@@ -11,7 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/classify"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
-	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 )
 
@@ -43,16 +42,7 @@ func Classify() *cobra.Command {
 					portdirs = append(portdirs, tgt.Portdir)
 				}
 			}
-			prefixPath, err := cmd.Flags().GetString("prefix")
-			if err != nil {
-				return err
-			}
-			var pfx prefix.Prefix
-			if prefixPath != "" {
-				pfx, err = prefix.New(prefixPath)
-			} else {
-				pfx, err = prefix.Find()
-			}
+			pfx, err := resolvePrefix(cmd)
 			if err != nil {
 				return err
 			}

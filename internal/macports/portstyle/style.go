@@ -12,13 +12,15 @@ const (
 	None Type = iota
 	// VersionLine is a literal version command: version at word 1.
 	VersionLine
-	// GoSetup is go.setup <package> <version> [tag-prefix].
+	// RevisionLine is a literal revision command: revision at word 1.
+	RevisionLine
+	// GoSetup is go.setup <package> <version> [tag-prefix] [tag-suffix].
 	GoSetup
-	// GithubSetup is github.setup <author> <project> <version> [prefix].
+	// GithubSetup is github.setup <author> <project> <version> [tag-prefix] [tag-suffix].
 	GithubSetup
-	// GitlabSetup is gitlab.setup <author> <project> <version> [prefix].
+	// GitlabSetup is gitlab.setup <author> <project> <version> [tag-prefix] [tag-suffix].
 	GitlabSetup
-	// BitbucketSetup is bitbucket.setup <author> <project> <version>.
+	// BitbucketSetup is bitbucket.setup <author> <project> <version> [tag-prefix].
 	BitbucketSetup
 	// Perl5Setup is perl5.setup <module> <version> [path].
 	Perl5Setup
@@ -72,6 +74,8 @@ func (t Type) String() string {
 		return "no style"
 	case VersionLine:
 		return "version"
+	case RevisionLine:
+		return "revision"
 	case GoSetup:
 		return "go.setup"
 	case GithubSetup:
@@ -124,16 +128,26 @@ func (t Type) String() string {
 	return "unknown style"
 }
 
-// versionStyles maps each style's command to the word index holding the
-// version. Word 0 is the command name itself. A style whose literal is not
-// the evaluated value verbatim declares the transform its PortGroup
-// applies; corroboration compares through it. Identity when nil.
-var versionStyles = []struct {
+// styleSpec is one row of a field's style table: the command carrying
+// the field, the word index holding the value (word 0 is the command
+// name itself), and the transform the style's PortGroup applies when
+// the literal is not the evaluated value verbatim — corroboration
+// compares through it, identity when nil.
+type styleSpec struct {
 	style     Type
 	command   string
 	word      int
 	transform func(string) string
-}{
+}
+
+// revisionStyles is FieldRevision's table: the literal revision line is
+// the only style.
+var revisionStyles = []styleSpec{
+	{RevisionLine, "revision", 1, nil},
+}
+
+// versionStyles is FieldVersion's table.
+var versionStyles = []styleSpec{
 	{VersionLine, "version", 1, nil},
 	{GoSetup, "go.setup", 2, nil},
 	{GithubSetup, "github.setup", 3, nil},
@@ -159,4 +173,16 @@ var versionStyles = []struct {
 	{SourcehutSetup, "sourcehut.setup", 3, nil},
 	{X11FontSetup, "x11font.setup", 2, nil},
 	{ZigToolchainSetup, "zig_toolchain.setup", 1, nil},
+}
+
+// Transformed reports whether the style writes its literal in a form
+// other than the evaluated value — a PortGroup transform sits between,
+// so the evaluated value cannot simply be written back into the span.
+func (t Type) Transformed() bool {
+	for _, s := range versionStyles {
+		if s.style == t {
+			return s.transform != nil
+		}
+	}
+	return false
 }

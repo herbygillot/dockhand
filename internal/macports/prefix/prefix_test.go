@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 func fakeLookPath(t *testing.T, fn func(string) (string, error)) {
@@ -22,7 +24,7 @@ func installed(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bin"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "bin", TclShellName), []byte("#!"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bin", macports.TclShellName), []byte("#!"), 0o755))
 	return dir
 }
 

@@ -42,3 +42,64 @@ proc snapshot {portdir {subport ""} {variations {}}} {
     return $out
 }
 ::tclrpc::register snapshot snapshot
+
+# fetchinfo returns, for the port at an absolute portdir, a dict with a
+# files entry mapping each distfile to the list of full URLs it may be
+# fetched from — sites expanded through MacPorts' own portfetch
+# machinery (mirror macros resolved, tags applied), so nothing about URL
+# assembly is reimplemented — plus the port's own fetch exceptions
+# (fetch.use_epsv, fetch.ignore_sslcert, fetch.user_agent), the same
+# options portfetch itself threads through to curl.
+proc fetchinfo {portdir {subport ""} {variations {}}} {
+    set opts {}
+    if {$subport ne ""} {
+        set opts [list subport $subport]
+    }
+    set handle [mportopen "file://$portdir" $opts $variations]
+    set worker [ditem_key $handle workername]
+    set files [dict create]
+    if {![catch {$worker eval {portfetch::checkfiles fetch_urls; set fetch_urls}} pairs]} {
+        foreach {tag file} $pairs {
+            set urls {}
+            foreach site [$worker eval [list set portfetch::urlmap($tag)]] {
+                lappend urls [$worker eval [list portfetch::assemble_url $site $file]]
+            }
+            dict set files $file $urls
+        }
+    }
+    set out [dict create files $files]
+    foreach {opt key} {
+        fetch.use_epsv use_epsv
+        fetch.ignore_sslcert ignore_sslcert
+        fetch.user_agent user_agent
+    } {
+        if {![catch {$worker eval [list option $opt]} val]} {
+            dict set out $key $val
+        }
+    }
+    mportclose $handle
+    return $out
+}
+::tclrpc::register fetchinfo fetchinfo
+
+# options returns the values of the named port options for one
+# evaluation context, omitting options the port does not have. The
+# generic primitive behind reads like livecheck.* and forge
+# coordinates.
+proc portoptions {portdir subport variations args} {
+    set opts {}
+    if {$subport ne ""} {
+        set opts [list subport $subport]
+    }
+    set handle [mportopen "file://$portdir" $opts $variations]
+    set worker [ditem_key $handle workername]
+    set out [dict create]
+    foreach name $args {
+        if {![catch {$worker eval [list option $name]} val]} {
+            dict set out $name $val
+        }
+    }
+    mportclose $handle
+    return $out
+}
+::tclrpc::register options portoptions

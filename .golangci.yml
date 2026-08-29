@@ -20,9 +20,11 @@ linters:
     exhaustive:
       default-signifies-exhaustive: false
     errcheck:
-      # Best-effort shutdowns and read-path closes: the error is not
-      # actionable at these call sites.
+      # Best-effort shutdowns, read-path closes, and terminal
+      # rendering: the error is not actionable at these call sites.
       exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
         - (*os.File).Close
         - (*github.com/herbygillot/dockhand/internal/macports/eval.Evaluator).Close
         - (*github.com/herbygillot/dockhand/internal/tcl/rpc.Session).Close

@@ -30,4 +30,11 @@ const (
 	// IndexQuickFile is the file name of the PortIndex's lookup
 	// accelerator alongside it.
 	IndexQuickFile = "PortIndex.quick"
+
+	// TclShellName is the file name of MacPorts' Tcl shell, installed
+	// under an installation prefix's bin directory.
+	TclShellName = "port-tclsh"
+
+	// CommandName is the file name of the port client, alongside it.
+	CommandName = "port"
 )

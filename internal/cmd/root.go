@@ -33,8 +33,18 @@ func Root(version string) *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
 	})
-	root.AddCommand(Classify(), Doctor(), versionCmd())
+	root.AddCommand(Apply(), Bump(), Classify(), Doctor(), versionCmd())
 	return root
+}
+
+// exactArgs is cobra.ExactArgs classified as a usage error.
+func exactArgs(n int) cobra.PositionalArgs {
+	return func(c *cobra.Command, args []string) error {
+		if err := cobra.ExactArgs(n)(c, args); err != nil {
+			return &UsageError{Err: err}
+		}
+		return nil
+	}
 }
 
 // Execute runs the dockhand command tree against os.Args and returns

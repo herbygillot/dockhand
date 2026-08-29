@@ -113,7 +113,7 @@ func TestLocateUnknownStyle(t *testing.T) {
 func TestLocateUnsupportedField(t *testing.T) {
 	b := []byte("version 1.0\n")
 	tree, _ := syntax.Parse(b)
-	_, err := Locate(b, tree, info.Values{Version: "1.0"}, info.FieldRevision)
+	_, err := Locate(b, tree, info.Values{Version: "1.0"}, info.FieldLicense)
 	var d *Decline
 	require.ErrorAs(t, err, &d)
 	require.Equal(t, FieldUnsupported, d.Type)
@@ -295,4 +295,45 @@ if {${os.major} >= 20} {
 `
 	loc := mustLocate(t, src, info.Values{Name: "same", Version: "3.1"})
 	require.Equal(t, VersionLine, loc.Style, "later span in document order wins")
+}
+
+func locateField(t *testing.T, src string, vals info.Values, field info.Field) (Located, error) {
+	t.Helper()
+	b := []byte(src)
+	tree, errs := syntax.Parse(b)
+	require.Empty(t, errs)
+	return Locate(b, tree, vals, field)
+}
+
+func TestLocateRevision(t *testing.T) {
+	src := "PortSystem 1.0\nversion 1.0\nrevision 3\n"
+	loc, err := locateField(t, src, info.Values{Name: "x", Version: "1.0", Revision: "3"}, info.FieldRevision)
+	require.NoError(t, err)
+	require.Equal(t, RevisionLine, loc.Style)
+	require.Equal(t, "3", loc.Span.Text([]byte(src)))
+
+	// No revision line: nothing carries the field.
+	_, err = locateField(t, "version 1.0\n", info.Values{Version: "1.0", Revision: "0"}, info.FieldRevision)
+	var d *Decline
+	require.ErrorAs(t, err, &d)
+	require.Equal(t, UnknownStyle, d.Type)
+
+	// A revision line whose literal is not the evaluated revision cannot
+	// corroborate.
+	_, err = locateField(t, "version 1.0\nrevision [expr 1+2]\n",
+		info.Values{Version: "1.0", Revision: "3"}, info.FieldRevision)
+	require.ErrorAs(t, err, &d)
+	require.Equal(t, NotLiteral, d.Type)
+}
+
+func TestLocateRevisionInSubportBlock(t *testing.T) {
+	src := `version 1.0
+revision 1
+subport foo-sub {
+    revision 5
+}
+`
+	loc, err := locateField(t, src, info.Values{Name: "foo-sub", Version: "1.0", Revision: "5"}, info.FieldRevision)
+	require.NoError(t, err)
+	require.Equal(t, "5", loc.Span.Text([]byte(src)))
 }

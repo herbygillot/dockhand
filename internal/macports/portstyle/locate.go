@@ -31,6 +31,28 @@ var scriptBodied = map[string]bool{
 	"while":    true,
 }
 
+// ScopeOf is the descend predicate for one evaluation context: the
+// conditional scopes that run during evaluation, plus the body of the
+// subport block whose name is the context's. Corroboration makes
+// conditional descent safe — evaluation already resolved the
+// conditionals on this host, so only the taken branch's span can match
+// the evaluated value. The whitelist is the safety boundary: descending
+// into arbitrary braced words would read prose (a long_description
+// mentioning a version) as candidates.
+func ScopeOf(src []byte, contextName string) func(syntax.Command) bool {
+	return func(cmd syntax.Command) bool {
+		name, ok := cmd.Name(src)
+		if !ok {
+			return false
+		}
+		if scriptBodied[name] {
+			return true
+		}
+		return name == "subport" && len(cmd.Words) >= 3 &&
+			cmd.Words[1].Span.Text(src) == contextName
+	}
+}
+
 // Locate finds the span carrying the given field's value for one
 // evaluation context. The tree must be a clean parse of src; vals must be
 // that context's evaluated state. On failure the returned error is a
@@ -41,10 +63,21 @@ var scriptBodied = map[string]bool{
 // and a context without an override inherits the top-level style, which
 // is then the span that carries its value.
 func Locate(src []byte, tree *syntax.Script, vals info.Values, field info.Field) (Located, error) {
-	if field != info.FieldVersion {
+	var value string
+	var styles []styleSpec
+	switch field {
+	case info.FieldVersion:
+		value, styles = vals.Version, versionStyles
+	case info.FieldRevision:
+		value, styles = vals.Revision, revisionStyles
+	case info.FieldName, info.FieldEpoch, info.FieldCategories,
+		info.FieldLicense, info.FieldMaintainers, info.FieldPlatforms,
+		info.FieldDistfiles, info.FieldChecksums,
+		info.FieldDependsFetch, info.FieldDependsExtract,
+		info.FieldDependsPatch, info.FieldDependsBuild,
+		info.FieldDependsLib, info.FieldDependsRun, info.FieldDependsTest:
 		return Located{}, &Decline{Type: FieldUnsupported, Field: field}
 	}
-	value := vals.Version
 
 	type candidate struct {
 		style     Type
@@ -54,59 +87,19 @@ func Locate(src []byte, tree *syntax.Script, vals info.Values, field info.Field)
 	}
 	var candidates []candidate
 
-	var collect func(sc *syntax.Script)
-	collect = func(sc *syntax.Script) {
-		for _, it := range sc.Items {
-			cmd, ok := it.(syntax.Command)
-			if !ok {
-				continue
-			}
-			name, ok := cmd.Name(src)
-			if !ok {
-				continue
-			}
-			for _, vc := range versionStyles {
-				if name != vc.command || len(cmd.Words) <= vc.word {
-					continue
-				}
-				w := cmd.Words[vc.word]
-				_, lit := w.Literal(src)
-				candidates = append(candidates, candidate{vc.style, w.Span, lit, vc.transform})
-			}
-			// Conditional scopes: descend into the brace bodies of
-			// script-bodied commands. Corroboration makes this safe —
-			// evaluation already resolved the conditionals on this host,
-			// so only the taken branch's span can match the evaluated
-			// value. The whitelist is the safety boundary: descending
-			// into arbitrary braced words would read prose (a
-			// long_description mentioning a version) as candidates.
-			if scriptBodied[name] {
-				for _, w := range cmd.Words[1:] {
-					if body, ok := w.BracedScript(src); ok {
-						collect(body)
-					}
-				}
-			}
-		}
-	}
-
-	collect(tree)
-	for _, it := range tree.Items {
-		cmd, ok := it.(syntax.Command)
+	for cmd := range tree.Commands(src, ScopeOf(src, vals.Name)) {
+		name, ok := cmd.Name(src)
 		if !ok {
 			continue
 		}
-		if name, ok := cmd.Name(src); !ok || name != "subport" || len(cmd.Words) < 3 {
-			continue
+		for _, vc := range styles {
+			if name != vc.command || len(cmd.Words) <= vc.word {
+				continue
+			}
+			w := cmd.Words[vc.word]
+			_, lit := w.Literal(src)
+			candidates = append(candidates, candidate{vc.style, w.Span, lit, vc.transform})
 		}
-		if cmd.Words[1].Span.Text(src) != vals.Name {
-			continue
-		}
-		body, ok := cmd.Words[2].BracedScript(src)
-		if !ok {
-			continue
-		}
-		collect(body)
 	}
 
 	if len(candidates) == 0 {

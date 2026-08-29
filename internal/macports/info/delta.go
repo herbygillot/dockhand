@@ -147,7 +147,7 @@ func (s Snapshot) Diff(after Snapshot) Delta {
 			d.Removed[k] = before
 			continue
 		}
-		if changes := diffValues(before, now); len(changes) > 0 {
+		if changes := ChangesBetween(before, now); len(changes) > 0 {
 			if d.Changed == nil {
 				d.Changed = map[SubportKey][]FieldChange{}
 			}
@@ -165,8 +165,10 @@ func (s Snapshot) Diff(after Snapshot) Delta {
 	return d
 }
 
-// diffValues compares two Values field by field, in canonical order.
-func diffValues(before, after Values) []FieldChange {
+// ChangesBetween compares two Values field by field, in canonical
+// (fieldTable) order. It is Diff's per-context comparison, exported for
+// callers rendering one-sided context changes.
+func ChangesBetween(before, after Values) []FieldChange {
 	var out []FieldChange
 	for _, f := range fieldTable {
 		old, now := f.get(before), f.get(after)
@@ -197,7 +199,7 @@ func valuesMapsEqual(a, b map[SubportKey]Values) bool {
 	}
 	for k, av := range a {
 		bv, ok := b[k]
-		if !ok || len(diffValues(av, bv)) != 0 {
+		if !ok || len(ChangesBetween(av, bv)) != 0 {
 			return false
 		}
 	}

@@ -18,15 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 )
 
-// The binaries an installation provides under <prefix>/bin.
-const (
-	// TclShellName is the file name of MacPorts' Tcl shell.
-	TclShellName = "port-tclsh"
-
-	// CommandName is the file name of the port client.
-	CommandName = "port"
-)
-
 // ErrNotInstalled reports that no MacPorts installation could be found.
 var ErrNotInstalled = errors.New("prefix: no MacPorts installation found")
 
@@ -37,12 +28,12 @@ type Prefix string
 
 // PortTclsh returns the path of the installation's Tcl shell.
 func (p Prefix) PortTclsh() string {
-	return filepath.Join(string(p), "bin", TclShellName)
+	return filepath.Join(string(p), "bin", macports.TclShellName)
 }
 
 // Port returns the path of the installation's port client.
 func (p Prefix) Port() string {
-	return filepath.Join(string(p), "bin", CommandName)
+	return filepath.Join(string(p), "bin", macports.CommandName)
 }
 
 // lookPath is indirected for hermetic tests.
@@ -54,7 +45,7 @@ var lookPath = exec.LookPath
 func New(dir string) (Prefix, error) {
 	p := Prefix(dir)
 	if _, err := os.Stat(p.PortTclsh()); err != nil {
-		return "", fmt.Errorf("%w (no %s under %s)", ErrNotInstalled, TclShellName, dir)
+		return "", fmt.Errorf("%w (no %s under %s)", ErrNotInstalled, macports.TclShellName, dir)
 	}
 	return p, nil
 }
@@ -66,11 +57,11 @@ func Find() (Prefix, error) {
 }
 
 func find(defaultPrefix string) (Prefix, error) {
-	if path, err := lookPath(TclShellName); err == nil {
+	if path, err := lookPath(macports.TclShellName); err == nil {
 		return Prefix(filepath.Dir(filepath.Dir(path))), nil
 	}
 	if p, err := New(defaultPrefix); err == nil {
 		return p, nil
 	}
-	return "", fmt.Errorf("%w (no %s on PATH or under %s)", ErrNotInstalled, TclShellName, defaultPrefix)
+	return "", fmt.Errorf("%w (no %s on PATH or under %s)", ErrNotInstalled, macports.TclShellName, defaultPrefix)
 }

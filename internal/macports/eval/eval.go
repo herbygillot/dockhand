@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 //go:embed shim.tcl
@@ -162,4 +163,74 @@ func variationsArg(v info.VariantSet) string {
 		b = append(b, ' ', sel[0])
 	}
 	return string(b)
+}
+
+// FetchInfo is one evaluation context's fetch surface: each distfile
+// with the full URLs it may be fetched from, plus the port's own fetch
+// exceptions — the fetch.* options portfetch itself threads through to
+// curl. Ports that fetch from a repository rather than distfiles have
+// no Files.
+type FetchInfo struct {
+	Files         map[string][]string
+	DisableEPSV   bool
+	IgnoreSSLCert bool
+	UserAgent     string
+}
+
+// FetchInfo reports the fetch surface for one evaluation context —
+// URLs assembled by MacPorts' own portfetch machinery, mirror macros
+// expanded.
+func (e *Evaluator) FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet) (FetchInfo, error) {
+	reply, err := e.sess.Call(ctx, "fetchinfo", portdir, subport, variationsArg(variants))
+	if err != nil {
+		return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: %w", portdir, err)
+	}
+	fields, errs := syntax.DictValues(reply)
+	if len(errs) != 0 {
+		return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed reply %q: %w", portdir, reply, errs[0])
+	}
+	fileFields, errs := syntax.DictValues(fields["files"])
+	if len(errs) != 0 {
+		return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed files dict %q: %w", portdir, fields["files"], errs[0])
+	}
+	epsv, haveEpsv := fields["use_epsv"]
+	sslcert, haveSslcert := fields["ignore_sslcert"]
+	fi := FetchInfo{
+		Files: make(map[string][]string, len(fileFields)),
+		// portfetch's own tests, with its defaults when the reply lacks
+		// the option: epsv on, certificates verified.
+		DisableEPSV:   haveEpsv && epsv != "yes",
+		IgnoreSSLCert: haveSslcert && sslcert != "no",
+		UserAgent:     syntax.ListValue(fields["user_agent"]),
+	}
+	for file, raw := range fileFields {
+		urls, errs := syntax.ListValues(raw)
+		if len(errs) != 0 {
+			return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed url list %q: %w", portdir, raw, errs[0])
+		}
+		fi.Files[file] = urls
+	}
+	return fi, nil
+}
+
+// Options reads the named port options for one evaluation context,
+// omitting options the port does not have. Values are decoded as single
+// list elements — the right reading for scalar options (URLs, regexes,
+// names); list-valued options need their own decoding and their own
+// accessor.
+func (e *Evaluator) Options(ctx context.Context, portdir, subport string, variants info.VariantSet, names ...string) (map[string]string, error) {
+	args := append([]string{portdir, subport, variationsArg(variants)}, names...)
+	reply, err := e.sess.Call(ctx, "options", args...)
+	if err != nil {
+		return nil, fmt.Errorf("eval: options of %s: %w", portdir, err)
+	}
+	fields, errs := syntax.DictValues(reply)
+	if len(errs) != 0 {
+		return nil, fmt.Errorf("eval: options of %s: malformed reply %q: %w", portdir, reply, errs[0])
+	}
+	out := make(map[string]string, len(fields))
+	for name, raw := range fields {
+		out[name] = syntax.ListValue(raw)
+	}
+	return out, nil
 }

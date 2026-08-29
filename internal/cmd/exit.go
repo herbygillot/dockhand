@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/portfetch"
+	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 )
@@ -39,9 +42,14 @@ func usagef(format string, a ...any) error {
 // ExitCode maps an error from the command tree to a process exit code.
 func ExitCode(err error) int {
 	var usage *UsageError
+	var styleDecline *portstyle.Decline
+	var intentDecline *intent.Decline
 	switch {
 	case err == nil:
 		return ExitOK
+	case errors.As(err, &styleDecline),
+		errors.As(err, &intentDecline):
+		return ExitDeclined
 	case errors.As(err, &usage),
 		errors.Is(err, tree.ErrTreeNeeded):
 		return ExitUsage
@@ -50,7 +58,8 @@ func ExitCode(err error) int {
 		return ExitTree
 	case errors.Is(err, prefix.ErrNotInstalled),
 		errors.Is(err, eval.ErrStartup),
-		errors.Is(err, eval.ErrRootRefused):
+		errors.Is(err, eval.ErrRootRefused),
+		errors.Is(err, portfetch.ErrRootRefused):
 		return ExitEnvironment
 	default:
 		return ExitFailure

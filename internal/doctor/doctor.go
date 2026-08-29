@@ -60,7 +60,7 @@ func Probe() Report {
 		return t
 	}
 
-	portTclsh := find("port-tclsh", prefix.Prefix(macports.DefaultPrefix).PortTclsh())
+	portTclsh := find(macports.TclShellName, prefix.Prefix(macports.DefaultPrefix).PortTclsh())
 	tclsh := find("tclsh", "")
 	git := find("git", "")
 	if git.Found {
@@ -75,11 +75,12 @@ func Probe() Report {
 	if gh.Found {
 		gh.Version = runVersion(gh.Path, "--version")
 	}
+	curl := find("curl", "")
 	tart := find("tart", "")
 	go2port := find("go2port", "")
 	cargo2port := find("cargo2port", "")
 
-	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, tart, go2port, cargo2port}}
+	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port}}
 }
 
 // String renders the report: each tool, then the capabilities the
@@ -110,9 +111,10 @@ func (r Report) String() string {
 			fmt.Fprintf(&b, "  %-24s unavailable (%s)\n", name, whyNot)
 		}
 	}
-	cap(byName["port-tclsh"].Found, "evaluation", "no port-tclsh: install MacPorts")
+	cap(byName[macports.TclShellName].Found, "evaluation", "no port-tclsh: install MacPorts")
 	cap(byName["git"].Found && byName["git"].Note == "", "branches and worktrees", "git missing or below floor")
 	cap(byName["gh"].Found, "GitHub integration", "no gh")
+	cap(byName["curl"].Found, "non-http distfile fetch", "no curl: only http(s) sources reachable")
 	cap(byName["tart"].Found, "VM verification", "no tart")
 	cap(byName["go2port"].Found, "Go vendored blocks", "no go2port")
 	cap(byName["cargo2port"].Found, "Rust vendored blocks", "no cargo2port")
