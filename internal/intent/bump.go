@@ -13,16 +13,19 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // Bump is the intent to move a port to a new upstream version.
@@ -78,6 +81,19 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 		return nil, &Decline{Type: AlreadyCurrent, Detail: vals.Version}
 	}
 
+	// A vendored dependency block pins the OLD version's dependency
+	// tree; bumping around it would ship a lying Portfile. Regeneration
+	// is the vendor intent's job (T3).
+	vendorOpts, err := ev.Options(ctx, portdir, b.Target.Subport, "", "go.vendors", "cargo.crates")
+	if err != nil {
+		return nil, err
+	}
+	for _, opt := range []string{"go.vendors", "cargo.crates"} {
+		if vendorOpts[opt] != "" {
+			return nil, &Decline{Type: VendoredBlock, Detail: opt}
+		}
+	}
+
 	// The version edit.
 	loc, err := portstyle.Locate(src, cst, vals, info.FieldVersion)
 	if err != nil {
@@ -123,7 +139,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 		if err != nil {
 			return nil, fmt.Errorf("intent: shadow evaluation: %w", err)
 		}
-		fi, err := ev.FetchInfo(ctx, shadowDir, b.Target.Subport, "")
+		fi, err := ev.FetchInfo(ctx, shadowDir, b.Target.Subport, "", true)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +164,10 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 		if err != nil {
 			return nil, fmt.Errorf("intent: %w", err)
 		}
-		ck, err := checksumEdits(src, cst, vals.Name, old, vals.Distfiles, shadowVals.Distfiles, sums)
+		// Distfiles tokens may carry :tag suffixes (fetch groups); the
+		// checksums block and the fetch surface both speak bare names.
+		ck, err := checksumEdits(src, cst, vals.Name, old,
+			bareDistfiles(vals.Distfiles), bareDistfiles(shadowVals.Distfiles), sums)
 		if err != nil {
 			return nil, err
 		}
@@ -257,4 +276,48 @@ func contextTop(ctx context.Context, ev *eval.Evaluator, portdir, subport string
 		return info.Values{}, fmt.Errorf("intent: subport %s not in shadow", subport)
 	}
 	return v, nil
+}
+
+// ResolveLatest answers what version "latest" means for a target, by
+// running upstream's two-resolver check against the port's version
+// carrier. A verdict that does not yield a trustworthy latest — rot,
+// disagreement, no signal — declines rather than guessing.
+func ResolveLatest(ctx context.Context, ev *eval.Evaluator, f *portfetch.Fetcher, target tree.Target) (string, upstream.Report, error) {
+	portdir := target.Portdir
+	src, err := os.ReadFile(filepath.Join(portdir, macports.PortfileName))
+	if err != nil {
+		return "", upstream.Report{}, err
+	}
+	cst, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return "", upstream.Report{}, fmt.Errorf("intent: %s: %s", portdir, errs[0].Describe(src))
+	}
+	vals, err := contextTop(ctx, ev, portdir, target.Subport)
+	if err != nil {
+		return "", upstream.Report{}, err
+	}
+	loc, err := portstyle.Locate(src, cst, vals, info.FieldVersion)
+	if err != nil {
+		return "", upstream.Report{}, err
+	}
+	report, err := upstream.Check(ctx, ev, f, portdir, target.Subport, loc.Style)
+	if err != nil {
+		return "", upstream.Report{}, err
+	}
+	if report.Latest == "" {
+		return "", report, &Decline{Type: LatestUnresolved,
+			Detail: fmt.Sprintf("%s (%s)", report.Verdict, report.Detail)}
+	}
+	return report.Latest, report, nil
+}
+
+// bareDistfiles strips the :tag fetch-group suffixes distfiles tokens
+// may carry; checksums and the fetch surface speak bare names.
+func bareDistfiles(distfiles []string) []string {
+	out := make([]string, 0, len(distfiles))
+	for _, d := range distfiles {
+		name, _, _ := strings.Cut(d, ":")
+		out = append(out, name)
+	}
+	return out
 }

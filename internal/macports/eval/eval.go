@@ -179,9 +179,15 @@ type FetchInfo struct {
 
 // FetchInfo reports the fetch surface for one evaluation context —
 // URLs assembled by MacPorts' own portfetch machinery, mirror macros
-// expanded.
-func (e *Evaluator) FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet) (FetchInfo, error) {
-	reply, err := e.sess.Call(ctx, "fetchinfo", portdir, subport, variationsArg(variants))
+// expanded. noMirrors skips the MacPorts fallback mirrors (the switch
+// behind port fetch --no-mirrors): the right mode when the distfiles
+// sought are for a version the mirrors cannot have yet.
+func (e *Evaluator) FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (FetchInfo, error) {
+	nm := "0"
+	if noMirrors {
+		nm = "1"
+	}
+	reply, err := e.sess.Call(ctx, "fetchinfo", portdir, subport, variationsArg(variants), nm)
 	if err != nil {
 		return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: %w", portdir, err)
 	}

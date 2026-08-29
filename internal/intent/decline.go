@@ -29,6 +29,13 @@ const (
 	VersionNotReached
 	// UnexpectedChange means a field unrelated to the bump moved.
 	UnexpectedChange
+	// LatestUnresolved means "latest" could not be trusted: the upstream
+	// resolvers disagreed, rotted, or produced no signal.
+	LatestUnresolved
+	// VendoredBlock means the port carries a vendored dependency block
+	// (go.vendors, cargo.crates) that a version bump must regenerate —
+	// the vendor intent's job, not yet built.
+	VendoredBlock
 )
 
 func (t DeclineType) String() string {
@@ -47,6 +54,10 @@ func (t DeclineType) String() string {
 		return "version would not reach the requested value"
 	case UnexpectedChange:
 		return "an unrelated field would change"
+	case LatestUnresolved:
+		return "latest could not be resolved"
+	case VendoredBlock:
+		return "vendored dependency block requires regeneration"
 	}
 	return "unknown decline"
 }

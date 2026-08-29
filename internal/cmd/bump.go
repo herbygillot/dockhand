@@ -19,14 +19,22 @@ import (
 // fetched checksums, exact predicted delta — and changes nothing;
 // apply consumes it.
 func Bump() *cobra.Command {
-	var to string
+	var (
+		to     string
+		latest bool
+	)
 	c := &cobra.Command{
 		Use:   "bump <port|subport|portdir>",
 		Short: "Plan a version bump (emits a plan; changes nothing)",
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if to == "" {
-				return usagef("--to <version> is required")
+			switch {
+			case to != "" && latest:
+				return usagef("--to and --latest are mutually exclusive")
+			case to == "latest":
+				// The literal string would be planned as a version;
+				// resolving the newest release is a different workflow.
+				return usagef("use --latest to resolve the newest release")
 			}
 			treeRoot, err := cmd.Flags().GetString("tree")
 			if err != nil {
@@ -53,8 +61,19 @@ func Bump() *cobra.Command {
 				return err
 			}
 			defer fetcher.Close()
+			ev := evs.Evaluators()[0]
 
-			p, err := intent.Bump{Target: targets[0], Version: to}.Plan(cmd.Context(), evs.Evaluators()[0], fetcher)
+			if to == "" {
+				// No stated version: latest is the intent.
+				resolved, report, err := intent.ResolveLatest(cmd.Context(), ev, fetcher, targets[0])
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "latest: %s (%s)\n", resolved, report.Verdict)
+				to = resolved
+			}
+
+			p, err := intent.Bump{Target: targets[0], Version: to}.Plan(cmd.Context(), ev, fetcher)
 			if err != nil {
 				return err
 			}
@@ -63,6 +82,7 @@ func Bump() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
+	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
 	return c
 }
 

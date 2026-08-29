@@ -33,7 +33,7 @@ With eleven intents they collide. The resolution:
 
 ```
 dockhand bump gcc14 --to 1.4.2           # emits a plan; changes nothing
-dockhand bump maintainer:me --to latest  # a sweep of bumps; still only plans
+dockhand bump maintainer:me              # a sweep to latest; still only plans
 dockhand apply <plan>                    # write the edit into the worktree
 dockhand verify <plan> --depth=build     # run verification
 dockhand promote <plan>                  # branch, commits, PR
@@ -56,7 +56,7 @@ The pipe is available when you want it. Sweeps never want it.
 ## Intent verbs
 
 ```
-bump <sel> [--to <version>|latest]
+bump <sel> [--to <version> | --latest]   # no flag: latest
 bump-revision <sel>                # alias: revbump
 bump-epoch <sel>
 refresh-checksums <sel>            # never auto-promotable; carries its cause
@@ -95,9 +95,9 @@ Notes on naming and shape:
   intents that touch variant-relative metadata need the scope, and the others
   do not.
 
-### `--to latest` is a query, not a value
+### `latest` is a query, not a value
 
-`bump maintainer:me --to latest` is the flagship invocation, and the update
+`bump maintainer:me` — latest by default — is the flagship invocation, and the update
 signal underneath it is unreliable in both directions. Across fifty real
 updates, Repology reported updates that did not exist for sixteen ports,
 missed newer versions for three, and for one port returned a version belonging

@@ -50,13 +50,19 @@ proc snapshot {portdir {subport ""} {variations {}}} {
 # assembly is reimplemented — plus the port's own fetch exceptions
 # (fetch.use_epsv, fetch.ignore_sslcert, fetch.user_agent), the same
 # options portfetch itself threads through to curl.
-proc fetchinfo {portdir {subport ""} {variations {}}} {
+proc fetchinfo {portdir {subport ""} {variations {}} {no_mirrors 0}} {
     set opts {}
     if {$subport ne ""} {
         set opts [list subport $subport]
     }
     set handle [mportopen "file://$portdir" $opts $variations]
     set worker [ditem_key $handle workername]
+    if {$no_mirrors} {
+        # The switch behind `port fetch --no-mirrors`: checkfiles skips
+        # the fallback mirrors, leaving only the port's own sites — a
+        # new upstream release cannot be on the mirrors yet.
+        $worker eval {set ports_fetch_no-mirrors yes}
+    }
     set files [dict create]
     if {![catch {$worker eval {portfetch::checkfiles fetch_urls; set fetch_urls}} pairs]} {
         foreach {tag file} $pairs {
