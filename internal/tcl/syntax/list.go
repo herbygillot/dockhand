@@ -50,9 +50,10 @@ func SplitList(src []byte, window text.Span) ([]text.Span, []Error) {
 					pos += 2
 					continue
 				}
-				if c == '{' {
+				switch c {
+				case '{':
 					depth++
-				} else if c == '}' {
+				case '}':
 					depth--
 				}
 				pos++

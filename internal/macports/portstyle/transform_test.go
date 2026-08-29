@@ -43,9 +43,9 @@ func TestPerl5ConvertVersionDifferential(t *testing.T) {
 	require.NoError(t, err)
 	text := string(src)
 	i := strings.Index(text, "proc perl5_convert_version")
-	require.Greater(t, i, 0)
+	require.Positive(t, i)
 	j := strings.Index(text[i:], "\n}")
-	require.Greater(t, j, 0)
+	require.Positive(t, j)
 	procDef := text[i : i+j+2]
 
 	path := testenv.Tclsh(t)

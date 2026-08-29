@@ -83,7 +83,7 @@ func TestDiffVariantFramesAreVisible(t *testing.T) {
 	d := before.Diff(after)
 	require.Len(t, d.Added, 1)
 	require.Len(t, d.Removed, 1)
-	require.True(t, d.Empty() == false)
+	require.False(t, d.Empty())
 }
 
 func TestDeltaEqual(t *testing.T) {

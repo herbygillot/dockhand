@@ -89,6 +89,8 @@ func bracedWords(src []byte, s *Script) []Braced {
 				fromSegments(seg.Segments)
 			case CmdSub:
 				fromScript(seg.Script)
+			case Literal, VarSub:
+				// No nested segments to descend into.
 			}
 		}
 	}

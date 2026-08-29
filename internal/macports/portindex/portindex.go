@@ -158,7 +158,7 @@ func scanOffsets(path string) (map[string]int64, error) {
 			return offsets, nil
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: at byte %d: %v", ErrMalformed, pos, err)
+			return nil, fmt.Errorf("%w: at byte %d: %w", ErrMalformed, pos, err)
 		}
 		offsets[strings.ToLower(headerName)] = pos
 		pos += n

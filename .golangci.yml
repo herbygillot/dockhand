@@ -1,0 +1,32 @@
+version: "2"
+
+# The exhaustiveness kit (decision D1): Go was chosen with the promise
+# that sealed types and closed enums get compiler-adjacent enforcement.
+# - exhaustive: every switch over a taxonomy (Outcome, portstyle.Type,
+#   info.Field, syntax.ErrorType, ...) names all members; a default case
+#   does not exempt it.
+# - gochecksumtype: switches over the //sumtype:decl sealed interfaces
+#   (syntax.Item, syntax.Segment) cover all variants.
+# - errorlint: comparisons and formatting respect wrapped errors — the
+#   sentinel-error standard's mechanical half.
+# - testifylint: assert/require used per the house testing style.
+linters:
+  enable:
+    - errorlint
+    - exhaustive
+    - gochecksumtype
+    - testifylint
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: false
+    errcheck:
+      # Best-effort shutdowns and read-path closes: the error is not
+      # actionable at these call sites.
+      exclude-functions:
+        - (*os.File).Close
+        - (*github.com/herbygillot/dockhand/internal/macports/eval.Evaluator).Close
+        - (*github.com/herbygillot/dockhand/internal/tcl/rpc.Session).Close
+
+formatters:
+  enable:
+    - gofmt

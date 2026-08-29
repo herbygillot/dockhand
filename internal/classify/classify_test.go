@@ -85,7 +85,7 @@ func TestCensus(t *testing.T) {
 
 	report := c.String()
 	require.Contains(t, report, "5 ports classified")
-	require.True(t, strings.Index(report, "version") < strings.Index(report, "go.setup"),
+	require.Less(t, strings.Index(report, "version"), strings.Index(report, "go.setup"),
 		"styles ordered by count")
 }
 

@@ -6,24 +6,45 @@
 // port-tclsh, git) ask this package for it and are skipped when it is
 // absent. Skipping is loud in verbose mode but silent in CI summaries, so
 // environments that are SUPPOSED to have the tools — a CI job that installs
-// MacPorts, a maintainer's workstation — can set DOCKHAND_TEST_REQUIRE=1 to
-// turn every would-be skip into a failure, catching a broken environment
-// instead of quietly testing nothing.
+// MacPorts, a maintainer's workstation — set DOCKHAND_TEST_REQUIRE to turn
+// would-be skips into failures, catching a broken environment instead of
+// quietly testing nothing. "1" or "all" requires every tool; a
+// comma-separated list (e.g. "tclsh,port-tclsh") requires exactly those, so
+// a CI job demands what it installed and no more.
 package testenv
 
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
+// required reports whether DOCKHAND_TEST_REQUIRE demands the named tool.
+func required(name string) bool {
+	v := os.Getenv("DOCKHAND_TEST_REQUIRE")
+	switch v {
+	case "":
+		return false
+	case "1", "all":
+		return true
+	}
+	for _, want := range strings.Split(v, ",") {
+		if strings.TrimSpace(want) == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Tool returns the path to the named executable, skipping the calling test
-// if it is not on PATH — or failing it when DOCKHAND_TEST_REQUIRE is set.
+// if it is not on PATH — or failing it when DOCKHAND_TEST_REQUIRE demands
+// the tool.
 func Tool(t *testing.T, name string) string {
 	t.Helper()
 	path, err := exec.LookPath(name)
 	if err != nil {
-		if os.Getenv("DOCKHAND_TEST_REQUIRE") != "" {
+		if required(name) {
 			t.Fatalf("%s required by DOCKHAND_TEST_REQUIRE but not found on PATH", name)
 		}
 		t.Skipf("%s not found on PATH; skipping (set DOCKHAND_TEST_REQUIRE=1 to make this a failure)", name)

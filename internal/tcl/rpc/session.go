@@ -190,7 +190,8 @@ func (s *Session) Call(ctx context.Context, op string, args ...string) (string, 
 			s.noise.Next(over)
 		}
 		if res.err != nil {
-			if _, ok := res.err.(CallError); !ok {
+			var ce CallError
+			if !errors.As(res.err, &ce) {
 				s.breakSession(res.err)
 			}
 			return "", res.err

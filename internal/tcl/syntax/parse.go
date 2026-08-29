@@ -179,6 +179,7 @@ func (p *parser) word() Word {
 	// expansion prefix, and the rest of the word is parsed as any other word.
 	if p.pos+3 < p.end &&
 		p.src[p.pos] == '{' && p.src[p.pos+1] == '*' && p.src[p.pos+2] == '}' {
+		//nolint:staticcheck // QF1001: the negation mirrors the rule's phrasing — "unless inside brackets and c closes them".
 		if c := p.src[p.pos+3]; !isSpace(c) && c != '\n' && c != ';' && !(p.brk > 0 && c == ']') {
 			expand = true
 			p.pos += 3
@@ -225,9 +226,10 @@ func (p *parser) bracedWord() Segment {
 			p.pos += 2
 			continue
 		}
-		if c == '{' {
+		switch c {
+		case '{':
 			depth++
-		} else if c == '}' {
+		case '}':
 			depth--
 		}
 		p.pos++

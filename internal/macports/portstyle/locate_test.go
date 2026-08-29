@@ -1,7 +1,6 @@
 package portstyle
 
 import (
-	"errors"
 	"os"
 	"testing"
 
@@ -108,7 +107,7 @@ func TestLocateComputedVersionDeclines(t *testing.T) {
 
 func TestLocateUnknownStyle(t *testing.T) {
 	src := "PortSystem 1.0\nname foo\n"
-	mustDecline(t, src, info.Values{Name: "foo", Version: "1.0"}, UnknownStyle)
+	_ = mustDecline(t, src, info.Values{Name: "foo", Version: "1.0"}, UnknownStyle)
 }
 
 func TestLocateUnsupportedField(t *testing.T) {
@@ -155,7 +154,7 @@ func TestLocateInterpolatedDeclines(t *testing.T) {
 func TestDeclineIsBranchableError(t *testing.T) {
 	_, err := locate(t, "name foo\n", info.Values{Name: "foo", Version: "1.0"})
 	var d *Decline
-	require.True(t, errors.As(err, &d))
+	require.ErrorAs(t, err, &d)
 	require.Equal(t, UnknownStyle, d.Type)
 }
 
@@ -227,7 +226,7 @@ long_description {
     version 1.0 was the best release of prosey.
 }
 `
-	mustDecline(t, src, info.Values{Name: "prosey", Version: "1.0"}, UnknownStyle)
+	_ = mustDecline(t, src, info.Values{Name: "prosey", Version: "1.0"}, UnknownStyle)
 }
 
 // Phase blocks might run at build time; a version assignment inside one is
