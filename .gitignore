@@ -1,4 +1,5 @@
 .DS_Store
 *.test
+!internal/tcl/syntax/testdata/**/*.test
 dist/
 /dockhand
