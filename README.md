@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/image.png" alt="dockhand logo" width="480">
+  <img src="images/logo-white.png" alt="dockhand logo" width="480">
 </p>
 
 # dockhand
