@@ -16,13 +16,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: gofmt
-        # Scoped to our trees: vendored code is formatted by its
-        # upstreams' Go versions, not ours.
-        run: test -z "$(gofmt -l cmd internal)"
-      - run: go vet ./...
-      - run: go build ./...
-      - run: go test -race ./...
+      # The Makefile is the single definition of how to check, build,
+      # and test; CI only invokes it, so local and CI cannot drift.
+      - run: make check
+      - run: make build
+      - run: make test
 
   lint:
     name: golangci-lint
@@ -50,7 +48,7 @@ jobs:
           go-version-file: go.mod
       - name: Install tclsh
         run: sudo apt-get update && sudo apt-get install -y tcl
-      - run: go test -race ./...
+      - run: make test
         env:
           DOCKHAND_TEST_REQUIRE: tclsh
 
@@ -68,6 +66,6 @@ jobs:
           go-version-file: go.mod
       - name: Install MacPorts
         uses: melusina-org/setup-macports@v1
-      - run: go test -race ./...
+      - run: make test
         env:
           DOCKHAND_TEST_REQUIRE: tclsh,port-tclsh
