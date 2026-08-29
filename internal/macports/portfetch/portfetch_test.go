@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
@@ -164,4 +165,35 @@ livecheck.type none
 	r, err := f.Livecheck(context.Background(), dir, "")
 	require.NoError(t, err)
 	assert.False(t, r.Ran)
+}
+
+// The pure Go VerCmp is pinned to the oracle, not to our expectations:
+// every pair must agree in sign with base's own vercmp.
+func TestVerCmpDifferential(t *testing.T) {
+	f := newFetcher(t)
+	ctx := context.Background()
+	versions := []string{
+		"1.0", "1.0.0", "1.0.1", "1.9", "1.10", "1.2.3", "1.2.10",
+		"2.36.0", "2.35.2", "0.4.0", "0.5.8", "1.0a", "1.0b", "1.0rc1",
+		"1.0-rc1", "1_0", "01.2", "1.02", "20260223", "2024-05-01",
+		"1.3.2", "3.0-beta.2", "0.0.4", "e9274a7bdbfd", "v1.0", "1.0v",
+		"", "0", "00", "a", "10", "9",
+	}
+	sign := func(n int) int {
+		switch {
+		case n < 0:
+			return -1
+		case n > 0:
+			return 1
+		}
+		return 0
+	}
+	for _, a := range versions {
+		for _, b := range versions {
+			oracle, err := f.Vercmp(ctx, a, b)
+			require.NoError(t, err)
+			require.Equal(t, sign(oracle), sign(macports.VerCmp(a, b)),
+				"VerCmp(%q, %q) disagrees with the oracle", a, b)
+		}
+	}
 }

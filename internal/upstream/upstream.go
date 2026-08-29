@@ -7,8 +7,8 @@
 // is a finding — most valuably, livecheck rot silently hiding real
 // releases. Corroboration, one level up from spans and deltas.
 //
-// Version ordering is always MacPorts' own (vercmp through a fetch
-// session); this package never invents an ordering.
+// Version ordering is always MacPorts' own (macports.VerCmp, the pure
+// port of base's vercomp.c); this package never invents an ordering.
 //
 // Planned, deliberately not yet built: when the first registry
 // resolver arrives (CRAN, rubygems, PyPI, CPAN — carriers with no git
@@ -24,6 +24,8 @@ package upstream
 
 import (
 	"regexp"
+
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 // Verdict classifies what the two resolvers said.
@@ -110,41 +112,31 @@ func Stable(version string) bool {
 	return !prerelease.MatchString(version)
 }
 
-// Compare orders two versions: negative, zero, positive. Implemented
-// by portfetch's Vercmp — MacPorts' own ordering.
-type Compare func(a, b string) (int, error)
-
-// Judge rules on an observation. cmp must be MacPorts ordering.
-func Judge(obs Observation, cmp Compare) (Report, error) {
+// Judge rules on an observation. Ordering is macports.VerCmp — a pure
+// comparison, so judging cannot fail.
+func Judge(obs Observation) Report {
 	r := Report{Livecheck: obs.Livecheck}
-	var err error
-	r.ForgeNewest, err = newest(obs.ForgeVersions, cmp)
-	if err != nil {
-		return Report{}, err
-	}
-	r.ForgeNewestStable, err = newest(stableOf(obs.ForgeVersions), cmp)
-	if err != nil {
-		return Report{}, err
-	}
+	r.ForgeNewest = newest(obs.ForgeVersions)
+	r.ForgeNewestStable = newest(stableOf(obs.ForgeVersions))
 
 	switch {
 	case obs.ForgeVersions == nil && obs.Livecheck == "":
 		r.Verdict = NoSignal
-		return r, nil
+		return r
 	case obs.ForgeVersions == nil:
 		r.Verdict, r.Latest = LivecheckOnly, obs.Livecheck
-		return r, nil
+		return r
 	case obs.LivecheckDisabled:
 		r.Verdict = ForgeOnly
 		if r.Latest = r.ForgeNewestStable; r.Latest == "" {
 			r.Latest = r.ForgeNewest
 			r.Detail = "only prerelease tags exist"
 		}
-		return r, nil
+		return r
 	case obs.Livecheck == "":
 		r.Verdict = LivecheckRot
 		r.Detail = "forge has " + r.ForgeNewest
-		return r, nil
+		return r
 	}
 
 	against := r.ForgeNewestStable
@@ -153,12 +145,9 @@ func Judge(obs Observation, cmp Compare) (Report, error) {
 		// policy, not rot.
 		r.Verdict, r.Latest = Agreement, obs.Livecheck
 		r.Detail = "forge has only prerelease tags"
-		return r, nil
+		return r
 	}
-	c, err := cmp(against, obs.Livecheck)
-	if err != nil {
-		return Report{}, err
-	}
+	c := macports.VerCmp(against, obs.Livecheck)
 	switch {
 	case c > 0:
 		r.Verdict = LivecheckBehind
@@ -170,7 +159,7 @@ func Judge(obs Observation, cmp Compare) (Report, error) {
 		// vercmp-equal; the maintainer's spelling wins.
 		r.Verdict, r.Latest = Agreement, obs.Livecheck
 	}
-	return r, nil
+	return r
 }
 
 func stableOf(versions []string) []string {
@@ -183,20 +172,12 @@ func stableOf(versions []string) []string {
 	return out
 }
 
-func newest(versions []string, cmp Compare) (string, error) {
+func newest(versions []string) string {
 	best := ""
 	for _, v := range versions {
-		if best == "" {
-			best = v
-			continue
-		}
-		c, err := cmp(v, best)
-		if err != nil {
-			return "", err
-		}
-		if c > 0 {
+		if best == "" || macports.VerCmp(v, best) > 0 {
 			best = v
 		}
 	}
-	return best, nil
+	return best
 }

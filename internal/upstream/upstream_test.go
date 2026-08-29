@@ -3,8 +3,6 @@ package upstream
 import (
 	"context"
 	"os/exec"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,25 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
-
-// numCmp orders dotted numeric versions — a stand-in for vercmp in
-// hermetic tests.
-func numCmp(a, b string) (int, error) {
-	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
-	for i := 0; i < len(pa) || i < len(pb); i++ {
-		var na, nb int
-		if i < len(pa) {
-			na, _ = strconv.Atoi(pa[i])
-		}
-		if i < len(pb) {
-			nb, _ = strconv.Atoi(pb[i])
-		}
-		if na != nb {
-			return na - nb, nil
-		}
-	}
-	return 0, nil
-}
 
 func TestCoords(t *testing.T) {
 	cases := []struct {
@@ -91,49 +70,41 @@ func TestStable(t *testing.T) {
 
 func TestJudge(t *testing.T) {
 	// Agreement.
-	r, err := Judge(Observation{Livecheck: "2.0", ForgeVersions: []string{"1.0", "2.0"}}, numCmp)
-	require.NoError(t, err)
+	r := Judge(Observation{Livecheck: "2.0", ForgeVersions: []string{"1.0", "2.0"}})
 	assert.Equal(t, Agreement, r.Verdict)
 	assert.Equal(t, "2.0", r.Latest)
 
 	// Rot: livecheck matched nothing, forge has versions.
-	r, err = Judge(Observation{Livecheck: "", ForgeVersions: []string{"1.0", "2.0"}}, numCmp)
-	require.NoError(t, err)
+	r = Judge(Observation{Livecheck: "", ForgeVersions: []string{"1.0", "2.0"}})
 	assert.Equal(t, LivecheckRot, r.Verdict)
 	assert.Empty(t, r.Latest)
 
 	// Behind: forge has a newer stable.
-	r, err = Judge(Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0"}}, numCmp)
-	require.NoError(t, err)
+	r = Judge(Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0"}})
 	assert.Equal(t, LivecheckBehind, r.Verdict)
 	assert.Empty(t, r.Latest)
 
 	// Only prereleases newer: livecheck's conservatism is policy.
-	r, err = Judge(Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0.rc.1"}}, numCmp)
-	require.NoError(t, err)
+	r = Judge(Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0.rc.1"}})
 	assert.Equal(t, Agreement, r.Verdict)
 	assert.Equal(t, "1.0", r.Latest)
 
 	// Ahead: livecheck newer than every tag.
-	r, err = Judge(Observation{Livecheck: "3.0", ForgeVersions: []string{"1.0", "2.0"}}, numCmp)
-	require.NoError(t, err)
+	r = Judge(Observation{Livecheck: "3.0", ForgeVersions: []string{"1.0", "2.0"}})
 	assert.Equal(t, LivecheckAhead, r.Verdict)
 
 	// Livecheck disabled, forge answers.
-	r, err = Judge(Observation{LivecheckDisabled: true, ForgeVersions: []string{"1.0", "2.0"}}, numCmp)
-	require.NoError(t, err)
+	r = Judge(Observation{LivecheckDisabled: true, ForgeVersions: []string{"1.0", "2.0"}})
 	assert.Equal(t, ForgeOnly, r.Verdict)
 	assert.Equal(t, "2.0", r.Latest)
 
 	// No forge: livecheck stands alone.
-	r, err = Judge(Observation{Livecheck: "2.0"}, numCmp)
-	require.NoError(t, err)
+	r = Judge(Observation{Livecheck: "2.0"})
 	assert.Equal(t, LivecheckOnly, r.Verdict)
 	assert.Equal(t, "2.0", r.Latest)
 
 	// Nothing at all.
-	r, err = Judge(Observation{LivecheckDisabled: true}, numCmp)
-	require.NoError(t, err)
+	r = Judge(Observation{LivecheckDisabled: true})
 	assert.Equal(t, NoSignal, r.Verdict)
 }
 

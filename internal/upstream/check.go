@@ -51,7 +51,5 @@ func Check(ctx context.Context, ev *eval.Evaluator, f *portfetch.Fetcher, portdi
 	}
 
 	slog.Debug("upstream observation", "livecheck", obs.Livecheck, "disabled", obs.LivecheckDisabled, "forgeVersions", len(obs.ForgeVersions))
-	return Judge(obs, func(a, b string) (int, error) {
-		return f.Vercmp(ctx, a, b)
-	})
+	return Judge(obs), nil
 }
