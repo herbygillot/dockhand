@@ -50,8 +50,7 @@ func ExitCode(err error) int {
 	case errors.As(err, &styleDecline),
 		errors.As(err, &intentDecline):
 		return ExitDeclined
-	case errors.As(err, &usage),
-		errors.Is(err, tree.ErrTreeNeeded):
+	case errors.As(err, &usage):
 		return ExitUsage
 	case errors.Is(err, tree.ErrNotPortsTree),
 		errors.Is(err, tree.ErrPortNotFound):

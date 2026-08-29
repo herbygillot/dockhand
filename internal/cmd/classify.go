@@ -2,14 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/classify"
-	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 )
@@ -85,7 +82,7 @@ func Classify() *cobra.Command {
 func resolveTargets(treeRoot string, all bool, args []string) ([]tree.Target, error) {
 	needTree := all
 	for _, a := range args {
-		if _, err := os.Stat(filepath.Join(a, macports.PortfileName)); err != nil {
+		if _, ok := tree.PathTarget(a); !ok {
 			needTree = true
 		}
 	}
@@ -130,12 +127,8 @@ func resolveTargets(treeRoot string, all bool, args []string) ([]tree.Target, er
 	}
 
 	for _, a := range args {
-		if _, err := os.Stat(filepath.Join(a, macports.PortfileName)); err == nil {
-			abs, err := filepath.Abs(a)
-			if err != nil {
-				return nil, err
-			}
-			add(tree.Target{Portdir: abs})
+		if tgt, ok := tree.PathTarget(a); ok {
+			add(tgt)
 			continue
 		}
 		if tr.HasCategory(a) {

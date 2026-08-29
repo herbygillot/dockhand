@@ -20,39 +20,19 @@ type Target struct {
 	Subport string // index-resolved port name; "" when resolved by location
 }
 
-// ErrTreeNeeded reports a reference that can only be resolved against a
-// ports tree when none was provided.
-var ErrTreeNeeded = errors.New("tree: a ports tree is needed to resolve names")
-
-// ResolveTarget resolves a target reference the way a MacPorts user
-// writes one:
-//
-//   - a portdir path, relative or absolute, "." included
-//   - "category/dir" relative to the tree root
-//   - a port or subport name, resolved case-insensitively through the
-//     tree's PortIndex when the tree carries one — the vocabulary the
-//     port client speaks
-//   - a portdir's directory name, matched by walking the tree
-//
-// in that order. treeRoot may be empty when the reference is a path.
-// Callers resolving many references against one tree should Open it
-// once and use Tree.Resolve, which caches the index.
-func ResolveTarget(treeRoot, ref string) (Target, error) {
-	if _, err := os.Stat(filepath.Join(ref, macports.PortfileName)); err == nil {
-		abs, err := filepath.Abs(ref)
-		if err != nil {
-			return Target{}, err
-		}
-		return Target{Portdir: abs}, nil
+// PathTarget reports whether ref names a portdir on disk — a directory
+// holding a Portfile — and resolves it to an absolute Target. A path
+// needs no ports tree: it says where the port is without being looked
+// up.
+func PathTarget(ref string) (Target, bool) {
+	if _, err := os.Stat(filepath.Join(ref, macports.PortfileName)); err != nil {
+		return Target{}, false
 	}
-	if treeRoot == "" {
-		return Target{}, fmt.Errorf("%q: %w", ref, ErrTreeNeeded)
-	}
-	tr, err := Open(treeRoot)
+	abs, err := filepath.Abs(ref)
 	if err != nil {
-		return Target{}, err
+		return Target{}, false
 	}
-	return tr.Resolve(ref)
+	return Target{Portdir: abs}, true
 }
 
 // index lazily opens the tree's own PortIndex, caching the result —
