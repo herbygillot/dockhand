@@ -95,3 +95,15 @@ func (t *Tree) Resolve(ref string) (Target, error) {
 	}
 	return Target{}, fmt.Errorf("%q: %w", ref, ErrPortNotFound)
 }
+
+// ErrNoPortdir reports a Target used before resolution gave it a
+// portdir.
+var ErrNoPortdir = errors.New("tree: target has no portdir")
+
+// Portfile returns the full path of the Target's Portfile.
+func (t Target) Portfile() (string, error) {
+	if t.Portdir == "" {
+		return "", ErrNoPortdir
+	}
+	return filepath.Join(t.Portdir, macports.PortfileName), nil
+}

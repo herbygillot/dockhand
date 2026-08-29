@@ -131,3 +131,12 @@ func TestResolveTargetErrors(t *testing.T) {
 	_, err = ResolveTarget(t.TempDir(), "kubectl")
 	require.ErrorIs(t, err, ErrNotPortsTree)
 }
+
+func TestTargetPortfile(t *testing.T) {
+	p, err := Target{Portdir: "/x/sysutils/foo"}.Portfile()
+	require.NoError(t, err)
+	assert.Equal(t, "/x/sysutils/foo/Portfile", p)
+
+	_, err = Target{}.Portfile()
+	require.ErrorIs(t, err, ErrNoPortdir)
+}
