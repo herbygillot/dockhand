@@ -17,7 +17,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: gofmt
-        run: test -z "$(gofmt -l .)"
+        # Scoped to our trees: vendored code is formatted by its
+        # upstreams' Go versions, not ours.
+        run: test -z "$(gofmt -l cmd internal)"
       - run: go vet ./...
       - run: go build ./...
       - run: go test -race ./...
