@@ -57,8 +57,8 @@ The pipe is available when you want it. Sweeps never want it.
 
 ```
 bump <sel> [--to <version>|latest]
-revbump <sel>
-epoch <sel>
+bump-revision <sel>                # alias: revbump
+bump-epoch <sel>
 refresh-checksums <sel>            # never auto-promotable; carries its cause
 vendor <sel>                       # regenerate vendored block (T3)
 deps <sel> --add/--remove <spec> [--kind lib|build|run] [--variant <v>]
@@ -70,6 +70,11 @@ migrate <sel> --idiom <name>
 
 Notes on naming and shape:
 
+- **`bump-revision` and `revbump` are the same verb.** The canonical name
+  follows the family's shape (`bump`, `bump-revision`, `bump-epoch`); the
+  alias honors the community's own vernacular — reviewers and commit
+  messages say "revbump" — by the same borrowing principle that took
+  `port`'s selectors. Both spellings are permanent; neither is deprecated.
 - **`refresh-checksums`, not `checksums`.** `port checksum` already exists,
   and it *verifies* checksums rather than refreshing them. Reusing `port`'s
   vocabulary to mean something different would be worse than not borrowing at
@@ -84,7 +89,7 @@ Notes on naming and shape:
   top-level port while its subports stay live (`libftdi` does), so the
   selector resolves to ports and the edit is sometimes the insertion of a
   guarded block rather than a whole-file rewrite. Obsoleting also cascades
-  into `revbump` and sometimes `epoch`.
+  into `bump-revision` and sometimes `bump-epoch`.
 - **`--variant` appears only where it means something.** `deps` takes it;
   `bump` does not. This is the variant-scope question surfacing as a flag:
   intents that touch variant-relative metadata need the scope, and the others
