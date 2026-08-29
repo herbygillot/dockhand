@@ -1,21 +1,21 @@
 package intent
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
-// Shadow materializes a copy of portdir with the edits applied to its
-// Portfile: the edit application is the planner's half, the portdir
-// copy is tree.Shadow's. The caller removes the returned
-// directory.
-func Shadow(portdir string, src []byte, edits []plan.Edit) (string, error) {
+// Shadow applies a planner's edits to the Portfile source and
+// materializes the result as a shadow of the handle's port: applying
+// the edits is the planner's half, copying the portdir is
+// port.Handle.Shadow's. The returned function removes the shadow.
+func Shadow(h port.Handle, src []byte, edits []plan.Edit) (port.Handle, func(), error) {
 	edited, err := text.Apply(src, textEdits(edits))
 	if err != nil {
-		return "", err
+		return port.Handle{}, nil, err
 	}
-	return tree.Shadow(portdir, edited)
+	return h.Shadow(edited)
 }
 
 // textEdits converts plan edits to text edits.

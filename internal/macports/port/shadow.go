@@ -1,33 +1,46 @@
-package tree
+package port
 
 import (
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 )
 
-// Shadow materializes a copy of a portdir with its Portfile replaced by
-// the given bytes, in a fresh temporary directory — the surface a
-// planner evaluates to learn, exactly, what its edits would do. The
-// caller removes the returned directory. Regular contents (files/,
-// patches) are copied; symlinks — a work link from a local build, say —
-// are not part of the port and are skipped.
-func Shadow(portdir string, portfile []byte) (string, error) {
+// Shadow materializes a copy of this handle's portdir with its Portfile
+// replaced by the given bytes, and returns a handle on that copy: the
+// surface a planner evaluates to learn, exactly, what an edit would do
+// before anything real is written.
+//
+// The returned function removes the copy. It is handed back rather than
+// left to the caller because the only thing safe to remove is what
+// Shadow created: a caller reaching for Target.Portdir to clean up
+// would, on any other handle, be deleting a real portdir out of the
+// ports tree. Skipping the call is how a shadow is kept for inspection.
+//
+// Regular contents (files/, patches) are copied; symlinks — a work link
+// from a local build, say — are not part of the port and are skipped.
+func (h Handle) Shadow(portfile []byte) (Handle, func(), error) {
 	dir, err := os.MkdirTemp("", "dockhand-shadow-*")
 	if err != nil {
-		return "", err
+		return Handle{}, nil, err
 	}
-	if err := copyTree(dir, portdir); err != nil {
-		os.RemoveAll(dir) //nolint:errcheck // best-effort on the error path
-		return "", err
+	remove := func() {
+		if err := os.RemoveAll(dir); err != nil {
+			slog.Warn("shadow left behind", "dir", dir, "err", err)
+		}
+	}
+	if err := copyTree(dir, h.Target.Portdir); err != nil {
+		remove()
+		return Handle{}, nil, err
 	}
 	if err := os.WriteFile(filepath.Join(dir, macports.PortfileName), portfile, 0o644); err != nil {
-		os.RemoveAll(dir) //nolint:errcheck
-		return "", err
+		remove()
+		return Handle{}, nil, err
 	}
-	return dir, nil
+	return h.At(dir), remove, nil
 }
 
 // copyTree copies a portdir's regular contents into dst.

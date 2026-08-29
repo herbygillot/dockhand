@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/bump"
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/plan"
 )
@@ -61,11 +62,11 @@ func Bump() *cobra.Command {
 				return err
 			}
 			defer fetcher.Close()
-			ev := evs.Evaluators()[0]
+			h := port.New(targets[0], evs.Evaluators()[0])
 
 			if to == "" {
 				// No stated version: latest is the intent.
-				resolved, report, err := bump.ResolveLatest(cmd.Context(), ev, fetcher, targets[0])
+				resolved, report, err := bump.ResolveLatest(cmd.Context(), h, fetcher)
 				if err != nil {
 					return err
 				}
@@ -73,7 +74,7 @@ func Bump() *cobra.Command {
 				to = resolved
 			}
 
-			p, err := bump.Bump{Target: targets[0], Version: to}.Plan(cmd.Context(), ev, fetcher)
+			p, err := bump.Bump{Version: to}.Plan(cmd.Context(), h, fetcher)
 			if err != nil {
 				return err
 			}

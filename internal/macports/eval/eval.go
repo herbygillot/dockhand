@@ -121,12 +121,24 @@ func (e *Evaluator) Snapshot(ctx context.Context, portdir string, variants info.
 	return snap, nil
 }
 
-// Top evaluates only the top-level context: one evaluation, no subport
-// enumeration. This is the census path — classification of a port's style
-// needs the top context's values and nothing else.
-func (e *Evaluator) Top(ctx context.Context, portdir string, variants info.VariantSet) (info.Values, error) {
-	v, _, err := e.one(ctx, portdir, "", variants)
+// Values evaluates one context — the top-level port when subport is
+// empty — and returns its state. One evaluation, whichever context is
+// named: asking for a subport costs the same as asking for the top
+// level, and never requires enumerating the rest.
+//
+// A subport the Portfile does not define is an error from MacPorts
+// itself ("X does not have a subport Y"), so the name is validated by
+// evaluation rather than by a prior enumeration.
+func (e *Evaluator) Values(ctx context.Context, portdir, subport string, variants info.VariantSet) (info.Values, error) {
+	v, _, err := e.one(ctx, portdir, subport, variants)
 	return v, err
+}
+
+// Top evaluates only the top-level context. This is the census path —
+// classification of a port's style needs the top context's values and
+// nothing else.
+func (e *Evaluator) Top(ctx context.Context, portdir string, variants info.VariantSet) (info.Values, error) {
+	return e.Values(ctx, portdir, "", variants)
 }
 
 // Subports enumerates the port's subports with a single evaluation, without

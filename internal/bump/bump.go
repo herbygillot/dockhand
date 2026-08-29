@@ -11,26 +11,24 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/intent"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
-// Bump is the intent to move a port to a new upstream version.
+// Bump is the intent to move a port to a new upstream version. The port
+// it applies to is the handle Plan is given: the intent names the
+// desired end state, the handle names the subject.
 type Bump struct {
-	Target  tree.Target
 	Version string
 }
 
@@ -48,28 +46,20 @@ var bumpMayChange = map[info.Field]bool{
 // Plan produces the complete bump plan: version and revision edits,
 // checksum edits computed from the actually-fetched new distfiles, and
 // the exact predicted delta from a shadow evaluation of the final edit
-// set. The returned error is a *Decline or *portstyle.Decline when the
-// refusal is a judgment rather than a failure.
-func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch intent.Fetcher) (*plan.Plan, error) {
-	portdir := b.Target.Portdir
-	portfile, err := b.Target.Portfile()
+// set. The returned error is an *intent.Decline or *portstyle.Decline
+// when the refusal is a judgment rather than a failure.
+func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*plan.Plan, error) {
+	portdir := h.Target.Portdir
+	src, cst, err := h.Source()
 	if err != nil {
 		return nil, err
-	}
-	src, err := os.ReadFile(portfile)
-	if err != nil {
-		return nil, err
-	}
-	cst, errs := syntax.Parse(src)
-	if len(errs) != 0 {
-		return nil, fmt.Errorf("intent: %s: %s", portdir, errs[0].Describe(src))
 	}
 
-	before, err := ev.Snapshot(ctx, portdir, "")
+	before, err := h.Snapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
-	vals, err := contextValues(ctx, ev, portdir, b.Target.Subport, before)
+	vals, err := h.Values(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +70,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch intent.Fetcher
 	// A vendored dependency block pins the OLD version's dependency
 	// tree; bumping around it would ship a lying Portfile. Regeneration
 	// is the vendor intent's job (T3).
-	vendorOpts, err := ev.Options(ctx, portdir, b.Target.Subport, "", "go.vendors", "cargo.crates")
+	vendorOpts, err := h.Options(ctx, "go.vendors", "cargo.crates")
 	if err != nil {
 		return nil, err
 	}
@@ -126,18 +116,18 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch intent.Fetcher
 	// URLs, then fetch them for checksums.
 	checksumOldTokens := vals.Checksums
 	if len(checksumOldTokens) > 0 {
-		shadowDir, err := intent.Shadow(portdir, src, edits)
+		shadow, cleanup, err := intent.Shadow(h, src, edits)
 		if err != nil {
 			return nil, err
 		}
-		slog.Debug("shadowed version edits", "dir", shadowDir)
-		defer os.RemoveAll(shadowDir) //nolint:errcheck // temp dir cleanup
+		defer cleanup()
+		slog.Debug("shadowed version edits", "dir", shadow.Target.Portdir)
 
-		shadowVals, err := contextTop(ctx, ev, shadowDir, b.Target.Subport)
+		shadowVals, err := shadow.Values(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("intent: shadow evaluation: %w", err)
+			return nil, fmt.Errorf("bump: shadow evaluation: %w", err)
 		}
-		fi, err := ev.FetchInfo(ctx, shadowDir, b.Target.Subport, "", true)
+		fi, err := shadow.FetchInfo(ctx, true)
 		if err != nil {
 			return nil, err
 		}
@@ -154,14 +144,14 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch intent.Fetcher
 		for file, u := range fi.Files {
 			s, err := fetch.Fetch(ctx, u, fetchOpts)
 			if err != nil {
-				return nil, fmt.Errorf("intent: %s: %w", file, err)
+				return nil, fmt.Errorf("bump: %s: %w", file, err)
 			}
 			slog.Debug("fetched distfile", "file", file, "sha256", s.Sha256, "size", s.Size)
 			sums[file] = s
 		}
 		old, err := checksums.Parse(checksumOldTokens)
 		if err != nil {
-			return nil, fmt.Errorf("intent: %w", err)
+			return nil, fmt.Errorf("bump: %w", err)
 		}
 		// Distfiles tokens may carry :tag suffixes (fetch groups); the
 		// checksums block and the fetch surface both speak bare names.
@@ -174,14 +164,14 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch intent.Fetcher
 	}
 
 	// Shadow the full edit set for the exact prediction.
-	finalDir, err := intent.Shadow(portdir, src, edits)
+	final, cleanup, err := intent.Shadow(h, src, edits)
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(finalDir) //nolint:errcheck // temp dir cleanup
-	after, err := ev.Snapshot(ctx, finalDir, "")
+	defer cleanup()
+	after, err := final.Snapshot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("intent: shadow evaluation: %w", err)
+		return nil, fmt.Errorf("bump: shadow evaluation: %w", err)
 	}
 	predicted := before.Diff(after)
 	slog.Debug("shadow prediction", "changed", len(predicted.Changed), "added", len(predicted.Added), "removed", len(predicted.Removed))
@@ -195,7 +185,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch intent.Fetcher
 		Format:         plan.Format,
 		Intent:         "bump",
 		Portdir:        portdir,
-		Subport:        b.Target.Subport,
+		Subport:        h.Target.Subport,
 		PortfileSHA256: plan.FileSHA256(src),
 		Edits:          edits,
 		Predicted:      plan.FromDelta(predicted),
@@ -249,54 +239,16 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	return nil
 }
 
-// contextValues resolves the targeted evaluation context's values from
-// a snapshot: the named subport's, or the top-level context's.
-func contextValues(ctx context.Context, ev *eval.Evaluator, portdir, subport string, snap info.Snapshot) (info.Values, error) {
-	if subport == "" {
-		return ev.Top(ctx, portdir, "")
-	}
-	v, ok := snap[info.SubportKey{Subport: subport}]
-	if !ok {
-		return info.Values{}, fmt.Errorf("intent: %w: subport %s not in %s", tree.ErrPortNotFound, subport, portdir)
-	}
-	return v, nil
-}
-
-// contextTop evaluates the targeted context of a (shadow) portdir.
-func contextTop(ctx context.Context, ev *eval.Evaluator, portdir, subport string) (info.Values, error) {
-	if subport == "" {
-		return ev.Top(ctx, portdir, "")
-	}
-	snap, err := ev.Snapshot(ctx, portdir, "")
-	if err != nil {
-		return info.Values{}, err
-	}
-	v, ok := snap[info.SubportKey{Subport: subport}]
-	if !ok {
-		return info.Values{}, fmt.Errorf("intent: subport %s not in shadow", subport)
-	}
-	return v, nil
-}
-
-// ResolveLatest answers what version "latest" means for a target, by
-// running upstream's two-resolver check against the port's version
-// carrier. A verdict that does not yield a trustworthy latest — rot,
-// disagreement, no signal — declines rather than guessing.
-func ResolveLatest(ctx context.Context, ev *eval.Evaluator, f *portfetch.Fetcher, target tree.Target) (string, upstream.Report, error) {
-	portdir := target.Portdir
-	portfile, err := target.Portfile()
+// ResolveLatest answers what version "latest" means for a port, by
+// running upstream's two-resolver check against its version carrier. A
+// verdict that does not yield a trustworthy latest — rot, disagreement,
+// no signal — declines rather than guessing.
+func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (string, upstream.Report, error) {
+	src, cst, err := h.Source()
 	if err != nil {
 		return "", upstream.Report{}, err
 	}
-	src, err := os.ReadFile(portfile)
-	if err != nil {
-		return "", upstream.Report{}, err
-	}
-	cst, errs := syntax.Parse(src)
-	if len(errs) != 0 {
-		return "", upstream.Report{}, fmt.Errorf("intent: %s: %s", portdir, errs[0].Describe(src))
-	}
-	vals, err := contextTop(ctx, ev, portdir, target.Subport)
+	vals, err := h.Values(ctx)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}
@@ -304,7 +256,7 @@ func ResolveLatest(ctx context.Context, ev *eval.Evaluator, f *portfetch.Fetcher
 	if err != nil {
 		return "", upstream.Report{}, err
 	}
-	report, err := upstream.Check(ctx, ev, f, portdir, target.Subport, loc.Style)
+	report, err := upstream.Check(ctx, h, f, loc.Style)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}

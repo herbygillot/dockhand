@@ -18,6 +18,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -34,6 +35,11 @@ func newEvaluator(t *testing.T) *eval.Evaluator {
 	require.NoError(t, err)
 	t.Cleanup(func() { ev.Close() })
 	return ev
+}
+
+// handle binds a portdir to an evaluator, as the command does.
+func handle(portdir string, ev *eval.Evaluator) port.Handle {
+	return port.New(tree.Target{Portdir: portdir}, ev)
 }
 
 // distServer serves the same fixed bytes for every requested distfile.
@@ -77,8 +83,8 @@ func TestBumpPlanEndToEnd(t *testing.T) {
 	srv, content := distServer(t)
 	dir := bumpPort(t, srv.URL+"/dist", content)
 
-	b := Bump{Target: tree.Target{Portdir: dir}, Version: "2.0"}
-	p, err := b.Plan(context.Background(), ev, newFetcher(t))
+	b := Bump{Version: "2.0"}
+	p, err := b.Plan(context.Background(), handle(dir, ev), newFetcher(t))
 	require.NoError(t, err)
 
 	// version + revision reset + rmd160 + sha256 (size is unchanged:
@@ -129,7 +135,7 @@ func TestBumpDeclinesAlreadyCurrent(t *testing.T) {
 	ev := newEvaluator(t)
 	srv, content := distServer(t)
 	dir := bumpPort(t, srv.URL+"/dist", content)
-	_, err := Bump{Target: tree.Target{Portdir: dir}, Version: "1.0"}.Plan(context.Background(), ev, newFetcher(t))
+	_, err := Bump{Version: "1.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
 	var d *intent.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, intent.AlreadyCurrent, d.Type)
@@ -158,7 +164,7 @@ checksums rmd160 0000000000000000000000000000000000000000 \
 `, srv.URL, hex.EncodeToString(sha[:]), len(content))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
 
-	_, err := Bump{Target: tree.Target{Portdir: dir}, Version: "2.0"}.Plan(context.Background(), ev, newFetcher(t))
+	_, err := Bump{Version: "2.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
 	var d *intent.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, intent.FetchNotDriven, d.Type)
@@ -178,7 +184,7 @@ description computed version
 long_description computed version declines
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
-	_, err := Bump{Target: tree.Target{Portdir: dir}, Version: "2.0"}.Plan(context.Background(), ev, newFetcher(t))
+	_, err := Bump{Version: "2.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "literal")
 }
