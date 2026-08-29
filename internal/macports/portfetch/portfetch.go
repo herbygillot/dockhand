@@ -17,6 +17,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,12 +87,14 @@ func (f *Fetcher) Fetch(ctx context.Context, urls []string, opts distfile.Option
 		_, err := f.sess.Call(ctx, "fetchdist", url, dest,
 			flag(opts.DisableEPSV), flag(opts.IgnoreSSLCert), opts.UserAgent)
 		if err != nil {
+			slog.Debug("fetch failed", "url", url, "err", err)
 			lastErr = fmt.Errorf("%s: %w", url, err)
 			if ctx.Err() != nil {
 				break
 			}
 			continue
 		}
+		slog.Debug("fetched", "url", url)
 		return checksums.HashFile(dest)
 	}
 	return checksums.Sums{}, fmt.Errorf("%w (%d urls): %w", distfile.ErrUnavailable, len(urls), lastErr)

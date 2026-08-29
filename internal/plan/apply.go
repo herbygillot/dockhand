@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -69,6 +70,7 @@ func (p *Plan) Apply(ctx context.Context, ev *eval.Evaluator) (info.Delta, error
 		return info.Delta{}, fmt.Errorf("%w: edited Portfile failed to evaluate: %w", ErrMismatch, err)
 	}
 	observed := before.Diff(now)
+	slog.Debug("apply observed delta", "changed", len(observed.Changed))
 	if !reflect.DeepEqual(FromDelta(observed), p.Predicted) {
 		if rerr := writeFile(path, src); rerr != nil {
 			return observed, errors.Join(fmt.Errorf("%w (and restore failed)", ErrMismatch), rerr)

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -99,6 +100,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 	if err != nil {
 		return nil, err
 	}
+	slog.Debug("located version carrier", "style", loc.Style.String(), "span", loc.Span, "value", loc.Value)
 	if loc.Style.Transformed() {
 		return nil, &Decline{Type: TransformedStyle, Detail: loc.Style.String()}
 	}
@@ -133,6 +135,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 		if err != nil {
 			return nil, err
 		}
+		slog.Debug("shadowed version edits", "dir", shadowDir)
 		defer os.RemoveAll(shadowDir) //nolint:errcheck // temp dir cleanup
 
 		shadowVals, err := contextTop(ctx, ev, shadowDir, b.Target.Subport)
@@ -158,6 +161,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 			if err != nil {
 				return nil, fmt.Errorf("intent: %s: %w", file, err)
 			}
+			slog.Debug("fetched distfile", "file", file, "sha256", s.Sha256, "size", s.Size)
 			sums[file] = s
 		}
 		old, err := checksums.Parse(checksumOldTokens)
@@ -185,6 +189,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 		return nil, fmt.Errorf("intent: shadow evaluation: %w", err)
 	}
 	predicted := before.Diff(after)
+	slog.Debug("shadow prediction", "changed", len(predicted.Changed), "added", len(predicted.Added), "removed", len(predicted.Removed))
 
 	if err := b.accept(vals, predicted); err != nil {
 		return nil, err

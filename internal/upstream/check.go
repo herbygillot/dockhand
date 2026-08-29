@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -45,9 +46,11 @@ func Check(ctx context.Context, ev *eval.Evaluator, f *portfetch.Fetcher, portdi
 		if err != nil {
 			return Report{}, err
 		}
+		slog.Debug("forge tags", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
 		obs.ForgeVersions = versions
 	}
 
+	slog.Debug("upstream observation", "livecheck", obs.Livecheck, "disabled", obs.LivecheckDisabled, "forgeVersions", len(obs.ForgeVersions))
 	return Judge(obs, func(a, b string) (int, error) {
 		return f.Vercmp(ctx, a, b)
 	})

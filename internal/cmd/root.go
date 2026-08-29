@@ -7,6 +7,7 @@
 package cmd
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -14,11 +15,20 @@ import (
 
 // Root builds the dockhand command tree.
 func Root(version string) *cobra.Command {
+	var debug bool
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",
 		Version:      version,
 		SilenceUsage: true,
+		PersistentPreRun: func(*cobra.Command, []string) {
+			level := slog.LevelWarn
+			if debug {
+				level = slog.LevelDebug
+			}
+			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr,
+				&slog.HandlerOptions{Level: level})))
+		},
 	}
 	root.SetErrPrefix("dockhand:")
 	root.SetVersionTemplate("dockhand {{.Version}}\n")
@@ -31,6 +41,8 @@ func Root(version string) *cobra.Command {
 		"MacPorts installation prefix (default $DOCKHAND_PREFIX, else discovered)")
 	root.PersistentFlags().StringP("tree", "t", os.Getenv("DOCKHAND_TREE"),
 		"ports tree root (default $DOCKHAND_TREE)")
+	root.PersistentFlags().BoolVar(&debug, "debug", false,
+		"print debug output to stderr")
 	// Flag-parse failures are usage errors; cobra's own are untyped.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
