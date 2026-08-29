@@ -1,3 +1,9 @@
+// Package intent holds the vocabulary every planner shares: the typed
+// Decline refusals (a decline is a first-class outcome, mapped to its
+// own exit code), the Shadow helper that materializes a portdir copy
+// with edits applied, and the Fetcher seam planners pull checksums
+// through. Each intent lives in its own package — bump is the first —
+// and speaks this vocabulary at its boundaries.
 package intent
 
 import "fmt"

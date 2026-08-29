@@ -1,10 +1,10 @@
-// Package intent holds the planners: each intent type turns a desired
-// end state into a plan, spending all its intelligence at plan time —
-// locating spans, shadow-evaluating its own edits, fetching what must
-// be fetched — so the plan it emits is complete and its prediction
-// exact. Judgment of the predicted delta is the intent's own: which
-// fields must move and which must not is relative to what was asked.
-package intent
+// Package bump plans version bumps: the flagship intent, moving a port
+// to a new upstream version. It spends all its intelligence at plan
+// time — locating spans, shadow-evaluating its own edits, fetching the
+// new distfiles for checksums — so the plan it emits is complete and
+// its prediction exact. The shared planner vocabulary (declines, the
+// shadow helper, the fetcher seam) lives in internal/intent.
+package bump
 
 import (
 	"context"
@@ -12,13 +12,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
-	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -33,14 +32,6 @@ import (
 type Bump struct {
 	Target  tree.Target
 	Version string
-}
-
-// Fetcher supplies distfile checksums; the planner asks it once per new
-// distfile. portfetch implements it over MacPorts' own curl — the
-// planner's normal engine — and distfile.Direct in-process, for
-// contexts with no installation in play.
-type Fetcher interface {
-	Fetch(ctx context.Context, urls []string, opts distfile.Options) (checksums.Sums, error)
 }
 
 // bumpMayChange are the fields a bump is allowed to move. Everything
@@ -59,9 +50,13 @@ var bumpMayChange = map[info.Field]bool{
 // the exact predicted delta from a shadow evaluation of the final edit
 // set. The returned error is a *Decline or *portstyle.Decline when the
 // refusal is a judgment rather than a failure.
-func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*plan.Plan, error) {
+func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch intent.Fetcher) (*plan.Plan, error) {
 	portdir := b.Target.Portdir
-	src, err := os.ReadFile(filepath.Join(portdir, macports.PortfileName))
+	portfile, err := b.Target.Portfile()
+	if err != nil {
+		return nil, err
+	}
+	src, err := os.ReadFile(portfile)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +74,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 		return nil, err
 	}
 	if vals.Version == b.Version {
-		return nil, &Decline{Type: AlreadyCurrent, Detail: vals.Version}
+		return nil, &intent.Decline{Type: intent.AlreadyCurrent, Detail: vals.Version}
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
@@ -91,7 +86,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 	}
 	for _, opt := range []string{"go.vendors", "cargo.crates"} {
 		if vendorOpts[opt] != "" {
-			return nil, &Decline{Type: VendoredBlock, Detail: opt}
+			return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: opt}
 		}
 	}
 
@@ -102,7 +97,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 	}
 	slog.Debug("located version carrier", "style", loc.Style.String(), "span", loc.Span, "value", loc.Value)
 	if loc.Style.Transformed() {
-		return nil, &Decline{Type: TransformedStyle, Detail: loc.Style.String()}
+		return nil, &intent.Decline{Type: intent.TransformedStyle, Detail: loc.Style.String()}
 	}
 	edits := []plan.Edit{{
 		Start: loc.Span.Start, End: loc.Span.End,
@@ -131,7 +126,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 	// URLs, then fetch them for checksums.
 	checksumOldTokens := vals.Checksums
 	if len(checksumOldTokens) > 0 {
-		shadowDir, err := shadow(portdir, src, edits)
+		shadowDir, err := intent.Shadow(portdir, src, edits)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +142,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 			return nil, err
 		}
 		if len(fi.Files) == 0 {
-			return nil, &Decline{Type: ChecksumsNotLocated,
+			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
 				Detail: "port records checksums but fetches no distfiles"}
 		}
 		fetchOpts := distfile.Options{
@@ -179,7 +174,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 	}
 
 	// Shadow the full edit set for the exact prediction.
-	finalDir, err := shadow(portdir, src, edits)
+	finalDir, err := intent.Shadow(portdir, src, edits)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +205,7 @@ func (b Bump) Plan(ctx context.Context, ev *eval.Evaluator, fetch Fetcher) (*pla
 // accept is the bump's judgment of its own predicted delta.
 func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	if len(predicted.Added) > 0 || len(predicted.Removed) > 0 {
-		return &Decline{Type: SubportsChanged,
+		return &intent.Decline{Type: intent.SubportsChanged,
 			Detail: fmt.Sprintf("%d added, %d removed", len(predicted.Added), len(predicted.Removed))}
 	}
 
@@ -232,21 +227,21 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 		}
 	}
 	if !versionReached {
-		return &Decline{Type: VersionNotReached,
+		return &intent.Decline{Type: intent.VersionNotReached,
 			Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
 	}
 	if len(vals.Distfiles) > 0 && !distfilesMoved {
-		return &Decline{Type: FetchNotDriven,
+		return &intent.Decline{Type: intent.FetchNotDriven,
 			Detail: "distfiles unchanged by the version edit"}
 	}
 	if len(vals.Checksums) > 0 && !checksumsMoved {
-		return &Decline{Type: FetchNotDriven, Detail: "checksums unchanged"}
+		return &intent.Decline{Type: intent.FetchNotDriven, Detail: "checksums unchanged"}
 	}
 
 	for key, changes := range predicted.Changed {
 		for _, ch := range changes {
 			if !bumpMayChange[ch.Field] {
-				return &Decline{Type: UnexpectedChange,
+				return &intent.Decline{Type: intent.UnexpectedChange,
 					Detail: fmt.Sprintf("%s: %s", key.Subport, ch.Field)}
 			}
 		}
@@ -289,7 +284,11 @@ func contextTop(ctx context.Context, ev *eval.Evaluator, portdir, subport string
 // disagreement, no signal — declines rather than guessing.
 func ResolveLatest(ctx context.Context, ev *eval.Evaluator, f *portfetch.Fetcher, target tree.Target) (string, upstream.Report, error) {
 	portdir := target.Portdir
-	src, err := os.ReadFile(filepath.Join(portdir, macports.PortfileName))
+	portfile, err := target.Portfile()
+	if err != nil {
+		return "", upstream.Report{}, err
+	}
+	src, err := os.ReadFile(portfile)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}
@@ -310,7 +309,7 @@ func ResolveLatest(ctx context.Context, ev *eval.Evaluator, f *portfetch.Fetcher
 		return "", upstream.Report{}, err
 	}
 	if report.Latest == "" {
-		return "", report, &Decline{Type: LatestUnresolved,
+		return "", report, &intent.Decline{Type: intent.LatestUnresolved,
 			Detail: fmt.Sprintf("%s (%s)", report.Verdict, report.Detail)}
 	}
 	return report.Latest, report, nil

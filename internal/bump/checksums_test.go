@@ -1,4 +1,4 @@
-package intent
+package bump
 
 import (
 	"testing"
@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -34,9 +35,9 @@ checksums           rmd160  aaaa \
 	old[0].Value = "zzzz"
 	_, err = checksumEdits(src, cst, "foo", old,
 		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
-	var d *Decline
+	var d *intent.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, ChecksumsNotLocated, d.Type)
+	assert.Equal(t, intent.ChecksumsNotLocated, d.Type)
 }
 
 func TestChecksumEditsRenamesLiteralFilenames(t *testing.T) {
@@ -68,7 +69,7 @@ func TestChecksumEditsDeclinesLegacyTypes(t *testing.T) {
 		[]checksums.Recorded{{Type: "md5", Value: "ee"}},
 		[]string{"f-1.tar.gz"}, []string{"f-2.tar.gz"},
 		map[string]checksums.Sums{"f-2.tar.gz": {}})
-	var d *Decline
+	var d *intent.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, ChecksumsNotLocated, d.Type)
+	assert.Equal(t, intent.ChecksumsNotLocated, d.Type)
 }

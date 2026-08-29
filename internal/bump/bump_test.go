@@ -1,4 +1,4 @@
-package intent
+package bump
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -129,9 +130,9 @@ func TestBumpDeclinesAlreadyCurrent(t *testing.T) {
 	srv, content := distServer(t)
 	dir := bumpPort(t, srv.URL+"/dist", content)
 	_, err := Bump{Target: tree.Target{Portdir: dir}, Version: "1.0"}.Plan(context.Background(), ev, newFetcher(t))
-	var d *Decline
+	var d *intent.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, AlreadyCurrent, d.Type)
+	assert.Equal(t, intent.AlreadyCurrent, d.Type)
 }
 
 func TestBumpDeclinesFetchNotDriven(t *testing.T) {
@@ -158,9 +159,9 @@ checksums rmd160 0000000000000000000000000000000000000000 \
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
 
 	_, err := Bump{Target: tree.Target{Portdir: dir}, Version: "2.0"}.Plan(context.Background(), ev, newFetcher(t))
-	var d *Decline
+	var d *intent.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, FetchNotDriven, d.Type)
+	assert.Equal(t, intent.FetchNotDriven, d.Type)
 }
 
 func TestBumpDeclinesComputedVersion(t *testing.T) {

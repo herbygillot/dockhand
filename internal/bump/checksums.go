@@ -1,9 +1,10 @@
-package intent
+package bump
 
 import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -31,7 +32,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		return nil, nil
 	}
 	if len(oldDistfiles) != len(newDistfiles) {
-		return nil, &Decline{Type: ChecksumsNotLocated,
+		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("distfile count changed: %d before, %d after", len(oldDistfiles), len(newDistfiles))}
 	}
 	fileMap := make(map[string]string, len(oldDistfiles))
@@ -43,7 +44,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 	seenFile := make(map[string]bool)
 	for _, r := range old {
 		if checksums.IsLegacyType(r.Type) {
-			return nil, &Decline{Type: ChecksumsNotLocated,
+			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
 				Detail: fmt.Sprintf("legacy checksum type %s cannot be recomputed", r.Type)}
 		}
 		s, err := sumsFor(r.File, fileMap, newDistfiles, sums)
@@ -52,7 +53,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		}
 		newValue, ok := s.Value(r.Type)
 		if !ok {
-			return nil, &Decline{Type: ChecksumsNotLocated,
+			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
 				Detail: fmt.Sprintf("unknown checksum type %s", r.Type)}
 		}
 		reps = append(reps, replacement{old: r.Value, new: newValue, reason: "checksum " + r.Type})
@@ -92,7 +93,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 	}
 	for _, r := range reps {
 		if !r.located {
-			return nil, &Decline{Type: ChecksumsNotLocated,
+			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
 				Detail: fmt.Sprintf("recorded value %q not found as a literal (%s)", r.old, r.reason)}
 		}
 	}
@@ -108,19 +109,19 @@ func sumsFor(file string, fileMap map[string]string, newDistfiles []string, sums
 	case file != "":
 		mapped, ok := fileMap[file]
 		if !ok {
-			return checksums.Sums{}, &Decline{Type: ChecksumsNotLocated,
+			return checksums.Sums{}, &intent.Decline{Type: intent.ChecksumsNotLocated,
 				Detail: fmt.Sprintf("checksums name %s but the port fetches no such distfile", file)}
 		}
 		name = mapped
 	case len(newDistfiles) == 1:
 		name = newDistfiles[0]
 	default:
-		return checksums.Sums{}, &Decline{Type: ChecksumsNotLocated,
+		return checksums.Sums{}, &intent.Decline{Type: intent.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("unnamed checksums with %d distfiles", len(newDistfiles))}
 	}
 	s, ok := sums[name]
 	if !ok {
-		return checksums.Sums{}, &Decline{Type: ChecksumsNotLocated,
+		return checksums.Sums{}, &intent.Decline{Type: intent.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("no fetched sums for %s", name)}
 	}
 	return s, nil

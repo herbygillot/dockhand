@@ -6,11 +6,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
-// shadow materializes a copy of portdir with the edits applied to its
+// Shadow materializes a copy of portdir with the edits applied to its
 // Portfile: the edit application is the planner's half, the portdir
 // copy is tree.Shadow's. The caller removes the returned
 // directory.
-func shadow(portdir string, src []byte, edits []plan.Edit) (string, error) {
+func Shadow(portdir string, src []byte, edits []plan.Edit) (string, error) {
 	edited, err := text.Apply(src, textEdits(edits))
 	if err != nil {
 		return "", err
