@@ -3,7 +3,7 @@ BINARY := dockhand
 .PHONY: build clean test
 
 build:
-	go build -o $(BINARY) ./cmd/dockhand
+	go build -mod=vendor -o $(BINARY) ./cmd/dockhand
 
 clean:
 	rm -f $(BINARY)

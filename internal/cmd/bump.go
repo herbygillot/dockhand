@@ -19,10 +19,7 @@ import (
 // fetched checksums, exact predicted delta — and changes nothing;
 // apply consumes it.
 func Bump() *cobra.Command {
-	var (
-		treeRoot string
-		to       string
-	)
+	var to string
 	c := &cobra.Command{
 		Use:   "bump <port|subport|portdir>",
 		Short: "Plan a version bump (emits a plan; changes nothing)",
@@ -30,6 +27,10 @@ func Bump() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if to == "" {
 				return usagef("--to <version> is required")
+			}
+			treeRoot, err := cmd.Flags().GetString("tree")
+			if err != nil {
+				return err
 			}
 			targets, err := resolveTargets(treeRoot, false, args)
 			if err != nil {
@@ -61,8 +62,6 @@ func Bump() *cobra.Command {
 			return p.Encode(cmd.OutOrStdout())
 		},
 	}
-	c.Flags().StringVarP(&treeRoot, "tree", "t", os.Getenv("DOCKHAND_TREE"),
-		"ports tree root (default $DOCKHAND_TREE)")
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
 	return c
 }

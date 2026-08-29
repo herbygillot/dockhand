@@ -18,7 +18,6 @@ import (
 // version-style tractability.
 func Classify() *cobra.Command {
 	var (
-		treeRoot string
 		workers  int
 		all      bool
 		declines bool
@@ -27,6 +26,10 @@ func Classify() *cobra.Command {
 		Use:   "classify [port|category|portdir ...]",
 		Short: "Survey ports for version-style tractability",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			treeRoot, err := cmd.Flags().GetString("tree")
+			if err != nil {
+				return err
+			}
 			targets, err := resolveTargets(treeRoot, all, args)
 			if err != nil {
 				return err
@@ -63,8 +66,6 @@ func Classify() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVarP(&treeRoot, "tree", "t", os.Getenv("DOCKHAND_TREE"),
-		"ports tree root (default $DOCKHAND_TREE)")
 	c.Flags().IntVarP(&workers, "workers", "j", min(8, runtime.NumCPU()),
 		"evaluator pool size")
 	c.Flags().BoolVarP(&all, "all", "a", false,
