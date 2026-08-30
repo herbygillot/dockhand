@@ -69,3 +69,21 @@ jobs:
       - run: make test
         env:
           DOCKHAND_TEST_REQUIRE: tclsh,port-tclsh
+
+  # Checks dockhand's assumptions against upstream reality — that the
+  # macOS release table still names every MacPorts installer, and no
+  # more. It is advisory because it fails when the world changes rather
+  # than when the code does: a new MacPorts release should tell us the
+  # table needs a row, not block whoever pushes next.
+  upstream:
+    name: upstream agreement (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test
+        env:
+          DOCKHAND_TEST_REQUIRE: network

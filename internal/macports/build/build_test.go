@@ -1,0 +1,153 @@
+package build
+
+import (
+	"io"
+	"net/http"
+	"regexp"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/testenv"
+)
+
+func TestLayoutTakesTheCategoryAbove(t *testing.T) {
+	c, n, err := Layout("/Users/x/macports-ports/sysutils/jq")
+	require.NoError(t, err)
+	assert.Equal(t, "sysutils", c)
+	assert.Equal(t, "jq", n)
+}
+
+func TestLayoutToleratesATrailingSlash(t *testing.T) {
+	c, n, err := Layout("/ports/devel/git/")
+	require.NoError(t, err)
+	assert.Equal(t, "devel", c)
+	assert.Equal(t, "git", n)
+}
+
+// A portdir with no category above it indexes nothing, and a build
+// against an empty overlay silently tests the installation's own copy
+// of the port.
+func TestLayoutRefusesAPortdirWithoutACategory(t *testing.T) {
+	_, _, err := Layout("/jq")
+	require.ErrorIs(t, err, ErrNotAPortdir)
+}
+
+const indexed = "Creating port index in /private/tmp/ov\n\n" +
+	"Total number of ports parsed:\t1 \nPorts successfully parsed:\t1 \n" +
+	"Ports failed:\t\t\t0 \nUp-to-date ports skipped:\t0 \n"
+
+func TestParseTallyReadsPortindex(t *testing.T) {
+	got, err := ParseTally(indexed)
+	require.NoError(t, err)
+	assert.Equal(t, Tally{Parsed: 1, Succeeded: 1, Failed: 0}, got)
+	assert.True(t, got.Complete())
+}
+
+// An unparseable Portfile is counted, not thrown: portindex exits zero
+// and reports the failure in its tally, so the tally is the only thing
+// that distinguishes a staged port from a skipped one.
+func TestParseTallyCatchesAFailedPortfile(t *testing.T) {
+	got, err := ParseTally("Total number of ports parsed:\t1 \n" +
+		"Ports successfully parsed:\t0 \nPorts failed:\t\t\t1 \n")
+	require.NoError(t, err)
+	assert.False(t, got.Complete())
+}
+
+func TestParseTallyCatchesAnEmptyOverlay(t *testing.T) {
+	got, err := ParseTally("Total number of ports parsed:\t0 \n" +
+		"Ports successfully parsed:\t0 \nPorts failed:\t\t\t0 \n")
+	require.NoError(t, err)
+	assert.False(t, got.Complete(), "indexing nothing is not success")
+}
+
+// Output that cannot be read must not be mistaken for an index that
+// found nothing, which would be mistaken for a port problem.
+func TestParseTallyRefusesForeignOutput(t *testing.T) {
+	_, err := ParseTally("command not found: portindex")
+	require.ErrorIs(t, err, ErrNoTally)
+}
+
+func TestSourcesLineIsNosync(t *testing.T) {
+	assert.Equal(t, "file:///tmp/ov [nosync]", SourcesLine("/tmp/ov"))
+}
+
+func TestInstallArgsKeepsVariantsSeparate(t *testing.T) {
+	v, err := info.Variants("+doc", "-x11")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"-N", "install", "pmd", "+doc", "-x11"},
+		InstallArgs("pmd", v, false))
+}
+
+func TestInstallArgsDefaultFrame(t *testing.T) {
+	assert.Equal(t, []string{"-N", "install", "jq"}, InstallArgs("jq", "", false))
+}
+
+// -s is only for a re-derivation at an unchanged version, where the
+// archive that matches predates the change.
+func TestInstallArgsForcesSource(t *testing.T) {
+	assert.Equal(t, []string{"-N", "-s", "install", "jq"}, InstallArgs("jq", "", true))
+}
+
+// The installer name pairs the product version with the marketing name,
+// spaces removed. Every case here is a file MacPorts actually publishes.
+func TestInstallerName(t *testing.T) {
+	for _, c := range []struct{ release, want string }{
+		{"Sequoia", "MacPorts-2.12.6-15-Sequoia.pkg"},
+		{"Tahoe", "MacPorts-2.12.6-26-Tahoe.pkg"},
+		{"Big Sur", "MacPorts-2.12.6-11-BigSur.pkg"},
+		{"High Sierra", "MacPorts-2.12.6-10.13-HighSierra.pkg"},
+		{"El Capitan", "MacPorts-2.12.6-10.11-ElCapitan.pkg"},
+	} {
+		r, ok := platform.ByName(c.release)
+		require.True(t, ok, "release %q", c.release)
+		assert.Equal(t, c.want, InstallerName("2.12.6", r))
+	}
+}
+
+func TestInstallerURL(t *testing.T) {
+	r, _ := platform.ByName("Sequoia")
+	assert.Equal(t, "https://distfiles.macports.org/MacPorts/MacPorts-2.12.6-15-Sequoia.pkg",
+		InstallerURL("2.12.6", r))
+}
+
+// The release table and the installer naming are only right if MacPorts
+// agrees, and neither this package nor platform can tell on its own. So
+// ask: every release named must have a published installer, and every
+// published installer must have a release that names it.
+//
+// It reaches upstream, so it is opt-in: a run says it wants the outside
+// world with DOCKHAND_TEST_REQUIRE=network. What it protects against is
+// the table quietly falling behind a MacPorts release — the failure a
+// constant would have had, and one a derived value should not.
+func TestReleaseTableAgreesWithWhatMacPortsPublishes(t *testing.T) {
+	testenv.Network(t)
+	const version = "2.12.6"
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Get(DistfilesURL + "/")
+	require.NoError(t, err, "the network was required but is not reachable")
+	defer resp.Body.Close() //nolint:errcheck // read-path close
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	re := regexp.MustCompile(`MacPorts-` + regexp.QuoteMeta(version) + `-[0-9.]+-[A-Za-z]+\.pkg`)
+	published := map[string]bool{}
+	for _, m := range re.FindAllString(string(body), -1) {
+		published[m] = true
+	}
+	require.NotEmpty(t, published, "found no %s installers; the listing format may have changed", version)
+
+	for _, r := range platform.Releases {
+		name := InstallerName(version, r)
+		assert.True(t, published[name], "%s names %s, which MacPorts does not publish", r.Name, name)
+		delete(published, name)
+	}
+	for name := range published {
+		assert.Fail(t, "unnamed release",
+			"MacPorts publishes %s but platform.Releases names no release for it", name)
+	}
+}
