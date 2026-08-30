@@ -73,3 +73,30 @@ func TestChecksumEditsDeclinesLegacyTypes(t *testing.T) {
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, intent.ChecksumsNotLocated, d.Type)
 }
+
+// The common spelling for a named distfile is a substitution, not a
+// literal: ${name}-${version}${extract.suffix}. The version edit renames
+// it by re-evaluation, so there is nothing to rewrite and nothing to
+// decline — while a checksum value that is missing is still fatal.
+func TestChecksumEditsSkipsSubstitutedFilename(t *testing.T) {
+	src := []byte(`name                foo
+version             1.0
+checksums           ${name}-${version}${extract.suffix} \
+                    sha256  bbbb \
+                    size    9
+`)
+	cst, errs := syntax.Parse(src)
+	require.Empty(t, errs)
+	old := []checksums.Recorded{
+		{File: "foo-1.0.tar.gz", Type: "sha256", Value: "bbbb"},
+		{File: "foo-1.0.tar.gz", Type: "size", Value: "9"},
+	}
+	sums := map[string]checksums.Sums{"foo-2.0.tar.gz": {Sha256: "dddd", Size: 12}}
+	edits, err := checksumEdits(src, cst, "foo", old,
+		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
+	require.NoError(t, err)
+	require.Len(t, edits, 2, "the two values are rewritten; the name is not an edit")
+	for _, e := range edits {
+		assert.NotEqual(t, reasonDistfileName, e.Reason)
+	}
+}
