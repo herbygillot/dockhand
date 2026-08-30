@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 func TestPickMember(t *testing.T) {
@@ -86,11 +88,12 @@ func tarballWith(t *testing.T, files map[string]string) string {
 	return path
 }
 
+// requireTar gates on the archiver the extractor drives. It goes
+// through testenv rather than stat'ing tarPath directly so that a run
+// which is supposed to have tar fails instead of quietly skipping.
 func requireTar(t *testing.T) {
 	t.Helper()
-	if _, err := os.Stat(tarPath); err != nil {
-		t.Skipf("%s not present; skipping", tarPath)
-	}
+	testenv.Tool(t, "tar")
 }
 
 func TestExtractReadsTheFileUnderThePreferredDirectory(t *testing.T) {

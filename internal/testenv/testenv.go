@@ -11,6 +11,12 @@
 // quietly testing nothing. "1" or "all" requires every tool; a
 // comma-separated list (e.g. "tclsh,port-tclsh") requires exactly those, so
 // a CI job demands what it installed and no more.
+//
+// The same switch names one thing that is not a tool: "network", for the
+// tests that check dockhand's assumptions against upstream reality. Those
+// are opt-in rather than skip-on-failure, because a network test that
+// merely tries will run wherever the network happens to work — which is
+// everywhere the hermetic job runs.
 package testenv
 
 import (
@@ -64,4 +70,24 @@ func Tclsh(t *testing.T) string {
 func PortTclsh(t *testing.T) string {
 	t.Helper()
 	return Tool(t, "port-tclsh")
+}
+
+// Network gates a test that reaches outside this machine, and is
+// deliberately opt-in rather than skip-on-failure.
+//
+// A test that tries the network and skips when it fails would run
+// wherever the network happens to work, which on a hosted runner is
+// everywhere — including the job whose whole promise is that it needs
+// nothing but Go. Worse, such a test goes red when the world changes
+// rather than when the code does, landing on whoever pushes next
+// instead of whoever should act.
+//
+// So a run says whether it wants the outside world, exactly as it says
+// which tools it has, and DOCKHAND_TEST_REQUIRE=network is how a job
+// that means to check against upstream asks for it.
+func Network(t *testing.T) {
+	t.Helper()
+	if !required("network") {
+		t.Skip("network tests are opt-in; set DOCKHAND_TEST_REQUIRE=network to run them")
+	}
 }
