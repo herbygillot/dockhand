@@ -131,3 +131,18 @@ func TestDoctorSucceedsWhenItsReportLands(t *testing.T) {
 		[]string{"doctor"}, &buf, io.Discard))
 	assert.Contains(t, buf.String(), "capabilities:")
 }
+
+// bump's flag contradictions are caught before anything is resolved or
+// evaluated, so these hold on a machine with no MacPorts at all.
+func TestBumpToAndLatestAreExclusive(t *testing.T) {
+	assert.Equal(t, ExitUsage, code(t, "bump", "--to", "1.0", "--latest", "someport"))
+}
+
+func TestBumpRejectsToLatestAsAVersion(t *testing.T) {
+	assert.Equal(t, ExitUsage, code(t, "bump", "--to", "latest", "someport"))
+}
+
+func TestBumpTakesExactlyOnePort(t *testing.T) {
+	assert.Equal(t, ExitUsage, code(t, "bump"))
+	assert.Equal(t, ExitUsage, code(t, "bump", "a", "b"))
+}

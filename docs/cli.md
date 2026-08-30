@@ -32,17 +32,23 @@ With eleven intents they collide. The resolution:
 > are separate verbs that consume the plan.
 
 ```
-dockhand bump gcc14 --to 1.4.2           # emits a plan; changes nothing
-dockhand bump maintainer:me              # a sweep to latest; still only plans
-dockhand apply <plan>                    # write the edit into the worktree
+dockhand bump gcc14 --to 1.4.2           # plans, then applies
+dockhand bump gcc14 --to 1.4.2 --plan    # emits the plan; changes nothing
+dockhand apply <plan>                    # write a saved plan into the worktree
 dockhand verify <plan> --depth=build     # run verification
 dockhand promote <plan>                  # branch, commits, PR
 ```
 
-Emitting a plan is both the convenient default and the safe one, so no flag is
-needed to make dry-run the default behavior. The shape also matches `port`
-itself (`port upgrade`, `port uninstall`), the same familiarity argument that
-justified borrowing the selectors.
+An intent's output is still always a plan — that is what makes the change
+verifiable, and applying it runs the same prediction check `apply` does. What
+`--plan` decides is whether the plan is carried out or handed back.
+
+**Superseded (2026-08-30).** This section originally argued that emitting a
+plan should be the default because it is both convenient and safe, so no flag
+was needed for dry-run. The convenience half did not survive contact with the
+tool: the overwhelmingly common case is one port, one bump, and it cost three
+commands and a temporary file. Safety is preserved by verification rather than
+by inaction — see D16.
 
 For interactive single-port work, three commands is tedious, so `apply` reads
 a plan from stdin:

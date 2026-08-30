@@ -333,3 +333,30 @@ tree, discovery is worse (`port search` finds nothing) and trust rests on the
 author's account rather than review.
 
 **Cost to reverse.** Low. Timing, not structure.
+
+---
+
+## D16 — bump applies by default; planning is opt-in
+
+**Decided (2026-08-30).** `dockhand bump <port>` plans the change and carries
+it out. `--plan` emits the plan on stdout and changes nothing. This reverses
+the CLI design's original position, which made plan-only the default on the
+grounds that it was both the convenient default and the safe one.
+
+**Why.** The convenience half was wrong. The common case is one port, one
+bump, and plan-only made it three commands and a temporary file for a change
+the tool had already computed and verified. The safety half does not depend on
+the default: a plan is still always produced, and applying it goes through the
+same path `apply` uses, which refuses if the Portfile moved since planning and
+restores the original bytes if the observed delta differs from the predicted
+one by so much as a field. The protection is the verification, not the
+inaction — and making the safe thing cost three commands is how a tool teaches
+people to skip it.
+
+**Known cost accepted.** The default now writes to the user's ports tree,
+where before no invocation of `bump` could. Mitigations are the prediction
+check, the restore on mismatch, and the fact that a ports tree is a git
+checkout. A user who wants the old behavior asks for it by name.
+
+**Cost to reverse.** Low. One flag's default and a line of docs; the two code
+paths already exist and are shared.

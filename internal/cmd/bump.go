@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,18 +14,23 @@ import (
 	"github.com/herbygillot/dockhand/internal/plan"
 )
 
-// Bump builds the bump subcommand: plan a version bump. Per the
-// read/write boundary, bump emits a complete plan on stdout — edits,
-// fetched checksums, exact predicted delta — and changes nothing;
-// apply consumes it.
+// Bump builds the bump subcommand: move a port to a new version.
+//
+// A plan is always produced — the edits, the fetched checksums, and the
+// exact predicted delta — because that is what makes the change
+// verifiable. What --plan decides is whether the plan is carried out or
+// handed back. Applying it here is the same code path apply runs on a
+// saved plan, including the check that the result matches the
+// prediction, so the default is not a shortcut around verification.
 func Bump(rc *RunContext) *cobra.Command {
 	var (
-		to     string
-		latest bool
+		to       string
+		latest   bool
+		planOnly bool
 	)
 	c := &cobra.Command{
 		Use:   "bump <port|subport|portdir>",
-		Short: "Plan a version bump (emits a plan; changes nothing)",
+		Short: "Bump a port to a new version (--plan to emit a plan instead)",
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch {
@@ -70,12 +76,19 @@ func Bump(rc *RunContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The summary comes first either way: when the plan is
+			// about to be carried out, it is the only chance to see
+			// what is being done before it is done.
 			renderPlan(rc.Err, p)
-			return p.Encode(rc.Out)
+			if planOnly {
+				return p.Encode(rc.Out)
+			}
+			return applyPlan(cmd.Context(), rc, p)
 		},
 	}
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
 	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
+	c.Flags().BoolVar(&planOnly, "plan", false, "emit the plan on stdout and change nothing")
 	return c
 }
 
@@ -99,18 +112,25 @@ func Apply(rc *RunContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ev, err := rc.Evaluator(cmd.Context())
-			if err != nil {
-				return err
-			}
-			if _, err := p.Apply(cmd.Context(), ev); err != nil {
-				return err
-			}
-			fmt.Fprintf(rc.Out, "applied: %s %s (%d edits, delta as predicted)\n",
-				p.Intent, p.Portdir, len(p.Edits))
-			return nil
+			return applyPlan(cmd.Context(), rc, p)
 		},
 	}
+}
+
+// applyPlan carries out a plan and reports what it did. Both the bump
+// that just produced one and the apply that read one from disk arrive
+// here, so a plan is executed the same way whichever made it.
+func applyPlan(ctx context.Context, rc *RunContext, p *plan.Plan) error {
+	ev, err := rc.Evaluator(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := p.Apply(ctx, ev); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rc.Out, "applied: %s %s (%d edits, delta as predicted)\n",
+		p.Intent, p.Portdir, len(p.Edits))
+	return err
 }
 
 // renderPlan writes the human-facing summary of a plan.

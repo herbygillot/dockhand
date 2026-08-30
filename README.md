@@ -36,12 +36,12 @@ replacements, so comments, alignment, and every line nobody asked about
 survive untouched. The diff is what a maintainer would have written by
 hand.
 
-**It predicts, then checks.** Before proposing anything, `dockhand`
-copies the port to a temporary directory, applies the edits there, and
-re-evaluates. That gives an exact prediction of what changes. Applying
-the plan re-evaluates again and demands the observed change equal the
-prediction — and if it doesn't, the Portfile is restored. A plan does
-precisely what it said or it does nothing.
+**It predicts, then checks.** Before touching anything, `dockhand` copies
+the port to a temporary directory, applies the edits there, and
+re-evaluates. That gives an exact prediction of what will change. Making
+the change for real re-evaluates again and demands the observed change
+equal the prediction — and if it doesn't, the Portfile is restored. A
+change does precisely what it said or it does nothing.
 
 When it can't be sure, it declines and says why, rather than guessing.
 
@@ -99,7 +99,7 @@ located by style:
   go_toolchain.setup     8
 ```
 
-### Plan a version bump
+### Bump a port
 
 ```bash
 dockhand bump jq                    # to the newest upstream release
@@ -115,8 +115,8 @@ reports: the port's own `livecheck`, and the tags on its upstream forge.
 A disagreement is worth knowing about — it usually means a `livecheck`
 regex has quietly rotted while releases kept happening.
 
-`bump` changes nothing. It emits a plan as JSON on stdout and a summary
-on stderr, so you can read one and pipe the other:
+`bump` writes the change. Before it does, it prints what it is about to
+do:
 
 ```
 plan: bump …/www/geckodriver (subport geckodriver), 5 edits
@@ -132,20 +132,28 @@ predicted delta:
 *(hashes, the regenerated block, and the delta's field values are elided
 here — the real output prints them in full)*
 
-Everything happens at plan time, fetching included — so the checksums in
-a plan are of bytes actually downloaded, and a port with a vendored
-`cargo.crates` block has it regenerated from the `Cargo.lock` inside that
-very distfile.
+Everything is computed before anything is written, fetching included — so
+the checksums are of bytes actually downloaded, and a port with a
+vendored `cargo.crates` block has it regenerated from the `Cargo.lock`
+inside that very distfile.
 
-### Apply it
+Writing is not the same as trusting. The edit is applied, the port
+re-evaluated, and the result compared against the prediction; anything
+other than an exact match restores the original file. A bump does
+precisely what it said or it does nothing.
+
+### Look before you leap
+
+`--plan` computes everything and stops, emitting the plan as JSON on
+stdout so you can read the summary and keep the plan:
 
 ```bash
-dockhand bump --to 0.37.1 geckodriver > plan.json
+dockhand bump --plan --to 0.37.1 geckodriver > plan.json
 dockhand apply plan.json
 ```
 
-`apply` refuses if the Portfile changed since the plan was made, and
-refuses if the result differs in any way from what the plan predicted.
+`apply` runs the same checks, plus one more: it refuses if the Portfile
+changed since the plan was made.
 
 ### Exit codes
 
