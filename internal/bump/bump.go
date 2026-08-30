@@ -36,6 +36,14 @@ import (
 // desired end state, the handle names the subject.
 type Bump struct {
 	Version string
+	// Force plans a bump to a version the port already carries. The
+	// point is not to rewrite the version — that edit is skipped, since
+	// it would change nothing — but to re-derive everything downstream
+	// of it: the distfile is fetched again and its checksums compared,
+	// and a vendored block is regenerated from the lockfile inside it.
+	// It is how a stealth update is caught, where an upstream re-rolled
+	// a release at the same version and the same URL.
+	Force bool
 }
 
 // bumpMayChange are the fields a bump is allowed to move. Everything
@@ -69,7 +77,10 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	if err != nil {
 		return nil, err
 	}
-	if vals.Version == b.Version {
+	// Whether the version is moving governs more than one decision
+	// below, so it is named once here.
+	moving := vals.Version != b.Version
+	if !moving && !b.Force {
 		return nil, &intent.Decline{Type: intent.AlreadyCurrent, Detail: vals.Version}
 	}
 
@@ -103,27 +114,34 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	if loc.Style.Transformed() {
 		return nil, &intent.Decline{Type: intent.TransformedStyle, Detail: loc.Style.String()}
 	}
-	edits := []plan.Edit{{
-		Start: loc.Span.Start, End: loc.Span.End,
-		Old: loc.Span.Text(src), New: b.Version, Reason: "version",
-	}}
+	var edits []plan.Edit
+	if moving {
+		edits = append(edits, plan.Edit{
+			Start: loc.Span.Start, End: loc.Span.End,
+			Old: loc.Span.Text(src), New: b.Version, Reason: "version",
+		})
 
-	// The revision reset: a present line rewrites to 0; an absent line
-	// is already 0.
-	revLoc, err := portstyle.Locate(src, cst, vals, info.FieldRevision)
-	var pd *portstyle.Decline
-	switch {
-	case err == nil:
-		if revLoc.Span.Text(src) != "0" {
-			edits = append(edits, plan.Edit{
-				Start: revLoc.Span.Start, End: revLoc.Span.End,
-				Old: revLoc.Span.Text(src), New: "0", Reason: "revision reset",
-			})
+		// The revision reset: a present line rewrites to 0; an absent
+		// line is already 0. It belongs to a version that moved. Resetting
+		// it where the version stayed would not merely be pointless: a
+		// port at revision 2 reset to 0 goes backwards in MacPorts'
+		// ordering, so installations already holding it would decline the
+		// very update the run was made to deliver.
+		revLoc, err := portstyle.Locate(src, cst, vals, info.FieldRevision)
+		var pd *portstyle.Decline
+		switch {
+		case err == nil:
+			if revLoc.Span.Text(src) != "0" {
+				edits = append(edits, plan.Edit{
+					Start: revLoc.Span.Start, End: revLoc.Span.End,
+					Old: revLoc.Span.Text(src), New: "0", Reason: "revision reset",
+				})
+			}
+		case errors.As(err, &pd) && pd.Type == portstyle.UnknownStyle:
+			// No revision line; nothing to reset.
+		default:
+			return nil, err
 		}
-	case errors.As(err, &pd) && pd.Type == portstyle.UnknownStyle:
-		// No revision line; nothing to reset.
-	default:
-		return nil, err
 	}
 
 	// Shadow the version edits to learn the new distfiles and their
@@ -262,10 +280,11 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	}
 
 	key := info.SubportKey{Subport: vals.Name}
-	var versionReached, distfilesMoved, checksumsMoved bool
+	var versionChanged, versionReached, distfilesMoved, checksumsMoved bool
 	for _, ch := range predicted.Changed[key] {
 		switch ch.Field {
 		case info.FieldVersion:
+			versionChanged = true
 			versionReached = slices.Equal(ch.New, []string{b.Version})
 		case info.FieldDistfiles:
 			distfilesMoved = true
@@ -280,16 +299,28 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 			info.FieldDependsRun, info.FieldDependsTest:
 		}
 	}
-	if !versionReached {
-		return &intent.Decline{Type: intent.VersionNotReached,
-			Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
-	}
-	if len(vals.Distfiles) > 0 && !distfilesMoved {
-		return &intent.Decline{Type: intent.FetchNotDriven,
-			Detail: "distfiles unchanged by the version edit"}
-	}
-	if len(vals.Checksums) > 0 && !checksumsMoved {
-		return &intent.Decline{Type: intent.FetchNotDriven, Detail: "checksums unchanged"}
+	// These three rules exist to prove a bump did what a bump does: the
+	// version arrived where it was sent, and the fetch surface followed
+	// it. A forced re-derivation at the version the port already carries
+	// is judged by the opposite standard — the version must not move,
+	// and whether anything downstream moved is the finding rather than
+	// the requirement, since an upstream that re-rolled nothing is the
+	// ordinary case.
+	if vals.Version != b.Version {
+		if !versionReached {
+			return &intent.Decline{Type: intent.VersionNotReached,
+				Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
+		}
+		if len(vals.Distfiles) > 0 && !distfilesMoved {
+			return &intent.Decline{Type: intent.FetchNotDriven,
+				Detail: "distfiles unchanged by the version edit"}
+		}
+		if len(vals.Checksums) > 0 && !checksumsMoved {
+			return &intent.Decline{Type: intent.FetchNotDriven, Detail: "checksums unchanged"}
+		}
+	} else if versionChanged {
+		return &intent.Decline{Type: intent.UnexpectedChange,
+			Detail: fmt.Sprintf("version moved from %s during a re-derivation at the same version", vals.Version)}
 	}
 
 	for key, changes := range predicted.Changed {

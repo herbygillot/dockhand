@@ -51,7 +51,16 @@ func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, reps
 				if located[i] || rep.Old != lit {
 					continue
 				}
+				// Located, and that is what the caller asked about — but
+				// a replacement whose new text is its old text is not an
+				// edit. Emitting one would put a change in a plan that
+				// changes nothing, which matters once a caller can ask
+				// for a re-derivation that may find everything already
+				// correct.
 				located[i] = true
+				if rep.New == rep.Old {
+					break
+				}
 				edits = append(edits, plan.Edit{
 					Start:  w.Span.Start,
 					End:    w.Span.End,

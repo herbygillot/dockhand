@@ -154,6 +154,21 @@ re-evaluated, and the result compared against the prediction; anything
 other than an exact match restores the original file. A bump does
 precisely what it said or it does nothing.
 
+### Re-derive at the current version
+
+A port already at the newest release declines — there is nothing to bump
+to. `--force` proceeds anyway, which is how you catch an upstream that
+re-rolled a release at the same version and the same URL:
+
+```bash
+dockhand bump --force jq
+```
+
+The version is not rewritten to itself and the revision is left alone;
+what gets re-derived is everything downstream — the distfile is fetched
+again and its checksums compared, and a vendored block is regenerated
+from the lockfile inside it. If nothing moved, the plan is empty.
+
 ### Look before you leap
 
 `--plan` computes everything and stops, emitting the plan as JSON on

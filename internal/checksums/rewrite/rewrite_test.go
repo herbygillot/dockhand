@@ -101,3 +101,17 @@ func TestEditsFirstUnclaimedMatchWins(t *testing.T) {
 	assert.Equal(t, "second", edits[1].New)
 	assert.Less(t, edits[0].Start, edits[1].Start)
 }
+
+// A value that is already what it should be is located, so the caller
+// hears no complaint about it, but yields no edit: a plan must not list
+// a change that changes nothing.
+func TestEditsSkipReplacementsThatChangeNothing(t *testing.T) {
+	src, cst := parse(t, "checksums rmd160 aaaa sha256 bbbb size 9\n")
+	edits, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{
+		{Old: "aaaa", New: "aaaa", Reason: "checksum rmd160"},
+		{Old: "bbbb", New: "cccc", Reason: "checksum sha256"},
+	})
+	assert.Empty(t, unlocated, "an unchanged value is still located")
+	require.Len(t, edits, 1)
+	assert.Equal(t, "cccc", edits[0].New)
+}

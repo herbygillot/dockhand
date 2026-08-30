@@ -27,6 +27,7 @@ func Bump(rc *RunContext) *cobra.Command {
 		to       string
 		latest   bool
 		planOnly bool
+		force    bool
 	)
 	c := &cobra.Command{
 		Use:   "bump <port|subport|portdir>",
@@ -72,7 +73,7 @@ func Bump(rc *RunContext) *cobra.Command {
 				to = resolved
 			}
 
-			p, err := bump.Bump{Version: to}.Plan(cmd.Context(), h, fetcher)
+			p, err := bump.Bump{Version: to, Force: force}.Plan(cmd.Context(), h, fetcher)
 			if err != nil {
 				return err
 			}
@@ -89,6 +90,8 @@ func Bump(rc *RunContext) *cobra.Command {
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
 	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
 	c.Flags().BoolVar(&planOnly, "plan", false, "emit the plan on stdout and change nothing")
+	c.Flags().BoolVar(&force, "force", false,
+		"proceed even if the port is already at the target version, re-deriving checksums and vendored blocks")
 	return c
 }
 
