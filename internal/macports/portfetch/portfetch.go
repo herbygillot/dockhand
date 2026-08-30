@@ -91,14 +91,16 @@ func (f *Fetcher) Close() {
 	os.RemoveAll(f.tmpDir) //nolint:errcheck // temp dir cleanup
 }
 
-// Fetch downloads one distfile, trying urls in order — the order
-// MacPorts' own machinery proposed — and returns its checksums. The
-// fetched bytes are hashed from disk and discarded.
-func (f *Fetcher) Fetch(ctx context.Context, urls []string, opts distfile.Options) (checksums.Sums, error) {
-	f.n++
-	dest := filepath.Join(f.tmpDir, fmt.Sprintf("distfile-%d", f.n))
-	defer os.Remove(dest) //nolint:errcheck // temp file cleanup
-
+// Fetch downloads one distfile to dest, trying urls in order — the
+// order MacPorts' own machinery proposed — and returns its checksums,
+// hashed from the bytes that landed there.
+//
+// The bytes are kept rather than discarded so that whatever is read out
+// of them later — a lockfile, a manifest — provably came from the same
+// artifact the returned checksums describe. The caller owns dest and
+// removes it; the session's own temporary directory holds only what the
+// session itself created.
+func (f *Fetcher) Fetch(ctx context.Context, urls []string, opts distfile.Options, dest string) (checksums.Sums, error) {
 	var lastErr error
 	for _, url := range urls {
 		_, err := f.sess.Call(ctx, "fetchdist", url, dest,

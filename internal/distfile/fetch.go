@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -77,18 +78,23 @@ var curlPath = sync.OnceValue(func() string {
 type Direct struct{}
 
 // Fetch implements the planner's fetcher over the direct client.
-func (Direct) Fetch(ctx context.Context, urls []string, opts Options) (checksums.Sums, error) {
-	return Fetch(ctx, urls, opts)
+func (Direct) Fetch(ctx context.Context, urls []string, opts Options, dest string) (checksums.Sums, error) {
+	return Fetch(ctx, urls, opts, dest)
 }
 
-// Fetch downloads one distfile, trying urls in order — the order
-// MacPorts' own machinery proposed, upstream before fallback mirrors —
-// and returns its checksums. A URL that fails is skipped; when every
-// URL fails, the error carries the last failure.
-func Fetch(ctx context.Context, urls []string, opts Options) (checksums.Sums, error) {
+// Fetch downloads one distfile to dest, trying urls in order — the
+// order MacPorts' own machinery proposed, upstream before fallback
+// mirrors — and returns its checksums. A URL that fails is skipped;
+// when every URL fails, the error carries the last failure.
+//
+// The bytes are kept rather than discarded so that whatever is read out
+// of them later — a lockfile, a manifest — provably came from the same
+// artifact the returned checksums describe. The caller owns dest and
+// removes it.
+func Fetch(ctx context.Context, urls []string, opts Options, dest string) (checksums.Sums, error) {
 	var lastErr error
 	for _, url := range urls {
-		sums, err := fetchOne(ctx, url, opts)
+		sums, err := fetchOne(ctx, url, opts, dest)
 		if err == nil {
 			return sums, nil
 		}
@@ -100,11 +106,26 @@ func Fetch(ctx context.Context, urls []string, opts Options) (checksums.Sums, er
 	return checksums.Sums{}, fmt.Errorf("%w (%d urls): %w", ErrUnavailable, len(urls), lastErr)
 }
 
-func fetchOne(ctx context.Context, url string, opts Options) (checksums.Sums, error) {
-	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		return httpFetch(ctx, url, opts)
+// fetchOne writes one attempt to dest, hashing as it goes. dest is
+// truncated per attempt, so a failed URL leaves nothing for the next one
+// to append to.
+func fetchOne(ctx context.Context, url string, opts Options, dest string) (checksums.Sums, error) {
+	f, err := os.Create(dest)
+	if err != nil {
+		return checksums.Sums{}, err
 	}
-	return curlFetch(ctx, url, opts)
+	defer f.Close() //nolint:errcheck // writes are unbuffered; close only releases the fd
+	h := checksums.New()
+	w := io.MultiWriter(h, f)
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		err = httpFetch(ctx, url, opts, w)
+	} else {
+		err = curlFetch(ctx, url, opts, w)
+	}
+	if err != nil {
+		return checksums.Sums{}, err
+	}
+	return h.Sums(), nil
 }
 
 func userAgent(opts Options) string {
@@ -114,10 +135,10 @@ func userAgent(opts Options) string {
 	return defaultUserAgent
 }
 
-func httpFetch(ctx context.Context, url string, opts Options) (checksums.Sums, error) {
+func httpFetch(ctx context.Context, url string, opts Options, w io.Writer) error {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		return checksums.Sums{}, err
+		return err
 	}
 	var rt http.RoundTripper = transport
 	if opts.IgnoreSSLCert {
@@ -137,22 +158,21 @@ func httpFetch(ctx context.Context, url string, opts Options) (checksums.Sums, e
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return checksums.Sums{}, err
+		return err
 	}
 	req.Header.Set("User-Agent", userAgent(opts))
 	resp, err := client.Do(req)
 	if err != nil {
-		return checksums.Sums{}, err
+		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-path close
 	if resp.StatusCode != http.StatusOK {
-		return checksums.Sums{}, fmt.Errorf("%s: %s", url, resp.Status)
+		return fmt.Errorf("%s: %s", url, resp.Status)
 	}
-	h := checksums.New()
-	if _, err := io.Copy(h, newStallReader(resp.Body, cancel)); err != nil {
-		return checksums.Sums{}, fmt.Errorf("%s: %w", url, err)
+	if _, err := io.Copy(w, newStallReader(resp.Body, cancel)); err != nil {
+		return fmt.Errorf("%s: %w", url, err)
 	}
-	return h.Sums(), nil
+	return nil
 }
 
 // stallReader aborts a transfer that delivers nothing for stallTimeout:
@@ -182,10 +202,10 @@ func (s *stallReader) Read(p []byte) (int, error) {
 // curlFetch streams a URL through curl — the reach for every scheme Go's
 // http client does not speak — with the same learned flags portfetch
 // passes to base's libcurl.
-func curlFetch(ctx context.Context, url string, opts Options) (checksums.Sums, error) {
+func curlFetch(ctx context.Context, url string, opts Options, w io.Writer) error {
 	curl := curlPath()
 	if curl == "" {
-		return checksums.Sums{}, fmt.Errorf("%s: scheme needs curl, which is not on PATH", url)
+		return fmt.Errorf("%s: scheme needs curl, which is not on PATH", url)
 	}
 	args := []string{
 		"--fail", "--silent", "--show-error", "--location",
@@ -204,17 +224,16 @@ func curlFetch(ctx context.Context, url string, opts Options) (checksums.Sums, e
 	}
 	args = append(args, url)
 
-	h := checksums.New()
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, curl, args...)
-	cmd.Stdout = h
+	cmd.Stdout = w
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
 		}
-		return checksums.Sums{}, fmt.Errorf("%s: curl: %s", url, msg)
+		return fmt.Errorf("%s: curl: %s", url, msg)
 	}
-	return h.Sums(), nil
+	return nil
 }

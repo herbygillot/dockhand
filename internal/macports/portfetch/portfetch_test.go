@@ -27,6 +27,12 @@ func newFetcher(t *testing.T) *Fetcher {
 	return f
 }
 
+// dest is a path for one fetch, owned and cleaned up by the test.
+func dest(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "distfile")
+}
+
 func TestFetchSums(t *testing.T) {
 	f := newFetcher(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +40,7 @@ func TestFetchSums(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	sums, err := f.Fetch(context.Background(), []string{srv.URL + "/f.tar.gz"}, distfile.Options{})
+	sums, err := f.Fetch(context.Background(), []string{srv.URL + "/f.tar.gz"}, distfile.Options{}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03", sums.Sha256)
 	assert.Equal(t, int64(6), sums.Size)
@@ -50,11 +56,11 @@ func TestFetchFallsBackAcrossURLs(t *testing.T) {
 	}))
 	defer good.Close()
 
-	sums, err := f.Fetch(context.Background(), []string{bad.URL + "/f", good.URL + "/f"}, distfile.Options{})
+	sums, err := f.Fetch(context.Background(), []string{bad.URL + "/f", good.URL + "/f"}, distfile.Options{}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, int64(6), sums.Size)
 	// The session survives the failed URL and serves more fetches.
-	sums, err = f.Fetch(context.Background(), []string{good.URL + "/g"}, distfile.Options{})
+	sums, err = f.Fetch(context.Background(), []string{good.URL + "/g"}, distfile.Options{}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, int64(6), sums.Size)
 }
@@ -63,7 +69,7 @@ func TestFetchAllFail(t *testing.T) {
 	f := newFetcher(t)
 	bad := httptest.NewServer(http.NotFoundHandler())
 	defer bad.Close()
-	_, err := f.Fetch(context.Background(), []string{bad.URL + "/a"}, distfile.Options{})
+	_, err := f.Fetch(context.Background(), []string{bad.URL + "/a"}, distfile.Options{}, dest(t))
 	require.ErrorIs(t, err, distfile.ErrUnavailable)
 	require.ErrorContains(t, err, "404")
 }
@@ -76,7 +82,7 @@ func TestFetchHonorsPortUserAgent(t *testing.T) {
 		_, _ = w.Write([]byte("hello\n"))
 	}))
 	defer srv.Close()
-	_, err := f.Fetch(context.Background(), []string{srv.URL + "/f"}, distfile.Options{UserAgent: "special-agent/2"})
+	_, err := f.Fetch(context.Background(), []string{srv.URL + "/f"}, distfile.Options{UserAgent: "special-agent/2"}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, "special-agent/2", got)
 }

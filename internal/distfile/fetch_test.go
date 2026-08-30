@@ -7,15 +7,24 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
+
+// dest is a path for one fetch, owned and cleaned up by the test.
+func dest(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "distfile")
+}
 
 func TestFetchSums(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +32,7 @@ func TestFetchSums(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	sums, err := Fetch(context.Background(), []string{srv.URL + "/f.tar.gz"}, Options{})
+	sums, err := Fetch(context.Background(), []string{srv.URL + "/f.tar.gz"}, Options{}, dest(t))
 	require.NoError(t, err)
 	// sha256 and size are independent ground truth for "hello\n".
 	assert.Equal(t, "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03", sums.Sha256)
@@ -39,7 +48,7 @@ func TestFetchFallsBackAcrossURLs(t *testing.T) {
 	}))
 	defer good.Close()
 
-	sums, err := Fetch(context.Background(), []string{bad.URL + "/f", good.URL + "/f"}, Options{})
+	sums, err := Fetch(context.Background(), []string{bad.URL + "/f", good.URL + "/f"}, Options{}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, int64(6), sums.Size)
 }
@@ -47,7 +56,7 @@ func TestFetchFallsBackAcrossURLs(t *testing.T) {
 func TestFetchAllFail(t *testing.T) {
 	bad := httptest.NewServer(http.NotFoundHandler())
 	defer bad.Close()
-	_, err := Fetch(context.Background(), []string{bad.URL + "/a", bad.URL + "/b"}, Options{})
+	_, err := Fetch(context.Background(), []string{bad.URL + "/a", bad.URL + "/b"}, Options{}, dest(t))
 	require.ErrorIs(t, err, ErrUnavailable)
 	require.ErrorContains(t, err, "404")
 }
@@ -59,8 +68,9 @@ func TestCurlFetchSums(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	sums, err := curlFetch(context.Background(), srv.URL+"/f.tar.gz", Options{})
-	require.NoError(t, err)
+	h := checksums.New()
+	require.NoError(t, curlFetch(context.Background(), srv.URL+"/f.tar.gz", Options{}, h))
+	sums := h.Sums()
 	assert.Equal(t, "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03", sums.Sha256)
 	assert.Equal(t, int64(6), sums.Size)
 }
@@ -69,7 +79,7 @@ func TestCurlFetchReportsFailure(t *testing.T) {
 	testenv.Tool(t, "curl")
 	srv := httptest.NewServer(http.NotFoundHandler())
 	defer srv.Close()
-	_, err := curlFetch(context.Background(), srv.URL+"/f", Options{})
+	err := curlFetch(context.Background(), srv.URL+"/f", Options{}, io.Discard)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "curl")
 }
@@ -78,7 +88,7 @@ func TestFetchRoutesSchemes(t *testing.T) {
 	// A non-http scheme routes to curl; with curl present the failure
 	// comes from the connection, not the router.
 	testenv.Tool(t, "curl")
-	_, err := Fetch(context.Background(), []string{"ftp://127.0.0.1:1/nope.tar.gz"}, Options{})
+	_, err := Fetch(context.Background(), []string{"ftp://127.0.0.1:1/nope.tar.gz"}, Options{}, dest(t))
 	require.ErrorIs(t, err, ErrUnavailable)
 	require.ErrorContains(t, err, "curl")
 }
@@ -99,7 +109,7 @@ func TestFetchDoesNotDecodeCompression(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	sums, err := Fetch(context.Background(), []string{srv.URL + "/f.tar.gz"}, Options{})
+	sums, err := Fetch(context.Background(), []string{srv.URL + "/f.tar.gz"}, Options{}, dest(t))
 	require.NoError(t, err)
 	wireSha := sha256.Sum256(wire)
 	assert.Equal(t, hex.EncodeToString(wireSha[:]), sums.Sha256, "sums must be of the wire bytes")
@@ -120,7 +130,7 @@ func TestFetchFollowsLongRedirectChains(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	sums, err := Fetch(context.Background(), []string{srv.URL + "/hop/0"}, Options{})
+	sums, err := Fetch(context.Background(), []string{srv.URL + "/hop/0"}, Options{}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, int64(6), sums.Size)
 }
@@ -144,7 +154,7 @@ func TestFetchCarriesCookiesAcrossRedirects(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	sums, err := Fetch(context.Background(), []string{srv.URL + "/start"}, Options{})
+	sums, err := Fetch(context.Background(), []string{srv.URL + "/start"}, Options{}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, int64(6), sums.Size)
 }
@@ -157,7 +167,7 @@ func TestFetchHonorsPortUserAgent(t *testing.T) {
 		_, _ = w.Write([]byte("hello\n"))
 	}))
 	defer srv.Close()
-	_, err := Fetch(context.Background(), []string{srv.URL + "/f"}, Options{UserAgent: "special-agent/1"})
+	_, err := Fetch(context.Background(), []string{srv.URL + "/f"}, Options{UserAgent: "special-agent/1"}, dest(t))
 	require.NoError(t, err)
 	assert.Equal(t, "special-agent/1", got)
 }
@@ -170,7 +180,7 @@ func TestFetchDefaultUserAgentIsDockhand(t *testing.T) {
 		_, _ = w.Write([]byte("hello\n"))
 	}))
 	defer srv.Close()
-	_, err := Fetch(context.Background(), []string{srv.URL + "/f"}, Options{})
+	_, err := Fetch(context.Background(), []string{srv.URL + "/f"}, Options{}, dest(t))
 	require.NoError(t, err)
 	assert.Contains(t, got, "dockhand")
 }

@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -132,6 +134,15 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
 				Detail: "port records checksums but fetches no distfiles"}
 		}
+		// The fetched bytes are kept for the length of the plan: what a
+		// planner reads out of a distfile has to be the same artifact
+		// whose checksums it records.
+		fetchDir, err := os.MkdirTemp("", "dockhand-bump-*")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(fetchDir) //nolint:errcheck // temp dir cleanup
+
 		fetchOpts := distfile.Options{
 			DisableEPSV:   fi.DisableEPSV,
 			IgnoreSSLCert: fi.IgnoreSSLCert,
@@ -139,7 +150,10 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 		}
 		sums := make(map[string]checksums.Sums, len(fi.Files))
 		for file, u := range fi.Files {
-			s, err := fetch.Fetch(ctx, u, fetchOpts)
+			if file != filepath.Base(file) {
+				return nil, fmt.Errorf("bump: distfile name %q is not a bare file name", file)
+			}
+			s, err := fetch.Fetch(ctx, u, fetchOpts, filepath.Join(fetchDir, file))
 			if err != nil {
 				return nil, fmt.Errorf("bump: %s: %w", file, err)
 			}
