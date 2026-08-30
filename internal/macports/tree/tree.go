@@ -23,6 +23,12 @@ var ErrNotPortsTree = errors.New("tree: not a ports tree")
 // ErrPortNotFound reports that no portdir matches the requested name.
 var ErrPortNotFound = errors.New("tree: port not found")
 
+// ErrNoTreeAbove reports that no ports tree contains the directory
+// searched from. It is distinct from ErrNotPortsTree, which is a named
+// path failing to be one: this is a search that found nothing, which is
+// an ordinary outcome rather than a mistake.
+var ErrNoTreeAbove = errors.New("tree: no ports tree contains this directory")
+
 // Tree is a ports tree rooted at a directory, validated on open by the
 // presence of the PortGroup resources directory — the one structural
 // feature every checkout shares. Resolve caches the tree's PortIndex on
@@ -41,10 +47,45 @@ func Open(path string) (*Tree, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fi, err := os.Stat(filepath.Join(abs, macports.PortGroupDir)); err != nil || !fi.IsDir() {
+	if !isRoot(abs) {
 		return nil, fmt.Errorf("%w: %s (no %s)", ErrNotPortsTree, abs, macports.PortGroupDir)
 	}
 	return &Tree{root: abs}, nil
+}
+
+// isRoot reports whether dir is the root of a ports tree, by the same
+// structural feature Open validates.
+func isRoot(dir string) bool {
+	fi, err := os.Stat(filepath.Join(dir, macports.PortGroupDir))
+	return err == nil && fi.IsDir()
+}
+
+// Find returns the root of the ports tree containing dir, searching dir
+// and then each parent. A caller standing in a portdir, a category, or
+// anywhere else inside a tree gets that tree without naming it.
+//
+// The test is structural — the PortGroup resources directory Open
+// validates — rather than asking git what the directory is. The tree
+// every MacPorts installation already has is delivered by rsync and is
+// not a git checkout at all, so a repository-shaped test would miss the
+// most common tree there is; and among trees that are checkouts, the
+// remote may be a fork under any name or absent entirely. Structure is
+// what a ports tree has in common with itself.
+func Find(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	for {
+		if isRoot(abs) {
+			return abs, nil
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return "", fmt.Errorf("%w: searched from %s", ErrNoTreeAbove, dir)
+		}
+		abs = parent
+	}
 }
 
 // Root returns the tree's root directory.

@@ -80,7 +80,7 @@ func resolveTargets(treeRoot string, all bool, args []string) ([]tree.Target, er
 	var tr *tree.Tree
 	if needTree {
 		if treeRoot == "" {
-			return nil, usagef("a ports tree is needed: pass --tree or set DOCKHAND_TREE")
+			return nil, usagef("a ports tree is needed: run inside one, pass --tree, or set DOCKHAND_TREE")
 		}
 		var err error
 		if tr, err = tree.Open(treeRoot); err != nil {

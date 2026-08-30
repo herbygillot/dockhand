@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
@@ -85,6 +86,21 @@ func (rc *RunContext) init(c *cobra.Command) error {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+
+	// With no tree named, the one the user is standing in is the one
+	// they mean. Best-effort on purpose: a command that needs no tree
+	// must not fail because the working directory is not in one, so a
+	// fruitless search leaves TreeRoot empty and the commands that do
+	// need a tree report it themselves. This runs after the logger is
+	// configured so that --debug can say which tree was found.
+	if rc.TreeRoot == "" {
+		if wd, err := os.Getwd(); err == nil {
+			if root, err := tree.Find(wd); err == nil {
+				slog.Debug("ports tree discovered from the working directory", "tree", root)
+				rc.TreeRoot = root
+			}
+		}
+	}
 	return nil
 }
 

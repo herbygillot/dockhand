@@ -52,7 +52,7 @@ func newRoot(version string) (*cobra.Command, *RunContext) {
 		"MacPorts installation prefix (default $DOCKHAND_PREFIX, else discovered)")
 
 	root.PersistentFlags().StringP("tree", "t", os.Getenv("DOCKHAND_TREE"),
-		"ports tree root (default $DOCKHAND_TREE)")
+		"ports tree root (default $DOCKHAND_TREE, else the tree the working directory is in)")
 
 	root.PersistentFlags().Bool("debug", false,
 		"print debug output to stderr")

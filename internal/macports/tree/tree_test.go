@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -64,4 +65,44 @@ func TestCategoryAndLookup(t *testing.T) {
 
 	_, err = tr.Lookup("nonexistent")
 	require.ErrorIs(t, err, ErrPortNotFound)
+}
+
+func TestFindFromTheRootItself(t *testing.T) {
+	root := fakeTree(t)
+	got, err := Find(root)
+	require.NoError(t, err)
+	assert.Equal(t, root, got)
+}
+
+// A user standing in a portdir, or anywhere else inside the tree, gets
+// the tree without naming it.
+func TestFindWalksUpFromInside(t *testing.T) {
+	root := fakeTree(t)
+	deep := filepath.Join(root, "devel", "foo", "files")
+	require.NoError(t, os.MkdirAll(deep, 0o755))
+	got, err := Find(deep)
+	require.NoError(t, err)
+	assert.Equal(t, root, got)
+}
+
+// The search ends at the filesystem root rather than looping, and says
+// so with an error distinct from a named path failing to be a tree.
+func TestFindOutsideAnyTree(t *testing.T) {
+	_, err := Find(t.TempDir())
+	require.ErrorIs(t, err, ErrNoTreeAbove)
+	assert.NotErrorIs(t, err, ErrNotPortsTree)
+}
+
+// A repository is not the test. The tree every MacPorts installation
+// already has arrives by rsync and contains no .git at all, so
+// discovery must find a tree that has never been a checkout.
+func TestFindDoesNotRequireAGitCheckout(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, macports.PortGroupDir), 0o755))
+	_, err := os.Stat(filepath.Join(root, ".git"))
+	require.True(t, os.IsNotExist(err), "fixture must have no repository")
+
+	got, err := Find(filepath.Join(root, macports.PortGroupDir))
+	require.NoError(t, err)
+	assert.Equal(t, root, got)
 }

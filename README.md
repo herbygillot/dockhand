@@ -47,15 +47,27 @@ When it can't be sure, it declines and says why, rather than guessing.
 
 ## Using it
 
-`dockhand` needs a MacPorts installation and a ports tree checkout. Point
-it at them once:
+`dockhand` needs a MacPorts installation and a ports tree, and finds both
+on its own. The installation comes from `port-tclsh` on your `PATH`. The
+tree is whichever one you are standing in — run it from anywhere inside a
+checkout, or inside the rsync tree MacPorts already maintains, and there
+is nothing to configure:
+
+```bash
+cd ~/Source/macports-ports/devel/tokei
+dockhand classify .
+```
+
+To work on a tree from outside it, name it — by flag, or once in your
+shell:
 
 ```bash
 export DOCKHAND_TREE=~/Source/macports-ports
 ```
 
-The prefix is discovered from `port-tclsh` on your `PATH`; `--prefix` or
-`$DOCKHAND_PREFIX` overrides it, and `--tree` overrides the tree.
+`--tree` wins over `$DOCKHAND_TREE`, which wins over the working
+directory. `--prefix` and `$DOCKHAND_PREFIX` do the same for the
+installation.
 
 ### What can this machine do?
 
