@@ -1,8 +1,15 @@
-// Package distfile is the in-process fetch engine for distribution
-// files, for contexts with no MacPorts installation in play — the
-// planner's normal fetches go through macports/portfetch instead. What
-// a checksum is, and the hashing itself, live in internal/checksums;
-// this package moves bytes and streams them through those hashes.
+// Package distfile handles distribution files: getting them, and
+// reading inside the ones that are archives.
+//
+// Its fetch engine is in-process, for contexts with no MacPorts
+// installation in play — the planner's normal fetches go through
+// macports/portfetch instead. What a checksum is, and the hashing
+// itself, live in internal/checksums; this package moves bytes and
+// streams them through those hashes.
+//
+// Extract reads a named file out of already-fetched distfiles, so a
+// caller that needs a lockfile or manifest from inside a source archive
+// gets it from the same bytes whose checksum it recorded.
 package distfile
 
 // Options carries a port's own fetch exceptions, read from its
