@@ -79,8 +79,8 @@ func TestZeroRootIssuesFromTheSystemTempDir(t *testing.T) {
 	require.NoError(t, err)
 	defer remove()
 	assert.Equal(t, filepath.Clean(os.TempDir()), filepath.Dir(dir))
-	assert.NoError(t, r.Remove(), "the zero Root owns nothing to remove")
+	require.NoError(t, r.Remove(), "the zero Root owns nothing to remove")
 
 	_, err = os.Stat(dir)
-	assert.NoError(t, err, "removing the zero Root must not touch what it issued")
+	require.NoError(t, err, "removing the zero Root must not touch what it issued")
 }
