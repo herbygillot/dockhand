@@ -22,6 +22,11 @@ var shimFS embed.FS
 // one is chosen.
 const shimDir = "shims"
 
+// NewestShim is the highest MacPorts version dockhand has a shim for,
+// and so the newest it has been verified to speak to. An installation
+// beyond it is driven by an older shim, which works until it does not.
+func NewestShim() (string, error) { return shim.Newest(shimFS, shimDir) }
+
 // Evaluator owns a port-tclsh session with the MacPorts shim loaded.
 // It is not safe for concurrent use; parallelism arrives as a pool of
 // evaluators, not a shared one.

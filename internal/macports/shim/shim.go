@@ -34,13 +34,12 @@ import (
 // problem, not a machine problem.
 var ErrNoShims = errors.New("shim: no shims embedded")
 
-// Select returns the shim from dir that fits the given MacPorts
-// version, and the version it was named for. An empty version means
-// undetermined, which takes the newest shim.
-func Select(fsys fs.FS, dir, version string) (script string, named string, err error) {
+// versions lists the MacPorts versions a shim set covers, oldest first
+// by MacPorts' own ordering.
+func versions(fsys fs.FS, dir string) ([]string, error) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
-		return "", "", fmt.Errorf("shim: %w", err)
+		return nil, fmt.Errorf("shim: %w", err)
 	}
 	var have []string
 	for _, e := range entries {
@@ -49,10 +48,42 @@ func Select(fsys fs.FS, dir, version string) (script string, named string, err e
 		}
 	}
 	if len(have) == 0 {
-		return "", "", fmt.Errorf("%w: %s", ErrNoShims, dir)
+		return nil, fmt.Errorf("%w: %s", ErrNoShims, dir)
 	}
-	// Oldest first, by MacPorts' own ordering.
 	sort.Slice(have, func(i, j int) bool { return macports.VerCmp(have[i], have[j]) < 0 })
+	return have, nil
+}
+
+// Newest is the highest MacPorts version this shim set was written and
+// verified against.
+//
+// It is derived from the shims rather than declared beside them,
+// because a constant saying the same thing would be a second place to
+// update and would start lying the day someone added a shim without
+// remembering it. Adding a shim is what raises this number; there is
+// nothing else to keep in step.
+//
+// It answers "the newest MacPorts dockhand knows how to talk to", which
+// is not "the newest MacPorts released". An installation newer than
+// this still works — Select falls back rather than failing — but it is
+// being driven by a shim written for an older one, and that is worth
+// saying out loud.
+func Newest(fsys fs.FS, dir string) (string, error) {
+	have, err := versions(fsys, dir)
+	if err != nil {
+		return "", err
+	}
+	return have[len(have)-1], nil
+}
+
+// Select returns the shim from dir that fits the given MacPorts
+// version, and the version it was named for. An empty version means
+// undetermined, which takes the newest shim.
+func Select(fsys fs.FS, dir, version string) (script string, named string, err error) {
+	have, err := versions(fsys, dir)
+	if err != nil {
+		return "", "", err
+	}
 
 	chosen, why := have[len(have)-1], "newest: installation version undetermined"
 	if version != "" {

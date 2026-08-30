@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 )
 
@@ -69,6 +70,15 @@ func Probe() Report {
 		pfx := prefix.Prefix(filepath.Dir(filepath.Dir(portTclsh.Path)))
 		if v, err := pfx.Version(context.Background()); err == nil {
 			portTclsh.Version = v
+			// An installation newer than any shim still works — selection
+			// falls back rather than failing — but it is being driven by a
+			// shim written for an older MacPorts, and the day that stops
+			// working it should not be a surprise. Derived from the shims
+			// themselves, so this notices without anyone remembering to
+			// check.
+			if newest, err := eval.NewestShim(); err == nil {
+				portTclsh.Note = shimNote(v, newest)
+			}
 		} else {
 			portTclsh.Note = "version undetermined; dockhand will use its newest shim"
 		}
@@ -131,6 +141,20 @@ func (r Report) String() string {
 	cap(byName["go2port"].Found, "Go vendored blocks", "no go2port")
 	cap(byName["cargo2port"].Found, "Rust vendored blocks", "no cargo2port")
 	return b.String()
+}
+
+// shimNote says when an installation has outrun the shims. Selection
+// falls back rather than failing, so this is not an error — but the
+// installation is being driven by a shim written for an older MacPorts,
+// and the day that stops working it should not come as a surprise.
+//
+// Derived from the shim set rather than compared against a constant, so
+// it notices without anyone remembering to check.
+func shimNote(installed, newestShim string) string {
+	if macports.VerCmp(installed, newestShim) <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("newer than dockhand's newest shim (%s); driven by that one", newestShim)
 }
 
 // versionBelow reports whether a dotted version string is numerically

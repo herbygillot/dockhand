@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,4 +47,16 @@ func TestVersionBelowIsNumeric(t *testing.T) {
 	// Unparseable versions are not claimed to be below the floor.
 	require.False(t, versionBelow("", 2, 5))
 	require.False(t, versionBelow("unknown", 2, 5))
+}
+
+// A shim is written against one MacPorts and taken to hold for later
+// ones until superseded. An installation past the newest shim still
+// works, and says so rather than failing.
+func TestShimNote(t *testing.T) {
+	assert.Empty(t, shimNote("2.12.6", "2.12.6"), "the version it was written for is silent")
+	assert.Empty(t, shimNote("2.11.0", "2.12.6"), "an older installation is silent; its own shim fits")
+	assert.Contains(t, shimNote("2.13.0", "2.12.6"), "2.12.6")
+	assert.Contains(t, shimNote("2.13.0", "2.12.6"), "newer than")
+	// MacPorts' ordering, not lexical: 2.9 is older than 2.12.
+	assert.Empty(t, shimNote("2.9.0", "2.12.6"))
 }

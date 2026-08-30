@@ -46,3 +46,25 @@ func TestSelectNoShims(t *testing.T) {
 	_, _, err = Select(fstest.MapFS{}, "nowhere", "2.12.6")
 	require.Error(t, err)
 }
+
+// Newest is what dockhand has been verified to speak to. Deriving it
+// from the shim set is the point: a constant beside them would be a
+// second place to update, and would start lying the day someone added
+// a shim without remembering it.
+func TestNewestIsTheHighestShim(t *testing.T) {
+	got, err := Newest(shims("2.9.0", "2.12.6", "2.11.0"), "shims")
+	require.NoError(t, err)
+	assert.Equal(t, "2.12.6", got)
+}
+
+// MacPorts' own ordering, not lexical: 2.9 precedes 2.11.
+func TestNewestUsesMacPortsOrdering(t *testing.T) {
+	got, err := Newest(shims("2.9.0", "2.11.0"), "shims")
+	require.NoError(t, err)
+	assert.Equal(t, "2.11.0", got, "lexically 2.9.0 sorts last; by version it does not")
+}
+
+func TestNewestNeedsShims(t *testing.T) {
+	_, err := Newest(fstest.MapFS{"shims/README": &fstest.MapFile{}}, "shims")
+	require.ErrorIs(t, err, ErrNoShims)
+}
