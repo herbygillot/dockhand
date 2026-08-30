@@ -29,6 +29,17 @@ type Values struct {
 	Checksums []string
 	Depends   Depends
 
+	// Worksrcdir, Filespath and Patchfiles describe what becomes of the
+	// source once it is fetched: the directory it extracts into, where
+	// the port keeps its patches, and which it applies. A planner that
+	// must read a file out of a distfile needs the first to find it, and
+	// the rest to know whether a patch rewrites that file before any
+	// build sees it. Like Livecheck and Vendored they are configuration
+	// rather than state, and stay out of fieldTable.
+	Worksrcdir string
+	Filespath  string
+	Patchfiles []string
+
 	// Livecheck and Vendored are configuration: what a Portfile
 	// declares about how it is maintained, rather than what it is.
 	// They ride along in the same evaluation because reading an option
@@ -56,10 +67,18 @@ type Livecheck struct {
 type Vendored struct {
 	GoVendors   string
 	CargoCrates string
+	// CargoCratesGithub is the cargo block's second form, for crates
+	// taken from a git revision rather than the registry. Two ports in
+	// the tree use it; it supplies distfiles the same way, but no
+	// generator writes it, so an intent that regenerates cargo.crates
+	// must still refuse a port carrying this.
+	CargoCratesGithub string
 }
 
 // Any reports whether the port carries a vendored dependency block.
-func (v Vendored) Any() bool { return v.GoVendors != "" || v.CargoCrates != "" }
+func (v Vendored) Any() bool {
+	return v.GoVendors != "" || v.CargoCrates != "" || v.CargoCratesGithub != ""
+}
 
 // Depends holds a context's dependency declarations, one list of depspecs
 // ("port:zlib", "bin:git:git", "path:...") per phase. Depspecs stay raw

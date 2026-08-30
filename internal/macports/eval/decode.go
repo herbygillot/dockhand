@@ -35,9 +35,12 @@ func decodeSnapshot(reply string) (info.Values, []string, error) {
 			Version: syntax.ListValue(fields["livecheck.version"]),
 		},
 		Vendored: info.Vendored{
-			GoVendors:   fields["go.vendors"],
-			CargoCrates: fields["cargo.crates"],
+			GoVendors:         fields["go.vendors"],
+			CargoCrates:       fields["cargo.crates"],
+			CargoCratesGithub: fields["cargo.crates_github"],
 		},
+		Worksrcdir: syntax.ListValue(fields["worksrcdir"]),
+		Filespath:  syntax.ListValue(fields["filespath"]),
 	}
 	var err error
 	for _, f := range []struct {
@@ -50,6 +53,7 @@ func decodeSnapshot(reply string) (info.Values, []string, error) {
 		{"platforms", &v.Platforms},
 		{"distfiles", &v.Distfiles},
 		{"checksums", &v.Checksums},
+		{"patchfiles", &v.Patchfiles},
 		{"depends_fetch", &v.Depends.Fetch},
 		{"depends_extract", &v.Depends.Extract},
 		{"depends_patch", &v.Depends.Patch},
