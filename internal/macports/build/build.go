@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/platform"
@@ -26,6 +27,45 @@ import (
 // ErrNotAPortdir reports a path that cannot be staged, because the
 // category directory the indexer needs is not above it.
 var ErrNotAPortdir = errors.New("build: not a <category>/<port> directory")
+
+// ForeignPrefixes are the other package managers a MacPorts build can
+// find by accident. A verdict environment that carries one is not
+// answering the question it was asked: a port that builds against
+// Homebrew's libraries proves nothing about a machine that has none,
+// and D4's declaration-completeness is exactly the proposition such a
+// prefix destroys.
+//
+// MacPorts' own binpath already excludes these from build phases, so
+// their binaries are not found — but binpath governs executables, not
+// headers, and a configure script that probes /opt/homebrew/include
+// finds what is there regardless. Removing them is the only way to be
+// sure, and an environment provisioned for verdicts can afford to be.
+//
+// Each entry is a path that only a package manager creates. That
+// distinction matters: /usr/local is not on this list, because a stock
+// macOS has one — empty, owned by root — and treating its existence as
+// contamination fails every clean image there is. Homebrew's presence
+// under it is named exactly, by the directories only Homebrew makes.
+//
+// The list is what MacPorts' own guide names as conflicting, plus the
+// Apple silicon Homebrew prefix it predates.
+var ForeignPrefixes = []string{
+	"/opt/homebrew",       // Homebrew on Apple silicon: the prefix is its own
+	"/usr/local/Homebrew", // Homebrew on Intel, which shares /usr/local
+	"/usr/local/Cellar",
+	"/sw",      // Fink
+	"/opt/pkg", // pkgsrc
+}
+
+// PathInjectors are the places a package manager puts itself on every
+// user's PATH. Removing a prefix and leaving these behind leaves a
+// machine whose PATH names directories that no longer exist — untidy
+// rather than dangerous, but it also leaves the next reader unsure
+// whether the excision worked.
+var PathInjectors = []string{
+	"/etc/paths.d/homebrew",
+	"/etc/paths.d/fink",
+}
 
 // DistfilesURL is where MacPorts publishes its own releases.
 const DistfilesURL = "https://distfiles.macports.org/MacPorts"
@@ -127,4 +167,34 @@ func InstallArgs(port string, variants info.VariantSet, fromSource bool) []strin
 	}
 	args = append(args, "install", port)
 	return append(args, variants.List()...)
+}
+
+// CleanScript is a shell script that reports everything wrong with a
+// MacPorts environment, one finding per line, and prints nothing when
+// there is nothing wrong. Empty output is the pass.
+//
+// It exists as a script rather than a sequence of calls because the
+// callers reach their environments by different means — a guest agent,
+// a local exec, eventually a CI step — and the question is the same for
+// all of them. What differs is transport, which is the provider's.
+//
+// The four findings are the ways an environment can look ready and not
+// be. Ports installed means a previous verification leaked into a base
+// that should be pristine. A foreign prefix means a build can find a
+// package manager the port never declared. No compiler means every port
+// will fail, opaquely and one at a time — a published image shipped
+// exactly that way. And MacPorts not answering means the environment
+// was never finished.
+func CleanScript(portCmd string) string {
+	var b strings.Builder
+	b.WriteString("installed=$(" + portCmd + " installed 2>/dev/null | grep -v 'No ports are installed' | grep -c . || true)\n")
+	b.WriteString("[ \"$installed\" != \"0\" ] && echo \"ports already installed: $installed\"\n")
+	for _, p := range append(append([]string{}, ForeignPrefixes...), PathInjectors...) {
+		b.WriteString("[ -e " + p + " ] && echo \"foreign package manager: " + p + "\"\n")
+	}
+	b.WriteString("xcode-select -p >/dev/null 2>&1 || echo 'no developer tools'\n")
+	b.WriteString("clang --version >/dev/null 2>&1 || echo 'no working compiler'\n")
+	b.WriteString(portCmd + " version >/dev/null 2>&1 || echo 'MacPorts does not answer'\n")
+	b.WriteString("exit 0\n")
+	return b.String()
 }

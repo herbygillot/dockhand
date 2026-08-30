@@ -151,3 +151,43 @@ func TestReleaseTableAgreesWithWhatMacPortsPublishes(t *testing.T) {
 			"MacPorts publishes %s but platform.Releases names no release for it", name)
 	}
 }
+
+// A stock macOS has an empty /usr/local owned by root — measured on a
+// clean vanilla image, 0 bytes containing one empty directory. Naming
+// the bare prefix as foreign would declare every clean machine dirty,
+// so Homebrew's presence under it is named by what only Homebrew makes.
+func TestForeignPrefixesNameManagersNotPlaces(t *testing.T) {
+	assert.NotContains(t, ForeignPrefixes, "/usr/local",
+		"a stock macOS has one; its existence is not contamination")
+	assert.Contains(t, ForeignPrefixes, "/usr/local/Homebrew")
+	assert.Contains(t, ForeignPrefixes, "/opt/homebrew")
+	// None of them may be a directory a stock macOS already has, or the
+	// check condemns every clean image.
+	stock := []string{"/usr", "/usr/local", "/opt", "/bin", "/sbin", "/etc", "/var", "/tmp"}
+	for _, p := range ForeignPrefixes {
+		assert.NotContains(t, stock, p, "%s exists on a clean macOS", p)
+	}
+}
+
+// Empty output is the pass. Every line the script can print is a way an
+// environment looks ready without being it.
+func TestCleanScriptChecksEveryWayToLookReady(t *testing.T) {
+	s := CleanScript("/opt/local/bin/port")
+	assert.Contains(t, s, "installed", "a leak from a previous verification shows as installed ports")
+	assert.Contains(t, s, "/opt/homebrew", "a build must not find a package manager the port never declared")
+	assert.Contains(t, s, "xcode-select", "an image with no compiler fails every port, one at a time")
+	assert.Contains(t, s, "clang --version")
+	assert.Contains(t, s, "/opt/local/bin/port version", "MacPorts answering is the last thing checked")
+	assert.Contains(t, s, "exit 0", "findings are printed, not signalled by exit status")
+	for _, p := range ForeignPrefixes {
+		assert.Contains(t, s, p)
+	}
+}
+
+// The prefix is threaded through: an ephemeral-prefix backend checks an
+// installation that is not at /opt/local.
+func TestCleanScriptUsesTheGivenPrefix(t *testing.T) {
+	s := CleanScript("/opt/dockhand/e/abc/bin/port")
+	assert.Contains(t, s, "/opt/dockhand/e/abc/bin/port installed")
+	assert.NotContains(t, s, "/opt/local/bin/port")
+}
