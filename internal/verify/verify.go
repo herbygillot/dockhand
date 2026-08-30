@@ -1,0 +1,226 @@
+// Package verify answers questions about a plan that only building can
+// answer. It owns the vocabulary — what is being asked, of what, and
+// what came back — and none of the machinery; a provider package such
+// as verify/tart supplies an environment that can answer.
+//
+// Everything here is asynchronous, including the backends that look
+// synchronous. A tart VM builds a small port in about fifteen seconds
+// and a large one in ten minutes, which is long enough that modelling
+// it as a function call would be a lie the first time someone
+// interrupts a run. The shape is therefore submit-then-poll for every
+// provider, and a Job is deliberately a plain serializable value: the
+// process that submitted the work is not necessarily the process that
+// collects it.
+package verify
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/platform"
+)
+
+// Proposition is one of the independent questions verification answers
+// (D4). They are not a ladder: a faithful edit can produce a port that
+// does not build, and a wrong edit can produce one that builds fine
+// against a cached distfile, so a provider says which it can answer
+// rather than implying the rest.
+type Proposition int
+
+const (
+	// PortViability asks whether the port builds at all.
+	PortViability Proposition = iota
+	// DeclarationCompleteness asks whether it builds somewhere that
+	// carries nothing but what the port declared.
+	DeclarationCompleteness
+	// EditFidelity asks whether the edit says what it meant to. It is
+	// answered by re-reading rather than by building, and is listed
+	// here so the enumeration matches the design's.
+	EditFidelity
+)
+
+func (p Proposition) String() string {
+	switch p {
+	case PortViability:
+		return "port viability"
+	case DeclarationCompleteness:
+		return "declaration completeness"
+	case EditFidelity:
+		return "edit fidelity"
+	}
+	return "unknown proposition"
+}
+
+// Capabilities is what a provider can and cannot do. A requirement it
+// cannot meet is reported rather than quietly downgraded: a plan that
+// asked for a pristine environment and got a warm one has been answered
+// with a different question.
+type Capabilities struct {
+	Name string
+	// Propositions lists only the questions this provider actually
+	// implements.
+	Propositions []Proposition
+	// Pristine reports whether the environment carries nothing from a
+	// previous verification.
+	Pristine bool
+	// Interactive reports whether a failed run leaves an environment
+	// the user can enter (D7's handle).
+	Interactive bool
+	// Platform is the macOS release the environment builds for, which
+	// need not be the host's — a guest that is a different release from
+	// its host is the main reason to want one.
+	Platform platform.Release
+	// Concurrent is how many verifications may run at once. For a
+	// macOS guest this is Apple's licence limit, not the machine's.
+	Concurrent int
+}
+
+// Answers reports whether the provider claims a proposition.
+func (c Capabilities) Answers(p Proposition) bool {
+	for _, a := range c.Propositions {
+		if a == p {
+			return true
+		}
+	}
+	return false
+}
+
+// Request is one verification: build this port, from these portdirs,
+// under this variant frame.
+type Request struct {
+	// Port is what to install — a port or subport name, as `port`
+	// itself would be given it.
+	Port string
+	// Portdirs are the directories the plan touched, on the host. They
+	// are staged ahead of the environment's own ports tree, so the port
+	// under test is the edited one and everything else is the tree's.
+	// Each must be a <category>/<port> directory: the indexer walks
+	// categories, so a portdir alone indexes nothing.
+	Portdirs []string
+	// Variants is the frame to build under. The zero value is the
+	// default frame, which is not the same as "no variants" — a port's
+	// default_variants still apply.
+	Variants info.VariantSet
+	// FromSource names ports whose binary archives must be ignored.
+	// A version bump does not need this: the new version yields an
+	// archive name that does not exist yet, so MacPorts builds from
+	// source on its own. A re-derivation at an unchanged version does,
+	// because the archive that matches predates the change and
+	// verifying against it would verify nothing.
+	FromSource []string
+}
+
+// Job identifies submitted work. It is a value, not a handle: writing
+// it beside the plan and polling it from a later process is the point,
+// because the work outlives the process that started it either way.
+type Job struct {
+	Provider string    `json:"provider"`
+	ID       string    `json:"id"`
+	Started  time.Time `json:"started"`
+}
+
+// State is where a job is.
+type State int
+
+const (
+	// Running means the environment is still working.
+	Running State = iota
+	// Passed means the port built.
+	Passed
+	// Failed means it did not, which is a finding about the port.
+	Failed
+	// Errored means the environment could not answer, which is a fact
+	// about the machine and never a finding about the port.
+	Errored
+)
+
+func (s State) String() string {
+	switch s {
+	case Running:
+		return "running"
+	case Passed:
+		return "passed"
+	case Failed:
+		return "failed"
+	case Errored:
+		return "errored"
+	}
+	return "unknown"
+}
+
+// Terminal reports whether a state will not change again.
+func (s State) Terminal() bool { return s != Running }
+
+// Status is a job's state, with the detail that exists once it is
+// terminal.
+type Status struct {
+	State State
+	// Log is what the environment produced, as far as it got.
+	Log string
+	// Detail explains an Errored state — why the environment could not
+	// answer.
+	Detail string
+	// Handle names the environment the job ran in, for a provider that
+	// can hold one, and is empty for a provider that cannot. It is
+	// populated for a finished job whatever the verdict: a failure is
+	// the obvious thing to go and look at, but a pass is worth entering
+	// too — to see what landed, or to run something else against it.
+	// The environment is held until the job is released.
+	Handle string
+}
+
+var (
+	// ErrUnsupported reports that a provider cannot meet a request:
+	// a proposition it does not answer, a platform it is not.
+	ErrUnsupported = errors.New("verify: provider cannot meet this request")
+	// ErrNoEnvironment reports that the machine cannot supply the
+	// environment — no VM tool, no base image. It is a doctor-shaped
+	// fact, never a finding about a port.
+	ErrNoEnvironment = errors.New("verify: no environment available")
+	// ErrUnknownJob reports a job the provider does not recognize,
+	// which is what a stale job file looks like.
+	ErrUnknownJob = errors.New("verify: unknown job")
+)
+
+// Verifier is an environment that can answer propositions about a port.
+//
+// Submit starts work and returns as soon as the work is running, not
+// when it finishes.
+//
+// Poll never blocks, and never changes anything: polling a finished job
+// twice must answer the same way twice. That rules out the tempting
+// shortcut of releasing an environment the moment it passes, which
+// turns the second poll of a successful job into "no such job".
+//
+// Release discards whatever the job is still holding. It is the
+// caller's decision because only the caller knows it is finished — and
+// on a provider with a hard limit on concurrent environments, a job
+// that is never released is a slot that never comes back.
+type Verifier interface {
+	Capabilities() Capabilities
+	Submit(ctx context.Context, req Request) (Job, error)
+	Poll(ctx context.Context, job Job) (Status, error)
+	Release(ctx context.Context, job Job) error
+}
+
+// Await polls until the job is terminal or the context ends. It is a
+// helper rather than a method so that no provider has to implement
+// blocking, and so a caller that wants to supervise several jobs is not
+// pushed into one goroutine per job.
+func Await(ctx context.Context, v Verifier, job Job, every time.Duration) (Status, error) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		st, err := v.Poll(ctx, job)
+		if err != nil || st.State.Terminal() {
+			return st, err
+		}
+		select {
+		case <-ctx.Done():
+			return st, ctx.Err()
+		case <-t.C:
+		}
+	}
+}
