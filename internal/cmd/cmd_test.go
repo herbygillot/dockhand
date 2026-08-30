@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -106,4 +107,27 @@ func TestExitCodeMapping(t *testing.T) {
 	assert.Equal(t, ExitEnvironment, ExitCode(prefix.ErrNotInstalled))
 	assert.Equal(t, ExitEnvironment, ExitCode(fmt.Errorf("sweep: %w", eval.ErrStartup)))
 	assert.Equal(t, ExitEnvironment, ExitCode(eval.ErrRootRefused))
+}
+
+// failWriter fails every write, standing in for the cases a redirected
+// run actually meets: a full disk, a closed descriptor.
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+// A command whose output is its product must not report success when
+// that output did not land. doctor's report is hermetic — it probes
+// PATH and nothing else — so this holds anywhere.
+func TestDoctorFailsWhenItsReportCannotBeWritten(t *testing.T) {
+	assert.NotEqual(t, 0, execute(context.Background(), "test",
+		[]string{"doctor"}, failWriter{}, io.Discard))
+}
+
+// The same run with a working stream still succeeds, so the check above
+// is testing the write and not the command.
+func TestDoctorSucceedsWhenItsReportLands(t *testing.T) {
+	var buf bytes.Buffer
+	assert.Equal(t, 0, execute(context.Background(), "test",
+		[]string{"doctor"}, &buf, io.Discard))
+	assert.Contains(t, buf.String(), "capabilities:")
 }

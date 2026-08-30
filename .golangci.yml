@@ -20,13 +20,21 @@ linters:
     exhaustive:
       default-signifies-exhaustive: false
     errcheck:
-      # Best-effort shutdowns, read-path closes, and terminal
-      # rendering: the error is not actionable at these call sites.
+      # Terminal rendering and best-effort shutdowns, where the error is
+      # not actionable. The Fprint family is here because most of its
+      # calls write to a strings.Builder, which cannot fail, and the rest
+      # go to stdout or stderr, where a broken pipe kills the process
+      # before any check could run. Output a caller might redirect to a
+      # file is checked at its call site instead.
+      #
+      # Closes are deliberately absent: errcheck cannot tell a read-path
+      # close from a write-path one, and excluding the category would
+      # silently cover a future write whose failure means data never
+      # reached disk. Each read-path close carries its own nolint.
       exclude-functions:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
-        - (*os.File).Close
         - (*github.com/herbygillot/dockhand/internal/macports/eval.Evaluator).Close
         - (*github.com/herbygillot/dockhand/internal/tcl/rpc.Session).Close
 

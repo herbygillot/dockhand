@@ -118,7 +118,7 @@ func readQuick(path string) (map[string]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-path close: nothing was written
 	offsets := make(map[string]int64)
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -148,7 +148,7 @@ func scanOffsets(path string) (map[string]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-path close: nothing was written
 	r := bufio.NewReaderSize(f, 1<<20)
 	offsets := make(map[string]int64)
 	var pos int64
@@ -171,7 +171,7 @@ func readEntryAt(path string, off int64) (Entry, string, error) {
 	if err != nil {
 		return Entry{}, "", err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-path close: nothing was written
 	if _, err := f.Seek(off, io.SeekStart); err != nil {
 		return Entry{}, "", err
 	}

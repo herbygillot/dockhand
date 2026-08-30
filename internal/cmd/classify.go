@@ -31,15 +31,26 @@ func Classify(rc *RunContext) *cobra.Command {
 				return err
 			}
 
+			// A survey redirected to a file must not report success on a
+			// partial write: exiting 0 over a truncated census would
+			// misreport the tree. Sweep drains its results on this
+			// goroutine, so the first failure is captured without a lock.
 			var census classify.Census
+			var writeErr error
 			classify.Sweep(cmd.Context(), p, targets, func(r classify.Result) {
 				census.Add(r)
 				if declines && r.Outcome != classify.Located {
-					fmt.Fprintf(rc.Out, "%-14s %s\t%s\n", r.Outcome, r.Target.Portdir, r.Detail)
+					if _, err := fmt.Fprintf(rc.Out, "%-14s %s\t%s\n",
+						r.Outcome, r.Target.Portdir, r.Detail); err != nil && writeErr == nil {
+						writeErr = err
+					}
 				}
 			})
-			fmt.Fprint(rc.Out, census.String())
-			return nil
+			if writeErr != nil {
+				return writeErr
+			}
+			_, err = fmt.Fprint(rc.Out, census.String())
+			return err
 		},
 	}
 	c.Flags().IntVarP(&workers, "workers", "j", min(8, runtime.NumCPU()),
