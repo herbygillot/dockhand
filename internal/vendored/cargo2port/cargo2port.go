@@ -35,6 +35,15 @@ const (
 	ToolName = "cargo2port"
 	// LockName is the file the generator reads.
 	LockName = "Cargo.lock"
+	// AlignFlag asks the generator for the column layout the ports tree
+	// actually uses: the crate name left-aligned, the version right-
+	// aligned against a common column. It is not the tool's default,
+	// and the difference is not cosmetic in the way it looks — a block
+	// written in one layout and regenerated in another rewrites every
+	// line it did not change. 224 of the tree's cargo blocks are in
+	// this layout against 5 in the alternative, and generating tokei's
+	// block with it reproduces the committed one byte for byte.
+	AlignFlag = "--align=justify"
 	// Kind is the block this package generates.
 	Kind = vendored.CargoCrates
 )
@@ -90,6 +99,12 @@ func Lockfile(ctx context.Context, archives []string, worksrcdir string) (data [
 // the command text with no trailing newline — the shape that replaces a
 // located block's span.
 //
+// The block is taken from the tool verbatim; what this package chooses
+// is the layout to ask for, not how to lay it out. Reflowing the output
+// would mean parsing what it has no business reading, but requesting the
+// tree's own alignment keeps a regenerated block's diff to the crates
+// that actually moved.
+//
 // The lockfile is passed as bytes rather than a path because it comes
 // from inside a distfile: the caller extracted it, and staging it under
 // root keeps every caller from having to.
@@ -109,7 +124,7 @@ func Generate(ctx context.Context, root tempdir.Root, lock []byte) ([]byte, erro
 	}
 
 	var out, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, bin, path)
+	cmd := exec.CommandContext(ctx, bin, AlignFlag, path)
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

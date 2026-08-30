@@ -2,6 +2,7 @@ package cargo2port
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -97,4 +98,41 @@ func afterCommandName(block string) string {
 		out = append(out, r)
 	}
 	return string(out)
+}
+
+// The layout is requested, not accepted: the tool's default is a third
+// thing that matches neither named mode, and regenerating a justified
+// block without asking would rewrite every line in it.
+func TestGenerateRequestsTheTreesAlignment(t *testing.T) {
+	testenv.Tool(t, ToolName)
+	// Names and versions of differing widths, so the layouts diverge.
+	const lock = `version = 3
+
+[[package]]
+name = "aho-corasick"
+version = "1.1.3"
+checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
+
+[[package]]
+name = "libgit2-sys"
+version = "0.17.0+1.8.1"
+checksum = "10472326a8a6477c3c20a64547b0059e4b0d086869eee31e6d7da728a8eb7224"
+`
+	block, err := Generate(context.Background(), tempdir.Root{}, []byte(lock))
+	require.NoError(t, err)
+
+	// Justified means the version column is right-aligned: every version
+	// ends at the same offset, while the names start at the same one.
+	var ends, starts []int
+	for _, line := range strings.Split(string(block), "\n")[1:] {
+		fields := strings.Fields(strings.TrimSuffix(strings.TrimSpace(line), `\`))
+		if len(fields) != 3 {
+			continue
+		}
+		starts = append(starts, strings.Index(line, fields[0]))
+		ends = append(ends, strings.Index(line, fields[1])+len(fields[1]))
+	}
+	require.Len(t, ends, 2)
+	assert.Equal(t, ends[0], ends[1], "versions must end at a common column")
+	assert.Equal(t, starts[0], starts[1], "names must start at a common column")
 }
