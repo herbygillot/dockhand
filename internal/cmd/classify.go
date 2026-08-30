@@ -31,17 +31,6 @@ func Classify() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// The census sweeps whole Portfiles, so targets flatten to
-			// unique portdirs; the subport a name resolved to matters
-			// to point commands, not to a survey.
-			var portdirs []string
-			seen := make(map[string]bool)
-			for _, tgt := range targets {
-				if !seen[tgt.Portdir] {
-					seen[tgt.Portdir] = true
-					portdirs = append(portdirs, tgt.Portdir)
-				}
-			}
 			pfx, err := resolvePrefix(cmd)
 			if err != nil {
 				return err
@@ -53,10 +42,10 @@ func Classify() *cobra.Command {
 			defer p.Close()
 
 			var census classify.Census
-			classify.Sweep(cmd.Context(), p, portdirs, func(r classify.Result) {
+			classify.Sweep(cmd.Context(), p, targets, func(r classify.Result) {
 				census.Add(r)
 				if declines && r.Outcome != classify.Located {
-					fmt.Printf("%-14s %s\t%s\n", r.Outcome, r.Portdir, r.Detail)
+					fmt.Printf("%-14s %s\t%s\n", r.Outcome, r.Target.Portdir, r.Detail)
 				}
 			})
 			fmt.Print(census.String())

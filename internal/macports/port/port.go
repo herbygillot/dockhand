@@ -14,7 +14,6 @@ package port
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -96,9 +95,23 @@ func (h Handle) FetchInfo(ctx context.Context, noMirrors bool) (eval.FetchInfo, 
 	return h.Ev.FetchInfo(ctx, h.Target.Portdir, h.Target.Subport, h.Variants, noMirrors)
 }
 
+// ParseError reports a Portfile that does not parse as Tcl. It is typed
+// because "could not be read" and "did not parse" are different facts
+// about a port — the census counts them apart — and only the reader
+// knows which it is looking at.
+type ParseError struct {
+	Path   string
+	Detail string
+}
+
+// Error implements the error interface.
+func (e *ParseError) Error() string { return "port: " + e.Path + ": " + e.Detail }
+
 // Source reads and parses the Portfile: the text half of the design's
 // asymmetry, where Values is the evaluated half. Spans in the returned
-// tree index into the returned bytes, so the two travel together.
+// tree index into the returned bytes, so the two travel together. A
+// Portfile that does not parse returns a *ParseError; a Portfile that
+// cannot be read returns the filesystem's error.
 func (h Handle) Source() ([]byte, *syntax.Script, error) {
 	path, err := h.Target.Portfile()
 	if err != nil {
@@ -110,7 +123,7 @@ func (h Handle) Source() ([]byte, *syntax.Script, error) {
 	}
 	cst, errs := syntax.Parse(src)
 	if len(errs) != 0 {
-		return nil, nil, fmt.Errorf("port: %s: %s", path, errs[0].Describe(src))
+		return nil, nil, &ParseError{Path: path, Detail: errs[0].Describe(src)}
 	}
 	return src, cst, nil
 }

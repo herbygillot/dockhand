@@ -10,7 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
+	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
@@ -26,6 +28,11 @@ func newEvaluator(t *testing.T) *eval.Evaluator {
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	return e
+}
+
+// handle binds a portdir to an evaluator, as the sweep does.
+func handle(ev *eval.Evaluator, portdir string) port.Handle {
+	return port.New(tree.Target{Portdir: portdir}, ev)
 }
 
 func portdir(t *testing.T, portfile string) string {
@@ -44,7 +51,7 @@ func fixturedir(t *testing.T, name string) string {
 
 func TestClassifyLiteralVersion(t *testing.T) {
 	e := newEvaluator(t)
-	r := Port(context.Background(), e, portdir(t, "PortSystem 1.0\nname x\nversion 1.2.3\ncategories devel\n"))
+	r := Port(context.Background(), handle(e, portdir(t, "PortSystem 1.0\nname x\nversion 1.2.3\ncategories devel\n")))
 	require.Equal(t, Located, r.Outcome)
 	require.Equal(t, portstyle.VersionLine, r.Style)
 	require.Equal(t, "x", r.Name)
@@ -52,22 +59,22 @@ func TestClassifyLiteralVersion(t *testing.T) {
 
 func TestClassifyPortgroupStyle(t *testing.T) {
 	e := newEvaluator(t)
-	r := Port(context.Background(), e, fixturedir(t, "math__ivy"))
+	r := Port(context.Background(), handle(e, fixturedir(t, "math__ivy")))
 	require.Equal(t, Located, r.Outcome)
 	require.Equal(t, portstyle.GoSetup, r.Style)
 }
 
 func TestClassifyComputedVersion(t *testing.T) {
 	e := newEvaluator(t)
-	r := Port(context.Background(), e, portdir(t,
-		"PortSystem 1.0\nname x\nset major 1\nversion ${major}.5\ncategories devel\n"))
+	r := Port(context.Background(), handle(e, portdir(t,
+		"PortSystem 1.0\nname x\nset major 1\nversion ${major}.5\ncategories devel\n")))
 	require.Equal(t, NotLiteral, r.Outcome)
 	require.NotEmpty(t, r.Detail)
 }
 
 func TestClassifyEvalFailure(t *testing.T) {
 	e := newEvaluator(t)
-	r := Port(context.Background(), e, filepath.Join(t.TempDir(), "missing"))
+	r := Port(context.Background(), handle(e, filepath.Join(t.TempDir(), "missing")))
 	require.Equal(t, EvalFailed, r.Outcome)
 	require.NotEmpty(t, r.Detail)
 }

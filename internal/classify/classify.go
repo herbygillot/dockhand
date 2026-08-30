@@ -4,22 +4,19 @@
 // since before any code existed — measured style coverage and a typed
 // decline distribution, replacing estimates.
 //
-// This package is the engine only: it classifies portdirs it is handed and
-// aggregates results. Walking a tree and rendering a report belong to its
-// callers.
+// This package is the engine only: it classifies the ports it is handed
+// and aggregates results. Walking a tree and rendering a report belong
+// to its callers.
 package classify
 
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
@@ -63,7 +60,7 @@ func (o Outcome) String() string {
 // Result is one port's classification. Style and Span are meaningful only
 // for Located; Detail carries the failure's diagnostic otherwise.
 type Result struct {
-	Portdir string
+	Target  tree.Target
 	Name    string
 	Outcome Outcome
 	Style   portstyle.Type
@@ -71,11 +68,12 @@ type Result struct {
 	Detail  string
 }
 
-// Port classifies a single portdir using the given evaluator.
-func Port(ctx context.Context, ev *eval.Evaluator, portdir string) Result {
-	r := Result{Portdir: portdir}
+// Port classifies the evaluation context a handle names: the top-level
+// port, or the subport when the handle carries one.
+func Port(ctx context.Context, h port.Handle) Result {
+	r := Result{Target: h.Target}
 
-	vals, err := ev.Top(ctx, portdir, "")
+	vals, err := h.Values(ctx)
 	if err != nil {
 		r.Outcome = EvalFailed
 		r.Detail = err.Error()
@@ -83,20 +81,21 @@ func Port(ctx context.Context, ev *eval.Evaluator, portdir string) Result {
 	}
 	r.Name = vals.Name
 
-	src, err := os.ReadFile(filepath.Join(portdir, macports.PortfileName))
+	src, cst, err := h.Source()
 	if err != nil {
-		r.Outcome = EvalFailed
-		r.Detail = err.Error()
-		return r
-	}
-	tree, errs := syntax.Parse(src)
-	if len(errs) != 0 {
-		r.Outcome = ParseFailed
-		r.Detail = errs[0].Describe(src)
+		// Unparseable and unreadable are different census facts.
+		var pe *port.ParseError
+		if errors.As(err, &pe) {
+			r.Outcome = ParseFailed
+			r.Detail = pe.Detail
+		} else {
+			r.Outcome = EvalFailed
+			r.Detail = err.Error()
+		}
 		return r
 	}
 
-	loc, err := portstyle.Locate(src, tree, vals, info.FieldVersion)
+	loc, err := portstyle.Locate(src, cst, vals, info.FieldVersion)
 	if err != nil {
 		var d *portstyle.Decline
 		if errors.As(err, &d) {
