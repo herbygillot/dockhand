@@ -97,3 +97,17 @@ func TestVersion(t *testing.T) {
 	_, err = Prefix("/opt/local").Version(context.Background())
 	require.Error(t, err)
 }
+
+// A verification backend drives an installation that is not this
+// machine's — inside a VM, or an ephemeral prefix made for one run — so
+// path construction must work on a Prefix that was never validated.
+func TestLayoutPathsNeedNoValidation(t *testing.T) {
+	p := Prefix("/opt/local")
+	assert.Equal(t, "/opt/local/bin/port", p.Port())
+	assert.Equal(t, "/opt/local/bin/portindex", p.Portindex())
+	assert.Equal(t, "/opt/local/etc/macports/sources.conf", p.SourcesConf())
+
+	e := Prefix("/opt/dockhand/e/abc123")
+	assert.Equal(t, "/opt/dockhand/e/abc123/bin/portindex", e.Portindex())
+	assert.Equal(t, "/opt/dockhand/e/abc123/etc/macports/sources.conf", e.SourcesConf())
+}

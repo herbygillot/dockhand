@@ -38,6 +38,18 @@ func (p Prefix) Port() string {
 	return filepath.Join(string(p), "bin", macports.CommandName)
 }
 
+// Portindex returns the path of the installation's tree indexer.
+func (p Prefix) Portindex() string {
+	return filepath.Join(string(p), "bin", macports.IndexCommandName)
+}
+
+// SourcesConf returns the path of the file listing the ports trees this
+// installation reads. Putting a tree ahead of the others there is how a
+// caller makes an edited port win over the installation's own copy.
+func (p Prefix) SourcesConf() string {
+	return filepath.Join(string(p), macports.SourcesConfPath)
+}
+
 // lookPath is indirected for hermetic tests.
 var lookPath = exec.LookPath
 

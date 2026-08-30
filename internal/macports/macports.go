@@ -37,4 +37,12 @@ const (
 
 	// CommandName is the file name of the port client, alongside it.
 	CommandName = "port"
+
+	// IndexCommandName is the name of the tool that builds a tree's
+	// PortIndex, in the installation's bin directory.
+	IndexCommandName = "portindex"
+
+	// SourcesConfPath is the path, relative to an installation's
+	// prefix, of the file listing the ports trees it reads.
+	SourcesConfPath = "etc/macports/sources.conf"
 )
