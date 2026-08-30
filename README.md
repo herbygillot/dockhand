@@ -15,14 +15,19 @@ A port maintenance utility for [MacPorts](https://www.macports.org).
 > renamed, commands get added, and signatures move between commits. There
 > is no release, no stability promise, and no migration path. Try it, take
 > ideas from it, but do not build on it yet.
+>
+> It also **edits Portfiles in place.** `bump` writes to your ports tree
+> unless you ask it not to with `--plan`. Point it at a checkout whose
+> changes you can throw away.
 
 ## What it is
 
 Keeping a MacPorts port up to date is mechanical and tedious: read the
 new version, fetch the distfile, update three checksums, reset the
 revision, regenerate whatever a PortGroup vendored, and hope nothing else
-moved. `dockhand` does that work — but the interesting part is how it
-avoids getting it wrong.
+moved. `dockhand` does that work, and by default it makes the change
+rather than suggesting one — so the interesting part is how it avoids
+getting it wrong.
 
 **It never parses a Portfile to decide what it means.** A Portfile is a
 Tcl program, so the only thing that can say what it evaluates to is
@@ -113,6 +118,9 @@ located by style:
 
 ### Bump a port
 
+This is the one that writes. It plans the change, prints what it is about
+to do, then does it:
+
 ```bash
 dockhand bump jq                    # to the newest upstream release
 dockhand bump --to 1.8.2 jq         # to a version you name
@@ -127,8 +135,8 @@ reports: the port's own `livecheck`, and the tags on its upstream forge.
 A disagreement is worth knowing about — it usually means a `livecheck`
 regex has quietly rotted while releases kept happening.
 
-`bump` writes the change. Before it does, it prints what it is about to
-do:
+The summary goes to stderr and is printed before the Portfile is
+touched:
 
 ```
 plan: bump …/www/geckodriver (subport geckodriver), 5 edits
@@ -167,7 +175,8 @@ dockhand bump --force jq
 The version is not rewritten to itself and the revision is left alone;
 what gets re-derived is everything downstream — the distfile is fetched
 again and its checksums compared, and a vendored block is regenerated
-from the lockfile inside it. If nothing moved, the plan is empty.
+from the lockfile inside it. If nothing moved it reports zero edits and
+leaves the file alone, which is the common and correct outcome.
 
 ### Look before you leap
 
