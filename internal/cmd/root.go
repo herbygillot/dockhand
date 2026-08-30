@@ -35,14 +35,20 @@ func Root(version string) *cobra.Command {
 	// Pre-defining the version flag gives it the -V shorthand; cobra
 	// only adds its own (shorthand-less) flag when none exists.
 	root.Flags().BoolP("version", "V", false, "print the version")
-	// Globals: every command that talks to a MacPorts installation or a
-	// ports tree resolves them through these flags.
+
+	// Global flags. Every command that talks to a MacPorts installation
+	// or a ports tree resolves them through these, so a command needing
+	// either inherits it rather than declaring its own.
+
 	root.PersistentFlags().StringP("prefix", "p", os.Getenv("DOCKHAND_PREFIX"),
 		"MacPorts installation prefix (default $DOCKHAND_PREFIX, else discovered)")
+
 	root.PersistentFlags().StringP("tree", "t", os.Getenv("DOCKHAND_TREE"),
 		"ports tree root (default $DOCKHAND_TREE)")
+
 	root.PersistentFlags().BoolVar(&debug, "debug", false,
 		"print debug output to stderr")
+
 	// Flag-parse failures are usage errors; cobra's own are untyped.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
