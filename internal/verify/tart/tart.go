@@ -33,24 +33,59 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// Provider verifies against a tart guest cloned from Base.
+// Base is one prepared VM: a Cirrus Labs image with MacPorts installed,
+// and the macOS release it runs.
+//
+// dockhand does not build these — an image is a machine fact doctor
+// probes for, like any other tool. Nothing else is required of it: the
+// guest agent and passwordless sudo are already in those images.
+//
+// The release is stated rather than probed because an image is prepared
+// once and its release does not change, and probing would mean booting
+// a guest to answer a question about an image.
+type Base struct {
+	VM      string
+	Release platform.Release
+}
+
+// Provider verifies against tart guests cloned from prepared bases.
+//
+// There is a list of them rather than one because a machine may hold a
+// base per macOS release, and those are several platforms of one
+// provider rather than several providers. Which one a verification uses
+// is the request's business.
 type Provider struct {
-	// Base is the prepared VM: a Cirrus Labs image with MacPorts
-	// installed. dockhand does not build it — the image is a machine
-	// fact doctor probes for, like any other tool. Nothing else is
-	// required of it: the guest agent and passwordless sudo are already
-	// in those images.
-	Base string
-	// Platform is the macOS release the guest runs. It is stated rather
-	// than probed because a base image is prepared once and its release
-	// does not change, and probing would mean booting a guest to answer
-	// a question about an image.
-	Platform platform.Release
-	// Prefix is the MacPorts installation inside the guest. It is a
+	// Bases are the prepared images, in preference order: the first is
+	// what a request that names no platform gets.
+	Bases []Base
+	// MacPorts is the version Provision installs. Empty takes the
+	// newest version dockhand has a shim for, which pins the
+	// environment to something verified rather than to whatever is
+	// newest upstream today.
+	MacPorts string
+	// Prefix is the MacPorts installation inside the guests. It is a
 	// field rather than a constant because the next backend is an
 	// ephemeral prefix, which is by definition not the conventional
 	// one; the zero value means the conventional one.
 	Prefix prefix.Prefix
+}
+
+// baseFor picks the image a request asks for. A release this provider
+// has no image for is refused, never substituted — a build on one macOS
+// is not evidence about another.
+func (p Provider) baseFor(r platform.Release) (Base, error) {
+	if len(p.Bases) == 0 {
+		return Base{}, fmt.Errorf("%w: no base images (see doctor)", verify.ErrNoEnvironment)
+	}
+	if r.IsZero() {
+		return p.Bases[0], nil
+	}
+	for _, b := range p.Bases {
+		if b.Release == r {
+			return b, nil
+		}
+	}
+	return Base{}, fmt.Errorf("%w: no base image for %s", verify.ErrUnsupported, r)
 }
 
 // prefixOf is the guest's installation, defaulting to the conventional
@@ -60,6 +95,14 @@ func (p Provider) prefixOf() prefix.Prefix {
 		return prefix.Prefix(macports.DefaultPrefix)
 	}
 	return p.Prefix
+}
+
+// BaseName is what dockhand calls the image it prepared for a release.
+// dockhand names these itself, which is what makes reading the release
+// back out of a name honest rather than a guess at someone else's
+// scheme.
+func BaseName(r platform.Release) string {
+	return "dockhand-base-" + strings.ToLower(r.CompactName())
 }
 
 const (
@@ -82,18 +125,27 @@ const (
 // MacPorts already installed is precisely the warm state that
 // proposition exists to detect.
 func (p Provider) Capabilities() verify.Capabilities {
+	platforms := make([]platform.Release, 0, len(p.Bases))
+	for _, b := range p.Bases {
+		platforms = append(platforms, b.Release)
+	}
 	return verify.Capabilities{
 		Name:         "tart",
 		Propositions: []verify.Proposition{verify.PortViability},
 		Pristine:     true,
 		Interactive:  true,
-		Platform:     p.Platform,
-		Concurrent:   concurrent,
+		Platforms:    platforms,
+		// Apple's limit on macOS guests, and a property of the machine
+		// rather than of any one image: two guests total, not two per
+		// platform.
+		Concurrent: concurrent,
 	}
 }
 
-// tartRun executes a tart subcommand, optionally piping stdin.
-func tartRun(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
+// CLI executes a tart subcommand, optionally piping stdin. It is
+// exported because provisioning drives the same tool: one place knows
+// how tart is invoked.
+func CLI(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
 	var buf bytes.Buffer
 	cmd := exec.CommandContext(ctx, "tart", args...)
 	cmd.Stdin = stdin
@@ -102,10 +154,10 @@ func tartRun(ctx context.Context, stdin io.Reader, args ...string) (string, erro
 	return buf.String(), err
 }
 
-// in runs a command in the guest. Arguments are argv, not a command
+// Exec runs a command in the guest. Arguments are argv, not a command
 // line: nothing here is quoted because nothing here reaches a shell.
-func in(ctx context.Context, vm string, argv ...string) (string, error) {
-	return tartRun(ctx, nil, append([]string{"exec", vm}, argv...)...)
+func Exec(ctx context.Context, vm string, argv ...string) (string, error) {
+	return CLI(ctx, nil, append([]string{"exec", vm}, argv...)...)
 }
 
 // Submit clones the base, stages the edited ports, and starts a
@@ -116,16 +168,23 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	if req.Port == "" {
 		return verify.Job{}, fmt.Errorf("%w: no port named", verify.ErrUnsupported)
 	}
-	if out, err := tartRun(ctx, nil, "list", "--source", "local"); err != nil || !strings.Contains(out, p.Base) {
-		return verify.Job{}, fmt.Errorf("%w: no base VM %q (see doctor)", verify.ErrNoEnvironment, p.Base)
+	base, err := p.baseFor(req.Platform)
+	if err != nil {
+		return verify.Job{}, err
+	}
+	if out, err := CLI(ctx, nil, "list", "--source", "local"); err != nil || !strings.Contains(out, base.VM) {
+		return verify.Job{}, fmt.Errorf("%w: no base VM %q (see doctor)", verify.ErrNoEnvironment, base.VM)
 	}
 
 	name := workerPrefix + stamp()
-	if out, err := tartRun(ctx, nil, "clone", p.Base, name); err != nil {
+	if out, err := CLI(ctx, nil, "clone", base.VM, name); err != nil {
 		return verify.Job{}, fmt.Errorf("%w: clone: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	job := verify.Job{Provider: "tart", ID: name, Started: time.Now()}
 
+	// The guest outlives this call, so every failure from here on must
+	// take it with it: a leaked worker holds one of two licence slots
+	// and blocks the next verification outright.
 	// The guest outlives this call, so every failure from here on must
 	// take it with it: a leaked worker holds one of two licence slots
 	// and blocks the next verification outright.
@@ -134,9 +193,9 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		return verify.Job{}, err
 	}
 	//nolint:errcheck // the guest is detached from this process by design
-	go tartRun(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+	go CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
 
-	if err := p.waitAgent(ctx, name); err != nil {
+	if err := WaitAgent(ctx, name); err != nil {
 		return fail(err)
 	}
 	if err := p.stage(ctx, name, req); err != nil {
@@ -148,11 +207,12 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	return job, nil
 }
 
-// waitAgent waits for the guest agent to answer, which is the only
-// readiness signal that matters: there is no address to wait for.
-func (p Provider) waitAgent(ctx context.Context, vm string) error {
+// WaitAgent waits for the guest agent to answer, which is the only
+// readiness signal that matters once an image is provisioned: there is
+// no address to wait for.
+func WaitAgent(ctx context.Context, vm string) error {
 	for i := 0; i < 120; i++ {
-		if _, err := in(ctx, vm, "/usr/bin/true"); err == nil {
+		if _, err := Exec(ctx, vm, "/usr/bin/true"); err == nil {
 			return nil
 		}
 		select {
@@ -170,7 +230,7 @@ func (p Provider) waitAgent(ctx context.Context, vm string) error {
 // then quietly test the tree's copy of the port instead of the one
 // under test.
 func (p Provider) stage(ctx context.Context, vm string, req verify.Request) error {
-	if _, err := in(ctx, vm, "/bin/sh", "-c", "rm -rf "+overlayDir+" && mkdir -p "+overlayDir); err != nil {
+	if _, err := Exec(ctx, vm, "/bin/sh", "-c", "rm -rf "+overlayDir+" && mkdir -p "+overlayDir); err != nil {
 		return fmt.Errorf("%w: preparing the overlay: %w", verify.ErrNoEnvironment, err)
 	}
 	for _, dir := range req.Portdirs {
@@ -190,14 +250,14 @@ func (p Provider) stage(ctx context.Context, vm string, req verify.Request) erro
 		if err := tar.Start(); err != nil {
 			return fmt.Errorf("%w: reading %s: %w", verify.ErrNoEnvironment, dir, err)
 		}
-		out, xerr := tartRun(ctx, pipe, "exec", "-i", vm, "/usr/bin/tar", "xf", "-", "-C", overlayDir)
+		out, xerr := CLI(ctx, pipe, "exec", "-i", vm, "/usr/bin/tar", "xf", "-", "-C", overlayDir)
 		werr := tar.Wait()
 		if xerr != nil || werr != nil {
 			return fmt.Errorf("%w: staging %s: %s", verify.ErrNoEnvironment, dir, strings.TrimSpace(out))
 		}
 	}
 
-	out, err := in(ctx, vm, "/bin/sh", "-c", "cd "+overlayDir+" && exec "+p.prefixOf().Portindex())
+	out, err := Exec(ctx, vm, "/bin/sh", "-c", "cd "+overlayDir+" && exec "+p.prefixOf().Portindex())
 	if err != nil {
 		return fmt.Errorf("%w: indexing the overlay: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
@@ -216,7 +276,7 @@ func (p Provider) stage(ctx context.Context, vm string, req verify.Request) erro
 	conf := p.prefixOf().SourcesConf()
 	line := build.SourcesLine(overlayDir)
 	script := fmt.Sprintf(`grep -qxF "$1" %[1]s || { printf '%%s\n' "$1" | cat - %[1]s > /tmp/sc && sudo -n cp /tmp/sc %[1]s; }`, conf)
-	if out, err := in(ctx, vm, "/bin/sh", "-c", script, "sh", line); err != nil {
+	if out, err := Exec(ctx, vm, "/bin/sh", "-c", script, "sh", line); err != nil {
 		return fmt.Errorf("%w: adding the overlay source: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	return nil
@@ -244,14 +304,14 @@ nohup /bin/sh -c '
 // rather than to this process.
 func (p Provider) launch(ctx context.Context, vm string, req verify.Request) error {
 	argv := build.InstallArgs(req.Port, req.Variants, len(req.FromSource) > 0)
-	if _, err := in(ctx, vm, "/bin/sh", "-c", "mkdir -p "+stateDir); err != nil {
+	if _, err := Exec(ctx, vm, "/bin/sh", "-c", "mkdir -p "+stateDir); err != nil {
 		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
 	}
 	body := strings.NewReader(strings.Join(argv, "\n") + "\n")
-	if out, err := tartRun(ctx, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv"); err != nil {
+	if out, err := CLI(ctx, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv"); err != nil {
 		return fmt.Errorf("%w: writing the argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
-	if out, err := in(ctx, vm, "/bin/sh", "-c", runner(p.prefixOf().Port())); err != nil {
+	if out, err := Exec(ctx, vm, "/bin/sh", "-c", runner(p.prefixOf().Port())); err != nil {
 		return fmt.Errorf("%w: launching the build: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	return nil
@@ -262,17 +322,17 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 	if job.Provider != "tart" {
 		return verify.Status{}, fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
 	}
-	out, err := tartRun(ctx, nil, "list", "--source", "local")
+	out, err := CLI(ctx, nil, "list", "--source", "local")
 	if err != nil || !strings.Contains(out, job.ID) {
 		return verify.Status{}, fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
-	state, err := in(ctx, job.ID, "/bin/cat", stateDir+"/state")
+	state, err := Exec(ctx, job.ID, "/bin/cat", stateDir+"/state")
 	if err != nil {
 		// The guest is not answering yet, or no longer is. Either way it
 		// has not reported an outcome, and inventing one would be worse.
 		return verify.Status{State: verify.Running}, nil
 	}
-	log, _ := in(ctx, job.ID, "/usr/bin/tail", "-200", stateDir+"/log")
+	log, _ := Exec(ctx, job.ID, "/usr/bin/tail", "-200", stateDir+"/log")
 
 	switch strings.TrimSpace(state) {
 	case "passed":
@@ -290,9 +350,21 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 
 // Release discards the worker, and with it any debug handle.
 func (p Provider) Release(ctx context.Context, job verify.Job) error {
-	_, _ = tartRun(ctx, nil, "stop", job.ID)
-	if out, err := tartRun(ctx, nil, "delete", job.ID); err != nil {
+	_, _ = CLI(ctx, nil, "stop", job.ID)
+	if out, err := CLI(ctx, nil, "delete", job.ID); err != nil {
 		return fmt.Errorf("verify/tart: releasing %s: %s", job.ID, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// GoldenName is the untouched reference copy of a base image. It is
+// never started, so it is the one thing on the machine that provisioned
+// state cannot drift out of; restoring a base means cloning from it,
+// which under copy-on-write costs neither time nor disk.
+//
+// It is deliberately not derived from BaseName by suffixing: a golden
+// named dockhand-base-sequoia-golden would contain the base's own name,
+// and everything that looks a base up by substring would find two.
+func GoldenName(r platform.Release) string {
+	return "dockhand-golden-" + strings.ToLower(r.CompactName())
 }

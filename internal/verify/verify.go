@@ -68,10 +68,12 @@ type Capabilities struct {
 	// Interactive reports whether a failed run leaves an environment
 	// the user can enter (D7's handle).
 	Interactive bool
-	// Platform is the macOS release the environment builds for, which
-	// need not be the host's — a guest that is a different release from
-	// its host is the main reason to want one.
-	Platform platform.Release
+	// Platforms are the macOS releases this provider can build for.
+	// There is more than one because providers serve more than one: a
+	// CI backend offers whatever runner labels exist, and a VM backend
+	// offers whatever base images have been provisioned. Instantiating
+	// the provider once per platform would model neither.
+	Platforms []platform.Release
 	// Concurrent is how many verifications may run at once. For a
 	// macOS guest this is Apple's licence limit, not the machine's.
 	Concurrent int
@@ -81,6 +83,21 @@ type Capabilities struct {
 func (c Capabilities) Answers(p Proposition) bool {
 	for _, a := range c.Propositions {
 		if a == p {
+			return true
+		}
+	}
+	return false
+}
+
+// Supports reports whether the provider can build for a release. The
+// zero Release asks for the provider's default, which any provider with
+// a platform at all can meet.
+func (c Capabilities) Supports(r platform.Release) bool {
+	if r.IsZero() {
+		return len(c.Platforms) > 0
+	}
+	for _, p := range c.Platforms {
+		if p == r {
 			return true
 		}
 	}
@@ -103,6 +120,12 @@ type Request struct {
 	// default frame, which is not the same as "no variants" — a port's
 	// default_variants still apply.
 	Variants info.VariantSet
+	// Platform is the macOS release to build on. The zero value takes
+	// the provider's default, which is what a caller who does not care
+	// means and what a single-platform provider has anyway. A release
+	// the provider does not serve is refused rather than substituted: a
+	// build on Sonoma is not evidence about Sequoia.
+	Platform platform.Release
 	// FromSource names ports whose binary archives must be ignored.
 	// A version bump does not need this: the new version yields an
 	// archive name that does not exist yet, so MacPorts builds from

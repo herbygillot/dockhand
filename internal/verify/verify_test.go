@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 // fake is a provider that returns a scripted sequence of states.
@@ -63,4 +65,15 @@ func TestCapabilitiesAnswerOnlyWhatTheyClaim(t *testing.T) {
 	assert.True(t, c.Answers(PortViability))
 	assert.False(t, c.Answers(DeclarationCompleteness))
 	assert.False(t, Capabilities{}.Answers(PortViability), "claiming nothing answers nothing")
+}
+
+func TestSupportsIsPerRelease(t *testing.T) {
+	seq, _ := platform.ByName("Sequoia")
+	son, _ := platform.ByName("Sonoma")
+	c := Capabilities{Platforms: []platform.Release{seq}}
+	assert.True(t, c.Supports(seq))
+	assert.False(t, c.Supports(son))
+	assert.True(t, c.Supports(platform.Release{}), "the zero release asks for the default")
+	assert.False(t, Capabilities{}.Supports(platform.Release{}),
+		"a provider with no platforms has no default either")
 }
