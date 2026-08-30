@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/tempdir"
+
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -194,7 +196,7 @@ long_description computed version declines
 func newFetcher(t *testing.T) *portfetch.Fetcher {
 	t.Helper()
 	tclsh := testenv.PortTclsh(t)
-	f, err := portfetch.New(context.Background(), prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))))
+	f, err := portfetch.New(context.Background(), prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))), tempdir.Root{})
 	require.NoError(t, err)
 	t.Cleanup(f.Close)
 	return f

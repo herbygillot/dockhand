@@ -20,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
 // Handle addresses one evaluation context: the Portfile at Target's
@@ -29,6 +30,11 @@ type Handle struct {
 	Target   tree.Target
 	Ev       *eval.Evaluator
 	Variants info.VariantSet
+	// TempDir is where Shadow materializes its copies. The zero value
+	// is the system temporary directory, so a handle built without one
+	// still works; a run supplies its own so the copies it leaves
+	// behind can be attributed to it.
+	TempDir tempdir.Root
 }
 
 // New returns a handle on a resolved target, under the default variant
@@ -52,6 +58,13 @@ func (h Handle) At(portdir string) Handle {
 // SubportNames or from target resolution are valid by construction.
 func (h Handle) Subport(name string) Handle {
 	h.Target.Subport = name
+	return h
+}
+
+// WithTempDir derives a handle whose shadows are materialized under the
+// given root, rather than straight into the system temporary directory.
+func (h Handle) WithTempDir(root tempdir.Root) Handle {
+	h.TempDir = root
 	return h
 }
 

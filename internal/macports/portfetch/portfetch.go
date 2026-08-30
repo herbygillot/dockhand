@@ -30,6 +30,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/shim"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
+	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
 //go:embed shims
@@ -47,13 +48,17 @@ var ErrRootRefused = errors.New("portfetch: refusing to run as root: fetching ne
 // Fetcher is a fetch session over one installation's port-tclsh. Not
 // safe for concurrent use; downloads through one Fetcher are serial.
 type Fetcher struct {
-	sess   *rpc.Session
-	tmpDir string
-	n      int
+	sess    *rpc.Session
+	tmpDir  string
+	removeD func()
+	n       int
 }
 
-// New starts the fetch session against an installation.
-func New(ctx context.Context, pfx prefix.Prefix) (*Fetcher, error) {
+// New starts the fetch session against an installation. The session's
+// own working files — livecheck logs, nothing a caller named — go under
+// the given temporary root; the zero root puts them in the system
+// temporary directory.
+func New(ctx context.Context, pfx prefix.Prefix, root tempdir.Root) (*Fetcher, error) {
 	if os.Geteuid() == 0 {
 		return nil, ErrRootRefused
 	}
@@ -77,18 +82,18 @@ func New(ctx context.Context, pfx prefix.Prefix) (*Fetcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("portfetch: initializing fetch session: %w", err)
 	}
-	tmpDir, err := os.MkdirTemp("", "dockhand-fetch-*")
+	tmpDir, removeDir, err := root.MakeDir("portfetch")
 	if err != nil {
 		sess.Close() //nolint:errcheck // best-effort on the error path
 		return nil, err
 	}
-	return &Fetcher{sess: sess, tmpDir: tmpDir}, nil
+	return &Fetcher{sess: sess, tmpDir: tmpDir, removeD: removeDir}, nil
 }
 
 // Close shuts the session down and removes any fetched remains.
 func (f *Fetcher) Close() {
-	f.sess.Close()         //nolint:errcheck // best-effort shutdown
-	os.RemoveAll(f.tmpDir) //nolint:errcheck // temp dir cleanup
+	f.sess.Close() //nolint:errcheck // best-effort shutdown
+	f.removeD()
 }
 
 // Fetch downloads one distfile to dest, trying urls in order — the

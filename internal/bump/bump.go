@@ -25,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/vendored"
 	"github.com/herbygillot/dockhand/internal/vendored/cargo2port"
@@ -172,11 +173,11 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 				Detail: "every distfile comes from a vendored block"}
 		}
 
-		fetchDir, err := os.MkdirTemp("", "dockhand-bump-*")
+		fetchDir, removeFetched, err := h.TempDir.MakeDir("distfiles")
 		if err != nil {
 			return nil, err
 		}
-		defer os.RemoveAll(fetchDir) //nolint:errcheck // temp dir cleanup
+		defer removeFetched()
 
 		fetchOpts := distfile.Options{
 			DisableEPSV:   fi.DisableEPSV,
@@ -216,7 +217,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 		// just fetched, so the crate set and the checksum recorded for
 		// that distfile describe the same bytes.
 		if vals.Vendored.CargoCrates != "" {
-			blockEdit, err := cargoBlockEdit(ctx, src, cst, vals, shadowVals.Worksrcdir, fetched)
+			blockEdit, err := cargoBlockEdit(ctx, h.TempDir, src, cst, vals, shadowVals.Worksrcdir, fetched)
 			if err != nil {
 				return nil, err
 			}
@@ -367,7 +368,7 @@ func ownRecords(recorded []checksums.Recorded, own []string) []checksums.Recorde
 
 // cargoBlockEdit regenerates a cargo.crates block from the Cargo.lock
 // inside the port's own distfiles.
-func cargoBlockEdit(ctx context.Context, src []byte, cst *syntax.Script, vals info.Values, worksrcdir string, fetched []string) (plan.Edit, error) {
+func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syntax.Script, vals info.Values, worksrcdir string, fetched []string) (plan.Edit, error) {
 	span, err := vendored.Locate(src, cst, portstyle.ScopeOf(src, vals.Name), cargo2port.Kind)
 	if err != nil {
 		return plan.Edit{}, err
@@ -377,7 +378,7 @@ func cargoBlockEdit(ctx context.Context, src []byte, cst *syntax.Script, vals in
 		return plan.Edit{}, err
 	}
 	slog.Debug("read lockfile", "from", filepath.Base(from), "bytes", len(lock))
-	block, err := cargo2port.Generate(ctx, lock)
+	block, err := cargo2port.Generate(ctx, root, lock)
 	if err != nil {
 		return plan.Edit{}, err
 	}

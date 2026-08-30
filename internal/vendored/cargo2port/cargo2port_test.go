@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
@@ -55,7 +56,7 @@ checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
 
 func TestGenerateWritesABlock(t *testing.T) {
 	testenv.Tool(t, ToolName)
-	block, err := Generate(context.Background(), []byte(oneCrateLock))
+	block, err := Generate(context.Background(), tempdir.Root{}, []byte(oneCrateLock))
 	require.NoError(t, err)
 	assert.Contains(t, string(block), "cargo.crates")
 	assert.Contains(t, string(block), "aho-corasick")
@@ -72,13 +73,13 @@ func TestGenerateWritesABlock(t *testing.T) {
 // the tool says so on stdout and exits zero.
 func TestGenerateRejectsLockWithNoCrates(t *testing.T) {
 	testenv.Tool(t, ToolName)
-	_, err := Generate(context.Background(), []byte("version = 3\n"))
+	_, err := Generate(context.Background(), tempdir.Root{}, []byte("version = 3\n"))
 	require.ErrorIs(t, err, vendored.ErrEmptyBlock)
 }
 
 func TestGenerateReportsToolFailure(t *testing.T) {
 	testenv.Tool(t, ToolName)
-	_, err := Generate(context.Background(), []byte("this is not toml\n"))
+	_, err := Generate(context.Background(), tempdir.Root{}, []byte("this is not toml\n"))
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, vendored.ErrEmptyBlock, "a parse failure is not an empty block")
 }

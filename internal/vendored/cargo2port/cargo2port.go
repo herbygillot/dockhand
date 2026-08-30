@@ -25,6 +25,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
 
@@ -90,18 +91,18 @@ func Lockfile(ctx context.Context, archives []string, worksrcdir string) (data [
 // located block's span.
 //
 // The lockfile is passed as bytes rather than a path because it comes
-// from inside a distfile: the caller extracted it, and staging it here
-// keeps every caller from having to.
-func Generate(ctx context.Context, lock []byte) ([]byte, error) {
+// from inside a distfile: the caller extracted it, and staging it under
+// root keeps every caller from having to.
+func Generate(ctx context.Context, root tempdir.Root, lock []byte) ([]byte, error) {
 	bin, err := exec.LookPath(ToolName)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", vendored.ErrNoGenerator, ToolName)
 	}
-	dir, err := os.MkdirTemp("", "dockhand-cargo-*")
+	dir, remove, err := root.MakeDir("cargo2port")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir) //nolint:errcheck // temp dir cleanup
+	defer remove()
 	path := filepath.Join(dir, LockName)
 	if err := os.WriteFile(path, lock, 0o644); err != nil {
 		return nil, err

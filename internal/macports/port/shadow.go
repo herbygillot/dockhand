@@ -2,7 +2,6 @@ package port
 
 import (
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -23,14 +22,9 @@ import (
 // Regular contents (files/, patches) are copied; symlinks — a work link
 // from a local build, say — are not part of the port and are skipped.
 func (h Handle) Shadow(portfile []byte) (Handle, func(), error) {
-	dir, err := os.MkdirTemp("", "dockhand-shadow-*")
+	dir, remove, err := h.TempDir.MakeDir("shadow")
 	if err != nil {
 		return Handle{}, nil, err
-	}
-	remove := func() {
-		if err := os.RemoveAll(dir); err != nil {
-			slog.Warn("shadow left behind", "dir", dir, "err", err)
-		}
 	}
 	if err := copyTree(dir, h.Target.Portdir); err != nil {
 		remove()

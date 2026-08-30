@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
 // Bump builds the bump subcommand: plan a version bump. Per the
@@ -57,7 +58,7 @@ func Bump() *cobra.Command {
 				return err
 			}
 			defer evs.Close()
-			fetcher, err := portfetch.New(cmd.Context(), pfx)
+			fetcher, err := portfetch.New(cmd.Context(), pfx, tempdir.Root{})
 			if err != nil {
 				return err
 			}
