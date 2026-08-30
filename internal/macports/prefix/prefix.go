@@ -9,11 +9,13 @@
 package prefix
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 )
@@ -64,4 +66,27 @@ func find(defaultPrefix string) (Prefix, error) {
 		return p, nil
 	}
 	return "", fmt.Errorf("%w (no %s on PATH or under %s)", ErrNotInstalled, macports.TclShellName, defaultPrefix)
+}
+
+// runVersion is indirected for hermetic tests.
+var runVersion = func(ctx context.Context, path string, args ...string) (string, error) {
+	out, err := exec.CommandContext(ctx, path, args...).Output()
+	return string(out), err
+}
+
+// Version reports the MacPorts version this installation runs, as the
+// port client states it. Callers that cannot determine a version are
+// expected to proceed on a best-effort default rather than fail: the
+// version selects among behaviors, it does not gate them.
+func (p Prefix) Version(ctx context.Context) (string, error) {
+	out, err := runVersion(ctx, p.Port(), "version")
+	if err != nil {
+		return "", fmt.Errorf("prefix: %s version: %w", p.Port(), err)
+	}
+	// "Version: 2.12.6"
+	_, v, ok := strings.Cut(strings.TrimSpace(out), ":")
+	if !ok {
+		return "", fmt.Errorf("prefix: %s version: unexpected output %q", p.Port(), strings.TrimSpace(out))
+	}
+	return strings.TrimSpace(v), nil
 }

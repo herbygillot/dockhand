@@ -2,19 +2,25 @@ package eval
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/shim"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
-//go:embed shim.tcl
-var shimScript string
+//go:embed shims
+var shimFS embed.FS
+
+// shimDir is the embedded shim set; see internal/macports/shim for how
+// one is chosen.
+const shimDir = "shims"
 
 // Evaluator owns a port-tclsh session with the MacPorts shim loaded.
 // It is not safe for concurrent use; parallelism arrives as a pool of
@@ -26,6 +32,9 @@ type Evaluator struct {
 type config struct {
 	allowRoot bool
 	platform  info.Platform
+	// macportsVersion selects the shim; empty means undetermined,
+	// which takes the newest shim available.
+	macportsVersion string
 }
 
 // Option configures New.
@@ -49,6 +58,15 @@ var ErrRootRefused = errors.New("eval: refusing to run as root: evaluation never
 // machine problem, not a port problem); the transport's own error stays
 // wrapped inside for detail.
 var ErrStartup = errors.New("eval: evaluator failed to start")
+
+// WithMacPortsVersion states which MacPorts the proc's port-tclsh
+// belongs to, so the matching shim is loaded. Callers that know the
+// installation — a pool does — should pass it; without it the newest
+// shim is used, which is right for a current MacPorts and best-effort
+// for an old one.
+func WithMacPortsVersion(v string) Option {
+	return func(c *config) { c.macportsVersion = v }
+}
 
 // WithPlatform evaluates every Portfile as though on the given platform,
 // via the same macports::override_vars mechanism base's portindex -p uses.
@@ -85,6 +103,12 @@ func New(ctx context.Context, proc *shell.Proc, opts ...Option) (*Evaluator, err
 		proc.Kill()
 		return nil, err
 	}
+	shimScript, named, err := shim.Select(shimFS, shimDir, cfg.macportsVersion)
+	if err != nil {
+		proc.Kill()
+		return nil, fmt.Errorf("%w: %w", ErrStartup, err)
+	}
+	slog.Debug("evaluator shim", "shim", named, "macports", cfg.macportsVersion)
 	inits := []string{shimScript}
 	if !cfg.platform.IsZero() {
 		inits = append(inits, platformOverrides(cfg.platform))

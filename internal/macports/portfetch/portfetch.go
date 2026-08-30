@@ -14,7 +14,7 @@ package portfetch
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,12 +27,17 @@ import (
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/macports/shim"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 )
 
-//go:embed fetch.tcl
-var fetchScript string
+//go:embed shims
+var shimFS embed.FS
+
+// shimDir is the embedded shim set; see internal/macports/shim for how
+// one is chosen.
+const shimDir = "shims"
 
 // ErrRootRefused mirrors eval's guard: fetching never requires
 // privileges, and mportinit carries writes that are dormant only for an
@@ -52,6 +57,18 @@ func New(ctx context.Context, pfx prefix.Prefix) (*Fetcher, error) {
 	if os.Geteuid() == 0 {
 		return nil, ErrRootRefused
 	}
+	// A shim mismatch degrades rather than blocks, so an installation
+	// that will not say its version still gets a fetcher.
+	version, err := pfx.Version(ctx)
+	if err != nil {
+		slog.Debug("macports version undetermined", "prefix", string(pfx), "err", err)
+	}
+	fetchScript, named, err := shim.Select(shimFS, shimDir, version)
+	if err != nil {
+		return nil, fmt.Errorf("portfetch: %w", err)
+	}
+	slog.Debug("fetch shim", "shim", named, "macports", version)
+
 	proc, err := shell.Start(ctx, pfx.PortTclsh())
 	if err != nil {
 		return nil, err

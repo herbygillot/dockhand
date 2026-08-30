@@ -1,6 +1,7 @@
 package prefix
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -70,4 +71,29 @@ func TestFindNotInstalled(t *testing.T) {
 	})
 	_, err := find(t.TempDir())
 	require.ErrorIs(t, err, ErrNotInstalled)
+}
+
+func TestVersion(t *testing.T) {
+	orig := runVersion
+	t.Cleanup(func() { runVersion = orig })
+
+	runVersion = func(context.Context, string, ...string) (string, error) {
+		return "Version: 2.12.6\n", nil
+	}
+	v, err := Prefix("/opt/local").Version(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "2.12.6", v)
+
+	// Unexpected output is an error, not a guess.
+	runVersion = func(context.Context, string, ...string) (string, error) {
+		return "something else\n", nil
+	}
+	_, err = Prefix("/opt/local").Version(context.Background())
+	require.Error(t, err)
+
+	runVersion = func(context.Context, string, ...string) (string, error) {
+		return "", errors.New("no port client")
+	}
+	_, err = Prefix("/opt/local").Version(context.Background())
+	require.Error(t, err)
 }

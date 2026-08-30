@@ -6,8 +6,10 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -61,6 +63,16 @@ func Probe() Report {
 	}
 
 	portTclsh := find(macports.TclShellName, prefix.Prefix(macports.DefaultPrefix).PortTclsh())
+	if portTclsh.Found {
+		// The MacPorts version is not trivia: it selects the Tcl shims
+		// dockhand speaks to this installation with.
+		pfx := prefix.Prefix(filepath.Dir(filepath.Dir(portTclsh.Path)))
+		if v, err := pfx.Version(context.Background()); err == nil {
+			portTclsh.Version = v
+		} else {
+			portTclsh.Note = "version undetermined; dockhand will use its newest shim"
+		}
+	}
 	tclsh := find("tclsh", "")
 	git := find("git", "")
 	if git.Found {

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -38,6 +39,13 @@ func New(ctx context.Context, pfx prefix.Prefix, size int, opts ...eval.Option) 
 	if size < 1 {
 		size = 1
 	}
+	// One probe for the whole pool: every evaluator it starts, now or
+	// as a replacement, speaks to the same installation.
+	version, err := pfx.Version(ctx)
+	if err != nil {
+		slog.Debug("macports version undetermined", "prefix", string(pfx), "err", err)
+	}
+	opts = append([]eval.Option{eval.WithMacPortsVersion(version)}, opts...)
 	p := &Pool{ctx: ctx, pfx: pfx, opts: opts, evs: make(map[*eval.Evaluator]bool)}
 	var lastErr error
 	for i := 0; i < size; i++ {
