@@ -7,27 +7,35 @@
 package cmd
 
 import (
-	"log/slog"
+	"context"
+	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
 
-// Root builds the dockhand command tree.
+// Root builds the dockhand command tree. The run it will execute is
+// created here and populated once the global flags are parsed, so every
+// command draws its prefix, tree, evaluators and temporary space from one
+// place instead of deriving them itself.
 func Root(version string) *cobra.Command {
-	var debug bool
+	root, _ := newRoot(version)
+	return root
+}
+
+// newRoot builds the tree along with the run it belongs to. Execute
+// needs both — the run has to be closed however the command ends.
+func newRoot(version string) (*cobra.Command, *RunContext) {
+	rc := &RunContext{}
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",
 		Version:      version,
 		SilenceUsage: true,
-		PersistentPreRun: func(*cobra.Command, []string) {
-			level := slog.LevelWarn
-			if debug {
-				level = slog.LevelDebug
-			}
-			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr,
-				&slog.HandlerOptions{Level: level})))
+		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
+			return rc.init(c)
 		},
 	}
 	root.SetErrPrefix("dockhand:")
@@ -46,15 +54,15 @@ func Root(version string) *cobra.Command {
 	root.PersistentFlags().StringP("tree", "t", os.Getenv("DOCKHAND_TREE"),
 		"ports tree root (default $DOCKHAND_TREE)")
 
-	root.PersistentFlags().BoolVar(&debug, "debug", false,
+	root.PersistentFlags().Bool("debug", false,
 		"print debug output to stderr")
 
 	// Flag-parse failures are usage errors; cobra's own are untyped.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
 	})
-	root.AddCommand(Apply(), Bump(), Classify(), Doctor(), versionCmd())
-	return root
+	root.AddCommand(Apply(rc), Bump(rc), Classify(rc), Doctor(rc), versionCmd())
+	return root, rc
 }
 
 // exactArgs is cobra.ExactArgs classified as a usage error.
@@ -69,11 +77,25 @@ func exactArgs(n int) cobra.PositionalArgs {
 
 // Execute runs the dockhand command tree against os.Args and returns
 // the process exit code.
+//
+// An interrupt cancels the run's context rather than killing the
+// process, so the deferred cleanup actually runs: without it a Ctrl-C
+// mid-fetch left the run's temporary files — shadowed portdirs, downloaded
+// distfiles — behind with nothing to attribute it to. A second signal
+// still kills outright, which is what a user pressing it twice means.
 func Execute(version string) int {
-	return execute(Root(version), os.Args[1:])
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return execute(ctx, version, os.Args[1:], os.Stdout, os.Stderr)
 }
 
-func execute(root *cobra.Command, args []string) int {
+func execute(ctx context.Context, version string, args []string, out, errOut io.Writer) int {
+	root, rc := newRoot(version)
+	// However the command ends — success, failure, interrupt — the run
+	// gives back what it took.
+	defer rc.Close()
+	root.SetOut(out)
+	root.SetErr(errOut)
 	root.SetArgs(args)
 	// Unknown commands are usage errors, but cobra detects them inside
 	// Execute with an untyped error; pre-flighting Find keeps the
@@ -87,7 +109,7 @@ func execute(root *cobra.Command, args []string) int {
 		root.PrintErrf("Run '%v --help' for usage.\n", root.CommandPath())
 		return ExitUsage
 	}
-	return ExitCode(root.Execute())
+	return ExitCode(root.ExecuteContext(ctx))
 }
 
 // noArgs is cobra.NoArgs classified as a usage error.

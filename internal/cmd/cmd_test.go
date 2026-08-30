@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,10 +32,7 @@ func run(t *testing.T, args ...string) error {
 // process exit code.
 func code(t *testing.T, args ...string) int {
 	t.Helper()
-	root := Root("test")
-	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
-	return execute(root, args)
+	return execute(context.Background(), "test", args, io.Discard, io.Discard)
 }
 
 func TestDoctorRejectsArguments(t *testing.T) {

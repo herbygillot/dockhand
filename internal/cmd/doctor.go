@@ -10,13 +10,13 @@ import (
 
 // Doctor builds the doctor subcommand: report which tools are present
 // and which capabilities they enable.
-func Doctor() *cobra.Command {
+func Doctor(rc *RunContext) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Report which tools are present and which capabilities they enable",
 		Args:  noArgs,
 		Run: func(*cobra.Command, []string) {
-			fmt.Print(doctor.Probe())
+			fmt.Fprint(rc.Out, doctor.Probe())
 		},
 	}
 }

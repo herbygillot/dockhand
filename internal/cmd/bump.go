@@ -9,18 +9,15 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/bump"
-	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
 	"github.com/herbygillot/dockhand/internal/macports/port"
-	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
 // Bump builds the bump subcommand: plan a version bump. Per the
 // read/write boundary, bump emits a complete plan on stdout — edits,
 // fetched checksums, exact predicted delta — and changes nothing;
 // apply consumes it.
-func Bump() *cobra.Command {
+func Bump(rc *RunContext) *cobra.Command {
 	var (
 		to     string
 		latest bool
@@ -38,32 +35,26 @@ func Bump() *cobra.Command {
 				// resolving the newest release is a different workflow.
 				return usagef("use --latest to resolve the newest release")
 			}
-			treeRoot, err := cmd.Flags().GetString("tree")
-			if err != nil {
-				return err
-			}
-			targets, err := resolveTargets(treeRoot, false, args)
+			targets, err := resolveTargets(rc.TreeRoot, false, args)
 			if err != nil {
 				return err
 			}
 			if len(targets) != 1 {
 				return usagef("bump takes exactly one port; %q names %d", args[0], len(targets))
 			}
-			pfx, err := resolvePrefix(cmd)
+			ev, err := rc.Evaluator(cmd.Context())
 			if err != nil {
 				return err
 			}
-			evs, err := pool.New(cmd.Context(), pfx, 1)
+			fetcher, err := rc.Fetcher(cmd.Context())
 			if err != nil {
 				return err
 			}
-			defer evs.Close()
-			fetcher, err := portfetch.New(cmd.Context(), pfx, tempdir.Root{})
+			root, err := rc.TempDir()
 			if err != nil {
 				return err
 			}
-			defer fetcher.Close()
-			h := port.New(targets[0], evs.Evaluators()[0])
+			h := port.New(targets[0], ev).WithTempDir(root)
 
 			if to == "" {
 				// No stated version: latest is the intent.
@@ -71,7 +62,7 @@ func Bump() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "latest: %s (%s)\n", resolved, report.Verdict)
+				fmt.Fprintf(rc.Err, "latest: %s (%s)\n", resolved, report.Verdict)
 				to = resolved
 			}
 
@@ -79,8 +70,8 @@ func Bump() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			renderPlan(cmd.ErrOrStderr(), p)
-			return p.Encode(cmd.OutOrStdout())
+			renderPlan(rc.Err, p)
+			return p.Encode(rc.Out)
 		},
 	}
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
@@ -89,7 +80,7 @@ func Bump() *cobra.Command {
 }
 
 // Apply builds the apply subcommand: execute a plan.
-func Apply() *cobra.Command {
+func Apply(rc *RunContext) *cobra.Command {
 	return &cobra.Command{
 		Use:   "apply <plan.json|->",
 		Short: "Apply a plan, verifying it does exactly what it predicted",
@@ -108,16 +99,14 @@ func Apply() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ev, done, err := oneEvaluator(cmd)
+			ev, err := rc.Evaluator(cmd.Context())
 			if err != nil {
 				return err
 			}
-			defer done()
-
 			if _, err := p.Apply(cmd.Context(), ev); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "applied: %s %s (%d edits, delta as predicted)\n",
+			fmt.Fprintf(rc.Out, "applied: %s %s (%d edits, delta as predicted)\n",
 				p.Intent, p.Portdir, len(p.Edits))
 			return nil
 		},

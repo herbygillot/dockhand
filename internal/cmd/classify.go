@@ -7,13 +7,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/classify"
-	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 )
 
 // Classify builds the classify subcommand: survey ports for
 // version-style tractability.
-func Classify() *cobra.Command {
+func Classify(rc *RunContext) *cobra.Command {
 	var (
 		workers  int
 		all      bool
@@ -23,32 +22,23 @@ func Classify() *cobra.Command {
 		Use:   "classify [port|category|portdir ...]",
 		Short: "Survey ports for version-style tractability",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			treeRoot, err := cmd.Flags().GetString("tree")
+			targets, err := resolveTargets(rc.TreeRoot, all, args)
 			if err != nil {
 				return err
 			}
-			targets, err := resolveTargets(treeRoot, all, args)
+			p, err := rc.Pool(cmd.Context(), workers)
 			if err != nil {
 				return err
 			}
-			pfx, err := resolvePrefix(cmd)
-			if err != nil {
-				return err
-			}
-			p, err := pool.New(cmd.Context(), pfx, workers)
-			if err != nil {
-				return err
-			}
-			defer p.Close()
 
 			var census classify.Census
 			classify.Sweep(cmd.Context(), p, targets, func(r classify.Result) {
 				census.Add(r)
 				if declines && r.Outcome != classify.Located {
-					fmt.Printf("%-14s %s\t%s\n", r.Outcome, r.Target.Portdir, r.Detail)
+					fmt.Fprintf(rc.Out, "%-14s %s\t%s\n", r.Outcome, r.Target.Portdir, r.Detail)
 				}
 			})
-			fmt.Print(census.String())
+			fmt.Fprint(rc.Out, census.String())
 			return nil
 		},
 	}
