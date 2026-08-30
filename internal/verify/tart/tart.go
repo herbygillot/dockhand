@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -185,17 +186,26 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	// The guest outlives this call, so every failure from here on must
 	// take it with it: a leaked worker holds one of two licence slots
 	// and blocks the next verification outright.
-	// The guest outlives this call, so every failure from here on must
-	// take it with it: a leaked worker holds one of two licence slots
-	// and blocks the next verification outright.
+	// Every failure from here must take the guest with it: a leaked
+	// worker holds one of two licence slots and blocks the next
+	// verification outright. Release can itself fail — a delete races
+	// the guest still coming up — so the leak is reported rather than
+	// swallowed, because a silent one is discovered as a capacity error
+	// much later and somewhere else.
 	fail := func(err error) (verify.Job, error) {
-		_ = p.Release(context.WithoutCancel(ctx), job)
+		if rerr := p.Release(context.WithoutCancel(ctx), job); rerr != nil {
+			slog.Warn("worker leaked after a failed submit", "worker", job.ID, "err", rerr)
+			err = fmt.Errorf("%w (worker %s was left behind: %w)", err, job.ID, rerr)
+		}
 		return verify.Job{}, err
 	}
 	//nolint:errcheck // the guest is detached from this process by design
 	go CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
 
 	if err := WaitAgent(ctx, name); err != nil {
+		return fail(err)
+	}
+	if err := p.assertClean(ctx, name); err != nil {
 		return fail(err)
 	}
 	if err := p.stage(ctx, name, req); err != nil {
@@ -351,10 +361,24 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 // Release discards the worker, and with it any debug handle.
 func (p Provider) Release(ctx context.Context, job verify.Job) error {
 	_, _ = CLI(ctx, nil, "stop", job.ID)
-	if out, err := CLI(ctx, nil, "delete", job.ID); err != nil {
-		return fmt.Errorf("verify/tart: releasing %s: %s", job.ID, strings.TrimSpace(out))
+	// A delete can race a guest that is still coming up — tart refuses
+	// to remove a running VM, and stop is not instantaneous. Retrying
+	// briefly costs nothing and is the difference between a released
+	// slot and one lost until someone notices.
+	var out string
+	var err error
+	for i := 0; i < 10; i++ {
+		if out, err = CLI(ctx, nil, "delete", job.ID); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+		_, _ = CLI(ctx, nil, "stop", job.ID)
 	}
-	return nil
+	return fmt.Errorf("verify/tart: releasing %s: %s", job.ID, strings.TrimSpace(out))
 }
 
 // GoldenName is the untouched reference copy of a base image. It is
@@ -367,4 +391,29 @@ func (p Provider) Release(ctx context.Context, job verify.Job) error {
 // and everything that looks a base up by substring would find two.
 func GoldenName(r platform.Release) string {
 	return "dockhand-golden-" + strings.ToLower(r.CompactName())
+}
+
+// assertClean refuses to verify in an environment that is not what it
+// claims to be.
+//
+// It runs against the worker rather than the base, which is both
+// cheaper and stronger: the worker is booted anyway, so the check costs
+// about a second instead of the ten a base boot would, and it observes
+// the environment the build will actually run in rather than the one it
+// was cloned from. Nothing is cached and no manifest is consulted —
+// a record of these facts could be stale or, if a base were
+// contaminated, contaminated alongside it.
+//
+// A finding here is ErrNoEnvironment, never Failed. A base that has
+// drifted is a fact about this machine; blaming the port for it would
+// be the worst kind of wrong answer, because it looks like a real one.
+func (p Provider) assertClean(ctx context.Context, vm string) error {
+	out, err := Exec(ctx, vm, "/bin/sh", "-c", build.CleanScript(p.prefixOf().Port()))
+	if err != nil {
+		return fmt.Errorf("%w: checking the environment: %w", verify.ErrNoEnvironment, err)
+	}
+	if found := strings.TrimSpace(out); found != "" {
+		return fmt.Errorf("%w: the environment is not clean:\n%s", verify.ErrNoEnvironment, found)
+	}
+	return nil
 }
