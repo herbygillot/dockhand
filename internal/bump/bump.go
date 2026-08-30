@@ -24,7 +24,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/upstream"
+	"github.com/herbygillot/dockhand/internal/vendored"
+	"github.com/herbygillot/dockhand/internal/vendored/cargo2port"
 )
 
 // Bump is the intent to move a port to a new upstream version. The port
@@ -70,13 +73,24 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
-	// tree; bumping around it would ship a lying Portfile. Regeneration
-	// is the vendor intent's job (T3).
+	// tree; bumping around it would ship a lying Portfile. cargo.crates
+	// is regenerated below, from the lockfile inside the new distfile.
+	// The rest have no generator wired up yet.
 	switch {
 	case vals.Vendored.GoVendors != "":
 		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "go.vendors"}
-	case vals.Vendored.CargoCrates != "":
-		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "cargo.crates"}
+	case vals.Vendored.CargoCratesGithub != "":
+		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "cargo.crates_github"}
+	}
+	// A patch over the lockfile means the crate set the port builds is
+	// not the one upstream shipped, so regenerating from the distfile's
+	// copy would state something untrue. This is judged here, before any
+	// network: a refusal that needs no download should never cost one.
+	if vals.Vendored.CargoCrates != "" {
+		if pf, ok := patchesLockfile(vals); ok {
+			return nil, &intent.Decline{Type: intent.VendoredBlock,
+				Detail: fmt.Sprintf("%s rewrites %s, so the built crate set is not the one upstream shipped", pf, cargo2port.LockName)}
+		}
 	}
 
 	// The version edit.
@@ -134,9 +148,30 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
 				Detail: "port records checksums but fetches no distfiles"}
 		}
-		// The fetched bytes are kept for the length of the plan: what a
-		// planner reads out of a distfile has to be the same artifact
-		// whose checksums it records.
+
+		// What a vendored block supplies is not the port's own. Those
+		// distfiles and their checksums come from the block, and
+		// regenerating it replaces them wholesale — so they are neither
+		// fetched nor rewritten here. Subtracting them leaves what the
+		// port fetches for itself: one file for most cargo ports, out of
+		// two hundred.
+		supplied, err := suppliedDistfiles(vals.Vendored)
+		if err != nil {
+			return nil, err
+		}
+		ownOld, err := vendored.Own(vals.Distfiles, supplied)
+		if err != nil {
+			return nil, err
+		}
+		ownNew, err := vendored.Own(shadowVals.Distfiles, supplied)
+		if err != nil {
+			return nil, err
+		}
+		if len(ownNew) == 0 {
+			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+				Detail: "every distfile comes from a vendored block"}
+		}
+
 		fetchDir, err := os.MkdirTemp("", "dockhand-bump-*")
 		if err != nil {
 			return nil, err
@@ -148,30 +183,45 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 			IgnoreSSLCert: fi.IgnoreSSLCert,
 			UserAgent:     fi.UserAgent,
 		}
-		sums := make(map[string]checksums.Sums, len(fi.Files))
-		for file, u := range fi.Files {
+		sums := make(map[string]checksums.Sums, len(ownNew))
+		fetched := make([]string, 0, len(ownNew))
+		for _, file := range ownNew {
+			u, ok := fi.Files[file]
+			if !ok {
+				return nil, fmt.Errorf("bump: %s: the fetch surface offers no urls", file)
+			}
 			if file != filepath.Base(file) {
 				return nil, fmt.Errorf("bump: distfile name %q is not a bare file name", file)
 			}
-			s, err := fetch.Fetch(ctx, u, fetchOpts, filepath.Join(fetchDir, file))
+			dest := filepath.Join(fetchDir, file)
+			s, err := fetch.Fetch(ctx, u, fetchOpts, dest)
 			if err != nil {
 				return nil, fmt.Errorf("bump: %s: %w", file, err)
 			}
 			slog.Debug("fetched distfile", "file", file, "sha256", s.Sha256, "size", s.Size)
 			sums[file] = s
+			fetched = append(fetched, dest)
 		}
-		old, err := checksums.Parse(checksumOldTokens)
+		recorded, err := checksums.Parse(checksumOldTokens)
 		if err != nil {
 			return nil, fmt.Errorf("bump: %w", err)
 		}
-		// Distfiles tokens may carry :tag suffixes (fetch groups); the
-		// checksums block and the fetch surface both speak bare names.
-		ck, err := checksumEdits(src, cst, vals.Name, old,
-			bareDistfiles(vals.Distfiles), bareDistfiles(shadowVals.Distfiles), sums)
+		ck, err := checksumEdits(src, cst, vals.Name, ownRecords(recorded, ownOld), ownOld, ownNew, sums)
 		if err != nil {
 			return nil, err
 		}
 		edits = append(edits, ck...)
+
+		// The block is regenerated from the lockfile inside the distfile
+		// just fetched, so the crate set and the checksum recorded for
+		// that distfile describe the same bytes.
+		if vals.Vendored.CargoCrates != "" {
+			blockEdit, err := cargoBlockEdit(ctx, src, cst, vals, shadowVals.Worksrcdir, fetched)
+			if err != nil {
+				return nil, err
+			}
+			edits = append(edits, blockEdit)
+		}
 	}
 
 	// Shadow the full edit set for the exact prediction.
@@ -280,13 +330,81 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (st
 	return report.Latest, report, nil
 }
 
-// bareDistfiles strips the :tag fetch-group suffixes distfiles tokens
-// may carry; checksums and the fetch surface speak bare names.
-func bareDistfiles(distfiles []string) []string {
-	out := make([]string, 0, len(distfiles))
-	for _, d := range distfiles {
-		name, _, _ := strings.Cut(d, ":")
-		out = append(out, name)
+// suppliedDistfiles names the distfiles a port's vendored blocks
+// contribute. Only cargo.crates reaches here; the other kinds decline
+// before any of this runs.
+func suppliedDistfiles(v info.Vendored) ([]string, error) {
+	if v.CargoCrates == "" {
+		return nil, nil
+	}
+	crates, err := cargo2port.Crates(v.CargoCrates)
+	if err != nil {
+		return nil, fmt.Errorf("bump: %w", err)
+	}
+	return cargo2port.Supplied(crates), nil
+}
+
+// ownRecords keeps the checksum records belonging to the port's own
+// distfiles. A vendored block appends one record per distfile it
+// supplies, and those literals live inside the block rather than in any
+// checksums command — regenerating the block rewrites them, and looking
+// for them among the checksums command's words would find nothing.
+func ownRecords(recorded []checksums.Recorded, own []string) []checksums.Recorded {
+	keep := make(map[string]bool, len(own))
+	for _, n := range own {
+		keep[n] = true
+	}
+	out := make([]checksums.Recorded, 0, len(recorded))
+	for _, r := range recorded {
+		// A record with no file name is the single-distfile form, which
+		// only the port itself writes.
+		if r.File == "" || keep[r.File] {
+			out = append(out, r)
+		}
 	}
 	return out
+}
+
+// cargoBlockEdit regenerates a cargo.crates block from the Cargo.lock
+// inside the port's own distfiles.
+func cargoBlockEdit(ctx context.Context, src []byte, cst *syntax.Script, vals info.Values, worksrcdir string, fetched []string) (plan.Edit, error) {
+	span, err := vendored.Locate(src, cst, portstyle.ScopeOf(src, vals.Name), cargo2port.Kind)
+	if err != nil {
+		return plan.Edit{}, err
+	}
+	lock, from, err := cargo2port.Lockfile(ctx, fetched, worksrcdir)
+	if err != nil {
+		return plan.Edit{}, err
+	}
+	slog.Debug("read lockfile", "from", filepath.Base(from), "bytes", len(lock))
+	block, err := cargo2port.Generate(ctx, lock)
+	if err != nil {
+		return plan.Edit{}, err
+	}
+	slog.Debug("regenerated block", "kind", cargo2port.Kind.String(), "bytes", len(block))
+	return vendored.Edit(src, span, block, cargo2port.Kind), nil
+}
+
+// patchesLockfile reports whether any of the port's patchfiles rewrites
+// the file the generator reads. The patches' own diff headers are read
+// rather than their names guessed at: a patch named for something else
+// can still touch the lockfile. A patchfile that cannot be read is
+// treated as touching it — the point is to prove the lockfile is
+// untouched, and an unreadable patch proves nothing.
+func patchesLockfile(vals info.Values) (string, bool) {
+	for _, pf := range vals.Patchfiles {
+		body, err := os.ReadFile(filepath.Join(vals.Filespath, pf))
+		if err != nil {
+			return pf, true
+		}
+		for line := range strings.Lines(string(body)) {
+			if !strings.HasPrefix(line, "--- ") && !strings.HasPrefix(line, "+++ ") {
+				continue
+			}
+			if strings.Contains(line, cargo2port.LockName) {
+				return pf, true
+			}
+		}
+	}
+	return "", false
 }
