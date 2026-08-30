@@ -16,6 +16,9 @@ const (
 	FieldLicense
 	FieldMaintainers
 	FieldPlatforms
+	FieldDescription
+	FieldHomepage
+	FieldLongDescription
 	FieldDistfiles
 	FieldChecksums
 	FieldDependsFetch
@@ -45,6 +48,12 @@ func (f Field) String() string {
 		return "maintainers"
 	case FieldPlatforms:
 		return "platforms"
+	case FieldDescription:
+		return "description"
+	case FieldHomepage:
+		return "homepage"
+	case FieldLongDescription:
+		return "long_description"
 	case FieldDistfiles:
 		return "distfiles"
 	case FieldChecksums:
@@ -83,6 +92,9 @@ var fieldTable = []struct {
 	{FieldLicense, func(v Values) []string { return v.License }},
 	{FieldMaintainers, func(v Values) []string { return v.Maintainers }},
 	{FieldPlatforms, func(v Values) []string { return v.Platforms }},
+	{FieldDescription, func(v Values) []string { return scalar(v.Description) }},
+	{FieldHomepage, func(v Values) []string { return scalar(v.Homepage) }},
+	{FieldLongDescription, func(v Values) []string { return scalar(v.LongDescription) }},
 	{FieldDistfiles, func(v Values) []string { return v.Distfiles }},
 	{FieldChecksums, func(v Values) []string { return v.Checksums }},
 	{FieldDependsFetch, func(v Values) []string { return v.Depends.Fetch }},

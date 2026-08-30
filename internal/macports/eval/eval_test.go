@@ -95,3 +95,57 @@ func TestRootGuard(t *testing.T) {
 	require.NoError(t, rootGuard(0, true))
 	require.NoError(t, rootGuard(501, false))
 }
+
+func TestValuesHydratesProseAndConfig(t *testing.T) {
+	e := newEvaluator(t)
+	dir := portdirWith(t, `PortSystem 1.0
+name             hydrate
+version          1.0
+categories       devel
+maintainers      nomaintainer
+license          MIT
+description      A one-line summary with spaces
+long_description This is the longer prose a port states about itself.
+homepage         https://example.org/hydrate
+livecheck.type   regex
+livecheck.url    https://example.org/tags
+livecheck.regex  {tags/([0-9.]+)\.tar\.gz}
+`)
+	v, err := e.Values(context.Background(), dir, "", "")
+	require.NoError(t, err)
+
+	// Prose arrives unbraced, spaces intact.
+	require.Equal(t, "A one-line summary with spaces", v.Description)
+	require.Equal(t, "This is the longer prose a port states about itself.", v.LongDescription)
+	require.Equal(t, "https://example.org/hydrate", v.Homepage)
+
+	// Configuration rides along in the same evaluation.
+	require.Equal(t, "regex", v.Livecheck.Type)
+	require.Equal(t, "https://example.org/tags", v.Livecheck.URL)
+	require.Equal(t, `tags/([0-9.]+)\.tar\.gz`, v.Livecheck.Regex)
+	require.Equal(t, "1.0", v.Livecheck.Version)
+	require.False(t, v.Vendored.Any())
+}
+
+func TestValuesReportsVendoredBlocks(t *testing.T) {
+	e := newEvaluator(t)
+	dir := portdirWith(t, `PortSystem 1.0
+PortGroup        golang 1.0
+go.setup         github.com/example/thing 1.0
+categories       devel
+maintainers      nomaintainer
+license          MIT
+description      vendored probe
+long_description vendored probe
+go.vendors       golang.org/x/sys \
+                     lock    v0.1.0 \
+                     rmd160  0 \
+                     sha256  0 \
+                     size    1
+`)
+	v, err := e.Values(context.Background(), dir, "", "")
+	require.NoError(t, err)
+	require.True(t, v.Vendored.Any())
+	require.Contains(t, v.Vendored.GoVendors, "golang.org/x/sys")
+	require.Empty(t, v.Vendored.CargoCrates)
+}

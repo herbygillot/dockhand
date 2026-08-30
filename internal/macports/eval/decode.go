@@ -22,6 +22,22 @@ func decodeSnapshot(reply string) (info.Values, []string, error) {
 		Version:  fields["version"],
 		Revision: fields["revision"],
 		Epoch:    fields["epoch"],
+		// Prose and configuration arrive as single list elements, so a
+		// value with spaces comes braced; ListValue is identity for the
+		// rest.
+		Description:     syntax.ListValue(fields["description"]),
+		Homepage:        syntax.ListValue(fields["homepage"]),
+		LongDescription: syntax.ListValue(fields["long_description"]),
+		Livecheck: info.Livecheck{
+			Type:    syntax.ListValue(fields["livecheck.type"]),
+			URL:     syntax.ListValue(fields["livecheck.url"]),
+			Regex:   syntax.ListValue(fields["livecheck.regex"]),
+			Version: syntax.ListValue(fields["livecheck.version"]),
+		},
+		Vendored: info.Vendored{
+			GoVendors:   fields["go.vendors"],
+			CargoCrates: fields["cargo.crates"],
+		},
 	}
 	var err error
 	for _, f := range []struct {

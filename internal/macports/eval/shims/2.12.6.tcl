@@ -22,6 +22,7 @@ proc snapshot {portdir {subport ""} {variations {}}} {
     foreach field {
         name version revision epoch categories license
         maintainers platforms
+        description homepage long_description
         depends_fetch depends_extract depends_patch
         depends_build depends_lib depends_run depends_test
         subports
@@ -30,10 +31,15 @@ proc snapshot {portdir {subport ""} {variations {}}} {
             dict set out $field $info($field)
         }
     }
-    # checksums and distfiles are port options, not PortInfo: read them
-    # from the port's own worker interpreter while the handle is open.
+    # Some of what a Portfile declares is a port option rather than a
+    # PortInfo field; read those from the port's own worker interpreter
+    # while the handle is open. Each costs microseconds against an
+    # already-open port, so everything statically knowable is collected
+    # in this one evaluation rather than in a call per group.
     set worker [ditem_key $handle workername]
-    foreach opt {checksums distfiles} {
+    foreach opt {checksums distfiles
+                 livecheck.type livecheck.url livecheck.regex livecheck.version
+                 go.vendors cargo.crates} {
         if {![catch {$worker eval [list option $opt]} val] && $val ne ""} {
             dict set out $opt $val
         }

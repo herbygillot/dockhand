@@ -72,6 +72,7 @@ func Locate(src []byte, tree *syntax.Script, vals info.Values, field info.Field)
 		value, styles = vals.Revision, revisionStyles
 	case info.FieldName, info.FieldEpoch, info.FieldCategories,
 		info.FieldLicense, info.FieldMaintainers, info.FieldPlatforms,
+		info.FieldDescription, info.FieldHomepage, info.FieldLongDescription,
 		info.FieldDistfiles, info.FieldChecksums,
 		info.FieldDependsFetch, info.FieldDependsExtract,
 		info.FieldDependsPatch, info.FieldDependsBuild,

@@ -70,14 +70,11 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	// A vendored dependency block pins the OLD version's dependency
 	// tree; bumping around it would ship a lying Portfile. Regeneration
 	// is the vendor intent's job (T3).
-	vendorOpts, err := h.Options(ctx, "go.vendors", "cargo.crates")
-	if err != nil {
-		return nil, err
-	}
-	for _, opt := range []string{"go.vendors", "cargo.crates"} {
-		if vendorOpts[opt] != "" {
-			return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: opt}
-		}
+	switch {
+	case vals.Vendored.GoVendors != "":
+		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "go.vendors"}
+	case vals.Vendored.CargoCrates != "":
+		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "cargo.crates"}
 	}
 
 	// The version edit.
@@ -211,7 +208,9 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 			checksumsMoved = true
 		case info.FieldName, info.FieldRevision, info.FieldEpoch,
 			info.FieldCategories, info.FieldLicense, info.FieldMaintainers,
-			info.FieldPlatforms, info.FieldDependsFetch, info.FieldDependsExtract,
+			info.FieldPlatforms, info.FieldDescription, info.FieldHomepage,
+			info.FieldLongDescription,
+			info.FieldDependsFetch, info.FieldDependsExtract,
 			info.FieldDependsPatch, info.FieldDependsBuild, info.FieldDependsLib,
 			info.FieldDependsRun, info.FieldDependsTest:
 		}
@@ -256,7 +255,7 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (st
 	if err != nil {
 		return "", upstream.Report{}, err
 	}
-	report, err := upstream.Check(ctx, h, f, loc.Style)
+	report, err := upstream.Check(ctx, h, f, loc.Style, vals.Livecheck)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}

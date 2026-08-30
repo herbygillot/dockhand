@@ -15,6 +15,12 @@ type Values struct {
 	// ({@alice example.com:alice}) arrives as one element.
 	Maintainers []string
 	Platforms   []string
+	// Description, Homepage and LongDescription are prose a port states
+	// about itself. They are compared like any other state: a bump that
+	// silently rewrites a description did more than it was asked to.
+	Description     string
+	Homepage        string
+	LongDescription string
 	// Distfiles and Checksums are port options rather than PortInfo
 	// fields, read from the port's worker interpreter. Checksums keeps the
 	// declared list's raw shape (type/value alternation, possibly
@@ -22,7 +28,38 @@ type Values struct {
 	Distfiles []string
 	Checksums []string
 	Depends   Depends
+
+	// Livecheck and Vendored are configuration: what a Portfile
+	// declares about how it is maintained, rather than what it is.
+	// They ride along in the same evaluation because reading an option
+	// off an already-open port costs microseconds — and they are
+	// deliberately absent from fieldTable, so they never appear in a
+	// Delta or count against an intent's acceptance. What a Values
+	// holds is everything one evaluation yields; what fieldTable holds
+	// is what counts as state to compare.
+	Livecheck Livecheck
+	Vendored  Vendored
 }
+
+// Livecheck is a port's declared update-checking configuration.
+type Livecheck struct {
+	Type    string
+	URL     string
+	Regex   string
+	Version string
+}
+
+// Vendored holds the dependency blocks a generator owns, as text.
+// dockhand owns the block boundary and nothing inside it (D6), so
+// these stay opaque: their presence is a fact, their content is the
+// generator's business.
+type Vendored struct {
+	GoVendors   string
+	CargoCrates string
+}
+
+// Any reports whether the port carries a vendored dependency block.
+func (v Vendored) Any() bool { return v.GoVendors != "" || v.CargoCrates != "" }
 
 // Depends holds a context's dependency declarations, one list of depspecs
 // ("port:zlib", "bin:git:git", "path:...") per phase. Depspecs stay raw

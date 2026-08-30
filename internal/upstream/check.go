@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
@@ -13,9 +14,12 @@ import (
 // testimony. The livecheck resolver is the port's own livecheck phase,
 // driven whole; style is the port's located version carrier, which
 // decides whether a git forge exists to ask.
-func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style portstyle.Type) (Report, error) {
-	names := append([]string{"livecheck.version"}, CoordOptions(style)...)
-	opts, err := h.Options(ctx, names...)
+func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style portstyle.Type, declared info.Livecheck) (Report, error) {
+	// Only the forge coordinates need a read of their own: which option
+	// names to ask for depends on the carrier style, so they cannot live
+	// in a struct. The livecheck configuration came with the values the
+	// caller already evaluated.
+	opts, err := h.Options(ctx, CoordOptions(style)...)
 	if err != nil {
 		return Report{}, err
 	}
@@ -31,11 +35,12 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 	case !lc.Ran:
 		obs.LivecheckDisabled = true
 	case lc.Version != "":
+		// The newer version livecheck found.
 		obs.Livecheck = lc.Version
 	case lc.UpToDate:
 		// Up to date means livecheck found exactly the version it was
 		// checking against.
-		obs.Livecheck = opts["livecheck.version"]
+		obs.Livecheck = declared.Version
 	case lc.NoMatch:
 		// Ran and matched nothing: the rot signal. Livecheck stays
 		// empty.
