@@ -104,3 +104,60 @@ func Verify(s Sums, recorded []Recorded) error {
 	}
 	return nil
 }
+
+// ErrUnresolved reports a recorded checksum whose new value cannot be
+// determined: a type that cannot be recomputed, or no sums for the
+// distfile it describes.
+var ErrUnresolved = errors.New("checksums: cannot resolve a new value")
+
+// Replacement is one literal inside a checksums block that must be
+// rewritten, with the reason it moved — provenance a plan carries
+// through to what a human reads.
+type Replacement struct {
+	Old    string
+	New    string
+	Reason string
+}
+
+// Replacements pairs each recorded checksum with its new value, given
+// the sums of the files those records describe. sums is keyed by the
+// file name the record names; the unnamed single-distfile form takes
+// the sole entry, which is the only reading that form can have.
+//
+// This is computation over the vocabulary, not location: where these
+// literals sit in a Portfile is checksums/rewrite's question.
+func Replacements(recorded []Recorded, sums map[string]Sums) ([]Replacement, error) {
+	out := make([]Replacement, 0, len(recorded))
+	for _, r := range recorded {
+		if IsLegacyType(r.Type) {
+			return nil, fmt.Errorf("%w: legacy type %s cannot be recomputed", ErrUnresolved, r.Type)
+		}
+		s, err := sumsFor(r.File, sums)
+		if err != nil {
+			return nil, err
+		}
+		value, ok := s.Value(r.Type)
+		if !ok {
+			return nil, fmt.Errorf("%w: unknown type %s", ErrUnresolved, r.Type)
+		}
+		out = append(out, Replacement{Old: r.Value, New: value, Reason: "checksum " + r.Type})
+	}
+	return out, nil
+}
+
+// sumsFor resolves which file's sums a record describes.
+func sumsFor(file string, sums map[string]Sums) (Sums, error) {
+	if file == "" {
+		if len(sums) != 1 {
+			return Sums{}, fmt.Errorf("%w: unnamed checksums with %d distfiles", ErrUnresolved, len(sums))
+		}
+		for _, s := range sums {
+			return s, nil
+		}
+	}
+	s, ok := sums[file]
+	if !ok {
+		return Sums{}, fmt.Errorf("%w: no sums for %s", ErrUnresolved, file)
+	}
+	return s, nil
+}

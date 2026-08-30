@@ -57,3 +57,44 @@ func TestVerify(t *testing.T) {
 	require.ErrorIs(t, err, ErrMismatch)
 	require.ErrorContains(t, err, "unverifiable")
 }
+
+func TestReplacements(t *testing.T) {
+	fresh := Sums{Rmd160: "aa", Sha256: "bb", Size: 12}
+
+	// The unnamed single-distfile form takes the sole entry.
+	reps, err := Replacements(
+		[]Recorded{{Type: "rmd160", Value: "old-a"}, {Type: "sha256", Value: "old-b"}, {Type: "size", Value: "9"}},
+		map[string]Sums{"foo-1.0.tar.gz": fresh})
+	require.NoError(t, err)
+	assert.Equal(t, []Replacement{
+		{Old: "old-a", New: "aa", Reason: "checksum rmd160"},
+		{Old: "old-b", New: "bb", Reason: "checksum sha256"},
+		{Old: "9", New: "12", Reason: "checksum size"},
+	}, reps)
+
+	// The named form resolves per file.
+	reps, err = Replacements(
+		[]Recorded{{File: "a.tar.gz", Type: "sha256", Value: "x"}, {File: "b.tar.gz", Type: "sha256", Value: "y"}},
+		map[string]Sums{"a.tar.gz": {Sha256: "AA"}, "b.tar.gz": {Sha256: "BB"}})
+	require.NoError(t, err)
+	assert.Equal(t, "AA", reps[0].New)
+	assert.Equal(t, "BB", reps[1].New)
+}
+
+func TestReplacementsUnresolvable(t *testing.T) {
+	one := map[string]Sums{"f.tar.gz": {Sha256: "x"}}
+	cases := map[string]struct {
+		recorded []Recorded
+		sums     map[string]Sums
+	}{
+		"legacy type cannot be recomputed": {[]Recorded{{Type: "md5", Value: "e"}}, one},
+		"unknown type":                     {[]Recorded{{Type: "sha512", Value: "e"}}, one},
+		"named file with no sums":          {[]Recorded{{File: "other.tar.gz", Type: "sha256", Value: "e"}}, one},
+		"unnamed with several distfiles": {[]Recorded{{Type: "sha256", Value: "e"}},
+			map[string]Sums{"a": {}, "b": {}}},
+	}
+	for name, c := range cases {
+		_, err := Replacements(c.recorded, c.sums)
+		require.ErrorIs(t, err, ErrUnresolved, name)
+	}
+}
