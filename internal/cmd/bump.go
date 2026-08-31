@@ -11,11 +11,22 @@ import (
 	"github.com/herbygillot/dockhand/internal/intent/bump"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/runcontext"
+	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
-// Bump builds the bump subcommand: move a port to a new version.
-//
+// bumpAction moves a port to a new version. An empty to means resolve
+// the newest upstream release.
+type bumpAction struct {
+	target   string
+	to       string
+	force    bool
+	planOnly bool
+	verify   bool
+	on       string
+}
+
+var _ Action = bumpAction{}
+
 // A plan is always produced — the edits, the fetched checksums, and the
 // exact predicted delta — because that is what makes the change
 // verifiable; under D21 it is internal interchange, never a user
@@ -23,7 +34,66 @@ import (
 // printed instead, and applying it includes the check that the result
 // matches the prediction, so the default is not a shortcut around
 // verification.
-func Bump(rc *runcontext.RunContext) *cobra.Command {
+func (a bumpAction) Execute(ctx context.Context, rs *runstate.Context) error {
+	targets, err := resolveTargets(rs.TreeRoot, false, []string{a.target})
+	if err != nil {
+		return err
+	}
+	if len(targets) != 1 {
+		return usagef("bump takes exactly one port; %q names %d", a.target, len(targets))
+	}
+	ev, err := rs.Evaluator(ctx)
+	if err != nil {
+		return err
+	}
+	fetcher, err := rs.Fetcher(ctx)
+	if err != nil {
+		return err
+	}
+	root, err := rs.TempDir()
+	if err != nil {
+		return err
+	}
+	h := port.New(targets[0], ev).WithTempDir(root)
+
+	to := a.to
+	if to == "" {
+		// No stated version: latest is the intent.
+		resolved, report, err := bump.ResolveLatest(ctx, h, fetcher)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(rs.Err, "latest: %s (%s)\n", resolved, report.Verdict)
+		to = resolved
+	}
+
+	p, err := bump.Bump{Version: to, Force: a.force}.Plan(ctx, h, fetcher)
+	if err != nil {
+		return err
+	}
+	// The summary comes first either way: when the plan is about to be
+	// carried out, it is the only chance to see what is being done
+	// before it is done.
+	renderPlan(rs.Err, p)
+	if a.verify || a.on != "" {
+		// Before apply, not after: a Portfile known not to build never
+		// lands in the tree.
+		release, err := releaseFlag(a.on)
+		if err != nil {
+			return err
+		}
+		if err := verifyPlan(ctx, rs, p, release); err != nil {
+			return err
+		}
+	}
+	if a.planOnly {
+		return p.Encode(rs.Out)
+	}
+	return applyPlan(ctx, rs, p)
+}
+
+// Bump builds the bump subcommand: move a port to a new version.
+func Bump() *cobra.Command {
 	var (
 		to       string
 		latest   bool
@@ -36,70 +106,24 @@ func Bump(rc *runcontext.RunContext) *cobra.Command {
 		Use:   "bump <port|subport|portdir>",
 		Short: "Bump a port to a new version (--plan to emit a plan instead)",
 		Args:  exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
 			switch {
 			case to != "" && latest:
-				return usagef("--to and --latest are mutually exclusive")
+				return nil, usagef("--to and --latest are mutually exclusive")
 			case to == "latest":
 				// The literal string would be planned as a version;
 				// resolving the newest release is a different workflow.
-				return usagef("use --latest to resolve the newest release")
+				return nil, usagef("use --latest to resolve the newest release")
 			}
-			targets, err := resolveTargets(rc.TreeRoot, false, args)
-			if err != nil {
-				return err
-			}
-			if len(targets) != 1 {
-				return usagef("bump takes exactly one port; %q names %d", args[0], len(targets))
-			}
-			ev, err := rc.Evaluator(cmd.Context())
-			if err != nil {
-				return err
-			}
-			fetcher, err := rc.Fetcher(cmd.Context())
-			if err != nil {
-				return err
-			}
-			root, err := rc.TempDir()
-			if err != nil {
-				return err
-			}
-			h := port.New(targets[0], ev).WithTempDir(root)
-
-			if to == "" {
-				// No stated version: latest is the intent.
-				resolved, report, err := bump.ResolveLatest(cmd.Context(), h, fetcher)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintf(rc.Err, "latest: %s (%s)\n", resolved, report.Verdict)
-				to = resolved
-			}
-
-			p, err := bump.Bump{Version: to, Force: force}.Plan(cmd.Context(), h, fetcher)
-			if err != nil {
-				return err
-			}
-			// The summary comes first either way: when the plan is
-			// about to be carried out, it is the only chance to see
-			// what is being done before it is done.
-			renderPlan(rc.Err, p)
-			if verifyIt || on != "" {
-				// Before apply, not after: a Portfile known not to
-				// build never lands in the tree.
-				release, err := releaseFlag(on)
-				if err != nil {
-					return err
-				}
-				if err := verifyPlan(cmd.Context(), rc, p, release); err != nil {
-					return err
-				}
-			}
-			if planOnly {
-				return p.Encode(rc.Out)
-			}
-			return applyPlan(cmd.Context(), rc, p)
-		},
+			return bumpAction{
+				target:   args[0],
+				to:       to,
+				force:    force,
+				planOnly: planOnly,
+				verify:   verifyIt,
+				on:       on,
+			}, nil
+		}),
 	}
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
 	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
@@ -116,15 +140,15 @@ func Bump(rc *runcontext.RunContext) *cobra.Command {
 // applyPlan carries out a plan and reports what it did. Every intent
 // that applies arrives here, so a plan is executed the same way
 // whichever produced it.
-func applyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan) error {
-	ev, err := rc.Evaluator(ctx)
+func applyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) error {
+	ev, err := rs.Evaluator(ctx)
 	if err != nil {
 		return err
 	}
 	if _, err := p.Apply(ctx, ev); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(rc.Out, "applied: %s %s (%d edits, delta as predicted)\n",
+	_, err = fmt.Fprintf(rs.Out, "applied: %s %s (%d edits, delta as predicted)\n",
 		p.Intent, p.Portdir, len(p.Edits))
 	return err
 }

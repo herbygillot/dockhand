@@ -14,7 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
-	"github.com/herbygillot/dockhand/internal/runcontext"
+	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
@@ -61,7 +61,7 @@ func vmProvider(ctx context.Context) (tart.Provider, error) {
 // read the Portfile, hold it to the plan's precondition hash, apply the
 // edits, shadow the result — so the port under test is exactly what
 // apply would write.
-func verifyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan, release platform.Release) error {
+func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release platform.Release) error {
 	src, err := os.ReadFile(filepath.Join(p.Portdir, macports.PortfileName))
 	if err != nil {
 		return err
@@ -73,7 +73,7 @@ func verifyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan, re
 	if err != nil {
 		return err
 	}
-	root, err := rc.TempDir()
+	root, err := rs.TempDir()
 	if err != nil {
 		return err
 	}
@@ -90,13 +90,13 @@ func verifyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan, re
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(p.Portdir))
 	}
-	return runVerification(ctx, rc, portName, shadow.Target.Portdir, release)
+	return runVerification(ctx, rs, portName, shadow.Target.Portdir, release)
 }
 
 // runVerification submits one portdir to the VM provider and reports
 // the verdict. Both verification modes arrive here: a plan's shadowed
 // portdir, and a portdir as it sits in the tree.
-func runVerification(ctx context.Context, rc *runcontext.RunContext, portName, portdir string, release platform.Release) error {
+func runVerification(ctx context.Context, rs *runstate.Context, portName, portdir string, release platform.Release) error {
 	prov, err := vmProvider(ctx)
 	if err != nil {
 		return err
@@ -114,24 +114,24 @@ func runVerification(ctx context.Context, rc *runcontext.RunContext, portName, p
 	if on.IsZero() && len(caps.Platforms) > 0 {
 		on = caps.Platforms[0]
 	}
-	fmt.Fprintf(rc.Err, "verifying %s on %s… ", portName, on)
+	fmt.Fprintf(rs.Err, "verifying %s on %s… ", portName, on)
 	st, err := verify.Await(ctx, prov, job, 3*time.Second)
 	if err != nil {
-		fmt.Fprintln(rc.Err)
+		fmt.Fprintln(rs.Err)
 		_ = prov.Release(context.WithoutCancel(ctx), job)
 		return err
 	}
 	switch st.State {
 	case verify.Passed:
-		fmt.Fprintln(rc.Err, "passed")
+		fmt.Fprintln(rs.Err, "passed")
 		return prov.Release(ctx, job)
 	case verify.Failed:
-		fmt.Fprintln(rc.Err, "FAILED")
+		fmt.Fprintln(rs.Err, "FAILED")
 		tail := st.Log
 		if len(tail) > 2000 {
 			tail = tail[len(tail)-2000:]
 		}
-		fmt.Fprintln(rc.Err, tail)
+		fmt.Fprintln(rs.Err, tail)
 		// The environment is kept on purpose: it is the debug handle.
 		return &VerifyFailedError{Port: portName, Handle: st.Handle}
 	case verify.Errored:
@@ -142,35 +142,46 @@ func runVerification(ctx context.Context, rc *runcontext.RunContext, portName, p
 	return fmt.Errorf("verify: job ended in state %s", st.State)
 }
 
-// Verify builds the verify subcommand: prove a port builds as it sits,
-// in a pristine environment, without writing anything. This is state
-// verification — it tests the portdir's current content, whoever
-// produced it, which is what makes human edits after a dockhand change
-// verifiable at all.
-func Verify(rc *runcontext.RunContext) *cobra.Command {
+// verifyAction proves a port builds as it sits, in a pristine
+// environment, without writing anything. This is state verification —
+// it tests the portdir's current content, whoever produced it, which
+// is what makes human edits after a dockhand change verifiable at all.
+type verifyAction struct {
+	target string
+	on     string
+}
+
+var _ Action = verifyAction{}
+
+func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
+	targets, err := resolveTargets(rs.TreeRoot, false, []string{a.target})
+	if err != nil {
+		return err
+	}
+	if len(targets) != 1 {
+		return usagef("verify takes exactly one port; %q names %d", a.target, len(targets))
+	}
+	portName := targets[0].Subport
+	if portName == "" {
+		portName = filepath.Base(filepath.Clean(targets[0].Portdir))
+	}
+	release, err := releaseFlag(a.on)
+	if err != nil {
+		return err
+	}
+	return runVerification(ctx, rs, portName, targets[0].Portdir, release)
+}
+
+// Verify builds the verify subcommand.
+func Verify() *cobra.Command {
 	var on string
 	c := &cobra.Command{
 		Use:   "verify <port|subport|portdir>",
 		Short: "Build a port as it sits, in a pristine VM, changing nothing",
 		Args:  exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			targets, err := resolveTargets(rc.TreeRoot, false, args)
-			if err != nil {
-				return err
-			}
-			if len(targets) != 1 {
-				return usagef("verify takes exactly one port; %q names %d", args[0], len(targets))
-			}
-			portName := targets[0].Subport
-			if portName == "" {
-				portName = filepath.Base(filepath.Clean(targets[0].Portdir))
-			}
-			release, err := releaseFlag(on)
-			if err != nil {
-				return err
-			}
-			return runVerification(cmd.Context(), rc, portName, targets[0].Portdir, release)
-		},
+		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
+			return verifyAction{target: args[0], on: on}, nil
+		}),
 	}
 	c.Flags().StringVar(&on, "on", "", "macOS release to verify on (name or version; default: the first provisioned base)")
 	return c

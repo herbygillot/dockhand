@@ -1,17 +1,28 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/doctor"
-	"github.com/herbygillot/dockhand/internal/runcontext"
+	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
-// Doctor builds the doctor subcommand: report which tools are present
-// and which capabilities they enable.
-func Doctor(rc *runcontext.RunContext) *cobra.Command {
+// doctorAction reports which tools are present and which capabilities
+// they enable.
+type doctorAction struct{}
+
+var _ Action = doctorAction{}
+
+func (doctorAction) Execute(_ context.Context, rs *runstate.Context) error {
+	_, err := fmt.Fprint(rs.Out, doctor.Probe())
+	return err
+}
+
+// Doctor builds the doctor subcommand.
+func Doctor() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Report which tools are present and which capabilities they enable",
@@ -19,9 +30,8 @@ func Doctor(rc *runcontext.RunContext) *cobra.Command {
 		// RunE rather than Run: the report is what this command
 		// produces, and a truncated one written to a file must not
 		// exit 0.
-		RunE: func(*cobra.Command, []string) error {
-			_, err := fmt.Fprint(rc.Out, doctor.Probe())
-			return err
-		},
+		RunE: runE(func(*cobra.Command, []string) (Action, error) {
+			return doctorAction{}, nil
+		}),
 	}
 }

@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/runcontext"
+	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
 // Root builds the dockhand command tree. The run it will execute is
@@ -29,8 +29,8 @@ func Root(version string) *cobra.Command {
 
 // newRoot builds the tree along with the run it belongs to. Execute
 // needs both — the run has to be closed however the command ends.
-func newRoot(version string) (*cobra.Command, *runcontext.RunContext) {
-	rc := &runcontext.RunContext{}
+func newRoot(version string) (*cobra.Command, *runstate.Context) {
+	rc := &runstate.Context{}
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",
@@ -49,7 +49,8 @@ func newRoot(version string) (*cobra.Command, *runcontext.RunContext) {
 			if err != nil {
 				return err
 			}
-			rc.Init(treeRoot, prefixPath, debug, c.OutOrStdout(), c.ErrOrStderr())
+			rc.Init(treeRoot, prefixPath, debug, c.InOrStdin(), c.OutOrStdout(), c.ErrOrStderr())
+			c.SetContext(runstate.Into(c.Context(), rc))
 			return nil
 		},
 	}
@@ -76,7 +77,7 @@ func newRoot(version string) (*cobra.Command, *runcontext.RunContext) {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
 	})
-	root.AddCommand(Bump(rc), BumpRevisionCmd(rc), Classify(rc), Doctor(rc), Provision(rc), RefreshChecksums(rc), Verify(rc), versionCmd())
+	root.AddCommand(Bump(), BumpRevisionCmd(), Classify(), Doctor(), Provision(), RefreshChecksums(), Verify(), versionCmd())
 	return root, rc
 }
 

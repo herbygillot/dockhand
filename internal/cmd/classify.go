@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 
@@ -8,12 +9,53 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/classify"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
-	"github.com/herbygillot/dockhand/internal/runcontext"
+	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
-// Classify builds the classify subcommand: survey ports for
-// version-style tractability.
-func Classify(rc *runcontext.RunContext) *cobra.Command {
+// classifyAction surveys ports for version-style tractability.
+type classifyAction struct {
+	args     []string
+	workers  int
+	all      bool
+	declines bool
+}
+
+var _ Action = classifyAction{}
+
+func (a classifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
+	targets, err := resolveTargets(rs.TreeRoot, a.all, a.args)
+	if err != nil {
+		return err
+	}
+	p, err := rs.Pool(ctx, a.workers)
+	if err != nil {
+		return err
+	}
+
+	// A survey redirected to a file must not report success on a
+	// partial write: exiting 0 over a truncated census would misreport
+	// the tree. Sweep drains its results on this goroutine, so the
+	// first failure is captured without a lock.
+	var census classify.Census
+	var writeErr error
+	classify.Sweep(ctx, p, targets, func(r classify.Result) {
+		census.Add(r)
+		if a.declines && r.Outcome != classify.Located {
+			if _, err := fmt.Fprintf(rs.Out, "%-14s %s\t%s\n",
+				r.Outcome, r.Target.Portdir, r.Detail); err != nil && writeErr == nil {
+				writeErr = err
+			}
+		}
+	})
+	if writeErr != nil {
+		return writeErr
+	}
+	_, err = fmt.Fprint(rs.Out, census.String())
+	return err
+}
+
+// Classify builds the classify subcommand.
+func Classify() *cobra.Command {
 	var (
 		workers  int
 		all      bool
@@ -22,37 +64,14 @@ func Classify(rc *runcontext.RunContext) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "classify [port|category|portdir ...]",
 		Short: "Survey ports for version-style tractability",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			targets, err := resolveTargets(rc.TreeRoot, all, args)
-			if err != nil {
-				return err
-			}
-			p, err := rc.Pool(cmd.Context(), workers)
-			if err != nil {
-				return err
-			}
-
-			// A survey redirected to a file must not report success on a
-			// partial write: exiting 0 over a truncated census would
-			// misreport the tree. Sweep drains its results on this
-			// goroutine, so the first failure is captured without a lock.
-			var census classify.Census
-			var writeErr error
-			classify.Sweep(cmd.Context(), p, targets, func(r classify.Result) {
-				census.Add(r)
-				if declines && r.Outcome != classify.Located {
-					if _, err := fmt.Fprintf(rc.Out, "%-14s %s\t%s\n",
-						r.Outcome, r.Target.Portdir, r.Detail); err != nil && writeErr == nil {
-						writeErr = err
-					}
-				}
-			})
-			if writeErr != nil {
-				return writeErr
-			}
-			_, err = fmt.Fprint(rc.Out, census.String())
-			return err
-		},
+		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
+			return classifyAction{
+				args:     args,
+				workers:  workers,
+				all:      all,
+				declines: declines,
+			}, nil
+		}),
 	}
 	c.Flags().IntVarP(&workers, "workers", "j", min(8, runtime.NumCPU()),
 		"evaluator pool size")

@@ -1,4 +1,4 @@
-package runcontext
+package runstate
 
 import (
 	"context"
@@ -14,38 +14,38 @@ import (
 	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
-// RunContext is one dockhand run: what the user asked for through the
+// Context is one dockhand run's state: what the user asked for through the
 // global flags, and the run-scoped facilities every command draws from.
 // Commands took these from *cobra.Command directly, which meant each
 // re-derived the prefix and the tree for itself and acquired evaluators
 // two different ways. One run, resolved once.
 //
-// It belongs to the command layer and goes no further down. Everything
-// below takes what it needs — a Prefix, an Evaluator, a tempdir.Root —
-// because a planner that accepted a RunContext would be a planner that
-// could reach the command line, and the domain packages stay testable
-// precisely because they cannot. Living outside internal/cmd, that rule
-// is no longer enforced by an import cycle; it is held by keeping the
-// signatures below narrow, and a domain package importing this one is a
-// review finding.
+// It belongs to the command layer and goes no further down: an Action
+// is the last layer that sees a Context. Everything below takes what it
+// needs — a Prefix, an Evaluator, a tempdir.Root — because a planner
+// that accepted a Context would be a planner that could reach the
+// command line, and the domain packages stay testable precisely because
+// they cannot. That rule is held by keeping the signatures below
+// narrow; a domain package importing this one is a review finding.
 //
 // Configuration is held; resources are not. Prefix, evaluators, the
 // fetcher and the temporary root are built on first use and remembered, so
 // a run that needs none of them — version, help, a usage error — starts
-// none of them, and a test can construct a RunContext without a MacPorts
+// none of them, and a test can construct a Context without a MacPorts
 // installation anywhere in sight.
 //
 // Not safe for concurrent use: a run is one command on one goroutine.
-type RunContext struct {
+type Context struct {
 	// TreeRoot and PrefixPath are as the user gave them; empty means
 	// discover. Debug is the flag, already applied to the logger.
 	TreeRoot   string
 	PrefixPath string
 	Debug      bool
 
-	// Out and Err are the run's streams. Structured output goes to Out
-	// and prose to Err, so a plan can be piped while its summary stays
-	// readable.
+	// In, Out and Err are the run's streams. Structured output goes to
+	// Out and prose to Err, so machine output can be piped while its
+	// summary stays readable.
+	In       io.Reader
 	Out, Err io.Writer
 
 	pfx     prefix.Prefix
@@ -65,9 +65,9 @@ type RunContext struct {
 // Init fills the context from what the flag layer parsed. It runs once
 // per execution, before any command's own work. Flag extraction stays
 // with the caller: this package knows runs, not command lines.
-func (rc *RunContext) Init(treeRoot, prefixPath string, debug bool, out, errOut io.Writer) {
+func (rc *Context) Init(treeRoot, prefixPath string, debug bool, in io.Reader, out, errOut io.Writer) {
 	rc.TreeRoot, rc.PrefixPath, rc.Debug = treeRoot, prefixPath, debug
-	rc.Out, rc.Err = out, errOut
+	rc.In, rc.Out, rc.Err = in, out, errOut
 
 	level := slog.LevelWarn
 	if debug {
@@ -94,7 +94,7 @@ func (rc *RunContext) Init(treeRoot, prefixPath string, debug bool, out, errOut 
 // Prefix is the MacPorts installation this run works against: the one
 // the user named, or the one discovered. A stated prefix is never fallen
 // back from.
-func (rc *RunContext) Prefix() (prefix.Prefix, error) {
+func (rc *Context) Prefix() (prefix.Prefix, error) {
 	if !rc.pfxDone {
 		rc.pfxDone = true
 		if rc.PrefixPath != "" {
@@ -109,7 +109,7 @@ func (rc *RunContext) Prefix() (prefix.Prefix, error) {
 // TempDir is the run's temporary root, created on first use. Everything
 // temporary a run produces belongs under it, so what a killed run left
 // behind is one identifiable tree.
-func (rc *RunContext) TempDir() (tempdir.Root, error) {
+func (rc *Context) TempDir() (tempdir.Root, error) {
 	if !rc.tempDone {
 		rc.tempDone = true
 		rc.tempRoot, rc.tempErr = tempdir.New()
@@ -122,7 +122,7 @@ func (rc *RunContext) TempDir() (tempdir.Root, error) {
 
 // Pool starts n evaluators against the run's installation and registers
 // their shutdown. Callers do not close it; the run does.
-func (rc *RunContext) Pool(ctx context.Context, n int) (*pool.Pool, error) {
+func (rc *Context) Pool(ctx context.Context, n int) (*pool.Pool, error) {
 	pfx, err := rc.Prefix()
 	if err != nil {
 		return nil, err
@@ -138,7 +138,7 @@ func (rc *RunContext) Pool(ctx context.Context, n int) (*pool.Pool, error) {
 // Evaluator is the run's single evaluator, for the commands that work
 // one port at a time. It replaces two separate acquisition paths with
 // one.
-func (rc *RunContext) Evaluator(ctx context.Context) (*eval.Evaluator, error) {
+func (rc *Context) Evaluator(ctx context.Context) (*eval.Evaluator, error) {
 	if rc.ev == nil {
 		p, err := rc.Pool(ctx, 1)
 		if err != nil {
@@ -150,7 +150,7 @@ func (rc *RunContext) Evaluator(ctx context.Context) (*eval.Evaluator, error) {
 }
 
 // Fetcher is the run's fetch session, over MacPorts' own curl.
-func (rc *RunContext) Fetcher(ctx context.Context) (*portfetch.Fetcher, error) {
+func (rc *Context) Fetcher(ctx context.Context) (*portfetch.Fetcher, error) {
 	if rc.fe == nil {
 		pfx, err := rc.Prefix()
 		if err != nil {
@@ -173,7 +173,7 @@ func (rc *RunContext) Fetcher(ctx context.Context) (*portfetch.Fetcher, error) {
 // root, in reverse order of acquisition. It runs whether the command
 // succeeded or failed, which is the point: the failures are what used to
 // leave directories behind.
-func (rc *RunContext) Close() {
+func (rc *Context) Close() {
 	for i := len(rc.closers) - 1; i >= 0; i-- {
 		rc.closers[i]()
 	}
@@ -181,4 +181,26 @@ func (rc *RunContext) Close() {
 	if err := rc.tempRoot.Remove(); err != nil {
 		slog.Warn("temp root left behind", "dir", rc.tempRoot.Path(), "err", err)
 	}
+}
+
+// key is the context key under which a run's Context travels. The run
+// is ambient by the time an Action executes — the root command created
+// and initialized it — so it rides the context.Context every execution
+// already carries, and subcommand constructors stay pure grammar.
+type key struct{}
+
+// Into returns ctx carrying c.
+func Into(ctx context.Context, c *Context) context.Context {
+	return context.WithValue(ctx, key{}, c)
+}
+
+// From returns the run's Context. It panics when there is none: the
+// root command is the single place that stores it, so absence is a
+// wiring bug, not a runtime condition.
+func From(ctx context.Context) *Context {
+	c, ok := ctx.Value(key{}).(*Context)
+	if !ok {
+		panic("runstate: no Context in this context; the root command must store one")
+	}
+	return c
 }
