@@ -168,6 +168,56 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 	return nil
 }
 
+// realizeOpts is one invocation's choice of realization, shared by
+// every intent that writes: print the plan, print the diff, edit in
+// place, or — the default — mint the branch and submit verification.
+type realizeOpts struct {
+	planOnly bool
+	diff     bool
+	inPlace  bool
+	noVerify bool
+	on       string
+	branch   string // the branch to mint, dockhand/<...>
+	message  string // the commit message, project format
+}
+
+// realizePlan carries a plan to its chosen realization. Every write
+// intent arrives here, so a plan becomes a branch the same way
+// whichever intent produced it (D21).
+func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o realizeOpts) error {
+	if o.planOnly {
+		return p.Encode(rs.Out)
+	}
+	if o.diff {
+		return diffFromPlan(ctx, rs, p)
+	}
+	if o.inPlace {
+		// The deliberate opt-out (D21): edit where the user stands,
+		// uncommitted — for the user running their own workflow, and
+		// the only write mode a non-git tree has.
+		return applyPlan(ctx, rs, p)
+	}
+	m, err := mintFromPlan(ctx, rs, p, o.branch, o.message)
+	if err != nil || m == nil {
+		return err
+	}
+	if o.noVerify {
+		return nil
+	}
+	// The branch is live the moment it exists (D21): verification is
+	// submitted against the tip and the guest drives its own build, so
+	// this process is free to exit; status collects the verdict.
+	release, err := releaseFlag(o.on)
+	if err != nil {
+		return err
+	}
+	portName := p.Subport
+	if portName == "" {
+		portName = filepath.Base(filepath.Clean(p.Portdir))
+	}
+	return submitVerification(ctx, rs, m, portName, release)
+}
+
 // diffFromPlan renders a plan as the patch its branch would carry,
 // writing nothing the workspace can see: the edited blob is grafted
 // into the base tree exactly as a mint would, and the two trees are

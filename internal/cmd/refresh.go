@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -16,7 +17,10 @@ import (
 type refreshAction struct {
 	target   string
 	planOnly bool
+	diff     bool
+	inPlace  bool
 	verify   bool
+	noVerify bool
 	on       string
 }
 
@@ -68,17 +72,26 @@ func (a refreshAction) Execute(ctx context.Context, rs *runstate.Context) error 
 			return err
 		}
 	}
-	if a.planOnly {
-		return p.Encode(rs.Out)
+	portName := p.Subport
+	if portName == "" {
+		portName = filepath.Base(filepath.Clean(p.Portdir))
 	}
-	return applyPlan(ctx, rs, p)
+	return realizePlan(ctx, rs, p, realizeOpts{
+		planOnly: a.planOnly, diff: a.diff, inPlace: a.inPlace,
+		noVerify: a.noVerify, on: a.on,
+		branch:  "dockhand/" + portName + "-checksums",
+		message: portName + ": update checksums",
+	})
 }
 
 // RefreshChecksums builds the refresh-checksums subcommand.
 func RefreshChecksums() *cobra.Command {
 	var (
 		planOnly bool
+		diffOnly bool
+		inPlace  bool
 		verifyIt bool
+		noVerify bool
 		on       string
 	)
 	c := &cobra.Command{
@@ -87,15 +100,30 @@ func RefreshChecksums() *cobra.Command {
 		Short:   "Re-fetch a port's distfiles and repair its recorded checksums",
 		Args:    exactArgs(1),
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
+			switch {
+			case diffOnly && inPlace, diffOnly && planOnly:
+				return nil, usagef("--diff is an output mode of its own; combine it with neither --plan nor --in-place")
+			case verifyIt && noVerify:
+				return nil, usagef("--verify and --no-verify are mutually exclusive")
+			}
 			return refreshAction{
 				target:   args[0],
 				planOnly: planOnly,
+				diff:     diffOnly,
+				inPlace:  inPlace,
 				verify:   verifyIt,
+				noVerify: noVerify,
 				on:       on,
 			}, nil
 		}),
 	}
 	c.Flags().BoolVar(&planOnly, "plan", false, "emit the plan on stdout and change nothing")
+	c.Flags().BoolVar(&diffOnly, "diff", false,
+		"print the patch the branch would carry, as a git diff; write nothing")
+	c.Flags().BoolVar(&inPlace, "in-place", false,
+		"edit the Portfile where it stands, uncommitted — no branch, no commit")
+	c.Flags().BoolVar(&noVerify, "no-verify", false,
+		"mint the branch without submitting background verification")
 	c.Flags().BoolVar(&verifyIt, "verify", false,
 		"build the result in a pristine VM before applying; failure applies nothing")
 	c.Flags().StringVar(&on, "on", "",

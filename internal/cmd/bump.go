@@ -90,41 +90,16 @@ func (a bumpAction) Execute(ctx context.Context, rs *runstate.Context) error {
 			return err
 		}
 	}
-	if a.planOnly {
-		return p.Encode(rs.Out)
-	}
-	if a.diff {
-		// The patch the branch would carry, and nothing else: same
-		// graft as a mint, diffed instead of committed.
-		return diffFromPlan(ctx, rs, p)
-	}
-	if a.inPlace {
-		// The deliberate opt-out (D21): edit where the user stands,
-		// uncommitted — for the user running their own workflow, and
-		// the only write mode a non-git tree has.
-		return applyPlan(ctx, rs, p)
-	}
 	portName := p.Subport
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(p.Portdir))
 	}
-	m, err := mintFromPlan(ctx, rs, p,
-		"dockhand/"+portName+"-"+to,
-		fmt.Sprintf("%s: update to %s", portName, to))
-	if err != nil || m == nil {
-		return err
-	}
-	if a.noVerify {
-		return nil
-	}
-	// The branch is live the moment it exists (D21): verification is
-	// submitted against the tip and the guest drives its own build, so
-	// this process is free to exit; status collects the verdict.
-	release, err := releaseFlag(a.on)
-	if err != nil {
-		return err
-	}
-	return submitVerification(ctx, rs, m, portName, release)
+	return realizePlan(ctx, rs, p, realizeOpts{
+		planOnly: a.planOnly, diff: a.diff, inPlace: a.inPlace,
+		noVerify: a.noVerify, on: a.on,
+		branch:  "dockhand/" + portName + "-" + to,
+		message: fmt.Sprintf("%s: update to %s", portName, to),
+	})
 }
 
 // Bump builds the bump subcommand: move a port to a new version.

@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,7 +18,10 @@ type bumpRevisionAction struct {
 	target   string
 	reason   string
 	planOnly bool
+	diff     bool
+	inPlace  bool
 	verify   bool
+	noVerify bool
 	on       string
 }
 
@@ -54,10 +59,25 @@ func (a bumpRevisionAction) Execute(ctx context.Context, rs *runstate.Context) e
 			return err
 		}
 	}
-	if a.planOnly {
-		return p.Encode(rs.Out)
+	portName := p.Subport
+	if portName == "" {
+		portName = filepath.Base(filepath.Clean(p.Portdir))
 	}
-	return applyPlan(ctx, rs, p)
+	// The branch is named for the revision it reaches; the reason is
+	// the commit's description — it is why users must rebuild, which
+	// is exactly what the log should say.
+	next := "next"
+	for _, e := range p.Edits {
+		if strings.HasPrefix(e.Reason, "revision") {
+			next = e.New
+		}
+	}
+	return realizePlan(ctx, rs, p, realizeOpts{
+		planOnly: a.planOnly, diff: a.diff, inPlace: a.inPlace,
+		noVerify: a.noVerify, on: a.on,
+		branch:  "dockhand/" + portName + "-rev" + next,
+		message: portName + ": " + a.reason,
+	})
 }
 
 // BumpRevisionCmd builds the bump-revision subcommand.
@@ -65,7 +85,10 @@ func BumpRevisionCmd() *cobra.Command {
 	var (
 		reason   string
 		planOnly bool
+		diffOnly bool
+		inPlace  bool
 		verifyIt bool
+		noVerify bool
 		on       string
 	)
 	c := &cobra.Command{
@@ -77,17 +100,32 @@ func BumpRevisionCmd() *cobra.Command {
 			if reason == "" {
 				return nil, usagef("a revision bump needs --reason: it says why users must rebuild")
 			}
+			switch {
+			case diffOnly && inPlace, diffOnly && planOnly:
+				return nil, usagef("--diff is an output mode of its own; combine it with neither --plan nor --in-place")
+			case verifyIt && noVerify:
+				return nil, usagef("--verify and --no-verify are mutually exclusive")
+			}
 			return bumpRevisionAction{
 				target:   args[0],
 				reason:   reason,
 				planOnly: planOnly,
+				diff:     diffOnly,
+				inPlace:  inPlace,
 				verify:   verifyIt,
+				noVerify: noVerify,
 				on:       on,
 			}, nil
 		}),
 	}
 	c.Flags().StringVar(&reason, "reason", "", "why users must rebuild (required; travels in the plan and the eventual commit)")
 	c.Flags().BoolVar(&planOnly, "plan", false, "emit the plan on stdout and change nothing")
+	c.Flags().BoolVar(&diffOnly, "diff", false,
+		"print the patch the branch would carry, as a git diff; write nothing")
+	c.Flags().BoolVar(&inPlace, "in-place", false,
+		"edit the Portfile where it stands, uncommitted — no branch, no commit")
+	c.Flags().BoolVar(&noVerify, "no-verify", false,
+		"mint the branch without submitting background verification")
 	c.Flags().BoolVar(&verifyIt, "verify", false, "build the result in a pristine VM before applying")
 	c.Flags().StringVar(&on, "on", "", "macOS release to verify on (implies --verify)")
 	return c
