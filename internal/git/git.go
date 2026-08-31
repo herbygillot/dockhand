@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,17 +65,26 @@ func (r *Repo) git(ctx context.Context, args ...string) (string, error) {
 // scrubbedEnv is the environment git runs with. Inherited GIT_*
 // redirection variables could point a command at some other
 // repository's objects or index — a leak from whatever invoked
-// dockhand — so they are dropped. LC_ALL=C keeps diagnostic text
-// stable, and GIT_PAGER=cat makes "no pager" a property of the code
-// rather than of how a command happened to be invoked. The user's own
-// config survives on purpose: their authorship and remotes are the
-// point.
+// dockhand — so they are dropped, and LC_ALL=C keeps diagnostic text
+// stable. The user's own config survives on purpose: their authorship,
+// remotes, and pager are the point. GIT_PAGER stays untouched here —
+// execGit adds its own cat so internal plumbing never pages, while
+// Pager can still ask what the user configured.
 func scrubbedEnv() []string {
+	// Alongside the redirection family: GIT_CONFIG_COUNT heads the
+	// `git -c` injection vars (dropping the count makes git ignore the
+	// KEY/VALUE pairs), GIT_DIFF_OPTS can silently strip a patch's
+	// context lines (-u0), and GIT_EXTERNAL_DIFF is redirection-shaped
+	// even though nothing here passes --ext-diff. GIT_CONFIG_GLOBAL
+	// and _SYSTEM survive: users export those deliberately to relocate
+	// their real config, which is authorship and pager — the point.
 	drop := map[string]bool{
 		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_INDEX_FILE": true,
 		"GIT_NAMESPACE": true, "GIT_OBJECT_DIRECTORY": true,
 		"GIT_ALTERNATE_OBJECT_DIRECTORIES": true, "GIT_COMMON_DIR": true,
-		"GIT_CEILING_DIRECTORIES": true,
+		"GIT_CEILING_DIRECTORIES": true, "GIT_CONFIG_PARAMETERS": true,
+		"GIT_CONFIG_COUNT": true, "GIT_DIFF_OPTS": true,
+		"GIT_EXTERNAL_DIFF": true,
 	}
 	var env []string
 	for _, kv := range os.Environ() {
@@ -83,14 +93,64 @@ func scrubbedEnv() []string {
 			env = append(env, kv)
 		}
 	}
-	return append(env, "LC_ALL=C", "GIT_PAGER=cat")
+	return append(env, "LC_ALL=C")
+}
+
+// Pager resolves the pager git itself would use for a diff. Real git
+// consults pager.diff first — false means never page a diff, a string
+// names the diff-specific pager, true falls through — and only then
+// the general chain: $GIT_PAGER, core.pager, $PAGER, less, which
+// `git var GIT_PAGER` runs (correctly even from behind a pipe).
+func (r *Repo) Pager(ctx context.Context) string {
+	if v, err := r.git(ctx, "config", "--get", "pager.diff"); err == nil {
+		switch strings.ToLower(v) {
+		case "false", "no", "off", "0":
+			return "cat"
+		case "true", "yes", "on", "1", "":
+			// Page, with the general chain's pager.
+		default:
+			return v
+		}
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", r.Root, "var", "GIT_PAGER")
+	cmd.Env = scrubbedEnv()
+	out, err := cmd.Output()
+	pager := strings.TrimSpace(string(out))
+	if err != nil || pager == "" {
+		return "cat"
+	}
+	return pager
+}
+
+// RunPager feeds content through a pager command the way git does: the
+// value is a shell command, and LESS=FRX / LV=-c are defaulted exactly
+// as git defaults them, so a bare less quits on a single screenful. A
+// pager the user closes early is a shown diff, not an error.
+func RunPager(ctx context.Context, pager string, content []byte, out, errOut io.Writer) error {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", pager)
+	env := os.Environ()
+	if os.Getenv("LESS") == "" {
+		env = append(env, "LESS=FRX")
+	}
+	if os.Getenv("LV") == "" {
+		env = append(env, "LV=-c")
+	}
+	cmd.Env = env
+	cmd.Stdin = bytes.NewReader(content)
+	cmd.Stdout, cmd.Stderr = out, errOut
+	err := cmd.Run()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return nil
+	}
+	return err
 }
 
 // execGit runs one git command with the scrubbed environment,
 // surfacing the exit code for the callers that classify by it.
 func execGit(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, int, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = scrubbedEnv()
+	cmd.Env = append(scrubbedEnv(), "GIT_PAGER=cat")
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -209,7 +269,10 @@ func (r *Repo) Mint(ctx context.Context, req MintRequest) (string, error) {
 // holding content: the object-database half of a mint, shared with
 // diffing — "diff the trees" and "commit the tree" are the same
 // construction with different last steps. The objects written are
-// ordinary gc fodder until something references them.
+// ordinary gc fodder until something references them. hash-object
+// without --path bypasses gitattributes clean filters, so the blob is
+// content's exact bytes — the assumption is that no filter governs
+// Portfiles, which holds in macports-ports.
 func (r *Repo) GraftTree(ctx context.Context, base, path string, content []byte) (string, error) {
 	baseTree, err := r.RevParse(ctx, base+"^{tree}")
 	if err != nil {

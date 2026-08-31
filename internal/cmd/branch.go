@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -104,6 +105,17 @@ func diffFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) error
 	patch, err := repo.DiffTrees(ctx, primary+"^{tree}", tree)
 	if err != nil {
 		return err
+	}
+	// Page the way git diff would: through the user's own pager
+	// (GIT_PAGER, core.pager, PAGER — git's chain), and only when
+	// stdout is a terminal. diff-tree itself runs behind a pipe, so
+	// the pager decision is dockhand's to make at its own stdout.
+	if f, ok := rs.Out.(*os.File); ok {
+		if fi, err := f.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+			if pager := repo.Pager(ctx); pager != "" && pager != "cat" {
+				return git.RunPager(ctx, pager, patch, rs.Out, rs.Err)
+			}
+		}
 	}
 	_, err = rs.Out.Write(patch)
 	return err

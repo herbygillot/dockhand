@@ -168,6 +168,60 @@ func TestDiffTreesEmitsWhatGitApplyAccepts(t *testing.T) {
 	assert.False(t, r.HasBranch(ctx, "dockhand/jq-1.8"))
 }
 
+// Pager resolution follows git's own chain, and the scrub must not
+// smother it: the GIT_PAGER=cat that keeps internal plumbing from
+// paging is execGit's, not the environment's.
+func TestPagerFollowsGitsChain(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+
+	// Setenv registers the restore; Unsetenv makes them truly absent —
+	// to git, an empty-but-set GIT_PAGER means "no pager", not "next
+	// in the chain".
+	t.Setenv("GIT_PAGER", "x")
+	t.Setenv("PAGER", "x")
+	require.NoError(t, os.Unsetenv("GIT_PAGER"))
+	require.NoError(t, os.Unsetenv("PAGER"))
+	_, err := r.git(ctx, "config", "core.pager", "mypager --fancy")
+	require.NoError(t, err)
+	assert.Equal(t, "mypager --fancy", r.Pager(ctx), "core.pager")
+
+	t.Setenv("GIT_PAGER", "envpager")
+	assert.Equal(t, "envpager", r.Pager(ctx), "GIT_PAGER outranks core.pager")
+
+	// pager.diff is git's diff-specific override: a command wins over
+	// everything, and false means a diff never pages.
+	_, err = r.git(ctx, "config", "pager.diff", "diffpager")
+	require.NoError(t, err)
+	assert.Equal(t, "diffpager", r.Pager(ctx))
+	_, err = r.git(ctx, "config", "pager.diff", "false")
+	require.NoError(t, err)
+	assert.Equal(t, "cat", r.Pager(ctx))
+}
+
+// The `git -c` injection vars are scrubbed like the redirection family:
+// config from whatever invoked dockhand must not reach our commands.
+func TestConfigInjectionIsScrubbed(t *testing.T) {
+	r := newRepo(t)
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.pager")
+	t.Setenv("GIT_CONFIG_VALUE_0", "evilpager")
+	assert.NotEqual(t, "evilpager", r.Pager(context.Background()))
+}
+
+// RunPager runs the value through the shell, as git does, and a pager
+// that exits early is a shown diff rather than an error.
+func TestRunPagerIsAShellCommand(t *testing.T) {
+	testenv.Tool(t, "git")
+	var out bytes.Buffer
+	err := RunPager(context.Background(), "tr a-z A-Z", []byte("diff text\n"), &out, &out)
+	require.NoError(t, err)
+	assert.Equal(t, "DIFF TEXT\n", out.String())
+
+	require.NoError(t, RunPager(context.Background(), "exit 1", []byte("x"), &out, &out),
+		"a pager's own exit status is the user's business")
+}
+
 // A GIT_DIR inherited from whatever invoked dockhand must not redirect
 // commands away from the repository they were addressed to.
 func TestEnvironmentRedirectionIsScrubbed(t *testing.T) {
