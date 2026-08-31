@@ -195,7 +195,7 @@ path and the one its author does not live.
 
 **Decided.**
 
-- *Required:* `port-tclsh`, `git`. `git` declared `bin:git:git` so an Xcode CLT git satisfies it; runtime probe enforces the version floor a dependency declaration cannot express (`git worktree` needs 2.5+).
+- *Required:* `port-tclsh`, `git`. `git` declared `bin:git:git` so an Xcode CLT git satisfies it; runtime probe enforces the version floor a dependency declaration cannot express. The floor is 2.25, resolved (2026-08-31) from the introducing releases of the three porcelains D21's write path needs: `git notes` is ancient (1.6.6; full subcommand set 1.7.1, merge strategies 1.7.4), `git worktree` needs 2.5, and `git sparse-checkout` — the binding one — needs 2.25.
 - *Assumed:* `patch`, matching base's own assumption. Exit status only, never message formatting. The verdict must come from whichever patch engine MacPorts will use for that port.
 - *Discovered:* `tart`, block generators. Resolved from `PATH` at startup; presence determines which tiers and verifications are reachable.
 

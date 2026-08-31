@@ -30,7 +30,7 @@ func TestReportRendering(t *testing.T) {
 	out := Probe().String()
 	require.Contains(t, out, "port-tclsh   /opt/local/bin/port-tclsh")
 	require.Contains(t, out, "tclsh        missing")
-	require.Contains(t, out, "below the 2.5 floor")
+	require.Contains(t, out, "below the 2.25 floor")
 	require.Contains(t, out, "evaluation               available")
 	require.Contains(t, out, "branches and worktrees   unavailable")
 	require.Contains(t, out, "VM verification          unavailable (no tart)")
@@ -44,6 +44,10 @@ func TestVersionBelowIsNumeric(t *testing.T) {
 	require.False(t, versionBelow("3.0", 2, 5))
 	require.True(t, versionBelow("2.4.0", 2, 5))
 	require.True(t, versionBelow("1.9.5", 2, 5))
+	// The enforced floor is 2.25 (sparse-checkout).
+	require.False(t, versionBelow("2.25.0", 2, 25))
+	require.False(t, versionBelow("2.39.5", 2, 25))
+	require.True(t, versionBelow("2.24.4", 2, 25))
 	// Unparseable versions are not claimed to be below the floor.
 	require.False(t, versionBelow("", 2, 5))
 	require.False(t, versionBelow("unknown", 2, 5))

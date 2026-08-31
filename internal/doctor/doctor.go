@@ -106,10 +106,14 @@ func Probe() Report {
 	git := find("git", "")
 	if git.Found {
 		git.Version = strings.TrimPrefix(runVersion(git.Path, "--version"), "git version ")
-		// git worktree needs 2.5+; a dependency declaration cannot express
-		// a version floor, so the probe enforces it.
-		if versionBelow(git.Version, 2, 5) {
-			git.Note = "below the 2.5 floor required for git worktree"
+		// The write path (D21) needs three porcelains, each with its
+		// introducing release: notes is ancient (1.6.6; full subcommand
+		// set 1.7.1, merge strategies 1.7.4), worktree needs 2.5, and
+		// sparse-checkout needs 2.25 — the binding floor, subsuming the
+		// others. A dependency declaration cannot express a version
+		// floor, so the probe enforces it.
+		if versionBelow(git.Version, 2, 25) {
+			git.Note = "below the 2.25 floor required for git sparse-checkout"
 		}
 	}
 	gh := find("gh", "")
