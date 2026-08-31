@@ -38,7 +38,10 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	if len(branches) == 0 {
-		fmt.Fprintln(rs.Out, "no dockhand branches")
+		// Naming the repository is the point: run from the wrong
+		// checkout, "no branches" is true and useless — true and
+		// located is actionable.
+		fmt.Fprintf(rs.Out, "no dockhand branches in %s\n", repo.Root)
 		return nil
 	}
 	for _, br := range branches {

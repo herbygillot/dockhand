@@ -42,7 +42,7 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	if len(branches) == 0 {
-		fmt.Fprintln(rs.Out, "no dockhand branches")
+		fmt.Fprintf(rs.Out, "no dockhand branches in %s\n", repo.Root)
 		return nil
 	}
 	upstream, err := upstreamRepo(ctx, repo)
