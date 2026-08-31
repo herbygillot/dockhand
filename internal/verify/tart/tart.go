@@ -71,6 +71,10 @@ type Provider struct {
 	Prefix prefix.Prefix
 }
 
+// The provider is the contract, provably: a Verifier that drifts
+// fails to build.
+var _ verify.Verifier = Provider{}
+
 // baseFor picks the image a request asks for. A release this provider
 // has no image for is refused, never substituted — a build on one macOS
 // is not evidence about another.
@@ -364,20 +368,37 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 		// has not reported an outcome, and inventing one would be worse.
 		return verify.Status{State: verify.Running}, nil
 	}
-	log, _ := Exec(ctx, job.ID, "/usr/bin/tail", "-200", stateDir+"/log")
 
 	switch strings.TrimSpace(state) {
 	case "passed":
-		return verify.Status{State: verify.Passed, Log: log, Handle: job.ID}, nil
+		return verify.Status{State: verify.Passed, Handle: job.ID}, nil
 	case "failed":
 		// Kept deliberately: what a failed verification hands back is the
 		// environment it failed in.
-		return verify.Status{State: verify.Failed, Log: log, Handle: job.ID}, nil
+		return verify.Status{State: verify.Failed, Handle: job.ID}, nil
 	case "running":
-		return verify.Status{State: verify.Running, Log: log}, nil
+		return verify.Status{State: verify.Running}, nil
 	}
-	return verify.Status{State: verify.Errored, Log: log,
+	return verify.Status{State: verify.Errored,
 		Detail: "the guest reported no state; the runner did not start"}, nil
+}
+
+// Log reads the build's output from the guest, in full — the fetch is
+// deliberate, so completeness beats the tail Poll used to carry.
+func (p Provider) Log(ctx context.Context, job verify.Job) (string, error) {
+	if job.Provider != "tart" {
+		return "", fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
+	}
+	if ok, err := HasVM(ctx, job.ID); err != nil {
+		return "", err
+	} else if !ok {
+		return "", fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
+	}
+	log, err := Exec(ctx, job.ID, "/bin/cat", stateDir+"/log")
+	if err != nil {
+		return "", fmt.Errorf("reading the build log from %s: %w", job.ID, err)
+	}
+	return log, nil
 }
 
 // Release discards the worker, and with it any debug handle.

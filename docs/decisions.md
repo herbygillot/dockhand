@@ -393,6 +393,14 @@ Poll, so no provider implements blocking. A Job is a plain serializable value
 {provider, id, started}: the process that submits is not necessarily the one
 that collects.
 
+**Amended (2026-08-31).** The contract gains Log(ctx, job): the build's
+output, fetched deliberately. It was previously a field on Poll's Status,
+which made every poll carry a log read — tolerable for a local VM, wrong by
+construction for a CI provider where the log is a download. Poll is now
+cheap state only; the log is asked for when someone wants it (`dockhand
+log`, the failure tail), which is also the shape a future GitHub provider
+needs.
+
 **Why.** Even the "synchronous" backend takes fifteen seconds to nine minutes,
 long enough that a blocking call is a lie the first time someone interrupts a
 run. The serializable Job forced the tart guest to drive its own build and

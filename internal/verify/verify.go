@@ -180,8 +180,6 @@ func (s State) Terminal() bool { return s != Running }
 // terminal.
 type Status struct {
 	State State
-	// Log is what the environment produced, as far as it got.
-	Log string
 	// Detail explains an Errored state — why the environment could not
 	// answer.
 	Detail string
@@ -225,6 +223,11 @@ type Verifier interface {
 	Capabilities() Capabilities
 	Submit(ctx context.Context, req Request) (Job, error)
 	Poll(ctx context.Context, job Job) (Status, error)
+	// Log is the build's output so far, fetched deliberately: for a
+	// local VM it is a read, for a CI provider it is a download, and
+	// either way it must never ride along on Poll — polling is cheap
+	// or the whole submit-and-poll shape stops being usable.
+	Log(ctx context.Context, job Job) (string, error)
 	Release(ctx context.Context, job Job) error
 }
 

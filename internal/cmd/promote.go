@@ -23,11 +23,12 @@ import (
 // writes ordinary tracking config, and any later lookup queries pulls
 // by head ref, the same way gh itself does.
 type promoteAction struct {
-	target string
-	remote string // fork remote; empty means detect by gh login
-	title  string
-	closes string
-	noPR   bool
+	target   string
+	remote   string // fork remote; empty means detect by gh login
+	title    string
+	closes   string
+	noPR     bool
+	noVerify bool // promote an unverified tip deliberately
 }
 
 var _ Action = promoteAction{}
@@ -61,10 +62,14 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return err
 	}
 	if !verified {
-		if tartPresent() {
-			return fmt.Errorf("%s: tip %s is unverified — `dockhand verify %s` first", branch, tip[:12], branch)
+		switch {
+		case a.noVerify:
+			fmt.Fprintln(rs.Err, "promoting unverified (--no-verify); the PR will say so")
+		case tartPresent():
+			return fmt.Errorf("%s: tip %s is unverified — `dockhand verify %s` first, or --no-verify to promote anyway", branch, tip[:12], branch)
+		default:
+			fmt.Fprintln(rs.Err, "no local verify provider (tart): promoting unverified")
 		}
-		fmt.Fprintln(rs.Err, "no local verify provider (tart): promoting unverified")
 	}
 
 	forkRemote, forkOwner, err := a.forkRemote(ctx, repo)
@@ -267,10 +272,11 @@ func ghOut(ctx context.Context, args ...string) (string, error) {
 // Promote builds the promote subcommand.
 func Promote() *cobra.Command {
 	var (
-		remote string
-		title  string
-		closes string
-		noPR   bool
+		remote   string
+		title    string
+		closes   string
+		noPR     bool
+		noVerify bool
 	)
 	c := &cobra.Command{
 		Use:   "promote <branch|port>",
@@ -279,7 +285,7 @@ func Promote() *cobra.Command {
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
 			return promoteAction{
 				target: args[0], remote: remote,
-				title: title, closes: closes, noPR: noPR,
+				title: title, closes: closes, noPR: noPR, noVerify: noVerify,
 			}, nil
 		}),
 	}
@@ -287,5 +293,7 @@ func Promote() *cobra.Command {
 	c.Flags().StringVar(&title, "title", "", "PR title (default: the tip commit's subject)")
 	c.Flags().StringVar(&closes, "closes", "", "Trac ticket number the PR closes")
 	c.Flags().BoolVar(&noPR, "no-pr", false, "push to the fork without opening a pull request")
+	c.Flags().BoolVar(&noVerify, "no-verify", false,
+		"promote even if the branch is unverified; the PR discloses it")
 	return c
 }

@@ -149,11 +149,13 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 		return prov.Release(ctx, job)
 	case verify.Failed:
 		fmt.Fprintln(rs.Err, "FAILED")
-		tail := st.Log
-		if len(tail) > 2000 {
-			tail = tail[len(tail)-2000:]
+		if log, lerr := prov.Log(ctx, job); lerr == nil {
+			tail := log
+			if len(tail) > 2000 {
+				tail = tail[len(tail)-2000:]
+			}
+			fmt.Fprintln(rs.Err, tail)
 		}
-		fmt.Fprintln(rs.Err, tail)
 		// The environment is kept on purpose: it is the debug handle.
 		return &VerifyFailedError{Port: portName, Handle: st.Handle}
 	case verify.Errored:

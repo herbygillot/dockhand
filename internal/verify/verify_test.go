@@ -21,6 +21,7 @@ type fake struct {
 func (f *fake) Capabilities() Capabilities                   { return f.caps }
 func (f *fake) Submit(context.Context, Request) (Job, error) { return Job{Provider: "fake"}, nil }
 func (f *fake) Release(context.Context, Job) error           { return nil }
+func (f *fake) Log(context.Context, Job) (string, error)     { return "", nil }
 func (f *fake) Poll(context.Context, Job) (Status, error) {
 	s := f.states[min(f.polls, len(f.states)-1)]
 	f.polls++
