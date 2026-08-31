@@ -107,3 +107,23 @@ func (r *Repo) NotesList(ctx context.Context, ref string) ([]string, error) {
 	}
 	return shas, nil
 }
+
+// MergeBase returns the merge base of two revisions.
+func (r *Repo) MergeBase(ctx context.Context, a, b string) (string, error) {
+	return r.git(ctx, "merge-base", a, b)
+}
+
+// IsAncestor reports whether a is an ancestor of b.
+func (r *Repo) IsAncestor(ctx context.Context, a, b string) bool {
+	_, _, err := execGit(ctx, r.Root, nil, "merge-base", "--is-ancestor", a, b)
+	return err == nil
+}
+
+// DiffNames lists the paths that differ between two revisions.
+func (r *Repo) DiffNames(ctx context.Context, a, b string) ([]string, error) {
+	out, err := r.git(ctx, "diff-tree", "-r", "--name-only", a, b)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
+}

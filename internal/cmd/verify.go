@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -155,6 +157,21 @@ type verifyAction struct {
 var _ Action = verifyAction{}
 
 func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
+	release, err := releaseFlag(a.on)
+	if err != nil {
+		return err
+	}
+	// A branch name wins over a port name: the branch is the unit
+	// (D21), and verifying one means verifying its tip sha, whoever
+	// made it. Everything else falls through to state verification of
+	// the working tree.
+	dir := rs.TreeRoot
+	if dir == "" {
+		dir = "."
+	}
+	if repo, err := git.Open(ctx, dir); err == nil && repo.HasBranch(ctx, a.target) {
+		return verifyBranch(ctx, rs, repo, a.target, release)
+	}
 	targets, err := resolveTargets(rs.TreeRoot, false, []string{a.target})
 	if err != nil {
 		return err
@@ -166,19 +183,101 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(targets[0].Portdir))
 	}
-	release, err := releaseFlag(a.on)
+	return runVerification(ctx, rs, portName, targets[0].Portdir, release)
+}
+
+// verifyBranch submits a branch's tip for verification in the
+// background, exactly as the mint that created it would have: the
+// changed portdir is derived from git — diff against the merge base
+// with the primary branch, so a human commit's changes count too — and
+// materialized from the object database. A job already running for the
+// tip is left alone; a running job the branch has moved past is
+// canceled first, its worker released and its note marked superseded,
+// because a verdict about an abandoned sha is a slot spent on nothing.
+func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, release platform.Release) error {
+	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return err
 	}
-	return runVerification(ctx, rs, portName, targets[0].Portdir, release)
+	if n, err := readNote(ctx, repo, tip); err == nil && n.State == "running" {
+		fmt.Fprintf(rs.Err, "already verifying (%s); `dockhand status` follows it\n",
+			time.Since(n.Job.Started).Round(time.Second))
+		return nil
+	}
+	if err := cancelStale(ctx, rs, repo, branch, tip); err != nil {
+		return err
+	}
+
+	primary, err := repo.PrimaryBranch(ctx)
+	if err != nil {
+		return err
+	}
+	base, err := repo.MergeBase(ctx, primary, tip)
+	if err != nil {
+		return err
+	}
+	paths, err := repo.DiffNames(ctx, base, tip)
+	if err != nil {
+		return err
+	}
+	portdirs := map[string]bool{}
+	for _, p := range paths {
+		parts := strings.SplitN(p, "/", 3)
+		if len(parts) >= 3 {
+			portdirs[parts[0]+"/"+parts[1]] = true
+		}
+	}
+	if len(portdirs) != 1 {
+		return fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, len(portdirs), base[:12])
+	}
+	var rel string
+	for d := range portdirs {
+		rel = d
+	}
+	return submitVerification(ctx, rs, &minted{
+		Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
+	}, filepath.Base(rel), release)
+}
+
+// cancelStale releases every running job recorded on a commit the
+// branch once pointed at but no longer does — reachable ancestors and
+// amended-away shas alike — and marks their notes superseded by the
+// tip about to be submitted.
+func cancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch, tip string) error {
+	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
+	if err != nil {
+		return err
+	}
+	for _, sha := range noted {
+		if sha == tip {
+			continue
+		}
+		n, err := readNote(ctx, repo, sha)
+		if err != nil || n.State != "running" || !repo.IsAncestor(ctx, sha, branch) {
+			continue
+		}
+		prov, err := vmProvider(ctx)
+		if err != nil {
+			return err
+		}
+		if err := prov.Release(ctx, n.Job); err != nil {
+			fmt.Fprintf(rs.Err, "warning: canceling %s: %v\n", n.Job.ID, err)
+		}
+		n.State, n.Detail = "superseded", "canceled: the branch moved to "+tip[:12]
+		if err := writeNote(ctx, repo, n); err != nil {
+			return err
+		}
+		fmt.Fprintf(rs.Err, "canceled stale verification of %s (branch moved past it)\n", sha[:12])
+	}
+	return nil
 }
 
 // Verify builds the verify subcommand.
 func Verify() *cobra.Command {
 	var on string
 	c := &cobra.Command{
-		Use:   "verify <port|subport|portdir>",
-		Short: "Build a port as it sits, in a pristine VM, changing nothing",
+		Use:   "verify <branch|port|subport|portdir>",
+		Short: "Verify a branch's tip in a pristine VM — or a port as it sits",
 		Args:  exactArgs(1),
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
 			return verifyAction{target: args[0], on: on}, nil
