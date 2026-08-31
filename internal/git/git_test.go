@@ -314,3 +314,16 @@ func TestRevListNewestFirst(t *testing.T) {
 	assert.Equal(t, sha, shas[0])
 	assert.Equal(t, head, shas[1])
 }
+
+// A checkout reached through a symlink hands us symlinked paths while
+// git names its top level by the real location — found in the field
+// when ~/Source/ports (a link) made every portdir look outside the
+// repository at ~/Source/macports-ports.
+func TestRelPathResolvesSymlinkedCheckouts(t *testing.T) {
+	r := newRepo(t)
+	link := filepath.Join(t.TempDir(), "ports")
+	require.NoError(t, os.Symlink(r.Root, link))
+	rel, err := r.RelPath(filepath.Join(link, "sysutils", "jq"))
+	require.NoError(t, err)
+	assert.Equal(t, "sysutils/jq", rel)
+}

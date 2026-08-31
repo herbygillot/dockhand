@@ -217,9 +217,20 @@ func (r *Repo) BlobAt(ctx context.Context, rev, path string) ([]byte, error) {
 }
 
 // RelPath renders an absolute path relative to the repository root,
-// slash-separated, refusing paths that escape it.
+// slash-separated, refusing paths that escape it. Both sides are
+// compared by their real locations: a checkout reached through a
+// symlink (~/Source/ports linking the real clone) hands us symlinked
+// paths, while git names its top level by where it really is, and the
+// mismatch must not read as "outside the repository".
 func (r *Repo) RelPath(path string) (string, error) {
-	rel, err := filepath.Rel(r.Root, path)
+	root := r.Root
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	rel, err := filepath.Rel(root, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("git: %s is outside the repository at %s", path, r.Root)
 	}
