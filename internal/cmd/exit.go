@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // Process exit codes. An exit status answers "whose problem is this":
@@ -22,7 +23,8 @@ const (
 	ExitUsage       = 2 // bad flag, unknown command, invalid arguments
 	ExitEnvironment = 3 // the machine: MacPorts missing, tclsh broken, running as root
 	ExitTree        = 4 // the ports tree: not a tree, port not found
-	ExitDeclined    = 5 // reserved: a point intent declined to produce a plan
+	ExitDeclined    = 5 // a point intent declined to produce a plan
+	ExitVerify      = 6 // verification ran and the port does not build
 )
 
 // UsageError marks a failure as the invocation being wrong — the remedy
@@ -43,6 +45,13 @@ func usagef(format string, a ...any) error {
 func ExitCode(err error) int {
 	var usage *UsageError
 	var styleDecline *portstyle.Decline
+	var verifyFailed *VerifyFailedError
+	if errors.As(err, &verifyFailed) {
+		return ExitVerify
+	}
+	if errors.Is(err, verify.ErrNoEnvironment) || errors.Is(err, verify.ErrUnsupported) {
+		return ExitEnvironment
+	}
 	var intentDecline *plan.Decline
 	switch {
 	case err == nil:

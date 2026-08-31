@@ -161,3 +161,24 @@ func TestShadow(t *testing.T) {
 	_, err = os.Stat(filepath.Join(portdir, macports.PortfileName))
 	assert.NoError(t, err, "the real portdir is untouched")
 }
+
+// The shadow of devel/foo lives at <tmp>/devel/foo: evaluation never
+// cares, but the verifier's overlay stages a portdir by its layout, and
+// a shadow that discarded the category could not be staged as the port
+// it shadows.
+func TestShadowKeepsTheCategoryLayout(t *testing.T) {
+	base := t.TempDir()
+	portdir := filepath.Join(base, "devel", "foo")
+	require.NoError(t, os.MkdirAll(portdir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(portdir, macports.PortfileName),
+		[]byte("PortSystem 1.0\nname foo\nversion 1.0\n"), 0o644))
+
+	h := New(tree.Target{Portdir: portdir}, nil)
+	sh, cleanup, err := h.Shadow([]byte("PortSystem 1.0\nname foo\nversion 2.0\n"))
+	require.NoError(t, err)
+	defer cleanup()
+
+	assert.Equal(t, "foo", filepath.Base(sh.Target.Portdir))
+	assert.Equal(t, "devel", filepath.Base(filepath.Dir(sh.Target.Portdir)),
+		"the category survives into the shadow's path")
+}

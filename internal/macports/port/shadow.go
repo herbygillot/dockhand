@@ -21,9 +21,22 @@ import (
 //
 // Regular contents (files/, patches) are copied; symlinks — a work link
 // from a local build, say — are not part of the port and are skipped.
+//
+// The copy keeps the port's <category>/<port> identity: the shadow of
+// devel/foo lives at <tmp>/devel/foo, not at <tmp> itself. Evaluation
+// never cares, but anything that stages a portdir by its layout — the
+// verifier's overlay, whose indexer walks categories — reads the
+// category from the path, and a shadow that discarded it could not be
+// staged as the port it is a shadow of.
 func (h Handle) Shadow(portfile []byte) (Handle, func(), error) {
-	dir, remove, err := h.TempDir.MakeDir("shadow")
+	root, remove, err := h.TempDir.MakeDir("shadow")
 	if err != nil {
+		return Handle{}, nil, err
+	}
+	clean := filepath.Clean(h.Target.Portdir)
+	dir := filepath.Join(root, filepath.Base(filepath.Dir(clean)), filepath.Base(clean))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		remove()
 		return Handle{}, nil, err
 	}
 	if err := copyTree(dir, h.Target.Portdir); err != nil {

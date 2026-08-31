@@ -20,7 +20,11 @@ import (
 // tell you which. The summary says so every time; nothing here will
 // ever auto-promote it.
 func RefreshChecksums(rc *RunContext) *cobra.Command {
-	var planOnly bool
+	var (
+		planOnly bool
+		verifyIt bool
+		on       string
+	)
 	c := &cobra.Command{
 		Use:     "refresh-checksums <port|subport|portdir>",
 		Aliases: []string{"refresh"},
@@ -56,6 +60,15 @@ func RefreshChecksums(rc *RunContext) *cobra.Command {
 			fmt.Fprintln(rc.Err, "note: these checksums changed at an UNCHANGED version — upstream re-rolled")
 			fmt.Fprintln(rc.Err, "the artifact. Establish why before this change goes anywhere public: it may")
 			fmt.Fprintln(rc.Err, "be a benign re-tar, or it may be a supply-chain event.")
+			if verifyIt || on != "" {
+				release, err := releaseFlag(on)
+				if err != nil {
+					return err
+				}
+				if err := verifyPlan(cmd.Context(), rc, p, release); err != nil {
+					return err
+				}
+			}
 			if planOnly {
 				return p.Encode(rc.Out)
 			}
@@ -63,5 +76,9 @@ func RefreshChecksums(rc *RunContext) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&planOnly, "plan", false, "emit the plan on stdout and change nothing")
+	c.Flags().BoolVar(&verifyIt, "verify", false,
+		"build the result in a pristine VM before applying; failure applies nothing")
+	c.Flags().StringVar(&on, "on", "",
+		"macOS release to verify on (implies --verify)")
 	return c
 }

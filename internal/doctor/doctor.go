@@ -15,7 +15,22 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
 )
+
+// provisioned is indirected for hermetic tests; the default asks the
+// provisioner what bases exist.
+var provisioned = func(ctx context.Context) ([]string, error) {
+	rels, err := (provision.Tart{}).Provisioned(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(rels))
+	for _, r := range rels {
+		names = append(names, r.Name)
+	}
+	return names, nil
+}
 
 // lookPath and runVersion are indirected for hermetic tests.
 var (
@@ -44,6 +59,10 @@ type Tool struct {
 // Report is the machine's capability picture.
 type Report struct {
 	Tools []Tool
+	// VMBases are the provisioned verification bases, by release name.
+	// The tart binary being present says nothing about whether any
+	// environment exists; the bases are the capability.
+	VMBases []string
 }
 
 // Probe examines the machine.
@@ -99,10 +118,17 @@ func Probe() Report {
 	}
 	curl := find("curl", "")
 	tart := find("tart", "")
+	var bases []string
+	if tart.Found {
+		if rels, err := provisioned(context.Background()); err == nil {
+			bases = rels
+		}
+	}
 	go2port := find("go2port", "")
 	cargo2port := find("cargo2port", "")
 
-	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port}}
+	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port},
+		VMBases: bases}
 }
 
 // String renders the report: each tool, then the capabilities the
@@ -137,7 +163,14 @@ func (r Report) String() string {
 	cap(byName["git"].Found && byName["git"].Note == "", "branches and worktrees", "git missing or below floor")
 	cap(byName["gh"].Found, "GitHub integration", "no gh")
 	cap(byName["curl"].Found, "non-http distfile fetch", "no curl: only http(s) sources reachable")
-	cap(byName["tart"].Found, "VM verification", "no tart")
+	switch {
+	case !byName["tart"].Found:
+		cap(false, "VM verification", "no tart")
+	case len(r.VMBases) == 0:
+		cap(false, "VM verification", "no base images: run `dockhand provision tart`")
+	default:
+		fmt.Fprintf(&b, "  %-24s available (%s)\n", "VM verification", strings.Join(r.VMBases, ", "))
+	}
 	cap(byName["go2port"].Found, "Go vendored blocks", "no go2port")
 	cap(byName["cargo2port"].Found, "Rust vendored blocks", "no cargo2port")
 	return b.String()

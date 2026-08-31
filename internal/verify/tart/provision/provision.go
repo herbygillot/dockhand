@@ -279,13 +279,13 @@ func (t Tart) AssertPristineFor(ctx context.Context, vm string) error {
 // reports as available platforms — the tool being installed says
 // nothing about whether any environment exists.
 func (t Tart) Provisioned(ctx context.Context) ([]platform.Release, error) {
-	out, err := tart.CLI(ctx, nil, "list", "--source", "local")
-	if err != nil {
-		return nil, fmt.Errorf("%w: listing local VMs: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
-	}
 	var found []platform.Release
 	for _, r := range platform.Releases {
-		if strings.Contains(out, tart.BaseName(r)) {
+		ok, err := tart.HasVM(ctx, tart.BaseName(r))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			found = append(found, r)
 		}
 	}

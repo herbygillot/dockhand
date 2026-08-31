@@ -60,3 +60,18 @@ func TestShimNote(t *testing.T) {
 	// MacPorts' ordering, not lexical: 2.9 is older than 2.12.
 	assert.Empty(t, shimNote("2.9.0", "2.12.6"))
 }
+
+// The tart binary being present says nothing about whether any
+// verification environment exists — an installed tart with no base
+// image fails on first use. The bases are the capability.
+func TestVMVerificationRequiresABase(t *testing.T) {
+	r := Report{Tools: []Tool{{Name: "tart", Found: true, Path: "/opt/local/bin/tart"}}}
+	assert.Contains(t, r.String(), "no base images")
+	assert.Contains(t, r.String(), "dockhand provision")
+
+	r.VMBases = []string{"Sequoia", "Sonoma"}
+	assert.Contains(t, r.String(), "available (Sequoia, Sonoma)")
+
+	none := Report{Tools: []Tool{{Name: "tart", Found: false}}}
+	assert.Contains(t, none.String(), "no tart")
+}

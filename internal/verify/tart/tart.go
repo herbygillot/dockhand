@@ -155,6 +155,25 @@ func CLI(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+// HasVM reports whether a local VM of exactly this name exists. Exact,
+// not substring: dockhand-base-sonoma must not be found inside
+// dockhand-base-sonoma-anything — the same hazard GoldenName's naming
+// avoids, and one that substring matching against `tart list` output
+// walked straight into.
+func HasVM(ctx context.Context, name string) (bool, error) {
+	out, err := CLI(ctx, nil, "list", "--source", "local")
+	if err != nil {
+		return false, fmt.Errorf("%w: listing local VMs: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Exec runs a command in the guest. Arguments are argv, not a command
 // line: nothing here is quoted because nothing here reaches a shell.
 func Exec(ctx context.Context, vm string, argv ...string) (string, error) {
@@ -173,7 +192,9 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	if err != nil {
 		return verify.Job{}, err
 	}
-	if out, err := CLI(ctx, nil, "list", "--source", "local"); err != nil || !strings.Contains(out, base.VM) {
+	if ok, err := HasVM(ctx, base.VM); err != nil {
+		return verify.Job{}, err
+	} else if !ok {
 		return verify.Job{}, fmt.Errorf("%w: no base VM %q (see doctor)", verify.ErrNoEnvironment, base.VM)
 	}
 
@@ -332,8 +353,9 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 	if job.Provider != "tart" {
 		return verify.Status{}, fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
 	}
-	out, err := CLI(ctx, nil, "list", "--source", "local")
-	if err != nil || !strings.Contains(out, job.ID) {
+	if ok, err := HasVM(ctx, job.ID); err != nil {
+		return verify.Status{}, err
+	} else if !ok {
 		return verify.Status{}, fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
 	state, err := Exec(ctx, job.ID, "/bin/cat", stateDir+"/state")

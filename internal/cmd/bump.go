@@ -28,6 +28,8 @@ func Bump(rc *RunContext) *cobra.Command {
 		latest   bool
 		planOnly bool
 		force    bool
+		verifyIt bool
+		on       string
 	)
 	c := &cobra.Command{
 		Use:   "bump <port|subport|portdir>",
@@ -81,6 +83,17 @@ func Bump(rc *RunContext) *cobra.Command {
 			// about to be carried out, it is the only chance to see
 			// what is being done before it is done.
 			renderPlan(rc.Err, p)
+			if verifyIt || on != "" {
+				// Before apply, not after: a Portfile known not to
+				// build never lands in the tree.
+				release, err := releaseFlag(on)
+				if err != nil {
+					return err
+				}
+				if err := verifyPlan(cmd.Context(), rc, p, release); err != nil {
+					return err
+				}
+			}
 			if planOnly {
 				return p.Encode(rc.Out)
 			}
@@ -90,6 +103,10 @@ func Bump(rc *RunContext) *cobra.Command {
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
 	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
 	c.Flags().BoolVar(&planOnly, "plan", false, "emit the plan on stdout and change nothing")
+	c.Flags().BoolVar(&verifyIt, "verify", false,
+		"build the result in a pristine VM before applying; failure applies nothing")
+	c.Flags().StringVar(&on, "on", "",
+		"macOS release to verify on (implies --verify)")
 	c.Flags().BoolVar(&force, "force", false,
 		"proceed even if the port is already at the target version, re-deriving checksums and vendored blocks")
 	return c
