@@ -27,6 +27,14 @@ func Root(version string) *cobra.Command {
 	return root
 }
 
+// logo opens the help message. The trailing spaces are the art's own.
+const logo = `     _            _    _                     _
+  __| | ___   ___| | _| |__   __ _ _ __   __| |
+ / _` + "`" + ` |/ _ \ / __| |/ / '_ \ / _` + "`" + ` | '_ \ / _` + "`" + ` |
+| (_| | (_) | (__|   <| | | | (_| | | | | (_| |
+ \__,_|\___/ \___|_|\_\_| |_|\__,_|_| |_|\__,_|
+`
+
 // newRoot builds the tree along with the run it belongs to. Execute
 // needs both — the run has to be closed however the command ends.
 func newRoot(version string) (*cobra.Command, *runstate.Context) {
@@ -34,6 +42,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",
+		Long:         logo + "\nA port maintenance utility for MacPorts.\nFrom upstream release to upstream PR.",
 		Version:      version,
 		SilenceUsage: true,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
@@ -77,7 +86,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
 	})
-	root.AddCommand(Bump(), BumpRevisionCmd(), Classify(), Doctor(), Provision(), RefreshChecksums(), Status(), Verify(), versionCmd())
+	root.AddCommand(Bump(), BumpRevisionCmd(), Classify(), Doctor(), Promote(), Provision(), RefreshChecksums(), Status(), Verify(), versionCmd())
 	return root, rc
 }
 

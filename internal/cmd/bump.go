@@ -117,7 +117,7 @@ func Bump() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "bump <port|subport|portdir>",
-		Short: "Bump a port to a new version, as a branch (D21)",
+		Short: "Bump a port to a new version, as a branch",
 		Args:  exactArgs(1),
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
 			switch {

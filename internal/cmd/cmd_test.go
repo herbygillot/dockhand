@@ -179,3 +179,19 @@ func TestBumpRevisionRequiresAReason(t *testing.T) {
 	assert.Equal(t, ExitUsage, code(t, "revbump", "someport"), "the alias shares the check")
 	assert.Equal(t, ExitUsage, code(t, "bump-revision"))
 }
+
+func TestOwnerRepoFromURL(t *testing.T) {
+	for _, tc := range []struct{ url, owner, repo string }{
+		{"git@github.com:herbygillot/macports-ports.git", "herbygillot", "macports-ports"},
+		{"https://github.com/macports/macports-ports", "macports", "macports-ports"},
+		{"https://github.com/macports/macports-ports.git", "macports", "macports-ports"},
+		{"ssh://git@github.com/owner/repo.git", "owner", "repo"},
+	} {
+		o, r, ok := ownerRepoFromURL(tc.url)
+		require.True(t, ok, tc.url)
+		assert.Equal(t, tc.owner, o, tc.url)
+		assert.Equal(t, tc.repo, r, tc.url)
+	}
+	_, _, ok := ownerRepoFromURL("nonsense")
+	assert.False(t, ok)
+}

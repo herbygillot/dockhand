@@ -40,6 +40,31 @@ func writeNote(ctx context.Context, repo *git.Repo, n verifyNote) error {
 	return repo.NoteWrite(ctx, git.VerifyNotesRef, n.Sha, body)
 }
 
+// passedVerdictFor reports the passed verification covering a tip: the
+// tip's own note, or any passed verdict over the identical tree — a
+// message-only amend moves the sha, not the content, and the content
+// is what was verified.
+func passedVerdictFor(ctx context.Context, repo *git.Repo, tip string) (verifyNote, bool, error) {
+	if n, err := readNote(ctx, repo, tip); err == nil {
+		return n, n.State == "passed", nil
+	}
+	tree, err := repo.RevParse(ctx, tip+"^{tree}")
+	if err != nil {
+		return verifyNote{}, false, err
+	}
+	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
+	if err != nil {
+		return verifyNote{}, false, err
+	}
+	for _, sha := range noted {
+		n, err := readNote(ctx, repo, sha)
+		if err == nil && n.State == "passed" && n.Tree == tree {
+			return n, true, nil
+		}
+	}
+	return verifyNote{}, false, nil
+}
+
 // readNote returns a commit's verification record, git.ErrNoNote when
 // the commit has none.
 func readNote(ctx context.Context, repo *git.Repo, sha string) (verifyNote, error) {

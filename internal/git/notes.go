@@ -127,3 +127,34 @@ func (r *Repo) DiffNames(ctx context.Context, a, b string) ([]string, error) {
 	}
 	return strings.Split(out, "\n"), nil
 }
+
+// Remotes returns each remote's fetch URL.
+func (r *Repo) Remotes(ctx context.Context) (map[string]string, error) {
+	out, err := r.git(ctx, "remote", "-v")
+	if err != nil {
+		return nil, err
+	}
+	remotes := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[2] == "(fetch)" {
+			remotes[fields[0]] = fields[1]
+		}
+	}
+	return remotes, nil
+}
+
+// Push pushes a branch to a remote under its own name, recording the
+// upstream tracking configuration — the push config a later PR lookup
+// derives the head ref from (D21), and what makes a bare `git push`
+// work for the human who takes the branch over.
+func (r *Repo) Push(ctx context.Context, remote, branch string) error {
+	_, err := r.git(ctx, "push", "-u", remote, branch)
+	return err
+}
+
+// TrackedRemote names the remote a branch tracks, "" when none.
+func (r *Repo) TrackedRemote(ctx context.Context, branch string) string {
+	out, _ := r.git(ctx, "config", "--get", "branch."+branch+".remote")
+	return out
+}
