@@ -158,3 +158,29 @@ func (r *Repo) TrackedRemote(ctx context.Context, branch string) string {
 	out, _ := r.git(ctx, "config", "--get", "branch."+branch+".remote")
 	return out
 }
+
+// NoteRemove deletes a commit's note under the ref; a commit with no
+// note is fine — removal is idempotent.
+func (r *Repo) NoteRemove(ctx context.Context, ref, sha string) error {
+	_, err := r.git(ctx, "notes", "--ref="+ref, "remove", "--ignore-missing", sha)
+	return err
+}
+
+// OwnCommits lists the commits reachable from rev but not from base —
+// a branch's own work, the commits whose notes die with it.
+func (r *Repo) OwnCommits(ctx context.Context, rev, base string) ([]string, error) {
+	out, err := r.git(ctx, "rev-list", rev, "--not", base)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// DeleteBranch removes a local branch regardless of merge state —
+// deliberately the one porcelain call here: branch -D owns the
+// configuration-section and reflog cleanup that a raw update-ref -d
+// would leave behind.
+func (r *Repo) DeleteBranch(ctx context.Context, name string) error {
+	_, err := r.git(ctx, "branch", "-D", name)
+	return err
+}
