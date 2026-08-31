@@ -86,7 +86,28 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
 	})
-	root.AddCommand(Bump(), BumpRevisionCmd(), Classify(), Clean(), Discard(), Doctor(), Log(), Promote(), Provision(), RefreshChecksums(), Shell(), Status(), Verify(), versionCmd())
+	// The verbs are grouped by family, and the families are the
+	// architecture's own: intents change a port, the lifecycle verbs
+	// work the branches an intent minted, the environment verbs build
+	// and reach into the VMs verification runs in, and the reports read
+	// without writing. Registration order is display order — the help
+	// reads as the workflow, so the workflow decides the order, not the
+	// alphabet.
+	cobra.EnableCommandSorting = false
+	add := func(group string, title string, cmds ...*cobra.Command) {
+		root.AddGroup(&cobra.Group{ID: group, Title: title})
+		for _, c := range cmds {
+			c.GroupID = group
+			root.AddCommand(c)
+		}
+	}
+	add("intent", "Change a port:", Bump(), BumpRevisionCmd(), RefreshChecksums())
+	add("test", "Test the port:", Verify(), Status())
+	add("submit", "Submit the port:", Promote())
+	add("env", "Troubleshoot the port:", Log(), Shell())
+	add("branch", "Housekeeping:", Discard(), Clean(), Provision())
+	add("report", "Reports:", Classify(), Doctor())
+	root.AddCommand(versionCmd())
 	return root, rc
 }
 
