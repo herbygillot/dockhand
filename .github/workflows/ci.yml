@@ -21,6 +21,30 @@ jobs:
       - run: make check
       - run: make build
       - run: make test
+      # Cross-compilation is the five-second guard against the
+      # platform-only-symbol class (a darwin-only syscall broke every
+      # Linux job once): both targets must compile from either side.
+      - name: Cross-compile for darwin
+        run: GOOS=darwin go build ./...
+
+  # The same baseline on the platform dockhand actually runs on. The
+  # Linux job keeps the core portable; this one makes darwin
+  # compilation a merge requirement rather than a fact about the
+  # maintainer's laptop — a Linux contributor cannot green a change
+  # that breaks every real user's build. No MacPorts here, so
+  # tool-gated tests skip and the job stays fast; the full gated suite
+  # is the advisory macports job below.
+  hermetic-macos:
+    name: hermetic (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make check
+      - run: make build
+      - run: make test
 
   lint:
     name: golangci-lint
