@@ -87,13 +87,23 @@ re-hosted without disturbing the orchestrator.
 
 ---
 
-## D5 — `Executor` interface in v1, VM backend later
+## D5 — `Executor` interface in v1, VM backend later — **superseded by D17**
 
 **Decided.** Define the execution interface now; implement only the local backend. Shape it against the VM case regardless.
 
 **Why.** Local hands you warm shared state — deps installed, populated distcache, incremental build products. A VM hands you nothing. An interface designed around local's conveniences bakes in "the deps are already there" and turns the second backend into a rewrite. `PrepareRequest.Pristine` must exist and be unsatisfiable locally from day one.
 
 **Cost to reverse.** Deceptively high — invisible until the second backend exists, by which point assumptions have spread.
+
+**Superseded (2026-08-30).** Two of its predictions held and one did not. Defining
+the interface before the second backend existed was right, and Pristine as an
+explicit, sometimes-unsatisfiable property survives as verify.Capabilities.
+What did not survive is the uniform Executor itself: the backends do not share
+one shape. A VM is slow-but-pollable, CI is asynchronous and returns only
+findings, upstream PR CI is not invocable at all. The built interface (D17) is
+submit/poll/release with capability flags, and — contrary to this entry's
+ordering — the VM backend came first, because measurement showed it cheaper
+than the "local" case this entry assumed would lead.
 
 ---
 
@@ -136,6 +146,14 @@ re-hosted without disturbing the orchestrator.
 **Why.** Reviewers meet automated PRs with suspicion by default; candour about the limits of testing buys goodwill silence does not.
 
 **Cost to reverse.** Low. Policy, not structure.
+
+**Amended (2026-08-30).** RefreshChecksums is the standing exception, by
+construction rather than by gate: it is T0 and its evidence is perfect, and it
+still never auto-promotes, because a checksum moving at an unchanged version is
+a supply-chain question wearing maintenance's clothes. The exception lives in
+the intent, where it is visible, not in the gate, where it would not be — the
+built command warns on every run. Local application stays fine under D16; the
+human asking is the loop.
 
 ---
 
@@ -360,3 +378,104 @@ checkout. A user who wants the old behavior asks for it by name.
 
 **Cost to reverse.** Low. One flag's default and a line of docs; the two code
 paths already exist and are shared.
+
+---
+
+## D17 — Verification is submit-and-poll; a Job is a value
+
+**Decided (2026-08-30, built).** `verify.Verifier` is Capabilities / Submit /
+Poll / Release. Submit returns when work is running, not when it finishes.
+Poll never blocks and never mutates — polling a finished job twice answers the
+same way twice. Release is the caller's decision, because only the caller
+knows it is done with the environment, and on a two-slot provider an
+unreleased job is a slot that never returns. Await is a free function over
+Poll, so no provider implements blocking. A Job is a plain serializable value
+{provider, id, started}: the process that submits is not necessarily the one
+that collects.
+
+**Why.** Even the "synchronous" backend takes fifteen seconds to nine minutes,
+long enough that a blocking call is a lie the first time someone interrupts a
+run. The serializable Job forced the tart guest to drive its own build and
+record its own state, which is also what lets a verification survive dockhand
+exiting. Failed and Errored are distinct states because one is a finding about
+the port and the other a fact about the machine, and conflating them reports a
+broken VM as a broken port.
+
+**Cost to reverse.** Moderate. The state-file protocol inside guests and any
+saved Job files assume it.
+
+---
+
+## D18 — Verification environments are provisioned from vanilla, and never carry another package manager
+
+**Decided (2026-08-30, built).** Base images are built from Cirrus Labs'
+vanilla macOS images: dockhand adds the tart guest agent (pinned, from the
+official release), MacPorts (pinned to the newest shim version), and nothing
+else. The Homebrew-bearing base/xcode images are not used, and excision was
+rejected: in those images the guest agent is itself a brew formula, so
+removing Homebrew without rescuing it yields an image that looks healthy while
+running and is unreachable once cloned. Never-had-it beats removed-it.
+
+Two supporting decisions ride along. dockhand authors the guest launchd
+plists, so the PATH every guest command inherits names MacPorts and the
+system, and no foreign prefix — the stock plists hardcode /opt/homebrew/bin.
+And provisioning proves what it built rather than trusting its steps: foreign
+prefixes absent, MacPorts answering, and a working compiler — the last because
+a published macos-tahoe-vanilla shipped with no command line tools at all (an
+upstream template greps for a label spelling Tahoe changed), and MacPorts
+installs and answers happily without one.
+
+**Known cost accepted.** One SSH bootstrap per provisioning run, password auth
+against the images' documented credentials, because vanilla has no agent until
+we install one. Ports needing full Xcode (about 1.2% of the tree) are not
+served by these images yet.
+
+**Cost to reverse.** Low. Re-provision from a different variant; the verifier
+does not care where a base came from.
+
+---
+
+## D19 — Environment integrity is derived, never recorded
+
+**Decided (2026-08-30, built).** Every verification proves its environment
+before staging work into it: no ports installed, no foreign package manager, a
+working compiler, MacPorts answering. The check runs on the worker (already
+booted, ~1s) rather than the base (~10s to boot), observes the environment the
+build actually runs in, and classifies failure as ErrNoEnvironment — a machine
+fact, never a port finding. There is no manifest: every fact the check needs
+is observable from the guest in about a second, and a recorded copy could go
+stale or be contaminated alongside what it vouches for. A signature stored
+inside the envelope vouches for nothing — and a manifest is also exactly the
+store D8 forbids. The recovery path is a golden clone per base, taken after
+provisioning's checks pass and never started; restoring is a copy-on-write
+clone, free, so it is the obvious response to drift rather than a last resort.
+
+**Cost to reverse.** Low. Add a manifest later if provenance ever drives a
+decision; nothing consumes one today.
+
+---
+
+## D20 — The intent catalogue is closed: ten intents, five families
+
+**Decided (2026-08-30).** The catalogue in intents.md is a fixed list — Bump,
+RefreshChecksums, RegenerateVendored, BumpRevision, BumpEpoch, Set,
+ChangeDependency, DropPatch, FixLivecheck, Obsolete — closed by the family
+rule: an intent restores truth, moves a counter, edits a declaration, repairs
+instrumentation, or ends a life. Anything fitting none of those, or needing
+authored content to reach its end state, stays out. Sweep is a shape point
+intents run in, not a kind of intent.
+
+**Why.** Two implementations and a two-year survey of the tree's history. The
+survey (intents.md, patch survey) struck RefreshPatches as standalone — 88
+mechanical occurrences in two years, all during bumps — and folded it into
+Bump with payload identity as its acceptance judgment; it promoted DropPatch,
+whose 523 drop-only bumps are where patch-related value actually sits.
+MigrateIdiom was struck because an open-ended family cannot sit in a closed
+list. FixLivecheck entered because the upstream corroboration machinery is
+already its verifier.
+
+**Known cost accepted.** A closed list will be wrong eventually. The remedy is
+this log: an addition must argue its family or argue a new one, in writing.
+
+**Cost to reverse.** Low for any single entry; the closure rule itself is the
+thing to defend.

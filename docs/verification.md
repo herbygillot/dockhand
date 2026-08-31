@@ -1,9 +1,12 @@
 # Verification backends
 
-**Status: provisional.** This is the re-examination of D5 that the fork-CI
-discovery forced, incorporating the four-backend enumeration from design
-discussion. D4's propositions are taken as given (plus the candidate fourth);
-this document is about *where* they get answered.
+**Status: partly enacted.** This began as the re-examination of D5 that the
+fork-CI discovery forced; its conclusion is now built and recorded as D17
+(submit/poll/release, Job as a value), with provisioning and integrity as D18
+and D19. D5 is superseded in the log. What remains provisional here is the
+scheduler, fork CI, and the ephemeral-prefix backend — the parts not yet
+built. D4's propositions are taken as given; this document is about *where*
+they get answered.
 
 ---
 
