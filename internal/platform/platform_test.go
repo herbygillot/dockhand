@@ -97,3 +97,38 @@ func TestTableIsOrderedAndConsistent(t *testing.T) {
 		assert.Equal(t, r, byName, "every entry must be findable by its own name")
 	}
 }
+
+// The forgiving forms: whatever separator a tool prefers, whatever
+// precision a person has to hand, with or without the macos prefix.
+func TestParseIsForgivingAboutSpelling(t *testing.T) {
+	for input, want := range map[string]string{
+		"big-sur":       "Big Sur",
+		"big_sur":       "Big Sur",
+		"BIG SUR":       "Big Sur",
+		"el-capitan":    "El Capitan",
+		"macos-sequoia": "Sequoia",
+		"macos ventura": "Ventura",
+		"macos-13":      "Ventura",
+		"macos-14":      "Sonoma",
+		"14.5":          "Sonoma",
+		"15.7.7":        "Sequoia",
+		"26.0":          "Tahoe",
+		"11.7.10":       "Big Sur",
+		"10.15.4":       "Catalina",
+		"10.13.6":       "High Sierra",
+	} {
+		r, err := Parse(input)
+		require.NoError(t, err, input)
+		assert.Equal(t, want, r.Name, input)
+	}
+}
+
+// Point precision resolves the release; nonsense still refuses. 10.16
+// never shipped (it is Big Sur's compatibility fiction), and a bare
+// "macos" names nothing.
+func TestForgivenessIsNotGuessing(t *testing.T) {
+	for _, input := range []string{"10.16", "27.1", "9.5", "macos", "sequoia-vanilla"} {
+		_, err := Parse(input)
+		require.ErrorIs(t, err, ErrUnknownRelease, input)
+	}
+}

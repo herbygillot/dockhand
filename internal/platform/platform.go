@@ -92,10 +92,12 @@ func (r Release) CompactName() string { return strings.ReplaceAll(r.Name, " ", "
 // IsZero reports the unset release.
 func (r Release) IsZero() bool { return r == Release{} }
 
-// ByName finds a release by marketing name, case- and space-insensitively,
-// so "high sierra", "HighSierra" and "High Sierra" all arrive.
+// ByName finds a release by marketing name, insensitive to case and to
+// the separators every tool writes differently — "high sierra",
+// "HighSierra", "high-sierra" and "big_sur" all arrive, as does a
+// "macos" prefix ("macos-sequoia", the shape an image name puts it in).
 func ByName(name string) (Release, bool) {
-	want := fold(name)
+	want := strings.TrimPrefix(fold(name), "macos")
 	for _, r := range Releases {
 		if fold(r.Name) == want {
 			return r, true
@@ -105,12 +107,34 @@ func ByName(name string) (Release, bool) {
 }
 
 // ByProduct finds a release by its macOS version, with or without a
-// "macos-" prefix, so a GitHub runner label resolves as readily as a
-// number a person typed.
+// "macos" prefix, so a GitHub runner label ("macos-14") resolves as
+// readily as a number a person typed. A version with more components
+// than the table's — "14.5", "15.7.7", "10.15.4" — resolves to its
+// release: a person holding a point release still means the release.
 func ByProduct(v string) (Release, bool) {
-	want := strings.TrimPrefix(fold(v), "macos-")
+	want := strings.TrimPrefix(fold(v), "macos")
 	for _, r := range Releases {
 		if fold(r.Product) == want {
+			return r, true
+		}
+	}
+	// No exact entry: reduce to the release-naming components — two for
+	// the 10.x era, one after it — and try once more.
+	parts := strings.Split(want, ".")
+	var major string
+	switch {
+	case len(parts) >= 2 && parts[0] == "10":
+		major = parts[0] + "." + parts[1]
+	case len(parts) >= 2:
+		major = parts[0]
+	default:
+		return Release{}, false
+	}
+	if major == want {
+		return Release{}, false
+	}
+	for _, r := range Releases {
+		if fold(r.Product) == major {
 			return r, true
 		}
 	}
@@ -129,7 +153,8 @@ func ByDarwin(major int) (Release, bool) {
 }
 
 // Parse resolves a release from how a person or a tool is likely to
-// write it: a marketing name, a product version, or a runner label.
+// write it: a marketing name in any separator style, a product version
+// down to the point release, or a "macos"-prefixed label.
 //
 // A bare number is read as a product version, never as a Darwin major.
 // The two ranges overlap — 25 is Tahoe's kernel and 26 is its product —
@@ -166,8 +191,13 @@ func FromUname(release string) (Release, error) {
 	return r, nil
 }
 
-// fold normalizes a name for comparison: case and the spaces in "High
-// Sierra" and "Big Sur", which every tool writes differently.
+// fold normalizes a name for comparison: case, and the separators in
+// "High Sierra" — spaces, hyphens, underscores — which every tool
+// writes differently.
 func fold(s string) string {
-	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), " ", "")
+	s = strings.ToLower(strings.TrimSpace(s))
+	for _, sep := range []string{" ", "-", "_"} {
+		s = strings.ReplaceAll(s, sep, "")
+	}
+	return s
 }
