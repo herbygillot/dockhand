@@ -76,7 +76,7 @@ func newRoot(version string) (*cobra.Command, *runcontext.RunContext) {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &UsageError{Err: err}
 	})
-	root.AddCommand(Apply(rc), Bump(rc), BumpRevisionCmd(rc), Classify(rc), Doctor(rc), Provision(rc), RefreshChecksums(rc), Verify(rc), versionCmd())
+	root.AddCommand(Bump(rc), BumpRevisionCmd(rc), Classify(rc), Doctor(rc), Provision(rc), RefreshChecksums(rc), Verify(rc), versionCmd())
 	return root, rc
 }
 

@@ -183,15 +183,15 @@ leaves the file alone, which is the common and correct outcome.
 ### Look before you leap
 
 `--plan` computes everything and stops, emitting the plan as JSON on
-stdout so you can read the summary and keep the plan:
+stdout so you can read exactly what would have been done:
 
 ```bash
-dockhand bump --plan --to 0.37.1 geckodriver > plan.json
-dockhand apply plan.json
+dockhand bump --plan --to 0.37.1 geckodriver
 ```
 
-`apply` runs the same checks, plus one more: it refuses if the Portfile
-changed since the plan was made.
+The JSON is dockhand's internal interchange, shown for inspection;
+nothing consumes a saved plan. The workflow is moving to git branches —
+see D21 in `docs/decisions.md`.
 
 ### Exit codes
 

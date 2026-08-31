@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,10 +18,11 @@ import (
 //
 // A plan is always produced — the edits, the fetched checksums, and the
 // exact predicted delta — because that is what makes the change
-// verifiable. What --plan decides is whether the plan is carried out or
-// handed back. Applying it here is the same code path apply runs on a
-// saved plan, including the check that the result matches the
-// prediction, so the default is not a shortcut around verification.
+// verifiable; under D21 it is internal interchange, never a user
+// artifact. What --plan decides is whether the plan is carried out or
+// printed instead, and applying it includes the check that the result
+// matches the prediction, so the default is not a shortcut around
+// verification.
 func Bump(rc *runcontext.RunContext) *cobra.Command {
 	var (
 		to       string
@@ -113,34 +113,9 @@ func Bump(rc *runcontext.RunContext) *cobra.Command {
 	return c
 }
 
-// Apply builds the apply subcommand: execute a plan.
-func Apply(rc *runcontext.RunContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "apply <plan.json|->",
-		Short: "Apply a plan, verifying it does exactly what it predicted",
-		Args:  exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			r := cmd.InOrStdin()
-			if args[0] != "-" {
-				f, err := os.Open(args[0])
-				if err != nil {
-					return err
-				}
-				defer f.Close() //nolint:errcheck // read-path close
-				r = f
-			}
-			p, err := plan.Decode(r)
-			if err != nil {
-				return err
-			}
-			return applyPlan(cmd.Context(), rc, p)
-		},
-	}
-}
-
-// applyPlan carries out a plan and reports what it did. Both the bump
-// that just produced one and the apply that read one from disk arrive
-// here, so a plan is executed the same way whichever made it.
+// applyPlan carries out a plan and reports what it did. Every intent
+// that applies arrives here, so a plan is executed the same way
+// whichever produced it.
 func applyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan) error {
 	ev, err := rc.Evaluator(ctx)
 	if err != nil {

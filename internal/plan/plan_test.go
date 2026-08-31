@@ -10,7 +10,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
-func TestEncodeDecodeRoundTrip(t *testing.T) {
+// Encode is --plan's debugging rendering; nothing reads a plan back
+// (D21). The test pins the shape a reader sees, not a wire contract.
+func TestEncodeRendersThePlan(t *testing.T) {
 	p := &Plan{
 		Format:         Format,
 		Intent:         "bump",
@@ -27,14 +29,11 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	require.NoError(t, p.Encode(&buf))
-	got, err := Decode(&buf)
-	require.NoError(t, err)
-	assert.Equal(t, p, got)
-}
-
-func TestDecodeRejectsWrongFormat(t *testing.T) {
-	_, err := Decode(bytes.NewBufferString(`{"format": 99}`))
-	require.ErrorIs(t, err, ErrFormat)
+	out := buf.String()
+	assert.Contains(t, out, `"intent": "bump"`)
+	assert.Contains(t, out, `"portdir": "/tree/sysutils/foo"`)
+	assert.Contains(t, out, `"old": "1.0.0"`)
+	assert.Contains(t, out, `"new": "2.0.0"`)
 }
 
 func TestFromDeltaCanonical(t *testing.T) {

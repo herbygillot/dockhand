@@ -14,15 +14,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"sort"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
-// Format is the plan wire format version this build writes and reads.
+// Format is the plan wire format version this build writes.
 const Format = 1
 
 // Edit is one byte-span replacement, with enough provenance to render
@@ -63,28 +61,13 @@ type Plan struct {
 	Predicted      []ContextDelta `json:"predicted"`
 }
 
-// ErrFormat reports a plan whose wire format this build does not speak.
-var ErrFormat = errors.New("plan: unsupported plan format")
-
-// Encode writes the plan as JSON.
+// Encode writes the plan as JSON. Under D21 a plan is internal
+// interchange; this rendering survives only as --plan's debugging
+// output, and nothing reads one back.
 func (p *Plan) Encode(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(p)
-}
-
-// Decode reads one JSON plan.
-func Decode(r io.Reader) (*Plan, error) {
-	var p Plan
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
-		return nil, fmt.Errorf("plan: decoding: %w", err)
-	}
-	if p.Format != Format {
-		return nil, fmt.Errorf("%w: %d (this build speaks %d)", ErrFormat, p.Format, Format)
-	}
-	return &p, nil
 }
 
 // FileSHA256 is the precondition hash: the hex sha256 of the Portfile

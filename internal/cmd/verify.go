@@ -59,9 +59,8 @@ func vmProvider(ctx context.Context) (tart.Provider, error) {
 // verifyPlan proves a plan's port builds before anything real is
 // written. The edited port is rematerialized from the plan itself —
 // read the Portfile, hold it to the plan's precondition hash, apply the
-// edits, shadow the result — so a saved plan and a just-produced one
-// verify identically, and the port under test is exactly what apply
-// would write.
+// edits, shadow the result — so the port under test is exactly what
+// apply would write.
 func verifyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan, release platform.Release) error {
 	src, err := os.ReadFile(filepath.Join(p.Portdir, macports.PortfileName))
 	if err != nil {
@@ -87,17 +86,24 @@ func verifyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan, re
 	}
 	defer cleanup()
 
-	prov, err := vmProvider(ctx)
-	if err != nil {
-		return err
-	}
 	portName := p.Subport
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(p.Portdir))
 	}
+	return runVerification(ctx, rc, portName, shadow.Target.Portdir, release)
+}
+
+// runVerification submits one portdir to the VM provider and reports
+// the verdict. Both verification modes arrive here: a plan's shadowed
+// portdir, and a portdir as it sits in the tree.
+func runVerification(ctx context.Context, rc *runcontext.RunContext, portName, portdir string, release platform.Release) error {
+	prov, err := vmProvider(ctx)
+	if err != nil {
+		return err
+	}
 	job, err := prov.Submit(ctx, verify.Request{
 		Port:     portName,
-		Portdirs: []string{shadow.Target.Portdir},
+		Portdirs: []string{portdir},
 		Platform: release,
 	})
 	if err != nil {
@@ -136,33 +142,34 @@ func verifyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan, re
 	return fmt.Errorf("verify: job ended in state %s", st.State)
 }
 
-// Verify builds the verify subcommand: prove a saved plan's port builds,
-// in a pristine environment, without writing anything.
+// Verify builds the verify subcommand: prove a port builds as it sits,
+// in a pristine environment, without writing anything. This is state
+// verification — it tests the portdir's current content, whoever
+// produced it, which is what makes human edits after a dockhand change
+// verifiable at all.
 func Verify(rc *runcontext.RunContext) *cobra.Command {
 	var on string
 	c := &cobra.Command{
-		Use:   "verify <plan.json|->",
-		Short: "Build a plan's port in a pristine VM, changing nothing",
+		Use:   "verify <port|subport|portdir>",
+		Short: "Build a port as it sits, in a pristine VM, changing nothing",
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r := cmd.InOrStdin()
-			if args[0] != "-" {
-				f, err := os.Open(args[0])
-				if err != nil {
-					return err
-				}
-				defer f.Close() //nolint:errcheck // read-path close
-				r = f
-			}
-			p, err := plan.Decode(r)
+			targets, err := resolveTargets(rc.TreeRoot, false, args)
 			if err != nil {
 				return err
+			}
+			if len(targets) != 1 {
+				return usagef("verify takes exactly one port; %q names %d", args[0], len(targets))
+			}
+			portName := targets[0].Subport
+			if portName == "" {
+				portName = filepath.Base(filepath.Clean(targets[0].Portdir))
 			}
 			release, err := releaseFlag(on)
 			if err != nil {
 				return err
 			}
-			return verifyPlan(cmd.Context(), rc, p, release)
+			return runVerification(cmd.Context(), rc, portName, targets[0].Portdir, release)
 		},
 	}
 	c.Flags().StringVar(&on, "on", "", "macOS release to verify on (name or version; default: the first provisioned base)")
