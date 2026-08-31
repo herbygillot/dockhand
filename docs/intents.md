@@ -12,6 +12,19 @@ intent. Four entries are first-class for near-term work — `Bump`, `Obsolete`,
 long tail of scalar metadata edits probably collapsing into a single verb (see
 *The `modify` boundary*).
 
+**Revised, 2026-08-30.** The catalogue is now the fixed list below: ten intents
+in five families, closed by rule. Two are built (`Bump`, `RefreshChecksums`)
+and building them changed the list. `MigrateIdiom` is struck — an open-ended
+family cannot sit in a closed catalogue. `RefreshPatches` is struck as a
+standalone intent and folded into `Bump` as a capability, on the strength of a
+two-year survey of the tree's own history (below): the mechanical case is real
+but occurred 88 times in two years, every one of them during a bump. The same
+survey promoted `DropPatch` — dropping patches is the most common patch action
+at bump time, six times the mechanical-refresh count — and `FixLivecheck`
+enters because the upstream-corroboration machinery built for `Bump` turned
+out to be exactly its verifier. `SetMetadata` is renamed `Set`, resolving open
+question 5 in favour of the name that is honest about its limit.
+
 ---
 
 ## What qualifies as an intent
@@ -41,19 +54,28 @@ second is reported as though nothing could be learned, which is false.
 
 ## The catalogue
 
-| Intent | Shape | Tier |
-|---|---|---|
-| `Bump {port, version}` | point | T0–T3 |
-| `RefreshChecksums {port}` | point | T0 |
-| `BumpRevision {port}` | point | T0 |
-| `BumpEpoch {port}` | point | T0 edit, T4 decision |
-| `RegenerateVendored {port}` | point | T3 |
-| `ChangeDependency {port, spec, kind}` | point | T1 |
-| `DropObsoletePatch {port, file}` | point | T1 |
-| `RefreshPatches {port}` | point | T2/T4 boundary |
-| `SetMetadata {port, field, value}` | point | T0 |
-| `Obsolete {port, replaced_by}` | point | T1 edit, T4 decision |
-| `MigrateIdiom {selector, from → to}` | **sweep** | T1–T2 |
+The families are the closure rule: every intent restores truth, moves a
+counter, edits a declaration, repairs instrumentation, or ends a life. A
+proposal that fits none of them, or that requires authoring content to reach
+its end state, stays out.
+
+| Intent | Family | Tier | Status |
+|---|---|---|---|
+| `Bump {port, version\|latest}` | truth | T0–T3 | **built** |
+| `RefreshChecksums {port}` | truth | T0 | **built** |
+| `RegenerateVendored {port}` | truth | T3 | inside `Bump`; no standalone door yet |
+| `BumpRevision {port, reason}` | counter | T0 edit, T4 decision | — |
+| `BumpEpoch {port}` | counter | T0 edit, T4 decision | — |
+| `Set {port, field, value}` | declaration | T0 | — |
+| `ChangeDependency {port, spec, kind}` | declaration | T1 | — |
+| `DropPatch {port, file}` | declaration | T1 | — |
+| `FixLivecheck {port}` | instrumentation | T1 | — |
+| `Obsolete {port, replaced_by}` | end of life | T1 edit, T4 decision | — |
+
+Every intent is a point intent. Sweep survives as a *shape* — any point intent
+run over a selector, with declines as output rather than refusal (see below) —
+not as a kind of intent. The struck entries and the reasons are recorded in
+the notes.
 
 ### Notes on individual entries
 
@@ -62,6 +84,16 @@ literal and nothing else moves, T2 when the version is computed and the
 constrained evaluator must locate which literal to touch, and T3 when it drags a
 vendored dependency block along with it. Every other intent sits at one or two
 rungs.
+
+*Amended 2026-08-30: mechanical patch refresh folds in here.* When the patch
+phase fuzzes at the new version, `Bump` may regenerate the patch — apply with
+fuzz against the new tree, re-diff — and accept the result **only if the
+payload is identical**: the patch's `+`/`-` lines, its reason for existing,
+unchanged, with only offsets and context rewritten. Payload drift declines as
+content. The boundary is not a guess; it is what maintainers actually do (see
+the patch survey below), and it is the same shape as the vendored-block
+capability: work `Bump` performs when the port demands it, not an intent of
+its own.
 
 The general form of that observation: **tier is a property of the triple
 `(intent, port, target)`, never of the intent alone.**
@@ -81,7 +113,8 @@ invariant. Whether this generalises beyond Go is unproven — Go's module path i
 unusually load-bearing — but a classifier that ignores the target is answering
 an easier question than the one asked.
 
-**`RefreshChecksums`** is the trap in the set. Two lines change, the tier is T0,
+**`RefreshChecksums`** — built, and the second intent implemented; the seams
+held (its commit records the verdict). It is the trap in the set. Two lines change, the tier is T0,
 and every rule in D9 therefore says ship it unattended. But a checksum that
 changes for an *unchanged* version means upstream re-rolled the tarball, which
 is a supply-chain event rather than maintenance. This is the one case where tier
@@ -134,7 +167,7 @@ The criterion is *measurable*: two destroots, one manifest diff. That moves
 which is the same question. The measurement sits at build-verification depth,
 so it is not free; but when a build has already run for other reasons, the
 revbump verdict is nearly free alongside it. It belongs in the class below
-rather than beside `SetMetadata`.
+rather than beside `Set`.
 
 Two further properties. Applied across a selector — `rdependentof:openssl` and
 similar — it is the tree's principal mass operation, and therefore the intent
@@ -188,14 +221,31 @@ worth carrying precisely because dockhand can do the edit faithfully once a
 human has made the call, and doing it faithfully is not nothing — epoch and
 `replaced_by` are both easy to get subtly wrong by hand.
 
-**`DropObsoletePatch`** is the only patch-related intent that is fully
-mechanical *and* verifiable, per D12: a patch that reverse-applies cleanly means
-upstream merged the fix, and the correct edit is to delete the file and its
-`patchfiles` entry. It is separated from `RefreshPatches` for that reason —
-keeping them as one intent would drag the verifiable case down to the tentative
-case's autonomy.
+**`RegenerateVendored`** is `RefreshChecksums`'s sibling for generated blocks:
+a block can be wrong at an *unchanged* version — a drifted crate hash, a block
+produced by a broken generator run (go2port's silent-empty failure is on
+record), a hand-mangled edit. The machinery exists inside `Bump`, which
+regenerates blocks as a consequence of version movement; this entry is the
+standalone door to the same machinery for truth restoration in place. Like
+`RefreshChecksums`, a change at an unchanged version is a fact someone should
+explain before it goes anywhere public.
 
-*Amended by field evidence.* The two do not cover the space. Both `mage` and
+**`DropPatch`** (né `DropObsoletePatch`) is the only patch-related intent that
+is fully mechanical *and* verifiable, per D12: a patch that reverse-applies
+cleanly means upstream merged the fix, and the correct edit is to delete the
+file and its `patchfiles` entry.
+
+*Promoted by the patch survey, 2026-08-30.* Dropping patches is the most
+common patch action at bump time — 523 bumps in two years dropped patches and
+nothing else, six times the mechanical-refresh count. It gains a finding
+source: after a bump, test whether each remaining patch still applies to the
+new source; one that no longer applies, or reverse-applies, is a drop
+candidate proposed to the human. Detect-and-propose, never author. The 423
+bumps that *added* patches stay entirely human — authoring a patch is the
+canonical unreachable case.
+
+*Amended by field evidence.* Dropping and refreshing do not cover the space.
+Both `mage` and
 `mp4ff` carried patches that no longer applied and wanted neither disposition:
 the patch's purpose was still needed, so dropping was wrong, and its anchor was
 gone, so refreshing had nothing to refresh against. Both needed the patch's
@@ -214,16 +264,60 @@ revision read), and its output is a proposed grouped `BumpRevision` — the
 promotion path this document already defines. This is not the deferred
 toolchain-floor propagation; it is core bump workflow.
 
-**`MigrateIdiom`** is the only sweep, and it is where most of the fleet-scale
-value sits: `PortGroup` version updates, `cxx11 1.1` removal, `master_sites` to
-`github.setup`, compiler blacklist syntax. It is also the only intent whose
-input is not a port.
+**`MigrateIdiom`** — *struck, 2026-08-30.* It was the only entry whose input
+is not a port, and the only one naming a family rather than an end state:
+"migrations, plural, unspecified" is a promise a closed catalogue cannot keep,
+since each migration needs its own recognizer and writer. The fleet-scale
+value it pointed at is real and is not lost — a specific migration that earns
+its keep enters the catalogue under its own name, and runs as a sweep like any
+other point intent.
+
+**`FixLivecheck`** — *added, 2026-08-30* — is the entry the implementation
+argued into existence. The upstream corroboration built for `Bump` already
+detects livecheck rot (livecheck disagreeing with the forge's tags), the edit
+is mechanical for forge-backed ports (set the livecheck fields to the forge
+convention), and the fix is verifiable by running the port's own livecheck
+phase before and after. It is the only intent whose verifier is the
+corroboration machinery itself, and it repairs the port's instrumentation
+rather than the port.
+
+### The patch survey (2026-08-30)
+
+The question was whether `RefreshPatches` is realistic. The tree's own history
+answers: every commit in two years of macports-ports touching both a Portfile
+and a patch, classified by **payload identity** — strip each patch to its
+`+`/`-` lines; if the payload survived the change, the refresh was mechanical
+(offsets and context only), and if not, a human changed what the patch does.
+
+| what the bump did to its patches | commits |
+|---|---|
+| dropped patches only | 523 |
+| added patches only | 423 |
+| modified, payload changed (content) | 365 |
+| modified, payload identical (mechanical) | **88** |
+| added and dropped | 95 |
+
+(2,670 commits touched both; 1,168 were patch-only maintenance with no version
+change.) The content bucket's changes are small — median 4 payload lines —
+which smells of version strings living inside the patched lines; small is not
+mechanical, because a tool cannot regenerate a payload it does not have.
+
+Three consequences, all reflected above. Mechanical refresh is real but rare —
+88 in two years, tree-wide, all during bumps, never standalone — so it is a
+`Bump` capability, not an intent. Payload identity is the acceptance judgment
+for that capability, validated against two years of maintainer behaviour
+rather than invented. And the survey's largest number belongs to an intent
+that was almost an afterthought: `DropPatch` is where the patch-related value
+actually sits.
+
+A methodological note worth keeping: a three-commit sample taken first said
+two-thirds of patch modifications were mechanical. The population says 19%.
 
 ---
 
 ## The `modify` boundary
 
-The long tail — `SetMetadata` and its relatives — plausibly collapses into one
+The long tail — `Set` and its relatives — plausibly collapses into one
 verb rather than one verb per field. The risk is that a general `modify` becomes
 the escape hatch everything else leaks through. A rule that holds the line:
 
@@ -327,8 +421,10 @@ That symmetry is exploitable:
 - A pristine-environment build failure (D4's third proposition) *is* the
   observation "dependency X is used but not declared". Its remedy is a
   `ChangeDependency` intent.
-- A reverse-apply probe that succeeds *is* `DropObsoletePatch`.
-- A recognizer decline on a known idiom *is* a candidate `MigrateIdiom`
+- A reverse-apply probe that succeeds *is* `DropPatch`.
+- A recognizer decline on a known idiom *is* a candidate migration — struck
+  from the catalogue as a standing entry, but this is exactly how a specific
+  migration would earn its own named intent
   selector.
 
 *One correction from field evidence.* This section assumes a finding is about
@@ -388,10 +484,10 @@ produce a *proposal*, never an execution.
    the most unwritten convention attached. The documents do not currently say
    whether the omission is deliberate.
 
-5. **What replaces `SetMetadata`?** If the `modify` boundary above holds, the
-   entry disappears from the catalogue and becomes one verb over an allowed
-   field list. The name is unsettled: `modify` promises a generality the rule
-   deliberately withholds, and `set` is more honest about the limit.
+5. **What replaces `SetMetadata`?** *Resolved 2026-08-30:* it is `Set`, one
+   verb over an allowed field list, in the catalogue above. `modify` promised
+   a generality the rule deliberately withholds; `set` is honest about the
+   limit.
 
 6. **Do the three verification propositions span the space?** Field evidence
    says no: four ports compiled, linked, destrooted and passed `port lint` while

@@ -26,7 +26,7 @@ targeting vocabularies.
 a desired end state: bump this port, refresh these checksums. A *stage* moves
 work through the pipeline: apply, verify, promote. The superseded design had
 one intent, so both kinds fit in the verb position without visible conflict.
-With eleven intents they collide. The resolution:
+With ten intents they collide. The resolution:
 
 > The intent takes the verb slot. Its output is always a plan, and the stages
 > are separate verbs that consume the plan.

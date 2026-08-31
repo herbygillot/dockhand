@@ -186,7 +186,7 @@ the patch's *semantic intent* re-derived against a restructured tree — for `mp
 version symbol had moved package and the target list had doubled; for `mage`, the patched
 file had moved directory and the mechanism it patched no longer existed.
 
-*May bear on:* whether `DropObsoletePatch` and `RefreshPatches` cover the space.
+*May bear on:* whether `DropPatch` and mechanical patch refresh (now a `Bump` capability; `RefreshPatches` struck 2026-08-30) cover the space.
 
 ## 11. PR-shaped constraints (least explored)
 
@@ -214,7 +214,7 @@ Observations that may follow, none verified:
 
 ## 12. Absent from the catalogue: creating a new port
 
-The eleven intents are all maintenance of an existing port. Nothing covers producing a new
+The ten intents are all maintenance of an existing port. Nothing covers producing a new
 one, which is plausibly the hardest task for the newcomers a PR workflow implies, and the
 one with the most unwritten convention attached.
 
