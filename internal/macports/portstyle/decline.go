@@ -19,10 +19,23 @@ const (
 	UnknownStyle
 	// NotLiteral means styles were found but no candidate's text equals
 	// the evaluated value: the value is computed, or lives somewhere the
-	// known styles do not reach. Candidates carries the spans inspected,
-	// as evidence for the diagnostic.
+	// known styles do not reach. Candidates carries what was inspected —
+	// evidence for the diagnostic, and the input to a counterfactual
+	// probe, which is how a computed value's carrier can still be proven
+	// (write a target into a candidate, re-evaluate, watch the value
+	// move).
 	NotLiteral
 )
+
+// Candidate is one span a style proposed that corroboration could not
+// prove. Style and Span say what and where; Literal says whether the
+// span is a plain literal a probe could rewrite — a candidate that is
+// itself a substitution cannot be.
+type Candidate struct {
+	Style   Type
+	Span    text.Span
+	Literal bool
+}
 
 func (t DeclineType) String() string {
 	switch t {
@@ -42,7 +55,7 @@ func (t DeclineType) String() string {
 type Decline struct {
 	Type       DeclineType
 	Field      info.Field
-	Candidates []text.Span
+	Candidates []Candidate
 }
 
 // Error implements the error interface.

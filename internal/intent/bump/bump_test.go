@@ -264,7 +264,7 @@ func TestAcceptForcedRunRefusesAVersionThatMoves(t *testing.T) {
 	moved := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
 		key: {{Field: info.FieldVersion, Old: []string{"1.0"}, New: []string{"2.0"}}},
 	}}
-	err := Bump{Version: "1.0", Force: true}.accept(vals, moved)
+	err := Bump{Version: "1.0", Force: true}.accept(vals, moved, false, true)
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.UnexpectedChange, d.Type)
@@ -273,7 +273,26 @@ func TestAcceptForcedRunRefusesAVersionThatMoves(t *testing.T) {
 // And an ordinary bump still requires the version to arrive.
 func TestAcceptOrdinaryBumpRequiresTheVersionToMove(t *testing.T) {
 	vals := info.Values{Name: "foo", Version: "1.0"}
-	err := Bump{Version: "2.0"}.accept(vals, info.Delta{})
+	err := Bump{Version: "2.0"}.accept(vals, info.Delta{}, true, true)
+	var d *plan.Decline
+	require.ErrorAs(t, err, &d)
+	assert.Equal(t, plan.TargetNotReached, d.Type)
+}
+
+// A transformed carrier is judged by movement, not equality: the
+// evaluated version is the Portfile's transform of the literal, known
+// only to evaluation — so any nonempty new value the shadow reports is
+// the target arriving, and no movement at all still declines.
+func TestAcceptTransformedCarrierRequiresMovementNotEquality(t *testing.T) {
+	vals := info.Values{Name: "foo", Version: "20260810.1"}
+	key := info.SubportKey{Subport: "foo"}
+	moved := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+		key: {{Field: info.FieldVersion, Old: []string{"20260810.1"}, New: []string{"20260824"}}},
+	}}
+	require.NoError(t, Bump{Version: "2026-08-24"}.accept(vals, moved, true, false),
+		"the evaluated value differs from the carrier target by design")
+
+	err := Bump{Version: "2026-08-24"}.accept(vals, info.Delta{}, true, false)
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.TargetNotReached, d.Type)

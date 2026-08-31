@@ -125,7 +125,7 @@ func Locate(src []byte, tree *syntax.Script, vals info.Values, field info.Field)
 	if best < 0 {
 		d := &Decline{Type: NotLiteral, Field: field}
 		for _, c := range candidates {
-			d.Candidates = append(d.Candidates, c.span)
+			d.Candidates = append(d.Candidates, Candidate{Style: c.style, Span: c.span, Literal: c.literal})
 		}
 		return Located{}, d
 	}

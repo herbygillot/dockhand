@@ -614,3 +614,82 @@ cancels the stale run and resubmits the tip, and `promote` refuses an
 unverified tip. A message-only amend moves the sha but not the tree, which
 is where the recorded tree-sha lets `status` say the content still matches
 a passed verdict.
+
+---
+
+## D22 — The bump target is written in carrier vocabulary; uncorroborated carriers prove themselves by counterfactual
+
+**Decided (2026-08-31, built).** A bump writes its target verbatim into
+the carrier span and lets the shadow evaluation derive the evaluated
+version — never the reverse. Targets come from upstream (livecheck,
+forge tags), and upstream speaks the carrier's vocabulary: CPAN says
+1.23, the rust-analyzer tag says 2026-08-24; the evaluated form is
+MacPorts-internal and exists only after evaluation. For the large
+majority of ports the two vocabularies coincide and nothing changes.
+Acceptance follows the vocabulary: an untransformed corroborated
+carrier is held to exact equality as before, while a transformed or
+probed one is held to movement — the version's new value is the
+Portfile's transform of the literal, known only to evaluation, and the
+prediction check still pins it exactly.
+
+**Two families unblock at once.** Registered transforms (perl5): locate
+already corroborated through the Go-ported transform, and the
+TransformedStyle decline — "the new literal cannot be derived from the
+requested version alone" — dissolves, because no inverse is ever
+needed. Ad hoc Portfile transforms (rust-analyzer's
+`version [string map {{-} {}} ${github.version}]`): corroboration
+fails textually, so the carrier proves itself by **counterfactual** —
+write the target into the last literal candidate, shadow, re-evaluate,
+and demand the version moved. This is the corroboration rule extended
+one step, from "text equals value" to "text demonstrably drives
+value", at the cost of one evaluation, only on that path. Latest
+resolution rides the same candidates: the style family is enough to
+ask livecheck and the forge, both of which answer in carrier
+vocabulary.
+
+**Why.** The blocks shared one root: the assumption that targets
+arrive in evaluated vocabulary, which forced inverting transforms —
+reimplementation by another name. Writing through the carrier is
+evaluate-don't-parse winning the argument one level higher: dockhand
+never computes what a Portfile means, including what version a literal
+becomes. Proven live: rust-analyzer resolved latest with agreement,
+probed its github.setup carrier, and planned version + checksums + a
+regenerated 237-crate block, with the version line untouched in the
+diff because evaluation, not dockhand, owns the transform.
+
+**Measured (2026-08-31), full tree, 20,049 portdirs.** Bumpable
+carriers went from 17,730 (88.4%) to 19,799 (98.8%): the perl5 family
+is the bulk (2,012 ports, 10.0%, located all along and blocked only by
+the TransformedStyle decline), and the counterfactual probe rescued 57
+of the 307 not-literal ports — the ad hoc family the probe exists for:
+tags with underscores (2_5_4), dashes (4-2-3), compound tags carrying
+two versions (10.2+2.0.3), date-suffixed versions, and rust-analyzer's
+date arithmetic. The probe's synthetic shape-preserving perturbation
+broke zero evaluations. What remains unbumpable is 1.2%: 65 ports
+whose candidates provably do not drive the version, 183 with no
+literal candidate at all (versions computed from dates or extracted
+strings), and 2 with no recognized style — each an honest decline.
+The 65 are a survey artifact more than a wall: 60 are SHA-pinned
+carriers (646 exist tree-wide), where the synthetic perturbation
+bumped the SHA's tail and the Portfile reads its head. With a real
+target they bump today — `--to <sha>` proven live on portaudio, real
+tarball fetched, stale date prefix left as the human's edit on the
+branch. What stays rejected is branch-head-as-latest: no upstream
+declared it a version, no second resolver corroborates it, and a
+pinned snapshot is often a choice. The target stays human-supplied.
+
+**Known cost accepted.** The transform registry is closed: perl5's Go
+port survives as read-side corroboration for classify's census, on
+grandfather terms, and no transform is ever ported again — the probe
+is the growth path, ending the faithful-port-warts-included treadmill.
+A probed location is a weaker proof class than textual corroboration
+(the span drives the version at this value; it is not thereby "the
+version field"), which classify should eventually report distinctly;
+today classify still reports these ports not-literal, since a static
+census has no target to probe with. And --to is documented as the
+version as upstream names it: a user who types the evaluated form for
+a transformed port writes a nonexistent tag and fails loudly at fetch.
+
+**Cost to reverse.** Low. The exact-acceptance path is untouched; the
+carrier-vocabulary and probe paths are additive branches with the old
+declines one revert away.

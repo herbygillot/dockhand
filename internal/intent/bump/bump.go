@@ -28,6 +28,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/tempdir"
+	"github.com/herbygillot/dockhand/internal/text"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/vendored"
 	"github.com/herbygillot/dockhand/internal/vendored/cargo2port"
@@ -84,11 +85,42 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	if err != nil {
 		return nil, err
 	}
+
+	// The version carrier, and the vocabulary decision (D22): the
+	// target is written verbatim into the carrier span, because targets
+	// come from upstream — livecheck, forge tags — which speaks the
+	// carrier's vocabulary. When the carrier corroborates untransformed,
+	// literal and evaluated coincide and exact acceptance applies. A
+	// registered transform (perl5) or a failed corroboration with a
+	// literal candidate (an ad hoc Portfile transform) still bumps: the
+	// evaluated version is derived by the shadow evaluation, never
+	// computed by an inverse, and acceptance checks movement instead of
+	// equality.
+	loc, lerr := portstyle.Locate(src, cst, vals, info.FieldVersion)
+	carrier, style, exact := loc.Span, loc.Style, true
+	if lerr == nil {
+		if loc.Style.Transformed() {
+			exact = false
+		}
+	} else {
+		var pd *portstyle.Decline
+		if !errors.As(lerr, &pd) || pd.Type != portstyle.NotLiteral {
+			return nil, lerr
+		}
+		cand, ok := lastLiteralCandidate(pd.Candidates)
+		if !ok {
+			return nil, lerr
+		}
+		carrier, style, exact = cand.Span, cand.Style, false
+	}
+	slog.Debug("version carrier", "style", style.String(), "span", carrier, "literal", carrier.Text(src), "corroborated", lerr == nil)
+
 	// Whether the version is moving governs more than one decision
-	// below, so it is named once here.
-	moving := vals.Version != b.Version
+	// below, so it is named once here — in carrier vocabulary, which is
+	// the target's own.
+	moving := carrier.Text(src) != b.Version
 	if !moving && !b.Force {
-		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: vals.Version}
+		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: carrier.Text(src)}
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
@@ -112,20 +144,25 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		}
 	}
 
+	// An uncorroborated carrier must prove itself before anything is
+	// planned on it: write the target into the candidate, shadow,
+	// re-evaluate, and demand the version moved. The corroboration rule
+	// extended one step — from "text equals value" to "text demonstrably
+	// drives value" — at the cost of one evaluation, only on this path.
+	if lerr != nil && moving {
+		if err := probeCarrier(ctx, h, src, carrier, b.Version, vals.Version); err != nil {
+			slog.Debug("counterfactual probe failed", "span", carrier, "err", err)
+			return nil, lerr
+		}
+		slog.Debug("carrier proven by counterfactual", "style", style.String(), "span", carrier)
+	}
+
 	// The version edit.
-	loc, err := portstyle.Locate(src, cst, vals, info.FieldVersion)
-	if err != nil {
-		return nil, err
-	}
-	slog.Debug("located version carrier", "style", loc.Style.String(), "span", loc.Span, "value", loc.Value)
-	if loc.Style.Transformed() {
-		return nil, &plan.Decline{Type: plan.TransformedStyle, Detail: loc.Style.String()}
-	}
 	var edits []edit.Edit
 	if moving {
 		edits = append(edits, edit.Edit{
-			Start: loc.Span.Start, End: loc.Span.End,
-			Old: loc.Span.Text(src), New: b.Version, Reason: "version",
+			Start: carrier.Start, End: carrier.End,
+			Old: carrier.Text(src), New: b.Version, Reason: "version",
 		})
 
 		// The revision reset: a present line rewrites to 0; an absent
@@ -271,7 +308,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	predicted := before.Diff(after)
 	slog.Debug("shadow prediction", "changed", len(predicted.Changed), "added", len(predicted.Added), "removed", len(predicted.Removed))
 
-	if err := b.accept(vals, predicted); err != nil {
+	if err := b.accept(vals, predicted, moving, exact); err != nil {
 		return nil, err
 	}
 
@@ -287,8 +324,13 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	}, nil
 }
 
-// accept is the bump's judgment of its own predicted delta.
-func (b Bump) accept(vals info.Values, predicted info.Delta) error {
+// accept is the bump's judgment of its own predicted delta. moving and
+// exact are the carrier's terms: moving says the carrier literal was
+// rewritten, and exact says carrier and evaluated vocabulary coincide —
+// when they do not (a transform sits between), the evaluated version's
+// new value is the Portfile's business, and movement is the
+// requirement.
+func (b Bump) accept(vals info.Values, predicted info.Delta, moving, exact bool) error {
 	if len(predicted.Added) > 0 || len(predicted.Removed) > 0 {
 		return &plan.Decline{Type: plan.SubportsChanged,
 			Detail: fmt.Sprintf("%d added, %d removed", len(predicted.Added), len(predicted.Removed))}
@@ -300,7 +342,11 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 		switch ch.Field {
 		case info.FieldVersion:
 			versionChanged = true
-			versionReached = slices.Equal(ch.New, []string{b.Version})
+			if exact {
+				versionReached = slices.Equal(ch.New, []string{b.Version})
+			} else {
+				versionReached = len(ch.New) == 1 && ch.New[0] != ""
+			}
 		case info.FieldDistfiles:
 			distfilesMoved = true
 		case info.FieldChecksums:
@@ -321,7 +367,7 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	// and whether anything downstream moved is the finding rather than
 	// the requirement, since an upstream that re-rolled nothing is the
 	// ordinary case.
-	if vals.Version != b.Version {
+	if moving {
 		if !versionReached {
 			return &plan.Decline{Type: plan.TargetNotReached,
 				Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
@@ -349,6 +395,51 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	return nil
 }
 
+// lastLiteralCandidate picks the probe's carrier: the last literal
+// candidate in document order, matching Tcl's later-assignment-wins —
+// the same preference corroboration itself uses. A candidate that is
+// not a plain literal cannot be rewritten, so it cannot carry.
+func lastLiteralCandidate(cands []portstyle.Candidate) (portstyle.Candidate, bool) {
+	var best portstyle.Candidate
+	ok := false
+	for _, c := range cands {
+		if c.Literal && (!ok || c.Span.Start > best.Span.Start) {
+			best, ok = c, true
+		}
+	}
+	return best, ok
+}
+
+// probeCarrier proves a span drives the version, by observation: the
+// target written into the span must move the evaluated version. The
+// Portfile transforms its carrier through Tcl of its own — a [string
+// map] over github.version, say — and no registry of Go transforms can
+// chase that family, so the proof is empirical, exactly as the
+// corroboration rule demands: evaluation is the only authority on what
+// a Portfile means.
+func probeCarrier(ctx context.Context, h port.Handle, src []byte, span text.Span, target, current string) error {
+	probed, err := edit.Apply(src, []edit.Edit{{
+		Start: span.Start, End: span.End,
+		Old: span.Text(src), New: target, Reason: "version",
+	}})
+	if err != nil {
+		return err
+	}
+	shadow, cleanup, err := h.Shadow(probed)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	sv, err := shadow.Values(ctx)
+	if err != nil {
+		return fmt.Errorf("bump: probe evaluation: %w", err)
+	}
+	if sv.Version == current || sv.Version == "" {
+		return fmt.Errorf("bump: writing %s into the candidate moved nothing", target)
+	}
+	return nil
+}
+
 // ResolveLatest answers what version "latest" means for a port, by
 // running upstream's two-resolver check against its version carrier. A
 // verdict that does not yield a trustworthy latest — rot, disagreement,
@@ -363,10 +454,23 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (st
 		return "", upstream.Report{}, err
 	}
 	loc, err := portstyle.Locate(src, cst, vals, info.FieldVersion)
+	style := loc.Style
 	if err != nil {
-		return "", upstream.Report{}, err
+		// Latest resolution needs the style family, not a proven span:
+		// livecheck and the forge speak the carrier's vocabulary either
+		// way, and the bump that follows proves the span by
+		// counterfactual before writing anything.
+		var pd *portstyle.Decline
+		if !errors.As(err, &pd) || pd.Type != portstyle.NotLiteral {
+			return "", upstream.Report{}, err
+		}
+		cand, ok := lastLiteralCandidate(pd.Candidates)
+		if !ok {
+			return "", upstream.Report{}, err
+		}
+		style = cand.Style
 	}
-	report, err := upstream.Check(ctx, h, f, loc.Style, vals.Livecheck)
+	report, err := upstream.Check(ctx, h, f, style, vals.Livecheck)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}
