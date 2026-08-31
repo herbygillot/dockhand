@@ -22,6 +22,7 @@ type bumpAction struct {
 	to       string
 	force    bool
 	planOnly bool
+	diff     bool
 	inPlace  bool
 	verify   bool
 	on       string
@@ -91,6 +92,11 @@ func (a bumpAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if a.planOnly {
 		return p.Encode(rs.Out)
 	}
+	if a.diff {
+		// The patch the branch would carry, and nothing else: same
+		// graft as a mint, diffed instead of committed.
+		return diffFromPlan(ctx, rs, p)
+	}
 	if a.inPlace {
 		// The deliberate opt-out (D21): edit where the user stands,
 		// uncommitted — for the user running their own workflow, and
@@ -112,6 +118,7 @@ func Bump() *cobra.Command {
 		to       string
 		latest   bool
 		planOnly bool
+		diffOnly bool
 		inPlace  bool
 		force    bool
 		verifyIt bool
@@ -129,12 +136,15 @@ func Bump() *cobra.Command {
 				// The literal string would be planned as a version;
 				// resolving the newest release is a different workflow.
 				return nil, usagef("use --latest to resolve the newest release")
+			case diffOnly && inPlace, diffOnly && planOnly:
+				return nil, usagef("--diff is an output mode of its own; combine it with neither --plan nor --in-place")
 			}
 			return bumpAction{
 				target:   args[0],
 				to:       to,
 				force:    force,
 				planOnly: planOnly,
+				diff:     diffOnly,
 				inPlace:  inPlace,
 				verify:   verifyIt,
 				on:       on,
@@ -144,6 +154,8 @@ func Bump() *cobra.Command {
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
 	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
 	c.Flags().BoolVar(&planOnly, "plan", false, "emit the plan on stdout and change nothing")
+	c.Flags().BoolVar(&diffOnly, "diff", false,
+		"print the patch the branch would carry, as a git diff; write nothing")
 	c.Flags().BoolVar(&inPlace, "in-place", false,
 		"edit the Portfile where it stands, uncommitted — no branch, no commit")
 	c.Flags().BoolVar(&verifyIt, "verify", false,

@@ -189,15 +189,7 @@ func (r *Repo) Mint(ctx context.Context, req MintRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	baseTree, err := r.RevParse(ctx, baseCommit+"^{tree}")
-	if err != nil {
-		return "", err
-	}
-	blob, err := r.gitStdin(ctx, req.Content, "hash-object", "-w", "--stdin")
-	if err != nil {
-		return "", err
-	}
-	tree, err := r.graft(ctx, baseTree, strings.Split(req.Path, "/"), blob)
+	tree, err := r.GraftTree(ctx, baseCommit, req.Path, req.Content)
 	if err != nil {
 		return "", err
 	}
@@ -211,6 +203,32 @@ func (r *Repo) Mint(ctx context.Context, req MintRequest) (string, error) {
 		return "", err
 	}
 	return commit, nil
+}
+
+// GraftTree writes a tree equal to base's but with the file at path
+// holding content: the object-database half of a mint, shared with
+// diffing — "diff the trees" and "commit the tree" are the same
+// construction with different last steps. The objects written are
+// ordinary gc fodder until something references them.
+func (r *Repo) GraftTree(ctx context.Context, base, path string, content []byte) (string, error) {
+	baseTree, err := r.RevParse(ctx, base+"^{tree}")
+	if err != nil {
+		return "", err
+	}
+	blob, err := r.gitStdin(ctx, content, "hash-object", "-w", "--stdin")
+	if err != nil {
+		return "", err
+	}
+	return r.graft(ctx, baseTree, strings.Split(path, "/"), blob)
+}
+
+// DiffTrees renders the patch between two tree-ishes. diff-tree is
+// plumbing: output ignores the user's diff.* config, carries the
+// standard a/ and b/ path prefixes, and never colors — so what it
+// prints is what `git apply` accepts.
+func (r *Repo) DiffTrees(ctx context.Context, a, b string) ([]byte, error) {
+	out, _, err := execGit(ctx, r.Root, nil, "diff-tree", "-p", a, b)
+	return out, err
 }
 
 // gitStdin runs one git command with the given stdin.

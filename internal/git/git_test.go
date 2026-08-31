@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -135,6 +136,36 @@ func TestPrimaryBranchFallsBackToTheCurrentOne(t *testing.T) {
 	name, err := r.PrimaryBranch(context.Background())
 	require.NoError(t, err)
 	assert.True(t, r.HasBranch(context.Background(), name))
+}
+
+// The diff of a grafted tree is the patch the branch would carry, and
+// git itself must accept it: the contract is `git apply`, so the test
+// is `git apply --check` against the working tree the patch targets.
+func TestDiffTreesEmitsWhatGitApplyAccepts(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+
+	tree, err := r.GraftTree(ctx, "HEAD", "sysutils/jq/Portfile", []byte("version 1.8\n"))
+	require.NoError(t, err)
+	patch, err := r.DiffTrees(ctx, "HEAD^{tree}", tree)
+	require.NoError(t, err)
+
+	s := string(patch)
+	assert.Contains(t, s, "a/sysutils/jq/Portfile")
+	assert.Contains(t, s, "b/sysutils/jq/Portfile")
+	assert.Contains(t, s, "-version 1.7")
+	assert.Contains(t, s, "+version 1.8")
+
+	cmd := exec.Command("git", "-C", r.Root, "apply", "--check")
+	cmd.Stdin = bytes.NewReader(patch)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git apply --check rejected the patch: %s", out)
+
+	// And nothing observable changed: no refs, clean tree.
+	status, err := r.git(ctx, "status", "--porcelain")
+	require.NoError(t, err)
+	assert.Empty(t, status)
+	assert.False(t, r.HasBranch(ctx, "dockhand/jq-1.8"))
 }
 
 // A GIT_DIR inherited from whatever invoked dockhand must not redirect
