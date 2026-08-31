@@ -27,6 +27,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/checksums/rewrite"
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
@@ -149,7 +150,7 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 	// Shadow the edits for the exact prediction, as every intent does:
 	// the plan states what will change, and applying it holds the
 	// change to that statement.
-	edited, err := plan.ApplyEdits(src, edits)
+	edited, err := edit.Apply(src, edits)
 	if err != nil {
 		return nil, err
 	}
@@ -167,13 +168,13 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 		return nil, err
 	}
 
-	slices.SortFunc(edits, func(a, b plan.Edit) int { return a.Start - b.Start })
+	slices.SortFunc(edits, func(a, b edit.Edit) int { return a.Start - b.Start })
 	return &plan.Plan{
 		Format:         plan.Format,
 		Intent:         "refresh-checksums",
 		Portdir:        h.Target.Portdir,
 		Subport:        h.Target.Subport,
-		PortfileSHA256: plan.FileSHA256(src),
+		PortfileSHA256: edit.FileSHA256(src),
 		Edits:          edits,
 		Predicted:      plan.FromDelta(predicted),
 	}, nil

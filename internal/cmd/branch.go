@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/plan"
@@ -44,10 +45,10 @@ func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, branc
 	if err != nil {
 		return err
 	}
-	if plan.FileSHA256(base) != p.PortfileSHA256 {
+	if edit.FileSHA256(base) != p.PortfileSHA256 {
 		return fmt.Errorf("%w: the Portfile on %s is not the one planned against — commit your work there first, or use --in-place", plan.ErrDrift, primary)
 	}
-	edited, err := plan.ApplyEdits(base, p.Edits)
+	edited, err := edit.Apply(base, p.Edits)
 	if err != nil {
 		return err
 	}

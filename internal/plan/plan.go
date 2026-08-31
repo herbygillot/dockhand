@@ -1,37 +1,29 @@
-// Package plan holds the artifact a planner emits and apply consumes: a
+// Package plan holds the value that separates deciding from doing: a
 // complete, inert description of an intended change — the byte edits,
-// their provenance, and the exact predicted delta. All intelligence is
-// spent at plan time and captured here; applying is deliberately dumb —
-// verify preconditions, write bytes, re-evaluate, demand the predicted
-// delta exactly.
+// their provenance, the precondition hash, and the exact predicted
+// delta. All intelligence is spent at plan time and captured here;
+// realizing is deliberately dumb — verify preconditions, write bytes,
+// re-evaluate, demand the predicted delta exactly.
 //
-// Plans serialize as JSON because they travel a pipe
-// (dockhand bump ... | dockhand apply -) and outlive the process that
-// made them.
+// Under D21 a plan is internal interchange, never a user artifact: one
+// intent's computation feeds every realization — committed onto a
+// branch, applied in place, verified in a VM before it exists anywhere
+// real, rendered for a human — without any of them re-deciding
+// anything. The JSON rendering survives only as --plan's inspection
+// output; nothing reads a plan back.
 package plan
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"sort"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
 // Format is the plan wire format version this build writes.
 const Format = 1
-
-// Edit is one byte-span replacement, with enough provenance to render
-// and to double-check against the file at apply time.
-type Edit struct {
-	Start  int    `json:"start"`
-	End    int    `json:"end"`
-	Old    string `json:"old"`
-	New    string `json:"new"`
-	Reason string `json:"reason"`
-}
 
 // Change is one field's movement within an evaluation context.
 type Change struct {
@@ -57,7 +49,7 @@ type Plan struct {
 	Portdir        string         `json:"portdir"`
 	Subport        string         `json:"subport,omitempty"`
 	PortfileSHA256 string         `json:"portfile_sha256"`
-	Edits          []Edit         `json:"edits"`
+	Edits          []edit.Edit    `json:"edits"`
 	Predicted      []ContextDelta `json:"predicted"`
 }
 
@@ -68,13 +60,6 @@ func (p *Plan) Encode(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(p)
-}
-
-// FileSHA256 is the precondition hash: the hex sha256 of the Portfile
-// bytes a plan was computed against.
-func FileSHA256(src []byte) string {
-	sum := sha256.Sum256(src)
-	return hex.EncodeToString(sum[:])
 }
 
 // FromDelta renders an info.Delta in the plan's canonical wire form:

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
@@ -18,7 +19,7 @@ func TestEncodeRendersThePlan(t *testing.T) {
 		Intent:         "bump",
 		Portdir:        "/tree/sysutils/foo",
 		PortfileSHA256: "abc",
-		Edits: []Edit{
+		Edits: []edit.Edit{
 			{Start: 10, End: 15, Old: "1.0.0", New: "2.0.0", Reason: "version"},
 		},
 		Predicted: []ContextDelta{

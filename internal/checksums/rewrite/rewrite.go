@@ -14,7 +14,7 @@ package rewrite
 
 import (
 	"github.com/herbygillot/dockhand/internal/checksums"
-	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -35,7 +35,7 @@ var commands = map[string]bool{
 // scope is injected rather than assumed so this package needs no
 // knowledge of what a Portfile's evaluation scopes are: callers pass
 // portstyle.ScopeOf for the context they are editing.
-func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, reps []checksums.Replacement) (edits []plan.Edit, unlocated []checksums.Replacement) {
+func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, reps []checksums.Replacement) (edits []edit.Edit, unlocated []checksums.Replacement) {
 	located := make([]bool, len(reps))
 	for cmd := range cst.Commands(src, scope) {
 		name, ok := cmd.Name(src)
@@ -61,7 +61,7 @@ func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, reps
 				if rep.New == rep.Old {
 					break
 				}
-				edits = append(edits, plan.Edit{
+				edits = append(edits, edit.Edit{
 					Start:  w.Span.Start,
 					End:    w.Span.End,
 					Old:    lit,

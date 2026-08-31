@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -66,10 +67,10 @@ func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release
 	if err != nil {
 		return err
 	}
-	if plan.FileSHA256(src) != p.PortfileSHA256 {
+	if edit.FileSHA256(src) != p.PortfileSHA256 {
 		return fmt.Errorf("%w: %s", plan.ErrDrift, p.Portdir)
 	}
-	edited, err := plan.ApplyEdits(src, p.Edits)
+	edited, err := edit.Apply(src, p.Edits)
 	if err != nil {
 		return err
 	}

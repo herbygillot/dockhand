@@ -33,7 +33,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 )
@@ -174,8 +174,8 @@ func ValidateBlock(out []byte, k Kind) ([]byte, error) {
 // widths would mean interpreting what this package has no business
 // reading, and the generator's own output is what a maintainer running
 // it by hand would commit.
-func Edit(src []byte, span text.Span, block []byte, k Kind) plan.Edit {
-	return plan.Edit{
+func Edit(src []byte, span text.Span, block []byte, k Kind) edit.Edit {
+	return edit.Edit{
 		Start:  span.Start,
 		End:    span.End,
 		Old:    span.Text(src),

@@ -6,6 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/checksums/rewrite"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -28,7 +29,7 @@ const reasonDistfileName = "distfile name"
 // positionally — a bump does not reorder or add distfiles, and a
 // changed count means the edit did more than a bump may — and the old
 // names, where the block writes them literally, are rewritten too.
-func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []checksums.Recorded, oldDistfiles, newDistfiles []string, sums map[string]checksums.Sums) ([]plan.Edit, error) {
+func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []checksums.Recorded, oldDistfiles, newDistfiles []string, sums map[string]checksums.Sums) ([]edit.Edit, error) {
 	if len(old) == 0 {
 		return nil, nil
 	}

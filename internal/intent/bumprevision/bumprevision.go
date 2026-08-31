@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
@@ -77,13 +78,13 @@ func (b BumpRevision) Plan(ctx context.Context, h port.Handle, _ distfile.Fetche
 	}
 	next := strconv.Itoa(n + 1)
 
-	edits := []plan.Edit{{
+	edits := []edit.Edit{{
 		Start: loc.Span.Start, End: loc.Span.End,
 		Old: loc.Span.Text(src), New: next,
 		Reason: "revision +1: " + b.Reason,
 	}}
 
-	finalSrc, err := plan.ApplyEdits(src, edits)
+	finalSrc, err := edit.Apply(src, edits)
 	if err != nil {
 		return nil, err
 	}
@@ -101,13 +102,13 @@ func (b BumpRevision) Plan(ctx context.Context, h port.Handle, _ distfile.Fetche
 		return nil, err
 	}
 
-	slices.SortFunc(edits, func(a, b plan.Edit) int { return a.Start - b.Start })
+	slices.SortFunc(edits, func(a, b edit.Edit) int { return a.Start - b.Start })
 	return &plan.Plan{
 		Format:         plan.Format,
 		Intent:         "bump-revision",
 		Portdir:        h.Target.Portdir,
 		Subport:        h.Target.Subport,
-		PortfileSHA256: plan.FileSHA256(src),
+		PortfileSHA256: edit.FileSHA256(src),
 		Edits:          edits,
 		Predicted:      plan.FromDelta(predicted),
 	}, nil

@@ -20,6 +20,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -120,9 +121,9 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	if loc.Style.Transformed() {
 		return nil, &plan.Decline{Type: plan.TransformedStyle, Detail: loc.Style.String()}
 	}
-	var edits []plan.Edit
+	var edits []edit.Edit
 	if moving {
-		edits = append(edits, plan.Edit{
+		edits = append(edits, edit.Edit{
 			Start: loc.Span.Start, End: loc.Span.End,
 			Old: loc.Span.Text(src), New: b.Version, Reason: "version",
 		})
@@ -138,7 +139,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		switch {
 		case err == nil:
 			if revLoc.Span.Text(src) != "0" {
-				edits = append(edits, plan.Edit{
+				edits = append(edits, edit.Edit{
 					Start: revLoc.Span.Start, End: revLoc.Span.End,
 					Old: revLoc.Span.Text(src), New: "0", Reason: "revision reset",
 				})
@@ -154,7 +155,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// URLs, then fetch them for checksums.
 	checksumOldTokens := vals.Checksums
 	if len(checksumOldTokens) > 0 {
-		edited, err := plan.ApplyEdits(src, edits)
+		edited, err := edit.Apply(src, edits)
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +255,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	}
 
 	// Shadow the full edit set for the exact prediction.
-	finalSrc, err := plan.ApplyEdits(src, edits)
+	finalSrc, err := edit.Apply(src, edits)
 	if err != nil {
 		return nil, err
 	}
@@ -274,13 +275,13 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		return nil, err
 	}
 
-	slices.SortFunc(edits, func(a, b plan.Edit) int { return a.Start - b.Start })
+	slices.SortFunc(edits, func(a, b edit.Edit) int { return a.Start - b.Start })
 	return &plan.Plan{
 		Format:         plan.Format,
 		Intent:         "bump",
 		Portdir:        portdir,
 		Subport:        h.Target.Subport,
-		PortfileSHA256: plan.FileSHA256(src),
+		PortfileSHA256: edit.FileSHA256(src),
 		Edits:          edits,
 		Predicted:      plan.FromDelta(predicted),
 	}, nil
@@ -392,19 +393,19 @@ func suppliedDistfiles(v info.Vendored) ([]string, error) {
 
 // cargoBlockEdit regenerates a cargo.crates block from the Cargo.lock
 // inside the port's own distfiles.
-func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syntax.Script, vals info.Values, worksrcdir string, fetched []string) (plan.Edit, error) {
+func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syntax.Script, vals info.Values, worksrcdir string, fetched []string) (edit.Edit, error) {
 	span, err := vendored.Locate(src, cst, portstyle.ScopeOf(src, vals.Name), cargo2port.Kind)
 	if err != nil {
-		return plan.Edit{}, err
+		return edit.Edit{}, err
 	}
 	lock, from, err := cargo2port.Lockfile(ctx, fetched, worksrcdir)
 	if err != nil {
-		return plan.Edit{}, err
+		return edit.Edit{}, err
 	}
 	slog.Debug("read lockfile", "from", filepath.Base(from), "bytes", len(lock))
 	block, err := cargo2port.Generate(ctx, root, lock)
 	if err != nil {
-		return plan.Edit{}, err
+		return edit.Edit{}, err
 	}
 	slog.Debug("regenerated block", "kind", cargo2port.Kind.String(), "bytes", len(block))
 	return vendored.Edit(src, span, block, cargo2port.Kind), nil
