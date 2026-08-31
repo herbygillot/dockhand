@@ -79,7 +79,7 @@ func (a bumpAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// carried out, it is the only chance to see what is being done
 	// before it is done.
 	renderPlan(rs.Err, p)
-	if a.verify || a.on != "" {
+	if a.verify {
 		// Before apply, not after: a Portfile known not to build never
 		// lands in the tree.
 		release, err := releaseFlag(a.on)
@@ -157,7 +157,7 @@ func Bump() *cobra.Command {
 	c.Flags().BoolVar(&noVerify, "no-verify", false,
 		"mint the branch without submitting background verification")
 	c.Flags().StringVar(&on, "on", "",
-		"macOS release to verify on (implies --verify)")
+		"macOS release to verify on")
 	c.Flags().BoolVar(&force, "force", false,
 		"proceed even if the port is already at the target version, re-deriving checksums and vendored blocks")
 	return c

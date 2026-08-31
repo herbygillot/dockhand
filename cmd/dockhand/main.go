@@ -1,5 +1,5 @@
 // dockhand is a command-line tool for MacPorts maintainers.
-// From upstream release to upstream PR.
+// From upstream release to submitted port.
 package main
 
 import (

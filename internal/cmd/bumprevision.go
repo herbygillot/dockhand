@@ -50,7 +50,7 @@ func (a bumpRevisionAction) Execute(ctx context.Context, rs *runstate.Context) e
 		return err
 	}
 	renderPlan(rs.Err, p)
-	if a.verify || a.on != "" {
+	if a.verify {
 		release, err := releaseFlag(a.on)
 		if err != nil {
 			return err
@@ -127,6 +127,6 @@ func BumpRevisionCmd() *cobra.Command {
 	c.Flags().BoolVar(&noVerify, "no-verify", false,
 		"mint the branch without submitting background verification")
 	c.Flags().BoolVar(&verifyIt, "verify", false, "build the result in a pristine VM before applying")
-	c.Flags().StringVar(&on, "on", "", "macOS release to verify on (implies --verify)")
+	c.Flags().StringVar(&on, "on", "", "macOS release to verify on")
 	return c
 }

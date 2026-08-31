@@ -42,7 +42,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",
-		Long:         logo + "\nA port maintenance utility for MacPorts.\nFrom upstream release to upstream PR.",
+		Long:         logo + "\nA port maintenance utility for MacPorts.\nFrom upstream release to submitted port.",
 		Version:      version,
 		SilenceUsage: true,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {

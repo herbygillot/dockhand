@@ -63,7 +63,7 @@ func (a refreshAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	fmt.Fprintln(rs.Err, "note: these checksums changed at an UNCHANGED version — upstream re-rolled")
 	fmt.Fprintln(rs.Err, "the artifact. Establish why before this change goes anywhere public: it may")
 	fmt.Fprintln(rs.Err, "be a benign re-tar, or it may be a supply-chain event.")
-	if a.verify || a.on != "" {
+	if a.verify {
 		release, err := releaseFlag(a.on)
 		if err != nil {
 			return err
@@ -127,6 +127,6 @@ func RefreshChecksums() *cobra.Command {
 	c.Flags().BoolVar(&verifyIt, "verify", false,
 		"build the result in a pristine VM before applying; failure applies nothing")
 	c.Flags().StringVar(&on, "on", "",
-		"macOS release to verify on (implies --verify)")
+		"macOS release to verify on")
 	return c
 }
