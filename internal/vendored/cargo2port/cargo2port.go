@@ -78,6 +78,22 @@ func Crates(option string) ([]Crate, error) {
 	return crates, nil
 }
 
+// SuppliedIn is the set of distfile names an evaluated cargo.crates
+// option contributes, in the form vendored.Own subtracts. It is the
+// composition every consumer wants: any intent that must tell a port's
+// own distfiles from the block's needs exactly this, and each keeping
+// its own copy of the parse-then-derive dance is how they drift.
+func SuppliedIn(option string) ([]string, error) {
+	if option == "" {
+		return nil, nil
+	}
+	crates, err := Crates(option)
+	if err != nil {
+		return nil, err
+	}
+	return Supplied(crates), nil
+}
+
 // Supplied is the set of distfile names a block contributes, in the form
 // vendored.Own subtracts.
 func Supplied(crates []Crate) []string {

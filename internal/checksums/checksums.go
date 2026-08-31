@@ -77,6 +77,26 @@ func Parse(tokens []string) ([]Recorded, error) {
 	return out, nil
 }
 
+// ForFiles keeps the records belonging to the named files, plus the
+// unnamed records of the single-distfile form, which only a port itself
+// writes. It is how an intent separates the checksums a port records
+// for its own distfiles from those a vendored block appended: the
+// block's records live inside the block and are regenerated with it,
+// never edited where they stand.
+func ForFiles(recorded []Recorded, files []string) []Recorded {
+	keep := make(map[string]bool, len(files))
+	for _, f := range files {
+		keep[f] = true
+	}
+	out := make([]Recorded, 0, len(recorded))
+	for _, r := range recorded {
+		if r.File == "" || keep[r.File] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // ErrMismatch reports computed sums that disagree with recorded ones.
 var ErrMismatch = errors.New("checksums: mismatch")
 

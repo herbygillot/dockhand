@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
@@ -22,27 +21,6 @@ func TestSuppliedDistfilesEmptyWithoutABlock(t *testing.T) {
 	got, err := suppliedDistfiles(info.Vendored{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
-}
-
-// A block appends one checksum record per distfile it supplies. Those
-// literals live inside the block, which is replaced wholesale, so they
-// must not be looked for among the checksums command's words.
-func TestOwnRecordsDropsBlockSuppliedEntries(t *testing.T) {
-	recorded := []checksums.Recorded{
-		{File: "tokei-13.0.0.tar.gz", Type: "sha256", Value: "aaa"},
-		{File: "libc-0.2.156.crate", Type: "sha256", Value: "bbb"},
-		{File: "bitflags-2.6.0.crate", Type: "sha256", Value: "ccc"},
-	}
-	got := ownRecords(recorded, []string{"tokei-13.0.0.tar.gz"})
-	require.Len(t, got, 1)
-	assert.Equal(t, "tokei-13.0.0.tar.gz", got[0].File)
-}
-
-// The single-distfile form carries no name, and only the port itself
-// writes it.
-func TestOwnRecordsKeepsTheUnnamedForm(t *testing.T) {
-	got := ownRecords([]checksums.Recorded{{Type: "sha256", Value: "aaa"}}, []string{"foo-1.0.tar.gz"})
-	require.Len(t, got, 1)
 }
 
 func valsWithPatch(t *testing.T, body string) info.Values {

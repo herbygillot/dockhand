@@ -225,7 +225,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 		if err != nil {
 			return nil, fmt.Errorf("bump: %w", err)
 		}
-		ck, err := checksumEdits(src, cst, vals.Name, ownRecords(recorded, ownOld), ownOld, ownNew, sums)
+		ck, err := checksumEdits(src, cst, vals.Name, checksums.ForFiles(recorded, ownOld), ownOld, ownNew, sums)
 		if err != nil {
 			return nil, err
 		}
@@ -369,32 +369,11 @@ func suppliedDistfiles(v info.Vendored) ([]string, error) {
 	if v.CargoCrates == "" {
 		return nil, nil
 	}
-	crates, err := cargo2port.Crates(v.CargoCrates)
+	supplied, err := cargo2port.SuppliedIn(v.CargoCrates)
 	if err != nil {
 		return nil, fmt.Errorf("bump: %w", err)
 	}
-	return cargo2port.Supplied(crates), nil
-}
-
-// ownRecords keeps the checksum records belonging to the port's own
-// distfiles. A vendored block appends one record per distfile it
-// supplies, and those literals live inside the block rather than in any
-// checksums command — regenerating the block rewrites them, and looking
-// for them among the checksums command's words would find nothing.
-func ownRecords(recorded []checksums.Recorded, own []string) []checksums.Recorded {
-	keep := make(map[string]bool, len(own))
-	for _, n := range own {
-		keep[n] = true
-	}
-	out := make([]checksums.Recorded, 0, len(recorded))
-	for _, r := range recorded {
-		// A record with no file name is the single-distfile form, which
-		// only the port itself writes.
-		if r.File == "" || keep[r.File] {
-			out = append(out, r)
-		}
-	}
-	return out
+	return supplied, nil
 }
 
 // cargoBlockEdit regenerates a cargo.crates block from the Cargo.lock
