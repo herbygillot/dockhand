@@ -25,6 +25,7 @@ type bumpAction struct {
 	diff     bool
 	inPlace  bool
 	verify   bool
+	noVerify bool
 	on       string
 }
 
@@ -107,9 +108,23 @@ func (a bumpAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(p.Portdir))
 	}
-	return mintFromPlan(ctx, rs, p,
+	m, err := mintFromPlan(ctx, rs, p,
 		"dockhand/"+portName+"-"+to,
 		fmt.Sprintf("%s: update to %s", portName, to))
+	if err != nil || m == nil {
+		return err
+	}
+	if a.noVerify {
+		return nil
+	}
+	// The branch is live the moment it exists (D21): verification is
+	// submitted against the tip and the guest drives its own build, so
+	// this process is free to exit; status collects the verdict.
+	release, err := releaseFlag(a.on)
+	if err != nil {
+		return err
+	}
+	return submitVerification(ctx, rs, m, portName, release)
 }
 
 // Bump builds the bump subcommand: move a port to a new version.
@@ -122,6 +137,7 @@ func Bump() *cobra.Command {
 		inPlace  bool
 		force    bool
 		verifyIt bool
+		noVerify bool
 		on       string
 	)
 	c := &cobra.Command{
@@ -138,6 +154,8 @@ func Bump() *cobra.Command {
 				return nil, usagef("use --latest to resolve the newest release")
 			case diffOnly && inPlace, diffOnly && planOnly:
 				return nil, usagef("--diff is an output mode of its own; combine it with neither --plan nor --in-place")
+			case verifyIt && noVerify:
+				return nil, usagef("--verify and --no-verify are mutually exclusive")
 			}
 			return bumpAction{
 				target:   args[0],
@@ -147,6 +165,7 @@ func Bump() *cobra.Command {
 				diff:     diffOnly,
 				inPlace:  inPlace,
 				verify:   verifyIt,
+				noVerify: noVerify,
 				on:       on,
 			}, nil
 		}),
@@ -159,7 +178,9 @@ func Bump() *cobra.Command {
 	c.Flags().BoolVar(&inPlace, "in-place", false,
 		"edit the Portfile where it stands, uncommitted — no branch, no commit")
 	c.Flags().BoolVar(&verifyIt, "verify", false,
-		"build the result in a pristine VM before applying; failure applies nothing")
+		"build the result in a pristine VM before realizing it; failure realizes nothing")
+	c.Flags().BoolVar(&noVerify, "no-verify", false,
+		"mint the branch without submitting background verification")
 	c.Flags().StringVar(&on, "on", "",
 		"macOS release to verify on (implies --verify)")
 	c.Flags().BoolVar(&force, "force", false,

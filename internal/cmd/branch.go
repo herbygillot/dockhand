@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // planOnBase resolves a plan against the repository it will land in:
@@ -49,19 +52,30 @@ func planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary, pat
 	return repo, primary, path, edited, nil
 }
 
+// minted is what a realized branch hands back: enough for the caller
+// to submit verification against the sha and tell the user where the
+// change lives.
+type minted struct {
+	Repo    *git.Repo
+	Branch  string
+	Sha     string // full commit sha
+	RelPort string // repo-relative portdir path
+}
+
 // mintFromPlan realizes a plan as a branch (D21): the edited Portfile
 // is committed onto the tree's primary branch at its local position,
 // under dockhand's namespace, entirely in the object database — the
-// user's HEAD and working tree are never touched.
-func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, branch, message string) error {
+// user's HEAD and working tree are never touched. A plan with no edits
+// mints nothing and returns nil, nil.
+func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, branch, message string) (*minted, error) {
 	if len(p.Edits) == 0 {
 		// A no-op realized as a branch would be an empty commit.
 		fmt.Fprintln(rs.Out, "no edits; no branch minted")
-		return nil
+		return nil, nil
 	}
 	repo, primary, path, edited, err := planOnBase(ctx, p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sha, err := repo.Mint(ctx, git.MintRequest{
 		Branch:  branch,
@@ -72,15 +86,71 @@ func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, branc
 	})
 	if err != nil {
 		if errors.Is(err, git.ErrBranchExists) {
-			return fmt.Errorf("a change for this port is already in flight: %s — discard it or pick up where it left off", branch)
+			return nil, fmt.Errorf("a change for this port is already in flight: %s — discard it or pick up where it left off", branch)
+		}
+		return nil, err
+	}
+	rel, err := repo.RelPath(p.Portdir)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(rs.Out, "branch: %s (%s)\n", branch, sha[:12])
+	fmt.Fprintf(rs.Err, "your checkout is untouched — `git checkout %s` to add changes\n", branch)
+	return &minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}, nil
+}
+
+// submitVerification stages the minted commit's portdir out of the
+// object database — the working tree is irrelevant to what the branch
+// carries — submits it to the VM provider, and records the running job
+// as the commit's note. Submission not starting is not a minting
+// failure: the branch stands either way, so environment problems and
+// full slots report themselves and leave the tip unverified for a
+// later `dockhand verify`.
+func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release) error {
+	later := func(why string) error {
+		fmt.Fprintf(rs.Err, "verification not started: %s\nrun `dockhand verify %s` when ready\n", why, m.Branch)
+		return nil
+	}
+	prov, err := vmProvider(ctx)
+	if err != nil {
+		if errors.Is(err, verify.ErrNoEnvironment) {
+			return later(err.Error())
 		}
 		return err
 	}
-	if len(sha) > 12 {
-		sha = sha[:12]
+	root, err := rs.TempDir()
+	if err != nil {
+		return err
 	}
-	fmt.Fprintf(rs.Out, "branch: %s (%s)\n", branch, sha)
-	fmt.Fprintf(rs.Err, "your checkout is untouched — `git checkout %s` to add changes\n", branch)
+	stage, _, err := root.MakeDir("stage-" + portName)
+	if err != nil {
+		return err
+	}
+	if err := m.Repo.Materialize(ctx, m.Sha, m.RelPort, stage); err != nil {
+		return err
+	}
+	job, err := prov.Submit(ctx, verify.Request{
+		Port:     portName,
+		Portdirs: []string{filepath.Join(stage, filepath.FromSlash(m.RelPort))},
+		Platform: release,
+	})
+	if err != nil {
+		// A full provider (two-slot cap) or a mid-submit failure: the
+		// branch is minted and the tip is simply unverified.
+		return later(err.Error())
+	}
+	tree, err := m.Repo.RevParse(ctx, m.Sha+"^{tree}")
+	if err != nil {
+		return err
+	}
+	n := verifyNote{
+		Schema: noteSchema, Sha: m.Sha, Tree: tree, Port: portName,
+		Platform: release.Name, State: "running", Job: job,
+	}
+	if err := writeNote(ctx, m.Repo, n); err != nil {
+		return err
+	}
+	fmt.Fprintf(rs.Err, "verify: submitted %s (job %s); `dockhand status` follows it\n", portName, job.ID)
 	return nil
 }
 

@@ -241,3 +241,76 @@ func TestRelPathStaysInside(t *testing.T) {
 	_, err = r.RelPath(filepath.Dir(r.Root))
 	require.Error(t, err)
 }
+
+func TestNotesRoundTripAndAbsence(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	sha, err := r.RevParse(ctx, "HEAD")
+	require.NoError(t, err)
+
+	_, err = r.NoteRead(ctx, VerifyNotesRef, sha)
+	require.ErrorIs(t, err, ErrNoNote)
+
+	require.NoError(t, r.NoteWrite(ctx, VerifyNotesRef, sha, []byte(`{"state":"running"}`)))
+	got, err := r.NoteRead(ctx, VerifyNotesRef, sha)
+	require.NoError(t, err)
+	// git notes show appends a newline; JSON comparison absorbs it.
+	assert.JSONEq(t, `{"state":"running"}`, string(got))
+
+	// Replacement, not accumulation: the note is the current record.
+	require.NoError(t, r.NoteWrite(ctx, VerifyNotesRef, sha, []byte(`{"state":"passed"}`)))
+	got, err = r.NoteRead(ctx, VerifyNotesRef, sha)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"state":"passed"}`, string(got))
+}
+
+func TestBranchesMatchesTheNamespaceNotSubstrings(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	for _, req := range []MintRequest{
+		{Branch: "dockhand/jq-1.8", Base: "HEAD", Path: "sysutils/jq/Portfile", Content: []byte("a\n"), Message: "a"},
+		{Branch: "dockhand-hidden", Base: "HEAD", Path: "sysutils/jq/Portfile", Content: []byte("b\n"), Message: "b"},
+	} {
+		_, err := r.Mint(ctx, req)
+		require.NoError(t, err)
+	}
+	got, err := r.Branches(ctx, "dockhand/")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dockhand/jq-1.8"}, got)
+}
+
+// Materialize reads the object database, so a dirty working tree — the
+// exact situation a background verification runs in — is irrelevant.
+func TestMaterializeIgnoresTheWorkingTree(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	sha, err := r.Mint(ctx, MintRequest{
+		Branch: "dockhand/jq-1.8", Base: "HEAD",
+		Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n"), Message: "jq: update to 1.8",
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(r.Root, "sysutils", "jq", "Portfile"), []byte("DIRTY\n"), 0o644))
+
+	dest := t.TempDir()
+	require.NoError(t, r.Materialize(ctx, sha, "sysutils/jq", dest))
+	got, err := os.ReadFile(filepath.Join(dest, "sysutils", "jq", "Portfile"))
+	require.NoError(t, err)
+	assert.Equal(t, "version 1.8\n", string(got))
+}
+
+func TestRevListNewestFirst(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	head, err := r.RevParse(ctx, "HEAD")
+	require.NoError(t, err)
+	sha, err := r.Mint(ctx, MintRequest{
+		Branch: "dockhand/jq-1.8", Base: "HEAD",
+		Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n"), Message: "jq: update to 1.8",
+	})
+	require.NoError(t, err)
+	shas, err := r.RevList(ctx, "dockhand/jq-1.8", 10)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(shas), 2)
+	assert.Equal(t, sha, shas[0])
+	assert.Equal(t, head, shas[1])
+}
