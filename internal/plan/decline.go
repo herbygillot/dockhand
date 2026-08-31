@@ -24,9 +24,10 @@ const (
 	// SubportsChanged means the shadow evaluation showed subports
 	// appearing or disappearing — beyond what a bump may do.
 	SubportsChanged
-	// VersionNotReached means the shadow evaluation did not show the
-	// version arriving at the requested value.
-	VersionNotReached
+	// TargetNotReached means the shadow evaluation did not show the
+	// edited field arriving at the requested value — a bump's version,
+	// a revbump's revision.
+	TargetNotReached
 	// UnexpectedChange means a field unrelated to the bump moved.
 	UnexpectedChange
 	// LatestUnresolved means "latest" could not be trusted: the upstream
@@ -56,8 +57,8 @@ func (t DeclineType) String() string {
 		return "checksums could not be located for editing"
 	case SubportsChanged:
 		return "subports would appear or disappear"
-	case VersionNotReached:
-		return "version would not reach the requested value"
+	case TargetNotReached:
+		return "the edit would not reach its target value"
 	case UnexpectedChange:
 		return "an unrelated field would change"
 	case LatestUnresolved:

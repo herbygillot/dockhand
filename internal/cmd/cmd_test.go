@@ -167,3 +167,11 @@ func TestProvisionTartRequiresARelease(t *testing.T) {
 		"an unknown release is a usage error naming the input, not a guess")
 	assert.Equal(t, ExitUsage, code(t, "provision", "tart", "extra-arg"))
 }
+
+// The reason is the human half of a revbump; without it the command is
+// a usage error before anything is resolved.
+func TestBumpRevisionRequiresAReason(t *testing.T) {
+	assert.Equal(t, ExitUsage, code(t, "bump-revision", "someport"))
+	assert.Equal(t, ExitUsage, code(t, "revbump", "someport"), "the alias shares the check")
+	assert.Equal(t, ExitUsage, code(t, "bump-revision"))
+}

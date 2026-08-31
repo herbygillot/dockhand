@@ -322,7 +322,7 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	// ordinary case.
 	if vals.Version != b.Version {
 		if !versionReached {
-			return &plan.Decline{Type: plan.VersionNotReached,
+			return &plan.Decline{Type: plan.TargetNotReached,
 				Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
 		}
 		if len(vals.Distfiles) > 0 && !distfilesMoved {

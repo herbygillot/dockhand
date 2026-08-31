@@ -276,5 +276,5 @@ func TestAcceptOrdinaryBumpRequiresTheVersionToMove(t *testing.T) {
 	err := Bump{Version: "2.0"}.accept(vals, info.Delta{})
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, plan.VersionNotReached, d.Type)
+	assert.Equal(t, plan.TargetNotReached, d.Type)
 }
