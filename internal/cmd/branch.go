@@ -122,6 +122,14 @@ func (e *VerifyDeferredError) Error() string {
 // failure — the branch stands — but it is a contract failure:
 // VerifyDeferredError carries that split.
 func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release) error {
+	if !tartPresent() {
+		// No provider, no contract: the machine cannot verify at all,
+		// so this is a --no-verify bump that says so — and the branch
+		// may be promoted as it is, unverified.
+		fmt.Fprintln(rs.Err, "no verification possible: no local verify provider (tart)")
+		fmt.Fprintf(rs.Err, "the branch is unverified; you may promote it as is, or install tart and run `dockhand verify %s`\n", m.Branch)
+		return nil
+	}
 	later := func(why string) error {
 		return &VerifyDeferredError{Branch: m.Branch, Reason: why}
 	}

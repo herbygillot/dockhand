@@ -50,15 +50,21 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return err
 	}
 
-	// Promote refuses an unverified tip (D21): the PR spends reviewer
+	// Promote refuses an unverified tip: the PR spends reviewer
 	// attention, and the private backends exist to predict the shared
-	// one's verdict before that happens.
-	n, ok, err := passedVerdictFor(ctx, repo, tip)
+	// one's verdict before that happens. Without a local verify
+	// provider there is nothing to refuse toward — the machine cannot
+	// verify — so the promotion proceeds unverified, says so, and the
+	// PR body says so too, which is the candour reviewers accept.
+	n, verified, err := passedVerdictFor(ctx, repo, tip)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fmt.Errorf("%s: tip %s is unverified — `dockhand verify %s` first", branch, tip[:12], branch)
+	if !verified {
+		if tartPresent() {
+			return fmt.Errorf("%s: tip %s is unverified — `dockhand verify %s` first", branch, tip[:12], branch)
+		}
+		fmt.Fprintln(rs.Err, "no local verify provider (tart): promoting unverified")
 	}
 
 	forkRemote, forkOwner, err := a.forkRemote(ctx, repo)
@@ -86,7 +92,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 			return err
 		}
 	}
-	body := promoteBody(n, a.closes)
+	body := promoteBody(n, verified, a.closes)
 	args := []string{"pr", "create", "--repo", upstream,
 		"--head", forkOwner + ":" + branch, "--title", title, "--body", body}
 	url, err := ghOut(ctx, args...)
@@ -97,17 +103,22 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	return nil
 }
 
-// promoteBody renders the PR body: what was done and what was
-// verified, stated plainly — candour is the accepted currency (D9),
-// and unverified assertions are what draw "did you verify this?".
-func promoteBody(n verifyNote, closes string) string {
+// promoteBody renders the PR body: what was done and what was — or
+// was not — verified, stated plainly: candour is the accepted
+// currency, and unverified assertions are what draw "did you verify
+// this?".
+func promoteBody(n verifyNote, verified bool, closes string) string {
 	var b strings.Builder
-	plat := n.Platform
-	if plat == "" {
-		plat = "macOS VM"
+	if !verified {
+		b.WriteString("Not locally verified: no verification environment on the submitting machine.\n")
+	} else {
+		plat := n.Platform
+		if plat == "" {
+			plat = "macOS VM"
+		}
+		fmt.Fprintf(&b, "Verified: `%s` built in a pristine %s environment (dockhand, commit `%s`).\n",
+			n.Port, plat, n.Sha[:12])
 	}
-	fmt.Fprintf(&b, "Verified: `%s` built in a pristine %s environment (dockhand, commit `%s`).\n",
-		n.Port, plat, n.Sha[:12])
 	if closes != "" {
 		fmt.Fprintf(&b, "\nCloses: https://trac.macports.org/ticket/%s\n", closes)
 	}

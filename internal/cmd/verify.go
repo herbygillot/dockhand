@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -40,9 +41,27 @@ func (e *VerifyFailedError) Error() string {
 	return msg
 }
 
+// tartPresent reports whether the local verify provider exists at all.
+// Its absence is a different fact from "present but unprovisioned": a
+// machine without tart cannot verify, so verification quietly leaves
+// the contract (bump warns and proceeds; promote warns and allows),
+// where a machine with tart and no bases is asked to provision.
+func tartPresent() bool {
+	_, err := exec.LookPath("tart")
+	return err == nil
+}
+
 // vmProvider assembles the tart provider from the base images actually
-// on this machine. No bases is ErrNoEnvironment with the remedy named.
+// on this machine. Both ways of having no environment — tart absent,
+// tart present with no bases — are ErrNoEnvironment with the remedy
+// named, which is what routes a bump to "the branch stands" rather
+// than a raw exec error.
 func vmProvider(ctx context.Context) (tart.Provider, error) {
+	if _, err := exec.LookPath("tart"); err != nil {
+		return tart.Provider{}, fmt.Errorf(
+			"%w: tart is not installed (`port install tart`); --no-verify skips verification",
+			verify.ErrNoEnvironment)
+	}
 	releases, err := (provision.Tart{}).Provisioned(ctx)
 	if err != nil {
 		return tart.Provider{}, err
