@@ -53,16 +53,20 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// provider there is nothing to refuse toward — the machine cannot
 	// verify — so the promotion proceeds unverified, says so, and the
 	// PR body says so too, which is the candour reviewers accept.
-	n, verified, err := passedVerdictFor(ctx, repo, tip)
+	n, verified, err := promotableVerdictFor(ctx, repo, tip)
 	if err != nil {
 		return err
 	}
 	if !verified {
+		reason := "is unverified"
+		if n.anyState("failed") {
+			reason = "has a failed verification"
+		}
 		switch {
 		case a.noVerify:
 			fmt.Fprintln(rs.Err, "promoting unverified (--no-verify); the PR will say so")
 		case tartPresent():
-			return fmt.Errorf("%s: tip %s is unverified — `dockhand verify %s` first, or --no-verify to promote anyway", branch, tip[:12], branch)
+			return fmt.Errorf("%s: tip %s %s — `dockhand verify %s` first, or --no-verify to promote anyway", branch, tip[:12], reason, branch)
 		default:
 			fmt.Fprintln(rs.Err, "no local verify provider (tart): promoting unverified")
 		}
@@ -113,12 +117,20 @@ func promoteBody(n verifyNote, verified bool, closes string) string {
 	if !verified {
 		b.WriteString("Not locally verified: no verification environment on the submitting machine.\n")
 	} else {
-		plat := n.Platform
-		if plat == "" {
-			plat = "macOS VM"
+		// The whole verdict set, enumerated: a passing platform and a
+		// declining one are both facts a reviewer wants, and candour is
+		// the accepted currency.
+		var parts []string
+		for _, plat := range n.platforms() {
+			switch n.Runs[plat].State {
+			case "passed":
+				parts = append(parts, plat+": built in a pristine VM")
+			case "unsupported":
+				parts = append(parts, plat+": the port declines this platform (known_fail)")
+			}
 		}
-		fmt.Fprintf(&b, "Verified: `%s` built in a pristine %s environment (dockhand, commit `%s`).\n",
-			n.Port, plat, n.Sha[:12])
+		fmt.Fprintf(&b, "Verified with dockhand at commit `%s` — %s.\n",
+			n.Sha[:12], strings.Join(parts, "; "))
 	}
 	if closes != "" {
 		fmt.Fprintf(&b, "\nCloses: https://trac.macports.org/ticket/%s\n", closes)

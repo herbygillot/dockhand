@@ -17,7 +17,7 @@ import (
 
 // statusAction reconciles the dockhand/* namespace: every branch, its
 // tip's verification record, and the drift between them. It is a
-// reconciler, not a daemon (D21): running jobs are polled here, their
+// reconciler, not a daemon: running jobs are polled here, their
 // verdicts written back to the notes, and workers released on pass —
 // the one mutation status performs, because a two-slot provider's
 // unreleased job is a slot that never returns. It never deletes a
@@ -44,14 +44,135 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return nil
 	}
 	for _, br := range branches {
-		line, err := describeBranch(ctx, repo, br)
+		lines, err := describeBranch(ctx, repo, br)
 		if err != nil {
-			line = "error: " + err.Error()
+			lines = []string{"error: " + err.Error()}
 		}
-		fmt.Fprintf(rs.Out, "%-32s %s\n", br, line)
+		if len(lines) == 1 {
+			fmt.Fprintf(rs.Out, "%-32s %s\n", br, lines[0])
+			continue
+		}
+		fmt.Fprintln(rs.Out, br)
+		for _, l := range lines {
+			fmt.Fprintf(rs.Out, "  %s\n", l)
+		}
 	}
 	reportOrphanWorkers(ctx, rs, repo)
 	return nil
+}
+
+// describeBranch renders one branch's verification standing, polling
+// and settling whatever is still running on its tip.
+func describeBranch(ctx context.Context, repo *git.Repo, branch string) ([]string, error) {
+	tip, err := repo.RevParse(ctx, branch)
+	if err != nil {
+		return nil, err
+	}
+	n, err := readNote(ctx, repo, tip)
+	if errors.Is(err, git.ErrNoNote) {
+		line, err := describeUnverifiedTip(ctx, repo, branch, tip)
+		if err != nil {
+			return nil, err
+		}
+		return []string{line}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if n.anyState("running") {
+		if err := settleRuns(ctx, repo, &n); err != nil {
+			return nil, err
+		}
+	}
+	return renderNote(n), nil
+}
+
+// settleRuns polls every running run and writes what it learns back to
+// the note. Poll never mutates and Release is the caller's: status
+// releases the worker on pass — a kept green environment is a wasted
+// slot — and keeps it on failure, where it is the debug handle. A
+// failure whose log shows the port refusing the platform records as
+// unsupported instead, and its worker is released: a correct refusal
+// leaves nothing to debug.
+func settleRuns(ctx context.Context, repo *git.Repo, n *verifyNote) error {
+	prov, err := vmProvider(ctx)
+	if err != nil {
+		return nil // running, cannot poll; the note stands as is
+	}
+	changed := false
+	for plat, r := range n.Runs {
+		if r.State != "running" {
+			continue
+		}
+		st, perr := prov.Poll(ctx, r.Job)
+		if errors.Is(perr, verify.ErrUnknownJob) {
+			r.State, r.Detail = "errored", "job vanished: its worker no longer exists"
+			n.Runs[plat], changed = r, true
+			continue
+		}
+		if perr != nil {
+			return perr
+		}
+		switch st.State {
+		case verify.Running:
+			continue
+		case verify.Passed:
+			r.State = "passed"
+			if rerr := prov.Release(ctx, r.Job); rerr != nil {
+				r.Detail = "worker not released: " + rerr.Error()
+			}
+		case verify.Failed:
+			r.State, r.Handle = "failed", st.Handle
+			if log, lerr := prov.Log(ctx, r.Job); lerr == nil && portDeclined(log) {
+				r.State, r.Handle = "unsupported", ""
+				r.Detail = "the port declines to build on this platform"
+				_ = prov.Release(context.WithoutCancel(ctx), r.Job)
+			}
+		case verify.Errored:
+			r.State, r.Detail = "errored", st.Detail
+			_ = prov.Release(context.WithoutCancel(ctx), r.Job)
+		}
+		n.Runs[plat], changed = r, true
+	}
+	if !changed {
+		return nil
+	}
+	return writeNote(ctx, repo, *n)
+}
+
+// renderNote is the human rendering of a verdict set: one line per
+// platform, in stable order.
+func renderNote(n verifyNote) []string {
+	var lines []string
+	for _, plat := range n.platforms() {
+		r := n.Runs[plat]
+		s := r.State
+		if r.State == "running" {
+			s = fmt.Sprintf("verifying (%s)", time.Since(r.Job.Started).Round(time.Second))
+		}
+		line := fmt.Sprintf("%s (%s)", s, plat)
+		if r.Handle != "" {
+			line += " — environment kept: " + r.Handle
+		}
+		if r.Detail != "" {
+			line += " — " + r.Detail
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return []string{"no runs recorded"}
+	}
+	return lines
+}
+
+// summarizeNote compresses a verdict set to one clause, for the
+// drift lines.
+func summarizeNote(n verifyNote) string {
+	var parts []string
+	for _, plat := range n.platforms() {
+		parts = append(parts, n.Runs[plat].State+" ("+plat+")")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // portDeclined reads a failure log for the shapes of a port refusing a
@@ -65,6 +186,46 @@ func portDeclined(log string) bool {
 		}
 	}
 	return false
+}
+
+// describeUnverifiedTip says what an unnoted tip means: never
+// verified, or verified at an older commit the branch has since moved
+// past — the sha gap that IS the drift mechanism. Content identity is
+// checked against every verdict, not just ancestors: an amend replaces
+// the commit, so a reworded tip's verdicts live on a sha the branch no
+// longer reaches, and the tree is what still matches.
+func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip string) (string, error) {
+	tipTree, err := repo.RevParse(ctx, tip+"^{tree}")
+	if err != nil {
+		return "", err
+	}
+	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
+	if err != nil {
+		return "", err
+	}
+	for _, sha := range noted {
+		n, err := readNote(ctx, repo, sha)
+		if err != nil || n.Tree != tipTree || !n.anyState("passed") {
+			continue
+		}
+		return fmt.Sprintf("%s at %s — the tip differs only in commit metadata", summarizeNote(n), sha[:12]), nil
+	}
+	shas, err := repo.RevList(ctx, branch, 32)
+	if err != nil {
+		return "", err
+	}
+	for behind, sha := range shas {
+		if behind == 0 {
+			continue
+		}
+		n, err := readNote(ctx, repo, sha)
+		if err != nil {
+			continue
+		}
+		return fmt.Sprintf("tip unverified; %s at %s, %d commit(s) behind — `dockhand verify %s` tests the tip",
+			summarizeNote(n), sha[:12], behind, branch), nil
+	}
+	return "unverified", nil
 }
 
 // reportOrphanWorkers names running workers no note accounts for: a
@@ -84,8 +245,10 @@ func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Re
 	if noted, err := repo.NotesList(ctx, git.VerifyNotesRef); err == nil {
 		for _, sha := range noted {
 			if n, err := readNote(ctx, repo, sha); err == nil {
-				tracked[n.Job.ID] = true
-				tracked[n.Handle] = true
+				for _, r := range n.Runs {
+					tracked[r.Job.ID] = true
+					tracked[r.Handle] = true
+				}
 			}
 		}
 	}
@@ -96,135 +259,6 @@ func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Re
 		}
 		fmt.Fprintf(rs.Out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", vm, vm, vm)
 	}
-}
-
-// describeBranch renders one branch's verification standing, polling
-// and settling a running job when the tip carries one.
-func describeBranch(ctx context.Context, repo *git.Repo, branch string) (string, error) {
-	tip, err := repo.RevParse(ctx, branch)
-	if err != nil {
-		return "", err
-	}
-	n, err := readNote(ctx, repo, tip)
-	if errors.Is(err, git.ErrNoNote) {
-		return describeUnverifiedTip(ctx, repo, branch, tip)
-	}
-	if err != nil {
-		return "", err
-	}
-	if n.State == "running" {
-		return settleRunning(ctx, repo, &n)
-	}
-	return renderState(n), nil
-}
-
-// settleRunning polls the tip's job and writes what it learns back to
-// the note. Poll never mutates and Release is the caller's (D17):
-// status releases the worker on pass — a kept green environment is a
-// wasted slot — and keeps it on failure, where it is the debug handle.
-func settleRunning(ctx context.Context, repo *git.Repo, n *verifyNote) (string, error) {
-	prov, err := vmProvider(ctx)
-	if err != nil {
-		return fmt.Sprintf("running, cannot poll: %v", err), nil
-	}
-	st, err := prov.Poll(ctx, n.Job)
-	if errors.Is(err, verify.ErrUnknownJob) {
-		n.State, n.Detail = "errored", "job vanished: its worker no longer exists"
-		if werr := writeNote(ctx, repo, *n); werr != nil {
-			return "", werr
-		}
-		return renderState(*n), nil
-	}
-	if err != nil {
-		return "", err
-	}
-	switch st.State {
-	case verify.Running:
-		return fmt.Sprintf("verifying (%s)", time.Since(n.Job.Started).Round(time.Second)), nil
-	case verify.Passed:
-		n.State = "passed"
-		if rerr := prov.Release(ctx, n.Job); rerr != nil {
-			n.Detail = "worker not released: " + rerr.Error()
-		}
-	case verify.Failed:
-		n.State, n.Handle = "failed", st.Handle
-		// A port that DECLINED to build — known_fail, a platform floor —
-		// is not a break: that refusal is often the success condition of
-		// the change under test (field evidence: a correct platform
-		// bound read as "failed"). Nothing to debug either, so the
-		// worker is released rather than kept.
-		if log, lerr := prov.Log(ctx, n.Job); lerr == nil && portDeclined(log) {
-			n.State, n.Handle = "unsupported", ""
-			n.Detail = "the port declines to build on this platform"
-			_ = prov.Release(context.WithoutCancel(ctx), n.Job)
-		}
-	case verify.Errored:
-		n.State, n.Detail = "errored", st.Detail
-		_ = prov.Release(context.WithoutCancel(ctx), n.Job)
-	}
-	if err := writeNote(ctx, repo, *n); err != nil {
-		return "", err
-	}
-	return renderState(*n), nil
-}
-
-// describeUnverifiedTip says what an unnoted tip means: never
-// verified, or verified at an older commit the branch has since moved
-// past — the sha gap that IS the drift mechanism (D21). Content
-// identity is checked against every verdict, not just ancestors: an
-// amend replaces the commit, so a reworded tip's passed verdict lives
-// on a sha the branch no longer reaches, and the tree is what still
-// matches.
-func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip string) (string, error) {
-	tipTree, err := repo.RevParse(ctx, tip+"^{tree}")
-	if err != nil {
-		return "", err
-	}
-	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
-	if err != nil {
-		return "", err
-	}
-	for _, sha := range noted {
-		n, err := readNote(ctx, repo, sha)
-		if err != nil || n.State != "passed" || n.Tree != tipTree {
-			continue
-		}
-		return fmt.Sprintf("passed for identical content at %s — the tip differs only in commit metadata", sha[:12]), nil
-	}
-	shas, err := repo.RevList(ctx, branch, 32)
-	if err != nil {
-		return "", err
-	}
-	for behind, sha := range shas {
-		if behind == 0 {
-			continue
-		}
-		n, err := readNote(ctx, repo, sha)
-		if err != nil {
-			continue
-		}
-		verb := n.State
-		if n.State == "running" {
-			verb = "verifying"
-		}
-		return fmt.Sprintf("tip unverified; %s at %s, %d commit(s) behind — `dockhand verify %s` tests the tip", verb, sha[:12], behind, branch), nil
-	}
-	return "unverified", nil
-}
-
-// renderState is the terse rendering of a settled note.
-func renderState(n verifyNote) string {
-	s := n.State
-	if n.Platform != "" {
-		s += " (" + n.Platform + ")"
-	}
-	if n.Handle != "" {
-		s += " — environment kept: " + n.Handle
-	}
-	if n.Detail != "" {
-		s += " — " + n.Detail
-	}
-	return s
 }
 
 // Status builds the status subcommand.

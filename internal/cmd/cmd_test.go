@@ -200,3 +200,28 @@ func TestOwnerRepoFromURL(t *testing.T) {
 	_, _, ok := ownerRepoFromURL("nonsense")
 	assert.False(t, ok)
 }
+
+// The promote gate over a verdict set: at least one pass, no failures.
+// A declining platform does not block — that refusal is often the
+// change working — an unexplained failure does.
+func TestPromotableVerdictSet(t *testing.T) {
+	n := verifyNote{Runs: map[string]verifyRun{
+		"Sonoma":   {State: "passed"},
+		"Monterey": {State: "unsupported"},
+	}}
+	assert.True(t, n.promotable())
+	n.Runs["Ventura"] = verifyRun{State: "failed"}
+	assert.False(t, n.promotable(), "a failed run blocks")
+	assert.False(t, verifyNote{Runs: map[string]verifyRun{"Sonoma": {State: "running"}}}.promotable(),
+		"running alone is not a pass")
+}
+
+// tclTrue mirrors [string is true], which is how mpbb judges known_fail.
+func TestTclTrue(t *testing.T) {
+	for _, v := range []string{"yes", "true", "1", "on", "YES", " True "} {
+		assert.True(t, tclTrue(v), v)
+	}
+	for _, v := range []string{"", "no", "false", "0", "maybe"} {
+		assert.False(t, tclTrue(v), v)
+	}
+}

@@ -63,13 +63,16 @@ func discardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 		}
 		// A running job's worker, or a failed job's kept environment:
 		// either way a VM this branch owns, released with it.
-		if n.State == "running" || n.Handle != "" {
+		for _, run := range n.Runs {
+			if run.State != "running" && run.Handle == "" {
+				continue
+			}
 			if prov, perr := vmProvider(ctx); perr == nil {
-				if rerr := prov.Release(ctx, n.Job); rerr != nil {
-					fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", n.Job.ID, rerr)
+				if rerr := prov.Release(ctx, run.Job); rerr != nil {
+					fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
 				}
 			} else {
-				fmt.Fprintf(rs.Err, "warning: %s holds worker %s, and no provider is available to release it\n", sha[:12], n.Job.ID)
+				fmt.Fprintf(rs.Err, "warning: %s holds worker %s, and no provider is available to release it\n", sha[:12], run.Job.ID)
 			}
 		}
 		if err := repo.NoteRemove(ctx, git.VerifyNotesRef, sha); err != nil {

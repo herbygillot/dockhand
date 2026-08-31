@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -172,22 +173,29 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 // is what makes human edits after a dockhand change verifiable at all.
 type verifyAction struct {
 	target string
-	on     string
+	on     []string
 }
 
 var _ Action = verifyAction{}
 
 func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	release, err := releaseFlag(a.on)
-	if err != nil {
-		return err
-	}
 	// A branch name wins over a port name: the branch is the unit
 	// (D21), and verifying one means verifying its tip sha, whoever
 	// made it. Everything else falls through to state verification of
 	// the working tree.
 	if repo, err := rs.Repo(ctx); err == nil && repo.HasBranch(ctx, a.target) {
-		return verifyBranch(ctx, rs, repo, a.target, release)
+		return verifyBranch(ctx, rs, repo, a.target, a.on)
+	}
+	var single string
+	if len(a.on) > 1 {
+		return usagef("state verification of a portdir takes one release; a branch takes lists and \"all\"")
+	}
+	if len(a.on) == 1 {
+		single = a.on[0]
+	}
+	release, err := releaseFlag(single)
+	if err != nil {
+		return err
 	}
 	targets, err := resolveTargets(rs.TreeRoot, false, []string{a.target})
 	if err != nil {
@@ -211,15 +219,18 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // tip is left alone; a running job the branch has moved past is
 // canceled first, its worker released and its note marked superseded,
 // because a verdict about an abandoned sha is a slot spent on nothing.
-func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, release platform.Release) error {
+func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, on []string) error {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return err
 	}
-	if n, err := readNote(ctx, repo, tip); err == nil && n.State == "running" {
-		fmt.Fprintf(rs.Err, "already verifying (%s); `dockhand status` follows it\n",
-			time.Since(n.Job.Started).Round(time.Second))
-		return nil
+	prov, err := vmProvider(ctx)
+	if err != nil {
+		return err
+	}
+	releases, err := verifyReleases(on, prov.Capabilities().Platforms)
+	if err != nil {
+		return err
 	}
 	if err := cancelStale(ctx, rs, repo, branch, tip); err != nil {
 		return err
@@ -251,9 +262,77 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	for d := range portdirs {
 		rel = d
 	}
-	return submitVerification(ctx, rs, &minted{
-		Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
-	}, filepath.Base(rel), release)
+
+	n, nerr := readNote(ctx, repo, tip)
+	var deferred int
+	for _, r := range releases {
+		if nerr == nil {
+			if run, ok := n.Runs[r.Name]; ok && run.State == "running" {
+				fmt.Fprintf(rs.Err, "already verifying on %s (%s); `dockhand status` follows it\n",
+					r.Name, time.Since(run.Job.Started).Round(time.Second))
+				continue
+			}
+		}
+		err := submitVerification(ctx, rs, &minted{
+			Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
+		}, filepath.Base(rel), r)
+		var vde *VerifyDeferredError
+		if errors.As(err, &vde) {
+			// No slot for this platform right now: recorded, reported,
+			// and the remaining releases still get their chance.
+			if rerr := recordRun(ctx, rs, repo, tip, filepath.Base(rel), r.Name, verifyRun{
+				State: "deferred", Detail: vde.Reason,
+			}, fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)); rerr != nil {
+				return rerr
+			}
+			deferred++
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if deferred > 0 {
+		return &VerifyDeferredError{Branch: branch,
+			Reason: fmt.Sprintf("%d release(s) deferred; re-run `dockhand verify %s --on <release>` when a slot frees", deferred, branch)}
+	}
+	return nil
+}
+
+// verifyReleases resolves verify's --on values against the provisioned
+// bases: nothing means the newest, "all" means every base, and each
+// named release must actually have a base — a verdict cannot be
+// promised on an environment that does not exist.
+func verifyReleases(on []string, provisioned []platform.Release) ([]platform.Release, error) {
+	if len(provisioned) == 0 {
+		return nil, fmt.Errorf("%w: no base images", verify.ErrNoEnvironment)
+	}
+	if len(on) == 0 {
+		return provisioned[:1], nil
+	}
+	var out []platform.Release
+	for _, v := range on {
+		if strings.EqualFold(v, "all") {
+			return provisioned, nil
+		}
+		r, err := platform.Parse(v)
+		if err != nil {
+			return nil, &UsageError{Err: err}
+		}
+		found := false
+		for _, p := range provisioned {
+			if p == r {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: no base image for %s; `dockhand provision tart --macos %s` builds one",
+				verify.ErrNoEnvironment, r.Name, strings.ToLower(r.CompactName()))
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // cancelStale releases every running job recorded on a commit the
@@ -270,28 +349,37 @@ func cancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 			continue
 		}
 		n, err := readNote(ctx, repo, sha)
-		if err != nil || n.State != "running" || !repo.IsAncestor(ctx, sha, branch) {
+		if err != nil || !n.anyState("running") || !repo.IsAncestor(ctx, sha, branch) {
 			continue
 		}
 		prov, err := vmProvider(ctx)
 		if err != nil {
 			return err
 		}
-		if err := prov.Release(ctx, n.Job); err != nil {
-			fmt.Fprintf(rs.Err, "warning: canceling %s: %v\n", n.Job.ID, err)
+		changed := false
+		for plat, run := range n.Runs {
+			if run.State != "running" {
+				continue
+			}
+			if err := prov.Release(ctx, run.Job); err != nil {
+				fmt.Fprintf(rs.Err, "warning: canceling %s: %v\n", run.Job.ID, err)
+			}
+			run.State, run.Detail = "superseded", "canceled: the branch moved to "+tip[:12]
+			n.Runs[plat], changed = run, true
+			fmt.Fprintf(rs.Err, "canceled stale verification of %s on %s (branch moved past it)\n", sha[:12], plat)
 		}
-		n.State, n.Detail = "superseded", "canceled: the branch moved to "+tip[:12]
-		if err := writeNote(ctx, repo, n); err != nil {
-			return err
+		if changed {
+			if err := writeNote(ctx, repo, n); err != nil {
+				return err
+			}
 		}
-		fmt.Fprintf(rs.Err, "canceled stale verification of %s (branch moved past it)\n", sha[:12])
 	}
 	return nil
 }
 
 // Verify builds the verify subcommand.
 func Verify() *cobra.Command {
-	var on string
+	var on []string
 	c := &cobra.Command{
 		Use:   "verify <branch|port|subport|portdir>",
 		Short: "Verify a branch's tip in a pristine VM — or a port as it sits",
@@ -300,7 +388,8 @@ func Verify() *cobra.Command {
 			return verifyAction{target: args[0], on: on}, nil
 		}),
 	}
-	c.Flags().StringVar(&on, "on", "", "macOS release to verify on (name or version; default: the first provisioned base)")
+	c.Flags().StringSliceVar(&on, "on", nil,
+		`macOS releases to verify on, or "all" (default: the newest provisioned base)`)
 	return c
 }
 
@@ -314,7 +403,7 @@ func releaseFlag(on string) (platform.Release, error) {
 		return platform.Release{}, nil
 	}
 	if strings.EqualFold(on, "all") || strings.Contains(on, ",") {
-		return platform.Release{}, usagef("verification runs one release at a time (the verdict tracks one build); repeat the run per release, or use `dockhand exec --on all` for cheap probes")
+		return platform.Release{}, usagef("this verb submits one platform; run the matrix afterwards with `dockhand verify <branch> --on <list|all>`")
 	}
 	r, err := platform.Parse(on)
 	if err != nil {

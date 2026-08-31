@@ -40,7 +40,7 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	n, err := readNote(ctx, repo, tip)
-	if errors.Is(err, git.ErrNoNote) || (err == nil && n.State != "running") {
+	if errors.Is(err, git.ErrNoNote) || (err == nil && !n.anyState("running")) {
 		fmt.Fprintf(rs.Err, "%s has no running verification\n", branch)
 		return nil
 	}
@@ -51,15 +51,18 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	if rerr := prov.Release(ctx, n.Job); rerr != nil {
-		fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", n.Job.ID, rerr)
+	for plat, run := range n.Runs {
+		if run.State != "running" {
+			continue
+		}
+		if rerr := prov.Release(ctx, run.Job); rerr != nil {
+			fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
+		}
+		run.State, run.Detail = "canceled", "canceled by the user"
+		n.Runs[plat] = run
+		fmt.Fprintf(rs.Out, "canceled verification of %s on %s (worker %s released)\n", branch, plat, run.Job.ID)
 	}
-	n.State, n.Detail = "canceled", "canceled by the user"
-	if err := writeNote(ctx, repo, n); err != nil {
-		return err
-	}
-	fmt.Fprintf(rs.Out, "canceled verification of %s (worker %s released)\n", branch, n.Job.ID)
-	return nil
+	return writeNote(ctx, repo, n)
 }
 
 // Cancel builds the cancel subcommand.

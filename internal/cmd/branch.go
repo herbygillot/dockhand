@@ -155,6 +155,11 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 		}
 		return err
 	}
+	// The platform resolves before anything is recorded: a run is keyed
+	// by release name, and "the default" is not a key.
+	if release.IsZero() {
+		release = prov.Capabilities().Platforms[0]
+	}
 	root, err := rs.TempDir()
 	if err != nil {
 		return err
@@ -166,9 +171,20 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 	if err := m.Repo.Materialize(ctx, m.Sha, m.RelPort, stage); err != nil {
 		return err
 	}
+	staged := filepath.Join(stage, filepath.FromSlash(m.RelPort))
+	// mpbb's list-time exclusion, borrowed: evaluation answers
+	// known_fail in a second, before any VM boots — and it answers for
+	// the branch's content, which is what was materialized.
+	if declares, kerr := knownFailOn(ctx, rs, staged, release); kerr != nil {
+		fmt.Fprintf(rs.Err, "warning: known_fail pre-flight: %v\n", kerr)
+	} else if declares {
+		return recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
+			State: "unsupported", Detail: "declares known_fail on " + release.Name,
+		}, fmt.Sprintf("%s declares known_fail on %s; recorded unsupported — no build attempted", portName, release.Name))
+	}
 	job, err := prov.Submit(ctx, verify.Request{
 		Port:     portName,
-		Portdirs: []string{filepath.Join(stage, filepath.FromSlash(m.RelPort))},
+		Portdirs: []string{staged},
 		Platform: release,
 	})
 	if err != nil {
@@ -176,18 +192,24 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 		// branch is minted and the tip is simply unverified.
 		return later(err.Error())
 	}
-	tree, err := m.Repo.RevParse(ctx, m.Sha+"^{tree}")
+	return recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
+		State: "running", Job: job,
+	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID))
+}
+
+// recordRun writes one platform's run into the commit's note — the
+// read-modify-write every per-platform update goes through — and tells
+// the user what was recorded.
+func recordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, releaseName string, r verifyRun, msg string) error {
+	n, err := loadOrStartNote(ctx, repo, sha, portName)
 	if err != nil {
 		return err
 	}
-	n := verifyNote{
-		Schema: noteSchema, Sha: m.Sha, Tree: tree, Port: portName,
-		Platform: release.Name, State: "running", Job: job,
-	}
-	if err := writeNote(ctx, m.Repo, n); err != nil {
+	n.Runs[releaseName] = r
+	if err := writeNote(ctx, repo, n); err != nil {
 		return err
 	}
-	fmt.Fprintf(rs.Err, "verify: submitted %s (job %s); `dockhand status` follows it\n", portName, job.ID)
+	fmt.Fprintln(rs.Err, msg)
 	return nil
 }
 
@@ -254,19 +276,16 @@ func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.
 	if err != nil {
 		return err
 	}
-	tree, err := m.Repo.RevParse(ctx, m.Sha+"^{tree}")
-	if err != nil {
-		return err
+	if release.IsZero() {
+		// The gate ran, so a provider exists; its default names the run.
+		prov, perr := vmProvider(ctx)
+		if perr != nil {
+			return perr
+		}
+		release = prov.Capabilities().Platforms[0]
 	}
-	n := verifyNote{
-		Schema: noteSchema, Sha: m.Sha, Tree: tree, Port: p.Port,
-		Platform: release.Name, State: "passed",
-	}
-	if err := writeNote(ctx, m.Repo, n); err != nil {
-		return err
-	}
-	fmt.Fprintln(rs.Err, "verified before minting; the tip is recorded as passed")
-	return nil
+	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed"},
+		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
 }
 
 // applyPlan carries out a plan against the working tree — the
