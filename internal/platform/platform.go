@@ -11,8 +11,9 @@
 //
 // What is not here is any of those renderings. A tart image name is
 // tart's business, a runner label is GitHub's, and an installer file
-// name is MacPorts'. This package answers only which release is being
-// talked about; it imports nothing and knows nothing about who is
+// name is MacPorts'. This package answers which release is being
+// talked about — plus, in host.go, the same kind of measured fact
+// about the machine underfoot — and knows nothing about who is
 // asking.
 //
 // Nor is this info.Platform, which is a different thing wearing a

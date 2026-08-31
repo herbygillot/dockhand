@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -25,6 +26,13 @@ const ImageVariant = "vanilla"
 
 // Tart provisions base images for the tart verifier.
 type Tart struct {
+	// CPUs and MemoryMB size each VM. Zero means the rule of thumb:
+	// half the host's physical cores per VM — host-relative, because
+	// everyone's machine is different and a constant tuned to one is
+	// wrong on the rest — with memory following the cores at 2 GB
+	// each, so the pair scales together.
+	CPUs     int
+	MemoryMB int
 	// MacPorts is the version installed into an image. Empty takes the
 	// newest version dockhand has a shim for, which pins an environment
 	// to something verified rather than to whatever is newest upstream
@@ -82,6 +90,27 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	_, _ = tart.CLI(ctx, nil, "delete", name)
 	if out, err := tart.CLI(ctx, nil, "clone", imageRef(r), name); err != nil {
 		return fmt.Errorf("%w: cloning to %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
+	}
+
+	// Size before anything runs, so the golden inherits it too: a
+	// restore must not quietly shrink a base back to image defaults.
+	cpus, memMB := t.CPUs, t.MemoryMB
+	if cpus == 0 || memMB == 0 {
+		autoCPU, autoMem, physical := hostSizing()
+		if cpus == 0 {
+			cpus = autoCPU
+		}
+		if memMB == 0 {
+			memMB = autoMem
+		}
+		say("sizing %s: %d cpus, %d MB (host has %d physical cores)", name, cpus, memMB, physical)
+	} else {
+		say("sizing %s: %d cpus, %d MB", name, cpus, memMB)
+	}
+	if cpus > 0 && memMB > 0 {
+		if out, err := tart.CLI(ctx, nil, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memMB)); err != nil {
+			return fmt.Errorf("%w: sizing %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
+		}
 	}
 
 	//nolint:errcheck // the guest is detached from this call by design

@@ -17,6 +17,8 @@ import (
 type provisionTartAction struct {
 	release  platform.Release
 	macports string
+	cpus     int
+	memoryMB int
 	recheck  bool
 	restore  bool
 }
@@ -24,7 +26,7 @@ type provisionTartAction struct {
 var _ Action = provisionTartAction{}
 
 func (a provisionTartAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	t := provision.Tart{MacPorts: a.macports}
+	t := provision.Tart{MacPorts: a.macports, CPUs: a.cpus, MemoryMB: a.memoryMB}
 
 	if a.restore {
 		// The golden is the remedy D19 promises: a drifted base is
@@ -83,6 +85,8 @@ func provisionTart() *cobra.Command {
 	var (
 		macos    string
 		macports string
+		cpus     int
+		memoryMB int
 		recheck  bool
 		restore  bool
 	)
@@ -101,6 +105,8 @@ func provisionTart() *cobra.Command {
 			return provisionTartAction{
 				release:  release,
 				macports: macports,
+				cpus:     cpus,
+				memoryMB: memoryMB,
 				recheck:  recheck,
 				restore:  restore,
 			}, nil
@@ -109,6 +115,10 @@ func provisionTart() *cobra.Command {
 	c.Flags().StringVar(&macos, "macos", "", "macOS release to provision (name or version)")
 	c.Flags().StringVar(&macports, "macports", "",
 		"MacPorts version to install (default: the newest dockhand has a shim for)")
+	c.Flags().IntVar(&cpus, "cpus", 0,
+		"CPU cores per VM (default: half the host's physical cores)")
+	c.Flags().IntVar(&memoryMB, "memory", 0,
+		"memory per VM in MB (default: 2048 per core)")
 	c.Flags().BoolVar(&recheck, "recheck", false, "re-run the pristine checks on an existing base instead of building one")
 	c.Flags().BoolVar(&restore, "restore", false, "replace the base with a fresh clone of its golden copy")
 	return c
