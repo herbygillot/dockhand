@@ -102,9 +102,9 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 		}
 	}
 	add("intent", "Change a port:", Bump(), BumpRevisionCmd(), RefreshChecksums())
-	add("test", "Test the port:", Verify(), Status())
+	add("test", "Test the port:", Verify(), Status(), Cancel())
 	add("submit", "Submit the port:", Promote())
-	add("env", "Troubleshoot the port:", Log(), Shell())
+	add("env", "Troubleshoot the port:", Log(), Shell(), Exec())
 	add("branch", "Housekeeping:", Discard(), Clean(), Provision())
 	add("report", "Reports:", Classify(), Doctor())
 	root.AddCommand(versionCmd())

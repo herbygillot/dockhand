@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -11,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
 
 // statusAction reconciles the dockhand/* namespace: every branch, its
@@ -38,6 +40,7 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		// checkout, "no branches" is true and useless — true and
 		// located is actionable.
 		fmt.Fprintf(rs.Out, "no dockhand branches in %s\n", repo.Root)
+		reportOrphanWorkers(ctx, rs, repo)
 		return nil
 	}
 	for _, br := range branches {
@@ -47,7 +50,52 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		}
 		fmt.Fprintf(rs.Out, "%-32s %s\n", br, line)
 	}
+	reportOrphanWorkers(ctx, rs, repo)
 	return nil
+}
+
+// portDeclined reads a failure log for the shapes of a port refusing a
+// platform rather than breaking on it. Conservative on purpose: an
+// unrecognized refusal stays "failed", which is only ever a log-read
+// away from the truth.
+func portDeclined(log string) bool {
+	for _, marker := range []string{"known to fail", "known_fail"} {
+		if strings.Contains(log, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// reportOrphanWorkers names running workers no note accounts for: a
+// pre-mint gate failure keeps its environment with no branch, another
+// checkout's jobs are invisible here, and with a two-guest cap a
+// forgotten worker is an expensive kind of quiet. Best-effort — a
+// machine without tart has no workers to report.
+func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Repo) {
+	if !tartPresent() {
+		return
+	}
+	out, err := tart.CLI(ctx, nil, "list", "--quiet")
+	if err != nil {
+		return
+	}
+	tracked := map[string]bool{}
+	if noted, err := repo.NotesList(ctx, git.VerifyNotesRef); err == nil {
+		for _, sha := range noted {
+			if n, err := readNote(ctx, repo, sha); err == nil {
+				tracked[n.Job.ID] = true
+				tracked[n.Handle] = true
+			}
+		}
+	}
+	for _, vm := range strings.Split(out, "\n") {
+		vm = strings.TrimSpace(vm)
+		if !strings.HasPrefix(vm, tart.WorkerPrefix) || tracked[vm] {
+			continue
+		}
+		fmt.Fprintf(rs.Out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", vm, vm, vm)
+	}
 }
 
 // describeBranch renders one branch's verification standing, polling
@@ -100,6 +148,16 @@ func settleRunning(ctx context.Context, repo *git.Repo, n *verifyNote) (string, 
 		}
 	case verify.Failed:
 		n.State, n.Handle = "failed", st.Handle
+		// A port that DECLINED to build — known_fail, a platform floor —
+		// is not a break: that refusal is often the success condition of
+		// the change under test (field evidence: a correct platform
+		// bound read as "failed"). Nothing to debug either, so the
+		// worker is released rather than kept.
+		if log, lerr := prov.Log(ctx, n.Job); lerr == nil && portDeclined(log) {
+			n.State, n.Handle = "unsupported", ""
+			n.Detail = "the port declines to build on this platform"
+			_ = prov.Release(context.WithoutCancel(ctx), n.Job)
+		}
 	case verify.Errored:
 		n.State, n.Detail = "errored", st.Detail
 		_ = prov.Release(context.WithoutCancel(ctx), n.Job)

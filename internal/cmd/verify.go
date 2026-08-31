@@ -71,9 +71,13 @@ func vmProvider(ctx context.Context) (tart.Provider, error) {
 			"%w: no base images; run `dockhand provision tart --macos <release>` first",
 			verify.ErrNoEnvironment)
 	}
+	// Newest first: the provider's default is its first base, and the
+	// default a quick bump wants is the current OS — the mundane-build
+	// check — not the oldest. Platform-floor archaeology asks for old
+	// releases by name.
 	bases := make([]tart.Base, 0, len(releases))
-	for _, r := range releases {
-		bases = append(bases, tart.Base{VM: tart.BaseName(r), Release: r})
+	for i := len(releases) - 1; i >= 0; i-- {
+		bases = append(bases, tart.Base{VM: tart.BaseName(releases[i]), Release: releases[i]})
 	}
 	return tart.Provider{Bases: bases}, nil
 }
@@ -300,10 +304,17 @@ func Verify() *cobra.Command {
 	return c
 }
 
-// releaseFlag parses --on, the empty flag meaning the provider default.
+// releaseFlag parses --on for the verbs that verify: one release, the
+// empty flag meaning the provider default (the newest provisioned
+// base). A matrix is refused with directions — the verdict note tracks
+// one job per commit, so breadth comes from repeated runs or from
+// exec, whose probes are built for it.
 func releaseFlag(on string) (platform.Release, error) {
 	if on == "" {
 		return platform.Release{}, nil
+	}
+	if strings.EqualFold(on, "all") || strings.Contains(on, ",") {
+		return platform.Release{}, usagef("verification runs one release at a time (the verdict tracks one build); repeat the run per release, or use `dockhand exec --on all` for cheap probes")
 	}
 	r, err := platform.Parse(on)
 	if err != nil {
