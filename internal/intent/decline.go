@@ -47,7 +47,12 @@ const (
 func (t DeclineType) String() string {
 	switch t {
 	case AlreadyCurrent:
-		return "already at the requested version"
+		// Worded for every intent that can find nothing to do — a bump
+		// at the version asked for, a refresh whose sums already match.
+		// "at the requested version" was the first intent's phrasing
+		// leaking into shared vocabulary, and it read as nonsense the
+		// moment a second intent declined this way.
+		return "already in the desired state"
 	case TransformedStyle:
 		return "carrier style transforms its literal"
 	case FetchNotDriven:

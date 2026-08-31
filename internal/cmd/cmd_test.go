@@ -146,3 +146,15 @@ func TestBumpTakesExactlyOnePort(t *testing.T) {
 	assert.Equal(t, ExitUsage, code(t, "bump"))
 	assert.Equal(t, ExitUsage, code(t, "bump", "a", "b"))
 }
+
+func TestRefreshChecksumsTakesExactlyOnePort(t *testing.T) {
+	assert.Equal(t, ExitUsage, code(t, "refresh-checksums"))
+	assert.Equal(t, ExitUsage, code(t, "refresh-checksums", "a", "b"))
+}
+
+// "refresh" is the short form a hand types; the canonical name matches
+// the intent catalogue.
+func TestRefreshAliasResolves(t *testing.T) {
+	assert.Equal(t, ExitUsage, code(t, "refresh"),
+		"the alias reaches the same command, whose arity check fires")
+}
