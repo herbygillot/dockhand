@@ -591,3 +591,26 @@ question into the open instead of leaving it deferrable.
 documentation reorganize around branches. Low underneath: plans never stopped
 being the internal interchange, so reversing is re-exposing what is already
 there.
+
+**Amended (2026-08-31, same day): no worktree by default.** The branch is
+minted in the object database with plumbing — hash the new blob, graft it
+into the base commit's tree, commit-tree, update-ref — and verification
+stages the guest from the object DB (`git archive <sha> -- <portdir>` feeds
+the tar the provider already pipes in). No checkout exists until a human
+wants one: the user checks the branch out themselves, in their own checkout,
+and edits there. This dissolves four things at once: the
+one-checkout-per-branch conflict that forced editing inside a hidden
+worktree; most of the work-root question (the sparse recipe — cone checkout,
+`index.sparse`, root under `.git/dockhand/wt/`, ~1.5 MB per worktree
+measured — survives as the opt-in isolation case); the hooks policy
+(plumbing runs no commit hooks, structurally); and dirty-checkout
+interference (`bump` never reads or touches the working tree — planning
+reads the Portfile from the base commit's tree, so the commit's parent
+always contains what was planned against). The sha gap is the drift
+mechanism: jobs and notes key to the submitted sha, so `status` warns when
+a tip has moved past it ("verification is testing <old>, N commits behind";
+"tip unverified; last verdict is for <old>"), `verify` on a moved branch
+cancels the stale run and resubmits the tip, and `promote` refuses an
+unverified tip. A message-only amend moves the sha but not the tree, which
+is where the recorded tree-sha lets `status` say the content still matches
+a passed verdict.

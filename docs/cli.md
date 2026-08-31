@@ -44,10 +44,14 @@ verifiable, and applying it runs the same prediction check `apply` does. What
 `--plan` decides is whether the plan is carried out or handed back.
 
 **Amended (2026-08-31, D21).** The unit an intent produces is now a
-**branch**, not a plan. A quick `dockhand bump jq` creates
-`dockhand/jq-<new version>`, lands the change as formatted commits in a
-sparse worktree, and submits verification against the tip; the plan survives
-as internal interchange only, never as a file the user handles. The stage
+**branch**, not a plan. A quick `dockhand bump jq` mints
+`dockhand/jq-<new version>` directly in the object database — no worktree,
+no checkout, the user's HEAD never moves — and submits verification against
+the tip, staged straight from the objects; the plan survives as internal
+interchange only, never as a file the user handles. A user wanting to add
+changes checks the branch out themselves; `status` warns when a tip has
+moved past the sha verification tested, `verify` cancels the stale run and
+resubmits the tip, and `promote` refuses an unverified tip. The stage
 verbs consume branches and shas rather than plan files — `verify` tests a
 commit, whoever made it; `status` reconciles the `dockhand/*` namespace;
 `promote` pushes the branch it finds. The deliberate opt-out is `--in-place`:
