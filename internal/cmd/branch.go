@@ -25,7 +25,9 @@ func planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary, pat
 	repo, err = git.Open(ctx, p.Portdir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
-			return nil, "", "", nil, fmt.Errorf("%s is not in a git checkout: the branch workflow needs one; --in-place edits the tree directly", p.Portdir)
+			// Wrapped, not swallowed: the identity is what routes this
+			// to the tree exit band.
+			return nil, "", "", nil, fmt.Errorf("%w — the branch workflow needs a git checkout; --in-place edits the tree directly", err)
 		}
 		return nil, "", "", nil, err
 	}
@@ -50,6 +52,18 @@ func planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary, pat
 		return nil, "", "", nil, err
 	}
 	return repo, primary, path, edited, nil
+}
+
+// BranchInFlightError is the refusal an intent gives when its port
+// already has a branch: refusal is a feature (exit 5), not a failure —
+// the user asked for one thing, and the reason they did not get it is
+// a judgment with a remedy, not something broken.
+type BranchInFlightError struct {
+	Branch string
+}
+
+func (e *BranchInFlightError) Error() string {
+	return fmt.Sprintf("a change for this port is already in flight: %s — discard it or pick up where it left off", e.Branch)
 }
 
 // minted is what a realized branch hands back: enough for the caller
@@ -87,7 +101,7 @@ func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) (*min
 	})
 	if err != nil {
 		if errors.Is(err, git.ErrBranchExists) {
-			return nil, fmt.Errorf("a change for this port is already in flight: %s — discard it or pick up where it left off", branch)
+			return nil, &BranchInFlightError{Branch: branch}
 		}
 		return nil, err
 	}

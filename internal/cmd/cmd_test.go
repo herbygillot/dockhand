@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -111,6 +112,10 @@ func TestExitCodeMapping(t *testing.T) {
 	// stands, and the exit says the machine owes a follow-up.
 	assert.Equal(t, ExitEnvironment, ExitCode(&VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
 	assert.Equal(t, ExitVerify, ExitCode(&VerifyFailedError{Port: "jq"}))
+	// An in-flight branch is a refusal with a remedy, and a tree that
+	// is not a git checkout is a fact about the tree.
+	assert.Equal(t, ExitDeclined, ExitCode(&BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
+	assert.Equal(t, ExitTree, ExitCode(fmt.Errorf("wrapped: %w", git.ErrNotARepo)))
 }
 
 // failWriter fails every write, standing in for the cases a redirected

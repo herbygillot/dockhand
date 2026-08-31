@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
@@ -47,6 +48,7 @@ func ExitCode(err error) int {
 	var styleDecline *portstyle.Decline
 	var verifyFailed *VerifyFailedError
 	var verifyDeferred *VerifyDeferredError
+	var inFlight *BranchInFlightError
 	if errors.As(err, &verifyFailed) {
 		return ExitVerify
 	}
@@ -64,12 +66,17 @@ func ExitCode(err error) int {
 	case err == nil:
 		return ExitOK
 	case errors.As(err, &styleDecline),
-		errors.As(err, &intentDecline):
+		errors.As(err, &intentDecline),
+		errors.As(err, &inFlight):
 		return ExitDeclined
 	case errors.As(err, &usage):
 		return ExitUsage
 	case errors.Is(err, tree.ErrNotPortsTree),
-		errors.Is(err, tree.ErrPortNotFound):
+		errors.Is(err, tree.ErrPortNotFound),
+		errors.Is(err, git.ErrNotARepo):
+		// A tree that is not a git checkout is a fact about the tree:
+		// the remedy is a different checkout or --in-place, never
+		// fixing the machine.
 		return ExitTree
 	case errors.Is(err, prefix.ErrNotInstalled),
 		errors.Is(err, eval.ErrStartup),
