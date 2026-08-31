@@ -81,18 +81,22 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if a.caution != "" {
 		fmt.Fprint(rs.Err, a.caution)
 	}
+	opts := a.opts
 	if a.verify {
 		// Before realizing, not after: a Portfile known not to build
-		// never becomes a branch or lands in a tree.
-		release, err := releaseFlag(a.opts.on)
+		// never becomes a branch or lands in a tree. A pass carries into
+		// the realization — the verdict is about these exact bytes, so
+		// the branch records it rather than building them again.
+		release, err := releaseFlag(opts.on)
 		if err != nil {
 			return err
 		}
 		if err := verifyPlan(ctx, rs, p, release); err != nil {
 			return err
 		}
+		opts.verified = true
 	}
-	return realizePlan(ctx, rs, p, a.opts)
+	return realizePlan(ctx, rs, p, opts)
 }
 
 // intentFlags declares the realization flags every write intent

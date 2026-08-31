@@ -186,6 +186,10 @@ type realizeOpts struct {
 	inPlace  bool
 	noVerify bool
 	on       string
+	// verified says the synchronous --verify gate already ran and
+	// passed on this plan's content, so realization records the verdict
+	// instead of buying the same build twice.
+	verified bool
 }
 
 // realizePlan carries a plan to its chosen realization. Every write
@@ -208,6 +212,14 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 	if err != nil || m == nil {
 		return err
 	}
+	if o.verified {
+		// The --verify gate built exactly these bytes — the minted blob
+		// and the gate's shadow are both edit.Apply over the same base —
+		// so the verdict transfers to the commit by content identity.
+		// Recording it beats resubmitting: the same build twice proves
+		// nothing the first one did not.
+		return markVerified(ctx, rs, m, p, o.on)
+	}
 	if o.noVerify {
 		return nil
 	}
@@ -219,6 +231,28 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 		return err
 	}
 	return submitVerification(ctx, rs, m, p.Port, release)
+}
+
+// markVerified writes the minted commit's note as passed, on the
+// strength of the pre-mint gate having built identical content.
+func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.Plan, on string) error {
+	release, err := releaseFlag(on)
+	if err != nil {
+		return err
+	}
+	tree, err := m.Repo.RevParse(ctx, m.Sha+"^{tree}")
+	if err != nil {
+		return err
+	}
+	n := verifyNote{
+		Schema: noteSchema, Sha: m.Sha, Tree: tree, Port: p.Port,
+		Platform: release.Name, State: "passed",
+	}
+	if err := writeNote(ctx, m.Repo, n); err != nil {
+		return err
+	}
+	fmt.Fprintln(rs.Err, "verified before minting; the tip is recorded as passed")
+	return nil
 }
 
 // applyPlan carries out a plan against the working tree — the
