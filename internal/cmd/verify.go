@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/runcontext"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
@@ -61,7 +62,7 @@ func vmProvider(ctx context.Context) (tart.Provider, error) {
 // edits, shadow the result — so a saved plan and a just-produced one
 // verify identically, and the port under test is exactly what apply
 // would write.
-func verifyPlan(ctx context.Context, rc *RunContext, p *plan.Plan, release platform.Release) error {
+func verifyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan, release platform.Release) error {
 	src, err := os.ReadFile(filepath.Join(p.Portdir, macports.PortfileName))
 	if err != nil {
 		return err
@@ -137,7 +138,7 @@ func verifyPlan(ctx context.Context, rc *RunContext, p *plan.Plan, release platf
 
 // Verify builds the verify subcommand: prove a saved plan's port builds,
 // in a pristine environment, without writing anything.
-func Verify(rc *RunContext) *cobra.Command {
+func Verify(rc *runcontext.RunContext) *cobra.Command {
 	var on string
 	c := &cobra.Command{
 		Use:   "verify <plan.json|->",

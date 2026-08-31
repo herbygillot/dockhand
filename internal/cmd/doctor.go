@@ -6,11 +6,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/doctor"
+	"github.com/herbygillot/dockhand/internal/runcontext"
 )
 
 // Doctor builds the doctor subcommand: report which tools are present
 // and which capabilities they enable.
-func Doctor(rc *RunContext) *cobra.Command {
+func Doctor(rc *runcontext.RunContext) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Report which tools are present and which capabilities they enable",

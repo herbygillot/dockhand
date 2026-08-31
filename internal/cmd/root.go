@@ -14,6 +14,8 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/herbygillot/dockhand/internal/runcontext"
 )
 
 // Root builds the dockhand command tree. The run it will execute is
@@ -27,15 +29,28 @@ func Root(version string) *cobra.Command {
 
 // newRoot builds the tree along with the run it belongs to. Execute
 // needs both — the run has to be closed however the command ends.
-func newRoot(version string) (*cobra.Command, *RunContext) {
-	rc := &RunContext{}
+func newRoot(version string) (*cobra.Command, *runcontext.RunContext) {
+	rc := &runcontext.RunContext{}
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",
 		Version:      version,
 		SilenceUsage: true,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			return rc.init(c)
+			treeRoot, err := c.Flags().GetString("tree")
+			if err != nil {
+				return err
+			}
+			prefixPath, err := c.Flags().GetString("prefix")
+			if err != nil {
+				return err
+			}
+			debug, err := c.Flags().GetBool("debug")
+			if err != nil {
+				return err
+			}
+			rc.Init(treeRoot, prefixPath, debug, c.OutOrStdout(), c.ErrOrStderr())
+			return nil
 		},
 	}
 	root.SetErrPrefix("dockhand:")

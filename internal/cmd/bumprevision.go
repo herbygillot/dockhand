@@ -5,12 +5,13 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/intent/bumprevision"
 	"github.com/herbygillot/dockhand/internal/macports/port"
+	"github.com/herbygillot/dockhand/internal/runcontext"
 )
 
 // BumpRevisionCmd builds the bump-revision subcommand: increment a
 // port's revision, for a stated reason. The edit is trivial; the reason
 // is the part only a human has, so the flag is required.
-func BumpRevisionCmd(rc *RunContext) *cobra.Command {
+func BumpRevisionCmd(rc *runcontext.RunContext) *cobra.Command {
 	var (
 		reason   string
 		planOnly bool

@@ -8,11 +8,12 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/classify"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/runcontext"
 )
 
 // Classify builds the classify subcommand: survey ports for
 // version-style tractability.
-func Classify(rc *RunContext) *cobra.Command {
+func Classify(rc *runcontext.RunContext) *cobra.Command {
 	var (
 		workers  int
 		all      bool

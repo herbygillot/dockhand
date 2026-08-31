@@ -1,12 +1,10 @@
-package cmd
+package runcontext
 
 import (
 	"context"
 	"io"
 	"log/slog"
 	"os"
-
-	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
@@ -22,13 +20,14 @@ import (
 // re-derived the prefix and the tree for itself and acquired evaluators
 // two different ways. One run, resolved once.
 //
-// It deliberately lives in this package and goes no further. Everything
+// It belongs to the command layer and goes no further down. Everything
 // below takes what it needs — a Prefix, an Evaluator, a tempdir.Root —
 // because a planner that accepted a RunContext would be a planner that
 // could reach the command line, and the domain packages stay testable
-// precisely because they cannot. That rule is not a convention here: cmd
-// imports bump, classify and plan, so any of them importing this would
-// be an import cycle.
+// precisely because they cannot. Living outside internal/cmd, that rule
+// is no longer enforced by an import cycle; it is held by keeping the
+// signatures below narrow, and a domain package importing this one is a
+// review finding.
 //
 // Configuration is held; resources are not. Prefix, evaluators, the
 // fetcher and the temporary root are built on first use and remembered, so
@@ -63,23 +62,12 @@ type RunContext struct {
 	closers []func()
 }
 
-// init fills the context from the parsed global flags. It runs once per
-// execution, before any command's own work.
-func (rc *RunContext) init(c *cobra.Command) error {
-	treeRoot, err := c.Flags().GetString("tree")
-	if err != nil {
-		return err
-	}
-	prefixPath, err := c.Flags().GetString("prefix")
-	if err != nil {
-		return err
-	}
-	debug, err := c.Flags().GetBool("debug")
-	if err != nil {
-		return err
-	}
+// Init fills the context from what the flag layer parsed. It runs once
+// per execution, before any command's own work. Flag extraction stays
+// with the caller: this package knows runs, not command lines.
+func (rc *RunContext) Init(treeRoot, prefixPath string, debug bool, out, errOut io.Writer) {
 	rc.TreeRoot, rc.PrefixPath, rc.Debug = treeRoot, prefixPath, debug
-	rc.Out, rc.Err = c.OutOrStdout(), c.ErrOrStderr()
+	rc.Out, rc.Err = out, errOut
 
 	level := slog.LevelWarn
 	if debug {
@@ -101,7 +89,6 @@ func (rc *RunContext) init(c *cobra.Command) error {
 			}
 		}
 	}
-	return nil
 }
 
 // Prefix is the MacPorts installation this run works against: the one

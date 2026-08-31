@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/runcontext"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
@@ -15,7 +16,7 @@ import (
 // provider kind, because providers take provider-specific parameters —
 // what they share is the platform vocabulary, so --macos means the
 // same thing to every provider that takes it.
-func Provision(rc *RunContext) *cobra.Command {
+func Provision(rc *runcontext.RunContext) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "provision",
 		Short: "Prepare verification environments",
@@ -24,7 +25,7 @@ func Provision(rc *RunContext) *cobra.Command {
 	return c
 }
 
-func provisionTart(rc *RunContext) *cobra.Command {
+func provisionTart(rc *runcontext.RunContext) *cobra.Command {
 	var (
 		macos    string
 		macports string

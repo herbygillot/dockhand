@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/intent/refresh"
 	"github.com/herbygillot/dockhand/internal/macports/port"
+	"github.com/herbygillot/dockhand/internal/runcontext"
 )
 
 // RefreshChecksums builds the refresh-checksums subcommand: make a
@@ -19,7 +20,7 @@ import (
 // benign re-tar, possibly a supply-chain event, and the edit cannot
 // tell you which. The summary says so every time; nothing here will
 // ever auto-promote it.
-func RefreshChecksums(rc *RunContext) *cobra.Command {
+func RefreshChecksums(rc *runcontext.RunContext) *cobra.Command {
 	var (
 		planOnly bool
 		verifyIt bool

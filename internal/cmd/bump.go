@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/intent/bump"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/runcontext"
 )
 
 // Bump builds the bump subcommand: move a port to a new version.
@@ -22,7 +23,7 @@ import (
 // handed back. Applying it here is the same code path apply runs on a
 // saved plan, including the check that the result matches the
 // prediction, so the default is not a shortcut around verification.
-func Bump(rc *RunContext) *cobra.Command {
+func Bump(rc *runcontext.RunContext) *cobra.Command {
 	var (
 		to       string
 		latest   bool
@@ -113,7 +114,7 @@ func Bump(rc *RunContext) *cobra.Command {
 }
 
 // Apply builds the apply subcommand: execute a plan.
-func Apply(rc *RunContext) *cobra.Command {
+func Apply(rc *runcontext.RunContext) *cobra.Command {
 	return &cobra.Command{
 		Use:   "apply <plan.json|->",
 		Short: "Apply a plan, verifying it does exactly what it predicted",
@@ -140,7 +141,7 @@ func Apply(rc *RunContext) *cobra.Command {
 // applyPlan carries out a plan and reports what it did. Both the bump
 // that just produced one and the apply that read one from disk arrive
 // here, so a plan is executed the same way whichever made it.
-func applyPlan(ctx context.Context, rc *RunContext, p *plan.Plan) error {
+func applyPlan(ctx context.Context, rc *runcontext.RunContext, p *plan.Plan) error {
 	ev, err := rc.Evaluator(ctx)
 	if err != nil {
 		return err
