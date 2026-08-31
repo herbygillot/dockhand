@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/intent/refresh"
 	"github.com/herbygillot/dockhand/internal/macports/port"
-	"github.com/herbygillot/dockhand/internal/refresh"
 )
 
 // RefreshChecksums builds the refresh-checksums subcommand: make a

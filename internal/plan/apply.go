@@ -41,17 +41,12 @@ func (p *Plan) Apply(ctx context.Context, ev *eval.Evaluator) (info.Delta, error
 		return info.Delta{}, fmt.Errorf("%w: %s", ErrDrift, path)
 	}
 
-	edits := make([]text.Edit, 0, len(p.Edits))
-	for _, e := range p.Edits {
-		span := text.Span{Start: e.Start, End: e.End}
-		if e.End > len(src) || span.Text(src) != e.Old {
-			return info.Delta{}, fmt.Errorf("%w: edit at %d..%d does not match", ErrDrift, e.Start, e.End)
-		}
-		edits = append(edits, text.Edit{Span: span, New: []byte(e.New)})
-	}
-	after, err := text.Apply(src, edits)
+	after, err := ApplyEdits(src, p.Edits)
 	if err != nil {
-		return info.Delta{}, fmt.Errorf("plan: %w", err)
+		// The precondition hash already matched, so a mismatch here is a
+		// corrupt plan rather than a moved file — but either way the
+		// plan's claims and the world disagree, which is drift's meaning.
+		return info.Delta{}, fmt.Errorf("%w: %w", ErrDrift, err)
 	}
 
 	before, err := ev.Snapshot(ctx, p.Portdir, "")
@@ -78,6 +73,25 @@ func (p *Plan) Apply(ctx context.Context, ev *eval.Evaluator) (info.Delta, error
 		return observed, ErrMismatch
 	}
 	return observed, nil
+}
+
+// ApplyEdits returns src with the edits applied, verifying each edit's
+// recorded Old against the bytes it claims to replace. Every path that
+// realizes edits comes through here — a planner shadowing its own edit
+// set as much as Apply executing a saved plan — so an edit whose Old
+// disagrees with its span cannot survive planning: it fails in the
+// planner's shadow, as the planner's bug, instead of surfacing at apply
+// time as a false drift blamed on the user's tree.
+func ApplyEdits(src []byte, edits []Edit) ([]byte, error) {
+	tedits := make([]text.Edit, 0, len(edits))
+	for _, e := range edits {
+		span := text.Span{Start: e.Start, End: e.End}
+		if e.End > len(src) || e.Start < 0 || span.Text(src) != e.Old {
+			return nil, fmt.Errorf("edit at %d..%d: recorded old text does not match the source", e.Start, e.End)
+		}
+		tedits = append(tedits, text.Edit{Span: span, New: []byte(e.New)})
+	}
+	return text.Apply(src, tedits)
 }
 
 // writeFile replaces the Portfile atomically: temp file in the same

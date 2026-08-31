@@ -27,7 +27,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/checksums/rewrite"
 	"github.com/herbygillot/dockhand/internal/distfile"
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
@@ -39,6 +38,8 @@ import (
 // Refresh is the intent to make a port's recorded checksums true again.
 type Refresh struct{}
 
+var _ plan.Planner = Refresh{}
+
 // refreshMayChange is the whole of what a refresh may move. The version
 // staying put is not listed because it is enforced the other way: any
 // field outside this set moving is an unexpected change, the version
@@ -49,9 +50,9 @@ var refreshMayChange = map[info.Field]bool{
 
 // Plan produces the refresh plan: fetch what the port's own distfiles
 // serve today, and where the recorded values disagree, edit them to
-// what is true. The returned error is an *intent.Decline when the
+// what is true. The returned error is an *plan.Decline when the
 // refusal is a judgment rather than a failure.
-func (Refresh) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*plan.Plan, error) {
+func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (*plan.Plan, error) {
 	src, cst, err := h.Source()
 	if err != nil {
 		return nil, err
@@ -65,7 +66,7 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*
 		return nil, err
 	}
 	if len(vals.Checksums) == 0 {
-		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: "port records no checksums to refresh"}
 	}
 	// go.vendors ports decline as bump's do: their sums live in a block
@@ -73,7 +74,7 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*
 	// records are subtracted below, and refreshing the port's own
 	// distfile does not touch the crates.
 	if vals.Vendored.GoVendors != "" {
-		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "go.vendors"}
+		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}
 	}
 
 	supplied, err := cargo2port.SuppliedIn(vals.Vendored.CargoCrates)
@@ -85,7 +86,7 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*
 		return nil, fmt.Errorf("refresh: %w", err)
 	}
 	if len(own) == 0 {
-		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: "every distfile comes from a vendored block"}
 	}
 
@@ -130,25 +131,29 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*
 	}
 	reps, err := checksums.Replacements(checksums.ForFiles(recorded, own), sums)
 	if err != nil {
-		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated, Detail: err.Error()}
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error()}
 	}
 	edits, unlocated := rewrite.Edits(src, cst, portstyle.ScopeOf(src, vals.Name), reps)
 	for _, u := range unlocated {
 		// Unlike a bump there are no renames here, so every replacement
 		// is a checksum value and every value must be found: one that is
 		// not written literally cannot be made true by editing.
-		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason)}
 	}
 	if len(edits) == 0 {
-		return nil, &intent.Decline{Type: intent.AlreadyCurrent,
+		return nil, &plan.Decline{Type: plan.AlreadyCurrent,
 			Detail: "recorded checksums match what upstream serves"}
 	}
 
 	// Shadow the edits for the exact prediction, as every intent does:
 	// the plan states what will change, and applying it holds the
 	// change to that statement.
-	shadow, cleanup, err := intent.Shadow(h, src, edits)
+	edited, err := plan.ApplyEdits(src, edits)
+	if err != nil {
+		return nil, err
+	}
+	shadow, cleanup, err := h.Shadow(edited)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +185,7 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*
 // is some other change wearing this one's name.
 func accept(vals info.Values, predicted info.Delta) error {
 	if len(predicted.Added) > 0 || len(predicted.Removed) > 0 {
-		return &intent.Decline{Type: intent.SubportsChanged,
+		return &plan.Decline{Type: plan.SubportsChanged,
 			Detail: fmt.Sprintf("%d added, %d removed", len(predicted.Added), len(predicted.Removed))}
 	}
 	key := info.SubportKey{Subport: vals.Name}
@@ -191,13 +196,13 @@ func accept(vals info.Values, predicted info.Delta) error {
 		}
 	}
 	if !checksumsMoved {
-		return &intent.Decline{Type: intent.FetchNotDriven,
+		return &plan.Decline{Type: plan.FetchNotDriven,
 			Detail: "the edits moved no checksums"}
 	}
 	for key, changes := range predicted.Changed {
 		for _, ch := range changes {
 			if !refreshMayChange[ch.Field] {
-				return &intent.Decline{Type: intent.UnexpectedChange,
+				return &plan.Decline{Type: plan.UnexpectedChange,
 					Detail: fmt.Sprintf("%s: %s", key.Subport, ch.Field)}
 			}
 		}

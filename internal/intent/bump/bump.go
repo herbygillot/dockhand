@@ -2,8 +2,10 @@
 // to a new upstream version. It spends all its intelligence at plan
 // time — locating spans, shadow-evaluating its own edits, fetching the
 // new distfiles for checksums — so the plan it emits is complete and
-// its prediction exact. The shared planner vocabulary (declines, the
-// shadow helper, the fetcher seam) lives in internal/intent.
+// its prediction exact. The vocabulary it speaks at its boundaries
+// lives where each piece belongs: declines and edit realization in
+// plan, the fetcher seam in distfile. internal/intent is a namespace,
+// not a package — it holds the intents and nothing else.
 package bump
 
 import (
@@ -18,7 +20,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -34,6 +35,9 @@ import (
 // Bump is the intent to move a port to a new upstream version. The port
 // it applies to is the handle Plan is given: the intent names the
 // desired end state, the handle names the subject.
+//
+// The assertion is the catalogue's shape (D20) made mechanical: every
+// intent is a plan.Planner, and one that drifts fails to build.
 type Bump struct {
 	Version string
 	// Force plans a bump to a version the port already carries. The
@@ -45,6 +49,8 @@ type Bump struct {
 	// a release at the same version and the same URL.
 	Force bool
 }
+
+var _ plan.Planner = Bump{}
 
 // bumpMayChange are the fields a bump is allowed to move. Everything
 // else moving is evidence the edits did more than asked, and the plan
@@ -60,9 +66,9 @@ var bumpMayChange = map[info.Field]bool{
 // Plan produces the complete bump plan: version and revision edits,
 // checksum edits computed from the actually-fetched new distfiles, and
 // the exact predicted delta from a shadow evaluation of the final edit
-// set. The returned error is an *intent.Decline or *portstyle.Decline
+// set. The returned error is an *plan.Decline or *portstyle.Decline
 // when the refusal is a judgment rather than a failure.
-func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*plan.Plan, error) {
+func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (*plan.Plan, error) {
 	portdir := h.Target.Portdir
 	src, cst, err := h.Source()
 	if err != nil {
@@ -81,7 +87,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	// below, so it is named once here.
 	moving := vals.Version != b.Version
 	if !moving && !b.Force {
-		return nil, &intent.Decline{Type: intent.AlreadyCurrent, Detail: vals.Version}
+		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: vals.Version}
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
@@ -90,9 +96,9 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	// The rest have no generator wired up yet.
 	switch {
 	case vals.Vendored.GoVendors != "":
-		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "go.vendors"}
+		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}
 	case vals.Vendored.CargoCratesGithub != "":
-		return nil, &intent.Decline{Type: intent.VendoredBlock, Detail: "cargo.crates_github"}
+		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "cargo.crates_github"}
 	}
 	// A patch over the lockfile means the crate set the port builds is
 	// not the one upstream shipped, so regenerating from the distfile's
@@ -100,7 +106,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	// network: a refusal that needs no download should never cost one.
 	if vals.Vendored.CargoCrates != "" {
 		if pf, ok := patchesLockfile(vals); ok {
-			return nil, &intent.Decline{Type: intent.VendoredBlock,
+			return nil, &plan.Decline{Type: plan.VendoredBlock,
 				Detail: fmt.Sprintf("%s rewrites %s, so the built crate set is not the one upstream shipped", pf, cargo2port.LockName)}
 		}
 	}
@@ -112,7 +118,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	}
 	slog.Debug("located version carrier", "style", loc.Style.String(), "span", loc.Span, "value", loc.Value)
 	if loc.Style.Transformed() {
-		return nil, &intent.Decline{Type: intent.TransformedStyle, Detail: loc.Style.String()}
+		return nil, &plan.Decline{Type: plan.TransformedStyle, Detail: loc.Style.String()}
 	}
 	var edits []plan.Edit
 	if moving {
@@ -148,7 +154,11 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	// URLs, then fetch them for checksums.
 	checksumOldTokens := vals.Checksums
 	if len(checksumOldTokens) > 0 {
-		shadow, cleanup, err := intent.Shadow(h, src, edits)
+		edited, err := plan.ApplyEdits(src, edits)
+		if err != nil {
+			return nil, err
+		}
+		shadow, cleanup, err := h.Shadow(edited)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +174,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 			return nil, err
 		}
 		if len(fi.Files) == 0 {
-			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+			return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 				Detail: "port records checksums but fetches no distfiles"}
 		}
 
@@ -187,7 +197,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 			return nil, err
 		}
 		if len(ownNew) == 0 {
-			return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+			return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 				Detail: "every distfile comes from a vendored block"}
 		}
 
@@ -244,7 +254,11 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 	}
 
 	// Shadow the full edit set for the exact prediction.
-	final, cleanup, err := intent.Shadow(h, src, edits)
+	finalSrc, err := plan.ApplyEdits(src, edits)
+	if err != nil {
+		return nil, err
+	}
+	final, cleanup, err := h.Shadow(finalSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +289,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch intent.Fetcher) (*p
 // accept is the bump's judgment of its own predicted delta.
 func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	if len(predicted.Added) > 0 || len(predicted.Removed) > 0 {
-		return &intent.Decline{Type: intent.SubportsChanged,
+		return &plan.Decline{Type: plan.SubportsChanged,
 			Detail: fmt.Sprintf("%d added, %d removed", len(predicted.Added), len(predicted.Removed))}
 	}
 
@@ -308,25 +322,25 @@ func (b Bump) accept(vals info.Values, predicted info.Delta) error {
 	// ordinary case.
 	if vals.Version != b.Version {
 		if !versionReached {
-			return &intent.Decline{Type: intent.VersionNotReached,
+			return &plan.Decline{Type: plan.VersionNotReached,
 				Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
 		}
 		if len(vals.Distfiles) > 0 && !distfilesMoved {
-			return &intent.Decline{Type: intent.FetchNotDriven,
+			return &plan.Decline{Type: plan.FetchNotDriven,
 				Detail: "distfiles unchanged by the version edit"}
 		}
 		if len(vals.Checksums) > 0 && !checksumsMoved {
-			return &intent.Decline{Type: intent.FetchNotDriven, Detail: "checksums unchanged"}
+			return &plan.Decline{Type: plan.FetchNotDriven, Detail: "checksums unchanged"}
 		}
 	} else if versionChanged {
-		return &intent.Decline{Type: intent.UnexpectedChange,
+		return &plan.Decline{Type: plan.UnexpectedChange,
 			Detail: fmt.Sprintf("version moved from %s during a re-derivation at the same version", vals.Version)}
 	}
 
 	for key, changes := range predicted.Changed {
 		for _, ch := range changes {
 			if !bumpMayChange[ch.Field] {
-				return &intent.Decline{Type: intent.UnexpectedChange,
+				return &plan.Decline{Type: plan.UnexpectedChange,
 					Detail: fmt.Sprintf("%s: %s", key.Subport, ch.Field)}
 			}
 		}
@@ -356,7 +370,7 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (st
 		return "", upstream.Report{}, err
 	}
 	if report.Latest == "" {
-		return "", report, &intent.Decline{Type: intent.LatestUnresolved,
+		return "", report, &plan.Decline{Type: plan.LatestUnresolved,
 			Detail: fmt.Sprintf("%s (%s)", report.Verdict, report.Detail)}
 	}
 	return report.Latest, report, nil

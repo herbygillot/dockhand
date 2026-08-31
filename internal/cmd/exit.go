@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/plan"
 )
 
 // Process exit codes. An exit status answers "whose problem is this":
@@ -43,7 +43,7 @@ func usagef(format string, a ...any) error {
 func ExitCode(err error) int {
 	var usage *UsageError
 	var styleDecline *portstyle.Decline
-	var intentDecline *intent.Decline
+	var intentDecline *plan.Decline
 	switch {
 	case err == nil:
 		return ExitOK

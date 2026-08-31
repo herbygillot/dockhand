@@ -18,7 +18,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/tempdir"
 
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
@@ -26,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
@@ -154,9 +154,9 @@ func TestBumpDeclinesAlreadyCurrent(t *testing.T) {
 	content := servedFor("/dist/bumpee-1.0.tar.gz")
 	dir := bumpPort(t, srv.URL+"/dist", content)
 	_, err := Bump{Version: "1.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.AlreadyCurrent, d.Type)
+	assert.Equal(t, plan.AlreadyCurrent, d.Type)
 }
 
 func TestBumpDeclinesFetchNotDriven(t *testing.T) {
@@ -184,9 +184,9 @@ checksums rmd160 0000000000000000000000000000000000000000 \
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
 
 	_, err := Bump{Version: "2.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.FetchNotDriven, d.Type)
+	assert.Equal(t, plan.FetchNotDriven, d.Type)
 }
 
 func TestBumpDeclinesComputedVersion(t *testing.T) {
@@ -265,16 +265,16 @@ func TestAcceptForcedRunRefusesAVersionThatMoves(t *testing.T) {
 		key: {{Field: info.FieldVersion, Old: []string{"1.0"}, New: []string{"2.0"}}},
 	}}
 	err := Bump{Version: "1.0", Force: true}.accept(vals, moved)
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.UnexpectedChange, d.Type)
+	assert.Equal(t, plan.UnexpectedChange, d.Type)
 }
 
 // And an ordinary bump still requires the version to arrive.
 func TestAcceptOrdinaryBumpRequiresTheVersionToMove(t *testing.T) {
 	vals := info.Values{Name: "foo", Version: "1.0"}
 	err := Bump{Version: "2.0"}.accept(vals, info.Delta{})
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.VersionNotReached, d.Type)
+	assert.Equal(t, plan.VersionNotReached, d.Type)
 }

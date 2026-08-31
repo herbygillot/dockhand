@@ -1,10 +1,4 @@
-// Package intent holds the vocabulary every planner shares: the typed
-// Decline refusals (a decline is a first-class outcome, mapped to its
-// own exit code), the Shadow helper that materializes a portdir copy
-// with edits applied, and the Fetcher seam planners pull checksums
-// through. Each intent lives in its own package — bump is the first —
-// and speaks this vocabulary at its boundaries.
-package intent
+package plan
 
 import "fmt"
 
@@ -39,8 +33,9 @@ const (
 	// resolvers disagreed, rotted, or produced no signal.
 	LatestUnresolved
 	// VendoredBlock means the port carries a vendored dependency block
-	// (go.vendors, cargo.crates) that a version bump must regenerate —
-	// the vendor intent's job, not yet built.
+	// this intent cannot regenerate. bump regenerates cargo.crates and
+	// declines the rest; refresh subtracts a cargo block's records and
+	// declines go.vendors.
 	VendoredBlock
 )
 
@@ -84,7 +79,7 @@ type Decline struct {
 // Error implements the error interface.
 func (d *Decline) Error() string {
 	if d.Detail == "" {
-		return fmt.Sprintf("intent: declined: %s", d.Type)
+		return fmt.Sprintf("plan: declined: %s", d.Type)
 	}
-	return fmt.Sprintf("intent: declined: %s: %s", d.Type, d.Detail)
+	return fmt.Sprintf("plan: declined: %s: %s", d.Type, d.Detail)
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
-	"github.com/herbygillot/dockhand/internal/intent"
+	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -35,9 +35,9 @@ checksums           rmd160  aaaa \
 	old[0].Value = "zzzz"
 	_, err = checksumEdits(src, cst, "foo", old,
 		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.ChecksumsNotLocated, d.Type)
+	assert.Equal(t, plan.ChecksumsNotLocated, d.Type)
 }
 
 func TestChecksumEditsRenamesLiteralFilenames(t *testing.T) {
@@ -69,9 +69,9 @@ func TestChecksumEditsDeclinesLegacyTypes(t *testing.T) {
 		[]checksums.Recorded{{Type: "md5", Value: "ee"}},
 		[]string{"f-1.tar.gz"}, []string{"f-2.tar.gz"},
 		map[string]checksums.Sums{"f-2.tar.gz": {}})
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.ChecksumsNotLocated, d.Type)
+	assert.Equal(t, plan.ChecksumsNotLocated, d.Type)
 }
 
 // The common spelling for a named distfile is a substitution, not a

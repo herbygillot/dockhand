@@ -6,7 +6,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/checksums/rewrite"
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -34,7 +33,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		return nil, nil
 	}
 	if len(oldDistfiles) != len(newDistfiles) {
-		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("distfile count changed: %d before, %d after", len(oldDistfiles), len(newDistfiles))}
 	}
 	// The block records the OLD names, so the fetched sums are keyed by
@@ -50,7 +49,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 
 	reps, err := checksums.Replacements(old, byRecordedName)
 	if err != nil {
-		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated, Detail: err.Error()}
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error()}
 	}
 	seen := make(map[string]bool)
 	for _, r := range old {
@@ -73,7 +72,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		// A checksum value that is not written literally cannot be
 		// rewritten, and a bump that left an old hash in place would ship
 		// a Portfile that fails to fetch.
-		return nil, &intent.Decline{Type: intent.ChecksumsNotLocated,
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason)}
 	}
 	return edits, nil

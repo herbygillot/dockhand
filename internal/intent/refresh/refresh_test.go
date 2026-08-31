@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
@@ -22,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/testenv"
@@ -125,9 +125,9 @@ func TestRefreshDeclinesWhenAlreadyTrue(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), fixed, 0o644))
 
 	_, err = Refresh{}.Plan(context.Background(), handle(dir, ev), f)
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.AlreadyCurrent, d.Type)
+	assert.Equal(t, plan.AlreadyCurrent, d.Type)
 }
 
 // The defining difference from bump: no version edit means no version
@@ -158,9 +158,9 @@ long_description no checksums recorded at all
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
 	_, err := Refresh{}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.ChecksumsNotLocated, d.Type)
+	assert.Equal(t, plan.ChecksumsNotLocated, d.Type)
 }
 
 // accept is pure: a version that moves under a "refresh" is some other
@@ -174,15 +174,15 @@ func TestAcceptRefusesAMovingVersion(t *testing.T) {
 			{Field: info.FieldVersion, Old: []string{"1.0"}, New: []string{"2.0"}},
 		},
 	}})
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.UnexpectedChange, d.Type)
+	assert.Equal(t, plan.UnexpectedChange, d.Type)
 }
 
 func TestAcceptRequiresChecksumsToMove(t *testing.T) {
 	vals := info.Values{Name: "foo", Version: "1.0"}
 	err := accept(vals, info.Delta{})
-	var d *intent.Decline
+	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, intent.FetchNotDriven, d.Type)
+	assert.Equal(t, plan.FetchNotDriven, d.Type)
 }

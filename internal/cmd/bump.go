@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/bump"
+	"github.com/herbygillot/dockhand/internal/intent/bump"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/plan"
 )
