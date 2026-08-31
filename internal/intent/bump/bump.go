@@ -316,6 +316,9 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	return &plan.Plan{
 		Format:         plan.Format,
 		Intent:         "bump",
+		Port:           vals.Name,
+		Slug:           vals.Name + "-" + b.Version,
+		Summary:        fmt.Sprintf("%s: update to %s", vals.Name, b.Version),
 		Portdir:        portdir,
 		Subport:        h.Target.Subport,
 		PortfileSHA256: edit.FileSHA256(src),

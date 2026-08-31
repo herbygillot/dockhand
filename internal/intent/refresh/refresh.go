@@ -172,6 +172,9 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 	return &plan.Plan{
 		Format:         plan.Format,
 		Intent:         "refresh-checksums",
+		Port:           vals.Name,
+		Slug:           vals.Name + "-checksums",
+		Summary:        vals.Name + ": update checksums",
 		Portdir:        h.Target.Portdir,
 		Subport:        h.Target.Subport,
 		PortfileSHA256: edit.FileSHA256(src),

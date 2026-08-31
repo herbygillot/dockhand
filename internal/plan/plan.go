@@ -23,7 +23,7 @@ import (
 )
 
 // Format is the plan wire format version this build writes.
-const Format = 1
+const Format = 2
 
 // Change is one field's movement within an evaluation context.
 type Change struct {
@@ -42,10 +42,20 @@ type ContextDelta struct {
 	Changes  []Change `json:"changes,omitempty"`
 }
 
-// Plan is the artifact.
+// Plan is the value. A plan carries its own identity: the intent that
+// made it knows, at plan time, what the change is called — Port names
+// the evaluation context, Slug is the change's short identity
+// ("jq-1.8.2", "jq-checksums", "jq-rev1"), and Summary is its one-line
+// description in the project's commit format. Realization composes
+// from these — a branch is dockhand/<slug>, a commit message is the
+// summary — instead of every realizer re-deriving names the planner
+// already had.
 type Plan struct {
 	Format         int            `json:"format"`
 	Intent         string         `json:"intent"`
+	Port           string         `json:"port"`
+	Slug           string         `json:"slug"`
+	Summary        string         `json:"summary"`
 	Portdir        string         `json:"portdir"`
 	Subport        string         `json:"subport,omitempty"`
 	PortfileSHA256 string         `json:"portfile_sha256"`

@@ -67,7 +67,8 @@ type minted struct {
 // under dockhand's namespace, entirely in the object database — the
 // user's HEAD and working tree are never touched. A plan with no edits
 // mints nothing and returns nil, nil.
-func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, branch, message string) (*minted, error) {
+func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) (*minted, error) {
+	branch, message := "dockhand/"+p.Slug, p.Summary
 	if len(p.Edits) == 0 {
 		// A no-op realized as a branch would be an empty commit.
 		fmt.Fprintln(rs.Out, "no edits; no branch minted")
@@ -185,8 +186,6 @@ type realizeOpts struct {
 	inPlace  bool
 	noVerify bool
 	on       string
-	branch   string // the branch to mint, dockhand/<...>
-	message  string // the commit message, project format
 }
 
 // realizePlan carries a plan to its chosen realization. Every write
@@ -205,7 +204,7 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 		// the only write mode a non-git tree has.
 		return applyPlan(ctx, rs, p)
 	}
-	m, err := mintFromPlan(ctx, rs, p, o.branch, o.message)
+	m, err := mintFromPlan(ctx, rs, p)
 	if err != nil || m == nil {
 		return err
 	}
@@ -219,11 +218,23 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 	if err != nil {
 		return err
 	}
-	portName := p.Subport
-	if portName == "" {
-		portName = filepath.Base(filepath.Clean(p.Portdir))
+	return submitVerification(ctx, rs, m, p.Port, release)
+}
+
+// applyPlan carries out a plan against the working tree — the
+// --in-place realization. Every intent arrives through realizePlan, so
+// a plan is executed the same way whichever produced it.
+func applyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) error {
+	ev, err := rs.Evaluator(ctx)
+	if err != nil {
+		return err
 	}
-	return submitVerification(ctx, rs, m, portName, release)
+	if _, err := p.Apply(ctx, ev); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(rs.Out, "applied: %s %s (%d edits, delta as predicted)\n",
+		p.Intent, p.Portdir, len(p.Edits))
+	return err
 }
 
 // diffFromPlan renders a plan as the patch its branch would carry,

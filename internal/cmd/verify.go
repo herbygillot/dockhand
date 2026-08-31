@@ -108,11 +108,7 @@ func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release
 	}
 	defer cleanup()
 
-	portName := p.Subport
-	if portName == "" {
-		portName = filepath.Base(filepath.Clean(p.Portdir))
-	}
-	return runVerification(ctx, rs, portName, shadow.Target.Portdir, release)
+	return runVerification(ctx, rs, p.Port, shadow.Target.Portdir, release)
 }
 
 // runVerification submits one portdir to the VM provider and reports

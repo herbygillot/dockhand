@@ -106,6 +106,9 @@ func (b BumpRevision) Plan(ctx context.Context, h port.Handle, _ distfile.Fetche
 	return &plan.Plan{
 		Format:         plan.Format,
 		Intent:         "bump-revision",
+		Port:           vals.Name,
+		Slug:           vals.Name + "-rev" + next,
+		Summary:        vals.Name + ": " + b.Reason,
 		Portdir:        h.Target.Portdir,
 		Subport:        h.Target.Subport,
 		PortfileSHA256: edit.FileSHA256(src),
