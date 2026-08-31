@@ -211,9 +211,20 @@ func (t Tart) ensureToolchain(ctx context.Context, vm string, say func(string, .
 		return nil
 	}
 	say("no command line tools in the image; installing them (about a gigabyte)")
+	// The label query retries, because a freshly booted guest's
+	// softwareupdate can answer "no updates" for its first minute or so
+	// while the catalog comes up — measured: the same query that failed
+	// seconds after first boot succeeds on a guest that has been up a
+	// while. An empty answer right after boot is "not yet", not "no".
 	const install = `set -e
 sudo -n touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-label=$(softwareupdate --list 2>/dev/null | sed -n 's/^\* Label: \(.*Command Line Tools.*\)$/\1/p' | sort -V | tail -1)
+label=""
+for attempt in 1 2 3 4 5 6; do
+  label=$(softwareupdate --list 2>/dev/null | sed -n 's/^\* Label: \(.*Command Line Tools.*\)$/\1/p' | sort -V | tail -1)
+  [ -n "$label" ] && break
+  echo "softwareupdate offers nothing yet (attempt $attempt); waiting"
+  sleep 15
+done
 if [ -z "$label" ]; then
   sudo -n rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   echo "softwareupdate offers no command line tools"

@@ -158,3 +158,12 @@ func TestRefreshAliasResolves(t *testing.T) {
 	assert.Equal(t, ExitUsage, code(t, "refresh"),
 		"the alias reaches the same command, whose arity check fires")
 }
+
+// provision's usage errors are caught before anything touches tart, so
+// these hold on a machine with nothing installed.
+func TestProvisionTartRequiresARelease(t *testing.T) {
+	assert.Equal(t, ExitUsage, code(t, "provision", "tart"))
+	assert.Equal(t, ExitUsage, code(t, "provision", "tart", "--macos", "cheetah"),
+		"an unknown release is a usage error naming the input, not a guess")
+	assert.Equal(t, ExitUsage, code(t, "provision", "tart", "extra-arg"))
+}
