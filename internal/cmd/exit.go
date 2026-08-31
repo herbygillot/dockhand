@@ -46,8 +46,15 @@ func ExitCode(err error) int {
 	var usage *UsageError
 	var styleDecline *portstyle.Decline
 	var verifyFailed *VerifyFailedError
+	var verifyDeferred *VerifyDeferredError
 	if errors.As(err, &verifyFailed) {
 		return ExitVerify
+	}
+	if errors.As(err, &verifyDeferred) {
+		// The branch was minted; verification could not start. The
+		// obstacle is the machine's — capacity or environment — and the
+		// message says the branch stands.
+		return ExitEnvironment
 	}
 	if errors.Is(err, verify.ErrNoEnvironment) || errors.Is(err, verify.ErrUnsupported) {
 		return ExitEnvironment

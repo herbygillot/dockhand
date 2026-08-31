@@ -469,6 +469,13 @@ tree or the name, `1` says the operation itself went wrong.
 The table and its lookup live in `internal/cmd` (exit.go), mapped from typed
 errors by identity — never by message text.
 
+One case splits an invocation's contract from its progress: a bump whose
+branch minted but whose verification could not start — no bases, both
+slots taken — exits `3` while the branch stands, the git commit/push
+shape (a failed push never deletes the commit). The message names the
+follow-up (`dockhand verify <branch>`), and `--no-verify` narrows the
+contract to minting alone, restoring exit `0`.
+
 The point/sweep asymmetry lands here directly. A point intent that declines
 exits `5`: the user asked for one thing and did not get it. A sweep that
 declines on 40 of 340 ports exits `0`: that is a success with a tail, and the

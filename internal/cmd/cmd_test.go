@@ -107,6 +107,10 @@ func TestExitCodeMapping(t *testing.T) {
 	assert.Equal(t, ExitEnvironment, ExitCode(prefix.ErrNotInstalled))
 	assert.Equal(t, ExitEnvironment, ExitCode(fmt.Errorf("sweep: %w", eval.ErrStartup)))
 	assert.Equal(t, ExitEnvironment, ExitCode(eval.ErrRootRefused))
+	// A minted branch whose verification could not start: the branch
+	// stands, and the exit says the machine owes a follow-up.
+	assert.Equal(t, ExitEnvironment, ExitCode(&VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
+	assert.Equal(t, ExitVerify, ExitCode(&VerifyFailedError{Port: "jq"}))
 }
 
 // failWriter fails every write, standing in for the cases a redirected

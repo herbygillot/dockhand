@@ -99,17 +99,31 @@ func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, branc
 	return &minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}, nil
 }
 
+// VerifyDeferredError reports a verification that could not start —
+// no bases, full slots, a mid-submit failure — after its branch was
+// successfully minted. The branch stands (the git commit/push shape:
+// nobody deletes the commit because the push failed), but the
+// invocation's contract was mint AND submit, so the exit is nonzero:
+// exit 3, because the obstacle is the machine's. --no-verify narrows
+// the contract to mint alone.
+type VerifyDeferredError struct {
+	Branch string
+	Reason string
+}
+
+func (e *VerifyDeferredError) Error() string {
+	return fmt.Sprintf("verification not started: %s\nthe branch stands — run `dockhand verify %s` when ready", e.Reason, e.Branch)
+}
+
 // submitVerification stages the minted commit's portdir out of the
 // object database — the working tree is irrelevant to what the branch
 // carries — submits it to the VM provider, and records the running job
 // as the commit's note. Submission not starting is not a minting
-// failure: the branch stands either way, so environment problems and
-// full slots report themselves and leave the tip unverified for a
-// later `dockhand verify`.
+// failure — the branch stands — but it is a contract failure:
+// VerifyDeferredError carries that split.
 func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release) error {
 	later := func(why string) error {
-		fmt.Fprintf(rs.Err, "verification not started: %s\nrun `dockhand verify %s` when ready\n", why, m.Branch)
-		return nil
+		return &VerifyDeferredError{Branch: m.Branch, Reason: why}
 	}
 	prov, err := vmProvider(ctx)
 	if err != nil {
