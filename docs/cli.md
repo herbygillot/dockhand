@@ -43,6 +43,26 @@ An intent's output is still always a plan — that is what makes the change
 verifiable, and applying it runs the same prediction check `apply` does. What
 `--plan` decides is whether the plan is carried out or handed back.
 
+**Amended (2026-08-31, D21).** The unit an intent produces is now a
+**branch**, not a plan. A quick `dockhand bump jq` creates
+`dockhand/jq-<new version>`, lands the change as formatted commits in a
+sparse worktree, and submits verification against the tip; the plan survives
+as internal interchange only, never as a file the user handles. The stage
+verbs consume branches and shas rather than plan files — `verify` tests a
+commit, whoever made it; `status` reconciles the `dockhand/*` namespace;
+`promote` pushes the branch it finds. The deliberate opt-out is `--in-place`:
+edit the Portfile where the user stands, uncommitted, minting nothing — for
+the user folding dockhand's mechanical edit into their own workflow, and the
+only write mode a non-git tree gets (with a loud warning). Lifecycle: an
+intent finding an in-flight branch for its port refuses and names it (a
+`--replan`/`--force` override may come later); `status` highlights merged
+branches but never deletes — `clean` is the explicit sweep: PR state from
+GitHub decides merged (the project's merge styles rewrite shas as commits
+land, so ancestry proves nothing), confirmed by byte-comparing the touched
+paths against upstream; closed-unmerged branches are kept and flagged. The
+pipe below, and every plan-file argument in this document, describe the
+superseded surface.
+
 **Superseded (2026-08-30).** This section originally argued that emitting a
 plan should be the default because it is both convenient and safe, so no flag
 was needed for dry-run. The convenience half did not survive contact with the
@@ -163,6 +183,11 @@ Fifty ports of ordinary maintenance produced no case that wanted to violate
 this model. The one apparent violation — fork pushes — is what forced the
 model to be stated correctly.
 
+Under D21 the rings hold with their contents renamed: ring 0's plan is
+internal rather than emitted, and ring 1 is the branch with its worktree —
+still things only the user's own repository holds. The boundaries themselves
+are unchanged.
+
 ### A branch changes rings
 
 `verify` force-pushes its branch freely. Re-runs are `push -f`, and the CI
@@ -180,7 +205,13 @@ Three consequences are settled alongside this rule:
 - **Branch naming** follows the convention observed on a real fork:
   `<port>-<version>`, with no `dockhand/` prefix. The ref becomes the PR
   head, visible to reviewers, and provenance disclosure belongs in the PR
-  body (per D9), not in the ref name.
+  body (per D9), not in the ref name. **Amended (D21):** the branch is
+  `dockhand/<port>-<version>` locally *and* on the fork — one name
+  everywhere. The observed no-prefix convention was habit, not policy; ref
+  names are not policed in review, and the prefix in a PR head ref is honest
+  provenance in D9's spirit. Identity means no refspec, a bare `git push`
+  that works from the worktree, and fork-side pruning scoped to a namespace
+  dockhand owns on both ends.
 - **Branch pruning** needs no persistent state. Whether a fork branch is
   stale is derivable — its PR merged or closed — so sweeping ring-2 garbage
   is consistent with the "deliberately absent" list below.

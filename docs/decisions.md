@@ -479,3 +479,115 @@ this log: an addition must argue its family or argue a new one, in writing.
 
 **Cost to reverse.** Low for any single entry; the closure rule itself is the
 thing to defend.
+
+---
+
+## D21 — The unit of operation is a branch
+
+**Decided (2026-08-31).** A write intent's product is a git branch. `dockhand
+bump jq` creates `dockhand/jq-<new version>`, materializes it in a sparse
+worktree, lands the change as formatted commits, and submits verification
+against the tip; from that moment the worktree is disposable. The branch is
+the durable identity: verification verdicts attach to its commits (git notes
+under `refs/notes/dockhand/verify`, keyed by sha), `status` reconciles
+branches against verdicts and workers, and `promote` pushes the branch and
+opens the PR. Plans remain what they already were internally — the typed
+interchange between planner, applier, and verifier — and stop being a
+user-facing artifact. Read-only intents are untouched: the unit governs what
+dockhand produces, not what it reads.
+
+**Why.** Four observations converged.
+
+- Review culture polices the commit (`pr-evidence.md` §2–3). A branch of
+  formatted commits is the artifact review acts on, produced at bump time
+  instead of synthesized at promote time — and the observed cohort shape
+  (a bump plus its grouped revbumps, N=9) is just commits on one branch.
+- The plan-hash drift check fights the most realistic workflow: the user
+  hand-editing after dockhand's change. On a branch, human and dockhand
+  commits interleave and verification tests HEAD, whoever made it.
+- Identity in a filesystem location — a plan file in a temp directory, or a
+  worktree path — is destroyed by cleanup. Identity in a ref is protected by
+  git: removing a worktree mid-verification orphans nothing.
+- Verification scope stops being plan-carried. `git diff --name-only
+  <base>...<tip>` names the changed portdirs, and it is automatically right
+  for human commits too — a capability a plan-carried scope could never have.
+
+**What made it affordable.** Sparse worktrees, measured on the real tree:
+0.153s and 1.4 MB for one portdir plus `_resources`, against 3.2s and 191 MB
+for a full checkout. Sparse checkout is a day-one requirement, not an
+optimization — with one constraint stated now rather than discovered later: a
+sparse worktree does not contain the rest of the tree, so anything assuming
+whole-tree reads runs against the main checkout, never the worktree.
+
+**Naming.** The local ref is `dockhand/<port>-<new version>`. The prefix is
+lifecycle ownership: dockhand lists, dedupes ("a change for jq is already in
+flight"), and prunes what it created, and a half-owned namespace rots. Two
+lifecycle rules settled 2026-08-31: an intent finding an in-flight branch for
+its port **refuses by default**, naming the branch — an explicit flag
+(`--replan` or `--force`, spelling unsettled) may later allow deliberate
+re-planning. And `status` never auto-discards: it highlights merged branches
+as needing cleanup, and the sweep is the user's explicit act — `dockhand
+clean` (superseding a briefly-held `discard --merged` spelling the same day),
+which walks the `dockhand/*` namespace, reads each branch's PR state from
+GitHub, and removes what merged: worktree, branch, notes. The branch→PR link
+is itself derived, never stored — git holds no PR metadata: `promote` sets
+the branch's push configuration (fork remote, same ref name), and the PR is
+found by querying pulls with head=`<fork-owner>:<branch>`, state=all — the
+same lookup `gh` performs. The pushed name is the local name, so even lost
+config derives the query from the branch alone. Merged-ness is
+never sha-ancestry: the project's merge styles rewrite commits as they land
+on master, so `git branch --merged` sees nothing and per-commit patch-ids
+die under squash. The check is content — the paths the branch touched,
+compared blob-for-blob against the upstream default branch. Byte-identical
+confirms the landing; differing bytes under a merged PR still clean, but say
+so (committers amend during merge, and later bumps supersede). A
+closed-unmerged PR is never cleaned, only highlighted: rejection is
+information. The verb borrows `port clean` safely — both mean "remove the
+tool's own accumulated work-product," so the borrowing principle that
+forbade `checksums` permits this. The pushed ref keeps the prefix (decided
+2026-08-31, revising a same-day refspec-rename idea): local and remote names
+are identical, `dockhand/<port>-<new version>` everywhere. The fork-observed
+`<port>-<version>` convention was an observation of habit, not a policy —
+nothing in review polices ref names — and the prefix in a PR head ref is
+honest provenance, consistent with D9's candour. Identity buys real things:
+no refspec, trivial push configuration, a bare `git push` that works for the
+human who took over the worktree, and fork-side pruning safely scoped to a
+namespace dockhand owns on both ends.
+
+**Amends D16.** `bump` still applies by default — no plan file, no second
+command — but the application now lands as commits on a fresh branch rather
+than uncommitted edits in the user's checkout. That is more conservative than
+D16's known cost, not less: the branch the user is standing on is never
+touched. Uncommitted in-place application survives by decision (2026-08-31)
+as `--in-place`: dockhand edits the Portfile where the user stands, stages
+nothing, mints nothing — the prediction check and restore-on-mismatch still
+run, since they live beneath the workflow layer. The flag exists for the user
+already running their own workflow, who wants dockhand's mechanical edit
+folded into their work surgically — an editor, not a workflow manager. Its
+stated costs: no sha means no note, so `verify` can report a verdict but not
+record one; the change is invisible to `status` and never directly
+promotable; and on a non-git tree — which only `--in-place` can serve — it
+warns loudly that the next sync destroys the edits. This is D16's survivor:
+the immediacy that flipped that default lives on in the flag while the
+default graduates to the branch.
+
+**Known cost accepted.** Git becomes a hard dependency of the write path;
+rsync trees get read-only intents (their write story was already a footgun —
+the next sync destroys the edits). The base-ref policy becomes decision one:
+branch from the tree's primary branch at its local position, warn when it is
+behind, never fetch autonomously. Verdicts in notes are records, not caches —
+a build happened; they are not re-derivable — which softens D8 by one fenced
+species of state: sha-keyed, local, and worthless to anything but `status`.
+Local is deliberate, not an accident of git's defaults (2026-08-31): a note
+answers "ready to promote?", a question only this machine asks, and after
+`promote` the branch's verdicts come from CI on the PR — the only evidence
+reviewers would credit anyway. dockhand never pushes notes refs; the one way
+they leak is `git push --mirror`, which ships every ref, and that hazard is
+documentation's to name, not machinery's to prevent.
+And background verification by default finally forces the two-slot scheduler
+question into the open instead of leaving it deferrable.
+
+**Cost to reverse.** Moderate at the surface: the CLI grammar and its
+documentation reorganize around branches. Low underneath: plans never stopped
+being the internal interchange, so reversing is re-exposing what is already
+there.
