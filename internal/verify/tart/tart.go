@@ -111,12 +111,12 @@ func BaseName(r platform.Release) string {
 }
 
 const (
-	// workerPrefix names the guests this provider creates. A verdict
+	// WorkerPrefix names the guests this provider creates. A verdict
 	// environment is interchangeable and short-lived, so it is named
 	// for its role rather than for the port it happens to be testing —
 	// which also keeps port names, which may contain characters a VM
 	// name may not, out of the naming scheme entirely.
-	workerPrefix = "dockhand-worker-"
+	WorkerPrefix = "dockhand-worker-"
 	// overlayDir is where the edited portdirs are staged in the guest.
 	overlayDir = "/tmp/dockhand-overlay"
 	// stateDir holds the runner's own record of where it got to.
@@ -202,7 +202,7 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		return verify.Job{}, fmt.Errorf("%w: no base VM %q (see doctor)", verify.ErrNoEnvironment, base.VM)
 	}
 
-	name := workerPrefix + stamp()
+	name := WorkerPrefix + stamp()
 	if out, err := CLI(ctx, nil, "clone", base.VM, name); err != nil {
 		return verify.Job{}, fmt.Errorf("%w: clone: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}

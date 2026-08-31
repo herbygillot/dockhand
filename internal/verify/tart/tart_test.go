@@ -15,8 +15,8 @@ import (
 // testing: port names may carry characters a VM name may not, and a
 // verdict environment is interchangeable anyway.
 func TestWorkerNamesAreRoleNamed(t *testing.T) {
-	assert.True(t, strings.HasPrefix(workerPrefix+stamp(), "dockhand-worker-"))
-	assert.NotContains(t, workerPrefix, "verify-", "workers are not named per port")
+	assert.True(t, strings.HasPrefix(WorkerPrefix+stamp(), "dockhand-worker-"))
+	assert.NotContains(t, WorkerPrefix, "verify-", "workers are not named per port")
 }
 
 func TestStampIsUnique(t *testing.T) {
