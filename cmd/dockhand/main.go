@@ -1,6 +1,5 @@
-// Command dockhand is a port maintenance utility for MacPorts. This is
-// a thin entry point; the command tree and exit-code table live in
-// internal/cmd.
+// dockhand is a command-line tool for MacPorts maintainers.
+// From upstream release to upstream PR.
 package main
 
 import (
