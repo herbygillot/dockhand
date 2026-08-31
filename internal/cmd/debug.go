@@ -38,11 +38,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target string) (*git
 			Job: verify.Job{Provider: "tart", ID: target},
 		}, nil
 	}
-	dir := rs.TreeRoot
-	if dir == "" {
-		dir = "."
-	}
-	repo, err := git.Open(ctx, dir)
+	repo, err := rs.Repo(ctx)
 	if err != nil {
 		return nil, verifyNote{}, err
 	}

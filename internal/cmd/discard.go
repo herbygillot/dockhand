@@ -26,11 +26,7 @@ type discardAction struct {
 var _ Action = discardAction{}
 
 func (a discardAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	dir := rs.TreeRoot
-	if dir == "" {
-		dir = "."
-	}
-	repo, err := git.Open(ctx, dir)
+	repo, err := rs.Repo(ctx)
 	if err != nil {
 		return err
 	}

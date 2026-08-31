@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -51,6 +52,10 @@ type Context struct {
 	pfx     prefix.Prefix
 	pfxErr  error
 	pfxDone bool
+
+	repo     *git.Repo
+	repoErr  error
+	repoDone bool
 
 	tempRoot tempdir.Root
 	tempErr  error
@@ -104,6 +109,26 @@ func (rc *Context) Prefix() (prefix.Prefix, error) {
 		}
 	}
 	return rc.pfx, rc.pfxErr
+}
+
+// Repo is the git repository this run works against: the one the
+// user's tree names, or the one the working directory is in. Resolved
+// once, so every part of one invocation agrees on which repository it
+// is in — the door where symlinked-checkout identity gets to be right
+// exactly once.
+func (rc *Context) Repo(ctx context.Context) (*git.Repo, error) {
+	if !rc.repoDone {
+		rc.repoDone = true
+		dir := rc.TreeRoot
+		if dir == "" {
+			dir = "."
+		}
+		rc.repo, rc.repoErr = git.Open(ctx, dir)
+		if rc.repoErr == nil {
+			slog.Debug("repository", "root", rc.repo.Root)
+		}
+	}
+	return rc.repo, rc.repoErr
 }
 
 // TempDir is the run's temporary root, created on first use. Everything

@@ -182,11 +182,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// (D21), and verifying one means verifying its tip sha, whoever
 	// made it. Everything else falls through to state verification of
 	// the working tree.
-	dir := rs.TreeRoot
-	if dir == "" {
-		dir = "."
-	}
-	if repo, err := git.Open(ctx, dir); err == nil && repo.HasBranch(ctx, a.target) {
+	if repo, err := rs.Repo(ctx); err == nil && repo.HasBranch(ctx, a.target) {
 		return verifyBranch(ctx, rs, repo, a.target, release)
 	}
 	targets, err := resolveTargets(rs.TreeRoot, false, []string{a.target})
