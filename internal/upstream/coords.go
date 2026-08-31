@@ -78,9 +78,9 @@ func specOptions(spec coordSpec) []string {
 	return names
 }
 
-// CoordOptions returns the option names Coords needs for a carrier
+// coordOptions returns the option names Coords needs for a carrier
 // style; nil when the style has no git forge.
-func CoordOptions(style portstyle.Type) []string {
+func coordOptions(style portstyle.Type) []string {
 	if families, ok := delegatedFamilies[style]; ok {
 		var names []string
 		for _, ns := range families {
@@ -104,7 +104,7 @@ func CoordOptions(style portstyle.Type) []string {
 // Coords derives the upstream repository from a carrier style and its
 // evaluated options; false when the style has no git forge or the
 // coordinates are incomplete.
-func Coords(style portstyle.Type, opts map[string]string) (Repo, bool) {
+func coords(style portstyle.Type, opts map[string]string) (Repo, bool) {
 	if families, ok := delegatedFamilies[style]; ok {
 		for _, ns := range families {
 			if r, ok := build(specsByNS[ns], opts); ok {

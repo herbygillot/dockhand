@@ -9,8 +9,8 @@ import (
 
 // Fetcher downloads one distfile to dest and reports its checksums; a
 // planner asks it once per new distfile. portfetch implements it over
-// MacPorts' own curl — the planners' normal engine — and distfile.Direct
-// in-process, for contexts with no installation in play.
+// MacPorts' own curl, which is the engine, singular: an in-process
+// alternative existed and was deleted for want of a caller.
 //
 // The bytes stay at dest rather than being hashed and dropped, so a
 // planner that must read inside a distfile — a lockfile for a vendored

@@ -1,16 +1,21 @@
-// Package distfile handles distribution files: getting them, and
-// reading inside the ones that are archives.
+// Package distfile is the vocabulary of distribution files: the fetch
+// options a port declares, the error a failed fetch reports, and
+// reading a named file out of distfiles already fetched.
 //
-// Its fetch engine is in-process, for contexts with no MacPorts
-// installation in play — the planner's normal fetches go through
-// macports/portfetch instead. What a checksum is, and the hashing
-// itself, live in internal/checksums; this package moves bytes and
-// streams them through those hashes.
-//
-// Extract reads a named file out of already-fetched distfiles, so a
-// caller that needs a lockfile or manifest from inside a source archive
-// gets it from the same bytes whose checksum it recorded.
+// It once carried an in-process fetch engine as well — an http client
+// and a curl driver of its own — deleted when macports/portfetch won
+// outright: every real fetch goes through MacPorts' own machinery,
+// which brings the proxies, the learned exceptions and the
+// configuration that engine would have had to reimplement. The history
+// has it if a no-installation context ever becomes real.
 package distfile
+
+import "errors"
+
+// ErrUnavailable reports that no url could serve a distfile. It is the
+// branchable outcome every fetcher reports, whatever machinery it
+// drives.
+var ErrUnavailable = errors.New("distfile: no url could be fetched")
 
 // Options carries a port's own fetch exceptions, read from its
 // fetch.* options — ports declare what their upstreams need.

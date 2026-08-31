@@ -41,23 +41,6 @@ func TestSumsValue(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestVerify(t *testing.T) {
-	s := Sums{Rmd160: "aa", Sha256: "bb", Size: 9}
-	require.NoError(t, Verify(s, []Recorded{
-		{"", "rmd160", "aa"}, {"", "sha256", "bb"}, {"", "size", "9"},
-	}))
-
-	err := Verify(s, []Recorded{{"", "sha256", "WRONG"}})
-	require.ErrorIs(t, err, ErrMismatch)
-	require.ErrorContains(t, err, "recorded WRONG")
-
-	// A legacy type cannot be verified: silence must never imply a
-	// check that did not happen.
-	err = Verify(s, []Recorded{{"", "md5", "ee"}})
-	require.ErrorIs(t, err, ErrMismatch)
-	require.ErrorContains(t, err, "unverifiable")
-}
-
 func TestReplacements(t *testing.T) {
 	fresh := Sums{Rmd160: "aa", Sha256: "bb", Size: 12}
 

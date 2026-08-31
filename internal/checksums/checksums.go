@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 // Sums is the checksum triple a Portfile's checksums option records.
@@ -95,34 +94,6 @@ func ForFiles(recorded []Recorded, files []string) []Recorded {
 		}
 	}
 	return out
-}
-
-// ErrMismatch reports computed sums that disagree with recorded ones.
-var ErrMismatch = errors.New("checksums: mismatch")
-
-// Verify checks one file's computed sums against its recorded triples.
-// A legacy type cannot be verified and counts as a failure — silence
-// must never imply a check that did not happen.
-func Verify(s Sums, recorded []Recorded) error {
-	var problems []string
-	for _, r := range recorded {
-		if IsLegacyType(r.Type) {
-			problems = append(problems, fmt.Sprintf("%s unverifiable (legacy type)", r.Type))
-			continue
-		}
-		got, ok := s.Value(r.Type)
-		if !ok {
-			problems = append(problems, fmt.Sprintf("%s unknown type", r.Type))
-			continue
-		}
-		if got != r.Value {
-			problems = append(problems, fmt.Sprintf("%s recorded %s, computed %s", r.Type, r.Value, got))
-		}
-	}
-	if len(problems) > 0 {
-		return fmt.Errorf("%w: %s", ErrMismatch, strings.Join(problems, "; "))
-	}
-	return nil
 }
 
 // ErrUnresolved reports a recorded checksum whose new value cannot be

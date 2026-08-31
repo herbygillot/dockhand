@@ -35,17 +35,17 @@ func TestCoords(t *testing.T) {
 			"https://git.sr.ht/~sircmpwn/aerc"},
 	}
 	for _, c := range cases {
-		r, ok := Coords(c.style, c.opts)
+		r, ok := coords(c.style, c.opts)
 		require.True(t, ok, c.want)
 		assert.Equal(t, c.want, r.URL)
 	}
 
 	// No forge for non-forge carriers; incomplete coordinates refuse.
-	_, ok := Coords(portstyle.VersionLine, nil)
+	_, ok := coords(portstyle.VersionLine, nil)
 	assert.False(t, ok)
-	_, ok = Coords(portstyle.GithubSetup, map[string]string{"github.author": "x"})
+	_, ok = coords(portstyle.GithubSetup, map[string]string{"github.author": "x"})
 	assert.False(t, ok)
-	assert.Nil(t, CoordOptions(portstyle.PureSetup))
+	assert.Nil(t, coordOptions(portstyle.PureSetup))
 }
 
 func TestStable(t *testing.T) {
@@ -136,7 +136,7 @@ func TestTags(t *testing.T) {
 // go.setup delegates tag naming to the forge family its domain selects;
 // the scheme is found in that family's options.
 func TestCoordsGoDelegatedTagScheme(t *testing.T) {
-	r, ok := Coords(portstyle.GoSetup, map[string]string{
+	r, ok := coords(portstyle.GoSetup, map[string]string{
 		"go.domain": "github.com", "go.author": "robpike", "go.project": "ivy",
 		"github.tag_prefix": "v", "github.tag_suffix": "",
 	})
@@ -171,7 +171,7 @@ func TestTagsStripsSuffix(t *testing.T) {
 }
 
 func TestCoordsCarriesSuffix(t *testing.T) {
-	r, ok := Coords(portstyle.GithubSetup, map[string]string{
+	r, ok := coords(portstyle.GithubSetup, map[string]string{
 		"github.author": "a", "github.project": "p",
 		"github.tag_prefix": "REL_", "github.tag_suffix": "_final",
 	})
@@ -182,7 +182,7 @@ func TestCoordsCarriesSuffix(t *testing.T) {
 
 func TestCoordsNewFamilies(t *testing.T) {
 	// notabug: a fixed-host forge of its own.
-	r, ok := Coords(portstyle.NotabugSetup, map[string]string{
+	r, ok := coords(portstyle.NotabugSetup, map[string]string{
 		"notabug.author": "a", "notabug.project": "p", "notabug.tag_prefix": "v",
 	})
 	require.True(t, ok)
@@ -190,14 +190,14 @@ func TestCoordsNewFamilies(t *testing.T) {
 	assert.Equal(t, "v", r.TagPrefix)
 
 	// cgit: no author, project hangs off the instance, clone URL has .git.
-	r, ok = Coords(portstyle.CgitSetup, map[string]string{
+	r, ok = coords(portstyle.CgitSetup, map[string]string{
 		"cgit.url": "git.zx2c4.com", "cgit.project": "wireguard-tools",
 	})
 	require.True(t, ok)
 	assert.Equal(t, "https://git.zx2c4.com/wireguard-tools.git", r.URL)
 
 	// octave delegates to github; the coordinates land there.
-	r, ok = Coords(portstyle.OctaveSetup, map[string]string{
+	r, ok = coords(portstyle.OctaveSetup, map[string]string{
 		"github.author": "gnu-octave", "github.project": "statistics", "github.tag_prefix": "release-",
 	})
 	require.True(t, ok)
@@ -205,13 +205,13 @@ func TestCoordsNewFamilies(t *testing.T) {
 	assert.Equal(t, "release-", r.TagPrefix)
 
 	// R delegates to gitlab for gitlab-domain packages.
-	r, ok = Coords(portstyle.RSetup, map[string]string{
+	r, ok = coords(portstyle.RSetup, map[string]string{
 		"gitlab.author": "r-pkg", "gitlab.project": "thing", "gitlab.instance": "https://gitlab.com",
 	})
 	require.True(t, ok)
 	assert.Equal(t, "https://gitlab.com/r-pkg/thing", r.URL)
 
 	// An R port on CRAN sets no forge family options: no forge, honestly.
-	_, ok = Coords(portstyle.RSetup, map[string]string{})
+	_, ok = coords(portstyle.RSetup, map[string]string{})
 	assert.False(t, ok)
 }

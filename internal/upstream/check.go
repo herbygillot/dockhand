@@ -19,7 +19,7 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 	// names to ask for depends on the carrier style, so they cannot live
 	// in a struct. The livecheck configuration came with the values the
 	// caller already evaluated.
-	opts, err := h.Options(ctx, CoordOptions(style)...)
+	opts, err := h.Options(ctx, coordOptions(style)...)
 	if err != nil {
 		return Report{}, err
 	}
@@ -46,7 +46,7 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 		// empty.
 	}
 
-	if repo, ok := Coords(style, opts); ok {
+	if repo, ok := coords(style, opts); ok {
 		versions, err := Tags(ctx, repo)
 		if err != nil {
 			return Report{}, err
