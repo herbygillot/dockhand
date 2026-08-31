@@ -1,8 +1,12 @@
 BINARY := dockhand
+VERSION ?= 0.0.0-dev
 
 # The vendored tree is the tree under test: fail loudly if it is
 # missing or inconsistent rather than falling back to the module cache.
-export GOFLAGS := -mod=vendor
+# Appends to the caller's own GOFLAGS rather than replacing them. The
+# -ldflags value uses the = form throughout because GOFLAGS entries
+# cannot contain spaces.
+export GOFLAGS := $(GOFLAGS) -mod=vendor -ldflags=-X=main.Version=$(VERSION)
 
 .PHONY: build clean test vet fmt lint check
 
