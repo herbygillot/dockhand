@@ -28,7 +28,7 @@ checksums           rmd160  aaaa \
                     sha256  bbbb \
                     size    9
 `)
-	edits, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{
+	edits, unlocated, _ := Edits(src, cst, topLevel, "demo", []checksums.Replacement{
 		{Old: "aaaa", New: "cccc", Reason: "checksum rmd160"},
 		{Old: "bbbb", New: "dddd", Reason: "checksum sha256"},
 		{Old: "9", New: "12", Reason: "checksum size"},
@@ -44,7 +44,7 @@ checksums           rmd160  aaaa \
 
 func TestEditsChecksumsAppend(t *testing.T) {
 	src, cst := parse(t, "checksums sha256 aaaa\nchecksums-append size 9\n")
-	edits, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{
+	edits, unlocated, _ := Edits(src, cst, topLevel, "demo", []checksums.Replacement{
 		{Old: "aaaa", New: "bbbb"},
 		{Old: "9", New: "12"},
 	})
@@ -54,7 +54,7 @@ func TestEditsChecksumsAppend(t *testing.T) {
 
 func TestEditsReportsUnlocated(t *testing.T) {
 	src, cst := parse(t, "checksums sha256 aaaa\n")
-	edits, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{
+	edits, unlocated, _ := Edits(src, cst, topLevel, "demo", []checksums.Replacement{
 		{Old: "aaaa", New: "bbbb", Reason: "checksum sha256"},
 		{Old: "nowhere", New: "x", Reason: "checksum size"},
 	})
@@ -66,7 +66,7 @@ func TestEditsReportsUnlocated(t *testing.T) {
 func TestEditsIgnoresOtherCommands(t *testing.T) {
 	// The same literal outside a checksums command is not a checksum.
 	src, cst := parse(t, "version aaaa\nchecksums sha256 aaaa\n")
-	edits, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{{Old: "aaaa", New: "bbbb"}})
+	edits, unlocated, _ := Edits(src, cst, topLevel, "demo", []checksums.Replacement{{Old: "aaaa", New: "bbbb"}})
 	require.Empty(t, unlocated)
 	require.Len(t, edits, 1)
 	assert.Greater(t, edits[0].Start, 12, "the version line's literal must be left alone")
@@ -75,7 +75,7 @@ func TestEditsIgnoresOtherCommands(t *testing.T) {
 func TestEditsDescendsWhereScopeSays(t *testing.T) {
 	src, cst := parse(t, "if {1} {\n    checksums sha256 aaaa\n}\n")
 	// Out of scope: nothing found.
-	_, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{{Old: "aaaa", New: "bbbb"}})
+	_, unlocated, _ := Edits(src, cst, topLevel, "demo", []checksums.Replacement{{Old: "aaaa", New: "bbbb"}})
 	assert.Len(t, unlocated, 1)
 
 	// In scope: the caller's predicate opens the branch.
@@ -83,7 +83,7 @@ func TestEditsDescendsWhereScopeSays(t *testing.T) {
 		name, ok := cmd.Name(src)
 		return ok && name == "if"
 	}
-	edits, unlocated := Edits(src, cst, intoIf, []checksums.Replacement{{Old: "aaaa", New: "bbbb"}})
+	edits, unlocated, _ := Edits(src, cst, intoIf, "demo", []checksums.Replacement{{Old: "aaaa", New: "bbbb"}})
 	require.Empty(t, unlocated)
 	assert.Len(t, edits, 1)
 }
@@ -91,7 +91,7 @@ func TestEditsDescendsWhereScopeSays(t *testing.T) {
 func TestEditsFirstUnclaimedMatchWins(t *testing.T) {
 	// A value repeated across two files claims each occurrence once.
 	src, cst := parse(t, "checksums a.tar.gz sha256 same b.tar.gz sha256 same\n")
-	edits, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{
+	edits, unlocated, _ := Edits(src, cst, topLevel, "demo", []checksums.Replacement{
 		{Old: "same", New: "first"},
 		{Old: "same", New: "second"},
 	})
@@ -107,7 +107,7 @@ func TestEditsFirstUnclaimedMatchWins(t *testing.T) {
 // a change that changes nothing.
 func TestEditsSkipReplacementsThatChangeNothing(t *testing.T) {
 	src, cst := parse(t, "checksums rmd160 aaaa sha256 bbbb size 9\n")
-	edits, unlocated := Edits(src, cst, topLevel, []checksums.Replacement{
+	edits, unlocated, _ := Edits(src, cst, topLevel, "demo", []checksums.Replacement{
 		{Old: "aaaa", New: "aaaa", Reason: "checksum rmd160"},
 		{Old: "bbbb", New: "cccc", Reason: "checksum sha256"},
 	})

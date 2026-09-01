@@ -139,7 +139,7 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 	if err != nil {
 		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error()}
 	}
-	edits, unlocated := rewrite.Edits(src, cst, portstyle.ScopeOf(src, vals.Name), reps)
+	edits, unlocated, viaSet := rewrite.Edits(src, cst, portstyle.ScopeOf(src, vals.Name), vals.Name, reps)
 	for _, u := range unlocated {
 		// Unlike a bump there are no renames here, so every replacement
 		// is a checksum value and every value must be found: one that is
@@ -169,6 +169,15 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 		return nil, fmt.Errorf("refresh: shadow evaluation: %w", err)
 	}
 	predicted := before.Diff(after)
+	// The same sibling proof bump runs: a set-variable carrier is
+	// corroborated by one subport's evaluation, so no other context may
+	// move with it.
+	if viaSet {
+		if key, moved := predicted.OtherContext(vals.Name); moved {
+			return nil, &plan.Decline{Type: plan.UnexpectedChange,
+				Detail: fmt.Sprintf("a checksum edit landed in a set variable, and %s moved with it; the carrier is ambiguous", key.Subport)}
+		}
+	}
 	if err := accept(vals, predicted); err != nil {
 		return nil, err
 	}

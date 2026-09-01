@@ -147,6 +147,31 @@ type Delta struct {
 	Changed map[SubportKey][]FieldChange
 }
 
+// OtherContext reports the first context other than the named subport
+// this delta touches, in any way — changed, added, or removed. The
+// proof consumer for edits that must not reach siblings: an edit
+// justified by one subport's evaluation and located outside its
+// checksums block (a set-variable carrier) is only honest if no other
+// context moved.
+func (d Delta) OtherContext(subport string) (SubportKey, bool) {
+	for key := range d.Changed {
+		if key.Subport != subport {
+			return key, true
+		}
+	}
+	for key := range d.Added {
+		if key.Subport != subport {
+			return key, true
+		}
+	}
+	for key := range d.Removed {
+		if key.Subport != subport {
+			return key, true
+		}
+	}
+	return SubportKey{}, false
+}
+
 // Diff reports what changed from s to after.
 func (s Snapshot) Diff(after Snapshot) Delta {
 	var d Delta

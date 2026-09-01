@@ -29,12 +29,12 @@ const reasonDistfileName = "distfile name"
 // positionally — a bump does not reorder or add distfiles, and a
 // changed count means the edit did more than a bump may — and the old
 // names, where the block writes them literally, are rewritten too.
-func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []checksums.Recorded, oldDistfiles, newDistfiles []string, sums map[string]checksums.Sums) ([]edit.Edit, error) {
+func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []checksums.Recorded, oldDistfiles, newDistfiles []string, sums map[string]checksums.Sums) ([]edit.Edit, bool, error) {
 	if len(old) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	if len(oldDistfiles) != len(newDistfiles) {
-		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
+		return nil, false, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("distfile count changed: %d before, %d after", len(oldDistfiles), len(newDistfiles))}
 	}
 	// The block records the OLD names, so the fetched sums are keyed by
@@ -50,7 +50,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 
 	reps, err := checksums.Replacements(old, byRecordedName)
 	if err != nil {
-		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error()}
+		return nil, false, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error()}
 	}
 	seen := make(map[string]bool)
 	for _, r := range old {
@@ -63,7 +63,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		})
 	}
 
-	edits, unlocated := rewrite.Edits(src, cst, portstyle.ScopeOf(src, contextName), reps)
+	edits, unlocated, viaSet := rewrite.Edits(src, cst, portstyle.ScopeOf(src, contextName), contextName, reps)
 	for _, u := range unlocated {
 		if u.Reason == reasonDistfileName {
 			slog.Debug("distfile name is not a literal; the version edit renames it",
@@ -73,8 +73,8 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		// A checksum value that is not written literally cannot be
 		// rewritten, and a bump that left an old hash in place would ship
 		// a Portfile that fails to fetch.
-		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
+		return nil, false, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason)}
 	}
-	return edits, nil
+	return edits, viaSet, nil
 }

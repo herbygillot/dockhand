@@ -119,3 +119,23 @@ func TestFieldTableCoversAllFields(t *testing.T) {
 	}
 	require.Len(t, seen, len(fieldTable), "duplicate field in table")
 }
+
+// OtherContext is the sibling proof's consumer: an edit corroborated
+// by one subport's evaluation must not move any other context.
+func TestOtherContext(t *testing.T) {
+	d := Delta{Changed: map[SubportKey][]FieldChange{
+		{Subport: "pcre2"}: {{Field: FieldChecksums}},
+	}}
+	_, moved := d.OtherContext("pcre2")
+	require.False(t, moved, "the bumped context's own changes are not siblings")
+
+	d.Changed[SubportKey{Subport: "pcre"}] = []FieldChange{{Field: FieldChecksums}}
+	key, moved := d.OtherContext("pcre2")
+	require.True(t, moved)
+	require.Equal(t, "pcre", key.Subport)
+
+	d = Delta{Added: map[SubportKey]Values{{Subport: "new"}: {}}}
+	key, moved = d.OtherContext("pcre2")
+	require.True(t, moved, "an appearing context is as disqualifying as a changed one")
+	require.Equal(t, "new", key.Subport)
+}

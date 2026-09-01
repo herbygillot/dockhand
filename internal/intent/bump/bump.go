@@ -159,6 +159,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 
 	// The version edit.
 	var edits []edit.Edit
+	checksumsViaSet := false
 	if me, ok := modelineEdit(src); ok {
 		edits = append(edits, me)
 	}
@@ -290,10 +291,11 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		if err != nil {
 			return nil, fmt.Errorf("bump: %w", err)
 		}
-		ck, err := checksumEdits(src, cst, vals.Name, checksums.ForFiles(recorded, ownOld), ownOld, ownNew, sums)
+		ck, viaSet, err := checksumEdits(src, cst, vals.Name, checksums.ForFiles(recorded, ownOld), ownOld, ownNew, sums)
 		if err != nil {
 			return nil, err
 		}
+		checksumsViaSet = viaSet
 		edits = append(edits, ck...)
 
 		// Each present family regenerates its block for the target — the
@@ -336,6 +338,18 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	}
 	predicted := before.Diff(after)
 	slog.Debug("shadow prediction", "changed", len(predicted.Changed), "added", len(predicted.Added), "removed", len(predicted.Removed))
+
+	// A checksum located in a set variable stands outside any checksums
+	// command, so the corroboration that placed it is one subport's
+	// evaluation — and two subports can record an identical value. The
+	// total shadow is the proof the aliasing hazard demands: with such
+	// an edit in play, no context but the bumped one may move at all.
+	if checksumsViaSet {
+		if key, moved := predicted.OtherContext(vals.Name); moved {
+			return nil, &plan.Decline{Type: plan.UnexpectedChange,
+				Detail: fmt.Sprintf("a checksum edit landed in a set variable, and %s moved with it; the carrier is ambiguous", key.Subport)}
+		}
+	}
 
 	if err := b.accept(vals, predicted, moving, exact); err != nil {
 		return nil, err

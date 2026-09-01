@@ -13,6 +13,8 @@
 package rewrite
 
 import (
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -32,10 +34,20 @@ var commands = map[string]bool{
 // first unclaimed match winning. Replacements whose old text appears
 // nowhere are returned unlocated, in the order given.
 //
-// scope is injected rather than assumed so this package needs no
+// A value the checksums command carries only by substitution may still
+// live in the file as a literal: six Portfiles tree-wide keep their
+// hashes in top-level set variables (set rmd160(pcre2) <hash>) that
+// the checksums statement dereferences. Those replacements fall back
+// to in-scope set commands — see locateInSets for the aliasing rules —
+// and viaSet reports that any did, because such an edit is justified
+// by one subport's evaluation while standing outside any checksums
+// command, so the caller owes a proof that no sibling context moved.
+//
+// context is the subport whose values the replacements were derived
+// from; scope is injected rather than assumed so this package needs no
 // knowledge of what a Portfile's evaluation scopes are: callers pass
 // portstyle.ScopeOf for the context they are editing.
-func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, reps []checksums.Replacement) (edits []edit.Edit, unlocated []checksums.Replacement) {
+func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, context string, reps []checksums.Replacement) (edits []edit.Edit, unlocated []checksums.Replacement, viaSet bool) {
 	located := make([]bool, len(reps))
 	for cmd := range cst.Commands(src, scope) {
 		name, ok := cmd.Name(src)
@@ -72,10 +84,87 @@ func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, reps
 			}
 		}
 	}
+	setEdits := locateInSets(src, cst, scope, context, reps, located)
+	edits = append(edits, setEdits...)
+	viaSet = len(setEdits) > 0
 	for i, rep := range reps {
 		if !located[i] {
 			unlocated = append(unlocated, rep)
 		}
 	}
-	return edits, unlocated
+	return edits, unlocated, viaSet
+}
+
+// setCarrier is one in-scope `set` command whose value is a literal —
+// a place a checksum may live outside any checksums command.
+type setCarrier struct {
+	variable string
+	value    string
+	start    int
+	end      int
+	claimed  bool
+}
+
+// locateInSets finds still-unlocated replacements among set commands,
+// marking what it locates in located. Aliasing is the hazard here —
+// two subports can record an identical value (sizes collide for
+// real), and editing a sibling's line would corrupt the sibling AND
+// leave the asked-for value stale — so selection is strict: a carrier
+// whose array key names the context exactly (rmd160(pcre2) for
+// context pcre2) wins, and without such a key the match must be the
+// only candidate. Anything ambiguous stays unlocated, which the
+// caller reports honestly.
+func locateInSets(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, context string, reps []checksums.Replacement, located []bool) []edit.Edit {
+	var carriers []*setCarrier
+	for cmd := range cst.Commands(src, scope) {
+		name, ok := cmd.Name(src)
+		if !ok || name != "set" || len(cmd.Words) != 3 {
+			continue
+		}
+		variable, ok := cmd.Words[1].Literal(src)
+		if !ok {
+			continue
+		}
+		value, ok := cmd.Words[2].Literal(src)
+		if !ok {
+			continue
+		}
+		carriers = append(carriers, &setCarrier{variable: variable, value: value,
+			start: cmd.Words[2].Span.Start, end: cmd.Words[2].Span.End})
+	}
+	keyed := "(" + context + ")"
+	var edits []edit.Edit
+	for i, rep := range reps {
+		if located[i] {
+			continue
+		}
+		var exact, loose []*setCarrier
+		for _, c := range carriers {
+			if c.claimed || c.value != rep.Old {
+				continue
+			}
+			if strings.HasSuffix(c.variable, keyed) {
+				exact = append(exact, c)
+			} else {
+				loose = append(loose, c)
+			}
+		}
+		var chosen *setCarrier
+		switch {
+		case len(exact) == 1:
+			chosen = exact[0]
+		case len(exact) == 0 && len(loose) == 1:
+			chosen = loose[0]
+		default:
+			continue // absent or ambiguous: unlocated, honestly
+		}
+		chosen.claimed = true
+		located[i] = true
+		if rep.New == rep.Old {
+			continue
+		}
+		edits = append(edits, edit.Edit{Start: chosen.start, End: chosen.end,
+			Old: rep.Old, New: rep.New, Reason: rep.Reason})
+	}
+	return edits
 }

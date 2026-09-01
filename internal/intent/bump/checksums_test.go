@@ -23,7 +23,7 @@ checksums           rmd160  aaaa \
 	sums := map[string]checksums.Sums{
 		"foo-2.0.tar.gz": {Rmd160: "cccc", Sha256: "dddd", Size: 12},
 	}
-	edits, err := checksumEdits(src, cst, "foo", old,
+	edits, _, err := checksumEdits(src, cst, "foo", old,
 		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
 	require.NoError(t, err)
 	require.Len(t, edits, 3)
@@ -33,7 +33,7 @@ checksums           rmd160  aaaa \
 
 	// A recorded value that appears nowhere as a literal declines.
 	old[0].Value = "zzzz"
-	_, err = checksumEdits(src, cst, "foo", old,
+	_, _, err = checksumEdits(src, cst, "foo", old,
 		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
@@ -47,7 +47,7 @@ func TestChecksumEditsRenamesLiteralFilenames(t *testing.T) {
 	require.Empty(t, errs)
 	old := []checksums.Recorded{{File: "foo-1.0.tar.gz", Type: "sha256", Value: "bbbb"}, {File: "foo-1.0.tar.gz", Type: "size", Value: "9"}}
 	sums := map[string]checksums.Sums{"foo-2.0.tar.gz": {Sha256: "dddd", Size: 12}}
-	edits, err := checksumEdits(src, cst, "foo", old,
+	edits, _, err := checksumEdits(src, cst, "foo", old,
 		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
 	require.NoError(t, err)
 	require.Len(t, edits, 3)
@@ -65,7 +65,7 @@ func TestChecksumEditsRenamesLiteralFilenames(t *testing.T) {
 func TestChecksumEditsDeclinesLegacyTypes(t *testing.T) {
 	src := []byte("checksums md5 ee\n")
 	cst, _ := syntax.Parse(src)
-	_, err := checksumEdits(src, cst, "foo",
+	_, _, err := checksumEdits(src, cst, "foo",
 		[]checksums.Recorded{{Type: "md5", Value: "ee"}},
 		[]string{"f-1.tar.gz"}, []string{"f-2.tar.gz"},
 		map[string]checksums.Sums{"f-2.tar.gz": {}})
@@ -92,7 +92,7 @@ checksums           ${name}-${version}${extract.suffix} \
 		{File: "foo-1.0.tar.gz", Type: "size", Value: "9"},
 	}
 	sums := map[string]checksums.Sums{"foo-2.0.tar.gz": {Sha256: "dddd", Size: 12}}
-	edits, err := checksumEdits(src, cst, "foo", old,
+	edits, _, err := checksumEdits(src, cst, "foo", old,
 		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
 	require.NoError(t, err)
 	require.Len(t, edits, 2, "the two values are rewritten; the name is not an edit")
