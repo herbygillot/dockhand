@@ -3,14 +3,18 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // statusAction reconciles the dockhand/* namespace: every branch, its
@@ -67,8 +71,86 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 			fmt.Fprintf(rs.Out, "  %s\n", l)
 		}
 	}
+	pumpDeferred(ctx, rs, repo, branches)
 	reportOrphanWorkers(ctx, rs, repo)
 	return nil
+}
+
+// pumpDeferred starts what was deferred, now that this status pass
+// has settled finished runs and freed their slots. Every deferred run
+// gets one attempt, whatever its recorded reason — conditions change
+// (a base provisioned, a slot freed), and the attempt re-records the
+// truth either way. The one early exit is a typed capacity refusal:
+// the machine is full, so further attempts this pass are noise. This
+// is the reconciler acting, not a daemon — a field batch run sat
+// eight deferred branches against an idle machine because the old
+// message promised a pump that did not exist.
+func pumpDeferred(ctx context.Context, rs *runstate.Context, repo *git.Repo, branches []string) {
+	if !lifecycle.TartPresent() {
+		return
+	}
+	for _, br := range branches {
+		tip, err := repo.RevParse(ctx, br)
+		if err != nil {
+			continue // cleaned mid-pass, or never a branch
+		}
+		n, err := lifecycle.ReadNote(ctx, repo, tip)
+		if err != nil {
+			continue
+		}
+		for _, plat := range n.Platforms() {
+			run := n.Runs[plat]
+			if run.State != "deferred" {
+				continue
+			}
+			rel, derr := branchPortdir(ctx, repo, br, tip)
+			if derr != nil {
+				fmt.Fprintf(rs.Err, "%s: deferred %s not retried: %v\n", br, plat, derr)
+				continue
+			}
+			release, ok := platformNamed(ctx, rs, plat)
+			if !ok {
+				fmt.Fprintf(rs.Err, "%s: deferred %s not retried: no such platform is provisioned\n", br, plat)
+				continue
+			}
+			err := lifecycle.SubmitVerification(ctx, rs, &lifecycle.Minted{
+				Repo: repo, Branch: br, Sha: tip, RelPort: rel,
+			}, filepath.Base(rel), release, false, run.Tested)
+			var vde *lifecycle.VerifyDeferredError
+			if errors.As(err, &vde) {
+				if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, filepath.Base(rel), plat, lifecycle.Run{
+					State: "deferred", Detail: vde.Reason, Tested: run.Tested,
+				}, ""); rerr != nil {
+					fmt.Fprintf(rs.Err, "warning: re-recording deferred run: %v\n", rerr)
+				}
+				var cap_ *verify.CapacityError
+				if errors.As(err, &cap_) {
+					fmt.Fprintf(rs.Err, "still waiting for a slot: %s on %s (and anything deferred after it)\n", br, plat)
+					return
+				}
+				fmt.Fprintf(rs.Err, "still deferred: %s on %s — %s\n", br, plat, vde.Reason)
+				continue
+			}
+			if err != nil {
+				fmt.Fprintf(rs.Err, "%s: deferred %s not retried: %v\n", br, plat, err)
+			}
+		}
+	}
+}
+
+// platformNamed resolves a run's recorded platform key against the
+// provider's provisioned platforms.
+func platformNamed(ctx context.Context, rs *runstate.Context, name string) (platform.Release, bool) {
+	prov, err := rs.VerifyProvider(ctx)
+	if err != nil {
+		return platform.Release{}, false
+	}
+	for _, r := range prov.Capabilities().Platforms {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return platform.Release{}, false
 }
 
 // statusJSON is the machine rendering of the same reconciliation the
@@ -123,6 +205,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		}
 		out.Branches = append(out.Branches, b)
 	}
+	pumpDeferred(ctx, &prose, repo, branches)
 	if workers := lifecycle.OrphanWorkers(ctx, repo); len(workers) > 0 {
 		out.OrphanWorkers = workers
 	}

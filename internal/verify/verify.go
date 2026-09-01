@@ -257,7 +257,7 @@ type CapacityError struct {
 }
 
 func (e *CapacityError) Error() string {
-	return fmt.Sprintf("all %d verification slots are busy (%d VMs running); a finished one frees on `dockhand status`", e.Cap, e.Busy)
+	return fmt.Sprintf("all %d verification slots are busy (%d VMs running); `dockhand status` starts it when one frees", e.Cap, e.Busy)
 }
 
 // ExitCode: the machine band.

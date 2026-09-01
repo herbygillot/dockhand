@@ -163,11 +163,17 @@ func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 type VerifyDeferredError struct {
 	Branch string
 	Reason string
+	// Cause is the underlying refusal when one exists — a typed
+	// CapacityError is how status's deferred pump knows a full machine
+	// from a missing capability.
+	Cause error
 }
 
 func (e *VerifyDeferredError) Error() string {
-	return fmt.Sprintf("verification not started: %s\nthe branch stands — run `dockhand verify %s` when ready", e.Reason, e.Branch)
+	return fmt.Sprintf("verification not started: %s\nthe branch stands — `dockhand status` starts it when it can, or run `dockhand verify %s` yourself", e.Reason, e.Branch)
 }
+
+func (e *VerifyDeferredError) Unwrap() error { return e.Cause }
 
 // ExitCode is the machine band: the branch stands, verification could
 // not start, and the obstacle is capacity or environment.
@@ -188,13 +194,13 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 		fmt.Fprintf(rs.Err, "the branch is unverified; you may promote it as is, or install tart and run `dockhand verify %s`\n", m.Branch)
 		return nil
 	}
-	later := func(why string) error {
-		return &VerifyDeferredError{Branch: m.Branch, Reason: why}
+	later := func(cause error) error {
+		return &VerifyDeferredError{Branch: m.Branch, Reason: cause.Error(), Cause: cause}
 	}
 	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		if errors.Is(err, verify.ErrNoEnvironment) {
-			return later(err.Error())
+			return later(err)
 		}
 		return err
 	}
@@ -248,7 +254,7 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 		}, ""); rerr != nil {
 			fmt.Fprintf(rs.Err, "warning: recording the deferred run: %v\n", rerr)
 		}
-		return later(err.Error())
+		return later(err)
 	}
 	if err := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
 		State: "running", Job: job, Tested: test, Linted: true,

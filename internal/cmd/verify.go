@@ -212,31 +212,9 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		return err
 	}
 
-	primary, err := repo.PrimaryBranch(ctx)
+	rel, err := branchPortdir(ctx, repo, branch, tip)
 	if err != nil {
 		return err
-	}
-	base, err := repo.MergeBase(ctx, primary, tip)
-	if err != nil {
-		return err
-	}
-	paths, err := repo.DiffNames(ctx, base, tip)
-	if err != nil {
-		return err
-	}
-	portdirs := map[string]bool{}
-	for _, p := range paths {
-		parts := strings.SplitN(p, "/", 3)
-		if len(parts) >= 3 {
-			portdirs[parts[0]+"/"+parts[1]] = true
-		}
-	}
-	if len(portdirs) != 1 {
-		return fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, len(portdirs), base[:12])
-	}
-	var rel string
-	for d := range portdirs {
-		rel = d
 	}
 
 	n, nerr := lifecycle.ReadNote(ctx, repo, tip)
@@ -275,9 +253,41 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 			// per-release lines above name each one. A field run caught
 			// this summary promising "when a slot frees" to a deferral
 			// no freed slot would ever help.
-			Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; re-run `dockhand verify %s --on <release>` once it is met", deferred, branch)}
+			Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", deferred)}
 	}
 	return nil
+}
+
+// branchPortdir derives the one portdir a branch changes against its
+// merge base with the primary branch — from git alone, so a human
+// commit's changes count the same as a minted one's.
+func branchPortdir(ctx context.Context, repo *git.Repo, branch, tip string) (string, error) {
+	primary, err := repo.PrimaryBranch(ctx)
+	if err != nil {
+		return "", err
+	}
+	base, err := repo.MergeBase(ctx, primary, tip)
+	if err != nil {
+		return "", err
+	}
+	paths, err := repo.DiffNames(ctx, base, tip)
+	if err != nil {
+		return "", err
+	}
+	portdirs := map[string]bool{}
+	for _, p := range paths {
+		parts := strings.SplitN(p, "/", 3)
+		if len(parts) >= 3 {
+			portdirs[parts[0]+"/"+parts[1]] = true
+		}
+	}
+	if len(portdirs) != 1 {
+		return "", fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, len(portdirs), base[:12])
+	}
+	for d := range portdirs {
+		return d, nil
+	}
+	return "", nil // unreachable
 }
 
 // verifyReleases resolves verify's --on values against the provisioned
