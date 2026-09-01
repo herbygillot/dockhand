@@ -11,7 +11,10 @@
 // context's evaluated distfiles without reconstructing any file name.
 //
 // The block's contents are still opaque: nothing here interprets a
-// crate, and a regenerated block is taken from the tool verbatim.
+// crate. A regenerated block is the tool's output re-laid, when the
+// existing block's geometry could be proven (Assess) — only the
+// whitespace between opaque words is ever touched — and the tool's
+// verbatim output otherwise.
 package cargo2port
 
 import (
@@ -106,13 +109,11 @@ func Lockfile(ctx context.Context, archives []string, worksrcdir string) (data [
 // the command text with no trailing newline — the shape that replaces a
 // located block's span.
 //
-// The block is taken from the tool verbatim; what this package chooses
-// is the layout to ask for, not how to lay it out. Reflowing the output
-// would mean parsing what it has no business reading, but requesting the
-// layout the port already has — Alignment's answer for the located
-// block — keeps a regenerated block's diff to the crates that actually
-// moved. The difference is not cosmetic: a block written in one layout
-// and regenerated in another rewrites every line it did not change.
+// Every token comes from the tool; the caller may then re-lay the
+// whitespace under a proven Geometry (Reformat), because the tree's
+// blocks are written by more rules than the tool has flags — a script
+// column layout regenerated in the tool's own rewrites every line it
+// did not change.
 //
 // The lockfile is passed as bytes rather than a path because it comes
 // from inside a distfile: the caller extracted it, and staging it under

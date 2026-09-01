@@ -169,11 +169,11 @@ func ValidateBlock(out []byte, k Kind) ([]byte, error) {
 	return block, nil
 }
 
-// Edit replaces a located block with a regenerated one. The block is
-// taken verbatim: reflowing it to preserve a port's existing column
-// widths would mean interpreting what this package has no business
-// reading, and the generator's own output is what a maintainer running
-// it by hand would commit.
+// Edit replaces a located block with a regenerated one, verbatim from
+// the caller. Whether the block is the generator's own layout or the
+// tool's tokens re-laid under the existing block's proven geometry is
+// the generator package's judgment (see cargo2port.Assess); this
+// package still never interprets what a block holds.
 func Edit(src []byte, span text.Span, block []byte, k Kind) edit.Edit {
 	return edit.Edit{
 		Start:  span.Start,

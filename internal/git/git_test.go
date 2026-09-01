@@ -393,7 +393,7 @@ func TestPushForceReplacesARewrittenBranch(t *testing.T) {
 	second := mint("jq: update to 2.1")
 	require.NotEqual(t, first, second)
 
-	assert.Error(t, r.Push(ctx, "fork", "dockhand/jq-2.0"), "a rewritten branch is not a fast-forward")
+	require.Error(t, r.Push(ctx, "fork", "dockhand/jq-2.0"), "a rewritten branch is not a fast-forward")
 	require.NoError(t, r.PushForce(ctx, "fork", "dockhand/jq-2.0"))
 	got, err := exec.Command("git", "-C", fork, "rev-parse", "dockhand/jq-2.0").Output()
 	require.NoError(t, err)

@@ -414,6 +414,20 @@ just the normal single-run progression (build → destroot → activate) split
 across two commands. The note records the bit (`tested`), because promote's
 checklist vouches only for what a note remembers.
 
+**Amended (2026-09-01, cargo.crates geometry).** Regenerated vendored
+blocks are re-laid under the existing block's measured column
+geometry, but only a geometry proven first: Assess re-renders the
+existing block's own triples and must reproduce it byte for byte
+before its rule is ever used, so a wrong measurement is impossible to
+act on — anything unproven keeps the tool's verbatim output. The
+proof-not-heuristic shape came from the tree itself: its blocks are
+written by more rules than cargo2port has flags (a script layout
+right-aligns versions in a narrow sliding field and overflows long
+ones; the tool's own reserves the widest), and 313 of 345 committed
+blocks round-trip exactly. This narrows the old "never reflow tool
+output" stance to "never touch anything but whitespace between opaque
+words".
+
 **Why.** Even the "synchronous" backend takes fifteen seconds to nine minutes,
 long enough that a blocking call is a lie the first time someone interrupts a
 run. The serializable Job forced the tart guest to drive its own build and

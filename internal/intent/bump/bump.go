@@ -510,13 +510,19 @@ func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syn
 		return edit.Edit{}, err
 	}
 	slog.Debug("read lockfile", "from", filepath.Base(from), "bytes", len(lock))
-	// The regenerated block is asked for in the layout the existing one
-	// is written in, so unchanged crates render byte-identical.
-	layout := cargo2port.Alignment(span.Text(src))
-	slog.Debug("assessed block layout", "layout", string(layout))
-	block, err := cargo2port.Generate(ctx, root, lock, layout)
+	// The regenerated block is re-laid under the existing block's own
+	// measured geometry — but only a geometry Assess proved by
+	// re-rendering the existing block byte for byte. Unchanged crates
+	// then render identical whatever wrote the original, a hand script
+	// included; an unproven geometry keeps the tool's output verbatim.
+	geom, proven := cargo2port.Assess(span.Text(src))
+	slog.Debug("assessed block layout", "layout", string(geom.Layout), "proven", proven)
+	block, err := cargo2port.Generate(ctx, root, lock, geom.Layout)
 	if err != nil {
 		return edit.Edit{}, err
+	}
+	if proven {
+		block = cargo2port.Reformat(block, geom)
 	}
 	slog.Debug("regenerated block", "kind", cargo2port.Kind.String(), "bytes", len(block))
 	return vendored.Edit(src, span, block, cargo2port.Kind), nil
