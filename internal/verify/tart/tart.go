@@ -19,9 +19,11 @@ package tart
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -375,6 +377,46 @@ func (p Provider) launch(ctx context.Context, vm string, req verify.Request) err
 		return fmt.Errorf("%w: launching the build: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// Exec implements verify.Executor: one command inside the worker,
+// through the same guest agent verification drives it by. The job is
+// checked the way Poll checks it — wrong provider is a contract
+// error, a vanished worker says so.
+func (p Provider) Exec(ctx context.Context, job verify.Job, argv ...string) (string, error) {
+	if job.Provider != "tart" {
+		return "", fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
+	}
+	if ok, err := HasVM(ctx, job.ID); err != nil {
+		return "", err
+	} else if !ok {
+		return "", fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
+	}
+	return Exec(ctx, job.ID, argv...)
+}
+
+// Shell implements verify.InteractiveShell: a login shell inside the
+// worker, on the process's real terminal. The TTY is requested only
+// when there is one: -t on a piped stdin dies on the terminal-size
+// ioctl, and a pipe of commands is a legitimate way to use a shell.
+func (p Provider) Shell(ctx context.Context, job verify.Job) error {
+	if job.Provider != "tart" {
+		return fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
+	}
+	args := []string{"exec", "-i"}
+	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		args = append(args, "-t")
+	}
+	args = append(args, job.ID, "/bin/zsh", "-l")
+	cmd := exec.CommandContext(ctx, "tart", args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err := cmd.Run()
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		// The shell's own exit status is the user's business.
+		return nil
+	}
+	return err
 }
 
 // Poll reads the guest's own record of where the build got to.

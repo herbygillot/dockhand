@@ -27,6 +27,11 @@ type Fake struct {
 	Vanished map[string]bool
 	// Logs scripts Log per job ID.
 	Logs map[string]string
+	// ExecOut scripts Exec per job ID — the fake implements
+	// verify.Executor so the guest-reaching verbs are testable, but
+	// deliberately not InteractiveShell: a fake terminal proves
+	// nothing.
+	ExecOut map[string]string
 
 	// Submitted records every request, in order.
 	Submitted []verify.Request
@@ -68,6 +73,16 @@ func (f *Fake) Poll(_ context.Context, job verify.Job) (verify.Status, error) {
 
 func (f *Fake) Log(_ context.Context, job verify.Job) (string, error) {
 	return f.Logs[job.ID], nil
+}
+
+var _ verify.Executor = (*Fake)(nil)
+
+func (f *Fake) Exec(_ context.Context, job verify.Job, _ ...string) (string, error) {
+	out, ok := f.ExecOut[job.ID]
+	if !ok {
+		return "", fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
+	}
+	return out, nil
 }
 
 func (f *Fake) Release(_ context.Context, job verify.Job) error {

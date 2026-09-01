@@ -241,6 +241,24 @@ type Verifier interface {
 	Release(ctx context.Context, job Job) error
 }
 
+// Executor is the optional capability of reaching inside a live
+// environment: run one command and return its output. tart implements
+// it (the guest agent is right there); a CI provider whose
+// environments are remote runners generally cannot, and a caller that
+// needs it type-asserts — the graceful refusal for a provider without
+// it is the caller's to phrase. This exists because the debug verbs
+// were calling the tart package directly on any job ID, which is
+// silently wrong the day a job's provider is not tart.
+type Executor interface {
+	Exec(ctx context.Context, job Job, argv ...string) (string, error)
+}
+
+// InteractiveShell is the optional capability of opening a human
+// shell inside an environment, wired to the process's own terminal.
+type InteractiveShell interface {
+	Shell(ctx context.Context, job Job) error
+}
+
 // Await polls until the job is terminal or the context ends. It is a
 // helper rather than a method so that no provider has to implement
 // blocking, and so a caller that wants to supervise several jobs is not

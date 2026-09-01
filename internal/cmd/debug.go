@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -200,6 +198,16 @@ func errorLog(ctx context.Context, rs *runstate.Context, prov verify.Verifier, e
 		fmt.Fprint(rs.Out, tail)
 		return nil
 	}
+	ex, ok := prov.(verify.Executor)
+	if !ok {
+		fmt.Fprintln(rs.Err, "this provider's environments cannot be reached from here; showing the console tail instead")
+		tail := console
+		if len(tail) > 4000 {
+			tail = tail[len(tail)-4000:]
+		}
+		fmt.Fprint(rs.Out, tail)
+		return nil
+	}
 	fmt.Fprintf(rs.Err, "errors from %s in %s:\n", m[1], env.Job.ID)
 	script := `log="$1"
 first=$(grep -n -m1 ':error:' "$log" | cut -d: -f1)
@@ -210,7 +218,7 @@ fi
 start=$((first > 25 ? first - 25 : 1))
 sed -n "${start},$((first - 1))p" "$log"
 grep ':error:' "$log" | head -40`
-	out, err := tart.Exec(ctx, env.Job.ID, "/bin/sh", "-c", script, "sh", m[1])
+	out, err := ex.Exec(ctx, env.Job, "/bin/sh", "-c", script, "sh", m[1])
 	if err != nil {
 		return fmt.Errorf("reading %s from %s: %w", m[1], env.Job.ID, err)
 	}
@@ -233,6 +241,14 @@ func (a shellAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
+	prov, err := lifecycle.VMProvider(ctx)
+	if err != nil {
+		return err
+	}
+	sh, ok := prov.(verify.InteractiveShell)
+	if !ok {
+		return fmt.Errorf("this provider's environments do not take an interactive shell; `dockhand log` still reads their output")
+	}
 	what := env.State
 	if env.Port != "" {
 		what += " verification of " + env.Port
@@ -243,26 +259,7 @@ func (a shellAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		what += " on " + env.Plat
 	}
 	fmt.Fprintf(rs.Err, "connecting to %s (%s)\n", env.Job.ID, what)
-	// An interactive session wants the process's real terminal, not the
-	// run's buffered streams: tart exec attaches through the guest
-	// agent — the same channel verification itself drives the guest by.
-	// The TTY is requested only when there is one: -t on a piped stdin
-	// dies on the terminal-size ioctl, and a pipe of commands is a
-	// legitimate way to use a shell.
-	args := []string{"exec", "-i"}
-	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
-		args = append(args, "-t")
-	}
-	args = append(args, env.Job.ID, "/bin/zsh", "-l")
-	cmd := exec.CommandContext(ctx, "tart", args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	err = cmd.Run()
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		// The shell's own exit status is the user's business.
-		return nil
-	}
-	return err
+	return sh.Shell(ctx, env.Job)
 }
 
 // Log builds the log subcommand.
