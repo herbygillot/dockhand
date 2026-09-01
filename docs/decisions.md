@@ -485,6 +485,22 @@ store D8 forbids. The recovery path is a golden clone per base, taken after
 provisioning's checks pass and never started; restoring is a copy-on-write
 clone, free, so it is the obvious response to drift rather than a last resort.
 
+**Amended (2026-09-01, Xcode in the golden).** Provisioning can bake a
+full Xcode into the image (`provision tart --xcode <dir of .xip>`),
+installed between the toolchain check and MacPorts, proven by
+xcodebuild answering, and recorded in the golden — the versatility
+buy: ports with use_xcode need xcodebuild, which the command line
+tools alone cannot answer. Three rulings inside it. The archives are
+supplied by the user, because Apple's downloads sit behind an Apple ID
+and the guest must never hold credentials. The version is chosen per
+release from a bounds table (Monterey stops below 14.3, Ventura 15.3,
+Sonoma 16.3, Sequoia 26.4 — Apple raises the floor mid-line, so bounds
+are minors), newest that fits, betas skipped: verdicts from a beta
+toolchain answer a question nobody asked. And the transfer rides the
+provisioning SSH channel (a raw pipe into cat), because tart's
+directory sharing needs a macOS 13+ guest and Monterey is in the
+fleet.
+
 **Cost to reverse.** Low. Add a manifest later if provenance ever drives a
 decision; nothing consumes one today.
 

@@ -33,6 +33,12 @@ type Tart struct {
 	// each, so the pair scales together.
 	CPUs     int
 	MemoryMB int
+	// XcodeDir names a directory of Xcode .xip archives (or one .xip);
+	// when set, the newest one the release can run is installed into
+	// the image before the golden is taken. The archives are supplied
+	// by the user because Apple's downloads sit behind an Apple ID —
+	// the guest must never need credentials.
+	XcodeDir string
 	// MacPorts is the version installed into an image. Empty takes the
 	// newest version dockhand has a shim for, which pins an environment
 	// to something verified rather than to whatever is newest upstream
@@ -142,6 +148,17 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	if err := t.ensureToolchain(ctx, name, say); err != nil {
 		return err
 	}
+	xcodeNote := ""
+	if t.XcodeDir != "" {
+		xip, xv, err := PickXcode(t.XcodeDir, r)
+		if err != nil {
+			return err
+		}
+		if err := t.installXcode(ctx, name, host, xip, xv, say); err != nil {
+			return err
+		}
+		xcodeNote = ", Xcode " + xv
+	}
 	say("installing MacPorts %s", version)
 	if err := t.installMacPorts(ctx, name, r, version); err != nil {
 		return err
@@ -164,7 +181,7 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 			verify.ErrNoEnvironment, golden, strings.TrimSpace(out))
 	}
 
-	say("provisioned %s — %s, MacPorts %s (golden: %s)", name, r, version, golden)
+	say("provisioned %s — %s, MacPorts %s%s (golden: %s)", name, r, version, xcodeNote, golden)
 	return nil
 }
 

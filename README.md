@@ -220,7 +220,9 @@ Provisioning proves what it built — no foreign package manager, a
 working compiler, MacPorts answering — and keeps a golden copy that
 never runs, so a base that drifts is restored by a free clone
 (`--restore`) rather than a rebuild. `--recheck` re-runs the proofs on
-demand.
+demand. With `--xcode <dir>` pointing at downloaded Xcode `.xip`
+archives, the image also gets the newest full Xcode its release can
+run — which is what lets ports that need `xcodebuild` verify too.
 
 Verdicts are recorded per commit and per macOS release, so one branch
 can carry `passed (Sonoma)` alongside `unsupported (Monterey)` — and

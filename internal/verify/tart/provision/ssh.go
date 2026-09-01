@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -34,23 +36,10 @@ const (
 // impersonating a VM tart just started — is not one this is placed to
 // answer.
 func sshRun(ctx context.Context, host, script string) (string, error) {
-	cfg := &ssh.ClientConfig{
-		User:            guestUser,
-		Auth:            []ssh.AuthMethod{ssh.Password(guestPassword)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // a just-created guest has no known key
-		Timeout:         15 * time.Second,
-	}
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, "22"))
+	client, err := sshClient(ctx, host)
 	if err != nil {
 		return "", err
 	}
-	c, chans, reqs, err := ssh.NewClientConn(conn, host, cfg)
-	if err != nil {
-		conn.Close() //nolint:errcheck // best-effort on the error path
-		return "", err
-	}
-	client := ssh.NewClient(c, chans, reqs)
 	defer client.Close() //nolint:errcheck // best-effort shutdown
 
 	sess, err := client.NewSession()
@@ -65,6 +54,60 @@ func sshRun(ctx context.Context, host, script string) (string, error) {
 		return out.String(), fmt.Errorf("guest script failed: %w", err)
 	}
 	return out.String(), nil
+}
+
+// sshPush streams one local file into the guest, byte for byte, over
+// the same channel the bootstrap uses. It exists for payloads far too
+// large to inline in a script — an Xcode archive is tens of gigabytes —
+// and a raw pipe into cat is the fastest transfer this package can
+// have without growing a dependency.
+func sshPush(ctx context.Context, host, local, remote string) error {
+	f, err := os.Open(local)
+	if err != nil {
+		return err
+	}
+	defer f.Close() //nolint:errcheck // read-only file
+
+	client, err := sshClient(ctx, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close() //nolint:errcheck // best-effort shutdown
+
+	sess, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close() //nolint:errcheck // best-effort shutdown
+
+	sess.Stdin = f
+	var out bytes.Buffer
+	sess.Stdout, sess.Stderr = &out, &out
+	if err := sess.Run("cat > " + remote); err != nil {
+		return fmt.Errorf("writing %s in the guest: %w: %s", remote, err, strings.TrimSpace(out.String()))
+	}
+	return nil
+}
+
+// sshClient dials the guest with the image's published credentials.
+func sshClient(ctx context.Context, host string) (*ssh.Client, error) {
+	cfg := &ssh.ClientConfig{
+		User:            guestUser,
+		Auth:            []ssh.AuthMethod{ssh.Password(guestPassword)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // a just-created guest has no known key
+		Timeout:         15 * time.Second,
+	}
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, "22"))
+	if err != nil {
+		return nil, err
+	}
+	c, chans, reqs, err := ssh.NewClientConn(conn, host, cfg)
+	if err != nil {
+		conn.Close() //nolint:errcheck // best-effort on the error path
+		return nil, err
+	}
+	return ssh.NewClient(c, chans, reqs), nil
 }
 
 // waitSSH waits for the guest to accept a login. It is the only

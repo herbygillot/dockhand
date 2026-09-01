@@ -17,6 +17,7 @@ import (
 type provisionTartAction struct {
 	release  platform.Release
 	macports string
+	xcode    string
 	cpus     int
 	memoryMB int
 	recheck  bool
@@ -26,7 +27,7 @@ type provisionTartAction struct {
 var _ Action = provisionTartAction{}
 
 func (a provisionTartAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	t := provision.Tart{MacPorts: a.macports, CPUs: a.cpus, MemoryMB: a.memoryMB}
+	t := provision.Tart{MacPorts: a.macports, CPUs: a.cpus, MemoryMB: a.memoryMB, XcodeDir: a.xcode}
 
 	if a.restore {
 		// The golden is the remedy D19 promises: a drifted base is
@@ -85,6 +86,7 @@ func provisionTart() *cobra.Command {
 	var (
 		macos    string
 		macports string
+		xcode    string
 		cpus     int
 		memoryMB int
 		recheck  bool
@@ -105,6 +107,7 @@ func provisionTart() *cobra.Command {
 			return provisionTartAction{
 				release:  release,
 				macports: macports,
+				xcode:    xcode,
 				cpus:     cpus,
 				memoryMB: memoryMB,
 				recheck:  recheck,
@@ -115,6 +118,8 @@ func provisionTart() *cobra.Command {
 	c.Flags().StringVar(&macos, "macos", "", "macOS release to provision (name or version)")
 	c.Flags().StringVar(&macports, "macports", "",
 		"MacPorts version to install (default: the newest dockhand has a shim for)")
+	c.Flags().StringVar(&xcode, "xcode", "",
+		"directory of Xcode .xip archives (or one .xip); installs the newest the release can run")
 	c.Flags().IntVar(&cpus, "cpus", 0,
 		"CPU cores per VM (default: half the host's physical cores)")
 	c.Flags().IntVar(&memoryMB, "memory", 0,
