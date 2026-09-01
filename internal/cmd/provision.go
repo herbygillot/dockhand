@@ -83,7 +83,7 @@ func Provision() *cobra.Command {
 		Use:   "provision",
 		Short: "Prepare verification environments",
 	}
-	c.AddCommand(provisionTart())
+	c.AddCommand(provisionTart(), provisionXcode())
 	return c
 }
 

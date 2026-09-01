@@ -29,6 +29,25 @@ var xcodeBounds = map[int]string{
 	24: "26.4",
 }
 
+// RecommendedXcode names the Xcode a release should get: the newest
+// release-form version below its bound. The specific version matters
+// greatly per macOS release — Apple raises the floor mid-line — which
+// is why this is a table a guided workflow can print, not a "download
+// the latest" suggestion.
+func RecommendedXcode(r platform.Release) (version string, capped bool) {
+	switch r.Darwin {
+	case 21:
+		return "14.2", true
+	case 22:
+		return "15.2", true
+	case 23:
+		return "16.2", true
+	case 24:
+		return "26.3", true
+	}
+	return "", false // the newest release runs the newest Xcode
+}
+
 // PickXcode chooses the archive to install for a release: the newest
 // .xip in dir whose version the release can run. dir may also name one
 // .xip directly, which is then held to the same bound rather than
