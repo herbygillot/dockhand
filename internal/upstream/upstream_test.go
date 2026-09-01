@@ -232,6 +232,66 @@ func TestJudgePrereleaseNewestIsNotALivecheckFault(t *testing.T) {
 	assert.Contains(t, r.Detail, "newest stable is 1.0.0")
 }
 
+// gopass's field case: livecheck matches rc tags, the forge's releases
+// API has the release itself. Semver puts 1.17.0-rc.3 strictly BEFORE
+// 1.17.0, but VerCmp orders it above — so the old verdict declined
+// "livecheck ahead" while printing the right answer (stable 1.17.0) in
+// the same breath. The release supersedes its prerelease, and
+// resolution proceeds with it.
+func TestJudgePrereleaseSupersededByItsRelease(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "1.17.0-rc.3",
+		ForgeVersions: []string{"1.16.1", "1.17.0"},
+		Authoritative: true,
+	})
+	assert.Equal(t, PrereleaseSuperseded, r.Verdict)
+	assert.Equal(t, "1.17.0", r.Latest, "the release stands")
+	assert.Contains(t, r.Detail, "1.17.0-rc.3")
+	assert.Contains(t, r.Detail, "the release 1.17.0 stands")
+}
+
+// The same rule on the tag path, where the rc is also the forge's raw
+// newest: previously PrereleaseNewest declined here, but an rc whose
+// release exists is superseded, not news.
+func TestJudgePrereleaseSupersededOnTheTagPath(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "1.17.0-rc.3",
+		ForgeVersions: []string{"1.16.1", "1.17.0", "1.17.0-rc.3"},
+	})
+	assert.Equal(t, PrereleaseSuperseded, r.Verdict)
+	assert.Equal(t, "1.17.0", r.Latest)
+}
+
+// A prerelease with NO release behind it is still a decline: the base
+// outranks every stable tag, so nothing supersedes it (mergestat's
+// shape keeps its verdict).
+func TestJudgePrereleaseWithoutItsReleaseStillDeclines(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "2.0.0-rc.1",
+		ForgeVersions: []string{"1.0.0", "2.0.0-rc.1"},
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest)
+}
+
+func TestReleaseBase(t *testing.T) {
+	for version, want := range map[string]string{
+		"1.17.0-rc.3":       "1.17.0",
+		"2.3.2-beta":        "2.3.2",
+		"1.2.3.rc1":         "1.2.3",
+		"3.0.0-pre":         "3.0.0",
+		"2026.9.1-pr5150.5": "2026.9.1",
+	} {
+		base, ok := releaseBase(version)
+		require.True(t, ok, version)
+		assert.Equal(t, want, base, version)
+	}
+	_, ok := releaseBase("1.17.0")
+	assert.False(t, ok, "a stable version has no prerelease base")
+	_, ok = releaseBase("rc1")
+	assert.False(t, ok, "all token, no base")
+}
+
 func TestJudgeLivecheckAheadNamesBothComparisons(t *testing.T) {
 	r := Judge(Observation{
 		Livecheck:     "9.0.0",

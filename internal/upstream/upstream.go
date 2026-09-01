@@ -24,6 +24,7 @@ package upstream
 
 import (
 	"regexp"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 )
@@ -58,6 +59,15 @@ const (
 	// current releases are all betas. Declining is right; the message
 	// must not read as a livecheck fault.
 	PrereleaseNewest
+	// PrereleaseSuperseded means livecheck matched a prerelease whose
+	// release the forge has: semver puts 1.17.0-rc.3 strictly before
+	// 1.17.0, so the release stands and resolution proceeds with it.
+	// MacPorts VerCmp orders the rc ABOVE its release (a trailing
+	// segment reads as more version), which is right for the suffix
+	// styles committed Portfiles use — so the precedence lives here in
+	// the judgment, not in the comparator (field-measured on gopass,
+	// declined "livecheck ahead" with the right answer in hand).
+	PrereleaseSuperseded
 )
 
 func (v Verdict) String() string {
@@ -78,6 +88,8 @@ func (v Verdict) String() string {
 		return "livecheck ahead of the forge"
 	case PrereleaseNewest:
 		return "the newest releases are prerelease-style tags"
+	case PrereleaseSuperseded:
+		return "livecheck matched a prerelease; the release stands"
 	}
 	return "unknown verdict"
 }
@@ -175,6 +187,15 @@ func Judge(obs Observation) Report {
 		r.Verdict = LivecheckBehind
 		r.Detail = "livecheck " + obs.Livecheck + ", newest stable-looking tag " + against
 	case c < 0:
+		// Semver precedence, judged here rather than in VerCmp: a
+		// prerelease orders strictly before its release, so when
+		// livecheck matched one and the forge has its release (or
+		// newer), the release is the answer, not a disagreement.
+		if base, ok := releaseBase(obs.Livecheck); ok && macports.VerCmp(base, against) <= 0 {
+			r.Verdict, r.Latest = PrereleaseSuperseded, against
+			r.Detail = "livecheck matched prerelease " + obs.Livecheck + "; the release " + against + " stands"
+			return r
+		}
 		if macports.VerCmp(obs.Livecheck, r.ForgeNewest) == 0 {
 			// livecheck tracks the forge's raw newest fine; it is ahead
 			// only of the stable subset. Charging livecheck here sent a
@@ -191,6 +212,19 @@ func Judge(obs Observation) Report {
 		r.Verdict, r.Latest = Agreement, obs.Livecheck
 	}
 	return r
+}
+
+// releaseBase is the release a prerelease-styled version belongs to:
+// the part before its prerelease token, separators trimmed —
+// 1.17.0-rc.3 belongs to 1.17.0. Not-ok for a stable version, or one
+// that is nothing but prerelease token (no base to speak of).
+func releaseBase(version string) (string, bool) {
+	loc := prerelease.FindStringSubmatchIndex(version)
+	if loc == nil {
+		return "", false
+	}
+	base := strings.TrimRight(version[:loc[4]], "-._")
+	return base, base != ""
 }
 
 func stableOf(versions []string) []string {
