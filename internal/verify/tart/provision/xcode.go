@@ -144,6 +144,19 @@ sudo -n xcodebuild -runFirstLaunch`
 	return t.assertXcode(ctx, vm)
 }
 
+// XcodeVersionOf reports the full Xcode a running image carries, ""
+// when it has none — a fact worth a line wherever an image is already
+// booted (recheck), because use_xcode ports are refused against a base
+// without one.
+func XcodeVersionOf(ctx context.Context, vm string) string {
+	out, err := tart.Exec(ctx, vm, "/usr/bin/xcodebuild", "-version")
+	if err != nil || !strings.HasPrefix(strings.TrimSpace(out), "Xcode ") {
+		return ""
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	return strings.TrimSpace(strings.TrimPrefix(first, "Xcode"))
+}
+
 // assertXcode proves xcodebuild answers from a real Xcode — the same
 // stance as every other provisioning step: the check, not the exit
 // status, is what says the image has the capability.

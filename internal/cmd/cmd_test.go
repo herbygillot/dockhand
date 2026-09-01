@@ -225,3 +225,10 @@ func TestTclTrue(t *testing.T) {
 		assert.False(t, tclTrue(v), v)
 	}
 }
+
+func TestLintSummaryReadsPortLintsOwnLine(t *testing.T) {
+	assert.Equal(t, "clean", lintSummary("--->  Verifying Portfile for jq\n--->  0 errors and 0 warnings found.\n"))
+	assert.Equal(t, "1 warning", lintSummary("--->  0 errors and 1 warning found.\n"))
+	assert.Equal(t, "3 warnings", lintSummary("--->  0 errors and 3 warnings found.\n"))
+	assert.Empty(t, lintSummary("no lint ran here"))
+}

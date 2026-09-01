@@ -42,6 +42,12 @@ type verifyRun struct {
 	// now, but the note remembers rather than the code assuming, so
 	// verdicts recorded before lint existed stay honest.
 	Linted bool `json:"linted,omitempty"`
+	// Lint is what lint actually said, read from the log as the run
+	// settles: "clean", or "2 warnings". It exists because the PR body
+	// vouches per checked box, and a checked lint box with no
+	// corroborating evidence was the one dishonest claim in it —
+	// field-caught on the first post-lint batch.
+	Lint string `json:"lint,omitempty"`
 }
 
 const noteSchema = 2

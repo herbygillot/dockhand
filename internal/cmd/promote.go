@@ -205,6 +205,14 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	return nil
 }
 
+// lintClause phrases a note's lint record for the evidence line.
+func lintClause(lint string) string {
+	if lint == "clean" {
+		return "clean"
+	}
+	return "with " + lint
+}
+
 // push publishes the branch to the fork: an ordinary push, or the
 // with-lease force that replaces a re-minted branch's copy.
 func (a promoteAction) push(ctx context.Context, rs *runstate.Context, repo *git.Repo, remote, owner, branch string) error {
@@ -284,8 +292,14 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 				if r.Tested {
 					what, tested = "built and tested in a pristine VM", true
 				}
-				if r.Linted {
-					linted = true
+				// The lint claim rides the evidence line, because the
+				// checked box below is only honest if the body states
+				// what backs it.
+				switch {
+				case r.Lint != "" && r.Linted:
+					what, linted = "linted "+lintClause(r.Lint)+", "+what, true
+				case r.Linted:
+					what, linted = "linted, "+what, true
 				}
 				parts = append(parts, plat+": "+what)
 				passed = append(passed, plat)

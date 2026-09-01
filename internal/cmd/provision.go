@@ -63,6 +63,11 @@ func (a provisionTartAction) Execute(ctx context.Context, rs *runstate.Context) 
 		if err := t.AssertPristineFor(ctx, name); err != nil {
 			return err
 		}
+		if v := provision.XcodeVersionOf(ctx, name); v != "" {
+			fmt.Fprintf(rs.Err, "full Xcode: %s\n", v)
+		} else {
+			fmt.Fprintln(rs.Err, "full Xcode: none — use_xcode ports will be refused; `provision tart --xcode` adds one")
+		}
 		fmt.Fprintf(rs.Err, "%s is what it claims: pristine, toolchain present, MacPorts answering\n", name)
 		return nil
 	}

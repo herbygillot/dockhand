@@ -89,7 +89,17 @@ func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
 }
 
 func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
-	n := templateNote(map[string]verifyRun{"Tahoe": {State: "passed", Linted: true}})
+	n := templateNote(map[string]verifyRun{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
 	body := promoteBody(n, true, "", 1, false)
+	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
+	// The checked box is only honest if the evidence line states what
+	// backs it — the field-caught gap.
+	assert.Contains(t, body, "Tahoe: linted clean, built in a pristine VM")
+}
+
+func TestPromoteBodyStatesLintWarnings(t *testing.T) {
+	n := templateNote(map[string]verifyRun{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
+	body := promoteBody(n, true, "", 1, false)
+	assert.Contains(t, body, "Tahoe: linted with 2 warnings, built and tested in a pristine VM")
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 }

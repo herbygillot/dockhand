@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -177,6 +178,14 @@ func settleRuns(ctx context.Context, repo *git.Repo, n *verifyNote) error {
 			continue
 		case verify.Passed:
 			r.State = "passed"
+			if r.Linted {
+				// The log is about to become unreachable — a passing
+				// run's worker is released — so what lint said is read
+				// now or never. This is the lint box's corroboration.
+				if log, lerr := prov.Log(ctx, r.Job); lerr == nil {
+					r.Lint = lintSummary(log)
+				}
+			}
 			if rerr := prov.Release(ctx, r.Job); rerr != nil {
 				r.Detail = "worker not released: " + rerr.Error()
 			}
@@ -232,6 +241,25 @@ func summarizeNote(n verifyNote) string {
 		parts = append(parts, n.Runs[plat].State+" ("+plat+")")
 	}
 	return strings.Join(parts, ", ")
+}
+
+// lintRE matches port lint's own summary line.
+var lintRE = regexp.MustCompile(`(\d+) errors? and (\d+) warnings? found`)
+
+// lintSummary compresses a run's lint outcome to what a reviewer
+// wants: "clean", or the warning count — the run already failed if
+// there were errors. Empty when the log carries no lint summary.
+func lintSummary(log string) string {
+	m := lintRE.FindStringSubmatch(log)
+	switch {
+	case m == nil:
+		return ""
+	case m[2] == "0":
+		return "clean"
+	case m[2] == "1":
+		return "1 warning"
+	}
+	return m[2] + " warnings"
 }
 
 // portDeclined reads a failure log for the shapes of a port refusing a
