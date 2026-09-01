@@ -59,8 +59,10 @@ edit the Portfile where the user stands, uncommitted, minting nothing — for
 the user folding dockhand's mechanical edit into their own workflow, and the
 only write mode a non-git tree gets (with a loud warning). Lifecycle: an
 intent finding an in-flight branch for its port refuses and names it (a
-`--replan`/`--force` override may come later); `status` highlights merged
-branches but never deletes — `clean` is the explicit sweep: PR state from
+`--replan`/`--force` override may come later); `status` reports each
+promoted branch's PR state and performs one deletion — a branch whose
+PR merged is cleaned, announced — while `clean` remains the explicit
+sweep: PR state from
 GitHub decides merged (the project's merge styles rewrite shas as commits
 land, so ancestry proves nothing), confirmed by byte-comparing the touched
 paths against upstream; closed-unmerged branches are kept and flagged. The

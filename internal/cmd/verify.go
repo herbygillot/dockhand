@@ -275,7 +275,7 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		}
 		err := submitVerification(ctx, rs, &minted{
 			Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
-		}, filepath.Base(rel), r)
+		}, filepath.Base(rel), r, false)
 		var vde *VerifyDeferredError
 		if errors.As(err, &vde) {
 			// No slot for this platform right now: recorded, reported,

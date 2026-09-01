@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -136,7 +137,7 @@ func (e *VerifyDeferredError) Error() string {
 // as the commit's note. Submission not starting is not a minting
 // failure — the branch stands — but it is a contract failure:
 // VerifyDeferredError carries that split.
-func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release) error {
+func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release, trace bool) error {
 	if !tartPresent() {
 		// No provider, no contract: the machine cannot verify at all,
 		// so this is a --no-verify bump that says so — and the branch
@@ -192,9 +193,15 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 		// branch is minted and the tip is simply unverified.
 		return later(err.Error())
 	}
-	return recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
+	if err := recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
 		State: "running", Job: job,
-	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID))
+	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID)); err != nil {
+		return err
+	}
+	if trace {
+		return followRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, prov, job)
+	}
+	return nil
 }
 
 // recordRun writes one platform's run into the commit's note — the
@@ -213,6 +220,58 @@ func recordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, p
 	return nil
 }
 
+// followRun streams a running build's log as the guest writes it,
+// then settles the run through the same machinery status uses — the
+// --trace contract: don't exit, watch. Ctrl-C detaches; the build
+// continues without us, which is the submit-and-poll design keeping
+// its promise even while we happen to be watching.
+func followRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, plat string, prov verify.Verifier, job verify.Job) error {
+	fmt.Fprintf(rs.Err, "following %s on %s — Ctrl-C detaches, the build continues\n", portName, plat)
+	printed := 0
+	for {
+		st, err := prov.Poll(ctx, job)
+		if err != nil {
+			if ctx.Err() != nil {
+				fmt.Fprintln(rs.Err, "detached; `dockhand status` follows it from here")
+				return nil
+			}
+			return err
+		}
+		if log, lerr := prov.Log(ctx, job); lerr == nil && len(log) > printed {
+			fmt.Fprint(rs.Out, log[printed:])
+			printed = len(log)
+		}
+		if st.State.Terminal() {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			fmt.Fprintln(rs.Err, "detached; `dockhand status` follows it from here")
+			return nil
+		case <-time.After(4 * time.Second):
+		}
+	}
+	n, err := loadOrStartNote(ctx, repo, sha, portName)
+	if err != nil {
+		return err
+	}
+	if err := settleRuns(ctx, repo, &n); err != nil {
+		return err
+	}
+	switch r := n.Runs[plat]; r.State {
+	case "passed":
+		fmt.Fprintf(rs.Err, "passed on %s; worker released\n", plat)
+		return nil
+	case "unsupported":
+		fmt.Fprintf(rs.Err, "%s declines %s: %s\n", portName, plat, r.Detail)
+		return nil
+	case "failed":
+		return &VerifyFailedError{Port: portName, Handle: r.Handle}
+	default:
+		return fmt.Errorf("%w: %s", verify.ErrNoEnvironment, r.Detail)
+	}
+}
+
 // realizeOpts is one invocation's choice of realization, shared by
 // every intent that writes: print the plan, print the diff, edit in
 // place, or — the default — mint the branch and submit verification.
@@ -221,6 +280,7 @@ type realizeOpts struct {
 	diff     bool
 	inPlace  bool
 	noVerify bool
+	trace    bool
 	on       string
 	// verified says the synchronous --verify gate already ran and
 	// passed on this plan's content, so realization records the verdict
@@ -266,7 +326,7 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 	if err != nil {
 		return err
 	}
-	return submitVerification(ctx, rs, m, p.Port, release)
+	return submitVerification(ctx, rs, m, p.Port, release, o.trace)
 }
 
 // markVerified writes the minted commit's note as passed, on the

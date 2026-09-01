@@ -118,6 +118,8 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"build the result in a pristine VM before realizing it; failure realizes nothing")
 	c.Flags().BoolVar(&f.opts.noVerify, "no-verify", false,
 		"mint the branch without submitting background verification")
+	c.Flags().BoolVar(&f.opts.trace, "trace", false,
+		"stay attached after submitting: stream the build log until it finishes")
 	c.Flags().StringVar(&f.opts.on, "on", "", "macOS release to verify on")
 }
 
@@ -128,6 +130,8 @@ func (f *intentFlags) check() error {
 		return usagef("--diff is an output mode of its own; combine it with neither --plan nor --in-place")
 	case f.verifyIt && f.opts.noVerify:
 		return usagef("--verify and --no-verify are mutually exclusive")
+	case f.opts.trace && (f.opts.noVerify || f.opts.planOnly || f.opts.diff || f.opts.inPlace):
+		return usagef("--trace follows a submitted verification; it needs the default branch realization")
 	}
 	return nil
 }

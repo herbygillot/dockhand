@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -124,6 +125,7 @@ func latestNote(ctx context.Context, repo *git.Repo, branch string) (verifyNote,
 type logAction struct {
 	target string
 	on     string
+	trace  bool
 }
 
 var _ Action = logAction{}
@@ -137,6 +139,9 @@ func (a logAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
+	if a.trace {
+		return traceLog(ctx, rs, prov, env)
+	}
 	log, err := prov.Log(ctx, env.Job)
 	if err != nil {
 		return err
@@ -147,6 +152,33 @@ func (a logAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	}
 	fmt.Fprint(rs.Out, log)
 	return nil
+}
+
+// traceLog streams the environment's log as it grows, until the build
+// reaches a terminal state. Read-only on purpose: verdict-keeping
+// stays with status, which this hands off to.
+func traceLog(ctx context.Context, rs *runstate.Context, prov verify.Verifier, env debugEnv) error {
+	printed := 0
+	for {
+		st, err := prov.Poll(ctx, env.Job)
+		if err != nil {
+			return err
+		}
+		if log, lerr := prov.Log(ctx, env.Job); lerr == nil && len(log) > printed {
+			fmt.Fprint(rs.Out, log[printed:])
+			printed = len(log)
+		}
+		if st.State.Terminal() {
+			fmt.Fprintf(rs.Err, "build finished: %s; `dockhand status` records it\n", st.State)
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			fmt.Fprintln(rs.Err, "detached; the build continues")
+			return nil
+		case <-time.After(4 * time.Second):
+		}
+	}
 }
 
 // shellAction opens an interactive shell inside the target's
@@ -199,15 +231,17 @@ func (a shellAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // Log builds the log subcommand.
 func Log() *cobra.Command {
 	var on string
+	var trace bool
 	c := &cobra.Command{
 		Use:   "log <branch|port|worker>",
 		Short: "Print the build log from a verification environment",
 		Args:  exactArgs(1),
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
-			return logAction{target: args[0], on: on}, nil
+			return logAction{target: args[0], on: on, trace: trace}, nil
 		}),
 	}
 	c.Flags().StringVar(&on, "on", "", "which platform's environment, when several are reachable")
+	c.Flags().BoolVar(&trace, "trace", false, "stream the log as it is written, until the build finishes")
 	return c
 }
 

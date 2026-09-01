@@ -533,8 +533,12 @@ flight"), and prunes what it created, and a half-owned namespace rots. Two
 lifecycle rules settled 2026-08-31: an intent finding an in-flight branch for
 its port **refuses by default**, naming the branch — an explicit flag
 (`--replan` or `--force`, spelling unsettled) may later allow deliberate
-re-planning. And `status` never auto-discards: it highlights merged branches
-as needing cleanup, and the sweep is the user's explicit act — `dockhand
+re-planning. And `status` never auto-discards — amended (2026-08-31):
+status now performs exactly one deletion, a branch whose PR merged,
+announced as it happens, because a merged PR is GitHub's own word that
+the work landed; every other cleanup remains the user's explicit act,
+and `clean` stays as the manual sweep and the home of kept/closed
+reporting. The original sweep verb — `dockhand
 clean` (superseding a briefly-held `discard --merged` spelling the same day),
 which walks the `dockhand/*` namespace, reads each branch's PR state from
 GitHub, and removes what merged: worktree, branch, notes. The branch→PR link

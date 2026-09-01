@@ -67,29 +67,46 @@ type pullRequest struct {
 	HTMLURL  string `json:"html_url"`
 }
 
-// cleanOne judges one branch and acts only on the merged verdict.
-func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes map[string]string, upstream, branch string) (string, error) {
+// lookupPR finds a promoted branch's pull request by head ref — the
+// derived linkage: the tracking remote names the fork owner, and the
+// query is the one gh itself uses. found is false for a branch never
+// promoted or with no PR yet.
+func lookupPR(ctx context.Context, repo *git.Repo, remotes map[string]string, upstream, branch string) (pr pullRequest, found bool, err error) {
 	tracked := repo.TrackedRemote(ctx, branch)
 	if tracked == "" {
-		return "kept — never promoted", nil
+		return pullRequest{}, false, nil
 	}
 	owner, _, ok := ownerRepoFromURL(remotes[tracked])
 	if !ok {
-		return "", fmt.Errorf("cannot read an owner from remote %q", tracked)
+		return pullRequest{}, false, fmt.Errorf("cannot read an owner from remote %q", tracked)
 	}
 	out, err := ghOut(ctx, "api",
 		fmt.Sprintf("repos/%s/pulls?head=%s:%s&state=all", upstream, owner, branch))
 	if err != nil {
-		return "", err
+		return pullRequest{}, false, err
 	}
 	var prs []pullRequest
 	if err := json.Unmarshal([]byte(out), &prs); err != nil {
-		return "", fmt.Errorf("reading PR lookup: %w", err)
+		return pullRequest{}, false, fmt.Errorf("reading PR lookup: %w", err)
 	}
 	if len(prs) == 0 {
+		return pullRequest{}, false, nil
+	}
+	return prs[0], true, nil
+}
+
+// cleanOne judges one branch and acts only on the merged verdict.
+func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes map[string]string, upstream, branch string) (string, error) {
+	if repo.TrackedRemote(ctx, branch) == "" {
+		return "kept — never promoted", nil
+	}
+	pr, found, err := lookupPR(ctx, repo, remotes, upstream, branch)
+	if err != nil {
+		return "", err
+	}
+	if !found {
 		return "kept — promoted, but no PR found", nil
 	}
-	pr := prs[0]
 	switch {
 	case pr.MergedAt != "":
 		identical, err := contentLanded(ctx, repo, branch)

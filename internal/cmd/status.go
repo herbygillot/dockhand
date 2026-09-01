@@ -18,10 +18,10 @@ import (
 // statusAction reconciles the dockhand/* namespace: every branch, its
 // tip's verification record, and the drift between them. It is a
 // reconciler, not a daemon: running jobs are polled here, their
-// verdicts written back to the notes, and workers released on pass —
-// the one mutation status performs, because a two-slot provider's
-// unreleased job is a slot that never returns. It never deletes a
-// branch: cleanup is the user's explicit act.
+// verdicts written back to the notes, workers released on pass, and —
+// the one deletion status performs — a branch whose PR merged is
+// cleaned, announced, because a merged PR is GitHub's own word that
+// the work landed. Every other cleanup is the user's explicit act.
 type statusAction struct{}
 
 var _ Action = statusAction{}
@@ -43,10 +43,16 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		reportOrphanWorkers(ctx, rs, repo)
 		return nil
 	}
+	pr := newPRStatus(ctx, repo)
 	for _, br := range branches {
 		lines, err := describeBranch(ctx, repo, br)
 		if err != nil {
 			lines = []string{"error: " + err.Error()}
+		}
+		if cleaned, extra := pr.reconcile(ctx, rs, br); cleaned {
+			lines = []string{extra}
+		} else if extra != "" {
+			lines = append(lines, extra)
 		}
 		if len(lines) == 1 {
 			fmt.Fprintf(rs.Out, "%-32s %s\n", br, lines[0])
@@ -59,6 +65,59 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	}
 	reportOrphanWorkers(ctx, rs, repo)
 	return nil
+}
+
+// prStatus carries the lazily-fetched pieces the PR half of status
+// needs: the upstream repo and the remote table, resolved once.
+type prStatus struct {
+	repo     *git.Repo
+	upstream string
+	remotes  map[string]string
+	broken   error
+	loaded   bool
+}
+
+func newPRStatus(ctx context.Context, repo *git.Repo) *prStatus {
+	return &prStatus{repo: repo}
+}
+
+// reconcile reports a promoted branch's PR standing — and when the PR
+// merged, the branch is done: status says so and cleans it, the one
+// deletion status performs, because a merged PR is GitHub's own word
+// that the work landed. Everything else stays reporting: open PRs,
+// closed ones, and unpromoted branches say their state and stand.
+func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch string) (cleaned bool, line string) {
+	if ps.repo.TrackedRemote(ctx, branch) == "" {
+		return false, ""
+	}
+	if !ps.loaded {
+		ps.loaded = true
+		ps.upstream, ps.broken = upstreamRepo(ctx, ps.repo)
+		if ps.broken == nil {
+			ps.remotes, ps.broken = ps.repo.Remotes(ctx)
+		}
+	}
+	if ps.broken != nil {
+		return false, "PR state unavailable: " + ps.broken.Error()
+	}
+	pr, found, err := lookupPR(ctx, ps.repo, ps.remotes, ps.upstream, branch)
+	if err != nil {
+		return false, "PR state unavailable: " + err.Error()
+	}
+	if !found {
+		return false, "promoted; no PR found"
+	}
+	switch {
+	case pr.MergedAt != "":
+		if err := discardBranch(ctx, rs, ps.repo, branch); err != nil {
+			return false, fmt.Sprintf("PR #%d merged; cleaning failed: %v", pr.Number, err)
+		}
+		return true, fmt.Sprintf("PR #%d merged — branch cleaned", pr.Number)
+	case pr.State == "open":
+		return false, fmt.Sprintf("PR #%d open (%s)", pr.Number, pr.HTMLURL)
+	default:
+		return false, fmt.Sprintf("PR #%d closed without merging", pr.Number)
+	}
 }
 
 // describeBranch renders one branch's verification standing, polling
