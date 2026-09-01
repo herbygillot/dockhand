@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -46,27 +47,50 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	}
 	defer unlock()
 	n, err := lifecycle.ReadNote(ctx, repo, tip)
-	if errors.Is(err, git.ErrNoNote) || (err == nil && !n.AnyState("running")) {
-		fmt.Fprintf(rs.Err, "%s has no running verification\n", branch)
+	if errors.Is(err, git.ErrNoNote) {
+		fmt.Fprintf(rs.Err, "%s has no verification to cancel\n", branch)
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	prov, err := rs.VerifyProvider(ctx)
-	if err != nil {
-		return err
-	}
+	// Two things a cancel can free: a running job, and a failed run's
+	// kept debug environment — "done debugging, the slot back please"
+	// previously had no verb short of discarding the branch. The
+	// failure verdict stays; only the environment goes.
+	touched := false
 	for plat, run := range n.Runs {
-		if run.State != "running" {
+		switch {
+		case run.State == "running":
+			prov, perr := rs.VerifyProvider(ctx)
+			if perr != nil {
+				return perr
+			}
+			if rerr := prov.Release(ctx, run.Job); rerr != nil {
+				fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
+			}
+			run.State, run.Detail = "canceled", "canceled by the user"
+			fmt.Fprintf(rs.Out, "canceled verification of %s on %s (worker %s released)\n", branch, plat, run.Job.ID)
+		case run.State == "failed" && run.Handle != "":
+			prov, perr := rs.VerifyProvider(ctx)
+			if perr != nil {
+				return perr
+			}
+			if rerr := prov.Release(ctx, run.Job); rerr != nil {
+				fmt.Fprintf(rs.Err, "warning: releasing kept environment %s: %v\n", run.Handle, rerr)
+			}
+			run.Handle = ""
+			run.Detail = strings.TrimSuffix(run.Detail, "\n") + " — kept environment released"
+			fmt.Fprintf(rs.Out, "released kept environment of %s on %s (the failed verdict stands)\n", branch, plat)
+		default:
 			continue
 		}
-		if rerr := prov.Release(ctx, run.Job); rerr != nil {
-			fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
-		}
-		run.State, run.Detail = "canceled", "canceled by the user"
 		n.Runs[plat] = run
-		fmt.Fprintf(rs.Out, "canceled verification of %s on %s (worker %s released)\n", branch, plat, run.Job.ID)
+		touched = true
+	}
+	if !touched {
+		fmt.Fprintf(rs.Err, "%s has no running verification or kept environment\n", branch)
+		return nil
 	}
 	return lifecycle.WriteNote(ctx, repo, n)
 }

@@ -125,6 +125,24 @@ func (r *Repo) IsAncestor(ctx context.Context, a, b string) bool {
 	return err == nil
 }
 
+// FormerTips is the set of shas a branch's reflog records it pointing
+// at — the amended-away history ancestry cannot see. Best-effort: a
+// branch with no reflog reports nothing, never an error, because the
+// reflog is corroborating evidence, not the record.
+func (r *Repo) FormerTips(ctx context.Context, branch string) map[string]bool {
+	out, err := r.git(ctx, "reflog", "show", "--format=%H", branch)
+	if err != nil {
+		return nil
+	}
+	tips := map[string]bool{}
+	for line := range strings.Lines(out) {
+		if sha := strings.TrimSpace(line); sha != "" {
+			tips[sha] = true
+		}
+	}
+	return tips
+}
+
 // DiffNames lists the paths that differ between two revisions.
 func (r *Repo) DiffNames(ctx context.Context, a, b string) ([]string, error) {
 	out, err := r.git(ctx, "diff-tree", "-r", "--name-only", a, b)

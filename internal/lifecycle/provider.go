@@ -78,10 +78,13 @@ func RealVMProvider(ctx context.Context) (verify.Verifier, error) {
 	return tart.Provider{Bases: bases}, nil
 }
 
-// CancelStale releases every running job recorded on a commit the
-// branch once pointed at but no longer does — reachable ancestors and
-// amended-away shas alike — and marks their notes superseded by the
-// tip about to be submitted.
+// CancelStale releases everything a branch's superseded commits still
+// hold: running jobs are canceled, and a failed run's kept debug
+// environment is released — once the branch moves past the failure,
+// the environment documents code that no longer exists, and a field
+// run watched one pin an admission slot forever. Staleness is judged
+// by ancestry OR the branch's reflog, because the commonest way past
+// a failure is an amend, which ancestry cannot see.
 func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch, tip string) error {
 	unlock, err := repo.LockNotes(ctx)
 	if err != nil {
@@ -92,12 +95,16 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 	if err != nil {
 		return err
 	}
+	former := repo.FormerTips(ctx, branch)
 	for _, sha := range noted {
 		if sha == tip {
 			continue
 		}
 		n, err := ReadNote(ctx, repo, sha)
-		if err != nil || !n.AnyState("running") || !repo.IsAncestor(ctx, sha, branch) {
+		if err != nil || (!n.AnyState("running") && !holdsEnvironment(n)) {
+			continue
+		}
+		if !repo.IsAncestor(ctx, sha, branch) && !former[sha] {
 			continue
 		}
 		prov, err := rs.VerifyProvider(ctx)
@@ -106,15 +113,23 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 		}
 		changed := false
 		for plat, run := range n.Runs {
-			if run.State != "running" {
+			switch {
+			case run.State == "running":
+				if err := prov.Release(ctx, run.Job); err != nil {
+					fmt.Fprintf(rs.Err, "warning: canceling %s: %v\n", run.Job.ID, err)
+				}
+				run.State, run.Detail = "superseded", "canceled: the branch moved to "+tip[:12]
+			case run.State == "failed" && run.Handle != "":
+				if err := prov.Release(ctx, run.Job); err != nil {
+					fmt.Fprintf(rs.Err, "warning: releasing kept environment %s: %v\n", run.Handle, err)
+				}
+				run.State, run.Handle = "superseded", ""
+				run.Detail = "failed here, then the branch moved to " + tip[:12] + " — kept environment released"
+			default:
 				continue
 			}
-			if err := prov.Release(ctx, run.Job); err != nil {
-				fmt.Fprintf(rs.Err, "warning: canceling %s: %v\n", run.Job.ID, err)
-			}
-			run.State, run.Detail = "superseded", "canceled: the branch moved to "+tip[:12]
 			n.Runs[plat], changed = run, true
-			fmt.Fprintf(rs.Err, "canceled stale verification of %s on %s (branch moved past it)\n", sha[:12], plat)
+			fmt.Fprintf(rs.Err, "released stale verification of %s on %s (branch moved past it)\n", sha[:12], plat)
 		}
 		if changed {
 			if err := WriteNote(ctx, repo, n); err != nil {
@@ -123,6 +138,17 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 		}
 	}
 	return nil
+}
+
+// holdsEnvironment reports whether any run still holds a kept debug
+// environment — the failure side's counterpart to AnyState("running").
+func holdsEnvironment(n Note) bool {
+	for _, r := range n.Runs {
+		if r.State == "failed" && r.Handle != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // CancelRunning releases every running run on one commit and marks it
