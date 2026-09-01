@@ -1,9 +1,12 @@
 package lifecycle
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -121,6 +124,18 @@ func SettleRuns(ctx context.Context, rs *runstate.Context, repo *git.Repo, n *No
 					// "why" without a log dig — the failure-side twin
 					// of the lint evidence.
 					r.Detail = failureSummary(log)
+					// A failure that names a DIFFERENT port is a
+					// dependency breaking before the change was ever
+					// reached: the branch is untested, not disproven.
+					// blocked, not failed — and the worker is released,
+					// because the breakage belongs to a port this
+					// branch never touched (field-measured on gomuks,
+					// whose verdict blamed the bump for olm).
+					if dep, ok := dependencyFailure(r.Detail, n.Port); ok {
+						r.State, r.Handle = "blocked", ""
+						r.Detail = blockedDetail(repo.Root, dep)
+						_ = prov.Release(context.WithoutCancel(ctx), r.Job)
+					}
 				}
 			}
 		case verify.Errored:
@@ -187,6 +202,36 @@ func LintSummary(log string) string {
 		return "1 warning"
 	}
 	return m[2] + " warnings"
+}
+
+// failedPortRE reads which port a MacPorts failure line blames — the
+// "Failed to <phase> <name>:" shape every phase failure opens with.
+var failedPortRE = regexp.MustCompile(`^Failed to [a-z]+ ([A-Za-z0-9._+-]+):`)
+
+// dependencyFailure reports the port a failure summary blames when it
+// is not the port under test. Conservative like portDeclined: a line
+// that names no port, or names the port itself, changes nothing.
+func dependencyFailure(summary, port string) (string, bool) {
+	m := failedPortRE.FindStringSubmatch(summary)
+	if m == nil || m[1] == port {
+		return "", false
+	}
+	return m[1], true
+}
+
+// blockedDetail names the dependency that blocked a verification, and
+// whether anyone maintains it — a nomaintainer dependency means there
+// is no one to nudge, which changes what the maintainer does next.
+// The lookup is best-effort against the tree; a port that cannot be
+// found is simply not annotated.
+func blockedDetail(treeRoot, dep string) string {
+	who := ""
+	if matches, _ := filepath.Glob(filepath.Join(treeRoot, "*", dep, "Portfile")); len(matches) == 1 {
+		if b, err := os.ReadFile(matches[0]); err == nil && bytes.Contains(b, []byte("nomaintainer")) {
+			who = " (nomaintainer)"
+		}
+	}
+	return fmt.Sprintf("dependency %s%s fails to build; the change itself is untested", dep, who)
 }
 
 // failureSummary is the first substantive Error line of a failed run's

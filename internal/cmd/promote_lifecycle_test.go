@@ -265,6 +265,32 @@ func TestPromoteUnverifiedComplainsAndProceeds(t *testing.T) {
 	assert.Contains(t, body[len(body)-1], "Not locally verified")
 }
 
+// A blocked run sits on the unverified side of the gate: the change
+// is untested, not disproven, so it promotes with the neighbor's name
+// in front of the maintainer — no --no-verify demanded.
+func TestPromoteBlockedPromotesWithTheDependencyNamed(t *testing.T) {
+	repo, sha := promoteRepo(t)
+	ctx := context.Background()
+	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	require.NoError(t, err)
+	n.Runs = map[string]lifecycle.Run{"Testos": {State: "blocked",
+		Detail: "dependency olm (nomaintainer) fails to build; the change itself is untested"}}
+	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+
+	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
+	rs, _, errb := promoteState(t, repo, gh)
+
+	require.NoError(t, promoteAction{target: "jq"}.Execute(ctx, rs))
+	assert.Contains(t, errb.String(), "verification blocked on Testos: dependency olm (nomaintainer) fails to build")
+	assert.Contains(t, errb.String(), "promoting unverified; the PR will say so")
+
+	creates := gh.called("create")
+	require.Len(t, creates, 1)
+	body := creates[0][len(creates[0])-1]
+	assert.Contains(t, body, "Not locally verified")
+	assert.NotContains(t, body, "olm", "local state is the local user's business")
+}
+
 func TestPromoteStillRefusesAFailedBuild(t *testing.T) {
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()

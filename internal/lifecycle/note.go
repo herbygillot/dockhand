@@ -28,8 +28,9 @@ type Note struct {
 }
 
 // Run is one platform's verification: running, passed, failed,
-// unsupported (the port declines the platform), canceled, superseded,
-// deferred (no slot when asked), or errored.
+// unsupported (the port declines the platform), blocked (a dependency
+// failed before the change was reached — untested, not disproven),
+// canceled, superseded, deferred (no slot when asked), or errored.
 type Run struct {
 	State  string     `json:"state"`
 	Job    verify.Job `json:"job"`

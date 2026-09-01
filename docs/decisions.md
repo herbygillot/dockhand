@@ -829,3 +829,40 @@ a transformed port writes a nonexistent tag and fails loudly at fetch.
 **Cost to reverse.** Low. The exact-acceptance path is untouched; the
 carrier-vocabulary and probe paths are additive branches with the old
 declines one revert away.
+
+## D23 — Verdicts blame precisely: a witness that abstains has not disagreed, and a neighbor's breakage is not the change's
+
+**Decision.** Two field-measured refinements to how dockhand assigns
+blame, one in upstream resolution and one in verification verdicts.
+
+**Upstream: corroborate before declaring livecheck ahead.** The
+releases API is authoritative about which tags upstream blessed as
+releases — but an upstream that tags without cutting a release (the
+gopass satellite repos) has abstained, not disagreed. When livecheck
+outruns the authoritative releases, the tag list is fetched as a
+second witness: a tag vercmp-equal to livecheck's answer resolves the
+report (TagWithoutRelease — the maintainer's declared policy and
+upstream's own ref agree), and its absence hardens the decline. The
+same sweep fixed the LivecheckAhead message, which claimed "newer
+than any forge tag" when no tag had been read. Sibling ruling, same
+commit series: a release supersedes its own prerelease
+(PrereleaseSuperseded) — semver precedence lives in the judgment,
+never in VerCmp, which stays the pure port of base's vercomp.c.
+
+**Verification: a dependency's failure blocks, it does not fail.** A
+failure log whose first Error line names a DIFFERENT port than the
+one under test is a neighbor breaking before the change was reached
+(gomuks blamed for olm, a nomaintainer port it never touched). That
+records as a distinct state, blocked: untested, not disproven. It
+sits on the unverified side of the promote gate — promotes with the
+dependency named in the complaint, no --no-verify demanded, PR reads
+simply as not verified — and its worker is RELEASED, unlike a real
+failure's: the kept environment exists to debug one's own breakage,
+and slots are machine-scarce. The detail annotates a nomaintainer
+dependency when the tree proves it, because "no one to nudge" changes
+what the maintainer does next. Detection is conservative like the
+unsupported reclassification: no extractable port name, or the port's
+own name, stays failed.
+
+**Cost to reverse.** Low. Both are additive branches on existing
+verdict paths; removing either restores the prior blame.

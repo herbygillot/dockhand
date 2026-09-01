@@ -82,6 +82,15 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		if n.AnyState("failed") && !a.noVerify {
 			return fmt.Errorf("%s: tip %s has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway", branch, tip[:12])
 		}
+		// A blocked run is the one unverified shape with a story worth
+		// telling: the change is untested because a neighbor is broken,
+		// and the maintainer deciding to promote anyway deserves the
+		// name of the neighbor in front of them.
+		for _, plat := range n.Platforms() {
+			if r := n.Runs[plat]; r.State == "blocked" {
+				fmt.Fprintf(rs.Err, "verification blocked on %s: %s\n", plat, r.Detail)
+			}
+		}
 		fmt.Fprintln(rs.Err, "promoting unverified; the PR will say so")
 	}
 

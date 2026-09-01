@@ -227,6 +227,62 @@ func TestSettleRunsRecordsTheFailureDiagnosis(t *testing.T) {
 		"the diagnosis rides the note; the See-pointer boilerplate does not")
 }
 
+// gomuks's field case: the dependency olm failed before the change
+// was ever reached, and the verdict blamed the bump. A failure naming
+// a DIFFERENT port records as blocked — untested, not disproven — and
+// its worker is released, because the breakage belongs to a port the
+// branch never touched.
+func TestSettleRunsDependencyFailureIsBlocked(t *testing.T) {
+	repo, sha := lifecycleRepo(t)
+	fake := &verifytest.Fake{
+		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
+		Logs: map[string]string{"fake-1": "--->  Building olm\n" +
+			"Error: Failed to build olm: command execution failed\n" +
+			"Error: See /opt/local/var/macports/logs/x/main.log for details.\n"},
+	}
+	n := runningNote(t, repo, sha, "fake-1")
+
+	require.NoError(t, SettleRuns(context.Background(), testState(t, fake), repo, &n))
+	r := n.Runs["Testos"]
+	assert.Equal(t, "blocked", r.State)
+	assert.Equal(t, "dependency olm fails to build; the change itself is untested", r.Detail)
+	assert.Empty(t, r.Handle, "the breakage is not this branch's to debug")
+	assert.Equal(t, []string{"fake-1"}, fake.Released, "a blocked run must not park a scarce slot")
+}
+
+func TestDependencyFailure(t *testing.T) {
+	dep, ok := dependencyFailure("Failed to build olm: command execution failed", "gomuks")
+	require.True(t, ok)
+	assert.Equal(t, "olm", dep)
+
+	_, ok = dependencyFailure("Failed to build gomuks: command execution failed", "gomuks")
+	assert.False(t, ok, "the port failing itself is a real failure")
+	_, ok = dependencyFailure("ld: symbol not found", "gomuks")
+	assert.False(t, ok, "a line naming no port changes nothing")
+	_, ok = dependencyFailure("", "gomuks")
+	assert.False(t, ok)
+
+	dep, ok = dependencyFailure("Failed to configure py312-cryptography: configure failure", "gomuks")
+	require.True(t, ok, "every phase failure carries the same shape")
+	assert.Equal(t, "py312-cryptography", dep)
+}
+
+// A nomaintainer dependency means there is no one to nudge; the
+// detail says so when the tree can prove it, and stays silent when
+// it cannot.
+func TestBlockedDetailAnnotatesNomaintainer(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "devel", "olm")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Portfile"),
+		[]byte("name olm\nmaintainers nomaintainer\n"), 0o644))
+
+	assert.Equal(t, "dependency olm (nomaintainer) fails to build; the change itself is untested",
+		blockedDetail(root, "olm"))
+	assert.Equal(t, "dependency zlib fails to build; the change itself is untested",
+		blockedDetail(root, "zlib"), "an unfindable port is simply not annotated")
+}
+
 func TestSettleRunsRereadsUnderTheLock(t *testing.T) {
 	// The caller's copy predates a concurrent record; settling must not
 	// write that staleness back over it.
