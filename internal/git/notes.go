@@ -178,6 +178,11 @@ func (r *Repo) TrackedRemote(ctx context.Context, branch string) string {
 	return out
 }
 
+// Subject is one commit's subject line.
+func (r *Repo) Subject(ctx context.Context, sha string) (string, error) {
+	return r.git(ctx, "log", "-1", "--format=%s", sha)
+}
+
 // NoteRemove deletes a commit's note under the ref; a commit with no
 // note is fine — removal is idempotent.
 func (r *Repo) NoteRemove(ctx context.Context, ref, sha string) error {

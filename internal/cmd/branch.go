@@ -113,6 +113,9 @@ func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 	if len(p.Edits) == 0 {
 		// A no-op realized as a branch would be an empty commit.
 		fmt.Fprintln(rs.Out, "no edits; no branch minted")
+		if force {
+			fmt.Fprintln(rs.Err, "an existing in-flight branch, if any, stands: --force replaces only when there is something to replace it with")
+		}
 		return nil, nil
 	}
 	repo, primary, path, edited, err := planOnBase(ctx, p)
@@ -225,8 +228,17 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 		NeedsXcode: pf.UseXcode,
 	})
 	if err != nil {
-		// A full provider (two-slot cap) or a mid-submit failure: the
-		// branch is minted and the tip is simply unverified.
+		// A full provider (two-slot cap), a capability refusal, or a
+		// mid-submit failure: the branch is minted and the tip is
+		// simply unverified. The deferred run is recorded here rather
+		// than left to a later verify — a field run saw an intent-path
+		// refusal show as bare "unverified" with the reason only in
+		// scrollback.
+		if rerr := recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
+			State: "deferred", Detail: err.Error(),
+		}, ""); rerr != nil {
+			fmt.Fprintf(rs.Err, "warning: recording the deferred run: %v\n", rerr)
+		}
 		return later(err.Error())
 	}
 	if err := recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{

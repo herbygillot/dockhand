@@ -124,7 +124,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		if len(own) > 0 {
 			subject = own[len(own)-1]
 		}
-		title, err = repoSubject(ctx, repo, subject)
+		title, err = repo.Subject(ctx, subject)
 		if err != nil {
 			return err
 		}
@@ -464,24 +464,6 @@ func ownerRepoFromURL(url string) (owner, repo string, ok bool) {
 		return "", "", false
 	}
 	return parts[len(parts)-2], parts[len(parts)-1], true
-}
-
-// repoSubject is the tip commit's subject line.
-func repoSubject(ctx context.Context, repo *git.Repo, sha string) (string, error) {
-	out, err := ghlessGit(ctx, repo, "log", "-1", "--format=%s", sha)
-	return out, err
-}
-
-// ghlessGit is a tiny indirection so promote's one log read shares the
-// repo's plumbing without widening the git package for a subject line.
-func ghlessGit(ctx context.Context, repo *git.Repo, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo.Root}, args...)...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out.String()), nil
 }
 
 // ghOut runs one gh command and returns its stdout.

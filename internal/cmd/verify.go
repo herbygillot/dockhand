@@ -52,14 +52,13 @@ func tartPresent() bool {
 	return err == nil
 }
 
-// vmProvider assembles the tart provider from the base images actually
-// on this machine. Both ways of having no environment — tart absent,
-// tart present with no bases — are ErrNoEnvironment with the remedy
-// named, which is what routes a bump to "the branch stands" rather
-// than a raw exec error.
-// vmProvider resolves the machine's verify provider. A variable so the
-// lifecycle tests can stand in an in-memory verifier: the seam is what
-// makes settle, discard, and follow testable without a VM.
+// vmProvider resolves the machine's verify provider — the tart
+// provider assembled from the base images actually present. Both ways
+// of having no environment (tart absent, tart present with no bases)
+// are ErrNoEnvironment with the remedy named, which is what routes a
+// bump to "the branch stands" rather than a raw exec error. A variable
+// so the lifecycle tests can stand in an in-memory verifier: the seam
+// is what makes settle, discard, and follow testable without a VM.
 var vmProvider func(ctx context.Context) (verify.Verifier, error) = realVMProvider
 
 func realVMProvider(ctx context.Context) (verify.Verifier, error) {
@@ -181,6 +180,7 @@ type verifyAction struct {
 	target string
 	on     []string
 	test   bool
+	trace  bool
 }
 
 var _ Action = verifyAction{}
@@ -197,7 +197,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		branch, rerr := resolveDockhandBranch(ctx, repo, a.target)
 		switch {
 		case rerr == nil:
-			return verifyBranch(ctx, rs, repo, branch, a.on, a.test)
+			return verifyBranch(ctx, rs, repo, branch, a.on, a.test, a.trace)
 		case errors.Is(rerr, errAmbiguousTarget):
 			return rerr
 		}
@@ -235,7 +235,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // tip is left alone; a running job the branch has moved past is
 // canceled first, its worker released and its note marked superseded,
 // because a verdict about an abandoned sha is a slot spent on nothing.
-func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, on []string, test bool) error {
+func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, on []string, test, trace bool) error {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return err
@@ -247,6 +247,9 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	releases, err := verifyReleases(on, prov.Capabilities().Platforms)
 	if err != nil {
 		return err
+	}
+	if trace && len(releases) > 1 {
+		return usagef("--trace follows one build; name one release with --on")
 	}
 	if err := cancelStale(ctx, rs, repo, branch, tip); err != nil {
 		return err
@@ -291,7 +294,7 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		}
 		err := submitVerification(ctx, rs, &minted{
 			Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
-		}, filepath.Base(rel), r, false, test)
+		}, filepath.Base(rel), r, trace, test)
 		var vde *VerifyDeferredError
 		if errors.As(err, &vde) {
 			// No slot for this platform right now: recorded, reported,
@@ -396,19 +399,21 @@ func cancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 // Verify builds the verify subcommand.
 func Verify() *cobra.Command {
 	var on []string
-	var test bool
+	var test, trace bool
 	c := &cobra.Command{
 		Use:   "verify <branch|port|subport|portdir>",
 		Short: "Verify a branch's tip in a pristine VM — or a port as it sits",
 		Args:  exactArgs(1),
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
-			return verifyAction{target: args[0], on: on, test: test}, nil
+			return verifyAction{target: args[0], on: on, test: test, trace: trace}, nil
 		}),
 	}
 	c.Flags().StringSliceVar(&on, "on", nil,
 		`macOS releases to verify on, or "all" (default: the newest provisioned base)`)
 	c.Flags().BoolVar(&test, "test", false,
 		"also run the port's test suite (`port test`) after the install")
+	c.Flags().BoolVar(&trace, "trace", false,
+		"stay attached after submitting: stream the build log until it finishes")
 	return c
 }
 
