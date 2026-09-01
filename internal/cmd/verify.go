@@ -57,18 +57,23 @@ func tartPresent() bool {
 // tart present with no bases — are ErrNoEnvironment with the remedy
 // named, which is what routes a bump to "the branch stands" rather
 // than a raw exec error.
-func vmProvider(ctx context.Context) (tart.Provider, error) {
+// vmProvider resolves the machine's verify provider. A variable so the
+// lifecycle tests can stand in an in-memory verifier: the seam is what
+// makes settle, discard, and follow testable without a VM.
+var vmProvider func(ctx context.Context) (verify.Verifier, error) = realVMProvider
+
+func realVMProvider(ctx context.Context) (verify.Verifier, error) {
 	if _, err := exec.LookPath("tart"); err != nil {
-		return tart.Provider{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%w: tart is not installed (`port install tart`); --no-verify skips verification",
 			verify.ErrNoEnvironment)
 	}
 	releases, err := (provision.Tart{}).Provisioned(ctx)
 	if err != nil {
-		return tart.Provider{}, err
+		return nil, err
 	}
 	if len(releases) == 0 {
-		return tart.Provider{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%w: no base images; run `dockhand provision tart --macos <release>` first",
 			verify.ErrNoEnvironment)
 	}
