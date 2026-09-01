@@ -153,11 +153,15 @@ func (p Provider) Capabilities() verify.Capabilities {
 // exported because provisioning drives the same tool: one place knows
 // how tart is invoked.
 func CLI(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
+	bin, err := platform.Find(platform.Tart)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
+	}
 	var buf bytes.Buffer
-	cmd := exec.CommandContext(ctx, "tart", args...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdin = stdin
 	cmd.Stdout, cmd.Stderr = &buf, &buf
-	err := cmd.Run()
+	err = cmd.Run()
 	return buf.String(), err
 }
 
@@ -317,7 +321,11 @@ func (p Provider) stage(ctx context.Context, vm string, req verify.Request) erro
 		// patchfiles, and a port staged without them fails in a way that
 		// looks like the port's fault.
 		root := filepath.Dir(filepath.Dir(filepath.Clean(dir)))
-		tar := exec.CommandContext(ctx, "tar", "cf", "-", "-C", root, filepath.Join(category, name))
+		tarBin, err := platform.Find(platform.Tar)
+		if err != nil {
+			return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
+		}
+		tar := exec.CommandContext(ctx, tarBin, "cf", "-", "-C", root, filepath.Join(category, name))
 		pipe, err := tar.StdoutPipe()
 		if err != nil {
 			return err

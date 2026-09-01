@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
 )
 
@@ -32,9 +33,12 @@ var provisioned = func(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// lookPath and runVersion are indirected for hermetic tests.
+// runVersion is indirected for hermetic tests; binary discovery goes
+// through platform.Find — the SAME provider every component execs
+// through, which is what keeps this report honest: doctor cannot say
+// "available" about a tool the working code would fail to find, nor
+// the reverse, because there is exactly one finder.
 var (
-	lookPath   = exec.LookPath
 	runVersion = func(path string, args ...string) string {
 		out, err := exec.Command(path, args...).Output()
 		if err != nil {
@@ -67,14 +71,9 @@ type Report struct {
 
 // Probe examines the machine.
 func Probe() Report {
-	find := func(name string, fallback string) Tool {
-		t := Tool{Name: name}
-		path, err := lookPath(name)
-		if err != nil && fallback != "" {
-			if _, ferr := lookPath(fallback); ferr == nil {
-				path, err = fallback, nil
-			}
-		}
+	find := func(tool platform.Tool, fallback string) Tool {
+		t := Tool{Name: string(tool)}
+		path, err := platform.FindWith(tool, fallback)
 		if err != nil {
 			return t
 		}
@@ -82,7 +81,7 @@ func Probe() Report {
 		return t
 	}
 
-	portTclsh := find(macports.TclShellName, prefix.Prefix(macports.DefaultPrefix).PortTclsh())
+	portTclsh := find(platform.PortTclsh, prefix.Prefix(macports.DefaultPrefix).PortTclsh())
 	if portTclsh.Found {
 		// The MacPorts version is not trivia: it selects the Tcl shims
 		// dockhand speaks to this installation with.
@@ -102,8 +101,8 @@ func Probe() Report {
 			portTclsh.Note = "version undetermined; dockhand will use its newest shim"
 		}
 	}
-	tclsh := find("tclsh", "")
-	git := find("git", "")
+	tclsh := find(platform.Tclsh, "")
+	git := find(platform.Git, "")
 	if git.Found {
 		git.Version = strings.TrimPrefix(runVersion(git.Path, "--version"), "git version ")
 		// The write path (D21) needs notes (ancient: full subcommand
@@ -118,20 +117,20 @@ func Probe() Report {
 			git.Note = "below the 2.5 floor required for worktree-aware plumbing (--git-common-dir)"
 		}
 	}
-	gh := find("gh", "")
+	gh := find(platform.Gh, "")
 	if gh.Found {
 		gh.Version = runVersion(gh.Path, "--version")
 	}
-	curl := find("curl", "")
-	tart := find("tart", "")
+	curl := find(platform.Curl, "")
+	tart := find(platform.Tart, "")
 	var bases []string
 	if tart.Found {
 		if rels, err := provisioned(context.Background()); err == nil {
 			bases = rels
 		}
 	}
-	go2port := find("go2port", "")
-	cargo2port := find("cargo2port", "")
+	go2port := find(platform.Go2Port, "")
+	cargo2port := find(platform.Cargo2Port, "")
 
 	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port},
 		VMBases: bases}

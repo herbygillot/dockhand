@@ -24,6 +24,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 // ErrNotARepo reports a directory that no git repository contains.
@@ -112,7 +114,11 @@ func (r *Repo) Pager(ctx context.Context) string {
 			return v
 		}
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", r.Root, "var", "GIT_PAGER")
+	bin, err := platform.Find(platform.Git)
+	if err != nil {
+		return "cat"
+	}
+	cmd := exec.CommandContext(ctx, bin, "-C", r.Root, "var", "GIT_PAGER")
 	cmd.Env = scrubbedEnv()
 	out, err := cmd.Output()
 	pager := strings.TrimSpace(string(out))
@@ -149,7 +155,11 @@ func RunPager(ctx context.Context, pager string, content []byte, out, errOut io.
 // execGit runs one git command with the scrubbed environment,
 // surfacing the exit code for the callers that classify by it.
 func execGit(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, int, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	bin, err := platform.Find(platform.Git)
+	if err != nil {
+		return nil, 0, err
+	}
+	cmd := exec.CommandContext(ctx, bin, append([]string{"-C", dir}, args...)...)
 	cmd.Env = append(scrubbedEnv(), "GIT_PAGER=cat")
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)

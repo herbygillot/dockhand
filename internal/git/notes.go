@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 // VerifyNotesRef is the notes namespace holding verification records,
@@ -56,7 +58,11 @@ func (r *Repo) Branches(ctx context.Context, prefix string) ([]string, error) {
 // filesystem, via git archive — the object database is the source, so
 // the working tree's state is irrelevant. dest must exist.
 func (r *Repo) Materialize(ctx context.Context, rev, path, dest string) error {
-	archive := exec.CommandContext(ctx, "git", "-C", r.Root, "archive", rev, "--", path)
+	bin, err := platform.Find(platform.Git)
+	if err != nil {
+		return err
+	}
+	archive := exec.CommandContext(ctx, bin, "-C", r.Root, "archive", rev, "--", path)
 	archive.Env = append(scrubbedEnv(), "GIT_PAGER=cat")
 	untar := exec.CommandContext(ctx, "tar", "-x", "-C", dest)
 	pipe, err := archive.StdoutPipe()

@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
@@ -36,7 +37,7 @@ const (
 // writes. pkg is the port's evaluated go.package — the module path the
 // golang PortGroup derived from go.setup.
 func Generate(ctx context.Context, pkg, version string) ([]byte, error) {
-	bin, err := exec.LookPath(ToolName)
+	bin, err := platform.Find(platform.Go2Port)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", vendored.ErrNoGenerator, ToolName)
 	}

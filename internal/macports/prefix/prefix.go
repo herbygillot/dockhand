@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 // ErrNotInstalled reports that no MacPorts installation could be found.
@@ -50,9 +51,6 @@ func (p Prefix) SourcesConf() string {
 	return filepath.Join(string(p), macports.SourcesConfPath)
 }
 
-// lookPath is indirected for hermetic tests.
-var lookPath = exec.LookPath
-
 // New returns the installation rooted at dir, validating that one
 // actually lives there — any directory works, not just the conventional
 // prefix. A stated prefix is never fallen back from.
@@ -71,7 +69,7 @@ func Find() (Prefix, error) {
 }
 
 func find(defaultPrefix string) (Prefix, error) {
-	if path, err := lookPath(macports.TclShellName); err == nil {
+	if path, err := platform.Find(platform.PortTclsh); err == nil {
 		return Prefix(filepath.Dir(filepath.Dir(path))), nil
 	}
 	if p, err := New(defaultPrefix); err == nil {

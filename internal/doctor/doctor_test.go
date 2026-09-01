@@ -7,19 +7,20 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 func TestReportRendering(t *testing.T) {
-	origLook, origVer := lookPath, runVersion
-	t.Cleanup(func() { lookPath, runVersion = origLook, origVer })
-
-	lookPath = func(name string) (string, error) {
+	origVer := runVersion
+	t.Cleanup(func() { runVersion = origVer })
+	t.Cleanup(platform.StubLookup(func(name string) (string, error) {
 		switch name {
 		case "port-tclsh", "git":
 			return "/opt/local/bin/" + name, nil
 		}
 		return "", errors.New("not found")
-	}
+	}))
 	runVersion = func(path string, args ...string) string {
 		if strings.Contains(path, "git") {
 			return "git version 2.4.0"

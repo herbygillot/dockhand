@@ -11,13 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 func fakeLookPath(t *testing.T, fn func(string) (string, error)) {
 	t.Helper()
-	orig := lookPath
-	lookPath = fn
-	t.Cleanup(func() { lookPath = orig })
+	t.Cleanup(platform.StubLookup(fn))
 }
 
 // installed builds a directory that passes for an installation.

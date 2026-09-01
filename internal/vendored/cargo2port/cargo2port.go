@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/vendored"
@@ -119,7 +120,7 @@ func Lockfile(ctx context.Context, archives []string, worksrcdir string) (data [
 // from inside a distfile: the caller extracted it, and staging it under
 // root keeps every caller from having to.
 func Generate(ctx context.Context, root tempdir.Root, lock []byte, layout Layout) ([]byte, error) {
-	bin, err := exec.LookPath(ToolName)
+	bin, err := platform.Find(platform.Cargo2Port)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", vendored.ErrNoGenerator, ToolName)
 	}

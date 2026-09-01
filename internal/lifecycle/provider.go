@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
@@ -41,8 +41,7 @@ func (e *VerifyFailedError) ExitCode() int { return exitcode.Verify }
 // the contract (bump warns and proceeds; promote warns and allows),
 // where a machine with tart and no bases is asked to provision.
 func TartPresent() bool {
-	_, err := exec.LookPath("tart")
-	return err == nil
+	return platform.Have(platform.Tart)
 }
 
 // RealVMProvider resolves the machine's verify provider — the tart
@@ -54,7 +53,7 @@ func TartPresent() bool {
 // this package reaches it through rs.VerifyProvider, which is what
 // lets tests stand in an in-memory verifier without mutating globals.
 func RealVMProvider(ctx context.Context) (verify.Verifier, error) {
-	if _, err := exec.LookPath("tart"); err != nil {
+	if _, err := platform.Find(platform.Tart); err != nil {
 		return nil, fmt.Errorf(
 			"%w: tart is not installed (`port install tart`); --no-verify skips verification",
 			verify.ErrNoEnvironment)

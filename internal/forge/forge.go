@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 // DuplicatePRError is promote's refusal when an open upstream PR
@@ -218,7 +219,11 @@ type Runner func(ctx context.Context, args ...string) (string, error)
 
 // RealGhOut runs the actual gh CLI.
 func RealGhOut(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", args...)
+	bin, err := platform.Find(platform.Gh)
+	if err != nil {
+		return "", fmt.Errorf("%w (`port install gh`)", err)
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {

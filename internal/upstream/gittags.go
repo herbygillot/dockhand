@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/platform"
 )
 
 // ErrNoGit reports that the forge resolver needs git and the machine
@@ -19,7 +21,7 @@ var ErrNoGit = errors.New("upstream: git not found on PATH")
 // prefix and suffix are stripped — a tag not matching the scheme is
 // not a version of this port and is excluded.
 func Tags(ctx context.Context, r Repo) ([]string, error) {
-	git, err := exec.LookPath("git")
+	git, err := platform.Find(platform.Git)
 	if err != nil {
 		return nil, ErrNoGit
 	}
