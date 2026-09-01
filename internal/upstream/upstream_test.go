@@ -301,6 +301,54 @@ func TestJudgeAuthoritativeBetaNamedReleasesStillDecline(t *testing.T) {
 	assert.Contains(t, r.Detail, "newest stable is 0.1.0")
 }
 
+// amber-lang's field case, the contrast to mergestat: the port
+// itself rides an alpha because upstream has never cut anything else,
+// so alpha to alpha gives up no stability — declining closes the
+// port's only possible update path. mergestat differs in exactly one
+// respect: its port version is stable-styled, so a -beta would be a
+// stability regression, and it still declines.
+func TestJudgePrereleaseLateralWhenThePortRidesPrereleases(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "0.6.0-alpha",
+		Current:       "0.3.1-alpha",
+		ForgeVersions: []string{"0.4.0-alpha", "0.5.0-alpha", "0.6.0-alpha"},
+		Authoritative: true,
+	})
+	assert.Equal(t, PrereleaseLateral, r.Verdict)
+	assert.Equal(t, "0.6.0-alpha", r.Latest)
+	assert.Contains(t, r.Detail, "rides prereleases (0.3.1-alpha)")
+
+	// A stable-styled port offered only prereleases still declines:
+	// that move IS a stability regression (mergestat's shape).
+	r = Judge(Observation{
+		Livecheck:     "2.3.2-beta",
+		Current:       "0.5.4",
+		ForgeVersions: []string{"2.3.0-beta", "2.3.2-beta"},
+		Authoritative: true,
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest)
+
+	// The lateral rule moves upward only; anything else declines.
+	r = Judge(Observation{
+		Livecheck:     "0.3.0-alpha",
+		Current:       "0.3.1-alpha",
+		ForgeVersions: []string{"0.3.0-alpha"},
+		Authoritative: true,
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest)
+
+	// An unknown current version proves nothing and stays a decline.
+	r = Judge(Observation{
+		Livecheck:     "0.6.0-alpha",
+		ForgeVersions: []string{"0.6.0-alpha"},
+		Authoritative: true,
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest)
+}
+
 // A stable-looking livecheck answer against only-prerelease tags is
 // still trusted: livecheck matching none of them is policy, not rot.
 func TestJudgeStableLivecheckAgainstOnlyPrereleaseTags(t *testing.T) {

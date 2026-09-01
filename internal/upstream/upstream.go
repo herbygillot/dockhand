@@ -67,6 +67,13 @@ const (
 	// and the tag is upstream's own ref: two witnesses agreeing, so
 	// resolution proceeds.
 	TagWithoutRelease
+	// PrereleaseLateral means the port itself rides prereleases —
+	// upstream has never cut anything else — and the newest is a
+	// higher prerelease: alpha to alpha gives up no stability, so
+	// resolution proceeds, named so the maintainer sees the move for
+	// what it is (field-measured on amber-lang, whose only possible
+	// update path a stricter rule had closed).
+	PrereleaseLateral
 	// PrereleaseSuperseded means livecheck matched a prerelease whose
 	// release the forge has: semver puts 1.17.0-rc.3 strictly before
 	// 1.17.0, so the release stands and resolution proceeds with it.
@@ -98,6 +105,8 @@ func (v Verdict) String() string {
 		return "the newest releases are prerelease-style tags"
 	case TagWithoutRelease:
 		return "tagged upstream, but no release cut"
+	case PrereleaseLateral:
+		return "prerelease to prerelease: nothing stable is given up"
 	case PrereleaseSuperseded:
 		return "livecheck matched a prerelease; the release stands"
 	}
@@ -116,9 +125,15 @@ type Observation struct {
 	// carrier has no git forge to ask.
 	ForgeVersions []string
 	// Authoritative says ForgeVersions came from the forge's releases
-	// API — upstream's own stability flag, already filtered — so the
-	// name heuristic has nothing left to judge.
+	// API — upstream's own stability flag, already filtered. The name
+	// heuristic still judges what remains: flags are a filter, not a
+	// verdict.
 	Authoritative bool
+	// Current is the version the port rides today, as livecheck
+	// checked against it — the witness that tells a stability
+	// REGRESSION (stable port offered a beta) from a lateral move (a
+	// port already on prereleases following them).
+	Current string
 }
 
 // Report is the judged answer.
@@ -190,6 +205,16 @@ func Judge(obs Observation) Report {
 	against := r.ForgeNewestStable
 	if against == "" {
 		if !Stable(obs.Livecheck) {
+			// A port already riding prereleases — upstream has never
+			// cut anything else — gives up no stability by following
+			// them upward; refusing here closes the port's only
+			// update path. Guarded to an upward move of a known
+			// current version: everything else stays a decline.
+			if obs.Current != "" && !Stable(obs.Current) && macports.VerCmp(obs.Livecheck, obs.Current) > 0 {
+				r.Verdict, r.Latest = PrereleaseLateral, obs.Livecheck
+				r.Detail = "the port rides prereleases (" + obs.Current + ") and upstream has cut nothing stable"
+				return r
+			}
 			// Everything is prerelease-style, livecheck's answer
 			// included: resolving would put a -beta in a Portfile as
 			// the version. Decline, and never charge livecheck.

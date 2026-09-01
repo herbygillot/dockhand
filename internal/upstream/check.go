@@ -30,7 +30,7 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 		// never a rot verdict.
 		return Report{}, err
 	}
-	var obs Observation
+	obs := Observation{Current: declared.Version}
 	switch {
 	case !lc.Ran:
 		obs.LivecheckDisabled = true
