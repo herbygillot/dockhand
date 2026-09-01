@@ -240,3 +240,58 @@ func TestJudgeLivecheckAheadNamesBothComparisons(t *testing.T) {
 	assert.Equal(t, LivecheckAhead, r.Verdict)
 	assert.Contains(t, r.Detail, "newer than any forge tag")
 }
+
+// flyctl's field shape: clean semver releases beside per-PR CI tags
+// that never become releases. The -pr<digits> spelling must classify
+// prerelease-style, or livecheck at the true newest reads as behind a
+// tag that was never a release at all.
+func TestJudgePRBuildTagsAreNotStable(t *testing.T) {
+	assert.False(t, Stable("2026.9.1-pr5150.5"))
+	assert.False(t, Stable("v2026.9.1-pr5150.4"))
+	assert.True(t, Stable("0.4.96"))
+	assert.True(t, Stable("1.0-print"), "letters after pr are not a PR build")
+
+	r := Judge(Observation{
+		Livecheck:     "0.4.96",
+		ForgeVersions: []string{"0.4.94", "0.4.95", "0.4.96", "2026.9.1-pr5150.5", "2026.9.1-pr5150.4"},
+	})
+	assert.Equal(t, Agreement, r.Verdict)
+	assert.Equal(t, "0.4.96", r.Latest)
+}
+
+func TestReleasesParsesAndFiltersGitHubsAnswer(t *testing.T) {
+	gh := func(_ context.Context, args ...string) (string, error) {
+		assert.Contains(t, args[1], "repos/superfly/flyctl/releases")
+		return `[{"tag_name":"v0.4.96","prerelease":false,"draft":false},
+			{"tag_name":"v0.4.97","prerelease":true,"draft":false},
+			{"tag_name":"v0.4.98","prerelease":false,"draft":true},
+			{"tag_name":"v0.4.95","prerelease":false,"draft":false},
+			{"tag_name":"nonconforming","prerelease":false,"draft":false}]`, nil
+	}
+	vs, ok := Releases(context.Background(), gh, Repo{URL: "https://github.com/superfly/flyctl.git", TagPrefix: "v"})
+	require.True(t, ok)
+	assert.Equal(t, []string{"0.4.96", "0.4.95"}, vs,
+		"prereleases, drafts, and nonconforming tags all excluded")
+}
+
+func TestReleasesFallsBackHonestly(t *testing.T) {
+	_, ok := Releases(context.Background(), nil, Repo{URL: "https://github.com/x/y"})
+	assert.False(t, ok, "no gh, no releases")
+	gh := func(context.Context, ...string) (string, error) { return "[]", nil }
+	_, ok = Releases(context.Background(), gh, Repo{URL: "https://github.com/x/y"})
+	assert.False(t, ok, "a tag-only repo answers with tags, not an empty forge")
+	_, ok = Releases(context.Background(), gh, Repo{URL: "https://gitlab.com/x/y"})
+	assert.False(t, ok, "the releases API is GitHub's alone")
+}
+
+func TestJudgeAuthoritativeReleasesOutrankTagHeuristics(t *testing.T) {
+	// flyctl's full shape: with releases authoritative, the calver CI
+	// tags never enter the comparison at all.
+	r := Judge(Observation{
+		Livecheck:     "0.4.96",
+		ForgeVersions: []string{"0.4.94", "0.4.95", "0.4.96"},
+		Authoritative: true,
+	})
+	assert.Equal(t, Agreement, r.Verdict)
+	assert.Equal(t, "0.4.96", r.Latest)
+}

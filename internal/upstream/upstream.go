@@ -73,7 +73,7 @@ func (v Verdict) String() string {
 	case LivecheckRot:
 		return "livecheck rot: regex matches nothing"
 	case LivecheckBehind:
-		return "livecheck behind: newer stable releases exist"
+		return "livecheck behind: newer stable-looking tags exist"
 	case LivecheckAhead:
 		return "livecheck ahead of the forge"
 	case PrereleaseNewest:
@@ -90,9 +90,13 @@ type Observation struct {
 	// Livecheck is the executed livecheck's answer; empty means the
 	// regex matched nothing.
 	Livecheck string
-	// ForgeVersions are the tag-derived versions; nil means the carrier
-	// has no git forge to ask.
+	// ForgeVersions are the forge-derived versions; nil means the
+	// carrier has no git forge to ask.
 	ForgeVersions []string
+	// Authoritative says ForgeVersions came from the forge's releases
+	// API — upstream's own stability flag, already filtered — so the
+	// name heuristic has nothing left to judge.
+	Authoritative bool
 }
 
 // Report is the judged answer.
@@ -112,7 +116,14 @@ type Report struct {
 // heuristic that keeps a deliberately conservative livecheck from being
 // charged with rot when only prereleases are newer. Name-based and
 // imperfect; the forge API's authoritative flag is a future refinement.
-var prerelease = regexp.MustCompile(`(?i)(^|[^a-z])(alpha|beta|rc|pre|preview|dev|snapshot|nightly)([^a-z]|$|[0-9])`)
+// pr<digits> is the CI-build spelling flyctl field-tested: per-PR tags
+// (v2026.9.1-pr5150.5) that never become releases, which the stable
+// heuristic read as stable and then outranked the real newest with. A
+// version literally tagged -pr1 is a PR build by any reasonable
+// reading. The authoritative refinement remains the forge API's own
+// prerelease flag, gated on routing resolution through the
+// authenticated gh seam (the tag path is API-free by design).
+var prerelease = regexp.MustCompile(`(?i)(^|[^a-z])(alpha|beta|rc|pre|preview|dev|snapshot|nightly|pr[0-9]+)([^a-z]|$|[0-9])`)
 
 // Stable reports whether a version looks like a stable release.
 func Stable(version string) bool {
@@ -124,7 +135,11 @@ func Stable(version string) bool {
 func Judge(obs Observation) Report {
 	r := Report{Livecheck: obs.Livecheck}
 	r.ForgeNewest = newest(obs.ForgeVersions)
-	r.ForgeNewestStable = newest(stableOf(obs.ForgeVersions))
+	if obs.Authoritative {
+		r.ForgeNewestStable = r.ForgeNewest
+	} else {
+		r.ForgeNewestStable = newest(stableOf(obs.ForgeVersions))
+	}
 
 	switch {
 	case obs.ForgeVersions == nil && obs.Livecheck == "":
@@ -158,7 +173,7 @@ func Judge(obs Observation) Report {
 	switch {
 	case c > 0:
 		r.Verdict = LivecheckBehind
-		r.Detail = "livecheck " + obs.Livecheck + ", forge stable " + against
+		r.Detail = "livecheck " + obs.Livecheck + ", newest stable-looking tag " + against
 	case c < 0:
 		if macports.VerCmp(obs.Livecheck, r.ForgeNewest) == 0 {
 			// livecheck tracks the forge's raw newest fine; it is ahead

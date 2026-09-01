@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"io"
 
 	"github.com/spf13/cobra"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
 // refreshCaution is printed with every refresh summary. The intent
@@ -38,7 +38,7 @@ func RefreshChecksums() *cobra.Command {
 				verb: "refresh-checksums", target: args[0],
 				opts: f.opts, verify: f.verifyIt, fetches: true,
 				caution: refreshCaution,
-				prepare: func(context.Context, port.Handle, *portfetch.Fetcher, io.Writer) (plan.Planner, error) {
+				prepare: func(context.Context, *runstate.Context, port.Handle, *portfetch.Fetcher) (plan.Planner, error) {
 					return refresh.Refresh{}, nil
 				},
 			}, nil

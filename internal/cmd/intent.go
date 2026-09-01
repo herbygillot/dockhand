@@ -31,7 +31,7 @@ type intentAction struct {
 	caution string                // printed after the summary, when the intent has one
 	// prepare yields the planner, resolving whatever only the command
 	// line knows — bump turns "latest" into a version here.
-	prepare func(ctx context.Context, h port.Handle, f *portfetch.Fetcher, report io.Writer) (plan.Planner, error)
+	prepare func(ctx context.Context, rs *runstate.Context, h port.Handle, f *portfetch.Fetcher) (plan.Planner, error)
 }
 
 var _ Action = intentAction{}
@@ -66,7 +66,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		df = pf
 	}
 
-	planner, err := a.prepare(ctx, h, pf, rs.Err)
+	planner, err := a.prepare(ctx, rs, h, pf)
 	if err != nil {
 		return err
 	}

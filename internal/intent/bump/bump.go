@@ -475,7 +475,7 @@ func probeCarrier(ctx context.Context, h port.Handle, src []byte, span text.Span
 // running upstream's two-resolver check against its version carrier. A
 // verdict that does not yield a trustworthy latest — rot, disagreement,
 // no signal — declines rather than guessing.
-func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (string, upstream.Report, error) {
+func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher, gh upstream.GhRunner) (string, upstream.Report, error) {
 	src, cst, err := h.Source()
 	if err != nil {
 		return "", upstream.Report{}, err
@@ -501,7 +501,7 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (st
 		}
 		style = cand.Style
 	}
-	report, err := upstream.Check(ctx, h, f, style, vals.Livecheck)
+	report, err := upstream.Check(ctx, h, f, style, vals.Livecheck, gh)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}

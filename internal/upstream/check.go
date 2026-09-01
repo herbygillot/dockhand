@@ -14,7 +14,7 @@ import (
 // testimony. The livecheck resolver is the port's own livecheck phase,
 // driven whole; style is the port's located version carrier, which
 // decides whether a git forge exists to ask.
-func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style portstyle.Type, declared info.Livecheck) (Report, error) {
+func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style portstyle.Type, declared info.Livecheck, gh GhRunner) (Report, error) {
 	// Only the forge coordinates need a read of their own: which option
 	// names to ask for depends on the carrier style, so they cannot live
 	// in a struct. The livecheck configuration came with the values the
@@ -47,12 +47,20 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 	}
 
 	if repo, ok := coords(style, opts); ok {
-		versions, err := Tags(ctx, repo)
-		if err != nil {
-			return Report{}, err
+		// Releases first, tags as the fallback: a repo that publishes
+		// releases has said authoritatively which tags count, and the
+		// name heuristic exists only for repos that never say.
+		if versions, ok := Releases(ctx, gh, repo); ok {
+			slog.Debug("forge releases", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
+			obs.ForgeVersions, obs.Authoritative = versions, true
+		} else {
+			versions, err := Tags(ctx, repo)
+			if err != nil {
+				return Report{}, err
+			}
+			slog.Debug("forge tags", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
+			obs.ForgeVersions = versions
 		}
-		slog.Debug("forge tags", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
-		obs.ForgeVersions = versions
 	}
 
 	slog.Debug("upstream observation", "livecheck", obs.Livecheck, "disabled", obs.LivecheckDisabled, "forgeVersions", len(obs.ForgeVersions))

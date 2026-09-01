@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/spf13/cobra"
 
@@ -11,6 +10,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // Bump builds the bump subcommand: move a port to a new version. The
@@ -42,15 +43,17 @@ func Bump() *cobra.Command {
 			return intentAction{
 				verb: "bump", target: args[0],
 				opts: f.opts, verify: f.verifyIt, fetches: true,
-				prepare: func(ctx context.Context, h port.Handle, pf *portfetch.Fetcher, report io.Writer) (plan.Planner, error) {
+				prepare: func(ctx context.Context, rs *runstate.Context, h port.Handle, pf *portfetch.Fetcher) (plan.Planner, error) {
 					v := to
 					if v == "" {
-						// No stated version: latest is the intent.
-						resolved, rep, err := bump.ResolveLatest(ctx, h, pf)
+						// No stated version: latest is the intent. The gh
+						// seam rides along so the forge's own releases
+						// outrank its raw tags where they exist.
+						resolved, rep, err := bump.ResolveLatest(ctx, h, pf, upstream.GhRunner(rs.Gh))
 						if err != nil {
 							return nil, err
 						}
-						fmt.Fprintf(report, "latest: %s (%s)\n", resolved, rep.Verdict)
+						fmt.Fprintf(rs.Err, "latest: %s (%s)\n", resolved, rep.Verdict)
 						v = resolved
 					}
 					return bump.Bump{Version: v, Force: f.opts.Force}, nil

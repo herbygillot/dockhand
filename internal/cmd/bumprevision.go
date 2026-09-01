@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"io"
 
 	"github.com/spf13/cobra"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
 // BumpRevisionCmd builds the bump-revision subcommand: increment a
@@ -37,7 +37,7 @@ func BumpRevisionCmd() *cobra.Command {
 			return intentAction{
 				verb: "bump-revision", target: args[0],
 				opts: f.opts, verify: f.verifyIt,
-				prepare: func(context.Context, port.Handle, *portfetch.Fetcher, io.Writer) (plan.Planner, error) {
+				prepare: func(context.Context, *runstate.Context, port.Handle, *portfetch.Fetcher) (plan.Planner, error) {
 					return bumprevision.BumpRevision{Reason: reason}, nil
 				},
 			}, nil
