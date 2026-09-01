@@ -34,6 +34,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/vendored"
 	"github.com/herbygillot/dockhand/internal/vendored/cargo2port"
+	"github.com/herbygillot/dockhand/internal/vendored/go2port"
 )
 
 // Bump is the intent to move a port to a new upstream version. The port
@@ -130,8 +131,6 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// is regenerated below, from the lockfile inside the new distfile.
 	// The rest have no generator wired up yet.
 	switch {
-	case vals.Vendored.GoVendors != "":
-		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}
 	case vals.Vendored.CargoCratesGithub != "":
 		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "cargo.crates_github"}
 	}
@@ -234,7 +233,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		// fetched nor rewritten here. Subtracting them leaves what the
 		// port fetches for itself: one file for most cargo ports, out of
 		// two hundred.
-		supplied, err := suppliedDistfiles(vals.Vendored)
+		supplied, err := suppliedDistfiles(ctx, h, vals.Vendored, vals.Distfiles)
 		if err != nil {
 			return nil, err
 		}
@@ -296,6 +295,13 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		// that distfile describe the same bytes.
 		if vals.Vendored.CargoCrates != "" {
 			blockEdit, err := cargoBlockEdit(ctx, h.TempDir, src, cst, vals, shadowVals.Worksrcdir, fetched)
+			if err != nil {
+				return nil, err
+			}
+			edits = append(edits, blockEdit)
+		}
+		if vals.Vendored.GoVendors != "" {
+			blockEdit, err := goBlockEdit(ctx, shadow, src, cst, vals)
 			if err != nil {
 				return nil, err
 			}
@@ -497,17 +503,76 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (st
 }
 
 // suppliedDistfiles names the distfiles a port's vendored blocks
-// contribute. Only cargo.crates reaches here; the other kinds decline
-// before any of this runs.
-func suppliedDistfiles(v info.Vendored) ([]string, error) {
-	if v.CargoCrates == "" {
-		return nil, nil
+// contribute — the set the checksum machinery must not treat as the
+// port's own.
+func suppliedDistfiles(ctx context.Context, h port.Handle, v info.Vendored, distfiles []string) ([]string, error) {
+	switch {
+	case v.CargoCrates != "":
+		supplied, err := cargo2port.SuppliedIn(v.CargoCrates)
+		if err != nil {
+			return nil, fmt.Errorf("bump: %w", err)
+		}
+		return supplied, nil
+	case v.GoVendors != "":
+		// The vendor distfile naming lives deep in the golang
+		// PortGroup (go._translate_package_id, per-forge rules);
+		// reimplementing it would be reimplementing MacPorts. Inverted
+		// instead: the port's own distfile is ${distname}${extract.suffix},
+		// both evaluated, and everything else the context's distfiles
+		// list carries is the block's contribution.
+		opts, err := h.Options(ctx, "distname", "extract.suffix")
+		if err != nil {
+			return nil, err
+		}
+		own := opts["distname"] + opts["extract.suffix"]
+		var supplied []string
+		for _, d := range distfiles {
+			name, _, _ := strings.Cut(d, ":")
+			if name != own {
+				supplied = append(supplied, name)
+			}
+		}
+		return supplied, nil
 	}
-	supplied, err := cargo2port.SuppliedIn(v.CargoCrates)
+	return nil, nil
+}
+
+// goBlockEdit regenerates a go.vendors block for the target version.
+// Unlike cargo's, the regeneration needs no distfile: go2port resolves
+// the module's go.mod at that version from its forge and downloads
+// every dependency to checksum it — the same network a maintainer
+// running the tool by hand spends. The module path comes from the
+// port's own evaluated go.package, so what is regenerated is what the
+// golang PortGroup will read.
+func goBlockEdit(ctx context.Context, shadow port.Handle, src []byte, cst *syntax.Script, vals info.Values) (edit.Edit, error) {
+	span, err := vendored.Locate(src, cst, portstyle.ScopeOf(src, vals.Name), go2port.Kind)
 	if err != nil {
-		return nil, fmt.Errorf("bump: %w", err)
+		return edit.Edit{}, err
 	}
-	return supplied, nil
+	// Asked of the SHADOW — the edited Portfile at the new version — so
+	// both answers are the portgroup's own composition for the target:
+	// go.package as go.setup derived it, and git.branch as the resolved
+	// git ref (tag prefix and suffix already applied by github.setup and
+	// its siblings). Measured: handing go2port a bare version against a
+	// v-prefixed tag makes it emit a portfile with no vendors block at
+	// all rather than fail.
+	opts, err := shadow.Options(ctx, "go.package", "git.branch")
+	if err != nil {
+		return edit.Edit{}, err
+	}
+	pkg := strings.TrimSpace(opts["go.package"])
+	ref := strings.TrimSpace(opts["git.branch"])
+	if pkg == "" || ref == "" {
+		return edit.Edit{}, &plan.Decline{Type: plan.VendoredBlock,
+			Detail: "go.vendors present but go.package or git.branch is empty; the module ref is unknowable"}
+	}
+	slog.Debug("regenerating go.vendors", "package", pkg, "ref", ref)
+	block, err := go2port.Generate(ctx, pkg, ref)
+	if err != nil {
+		return edit.Edit{}, err
+	}
+	slog.Debug("regenerated block", "kind", go2port.Kind.String(), "bytes", len(block))
+	return vendored.Edit(src, span, block, go2port.Kind), nil
 }
 
 // cargoBlockEdit regenerates a cargo.crates block from the Cargo.lock
