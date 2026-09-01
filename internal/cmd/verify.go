@@ -153,7 +153,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		branch, rerr := lifecycle.ResolveBranch(ctx, repo, a.target)
 		switch {
 		case rerr == nil:
-			return verifyBranch(ctx, rs, repo, branch, a.on, a.test, a.trace)
+			return verifyBranch(ctx, rs, repo, a.target, branch, a.on, a.test, a.trace)
 		case errors.Is(rerr, lifecycle.ErrAmbiguousTarget):
 			return rerr
 		}
@@ -192,7 +192,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // tip is left alone; a running job the branch has moved past is
 // canceled first, its worker released and its note marked superseded,
 // because a verdict about an abandoned sha is a slot spent on nothing.
-func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, on []string, test, trace bool) error {
+func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, target, branch string, on []string, test, trace bool) error {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return err
@@ -216,6 +216,10 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	if err != nil {
 		return err
 	}
+	portName, err := branchPortName(ctx, rs, repo, target, branch, tip, rel)
+	if err != nil {
+		return err
+	}
 
 	n, nerr := lifecycle.ReadNote(ctx, repo, tip)
 	var deferred int
@@ -229,12 +233,12 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		}
 		err := lifecycle.SubmitVerification(ctx, rs, &lifecycle.Minted{
 			Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
-		}, filepath.Base(rel), r, trace, test)
+		}, portName, r, trace, test)
 		var vde *lifecycle.VerifyDeferredError
 		if errors.As(err, &vde) {
 			// No slot for this platform right now: recorded, reported,
 			// and the remaining releases still get their chance.
-			if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, filepath.Base(rel), r.Name, lifecycle.Run{
+			if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, r.Name, lifecycle.Run{
 				State: "deferred", Detail: vde.Reason,
 			}, fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)); rerr != nil {
 				return rerr
@@ -256,6 +260,26 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 			Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", deferred)}
 	}
 	return nil
+}
+
+// branchPortName names what a branch verification builds. The
+// portdir's base name is NOT the answer — devel/pcre's branch may
+// change pcre2, and building the parent verifies nothing about the
+// change (field-caught: the VM built the untouched pcre 8.45 and
+// would have called the pcre2 branch verified). Resolution, most
+// direct authority first: the port the user themselves named (a
+// target that matched the branch as dockhand/<target>-*, the mint's
+// own naming); the tip note's recorded port (written from the plan's
+// subport at bump time); and for a hand-made branch with neither, the
+// context the branch's own diff moves under evaluation.
+func branchPortName(ctx context.Context, rs *runstate.Context, repo *git.Repo, target, branch, tip, rel string) (string, error) {
+	if target != branch {
+		return target, nil
+	}
+	if n, err := lifecycle.ReadNote(ctx, repo, tip); err == nil && n.Port != "" {
+		return n.Port, nil
+	}
+	return lifecycle.ChangedPort(ctx, rs, repo, tip, rel)
 }
 
 // branchPortdir derives the one portdir a branch changes against its
