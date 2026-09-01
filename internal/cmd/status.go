@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -23,11 +24,13 @@ import (
 // the one deletion status performs — a branch whose PR merged is
 // cleaned, announced, because a merged PR is GitHub's own word that
 // the work landed. Every other cleanup is the user's explicit act.
-type statusAction struct{}
+type statusAction struct {
+	json bool
+}
 
 var _ Action = statusAction{}
 
-func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
+func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	repo, err := rs.Repo(ctx)
 	if err != nil {
 		return err
@@ -35,6 +38,9 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	branches, err := repo.Branches(ctx, "dockhand/")
 	if err != nil {
 		return err
+	}
+	if a.json {
+		return statusAsJSON(ctx, rs, repo, branches)
 	}
 	if len(branches) == 0 {
 		// Naming the repository is the point: run from the wrong
@@ -68,6 +74,60 @@ func (statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	return nil
 }
 
+// statusJSON is the machine rendering of the same reconciliation the
+// human one performs — the polling, settling, and merged-PR autoclean
+// all still happen; only the telling differs. The note is emitted as
+// stored (its own JSON is the schema), so a consumer reads exactly
+// what a future dockhand would.
+type statusJSON struct {
+	Repository    string         `json:"repository"`
+	Branches      []statusBranch `json:"branches"`
+	OrphanWorkers []string       `json:"orphan_workers,omitempty"`
+}
+
+type statusBranch struct {
+	Branch string `json:"branch"`
+	Tip    string `json:"tip,omitempty"`
+	// Note is the tip's verdict set, absent when the tip has none.
+	Note *verifyNote `json:"note,omitempty"`
+	// Drift is the human sentence about an unnoted tip — content
+	// identity, commits behind — kept as prose: it is a finding, not a
+	// state machine.
+	Drift   string       `json:"drift,omitempty"`
+	PR      *pullRequest `json:"pr,omitempty"`
+	PRError string       `json:"pr_error,omitempty"`
+	Cleaned bool         `json:"cleaned,omitempty"`
+	Error   string       `json:"error,omitempty"`
+}
+
+func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, branches []string) error {
+	out := statusJSON{Repository: repo.Root, Branches: []statusBranch{}}
+	pr := newPRStatus(ctx, repo)
+	for _, br := range branches {
+		b := statusBranch{Branch: br}
+		tip, n, drift, err := inspectBranch(ctx, repo, br)
+		if err != nil {
+			b.Error = err.Error()
+		} else {
+			b.Tip, b.Note, b.Drift = tip, n, drift
+		}
+		outcome := pr.judge(ctx, rs, br)
+		b.Cleaned = outcome.cleaned
+		b.PRError = outcome.errText
+		if outcome.found {
+			prCopy := outcome.pr
+			b.PR = &prCopy
+		}
+		out.Branches = append(out.Branches, b)
+	}
+	if workers := orphanWorkers(ctx, repo); len(workers) > 0 {
+		out.OrphanWorkers = workers
+	}
+	enc := json.NewEncoder(rs.Out)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
 // prStatus carries the lazily-fetched pieces the PR half of status
 // needs: the upstream repo and the remote table, resolved once.
 type prStatus struct {
@@ -82,14 +142,25 @@ func newPRStatus(ctx context.Context, repo *git.Repo) *prStatus {
 	return &prStatus{repo: repo}
 }
 
-// reconcile reports a promoted branch's PR standing — and when the PR
-// merged, the branch is done: status says so and cleans it, the one
-// deletion status performs, because a merged PR is GitHub's own word
-// that the work landed. Everything else stays reporting: open PRs,
-// closed ones, and unpromoted branches say their state and stand.
-func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch string) (cleaned bool, line string) {
+// prOutcome is one branch's judged PR standing, structured for both
+// renderings.
+type prOutcome struct {
+	promoted bool
+	found    bool
+	cleaned  bool
+	pr       pullRequest
+	errText  string
+	cleanErr string
+}
+
+// judge reports a promoted branch's PR standing — and when the PR
+// merged, the branch is done: status cleans it, the one deletion
+// status performs, because a merged PR is GitHub's own word that the
+// work landed. Everything else stays reporting: open PRs, closed
+// ones, and unpromoted branches say their state and stand.
+func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch string) prOutcome {
 	if ps.repo.TrackedRemote(ctx, branch) == "" {
-		return false, ""
+		return prOutcome{}
 	}
 	if !ps.loaded {
 		ps.loaded = true
@@ -99,52 +170,85 @@ func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch 
 		}
 	}
 	if ps.broken != nil {
-		return false, "PR state unavailable: " + ps.broken.Error()
+		return prOutcome{promoted: true, errText: ps.broken.Error()}
 	}
 	pr, found, err := lookupPR(ctx, ps.repo, ps.remotes, ps.upstream, branch)
 	if err != nil {
-		return false, "PR state unavailable: " + err.Error()
+		return prOutcome{promoted: true, errText: err.Error()}
 	}
 	if !found {
-		return false, "promoted; no PR found"
+		return prOutcome{promoted: true}
 	}
-	switch {
-	case pr.MergedAt != "":
+	o := prOutcome{promoted: true, found: true, pr: pr}
+	if pr.MergedAt != "" {
 		if err := discardBranch(ctx, rs, ps.repo, branch, true); err != nil {
-			return false, fmt.Sprintf("PR #%d merged; cleaning failed: %v", pr.Number, err)
+			o.cleanErr = err.Error()
+			return o
 		}
-		return true, fmt.Sprintf("PR #%d merged — branch cleaned", pr.Number)
-	case pr.State == "open":
-		return false, fmt.Sprintf("PR #%d open (%s)", pr.Number, pr.HTMLURL)
+		o.cleaned = true
+	}
+	return o
+}
+
+// reconcile is judge's human rendering: (cleaned, line).
+func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch string) (cleaned bool, line string) {
+	o := ps.judge(ctx, rs, branch)
+	switch {
+	case !o.promoted:
+		return false, ""
+	case o.errText != "":
+		return false, "PR state unavailable: " + o.errText
+	case !o.found:
+		return false, "promoted; no PR found"
+	case o.cleanErr != "":
+		return false, fmt.Sprintf("PR #%d merged; cleaning failed: %s", o.pr.Number, o.cleanErr)
+	case o.cleaned:
+		return true, fmt.Sprintf("PR #%d merged — branch cleaned", o.pr.Number)
+	case o.pr.State == "open":
+		return false, fmt.Sprintf("PR #%d open (%s)", o.pr.Number, o.pr.HTMLURL)
 	default:
-		return false, fmt.Sprintf("PR #%d closed without merging", pr.Number)
+		return false, fmt.Sprintf("PR #%d closed without merging", o.pr.Number)
 	}
 }
 
 // describeBranch renders one branch's verification standing, polling
 // and settling whatever is still running on its tip.
 func describeBranch(ctx context.Context, repo *git.Repo, branch string) ([]string, error) {
-	tip, err := repo.RevParse(ctx, branch)
+	_, n, drift, err := inspectBranch(ctx, repo, branch)
 	if err != nil {
 		return nil, err
+	}
+	if n == nil {
+		return []string{drift}, nil
+	}
+	return renderNote(*n), nil
+}
+
+// inspectBranch is the structured half describeBranch and the JSON
+// rendering share: the tip, its settled note (nil when unnoted), and
+// the drift finding for an unnoted tip.
+func inspectBranch(ctx context.Context, repo *git.Repo, branch string) (string, *verifyNote, string, error) {
+	tip, err := repo.RevParse(ctx, branch)
+	if err != nil {
+		return "", nil, "", err
 	}
 	n, err := readNote(ctx, repo, tip)
 	if errors.Is(err, git.ErrNoNote) {
-		line, err := describeUnverifiedTip(ctx, repo, branch, tip)
-		if err != nil {
-			return nil, err
+		drift, derr := describeUnverifiedTip(ctx, repo, branch, tip)
+		if derr != nil {
+			return tip, nil, "", derr
 		}
-		return []string{line}, nil
+		return tip, nil, drift, nil
 	}
 	if err != nil {
-		return nil, err
+		return tip, nil, "", err
 	}
 	if n.anyState("running") {
 		if err := settleRuns(ctx, repo, &n); err != nil {
-			return nil, err
+			return tip, nil, "", err
 		}
 	}
-	return renderNote(n), nil
+	return tip, &n, "", nil
 }
 
 // settleRuns polls every running run and writes what it learns back to
@@ -321,12 +425,19 @@ func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip stri
 // forgotten worker is an expensive kind of quiet. Best-effort — a
 // machine without tart has no workers to report.
 func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Repo) {
+	for _, vm := range orphanWorkers(ctx, repo) {
+		fmt.Fprintf(rs.Out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", vm, vm, vm)
+	}
+}
+
+// orphanWorkers lists them: running workers no note accounts for.
+func orphanWorkers(ctx context.Context, repo *git.Repo) []string {
 	if !tartPresent() {
-		return
+		return nil
 	}
 	out, err := tart.CLI(ctx, nil, "list", "--quiet")
 	if err != nil {
-		return
+		return nil
 	}
 	tracked := map[string]bool{}
 	if noted, err := repo.NotesList(ctx, git.VerifyNotesRef); err == nil {
@@ -339,23 +450,27 @@ func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Re
 			}
 		}
 	}
+	var orphans []string
 	for _, vm := range strings.Split(out, "\n") {
 		vm = strings.TrimSpace(vm)
-		if !strings.HasPrefix(vm, tart.WorkerPrefix) || tracked[vm] {
-			continue
+		if strings.HasPrefix(vm, tart.WorkerPrefix) && !tracked[vm] {
+			orphans = append(orphans, vm)
 		}
-		fmt.Fprintf(rs.Out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", vm, vm, vm)
 	}
+	return orphans
 }
 
 // Status builds the status subcommand.
 func Status() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	c := &cobra.Command{
 		Use:   "status",
 		Short: "Report every dockhand branch and its verification standing",
 		Args:  noArgs,
 		RunE: runE(func(*cobra.Command, []string) (Action, error) {
-			return statusAction{}, nil
+			return statusAction{json: asJSON}, nil
 		}),
 	}
+	c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON on stdout")
+	return c
 }

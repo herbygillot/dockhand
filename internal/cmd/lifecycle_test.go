@@ -9,6 +9,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -180,4 +181,30 @@ func TestFollowRunSettlesAndSpeaksTheVerdict(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "passed", n.Runs["Testos"].State)
 	assert.Equal(t, "clean", n.Runs["Testos"].Lint)
+}
+
+func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
+	repo, sha := lifecycleRepo(t)
+	fake := &verifytest.Fake{
+		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
+		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
+	}
+	fake.Install(t, &vmProvider)
+	runningNote(t, repo, sha, "fake-1")
+
+	var out, errb bytes.Buffer
+	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb}
+	require.NoError(t, statusAction{json: true}.Execute(context.Background(), rs))
+
+	var got statusJSON
+	require.NoError(t, json.Unmarshal(out.Bytes(), &got), "stdout must be one JSON document: %s", out.String())
+	require.Len(t, got.Branches, 1)
+	b := got.Branches[0]
+	assert.Equal(t, "dockhand/jq-1.8", b.Branch)
+	assert.Equal(t, sha, b.Tip)
+	require.NotNil(t, b.Note)
+	assert.Equal(t, "passed", b.Note.Runs["Testos"].State, "the JSON mode settles, same as the human one")
+	assert.Equal(t, "clean", b.Note.Runs["Testos"].Lint)
+	assert.Nil(t, b.PR, "an unpromoted branch carries no PR object")
+	assert.False(t, b.Cleaned)
 }
