@@ -414,6 +414,21 @@ just the normal single-run progression (build → destroot → activate) split
 across two commands. The note records the bit (`tested`), because promote's
 checklist vouches only for what a note remembers.
 
+**Amended (2026-09-01, notes are shared state now).** The verify notes
+are dockhand's only mutable state, edited as read-modify-write of
+whole JSON documents — safe while one human ran one dockhand, a
+lost-update race the day two agents shared a checkout, which is how
+the tool is now actually used. Every note critical section (record,
+settle, cancel, discard's read-release-remove) runs under a per-repo
+advisory flock, and settle re-reads the note inside the lock rather
+than trusting the caller's copy. Two evidence rules landed with it:
+a failed run's first substantive Error line is stored as the run's
+Detail at settle time (the failure-side twin of the lint evidence,
+read before the log becomes unreachable), and the --verify gate
+returns its lint evidence so a gate-verified tip's note reads exactly
+like a background-verified one — one verdict vocabulary, however the
+verification ran.
+
 **Amended (2026-09-01, cargo.crates geometry).** Regenerated vendored
 blocks are re-laid under the existing block's measured column
 geometry, but only a geometry proven first: Assess re-renders the

@@ -39,6 +39,11 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err := cancelStale(ctx, rs, repo, branch, tip); err != nil {
 		return err
 	}
+	unlock, err := repo.LockNotes(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	n, err := readNote(ctx, repo, tip)
 	if errors.Is(err, git.ErrNoNote) || (err == nil && !n.anyState("running")) {
 		fmt.Fprintf(rs.Err, "%s has no running verification\n", branch)

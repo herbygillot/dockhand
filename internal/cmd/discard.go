@@ -57,6 +57,14 @@ func discardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 	if err != nil {
 		return err
 	}
+	// The read-release-remove over each commit's note is one critical
+	// section: a run recorded between the read and the removal would be
+	// a leaked worker nobody can see.
+	unlock, err := repo.LockNotes(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	for _, sha := range own {
 		n, err := readNote(ctx, repo, sha)
 		if errors.Is(err, git.ErrNoNote) {

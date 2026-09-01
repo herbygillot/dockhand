@@ -91,10 +91,11 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := verifyPlan(ctx, rs, p, release, a.opts.test); err != nil {
+		lint, err := verifyPlan(ctx, rs, p, release, a.opts.test)
+		if err != nil {
 			return err
 		}
-		opts.verified = true
+		opts.verified, opts.gateLint = true, lint
 	}
 	return realizePlan(ctx, rs, p, opts)
 }

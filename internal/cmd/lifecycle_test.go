@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -207,4 +208,73 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 	assert.Equal(t, "clean", b.Note.Runs["Testos"].Lint)
 	assert.Nil(t, b.PR, "an unpromoted branch carries no PR object")
 	assert.False(t, b.Cleaned)
+}
+
+func TestConcurrentRecordsBothSurvive(t *testing.T) {
+	// Two dockhands share this checkout now — an agent and its user —
+	// and recordRun is read-modify-write of a whole note. Without the
+	// notes lock, one of these two platforms' runs is silently lost.
+	repo, sha := lifecycleRepo(t)
+	fake := &verifytest.Fake{}
+	fake.Install(t, &vmProvider)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i, plat := range []string{"Testos", "Oldos"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = recordRun(ctx, testState(t), repo, sha, "jq", plat,
+				verifyRun{State: "running", Job: verify.Job{Provider: "fake", ID: "fake-" + plat}}, "")
+		}()
+	}
+	wg.Wait()
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+
+	n, err := readNote(ctx, repo, sha)
+	require.NoError(t, err)
+	assert.Len(t, n.Runs, 2, "both concurrent records must survive")
+}
+
+func TestSettleRunsRecordsTheFailureDiagnosis(t *testing.T) {
+	repo, sha := lifecycleRepo(t)
+	fake := &verifytest.Fake{
+		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
+		Logs: map[string]string{"fake-1": "--->  Building jq\n" +
+			"Error: Failed to build jq: command execution failed\n" +
+			"Error: See /opt/local/var/macports/logs/x/main.log for details.\n"},
+	}
+	fake.Install(t, &vmProvider)
+	n := runningNote(t, repo, sha, "fake-1")
+
+	require.NoError(t, settleRuns(context.Background(), repo, &n))
+	r := n.Runs["Testos"]
+	assert.Equal(t, "failed", r.State)
+	assert.Equal(t, "Failed to build jq: command execution failed", r.Detail,
+		"the diagnosis rides the note; the See-pointer boilerplate does not")
+}
+
+func TestSettleRunsRereadsUnderTheLock(t *testing.T) {
+	// The caller's copy predates a concurrent record; settling must not
+	// write that staleness back over it.
+	repo, sha := lifecycleRepo(t)
+	fake := &verifytest.Fake{
+		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
+		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
+	}
+	fake.Install(t, &vmProvider)
+	ctx := context.Background()
+	n := runningNote(t, repo, sha, "fake-1")
+	stale := n // the copy a slow status would hold
+
+	// A concurrent dockhand records a second platform meanwhile.
+	require.NoError(t, recordRun(ctx, testState(t), repo, sha, "jq", "Oldos",
+		verifyRun{State: "deferred", Detail: "slot full"}, ""))
+
+	require.NoError(t, settleRuns(ctx, repo, &stale))
+	assert.Len(t, stale.Runs, 2, "the settle re-read; the concurrent record survives")
+	assert.Equal(t, "passed", stale.Runs["Testos"].State)
+	assert.Equal(t, "deferred", stale.Runs["Oldos"].State)
 }

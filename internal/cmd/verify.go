@@ -92,41 +92,48 @@ func realVMProvider(ctx context.Context) (verify.Verifier, error) {
 // read the Portfile, hold it to the plan's precondition hash, apply the
 // edits, shadow the result — so the port under test is exactly what
 // apply would write.
-func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release platform.Release, test bool) error {
+func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release platform.Release, test bool) (string, error) {
 	src, err := os.ReadFile(filepath.Join(p.Portdir, macports.PortfileName))
 	if err != nil {
-		return err
+		return "", err
 	}
 	if edit.FileSHA256(src) != p.PortfileSHA256 {
-		return fmt.Errorf("%w: %s", plan.ErrDrift, p.Portdir)
+		return "", fmt.Errorf("%w: %s", plan.ErrDrift, p.Portdir)
 	}
 	edited, err := edit.Apply(src, p.Edits)
 	if err != nil {
-		return err
+		return "", err
 	}
 	root, err := rs.TempDir()
 	if err != nil {
-		return err
+		return "", err
 	}
 	// Shadow needs no evaluator: it is a copy, and the guest does the
 	// evaluating from here on.
 	h := port.New(tree.Target{Portdir: p.Portdir}, nil).WithTempDir(root)
 	shadow, cleanup, err := h.Shadow(edited)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer cleanup()
 
-	return runVerification(ctx, rs, p.Port, shadow.Target.Portdir, release, test)
+	lint, err := runVerification(ctx, rs, p.Port, shadow.Target.Portdir, release, test)
+	if err != nil {
+		return "", err
+	}
+	return lint, nil
 }
 
 // runVerification submits one portdir to the VM provider and reports
 // the verdict. Both verification modes arrive here: a plan's shadowed
-// portdir, and a portdir as it sits in the tree.
-func runVerification(ctx context.Context, rs *runstate.Context, portName, portdir string, release platform.Release, test bool) error {
+// portdir, and a portdir as it sits in the tree. The returned lint is
+// the run's evidence on a pass — the same summary a settled background
+// run records — so a gate-verified tip's note says exactly what a
+// background-verified one would.
+func runVerification(ctx context.Context, rs *runstate.Context, portName, portdir string, release platform.Release, test bool) (string, error) {
 	prov, err := vmProvider(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	job, err := prov.Submit(ctx, verify.Request{
 		Port:     portName,
@@ -135,7 +142,7 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 		Test:     test,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	caps := prov.Capabilities()
 	on := release
@@ -143,33 +150,45 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 		on = caps.Platforms[0]
 	}
 	fmt.Fprintf(rs.Err, "verifying %s on %s… ", portName, on)
-	st, err := verify.Await(ctx, prov, job, 3*time.Second)
+	st, log, err := awaitVerdict(ctx, prov, job)
 	if err != nil {
 		fmt.Fprintln(rs.Err)
 		_ = prov.Release(context.WithoutCancel(ctx), job)
-		return err
+		return "", err
 	}
 	switch st.State {
 	case verify.Passed:
 		fmt.Fprintln(rs.Err, "passed")
-		return prov.Release(ctx, job)
+		return lintSummary(log), prov.Release(ctx, job)
 	case verify.Failed:
 		fmt.Fprintln(rs.Err, "FAILED")
-		if log, lerr := prov.Log(ctx, job); lerr == nil {
-			tail := log
-			if len(tail) > 2000 {
-				tail = tail[len(tail)-2000:]
-			}
-			fmt.Fprintln(rs.Err, tail)
+		tail := log
+		if len(tail) > 2000 {
+			tail = tail[len(tail)-2000:]
 		}
+		fmt.Fprintln(rs.Err, tail)
 		// The environment is kept on purpose: it is the debug handle.
-		return &VerifyFailedError{Port: portName, Handle: st.Handle}
+		return "", &VerifyFailedError{Port: portName, Handle: st.Handle}
 	case verify.Errored:
 		_ = prov.Release(context.WithoutCancel(ctx), job)
-		return fmt.Errorf("%w: %s", verify.ErrNoEnvironment, st.Detail)
+		return "", fmt.Errorf("%w: %s", verify.ErrNoEnvironment, st.Detail)
 	case verify.Running:
 	}
-	return fmt.Errorf("verify: job ended in state %s", st.State)
+	return "", fmt.Errorf("verify: job ended in state %s", st.State)
+}
+
+// awaitVerdict polls to a terminal state, then fetches the log once —
+// the one read every evidence extraction shares.
+func awaitVerdict(ctx context.Context, prov verify.Verifier, job verify.Job) (verify.Status, string, error) {
+	st, err := verify.Await(ctx, prov, job, 3*time.Second)
+	if err != nil {
+		return verify.Status{}, "", err
+	}
+	log, lerr := prov.Log(ctx, job)
+	if lerr != nil {
+		log = ""
+	}
+	return st, log, nil
 }
 
 // verifyAction proves a port builds as it sits, in a pristine
@@ -224,7 +243,8 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(targets[0].Portdir))
 	}
-	return runVerification(ctx, rs, portName, targets[0].Portdir, release, a.test)
+	_, err = runVerification(ctx, rs, portName, targets[0].Portdir, release, a.test)
+	return err
 }
 
 // verifyBranch submits a branch's tip for verification in the
@@ -359,6 +379,11 @@ func verifyReleases(on []string, provisioned []platform.Release) ([]platform.Rel
 // amended-away shas alike — and marks their notes superseded by the
 // tip about to be submitted.
 func cancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch, tip string) error {
+	unlock, err := repo.LockNotes(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
 	if err != nil {
 		return err

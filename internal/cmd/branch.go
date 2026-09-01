@@ -256,6 +256,11 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 // read-modify-write every per-platform update goes through — and tells
 // the user what was recorded.
 func recordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, releaseName string, r verifyRun, msg string) error {
+	unlock, err := repo.LockNotes(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	n, err := loadOrStartNote(ctx, repo, sha, portName)
 	if err != nil {
 		return err
@@ -264,7 +269,9 @@ func recordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, p
 	if err := writeNote(ctx, repo, n); err != nil {
 		return err
 	}
-	fmt.Fprintln(rs.Err, msg)
+	if msg != "" {
+		fmt.Fprintln(rs.Err, msg)
+	}
 	return nil
 }
 
@@ -332,6 +339,10 @@ type realizeOpts struct {
 	test     bool
 	force    bool
 	on       string
+	// gateLint is the gate's lint evidence, carried to the minted
+	// commit's note so a gate-verified tip reads exactly like a
+	// background-verified one.
+	gateLint string
 	// verified says the synchronous --verify gate already ran and
 	// passed on this plan's content, so realization records the verdict
 	// instead of buying the same build twice.
@@ -364,7 +375,7 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 		// so the verdict transfers to the commit by content identity.
 		// Recording it beats resubmitting: the same build twice proves
 		// nothing the first one did not.
-		return markVerified(ctx, rs, m, p, o.on, o.test)
+		return markVerified(ctx, rs, m, p, o.on, o.test, o.gateLint)
 	}
 	if o.noVerify {
 		return nil
@@ -381,7 +392,7 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 
 // markVerified writes the minted commit's note as passed, on the
 // strength of the pre-mint gate having built identical content.
-func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.Plan, on string, tested bool) error {
+func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.Plan, on string, tested bool, lint string) error {
 	release, err := releaseFlag(on)
 	if err != nil {
 		return err
@@ -394,7 +405,7 @@ func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.
 		}
 		release = prov.Capabilities().Platforms[0]
 	}
-	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed", Tested: tested, Linted: true},
+	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed", Tested: tested, Linted: true, Lint: lint},
 		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
 }
 

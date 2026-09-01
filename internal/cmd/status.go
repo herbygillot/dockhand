@@ -263,6 +263,19 @@ func settleRuns(ctx context.Context, repo *git.Repo, n *verifyNote) error {
 	if err != nil {
 		return nil // running, cannot poll; the note stands as is
 	}
+	// The critical section spans the whole read-modify-write, and the
+	// note is RE-READ under the lock: the caller's copy may predate a
+	// concurrent dockhand's record — two agents share this checkout
+	// now — and settling a stale copy would write the lost update this
+	// lock exists to prevent.
+	unlock, err := repo.LockNotes(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if fresh, rerr := readNote(ctx, repo, n.Sha); rerr == nil {
+		*n = fresh
+	}
 	changed := false
 	for plat, r := range n.Runs {
 		if r.State != "running" {
@@ -295,10 +308,17 @@ func settleRuns(ctx context.Context, repo *git.Repo, n *verifyNote) error {
 			}
 		case verify.Failed:
 			r.State, r.Handle = "failed", st.Handle
-			if log, lerr := prov.Log(ctx, r.Job); lerr == nil && portDeclined(log) {
-				r.State, r.Handle = "unsupported", ""
-				r.Detail = "the port declines to build on this platform"
-				_ = prov.Release(context.WithoutCancel(ctx), r.Job)
+			if log, lerr := prov.Log(ctx, r.Job); lerr == nil {
+				if portDeclined(log) {
+					r.State, r.Handle = "unsupported", ""
+					r.Detail = "the port declines to build on this platform"
+					_ = prov.Release(context.WithoutCancel(ctx), r.Job)
+				} else {
+					// The diagnosis rides the note, so status answers
+					// "why" without a log dig — the failure-side twin
+					// of the lint evidence.
+					r.Detail = failureSummary(log)
+				}
 			}
 		case verify.Errored:
 			r.State, r.Detail = "errored", st.Detail
@@ -364,6 +384,25 @@ func lintSummary(log string) string {
 		return "1 warning"
 	}
 	return m[2] + " warnings"
+}
+
+// failureSummary is the first substantive Error line of a failed run's
+// log — the line naming which phase failed and why — skipping the
+// boilerplate pointers that follow it. Empty when the log carries none.
+func failureSummary(log string) string {
+	for line := range strings.Lines(log) {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Error: ") ||
+			strings.HasPrefix(line, "Error: See ") ||
+			strings.HasPrefix(line, "Error: Follow ") {
+			continue
+		}
+		if len(line) > 160 {
+			line = line[:160] + "…"
+		}
+		return strings.TrimPrefix(line, "Error: ")
+	}
+	return ""
 }
 
 // portDeclined reads a failure log for the shapes of a port refusing a
