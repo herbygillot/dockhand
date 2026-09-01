@@ -414,6 +414,16 @@ just the normal single-run progression (build → destroot → activate) split
 across two commands. The note records the bit (`tested`), because promote's
 checklist vouches only for what a note remembers.
 
+**Amended (2026-09-01, the flag falls; status gains --no-clean).** The
+friction ruling completed: invoking promote IS the publication choice,
+so an unverified branch promotes with a complaint and no flag — the
+reviewer and the user converged on this independently. --no-verify
+survives with one meaning only: overriding the refusal of a completed
+FAILED build, which is negative evidence, not absence. And status
+keeps its reconciliation — settling, releasing, autocleaning — as the
+default, with --no-clean withholding just the deletions for callers
+that want the merged-PR report without the sweep.
+
 **Amended (2026-09-01, promotion is frictionless and binary).** An
 independent review recommended closed evidence states — outstanding
 runs blocking promotion, the PR body enumerating every local state —

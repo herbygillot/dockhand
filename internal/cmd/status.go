@@ -21,7 +21,8 @@ import (
 // cleaned, announced, because a merged PR is GitHub's own word that
 // the work landed. Every other cleanup is the user's explicit act.
 type statusAction struct {
-	json bool
+	json    bool
+	noClean bool
 }
 
 var _ Action = statusAction{}
@@ -36,7 +37,7 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	if a.json {
-		return statusAsJSON(ctx, rs, repo, branches)
+		return statusAsJSON(ctx, rs, repo, branches, a.noClean)
 	}
 	if len(branches) == 0 {
 		// Naming the repository is the point: run from the wrong
@@ -46,7 +47,7 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		reportOrphanWorkers(ctx, rs, repo)
 		return nil
 	}
-	pr := newPRStatus(ctx, repo)
+	pr := newPRStatus(ctx, repo, a.noClean)
 	for _, br := range branches {
 		lines, err := lifecycle.DescribeBranch(ctx, rs, repo, br)
 		if err != nil {
@@ -96,7 +97,7 @@ type statusBranch struct {
 	Error   string             `json:"error,omitempty"`
 }
 
-func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, branches []string) error {
+func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, branches []string, noClean bool) error {
 	out := statusJSON{Repository: repo.Root, Branches: []statusBranch{}}
 	// Stdout is the document, so every side-effect's prose — an
 	// autoclean announcing itself, a discard's fork warning — routes to
@@ -104,7 +105,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	// "discarded …" into the JSON and broke the consumer.
 	prose := *rs
 	prose.Out = rs.Err
-	pr := newPRStatus(ctx, repo)
+	pr := newPRStatus(ctx, repo, noClean)
 	for _, br := range branches {
 		b := statusBranch{Branch: br}
 		tip, n, drift, err := lifecycle.InspectBranch(ctx, rs, repo, br)
@@ -133,6 +134,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 // prStatus carries the lazily-fetched pieces the PR half of status
 // needs: the upstream repo and the remote table, resolved once.
 type prStatus struct {
+	noClean  bool
 	repo     *git.Repo
 	upstream string
 	remotes  map[string]string
@@ -140,8 +142,8 @@ type prStatus struct {
 	loaded   bool
 }
 
-func newPRStatus(ctx context.Context, repo *git.Repo) *prStatus {
-	return &prStatus{repo: repo}
+func newPRStatus(_ context.Context, repo *git.Repo, noClean bool) *prStatus {
+	return &prStatus{repo: repo, noClean: noClean}
 }
 
 // prOutcome is one branch's judged PR standing, structured for both
@@ -182,7 +184,7 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 		return prOutcome{promoted: true}
 	}
 	o := prOutcome{promoted: true, found: true, pr: pr}
-	if pr.MergedAt != "" {
+	if pr.MergedAt != "" && !ps.noClean {
 		if err := lifecycle.DiscardBranch(ctx, rs, ps.repo, branch, true); err != nil {
 			o.cleanErr = err.Error()
 			return o
@@ -206,6 +208,9 @@ func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch 
 		return false, fmt.Sprintf("PR #%d merged; cleaning failed: %s", o.pr.Number, o.cleanErr)
 	case o.cleaned:
 		return true, fmt.Sprintf("PR #%d merged — branch cleaned", o.pr.Number)
+	case o.pr.MergedAt != "":
+		// --no-clean: report the merge, withhold the deletion.
+		return false, fmt.Sprintf("PR #%d merged — `dockhand clean` removes the branch", o.pr.Number)
 	case o.pr.State == "open":
 		return false, fmt.Sprintf("PR #%d open (%s)", o.pr.Number, o.pr.HTMLURL)
 	default:
@@ -230,15 +235,16 @@ func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Re
 
 // Status builds the status subcommand.
 func Status() *cobra.Command {
-	var asJSON bool
+	var asJSON, noClean bool
 	c := &cobra.Command{
 		Use:   "status",
 		Short: "Report every dockhand branch and its verification standing",
 		Args:  noArgs,
 		RunE: runE(func(*cobra.Command, []string) (Action, error) {
-			return statusAction{json: asJSON}, nil
+			return statusAction{json: asJSON, noClean: noClean}, nil
 		}),
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON on stdout")
+	c.Flags().BoolVar(&noClean, "no-clean", false, "report merged PRs without deleting their branches")
 	return c
 }

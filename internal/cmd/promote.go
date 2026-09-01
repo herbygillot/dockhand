@@ -73,23 +73,16 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return err
 	}
 	if !verified {
-		reason := "is unverified"
-		if n.AnyState("failed") {
-			reason = "has a failed verification"
+		// Invoking promote is already the publication choice, so an
+		// unverified branch promotes with a complaint, never a demanded
+		// flag — the friction ruling, extended here at the reviewer's
+		// and the user's shared urging. The one refusal that remains is
+		// distinct NEGATIVE evidence: a completed failed build, which
+		// --no-verify alone overrides.
+		if n.AnyState("failed") && !a.noVerify {
+			return fmt.Errorf("%s: tip %s has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway", branch, tip[:12])
 		}
-		switch {
-		case a.noVerify:
-			fmt.Fprintln(rs.Err, "promoting unverified (--no-verify); the PR will say so")
-		case canceled > 0:
-			// The consent was the promote itself: requiring a flag on
-			// top of the cancellation would be the friction this path
-			// exists to remove.
-			fmt.Fprintln(rs.Err, "promoting unverified; the PR will say so")
-		case lifecycle.TartPresent():
-			return fmt.Errorf("%s: tip %s %s — `dockhand verify %s` first, or --no-verify to promote anyway", branch, tip[:12], reason, branch)
-		default:
-			fmt.Fprintln(rs.Err, "no local verify provider (tart): promoting unverified")
-		}
+		fmt.Fprintln(rs.Err, "promoting unverified; the PR will say so")
 	}
 
 	forkRemote, forkOwner, err := forge.ForkRemote(ctx, rs.RunGH, repo, a.remote)
@@ -251,7 +244,7 @@ func Promote() *cobra.Command {
 	c.Flags().StringVar(&closes, "closes", "", "Trac ticket number the PR closes")
 	c.Flags().BoolVar(&noPR, "no-pr", false, "push to the fork without opening a pull request")
 	c.Flags().BoolVar(&noVerify, "no-verify", false,
-		"promote even if the branch is unverified; the PR discloses it")
+		"promote past a FAILED verification; an unverified branch needs no flag")
 	c.Flags().BoolVar(&noPRCheck, "no-pr-check", false,
 		"skip the search for pre-existing open PRs on the same port")
 	c.Flags().BoolVar(&force, "force", false,

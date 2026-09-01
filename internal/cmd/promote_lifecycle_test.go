@@ -243,3 +243,57 @@ func TestPromoteMidVerificationKeepsThePassedEvidence(t *testing.T) {
 		"the surviving evidence still speaks")
 	assert.NotContains(t, joined, "Oldos", "the canceled run never reaches the PR")
 }
+
+func TestPromoteUnverifiedComplainsAndProceeds(t *testing.T) {
+	// The friction ruling, complete: an unverified branch promotes with
+	// a complaint — invoking promote IS the publication choice — and
+	// only a completed FAILED build still refuses without --no-verify.
+	repo, sha := promoteRepo(t)
+	ctx := context.Background()
+	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	require.NoError(t, err)
+	n.Runs = map[string]lifecycle.Run{}
+	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+
+	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/3"}
+	rs, _, errb := promoteState(t, repo, gh)
+	rs.Verifier = func(context.Context) (verify.Verifier, error) { return &verifytest.Fake{}, nil }
+
+	require.NoError(t, promoteAction{target: "jq"}.Execute(ctx, rs))
+	assert.Contains(t, errb.String(), "promoting unverified; the PR will say so")
+	body := gh.called("create")[0]
+	assert.Contains(t, body[len(body)-1], "Not locally verified")
+}
+
+func TestPromoteStillRefusesAFailedBuild(t *testing.T) {
+	repo, sha := promoteRepo(t)
+	ctx := context.Background()
+	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	require.NoError(t, err)
+	n.Runs = map[string]lifecycle.Run{"Testos": {State: "failed", Handle: "kept-1"}}
+	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+
+	gh := &ghFake{login: "herbygillot"}
+	rs, _, _ := promoteState(t, repo, gh)
+	rs.Verifier = func(context.Context) (verify.Verifier, error) { return &verifytest.Fake{}, nil }
+
+	err = promoteAction{target: "jq"}.Execute(ctx, rs)
+	require.Error(t, err, "a failed build is negative evidence, not absence")
+	assert.Contains(t, err.Error(), "failed verification")
+	assert.Empty(t, gh.called("create"))
+}
+
+func TestStatusNoCleanReportsWithoutDeleting(t *testing.T) {
+	repo, _ := promoteRepo(t)
+	ctx := context.Background()
+	require.NoError(t, repo.Push(ctx, "herby", "dockhand/jq-1.8"))
+	gh := &ghFake{login: "herbygillot",
+		ownPRs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/9"}]`}
+	fake := &verifytest.Fake{}
+	rs, out, _ := promoteState(t, repo, gh)
+	rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+
+	require.NoError(t, statusAction{noClean: true}.Execute(ctx, rs))
+	assert.Contains(t, out.String(), "PR #9 merged — `dockhand clean` removes the branch")
+	assert.True(t, repo.HasBranch(ctx, "dockhand/jq-1.8"), "--no-clean withholds the deletion")
+}
