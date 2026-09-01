@@ -1,6 +1,9 @@
 package cargo2port
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"os"
@@ -120,15 +123,40 @@ func TestGithubRepo(t *testing.T) {
 }
 
 // fetchFake records each URL and hands back a checksum derived from it,
-// so the rendered block proves which tarball each sum came from.
-type fetchFake struct{ urls []string }
+// so the rendered block proves which tarball each sum came from. What
+// it writes to dest is a real tarball whose root Cargo.toml is the
+// manifest given, because buildGithubBlock reads it back.
+type fetchFake struct {
+	urls     []string
+	manifest string
+}
+
+const packageToml = "[package]\nname = \"x\"\n"
 
 func (f *fetchFake) Fetch(_ context.Context, urls []string, _ distfile.Options, dest string) (checksums.Sums, error) {
 	f.urls = append(f.urls, urls...)
-	if err := os.WriteFile(dest, []byte("x"), 0o644); err != nil {
+	manifest := f.manifest
+	if manifest == "" {
+		manifest = packageToml
+	}
+	if err := os.WriteFile(dest, repoTarball(manifest), 0o644); err != nil {
 		return checksums.Sums{}, err
 	}
 	return checksums.Sums{Sha256: fmt.Sprintf("sum-of-%d", len(f.urls))}, nil
+}
+
+// repoTarball is a GitHub-archive-shaped tar.gz: one root directory
+// holding a Cargo.toml.
+func repoTarball(manifest string) []byte {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	body := []byte(manifest)
+	_ = tw.WriteHeader(&tar.Header{Name: "repo-rev/Cargo.toml", Mode: 0o644, Size: int64(len(body))})
+	_, _ = tw.Write(body)
+	_ = tw.Close()
+	_ = gz.Close()
+	return buf.Bytes()
 }
 
 func TestBuildGithubBlockFetchesEachRevisionAndRendersTheTreeShape(t *testing.T) {
@@ -149,6 +177,28 @@ func TestBuildGithubBlockFetchesEachRevisionAndRendersTheTreeShape(t *testing.T)
     other o/p main \
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
     sum-of-2`, block)
+}
+
+// The PortGroup imports a repository as one package directory, so a
+// workspace's virtual manifest at the root cannot feed cargo — the
+// yazi failure, judged before any branch is minted.
+func TestBuildGithubBlockDeclinesAWorkspaceRepo(t *testing.T) {
+	fake := &fetchFake{manifest: "[workspace]\nmembers = [\"ratatui-core\"]\n"}
+	_, err := buildGithubBlock(t.Context(), vendored.Regen{Fetch: fake}, []gitCrate{
+		{Name: "ratatui-core", Repo: "yazi-rs/ratatui", Branch: "fix", Revision: "dde5e05e59606cbba07340bd1cbb2d88866bc4a5"},
+	})
+	var d *plan.Decline
+	require.ErrorAs(t, err, &d)
+	assert.Contains(t, d.Detail, "ratatui-core lives in a cargo workspace at yazi-rs/ratatui")
+}
+
+func TestPackageManifest(t *testing.T) {
+	assert.True(t, packageManifest([]byte("[package]\nname = \"x\"\n")))
+	assert.True(t, packageManifest([]byte("[workspace]\n\n[package]\nname = \"x\"\n")),
+		"a root package that is also a workspace is a package manifest")
+	assert.False(t, packageManifest([]byte("[workspace]\nmembers = [\"a\"]\n")))
+	assert.False(t, packageManifest([]byte("[package.metadata.docs]\nall-features = true\n")),
+		"a package subtable alone does not declare a package")
 }
 
 func TestBuildGithubBlockRefusesWithoutAFetcher(t *testing.T) {

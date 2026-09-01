@@ -178,6 +178,22 @@ func buildGithubBlock(ctx context.Context, rc vendored.Regen, crates []gitCrate)
 			return "", fmt.Errorf("vendored: fetching %s@%s: %w", c.Name, shortRev(c.Revision), err)
 		}
 		slog.Debug("checksummed git crate", "crate", c.Name, "rev", shortRev(c.Revision), "sha256", sums.Sha256)
+		// The PortGroup imports the whole repository as one package
+		// directory, so a repo whose root manifest is a workspace's
+		// virtual manifest cannot feed cargo (field-measured on yazi:
+		// the block regenerated, the build failed on "found a virtual
+		// manifest instead of a package manifest"). The tarball is in
+		// hand for its checksum, so the root manifest is judged here,
+		// before any branch is minted.
+		manifest, _, merr := distfile.Extract(ctx, []string{dest}, "", "Cargo.toml")
+		if merr != nil {
+			return "", &plan.Decline{Type: plan.VendoredBlock,
+				Detail: fmt.Sprintf("%s's repository %s@%s carries no readable root Cargo.toml", c.Name, c.Repo, shortRev(c.Revision))}
+		}
+		if !packageManifest(manifest) {
+			return "", &plan.Decline{Type: plan.VendoredBlock,
+				Detail: fmt.Sprintf("%s lives in a cargo workspace at %s; cargo.crates_github imports a repository as one package, and cargo refuses a virtual manifest", c.Name, c.Repo)}
+		}
 		fmt.Fprintf(&b, "\n    %s %s %s \\", c.Name, c.Repo, c.Branch)
 		fmt.Fprintf(&b, "\n    %s \\", c.Revision)
 		fmt.Fprintf(&b, "\n    %s", sums.Sha256)
@@ -186,6 +202,19 @@ func buildGithubBlock(ctx context.Context, rc vendored.Regen, crates []gitCrate)
 		}
 	}
 	return b.String(), nil
+}
+
+// packageManifest reports whether a root Cargo.toml declares a package,
+// as opposed to a workspace's virtual manifest — the distinction cargo
+// itself draws when reading a directory source.
+func packageManifest(manifest []byte) bool {
+	for line := range strings.Lines(string(manifest)) {
+		line = strings.TrimSpace(line)
+		if line == "[package]" || strings.HasPrefix(line, "[package]#") || strings.HasPrefix(line, "[package] ") {
+			return true
+		}
+	}
+	return false
 }
 
 // shortRev abbreviates a commit for messages; the lock's regex admits
