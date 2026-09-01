@@ -66,6 +66,14 @@ const (
 	X11FontSetup
 	// ZigToolchainSetup is zig_toolchain.setup <version>.
 	ZigToolchainSetup
+	// SetVariable is a Tcl variable carrying the version: set <name>
+	// <version>, with version (or a setup command) reading it back. The
+	// weakest style in the table — any set whose value happens to equal
+	// the version corroborates — so it is held to two extra rules in
+	// Locate: a corroborated non-set carrier always outranks it, and it
+	// never enters a decline's candidate list, where the counterfactual
+	// probe would otherwise chase coincidences.
+	SetVariable
 )
 
 func (t Type) String() string {
@@ -124,6 +132,8 @@ func (t Type) String() string {
 		return "x11font.setup"
 	case ZigToolchainSetup:
 		return "zig_toolchain.setup"
+	case SetVariable:
+		return "set variable"
 	}
 	return "unknown style"
 }
@@ -173,6 +183,7 @@ var versionStyles = []styleSpec{
 	{SourcehutSetup, "sourcehut.setup", 3, nil},
 	{X11FontSetup, "x11font.setup", 2, nil},
 	{ZigToolchainSetup, "zig_toolchain.setup", 1, nil},
+	{SetVariable, "set", 2, nil},
 }
 
 // Transformed reports whether the style writes its literal in a form

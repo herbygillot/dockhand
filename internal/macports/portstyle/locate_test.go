@@ -145,8 +145,17 @@ func TestLocateLaterAssignmentWins(t *testing.T) {
 }
 
 // A style's version word containing substitutions cannot corroborate.
-func TestLocateInterpolatedDeclines(t *testing.T) {
+func TestLocateInterpolatedFindsItsSet(t *testing.T) {
+	// Once the classic decline of the survey: version through a
+	// variable. The set variable style now locates it — the 183-port
+	// tier the census counted.
 	src := "set v 1.0\nversion ${v}\n"
+	loc := mustLocate(t, src, info.Values{Name: "x", Version: "1.0"})
+	require.Equal(t, SetVariable, loc.Style)
+}
+
+func TestLocateInterpolatedWithoutAMatchingSetDeclines(t *testing.T) {
+	src := "version ${v}\n"
 	d := mustDecline(t, src, info.Values{Name: "x", Version: "1.0"}, NotLiteral)
 	require.Len(t, d.Candidates, 1)
 }
@@ -336,4 +345,36 @@ subport foo-sub {
 	loc, err := locateField(t, src, info.Values{Name: "foo-sub", Version: "1.0", Revision: "5"}, info.FieldRevision)
 	require.NoError(t, err)
 	require.Equal(t, "5", loc.Span.Text([]byte(src)))
+}
+
+func TestLocateCorroboratesASetVariable(t *testing.T) {
+	src := "set myver 1.2.3\nversion ${myver}\n"
+	loc := mustLocate(t, src, info.Values{Name: "foo", Version: "1.2.3"})
+	require.Equal(t, SetVariable, loc.Style)
+	require.Equal(t, "1.2.3", loc.Span.Text([]byte(src)))
+}
+
+func TestLocateNeverLetsASetShadowARealStyle(t *testing.T) {
+	// The coincidental set comes LAST — position would pick it; rank
+	// must not.
+	src := "github.setup a b 1.2.3\nset unrelated 1.2.3\n"
+	loc := mustLocate(t, src, info.Values{Name: "b", Version: "1.2.3"})
+	require.Equal(t, GithubSetup, loc.Style)
+}
+
+func TestLocateKeepsSetsOutOfProbeCandidates(t *testing.T) {
+	// Nothing corroborates; the decline's candidates must not offer
+	// the set span to the counterfactual probe.
+	src := "set frag 7.7.7\ngithub.setup a b ${v}\n"
+	d := mustDecline(t, src, info.Values{Name: "b", Version: "9.9.9"}, NotLiteral)
+	for _, c := range d.Candidates {
+		require.NotEqual(t, SetVariable, c.Style)
+	}
+}
+
+func TestLocateSetOnlyMiscorroborationStaysUnknown(t *testing.T) {
+	// Only set candidates and none corroborate: an empty candidate
+	// list must degrade to UnknownStyle, never a hollow NotLiteral.
+	src := "set frag 7.7.7\n"
+	_ = mustDecline(t, src, info.Values{Name: "foo", Version: "9.9.9"}, UnknownStyle)
 }

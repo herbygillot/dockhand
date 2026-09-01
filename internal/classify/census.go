@@ -33,7 +33,7 @@ func (c *Census) Add(r Result) {
 func (c *Census) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d ports classified\n", c.Total)
-	for _, o := range []Outcome{Located, NotLiteral, UnknownStyle, ParseFailed, EvalFailed} {
+	for _, o := range []Outcome{Located, Probeable, NotLiteral, UnknownStyle, ParseFailed, EvalFailed} {
 		if n := c.ByOutcome[o]; n > 0 {
 			fmt.Fprintf(&b, "  %-14s %5d  (%.1f%%)\n", o, n, 100*float64(n)/float64(c.Total))
 		}

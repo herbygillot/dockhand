@@ -35,6 +35,11 @@ const (
 	// NotLiteral means styles exist but none is literal: the version is
 	// computed, and locating it needs more than the style table.
 	NotLiteral
+	// Probeable is NotLiteral with at least one literal candidate: the
+	// population bump's counterfactual probe can attempt. The census
+	// tier is free — no probe runs here — so the name claims the
+	// attempt, never the outcome.
+	Probeable
 	// ParseFailed means the Portfile has Tcl syntax errors.
 	ParseFailed
 	// EvalFailed means the port did not evaluate; nothing downstream ran.
@@ -49,6 +54,8 @@ func (o Outcome) String() string {
 		return "unknown style"
 	case NotLiteral:
 		return "not literal"
+	case Probeable:
+		return "not literal (probeable)"
 	case ParseFailed:
 		return "parse failed"
 	case EvalFailed:
@@ -119,6 +126,11 @@ func declineOutcome(d *portstyle.Decline) Outcome {
 	case portstyle.UnknownStyle:
 		return UnknownStyle
 	case portstyle.NotLiteral:
+		for _, c := range d.Candidates {
+			if c.Literal {
+				return Probeable
+			}
+		}
 		return NotLiteral
 	case portstyle.FieldUnsupported:
 		return EvalFailed // cannot happen for version; surfaced, not hidden

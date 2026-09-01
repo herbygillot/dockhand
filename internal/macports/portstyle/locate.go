@@ -109,23 +109,42 @@ func Locate(src []byte, tree *syntax.Script, vals info.Values, field info.Field)
 
 	// Corroborate, preferring the last match in document order: Tcl's
 	// later assignment wins, so the last span whose text equals the
-	// evaluated value is the one that produced it.
+	// evaluated value is the one that produced it. SetVariable is the
+	// exception both ways: a corroborated non-set carrier always
+	// outranks it (any set whose value coincides with the version
+	// corroborates, and the real style is the better claim), and it
+	// never enters the decline's candidate list (the counterfactual
+	// probe should not chase coincidental sets).
 	best := -1
+	outranks := func(i, j int) bool {
+		if j < 0 {
+			return true
+		}
+		a, b := candidates[i], candidates[j]
+		if (a.style == SetVariable) != (b.style == SetVariable) {
+			return b.style == SetVariable
+		}
+		return a.span.Start > b.span.Start
+	}
 	for i, c := range candidates {
 		got := c.span.Text(src)
 		if c.transform != nil {
 			got = c.transform(got)
 		}
-		if c.literal && value != "" && got == value {
-			if best < 0 || c.span.Start > candidates[best].span.Start {
-				best = i
-			}
+		if c.literal && value != "" && got == value && outranks(i, best) {
+			best = i
 		}
 	}
 	if best < 0 {
 		d := &Decline{Type: NotLiteral, Field: field}
 		for _, c := range candidates {
+			if c.style == SetVariable {
+				continue
+			}
 			d.Candidates = append(d.Candidates, Candidate{Style: c.style, Span: c.span, Literal: c.literal})
+		}
+		if len(d.Candidates) == 0 {
+			return Located{}, &Decline{Type: UnknownStyle, Field: field}
 		}
 		return Located{}, d
 	}

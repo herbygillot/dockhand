@@ -189,13 +189,45 @@ checksums rmd160 0000000000000000000000000000000000000000 \
 	assert.Equal(t, plan.FetchNotDriven, d.Type)
 }
 
-func TestBumpDeclinesComputedVersion(t *testing.T) {
+func TestBumpPlansThroughASetVariable(t *testing.T) {
+	// Once the classic computed-version decline; the set variable style
+	// locates it now, and the bump edits the set's own literal.
 	ev := newEvaluator(t)
 	dir := t.TempDir()
 	portfile := `PortSystem 1.0
 name computed
 set v 1.0
 version ${v}
+categories devel
+maintainers nomaintainer
+license MIT
+description version via a set variable
+long_description version via a set variable plans
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
+	p, err := Bump{Version: "2.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+	require.NoError(t, err)
+	var versionEdit bool
+	for _, e := range p.Edits {
+		if e.Reason == "version" {
+			versionEdit = true
+			assert.Equal(t, "1.0", e.Old)
+			assert.Equal(t, "2.0", e.New)
+		}
+	}
+	assert.True(t, versionEdit, "the set literal is the carrier")
+}
+
+func TestBumpDeclinesComputedVersion(t *testing.T) {
+	// Genuinely computed: the set literal is a fragment of the value,
+	// so nothing corroborates and no literal candidate remains for the
+	// probe.
+	ev := newEvaluator(t)
+	dir := t.TempDir()
+	portfile := `PortSystem 1.0
+name computed
+set v 1.0
+version ${v}.1
 categories devel
 maintainers nomaintainer
 license MIT
