@@ -330,6 +330,10 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 	box(len(passed) > 0, "tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM")
 	box(false, "tested basic functionality of all binary files?")
 	box(false, "checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?")
+	// Every body signs off, the unverified ones included: a PR with no
+	// verification claim still owes the reviewer the fact of how it was
+	// made.
+	fmt.Fprintf(&b, "\nAutomated by [dockhand](%s)\n", dockhandRepoURL)
 	return b.String()
 }
 

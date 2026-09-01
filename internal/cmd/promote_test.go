@@ -47,6 +47,17 @@ func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
 	assert.Contains(t, body, "- [x] tried a full install with")
 }
 
+func TestPromoteBodySignsOffEveryBody(t *testing.T) {
+	signoff := "\nAutomated by [dockhand](" + dockhandRepoURL + ")\n"
+	verified := templateNote(map[string]verifyRun{"Sonoma": {State: "passed"}})
+	for name, body := range map[string]string{
+		"verified":   promoteBody(verified, true, "", 1, true),
+		"unverified": promoteBody(verifyNote{}, false, "", 1, false),
+	} {
+		assert.True(t, strings.HasSuffix(body, signoff), "%s body must end with the sign-off", name)
+	}
+}
+
 func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
 	body := promoteBody(verifyNote{}, false, "12345", 1, false)
 	assert.Contains(t, body, "Not locally verified")
