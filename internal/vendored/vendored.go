@@ -47,12 +47,17 @@ const (
 	CargoCrates Kind = iota
 	// GoVendors is the Go block, regenerated from a module's source.
 	GoVendors
+	// CargoCratesGithub is the cargo block's git-sourced form: crates
+	// taken from a GitHub branch at a pinned revision.
+	CargoCratesGithub
 )
 
 func (k Kind) String() string {
 	switch k {
 	case CargoCrates:
 		return "cargo.crates"
+	case CargoCratesGithub:
+		return "cargo.crates_github"
 	case GoVendors:
 		return "go.vendors"
 	}

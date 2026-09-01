@@ -82,6 +82,11 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 	if err != nil {
 		return nil, fmt.Errorf("refresh: %w", err)
 	}
+	gitSupplied, err := cargo2port.GithubSuppliedIn(vals.Vendored.CargoCratesGithub)
+	if err != nil {
+		return nil, fmt.Errorf("refresh: %w", err)
+	}
+	supplied = append(supplied, gitSupplied...)
 	own, err := vendored.Own(vals.Distfiles, supplied)
 	if err != nil {
 		return nil, fmt.Errorf("refresh: %w", err)

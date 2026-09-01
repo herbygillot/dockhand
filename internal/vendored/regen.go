@@ -3,6 +3,7 @@ package vendored
 import (
 	"context"
 
+	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
@@ -30,6 +31,9 @@ type Regen struct {
 	// Fetched are the local paths of the target version's own
 	// distfiles, already downloaded and checksummed.
 	Fetched []string
+	// Fetch downloads what a family needs beyond those — the git-crate
+	// tarballs, checksummed as they land.
+	Fetch distfile.Fetcher
 	// TempDir stages whatever a generator needs on disk.
 	TempDir tempdir.Root
 }
@@ -54,7 +58,8 @@ type Regenerator interface {
 	// checksum machinery must not treat as the port's own. It runs
 	// before any fetch, so rc.Fetched is empty here.
 	Supplied(ctx context.Context, rc Regen) ([]string, error)
-	// Regenerate produces the block's replacement edit for the target
-	// version.
-	Regenerate(ctx context.Context, rc Regen) (edit.Edit, error)
+	// Regenerate produces the block edits for the target version —
+	// usually one, but a family may maintain sibling blocks (cargo's
+	// registry and github forms travel together).
+	Regenerate(ctx context.Context, rc Regen) ([]edit.Edit, error)
 }

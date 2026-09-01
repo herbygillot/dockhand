@@ -230,6 +230,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			Handle: h, Vals: vals,
 			Shadow: shadow, ShadowVals: shadowVals,
 			TempDir: h.TempDir,
+			Fetch:   fetch,
 		}
 		var supplied []string
 		for _, r := range regenerators {
@@ -303,11 +304,11 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			if !r.Present(vals) {
 				continue
 			}
-			blockEdit, rerr := r.Regenerate(ctx, rc)
+			blockEdits, rerr := r.Regenerate(ctx, rc)
 			if rerr != nil {
 				return nil, rerr
 			}
-			edits = append(edits, blockEdit)
+			edits = append(edits, blockEdits...)
 		}
 		// The declared Go floor follows the new go.mod when its series
 		// moved — update-only; a port that never declared one is never

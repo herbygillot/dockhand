@@ -52,26 +52,26 @@ func (Blocks) Supplied(ctx context.Context, rc vendored.Regen) ([]string, error)
 // its siblings). Measured: handing go2port a bare version against a
 // v-prefixed tag makes it emit a portfile with no vendors block at
 // all rather than fail.
-func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) (edit.Edit, error) {
+func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) ([]edit.Edit, error) {
 	span, err := vendored.Locate(rc.Src, rc.CST, portstyle.ScopeOf(rc.Src, rc.Vals.Name), Kind)
 	if err != nil {
-		return edit.Edit{}, err
+		return nil, err
 	}
 	opts, err := rc.Shadow.Options(ctx, "go.package", "git.branch")
 	if err != nil {
-		return edit.Edit{}, err
+		return nil, err
 	}
 	pkg := strings.TrimSpace(opts["go.package"])
 	ref := strings.TrimSpace(opts["git.branch"])
 	if pkg == "" || ref == "" {
-		return edit.Edit{}, &plan.Decline{Type: plan.VendoredBlock,
+		return nil, &plan.Decline{Type: plan.VendoredBlock,
 			Detail: "go.vendors present but go.package or git.branch is empty; the module ref is unknowable"}
 	}
 	slog.Debug("regenerating go.vendors", "package", pkg, "ref", ref)
 	block, err := Generate(ctx, pkg, ref)
 	if err != nil {
-		return edit.Edit{}, err
+		return nil, err
 	}
 	slog.Debug("regenerated block", "kind", Kind.String(), "bytes", len(block))
-	return vendored.Edit(rc.Src, span, block, Kind), nil
+	return []edit.Edit{vendored.Edit(rc.Src, span, block, Kind)}, nil
 }

@@ -27,15 +27,13 @@ func (Blocks) Present(vals info.Values) bool {
 	return vals.Vendored.CargoCrates != "" || vals.Vendored.CargoCratesGithub != ""
 }
 
-// Veto refuses the two ways cargo regeneration would be dishonest,
-// both judged before any network: the git-revision block form no
-// generator writes, and a patch over the lockfile — the built crate
-// set is then not the one upstream shipped, so regenerating from the
-// distfile's copy would state something untrue.
+// Veto refuses the one way cargo regeneration would be dishonest,
+// judged before any network: a patch over the lockfile — the built
+// crate set is then not the one upstream shipped, so regenerating
+// from the distfile's copy would state something untrue. The
+// crates_github form is no longer a veto: both blocks regenerate from
+// the new lock together.
 func (Blocks) Veto(vals info.Values) (string, bool) {
-	if vals.Vendored.CargoCratesGithub != "" {
-		return "cargo.crates_github", true
-	}
 	if pf, ok := patchesLockfile(vals); ok {
 		return fmt.Sprintf("%s rewrites %s, so the built crate set is not the one upstream shipped", pf, LockName), true
 	}
@@ -47,34 +45,50 @@ func (Blocks) Supplied(_ context.Context, rc vendored.Regen) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bump: %w", err)
 	}
-	return supplied, nil
+	git, err := GithubSuppliedIn(rc.Vals.Vendored.CargoCratesGithub)
+	if err != nil {
+		return nil, fmt.Errorf("bump: %w", err)
+	}
+	return append(supplied, git...), nil
 }
 
 // Regenerate rebuilds the block from the lockfile inside the distfile
 // just fetched, so the crate set and the checksum recorded for that
 // distfile describe the same bytes — re-laid under the existing
 // block's proven geometry when Assess can prove one.
-func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) (edit.Edit, error) {
+func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) ([]edit.Edit, error) {
 	span, err := vendored.Locate(rc.Src, rc.CST, portstyle.ScopeOf(rc.Src, rc.Vals.Name), Kind)
 	if err != nil {
-		return edit.Edit{}, err
+		return nil, err
 	}
 	lock, from, err := Lockfile(ctx, rc.Fetched, rc.ShadowVals.Worksrcdir)
 	if err != nil {
-		return edit.Edit{}, err
+		return nil, err
 	}
 	slog.Debug("read lockfile", "from", filepath.Base(from), "bytes", len(lock))
+	// The lock rules on git sources before anything regenerates: a git
+	// dependency the block format cannot express declines here, by
+	// name — never a complete-looking branch that cannot build.
+	git, err := gitCrates(lock)
+	if err != nil {
+		return nil, err
+	}
 	geom, proven := Assess(span.Text(rc.Src))
 	slog.Debug("assessed block layout", "layout", string(geom.Layout), "proven", proven)
 	block, err := Generate(ctx, rc.TempDir, lock, geom.Layout)
 	if err != nil {
-		return edit.Edit{}, err
+		return nil, err
 	}
 	if proven {
 		block = Reformat(block, geom)
 	}
 	slog.Debug("regenerated block", "kind", Kind.String(), "bytes", len(block))
-	return vendored.Edit(rc.Src, span, block, Kind), nil
+	edits := []edit.Edit{vendored.Edit(rc.Src, span, block, Kind)}
+	ghEdits, err := githubEdits(ctx, rc, span, git)
+	if err != nil {
+		return nil, err
+	}
+	return append(edits, ghEdits...), nil
 }
 
 // patchesLockfile reports whether any of the port's patchfiles rewrites
