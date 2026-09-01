@@ -195,3 +195,7 @@ func TestCleanScriptUsesTheGivenPrefix(t *testing.T) {
 	assert.Contains(t, s, "/opt/dockhand/e/abc/bin/port installed")
 	assert.NotContains(t, s, "/opt/local/bin/port")
 }
+
+func TestLintArgsLeadTheRun(t *testing.T) {
+	assert.Equal(t, []string{"lint", "jq"}, LintArgs("jq"))
+}

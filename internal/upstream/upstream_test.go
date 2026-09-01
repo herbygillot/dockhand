@@ -215,3 +215,28 @@ func TestCoordsNewFamilies(t *testing.T) {
 	_, ok = coords(portstyle.RSetup, map[string]string{})
 	assert.False(t, ok)
 }
+
+// mergestat's field case: every release is a prerelease-style tag, an
+// ancient stable tag exists, and livecheck tracks the raw newest. The
+// old verdict charged livecheck with being "ahead of the forge" while
+// printing two identical versions — an explanation that contradicted
+// itself and sent the field run chasing a livecheck bug.
+func TestJudgePrereleaseNewestIsNotALivecheckFault(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "2.3.2-beta",
+		ForgeVersions: []string{"1.0.0", "2.3.0-beta", "2.3.2-beta"},
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest, "prerelease-only newest declines, never guesses")
+	assert.Contains(t, r.Detail, "prerelease-style")
+	assert.Contains(t, r.Detail, "newest stable is 1.0.0")
+}
+
+func TestJudgeLivecheckAheadNamesBothComparisons(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "9.0.0",
+		ForgeVersions: []string{"1.0.0", "2.0.0"},
+	})
+	assert.Equal(t, LivecheckAhead, r.Verdict)
+	assert.Contains(t, r.Detail, "newer than any forge tag")
+}

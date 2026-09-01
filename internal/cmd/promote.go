@@ -269,7 +269,7 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 	var b strings.Builder
 	b.WriteString("#### Description\n\n")
 	var passed []string
-	tested := false
+	tested, linted := false, false
 	if !verified {
 		b.WriteString("Not locally verified: no verification environment on the submitting machine.\n")
 	} else {
@@ -283,6 +283,9 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 				what := "built in a pristine VM"
 				if r.Tested {
 					what, tested = "built and tested in a pristine VM", true
+				}
+				if r.Linted {
+					linted = true
 				}
 				parts = append(parts, plat+": "+what)
 				passed = append(passed, plat)
@@ -325,7 +328,7 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 	box(single, "squashed and [minimized your commits](https://guide.macports.org/#project.github)?")
 	box(checkedPRs, "checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?")
 	box(false, "referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?")
-	box(false, "checked your Portfile with `port lint`?")
+	box(linted, "checked your Portfile with `port lint`?")
 	box(tested, "tried existing tests with `sudo port test`?")
 	box(len(passed) > 0, "tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM")
 	box(false, "tested basic functionality of all binary files?")

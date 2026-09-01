@@ -297,3 +297,24 @@ func TestAcceptTransformedCarrierRequiresMovementNotEquality(t *testing.T) {
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.TargetNotReached, d.Type)
 }
+
+func TestZigVendorHashFindsThePinnedShape(t *testing.T) {
+	src := []byte(`PortGroup   zig 1.0
+set vaxis_commit  a367b89da09bfe5e1b628501940de5b4f858f5f3
+set vaxis_hash    vaxis-0.6.0-BWNV_HHwCQB451KS7A8SMykALblPmGwHnzSfiJHjN3_9
+`)
+	assert.Equal(t, "vaxis-0.6.0-BWNV_HHwCQB451KS7A8SMykALblPmGwHnzSfiJHjN3_9",
+		zigVendorHash(src))
+}
+
+func TestZigVendorHashLeavesOrdinaryPortsAlone(t *testing.T) {
+	// A distname, a sha256, a version — none carry the 30+ character
+	// base64url fingerprint after a semver.
+	assert.Empty(t, zigVendorHash([]byte(`name zig
+version 0.13.0
+distname zig-macos-aarch64-0.13.0
+checksums sha256 8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916
+`)))
+	// The hash shape without any zig context does not decline.
+	assert.Empty(t, zigVendorHash([]byte(`something-1.0.0-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`)))
+}

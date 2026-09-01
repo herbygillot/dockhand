@@ -233,6 +233,15 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	if err := p.assertClean(ctx, name); err != nil {
 		return fail(err)
 	}
+	if req.NeedsXcode {
+		// Derived, never recorded (D19): the worker is already booted,
+		// so asking it costs a second — and refusing here releases the
+		// slot instead of keeping a guaranteed failure as a debug
+		// environment nobody needs.
+		if out, xerr := Exec(ctx, name, "/usr/bin/xcodebuild", "-version"); xerr != nil || !strings.Contains(out, "Xcode") {
+			return fail(fmt.Errorf("%w: %s requires a full Xcode installation and this base has none — provision with --xcode, or promote unverified", verify.ErrNoEnvironment, req.Port))
+		}
+	}
 	if err := p.stage(ctx, name, req); err != nil {
 		return fail(err)
 	}
@@ -327,7 +336,7 @@ echo running > ` + stateDir + `/state
 : > ` + stateDir + `/log
 nohup /bin/sh -c '
   ok=yes
-  for f in ` + stateDir + `/argv.test ` + stateDir + `/argv; do
+  for f in ` + stateDir + `/argv.lint ` + stateDir + `/argv.test ` + stateDir + `/argv; do
     [ -f "$f" ] || continue
     set --
     while IFS= read -r a; do set -- "$@" "$a"; done < "$f"
@@ -351,6 +360,10 @@ func (p Provider) launch(ctx context.Context, vm string, req verify.Request) err
 	body := strings.NewReader(strings.Join(argv, "\n") + "\n")
 	if out, err := CLI(ctx, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv"); err != nil {
 		return fmt.Errorf("%w: writing the argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+	}
+	lint := strings.NewReader(strings.Join(build.LintArgs(req.Port), "\n") + "\n")
+	if out, err := CLI(ctx, lint, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.lint"); err != nil {
+		return fmt.Errorf("%w: writing the lint argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	if req.Test {
 		body := strings.NewReader(strings.Join(build.TestArgs(req.Port, req.Variants), "\n") + "\n")

@@ -38,6 +38,10 @@ type verifyRun struct {
 	// after the install — promote's checklist vouches only for what a
 	// note remembers.
 	Tested bool `json:"tested,omitempty"`
+	// Linted says the run led with `port lint` — every tart run does
+	// now, but the note remembers rather than the code assuming, so
+	// verdicts recorded before lint existed stay honest.
+	Linted bool `json:"linted,omitempty"`
 }
 
 const noteSchema = 2

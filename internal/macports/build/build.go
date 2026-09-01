@@ -172,6 +172,15 @@ func InstallArgs(port string, variants info.VariantSet, fromSource bool) []strin
 	return append(args, variants.List()...)
 }
 
+// LintArgs asks port(1) to lint the Portfile. It leads every
+// verification: the environment is already there, lint is cheap, and
+// its passing is what lets the PR template's lint box be checked
+// honestly. Errors fail the run; warnings do not — port lint's own
+// exit code draws that line.
+func LintArgs(port string) []string {
+	return []string{"lint", port}
+}
+
 // TestArgs asks port(1) to run the port's test suite, under the same
 // variant frame the install will use. It runs BEFORE the install, the
 // way mpbb's test-port does: a fresh invocation builds the port through

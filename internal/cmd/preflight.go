@@ -21,23 +21,37 @@ import (
 // (one short-lived session, about a second) against the portdir given,
 // which for a branch verification is the materialized branch content —
 // the known_fail under test is the branch's, not the checkout's.
-func knownFailOn(ctx context.Context, rs *runstate.Context, portdir string, r platform.Release) (bool, error) {
+func knownFailOn(ctx context.Context, rs *runstate.Context, portdir string, r platform.Release) (preflight, error) {
 	pfx, err := rs.Prefix()
 	if err != nil {
-		return false, err
+		return preflight{}, err
 	}
 	frame := info.Platform{OS: "macosx", Major: r.Darwin, Arch: "arm"}
 	p, err := pool.New(ctx, pfx, 1, eval.WithPlatform(frame))
 	if err != nil {
-		return false, err
+		return preflight{}, err
 	}
 	defer p.Close()
 	h := port.New(tree.Target{Portdir: portdir}, p.Evaluators()[0])
-	opts, err := h.Options(ctx, "known_fail")
+	opts, err := h.Options(ctx, "known_fail", "use_xcode")
 	if err != nil {
-		return false, err
+		return preflight{}, err
 	}
-	return tclTrue(opts["known_fail"]), nil
+	return preflight{
+		KnownFail: tclTrue(opts["known_fail"]),
+		UseXcode:  tclTrue(opts["use_xcode"]),
+	}, nil
+}
+
+// preflight is what one evaluation answers before any VM boots: does
+// the port refuse this platform, and does it need a capability —
+// full Xcode — a base may not have. Field-measured cost of not asking
+// the second question: a guaranteed-failure build spent a VM slot,
+// kept its worker as a debug environment nobody needed, and read as
+// "this bump is broken" when the base was the limitation.
+type preflight struct {
+	KnownFail bool
+	UseXcode  bool
 }
 
 // tclTrue reads a value the way Tcl's [string is true] does, which is

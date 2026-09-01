@@ -53,6 +53,11 @@ const (
 	// forge tag: it may be watching the wrong project, or the upstream
 	// moved.
 	LivecheckAhead
+	// PrereleaseNewest means livecheck and the forge agree on the raw
+	// newest tag, but that tag is prerelease-style: the upstream's
+	// current releases are all betas. Declining is right; the message
+	// must not read as a livecheck fault.
+	PrereleaseNewest
 )
 
 func (v Verdict) String() string {
@@ -71,6 +76,8 @@ func (v Verdict) String() string {
 		return "livecheck behind: newer stable releases exist"
 	case LivecheckAhead:
 		return "livecheck ahead of the forge"
+	case PrereleaseNewest:
+		return "the newest releases are prerelease-style tags"
 	}
 	return "unknown verdict"
 }
@@ -153,8 +160,17 @@ func Judge(obs Observation) Report {
 		r.Verdict = LivecheckBehind
 		r.Detail = "livecheck " + obs.Livecheck + ", forge stable " + against
 	case c < 0:
+		if macports.VerCmp(obs.Livecheck, r.ForgeNewest) == 0 {
+			// livecheck tracks the forge's raw newest fine; it is ahead
+			// only of the stable subset. Charging livecheck here sent a
+			// field run chasing a livecheck bug that did not exist —
+			// the message printed the newest it never compared against.
+			r.Verdict = PrereleaseNewest
+			r.Detail = "newest tag " + r.ForgeNewest + " is prerelease-style; newest stable is " + against
+			return r
+		}
 		r.Verdict = LivecheckAhead
-		r.Detail = "livecheck " + obs.Livecheck + ", forge newest " + r.ForgeNewest
+		r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge tag (newest " + r.ForgeNewest + ", stable " + against + ")"
 	default:
 		// vercmp-equal; the maintainer's spelling wins.
 		r.Verdict, r.Latest = Agreement, obs.Livecheck

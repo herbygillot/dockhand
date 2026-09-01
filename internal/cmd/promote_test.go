@@ -87,3 +87,9 @@ func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
 	}
 	assert.Equal(t, 12, strings.Count(body, "- ["), "3 type boxes + 9 checklist boxes")
 }
+
+func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
+	n := templateNote(map[string]verifyRun{"Tahoe": {State: "passed", Linted: true}})
+	body := promoteBody(n, true, "", 1, false)
+	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
+}

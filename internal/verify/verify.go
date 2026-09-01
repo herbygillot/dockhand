@@ -126,6 +126,10 @@ type Request struct {
 	// the provider does not serve is refused rather than substituted: a
 	// build on Sonoma is not evidence about Sequoia.
 	Platform platform.Release
+	// NeedsXcode says the port sets use_xcode: the environment must
+	// answer xcodebuild, and one that cannot should refuse before the
+	// build starts rather than fail forty minutes in.
+	NeedsXcode bool
 	// Test also runs the port's test suite (`port test`) after the
 	// install succeeds, in the same environment. Additive on purpose,
 	// the same shape as mpbb (install-port and test-port are separate

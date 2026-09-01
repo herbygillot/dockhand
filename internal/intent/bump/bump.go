@@ -9,12 +9,14 @@
 package bump
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -132,6 +134,16 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}
 	case vals.Vendored.CargoCratesGithub != "":
 		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "cargo.crates_github"}
+	}
+	// Zig dependency sets are hand-vendored — no MacPorts option marks
+	// them, so the Portfile itself is read for Zig's package-hash shape.
+	// The stake is higher than a missing generator: without this
+	// refusal a bump re-checksums the OLD pinned dependency commits and
+	// produces a branch that looks complete and is wrong — the one
+	// behaviour the tool promises against. Field-measured on ziggity.
+	if h := zigVendorHash(src); h != "" {
+		return nil, &plan.Decline{Type: plan.VendoredBlock,
+			Detail: fmt.Sprintf("hand-vendored Zig dependency set (build.zig.zon package hash %s); dockhand cannot re-resolve the pinned dependencies yet", h)}
 	}
 	// A patch over the lockfile means the crate set the port builds is
 	// not the one upstream shipped, so regenerating from the distfile's
@@ -526,6 +538,23 @@ func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syn
 	}
 	slog.Debug("regenerated block", "kind", cargo2port.Kind.String(), "bytes", len(block))
 	return vendored.Edit(src, span, block, cargo2port.Kind), nil
+}
+
+// zigPackageHash is the shape of a Zig 0.12+ package hash as ports pin
+// them: name, semver, and a long base64url fingerprint, e.g.
+// vaxis-0.6.0-BWNV_HHwCQB451KS7A8SMykALblPmGwHnzSfiJHjN3_9. The
+// fingerprint's length is what keeps distnames and versions from
+// matching. "zig" must also appear in the Portfile, so an improbable
+// literal elsewhere cannot decline an unrelated port.
+var zigPackageHash = regexp.MustCompile(`\b[A-Za-z0-9_.]+-[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9_-]{30,}\b`)
+
+// zigVendorHash reports the first Zig package hash pinned in a
+// Portfile, "" when none.
+func zigVendorHash(src []byte) string {
+	if !bytes.Contains(src, []byte("zig")) {
+		return ""
+	}
+	return string(zigPackageHash.Find(src))
 }
 
 // patchesLockfile reports whether any of the port's patchfiles rewrites

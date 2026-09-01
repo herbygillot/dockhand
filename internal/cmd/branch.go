@@ -206,19 +206,23 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 	staged := filepath.Join(stage, filepath.FromSlash(m.RelPort))
 	// mpbb's list-time exclusion, borrowed: evaluation answers
 	// known_fail in a second, before any VM boots — and it answers for
-	// the branch's content, which is what was materialized.
-	if declares, kerr := knownFailOn(ctx, rs, staged, release); kerr != nil {
-		fmt.Fprintf(rs.Err, "warning: known_fail pre-flight: %v\n", kerr)
-	} else if declares {
+	// the branch's content, which is what was materialized. The same
+	// session answers use_xcode, so a port that needs a full Xcode is
+	// probed for one before the build starts, not forty minutes in.
+	pf, kerr := knownFailOn(ctx, rs, staged, release)
+	if kerr != nil {
+		fmt.Fprintf(rs.Err, "warning: pre-flight evaluation: %v\n", kerr)
+	} else if pf.KnownFail {
 		return recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
 			State: "unsupported", Detail: "declares known_fail on " + release.Name,
 		}, fmt.Sprintf("%s declares known_fail on %s; recorded unsupported — no build attempted", portName, release.Name))
 	}
 	job, err := prov.Submit(ctx, verify.Request{
-		Port:     portName,
-		Portdirs: []string{staged},
-		Platform: release,
-		Test:     test,
+		Port:       portName,
+		Portdirs:   []string{staged},
+		Platform:   release,
+		Test:       test,
+		NeedsXcode: pf.UseXcode,
 	})
 	if err != nil {
 		// A full provider (two-slot cap) or a mid-submit failure: the
@@ -226,7 +230,7 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 		return later(err.Error())
 	}
 	if err := recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
-		State: "running", Job: job, Tested: test,
+		State: "running", Job: job, Tested: test, Linted: true,
 	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID)); err != nil {
 		return err
 	}
@@ -378,7 +382,7 @@ func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.
 		}
 		release = prov.Capabilities().Platforms[0]
 	}
-	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed", Tested: tested},
+	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed", Tested: tested, Linted: true},
 		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
 }
 
