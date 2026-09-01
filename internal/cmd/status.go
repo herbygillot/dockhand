@@ -109,7 +109,7 @@ func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch 
 	}
 	switch {
 	case pr.MergedAt != "":
-		if err := discardBranch(ctx, rs, ps.repo, branch); err != nil {
+		if err := discardBranch(ctx, rs, ps.repo, branch, true); err != nil {
 			return false, fmt.Sprintf("PR #%d merged; cleaning failed: %v", pr.Number, err)
 		}
 		return true, fmt.Sprintf("PR #%d merged — branch cleaned", pr.Number)

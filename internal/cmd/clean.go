@@ -113,7 +113,7 @@ func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes
 		if err != nil {
 			return "", err
 		}
-		if err := discardBranch(ctx, rs, repo, branch); err != nil {
+		if err := discardBranch(ctx, rs, repo, branch, true); err != nil {
 			return "", err
 		}
 		verdict := fmt.Sprintf("cleaned — PR #%d merged", pr.Number)

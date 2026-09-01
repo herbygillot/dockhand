@@ -91,7 +91,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := verifyPlan(ctx, rs, p, release); err != nil {
+		if err := verifyPlan(ctx, rs, p, release, a.opts.test); err != nil {
 			return err
 		}
 		opts.verified = true
@@ -118,6 +118,8 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"build the result in a pristine VM before realizing it; failure realizes nothing")
 	c.Flags().BoolVar(&f.opts.noVerify, "no-verify", false,
 		"mint the branch without submitting background verification")
+	c.Flags().BoolVar(&f.opts.test, "test", false,
+		"also run the port's test suite (`port test`) in the verification environment")
 	c.Flags().BoolVar(&f.opts.trace, "trace", false,
 		"stay attached after submitting: stream the build log until it finishes")
 	c.Flags().StringVar(&f.opts.on, "on", "", "macOS release to verify on")
@@ -132,6 +134,8 @@ func (f *intentFlags) check() error {
 		return usagef("--verify and --no-verify are mutually exclusive")
 	case f.opts.trace && (f.opts.noVerify || f.opts.planOnly || f.opts.diff || f.opts.inPlace):
 		return usagef("--trace follows a submitted verification; it needs the default branch realization")
+	case f.opts.test && (f.opts.noVerify || f.opts.planOnly || f.opts.diff || f.opts.inPlace):
+		return usagef("--test rides a verification; it needs the default branch realization")
 	}
 	return nil
 }

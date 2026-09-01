@@ -126,6 +126,12 @@ type Request struct {
 	// the provider does not serve is refused rather than substituted: a
 	// build on Sonoma is not evidence about Sequoia.
 	Platform platform.Release
+	// Test also runs the port's test suite (`port test`) after the
+	// install succeeds, in the same environment. Additive on purpose,
+	// the same shape as mpbb (install-port and test-port are separate
+	// steps): `port test` builds but never destroots or activates, so
+	// it cannot stand in for the install that verification is.
+	Test bool
 	// FromSource names ports whose binary archives must be ignored.
 	// A version bump does not need this: the new version yields an
 	// archive name that does not exist yet, so MacPorts builds from

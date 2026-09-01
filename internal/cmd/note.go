@@ -34,6 +34,10 @@ type verifyRun struct {
 	Job    verify.Job `json:"job"`
 	Handle string     `json:"handle,omitempty"`
 	Detail string     `json:"detail,omitempty"`
+	// Tested says the run included the port's test suite (`port test`)
+	// after the install — promote's checklist vouches only for what a
+	// note remembers.
+	Tested bool `json:"tested,omitempty"`
 }
 
 const noteSchema = 2

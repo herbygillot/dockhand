@@ -153,6 +153,15 @@ func (r *Repo) Push(ctx context.Context, remote, branch string) error {
 	return err
 }
 
+// PushDelete removes a branch from a remote — the undo of Push, for
+// cleanup that follows a merged PR. Deleting a ref that is already
+// gone is an error from git, and callers who want idempotence should
+// treat it as advisory.
+func (r *Repo) PushDelete(ctx context.Context, remote, branch string) error {
+	_, err := r.git(ctx, "push", remote, "--delete", branch)
+	return err
+}
+
 // TrackedRemote names the remote a branch tracks, "" when none.
 func (r *Repo) TrackedRemote(ctx context.Context, branch string) string {
 	out, _ := r.git(ctx, "config", "--get", "branch."+branch+".remote")

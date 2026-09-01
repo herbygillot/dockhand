@@ -401,6 +401,19 @@ cheap state only; the log is asked for when someone wants it (`dockhand
 log`, the failure tail), which is also the shape a future GitHub provider
 needs.
 
+**Amended (2026-08-31).** Request gains Test: verification can also run the
+port's test suite. Two rulings, both taken from mpbb. Test is additive, never
+a replacement — mpbb keeps install-port and test-port as separate steps, and
+`port test` builds but never destroots or activates, so it cannot stand in
+for the install that verification is. And test runs BEFORE the install, as
+its own fresh invocation with -k, the install continuing from the kept work
+directory: the reverse order — install then test — was measured failing with
+EPERM in the guest, because two `port` invocations leave the work directory's
+files owned between root and the macports user, while test-then-install is
+just the normal single-run progression (build → destroot → activate) split
+across two commands. The note records the bit (`tested`), because promote's
+checklist vouches only for what a note remembers.
+
 **Why.** Even the "synchronous" backend takes fifteen seconds to nine minutes,
 long enough that a blocking call is a lie the first time someone interrupts a
 run. The serializable Job forced the tart guest to drive its own build and
@@ -536,7 +549,10 @@ its port **refuses by default**, naming the branch — an explicit flag
 re-planning. And `status` never auto-discards — amended (2026-08-31):
 status now performs exactly one deletion, a branch whose PR merged,
 announced as it happens, because a merged PR is GitHub's own word that
-the work landed; every other cleanup remains the user's explicit act,
+the work landed — and the fork copy goes with it, in status and in
+`clean` both: dockhand placed it, so dockhand deletes it (plain
+`discard` still leaves it, because there the copy may back an open
+PR); every other cleanup remains the user's explicit act,
 and `clean` stays as the manual sweep and the home of kept/closed
 reporting. The original sweep verb — `dockhand
 clean` (superseding a briefly-held `discard --merged` spelling the same day),

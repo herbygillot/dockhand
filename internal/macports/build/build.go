@@ -169,6 +169,19 @@ func InstallArgs(port string, variants info.VariantSet, fromSource bool) []strin
 	return append(args, variants.List()...)
 }
 
+// TestArgs asks port(1) to run the port's test suite, under the same
+// variant frame the install will use. It runs BEFORE the install, the
+// way mpbb's test-port does: a fresh invocation builds the port through
+// the test phase under one consistent privilege drop, where testing
+// after an install rebuilds in a work directory whose files two
+// invocations own between them — measured as EPERM in the guest. -k
+// keeps the work directory, so the install that follows continues from
+// the built state (build → destroot → activate is the normal
+// single-run progression) instead of starting the port over.
+func TestArgs(port string, variants info.VariantSet) []string {
+	return append([]string{"-N", "-k", "test", port}, variants.List()...)
+}
+
 // CleanScript is a shell script that reports everything wrong with a
 // MacPorts environment, one finding per line, and prints nothing when
 // there is nothing wrong. Empty output is the pass.

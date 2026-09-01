@@ -137,7 +137,7 @@ func (e *VerifyDeferredError) Error() string {
 // as the commit's note. Submission not starting is not a minting
 // failure — the branch stands — but it is a contract failure:
 // VerifyDeferredError carries that split.
-func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release, trace bool) error {
+func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release, trace, test bool) error {
 	if !tartPresent() {
 		// No provider, no contract: the machine cannot verify at all,
 		// so this is a --no-verify bump that says so — and the branch
@@ -187,6 +187,7 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 		Port:     portName,
 		Portdirs: []string{staged},
 		Platform: release,
+		Test:     test,
 	})
 	if err != nil {
 		// A full provider (two-slot cap) or a mid-submit failure: the
@@ -194,7 +195,7 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 		return later(err.Error())
 	}
 	if err := recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
-		State: "running", Job: job,
+		State: "running", Job: job, Tested: test,
 	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID)); err != nil {
 		return err
 	}
@@ -281,6 +282,7 @@ type realizeOpts struct {
 	inPlace  bool
 	noVerify bool
 	trace    bool
+	test     bool
 	on       string
 	// verified says the synchronous --verify gate already ran and
 	// passed on this plan's content, so realization records the verdict
@@ -314,7 +316,7 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 		// so the verdict transfers to the commit by content identity.
 		// Recording it beats resubmitting: the same build twice proves
 		// nothing the first one did not.
-		return markVerified(ctx, rs, m, p, o.on)
+		return markVerified(ctx, rs, m, p, o.on, o.test)
 	}
 	if o.noVerify {
 		return nil
@@ -326,12 +328,12 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 	if err != nil {
 		return err
 	}
-	return submitVerification(ctx, rs, m, p.Port, release, o.trace)
+	return submitVerification(ctx, rs, m, p.Port, release, o.trace, o.test)
 }
 
 // markVerified writes the minted commit's note as passed, on the
 // strength of the pre-mint gate having built identical content.
-func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.Plan, on string) error {
+func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.Plan, on string, tested bool) error {
 	release, err := releaseFlag(on)
 	if err != nil {
 		return err
@@ -344,7 +346,7 @@ func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.
 		}
 		release = prov.Capabilities().Platforms[0]
 	}
-	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed"},
+	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed", Tested: tested},
 		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
 }
 

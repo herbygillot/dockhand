@@ -324,10 +324,16 @@ func runner(portCmd string) string {
 	return `set -u
 mkdir -p ` + stateDir + `
 echo running > ` + stateDir + `/state
+: > ` + stateDir + `/log
 nohup /bin/sh -c '
-  set --
-  while IFS= read -r a; do set -- "$@" "$a"; done < ` + stateDir + `/argv
-  if sudo -n ` + portCmd + ` "$@" > ` + stateDir + `/log 2>&1
+  ok=yes
+  for f in ` + stateDir + `/argv.test ` + stateDir + `/argv; do
+    [ -f "$f" ] || continue
+    set --
+    while IFS= read -r a; do set -- "$@" "$a"; done < "$f"
+    sudo -n ` + portCmd + ` "$@" >> ` + stateDir + `/log 2>&1 || { ok=no; break; }
+  done
+  if [ "$ok" = yes ]
   then echo passed > ` + stateDir + `/state
   else echo failed > ` + stateDir + `/state
   fi
@@ -345,6 +351,12 @@ func (p Provider) launch(ctx context.Context, vm string, req verify.Request) err
 	body := strings.NewReader(strings.Join(argv, "\n") + "\n")
 	if out, err := CLI(ctx, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv"); err != nil {
 		return fmt.Errorf("%w: writing the argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+	}
+	if req.Test {
+		body := strings.NewReader(strings.Join(build.TestArgs(req.Port, req.Variants), "\n") + "\n")
+		if out, err := CLI(ctx, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.test"); err != nil {
+			return fmt.Errorf("%w: writing the test argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+		}
 	}
 	if out, err := Exec(ctx, vm, "/bin/sh", "-c", runner(p.prefixOf().Port())); err != nil {
 		return fmt.Errorf("%w: launching the build: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))

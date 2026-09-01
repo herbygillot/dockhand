@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -326,4 +327,37 @@ func TestRelPathResolvesSymlinkedCheckouts(t *testing.T) {
 	rel, err := r.RelPath(filepath.Join(link, "sysutils", "jq"))
 	require.NoError(t, err)
 	assert.Equal(t, "sysutils/jq", rel)
+}
+
+// Push -u then PushDelete must round-trip against a real remote: the
+// fork copy dockhand placed is one dockhand can delete, and the
+// tracking config Push wrote is what names the remote to delete from.
+func TestPushDeleteRemovesTheForkCopy(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+
+	fork := t.TempDir()
+	out, err := exec.Command("git", "init", "--bare", "--quiet", fork).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	_, err = exec.Command("git", "-C", r.Root, "remote", "add", "fork", fork).CombinedOutput()
+	require.NoError(t, err)
+
+	sha, err := r.RevParse(ctx, "HEAD")
+	require.NoError(t, err)
+	_, err = exec.Command("git", "-C", r.Root, "branch", "dockhand/jq-1.8", sha).CombinedOutput()
+	require.NoError(t, err)
+
+	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-1.8"))
+	assert.Equal(t, "fork", r.TrackedRemote(ctx, "dockhand/jq-1.8"))
+	lsRemote, err := exec.Command("git", "-C", fork, "branch", "--list", "dockhand/jq-1.8").Output()
+	require.NoError(t, err)
+	require.Contains(t, string(lsRemote), "dockhand/jq-1.8")
+
+	require.NoError(t, r.PushDelete(ctx, "fork", "dockhand/jq-1.8"))
+	lsRemote, err = exec.Command("git", "-C", fork, "branch", "--list", "dockhand/jq-1.8").Output()
+	require.NoError(t, err)
+	assert.Empty(t, strings.TrimSpace(string(lsRemote)))
+
+	// Deleting the already-gone ref is git's error, advisory by contract.
+	assert.Error(t, r.PushDelete(ctx, "fork", "dockhand/jq-1.8"))
 }

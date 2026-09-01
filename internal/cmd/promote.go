@@ -88,16 +88,31 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err != nil {
 		return err
 	}
+	// The branch's own commits, oldest last (rev-list order): the
+	// oldest is the one dockhand minted, and its subject is already in
+	// project format (`<port>: <description>`) — later commits are
+	// fixups whose subjects would make bad titles. The count also
+	// answers the template's squashed-and-minimized checkbox.
+	primary, err := repo.PrimaryBranch(ctx)
+	if err != nil {
+		return err
+	}
+	own, err := repo.OwnCommits(ctx, tip, primary)
+	if err != nil {
+		return err
+	}
 	title := a.title
 	if title == "" {
-		// The tip commit's subject is already in project format, and
-		// the PR template auto-detects the change type from the title.
-		title, err = repoSubject(ctx, repo, tip)
+		subject := tip
+		if len(own) > 0 {
+			subject = own[len(own)-1]
+		}
+		title, err = repoSubject(ctx, repo, subject)
 		if err != nil {
 			return err
 		}
 	}
-	body := promoteBody(n, verified, a.closes)
+	body := promoteBody(n, verified, a.closes, len(own))
 	args := []string{"pr", "create", "--repo", upstream,
 		"--head", forkOwner + ":" + branch, "--title", title, "--body", body}
 	url, err := ghOut(ctx, args...)
@@ -112,29 +127,77 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 // was not — verified, stated plainly: candour is the accepted
 // currency, and unverified assertions are what draw "did you verify
 // this?".
-func promoteBody(n verifyNote, verified bool, closes string) string {
+// dockhandRepoURL is where the PR body's "dockhand" points, so a
+// reviewer meeting the tool in a PR can see what vouched for the claim.
+const dockhandRepoURL = "https://github.com/herbygillot/dockhand"
+
+// promoteBody renders the PR body in the shape of macports-ports' own
+// pull request template, with the boxes dockhand can honestly vouch
+// for checked and everything it cannot left for the human. Candour is
+// the accepted currency: the verdict set is enumerated in full, an
+// unverified promotion says so, and the install checkbox strikes the
+// template's command through in favour of the one actually run.
+func promoteBody(n verifyNote, verified bool, closes string, ownCommits int) string {
 	var b strings.Builder
+	b.WriteString("#### Description\n\n")
+	var passed []string
+	tested := false
 	if !verified {
 		b.WriteString("Not locally verified: no verification environment on the submitting machine.\n")
 	} else {
 		// The whole verdict set, enumerated: a passing platform and a
-		// declining one are both facts a reviewer wants, and candour is
-		// the accepted currency.
+		// declining one are both facts a reviewer wants.
 		var parts []string
 		for _, plat := range n.platforms() {
-			switch n.Runs[plat].State {
+			r := n.Runs[plat]
+			switch r.State {
 			case "passed":
-				parts = append(parts, plat+": built in a pristine VM")
+				what := "built in a pristine VM"
+				if r.Tested {
+					what, tested = "built and tested in a pristine VM", true
+				}
+				parts = append(parts, plat+": "+what)
+				passed = append(passed, plat)
 			case "unsupported":
 				parts = append(parts, plat+": the port declines this platform (known_fail)")
 			}
 		}
-		fmt.Fprintf(&b, "Verified with dockhand at commit `%s` — %s.\n",
-			n.Sha[:12], strings.Join(parts, "; "))
+		fmt.Fprintf(&b, "Verified with [dockhand](%s) at commit `%s` — %s.\n",
+			dockhandRepoURL, n.Sha[:12], strings.Join(parts, "; "))
 	}
 	if closes != "" {
 		fmt.Fprintf(&b, "\nCloses: https://trac.macports.org/ticket/%s\n", closes)
 	}
+
+	b.WriteString("\n###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n")
+	if len(passed) > 0 {
+		b.WriteString("\n###### Tested on\n")
+		for _, plat := range passed {
+			fmt.Fprintf(&b, "macOS %s — pristine tart VM, via dockhand\n", plat)
+		}
+	}
+
+	box := func(ok bool, item string) {
+		mark := " "
+		if ok {
+			mark = "x"
+		}
+		fmt.Fprintf(&b, "- [%s] %s\n", mark, item)
+	}
+	// The single minted commit is the one whose message dockhand wrote
+	// in project format; a branch the user grew past it is theirs to
+	// vouch for.
+	single := ownCommits == 1
+	b.WriteString("\n###### Verification\nHave you\n\n")
+	box(single, "followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?")
+	box(single, "squashed and [minimized your commits](https://guide.macports.org/#project.github)?")
+	box(false, "checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?")
+	box(false, "referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?")
+	box(false, "checked your Portfile with `port lint`?")
+	box(tested, "tried existing tests with `sudo port test`?")
+	box(len(passed) > 0, "tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM?")
+	box(false, "tested basic functionality of all binary files?")
+	box(false, "checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?")
 	return b.String()
 }
 

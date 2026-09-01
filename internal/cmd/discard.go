@@ -34,13 +34,17 @@ func (a discardAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err != nil {
 		return err
 	}
-	return discardBranch(ctx, rs, repo, branch)
+	return discardBranch(ctx, rs, repo, branch, false)
 }
 
 // discardBranch is the shared demolition: cancel and release whatever
 // the branch's commits hold, remove their notes, delete the branch.
-// clean arrives here too, once its evidence says a branch is done.
-func discardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string) error {
+// clean and status's merged-PR autoclean arrive here too, and they
+// pass dropFork: dockhand placed the fork copy, so once the PR merged
+// dockhand deletes it. Plain discard leaves it, because there the copy
+// may back an open PR, and deleting it closes the PR — a louder
+// decision than discard makes.
+func discardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, dropFork bool) error {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return err
@@ -80,8 +84,17 @@ func discardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 		}
 	}
 	if tracked := repo.TrackedRemote(ctx, branch); tracked != "" {
-		fmt.Fprintf(rs.Err, "the fork copy on %q is untouched — `git push %s --delete %s` removes it\n",
-			tracked, tracked, branch)
+		if !dropFork {
+			fmt.Fprintf(rs.Err, "the fork copy on %q is untouched — `git push %s --delete %s` removes it\n",
+				tracked, tracked, branch)
+		} else if derr := repo.PushDelete(ctx, tracked, branch); derr != nil {
+			// Advisory: the ref may already be gone (GitHub's own
+			// delete-branch button, an earlier sweep), and a network
+			// refusal must not leave the local demolition half-done.
+			fmt.Fprintf(rs.Err, "warning: the fork copy on %q was not removed: %v\n", tracked, derr)
+		} else {
+			fmt.Fprintf(rs.Err, "removed %s from %q\n", branch, tracked)
+		}
 	}
 	if err := repo.DeleteBranch(ctx, branch); err != nil {
 		return err

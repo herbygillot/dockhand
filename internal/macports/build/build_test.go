@@ -93,6 +93,10 @@ func TestInstallArgsForcesSource(t *testing.T) {
 	assert.Equal(t, []string{"-N", "-s", "install", "jq"}, InstallArgs("jq", "", true))
 }
 
+func TestTestArgsRunFirstAndKeepTheBuild(t *testing.T) {
+	assert.Equal(t, []string{"-N", "-k", "test", "jq"}, TestArgs("jq", ""))
+}
+
 // The installer name pairs the product version with the marketing name,
 // spaces removed. Every case here is a file MacPorts actually publishes.
 func TestInstallerName(t *testing.T) {

@@ -88,7 +88,7 @@ func vmProvider(ctx context.Context) (tart.Provider, error) {
 // read the Portfile, hold it to the plan's precondition hash, apply the
 // edits, shadow the result — so the port under test is exactly what
 // apply would write.
-func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release platform.Release) error {
+func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release platform.Release, test bool) error {
 	src, err := os.ReadFile(filepath.Join(p.Portdir, macports.PortfileName))
 	if err != nil {
 		return err
@@ -113,13 +113,13 @@ func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release
 	}
 	defer cleanup()
 
-	return runVerification(ctx, rs, p.Port, shadow.Target.Portdir, release)
+	return runVerification(ctx, rs, p.Port, shadow.Target.Portdir, release, test)
 }
 
 // runVerification submits one portdir to the VM provider and reports
 // the verdict. Both verification modes arrive here: a plan's shadowed
 // portdir, and a portdir as it sits in the tree.
-func runVerification(ctx context.Context, rs *runstate.Context, portName, portdir string, release platform.Release) error {
+func runVerification(ctx context.Context, rs *runstate.Context, portName, portdir string, release platform.Release, test bool) error {
 	prov, err := vmProvider(ctx)
 	if err != nil {
 		return err
@@ -128,6 +128,7 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 		Port:     portName,
 		Portdirs: []string{portdir},
 		Platform: release,
+		Test:     test,
 	})
 	if err != nil {
 		return err
@@ -174,6 +175,7 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 type verifyAction struct {
 	target string
 	on     []string
+	test   bool
 }
 
 var _ Action = verifyAction{}
@@ -184,7 +186,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// made it. Everything else falls through to state verification of
 	// the working tree.
 	if repo, err := rs.Repo(ctx); err == nil && repo.HasBranch(ctx, a.target) {
-		return verifyBranch(ctx, rs, repo, a.target, a.on)
+		return verifyBranch(ctx, rs, repo, a.target, a.on, a.test)
 	}
 	var single string
 	if len(a.on) > 1 {
@@ -208,7 +210,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(targets[0].Portdir))
 	}
-	return runVerification(ctx, rs, portName, targets[0].Portdir, release)
+	return runVerification(ctx, rs, portName, targets[0].Portdir, release, a.test)
 }
 
 // verifyBranch submits a branch's tip for verification in the
@@ -219,7 +221,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // tip is left alone; a running job the branch has moved past is
 // canceled first, its worker released and its note marked superseded,
 // because a verdict about an abandoned sha is a slot spent on nothing.
-func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, on []string) error {
+func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string, on []string, test bool) error {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return err
@@ -275,7 +277,7 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		}
 		err := submitVerification(ctx, rs, &minted{
 			Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
-		}, filepath.Base(rel), r, false)
+		}, filepath.Base(rel), r, false, test)
 		var vde *VerifyDeferredError
 		if errors.As(err, &vde) {
 			// No slot for this platform right now: recorded, reported,
@@ -380,16 +382,19 @@ func cancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 // Verify builds the verify subcommand.
 func Verify() *cobra.Command {
 	var on []string
+	var test bool
 	c := &cobra.Command{
 		Use:   "verify <branch|port|subport|portdir>",
 		Short: "Verify a branch's tip in a pristine VM — or a port as it sits",
 		Args:  exactArgs(1),
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
-			return verifyAction{target: args[0], on: on}, nil
+			return verifyAction{target: args[0], on: on, test: test}, nil
 		}),
 	}
 	c.Flags().StringSliceVar(&on, "on", nil,
 		`macOS releases to verify on, or "all" (default: the newest provisioned base)`)
+	c.Flags().BoolVar(&test, "test", false,
+		"also run the port's test suite (`port test`) after the install")
 	return c
 }
 
