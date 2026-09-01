@@ -1,8 +1,10 @@
 package tart
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -10,7 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-const tartListFixture = `Source Name              Disk   Size  Accessed      State  
+const tartListFixture = `Source Name              Disk   Size  Accessed      State
 local  dockhand-base-a   50 GB  23 GB 15 hours ago  stopped
 local  dockhand-worker-1 50 GB  23 GB 2 minutes ago running
 oci    someone-elses-vm  40 GB  12 GB 1 minute ago  running
@@ -24,17 +26,50 @@ func TestCountRunningCountsEveryonesVMs(t *testing.T) {
 	assert.Equal(t, 0, countRunning("Source Name Disk Size Accessed State\n"))
 }
 
-func TestAdmitRefusesTypedAtCapacity(t *testing.T) {
+func stubMachine(t *testing.T, list string) {
+	t.Helper()
 	tmp := t.TempDir()
-	orig := cacheDir
+	origCache, origList := cacheDir, listVMs
 	cacheDir = func() (string, error) { return tmp, nil }
-	t.Cleanup(func() { cacheDir = orig })
+	listVMs = func(context.Context) (string, error) { return list, nil }
+	t.Cleanup(func() { cacheDir = origCache; listVMs = origList })
+}
 
-	// Fake tart on PATH is overkill; drive countRunning directly and
-	// prove the typed error's shape instead.
-	err := &verify.CapacityError{Busy: 2, Cap: 2}
+func TestAdmitRefusesTypedAtCapacity(t *testing.T) {
+	stubMachine(t, tartListFixture) // two running
+	_, err := Admit(context.Background(), 2)
+	var cap_ *verify.CapacityError
+	require.ErrorAs(t, err, &cap_)
+	assert.Equal(t, 2, cap_.Busy)
 	assert.Contains(t, err.Error(), "all 2 verification slots are busy")
-	assert.Equal(t, 3, err.ExitCode(), "capacity is the machine band")
+	assert.Equal(t, 3, cap_.ExitCode(), "capacity is the machine band")
+
+	// A refusal holds no lock: the next caller with room admits.
+	unlock, err := Admit(context.Background(), 3)
+	require.NoError(t, err)
+	unlock()
+}
+
+func TestAdmitSerializesConcurrentStarts(t *testing.T) {
+	stubMachine(t, "Source Name Disk Size Accessed State\n") // empty machine
+	unlock, err := Admit(context.Background(), 2)
+	require.NoError(t, err)
+
+	second := make(chan error, 1)
+	go func() {
+		u2, err := Admit(context.Background(), 2)
+		if err == nil {
+			u2()
+		}
+		second <- err
+	}()
+	select {
+	case <-second:
+		t.Fatal("the second admission must wait for the first to release")
+	case <-time.After(400 * time.Millisecond):
+	}
+	unlock()
+	require.NoError(t, <-second, "released, the second admission proceeds")
 }
 
 func TestAttributionRoundTrip(t *testing.T) {

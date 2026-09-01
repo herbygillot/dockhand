@@ -80,7 +80,7 @@ func (e *BranchInFlightError) ExitCode() int { return exitcode.Declined }
 // replaceInFlight clears the way for --force: the standing branch goes
 // through discard's own demolition — running verification canceled,
 // workers released, notes removed — but only when the branch is
-// exactly what dockhand Minted. Commits the user added are theirs;
+// exactly what dockhand minted. Commits the user added are theirs;
 // destroying them silently is what the refusal exists to prevent, and
 // discard remains the explicit act for that.
 func replaceInFlight(ctx context.Context, rs *runstate.Context, repo *git.Repo, primary, branch string) error {
@@ -116,7 +116,7 @@ func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 	branch, message := "dockhand/"+p.Slug, p.Summary
 	if len(p.Edits) == 0 {
 		// A no-op realized as a branch would be an empty commit.
-		fmt.Fprintln(rs.Out, "no edits; no branch Minted")
+		fmt.Fprintln(rs.Out, "no edits; no branch minted")
 		if force {
 			fmt.Fprintln(rs.Err, "an existing in-flight branch, if any, stands: --force replaces only when there is something to replace it with")
 		}
@@ -155,7 +155,7 @@ func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 
 // VerifyDeferredError reports a verification that could not start —
 // no bases, full slots, a mid-submit failure — after its branch was
-// successfully Minted. The branch stands (the git commit/push shape:
+// successfully minted. The branch stands (the git commit/push shape:
 // nobody deletes the commit because the push failed), but the
 // invocation's contract was mint AND submit, so the exit is nonzero:
 // exit 3, because the obstacle is the machine's. --no-verify narrows
@@ -173,7 +173,7 @@ func (e *VerifyDeferredError) Error() string {
 // not start, and the obstacle is capacity or environment.
 func (e *VerifyDeferredError) ExitCode() int { return exitcode.Environment }
 
-// SubmitVerification stages the Minted commit's portdir out of the
+// SubmitVerification stages the minted commit's portdir out of the
 // object database — the working tree is irrelevant to what the branch
 // carries — submits it to the VM provider, and records the running job
 // as the commit's note. Submission not starting is not a minting
@@ -238,7 +238,7 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 	})
 	if err != nil {
 		// A full provider (two-slot cap), a capability refusal, or a
-		// mid-submit failure: the branch is Minted and the tip is
+		// mid-submit failure: the branch is minted and the tip is
 		// simply unverified. The deferred run is recorded here rather
 		// than left to a later verify — a field run saw an intent-path
 		// refusal show as bare "unverified" with the reason only in
@@ -361,7 +361,7 @@ type RealizeOpts struct {
 	// the zero value means the provider default. Flag parsing is the
 	// CLI's business, not the engine's.
 	On platform.Release
-	// gateLint is the gate's lint evidence, carried to the Minted
+	// gateLint is the gate's lint evidence, carried to the minted
 	// commit's note so a gate-verified tip reads exactly like a
 	// background-verified one.
 	GateLint string
@@ -392,7 +392,7 @@ func RealizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o Real
 		return err
 	}
 	if o.Verified {
-		// The --verify gate built exactly these bytes — the Minted blob
+		// The --verify gate built exactly these bytes — the minted blob
 		// and the gate's shadow are both edit.Apply over the same base —
 		// so the verdict transfers to the commit by content identity.
 		// Recording it beats resubmitting: the same build twice proves
@@ -408,7 +408,7 @@ func RealizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o Real
 	return SubmitVerification(ctx, rs, m, p.Port, o.On, o.Trace, o.Test)
 }
 
-// markVerified writes the Minted commit's note as passed, on the
+// markVerified writes the minted commit's note as passed, on the
 // strength of the pre-mint gate having built identical content.
 func markVerified(ctx context.Context, rs *runstate.Context, m *Minted, p *plan.Plan, release platform.Release, tested bool, lint string) error {
 	if release.IsZero() {

@@ -242,10 +242,6 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			}
 			supplied = append(supplied, sup...)
 		}
-		err = nil
-		if err != nil {
-			return nil, err
-		}
 		ownOld, err := vendored.Own(vals.Distfiles, supplied)
 		if err != nil {
 			return nil, err

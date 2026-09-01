@@ -83,7 +83,7 @@ func Exec() *cobra.Command {
 	var on []string
 	c := &cobra.Command{
 		Use:   "exec [--on <release>[,<release>]|--on all] -- <command> [args...]",
-		Short: "lifecycle.Run a command on pristine clones of provisioned bases",
+		Short: "Run a command on pristine clones of provisioned bases",
 		Args: func(c *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return usagef("exec needs a command to run")

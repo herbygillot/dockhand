@@ -56,7 +56,10 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          # Pinned: an unpinned linter turns every upstream lint release
+          # into a surprise red build on an untouched tree. Bump
+          # deliberately, alongside fixing whatever the new version finds.
+          version: v2.13.1
 
   # With a real tclsh the differential harness cross-checks the CST
   # against Tcl itself. DOCKHAND_TEST_REQUIRE names exactly what this

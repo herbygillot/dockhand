@@ -23,21 +23,13 @@ import (
 // re-derived the prefix and the tree for itself and acquired evaluators
 // two different ways. One run, resolved once.
 //
-// It belongs to the command layer and goes no further down: an Action
-// is the last layer that sees a Context. Everything below takes what it
-// needs — a Prefix, an Evaluator, a tempdir.Root — because a planner
-// that accepted a Context would be a planner that could reach the
-// command line, and the domain packages stay testable precisely because
-// they cannot. That rule is held by keeping the signatures below
-// narrow; a domain package importing this one is a review finding.
-//
-// Configuration is held; resources are not. Prefix, evaluators, the
-// fetcher and the temporary root are built on first use and remembered, so
-// a run that needs none of them — version, help, a usage error — starts
-// none of them, and a test can construct a Context without a MacPorts
-// installation anywhere in sight.
-//
-// Not safe for concurrent use: a run is one command on one goroutine.
+// The layering rule, restated after the lifecycle extraction: Context
+// reaches the APPLICATION layer — Actions and the lifecycle engine,
+// which needs the run's streams, seams, and services throughout — and
+// stops there. The DOMAIN packages (planners, styles, evaluation,
+// vendored families) still take only what they need — a Prefix, an
+// Evaluator, a tempdir.Root — because a planner that accepted a
+// Context would be a planner that could reach the command line.
 type Context struct {
 	// TreeRoot and PrefixPath are as the user gave them; empty means
 	// discover. Debug is the flag, already applied to the logger.

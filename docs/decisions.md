@@ -195,7 +195,7 @@ path and the one its author does not live.
 
 **Decided.**
 
-- *Required:* `port-tclsh`, `git`. `git` declared `bin:git:git` so an Xcode CLT git satisfies it; runtime probe enforces the version floor a dependency declaration cannot express. The floor is 2.25, resolved (2026-08-31) from the introducing releases of the three porcelains D21's write path needs: `git notes` is ancient (1.6.6; full subcommand set 1.7.1, merge strategies 1.7.4), `git worktree` needs 2.5, and `git sparse-checkout` — the binding one — needs 2.25.
+- *Required:* `port-tclsh`, `git`. `git` declared `bin:git:git` so an Xcode CLT git satisfies it; runtime probe enforces the version floor a dependency declaration cannot express. The floor is 2.5, re-resolved (2026-09-01) after the assessment caught the old 2.25 reason — sparse-checkout — outliving the worktree-based design that needed it. What the write path actually needs: `git notes` (ancient; full subcommand set 1.7.1) and worktree-aware plumbing (`--git-common-dir`, 2.5, which the notes lock resolves) — the binding floor.
 - *Assumed:* `patch`, matching base's own assumption. Exit status only, never message formatting. The verdict must come from whichever patch engine MacPorts will use for that port.
 - *Discovered:* `tart`, block generators. Resolved from `PATH` at startup; presence determines which tiers and verifications are reachable.
 
@@ -413,6 +413,18 @@ files owned between root and the macports user, while test-then-install is
 just the normal single-run progression (build → destroot → activate) split
 across two commands. The note records the bit (`tested`), because promote's
 checklist vouches only for what a note remembers.
+
+**Amended (2026-09-01, tart is declared the only local provider — for
+now).** The verify contract is provider-shaped and the second
+assessment rightly noted the abstraction is only partly honoured:
+SubmitVerification's degradation gate asks whether the tart executable
+exists, exec drives tart directly, and the PR prose says "pristine
+tart VM". Ruled: declare rather than abstract, until a second local
+provider exists. The declaration is this paragraph; REVISIT when the
+GitHub CI provider lands — that is the moment to route availability
+through the injected provider, validate capabilities at submission,
+and derive the PR prose from Capabilities rather than the provider's
+name.
 
 **Amended (2026-09-01, the flag falls; status gains --no-clean).** The
 friction ruling completed: invoking promote IS the publication choice,

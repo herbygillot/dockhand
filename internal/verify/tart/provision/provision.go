@@ -86,7 +86,14 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	if err != nil {
 		return err
 	}
-	name := tart.BaseName(r)
+	// Provisioning is a transaction against a TEMPORARY name: the
+	// existing base survives untouched until its replacement has passed
+	// every proof, so a capacity refusal, a network failure, or a
+	// mid-provision crash costs nothing already working. The assessment
+	// caught the old order deleting the base before admission had even
+	// been asked.
+	base := tart.BaseName(r)
+	name := base + "-next"
 	say := func(f string, a ...any) { fmt.Fprintf(w, f+"\n", a...) }
 
 	say("pulling %s", imageRef(r))
@@ -185,18 +192,28 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	// The golden is taken after the checks pass and before anything has
 	// run the image, so it records a state that was verified rather than
 	// merely reached. It is never started again.
-	say("taking the golden copy")
+	// Every proof has passed on the temporary image; only now does the
+	// old pair give way. Golden first, then base, temp deleted last —
+	// not atomic, but ordered so a crash at any point leaves either the
+	// old pair intact or a proven image one free clone away.
+	say("swapping the proven image in")
 	golden := tart.GoldenName(r)
-	_, _ = tart.CLI(ctx, nil, "delete", golden)
 	if _, err := tart.CLI(context.WithoutCancel(ctx), nil, "stop", name); err != nil {
-		slog.Debug("stopping before the golden clone", "vm", name, "err", err)
+		slog.Debug("stopping before the swap", "vm", name, "err", err)
 	}
+	_, _ = tart.CLI(ctx, nil, "delete", golden)
 	if out, err := tart.CLI(ctx, nil, "clone", name, golden); err != nil {
 		return fmt.Errorf("%w: taking the golden copy %s: %s",
 			verify.ErrNoEnvironment, golden, strings.TrimSpace(out))
 	}
+	_, _ = tart.CLI(ctx, nil, "delete", base)
+	if out, err := tart.CLI(ctx, nil, "clone", name, base); err != nil {
+		return fmt.Errorf("%w: installing the base %s: %s",
+			verify.ErrNoEnvironment, base, strings.TrimSpace(out))
+	}
+	_, _ = tart.CLI(ctx, nil, "delete", name)
 
-	say("provisioned %s — %s, MacPorts %s%s (golden: %s)", name, r, version, xcodeNote, golden)
+	say("provisioned %s — %s, MacPorts %s%s (golden: %s)", base, r, version, xcodeNote, golden)
 	return nil
 }
 

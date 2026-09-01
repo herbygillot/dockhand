@@ -160,7 +160,7 @@ func execute(ctx context.Context, version string, args []string, out, errOut io.
 	root.InitDefaultCompletionCmd()
 	if _, _, err := root.Find(args); err != nil {
 		root.PrintErrln(root.ErrPrefix(), err.Error())
-		root.PrintErrf("lifecycle.Run '%v --help' for usage.\n", root.CommandPath())
+		root.PrintErrf("Run '%v --help' for usage.\n", root.CommandPath())
 		return ExitUsage
 	}
 	return ExitCode(root.ExecuteContext(ctx))

@@ -53,10 +53,22 @@ func Admit(ctx context.Context, capacity int) (func(), error) {
 	return unlock, nil
 }
 
+// listVMs reads `tart list` — a variable so the admission behavior is
+// testable without tart.
+var listVMs = func(ctx context.Context) (string, error) {
+	return CLI(ctx, nil, "list")
+}
+
 // runningVMs counts every running VM on the machine, whoever started
 // it.
+//
+// A boundary stated plainly: the admission lock coordinates DOCKHAND
+// processes. A human running `tart run` by hand does not take this
+// lock and cannot be made to; the live recount narrows that race to
+// the admission window but cannot close it, and Apple's own cap is
+// the final arbiter.
 func runningVMs(ctx context.Context) (int, error) {
-	out, err := CLI(ctx, nil, "list")
+	out, err := listVMs(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("%w: listing VMs for admission: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
