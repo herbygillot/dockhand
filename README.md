@@ -271,3 +271,7 @@ where they are supposed to exist:
 DOCKHAND_TEST_REQUIRE=1 make test        # every tool
 DOCKHAND_TEST_REQUIRE=tclsh,git make test   # only these
 ```
+
+## License
+
+[MIT](LICENSE)
