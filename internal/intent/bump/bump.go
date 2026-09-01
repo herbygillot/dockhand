@@ -307,6 +307,14 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			}
 			edits = append(edits, blockEdit)
 		}
+		// The declared Go floor follows the new go.mod when its series
+		// moved — update-only; a port that never declared one is never
+		// gated by dockhand either.
+		if tc, ok, err := toolchainMinEdit(ctx, src, cst, vals.Name, fetched, shadowVals.Worksrcdir); err != nil {
+			return nil, err
+		} else if ok {
+			edits = append(edits, tc)
+		}
 	}
 
 	// Shadow the full edit set for the exact prediction.

@@ -12,6 +12,7 @@ package classify
 import (
 	"context"
 	"errors"
+	"regexp"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
@@ -73,6 +74,11 @@ type Result struct {
 	Style   portstyle.Type
 	Span    text.Span
 	Detail  string
+	// DeclaresGoMin marks a port declaring go.toolchain_min — the Go
+	// floor bump now maintains, so the census can say how many ports
+	// carry one (and, with the go_toolchain.setup style count, how
+	// many ARE the toolchain).
+	DeclaresGoMin bool
 }
 
 // Port classifies the evaluation context a handle names: the top-level
@@ -102,6 +108,8 @@ func Port(ctx context.Context, h port.Handle) Result {
 		return r
 	}
 
+	r.DeclaresGoMin = goMinRE.Match(src)
+
 	loc, err := portstyle.Locate(src, cst, vals, info.FieldVersion)
 	if err != nil {
 		var d *portstyle.Decline
@@ -119,6 +127,11 @@ func Port(ctx context.Context, h port.Handle) Result {
 	r.Span = loc.Span
 	return r
 }
+
+// goMinRE recognizes a go.toolchain_min declaration — a literal
+// specifier by the PortGroup's own design, so a text scan is the
+// census-honest reading.
+var goMinRE = regexp.MustCompile(`(?m)^\s*go\.toolchain_min\s`)
 
 // declineOutcome maps a style decline onto the census vocabulary.
 func declineOutcome(d *portstyle.Decline) Outcome {

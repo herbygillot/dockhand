@@ -14,6 +14,9 @@ type Census struct {
 	Total     int
 	ByOutcome map[Outcome]int
 	ByStyle   map[portstyle.Type]int
+	// GoMinDeclared counts ports declaring go.toolchain_min, the Go
+	// floor bump maintains.
+	GoMinDeclared int
 }
 
 // Add folds one result into the census.
@@ -27,6 +30,9 @@ func (c *Census) Add(r Result) {
 	if r.Outcome == Located {
 		c.ByStyle[r.Style]++
 	}
+	if r.DeclaresGoMin {
+		c.GoMinDeclared++
+	}
 }
 
 // String renders the census as a small fixed-order report.
@@ -37,6 +43,9 @@ func (c *Census) String() string {
 		if n := c.ByOutcome[o]; n > 0 {
 			fmt.Fprintf(&b, "  %-14s %5d  (%.1f%%)\n", o, n, 100*float64(n)/float64(c.Total))
 		}
+	}
+	if c.GoMinDeclared > 0 {
+		fmt.Fprintf(&b, "  go.toolchain_min declared: %d\n", c.GoMinDeclared)
 	}
 	if len(c.ByStyle) > 0 {
 		b.WriteString("located by style:\n")
