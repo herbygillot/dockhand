@@ -49,6 +49,7 @@ func ExitCode(err error) int {
 	var verifyFailed *VerifyFailedError
 	var verifyDeferred *VerifyDeferredError
 	var inFlight *BranchInFlightError
+	var duplicatePR *DuplicatePRError
 	if errors.As(err, &verifyFailed) {
 		return ExitVerify
 	}
@@ -67,7 +68,8 @@ func ExitCode(err error) int {
 		return ExitOK
 	case errors.As(err, &styleDecline),
 		errors.As(err, &intentDecline),
-		errors.As(err, &inFlight):
+		errors.As(err, &inFlight),
+		errors.As(err, &duplicatePR):
 		return ExitDeclined
 	case errors.As(err, &usage):
 		return ExitUsage

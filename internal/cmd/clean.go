@@ -62,6 +62,7 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // pullRequest is the slice of GitHub's PR object clean reads.
 type pullRequest struct {
 	Number   int    `json:"number"`
+	Title    string `json:"title"`
 	State    string `json:"state"`
 	MergedAt string `json:"merged_at"`
 	HTMLURL  string `json:"html_url"`

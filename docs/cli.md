@@ -54,7 +54,12 @@ moved past the sha verification tested, `verify` cancels the stale run and
 resubmits the tip, and `promote` refuses an unverified tip. The stage
 verbs consume branches and shas rather than plan files — `verify` tests a
 commit, whoever made it; `status` reconciles the `dockhand/*` namespace;
-`promote` pushes the branch it finds. The deliberate opt-out is `--in-place`:
+`promote` pushes the branch it finds, and first searches upstream's
+open PRs by the `<port>:` title convention: an identical title is
+refused as a duplicate (exit 5, `--no-pr-check` overrides), a
+same-port PR is surfaced as a note, and a clean search checks the
+template's other-open-PRs box. A branch whose own PR is already open
+is re-promotion: the push updates that PR instead of opening a second. The deliberate opt-out is `--in-place`:
 edit the Portfile where the user stands, uncommitted, minting nothing — for
 the user folding dockhand's mechanical edit into their own workflow, and the
 only write mode a non-git tree gets (with a loud warning). Lifecycle: an

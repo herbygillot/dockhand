@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -23,12 +24,27 @@ import (
 // writes ordinary tracking config, and any later lookup queries pulls
 // by head ref, the same way gh itself does.
 type promoteAction struct {
-	target   string
-	remote   string // fork remote; empty means detect by gh login
-	title    string
-	closes   string
-	noPR     bool
-	noVerify bool // promote an unverified tip deliberately
+	target    string
+	remote    string // fork remote; empty means detect by gh login
+	title     string
+	closes    string
+	noPR      bool
+	noVerify  bool // promote an unverified tip deliberately
+	noPRCheck bool // skip the duplicate-PR search deliberately
+}
+
+// DuplicatePRError is promote's refusal when an open upstream PR
+// already claims the same change: a duplicate spends reviewer
+// attention on the purest kind of waste. Refusal with a remedy (exit
+// 5), not a failure — the other PR may be theirs to join, or
+// --no-pr-check promotes past it deliberately.
+type DuplicatePRError struct {
+	Title string
+	URL   string
+}
+
+func (e *DuplicatePRError) Error() string {
+	return fmt.Sprintf("an open PR already proposes %q: %s — join it, retitle with --title, or --no-pr-check to promote anyway", e.Title, e.URL)
 }
 
 var _ Action = promoteAction{}
@@ -76,11 +92,11 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err != nil {
 		return err
 	}
-	if err := repo.Push(ctx, forkRemote, branch); err != nil {
-		return err
-	}
-	fmt.Fprintf(rs.Err, "pushed %s to %s (%s)\n", branch, forkRemote, forkOwner)
 	if a.noPR {
+		if err := repo.Push(ctx, forkRemote, branch); err != nil {
+			return err
+		}
+		fmt.Fprintf(rs.Err, "pushed %s to %s (%s)\n", branch, forkRemote, forkOwner)
 		return nil
 	}
 
@@ -112,7 +128,64 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 			return err
 		}
 	}
-	body := promoteBody(n, verified, a.closes, len(own))
+	// A branch that already has its own open PR is re-promotion, not
+	// duplication: the push below updates that PR in place, and opening
+	// a second one would be the duplicate this verb refuses elsewhere.
+	remotes, err := repo.Remotes(ctx)
+	if err != nil {
+		return err
+	}
+	ownPR, ownFound, err := lookupPR(ctx, repo, remotes, upstream, branch)
+	if err != nil {
+		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
+		ownFound = false
+	}
+	if ownFound && ownPR.MergedAt != "" {
+		return fmt.Errorf("PR #%d for %s already merged (%s) — `dockhand clean` retires the branch", ownPR.Number, branch, ownPR.HTMLURL)
+	}
+
+	checkedPRs := false
+	if !a.noPRCheck {
+		port := n.Port
+		if before, _, found := strings.Cut(title, ":"); port == "" && found {
+			port = strings.TrimSpace(before)
+		}
+		switch prs, serr := openPortPRs(ctx, upstream, port); {
+		case port == "":
+			fmt.Fprintln(rs.Err, "warning: no port name to search open PRs by; skipping the duplicate check")
+		case serr != nil:
+			// The search is advisory: a rate-limited or offline lookup
+			// must not block a promotion, it just leaves the checklist
+			// box for the human.
+			fmt.Fprintf(rs.Err, "warning: could not search for open PRs: %v\n", serr)
+		default:
+			checkedPRs = true
+			for _, pr := range prs {
+				if ownFound && pr.Number == ownPR.Number {
+					continue
+				}
+				if strings.EqualFold(strings.TrimSpace(pr.Title), strings.TrimSpace(title)) {
+					return &DuplicatePRError{Title: pr.Title, URL: pr.HTMLURL}
+				}
+				// Same port, different change: not a duplicate, but a
+				// maintainer coordinating both will want to know now
+				// rather than at review.
+				fmt.Fprintf(rs.Err, "note: an open PR already touches this port: #%d %q (%s)\n", pr.Number, pr.Title, pr.HTMLURL)
+			}
+		}
+	}
+
+	if err := repo.Push(ctx, forkRemote, branch); err != nil {
+		return err
+	}
+	fmt.Fprintf(rs.Err, "pushed %s to %s (%s)\n", branch, forkRemote, forkOwner)
+	if ownFound && ownPR.State == "open" {
+		fmt.Fprintf(rs.Err, "PR #%d already open for this branch; the push updated it\n", ownPR.Number)
+		fmt.Fprintln(rs.Out, ownPR.HTMLURL)
+		return nil
+	}
+
+	body := promoteBody(n, verified, a.closes, len(own), checkedPRs)
 	args := []string{"pr", "create", "--repo", upstream,
 		"--head", forkOwner + ":" + branch, "--title", title, "--body", body}
 	url, err := ghOut(ctx, args...)
@@ -121,6 +194,35 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	}
 	fmt.Fprintln(rs.Out, strings.TrimSpace(url))
 	return nil
+}
+
+// openPortPRs lists the open upstream PRs whose titles claim the same
+// port, leaning on the project convention that a title is
+// `<port>: <description>` — dockhand's own titles included. The search
+// API bounds and ranks the result; the prefix filter runs here because
+// in:title matches the term anywhere in a title.
+func openPortPRs(ctx context.Context, upstream, port string) ([]pullRequest, error) {
+	if port == "" {
+		return nil, nil
+	}
+	out, err := ghOut(ctx, "api", "-X", "GET", "search/issues",
+		"-f", fmt.Sprintf("q=repo:%s is:pr is:open in:title %q", upstream, port+":"))
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		Items []pullRequest `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		return nil, fmt.Errorf("reading PR search: %w", err)
+	}
+	var prs []pullRequest
+	for _, pr := range res.Items {
+		if strings.HasPrefix(pr.Title, port+":") {
+			prs = append(prs, pr)
+		}
+	}
+	return prs, nil
 }
 
 // promoteBody renders the PR body: what was done and what was — or
@@ -137,7 +239,7 @@ const dockhandRepoURL = "https://github.com/herbygillot/dockhand"
 // the accepted currency: the verdict set is enumerated in full, an
 // unverified promotion says so, and the install checkbox strikes the
 // template's command through in favour of the one actually run.
-func promoteBody(n verifyNote, verified bool, closes string, ownCommits int) string {
+func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, checkedPRs bool) string {
 	var b strings.Builder
 	b.WriteString("#### Description\n\n")
 	var passed []string
@@ -173,7 +275,7 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int) str
 	if len(passed) > 0 {
 		b.WriteString("\n###### Tested on\n")
 		for _, plat := range passed {
-			fmt.Fprintf(&b, "macOS %s — pristine tart VM, via dockhand\n", plat)
+			fmt.Fprintf(&b, "- macOS %s — pristine tart VM, via dockhand\n", plat)
 		}
 	}
 
@@ -191,11 +293,11 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int) str
 	b.WriteString("\n###### Verification\nHave you\n\n")
 	box(single, "followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?")
 	box(single, "squashed and [minimized your commits](https://guide.macports.org/#project.github)?")
-	box(false, "checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?")
+	box(checkedPRs, "checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?")
 	box(false, "referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?")
 	box(false, "checked your Portfile with `port lint`?")
 	box(tested, "tried existing tests with `sudo port test`?")
-	box(len(passed) > 0, "tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM?")
+	box(len(passed) > 0, "tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM")
 	box(false, "tested basic functionality of all binary files?")
 	box(false, "checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?")
 	return b.String()
@@ -343,11 +445,12 @@ func ghOut(ctx context.Context, args ...string) (string, error) {
 // Promote builds the promote subcommand.
 func Promote() *cobra.Command {
 	var (
-		remote   string
-		title    string
-		closes   string
-		noPR     bool
-		noVerify bool
+		remote    string
+		title     string
+		closes    string
+		noPR      bool
+		noVerify  bool
+		noPRCheck bool
 	)
 	c := &cobra.Command{
 		Use:   "promote <branch|port>",
@@ -357,6 +460,7 @@ func Promote() *cobra.Command {
 			return promoteAction{
 				target: args[0], remote: remote,
 				title: title, closes: closes, noPR: noPR, noVerify: noVerify,
+				noPRCheck: noPRCheck,
 			}, nil
 		}),
 	}
@@ -366,5 +470,7 @@ func Promote() *cobra.Command {
 	c.Flags().BoolVar(&noPR, "no-pr", false, "push to the fork without opening a pull request")
 	c.Flags().BoolVar(&noVerify, "no-verify", false,
 		"promote even if the branch is unverified; the PR discloses it")
+	c.Flags().BoolVar(&noPRCheck, "no-pr-check", false,
+		"skip the search for pre-existing open PRs on the same port")
 	return c
 }
