@@ -3,3 +3,4 @@
 !internal/tcl/syntax/testdata/**/*.test
 dist/
 /dockhand
+dockhand-assessment.html
