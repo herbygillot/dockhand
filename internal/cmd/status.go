@@ -113,12 +113,21 @@ func pumpDeferred(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 				fmt.Fprintf(rs.Err, "%s: deferred %s not retried: no such platform is provisioned\n", br, plat)
 				continue
 			}
+			// The note names what this branch verifies — for a minted
+			// branch, the SUBPORT the plan bumped. The portdir's base
+			// name is the parent port, and submitting that would build
+			// the untouched main port and call the branch verified
+			// (field-caught on pcre2, whose portdir is devel/pcre).
+			portName := n.Port
+			if portName == "" {
+				portName = filepath.Base(rel)
+			}
 			err := lifecycle.SubmitVerification(ctx, rs, &lifecycle.Minted{
 				Repo: repo, Branch: br, Sha: tip, RelPort: rel,
-			}, filepath.Base(rel), release, false, run.Tested)
+			}, portName, release, false, run.Tested)
 			var vde *lifecycle.VerifyDeferredError
 			if errors.As(err, &vde) {
-				if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, filepath.Base(rel), plat, lifecycle.Run{
+				if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, plat, lifecycle.Run{
 					State: "deferred", Detail: vde.Reason, Tested: run.Tested,
 				}, ""); rerr != nil {
 					fmt.Fprintf(rs.Err, "warning: re-recording deferred run: %v\n", rerr)

@@ -62,11 +62,41 @@ func TestStatusStartsDeferredVerifications(t *testing.T) {
 
 	require.Len(t, fake.Submitted, 1, "the deferred run must actually start")
 	assert.Equal(t, "jq", fake.Submitted[0].Port)
+	// The note's port is the submission target — a subport branch in a
+	// parent-named portdir must not collapse to the parent (pcre2 in
+	// devel/pcre, field-caught): deferredNote records port "jq", and
+	// were the pump reading the portdir's base name instead, a fixture
+	// with a differing note port would betray it — proven below.
 	assert.Contains(t, errb.String(), "verify: submitted jq on Testos")
 
 	n, err := lifecycle.ReadNote(context.Background(), repo, sha)
 	require.NoError(t, err)
 	assert.Equal(t, "running", n.Runs["Testos"].State, "deferred became running, not a stale replay")
+}
+
+// The pcre2 shape: the note names a subport of a portdir whose base
+// name is a different port. The pump submits what the note names.
+func TestStatusPumpSubmitsTheNotesSubport(t *testing.T) {
+	tartOnPath(t)
+	repo, sha := lifecycleRepo(t)
+	ctx := context.Background()
+	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq2")
+	require.NoError(t, err)
+	n.Runs["Testos"] = lifecycle.Run{State: "deferred", Detail: "slots busy"}
+	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+
+	fake := &verifytest.Fake{}
+	rs, _, _ := pumpState(repo, fake)
+	require.NoError(t, statusAction{noClean: true}.Execute(ctx, rs))
+
+	require.Len(t, fake.Submitted, 1)
+	assert.Equal(t, "jq2", fake.Submitted[0].Port,
+		"the note's port, never the portdir's base name")
+
+	after, err := lifecycle.ReadNote(ctx, repo, sha)
+	require.NoError(t, err)
+	assert.Equal(t, "jq2", after.Port, "the note keeps naming the subport")
+	assert.Equal(t, "running", after.Runs["Testos"].State)
 }
 
 func TestStatusStopsPumpingAtCapacityWithAFreshReason(t *testing.T) {
