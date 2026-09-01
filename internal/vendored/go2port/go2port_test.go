@@ -39,7 +39,7 @@ func TestExtractBlockFindsGoVendors(t *testing.T) {
 	block, err := ExtractBlock([]byte(generatedPortfile))
 	require.NoError(t, err)
 	s := string(block)
-	assert.True(t, len(s) > 0)
+	assert.NotEmpty(t, s)
 	assert.Contains(t, s, "go.vendors")
 	assert.Contains(t, s, "golang.org/x/net")
 	assert.Contains(t, s, "size    1234567")

@@ -60,7 +60,7 @@ func Generate(ctx context.Context, pkg, version string) ([]byte, error) {
 func ExtractBlock(generated []byte) ([]byte, error) {
 	cst, errs := syntax.Parse(generated)
 	if len(errs) != 0 {
-		return nil, fmt.Errorf("vendored: %s produced output that does not parse: %v", ToolName, errs[0])
+		return nil, fmt.Errorf("vendored: %s produced output that does not parse: %w", ToolName, errs[0])
 	}
 	// The generated portfile is the tool's own, not the user's: every
 	// command is in scope, and exactly one go.vendors is expected.

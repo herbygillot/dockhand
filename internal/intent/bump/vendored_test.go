@@ -9,16 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 )
 
 func TestSuppliedDistfilesNamesWhatTheBlockContributes(t *testing.T) {
-	got, err := suppliedDistfiles(info.Vendored{CargoCrates: "libc 0.2.156 a5f43f1 bitflags 2.6.0 b048fb6"})
+	got, err := suppliedDistfiles(t.Context(), port.Handle{},
+		info.Vendored{CargoCrates: "libc 0.2.156 a5f43f1 bitflags 2.6.0 b048fb6"}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"libc-0.2.156.crate", "bitflags-2.6.0.crate"}, got)
 }
 
 func TestSuppliedDistfilesEmptyWithoutABlock(t *testing.T) {
-	got, err := suppliedDistfiles(info.Vendored{})
+	got, err := suppliedDistfiles(t.Context(), port.Handle{}, info.Vendored{}, nil)
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
