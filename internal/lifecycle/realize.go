@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/plan"
@@ -72,6 +73,9 @@ func (e *BranchInFlightError) Error() string {
 	}
 	return fmt.Sprintf("a change for this port is already in flight: %s — discard it, pick up where it left off, or --force to replace it", e.Branch)
 }
+
+// ExitCode: refusal is a feature — a decline, never a failure.
+func (e *BranchInFlightError) ExitCode() int { return exitcode.Declined }
 
 // replaceInFlight clears the way for --force: the standing branch goes
 // through discard's own demolition — running verification canceled,
@@ -164,6 +168,10 @@ type VerifyDeferredError struct {
 func (e *VerifyDeferredError) Error() string {
 	return fmt.Sprintf("verification not started: %s\nthe branch stands — run `dockhand verify %s` when ready", e.Reason, e.Branch)
 }
+
+// ExitCode is the machine band: the branch stands, verification could
+// not start, and the obstacle is capacity or environment.
+func (e *VerifyDeferredError) ExitCode() int { return exitcode.Environment }
 
 // SubmitVerification stages the Minted commit's portdir out of the
 // object database — the working tree is irrelevant to what the branch

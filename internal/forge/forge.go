@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 )
@@ -30,6 +31,9 @@ type DuplicatePRError struct {
 func (e *DuplicatePRError) Error() string {
 	return fmt.Sprintf("an open PR already proposes %q: %s — join it, retitle with --title, or --no-pr-check to promote anyway", e.Title, e.URL)
 }
+
+// ExitCode: a duplicate refusal is a decline with a remedy.
+func (e *DuplicatePRError) ExitCode() int { return exitcode.Declined }
 
 // lintClause phrases a note's lint record for the evidence line.
 func lintClause(lint string) string {

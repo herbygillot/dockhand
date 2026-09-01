@@ -4,15 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
-	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
-	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -21,13 +18,13 @@ import (
 // in docs/cli.md; once dockhand ships these are a contract for scripts
 // branching on $?.
 const (
-	ExitOK          = 0 // success; for sweeps, success even with a tail of declines
-	ExitFailure     = 1 // the operation itself failed
-	ExitUsage       = 2 // bad flag, unknown command, invalid arguments
-	ExitEnvironment = 3 // the machine: MacPorts missing, tclsh broken, running as root
-	ExitTree        = 4 // the ports tree: not a tree, port not found
-	ExitDeclined    = 5 // a point intent declined to produce a plan
-	ExitVerify      = 6 // verification ran and the port does not build
+	ExitOK          = exitcode.OK
+	ExitFailure     = exitcode.Failure
+	ExitUsage       = exitcode.Usage
+	ExitEnvironment = exitcode.Environment
+	ExitTree        = exitcode.Tree
+	ExitDeclined    = exitcode.Declined
+	ExitVerify      = exitcode.Verify
 )
 
 // UsageError marks a failure as the invocation being wrong — the remedy
@@ -39,55 +36,41 @@ type UsageError struct{ Err error }
 func (e *UsageError) Error() string { return e.Err.Error() }
 func (e *UsageError) Unwrap() error { return e.Err }
 
+// ExitCode: the invocation band — the remedy is rereading --help.
+func (e *UsageError) ExitCode() int { return exitcode.Usage }
+
 // usagef builds a UsageError from a format string.
 func usagef(format string, a ...any) error {
 	return &UsageError{Err: fmt.Errorf(format, a...)}
 }
 
 // ExitCode maps an error from the command tree to a process exit code.
+// Typed errors own their band (exitcode.Coder, checked first); the
+// table below covers only sentinels, which cannot carry a method.
 func ExitCode(err error) int {
-	var usage *UsageError
-	var styleDecline *portstyle.Decline
-	var verifyFailed *lifecycle.VerifyFailedError
-	var verifyDeferred *lifecycle.VerifyDeferredError
-	var inFlight *lifecycle.BranchInFlightError
-	var duplicatePR *forge.DuplicatePRError
-	if errors.As(err, &verifyFailed) {
-		return ExitVerify
+	if err == nil {
+		return exitcode.OK
 	}
-	if errors.As(err, &verifyDeferred) {
-		// The branch was lifecycle.Minted; verification could not start. The
-		// obstacle is the machine's — capacity or environment — and the
-		// message says the branch stands.
-		return ExitEnvironment
+	var coder exitcode.Coder
+	if errors.As(err, &coder) {
+		return coder.ExitCode()
 	}
-	if errors.Is(err, verify.ErrNoEnvironment) || errors.Is(err, verify.ErrUnsupported) {
-		return ExitEnvironment
-	}
-	var intentDecline *plan.Decline
 	switch {
-	case err == nil:
-		return ExitOK
-	case errors.As(err, &styleDecline),
-		errors.As(err, &intentDecline),
-		errors.As(err, &inFlight),
-		errors.As(err, &duplicatePR):
-		return ExitDeclined
-	case errors.As(err, &usage):
-		return ExitUsage
+	case errors.Is(err, verify.ErrNoEnvironment),
+		errors.Is(err, verify.ErrUnsupported),
+		errors.Is(err, prefix.ErrNotInstalled),
+		errors.Is(err, eval.ErrStartup),
+		errors.Is(err, eval.ErrRootRefused),
+		errors.Is(err, portfetch.ErrRootRefused):
+		return exitcode.Environment
 	case errors.Is(err, tree.ErrNotPortsTree),
 		errors.Is(err, tree.ErrPortNotFound),
 		errors.Is(err, git.ErrNotARepo):
 		// A tree that is not a git checkout is a fact about the tree:
 		// the remedy is a different checkout or --in-place, never
 		// fixing the machine.
-		return ExitTree
-	case errors.Is(err, prefix.ErrNotInstalled),
-		errors.Is(err, eval.ErrStartup),
-		errors.Is(err, eval.ErrRootRefused),
-		errors.Is(err, portfetch.ErrRootRefused):
-		return ExitEnvironment
+		return exitcode.Tree
 	default:
-		return ExitFailure
+		return exitcode.Failure
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -28,6 +29,10 @@ func (e *VerifyFailedError) Error() string {
 	}
 	return msg
 }
+
+// ExitCode places verification failure in its own band: not the tool,
+// not the machine, not the invocation — the port does not build.
+func (e *VerifyFailedError) ExitCode() int { return exitcode.Verify }
 
 // TartPresent reports whether the local verify provider exists at all.
 // Its absence is a different fact from "present but unprovisioned": a

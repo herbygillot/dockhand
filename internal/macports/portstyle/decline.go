@@ -3,6 +3,7 @@ package portstyle
 import (
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/text"
 )
@@ -62,3 +63,6 @@ type Decline struct {
 func (d *Decline) Error() string {
 	return fmt.Sprintf("portstyle: %s: %s", d.Field, d.Type)
 }
+
+// ExitCode: a decline is a successful judgment, exit band 5.
+func (d *Decline) ExitCode() int { return exitcode.Declined }

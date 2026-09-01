@@ -1,6 +1,10 @@
 package plan
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/herbygillot/dockhand/internal/exitcode"
+)
 
 // DeclineType classifies why a planner refused to produce a plan. These
 // extend portstyle's location declines one level up: location succeeded,
@@ -84,3 +88,6 @@ func (d *Decline) Error() string {
 	}
 	return fmt.Sprintf("plan: declined: %s: %s", d.Type, d.Detail)
 }
+
+// ExitCode: a decline is a successful judgment, exit band 5.
+func (d *Decline) ExitCode() int { return exitcode.Declined }
