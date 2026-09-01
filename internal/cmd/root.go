@@ -15,6 +15,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -38,7 +40,13 @@ const logo = `     _            _    _                     _
 // newRoot builds the tree along with the run it belongs to. Execute
 // needs both — the run has to be closed however the command ends.
 func newRoot(version string) (*cobra.Command, *runstate.Context) {
-	rc := &runstate.Context{}
+	// The composition root: the two external-service seams are wired
+	// here and only here. Tests build a Context with fakes instead of
+	// mutating package state.
+	rc := &runstate.Context{
+		Verifier: lifecycle.RealVMProvider,
+		Gh:       forge.RealGhOut,
+	}
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",

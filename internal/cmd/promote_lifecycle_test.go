@@ -77,13 +77,6 @@ func (g *ghFake) called(verb string) [][]string {
 	return out
 }
 
-func (g *ghFake) install(t *testing.T) {
-	t.Helper()
-	real_ := forge.GhOut
-	forge.GhOut = g.run
-	t.Cleanup(func() { forge.GhOut = real_ })
-}
-
 // promoteRepo is a lifecycleRepo with an upstream remote (URL only,
 // never contacted) and a pushable bare fork whose path names the
 // login as its owner.
@@ -111,17 +104,18 @@ func promoteRepo(t *testing.T) (*git.Repo, string) {
 	return repo, sha
 }
 
-func promoteState(t *testing.T, repo *git.Repo) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
+func promoteState(t *testing.T, repo *git.Repo, gh *ghFake) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	return &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb}, &out, &errb
+	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb, Gh: gh.run,
+		Verifier: lifecycle.RealVMProvider}
+	return rs, &out, &errb
 }
 
 func TestPromoteOpensThePR(t *testing.T) {
 	repo, _ := promoteRepo(t)
 	gh := &ghFake{login: "herbygillot", createURL: "https://github.com/macports/macports-ports/pull/999"}
-	gh.install(t)
-	rs, out, _ := promoteState(t, repo)
+	rs, out, _ := promoteState(t, repo, gh)
 
 	require.NoError(t, promoteAction{target: "jq"}.Execute(context.Background(), rs))
 	assert.Contains(t, out.String(), "/pull/999")
@@ -139,8 +133,7 @@ func TestPromoteRefusesADuplicate(t *testing.T) {
 	repo, _ := promoteRepo(t)
 	gh := &ghFake{login: "herbygillot",
 		searchHit: `{"items":[{"number":123,"title":"jq: update to 1.8","state":"open","html_url":"https://x/123"}]}`}
-	gh.install(t)
-	rs, _, _ := promoteState(t, repo)
+	rs, _, _ := promoteState(t, repo, gh)
 
 	err := promoteAction{target: "jq"}.Execute(context.Background(), rs)
 	var dup *forge.DuplicatePRError
@@ -154,8 +147,7 @@ func TestPromoteRePromotionUpdatesInPlace(t *testing.T) {
 	repo, _ := promoteRepo(t)
 	gh := &ghFake{login: "herbygillot",
 		ownPRs: `[{"number":77,"state":"open","html_url":"https://x/77","title":"jq: update to 1.8"}]`}
-	gh.install(t)
-	rs, out, errb := promoteState(t, repo)
+	rs, out, errb := promoteState(t, repo, gh)
 
 	require.NoError(t, promoteAction{target: "jq"}.Execute(context.Background(), rs))
 	assert.Contains(t, errb.String(), "PR #77 already open for this branch; the push updated it")
@@ -168,8 +160,7 @@ func TestPromoteForceRefreshesTitleAndBody(t *testing.T) {
 	repo, _ := promoteRepo(t)
 	gh := &ghFake{login: "herbygillot",
 		ownPRs: `[{"number":77,"state":"open","html_url":"https://x/77","title":"jq: update to 1.7"}]`}
-	gh.install(t)
-	rs, _, errb := promoteState(t, repo)
+	rs, _, errb := promoteState(t, repo, gh)
 
 	require.NoError(t, promoteAction{target: "jq", force: true}.Execute(context.Background(), rs))
 	assert.Contains(t, errb.String(), "force-pushed")
@@ -184,8 +175,7 @@ func TestPromoteMergedPRIsADeadEnd(t *testing.T) {
 	repo, _ := promoteRepo(t)
 	gh := &ghFake{login: "herbygillot",
 		ownPRs: `[{"number":50,"state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/50"}]`}
-	gh.install(t)
-	rs, _, _ := promoteState(t, repo)
+	rs, _, _ := promoteState(t, repo, gh)
 
 	err := promoteAction{target: "jq"}.Execute(context.Background(), rs)
 	require.Error(t, err)

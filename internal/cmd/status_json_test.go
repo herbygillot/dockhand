@@ -74,11 +74,11 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
 	}
-	fake.Install(t, &lifecycle.VMProvider)
 	runningNote(t, repo, sha, "fake-1")
 
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb}
+	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb,
+		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 	require.NoError(t, statusAction{json: true}.Execute(context.Background(), rs))
 
 	var got statusJSON
@@ -99,10 +99,8 @@ func TestStatusJSONKeepsStdoutPureUnderAutoclean(t *testing.T) {
 	// stderr, never inside the document. Field-measured breakage.
 	repo, sha := lifecycleRepo(t)
 	fake := &verifytest.Fake{}
-	fake.Install(t, &lifecycle.VMProvider)
 	gh := &ghFake{login: "herbygillot",
 		ownPRs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/9"}]`}
-	gh.install(t)
 	_ = sha
 
 	// Promote-shape the branch: a tracked remote is what makes judge
@@ -119,7 +117,8 @@ func TestStatusJSONKeepsStdoutPureUnderAutoclean(t *testing.T) {
 	require.NoError(t, repo.Push(context.Background(), "herby", "dockhand/jq-1.8"))
 
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb}
+	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb, Gh: gh.run,
+		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 	require.NoError(t, statusAction{json: true}.Execute(context.Background(), rs))
 
 	var got statusJSON

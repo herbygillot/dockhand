@@ -191,7 +191,7 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 	later := func(why string) error {
 		return &VerifyDeferredError{Branch: m.Branch, Reason: why}
 	}
-	prov, err := VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		if errors.Is(err, verify.ErrNoEnvironment) {
 			return later(err.Error())
@@ -318,7 +318,7 @@ func FollowRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, p
 	if err != nil {
 		return err
 	}
-	if err := SettleRuns(ctx, repo, &n); err != nil {
+	if err := SettleRuns(ctx, rs, repo, &n); err != nil {
 		return err
 	}
 	switch r := n.Runs[plat]; r.State {
@@ -402,7 +402,7 @@ func RealizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o Real
 func markVerified(ctx context.Context, rs *runstate.Context, m *Minted, p *plan.Plan, release platform.Release, tested bool, lint string) error {
 	if release.IsZero() {
 		// The gate ran, so a provider exists; its default names the run.
-		prov, perr := VMProvider(ctx)
+		prov, perr := rs.VerifyProvider(ctx)
 		if perr != nil {
 			return perr
 		}

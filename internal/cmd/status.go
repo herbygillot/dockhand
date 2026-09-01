@@ -48,7 +48,7 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	}
 	pr := newPRStatus(ctx, repo)
 	for _, br := range branches {
-		lines, err := lifecycle.DescribeBranch(ctx, repo, br)
+		lines, err := lifecycle.DescribeBranch(ctx, rs, repo, br)
 		if err != nil {
 			lines = []string{"error: " + err.Error()}
 		}
@@ -107,7 +107,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	pr := newPRStatus(ctx, repo)
 	for _, br := range branches {
 		b := statusBranch{Branch: br}
-		tip, n, drift, err := lifecycle.InspectBranch(ctx, repo, br)
+		tip, n, drift, err := lifecycle.InspectBranch(ctx, rs, repo, br)
 		if err != nil {
 			b.Error = err.Error()
 		} else {
@@ -174,7 +174,7 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 	if ps.broken != nil {
 		return prOutcome{promoted: true, errText: ps.broken.Error()}
 	}
-	pr, found, err := forge.LookupPR(ctx, ps.repo, ps.remotes, ps.upstream, branch)
+	pr, found, err := forge.LookupPR(ctx, rs.RunGH, ps.repo, ps.remotes, ps.upstream, branch)
 	if err != nil {
 		return prOutcome{promoted: true, errText: err.Error()}
 	}

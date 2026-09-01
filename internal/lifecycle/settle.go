@@ -9,14 +9,15 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
 
 // DescribeBranch renders one branch's verification standing, polling
 // and settling whatever is still running on its tip.
-func DescribeBranch(ctx context.Context, repo *git.Repo, branch string) ([]string, error) {
-	_, n, drift, err := InspectBranch(ctx, repo, branch)
+func DescribeBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string) ([]string, error) {
+	_, n, drift, err := InspectBranch(ctx, rs, repo, branch)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +30,7 @@ func DescribeBranch(ctx context.Context, repo *git.Repo, branch string) ([]strin
 // InspectBranch is the structured half DescribeBranch and the JSON
 // rendering share: the tip, its settled note (nil when unnoted), and
 // the drift finding for an unnoted tip.
-func InspectBranch(ctx context.Context, repo *git.Repo, branch string) (string, *Note, string, error) {
+func InspectBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string) (string, *Note, string, error) {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return "", nil, "", err
@@ -46,7 +47,7 @@ func InspectBranch(ctx context.Context, repo *git.Repo, branch string) (string, 
 		return tip, nil, "", err
 	}
 	if n.AnyState("running") {
-		if err := SettleRuns(ctx, repo, &n); err != nil {
+		if err := SettleRuns(ctx, rs, repo, &n); err != nil {
 			return tip, nil, "", err
 		}
 	}
@@ -60,8 +61,8 @@ func InspectBranch(ctx context.Context, repo *git.Repo, branch string) (string, 
 // failure whose log shows the port refusing the platform records as
 // unsupported instead, and its worker is released: a correct refusal
 // leaves nothing to debug.
-func SettleRuns(ctx context.Context, repo *git.Repo, n *Note) error {
-	prov, err := VMProvider(ctx)
+func SettleRuns(ctx context.Context, rs *runstate.Context, repo *git.Repo, n *Note) error {
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return nil // running, cannot poll; the note stands as is
 	}

@@ -65,7 +65,7 @@ func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes
 	if repo.TrackedRemote(ctx, branch) == "" {
 		return "kept — never promoted", nil
 	}
-	pr, found, err := forge.LookupPR(ctx, repo, remotes, upstream, branch)
+	pr, found, err := forge.LookupPR(ctx, rs.RunGH, repo, remotes, upstream, branch)
 	if err != nil {
 		return "", err
 	}

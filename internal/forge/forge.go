@@ -48,11 +48,11 @@ func lintClause(lint string) string {
 // `<port>: <description>` — dockhand's own titles included. The search
 // API bounds and ranks the result; the prefix filter runs here because
 // in:title matches the term anywhere in a title.
-func OpenPortPRs(ctx context.Context, upstream, port string) ([]PullRequest, error) {
+func OpenPortPRs(ctx context.Context, gh Runner, upstream, port string) ([]PullRequest, error) {
 	if port == "" {
 		return nil, nil
 	}
-	out, err := GhOut(ctx, "api", "-X", "GET", "search/issues",
+	out, err := gh(ctx, "api", "-X", "GET", "search/issues",
 		"-f", fmt.Sprintf("q=repo:%s is:pr is:open in:title %q", upstream, port+":"))
 	if err != nil {
 		return nil, err
@@ -209,12 +209,15 @@ func OwnerRepoFromURL(url string) (owner, repo string, ok bool) {
 	return parts[len(parts)-2], parts[len(parts)-1], true
 }
 
-// GhOut runs one gh command and returns its stdout. A variable so the
-// promote lifecycle tests can stand in a scripted GitHub — the same
-// seam shape lifecycle.VMProvider gave the verifier.
-var GhOut func(ctx context.Context, args ...string) (string, error) = realGhOut
+// Runner is the gh seam's shape: one invocation, stdout back. The
+// composition root wires RealGhOut into runstate.Context; every forge
+// function takes a Runner rather than reaching for a package variable,
+// which is what lets a test hand in a scripted GitHub without mutating
+// globals.
+type Runner func(ctx context.Context, args ...string) (string, error)
 
-func realGhOut(ctx context.Context, args ...string) (string, error) {
+// RealGhOut runs the actual gh CLI.
+func RealGhOut(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -241,7 +244,7 @@ type PullRequest struct {
 // derived linkage: the tracking remote names the fork owner, and the
 // query is the one gh itself uses. found is false for a branch never
 // promoted or with no PR yet.
-func LookupPR(ctx context.Context, repo *git.Repo, remotes map[string]string, upstream, branch string) (pr PullRequest, found bool, err error) {
+func LookupPR(ctx context.Context, gh Runner, repo *git.Repo, remotes map[string]string, upstream, branch string) (pr PullRequest, found bool, err error) {
 	tracked := repo.TrackedRemote(ctx, branch)
 	if tracked == "" {
 		return PullRequest{}, false, nil
@@ -250,14 +253,14 @@ func LookupPR(ctx context.Context, repo *git.Repo, remotes map[string]string, up
 	if !ok {
 		return PullRequest{}, false, fmt.Errorf("cannot read an owner from remote %q", tracked)
 	}
-	return QueryPR(ctx, upstream, owner, branch)
+	return QueryPR(ctx, gh, upstream, owner, branch)
 }
 
 // QueryPR is the head-ref lookup itself, for callers that already know
 // the fork owner — promote does, and a branch --force just re-lifecycle.Minted
 // has no tracking config to derive it from until the push restores it.
-func QueryPR(ctx context.Context, upstream, owner, branch string) (pr PullRequest, found bool, err error) {
-	out, err := GhOut(ctx, "api",
+func QueryPR(ctx context.Context, gh Runner, upstream, owner, branch string) (pr PullRequest, found bool, err error) {
+	out, err := gh(ctx, "api",
 		fmt.Sprintf("repos/%s/pulls?head=%s:%s&state=all", upstream, owner, branch))
 	if err != nil {
 		return PullRequest{}, false, err
@@ -277,7 +280,7 @@ func QueryPR(ctx context.Context, upstream, owner, branch string) (pr PullReques
 // authenticated gh login. Requiring exactly one match keeps a
 // many-remote checkout — other people's forks are remotes too — from
 // being guessed at.
-func ForkRemote(ctx context.Context, repo *git.Repo, override string) (name, owner string, err error) {
+func ForkRemote(ctx context.Context, gh Runner, repo *git.Repo, override string) (name, owner string, err error) {
 	remotes, err := repo.Remotes(ctx)
 	if err != nil {
 		return "", "", err
@@ -293,7 +296,7 @@ func ForkRemote(ctx context.Context, repo *git.Repo, override string) (name, own
 		}
 		return override, owner, nil
 	}
-	login, err := GhOut(ctx, "api", "user", "-q", ".login")
+	login, err := gh(ctx, "api", "user", "-q", ".login")
 	if err != nil {
 		return "", "", fmt.Errorf("finding your fork needs gh: %w (or pass --remote)", err)
 	}

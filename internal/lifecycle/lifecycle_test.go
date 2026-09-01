@@ -72,10 +72,14 @@ func runningNote(t *testing.T, repo *git.Repo, sha, jobID string) Note {
 	return n
 }
 
-func testState(t *testing.T) *runstate.Context {
+func testState(t *testing.T, fake *verifytest.Fake) *runstate.Context {
 	t.Helper()
 	var buf bytes.Buffer
-	return &runstate.Context{Out: &buf, Err: &buf}
+	rs := &runstate.Context{Out: &buf, Err: &buf}
+	if fake != nil {
+		rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+	}
+	return rs
 }
 
 func TestSettleRunsPassReleasesAndKeepsLintEvidence(t *testing.T) {
@@ -84,10 +88,9 @@ func TestSettleRunsPassReleasesAndKeepsLintEvidence(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  Verifying Portfile for jq\n--->  0 errors and 2 warnings found.\n--->  Activating jq\n"},
 	}
-	fake.Install(t, &VMProvider)
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), repo, &n))
+	require.NoError(t, SettleRuns(context.Background(), testState(t, fake), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, "passed", r.State)
 	assert.Equal(t, "2 warnings", r.Lint, "lint evidence is read before the release")
@@ -105,10 +108,9 @@ func TestSettleRunsFailureKeepsTheDebugHandle(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "ld: symbol not found\n"},
 	}
-	fake.Install(t, &VMProvider)
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), repo, &n))
+	require.NoError(t, SettleRuns(context.Background(), testState(t, fake), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, "failed", r.State)
 	assert.Equal(t, "fake-1", r.Handle, "the failure's environment is the debug handle")
@@ -121,10 +123,9 @@ func TestSettleRunsReadsARefusalAsUnsupported(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "Error: jq is known to fail on this platform\n"},
 	}
-	fake.Install(t, &VMProvider)
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), repo, &n))
+	require.NoError(t, SettleRuns(context.Background(), testState(t, fake), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, "unsupported", r.State, "a correct refusal is not a failure")
 	assert.Empty(t, r.Handle, "a refusal leaves nothing to debug")
@@ -134,10 +135,9 @@ func TestSettleRunsReadsARefusalAsUnsupported(t *testing.T) {
 func TestSettleRunsVanishedJobIsErrored(t *testing.T) {
 	repo, sha := lifecycleRepo(t)
 	fake := &verifytest.Fake{Vanished: map[string]bool{"fake-1": true}}
-	fake.Install(t, &VMProvider)
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), repo, &n))
+	require.NoError(t, SettleRuns(context.Background(), testState(t, fake), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, "errored", r.State)
 	assert.Contains(t, r.Detail, "vanished")
@@ -146,14 +146,13 @@ func TestSettleRunsVanishedJobIsErrored(t *testing.T) {
 func TestDiscardBranchReleasesEverythingItHolds(t *testing.T) {
 	repo, sha := lifecycleRepo(t)
 	fake := &verifytest.Fake{}
-	fake.Install(t, &VMProvider)
 	ctx := context.Background()
 	n := runningNote(t, repo, sha, "fake-1")
 	n.Runs["Oldos"] = Run{State: "failed", Handle: "fake-9",
 		Job: verify.Job{Provider: "fake", ID: "fake-9"}}
 	require.NoError(t, WriteNote(ctx, repo, n))
 
-	require.NoError(t, DiscardBranch(ctx, testState(t), repo, "dockhand/jq-1.8", false))
+	require.NoError(t, DiscardBranch(ctx, testState(t, fake), repo, "dockhand/jq-1.8", false))
 	assert.ElementsMatch(t, []string{"fake-1", "fake-9"}, fake.Released,
 		"the running worker and the kept failure both go")
 	assert.False(t, repo.HasBranch(ctx, "dockhand/jq-1.8"))
@@ -167,11 +166,11 @@ func TestFollowRunSettlesAndSpeaksTheVerdict(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\nbuild output\n"},
 	}
-	fake.Install(t, &VMProvider)
 	runningNote(t, repo, sha, "fake-1")
 
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{Out: &out, Err: &errb}
+	rs := &runstate.Context{Out: &out, Err: &errb,
+		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 	job := verify.Job{Provider: "fake", ID: "fake-1"}
 	require.NoError(t, FollowRun(context.Background(), rs, repo, sha, "jq", "Testos", fake, job))
 	assert.Contains(t, out.String(), "build output", "the log streams to stdout")
@@ -189,7 +188,6 @@ func TestConcurrentRecordsBothSurvive(t *testing.T) {
 	// notes lock, one of these two platforms' runs is silently lost.
 	repo, sha := lifecycleRepo(t)
 	fake := &verifytest.Fake{}
-	fake.Install(t, &VMProvider)
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
@@ -198,7 +196,7 @@ func TestConcurrentRecordsBothSurvive(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = RecordRun(ctx, testState(t), repo, sha, "jq", plat,
+			errs[i] = RecordRun(ctx, testState(t, fake), repo, sha, "jq", plat,
 				Run{State: "running", Job: verify.Job{Provider: "fake", ID: "fake-" + plat}}, "")
 		}()
 	}
@@ -219,10 +217,9 @@ func TestSettleRunsRecordsTheFailureDiagnosis(t *testing.T) {
 			"Error: Failed to build jq: command execution failed\n" +
 			"Error: See /opt/local/var/macports/logs/x/main.log for details.\n"},
 	}
-	fake.Install(t, &VMProvider)
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), repo, &n))
+	require.NoError(t, SettleRuns(context.Background(), testState(t, fake), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, "failed", r.State)
 	assert.Equal(t, "Failed to build jq: command execution failed", r.Detail,
@@ -237,16 +234,15 @@ func TestSettleRunsRereadsUnderTheLock(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
 	}
-	fake.Install(t, &VMProvider)
 	ctx := context.Background()
 	n := runningNote(t, repo, sha, "fake-1")
 	stale := n // the copy a slow status would hold
 
 	// A concurrent dockhand records a second platform meanwhile.
-	require.NoError(t, RecordRun(ctx, testState(t), repo, sha, "jq", "Oldos",
+	require.NoError(t, RecordRun(ctx, testState(t, nil), repo, sha, "jq", "Oldos",
 		Run{State: "deferred", Detail: "slot full"}, ""))
 
-	require.NoError(t, SettleRuns(ctx, repo, &stale))
+	require.NoError(t, SettleRuns(ctx, testState(t, fake), repo, &stale))
 	assert.Len(t, stale.Runs, 2, "the settle re-read; the concurrent record survives")
 	assert.Equal(t, "passed", stale.Runs["Testos"].State)
 	assert.Equal(t, "deferred", stale.Runs["Oldos"].State)

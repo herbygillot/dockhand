@@ -53,7 +53,7 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	prov, err := lifecycle.VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return err
 	}

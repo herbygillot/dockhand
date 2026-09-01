@@ -94,7 +94,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 	}
 	run := reachable[plat]
 	env := debugEnv{Job: run.Job, State: run.State, Port: n.Port, Plat: plat}
-	prov, err := lifecycle.VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return debugEnv{}, err
 	}
@@ -121,7 +121,7 @@ func (a logAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	prov, err := lifecycle.VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func (a shellAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	prov, err := lifecycle.VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return err
 	}

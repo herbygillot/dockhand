@@ -2,6 +2,7 @@ package runstate
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/tempdir"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // Context is one dockhand run's state: what the user asked for through the
@@ -42,6 +44,15 @@ type Context struct {
 	TreeRoot   string
 	PrefixPath string
 	Debug      bool
+
+	// Verifier resolves the machine's verify provider — wired by the
+	// composition root (cmd's Root), stood in by tests. A package-level
+	// seam would be mutable global state; a Context field is the same
+	// injection every other service here gets.
+	Verifier func(ctx context.Context) (verify.Verifier, error)
+	// Gh runs one gh invocation and returns its stdout — the GitHub
+	// seam, wired and stood in the same way.
+	Gh func(ctx context.Context, args ...string) (string, error)
 
 	// In, Out and Err are the run's streams. Structured output goes to
 	// Out and prose to Err, so machine output can be piped while its
@@ -228,4 +239,22 @@ func From(ctx context.Context) *Context {
 		panic("runstate: no Context in this context; the root command must store one")
 	}
 	return c
+}
+
+// VerifyProvider resolves the verify provider, refusing plainly when
+// none was wired: a nil seam is a composition bug, not a machine
+// state, and deserves its own message.
+func (c *Context) VerifyProvider(ctx context.Context) (verify.Verifier, error) {
+	if c.Verifier == nil {
+		return nil, errors.New("no verify provider wired into this run")
+	}
+	return c.Verifier(ctx)
+}
+
+// RunGH runs one gh invocation through the wired seam.
+func (c *Context) RunGH(ctx context.Context, args ...string) (string, error) {
+	if c.Gh == nil {
+		return "", errors.New("no gh runner wired into this run")
+	}
+	return c.Gh(ctx, args...)
 }

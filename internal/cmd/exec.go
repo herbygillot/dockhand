@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
@@ -28,7 +27,7 @@ type execAction struct {
 var _ Action = execAction{}
 
 func (a execAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	prov, err := lifecycle.VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return err
 	}

@@ -51,7 +51,7 @@ func DiscardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 			if run.State != "running" && run.Handle == "" {
 				continue
 			}
-			if prov, perr := VMProvider(ctx); perr == nil {
+			if prov, perr := rs.VerifyProvider(ctx); perr == nil {
 				if rerr := prov.Release(ctx, run.Job); rerr != nil {
 					fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
 				}

@@ -89,13 +89,3 @@ func (f *Fake) Release(_ context.Context, job verify.Job) error {
 	f.Released = append(f.Released, job.ID)
 	return nil
 }
-
-// Install points cmd's provider seam at this fake for one test,
-// restoring the real one after. seam is the address of the package's
-// vmProvider variable; passing it keeps this package free of a cmd
-// import cycle.
-func (f *Fake) Install(t interface{ Cleanup(func()) }, seam *func(context.Context) (verify.Verifier, error)) {
-	real_ := *seam
-	*seam = func(context.Context) (verify.Verifier, error) { return f, nil }
-	t.Cleanup(func() { *seam = real_ })
-}

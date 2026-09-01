@@ -67,7 +67,7 @@ func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release
 // run records — so a gate-verified tip's note says exactly what a
 // background-verified one would.
 func runVerification(ctx context.Context, rs *runstate.Context, portName, portdir string, release platform.Release, test bool) (string, error) {
-	prov, err := lifecycle.VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -196,7 +196,7 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	if err != nil {
 		return err
 	}
-	prov, err := lifecycle.VMProvider(ctx)
+	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return err
 	}

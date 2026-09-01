@@ -74,7 +74,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		}
 	}
 
-	forkRemote, forkOwner, err := forge.ForkRemote(ctx, repo, a.remote)
+	forkRemote, forkOwner, err := forge.ForkRemote(ctx, rs.RunGH, repo, a.remote)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// a second one would be the duplicate this verb refuses elsewhere.
 	// Looked up by the fork owner, never by tracking config — a branch
 	// --force just re-lifecycle.Minted has none until the push restores it.
-	ownPR, ownFound, err := forge.QueryPR(ctx, upstream, forkOwner, branch)
+	ownPR, ownFound, err := forge.QueryPR(ctx, rs.RunGH, upstream, forkOwner, branch)
 	if err != nil {
 		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
 		ownFound = false
@@ -133,7 +133,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		if before, _, found := strings.Cut(title, ":"); port == "" && found {
 			port = strings.TrimSpace(before)
 		}
-		switch prs, serr := forge.OpenPortPRs(ctx, upstream, port); {
+		switch prs, serr := forge.OpenPortPRs(ctx, rs.RunGH, upstream, port); {
 		case port == "":
 			fmt.Fprintln(rs.Err, "warning: no port name to search open PRs by; skipping the duplicate check")
 		case serr != nil:
@@ -167,7 +167,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 			// A replaced branch usually means a new version: the PR's
 			// commits moved with the push, and its title and body are
 			// stale until told otherwise.
-			if _, err := forge.GhOut(ctx, "pr", "edit", fmt.Sprint(ownPR.Number), "--repo", upstream,
+			if _, err := rs.RunGH(ctx, "pr", "edit", fmt.Sprint(ownPR.Number), "--repo", upstream,
 				"--title", title, "--body", body); err != nil {
 				return fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", ownPR.Number, err)
 			}
@@ -181,7 +181,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 
 	args := []string{"pr", "create", "--repo", upstream,
 		"--head", forkOwner + ":" + branch, "--title", title, "--body", body}
-	url, err := forge.GhOut(ctx, args...)
+	url, err := rs.RunGH(ctx, args...)
 	if err != nil {
 		return fmt.Errorf("the branch is pushed; opening the PR failed: %w", err)
 	}
