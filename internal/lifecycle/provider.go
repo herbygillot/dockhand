@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 
@@ -123,4 +124,45 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 		}
 	}
 	return nil
+}
+
+// CancelRunning releases every running run on one commit and marks it
+// canceled with the reason, returning how many were. The shared shape
+// under the cancel verb and promote's cancel-and-proceed: choosing to
+// promote mid-verification IS the user's answer about the running
+// build, so the tool cancels it cleanly rather than making them wait
+// or type a flag — friction removed locally, the note still honest.
+func CancelRunning(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, reason string) (int, error) {
+	unlock, err := repo.LockNotes(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
+	n, err := ReadNote(ctx, repo, sha)
+	if err != nil {
+		if errors.Is(err, git.ErrNoNote) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	prov, err := rs.VerifyProvider(ctx)
+	if err != nil {
+		return 0, err
+	}
+	canceled := 0
+	for plat, run := range n.Runs {
+		if run.State != "running" {
+			continue
+		}
+		if rerr := prov.Release(ctx, run.Job); rerr != nil {
+			fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
+		}
+		run.State, run.Detail = "canceled", reason
+		n.Runs[plat] = run
+		canceled++
+	}
+	if canceled == 0 {
+		return 0, nil
+	}
+	return canceled, WriteNote(ctx, repo, n)
 }

@@ -24,6 +24,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
 // ghFake scripts GitHub's answers and records every call.
@@ -181,4 +183,63 @@ func TestPromoteMergedPRIsADeadEnd(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already merged")
 	assert.Contains(t, err.Error(), "dockhand clean")
+}
+
+func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
+	// The user's ruling on the assessment's "closed evidence states":
+	// a promote issued mid-verification IS the answer about the
+	// running build. Cancel with a warning, promote, and the PR reads
+	// as unverified — no --no-verify demanded on top.
+	repo, sha := promoteRepo(t)
+	ctx := context.Background()
+	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	require.NoError(t, err)
+	n.Runs = map[string]lifecycle.Run{"Testos": {State: "running",
+		Job: verify.Job{Provider: "fake", ID: "fake-9"}}}
+	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+
+	fake := &verifytest.Fake{}
+	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
+	rs, _, errb := promoteState(t, repo, gh)
+	rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+
+	require.NoError(t, promoteAction{target: "jq"}.Execute(ctx, rs))
+	assert.Equal(t, []string{"fake-9"}, fake.Released, "the running worker is released, not abandoned")
+	assert.Contains(t, errb.String(), "canceled 1 running verification(s)")
+	assert.Contains(t, errb.String(), "promoting unverified; the PR will say so")
+
+	creates := gh.called("create")
+	require.Len(t, creates, 1)
+	body := creates[0][len(creates[0])-1]
+	assert.Contains(t, body, "Not locally verified", "the PR only says verified or not")
+	assert.NotContains(t, body, "canceled", "local state is the local user's business")
+
+	after, err := lifecycle.ReadNote(ctx, repo, sha)
+	require.NoError(t, err)
+	assert.Equal(t, "canceled", after.Runs["Testos"].State, "the note stays honest locally")
+}
+
+func TestPromoteMidVerificationKeepsThePassedEvidence(t *testing.T) {
+	repo, sha := promoteRepo(t) // fixture already records a passed, linted run
+	ctx := context.Background()
+	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	require.NoError(t, err)
+	n.Runs["Oldos"] = lifecycle.Run{State: "running",
+		Job: verify.Job{Provider: "fake", ID: "fake-8"}}
+	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+
+	fake := &verifytest.Fake{}
+	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/2"}
+	rs, _, errb := promoteState(t, repo, gh)
+	rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+
+	require.NoError(t, promoteAction{target: "jq"}.Execute(ctx, rs))
+	assert.Equal(t, []string{"fake-8"}, fake.Released)
+	assert.Contains(t, errb.String(), "canceled 1 running verification(s)")
+
+	body := gh.called("create")[0]
+	joined := body[len(body)-1]
+	assert.Contains(t, joined, "Testos: linted clean, built in a pristine VM",
+		"the surviving evidence still speaks")
+	assert.NotContains(t, joined, "Oldos", "the canceled run never reaches the PR")
 }

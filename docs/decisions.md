@@ -414,6 +414,22 @@ just the normal single-run progression (build → destroot → activate) split
 across two commands. The note records the bit (`tested`), because promote's
 checklist vouches only for what a note remembers.
 
+**Amended (2026-09-01, promotion is frictionless and binary).** An
+independent review recommended closed evidence states — outstanding
+runs blocking promotion, the PR body enumerating every local state —
+and explicit unverified consent uniformly. Ruled the other way, on the
+tool's own philosophy: dockhand removes friction from the workflow
+while ensuring correctness. A promote issued mid-verification IS the
+user's answer about the running build — the run is canceled with a
+warning (worker released, note recording the cancellation) and the
+promotion proceeds without demanding a flag on top. The PR body only
+ever says verified or not: local state — deferred, canceled, errored,
+running — is the local user's business and never reaches a reviewer.
+And a machine without tart degrades dockhand into a bump-and-promote
+tool by design, warning rather than gatekeeping. Correctness lives in
+what the tool does locally; the PR speaks the one binary a reviewer
+needs.
+
 **Amended (2026-09-01, machine-wide admission).** VM capacity is
 admitted, not discovered: under a per-user machine lock
 (~/Library/Caches/dockhand/tart.lock), occupancy is counted live from

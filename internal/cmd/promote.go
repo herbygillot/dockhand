@@ -55,6 +55,19 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// provider there is nothing to refuse toward — the machine cannot
 	// verify — so the promotion proceeds unverified, says so, and the
 	// PR body says so too, which is the candour reviewers accept.
+	// A promote issued mid-verification is itself the user's answer
+	// about the running build: cancel it with a warning and proceed —
+	// the tool removes friction, the note records the cancellation,
+	// and the PR simply reads as whatever evidence remains. Local
+	// state is the local user's business; the PR only ever says
+	// verified or not.
+	canceled, err := lifecycle.CancelRunning(ctx, rs, repo, tip, "canceled: promoted without waiting")
+	if err != nil {
+		return err
+	}
+	if canceled > 0 {
+		fmt.Fprintf(rs.Err, "canceled %d running verification(s) — promoting without waiting\n", canceled)
+	}
 	n, verified, err := lifecycle.PromotableVerdictFor(ctx, repo, tip)
 	if err != nil {
 		return err
@@ -67,6 +80,11 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		switch {
 		case a.noVerify:
 			fmt.Fprintln(rs.Err, "promoting unverified (--no-verify); the PR will say so")
+		case canceled > 0:
+			// The consent was the promote itself: requiring a flag on
+			// top of the cancellation would be the friction this path
+			// exists to remove.
+			fmt.Fprintln(rs.Err, "promoting unverified; the PR will say so")
 		case lifecycle.TartPresent():
 			return fmt.Errorf("%s: tip %s %s — `dockhand verify %s` first, or --no-verify to promote anyway", branch, tip[:12], reason, branch)
 		default:
