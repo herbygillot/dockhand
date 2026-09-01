@@ -182,8 +182,17 @@ func LoadOrStartNote(ctx context.Context, repo *git.Repo, sha, port string) (Not
 // amend moves the sha and not the content — and whether that verdict
 // set clears promote's gate.
 func PromotableVerdictFor(ctx context.Context, repo *git.Repo, tip string) (Note, bool, error) {
-	if n, err := ReadNote(ctx, repo, tip); err == nil {
+	// The strict reader's refusals PROPAGATE here, absence alone falls
+	// through: promotion is where a verdict authorizes publication, and
+	// the assessment caught this path treating a corrupt or
+	// future-schema tip note as mere absence — through which an older
+	// same-tree note could have authorized the publication instead.
+	n, err := ReadNote(ctx, repo, tip)
+	if err == nil {
 		return n, n.promotable(), nil
+	}
+	if !errors.Is(err, git.ErrNoNote) {
+		return Note{}, false, err
 	}
 	tree, err := repo.RevParse(ctx, tip+"^{tree}")
 	if err != nil {
@@ -195,7 +204,13 @@ func PromotableVerdictFor(ctx context.Context, repo *git.Repo, tip string) (Note
 	}
 	for _, sha := range noted {
 		n, err := ReadNote(ctx, repo, sha)
-		if err == nil && n.Tree == tree && n.promotable() {
+		if err != nil {
+			if errors.Is(err, git.ErrNoNote) {
+				continue
+			}
+			return Note{}, false, err
+		}
+		if n.Tree == tree && n.promotable() {
 			return n, true, nil
 		}
 	}

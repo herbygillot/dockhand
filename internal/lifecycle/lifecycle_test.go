@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -320,4 +321,43 @@ func TestNoteValidationRefusesWhatItCannotHonour(t *testing.T) {
 	n, err := LoadOrStartNote(ctx, repo, sha, "jq")
 	require.NoError(t, err)
 	assert.Equal(t, sha, n.Sha)
+}
+
+func TestSubmitReleasesTheJobWhenRecordingFails(t *testing.T) {
+	// Submit-and-record is a transaction: with the tip's note made
+	// unreadable (strict validation refuses it), recording fails after
+	// the job started — and the compensation must release exactly that
+	// job rather than leave a VM no settlement can find.
+	testenv.Tool(t, "tart") // SubmitVerification's degradation gate asks for the tool itself
+	repo, sha := lifecycleRepo(t)
+	writeRawNote(t, repo, sha, "{not json")
+	fake := &verifytest.Fake{}
+	rs := testState(t, fake)
+
+	rel, err := repo.PrimaryBranch(context.Background())
+	_ = rel
+	require.NoError(t, err)
+	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
+	err = SubmitVerification(context.Background(), rs, m, "jq", platform.Release{Name: "Testos", Darwin: 99}, false, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "the worker was released")
+	require.Len(t, fake.Submitted, 1, "the job did start")
+	assert.Equal(t, []string{"fake-1"}, fake.Released, "exactly one release compensates the failed record")
+}
+
+func TestPromotionRefusesACorruptTipNote(t *testing.T) {
+	// A corrupt or future-schema note on the tip must refuse promotion
+	// outright — never read as absence, through which an older
+	// same-tree note could authorize publication.
+	repo, sha := lifecycleRepo(t)
+	ctx := context.Background()
+	writeRawNote(t, repo, sha, "{not json")
+	_, _, err := PromotableVerdictFor(ctx, repo, sha)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not parse")
+
+	writeRawNote(t, repo, sha, `{"schema":99,"sha":"`+sha+`","port":"jq","runs":{}}`)
+	_, _, err = PromotableVerdictFor(ctx, repo, sha)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "newer dockhand")
 }

@@ -253,7 +253,17 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 	if err := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
 		State: "running", Job: job, Tested: test, Linted: true,
 	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID)); err != nil {
-		return err
+		// Submit-and-record is a transaction: a job whose note cannot
+		// be persisted is a running VM no settlement can ever find, so
+		// the compensation is release, on a context that survives the
+		// caller's cancellation. Strict note validation made this path
+		// reachable — a malformed existing note now refuses instead of
+		// being overwritten — which is exactly when a worker must not
+		// be left running behind an error return.
+		if rerr := prov.Release(context.WithoutCancel(ctx), job); rerr != nil {
+			return fmt.Errorf("recording the run failed (%w) and releasing %s failed too: %w — `tart delete %s` frees the slot", err, job.ID, rerr, job.ID)
+		}
+		return fmt.Errorf("recording the run failed; the worker was released: %w", err)
 	}
 	if trace {
 		return FollowRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, prov, job)
