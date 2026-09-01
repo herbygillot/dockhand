@@ -32,7 +32,7 @@ func TestReportRendering(t *testing.T) {
 	require.Contains(t, out, "tclsh        missing")
 	require.Contains(t, out, "below the 2.25 floor")
 	require.Contains(t, out, "evaluation               available")
-	require.Contains(t, out, "branches and worktrees   unavailable")
+	require.Contains(t, out, "branch workflow          unavailable")
 	require.Contains(t, out, "VM verification          unavailable (no tart)")
 }
 

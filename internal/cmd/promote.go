@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -264,8 +265,12 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 				parts = append(parts, plat+": the port declines this platform (known_fail)")
 			}
 		}
-		fmt.Fprintf(&b, "Verified with [dockhand](%s) at commit `%s` — %s.\n",
-			dockhandRepoURL, n.Sha[:12], strings.Join(parts, "; "))
+		// One verdict per line: GitHub keeps single newlines in PR
+		// bodies, so the set reads as the list it is.
+		fmt.Fprintf(&b, "Verified with [dockhand](%s) at commit `%s`\n", dockhandRepoURL, n.Sha[:12])
+		for _, part := range parts {
+			fmt.Fprintf(&b, "  — %s.\n", part)
+		}
 	}
 	if closes != "" {
 		fmt.Fprintf(&b, "\nCloses: https://trac.macports.org/ticket/%s\n", closes)
@@ -303,6 +308,12 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 	return b.String()
 }
 
+// errAmbiguousTarget marks a port name that names several in-flight
+// branches: branchable state, because verify falls through to state
+// mode when no branch exists but must refuse — not silently verify the
+// working tree — when several do.
+var errAmbiguousTarget = errors.New("ambiguous target")
+
 // resolveDockhandBranch accepts a branch name outright, or a port name
 // that names exactly one in-flight branch.
 func resolveDockhandBranch(ctx context.Context, repo *git.Repo, target string) (string, error) {
@@ -325,7 +336,7 @@ func resolveDockhandBranch(ctx context.Context, repo *git.Repo, target string) (
 	case 0:
 		return "", fmt.Errorf("no dockhand branch for %q; `dockhand status` lists what is in flight", target)
 	default:
-		return "", fmt.Errorf("%q names %d branches (%s); use the full branch name", target, len(matches), strings.Join(matches, ", "))
+		return "", fmt.Errorf("%w: %q names %d branches (%s); use the full branch name", errAmbiguousTarget, target, len(matches), strings.Join(matches, ", "))
 	}
 }
 

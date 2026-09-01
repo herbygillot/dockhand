@@ -164,7 +164,7 @@ func (r Report) String() string {
 		}
 	}
 	cap(byName[macports.TclShellName].Found, "evaluation", "no port-tclsh: install MacPorts")
-	cap(byName["git"].Found && byName["git"].Note == "", "branches and worktrees", "git missing or below floor")
+	cap(byName["git"].Found && byName["git"].Note == "", "branch workflow", "git missing or below floor")
 	cap(byName["gh"].Found, "GitHub integration", "no gh")
 	cap(byName["curl"].Found, "non-http distfile fetch", "no curl: only http(s) sources reachable")
 	switch {

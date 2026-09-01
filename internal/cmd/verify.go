@@ -181,12 +181,21 @@ type verifyAction struct {
 var _ Action = verifyAction{}
 
 func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	// A branch name wins over a port name: the branch is the unit
-	// (D21), and verifying one means verifying its tip sha, whoever
-	// made it. Everything else falls through to state verification of
-	// the working tree.
-	if repo, err := rs.Repo(ctx); err == nil && repo.HasBranch(ctx, a.target) {
-		return verifyBranch(ctx, rs, repo, a.target, a.on, a.test)
+	// The in-flight branch wins, resolved the way every sibling verb
+	// resolves it — a branch name outright, or a port name that names
+	// exactly one dockhand branch. The branch is the unit (D21), and
+	// verifying one means verifying its tip sha, whoever made it. A
+	// target with no in-flight branch falls through to state
+	// verification of the working tree, which a portdir path always
+	// reaches directly.
+	if repo, err := rs.Repo(ctx); err == nil {
+		branch, rerr := resolveDockhandBranch(ctx, repo, a.target)
+		switch {
+		case rerr == nil:
+			return verifyBranch(ctx, rs, repo, branch, a.on, a.test)
+		case errors.Is(rerr, errAmbiguousTarget):
+			return rerr
+		}
 	}
 	var single string
 	if len(a.on) > 1 {

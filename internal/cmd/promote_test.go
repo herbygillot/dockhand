@@ -23,8 +23,9 @@ func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
 	body := promoteBody(n, true, "", 1, true)
 
 	assert.Contains(t, body,
-		"Verified with [dockhand]("+dockhandRepoURL+") at commit `0123456789ab` — "+
-			"Monterey: the port declines this platform (known_fail); Sonoma: built and tested in a pristine VM.")
+		"Verified with [dockhand]("+dockhandRepoURL+") at commit `0123456789ab`\n"+
+			"  — Monterey: the port declines this platform (known_fail).\n"+
+			"  — Sonoma: built and tested in a pristine VM.\n")
 	assert.Contains(t, body, "- macOS Sonoma — pristine tart VM, via dockhand")
 	assert.Contains(t, body, "- [x] followed our [Commit Message Guidelines]")
 	assert.Contains(t, body, "- [x] squashed and [minimized your commits]")

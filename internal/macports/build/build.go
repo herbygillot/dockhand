@@ -161,7 +161,10 @@ func SourcesLine(root string) string { return "file://" + root + " [nosync]" }
 // asking for source builds the dependencies from source too, which is
 // the difference between seconds and minutes.
 func InstallArgs(port string, variants info.VariantSet, fromSource bool) []string {
-	args := []string{"-N"}
+	// -d is deliberate: the environment is disposable and the log is
+	// the artifact, so verification runs at full verbosity — mpbb's
+	// -dkn made the same call for the same reason.
+	args := []string{"-d", "-N"}
 	if fromSource {
 		args = append(args, "-s")
 	}
@@ -179,7 +182,7 @@ func InstallArgs(port string, variants info.VariantSet, fromSource bool) []strin
 // the built state (build → destroot → activate is the normal
 // single-run progression) instead of starting the port over.
 func TestArgs(port string, variants info.VariantSet) []string {
-	return append([]string{"-N", "-k", "test", port}, variants.List()...)
+	return append([]string{"-d", "-N", "-k", "test", port}, variants.List()...)
 }
 
 // CleanScript is a shell script that reports everything wrong with a

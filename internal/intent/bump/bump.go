@@ -510,7 +510,11 @@ func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syn
 		return edit.Edit{}, err
 	}
 	slog.Debug("read lockfile", "from", filepath.Base(from), "bytes", len(lock))
-	block, err := cargo2port.Generate(ctx, root, lock)
+	// The regenerated block is asked for in the layout the existing one
+	// is written in, so unchanged crates render byte-identical.
+	layout := cargo2port.Alignment(span.Text(src))
+	slog.Debug("assessed block layout", "layout", string(layout))
+	block, err := cargo2port.Generate(ctx, root, lock, layout)
 	if err != nil {
 		return edit.Edit{}, err
 	}

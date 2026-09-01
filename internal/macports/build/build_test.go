@@ -79,22 +79,22 @@ func TestSourcesLineIsNosync(t *testing.T) {
 func TestInstallArgsKeepsVariantsSeparate(t *testing.T) {
 	v, err := info.Variants("+doc", "-x11")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"-N", "install", "pmd", "+doc", "-x11"},
+	assert.Equal(t, []string{"-d", "-N", "install", "pmd", "+doc", "-x11"},
 		InstallArgs("pmd", v, false))
 }
 
 func TestInstallArgsDefaultFrame(t *testing.T) {
-	assert.Equal(t, []string{"-N", "install", "jq"}, InstallArgs("jq", "", false))
+	assert.Equal(t, []string{"-d", "-N", "install", "jq"}, InstallArgs("jq", "", false))
 }
 
 // -s is only for a re-derivation at an unchanged version, where the
 // archive that matches predates the change.
 func TestInstallArgsForcesSource(t *testing.T) {
-	assert.Equal(t, []string{"-N", "-s", "install", "jq"}, InstallArgs("jq", "", true))
+	assert.Equal(t, []string{"-d", "-N", "-s", "install", "jq"}, InstallArgs("jq", "", true))
 }
 
 func TestTestArgsRunFirstAndKeepTheBuild(t *testing.T) {
-	assert.Equal(t, []string{"-N", "-k", "test", "jq"}, TestArgs("jq", ""))
+	assert.Equal(t, []string{"-d", "-N", "-k", "test", "jq"}, TestArgs("jq", ""))
 }
 
 // The installer name pairs the product version with the marketing name,
