@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -50,7 +51,7 @@ func ExitCode(err error) int {
 	var verifyFailed *lifecycle.VerifyFailedError
 	var verifyDeferred *lifecycle.VerifyDeferredError
 	var inFlight *lifecycle.BranchInFlightError
-	var duplicatePR *DuplicatePRError
+	var duplicatePR *forge.DuplicatePRError
 	if errors.As(err, &verifyFailed) {
 		return ExitVerify
 	}

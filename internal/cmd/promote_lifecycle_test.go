@@ -1,8 +1,8 @@
 package cmd
 
 // The promote lifecycle, hermetically: a scripted GitHub behind the
-// ghOut seam, a bare repo standing in for the fork (its path ends in
-// herbygillot/ports, which is all ownerRepoFromURL reads), and the
+// forge.GhOut seam, a bare repo standing in for the fork (its path ends in
+// herbygillot/ports, which is all forge.OwnerRepoFromURL reads), and the
 // same note fixtures the verify lifecycle uses. Everything promote
 // decides — duplicate refusal, re-promotion, force refresh, the merged
 // dead end — was previously provable only against real GitHub.
@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
@@ -78,9 +79,9 @@ func (g *ghFake) called(verb string) [][]string {
 
 func (g *ghFake) install(t *testing.T) {
 	t.Helper()
-	real_ := ghOut
-	ghOut = g.run
-	t.Cleanup(func() { ghOut = real_ })
+	real_ := forge.GhOut
+	forge.GhOut = g.run
+	t.Cleanup(func() { forge.GhOut = real_ })
 }
 
 // promoteRepo is a lifecycleRepo with an upstream remote (URL only,
@@ -142,7 +143,7 @@ func TestPromoteRefusesADuplicate(t *testing.T) {
 	rs, _, _ := promoteState(t, repo)
 
 	err := promoteAction{target: "jq"}.Execute(context.Background(), rs)
-	var dup *DuplicatePRError
+	var dup *forge.DuplicatePRError
 	require.ErrorAs(t, err, &dup)
 	assert.Empty(t, repo.TrackedRemote(context.Background(), "dockhand/jq-1.8"),
 		"a refused promotion pushes nothing")

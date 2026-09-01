@@ -1,15 +1,13 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
@@ -33,20 +31,6 @@ type promoteAction struct {
 	noVerify  bool // promote an unverified tip deliberately
 	noPRCheck bool // skip the duplicate-PR search deliberately
 	force     bool // replace the fork branch and refresh the PR
-}
-
-// DuplicatePRError is promote's refusal when an open upstream PR
-// already claims the same change: a duplicate spends reviewer
-// attention on the purest kind of waste. Refusal with a remedy (exit
-// 5), not a failure — the other PR may be theirs to join, or
-// --no-pr-check promotes past it deliberately.
-type DuplicatePRError struct {
-	Title string
-	URL   string
-}
-
-func (e *DuplicatePRError) Error() string {
-	return fmt.Sprintf("an open PR already proposes %q: %s — join it, retitle with --title, or --no-pr-check to promote anyway", e.Title, e.URL)
 }
 
 var _ Action = promoteAction{}
@@ -90,7 +74,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		}
 	}
 
-	forkRemote, forkOwner, err := a.forkRemote(ctx, repo)
+	forkRemote, forkOwner, err := forge.ForkRemote(ctx, repo, a.remote)
 	if err != nil {
 		return err
 	}
@@ -101,7 +85,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return nil
 	}
 
-	upstream, err := upstreamRepo(ctx, repo)
+	upstream, err := forge.UpstreamRepo(ctx, repo)
 	if err != nil {
 		return err
 	}
@@ -134,7 +118,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// a second one would be the duplicate this verb refuses elsewhere.
 	// Looked up by the fork owner, never by tracking config — a branch
 	// --force just re-lifecycle.Minted has none until the push restores it.
-	ownPR, ownFound, err := queryPR(ctx, upstream, forkOwner, branch)
+	ownPR, ownFound, err := forge.QueryPR(ctx, upstream, forkOwner, branch)
 	if err != nil {
 		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
 		ownFound = false
@@ -149,7 +133,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		if before, _, found := strings.Cut(title, ":"); port == "" && found {
 			port = strings.TrimSpace(before)
 		}
-		switch prs, serr := openPortPRs(ctx, upstream, port); {
+		switch prs, serr := forge.OpenPortPRs(ctx, upstream, port); {
 		case port == "":
 			fmt.Fprintln(rs.Err, "warning: no port name to search open PRs by; skipping the duplicate check")
 		case serr != nil:
@@ -164,7 +148,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 					continue
 				}
 				if strings.EqualFold(strings.TrimSpace(pr.Title), strings.TrimSpace(title)) {
-					return &DuplicatePRError{Title: pr.Title, URL: pr.HTMLURL}
+					return &forge.DuplicatePRError{Title: pr.Title, URL: pr.HTMLURL}
 				}
 				// Same port, different change: not a duplicate, but a
 				// maintainer coordinating both will want to know now
@@ -177,13 +161,13 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err := a.push(ctx, rs, repo, forkRemote, forkOwner, branch); err != nil {
 		return err
 	}
-	body := promoteBody(n, verified, a.closes, len(own), checkedPRs)
+	body := forge.PromoteBody(n, verified, a.closes, len(own), checkedPRs)
 	if ownFound && ownPR.State == "open" {
 		if a.force {
 			// A replaced branch usually means a new version: the PR's
 			// commits moved with the push, and its title and body are
 			// stale until told otherwise.
-			if _, err := ghOut(ctx, "pr", "edit", fmt.Sprint(ownPR.Number), "--repo", upstream,
+			if _, err := forge.GhOut(ctx, "pr", "edit", fmt.Sprint(ownPR.Number), "--repo", upstream,
 				"--title", title, "--body", body); err != nil {
 				return fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", ownPR.Number, err)
 			}
@@ -197,20 +181,12 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 
 	args := []string{"pr", "create", "--repo", upstream,
 		"--head", forkOwner + ":" + branch, "--title", title, "--body", body}
-	url, err := ghOut(ctx, args...)
+	url, err := forge.GhOut(ctx, args...)
 	if err != nil {
 		return fmt.Errorf("the branch is pushed; opening the PR failed: %w", err)
 	}
 	fmt.Fprintln(rs.Out, strings.TrimSpace(url))
 	return nil
-}
-
-// lintClause phrases a note's lint record for the evidence line.
-func lintClause(lint string) string {
-	if lint == "clean" {
-		return "clean"
-	}
-	return "with " + lint
 }
 
 // push publishes the branch to the fork: an ordinary push, or the
@@ -230,230 +206,6 @@ func (a promoteAction) push(ctx context.Context, rs *runstate.Context, repo *git
 	return nil
 }
 
-// openPortPRs lists the open upstream PRs whose titles claim the same
-// port, leaning on the project convention that a title is
-// `<port>: <description>` — dockhand's own titles included. The search
-// API bounds and ranks the result; the prefix filter runs here because
-// in:title matches the term anywhere in a title.
-func openPortPRs(ctx context.Context, upstream, port string) ([]pullRequest, error) {
-	if port == "" {
-		return nil, nil
-	}
-	out, err := ghOut(ctx, "api", "-X", "GET", "search/issues",
-		"-f", fmt.Sprintf("q=repo:%s is:pr is:open in:title %q", upstream, port+":"))
-	if err != nil {
-		return nil, err
-	}
-	var res struct {
-		Items []pullRequest `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		return nil, fmt.Errorf("reading PR search: %w", err)
-	}
-	var prs []pullRequest
-	for _, pr := range res.Items {
-		if strings.HasPrefix(pr.Title, port+":") {
-			prs = append(prs, pr)
-		}
-	}
-	return prs, nil
-}
-
-// promoteBody renders the PR body: what was done and what was — or
-// was not — verified, stated plainly: candour is the accepted
-// currency, and unverified assertions are what draw "did you verify
-// this?".
-// dockhandRepoURL is where the PR body's "dockhand" points, so a
-// reviewer meeting the tool in a PR can see what vouched for the claim.
-const dockhandRepoURL = "https://github.com/herbygillot/dockhand"
-
-// promoteBody renders the PR body in the shape of macports-ports' own
-// pull request template, with the boxes dockhand can honestly vouch
-// for checked and everything it cannot left for the human. Candour is
-// the accepted currency: the verdict set is enumerated in full, an
-// unverified promotion says so, and the install checkbox strikes the
-// template's command through in favour of the one actually run.
-func promoteBody(n lifecycle.Note, verified bool, closes string, ownCommits int, checkedPRs bool) string {
-	var b strings.Builder
-	b.WriteString("#### Description\n\n")
-	var passed []string
-	tested, linted := false, false
-	if !verified {
-		b.WriteString("Not locally verified: no verification environment on the submitting machine.\n")
-	} else {
-		// The whole verdict set, enumerated: a passing platform and a
-		// declining one are both facts a reviewer wants.
-		var parts []string
-		for _, plat := range n.Platforms() {
-			r := n.Runs[plat]
-			switch r.State {
-			case "passed":
-				what := "built in a pristine VM"
-				if r.Tested {
-					what, tested = "built and tested in a pristine VM", true
-				}
-				// The lint claim rides the evidence line, because the
-				// checked box below is only honest if the body states
-				// what backs it.
-				switch {
-				case r.Lint != "" && r.Linted:
-					what, linted = "linted "+lintClause(r.Lint)+", "+what, true
-				case r.Linted:
-					what, linted = "linted, "+what, true
-				}
-				parts = append(parts, plat+": "+what)
-				passed = append(passed, plat)
-			case "unsupported":
-				parts = append(parts, plat+": the port declines this platform (known_fail)")
-			}
-		}
-		// One verdict per line: GitHub keeps single newlines in PR
-		// bodies, so the set reads as the list it is.
-		fmt.Fprintf(&b, "Verified with [dockhand](%s) at commit `%s`\n", dockhandRepoURL, n.Sha[:12])
-		for _, part := range parts {
-			fmt.Fprintf(&b, "  — %s.\n", part)
-		}
-	}
-	if closes != "" {
-		fmt.Fprintf(&b, "\nCloses: https://trac.macports.org/ticket/%s\n", closes)
-	}
-
-	b.WriteString("\n###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n")
-	if len(passed) > 0 {
-		b.WriteString("\n###### Tested on\n")
-		for _, plat := range passed {
-			fmt.Fprintf(&b, "- macOS %s — pristine tart VM, via dockhand\n", plat)
-		}
-	}
-
-	box := func(ok bool, item string) {
-		mark := " "
-		if ok {
-			mark = "x"
-		}
-		fmt.Fprintf(&b, "- [%s] %s\n", mark, item)
-	}
-	// The single lifecycle.Minted commit is the one whose message dockhand wrote
-	// in project format; a branch the user grew past it is theirs to
-	// vouch for.
-	single := ownCommits == 1
-	b.WriteString("\n###### Verification\nHave you\n\n")
-	box(single, "followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?")
-	box(single, "squashed and [minimized your commits](https://guide.macports.org/#project.github)?")
-	box(checkedPRs, "checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?")
-	box(false, "referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?")
-	box(linted, "checked your Portfile with `port lint`?")
-	box(tested, "tried existing tests with `sudo port test`?")
-	box(len(passed) > 0, "tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM")
-	box(false, "tested basic functionality of all binary files?")
-	box(false, "checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?")
-	// Every body signs off, the unverified ones included: a PR with no
-	// verification claim still owes the reviewer the fact of how it was
-	// made.
-	fmt.Fprintf(&b, "\nAutomated by [dockhand](%s)\n", dockhandRepoURL)
-	return b.String()
-}
-
-// forkRemote finds the remote pointing at the user's own fork: the
-// flag when given, otherwise the remote whose URL owner is the
-// authenticated gh login. Requiring exactly one match keeps a
-// many-remote checkout — other people's forks are remotes too — from
-// being guessed at.
-func (a promoteAction) forkRemote(ctx context.Context, repo *git.Repo) (name, owner string, err error) {
-	remotes, err := repo.Remotes(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	if a.remote != "" {
-		url, ok := remotes[a.remote]
-		if !ok {
-			return "", "", fmt.Errorf("no remote %q", a.remote)
-		}
-		owner, _, ok := ownerRepoFromURL(url)
-		if !ok {
-			return "", "", fmt.Errorf("remote %q: cannot read an owner from %s", a.remote, url)
-		}
-		return a.remote, owner, nil
-	}
-	login, err := ghOut(ctx, "api", "user", "-q", ".login")
-	if err != nil {
-		return "", "", fmt.Errorf("finding your fork needs gh: %w (or pass --remote)", err)
-	}
-	login = strings.TrimSpace(login)
-	var found []string
-	for rname, url := range remotes {
-		if o, _, ok := ownerRepoFromURL(url); ok && o == login {
-			found = append(found, rname)
-		}
-	}
-	if len(found) != 1 {
-		return "", "", fmt.Errorf("%d remotes belong to %s; pass --remote", len(found), login)
-	}
-	return found[0], login, nil
-}
-
-// upstreamRepo names the owner/repo the PR targets: the remote the
-// primary branch tracks — where the work forked from is where it goes
-// back to.
-func upstreamRepo(ctx context.Context, repo *git.Repo) (string, error) {
-	primary, err := repo.PrimaryBranch(ctx)
-	if err != nil {
-		return "", err
-	}
-	remote := repo.TrackedRemote(ctx, primary)
-	if remote == "" {
-		remote = "origin"
-	}
-	remotes, err := repo.Remotes(ctx)
-	if err != nil {
-		return "", err
-	}
-	owner, name, ok := ownerRepoFromURL(remotes[remote])
-	if !ok {
-		return "", fmt.Errorf("cannot read owner/repo from remote %q (%s)", remote, remotes[remote])
-	}
-	return owner + "/" + name, nil
-}
-
-// ownerRepoFromURL reads owner and repository out of a git remote URL,
-// in both the ssh (git@host:owner/repo.git) and https
-// (https://host/owner/repo) spellings.
-func ownerRepoFromURL(url string) (owner, repo string, ok bool) {
-	s := strings.TrimSuffix(url, ".git")
-	if _, rest, found := strings.Cut(s, ":"); found && !strings.Contains(s, "://") {
-		s = rest
-	} else if _, rest, found := strings.Cut(s, "://"); found {
-		if _, path, found := strings.Cut(rest, "/"); found {
-			s = path
-		}
-	}
-	parts := strings.Split(strings.Trim(s, "/"), "/")
-	if len(parts) < 2 {
-		return "", "", false
-	}
-	return parts[len(parts)-2], parts[len(parts)-1], true
-}
-
-// ghOut runs one gh command and returns its stdout. A variable so the
-// promote lifecycle tests can stand in a scripted GitHub — the same
-// seam shape lifecycle.VMProvider gave the verifier.
-var ghOut func(ctx context.Context, args ...string) (string, error) = realGhOut
-
-func realGhOut(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return "", fmt.Errorf("gh %s: %s", args[0], msg)
-	}
-	return out.String(), nil
-}
-
-// Promote builds the promote subcommand.
 func Promote() *cobra.Command {
 	var (
 		remote    string

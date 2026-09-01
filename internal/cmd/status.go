@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
@@ -88,15 +89,21 @@ type statusBranch struct {
 	// Drift is the human sentence about an unnoted tip — content
 	// identity, commits behind — kept as prose: it is a finding, not a
 	// state machine.
-	Drift   string       `json:"drift,omitempty"`
-	PR      *pullRequest `json:"pr,omitempty"`
-	PRError string       `json:"pr_error,omitempty"`
-	Cleaned bool         `json:"cleaned,omitempty"`
-	Error   string       `json:"error,omitempty"`
+	Drift   string             `json:"drift,omitempty"`
+	PR      *forge.PullRequest `json:"pr,omitempty"`
+	PRError string             `json:"pr_error,omitempty"`
+	Cleaned bool               `json:"cleaned,omitempty"`
+	Error   string             `json:"error,omitempty"`
 }
 
 func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, branches []string) error {
 	out := statusJSON{Repository: repo.Root, Branches: []statusBranch{}}
+	// Stdout is the document, so every side-effect's prose — an
+	// autoclean announcing itself, a discard's fork warning — routes to
+	// stderr. Field-measured: a merged-PR clean mid---json wrote
+	// "discarded …" into the JSON and broke the consumer.
+	prose := *rs
+	prose.Out = rs.Err
 	pr := newPRStatus(ctx, repo)
 	for _, br := range branches {
 		b := statusBranch{Branch: br}
@@ -106,7 +113,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		} else {
 			b.Tip, b.Note, b.Drift = tip, n, drift
 		}
-		outcome := pr.judge(ctx, rs, br)
+		outcome := pr.judge(ctx, &prose, br)
 		b.Cleaned = outcome.cleaned
 		b.PRError = outcome.errText
 		if outcome.found {
@@ -143,7 +150,7 @@ type prOutcome struct {
 	promoted bool
 	found    bool
 	cleaned  bool
-	pr       pullRequest
+	pr       forge.PullRequest
 	errText  string
 	cleanErr string
 }
@@ -159,7 +166,7 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 	}
 	if !ps.loaded {
 		ps.loaded = true
-		ps.upstream, ps.broken = upstreamRepo(ctx, ps.repo)
+		ps.upstream, ps.broken = forge.UpstreamRepo(ctx, ps.repo)
 		if ps.broken == nil {
 			ps.remotes, ps.broken = ps.repo.Remotes(ctx)
 		}
@@ -167,7 +174,7 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 	if ps.broken != nil {
 		return prOutcome{promoted: true, errText: ps.broken.Error()}
 	}
-	pr, found, err := lookupPR(ctx, ps.repo, ps.remotes, ps.upstream, branch)
+	pr, found, err := forge.LookupPR(ctx, ps.repo, ps.remotes, ps.upstream, branch)
 	if err != nil {
 		return prOutcome{promoted: true, errText: err.Error()}
 	}

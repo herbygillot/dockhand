@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
@@ -42,7 +42,7 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		fmt.Fprintf(rs.Out, "no dockhand branches in %s\n", repo.Root)
 		return nil
 	}
-	upstream, err := upstreamRepo(ctx, repo)
+	upstream, err := forge.UpstreamRepo(ctx, repo)
 	if err != nil {
 		return err
 	}
@@ -60,56 +60,12 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	return nil
 }
 
-// pullRequest is the slice of GitHub's PR object clean reads.
-type pullRequest struct {
-	Number   int    `json:"number"`
-	Title    string `json:"title"`
-	State    string `json:"state"`
-	MergedAt string `json:"merged_at"`
-	HTMLURL  string `json:"html_url"`
-}
-
-// lookupPR finds a promoted branch's pull request by head ref — the
-// derived linkage: the tracking remote names the fork owner, and the
-// query is the one gh itself uses. found is false for a branch never
-// promoted or with no PR yet.
-func lookupPR(ctx context.Context, repo *git.Repo, remotes map[string]string, upstream, branch string) (pr pullRequest, found bool, err error) {
-	tracked := repo.TrackedRemote(ctx, branch)
-	if tracked == "" {
-		return pullRequest{}, false, nil
-	}
-	owner, _, ok := ownerRepoFromURL(remotes[tracked])
-	if !ok {
-		return pullRequest{}, false, fmt.Errorf("cannot read an owner from remote %q", tracked)
-	}
-	return queryPR(ctx, upstream, owner, branch)
-}
-
-// queryPR is the head-ref lookup itself, for callers that already know
-// the fork owner — promote does, and a branch --force just re-lifecycle.Minted
-// has no tracking config to derive it from until the push restores it.
-func queryPR(ctx context.Context, upstream, owner, branch string) (pr pullRequest, found bool, err error) {
-	out, err := ghOut(ctx, "api",
-		fmt.Sprintf("repos/%s/pulls?head=%s:%s&state=all", upstream, owner, branch))
-	if err != nil {
-		return pullRequest{}, false, err
-	}
-	var prs []pullRequest
-	if err := json.Unmarshal([]byte(out), &prs); err != nil {
-		return pullRequest{}, false, fmt.Errorf("reading PR lookup: %w", err)
-	}
-	if len(prs) == 0 {
-		return pullRequest{}, false, nil
-	}
-	return prs[0], true, nil
-}
-
 // cleanOne judges one branch and acts only on the merged verdict.
 func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes map[string]string, upstream, branch string) (string, error) {
 	if repo.TrackedRemote(ctx, branch) == "" {
 		return "kept — never promoted", nil
 	}
-	pr, found, err := lookupPR(ctx, repo, remotes, upstream, branch)
+	pr, found, err := forge.LookupPR(ctx, repo, remotes, upstream, branch)
 	if err != nil {
 		return "", err
 	}

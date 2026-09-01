@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -193,11 +194,11 @@ func TestOwnerRepoFromURL(t *testing.T) {
 		{"https://github.com/macports/macports-ports.git", "macports", "macports-ports"},
 		{"ssh://git@github.com/owner/repo.git", "owner", "repo"},
 	} {
-		o, r, ok := ownerRepoFromURL(tc.url)
+		o, r, ok := forge.OwnerRepoFromURL(tc.url)
 		require.True(t, ok, tc.url)
 		assert.Equal(t, tc.owner, o, tc.url)
 		assert.Equal(t, tc.repo, r, tc.url)
 	}
-	_, _, ok := ownerRepoFromURL("nonsense")
+	_, _, ok := forge.OwnerRepoFromURL("nonsense")
 	assert.False(t, ok)
 }

@@ -1,4 +1,4 @@
-package cmd
+package forge
 
 import (
 	"strings"
@@ -22,10 +22,10 @@ func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
 		"Sonoma":   {State: "passed", Tested: true},
 		"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
 	})
-	body := promoteBody(n, true, "", 1, true)
+	body := PromoteBody(n, true, "", 1, true)
 
 	assert.Contains(t, body,
-		"Verified with [dockhand]("+dockhandRepoURL+") at commit `0123456789ab`\n"+
+		"Verified with [dockhand]("+RepoURL+") at commit `0123456789ab`\n"+
 			"  — Monterey: the port declines this platform (known_fail).\n"+
 			"  — Sonoma: built and tested in a pristine VM.\n")
 	assert.Contains(t, body, "- macOS Sonoma — pristine tart VM, via dockhand")
@@ -42,7 +42,7 @@ func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
 
 func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
 	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
-	body := promoteBody(n, true, "", 1, false)
+	body := PromoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Sonoma: built in a pristine VM")
 	assert.Contains(t, body, "- [ ] checked that there aren't other open [pull requests]")
 	assert.Contains(t, body, "- [ ] tried existing tests with `sudo port test`?")
@@ -50,18 +50,18 @@ func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
 }
 
 func TestPromoteBodySignsOffEveryBody(t *testing.T) {
-	signoff := "\nAutomated by [dockhand](" + dockhandRepoURL + ")\n"
+	signoff := "\nAutomated by [dockhand](" + RepoURL + ")\n"
 	verified := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
 	for name, body := range map[string]string{
-		"verified":   promoteBody(verified, true, "", 1, true),
-		"unverified": promoteBody(lifecycle.Note{}, false, "", 1, false),
+		"verified":   PromoteBody(verified, true, "", 1, true),
+		"unverified": PromoteBody(lifecycle.Note{}, false, "", 1, false),
 	} {
 		assert.True(t, strings.HasSuffix(body, signoff), "%s body must end with the sign-off", name)
 	}
 }
 
 func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
-	body := promoteBody(lifecycle.Note{}, false, "12345", 1, false)
+	body := PromoteBody(lifecycle.Note{}, false, "12345", 1, false)
 	assert.Contains(t, body, "Not locally verified")
 	assert.Contains(t, body, "Closes: https://trac.macports.org/ticket/12345")
 	assert.NotContains(t, body, "###### Tested on")
@@ -72,7 +72,7 @@ func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
 
 func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
 	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
-	body := promoteBody(n, true, "", 3, false)
+	body := PromoteBody(n, true, "", 3, false)
 	assert.Contains(t, body, "- [ ] followed our [Commit Message Guidelines]")
 	assert.Contains(t, body, "- [ ] squashed and [minimized your commits]")
 }
@@ -82,7 +82,7 @@ func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
 // checklist would read as dockhand inventing its own ceremony.
 func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
 	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed", Tested: true}})
-	body := promoteBody(n, true, "7", 1, true)
+	body := PromoteBody(n, true, "7", 1, true)
 	require.True(t, strings.HasPrefix(body, "#### Description\n"))
 	for _, section := range []string{"###### Type(s)", "###### Tested on", "###### Verification"} {
 		assert.Contains(t, body, section)
@@ -92,7 +92,7 @@ func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
 
 func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
 	n := templateNote(map[string]lifecycle.Run{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
-	body := promoteBody(n, true, "", 1, false)
+	body := PromoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 	// The checked box is only honest if the evidence line states what
 	// backs it — the field-caught gap.
@@ -101,7 +101,7 @@ func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
 
 func TestPromoteBodyStatesLintWarnings(t *testing.T) {
 	n := templateNote(map[string]lifecycle.Run{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
-	body := promoteBody(n, true, "", 1, false)
+	body := PromoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Tahoe: linted with 2 warnings, built and tested in a pristine VM")
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 }
