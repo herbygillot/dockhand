@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +16,7 @@ import (
 
 // provisionTartAction builds, rechecks, or restores a tart base image.
 type provisionTartAction struct {
+	all      bool
 	release  platform.Release
 	macports string
 	xcode    string
@@ -28,6 +30,9 @@ var _ Action = provisionTartAction{}
 
 func (a provisionTartAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	t := provision.Tart{MacPorts: a.macports, CPUs: a.cpus, MemoryMB: a.memoryMB, XcodeDir: a.xcode}
+	if a.all {
+		return a.provisionAll(ctx, rs, t)
+	}
 
 	if a.restore {
 		// The golden is the remedy D19 promises: a drifted base is
@@ -103,13 +108,22 @@ func provisionTart() *cobra.Command {
 		Args:  noArgs,
 		RunE: runE(func(*cobra.Command, []string) (Action, error) {
 			if macos == "" {
-				return nil, usagef("which macOS? pass --macos <release> (a name like sequoia, or a version like 15)")
+				return nil, usagef("which macOS? pass --macos <release> (a name, a version, or \"all\")")
 			}
-			release, err := platform.Parse(macos)
-			if err != nil {
-				return nil, &UsageError{Err: err}
+			var release platform.Release
+			all := macos == "all"
+			if !all {
+				r, err := platform.Parse(macos)
+				if err != nil {
+					return nil, &UsageError{Err: err}
+				}
+				release = r
+			}
+			if all && (recheck || restore) {
+				return nil, usagef("--macos all provisions; recheck and restore take one release")
 			}
 			return provisionTartAction{
+				all:      all,
 				release:  release,
 				macports: macports,
 				xcode:    xcode,
@@ -132,4 +146,42 @@ func provisionTart() *cobra.Command {
 	c.Flags().BoolVar(&recheck, "recheck", false, "re-run the pristine checks on an existing base instead of building one")
 	c.Flags().BoolVar(&restore, "restore", false, "replace the base with a fresh clone of its golden copy")
 	return c
+}
+
+// provisionAll sweeps every release with a base (or the modern set on
+// a fresh machine), sequentially — each boot admits against the
+// machine lock on its own. Sweep semantics: a release whose Xcode
+// requirement cannot be met from the given archives is SKIPPED with
+// the reason, not a reason to abort the ones that can proceed; hard
+// provisioning failures are collected and returned together.
+func (a provisionTartAction) provisionAll(ctx context.Context, rs *runstate.Context, t provision.Tart) error {
+	releases, err := (provision.Tart{}).Provisioned(ctx)
+	if err != nil {
+		return err
+	}
+	if len(releases) == 0 {
+		for _, r := range platform.Releases {
+			if r.Darwin >= 21 {
+				releases = append(releases, r)
+			}
+		}
+	}
+	var failed []string
+	for _, r := range releases {
+		if a.xcode != "" {
+			if _, _, perr := provision.PickXcode(a.xcode, r); perr != nil {
+				fmt.Fprintf(rs.Err, "skipping %s: %v\n", r.Name, perr)
+				continue
+			}
+		}
+		fmt.Fprintf(rs.Err, "== provisioning %s\n", r.Name)
+		if perr := t.Provision(ctx, r, rs.Err); perr != nil {
+			fmt.Fprintf(rs.Err, "%s failed: %v\n", r.Name, perr)
+			failed = append(failed, r.Name)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("provisioning failed for %s", strings.Join(failed, ", "))
+	}
+	return nil
 }
