@@ -270,7 +270,12 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	}
 	if deferred > 0 {
 		return &lifecycle.VerifyDeferredError{Branch: branch,
-			Reason: fmt.Sprintf("%d release(s) deferred; re-run `dockhand verify %s --on <release>` when a slot frees", deferred, branch)}
+			// Deferrals have different remedies — a full machine frees on
+			// its own, a missing capability needs provisioning — and the
+			// per-release lines above name each one. A field run caught
+			// this summary promising "when a slot frees" to a deferral
+			// no freed slot would ever help.
+			Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; re-run `dockhand verify %s --on <release>` once it is met", deferred, branch)}
 	}
 	return nil
 }

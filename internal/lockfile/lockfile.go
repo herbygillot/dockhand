@@ -41,7 +41,11 @@ func Acquire(ctx context.Context, path string, deadline time.Duration) (func(), 
 		}
 		if time.Now().After(until) {
 			_ = f.Close()
-			return nil, fmt.Errorf("another dockhand has held %s past its deadline; if none is running, delete the file", path)
+			// Never advise deleting the file: a crashed holder releases
+			// automatically (the lock lives on the descriptor, not the
+			// file), and deleting it under a LIVE holder splits the
+			// lock across two inodes — two holders, no exclusion.
+			return nil, fmt.Errorf("another dockhand has held %s past its deadline — check for a running or hung dockhand; a crashed one releases the lock by itself", path)
 		}
 		select {
 		case <-ctx.Done():
