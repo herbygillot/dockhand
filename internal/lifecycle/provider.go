@@ -145,6 +145,12 @@ func CancelRunning(ctx context.Context, rs *runstate.Context, repo *git.Repo, sh
 		}
 		return 0, err
 	}
+	if !n.AnyState("running") {
+		// Nothing to cancel needs no provider: a tart-less machine
+		// promotes branches with settled notes all day, and CI proved
+		// the eager lookup broke exactly that.
+		return 0, nil
+	}
 	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return 0, err

@@ -361,3 +361,20 @@ func TestPromotionRefusesACorruptTipNote(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "newer dockhand")
 }
+
+func TestCancelRunningNeedsNoProviderWhenNothingRuns(t *testing.T) {
+	// CI's tart-less runners caught the eager provider lookup: a note
+	// with nothing running must cancel nothing without ever asking for
+	// a provider.
+	repo, sha := lifecycleRepo(t)
+	ctx := context.Background()
+	n, err := LoadOrStartNote(ctx, repo, sha, "jq")
+	require.NoError(t, err)
+	n.Runs["Testos"] = Run{State: "passed"}
+	require.NoError(t, WriteNote(ctx, repo, n))
+
+	rs := testState(t, nil) // Verifier unset: resolving it would error
+	canceled, err := CancelRunning(ctx, rs, repo, sha, "x")
+	require.NoError(t, err)
+	assert.Zero(t, canceled)
+}
