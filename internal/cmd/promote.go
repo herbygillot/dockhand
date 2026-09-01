@@ -466,8 +466,12 @@ func ownerRepoFromURL(url string) (owner, repo string, ok bool) {
 	return parts[len(parts)-2], parts[len(parts)-1], true
 }
 
-// ghOut runs one gh command and returns its stdout.
-func ghOut(ctx context.Context, args ...string) (string, error) {
+// ghOut runs one gh command and returns its stdout. A variable so the
+// promote lifecycle tests can stand in a scripted GitHub — the same
+// seam shape vmProvider gave the verifier.
+var ghOut func(ctx context.Context, args ...string) (string, error) = realGhOut
+
+func realGhOut(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
