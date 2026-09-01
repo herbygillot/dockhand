@@ -59,6 +59,14 @@ const (
 	// current releases are all betas. Declining is right; the message
 	// must not read as a livecheck fault.
 	PrereleaseNewest
+	// TagWithoutRelease means livecheck named a version the forge has
+	// only as a tag: the releases feed is authoritative about which
+	// tags are RELEASES, but an upstream that tags without cutting one
+	// (the gopass satellite repos, field-measured) has not disagreed —
+	// it has abstained. Livecheck is the maintainer's declared policy
+	// and the tag is upstream's own ref: two witnesses agreeing, so
+	// resolution proceeds.
+	TagWithoutRelease
 	// PrereleaseSuperseded means livecheck matched a prerelease whose
 	// release the forge has: semver puts 1.17.0-rc.3 strictly before
 	// 1.17.0, so the release stands and resolution proceeds with it.
@@ -88,6 +96,8 @@ func (v Verdict) String() string {
 		return "livecheck ahead of the forge"
 	case PrereleaseNewest:
 		return "the newest releases are prerelease-style tags"
+	case TagWithoutRelease:
+		return "tagged upstream, but no release cut"
 	case PrereleaseSuperseded:
 		return "livecheck matched a prerelease; the release stands"
 	}
@@ -206,7 +216,13 @@ func Judge(obs Observation) Report {
 			return r
 		}
 		r.Verdict = LivecheckAhead
-		r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge tag (newest " + r.ForgeNewest + ", stable " + against + ")"
+		if obs.Authoritative {
+			// The versions compared against were releases, and saying
+			// "tag" here misled a field run: the tag may well exist.
+			r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge release (newest " + r.ForgeNewest + ")"
+		} else {
+			r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge tag (newest " + r.ForgeNewest + ", stable " + against + ")"
+		}
 	default:
 		// vercmp-equal; the maintainer's spelling wins.
 		r.Verdict, r.Latest = Agreement, obs.Livecheck
@@ -225,6 +241,22 @@ func releaseBase(version string) (string, bool) {
 	}
 	base := strings.TrimRight(version[:loc[4]], "-._")
 	return base, base != ""
+}
+
+// corroborate re-judges a LivecheckAhead-of-releases report against
+// the tag list, the second witness the releases feed cannot speak
+// for. A tag vercmp-equal to livecheck's answer resolves the report;
+// its absence hardens the decline's message.
+func corroborate(r Report, tags []string) Report {
+	for _, t := range tags {
+		if macports.VerCmp(t, r.Livecheck) == 0 {
+			r.Verdict, r.Latest = TagWithoutRelease, r.Livecheck
+			r.Detail = "livecheck " + r.Livecheck + " matches a forge tag; upstream cut no release for it"
+			return r
+		}
+	}
+	r.Detail += "; no forge tag matches either"
+	return r
 }
 
 func stableOf(versions []string) []string {

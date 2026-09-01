@@ -64,5 +64,21 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 	}
 
 	slog.Debug("upstream observation", "livecheck", obs.Livecheck, "disabled", obs.LivecheckDisabled, "forgeVersions", len(obs.ForgeVersions))
-	return Judge(obs), nil
+	report := Judge(obs)
+	if report.Verdict == LivecheckAhead && obs.Authoritative {
+		// Livecheck outran the releases feed, which only speaks for
+		// tags upstream blessed as releases — a version tagged but
+		// never released (the gopass satellite repos) is invisible to
+		// it. The tags themselves are the second witness; best-effort,
+		// because the corroboration is a refinement of a verdict
+		// already reached, not a resolver of its own.
+		if repo, ok := coords(style, opts); ok {
+			if tags, terr := Tags(ctx, repo); terr == nil {
+				report = corroborate(report, tags)
+			} else {
+				slog.Debug("tag corroboration unavailable", "err", terr)
+			}
+		}
+	}
+	return report, nil
 }

@@ -274,6 +274,38 @@ func TestJudgePrereleaseWithoutItsReleaseStillDeclines(t *testing.T) {
 	assert.Empty(t, r.Latest)
 }
 
+// The gopass-satellite field case: upstream tags v1.17.0 but cuts no
+// GitHub release, so the authoritative feed tops out at 1.16.1 and
+// livecheck looks ahead. The tag list is the second witness: a tag
+// matching livecheck's answer resolves the report.
+func TestCorroborateResolvesATagOnlyVersion(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "1.17.0",
+		ForgeVersions: []string{"1.16.0", "1.16.1"},
+		Authoritative: true,
+	})
+	require.Equal(t, LivecheckAhead, r.Verdict)
+	assert.Contains(t, r.Detail, "forge release", "authoritative comparisons must not claim to have read tags")
+	assert.NotContains(t, r.Detail, "forge tag")
+
+	got := corroborate(r, []string{"1.16.1", "1.17.0"})
+	assert.Equal(t, TagWithoutRelease, got.Verdict)
+	assert.Equal(t, "1.17.0", got.Latest)
+	assert.Contains(t, got.Detail, "upstream cut no release for it")
+}
+
+func TestCorroborateHardensTheDeclineWhenNoTagMatches(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "9.0.0",
+		ForgeVersions: []string{"1.16.1"},
+		Authoritative: true,
+	})
+	got := corroborate(r, []string{"1.16.1", "1.17.0"})
+	assert.Equal(t, LivecheckAhead, got.Verdict)
+	assert.Empty(t, got.Latest, "an uncorroborated ahead still declines")
+	assert.Contains(t, got.Detail, "no forge tag matches either")
+}
+
 func TestReleaseBase(t *testing.T) {
 	for version, want := range map[string]string{
 		"1.17.0-rc.3":       "1.17.0",
