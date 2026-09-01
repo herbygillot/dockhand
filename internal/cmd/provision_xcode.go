@@ -64,10 +64,11 @@ func (a provisionXcodeAction) Execute(ctx context.Context, rs *runstate.Context)
 The steps:
   1. Sign in at https://developer.apple.com/download/all/?q=Xcode
      (an Apple ID is required; dockhand never handles it) and download
-     each version named above as its .xip archive.
+     each version named above as its .xip archive. Apple offers each
+     as "Apple Silicon" or "Universal" — either works here.
      https://xcodereleases.com indexes every version with direct links.
-  2. Place the archives, named as Apple ships them (Xcode_16.2.xip),
-     in one directory: %s
+  2. Place the archives in one directory, named as Apple ships them
+     (Xcode_16.2.xip, Xcode_26.3_Apple_silicon.xip): %s
   3. Bake each golden image:
        dockhand provision tart --macos <release> --xcode %s
      The newest archive the release can run is chosen automatically;

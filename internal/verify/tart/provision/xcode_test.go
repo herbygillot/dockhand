@@ -80,14 +80,16 @@ func TestPickXcodeNamesAnEmptyDirectory(t *testing.T) {
 
 func TestXipVersion(t *testing.T) {
 	for name, want := range map[string]string{
-		"Xcode_16.2.xip":   "16.2",
-		"Xcode_26.0.1.xip": "26.0.1",
+		"Xcode_16.2.xip":               "16.2",
+		"Xcode_26.0.1.xip":             "26.0.1",
+		"Xcode_26.3_Apple_silicon.xip": "26.3",
+		"Xcode_26.6_Universal.xip":     "26.6",
 	} {
 		v, ok := xipVersion(name)
 		assert.True(t, ok, name)
 		assert.Equal(t, want, v)
 	}
-	for _, name := range []string{"Xcode_26.1_beta.xip", "Xcode.xip", "Xcode_.xip", "clang.xip"} {
+	for _, name := range []string{"Xcode_26.1_beta.xip", "Xcode_26_beta_2_Apple_silicon.xip", "Xcode.xip", "Xcode_.xip", "clang.xip"} {
 		_, ok := xipVersion(name)
 		assert.False(t, ok, name)
 	}

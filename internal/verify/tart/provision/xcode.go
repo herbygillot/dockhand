@@ -104,9 +104,12 @@ func PickXcode(dir string, r platform.Release) (path, version string, err error)
 	return candidates[best], best, nil
 }
 
-// xipVersion reads the version out of Apple's release archive naming,
-// Xcode_<version>.xip. ok is false for anything else — including the
-// beta and RC spellings, which carry more than a version.
+// xipVersion reads the version out of Apple's release archive naming:
+// Xcode_<version>.xip, and — since Apple split downloads by
+// architecture — Xcode_<version>_Apple_silicon.xip or _Universal.xip,
+// which install identically here (the guests are Apple Silicon
+// either way). ok is false for anything else — including the beta
+// and RC spellings, which carry more than a version.
 func xipVersion(name string) (string, bool) {
 	v, found := strings.CutPrefix(name, "Xcode_")
 	if !found {
@@ -115,6 +118,13 @@ func xipVersion(name string) (string, bool) {
 	v, found = strings.CutSuffix(v, ".xip")
 	if !found || v == "" {
 		return "", false
+	}
+	lower := strings.ToLower(v)
+	for _, suffix := range []string{"_apple_silicon", "_universal"} {
+		if strings.HasSuffix(lower, suffix) {
+			v = v[:len(v)-len(suffix)]
+			break
+		}
 	}
 	for _, r := range v {
 		if (r < '0' || r > '9') && r != '.' {
