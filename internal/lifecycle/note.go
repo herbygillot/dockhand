@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -116,9 +117,21 @@ func ReadNote(ctx context.Context, repo *git.Repo, sha string) (Note, error) {
 	}
 	var n Note
 	if err := json.Unmarshal(body, &n); err != nil {
-		return Note{}, fmt.Errorf("note on %s: %w", sha, err)
+		return Note{}, fmt.Errorf("note on %s does not parse: %w — `git notes --ref=%s remove %s` clears it", sha, err, git.VerifyNotesRef, sha)
 	}
-	if n.Schema >= noteSchema && n.Runs != nil {
+	// Notes govern worker release and promotion, so they are validated
+	// strictly rather than read hopefully. A schema from the future is
+	// refused, not half-read: a newer dockhand may store what this one
+	// cannot honour. And the embedded sha must be the commit the note
+	// is attached to — a mismatch means the note was copied or mangled,
+	// and acting on it would release or promote against the wrong tip.
+	if n.Schema > noteSchema {
+		return Note{}, fmt.Errorf("note on %s was written by a newer dockhand (schema %d, this build speaks %d); upgrade dockhand", sha, n.Schema, noteSchema)
+	}
+	if n.Schema == noteSchema && n.Sha != "" && n.Sha != sha {
+		return Note{}, fmt.Errorf("note on %s claims to describe %s — corrupt; `git notes --ref=%s remove %s` clears it", sha, n.Sha, git.VerifyNotesRef, sha)
+	}
+	if n.Schema == noteSchema && n.Runs != nil {
 		return n, nil
 	}
 	var l legacyNote
@@ -145,6 +158,14 @@ func LoadOrStartNote(ctx context.Context, repo *git.Repo, sha, port string) (Not
 			n.Runs = map[string]Run{}
 		}
 		return n, nil
+	}
+	// Only true absence starts fresh. Anything else — a malformed note,
+	// a schema from the future, a transient git failure — propagates:
+	// treating it as absence would overwrite state that governs worker
+	// release and promotion. Field origin: the assessment caught this
+	// path quietly turning read errors into empty notes.
+	if !errors.Is(err, git.ErrNoNote) {
+		return Note{}, err
 	}
 	tree, terr := repo.RevParse(ctx, sha+"^{tree}")
 	if terr != nil {

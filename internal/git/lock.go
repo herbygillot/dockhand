@@ -22,14 +22,34 @@ import (
 // The returned unlock must be called; the lock also dies with the
 // process, so a crashed holder cannot wedge the next one.
 func (r *Repo) LockNotes(ctx context.Context) (func(), error) {
-	dir, err := r.git(ctx, "rev-parse", "--git-dir")
+	path, err := r.notesLockPath(ctx)
 	if err != nil {
 		return nil, err
+	}
+	return flockPath(ctx, path)
+}
+
+// notesLockPath names the one lock file all views of a repository
+// share, linked worktrees included.
+func (r *Repo) notesLockPath(ctx context.Context) (string, error) {
+	// The COMMON git dir, not the worktree's own: a linked worktree has
+	// a private git dir while refs — the notes among them — are shared.
+	// A lock placed per-worktree would let two worktrees hold different
+	// locks over the same notes ref, which is exactly the lost update
+	// this lock exists to prevent.
+	dir, err := r.git(ctx, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
 	}
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(r.Root, dir)
 	}
-	path := filepath.Join(strings.TrimSpace(dir), "dockhand-notes.lock")
+	return filepath.Join(strings.TrimSpace(dir), "dockhand-notes.lock"), nil
+}
+
+// flockPath acquires an exclusive advisory lock on path, creating it
+// as needed.
+func flockPath(ctx context.Context, path string) (func(), error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err

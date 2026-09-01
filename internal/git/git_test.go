@@ -399,3 +399,26 @@ func TestPushForceReplacesARewrittenBranch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, second, strings.TrimSpace(string(got)))
 }
+
+// Two linked worktrees share one notes ref, so they must share one
+// lock: the lock lives in the COMMON git dir. Placing it per-worktree
+// was the assessment's sharpest catch — two views of the same notes
+// holding different locks defeats the lost-update protection entirely.
+func TestNotesLockIsSharedAcrossLinkedWorktrees(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+
+	wt := filepath.Join(t.TempDir(), "linked")
+	out, err := exec.Command("git", "-C", r.Root, "worktree", "add", "--quiet", wt).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	linked, err := Open(ctx, wt)
+	require.NoError(t, err)
+
+	p1, err := r.notesLockPath(ctx)
+	require.NoError(t, err)
+	p2, err := linked.notesLockPath(ctx)
+	require.NoError(t, err)
+	r1, _ := filepath.EvalSymlinks(p1)
+	r2, _ := filepath.EvalSymlinks(p2)
+	assert.Equal(t, r1, r2, "one repository, one notes lock, however many worktrees")
+}

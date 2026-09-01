@@ -279,3 +279,45 @@ func TestLintSummaryReadsPortLintsOwnLine(t *testing.T) {
 	assert.Equal(t, "3 warnings", LintSummary("--->  0 errors and 3 warnings found.\n"))
 	assert.Empty(t, LintSummary("no lint ran here"))
 }
+
+func writeRawNote(t *testing.T, repo *git.Repo, sha, body string) {
+	t.Helper()
+	out, err := exec.Command("git", "-C", repo.Root, "notes", "--ref="+git.VerifyNotesRef,
+		"add", "-f", "-m", body, sha).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+}
+
+func TestNoteValidationRefusesWhatItCannotHonour(t *testing.T) {
+	repo, sha := lifecycleRepo(t)
+	ctx := context.Background()
+
+	// Malformed: named as corrupt, with the removal command.
+	writeRawNote(t, repo, sha, "{not json")
+	_, err := ReadNote(ctx, repo, sha)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not parse")
+	assert.Contains(t, err.Error(), "notes --ref="+git.VerifyNotesRef+" remove")
+
+	// And crucially: a read error never becomes a fresh empty note.
+	_, err = LoadOrStartNote(ctx, repo, sha, "jq")
+	require.Error(t, err, "a malformed note must not be treated as absence")
+
+	// A schema from the future is refused, not half-read.
+	writeRawNote(t, repo, sha, `{"schema":99,"sha":"`+sha+`","port":"jq","runs":{}}`)
+	_, err = ReadNote(ctx, repo, sha)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "newer dockhand")
+
+	// A note describing a different commit is corrupt.
+	writeRawNote(t, repo, sha, `{"schema":2,"sha":"0000000000000000000000000000000000000000","port":"jq","runs":{}}`)
+	_, err = ReadNote(ctx, repo, sha)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "claims to describe")
+
+	// True absence still starts fresh.
+	out, rerr := exec.Command("git", "-C", repo.Root, "notes", "--ref="+git.VerifyNotesRef, "remove", sha).CombinedOutput()
+	require.NoError(t, rerr, "%s", out)
+	n, err := LoadOrStartNote(ctx, repo, sha, "jq")
+	require.NoError(t, err)
+	assert.Equal(t, sha, n.Sha)
+}
