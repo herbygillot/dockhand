@@ -209,7 +209,12 @@ func parseBlock(block string) (option string, crates []Crate, lines []crateLine,
 	return option, crates, lines, true
 }
 
-// modalOf is the most common value of one measured column.
+// modalOf is the most common value of one measured column, ties
+// broken toward the larger value. The break must be fixed — map
+// iteration order is randomized per process, and a tie broken by it
+// made Assess answer differently run to run — and it must be the
+// larger: an end column tied low degenerates fixed-end justify into
+// left-alignment, stealing byte-identical maxlen blocks' label.
 func modalOf(lines []crateLine, f func(crateLine) int) int {
 	counts := map[int]int{}
 	for _, l := range lines {
@@ -217,7 +222,7 @@ func modalOf(lines []crateLine, f func(crateLine) int) int {
 	}
 	best, n := 0, 0
 	for v, c := range counts {
-		if c > n {
+		if c > n || (c == n && v > best) {
 			best, n = v, c
 		}
 	}
