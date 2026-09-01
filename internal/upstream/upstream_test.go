@@ -274,6 +274,44 @@ func TestJudgePrereleaseWithoutItsReleaseStillDeclines(t *testing.T) {
 	assert.Empty(t, r.Latest)
 }
 
+// mergestat's field regression: upstream publishes beta-NAMED
+// releases with prerelease=false, so the authoritative feed carried
+// them and the old shortcut (authoritative means stable) planned a
+// bump to 2.3.2-beta. The witnesses compose: the flag filters what
+// upstream disclaims, the name heuristic judges what remains.
+func TestJudgeAuthoritativeBetaNamedReleasesStillDecline(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "2.3.2-beta",
+		ForgeVersions: []string{"2.3.0-beta", "2.3.2-beta"},
+		Authoritative: true,
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest, "a -beta must never land in a Portfile as the version")
+	assert.Contains(t, r.Detail, "no stable version exists")
+
+	// With an old stable in the release list, the tags-path shape
+	// holds on the authoritative path too.
+	r = Judge(Observation{
+		Livecheck:     "2.3.2-beta",
+		ForgeVersions: []string{"0.1.0", "2.3.0-beta", "2.3.2-beta"},
+		Authoritative: true,
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest)
+	assert.Contains(t, r.Detail, "newest stable is 0.1.0")
+}
+
+// A stable-looking livecheck answer against only-prerelease tags is
+// still trusted: livecheck matching none of them is policy, not rot.
+func TestJudgeStableLivecheckAgainstOnlyPrereleaseTags(t *testing.T) {
+	r := Judge(Observation{
+		Livecheck:     "1.2.0",
+		ForgeVersions: []string{"2.0.0-beta"},
+	})
+	assert.Equal(t, Agreement, r.Verdict)
+	assert.Equal(t, "1.2.0", r.Latest)
+}
+
 // The gopass-satellite field case: upstream tags v1.17.0 but cuts no
 // GitHub release, so the authoritative feed tops out at 1.16.1 and
 // livecheck looks ahead. The tag list is the second witness: a tag

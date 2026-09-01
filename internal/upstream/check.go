@@ -48,8 +48,9 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 
 	if repo, ok := coords(style, opts); ok {
 		// Releases first, tags as the fallback: a repo that publishes
-		// releases has said authoritatively which tags count, and the
-		// name heuristic exists only for repos that never say.
+		// releases has said authoritatively which tags count. The name
+		// heuristic still judges what remains — upstream flags are a
+		// filter, not a verdict (mergestat marks betas as releases).
 		if versions, ok := Releases(ctx, gh, repo); ok {
 			slog.Debug("forge releases", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
 			obs.ForgeVersions, obs.Authoritative = versions, true

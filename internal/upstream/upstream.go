@@ -157,11 +157,15 @@ func Stable(version string) bool {
 func Judge(obs Observation) Report {
 	r := Report{Livecheck: obs.Livecheck}
 	r.ForgeNewest = newest(obs.ForgeVersions)
-	if obs.Authoritative {
-		r.ForgeNewestStable = r.ForgeNewest
-	} else {
-		r.ForgeNewestStable = newest(stableOf(obs.ForgeVersions))
-	}
+	// The stability witnesses COMPOSE, authoritative or not: the
+	// releases feed drops what upstream disclaims, and the name
+	// heuristic drops what the version itself disclaims. mergestat
+	// field-proved that trusting the flag alone plans a bump to a
+	// -beta — upstream publishes beta-named releases with
+	// prerelease=false, and an upstream sloppy with its flags is
+	// exactly what a second witness is for. A version named -beta is
+	// a beta by any reasonable reading, whatever the flag says.
+	r.ForgeNewestStable = newest(stableOf(obs.ForgeVersions))
 
 	switch {
 	case obs.ForgeVersions == nil && obs.Livecheck == "":
@@ -185,8 +189,16 @@ func Judge(obs Observation) Report {
 
 	against := r.ForgeNewestStable
 	if against == "" {
-		// Only prerelease tags: livecheck matching none of them is
-		// policy, not rot.
+		if !Stable(obs.Livecheck) {
+			// Everything is prerelease-style, livecheck's answer
+			// included: resolving would put a -beta in a Portfile as
+			// the version. Decline, and never charge livecheck.
+			r.Verdict = PrereleaseNewest
+			r.Detail = "newest tag " + r.ForgeNewest + " is prerelease-style, and no stable version exists"
+			return r
+		}
+		// A stable-looking livecheck answer against only-prerelease
+		// tags: livecheck matching none of them is policy, not rot.
 		r.Verdict, r.Latest = Agreement, obs.Livecheck
 		r.Detail = "forge has only prerelease tags"
 		return r
