@@ -118,6 +118,8 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"build the result in a pristine VM before realizing it; failure realizes nothing")
 	c.Flags().BoolVar(&f.opts.noVerify, "no-verify", false,
 		"mint the branch without submitting background verification")
+	c.Flags().BoolVar(&f.opts.force, "force", false,
+		"replace an in-flight branch (canceling its verification) and re-derive the port from scratch")
 	c.Flags().BoolVar(&f.opts.test, "test", false,
 		"also run the port's test suite (`port test`) in the verification environment")
 	c.Flags().BoolVar(&f.opts.trace, "trace", false,

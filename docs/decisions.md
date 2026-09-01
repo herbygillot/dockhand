@@ -544,9 +544,16 @@ whole-tree reads runs against the main checkout, never the worktree.
 lifecycle ownership: dockhand lists, dedupes ("a change for jq is already in
 flight"), and prunes what it created, and a half-owned namespace rots. Two
 lifecycle rules settled 2026-08-31: an intent finding an in-flight branch for
-its port **refuses by default**, naming the branch — an explicit flag
-(`--replan` or `--force`, spelling unsettled) may later allow deliberate
-re-planning. And `status` never auto-discards — amended (2026-08-31):
+its port **refuses by default**, naming the branch — settled 2026-09-01
+as `--force`, one meaning at every ring: replace what dockhand placed.
+On the intent verbs it demolishes the in-flight branch through
+discard's path (verification canceled, workers released, notes
+removed) and re-derives the port from scratch — subsuming bump's old
+at-latest override — but refuses a branch carrying commits the user
+added past the mint, which only an explicit `discard` may drop. On
+`promote` it force-pushes the fork copy (with lease, so a copy moved
+from another machine refuses rather than tramples) and refreshes the
+open PR's title and body. And `status` never auto-discards — amended (2026-08-31):
 status now performs exactly one deletion, a branch whose PR merged,
 announced as it happens, because a merged PR is GitHub's own word that
 the work landed — and the fork copy goes with it, in status and in

@@ -32,6 +32,7 @@ type promoteAction struct {
 	noPR      bool
 	noVerify  bool // promote an unverified tip deliberately
 	noPRCheck bool // skip the duplicate-PR search deliberately
+	force     bool // replace the fork branch and refresh the PR
 }
 
 // DuplicatePRError is promote's refusal when an open upstream PR
@@ -94,10 +95,9 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return err
 	}
 	if a.noPR {
-		if err := repo.Push(ctx, forkRemote, branch); err != nil {
+		if err := a.push(ctx, rs, repo, forkRemote, forkOwner, branch); err != nil {
 			return err
 		}
-		fmt.Fprintf(rs.Err, "pushed %s to %s (%s)\n", branch, forkRemote, forkOwner)
 		return nil
 	}
 
@@ -132,11 +132,9 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// A branch that already has its own open PR is re-promotion, not
 	// duplication: the push below updates that PR in place, and opening
 	// a second one would be the duplicate this verb refuses elsewhere.
-	remotes, err := repo.Remotes(ctx)
-	if err != nil {
-		return err
-	}
-	ownPR, ownFound, err := lookupPR(ctx, repo, remotes, upstream, branch)
+	// Looked up by the fork owner, never by tracking config — a branch
+	// --force just re-minted has none until the push restores it.
+	ownPR, ownFound, err := queryPR(ctx, upstream, forkOwner, branch)
 	if err != nil {
 		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
 		ownFound = false
@@ -176,17 +174,27 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		}
 	}
 
-	if err := repo.Push(ctx, forkRemote, branch); err != nil {
+	if err := a.push(ctx, rs, repo, forkRemote, forkOwner, branch); err != nil {
 		return err
 	}
-	fmt.Fprintf(rs.Err, "pushed %s to %s (%s)\n", branch, forkRemote, forkOwner)
+	body := promoteBody(n, verified, a.closes, len(own), checkedPRs)
 	if ownFound && ownPR.State == "open" {
-		fmt.Fprintf(rs.Err, "PR #%d already open for this branch; the push updated it\n", ownPR.Number)
+		if a.force {
+			// A replaced branch usually means a new version: the PR's
+			// commits moved with the push, and its title and body are
+			// stale until told otherwise.
+			if _, err := ghOut(ctx, "pr", "edit", fmt.Sprint(ownPR.Number), "--repo", upstream,
+				"--title", title, "--body", body); err != nil {
+				return fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", ownPR.Number, err)
+			}
+			fmt.Fprintf(rs.Err, "PR #%d replaced: branch force-pushed, title and body refreshed\n", ownPR.Number)
+		} else {
+			fmt.Fprintf(rs.Err, "PR #%d already open for this branch; the push updated it\n", ownPR.Number)
+		}
 		fmt.Fprintln(rs.Out, ownPR.HTMLURL)
 		return nil
 	}
 
-	body := promoteBody(n, verified, a.closes, len(own), checkedPRs)
 	args := []string{"pr", "create", "--repo", upstream,
 		"--head", forkOwner + ":" + branch, "--title", title, "--body", body}
 	url, err := ghOut(ctx, args...)
@@ -194,6 +202,23 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return fmt.Errorf("the branch is pushed; opening the PR failed: %w", err)
 	}
 	fmt.Fprintln(rs.Out, strings.TrimSpace(url))
+	return nil
+}
+
+// push publishes the branch to the fork: an ordinary push, or the
+// with-lease force that replaces a re-minted branch's copy.
+func (a promoteAction) push(ctx context.Context, rs *runstate.Context, repo *git.Repo, remote, owner, branch string) error {
+	if a.force {
+		if err := repo.PushForce(ctx, remote, branch); err != nil {
+			return err
+		}
+		fmt.Fprintf(rs.Err, "force-pushed %s to %s (%s)\n", branch, remote, owner)
+		return nil
+	}
+	if err := repo.Push(ctx, remote, branch); err != nil {
+		return err
+	}
+	fmt.Fprintf(rs.Err, "pushed %s to %s (%s)\n", branch, remote, owner)
 	return nil
 }
 
@@ -462,6 +487,7 @@ func Promote() *cobra.Command {
 		noPR      bool
 		noVerify  bool
 		noPRCheck bool
+		force     bool
 	)
 	c := &cobra.Command{
 		Use:   "promote <branch|port>",
@@ -471,7 +497,7 @@ func Promote() *cobra.Command {
 			return promoteAction{
 				target: args[0], remote: remote,
 				title: title, closes: closes, noPR: noPR, noVerify: noVerify,
-				noPRCheck: noPRCheck,
+				noPRCheck: noPRCheck, force: force,
 			}, nil
 		}),
 	}
@@ -483,5 +509,7 @@ func Promote() *cobra.Command {
 		"promote even if the branch is unverified; the PR discloses it")
 	c.Flags().BoolVar(&noPRCheck, "no-pr-check", false,
 		"skip the search for pre-existing open PRs on the same port")
+	c.Flags().BoolVar(&force, "force", false,
+		"replace the fork branch (force-push with lease) and refresh the open PR's title and body")
 	return c
 }

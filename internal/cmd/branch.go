@@ -61,10 +61,36 @@ func planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary, pat
 // a judgment with a remedy, not something broken.
 type BranchInFlightError struct {
 	Branch string
+	// Reason overrides the default message: --force's narrower refusal
+	// speaks here.
+	Reason string
 }
 
 func (e *BranchInFlightError) Error() string {
-	return fmt.Sprintf("a change for this port is already in flight: %s — discard it or pick up where it left off", e.Branch)
+	if e.Reason != "" {
+		return e.Reason
+	}
+	return fmt.Sprintf("a change for this port is already in flight: %s — discard it, pick up where it left off, or --force to replace it", e.Branch)
+}
+
+// replaceInFlight clears the way for --force: the standing branch goes
+// through discard's own demolition — running verification canceled,
+// workers released, notes removed — but only when the branch is
+// exactly what dockhand minted. Commits the user added are theirs;
+// destroying them silently is what the refusal exists to prevent, and
+// discard remains the explicit act for that.
+func replaceInFlight(ctx context.Context, rs *runstate.Context, repo *git.Repo, primary, branch string) error {
+	own, err := repo.OwnCommits(ctx, branch, primary)
+	if err != nil {
+		return err
+	}
+	if len(own) > 1 {
+		return &BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
+			"%s carries %d commit(s) beyond the mint — --force replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
+			branch, len(own)-1, branch)}
+	}
+	fmt.Fprintf(rs.Err, "replacing in-flight %s (--force)\n", branch)
+	return discardBranch(ctx, rs, repo, branch, false)
 }
 
 // minted is what a realized branch hands back: enough for the caller
@@ -82,7 +108,7 @@ type minted struct {
 // under dockhand's namespace, entirely in the object database — the
 // user's HEAD and working tree are never touched. A plan with no edits
 // mints nothing and returns nil, nil.
-func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) (*minted, error) {
+func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force bool) (*minted, error) {
 	branch, message := "dockhand/"+p.Slug, p.Summary
 	if len(p.Edits) == 0 {
 		// A no-op realized as a branch would be an empty commit.
@@ -92,6 +118,11 @@ func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) (*min
 	repo, primary, path, edited, err := planOnBase(ctx, p)
 	if err != nil {
 		return nil, err
+	}
+	if force && repo.HasBranch(ctx, branch) {
+		if err := replaceInFlight(ctx, rs, repo, primary, branch); err != nil {
+			return nil, err
+		}
 	}
 	sha, err := repo.Mint(ctx, git.MintRequest{
 		Branch:  branch,
@@ -283,6 +314,7 @@ type realizeOpts struct {
 	noVerify bool
 	trace    bool
 	test     bool
+	force    bool
 	on       string
 	// verified says the synchronous --verify gate already ran and
 	// passed on this plan's content, so realization records the verdict
@@ -306,7 +338,7 @@ func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o real
 		// the only write mode a non-git tree has.
 		return applyPlan(ctx, rs, p)
 	}
-	m, err := mintFromPlan(ctx, rs, p)
+	m, err := mintFromPlan(ctx, rs, p, o.force)
 	if err != nil || m == nil {
 		return err
 	}

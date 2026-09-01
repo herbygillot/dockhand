@@ -21,7 +21,6 @@ func Bump() *cobra.Command {
 	var (
 		to     string
 		latest bool
-		force  bool
 		f      intentFlags
 	)
 	c := &cobra.Command{
@@ -54,15 +53,13 @@ func Bump() *cobra.Command {
 						fmt.Fprintf(report, "latest: %s (%s)\n", resolved, rep.Verdict)
 						v = resolved
 					}
-					return bump.Bump{Version: v, Force: force}, nil
+					return bump.Bump{Version: v, Force: f.opts.force}, nil
 				},
 			}, nil
 		}),
 	}
 	c.Flags().StringVar(&to, "to", "", "the version to bump to")
 	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
-	c.Flags().BoolVar(&force, "force", false,
-		"proceed even if the port is already at the target version, re-deriving checksums and vendored blocks")
 	f.register(c)
 	return c
 }

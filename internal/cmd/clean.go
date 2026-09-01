@@ -81,6 +81,13 @@ func lookupPR(ctx context.Context, repo *git.Repo, remotes map[string]string, up
 	if !ok {
 		return pullRequest{}, false, fmt.Errorf("cannot read an owner from remote %q", tracked)
 	}
+	return queryPR(ctx, upstream, owner, branch)
+}
+
+// queryPR is the head-ref lookup itself, for callers that already know
+// the fork owner — promote does, and a branch --force just re-minted
+// has no tracking config to derive it from until the push restores it.
+func queryPR(ctx context.Context, upstream, owner, branch string) (pr pullRequest, found bool, err error) {
 	out, err := ghOut(ctx, "api",
 		fmt.Sprintf("repos/%s/pulls?head=%s:%s&state=all", upstream, owner, branch))
 	if err != nil {

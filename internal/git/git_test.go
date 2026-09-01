@@ -361,3 +361,41 @@ func TestPushDeleteRemovesTheForkCopy(t *testing.T) {
 	// Deleting the already-gone ref is git's error, advisory by contract.
 	assert.Error(t, r.PushDelete(ctx, "fork", "dockhand/jq-1.8"))
 }
+
+// A re-minted branch cannot reach its fork copy by ordinary push; the
+// with-lease force replaces it, and the lease still refuses a copy
+// moved by someone else.
+func TestPushForceReplacesARewrittenBranch(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+
+	fork := t.TempDir()
+	out, err := exec.Command("git", "init", "--bare", "--quiet", fork).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	_, err = exec.Command("git", "-C", r.Root, "remote", "add", "fork", fork).CombinedOutput()
+	require.NoError(t, err)
+
+	sha, err := r.RevParse(ctx, "HEAD")
+	require.NoError(t, err)
+	mint := func(msg string) string {
+		s, merr := r.Mint(ctx, MintRequest{
+			Branch: "dockhand/jq-2.0", Base: sha, Path: "sysutils/jq/Portfile",
+			Content: []byte("version " + msg + "\n"), Message: msg,
+		})
+		require.NoError(t, merr)
+		return s
+	}
+	first := mint("jq: update to 2.0")
+	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-2.0"))
+
+	// Replace: delete and re-mint — different content, unrelated tip.
+	require.NoError(t, r.DeleteBranch(ctx, "dockhand/jq-2.0"))
+	second := mint("jq: update to 2.1")
+	require.NotEqual(t, first, second)
+
+	assert.Error(t, r.Push(ctx, "fork", "dockhand/jq-2.0"), "a rewritten branch is not a fast-forward")
+	require.NoError(t, r.PushForce(ctx, "fork", "dockhand/jq-2.0"))
+	got, err := exec.Command("git", "-C", fork, "rev-parse", "dockhand/jq-2.0").Output()
+	require.NoError(t, err)
+	assert.Equal(t, second, strings.TrimSpace(string(got)))
+}

@@ -63,8 +63,13 @@ is re-promotion: the push updates that PR instead of opening a second. The delib
 edit the Portfile where the user stands, uncommitted, minting nothing — for
 the user folding dockhand's mechanical edit into their own workflow, and the
 only write mode a non-git tree gets (with a loud warning). Lifecycle: an
-intent finding an in-flight branch for its port refuses and names it (a
-`--replan`/`--force` override may come later); `status` reports each
+intent finding an in-flight branch for its port refuses and names it;
+`--force` replaces it — verification canceled, notes removed, the port
+re-derived from scratch — but only a branch that is exactly the minted
+commit: work the user added past the mint refuses, and `discard` stays
+the explicit act for dropping it. `promote --force` is the same meaning
+at ring 2/3: force-push the fork copy (with lease) and refresh the open
+PR's title and body. `status` reports each
 promoted branch's PR state and performs one deletion — a branch whose
 PR merged is cleaned, announced, its fork copy deleted with it — while
 `clean` remains the explicit sweep: PR state from

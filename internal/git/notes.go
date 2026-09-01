@@ -153,6 +153,16 @@ func (r *Repo) Push(ctx context.Context, remote, branch string) error {
 	return err
 }
 
+// PushForce replaces a remote branch with the local one — promote
+// --force's republish after a branch was re-minted. --force-with-lease
+// rather than --force: the lease is the remote-tracking ref the last
+// push recorded, so a copy moved from another machine is refused
+// instead of trampled.
+func (r *Repo) PushForce(ctx context.Context, remote, branch string) error {
+	_, err := r.git(ctx, "push", "--force-with-lease", "-u", remote, branch)
+	return err
+}
+
 // PushDelete removes a branch from a remote — the undo of Push, for
 // cleanup that follows a merged PR. Deleting a ref that is already
 // gone is an error from git, and callers who want idempotence should
