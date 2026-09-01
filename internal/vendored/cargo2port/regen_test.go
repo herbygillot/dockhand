@@ -1,4 +1,4 @@
-package bump
+package cargo2port
 
 import (
 	"os"
@@ -9,18 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/macports/port"
+	"github.com/herbygillot/dockhand/internal/vendored"
 )
 
 func TestSuppliedDistfilesNamesWhatTheBlockContributes(t *testing.T) {
-	got, err := suppliedDistfiles(t.Context(), port.Handle{},
-		info.Vendored{CargoCrates: "libc 0.2.156 a5f43f1 bitflags 2.6.0 b048fb6"}, nil)
+	got, err := Blocks{}.Supplied(t.Context(), vendored.Regen{
+		Vals: info.Values{Vendored: info.Vendored{CargoCrates: "libc 0.2.156 a5f43f1 bitflags 2.6.0 b048fb6"}}})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"libc-0.2.156.crate", "bitflags-2.6.0.crate"}, got)
 }
 
 func TestSuppliedDistfilesEmptyWithoutABlock(t *testing.T) {
-	got, err := suppliedDistfiles(t.Context(), port.Handle{}, info.Vendored{}, nil)
+	got, err := Blocks{}.Supplied(t.Context(), vendored.Regen{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }

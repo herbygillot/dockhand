@@ -14,11 +14,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
@@ -28,8 +26,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/text"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/vendored"
@@ -127,12 +123,15 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
-	// tree; bumping around it would ship a lying Portfile. cargo.crates
-	// is regenerated below, from the lockfile inside the new distfile.
-	// The rest have no generator wired up yet.
-	switch {
-	case vals.Vendored.CargoCratesGithub != "":
-		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "cargo.crates_github"}
+	// tree; bumping around it would ship a lying Portfile. Each family
+	// judges its own honesty here, before any network is spent.
+	for _, r := range regenerators {
+		if !r.Present(vals) {
+			continue
+		}
+		if reason, veto := r.Veto(vals); veto {
+			return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: reason}
+		}
 	}
 	// Zig dependency sets are hand-vendored — no MacPorts option marks
 	// them, so the Portfile itself is read for Zig's package-hash shape.
@@ -143,16 +142,6 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	if h := zigVendorHash(src); h != "" {
 		return nil, &plan.Decline{Type: plan.VendoredBlock,
 			Detail: fmt.Sprintf("hand-vendored Zig dependency set (build.zig.zon package hash %s); dockhand cannot re-resolve the pinned dependencies yet", h)}
-	}
-	// A patch over the lockfile means the crate set the port builds is
-	// not the one upstream shipped, so regenerating from the distfile's
-	// copy would state something untrue. This is judged here, before any
-	// network: a refusal that needs no download should never cost one.
-	if vals.Vendored.CargoCrates != "" {
-		if pf, ok := patchesLockfile(vals); ok {
-			return nil, &plan.Decline{Type: plan.VendoredBlock,
-				Detail: fmt.Sprintf("%s rewrites %s, so the built crate set is not the one upstream shipped", pf, cargo2port.LockName)}
-		}
 	}
 
 	// An uncorroborated carrier must prove itself before anything is
@@ -236,7 +225,24 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		// fetched nor rewritten here. Subtracting them leaves what the
 		// port fetches for itself: one file for most cargo ports, out of
 		// two hundred.
-		supplied, err := suppliedDistfiles(ctx, h, vals.Vendored, vals.Distfiles)
+		rc := vendored.Regen{
+			Src: src, CST: cst,
+			Handle: h, Vals: vals,
+			Shadow: shadow, ShadowVals: shadowVals,
+			TempDir: h.TempDir,
+		}
+		var supplied []string
+		for _, r := range regenerators {
+			if !r.Present(vals) {
+				continue
+			}
+			sup, serr := r.Supplied(ctx, rc)
+			if serr != nil {
+				return nil, serr
+			}
+			supplied = append(supplied, sup...)
+		}
+		err = nil
 		if err != nil {
 			return nil, err
 		}
@@ -293,20 +299,17 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		}
 		edits = append(edits, ck...)
 
-		// The block is regenerated from the lockfile inside the distfile
-		// just fetched, so the crate set and the checksum recorded for
-		// that distfile describe the same bytes.
-		if vals.Vendored.CargoCrates != "" {
-			blockEdit, err := cargoBlockEdit(ctx, h.TempDir, src, cst, vals, shadowVals.Worksrcdir, fetched)
-			if err != nil {
-				return nil, err
+		// Each present family regenerates its block for the target — the
+		// crate set and the checksum recorded for the distfile describe
+		// the same bytes, because both came from this fetch.
+		rc.Fetched = fetched
+		for _, r := range regenerators {
+			if !r.Present(vals) {
+				continue
 			}
-			edits = append(edits, blockEdit)
-		}
-		if vals.Vendored.GoVendors != "" {
-			blockEdit, err := goBlockEdit(ctx, shadow, src, cst, vals)
-			if err != nil {
-				return nil, err
+			blockEdit, rerr := r.Regenerate(ctx, rc)
+			if rerr != nil {
+				return nil, rerr
 			}
 			edits = append(edits, blockEdit)
 		}
@@ -513,108 +516,11 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher) (st
 	return report.Latest, report, nil
 }
 
-// suppliedDistfiles names the distfiles a port's vendored blocks
-// contribute — the set the checksum machinery must not treat as the
-// port's own.
-func suppliedDistfiles(ctx context.Context, h port.Handle, v info.Vendored, distfiles []string) ([]string, error) {
-	switch {
-	case v.CargoCrates != "":
-		supplied, err := cargo2port.SuppliedIn(v.CargoCrates)
-		if err != nil {
-			return nil, fmt.Errorf("bump: %w", err)
-		}
-		return supplied, nil
-	case v.GoVendors != "":
-		// The vendor distfile naming lives deep in the golang
-		// PortGroup (go._translate_package_id, per-forge rules);
-		// reimplementing it would be reimplementing MacPorts. Inverted
-		// instead: the port's own distfile is ${distname}${extract.suffix},
-		// both evaluated, and everything else the context's distfiles
-		// list carries is the block's contribution.
-		opts, err := h.Options(ctx, "distname", "extract.suffix")
-		if err != nil {
-			return nil, err
-		}
-		own := opts["distname"] + opts["extract.suffix"]
-		var supplied []string
-		for _, d := range distfiles {
-			name, _, _ := strings.Cut(d, ":")
-			if name != own {
-				supplied = append(supplied, name)
-			}
-		}
-		return supplied, nil
-	}
-	return nil, nil
-}
-
-// goBlockEdit regenerates a go.vendors block for the target version.
-// Unlike cargo's, the regeneration needs no distfile: go2port resolves
-// the module's go.mod at that version from its forge and downloads
-// every dependency to checksum it — the same network a maintainer
-// running the tool by hand spends. The module path comes from the
-// port's own evaluated go.package, so what is regenerated is what the
-// golang PortGroup will read.
-func goBlockEdit(ctx context.Context, shadow port.Handle, src []byte, cst *syntax.Script, vals info.Values) (edit.Edit, error) {
-	span, err := vendored.Locate(src, cst, portstyle.ScopeOf(src, vals.Name), go2port.Kind)
-	if err != nil {
-		return edit.Edit{}, err
-	}
-	// Asked of the SHADOW — the edited Portfile at the new version — so
-	// both answers are the portgroup's own composition for the target:
-	// go.package as go.setup derived it, and git.branch as the resolved
-	// git ref (tag prefix and suffix already applied by github.setup and
-	// its siblings). Measured: handing go2port a bare version against a
-	// v-prefixed tag makes it emit a portfile with no vendors block at
-	// all rather than fail.
-	opts, err := shadow.Options(ctx, "go.package", "git.branch")
-	if err != nil {
-		return edit.Edit{}, err
-	}
-	pkg := strings.TrimSpace(opts["go.package"])
-	ref := strings.TrimSpace(opts["git.branch"])
-	if pkg == "" || ref == "" {
-		return edit.Edit{}, &plan.Decline{Type: plan.VendoredBlock,
-			Detail: "go.vendors present but go.package or git.branch is empty; the module ref is unknowable"}
-	}
-	slog.Debug("regenerating go.vendors", "package", pkg, "ref", ref)
-	block, err := go2port.Generate(ctx, pkg, ref)
-	if err != nil {
-		return edit.Edit{}, err
-	}
-	slog.Debug("regenerated block", "kind", go2port.Kind.String(), "bytes", len(block))
-	return vendored.Edit(src, span, block, go2port.Kind), nil
-}
-
-// cargoBlockEdit regenerates a cargo.crates block from the Cargo.lock
-// inside the port's own distfiles.
-func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syntax.Script, vals info.Values, worksrcdir string, fetched []string) (edit.Edit, error) {
-	span, err := vendored.Locate(src, cst, portstyle.ScopeOf(src, vals.Name), cargo2port.Kind)
-	if err != nil {
-		return edit.Edit{}, err
-	}
-	lock, from, err := cargo2port.Lockfile(ctx, fetched, worksrcdir)
-	if err != nil {
-		return edit.Edit{}, err
-	}
-	slog.Debug("read lockfile", "from", filepath.Base(from), "bytes", len(lock))
-	// The regenerated block is re-laid under the existing block's own
-	// measured geometry — but only a geometry Assess proved by
-	// re-rendering the existing block byte for byte. Unchanged crates
-	// then render identical whatever wrote the original, a hand script
-	// included; an unproven geometry keeps the tool's output verbatim.
-	geom, proven := cargo2port.Assess(span.Text(src))
-	slog.Debug("assessed block layout", "layout", string(geom.Layout), "proven", proven)
-	block, err := cargo2port.Generate(ctx, root, lock, geom.Layout)
-	if err != nil {
-		return edit.Edit{}, err
-	}
-	if proven {
-		block = cargo2port.Reformat(block, geom)
-	}
-	slog.Debug("regenerated block", "kind", cargo2port.Kind.String(), "bytes", len(block))
-	return vendored.Edit(src, span, block, cargo2port.Kind), nil
-}
+// regenerators is the registry of vendored-block families — the
+// closed list bump consults instead of an if-chain, so the next
+// family is a registration here rather than another lobe on the
+// planner.
+var regenerators = []vendored.Regenerator{cargo2port.Blocks{}, go2port.Blocks{}}
 
 // Modeline is the editor header the MacPorts best-practices page
 // prescribes; a bump adds it to a Portfile that opens without one.
@@ -649,28 +555,4 @@ func zigVendorHash(src []byte) string {
 		return ""
 	}
 	return string(zigPackageHash.Find(src))
-}
-
-// patchesLockfile reports whether any of the port's patchfiles rewrites
-// the file the generator reads. The patches' own diff headers are read
-// rather than their names guessed at: a patch named for something else
-// can still touch the lockfile. A patchfile that cannot be read is
-// treated as touching it — the point is to prove the lockfile is
-// untouched, and an unreadable patch proves nothing.
-func patchesLockfile(vals info.Values) (string, bool) {
-	for _, pf := range vals.Patchfiles {
-		body, err := os.ReadFile(filepath.Join(vals.Filespath, pf))
-		if err != nil {
-			return pf, true
-		}
-		for line := range strings.Lines(string(body)) {
-			if !strings.HasPrefix(line, "--- ") && !strings.HasPrefix(line, "+++ ") {
-				continue
-			}
-			if strings.Contains(line, cargo2port.LockName) {
-				return pf, true
-			}
-		}
-	}
-	return "", false
 }
