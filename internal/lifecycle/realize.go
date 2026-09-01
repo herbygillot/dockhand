@@ -1,4 +1,4 @@
-package cmd
+package lifecycle
 
 import (
 	"context"
@@ -76,7 +76,7 @@ func (e *BranchInFlightError) Error() string {
 // replaceInFlight clears the way for --force: the standing branch goes
 // through discard's own demolition — running verification canceled,
 // workers released, notes removed — but only when the branch is
-// exactly what dockhand minted. Commits the user added are theirs;
+// exactly what dockhand Minted. Commits the user added are theirs;
 // destroying them silently is what the refusal exists to prevent, and
 // discard remains the explicit act for that.
 func replaceInFlight(ctx context.Context, rs *runstate.Context, repo *git.Repo, primary, branch string) error {
@@ -90,29 +90,29 @@ func replaceInFlight(ctx context.Context, rs *runstate.Context, repo *git.Repo, 
 			branch, len(own)-1, branch)}
 	}
 	fmt.Fprintf(rs.Err, "replacing in-flight %s (--force)\n", branch)
-	return discardBranch(ctx, rs, repo, branch, false)
+	return DiscardBranch(ctx, rs, repo, branch, false)
 }
 
-// minted is what a realized branch hands back: enough for the caller
+// Minted is what a realized branch hands back: enough for the caller
 // to submit verification against the sha and tell the user where the
 // change lives.
-type minted struct {
+type Minted struct {
 	Repo    *git.Repo
 	Branch  string
 	Sha     string // full commit sha
 	RelPort string // repo-relative portdir path
 }
 
-// mintFromPlan realizes a plan as a branch (D21): the edited Portfile
+// MintFromPlan realizes a plan as a branch (D21): the edited Portfile
 // is committed onto the tree's primary branch at its local position,
 // under dockhand's namespace, entirely in the object database — the
 // user's HEAD and working tree are never touched. A plan with no edits
 // mints nothing and returns nil, nil.
-func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force bool) (*minted, error) {
+func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force bool) (*Minted, error) {
 	branch, message := "dockhand/"+p.Slug, p.Summary
 	if len(p.Edits) == 0 {
 		// A no-op realized as a branch would be an empty commit.
-		fmt.Fprintln(rs.Out, "no edits; no branch minted")
+		fmt.Fprintln(rs.Out, "no edits; no branch Minted")
 		if force {
 			fmt.Fprintln(rs.Err, "an existing in-flight branch, if any, stands: --force replaces only when there is something to replace it with")
 		}
@@ -146,12 +146,12 @@ func mintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 	}
 	fmt.Fprintf(rs.Out, "branch: %s (%s)\n", branch, sha[:12])
 	fmt.Fprintf(rs.Err, "your checkout is untouched — `git checkout %s` to add changes\n", branch)
-	return &minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}, nil
+	return &Minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}, nil
 }
 
 // VerifyDeferredError reports a verification that could not start —
 // no bases, full slots, a mid-submit failure — after its branch was
-// successfully minted. The branch stands (the git commit/push shape:
+// successfully Minted. The branch stands (the git commit/push shape:
 // nobody deletes the commit because the push failed), but the
 // invocation's contract was mint AND submit, so the exit is nonzero:
 // exit 3, because the obstacle is the machine's. --no-verify narrows
@@ -165,14 +165,14 @@ func (e *VerifyDeferredError) Error() string {
 	return fmt.Sprintf("verification not started: %s\nthe branch stands — run `dockhand verify %s` when ready", e.Reason, e.Branch)
 }
 
-// submitVerification stages the minted commit's portdir out of the
+// SubmitVerification stages the Minted commit's portdir out of the
 // object database — the working tree is irrelevant to what the branch
 // carries — submits it to the VM provider, and records the running job
 // as the commit's note. Submission not starting is not a minting
 // failure — the branch stands — but it is a contract failure:
 // VerifyDeferredError carries that split.
-func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, portName string, release platform.Release, trace, test bool) error {
-	if !tartPresent() {
+func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, portName string, release platform.Release, trace, test bool) error {
+	if !TartPresent() {
 		// No provider, no contract: the machine cannot verify at all,
 		// so this is a --no-verify bump that says so — and the branch
 		// may be promoted as it is, unverified.
@@ -183,7 +183,7 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 	later := func(why string) error {
 		return &VerifyDeferredError{Branch: m.Branch, Reason: why}
 	}
-	prov, err := vmProvider(ctx)
+	prov, err := VMProvider(ctx)
 	if err != nil {
 		if errors.Is(err, verify.ErrNoEnvironment) {
 			return later(err.Error())
@@ -212,11 +212,11 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 	// the branch's content, which is what was materialized. The same
 	// session answers use_xcode, so a port that needs a full Xcode is
 	// probed for one before the build starts, not forty minutes in.
-	pf, kerr := knownFailOn(ctx, rs, staged, release)
+	pf, kerr := preflightOn(ctx, rs, staged, release)
 	if kerr != nil {
 		fmt.Fprintf(rs.Err, "warning: pre-flight evaluation: %v\n", kerr)
 	} else if pf.KnownFail {
-		return recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
+		return RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
 			State: "unsupported", Detail: "declares known_fail on " + release.Name,
 		}, fmt.Sprintf("%s declares known_fail on %s; recorded unsupported — no build attempted", portName, release.Name))
 	}
@@ -229,44 +229,44 @@ func submitVerification(ctx context.Context, rs *runstate.Context, m *minted, po
 	})
 	if err != nil {
 		// A full provider (two-slot cap), a capability refusal, or a
-		// mid-submit failure: the branch is minted and the tip is
+		// mid-submit failure: the branch is Minted and the tip is
 		// simply unverified. The deferred run is recorded here rather
 		// than left to a later verify — a field run saw an intent-path
 		// refusal show as bare "unverified" with the reason only in
 		// scrollback.
-		if rerr := recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
+		if rerr := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
 			State: "deferred", Detail: err.Error(),
 		}, ""); rerr != nil {
 			fmt.Fprintf(rs.Err, "warning: recording the deferred run: %v\n", rerr)
 		}
 		return later(err.Error())
 	}
-	if err := recordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, verifyRun{
+	if err := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
 		State: "running", Job: job, Tested: test, Linted: true,
 	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID)); err != nil {
 		return err
 	}
 	if trace {
-		return followRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, prov, job)
+		return FollowRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, prov, job)
 	}
 	return nil
 }
 
-// recordRun writes one platform's run into the commit's note — the
+// RecordRun writes one platform's run into the commit's note — the
 // read-modify-write every per-platform update goes through — and tells
 // the user what was recorded.
-func recordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, releaseName string, r verifyRun, msg string) error {
+func RecordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, releaseName string, r Run, msg string) error {
 	unlock, err := repo.LockNotes(ctx)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	n, err := loadOrStartNote(ctx, repo, sha, portName)
+	n, err := LoadOrStartNote(ctx, repo, sha, portName)
 	if err != nil {
 		return err
 	}
 	n.Runs[releaseName] = r
-	if err := writeNote(ctx, repo, n); err != nil {
+	if err := WriteNote(ctx, repo, n); err != nil {
 		return err
 	}
 	if msg != "" {
@@ -275,12 +275,12 @@ func recordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, p
 	return nil
 }
 
-// followRun streams a running build's log as the guest writes it,
+// FollowRun streams a running build's log as the guest writes it,
 // then settles the run through the same machinery status uses — the
 // --trace contract: don't exit, watch. Ctrl-C detaches; the build
 // continues without us, which is the submit-and-poll design keeping
 // its promise even while we happen to be watching.
-func followRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, plat string, prov verify.Verifier, job verify.Job) error {
+func FollowRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, plat string, prov verify.Verifier, job verify.Job) error {
 	fmt.Fprintf(rs.Err, "following %s on %s — Ctrl-C detaches, the build continues\n", portName, plat)
 	printed := 0
 	for {
@@ -306,11 +306,11 @@ func followRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, p
 		case <-time.After(4 * time.Second):
 		}
 	}
-	n, err := loadOrStartNote(ctx, repo, sha, portName)
+	n, err := LoadOrStartNote(ctx, repo, sha, portName)
 	if err != nil {
 		return err
 	}
-	if err := settleRuns(ctx, repo, &n); err != nil {
+	if err := SettleRuns(ctx, repo, &n); err != nil {
 		return err
 	}
 	switch r := n.Runs[plat]; r.State {
@@ -327,90 +327,85 @@ func followRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, p
 	}
 }
 
-// realizeOpts is one invocation's choice of realization, shared by
+// RealizeOpts is one invocation's choice of realization, shared by
 // every intent that writes: print the plan, print the diff, edit in
 // place, or — the default — mint the branch and submit verification.
-type realizeOpts struct {
-	planOnly bool
-	diff     bool
-	inPlace  bool
-	noVerify bool
-	trace    bool
-	test     bool
-	force    bool
-	on       string
-	// gateLint is the gate's lint evidence, carried to the minted
+type RealizeOpts struct {
+	PlanOnly bool
+	Diff     bool
+	InPlace  bool
+	NoVerify bool
+	Trace    bool
+	Test     bool
+	Force    bool
+	// On is the release to verify on, already parsed by the caller;
+	// the zero value means the provider default. Flag parsing is the
+	// CLI's business, not the engine's.
+	On platform.Release
+	// gateLint is the gate's lint evidence, carried to the Minted
 	// commit's note so a gate-verified tip reads exactly like a
 	// background-verified one.
-	gateLint string
+	GateLint string
 	// verified says the synchronous --verify gate already ran and
 	// passed on this plan's content, so realization records the verdict
 	// instead of buying the same build twice.
-	verified bool
+	Verified bool
 }
 
-// realizePlan carries a plan to its chosen realization. Every write
+// RealizePlan carries a plan to its chosen realization. Every write
 // intent arrives here, so a plan becomes a branch the same way
 // whichever intent produced it (D21).
-func realizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o realizeOpts) error {
-	if o.planOnly {
+func RealizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o RealizeOpts) error {
+	if o.PlanOnly {
 		return p.Encode(rs.Out)
 	}
-	if o.diff {
+	if o.Diff {
 		return diffFromPlan(ctx, rs, p)
 	}
-	if o.inPlace {
+	if o.InPlace {
 		// The deliberate opt-out (D21): edit where the user stands,
 		// uncommitted — for the user running their own workflow, and
 		// the only write mode a non-git tree has.
 		return applyPlan(ctx, rs, p)
 	}
-	m, err := mintFromPlan(ctx, rs, p, o.force)
+	m, err := MintFromPlan(ctx, rs, p, o.Force)
 	if err != nil || m == nil {
 		return err
 	}
-	if o.verified {
-		// The --verify gate built exactly these bytes — the minted blob
+	if o.Verified {
+		// The --verify gate built exactly these bytes — the Minted blob
 		// and the gate's shadow are both edit.Apply over the same base —
 		// so the verdict transfers to the commit by content identity.
 		// Recording it beats resubmitting: the same build twice proves
 		// nothing the first one did not.
-		return markVerified(ctx, rs, m, p, o.on, o.test, o.gateLint)
+		return markVerified(ctx, rs, m, p, o.On, o.Test, o.GateLint)
 	}
-	if o.noVerify {
+	if o.NoVerify {
 		return nil
 	}
 	// The branch is live the moment it exists (D21): verification is
 	// submitted against the tip and the guest drives its own build, so
 	// this process is free to exit; status collects the verdict.
-	release, err := releaseFlag(o.on)
-	if err != nil {
-		return err
-	}
-	return submitVerification(ctx, rs, m, p.Port, release, o.trace, o.test)
+	return SubmitVerification(ctx, rs, m, p.Port, o.On, o.Trace, o.Test)
 }
 
-// markVerified writes the minted commit's note as passed, on the
+// markVerified writes the Minted commit's note as passed, on the
 // strength of the pre-mint gate having built identical content.
-func markVerified(ctx context.Context, rs *runstate.Context, m *minted, p *plan.Plan, on string, tested bool, lint string) error {
-	release, err := releaseFlag(on)
-	if err != nil {
-		return err
-	}
+func markVerified(ctx context.Context, rs *runstate.Context, m *Minted, p *plan.Plan, release platform.Release, tested bool, lint string) error {
 	if release.IsZero() {
 		// The gate ran, so a provider exists; its default names the run.
-		prov, perr := vmProvider(ctx)
+		prov, perr := VMProvider(ctx)
 		if perr != nil {
 			return perr
 		}
 		release = prov.Capabilities().Platforms[0]
 	}
-	return recordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, verifyRun{State: "passed", Tested: tested, Linted: true, Lint: lint},
+	return RecordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, Run{State: "passed", Tested: tested, Linted: true, Lint: lint},
 		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
 }
 
 // applyPlan carries out a plan against the working tree — the
-// --in-place realization. Every intent arrives through realizePlan, so
+// --in-place realization. Every intent arrives through RealizePlan, so
 // a plan is executed the same way whichever produced it.
 func applyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) error {
 	ev, err := rs.Evaluator(ctx)

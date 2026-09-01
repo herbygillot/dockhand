@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
@@ -27,7 +28,7 @@ type execAction struct {
 var _ Action = execAction{}
 
 func (a execAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	prov, err := vmProvider(ctx)
+	prov, err := lifecycle.VMProvider(ctx)
 	if err != nil {
 		return err
 	}
@@ -83,7 +84,7 @@ func Exec() *cobra.Command {
 	var on []string
 	c := &cobra.Command{
 		Use:   "exec [--on <release>[,<release>]|--on all] -- <command> [args...]",
-		Short: "Run a command on pristine clones of provisioned bases",
+		Short: "lifecycle.Run a command on pristine clones of provisioned bases",
 		Args: func(c *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return usagef("exec needs a command to run")

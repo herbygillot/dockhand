@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -85,7 +86,7 @@ func lookupPR(ctx context.Context, repo *git.Repo, remotes map[string]string, up
 }
 
 // queryPR is the head-ref lookup itself, for callers that already know
-// the fork owner — promote does, and a branch --force just re-minted
+// the fork owner — promote does, and a branch --force just re-lifecycle.Minted
 // has no tracking config to derive it from until the push restores it.
 func queryPR(ctx context.Context, upstream, owner, branch string) (pr pullRequest, found bool, err error) {
 	out, err := ghOut(ctx, "api",
@@ -121,7 +122,7 @@ func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes
 		if err != nil {
 			return "", err
 		}
-		if err := discardBranch(ctx, rs, repo, branch, true); err != nil {
+		if err := lifecycle.DiscardBranch(ctx, rs, repo, branch, true); err != nil {
 			return "", err
 		}
 		verdict := fmt.Sprintf("cleaned — PR #%d merged", pr.Number)

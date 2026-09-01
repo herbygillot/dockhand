@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -108,13 +109,13 @@ func TestExitCodeMapping(t *testing.T) {
 	assert.Equal(t, ExitEnvironment, ExitCode(prefix.ErrNotInstalled))
 	assert.Equal(t, ExitEnvironment, ExitCode(fmt.Errorf("sweep: %w", eval.ErrStartup)))
 	assert.Equal(t, ExitEnvironment, ExitCode(eval.ErrRootRefused))
-	// A minted branch whose verification could not start: the branch
+	// A lifecycle.Minted branch whose verification could not start: the branch
 	// stands, and the exit says the machine owes a follow-up.
-	assert.Equal(t, ExitEnvironment, ExitCode(&VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
-	assert.Equal(t, ExitVerify, ExitCode(&VerifyFailedError{Port: "jq"}))
+	assert.Equal(t, ExitEnvironment, ExitCode(&lifecycle.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
+	assert.Equal(t, ExitVerify, ExitCode(&lifecycle.VerifyFailedError{Port: "jq"}))
 	// An in-flight branch is a refusal with a remedy, and a tree that
 	// is not a git checkout is a fact about the tree.
-	assert.Equal(t, ExitDeclined, ExitCode(&BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
+	assert.Equal(t, ExitDeclined, ExitCode(&lifecycle.BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
 	assert.Equal(t, ExitTree, ExitCode(fmt.Errorf("wrapped: %w", git.ErrNotARepo)))
 }
 
@@ -199,36 +200,4 @@ func TestOwnerRepoFromURL(t *testing.T) {
 	}
 	_, _, ok := ownerRepoFromURL("nonsense")
 	assert.False(t, ok)
-}
-
-// The promote gate over a verdict set: at least one pass, no failures.
-// A declining platform does not block — that refusal is often the
-// change working — an unexplained failure does.
-func TestPromotableVerdictSet(t *testing.T) {
-	n := verifyNote{Runs: map[string]verifyRun{
-		"Sonoma":   {State: "passed"},
-		"Monterey": {State: "unsupported"},
-	}}
-	assert.True(t, n.promotable())
-	n.Runs["Ventura"] = verifyRun{State: "failed"}
-	assert.False(t, n.promotable(), "a failed run blocks")
-	assert.False(t, verifyNote{Runs: map[string]verifyRun{"Sonoma": {State: "running"}}}.promotable(),
-		"running alone is not a pass")
-}
-
-// tclTrue mirrors [string is true], which is how mpbb judges known_fail.
-func TestTclTrue(t *testing.T) {
-	for _, v := range []string{"yes", "true", "1", "on", "YES", " True "} {
-		assert.True(t, tclTrue(v), v)
-	}
-	for _, v := range []string{"", "no", "false", "0", "maybe"} {
-		assert.False(t, tclTrue(v), v)
-	}
-}
-
-func TestLintSummaryReadsPortLintsOwnLine(t *testing.T) {
-	assert.Equal(t, "clean", lintSummary("--->  Verifying Portfile for jq\n--->  0 errors and 0 warnings found.\n"))
-	assert.Equal(t, "1 warning", lintSummary("--->  0 errors and 1 warning found.\n"))
-	assert.Equal(t, "3 warnings", lintSummary("--->  0 errors and 3 warnings found.\n"))
-	assert.Empty(t, lintSummary("no lint ran here"))
 }

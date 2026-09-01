@@ -3,18 +3,13 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"regexp"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
-	"github.com/herbygillot/dockhand/internal/verify"
-	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
 
 // statusAction reconciles the dockhand/* namespace: every branch, its
@@ -52,7 +47,7 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	}
 	pr := newPRStatus(ctx, repo)
 	for _, br := range branches {
-		lines, err := describeBranch(ctx, repo, br)
+		lines, err := lifecycle.DescribeBranch(ctx, repo, br)
 		if err != nil {
 			lines = []string{"error: " + err.Error()}
 		}
@@ -89,7 +84,7 @@ type statusBranch struct {
 	Branch string `json:"branch"`
 	Tip    string `json:"tip,omitempty"`
 	// Note is the tip's verdict set, absent when the tip has none.
-	Note *verifyNote `json:"note,omitempty"`
+	Note *lifecycle.Note `json:"note,omitempty"`
 	// Drift is the human sentence about an unnoted tip — content
 	// identity, commits behind — kept as prose: it is a finding, not a
 	// state machine.
@@ -105,7 +100,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 	pr := newPRStatus(ctx, repo)
 	for _, br := range branches {
 		b := statusBranch{Branch: br}
-		tip, n, drift, err := inspectBranch(ctx, repo, br)
+		tip, n, drift, err := lifecycle.InspectBranch(ctx, repo, br)
 		if err != nil {
 			b.Error = err.Error()
 		} else {
@@ -120,7 +115,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		}
 		out.Branches = append(out.Branches, b)
 	}
-	if workers := orphanWorkers(ctx, repo); len(workers) > 0 {
+	if workers := lifecycle.OrphanWorkers(ctx, repo); len(workers) > 0 {
 		out.OrphanWorkers = workers
 	}
 	enc := json.NewEncoder(rs.Out)
@@ -181,7 +176,7 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 	}
 	o := prOutcome{promoted: true, found: true, pr: pr}
 	if pr.MergedAt != "" {
-		if err := discardBranch(ctx, rs, ps.repo, branch, true); err != nil {
+		if err := lifecycle.DiscardBranch(ctx, rs, ps.repo, branch, true); err != nil {
 			o.cleanErr = err.Error()
 			return o
 		}
@@ -211,292 +206,15 @@ func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch 
 	}
 }
 
-// describeBranch renders one branch's verification standing, polling
-// and settling whatever is still running on its tip.
-func describeBranch(ctx context.Context, repo *git.Repo, branch string) ([]string, error) {
-	_, n, drift, err := inspectBranch(ctx, repo, branch)
-	if err != nil {
-		return nil, err
-	}
-	if n == nil {
-		return []string{drift}, nil
-	}
-	return renderNote(*n), nil
-}
-
-// inspectBranch is the structured half describeBranch and the JSON
-// rendering share: the tip, its settled note (nil when unnoted), and
-// the drift finding for an unnoted tip.
-func inspectBranch(ctx context.Context, repo *git.Repo, branch string) (string, *verifyNote, string, error) {
-	tip, err := repo.RevParse(ctx, branch)
-	if err != nil {
-		return "", nil, "", err
-	}
-	n, err := readNote(ctx, repo, tip)
-	if errors.Is(err, git.ErrNoNote) {
-		drift, derr := describeUnverifiedTip(ctx, repo, branch, tip)
-		if derr != nil {
-			return tip, nil, "", derr
-		}
-		return tip, nil, drift, nil
-	}
-	if err != nil {
-		return tip, nil, "", err
-	}
-	if n.anyState("running") {
-		if err := settleRuns(ctx, repo, &n); err != nil {
-			return tip, nil, "", err
-		}
-	}
-	return tip, &n, "", nil
-}
-
-// settleRuns polls every running run and writes what it learns back to
-// the note. Poll never mutates and Release is the caller's: status
-// releases the worker on pass — a kept green environment is a wasted
-// slot — and keeps it on failure, where it is the debug handle. A
-// failure whose log shows the port refusing the platform records as
-// unsupported instead, and its worker is released: a correct refusal
-// leaves nothing to debug.
-func settleRuns(ctx context.Context, repo *git.Repo, n *verifyNote) error {
-	prov, err := vmProvider(ctx)
-	if err != nil {
-		return nil // running, cannot poll; the note stands as is
-	}
-	// The critical section spans the whole read-modify-write, and the
-	// note is RE-READ under the lock: the caller's copy may predate a
-	// concurrent dockhand's record — two agents share this checkout
-	// now — and settling a stale copy would write the lost update this
-	// lock exists to prevent.
-	unlock, err := repo.LockNotes(ctx)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	if fresh, rerr := readNote(ctx, repo, n.Sha); rerr == nil {
-		*n = fresh
-	}
-	changed := false
-	for plat, r := range n.Runs {
-		if r.State != "running" {
-			continue
-		}
-		st, perr := prov.Poll(ctx, r.Job)
-		if errors.Is(perr, verify.ErrUnknownJob) {
-			r.State, r.Detail = "errored", "job vanished: its worker no longer exists"
-			n.Runs[plat], changed = r, true
-			continue
-		}
-		if perr != nil {
-			return perr
-		}
-		switch st.State {
-		case verify.Running:
-			continue
-		case verify.Passed:
-			r.State = "passed"
-			if r.Linted {
-				// The log is about to become unreachable — a passing
-				// run's worker is released — so what lint said is read
-				// now or never. This is the lint box's corroboration.
-				if log, lerr := prov.Log(ctx, r.Job); lerr == nil {
-					r.Lint = lintSummary(log)
-				}
-			}
-			if rerr := prov.Release(ctx, r.Job); rerr != nil {
-				r.Detail = "worker not released: " + rerr.Error()
-			}
-		case verify.Failed:
-			r.State, r.Handle = "failed", st.Handle
-			if log, lerr := prov.Log(ctx, r.Job); lerr == nil {
-				if portDeclined(log) {
-					r.State, r.Handle = "unsupported", ""
-					r.Detail = "the port declines to build on this platform"
-					_ = prov.Release(context.WithoutCancel(ctx), r.Job)
-				} else {
-					// The diagnosis rides the note, so status answers
-					// "why" without a log dig — the failure-side twin
-					// of the lint evidence.
-					r.Detail = failureSummary(log)
-				}
-			}
-		case verify.Errored:
-			r.State, r.Detail = "errored", st.Detail
-			_ = prov.Release(context.WithoutCancel(ctx), r.Job)
-		}
-		n.Runs[plat], changed = r, true
-	}
-	if !changed {
-		return nil
-	}
-	return writeNote(ctx, repo, *n)
-}
-
-// renderNote is the human rendering of a verdict set: one line per
-// platform, in stable order.
-func renderNote(n verifyNote) []string {
-	var lines []string
-	for _, plat := range n.platforms() {
-		r := n.Runs[plat]
-		s := r.State
-		if r.State == "running" {
-			s = fmt.Sprintf("verifying (%s)", time.Since(r.Job.Started).Round(time.Second))
-		}
-		line := fmt.Sprintf("%s (%s)", s, plat)
-		if r.Handle != "" {
-			line += " — environment kept: " + r.Handle
-		}
-		if r.Detail != "" {
-			line += " — " + r.Detail
-		}
-		lines = append(lines, line)
-	}
-	if len(lines) == 0 {
-		return []string{"no runs recorded"}
-	}
-	return lines
-}
-
-// summarizeNote compresses a verdict set to one clause, for the
-// drift lines.
-func summarizeNote(n verifyNote) string {
-	var parts []string
-	for _, plat := range n.platforms() {
-		parts = append(parts, n.Runs[plat].State+" ("+plat+")")
-	}
-	return strings.Join(parts, ", ")
-}
-
-// lintRE matches port lint's own summary line.
-var lintRE = regexp.MustCompile(`(\d+) errors? and (\d+) warnings? found`)
-
-// lintSummary compresses a run's lint outcome to what a reviewer
-// wants: "clean", or the warning count — the run already failed if
-// there were errors. Empty when the log carries no lint summary.
-func lintSummary(log string) string {
-	m := lintRE.FindStringSubmatch(log)
-	switch {
-	case m == nil:
-		return ""
-	case m[2] == "0":
-		return "clean"
-	case m[2] == "1":
-		return "1 warning"
-	}
-	return m[2] + " warnings"
-}
-
-// failureSummary is the first substantive Error line of a failed run's
-// log — the line naming which phase failed and why — skipping the
-// boilerplate pointers that follow it. Empty when the log carries none.
-func failureSummary(log string) string {
-	for line := range strings.Lines(log) {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "Error: ") ||
-			strings.HasPrefix(line, "Error: See ") ||
-			strings.HasPrefix(line, "Error: Follow ") {
-			continue
-		}
-		if len(line) > 160 {
-			line = line[:160] + "…"
-		}
-		return strings.TrimPrefix(line, "Error: ")
-	}
-	return ""
-}
-
-// portDeclined reads a failure log for the shapes of a port refusing a
-// platform rather than breaking on it. Conservative on purpose: an
-// unrecognized refusal stays "failed", which is only ever a log-read
-// away from the truth.
-func portDeclined(log string) bool {
-	for _, marker := range []string{"known to fail", "known_fail"} {
-		if strings.Contains(log, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-// describeUnverifiedTip says what an unnoted tip means: never
-// verified, or verified at an older commit the branch has since moved
-// past — the sha gap that IS the drift mechanism. Content identity is
-// checked against every verdict, not just ancestors: an amend replaces
-// the commit, so a reworded tip's verdicts live on a sha the branch no
-// longer reaches, and the tree is what still matches.
-func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip string) (string, error) {
-	tipTree, err := repo.RevParse(ctx, tip+"^{tree}")
-	if err != nil {
-		return "", err
-	}
-	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
-	if err != nil {
-		return "", err
-	}
-	for _, sha := range noted {
-		n, err := readNote(ctx, repo, sha)
-		if err != nil || n.Tree != tipTree || !n.anyState("passed") {
-			continue
-		}
-		return fmt.Sprintf("%s at %s — the tip differs only in commit metadata", summarizeNote(n), sha[:12]), nil
-	}
-	shas, err := repo.RevList(ctx, branch, 32)
-	if err != nil {
-		return "", err
-	}
-	for behind, sha := range shas {
-		if behind == 0 {
-			continue
-		}
-		n, err := readNote(ctx, repo, sha)
-		if err != nil {
-			continue
-		}
-		return fmt.Sprintf("tip unverified; %s at %s, %d commit(s) behind — `dockhand verify %s` tests the tip",
-			summarizeNote(n), sha[:12], behind, branch), nil
-	}
-	return "unverified", nil
-}
-
 // reportOrphanWorkers names running workers no note accounts for: a
 // pre-mint gate failure keeps its environment with no branch, another
 // checkout's jobs are invisible here, and with a two-guest cap a
 // forgotten worker is an expensive kind of quiet. Best-effort — a
 // machine without tart has no workers to report.
 func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Repo) {
-	for _, vm := range orphanWorkers(ctx, repo) {
+	for _, vm := range lifecycle.OrphanWorkers(ctx, repo) {
 		fmt.Fprintf(rs.Out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", vm, vm, vm)
 	}
-}
-
-// orphanWorkers lists them: running workers no note accounts for.
-func orphanWorkers(ctx context.Context, repo *git.Repo) []string {
-	if !tartPresent() {
-		return nil
-	}
-	out, err := tart.CLI(ctx, nil, "list", "--quiet")
-	if err != nil {
-		return nil
-	}
-	tracked := map[string]bool{}
-	if noted, err := repo.NotesList(ctx, git.VerifyNotesRef); err == nil {
-		for _, sha := range noted {
-			if n, err := readNote(ctx, repo, sha); err == nil {
-				for _, r := range n.Runs {
-					tracked[r.Job.ID] = true
-					tracked[r.Handle] = true
-				}
-			}
-		}
-	}
-	var orphans []string
-	for _, vm := range strings.Split(out, "\n") {
-		vm = strings.TrimSpace(vm)
-		if strings.HasPrefix(vm, tart.WorkerPrefix) && !tracked[vm] {
-			orphans = append(orphans, vm)
-		}
-	}
-	return orphans
 }
 
 // Status builds the status subcommand.

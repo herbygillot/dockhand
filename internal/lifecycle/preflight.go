@@ -1,4 +1,4 @@
-package cmd
+package lifecycle
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
-// knownFailOn asks, before any VM boots, whether a portdir declares
+// preflightOn asks, before any VM boots, whether a portdir declares
 // known_fail under a release's platform frame — mpbb's own layering,
 // borrowed: the buildbot excludes known_fail ports at list time by
 // reading the evaluated option, and only falls back to discovering it
@@ -21,7 +21,7 @@ import (
 // (one short-lived session, about a second) against the portdir given,
 // which for a branch verification is the materialized branch content —
 // the known_fail under test is the branch's, not the checkout's.
-func knownFailOn(ctx context.Context, rs *runstate.Context, portdir string, r platform.Release) (preflight, error) {
+func preflightOn(ctx context.Context, rs *runstate.Context, portdir string, r platform.Release) (preflight, error) {
 	pfx, err := rs.Prefix()
 	if err != nil {
 		return preflight{}, err

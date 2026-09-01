@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -51,11 +52,11 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 	if err != nil {
 		return debugEnv{}, err
 	}
-	branch, err := resolveDockhandBranch(ctx, repo, target)
+	branch, err := lifecycle.ResolveBranch(ctx, repo, target)
 	if err != nil {
 		return debugEnv{}, err
 	}
-	n, err := latestNote(ctx, repo, branch)
+	n, err := lifecycle.LatestNote(ctx, repo, branch)
 	if err != nil {
 		if errors.Is(err, git.ErrNoNote) {
 			return debugEnv{}, fmt.Errorf("%s has no verification record; `dockhand verify %s` starts one", branch, branch)
@@ -63,7 +64,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 		return debugEnv{}, err
 	}
 
-	reachable := map[string]verifyRun{}
+	reachable := map[string]lifecycle.Run{}
 	for plat, r := range n.Runs {
 		if r.State == "running" || r.Handle != "" {
 			reachable[plat] = r
@@ -77,7 +78,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 			return debugEnv{}, &UsageError{Err: err}
 		}
 		if _, ok := reachable[r.Name]; !ok {
-			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, summarizeNote(n))
+			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, lifecycle.SummarizeNote(n))
 		}
 		plat = r.Name
 	case len(reachable) == 1:
@@ -85,7 +86,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 			plat = p
 		}
 	case len(reachable) == 0:
-		return debugEnv{}, fmt.Errorf("%s: no environment to reach (%s); `dockhand verify %s` starts one", branch, summarizeNote(n), branch)
+		return debugEnv{}, fmt.Errorf("%s: no environment to reach (%s); `dockhand verify %s` starts one", branch, lifecycle.SummarizeNote(n), branch)
 	default:
 		var plats []string
 		for p := range reachable {
@@ -95,7 +96,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 	}
 	run := reachable[plat]
 	env := debugEnv{Job: run.Job, State: run.State, Port: n.Port, Plat: plat}
-	prov, err := vmProvider(ctx)
+	prov, err := lifecycle.VMProvider(ctx)
 	if err != nil {
 		return debugEnv{}, err
 	}
@@ -103,21 +104,6 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 		return debugEnv{}, fmt.Errorf("%s: environment %s no longer exists", branch, run.Job.ID)
 	}
 	return env, nil
-}
-
-// latestNote is the branch's most recent verification record: the
-// tip's note, or the nearest one behind it.
-func latestNote(ctx context.Context, repo *git.Repo, branch string) (verifyNote, error) {
-	shas, err := repo.RevList(ctx, branch, 32)
-	if err != nil {
-		return verifyNote{}, err
-	}
-	for _, sha := range shas {
-		if n, err := readNote(ctx, repo, sha); err == nil {
-			return n, nil
-		}
-	}
-	return verifyNote{}, git.ErrNoNote
 }
 
 // logAction prints the build log out of the target's verification
@@ -137,7 +123,7 @@ func (a logAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	prov, err := vmProvider(ctx)
+	prov, err := lifecycle.VMProvider(ctx)
 	if err != nil {
 		return err
 	}

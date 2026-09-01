@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
@@ -46,15 +47,15 @@ func usagef(format string, a ...any) error {
 func ExitCode(err error) int {
 	var usage *UsageError
 	var styleDecline *portstyle.Decline
-	var verifyFailed *VerifyFailedError
-	var verifyDeferred *VerifyDeferredError
-	var inFlight *BranchInFlightError
+	var verifyFailed *lifecycle.VerifyFailedError
+	var verifyDeferred *lifecycle.VerifyDeferredError
+	var inFlight *lifecycle.BranchInFlightError
 	var duplicatePR *DuplicatePRError
 	if errors.As(err, &verifyFailed) {
 		return ExitVerify
 	}
 	if errors.As(err, &verifyDeferred) {
-		// The branch was minted; verification could not start. The
+		// The branch was lifecycle.Minted; verification could not start. The
 		// obstacle is the machine's — capacity or environment — and the
 		// message says the branch stands.
 		return ExitEnvironment

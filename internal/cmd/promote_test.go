@@ -6,17 +6,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 )
 
-func templateNote(runs map[string]verifyRun) verifyNote {
-	return verifyNote{Schema: noteSchema, Sha: "0123456789abcdef0123",
+func templateNote(runs map[string]lifecycle.Run) lifecycle.Note {
+	return lifecycle.Note{Sha: "0123456789abcdef0123",
 		Port: "jq", Runs: runs}
 }
 
 // The body is the upstream PR template with only vouchable boxes
-// checked: install passed and tested, single minted commit.
+// checked: install passed and tested, single lifecycle.Minted commit.
 func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
-	n := templateNote(map[string]verifyRun{
+	n := templateNote(map[string]lifecycle.Run{
 		"Sonoma":   {State: "passed", Tested: true},
 		"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
 	})
@@ -39,7 +41,7 @@ func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
 }
 
 func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
-	n := templateNote(map[string]verifyRun{"Sonoma": {State: "passed"}})
+	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
 	body := promoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Sonoma: built in a pristine VM")
 	assert.Contains(t, body, "- [ ] checked that there aren't other open [pull requests]")
@@ -49,17 +51,17 @@ func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
 
 func TestPromoteBodySignsOffEveryBody(t *testing.T) {
 	signoff := "\nAutomated by [dockhand](" + dockhandRepoURL + ")\n"
-	verified := templateNote(map[string]verifyRun{"Sonoma": {State: "passed"}})
+	verified := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
 	for name, body := range map[string]string{
 		"verified":   promoteBody(verified, true, "", 1, true),
-		"unverified": promoteBody(verifyNote{}, false, "", 1, false),
+		"unverified": promoteBody(lifecycle.Note{}, false, "", 1, false),
 	} {
 		assert.True(t, strings.HasSuffix(body, signoff), "%s body must end with the sign-off", name)
 	}
 }
 
 func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
-	body := promoteBody(verifyNote{}, false, "12345", 1, false)
+	body := promoteBody(lifecycle.Note{}, false, "12345", 1, false)
 	assert.Contains(t, body, "Not locally verified")
 	assert.Contains(t, body, "Closes: https://trac.macports.org/ticket/12345")
 	assert.NotContains(t, body, "###### Tested on")
@@ -69,7 +71,7 @@ func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
 }
 
 func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
-	n := templateNote(map[string]verifyRun{"Sonoma": {State: "passed"}})
+	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
 	body := promoteBody(n, true, "", 3, false)
 	assert.Contains(t, body, "- [ ] followed our [Commit Message Guidelines]")
 	assert.Contains(t, body, "- [ ] squashed and [minimized your commits]")
@@ -79,7 +81,7 @@ func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
 // template's own lines (modulo the strikethrough rewrite): a drifted
 // checklist would read as dockhand inventing its own ceremony.
 func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
-	n := templateNote(map[string]verifyRun{"Sonoma": {State: "passed", Tested: true}})
+	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed", Tested: true}})
 	body := promoteBody(n, true, "7", 1, true)
 	require.True(t, strings.HasPrefix(body, "#### Description\n"))
 	for _, section := range []string{"###### Type(s)", "###### Tested on", "###### Verification"} {
@@ -89,7 +91,7 @@ func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
 }
 
 func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
-	n := templateNote(map[string]verifyRun{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
+	n := templateNote(map[string]lifecycle.Run{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
 	body := promoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 	// The checked box is only honest if the evidence line states what
@@ -98,7 +100,7 @@ func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
 }
 
 func TestPromoteBodyStatesLintWarnings(t *testing.T) {
-	n := templateNote(map[string]verifyRun{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
+	n := templateNote(map[string]lifecycle.Run{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
 	body := promoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Tahoe: linted with 2 warnings, built and tested in a pristine VM")
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")

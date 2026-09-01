@@ -1,4 +1,4 @@
-package cmd
+package lifecycle
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// verifyNote is a commit's verification record, stored as its git note
+// Note is a commit's verification record, stored as its git note
 // under refs/notes/dockhand/verify: sha-keyed, local to this machine,
 // read back by status. Schema 2 holds one run per platform, keyed by
 // the resolved release name — a commit's verdict is a set, so a
@@ -18,18 +18,18 @@ import (
 // overwriting itself. Each run's Job is the serializable value the
 // process that collects need not have submitted; Handle names a kept
 // environment, machine-local by nature.
-type verifyNote struct {
-	Schema int                  `json:"schema"`
-	Sha    string               `json:"sha"`
-	Tree   string               `json:"tree"` // content identity: a message-only amend moves Sha, not Tree
-	Port   string               `json:"port"`
-	Runs   map[string]verifyRun `json:"runs"`
+type Note struct {
+	Schema int            `json:"schema"`
+	Sha    string         `json:"sha"`
+	Tree   string         `json:"tree"` // content identity: a message-only amend moves Sha, not Tree
+	Port   string         `json:"port"`
+	Runs   map[string]Run `json:"runs"`
 }
 
-// verifyRun is one platform's verification: running, passed, failed,
+// Run is one platform's verification: running, passed, failed,
 // unsupported (the port declines the platform), canceled, superseded,
 // deferred (no slot when asked), or errored.
-type verifyRun struct {
+type Run struct {
 	State  string     `json:"state"`
 	Job    verify.Job `json:"job"`
 	Handle string     `json:"handle,omitempty"`
@@ -67,7 +67,7 @@ type legacyNote struct {
 }
 
 // platforms lists the note's run keys, sorted for stable rendering.
-func (n verifyNote) platforms() []string {
+func (n Note) Platforms() []string {
 	out := make([]string, 0, len(n.Runs))
 	for k := range n.Runs {
 		out = append(out, k)
@@ -76,8 +76,8 @@ func (n verifyNote) platforms() []string {
 	return out
 }
 
-// anyState reports whether any run is in the given state.
-func (n verifyNote) anyState(s string) bool {
+// AnyState reports whether any run is in the given state.
+func (n Note) AnyState(s string) bool {
 	for _, r := range n.Runs {
 		if r.State == s {
 			return true
@@ -91,14 +91,14 @@ func (n verifyNote) anyState(s string) bool {
 // (unsupported) does not block — that refusal is often the change
 // working — but an unexplained failure does, because it is exactly the
 // question review will ask.
-func (n verifyNote) promotable() bool {
-	return n.anyState("passed") && !n.anyState("failed")
+func (n Note) promotable() bool {
+	return n.AnyState("passed") && !n.AnyState("failed")
 }
 
-// writeNote records the note on its commit, replacing what was there:
+// WriteNote records the note on its commit, replacing what was there:
 // the note is the commit's current record, and history lives in the
 // notes ref itself.
-func writeNote(ctx context.Context, repo *git.Repo, n verifyNote) error {
+func WriteNote(ctx context.Context, repo *git.Repo, n Note) error {
 	n.Schema = noteSchema
 	body, err := json.MarshalIndent(n, "", "  ")
 	if err != nil {
@@ -107,76 +107,76 @@ func writeNote(ctx context.Context, repo *git.Repo, n verifyNote) error {
 	return repo.NoteWrite(ctx, git.VerifyNotesRef, n.Sha, body)
 }
 
-// readNote returns a commit's verification record, git.ErrNoNote when
+// ReadNote returns a commit's verification record, git.ErrNoNote when
 // the commit has none. A schema-1 note lifts into a single run.
-func readNote(ctx context.Context, repo *git.Repo, sha string) (verifyNote, error) {
+func ReadNote(ctx context.Context, repo *git.Repo, sha string) (Note, error) {
 	body, err := repo.NoteRead(ctx, git.VerifyNotesRef, sha)
 	if err != nil {
-		return verifyNote{}, err
+		return Note{}, err
 	}
-	var n verifyNote
+	var n Note
 	if err := json.Unmarshal(body, &n); err != nil {
-		return verifyNote{}, fmt.Errorf("note on %s: %w", sha, err)
+		return Note{}, fmt.Errorf("note on %s: %w", sha, err)
 	}
 	if n.Schema >= noteSchema && n.Runs != nil {
 		return n, nil
 	}
 	var l legacyNote
 	if err := json.Unmarshal(body, &l); err != nil {
-		return verifyNote{}, fmt.Errorf("note on %s: %w", sha, err)
+		return Note{}, fmt.Errorf("note on %s: %w", sha, err)
 	}
 	key := l.Platform
 	if key == "" {
 		key = "(unrecorded)"
 	}
-	return verifyNote{
+	return Note{
 		Schema: noteSchema, Sha: l.Sha, Tree: l.Tree, Port: l.Port,
-		Runs: map[string]verifyRun{key: {State: l.State, Job: l.Job, Handle: l.Handle, Detail: l.Detail}},
+		Runs: map[string]Run{key: {State: l.State, Job: l.Job, Handle: l.Handle, Detail: l.Detail}},
 	}, nil
 }
 
-// loadOrStartNote reads the commit's note, or begins one carrying the
+// LoadOrStartNote reads the commit's note, or begins one carrying the
 // commit's identity — the read-modify-write every per-platform update
 // goes through.
-func loadOrStartNote(ctx context.Context, repo *git.Repo, sha, port string) (verifyNote, error) {
-	n, err := readNote(ctx, repo, sha)
+func LoadOrStartNote(ctx context.Context, repo *git.Repo, sha, port string) (Note, error) {
+	n, err := ReadNote(ctx, repo, sha)
 	if err == nil {
 		if n.Runs == nil {
-			n.Runs = map[string]verifyRun{}
+			n.Runs = map[string]Run{}
 		}
 		return n, nil
 	}
 	tree, terr := repo.RevParse(ctx, sha+"^{tree}")
 	if terr != nil {
-		return verifyNote{}, terr
+		return Note{}, terr
 	}
-	return verifyNote{
+	return Note{
 		Schema: noteSchema, Sha: sha, Tree: tree, Port: port,
-		Runs: map[string]verifyRun{},
+		Runs: map[string]Run{},
 	}, nil
 }
 
-// promotableVerdictFor reports the verification covering a tip — its
+// PromotableVerdictFor reports the verification covering a tip — its
 // own note, or any note over the identical tree, since a message-only
 // amend moves the sha and not the content — and whether that verdict
 // set clears promote's gate.
-func promotableVerdictFor(ctx context.Context, repo *git.Repo, tip string) (verifyNote, bool, error) {
-	if n, err := readNote(ctx, repo, tip); err == nil {
+func PromotableVerdictFor(ctx context.Context, repo *git.Repo, tip string) (Note, bool, error) {
+	if n, err := ReadNote(ctx, repo, tip); err == nil {
 		return n, n.promotable(), nil
 	}
 	tree, err := repo.RevParse(ctx, tip+"^{tree}")
 	if err != nil {
-		return verifyNote{}, false, err
+		return Note{}, false, err
 	}
 	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
 	if err != nil {
-		return verifyNote{}, false, err
+		return Note{}, false, err
 	}
 	for _, sha := range noted {
-		n, err := readNote(ctx, repo, sha)
+		n, err := ReadNote(ctx, repo, sha)
 		if err == nil && n.Tree == tree && n.promotable() {
 			return n, true, nil
 		}
 	}
-	return verifyNote{}, false, nil
+	return Note{}, false, nil
 }

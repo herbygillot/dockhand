@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -56,7 +56,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err != nil {
 		return err
 	}
-	branch, err := resolveDockhandBranch(ctx, repo, a.target)
+	branch, err := lifecycle.ResolveBranch(ctx, repo, a.target)
 	if err != nil {
 		return err
 	}
@@ -71,19 +71,19 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// provider there is nothing to refuse toward — the machine cannot
 	// verify — so the promotion proceeds unverified, says so, and the
 	// PR body says so too, which is the candour reviewers accept.
-	n, verified, err := promotableVerdictFor(ctx, repo, tip)
+	n, verified, err := lifecycle.PromotableVerdictFor(ctx, repo, tip)
 	if err != nil {
 		return err
 	}
 	if !verified {
 		reason := "is unverified"
-		if n.anyState("failed") {
+		if n.AnyState("failed") {
 			reason = "has a failed verification"
 		}
 		switch {
 		case a.noVerify:
 			fmt.Fprintln(rs.Err, "promoting unverified (--no-verify); the PR will say so")
-		case tartPresent():
+		case lifecycle.TartPresent():
 			return fmt.Errorf("%s: tip %s %s — `dockhand verify %s` first, or --no-verify to promote anyway", branch, tip[:12], reason, branch)
 		default:
 			fmt.Fprintln(rs.Err, "no local verify provider (tart): promoting unverified")
@@ -106,7 +106,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return err
 	}
 	// The branch's own commits, oldest last (rev-list order): the
-	// oldest is the one dockhand minted, and its subject is already in
+	// oldest is the one dockhand lifecycle.Minted, and its subject is already in
 	// project format (`<port>: <description>`) — later commits are
 	// fixups whose subjects would make bad titles. The count also
 	// answers the template's squashed-and-minimized checkbox.
@@ -133,7 +133,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// duplication: the push below updates that PR in place, and opening
 	// a second one would be the duplicate this verb refuses elsewhere.
 	// Looked up by the fork owner, never by tracking config — a branch
-	// --force just re-minted has none until the push restores it.
+	// --force just re-lifecycle.Minted has none until the push restores it.
 	ownPR, ownFound, err := queryPR(ctx, upstream, forkOwner, branch)
 	if err != nil {
 		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
@@ -214,7 +214,7 @@ func lintClause(lint string) string {
 }
 
 // push publishes the branch to the fork: an ordinary push, or the
-// with-lease force that replaces a re-minted branch's copy.
+// with-lease force that replaces a re-lifecycle.Minted branch's copy.
 func (a promoteAction) push(ctx context.Context, rs *runstate.Context, repo *git.Repo, remote, owner, branch string) error {
 	if a.force {
 		if err := repo.PushForce(ctx, remote, branch); err != nil {
@@ -273,7 +273,7 @@ const dockhandRepoURL = "https://github.com/herbygillot/dockhand"
 // the accepted currency: the verdict set is enumerated in full, an
 // unverified promotion says so, and the install checkbox strikes the
 // template's command through in favour of the one actually run.
-func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, checkedPRs bool) string {
+func promoteBody(n lifecycle.Note, verified bool, closes string, ownCommits int, checkedPRs bool) string {
 	var b strings.Builder
 	b.WriteString("#### Description\n\n")
 	var passed []string
@@ -284,7 +284,7 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 		// The whole verdict set, enumerated: a passing platform and a
 		// declining one are both facts a reviewer wants.
 		var parts []string
-		for _, plat := range n.platforms() {
+		for _, plat := range n.Platforms() {
 			r := n.Runs[plat]
 			switch r.State {
 			case "passed":
@@ -333,7 +333,7 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 		}
 		fmt.Fprintf(&b, "- [%s] %s\n", mark, item)
 	}
-	// The single minted commit is the one whose message dockhand wrote
+	// The single lifecycle.Minted commit is the one whose message dockhand wrote
 	// in project format; a branch the user grew past it is theirs to
 	// vouch for.
 	single := ownCommits == 1
@@ -352,38 +352,6 @@ func promoteBody(n verifyNote, verified bool, closes string, ownCommits int, che
 	// made.
 	fmt.Fprintf(&b, "\nAutomated by [dockhand](%s)\n", dockhandRepoURL)
 	return b.String()
-}
-
-// errAmbiguousTarget marks a port name that names several in-flight
-// branches: branchable state, because verify falls through to state
-// mode when no branch exists but must refuse — not silently verify the
-// working tree — when several do.
-var errAmbiguousTarget = errors.New("ambiguous target")
-
-// resolveDockhandBranch accepts a branch name outright, or a port name
-// that names exactly one in-flight branch.
-func resolveDockhandBranch(ctx context.Context, repo *git.Repo, target string) (string, error) {
-	if repo.HasBranch(ctx, target) {
-		return target, nil
-	}
-	branches, err := repo.Branches(ctx, "dockhand/")
-	if err != nil {
-		return "", err
-	}
-	var matches []string
-	for _, br := range branches {
-		if strings.HasPrefix(br, "dockhand/"+target+"-") {
-			matches = append(matches, br)
-		}
-	}
-	switch len(matches) {
-	case 1:
-		return matches[0], nil
-	case 0:
-		return "", fmt.Errorf("no dockhand branch for %q; `dockhand status` lists what is in flight", target)
-	default:
-		return "", fmt.Errorf("%w: %q names %d branches (%s); use the full branch name", errAmbiguousTarget, target, len(matches), strings.Join(matches, ", "))
-	}
 }
 
 // forkRemote finds the remote pointing at the user's own fork: the
@@ -468,7 +436,7 @@ func ownerRepoFromURL(url string) (owner, repo string, ok bool) {
 
 // ghOut runs one gh command and returns its stdout. A variable so the
 // promote lifecycle tests can stand in a scripted GitHub — the same
-// seam shape vmProvider gave the verifier.
+// seam shape lifecycle.VMProvider gave the verifier.
 var ghOut func(ctx context.Context, args ...string) (string, error) = realGhOut
 
 func realGhOut(ctx context.Context, args ...string) (string, error) {

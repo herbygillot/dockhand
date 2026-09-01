@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -102,10 +103,10 @@ func promoteRepo(t *testing.T) (*git.Repo, string) {
 	}
 	// A passed, linted run makes the branch promotable.
 	ctx := context.Background()
-	n, err := loadOrStartNote(ctx, repo, sha, "jq")
+	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq")
 	require.NoError(t, err)
-	n.Runs["Testos"] = verifyRun{State: "passed", Linted: true, Lint: "clean"}
-	require.NoError(t, writeNote(ctx, repo, n))
+	n.Runs["Testos"] = lifecycle.Run{State: "passed", Linted: true, Lint: "clean"}
+	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
 	return repo, sha
 }
 
@@ -129,7 +130,7 @@ func TestPromoteOpensThePR(t *testing.T) {
 	assert.Contains(t, body, "Testos: linted clean, built in a pristine VM")
 	assert.Contains(t, body, "- [x] checked that there aren't other open [pull requests]",
 		"a clean search checks the box")
-	assert.Contains(t, creates[0], "jq: update to 1.8", "the title is the minted commit's subject")
+	assert.Contains(t, creates[0], "jq: update to 1.8", "the title is the lifecycle.Minted commit's subject")
 	assert.Equal(t, "herby", repo.TrackedRemote(context.Background(), "dockhand/jq-1.8"))
 }
 

@@ -88,7 +88,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	})
 	// The verbs are grouped by family, and the families are the
 	// architecture's own: intents change a port, the lifecycle verbs
-	// work the branches an intent minted, the environment verbs build
+	// work the branches an intent lifecycle.Minted, the environment verbs build
 	// and reach into the VMs verification runs in, and the reports read
 	// without writing. Registration order is display order — the help
 	// reads as the workflow, so the workflow decides the order, not the
@@ -152,7 +152,7 @@ func execute(ctx context.Context, version string, args []string, out, errOut io.
 	root.InitDefaultCompletionCmd()
 	if _, _, err := root.Find(args); err != nil {
 		root.PrintErrln(root.ErrPrefix(), err.Error())
-		root.PrintErrf("Run '%v --help' for usage.\n", root.CommandPath())
+		root.PrintErrf("lifecycle.Run '%v --help' for usage.\n", root.CommandPath())
 		return ExitUsage
 	}
 	return ExitCode(root.ExecuteContext(ctx))

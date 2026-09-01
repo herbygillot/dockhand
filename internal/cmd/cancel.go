@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -26,7 +27,7 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	branch, err := resolveDockhandBranch(ctx, repo, a.target)
+	branch, err := lifecycle.ResolveBranch(ctx, repo, a.target)
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,7 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	}
 	// The stale sweep releases running jobs the branch moved past; the
 	// tip's own running job is the one cancel exists for.
-	if err := cancelStale(ctx, rs, repo, branch, tip); err != nil {
+	if err := lifecycle.CancelStale(ctx, rs, repo, branch, tip); err != nil {
 		return err
 	}
 	unlock, err := repo.LockNotes(ctx)
@@ -44,15 +45,15 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	defer unlock()
-	n, err := readNote(ctx, repo, tip)
-	if errors.Is(err, git.ErrNoNote) || (err == nil && !n.anyState("running")) {
+	n, err := lifecycle.ReadNote(ctx, repo, tip)
+	if errors.Is(err, git.ErrNoNote) || (err == nil && !n.AnyState("running")) {
 		fmt.Fprintf(rs.Err, "%s has no running verification\n", branch)
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	prov, err := vmProvider(ctx)
+	prov, err := lifecycle.VMProvider(ctx)
 	if err != nil {
 		return err
 	}
@@ -67,7 +68,7 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		n.Runs[plat] = run
 		fmt.Fprintf(rs.Out, "canceled verification of %s on %s (worker %s released)\n", branch, plat, run.Job.ID)
 	}
-	return writeNote(ctx, repo, n)
+	return lifecycle.WriteNote(ctx, repo, n)
 }
 
 // Cancel builds the cancel subcommand.
