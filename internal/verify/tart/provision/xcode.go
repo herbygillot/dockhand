@@ -134,6 +134,35 @@ func xipVersion(name string) (string, bool) {
 	return v, true
 }
 
+// xcodeDiskGB is the disk an Xcode-bearing image gets: the image's
+// own ~25 GB plus the archive, the ~40 GB expansion, and headroom.
+// Thin on the host — only written blocks cost real space.
+const xcodeDiskGB = 100
+
+// expandGuestDisk grows the guest's APFS container into the space
+// tart set --disk-size added. macOS does not do this on its own: the
+// partition map is repaired first (non-interactive yes — the prompt
+// is about a recovery partition that these images do not carry), then
+// the container takes all remaining space.
+func expandGuestDisk(ctx context.Context, vm string, say func(string, ...any)) error {
+	say("expanding the guest filesystem into the grown disk")
+	// repairDisk settles the map after the host-side GPT edit — and,
+	// measured, often absorbs the freed space into the container by
+	// itself, which is why the explicit resize tolerates "same size"
+	// (-69743). The free-space number is the real verdict.
+	script := `set -e
+sudo -n /bin/sh -c 'yes | /usr/sbin/diskutil repairDisk disk0' >/dev/null
+sudo -n /usr/sbin/diskutil apfs resizeContainer disk0s2 0 >/dev/null 2>&1 || true
+/bin/df -g / | /usr/bin/awk 'NR==2 {print $4}'`
+	out, err := tart.Exec(ctx, vm, "/bin/sh", "-c", script)
+	if err != nil {
+		return fmt.Errorf("%w: expanding the guest filesystem: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+	}
+	free := strings.TrimSpace(out)
+	say("guest filesystem expanded: %s GB free", free)
+	return nil
+}
+
 // installXcode pushes the archive into the guest over the provisioning
 // SSH channel, expands it, and makes it the selected developer
 // directory. The command line tools stay installed alongside — MacPorts

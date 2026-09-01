@@ -125,6 +125,29 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 			return fmt.Errorf("%w: sizing %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
 		}
 	}
+	if t.XcodeDir != "" {
+		// The vanilla images ship 50 GB disks with 13-24 GB free after
+		// macOS and the toolchain — nowhere near Xcode's ~60 GB
+		// expansion appetite, field-measured five for five. The disk
+		// grows here (thin on the host: only written blocks cost) and
+		// the APFS container inside grows after boot.
+		say("growing the disk to %d GB (Xcode needs room to expand)", xcodeDiskGB)
+		if out, err := tart.CLI(ctx, nil, "set", name, "--disk-size", strconv.Itoa(xcodeDiskGB)); err != nil {
+			return fmt.Errorf("%w: growing %s's disk: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
+		}
+		// The guest recovery partition would sit between the container
+		// and the new space; see gpt.go for why removing it pre-boot is
+		// the only automatable path.
+		img, err := diskImagePath(name)
+		if err != nil {
+			return err
+		}
+		if removed, err := removeRecoveryPartition(img); err != nil {
+			return fmt.Errorf("%w: preparing %s's partition map: %w", verify.ErrNoEnvironment, name, err)
+		} else if removed {
+			say("removed the guest recovery partition (a VM never boots it; the space joins the container)")
+		}
+	}
 
 	// Provisioning's boot spends a licence slot like any worker, so it
 	// goes through the same admission: with builds in flight the answer
@@ -174,6 +197,9 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	if t.XcodeDir != "" {
 		xip, xv, err := PickXcode(t.XcodeDir, r)
 		if err != nil {
+			return err
+		}
+		if err := expandGuestDisk(ctx, name, say); err != nil {
 			return err
 		}
 		if err := t.installXcode(ctx, name, host, xip, xv, say); err != nil {
