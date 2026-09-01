@@ -204,11 +204,29 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		return verify.Job{}, fmt.Errorf("%w: no base VM %q (see doctor)", verify.ErrNoEnvironment, base.VM)
 	}
 
+	// Admission before the clone: occupancy is counted live under the
+	// machine lock, and a full machine refuses in a second with a typed
+	// CapacityError instead of being discovered through the agent
+	// timeout. The lock is held until the new VM is itself visible as
+	// running, so concurrent submitters cannot both count the same
+	// free slot.
+	unlockAdmission, err := Admit(ctx, p.Capabilities().Concurrent)
+	if err != nil {
+		return verify.Job{}, err
+	}
+	admitted := true
+	defer func() {
+		if admitted {
+			unlockAdmission()
+		}
+	}()
+
 	name := WorkerPrefix + stamp()
 	if out, err := CLI(ctx, nil, "clone", base.VM, name); err != nil {
 		return verify.Job{}, fmt.Errorf("%w: clone: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	job := verify.Job{Provider: "tart", ID: name, Started: time.Now()}
+	writeAttribution(name, req.Owner)
 
 	// The guest outlives this call, so every failure from here on must
 	// take it with it: a leaked worker holds one of two licence slots
@@ -226,8 +244,19 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		}
 		return verify.Job{}, err
 	}
-	//nolint:errcheck // the guest is detached from this process by design
-	go CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+	// The run's error is captured, not discarded: a start that fails —
+	// at capacity, out of disk — surfaces as itself.
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+		runErr <- err
+	}()
+	if err := WaitRunning(ctx, name, runErr); err != nil {
+		return fail(err)
+	}
+	// The slot is visibly occupied; the machine lock can pass on.
+	admitted = false
+	unlockAdmission()
 
 	if err := WaitAgent(ctx, name); err != nil {
 		return fail(err)
@@ -470,6 +499,7 @@ func (p Provider) Log(ctx context.Context, job verify.Job) (string, error) {
 
 // Release discards the worker, and with it any debug handle.
 func (p Provider) Release(ctx context.Context, job verify.Job) error {
+	defer clearAttribution(job.ID)
 	_, _ = CLI(ctx, nil, "stop", job.ID)
 	// A delete can race a guest that is still coming up — tart refuses
 	// to remove a running VM, and stop is not instantaneous. Retrying

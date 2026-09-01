@@ -75,6 +75,7 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 		Port:     portName,
 		Portdirs: []string{portdir},
 		Platform: release,
+		Owner:    rs.TreeRoot,
 		Test:     test,
 	})
 	if err != nil {

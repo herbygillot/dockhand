@@ -76,9 +76,9 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // stored (its own JSON is the schema), so a consumer reads exactly
 // what a future dockhand would.
 type statusJSON struct {
-	Repository    string         `json:"repository"`
-	Branches      []statusBranch `json:"branches"`
-	OrphanWorkers []string       `json:"orphan_workers,omitempty"`
+	Repository    string             `json:"repository"`
+	Branches      []statusBranch     `json:"branches"`
+	OrphanWorkers []lifecycle.Orphan `json:"orphan_workers,omitempty"`
 }
 
 type statusBranch struct {
@@ -219,8 +219,12 @@ func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch 
 // forgotten worker is an expensive kind of quiet. Best-effort — a
 // machine without tart has no workers to report.
 func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Repo) {
-	for _, vm := range lifecycle.OrphanWorkers(ctx, repo) {
-		fmt.Fprintf(rs.Out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", vm, vm, vm)
+	for _, o := range lifecycle.OrphanWorkers(ctx, repo) {
+		if o.Owner != "" {
+			fmt.Fprintf(rs.Out, "%-32s worker from %s — `dockhand status` there follows it\n", o.Name, o.Owner)
+			continue
+		}
+		fmt.Fprintf(rs.Out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", o.Name, o.Name, o.Name)
 	}
 }
 

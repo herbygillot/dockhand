@@ -414,6 +414,24 @@ just the normal single-run progression (build → destroot → activate) split
 across two commands. The note records the bit (`tested`), because promote's
 checklist vouches only for what a note remembers.
 
+**Amended (2026-09-01, machine-wide admission).** VM capacity is
+admitted, not discovered: under a per-user machine lock
+(~/Library/Caches/dockhand/tart.lock), occupancy is counted live from
+`tart list` — derived, never recorded, the D19 stance machine-scoped —
+and a full machine refuses in about a second with a typed
+CapacityError that the deferred-branch flow absorbs, where it used to
+be discovered through a two-minute agent timeout. Derived counting
+also sees VMs dockhand did not start, which spend Apple's licence
+slots just the same; any ledger would have missed them. The lock is
+held until the admitted VM is itself visibly running, so concurrent
+dockhands serialize their starts instead of both counting the same
+free slot; the boot's error is captured, not discarded. Every boot
+site admits: workers, probes, provisioning, recheck. Attribution is a
+separate, deliberately informational sidecar
+(~/Library/Caches/dockhand/workers/) mapping worker to owning
+checkout — admission never reads it, so staleness can only mislabel a
+status line, never mis-admit a VM.
+
 **Amended (2026-09-01, notes are shared state now).** The verify notes
 are dockhand's only mutable state, edited as read-modify-write of
 whole JSON documents — safe while one human ran one dockhand, a

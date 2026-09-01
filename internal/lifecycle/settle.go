@@ -262,7 +262,14 @@ func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip stri
 }
 
 // OrphanWorkers lists them: running workers no note accounts for.
-func OrphanWorkers(ctx context.Context, repo *git.Repo) []string {
+// Orphan is a running worker no note here accounts for, with the
+// owning checkout when the attribution sidecar knows it.
+type Orphan struct {
+	Name  string `json:"name"`
+	Owner string `json:"owner,omitempty"`
+}
+
+func OrphanWorkers(ctx context.Context, repo *git.Repo) []Orphan {
 	if !TartPresent() {
 		return nil
 	}
@@ -281,12 +288,20 @@ func OrphanWorkers(ctx context.Context, repo *git.Repo) []string {
 			}
 		}
 	}
-	var orphans []string
-	for _, vm := range strings.Split(out, "\n") {
-		vm = strings.TrimSpace(vm)
-		if strings.HasPrefix(vm, tart.WorkerPrefix) && !tracked[vm] {
-			orphans = append(orphans, vm)
+	var orphans []Orphan
+	for _, line := range strings.Split(out, "\n") {
+		vm := strings.TrimSpace(line)
+		if !strings.HasPrefix(vm, tart.WorkerPrefix) || tracked[vm] {
+			continue
 		}
+		o := Orphan{Name: vm}
+		// The attribution sidecar can name the checkout that started a
+		// worker this repository's notes know nothing about — the
+		// cross-repo half of the untracked-worker story.
+		if owner := tart.OwnerOf(vm); owner != "" && owner != repo.Root {
+			o.Owner = owner
+		}
+		orphans = append(orphans, o)
 	}
 	return orphans
 }

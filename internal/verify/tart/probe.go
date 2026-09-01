@@ -30,8 +30,20 @@ func RunOnBase(ctx context.Context, baseVM string, argv []string) (string, error
 		_, _ = CLI(cctx, nil, "stop", name)
 		_, _ = CLI(cctx, nil, "delete", name)
 	}()
-	//nolint:errcheck // the guest is detached by design
-	go CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+	unlockAdmission, err := Admit(ctx, concurrent)
+	if err != nil {
+		return "", err
+	}
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+		runErr <- err
+	}()
+	if err := WaitRunning(ctx, name, runErr); err != nil {
+		unlockAdmission()
+		return "", err
+	}
+	unlockAdmission()
 	if err := WaitAgent(ctx, name); err != nil {
 		return "", err
 	}

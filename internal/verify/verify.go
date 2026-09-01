@@ -16,8 +16,10 @@ package verify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/platform"
 )
@@ -126,6 +128,9 @@ type Request struct {
 	// the provider does not serve is refused rather than substituted: a
 	// build on Sonoma is not evidence about Sequoia.
 	Platform platform.Release
+	// Owner names the checkout this work belongs to — purely
+	// informational, for cross-repo worker attribution; empty is fine.
+	Owner string
 	// NeedsXcode says the port sets use_xcode: the environment must
 	// answer xcodebuild, and one that cannot should refuse before the
 	// build starts rather than fail forty minutes in.
@@ -240,6 +245,23 @@ type Verifier interface {
 	Log(ctx context.Context, job Job) (string, error)
 	Release(ctx context.Context, job Job) error
 }
+
+// CapacityError is a submission refused for want of a slot: every
+// concurrent-VM licence is spoken for, counted live at admission. It
+// is a machine fact — the deferred-branch flow absorbs it exactly as
+// it absorbs a missing environment — and it exists as a type because
+// the alternative was discovering a full machine through a
+// two-minute agent timeout.
+type CapacityError struct {
+	Busy, Cap int
+}
+
+func (e *CapacityError) Error() string {
+	return fmt.Sprintf("all %d verification slots are busy (%d VMs running); a finished one frees on `dockhand status`", e.Cap, e.Busy)
+}
+
+// ExitCode: the machine band.
+func (e *CapacityError) ExitCode() int { return exitcode.Environment }
 
 // Executor is the optional capability of reaching inside a live
 // environment: run one command and return its output. tart implements

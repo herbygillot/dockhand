@@ -232,6 +232,7 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 		Port:       portName,
 		Portdirs:   []string{staged},
 		Platform:   release,
+		Owner:      m.Repo.Root,
 		Test:       test,
 		NeedsXcode: pf.UseXcode,
 	})

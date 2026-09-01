@@ -119,9 +119,24 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 		}
 	}
 
-	//nolint:errcheck // the guest is detached from this call by design
-	go tart.CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+	// Provisioning's boot spends a licence slot like any worker, so it
+	// goes through the same admission: with builds in flight the answer
+	// is a fast typed refusal, never a mid-provision hang.
+	unlockAdmission, err := tart.Admit(ctx, tart.Provider{}.Capabilities().Concurrent)
+	if err != nil {
+		return err
+	}
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := tart.CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+		runErr <- err
+	}()
 	defer func() { _, _ = tart.CLI(context.WithoutCancel(ctx), nil, "stop", name) }()
+	if err := tart.WaitRunning(ctx, name, runErr); err != nil {
+		unlockAdmission()
+		return err
+	}
+	unlockAdmission()
 
 	host, err := guestIP(ctx, name)
 	if err != nil {

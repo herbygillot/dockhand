@@ -2,12 +2,11 @@ package git
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/herbygillot/dockhand/internal/lockfile"
 )
 
 // LockNotes serializes note read-modify-write across processes. The
@@ -47,37 +46,8 @@ func (r *Repo) notesLockPath(ctx context.Context) (string, error) {
 	return filepath.Join(strings.TrimSpace(dir), "dockhand-notes.lock"), nil
 }
 
-// flockPath acquires an exclusive advisory lock on path, creating it
-// as needed.
+// flockPath acquires the exclusive lock through the shared helper,
+// with the minute-long deadline a note critical section deserves.
 func flockPath(ctx context.Context, path string) (func(), error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	// Non-blocking with retry, so a wedged peer surfaces as a named
-	// refusal rather than a silent hang.
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return func() {
-				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-				_ = f.Close()
-			}, nil
-		}
-		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
-			_ = f.Close()
-			return nil, fmt.Errorf("locking %s: %w", path, err)
-		}
-		if time.Now().After(deadline) {
-			_ = f.Close()
-			return nil, fmt.Errorf("another dockhand has held the notes lock (%s) for over a minute; if none is running, delete the file", path)
-		}
-		select {
-		case <-ctx.Done():
-			_ = f.Close()
-			return nil, ctx.Err()
-		case <-time.After(200 * time.Millisecond):
-		}
-	}
+	return lockfile.Acquire(ctx, path, 60*time.Second)
 }
