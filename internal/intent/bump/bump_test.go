@@ -74,7 +74,8 @@ func bumpPort(t *testing.T, siteURL string, content []byte) string {
 	t.Helper()
 	sha := sha256.Sum256(content)
 	dir := t.TempDir()
-	portfile := fmt.Sprintf(`PortSystem 1.0
+	portfile := fmt.Sprintf(`# -*- coding: utf-8; mode: tcl -*-
+PortSystem 1.0
 name bumpee
 version 1.0
 revision 2

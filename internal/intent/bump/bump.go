@@ -170,6 +170,9 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 
 	// The version edit.
 	var edits []edit.Edit
+	if me, ok := modelineEdit(src); ok {
+		edits = append(edits, me)
+	}
 	if moving {
 		edits = append(edits, edit.Edit{
 			Start: carrier.Start, End: carrier.End,
@@ -611,6 +614,24 @@ func cargoBlockEdit(ctx context.Context, root tempdir.Root, src []byte, cst *syn
 	}
 	slog.Debug("regenerated block", "kind", cargo2port.Kind.String(), "bytes", len(block))
 	return vendored.Edit(src, span, block, cargo2port.Kind), nil
+}
+
+// Modeline is the editor header the MacPorts best-practices page
+// prescribes; a bump adds it to a Portfile that opens without one.
+const Modeline = "# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4"
+
+// modelineEdit inserts the modeline when the Portfile's very first
+// line is not one. Detection is deliberately loose — any leading
+// comment carrying an emacs -*- block or a vim: stanza counts — so an
+// existing modeline in either dialect, however configured, is never
+// second-guessed or rewritten.
+func modelineEdit(src []byte) (edit.Edit, bool) {
+	first, _, _ := bytes.Cut(src, []byte("\n"))
+	if bytes.HasPrefix(first, []byte("#")) &&
+		(bytes.Contains(first, []byte("-*-")) || bytes.Contains(first, []byte("vim:")) || bytes.Contains(first, []byte("vi:"))) {
+		return edit.Edit{}, false
+	}
+	return edit.Edit{Start: 0, End: 0, Old: "", New: Modeline + "\n", Reason: "modeline"}, true
 }
 
 // zigPackageHash is the shape of a Zig 0.12+ package hash as ports pin

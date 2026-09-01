@@ -45,3 +45,24 @@ func TestGoDirectiveParsing(t *testing.T) {
 	assert.Equal(t, "1.24.0", string(m[1]))
 	assert.Nil(t, goDirectiveRE.FindSubmatch([]byte("module x\n// go 1.21 in a comment\n")))
 }
+
+func TestModelineEditAddsOnlyWhenMissing(t *testing.T) {
+	e, ok := modelineEdit([]byte("PortSystem 1.0\nname x\n"))
+	require.True(t, ok)
+	assert.Equal(t, 0, e.Start)
+	assert.Equal(t, 0, e.End)
+	assert.Equal(t, Modeline+"\n", e.New)
+
+	for _, first := range []string{
+		Modeline,
+		"# -*- coding: utf-8; mode: tcl -*-",
+		"# vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4",
+		"# vi: set ts=4:",
+	} {
+		_, ok := modelineEdit([]byte(first + "\nPortSystem 1.0\n"))
+		assert.False(t, ok, "an existing modeline is never second-guessed: %s", first)
+	}
+	// An ordinary leading comment is not a modeline.
+	_, ok = modelineEdit([]byte("# This port is maintained upstream\nPortSystem 1.0\n"))
+	assert.True(t, ok)
+}
