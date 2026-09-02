@@ -7,10 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verdict"
 )
@@ -87,7 +88,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		fmt.Fprintln(rs.Err, "promoting unverified; the PR will say so")
 	}
 
-	forkRemote, forkOwner, err := forge.ForkRemote(ctx, rs.RunGH, repo, a.remote)
+	forkRemote, forkOwner, err := gh.ForkRemote(ctx, rs.RunGH, repo, a.remote)
 	if err != nil {
 		return err
 	}
@@ -98,7 +99,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return nil
 	}
 
-	upstream, err := forge.UpstreamRepo(ctx, repo)
+	upstream, err := gh.UpstreamRepo(ctx, repo)
 	if err != nil {
 		return err
 	}
@@ -131,7 +132,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// a second one would be the duplicate this verb refuses elsewhere.
 	// Looked up by the fork owner, never by tracking config — a branch
 	// --force just re-minted has none until the push restores it.
-	ownPR, ownFound, err := forge.QueryPR(ctx, rs.RunGH, upstream, forkOwner, branch)
+	ownPR, ownFound, err := gh.QueryPR(ctx, rs.RunGH, upstream, forkOwner, branch)
 	if err != nil {
 		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
 		ownFound = false
@@ -144,7 +145,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	checkedPRs := false
 	if !a.noPRCheck {
 		port := verdict.PortName(n.Port, title)
-		switch prs, serr := forge.OpenPortPRs(ctx, rs.RunGH, upstream, port); {
+		switch prs, serr := gh.OpenPortPRs(ctx, rs.RunGH, upstream, port); {
 		case port == "":
 			fmt.Fprintln(rs.Err, "warning: no port name to search open PRs by; skipping the duplicate check")
 		case serr != nil:
@@ -170,7 +171,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err := a.push(ctx, rs, repo, forkRemote, forkOwner, branch); err != nil {
 		return err
 	}
-	body := forge.PromoteBody(n, verified, a.closes, len(ownCommits), checkedPRs)
+	body := render.PRBody(n, verified, a.closes, len(ownCommits), checkedPRs)
 	if own.Found && own.Open {
 		if a.force {
 			// A replaced branch usually means a new version: the PR's

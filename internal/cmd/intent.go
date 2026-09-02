@@ -3,8 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -13,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -78,7 +77,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// The summary comes first whatever happens next: when the plan is
 	// about to be realized, this is the only chance to see what is
 	// being done before it is done.
-	renderPlan(rs.Err, p)
+	render.RenderPlan(rs.Err, p)
 	if a.caution != "" {
 		fmt.Fprint(rs.Err, a.caution)
 	}
@@ -146,49 +145,4 @@ func (f *intentFlags) check() error {
 	}
 	f.opts.On = release
 	return nil
-}
-
-// renderPlan writes the human-facing summary of a plan.
-func renderPlan(w io.Writer, p *plan.Plan) {
-	target := p.Portdir
-	if p.Subport != "" {
-		target += " (subport " + p.Subport + ")"
-	}
-	fmt.Fprintf(w, "plan: %s %s, %d edits\n", p.Intent, target, len(p.Edits))
-	for _, e := range p.Edits {
-		fmt.Fprintf(w, "  %-16s %s -> %s\n", e.Reason+":", e.Old, e.New)
-	}
-	fmt.Fprintln(w, "predicted delta:")
-	for _, cd := range p.Predicted {
-		var parts []string
-		for _, ch := range cd.Changes {
-			parts = append(parts, renderChange(ch))
-		}
-		fmt.Fprintf(w, "  %s: %s\n", cd.Subport, strings.Join(parts, "; "))
-	}
-}
-
-// renderChange keeps the delta line readable: a small change prints in
-// full, and a big one — a cargo port's distfiles run to hundreds of
-// entries — summarizes to counts. A field run measured the inlined
-// form at 87KB on one line, burying the branch and verify lines the
-// user actually needed; the full values still live in --plan's JSON.
-func renderChange(ch plan.Change) string {
-	const inlineMax = 6
-	if len(ch.Old) <= inlineMax && len(ch.New) <= inlineMax {
-		return fmt.Sprintf("%s %s -> %s",
-			ch.Field, strings.Join(ch.Old, " "), strings.Join(ch.New, " "))
-	}
-	before := map[string]bool{}
-	for _, v := range ch.Old {
-		before[v] = true
-	}
-	changed := 0
-	for _, v := range ch.New {
-		if !before[v] {
-			changed++
-		}
-	}
-	return fmt.Sprintf("%s %d -> %d entries (%d new or changed)",
-		ch.Field, len(ch.Old), len(ch.New), changed)
 }

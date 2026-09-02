@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -103,8 +104,8 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 	case verify.Failed:
 		fmt.Fprintln(rs.Err, "FAILED")
 		tail := log
-		if len(tail) > 2000 {
-			tail = tail[len(tail)-2000:]
+		if len(tail) > render.FailureTail {
+			tail = tail[len(tail)-render.FailureTail:]
 		}
 		fmt.Fprintln(rs.Err, tail)
 		// The environment is kept on purpose: it is the debug handle.

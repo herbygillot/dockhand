@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verdict"
@@ -22,15 +22,18 @@ import (
 
 // DescribeBranch renders one branch's verification standing, polling
 // and settling whatever is still running on its tip.
+//
+// The reading is here and the wording is render's. This function is the
+// join: it settles the tip, then hands over what it learned — the
+// record, the drift finding, and the clock a running run's elapsed time
+// is measured against. Reading the clock here rather than inside the
+// renderer is what lets a golden pin the sentence.
 func DescribeBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string) ([]string, error) {
 	_, n, drift, err := InspectBranch(ctx, rs, repo, branch)
 	if err != nil {
 		return nil, err
 	}
-	if n == nil {
-		return []string{drift}, nil
-	}
-	return RenderNote(*n), nil
+	return render.DescribeChange(n, drift, time.Now()), nil
 }
 
 // InspectBranch is the structured half DescribeBranch and the JSON
@@ -160,33 +163,6 @@ func nomaintainerDep(treeRoot, dep string) bool {
 	}
 	b, err := os.ReadFile(matches[0])
 	return err == nil && bytes.Contains(b, []byte("nomaintainer"))
-}
-
-// RenderNote is the human rendering of a verdict set: one line per
-// platform, in stable order.
-func RenderNote(n record.Record) []string {
-	var lines []string
-	for _, plat := range n.Platforms() {
-		r := n.Runs[plat]
-		// The wire word is the line's own text until a running run
-		// replaces it with its elapsed time.
-		s := string(r.State)
-		if r.State == record.Running {
-			s = fmt.Sprintf("verifying (%s)", time.Since(r.Job.Started).Round(time.Second))
-		}
-		line := fmt.Sprintf("%s (%s)", s, plat)
-		if r.Handle != "" {
-			line += " — environment kept: " + r.Handle
-		}
-		if r.Detail != "" {
-			line += " — " + r.Detail
-		}
-		lines = append(lines, line)
-	}
-	if len(lines) == 0 {
-		return []string{"no runs recorded"}
-	}
-	return lines
 }
 
 // describeUnverifiedTip says what an unnoted tip means. The finding is

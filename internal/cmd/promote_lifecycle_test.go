@@ -1,8 +1,8 @@
 package cmd
 
 // The promote lifecycle, hermetically: a scripted GitHub behind the
-// forge.GhOut seam, a bare repo standing in for the fork (its path ends in
-// herbygillot/ports, which is all forge.OwnerRepoFromURL reads), and the
+// gh.RealGhOut seam, a bare repo standing in for the fork (its path ends in
+// herbygillot/ports, which is all gh.OwnerRepoFromURL reads), and the
 // same note fixtures the verify lifecycle uses. Everything promote
 // decides — duplicate refusal, re-promotion, force refresh, the merged
 // dead end — was previously provable only against real GitHub.

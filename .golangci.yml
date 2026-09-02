@@ -95,7 +95,7 @@ linters:
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/git
               desc: the caller reads the repo and passes the facts in; a judgment that opens git needs one to be tested
-            - pkg: github.com/herbygillot/dockhand/internal/forge
+            - pkg: github.com/herbygillot/dockhand/internal/gh
               desc: verdict decides from a PR's facts, mapped by the caller — it never runs gh itself
             - pkg: github.com/herbygillot/dockhand/internal/tool
               desc: which binaries this machine has is a fact, discovered once by the caller, not asked for mid-decision
@@ -197,6 +197,53 @@ linters:
               desc: a record says what was observed; what that is worth is verdict's to say
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
               desc: the tests pin bytes; a provider under them would prove something else
+        # render is the other half of the split verdict began: a
+        # judgment states what happened, and this package chooses the
+        # sentence. Its promise is that every published byte is a
+        # function of the arguments — a PR body, a branch standing, a
+        # plan summary — so a phrase is pinned by a golden instead of
+        # reproduced by a run. The clock is the plainest case:
+        # RecordLines is handed the caller's clock read, and the moment
+        # it could take its own, the golden pinning a running run's line
+        # would depend on when the test ran.
+        #
+        # A deny list rather than verdict's allow list, because render
+        # imports plan in order to print one, and plan's own dependencies
+        # already reach the Tcl shell; an allow list here would claim a
+        # closure the import graph does not have. What render promises is
+        # narrower than verdict's purity and these are the edges that
+        # would end it: it never looks at anything itself.
+        render:
+          files:
+            - "**/internal/render/**"
+            # Tests reach across on purpose: the body restates git's
+            # abbreviation rule rather than importing it, and the only
+            # way to hold the two to the same twelve is a test that can
+            # see both. What the rule protects is the rendering itself.
+            - "!**/internal/render/*_test.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: the body abbreviates a sha itself rather than importing the package that shells out; a renderer that can open a repository needs one to be checked
+            - pkg: github.com/herbygillot/dockhand/internal/gh
+              desc: a pull request's facts come from the caller that fetched them; wording that queries its own needs a network to pin
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: the record arrives already read; custody of the notes is the ledger's
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine calls render, so render must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/intent
+              desc: what the user asked for is resolved before the words are chosen, never while choosing them
+            - pkg: github.com/herbygillot/dockhand/internal/lifecycle
+              desc: settling a run polls a worker and writes a note; DescribeChange takes the settled record instead
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd calls render, so render must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: streams, a clock and process state stay with the verb; the clock read is passed in for exactly that reason
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: render may speak verify's vocabulary but never the provider that boots and polls workers
+            - pkg: os/exec
+              desc: a sentence that shells out is not a function of its arguments, and no golden can pin one
+            - pkg: net
+              desc: the same values have to render the same bytes offline
         # ledger holds custody of the notes — the read, the flock, the
         # re-read inside it, the write, the scans. It touches git and the
         # lockfile because that is the entire job. What it must not
@@ -216,6 +263,38 @@ linters:
               desc: cmd calls the ledger, so the ledger must not call back
             - pkg: github.com/herbygillot/dockhand/internal/runstate
               desc: what is said under the lock belongs to the verb that took it; a ledger that prints owns output ordering it cannot see
+        # gh is the client and nothing above it: the seam that runs the
+        # binary, the pull request lookups, and fork and upstream
+        # resolution. It answers with facts and holds no opinion about
+        # them. What a pull request means is mapped by the caller into
+        # what verdict weighs, and how any of it is worded is render's,
+        # which is what lets a duplicate-PR decision be read, and tested,
+        # with no gh on the machine at all.
+        #
+        # The edges below are the ways it would acquire an opinion, and
+        # each one would make running the tool a prerequisite for
+        # reading the judgment that came out of it. The rule covers the
+        # whole subtree rather than the package's own files, so a test
+        # double standing in for the client is held to the same line as
+        # the client.
+        gh:
+          files:
+            - "**/internal/gh/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/record
+              desc: a pull request is not a note; a client that knew the wire format would start deciding what goes on one
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: gh answers about pull requests and keeps nothing; custody of the notes is the ledger's
+            - pkg: github.com/herbygillot/dockhand/internal/verdict
+              desc: gh reports a PR's state, and whether that state means a duplicate is verdict's to say
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: the words left this package deliberately; a client that phrases its answers takes their goldens back with it
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine calls gh, so gh must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd calls gh, so gh must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: a client returns values and errors; what is printed of them, and when, belongs to the verb that asked
         # verify names a job and its outcome, and record embeds a Job, so
         # verify sits below record. An import the other way is a cycle;
         # this says so before the compiler does, with the reason on it.

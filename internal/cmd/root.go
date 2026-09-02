@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
-	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/tool"
@@ -51,7 +51,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	rc := &runstate.Context{
 		Tools:    tools,
 		Verifier: lifecycle.RealVMProvider(tools),
-		Gh:       forge.RealGhOut(tools),
+		Gh:       gh.RealGhOut(tools),
 	}
 	root := &cobra.Command{
 		Use:          "dockhand",

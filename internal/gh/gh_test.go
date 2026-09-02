@@ -1,4 +1,4 @@
-package forge
+package gh
 
 import (
 	"context"
@@ -57,4 +57,23 @@ func TestRealGhOutReturnsStdout(t *testing.T) {
 	out, err := gh(context.Background(), "api", "user", "-q", ".login")
 	require.NoError(t, err)
 	assert.Equal(t, "api user -q .login\n", out, "stdout alone is the answer")
+}
+
+func TestOwnerRepoFromURLReadsBothSpellings(t *testing.T) {
+	for _, tc := range []struct{ url, owner, repo string }{
+		{"git@github.com:macports/macports-ports.git", "macports", "macports-ports"},
+		{"https://github.com/macports/macports-ports", "macports", "macports-ports"},
+		{"https://github.com/macports/macports-ports.git", "macports", "macports-ports"},
+		{"ssh://git@github.com/macports/macports-ports.git", "macports", "macports-ports"},
+		// A local bare fork is a remote too: the last two path
+		// segments are what a fixture's directory layout spells.
+		{"/tmp/checkout/herbygillot/ports", "herbygillot", "ports"},
+	} {
+		o, r, ok := OwnerRepoFromURL(tc.url)
+		require.True(t, ok, tc.url)
+		assert.Equal(t, tc.owner, o, tc.url)
+		assert.Equal(t, tc.repo, r, tc.url)
+	}
+	_, _, ok := OwnerRepoFromURL("nonsense")
+	assert.False(t, ok, "one segment names no repository")
 }

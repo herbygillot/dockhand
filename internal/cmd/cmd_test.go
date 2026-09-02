@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
-	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -186,20 +185,4 @@ func TestBumpRevisionRequiresAReason(t *testing.T) {
 	assert.Equal(t, exitcode.Usage, code(t, "bump-revision", "someport"))
 	assert.Equal(t, exitcode.Usage, code(t, "revbump", "someport"), "the alias shares the check")
 	assert.Equal(t, exitcode.Usage, code(t, "bump-revision"))
-}
-
-func TestOwnerRepoFromURL(t *testing.T) {
-	for _, tc := range []struct{ url, owner, repo string }{
-		{"git@github.com:herbygillot/macports-ports.git", "herbygillot", "macports-ports"},
-		{"https://github.com/macports/macports-ports", "macports", "macports-ports"},
-		{"https://github.com/macports/macports-ports.git", "macports", "macports-ports"},
-		{"ssh://git@github.com/owner/repo.git", "owner", "repo"},
-	} {
-		o, r, ok := forge.OwnerRepoFromURL(tc.url)
-		require.True(t, ok, tc.url)
-		assert.Equal(t, tc.owner, o, tc.url)
-		assert.Equal(t, tc.repo, r, tc.url)
-	}
-	_, _, ok := forge.OwnerRepoFromURL("nonsense")
-	assert.False(t, ok)
 }

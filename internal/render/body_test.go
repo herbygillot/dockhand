@@ -1,4 +1,4 @@
-package forge
+package render
 
 import (
 	"flag"
@@ -10,11 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // update rewrites the goldens under testdata/golden from what the code
-// renders now: `go test ./internal/forge -update`. A golden is a pinned
+// renders now: `go test ./internal/render -update`. A golden is a pinned
 // PR body, so a rewrite is reviewed as a change to what dockhand tells
 // upstream, not as test maintenance.
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -26,12 +27,12 @@ func templateNote(runs map[string]record.Run) record.Record {
 
 // The body is the upstream PR template with only vouchable boxes
 // checked: install passed and tested, a single minted commit.
-func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
+func TestPRBodyChecksWhatItCanVouchFor(t *testing.T) {
 	n := templateNote(map[string]record.Run{
 		"Sonoma":   {State: "passed", Tested: true},
 		"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
 	})
-	body := PromoteBody(n, true, "", 1, true)
+	body := PRBody(n, true, "", 1, true)
 
 	assert.Contains(t, body,
 		"Verified with [dockhand]("+RepoURL+") at commit `0123456789ab`\n"+
@@ -49,28 +50,28 @@ func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
 	assert.Contains(t, body, "- [ ] tested basic functionality of all binary files?")
 }
 
-func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
+func TestPRBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
 	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
-	body := PromoteBody(n, true, "", 1, false)
+	body := PRBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Sonoma: built in a pristine VM")
 	assert.Contains(t, body, "- [ ] checked that there aren't other open [pull requests]")
 	assert.Contains(t, body, "- [ ] tried existing tests with `sudo port test`?")
 	assert.Contains(t, body, "- [x] tried a full install with")
 }
 
-func TestPromoteBodySignsOffEveryBody(t *testing.T) {
+func TestPRBodySignsOffEveryBody(t *testing.T) {
 	signoff := "\nAutomated by [dockhand](" + RepoURL + ")\n"
 	verified := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
 	for name, body := range map[string]string{
-		"verified":   PromoteBody(verified, true, "", 1, true),
-		"unverified": PromoteBody(record.Record{}, false, "", 1, false),
+		"verified":   PRBody(verified, true, "", 1, true),
+		"unverified": PRBody(record.Record{}, false, "", 1, false),
 	} {
 		assert.True(t, strings.HasSuffix(body, signoff), "%s body must end with the sign-off", name)
 	}
 }
 
-func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
-	body := PromoteBody(record.Record{}, false, "12345", 1, false)
+func TestPRBodyUnverifiedChecksNothing(t *testing.T) {
+	body := PRBody(record.Record{}, false, "12345", 1, false)
 	assert.Contains(t, body, "Not locally verified")
 	assert.Contains(t, body, "Closes: https://trac.macports.org/ticket/12345")
 	assert.NotContains(t, body, "###### Tested on")
@@ -79,9 +80,9 @@ func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
 	assert.NotContains(t, body, "- [x] tried")
 }
 
-func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
+func TestPRBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
 	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
-	body := PromoteBody(n, true, "", 3, false)
+	body := PRBody(n, true, "", 3, false)
 	assert.Contains(t, body, "- [ ] followed our [Commit Message Guidelines]")
 	assert.Contains(t, body, "- [ ] squashed and [minimized your commits]")
 }
@@ -89,9 +90,9 @@ func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
 // Every checklist line in the body must be one of the upstream
 // template's own lines (modulo the strikethrough rewrite): a drifted
 // checklist would read as dockhand inventing its own ceremony.
-func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
+func TestPRBodyKeepsTheTemplateShape(t *testing.T) {
 	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed", Tested: true}})
-	body := PromoteBody(n, true, "7", 1, true)
+	body := PRBody(n, true, "7", 1, true)
 	require.True(t, strings.HasPrefix(body, "#### Description\n"))
 	for _, section := range []string{"###### Type(s)", "###### Tested on", "###### Verification"} {
 		assert.Contains(t, body, section)
@@ -99,26 +100,53 @@ func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
 	assert.Equal(t, 12, strings.Count(body, "- ["), "3 type boxes + 9 checklist boxes")
 }
 
-func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
+func TestPRBodyChecksLintWhenTheRunLinted(t *testing.T) {
 	n := templateNote(map[string]record.Run{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
-	body := PromoteBody(n, true, "", 1, false)
+	body := PRBody(n, true, "", 1, false)
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 	// The checked box is only honest if the evidence line states what
 	// backs it — the field-caught gap.
 	assert.Contains(t, body, "Tahoe: linted clean, built in a pristine VM")
 }
 
-func TestPromoteBodyStatesLintWarnings(t *testing.T) {
+func TestPRBodyStatesLintWarnings(t *testing.T) {
 	n := templateNote(map[string]record.Run{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
-	body := PromoteBody(n, true, "", 1, false)
+	body := PRBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Tahoe: linted with 2 warnings, built and tested in a pristine VM")
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 }
 
-// goldenDir holds one pinned body per reachable PromoteBody variant.
+// The sha in the header is abbreviated here rather than by internal/git,
+// which this package must not import, so the width the body prints is
+// pinned on its own: twelve digits of a full sha, and a short revision
+// whole.
+// The body restates git's abbreviation rule rather than importing the
+// package that shells out to git. Two statements of one rule drift
+// unless something holds them together, and a golden pins only what
+// render printed — so the agreement is asserted here, in the one place
+// allowed to see both.
+func TestAbbreviationAgreesWithGits(t *testing.T) {
+	for _, sha := range []string{
+		"0123456789abcdef0123456789abcdef01234567",
+		"0123456789abc",
+		"0123456789ab",
+		"0123",
+		"",
+	} {
+		assert.Equal(t, git.Abbrev(sha), abbrevSha(sha), "sha %q", sha)
+	}
+}
+
+func TestPRBodyAbbreviatesTheShaToTwelve(t *testing.T) {
+	assert.Equal(t, "0123456789ab", abbrevSha("0123456789abcdef0123"))
+	assert.Equal(t, "0123", abbrevSha("0123"))
+	assert.Empty(t, abbrevSha(""))
+}
+
+// goldenDir holds one pinned body per reachable PRBody variant.
 const goldenDir = "testdata/golden"
 
-// bodyVariant is one input shape promote can hand PromoteBody today.
+// bodyVariant is one input shape promote can hand PRBody today.
 // The golden is named for the variant, so a diff names what changed.
 type bodyVariant struct {
 	name       string
@@ -129,7 +157,7 @@ type bodyVariant struct {
 	checkedPRs bool
 }
 
-// bodyVariants enumerates the branches in PromoteBody: the verified
+// bodyVariants enumerates the branches in PRBody: the verified
 // evidence line per run state and per lint/test record, the sections
 // that come and go with them, and the flags the checklist boxes read.
 // Unverified bodies ignore the note entirely, which the failed and
@@ -234,13 +262,13 @@ var bodyVariants = []bodyVariant{
 // Each variant's whole body is pinned: a checklist box flipping, a
 // section appearing, or a phrase drifting is a change in what dockhand
 // vouches for upstream, and the golden makes it a reviewed one.
-func TestPromoteBodyGoldens(t *testing.T) {
+func TestPRBodyGoldens(t *testing.T) {
 	rendered := map[string]bool{}
 	for _, v := range bodyVariants {
 		require.False(t, rendered[v.name], "variant %q is listed twice", v.name)
 		rendered[v.name] = true
 		t.Run(v.name, func(t *testing.T) {
-			body := PromoteBody(templateNote(v.runs), v.verified, v.closes, v.ownCommits, v.checkedPRs)
+			body := PRBody(templateNote(v.runs), v.verified, v.closes, v.ownCommits, v.checkedPRs)
 			checkGolden(t, v.name, body)
 		})
 	}
@@ -252,6 +280,27 @@ func TestPromoteBodyGoldens(t *testing.T) {
 	for _, e := range entries {
 		name := strings.TrimSuffix(e.Name(), ".golden")
 		assert.True(t, rendered[name], "stale golden %s: no variant renders it", filepath.Join(goldenDir, e.Name()))
+	}
+}
+
+// Six of the variants exist to say that some input makes no difference
+// to the body, and each says it by rendering to a file already on disk
+// under another name. Prose in the variant table claimed that; this
+// checks it, so an edit that starts distinguishing these cases fails
+// here rather than passing with two goldens quietly rewritten together.
+func TestPRBodyIdenticalVariantsStayIdentical(t *testing.T) {
+	for _, group := range [][]string{
+		{"verified_one_platform", "verified_omits_non_verdict_states", "verified_lint_summary_without_linted"},
+		{"unverified", "unverified_failed_overridden", "unverified_blocked_and_canceled"},
+	} {
+		first, err := os.ReadFile(filepath.Join(goldenDir, group[0]+".golden"))
+		require.NoError(t, err)
+		for _, name := range group[1:] {
+			got, err := os.ReadFile(filepath.Join(goldenDir, name+".golden"))
+			require.NoError(t, err)
+			assert.Equal(t, string(first), string(got),
+				"%s must be byte-identical to %s; that identity is what the variant exists to state", name, group[0])
+		}
 	}
 }
 
@@ -267,9 +316,9 @@ func checkGolden(t *testing.T, name, got string) {
 		return
 	}
 	want, err := os.ReadFile(path)
-	require.NoError(t, err, "no golden at %s; `go test ./internal/forge -update` writes it", path)
+	require.NoError(t, err, "no golden at %s; `go test ./internal/render -update` writes it", path)
 	if string(want) != got {
-		t.Errorf("body differs from %s:\n%s\nif the new body is intended, `go test ./internal/forge -update` rewrites the golden", path, lineDiff(path, string(want), got))
+		t.Errorf("body differs from %s:\n%s\nif the new body is intended, `go test ./internal/render -update` rewrites the golden", path, lineDiff(path, string(want), got))
 	}
 }
 

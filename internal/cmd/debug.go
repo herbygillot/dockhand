@@ -13,8 +13,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
-	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
@@ -77,7 +77,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 			return debugEnv{}, err
 		}
 		if _, ok := reachable[r.Name]; !ok {
-			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, verdict.Summarize(n))
+			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, render.SummarizeRecord(n))
 		}
 		plat = r.Name
 	case len(reachable) == 1:
@@ -85,7 +85,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 			plat = p
 		}
 	case len(reachable) == 0:
-		return debugEnv{}, fmt.Errorf("%s: no environment to reach (%s); `dockhand verify %s` starts one", branch, verdict.Summarize(n), branch)
+		return debugEnv{}, fmt.Errorf("%s: no environment to reach (%s); `dockhand verify %s` starts one", branch, render.SummarizeRecord(n), branch)
 	default:
 		var plats []string
 		for p := range reachable {
@@ -195,8 +195,8 @@ func errorLog(ctx context.Context, rs *runstate.Context, prov verify.Verifier, e
 	if m == nil {
 		fmt.Fprintln(rs.Err, "the console log names no main.log; showing its tail instead")
 		tail := console
-		if len(tail) > 4000 {
-			tail = tail[len(tail)-4000:]
+		if len(tail) > render.LogTail {
+			tail = tail[len(tail)-render.LogTail:]
 		}
 		fmt.Fprint(rs.Out, tail)
 		return nil
@@ -205,8 +205,8 @@ func errorLog(ctx context.Context, rs *runstate.Context, prov verify.Verifier, e
 	if !ok {
 		fmt.Fprintln(rs.Err, "this provider's environments cannot be reached from here; showing the console tail instead")
 		tail := console
-		if len(tail) > 4000 {
-			tail = tail[len(tail)-4000:]
+		if len(tail) > render.LogTail {
+			tail = tail[len(tail)-render.LogTail:]
 		}
 		fmt.Fprint(rs.Out, tail)
 		return nil

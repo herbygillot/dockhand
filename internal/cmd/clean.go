@@ -7,9 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verdict"
 )
@@ -43,7 +44,7 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		fmt.Fprintf(rs.Out, "no dockhand branches in %s\n", repo.Root)
 		return nil
 	}
-	upstream, err := forge.UpstreamRepo(ctx, repo)
+	upstream, err := gh.UpstreamRepo(ctx, repo)
 	if err != nil {
 		return err
 	}
@@ -56,7 +57,7 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		if err != nil {
 			line = "error: " + err.Error()
 		}
-		fmt.Fprintf(rs.Out, "%-32s %s\n", br, line)
+		fmt.Fprintf(rs.Out, render.BranchLine, br, line)
 	}
 	return nil
 }
@@ -68,7 +69,7 @@ func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes
 		// reason to spend a gh call finding that out.
 		return verdict.RetireUnpromoted.SweepLine(verdict.PRFact{}, false), nil
 	}
-	pr, found, err := forge.LookupPR(ctx, rs.RunGH, repo, remotes, upstream, branch)
+	pr, found, err := gh.LookupPR(ctx, rs.RunGH, repo, remotes, upstream, branch)
 	if err != nil {
 		return "", err
 	}

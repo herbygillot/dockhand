@@ -10,13 +10,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -68,7 +69,7 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 			lines = append(lines, extra)
 		}
 		if len(lines) == 1 {
-			fmt.Fprintf(rs.Out, "%-32s %s\n", br, lines[0])
+			fmt.Fprintf(rs.Out, render.BranchLine, br, lines[0])
 			continue
 		}
 		fmt.Fprintln(rs.Out, br)
@@ -260,11 +261,11 @@ type statusBranch struct {
 	// Drift is the human sentence about an unnoted tip — content
 	// identity, commits behind — kept as prose: it is a finding, not a
 	// state machine.
-	Drift   string             `json:"drift,omitempty"`
-	PR      *forge.PullRequest `json:"pr,omitempty"`
-	PRError string             `json:"pr_error,omitempty"`
-	Cleaned bool               `json:"cleaned,omitempty"`
-	Error   string             `json:"error,omitempty"`
+	Drift   string          `json:"drift,omitempty"`
+	PR      *gh.PullRequest `json:"pr,omitempty"`
+	PRError string          `json:"pr_error,omitempty"`
+	Cleaned bool            `json:"cleaned,omitempty"`
+	Error   string          `json:"error,omitempty"`
 }
 
 func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, branches []string, noClean bool) error {
@@ -323,7 +324,7 @@ type prOutcome struct {
 	promoted bool
 	found    bool
 	cleaned  bool
-	pr       forge.PullRequest
+	pr       gh.PullRequest
 	errText  string
 	cleanErr string
 }
@@ -339,7 +340,7 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 	}
 	if !ps.loaded {
 		ps.loaded = true
-		ps.upstream, ps.broken = forge.UpstreamRepo(ctx, ps.repo)
+		ps.upstream, ps.broken = gh.UpstreamRepo(ctx, ps.repo)
 		if ps.broken == nil {
 			ps.remotes, ps.broken = ps.repo.Remotes(ctx)
 		}
@@ -347,7 +348,7 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 	if ps.broken != nil {
 		return prOutcome{promoted: true, errText: ps.broken.Error()}
 	}
-	pr, found, err := forge.LookupPR(ctx, rs.RunGH, ps.repo, ps.remotes, ps.upstream, branch)
+	pr, found, err := gh.LookupPR(ctx, rs.RunGH, ps.repo, ps.remotes, ps.upstream, branch)
 	if err != nil {
 		return prOutcome{promoted: true, errText: err.Error()}
 	}
@@ -384,6 +385,12 @@ func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch 
 // checkout's jobs are invisible here, and with a two-guest cap a
 // forgotten worker is an expensive kind of quiet. Best-effort — a
 // machine without tart has no workers to report.
+//
+// The width here is a literal and not render.BranchLine on purpose: the
+// subject is a worker name, not a branch, and these lines carry their
+// own sentence rather than a standing. They sit under the branch
+// listing and happen to share a column today; tuning one column is not
+// a reason to move the other.
 func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Repo) {
 	for _, o := range lifecycle.OrphanWorkers(ctx, rs.Tools, repo) {
 		if o.Owner != "" {

@@ -1,12 +1,12 @@
 package cmd
 
 import (
-	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
-// prFact maps the forge's answer about a pull request into the fact a
-// judgment weighs. The forge's own spellings — a merge timestamp being
+// prFact maps gh's answer about a pull request into the fact a
+// judgment weighs. GitHub's own spellings — a merge timestamp being
 // present, a state word reading "open" — are read here, at the boundary
 // where its JSON is already being read, so that clean, status and
 // promote all reach the same judgment from the same shape and no
@@ -14,7 +14,7 @@ import (
 //
 // A lookup that found nothing is the zero fact, which is what "no pull
 // request" means.
-func prFact(pr forge.PullRequest, found bool) verdict.PRFact {
+func prFact(pr gh.PullRequest, found bool) verdict.PRFact {
 	if !found {
 		return verdict.PRFact{}
 	}
@@ -28,9 +28,9 @@ func prFact(pr forge.PullRequest, found bool) verdict.PRFact {
 	}
 }
 
-// prFacts maps a list the forge returned. Every entry exists, so every
-// one of them is Found.
-func prFacts(prs []forge.PullRequest) []verdict.PRFact {
+// prFacts maps a list gh returned. Every entry exists, so every one of
+// them is Found.
+func prFacts(prs []gh.PullRequest) []verdict.PRFact {
 	out := make([]verdict.PRFact, 0, len(prs))
 	for _, pr := range prs {
 		out = append(out, prFact(pr, true))
