@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"slices"
 
@@ -106,11 +105,11 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 	if err != nil {
 		return nil, err
 	}
-	fetchDir, err := os.MkdirTemp("", "dockhand-refresh-*")
+	fetchDir, removeFetched, err := h.TempDir.MakeDir("distfiles")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(fetchDir) //nolint:errcheck // temp dir cleanup
+	defer removeFetched()
 
 	opts := distfile.Options{
 		DisableEPSV:   fi.DisableEPSV,

@@ -169,7 +169,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	targets, err := resolveTargets(rs.TreeRoot, false, []string{a.target})
+	targets, err := resolveTargets(rs, false, []string{a.target})
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, tar
 	if err != nil {
 		return err
 	}
-	releases, err := verifyReleases(on, prov.Capabilities().Platforms)
+	releases, err := resolveReleaseSet(on, prov.Capabilities().Platforms, true)
 	if err != nil {
 		return err
 	}
@@ -367,42 +367,6 @@ func branchPortdir(ctx context.Context, repo *git.Repo, branch, tip string) (str
 	return "", nil // unreachable
 }
 
-// verifyReleases resolves verify's --on values against the provisioned
-// bases: nothing means the newest, "all" means every base, and each
-// named release must actually have a base — a verdict cannot be
-// promised on an environment that does not exist.
-func verifyReleases(on []string, provisioned []platform.Release) ([]platform.Release, error) {
-	if len(provisioned) == 0 {
-		return nil, fmt.Errorf("%w: no base images", verify.ErrNoEnvironment)
-	}
-	if len(on) == 0 {
-		return provisioned[:1], nil
-	}
-	var out []platform.Release
-	for _, v := range on {
-		if strings.EqualFold(v, "all") {
-			return provisioned, nil
-		}
-		r, err := platform.Parse(v)
-		if err != nil {
-			return nil, &UsageError{Err: err}
-		}
-		found := false
-		for _, p := range provisioned {
-			if p == r {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("%w: no base image for %s; `dockhand provision tart --macos %s` builds one",
-				verify.ErrNoEnvironment, r.Name, strings.ToLower(r.CompactName()))
-		}
-		out = append(out, r)
-	}
-	return out, nil
-}
-
 // Verify builds the verify subcommand.
 func Verify() *cobra.Command {
 	var on []string
@@ -422,23 +386,4 @@ func Verify() *cobra.Command {
 	c.Flags().BoolVar(&trace, "trace", false,
 		"stay attached after submitting: stream the build log until it finishes")
 	return c
-}
-
-// releaseFlag parses --on for the verbs that verify: one release, the
-// empty flag meaning the provider default (the newest provisioned
-// base). A matrix is refused with directions — the verdict note tracks
-// one job per commit, so breadth comes from repeated runs or from
-// exec, whose probes are built for it.
-func releaseFlag(on string) (platform.Release, error) {
-	if on == "" {
-		return platform.Release{}, nil
-	}
-	if strings.EqualFold(on, "all") || strings.Contains(on, ",") {
-		return platform.Release{}, usagef("this verb submits one platform; run the matrix afterwards with `dockhand verify <branch> --on <list|all>`")
-	}
-	r, err := platform.Parse(on)
-	if err != nil {
-		return platform.Release{}, &UsageError{Err: err}
-	}
-	return r, nil
 }

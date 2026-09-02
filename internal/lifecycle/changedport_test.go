@@ -3,15 +3,14 @@ package lifecycle
 import (
 	"bytes"
 	"context"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
@@ -36,38 +35,15 @@ subport demo2 {
 
 func subportRepo(t *testing.T) (*git.Repo, string) {
 	t.Helper()
-	testenv.Tool(t, "git")
-	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
-		out, err := cmd.CombinedOutput()
-		require.NoError(t, err, "git %v: %s", args, out)
-	}
-	run("init", "--quiet")
-	run("config", "user.name", "t")
-	run("config", "user.email", "t@t")
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sysutils", "demo"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "sysutils", "demo", "Portfile"), []byte(subportPortfile), 0o644))
-	run("add", ".")
-	run("commit", "--quiet", "-m", "initial tree")
-
-	repo, err := git.Open(context.Background(), realTools, dir)
-	require.NoError(t, err)
-	primary, err := repo.PrimaryBranch(context.Background())
+	ctx := context.Background()
+	repo := gittest.Init(t, realTools, "", map[string]string{"sysutils/demo/Portfile": subportPortfile})
+	primary, err := repo.PrimaryBranch(ctx)
 	require.NoError(t, err)
 	// The branch moves ONLY the subport's version — the change is
 	// about demo2, whatever the portdir is called.
-	edited := bytes.Replace([]byte(subportPortfile),
-		[]byte("    version         2.0"), []byte("    version         2.1"), 1)
-	sha, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: "dockhand/demo2-2.1", Base: primary, Path: "sysutils/demo/Portfile",
-		Content: edited, Message: "demo2: update to 2.1",
-	})
-	require.NoError(t, err)
+	edited := strings.Replace(subportPortfile, "    version         2.0", "    version         2.1", 1)
+	sha := gittest.Commit(t, repo, "dockhand/demo2-2.1", primary, "sysutils/demo/Portfile",
+		edited, "demo2: update to 2.1")
 	return repo, sha
 }
 
@@ -75,7 +51,7 @@ func TestChangedPortNamesTheSubportTheBranchMoves(t *testing.T) {
 	testenv.PortTclsh(t)
 	repo, sha := subportRepo(t)
 	var buf bytes.Buffer
-	rs := &runstate.Context{Tools: realTools, Out: &buf, Err: &buf}
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: realTools, Out: &buf, Err: &buf}
 
 	name, err := ChangedPort(context.Background(), rs, repo, sha, "sysutils/demo")
 	require.NoError(t, err)
@@ -95,7 +71,7 @@ func TestChangedPortFallsBackWhenNothingEvaluatedMoves(t *testing.T) {
 	})
 	require.NoError(t, err)
 	var buf bytes.Buffer
-	rs := &runstate.Context{Tools: realTools, Out: &buf, Err: &buf}
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: realTools, Out: &buf, Err: &buf}
 
 	name, err := ChangedPort(context.Background(), rs, repo, sha, "sysutils/demo")
 	require.NoError(t, err)

@@ -10,8 +10,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/build"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/macports/session"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -65,7 +65,7 @@ func (t Tart) macPortsVersion() (string, error) {
 	if t.MacPorts != "" {
 		return t.MacPorts, nil
 	}
-	v, err := eval.NewestShim()
+	v, err := session.NewestShim()
 	if err != nil {
 		return "", fmt.Errorf("%w: no MacPorts version given and no shim to infer one from: %w",
 			verify.ErrNoEnvironment, err)

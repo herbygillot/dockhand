@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/macports/session"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
 )
@@ -93,7 +93,7 @@ func Probe(tools *tool.Finder) Report {
 			// working it should not be a surprise. Derived from the shims
 			// themselves, so this notices without anyone remembering to
 			// check.
-			if newest, err := eval.NewestShim(); err == nil {
+			if newest, err := session.NewestShim(); err == nil {
 				portTclsh.Note = shimNote(v, newest)
 			}
 		} else {

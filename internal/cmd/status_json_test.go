@@ -1,71 +1,37 @@
 package cmd
 
-// Fixtures for cmd-level lifecycle-adjacent tests: a ports-tree-shaped
-// repo with one minted dockhand branch, mirroring lifecycle's own test
-// fixture (helpers cannot cross package test boundaries).
+// Fixtures for cmd-level lifecycle-adjacent tests: the ports-tree-shaped
+// repo with one minted dockhand branch that lifecycle's own tests start
+// from, built over gittest so the two packages share one fixture.
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
-	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
+// lifecycleRepo is a ports-tree-shaped git repo with one dockhand
+// branch minted, its tip returned alongside.
 func lifecycleRepo(t *testing.T) (*git.Repo, string) {
 	t.Helper()
-	testenv.Tool(t, "git")
-	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
-		out, err := cmd.CombinedOutput()
-		require.NoError(t, err, "git %v: %s", args, out)
-	}
-	run("init", "--quiet")
-	run("config", "user.name", "t")
-	run("config", "user.email", "t@t")
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "sysutils", "jq"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "sysutils", "jq", "Portfile"), []byte("version 1.7\n"), 0o644))
-	run("add", ".")
-	run("commit", "--quiet", "-m", "initial tree")
-
-	repo, err := git.Open(context.Background(), testFinder(), dir)
-	require.NoError(t, err)
-	primary, err := repo.PrimaryBranch(context.Background())
-	require.NoError(t, err)
-	sha, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: "dockhand/jq-1.8", Base: primary, Path: "sysutils/jq/Portfile",
-		Content: []byte("version 1.8\n"), Message: "jq: update to 1.8",
-	})
-	require.NoError(t, err)
-	return repo, sha
-}
-
-func runningNote(t *testing.T, repo *git.Repo, sha, jobID string) lifecycle.Note {
-	t.Helper()
 	ctx := context.Background()
-	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq")
+	repo := gittest.PortsTree(t, testFinder())
+	primary, err := repo.PrimaryBranch(ctx)
 	require.NoError(t, err)
-	n.Runs["Testos"] = lifecycle.Run{State: "running",
-		Job: verify.Job{Provider: "fake", ID: jobID}, Linted: true}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
-	return n
+	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", primary, "sysutils/jq/Portfile",
+		"version 1.8\n", "jq: update to 1.8")
+	return repo, sha
 }
 
 func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
@@ -74,7 +40,8 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
 	}
-	runningNote(t, repo, sha, "fake-1")
+	writeRuns(t, repo, sha, map[string]lifecycle.Run{"Testos": {State: "running",
+		Job: verify.Job{Provider: "fake", ID: "fake-1"}, Linted: true}})
 
 	var out, errb bytes.Buffer
 	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb,
@@ -105,15 +72,7 @@ func TestStatusJSONKeepsStdoutPureUnderAutoclean(t *testing.T) {
 
 	// Promote-shape the branch: a tracked remote is what makes judge
 	// look the PR up.
-	forkRoot := filepath.Join(t.TempDir(), "herbygillot")
-	require.NoError(t, os.MkdirAll(forkRoot, 0o755))
-	fork := filepath.Join(forkRoot, "ports")
-	out0, err := exec.Command("git", "init", "--bare", "--quiet", fork).CombinedOutput()
-	require.NoError(t, err, "%s", out0)
-	out0, err = exec.Command("git", "-C", repo.Root, "remote", "add", "origin", "https://github.com/macports/macports-ports.git").CombinedOutput()
-	require.NoError(t, err, "%s", out0)
-	out0, err = exec.Command("git", "-C", repo.Root, "remote", "add", "herby", fork).CombinedOutput()
-	require.NoError(t, err, "%s", out0)
+	gittest.BareFork(t, repo, "herbygillot", "herby")
 	require.NoError(t, repo.Push(context.Background(), "herby", "dockhand/jq-1.8"))
 
 	var out, errb bytes.Buffer

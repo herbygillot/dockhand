@@ -1,9 +1,9 @@
 // Package portfetch fetches distfiles through MacPorts' own machinery:
-// a dedicated port-tclsh session running base's pextlib curl — the same
-// code, learned exceptions, and macports.conf configuration (proxies
-// included) that port itself fetches with. The session outlives one
-// fetch: a Fetcher is created per plan and serves every download the
-// plan needs.
+// its own session (internal/macports/session), separate from the
+// evaluator's, running base's pextlib curl — the same code, learned
+// exceptions, and macports.conf configuration (proxies included) that
+// port itself fetches with. The session outlives one fetch: a Fetcher
+// is created per plan and serves every download the plan needs.
 //
 // The session is deliberately separate from the evaluator's: a stalled
 // download is cancelled by breaking this session, and the evaluator
@@ -14,8 +14,6 @@ package portfetch
 
 import (
 	"context"
-	"embed"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -27,28 +25,20 @@ import (
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
-	"github.com/herbygillot/dockhand/internal/macports/shim"
-	"github.com/herbygillot/dockhand/internal/tcl/rpc"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
+	"github.com/herbygillot/dockhand/internal/macports/session"
 	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
-//go:embed shims
-var shimFS embed.FS
-
-// shimDir is the embedded shim set; see internal/macports/shim for how
-// one is chosen.
-const shimDir = "shims"
-
-// ErrRootRefused mirrors eval's guard: fetching never requires
-// privileges, and mportinit carries writes that are dormant only for an
-// unprivileged user.
-var ErrRootRefused = errors.New("portfetch: refusing to run as root: fetching never requires privileges")
+// ErrRootRefused reports that New declined to run as the superuser:
+// fetching never requires privileges, and mportinit carries writes that
+// are dormant only for an unprivileged user. It is session's sentinel,
+// kept under this name because the exit table classifies on it.
+var ErrRootRefused = session.ErrRootRefused
 
 // Fetcher is a fetch session over one installation's port-tclsh. Not
 // safe for concurrent use; downloads through one Fetcher are serial.
 type Fetcher struct {
-	sess    *rpc.Session
+	sess    *session.Session
 	tmpDir  string
 	removeD func()
 	n       int
@@ -59,35 +49,16 @@ type Fetcher struct {
 // the given temporary root; the zero root puts them in the system
 // temporary directory.
 func New(ctx context.Context, pfx prefix.Prefix, root tempdir.Root) (*Fetcher, error) {
-	if os.Geteuid() == 0 {
-		return nil, ErrRootRefused
-	}
-	// A shim mismatch degrades rather than blocks, so an installation
-	// that will not say its version still gets a fetcher.
-	version, err := pfx.Version(ctx)
-	if err != nil {
-		slog.Debug("macports version undetermined", "prefix", string(pfx), "err", err)
-	}
-	fetchScript, named, err := shim.Select(shimFS, shimDir, version)
-	if err != nil {
-		return nil, fmt.Errorf("portfetch: %w", err)
-	}
-	slog.Debug("fetch shim", "shim", named, "macports", version)
-
-	proc, err := shell.Start(ctx, pfx.PortTclsh())
+	s, err := session.Start(ctx, pfx)
 	if err != nil {
 		return nil, err
-	}
-	sess, err := rpc.New(ctx, proc, rpc.WithInit(fetchScript))
-	if err != nil {
-		return nil, fmt.Errorf("portfetch: initializing fetch session: %w", err)
 	}
 	tmpDir, removeDir, err := root.MakeDir("portfetch")
 	if err != nil {
-		sess.Close() //nolint:errcheck // best-effort on the error path
+		s.Close() //nolint:errcheck // best-effort on the error path
 		return nil, err
 	}
-	return &Fetcher{sess: sess, tmpDir: tmpDir, removeD: removeDir}, nil
+	return &Fetcher{sess: s, tmpDir: tmpDir, removeD: removeDir}, nil
 }
 
 // Close shuts the session down and removes any fetched remains.

@@ -23,7 +23,7 @@ type classifyAction struct {
 var _ Action = classifyAction{}
 
 func (a classifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	targets, err := resolveTargets(rs.TreeRoot, a.all, a.args)
+	targets, err := resolveTargets(rs, a.all, a.args)
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func Classify() *cobra.Command {
 // With all, the whole tree. Literal repeats dedupe; distinct references
 // to the same portdir (two subports of one Portfile) do not — the
 // caller decides what its command's unit of work is.
-func resolveTargets(treeRoot string, all bool, args []string) ([]tree.Target, error) {
+func resolveTargets(rs *runstate.Context, all bool, args []string) ([]tree.Target, error) {
 	needTree := all
 	for _, a := range args {
 		if _, ok := tree.PathTarget(a); !ok {
@@ -99,11 +99,11 @@ func resolveTargets(treeRoot string, all bool, args []string) ([]tree.Target, er
 
 	var tr *tree.Tree
 	if needTree {
-		if treeRoot == "" {
+		if rs.TreeRoot == "" {
 			return nil, usagef("a ports tree is needed: run inside one, pass --tree, or set DOCKHAND_TREE")
 		}
 		var err error
-		if tr, err = tree.Open(treeRoot); err != nil {
+		if tr, err = rs.Tree(); err != nil {
 			return nil, err
 		}
 	}

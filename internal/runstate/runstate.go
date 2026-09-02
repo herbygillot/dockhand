@@ -66,10 +66,9 @@ type Context struct {
 	// seam, wired and stood in the same way.
 	Gh func(ctx context.Context, args ...string) (string, error)
 
-	// In, Out and Err are the run's streams. Structured output goes to
-	// Out and prose to Err, so machine output can be piped while its
-	// summary stays readable.
-	In       io.Reader
+	// Out and Err are the run's streams. Structured output goes to Out
+	// and prose to Err, so machine output can be piped while its summary
+	// stays readable.
 	Out, Err io.Writer
 
 	pfx     prefix.Prefix
@@ -79,6 +78,14 @@ type Context struct {
 	repo     *git.Repo
 	repoErr  error
 	repoDone bool
+
+	tr     *tree.Tree
+	trErr  error
+	trDone bool
+
+	prov     verify.Verifier
+	provErr  error
+	provDone bool
 
 	tempRoot tempdir.Root
 	tempErr  error
@@ -93,22 +100,17 @@ type Context struct {
 // Init fills the context from what the flag layer parsed. It runs once
 // per execution, before any command's own work. Flag extraction stays
 // with the caller: this package knows runs, not command lines.
-func (rc *Context) Init(treeRoot, prefixPath string, debug bool, in io.Reader, out, errOut io.Writer) {
+// The logger is the caller's to configure, and it must already be
+// configured when this runs: the tree search below speaks through it.
+func (rc *Context) Init(treeRoot, prefixPath string, debug bool, out, errOut io.Writer) {
 	rc.TreeRoot, rc.PrefixPath, rc.Debug = treeRoot, prefixPath, debug
-	rc.In, rc.Out, rc.Err = in, out, errOut
-
-	level := slog.LevelWarn
-	if debug {
-		level = slog.LevelDebug
-	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	rc.Out, rc.Err = out, errOut
 
 	// With no tree named, the one the user is standing in is the one
 	// they mean. Best-effort on purpose: a command that needs no tree
 	// must not fail because the working directory is not in one, so a
 	// fruitless search leaves TreeRoot empty and the commands that do
-	// need a tree report it themselves. This runs after the logger is
-	// configured so that --debug can say which tree was found.
+	// need a tree report it themselves.
 	if rc.TreeRoot == "" {
 		if wd, err := os.Getwd(); err == nil {
 			if root, err := tree.Find(wd); err == nil {
@@ -152,6 +154,37 @@ func (rc *Context) Repo(ctx context.Context) (*git.Repo, error) {
 		}
 	}
 	return rc.repo, rc.repoErr
+}
+
+// RepoFor is Repo, for a realization that named a portdir: the run's
+// repository is resolved once, and the first asker anchors it — the
+// tree (or the working directory) for the lifecycle verbs, the portdir
+// an intent names for the realizations that speak git. Both name the
+// same checkout whenever the portdir is in the tree, and a portdir
+// named from outside any tree still finds its own.
+func (rc *Context) RepoFor(ctx context.Context, dir string) (*git.Repo, error) {
+	if !rc.repoDone {
+		rc.repoDone = true
+		rc.repo, rc.repoErr = git.Open(ctx, rc.Tools, dir)
+		if rc.repoErr == nil {
+			slog.Debug("repository", "root", rc.repo.Root)
+		}
+	}
+	return rc.repo, rc.repoErr
+}
+
+// Tree is the ports tree this run works against, opened once. The
+// caller that needs a tree checks TreeRoot itself: an unnamed tree is
+// that command's usage question, not this one's.
+func (rc *Context) Tree() (*tree.Tree, error) {
+	if !rc.trDone {
+		rc.trDone = true
+		rc.tr, rc.trErr = tree.Open(rc.TreeRoot)
+		if rc.trErr == nil {
+			slog.Debug("ports tree", "root", rc.tr.Root())
+		}
+	}
+	return rc.tr, rc.trErr
 }
 
 // TempDir is the run's temporary root, created on first use. Everything
@@ -256,11 +289,20 @@ func From(ctx context.Context) *Context {
 // VerifyProvider resolves the verify provider, refusing plainly when
 // none was wired: a nil seam is a composition bug, not a machine
 // state, and deserves its own message.
+//
+// Resolved once per run, answer and refusal alike. Composing a provider
+// lists the machine's base images, and status used to pay for that once
+// per release per branch; a run's answer about its own machine cannot
+// change under it, so asking twice was only ever cost.
 func (c *Context) VerifyProvider(ctx context.Context) (verify.Verifier, error) {
 	if c.Verifier == nil {
 		return nil, errors.New("no verify provider wired into this run")
 	}
-	return c.Verifier(ctx)
+	if !c.provDone {
+		c.provDone = true
+		c.prov, c.provErr = c.Verifier(ctx)
+	}
+	return c.prov, c.provErr
 }
 
 // RunGH runs one gh invocation through the wired seam.

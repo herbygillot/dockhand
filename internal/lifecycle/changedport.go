@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -42,11 +42,11 @@ func ChangedPort(ctx context.Context, rs *runstate.Context, repo *git.Repo, tip,
 	if err != nil {
 		return "", err
 	}
-	p, err := pool.New(ctx, pfx, 1)
+	ev, err := eval.Start(ctx, pfx)
 	if err != nil {
 		return "", err
 	}
-	defer p.Close()
+	defer ev.Close()
 
 	root, err := rs.TempDir()
 	if err != nil {
@@ -61,7 +61,7 @@ func ChangedPort(ctx context.Context, rs *runstate.Context, repo *git.Repo, tip,
 		if err := repo.Materialize(ctx, sha, rel, stage); err != nil {
 			return nil, err
 		}
-		h := port.New(tree.Target{Portdir: filepath.Join(stage, filepath.FromSlash(rel))}, p.Evaluators()[0])
+		h := port.New(tree.Target{Portdir: filepath.Join(stage, filepath.FromSlash(rel))}, ev)
 		snap, err := h.Snapshot(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("lifecycle: evaluating %s at %s: %w", rel, git.Abbrev(sha), err)

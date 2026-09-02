@@ -22,17 +22,20 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
+// testPrefix derives the installation prefix from the discovered
+// port-tclsh, skipping when the machine has none.
+func testPrefix(t *testing.T) prefix.Prefix {
+	t.Helper()
+	return prefix.Prefix(filepath.Dir(filepath.Dir(testenv.PortTclsh(t))))
+}
+
 func newEvaluator(t *testing.T) *eval.Evaluator {
 	t.Helper()
-	path := testenv.PortTclsh(t)
-	proc, err := shell.Start(context.Background(), path)
-	require.NoError(t, err)
-	ev, err := eval.New(context.Background(), proc)
+	ev, err := eval.Start(context.Background(), testPrefix(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { ev.Close() })
 	return ev
@@ -44,8 +47,7 @@ func handle(portdir string, ev *eval.Evaluator) port.Handle {
 
 func newFetcher(t *testing.T) *portfetch.Fetcher {
 	t.Helper()
-	tclsh := testenv.PortTclsh(t)
-	f, err := portfetch.New(context.Background(), prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))), tempdir.Root{})
+	f, err := portfetch.New(context.Background(), testPrefix(t), tempdir.Root{})
 	require.NoError(t, err)
 	t.Cleanup(f.Close)
 	return f

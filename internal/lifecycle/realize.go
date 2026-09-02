@@ -14,7 +14,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
-	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -23,10 +22,10 @@ import (
 // the edited bytes — computed from the base commit's blob, never the
 // working file, with the plan's precondition hash held against that
 // blob. Both realizations that speak git — mint and diff — start here.
-// tools is the run's finder, which the opened repository drives git
-// through.
-func planOnBase(ctx context.Context, tools *tool.Finder, p *plan.Plan) (repo *git.Repo, primary, path string, edited []byte, err error) {
-	repo, err = git.Open(ctx, tools, p.Portdir)
+// rs is the run: the repository it opens here is the run's, resolved
+// once.
+func planOnBase(ctx context.Context, rs *runstate.Context, p *plan.Plan) (repo *git.Repo, primary, path string, edited []byte, err error) {
+	repo, err = rs.RepoFor(ctx, p.Portdir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			// Wrapped, not swallowed: the identity is what routes this
@@ -124,7 +123,7 @@ func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 		}
 		return nil, nil
 	}
-	repo, primary, path, edited, err := planOnBase(ctx, rs.Tools, p)
+	repo, primary, path, edited, err := planOnBase(ctx, rs, p)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +476,7 @@ func diffFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) error
 		fmt.Fprintln(rs.Err, "no edits; nothing to diff")
 		return nil
 	}
-	repo, primary, path, edited, err := planOnBase(ctx, rs.Tools, p)
+	repo, primary, path, edited, err := planOnBase(ctx, rs, p)
 	if err != nil {
 		return err
 	}

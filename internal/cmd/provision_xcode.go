@@ -92,13 +92,7 @@ func (a provisionXcodeAction) targets(ctx context.Context, tools *tool.Finder) (
 			return rels, nil
 		}
 	}
-	var out []platform.Release
-	for _, r := range platform.Releases {
-		if r.Darwin >= 21 {
-			out = append(out, r)
-		}
-	}
-	return out, nil
+	return modernReleases(), nil
 }
 
 // provisionXcode builds the `provision xcode` subcommand.
@@ -111,9 +105,9 @@ func provisionXcode() *cobra.Command {
 		RunE: runE(func(*cobra.Command, []string) (Action, error) {
 			var release platform.Release
 			if macos != "" {
-				r, err := platform.Parse(macos)
+				r, err := parseRelease(macos)
 				if err != nil {
-					return nil, &UsageError{Err: err}
+					return nil, err
 				}
 				release = r
 			}

@@ -9,19 +9,23 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
+	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
+// testPrefix derives the installation prefix from the discovered
+// port-tclsh, skipping when the machine has none.
+func testPrefix(t *testing.T) prefix.Prefix {
+	t.Helper()
+	return prefix.Prefix(filepath.Dir(filepath.Dir(testenv.PortTclsh(t))))
+}
+
 func newEvaluator(t *testing.T) *Evaluator {
 	t.Helper()
-	path := testenv.PortTclsh(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	proc, err := shell.Start(ctx, path)
+	e, err := Start(ctx, testPrefix(t))
 	require.NoError(t, err)
-	e, err := New(ctx, proc)
-	require.NoError(t, err) // New kills the proc on failure
 	t.Cleanup(func() { e.Close() })
 	return e
 }
@@ -88,12 +92,6 @@ func TestSnapshotMissingPortdir(t *testing.T) {
 	e := newEvaluator(t)
 	_, err := e.Snapshot(context.Background(), filepath.Join(t.TempDir(), "nope"), "")
 	require.Error(t, err, "snapshot of missing portdir must fail")
-}
-
-func TestRootGuard(t *testing.T) {
-	require.ErrorIs(t, rootGuard(0, false), ErrRootRefused)
-	require.NoError(t, rootGuard(0, true))
-	require.NoError(t, rootGuard(501, false))
 }
 
 func TestValuesHydratesProseAndConfig(t *testing.T) {

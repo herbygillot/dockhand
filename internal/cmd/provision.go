@@ -113,9 +113,9 @@ func provisionTart() *cobra.Command {
 			var release platform.Release
 			all := macos == "all"
 			if !all {
-				r, err := platform.Parse(macos)
+				r, err := parseRelease(macos)
 				if err != nil {
-					return nil, &UsageError{Err: err}
+					return nil, err
 				}
 				release = r
 			}
@@ -160,11 +160,7 @@ func (a provisionTartAction) provisionAll(ctx context.Context, rs *runstate.Cont
 		return err
 	}
 	if len(releases) == 0 {
-		for _, r := range platform.Releases {
-			if r.Darwin >= 21 {
-				releases = append(releases, r)
-			}
-		}
+		releases = modernReleases()
 	}
 	var failed []string
 	for _, r := range releases {

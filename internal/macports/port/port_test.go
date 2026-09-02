@@ -12,8 +12,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
@@ -65,9 +65,8 @@ func TestSource(t *testing.T) {
 // evaluator starts a real evaluator, skipping without port-tclsh.
 func evaluator(t *testing.T) *eval.Evaluator {
 	t.Helper()
-	proc, err := shell.Start(context.Background(), testenv.PortTclsh(t))
-	require.NoError(t, err)
-	ev, err := eval.New(context.Background(), proc)
+	tclsh := testenv.PortTclsh(t)
+	ev, err := eval.Start(context.Background(), prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))))
 	require.NoError(t, err)
 	t.Cleanup(func() { ev.Close() })
 	return ev

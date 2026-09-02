@@ -15,7 +15,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
 )
 
 // Pool is the evaluator set. Replace may be called concurrently from
@@ -66,11 +65,7 @@ func New(ctx context.Context, pfx prefix.Prefix, size int, opts ...eval.Option) 
 }
 
 func (p *Pool) spawn() (*eval.Evaluator, error) {
-	proc, err := shell.Start(p.ctx, p.pfx.PortTclsh())
-	if err != nil {
-		return nil, err
-	}
-	return eval.New(p.ctx, proc, p.opts...)
+	return eval.Start(p.ctx, p.pfx, p.opts...)
 }
 
 // Evaluators returns the pool's current set, one entry per started

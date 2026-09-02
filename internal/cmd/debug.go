@@ -12,7 +12,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
@@ -71,9 +70,9 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 	var plat string
 	switch {
 	case on != "":
-		r, err := platform.Parse(on)
+		r, err := parseRelease(on)
 		if err != nil {
-			return debugEnv{}, &UsageError{Err: err}
+			return debugEnv{}, err
 		}
 		if _, ok := reachable[r.Name]; !ok {
 			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, lifecycle.SummarizeNote(n))

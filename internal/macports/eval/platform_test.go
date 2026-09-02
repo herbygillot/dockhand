@@ -8,19 +8,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 func newPlatformEvaluator(t *testing.T, p info.Platform) *Evaluator {
 	t.Helper()
-	path := testenv.PortTclsh(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	proc, err := shell.Start(ctx, path)
-	require.NoError(t, err)
-	e, err := New(ctx, proc, WithPlatform(p))
+	e, err := Start(ctx, testPrefix(t), WithPlatform(p))
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	return e

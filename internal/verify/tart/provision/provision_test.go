@@ -8,9 +8,29 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports/session"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
+
+// An image with no MacPorts version named gets the newest one dockhand
+// has a shim for — the same shim set the session drives an installation
+// with and doctor reports against, so a provisioned environment is
+// pinned to something verified rather than to whatever is newest
+// upstream the afternoon it was built.
+func TestMacPortsVersionDefaultsToTheNewestShim(t *testing.T) {
+	newest, err := session.NewestShim()
+	require.NoError(t, err)
+	require.NotEmpty(t, newest)
+
+	got, err := Tart{}.macPortsVersion()
+	require.NoError(t, err)
+	assert.Equal(t, newest, got)
+
+	got, err = Tart{MacPorts: "2.9.3"}.macPortsVersion()
+	require.NoError(t, err)
+	assert.Equal(t, "2.9.3", got, "a stated version is taken as stated")
+}
 
 // Vanilla, not base or xcode: those install Homebrew, and an
 // environment that answers whether a port declared its dependencies

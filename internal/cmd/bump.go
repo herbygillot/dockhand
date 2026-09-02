@@ -49,7 +49,7 @@ func Bump() *cobra.Command {
 						// No stated version: latest is the intent. The gh
 						// seam rides along so the forge's own releases
 						// outrank its raw tags where they exist.
-						resolved, rep, err := bump.ResolveLatest(ctx, rs.Tools, h, pf, upstream.GhRunner(rs.Gh))
+						resolved, rep, err := bump.ResolveLatest(ctx, rs.Tools, h, pf, upstream.GhRunner(rs.RunGH))
 						if err != nil {
 							return nil, err
 						}

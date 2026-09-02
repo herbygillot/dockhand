@@ -37,7 +37,7 @@ type intentAction struct {
 var _ Action = intentAction{}
 
 func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	targets, err := resolveTargets(rs.TreeRoot, false, []string{a.target})
+	targets, err := resolveTargets(rs, false, []string{a.target})
 	if err != nil {
 		return err
 	}

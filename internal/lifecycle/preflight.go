@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports/eval"
-	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -27,12 +26,12 @@ func preflightOn(ctx context.Context, rs *runstate.Context, portdir string, r pl
 		return preflight{}, err
 	}
 	frame := info.Platform{OS: "macosx", Major: r.Darwin, Arch: "arm"}
-	p, err := pool.New(ctx, pfx, 1, eval.WithPlatform(frame))
+	ev, err := eval.Start(ctx, pfx, eval.WithPlatform(frame))
 	if err != nil {
 		return preflight{}, err
 	}
-	defer p.Close()
-	h := port.New(tree.Target{Portdir: portdir}, p.Evaluators()[0])
+	defer ev.Close()
+	h := port.New(tree.Target{Portdir: portdir}, ev)
 	opts, err := h.Options(ctx, "known_fail", "use_xcode")
 	if err != nil {
 		return preflight{}, err

@@ -14,18 +14,16 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
+	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 func newEvaluator(t *testing.T) *eval.Evaluator {
 	t.Helper()
-	path := testenv.PortTclsh(t)
-	proc, err := shell.Start(context.Background(), path)
-	require.NoError(t, err)
-	ev, err := eval.New(context.Background(), proc)
+	tclsh := testenv.PortTclsh(t)
+	ev, err := eval.Start(context.Background(), prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))))
 	require.NoError(t, err)
 	t.Cleanup(func() { ev.Close() })
 	return ev

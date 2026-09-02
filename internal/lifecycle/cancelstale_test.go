@@ -7,14 +7,13 @@ package lifecycle
 
 import (
 	"context"
-	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
@@ -29,33 +28,17 @@ func keptFailureNote(t *testing.T, repo *git.Repo, sha string) {
 	require.NoError(t, WriteNote(ctx, repo, n))
 }
 
-// moveBranch repoints the branch at sha the way an amend or a fixup
-// does, reflog entry included.
-func moveBranch(t *testing.T, repo *git.Repo, branch, sha string) {
-	t.Helper()
-	cmd := exec.Command("git", "-C", repo.Root, "update-ref",
-		"refs/heads/"+branch, sha)
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "%s", out)
-}
-
 func TestCancelStaleReleasesKeptEnvironmentOfASupersededFailure(t *testing.T) {
 	repo, sha := lifecycleRepo(t)
 	keptFailureNote(t, repo, sha)
 
 	// The fix lands as a child commit; the old tip is an ancestor.
-	fixed, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: "dockhand/jq-fix", Base: "dockhand/jq-1.8", Path: "sysutils/jq/Portfile",
-		Content: []byte("version 1.8\nrevision 0\n"), Message: "jq: drop obsolete patch",
-	})
-	require.NoError(t, err)
-	moveBranch(t, repo, "dockhand/jq-1.8", fixed)
+	fixed := gittest.Commit(t, repo, "dockhand/jq-fix", "dockhand/jq-1.8", "sysutils/jq/Portfile",
+		"version 1.8\nrevision 0\n", "jq: drop obsolete patch")
+	gittest.MoveBranch(t, repo, "dockhand/jq-1.8", fixed)
 
 	fake := &verifytest.Fake{}
-	require.NoError(t, CancelStale(context.Background(), testState(t, fake), repo, "dockhand/jq-1.8", fixed))
+	require.NoError(t, CancelStale(context.Background(), testState(t, repo, fake), repo, "dockhand/jq-1.8", fixed))
 
 	assert.Equal(t, []string{"fake-1"}, fake.Released, "the kept environment is a slot spent on dead code")
 	n, err := ReadNote(context.Background(), repo, sha)
@@ -75,17 +58,14 @@ func TestCancelStaleReachesAmendedAwayFailures(t *testing.T) {
 
 	primary, err := repo.PrimaryBranch(context.Background())
 	require.NoError(t, err)
-	amended, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: "dockhand/jq-amended", Base: primary, Path: "sysutils/jq/Portfile",
-		Content: []byte("version 1.8\nrevision 0\n"), Message: "jq: update to 1.8",
-	})
-	require.NoError(t, err)
-	moveBranch(t, repo, "dockhand/jq-1.8", amended)
+	amended := gittest.Commit(t, repo, "dockhand/jq-amended", primary, "sysutils/jq/Portfile",
+		"version 1.8\nrevision 0\n", "jq: update to 1.8")
+	gittest.MoveBranch(t, repo, "dockhand/jq-1.8", amended)
 	require.False(t, repo.IsAncestor(context.Background(), sha, "dockhand/jq-1.8"),
 		"the fixture must model an amend, not a fixup")
 
 	fake := &verifytest.Fake{}
-	require.NoError(t, CancelStale(context.Background(), testState(t, fake), repo, "dockhand/jq-1.8", amended))
+	require.NoError(t, CancelStale(context.Background(), testState(t, repo, fake), repo, "dockhand/jq-1.8", amended))
 
 	assert.Equal(t, []string{"fake-1"}, fake.Released)
 	n, err := ReadNote(context.Background(), repo, sha)
@@ -100,14 +80,11 @@ func TestCancelStaleLeavesOtherBranchesEnvironmentsAlone(t *testing.T) {
 
 	primary, err := repo.PrimaryBranch(context.Background())
 	require.NoError(t, err)
-	other, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: "dockhand/other-1.0", Base: primary, Path: "sysutils/jq/Portfile",
-		Content: []byte("version 9.9\n"), Message: "other: unrelated",
-	})
-	require.NoError(t, err)
+	other := gittest.Commit(t, repo, "dockhand/other-1.0", primary, "sysutils/jq/Portfile",
+		"version 9.9\n", "other: unrelated")
 
 	fake := &verifytest.Fake{}
-	require.NoError(t, CancelStale(context.Background(), testState(t, fake), repo, "dockhand/other-1.0", other))
+	require.NoError(t, CancelStale(context.Background(), testState(t, repo, fake), repo, "dockhand/other-1.0", other))
 
 	assert.Empty(t, fake.Released, "jq's kept environment belongs to jq's branch")
 	n, err := ReadNote(context.Background(), repo, sha)

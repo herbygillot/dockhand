@@ -11,9 +11,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,6 +19,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -85,18 +83,7 @@ func (g *ghFake) called(verb string) [][]string {
 func promoteRepo(t *testing.T) (*git.Repo, string) {
 	t.Helper()
 	repo, sha := lifecycleRepo(t)
-	forkRoot := filepath.Join(t.TempDir(), "herbygillot")
-	require.NoError(t, os.MkdirAll(forkRoot, 0o755))
-	fork := filepath.Join(forkRoot, "ports")
-	out, err := exec.Command("git", "init", "--bare", "--quiet", fork).CombinedOutput()
-	require.NoError(t, err, "%s", out)
-	for _, args := range [][]string{
-		{"remote", "add", "origin", "https://github.com/macports/macports-ports.git"},
-		{"remote", "add", "herby", fork},
-	} {
-		out, err := exec.Command("git", append([]string{"-C", repo.Root}, args...)...).CombinedOutput()
-		require.NoError(t, err, "%s", out)
-	}
+	gittest.BareFork(t, repo, "herbygillot", "herby")
 	// A passed, linted run makes the branch promotable.
 	ctx := context.Background()
 	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq")

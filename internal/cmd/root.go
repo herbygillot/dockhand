@@ -9,6 +9,7 @@ package cmd
 import (
 	"context"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -71,7 +72,17 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 			if err != nil {
 				return err
 			}
-			rc.Init(treeRoot, prefixPath, debug, c.InOrStdin(), c.OutOrStdout(), c.ErrOrStderr())
+			// The logger is configured here, before the run is built:
+			// Init's tree search speaks through it, so --debug can say
+			// which tree was found. It belongs to the command layer
+			// because --debug is a flag, and the run holds facilities,
+			// not process-wide settings.
+			level := slog.LevelWarn
+			if debug {
+				level = slog.LevelDebug
+			}
+			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+			rc.Init(treeRoot, prefixPath, debug, c.OutOrStdout(), c.ErrOrStderr())
 			c.SetContext(runstate.Into(c.Context(), rc))
 			return nil
 		},

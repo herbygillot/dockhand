@@ -2,75 +2,65 @@ package eval
 
 import (
 	"context"
-	"embed"
-	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/macports/shim"
-	"github.com/herbygillot/dockhand/internal/tcl/rpc"
-	"github.com/herbygillot/dockhand/internal/tcl/shell"
+	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/macports/session"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
-
-//go:embed shims
-var shimFS embed.FS
-
-// shimDir is the embedded shim set; see internal/macports/shim for how
-// one is chosen.
-const shimDir = "shims"
-
-// NewestShim is the highest MacPorts version dockhand has a shim for,
-// and so the newest it has been verified to speak to. An installation
-// beyond it is driven by an older shim, which works until it does not.
-func NewestShim() (string, error) { return shim.Newest(shimFS, shimDir) }
 
 // Evaluator owns a port-tclsh session with the MacPorts shim loaded.
 // It is not safe for concurrent use; parallelism arrives as a pool of
 // evaluators, not a shared one.
 type Evaluator struct {
-	sess *rpc.Session
+	sess *session.Session
 }
 
 type config struct {
-	allowRoot bool
-	platform  info.Platform
-	// macportsVersion selects the shim; empty means undetermined,
-	// which takes the newest shim available.
-	macportsVersion string
+	platform info.Platform
+	// sopts are the session options the evaluator's own options
+	// translate to; the platform frame joins them at Start, because it
+	// is an init script and must follow the shim.
+	sopts []session.Option
 }
 
-// Option configures New.
+// Option configures Start.
 type Option func(*config)
 
-// AllowRoot permits running the evaluator as the superuser. By default New
-// refuses: evaluation is a pure read and never requires privileges, and
-// mportinit carries writes that are dormant only for an unprivileged user
-// (a Spotlight hidden-flag update, registry schema work on a mismatched
-// install). Privileged phases — installing, building — construct their
-// sessions deliberately and say so with this option.
-func AllowRoot() Option { return func(c *config) { c.allowRoot = true } }
+// AllowRoot permits running the evaluator as the superuser. By default
+// Start refuses: evaluation is a pure read and never requires
+// privileges, and mportinit carries writes that are dormant only for an
+// unprivileged user (a Spotlight hidden-flag update, registry schema
+// work on a mismatched install). Privileged phases — installing,
+// building — construct their sessions deliberately and say so with this
+// option.
+func AllowRoot() Option {
+	return func(c *config) { c.sopts = append(c.sopts, session.AllowRoot()) }
+}
 
-// ErrRootRefused reports that New declined to run as the superuser without
-// AllowRoot.
-var ErrRootRefused = errors.New("eval: refusing to run as root: evaluation never requires privileges (pass AllowRoot to override)")
+// ErrRootRefused reports that Start declined to run as the superuser
+// without AllowRoot. It is session's sentinel, kept under this name
+// because the exit table and callers classify on it.
+var ErrRootRefused = session.ErrRootRefused
 
 // ErrStartup reports that the evaluator's session could not be
 // established — the tclsh never answered, or the shim failed to
 // initialize. It is the domain-level fact callers classify on (a
 // machine problem, not a port problem); the transport's own error stays
-// wrapped inside for detail.
-var ErrStartup = errors.New("eval: evaluator failed to start")
+// wrapped inside for detail. It is session's sentinel, kept under this
+// name because the exit table and callers classify on it, so every
+// session start failure satisfies errors.Is against it.
+var ErrStartup = session.ErrStartup
 
-// WithMacPortsVersion states which MacPorts the proc's port-tclsh
-// belongs to, so the matching shim is loaded. Callers that know the
-// installation — a pool does — should pass it; without it the newest
-// shim is used, which is right for a current MacPorts and best-effort
-// for an old one.
+// WithMacPortsVersion states which MacPorts the installation runs, so
+// the matching shim is loaded without Start probing for it. Callers
+// that probed once for many evaluators — a pool does — pass what they
+// found; without it the session probes, and an undetermined version
+// takes the newest shim.
 func WithMacPortsVersion(v string) Option {
-	return func(c *config) { c.macportsVersion = v }
+	return func(c *config) { c.sopts = append(c.sopts, session.WithVersion(v)) }
 }
 
 // WithPlatform evaluates every Portfile as though on the given platform,
@@ -84,45 +74,27 @@ func WithPlatform(p info.Platform) Option {
 	return func(c *config) { c.platform = p }
 }
 
-// rootGuard is New's privilege check, separated for testability.
-func rootGuard(euid int, allowRoot bool) error {
-	if euid == 0 && !allowRoot {
-		return ErrRootRefused
-	}
-	return nil
-}
-
-// New builds an evaluator over a freshly started, script-less port-tclsh
-// Proc. The caller owns process policy — which binary, environment, working
-// directory — and New owns everything after: it takes ownership of the proc
-// on all paths, killing it on failure, so callers never inherit a
-// half-initialized shell. Initialization runs mportinit against the
-// machine's MacPorts installation, so it needs one, and takes on the order
-// of a second.
-func New(ctx context.Context, proc *shell.Proc, opts ...Option) (*Evaluator, error) {
+// Start builds an evaluator over a fresh session against an
+// installation. The session owns the process on every path — a failure
+// after the shell starts kills it, so callers never inherit a
+// half-initialized shell — and its initialization runs mportinit
+// against the installation, so it needs one, and takes on the order of
+// a second.
+func Start(ctx context.Context, pfx prefix.Prefix, opts ...Option) (*Evaluator, error) {
 	var cfg config
 	for _, o := range opts {
 		o(&cfg)
 	}
-	if err := rootGuard(os.Geteuid(), cfg.allowRoot); err != nil {
-		proc.Kill()
+	sopts := cfg.sopts
+	if !cfg.platform.IsZero() {
+		sopts = append(sopts, session.WithInit(platformOverrides(cfg.platform)))
+	}
+	s, err := session.Start(ctx, pfx, sopts...)
+	if err != nil {
 		return nil, err
 	}
-	shimScript, named, err := shim.Select(shimFS, shimDir, cfg.macportsVersion)
-	if err != nil {
-		proc.Kill()
-		return nil, fmt.Errorf("%w: %w", ErrStartup, err)
-	}
-	slog.Debug("evaluator shim", "shim", named, "macports", cfg.macportsVersion)
-	inits := []string{shimScript}
-	if !cfg.platform.IsZero() {
-		inits = append(inits, platformOverrides(cfg.platform))
-	}
-	sess, err := rpc.New(ctx, proc, rpc.WithInit(inits...))
-	if err != nil {
-		return nil, fmt.Errorf("%w: initializing shim: %w", ErrStartup, err)
-	}
-	return &Evaluator{sess: sess}, nil
+	slog.Debug("evaluator shim", "shim", s.Shim(), "macports", s.Version())
+	return &Evaluator{sess: s}, nil
 }
 
 // Close shuts the evaluator down.

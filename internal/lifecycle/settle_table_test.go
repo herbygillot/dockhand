@@ -301,7 +301,7 @@ func TestSettleRunsProviderFailuresTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo, sha := lifecycleRepo(t)
 			n := seededNote(t, repo, sha, "jq", tc.linted)
-			require.NoError(t, SettleRuns(context.Background(), testState(t, tc.fake), repo, &n))
+			require.NoError(t, SettleRuns(context.Background(), testState(t, repo, tc.fake), repo, &n))
 			r := n.Runs["Testos"]
 			assert.Equal(t, tc.state, r.State, "state")
 			assert.Equal(t, tc.detail, r.Detail, "detail")
@@ -364,7 +364,7 @@ func TestLogCorpus(t *testing.T) {
 				}
 				n := corpusNote(t, repo, sha, exp.port)
 
-				require.NoError(t, SettleRuns(context.Background(), testState(t, fake), repo, &n))
+				require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
 				r := n.Runs["Testos"]
 				assert.Equal(t, exp.state, r.State, "state")
 				assert.Equal(t, exp.detail, r.Detail, "detail")

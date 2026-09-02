@@ -32,9 +32,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
-	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
@@ -86,61 +86,25 @@ func goldenPromoteRepo(t *testing.T) (*git.Repo, string) {
 
 // goldenRepo is a ports-tree-shaped repository with no dockhand branch
 // yet: sysutils/jq, which every minted branch changes, and devel/olm,
-// the nomaintainer dependency a blocked verdict names. The default
-// branch is stated so the fixture reads the same under any git config.
+// the nomaintainer dependency a blocked verdict names. gittest pins the
+// default branch, so the fixture reads the same under any git config.
 func goldenRepo(t *testing.T) *git.Repo {
 	t.Helper()
-	testenv.Tool(t, "git")
 	pinGitDates(t)
-	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
-		out, err := cmd.CombinedOutput()
-		require.NoError(t, err, "git %v: %s", args, out)
-	}
-	run("-c", "init.defaultBranch=main", "init", "--quiet")
-	run("config", "user.name", "t")
-	run("config", "user.email", "t@t")
-	for path, content := range map[string]string{
+	return gittest.Init(t, testFinder(), "", map[string]string{
 		"sysutils/jq/Portfile": "version 1.7\n",
 		"devel/olm/Portfile":   "version 3.2.16\nmaintainers nomaintainer\n",
-	} {
-		full := filepath.Join(dir, filepath.FromSlash(path))
-		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
-		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
-	}
-	run("add", ".")
-	run("commit", "--quiet", "-m", "initial tree")
-	repo, err := git.Open(context.Background(), testFinder(), dir)
-	require.NoError(t, err)
-	return repo
+	})
 }
 
 // mintBranch mints dockhand/jq-<suffix> off the primary branch, moving
 // sysutils/jq to the given version, and returns its tip.
 func mintBranch(t *testing.T, repo *git.Repo, suffix, version string) string {
 	t.Helper()
-	ctx := context.Background()
-	primary, err := repo.PrimaryBranch(ctx)
+	primary, err := repo.PrimaryBranch(context.Background())
 	require.NoError(t, err)
-	sha, err := repo.Mint(ctx, git.MintRequest{
-		Branch: "dockhand/jq-" + suffix, Base: primary, Path: "sysutils/jq/Portfile",
-		Content: []byte("version " + version + "\n"), Message: "jq: update to " + version,
-	})
-	require.NoError(t, err)
-	return sha
-}
-
-// moveBranchTo repoints a branch the way an amend or a fixup does,
-// reflog entry included.
-func moveBranchTo(t *testing.T, repo *git.Repo, branch, sha string) {
-	t.Helper()
-	out, err := exec.Command("git", "-C", repo.Root, "update-ref", "refs/heads/"+branch, sha).CombinedOutput()
-	require.NoError(t, err, "%s", out)
+	return gittest.Commit(t, repo, "dockhand/jq-"+suffix, primary, "sysutils/jq/Portfile",
+		"version "+version+"\n", "jq: update to "+version)
 }
 
 // growBranch adds a commit on top of a branch — the human fixup that
@@ -148,15 +112,10 @@ func moveBranchTo(t *testing.T, repo *git.Repo, branch, sha string) {
 // and returns the new tip.
 func growBranch(t *testing.T, repo *git.Repo, branch, content, message string) string {
 	t.Helper()
-	ctx := context.Background()
 	scratch := branch + "-scratch"
-	sha, err := repo.Mint(ctx, git.MintRequest{
-		Branch: scratch, Base: branch, Path: "sysutils/jq/Portfile",
-		Content: []byte(content), Message: message,
-	})
-	require.NoError(t, err)
-	moveBranchTo(t, repo, branch, sha)
-	require.NoError(t, repo.DeleteBranch(ctx, scratch))
+	sha := gittest.Commit(t, repo, scratch, branch, "sysutils/jq/Portfile", content, message)
+	gittest.MoveBranch(t, repo, branch, sha)
+	require.NoError(t, repo.DeleteBranch(context.Background(), scratch))
 	return sha
 }
 
@@ -276,18 +235,7 @@ func goldenPromotedRepo(t *testing.T) (*git.Repo, *goldenGh) {
 	t.Helper()
 	repo := goldenRepo(t)
 	ctx := context.Background()
-	forkRoot := filepath.Join(t.TempDir(), "herbygillot")
-	require.NoError(t, os.MkdirAll(forkRoot, 0o755))
-	fork := filepath.Join(forkRoot, "ports")
-	out, err := exec.Command("git", "init", "--bare", "--quiet", fork).CombinedOutput()
-	require.NoError(t, err, "%s", out)
-	for _, args := range [][]string{
-		{"remote", "add", "origin", "https://github.com/macports/macports-ports.git"},
-		{"remote", "add", "herby", fork},
-	} {
-		out, err := exec.Command("git", append([]string{"-C", repo.Root}, args...)...).CombinedOutput()
-		require.NoError(t, err, "%s", out)
-	}
+	gittest.BareFork(t, repo, "herbygillot", "herby")
 
 	passed := map[string]lifecycle.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}}
 	for _, c := range []struct {
@@ -434,25 +382,11 @@ func goldenPortdir(t *testing.T) string {
 // fixture committed on the primary branch — what --diff plans against.
 func goldenPortRepo(t *testing.T) string {
 	t.Helper()
-	testenv.Tool(t, "git")
 	pinGitDates(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	portdir := copyBumpee(t, root)
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
-		out, err := cmd.CombinedOutput()
-		require.NoError(t, err, "git %v: %s", args, out)
-	}
-	run("-c", "init.defaultBranch=main", "init", "--quiet")
-	run("config", "user.name", "t")
-	run("config", "user.email", "t@t")
-	run("add", ".")
-	run("commit", "--quiet", "-m", "initial tree")
+	gittest.Init(t, testFinder(), root, nil)
 	return portdir
 }
 

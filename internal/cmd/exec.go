@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
@@ -31,7 +30,7 @@ func (a execAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	releases, err := execReleases(a.on, prov.Capabilities().Platforms)
+	releases, err := resolveReleaseSet(a.on, prov.Capabilities().Platforms, false)
 	if err != nil {
 		return err
 	}
@@ -54,28 +53,6 @@ func (a execAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return fmt.Errorf("exec: the command failed on %d of %d releases", failed, len(releases))
 	}
 	return nil
-}
-
-// execReleases resolves exec's --on values against what is
-// provisioned: nothing means the newest base — the quick check is the
-// common check — "all" means every base, and any mix of names and
-// versions otherwise, in the order given.
-func execReleases(on []string, provisioned []platform.Release) ([]platform.Release, error) {
-	if len(on) == 0 {
-		return provisioned[:1], nil
-	}
-	var out []platform.Release
-	for _, v := range on {
-		if strings.EqualFold(v, "all") {
-			return provisioned, nil
-		}
-		r, err := platform.Parse(v)
-		if err != nil {
-			return nil, &UsageError{Err: err}
-		}
-		out = append(out, r)
-	}
-	return out, nil
 }
 
 // Exec builds the exec subcommand.

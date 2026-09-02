@@ -29,6 +29,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
+	"github.com/herbygillot/dockhand/internal/macports/session"
 	"github.com/herbygillot/dockhand/internal/macports/shim"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
@@ -98,9 +99,9 @@ func exitTable() []exitRow {
 	// Errors produced by the code paths themselves, wherever the
 	// producer runs without a machine behind it.
 	_, unknownRelease := platform.Parse("cheetah")
-	_, noBases := verifyReleases(nil, nil)
-	_, noBaseFor := verifyReleases([]string{"sequoia"}, testos)
-	_, badOn := verifyReleases([]string{"cheetah"}, testos)
+	_, noBases := resolveReleaseSet(nil, nil, true)
+	_, noBaseFor := resolveReleaseSet([]string{"sequoia"}, testos, true)
+	_, badOn := resolveReleaseSet([]string{"cheetah"}, testos, true)
 	_, noVerifier := (&runstate.Context{}).VerifyProvider(ctx)
 	_, noGh := (&runstate.Context{}).RunGH(ctx, "api", "user")
 	_, writeFailed := fmt.Fprint(failWriter{}, "capabilities:\n")
@@ -144,7 +145,7 @@ func exitTable() []exitRow {
 			err: &UsageError{Err: errors.New("unknown flag: --no-such-flag")}, as: new(*UsageError)},
 		exitRow{name: "*cmd.UsageError over cobra.ExactArgs (exactArgs)", err: tooManyArgs, as: new(*UsageError)},
 		exitRow{name: "*cmd.UsageError over cobra.NoArgs (noArgs)", err: extraArg, as: new(*UsageError)},
-		exitRow{name: "platform.ErrUnknownRelease in *cmd.UsageError (verifyReleases --on)",
+		exitRow{name: "platform.ErrUnknownRelease in *cmd.UsageError (resolveReleaseSet --on)",
 			err: badOn, is: []error{platform.ErrUnknownRelease}, as: new(*UsageError)},
 		exitRow{name: "platform.ErrUnknownRelease in *cmd.UsageError (provision --macos)",
 			err: &UsageError{Err: unknownRelease}, is: []error{platform.ErrUnknownRelease}, as: new(*UsageError)},
@@ -189,9 +190,9 @@ func exitTable() []exitRow {
 			is:  []error{verify.ErrNoEnvironment}},
 		exitRow{name: "verify.ErrNoEnvironment (runVerification: Errored verdict)",
 			err: noEnv("%s", "the guest agent timed out"), is: []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (verifyReleases: no base images)",
+		exitRow{name: "verify.ErrNoEnvironment (resolveReleaseSet: no base images)",
 			err: noBases, is: []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (verifyReleases: --on release without a base)",
+		exitRow{name: "verify.ErrNoEnvironment (resolveReleaseSet: --on release without a base)",
 			err: noBaseFor, is: []error{verify.ErrNoEnvironment}},
 		exitRow{name: "verify.ErrNoEnvironment (provision: base missing after provisioning)",
 			err: noEnv("base image %s is not present after provisioning", "dockhand-base-sequoia"),
@@ -202,13 +203,25 @@ func exitTable() []exitRow {
 		exitRow{name: "prefix.ErrNotInstalled (prefix.Find)",
 			err: fmt.Errorf("%w (no port-tclsh on PATH or under /opt/local)", prefix.ErrNotInstalled),
 			is:  []error{prefix.ErrNotInstalled}},
-		exitRow{name: "eval.ErrStartup over shim.ErrNoShims (eval.New)",
+		exitRow{name: "eval.ErrStartup over shim.ErrNoShims (session.Start)",
 			err: fmt.Errorf("%w: %w", eval.ErrStartup, shim.ErrNoShims), is: []error{eval.ErrStartup, shim.ErrNoShims}},
-		exitRow{name: "eval.ErrStartup (eval.New: shim initialization)",
+		exitRow{name: "eval.ErrStartup (session.Start: shim initialization)",
 			err: fmt.Errorf("%w: initializing shim: %w", eval.ErrStartup, errors.New("broken pipe")),
 			is:  []error{eval.ErrStartup}},
 		exitRow{name: "eval.ErrRootRefused", err: eval.ErrRootRefused, is: []error{eval.ErrRootRefused}},
 		exitRow{name: "portfetch.ErrRootRefused", err: portfetch.ErrRootRefused, is: []error{portfetch.ErrRootRefused}},
+		// The session owns the bootstrap eval and portfetch share, and
+		// with it the sentinels; theirs alias it, which the is lists
+		// prove — a re-declared sentinel would keep its own band and
+		// silently drop the other package's.
+		exitRow{name: "session.ErrRootRefused (session.Start; eval and portfetch alias it)",
+			err: session.ErrRootRefused, is: []error{session.ErrRootRefused, eval.ErrRootRefused, portfetch.ErrRootRefused}},
+		exitRow{name: "session.ErrStartup over shell.Start (session.Start)",
+			err: fmt.Errorf("%w: %w", session.ErrStartup, errors.New("fork/exec /nowhere/bin/port-tclsh: no such file or directory")),
+			is:  []error{session.ErrStartup, eval.ErrStartup}},
+		exitRow{name: "session.ErrStartup (portfetch.New over session.Start: shim initialization)",
+			err: fmt.Errorf("%w: initializing shim: %w", session.ErrStartup, errors.New("broken pipe")),
+			is:  []error{session.ErrStartup}},
 	)
 
 	// Band 4: the tree.
