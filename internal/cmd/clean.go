@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
 // cleanAction sweeps the dockhand/* namespace by evidence: a branch
@@ -63,37 +64,32 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // cleanOne judges one branch and acts only on the merged verdict.
 func cleanOne(ctx context.Context, rs *runstate.Context, repo *git.Repo, remotes map[string]string, upstream, branch string) (string, error) {
 	if repo.TrackedRemote(ctx, branch) == "" {
-		return "kept — never promoted", nil
+		// Never pushed: there is no pull request to ask about, and no
+		// reason to spend a gh call finding that out.
+		return verdict.RetireUnpromoted.SweepLine(verdict.PRFact{}, false), nil
 	}
 	pr, found, err := forge.LookupPR(ctx, rs.RunGH, repo, remotes, upstream, branch)
 	if err != nil {
 		return "", err
 	}
-	if !found {
-		return "kept — promoted, but no PR found", nil
+	fact := prFact(pr, found)
+	retire := verdict.DecideRetire(true, fact)
+	if retire != verdict.RetireMerged {
+		return retire.SweepLine(fact, false), nil
 	}
-	switch {
-	case pr.MergedAt != "":
-		identical, err := contentLanded(ctx, repo, branch)
-		if err != nil {
-			return "", err
-		}
-		if err := lifecycle.DiscardBranch(ctx, rs, repo, branch, true); err != nil {
-			return "", err
-		}
-		verdict := fmt.Sprintf("cleaned — PR #%d merged", pr.Number)
-		if !identical {
-			// Merged is the authority; differing bytes mean a committer
-			// amended in flight or a later change superseded it — worth
-			// saying, never worth keeping the branch for.
-			verdict += " (upstream bytes differ: amended on merge, or since superseded)"
-		}
-		return verdict, nil
-	case pr.State == "open":
-		return fmt.Sprintf("kept — PR #%d open (%s)", pr.Number, pr.HTMLURL), nil
-	default:
-		return fmt.Sprintf("kept — PR #%d closed without merging; rejection is information", pr.Number), nil
+	// Only the merged verdict pays for the byte comparison: it is
+	// several git calls per branch, and on any other verdict its answer
+	// goes unread while its failure would turn a clean report into an
+	// error. The line is written after the demolition, so "cleaned" is
+	// a fact rather than an intention.
+	identical, err := contentLanded(ctx, repo, branch)
+	if err != nil {
+		return "", err
 	}
+	if err := lifecycle.DiscardBranch(ctx, rs, repo, branch, true); err != nil {
+		return "", err
+	}
+	return retire.SweepLine(fact, identical), nil
 }
 
 // contentLanded reports whether every file the branch touched reads

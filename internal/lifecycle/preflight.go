@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
 // preflightOn asks, before any VM boots, whether a portdir declares
@@ -20,37 +21,29 @@ import (
 // (one short-lived session, about a second) against the portdir given,
 // which for a branch verification is the materialized branch content —
 // the known_fail under test is the branch's, not the checkout's.
-func preflightOn(ctx context.Context, rs *runstate.Context, portdir string, r platform.Release) (preflight, error) {
+// The answer is verdict's own Preflight: what the evaluation found is
+// a fact the scheduling judgment weighs, and there is nothing here to
+// hold it that verdict does not already declare.
+func preflightOn(ctx context.Context, rs *runstate.Context, portdir string, r platform.Release) (verdict.Preflight, error) {
 	pfx, err := rs.Prefix()
 	if err != nil {
-		return preflight{}, err
+		return verdict.Preflight{}, err
 	}
 	frame := info.Platform{OS: "macosx", Major: r.Darwin, Arch: "arm"}
 	ev, err := eval.Start(ctx, pfx, eval.WithPlatform(frame))
 	if err != nil {
-		return preflight{}, err
+		return verdict.Preflight{}, err
 	}
 	defer ev.Close()
 	h := port.New(tree.Target{Portdir: portdir}, ev)
 	opts, err := h.Options(ctx, "known_fail", "use_xcode")
 	if err != nil {
-		return preflight{}, err
+		return verdict.Preflight{}, err
 	}
-	return preflight{
+	return verdict.Preflight{
 		KnownFail: tclTrue(opts["known_fail"]),
 		UseXcode:  tclTrue(opts["use_xcode"]),
 	}, nil
-}
-
-// preflight is what one evaluation answers before any VM boots: does
-// the port refuse this platform, and does it need a capability —
-// full Xcode — a base may not have. Field-measured cost of not asking
-// the second question: a guaranteed-failure build spent a VM slot,
-// kept its worker as a debug environment nobody needed, and read as
-// "this bump is broken" when the base was the limitation.
-type preflight struct {
-	KnownFail bool
-	UseXcode  bool
 }
 
 // tclTrue reads a value the way Tcl's [string is true] does, which is

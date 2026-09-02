@@ -12,7 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
@@ -21,11 +22,11 @@ import (
 func TestCancelReleasesAKeptFailureEnvironment(t *testing.T) {
 	repo, sha := lifecycleRepo(t)
 	ctx := context.Background()
-	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq")
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
 	require.NoError(t, err)
-	n.Runs["Testos"] = lifecycle.Run{State: "failed", Handle: "fake-1",
+	n.Runs["Testos"] = record.Run{State: "failed", Handle: "fake-1",
 		Job: verify.Job{Provider: "fake", ID: "fake-1"}, Detail: "Failed to build jq: boom"}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	fake := &verifytest.Fake{}
 	var out, errb bytes.Buffer
@@ -37,10 +38,10 @@ func TestCancelReleasesAKeptFailureEnvironment(t *testing.T) {
 	assert.Contains(t, out.String(), "released kept environment of dockhand/jq-1.8 on Testos")
 	assert.Contains(t, out.String(), "the failed verdict stands")
 
-	after, err := lifecycle.ReadNote(ctx, repo, sha)
+	after, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
 	r := after.Runs["Testos"]
-	assert.Equal(t, "failed", r.State, "cancel frees the environment, never the evidence")
+	assert.Equal(t, record.Failed, r.State, "cancel frees the environment, never the evidence")
 	assert.Empty(t, r.Handle)
 	assert.Contains(t, r.Detail, "Failed to build jq: boom — kept environment released")
 }
@@ -48,10 +49,10 @@ func TestCancelReleasesAKeptFailureEnvironment(t *testing.T) {
 func TestCancelWithNothingToFreeSaysSo(t *testing.T) {
 	repo, sha := lifecycleRepo(t)
 	ctx := context.Background()
-	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq")
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
 	require.NoError(t, err)
-	n.Runs["Testos"] = lifecycle.Run{State: "passed"}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	n.Runs["Testos"] = record.Run{State: "passed"}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	fake := &verifytest.Fake{}
 	var out, errb bytes.Buffer
@@ -79,10 +80,10 @@ func TestBranchPortNameHonorsTargetThenNote(t *testing.T) {
 	assert.Equal(t, "jq2", name)
 
 	// Target is the branch itself: the note's recorded port answers.
-	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq2")
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq2")
 	require.NoError(t, err)
-	n.Runs["Testos"] = lifecycle.Run{State: "deferred", Detail: "slots busy"}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	n.Runs["Testos"] = record.Run{State: "deferred", Detail: "slots busy"}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 	name, err = branchPortName(ctx, rs, repo, "dockhand/jq-1.8", "dockhand/jq-1.8", sha, "sysutils/jq")
 	require.NoError(t, err)
 	assert.Equal(t, "jq2", name, "the note was written from the plan's subport at bump time")

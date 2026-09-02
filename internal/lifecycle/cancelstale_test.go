@@ -14,6 +14,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
+	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
@@ -21,11 +23,11 @@ import (
 func keptFailureNote(t *testing.T, repo *git.Repo, sha string) {
 	t.Helper()
 	ctx := context.Background()
-	n, err := LoadOrStartNote(ctx, repo, sha, "jq")
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
 	require.NoError(t, err)
-	n.Runs["Testos"] = Run{State: "failed", Handle: "fake-1",
+	n.Runs["Testos"] = record.Run{State: "failed", Handle: "fake-1",
 		Job: verify.Job{Provider: "fake", ID: "fake-1"}, Detail: "Failed to build jq: boom"}
-	require.NoError(t, WriteNote(ctx, repo, n))
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 }
 
 func TestCancelStaleReleasesKeptEnvironmentOfASupersededFailure(t *testing.T) {
@@ -41,10 +43,10 @@ func TestCancelStaleReleasesKeptEnvironmentOfASupersededFailure(t *testing.T) {
 	require.NoError(t, CancelStale(context.Background(), testState(t, repo, fake), repo, "dockhand/jq-1.8", fixed))
 
 	assert.Equal(t, []string{"fake-1"}, fake.Released, "the kept environment is a slot spent on dead code")
-	n, err := ReadNote(context.Background(), repo, sha)
+	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
 	r := n.Runs["Testos"]
-	assert.Equal(t, "superseded", r.State)
+	assert.Equal(t, record.Superseded, r.State)
 	assert.Empty(t, r.Handle)
 	assert.Contains(t, r.Detail, "kept environment released")
 	assert.Contains(t, r.Detail, "failed here")
@@ -68,9 +70,9 @@ func TestCancelStaleReachesAmendedAwayFailures(t *testing.T) {
 	require.NoError(t, CancelStale(context.Background(), testState(t, repo, fake), repo, "dockhand/jq-1.8", amended))
 
 	assert.Equal(t, []string{"fake-1"}, fake.Released)
-	n, err := ReadNote(context.Background(), repo, sha)
+	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, "superseded", n.Runs["Testos"].State)
+	assert.Equal(t, record.Superseded, n.Runs["Testos"].State)
 }
 
 // Another branch's kept failure is not this branch's to release.
@@ -87,7 +89,7 @@ func TestCancelStaleLeavesOtherBranchesEnvironmentsAlone(t *testing.T) {
 	require.NoError(t, CancelStale(context.Background(), testState(t, repo, fake), repo, "dockhand/other-1.0", other))
 
 	assert.Empty(t, fake.Released, "jq's kept environment belongs to jq's branch")
-	n, err := ReadNote(context.Background(), repo, sha)
+	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, "failed", n.Runs["Testos"].State)
+	assert.Equal(t, record.Failed, n.Runs["Testos"].State)
 }

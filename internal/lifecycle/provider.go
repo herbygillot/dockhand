@@ -7,6 +7,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -95,7 +97,8 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 		return err
 	}
 	defer unlock()
-	noted, err := repo.NotesList(ctx, git.VerifyNotesRef)
+	l := ledger.Open(repo)
+	noted, err := l.All(ctx)
 	if err != nil {
 		return err
 	}
@@ -104,8 +107,8 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 		if sha == tip {
 			continue
 		}
-		n, err := ReadNote(ctx, repo, sha)
-		if err != nil || (!n.AnyState("running") && !holdsEnvironment(n)) {
+		n, err := l.Read(ctx, sha)
+		if err != nil || (!n.AnyState(record.Running) && !holdsEnvironment(n)) {
 			continue
 		}
 		if !repo.IsAncestor(ctx, sha, branch) && !former[sha] {
@@ -118,16 +121,16 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 		changed := false
 		for plat, run := range n.Runs {
 			switch {
-			case run.State == "running":
+			case run.State == record.Running:
 				if err := prov.Release(ctx, run.Job); err != nil {
 					fmt.Fprintf(rs.Err, "warning: canceling %s: %v\n", run.Job.ID, err)
 				}
-				run.State, run.Detail = "superseded", "canceled: the branch moved to "+git.Abbrev(tip)
-			case run.State == "failed" && run.Handle != "":
+				run.State, run.Detail = record.Superseded, "canceled: the branch moved to "+git.Abbrev(tip)
+			case run.State == record.Failed && run.Handle != "":
 				if err := prov.Release(ctx, run.Job); err != nil {
 					fmt.Fprintf(rs.Err, "warning: releasing kept environment %s: %v\n", run.Handle, err)
 				}
-				run.State, run.Handle = "superseded", ""
+				run.State, run.Handle = record.Superseded, ""
 				run.Detail = "failed here, then the branch moved to " + git.Abbrev(tip) + " — kept environment released"
 			default:
 				continue
@@ -136,7 +139,7 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 			fmt.Fprintf(rs.Err, "released stale verification of %s on %s (branch moved past it)\n", git.Abbrev(sha), plat)
 		}
 		if changed {
-			if err := WriteNote(ctx, repo, n); err != nil {
+			if err := l.Write(ctx, n); err != nil {
 				return err
 			}
 		}
@@ -145,10 +148,10 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 }
 
 // holdsEnvironment reports whether any run still holds a kept debug
-// environment — the failure side's counterpart to AnyState("running").
-func holdsEnvironment(n Note) bool {
+// environment — the failure side's counterpart to a running run.
+func holdsEnvironment(n record.Record) bool {
 	for _, r := range n.Runs {
-		if r.State == "failed" && r.Handle != "" {
+		if r.State == record.Failed && r.Handle != "" {
 			return true
 		}
 	}
@@ -167,14 +170,15 @@ func CancelRunning(ctx context.Context, rs *runstate.Context, repo *git.Repo, sh
 		return 0, err
 	}
 	defer unlock()
-	n, err := ReadNote(ctx, repo, sha)
+	l := ledger.Open(repo)
+	n, err := l.Read(ctx, sha)
 	if err != nil {
 		if errors.Is(err, git.ErrNoNote) {
 			return 0, nil
 		}
 		return 0, err
 	}
-	if !n.AnyState("running") {
+	if !n.AnyState(record.Running) {
 		// Nothing to cancel needs no provider: a tart-less machine
 		// promotes branches with settled notes all day, and CI proved
 		// the eager lookup broke exactly that.
@@ -186,18 +190,18 @@ func CancelRunning(ctx context.Context, rs *runstate.Context, repo *git.Repo, sh
 	}
 	canceled := 0
 	for plat, run := range n.Runs {
-		if run.State != "running" {
+		if run.State != record.Running {
 			continue
 		}
 		if rerr := prov.Release(ctx, run.Job); rerr != nil {
 			fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
 		}
-		run.State, run.Detail = "canceled", reason
+		run.State, run.Detail = record.Canceled, reason
 		n.Runs[plat] = run
 		canceled++
 	}
 	if canceled == 0 {
 		return 0, nil
 	}
-	return canceled, WriteNote(ctx, repo, n)
+	return canceled, l.Write(ctx, n)
 }

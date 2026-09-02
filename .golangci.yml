@@ -10,8 +10,12 @@ version: "2"
 # - errorlint: comparisons and formatting respect wrapped errors — the
 #   sentinel-error standard's mechanical half.
 # - testifylint: assert/require used per the house testing style.
+# - depguard: the layering the judgment packages rest on, held at the
+#   import line instead of at review time; the rules and the reason for
+#   each forbidden edge are in the settings block below.
 linters:
   enable:
+    - depguard
     - errorlint
     - exhaustive
     - gochecksumtype
@@ -37,6 +41,206 @@ linters:
         - fmt.Fprintln
         - (*github.com/herbygillot/dockhand/internal/macports/eval.Evaluator).Close
         - (*github.com/herbygillot/dockhand/internal/tcl/rpc.Session).Close
+    # The layering under the notes: record, ledger and verdict are split
+    # apart so that a judgment can be read, and tested, with no repo, no
+    # worker and no clock behind it. Nothing in the type system says so.
+    # The property lives in the import block of every file, where one
+    # convenient call is enough to lose it, and losing it is quiet — the
+    # tests still pass, they just need a fixture rig to run. These rules
+    # name the edges that would end it, and why each one would.
+    #
+    # A package path matches by prefix, so a rule naming internal/git
+    # covers internal/git/gittest too, and one naming net covers the
+    # whole net family. Test files are in scope on purpose: a table test
+    # reaching for a repo is the first sign the purity has gone.
+    #
+    # The two pure packages are held by an ALLOW list, and the rest by
+    # deny lists. A deny list only knows the edges someone thought of:
+    # verdict importing internal/macports/eval or internal/upstream
+    # passed a full run clean while dragging os/exec in behind it, which
+    # is the same lost property arriving by a route nobody had named. An
+    # allow list inverts that — a new import is a lint failure until it
+    # is argued for — and it is affordable only because these two
+    # packages are meant to stay small. The deny entries stay under it,
+    # because prefix matching means allowing internal/verify allows the
+    # tart provider too, and because the reason an edge is forbidden is
+    # worth saying at the import line where someone adds it.
+    #
+    # Each pure package gets a second rule for its own tests, allowing
+    # the harness — testify, testing, and the file reading a corpus
+    # sweep needs — and repeating the denials, so a test that reaches
+    # for a repository still fails.
+    depguard:
+      rules:
+        # verdict decides; it never looks. Every fact it weighs — a poll
+        # status, a build log, a PR's state, whether a dependency's
+        # Portfile says nomaintainer — arrives as a value from the caller
+        # that did the I/O. That is what lets the settle corpus run as a
+        # table test, and it holds only while verdict cannot reach the
+        # packages that read the world for themselves.
+        verdict:
+          files:
+            - "**/internal/verdict/**"
+            - "!**/internal/verdict/*_test.go"
+          allow:
+            - fmt
+            - iter
+            - regexp
+            - sort
+            - strings
+            - github.com/herbygillot/dockhand/internal/exitcode
+            - github.com/herbygillot/dockhand/internal/platform
+            - github.com/herbygillot/dockhand/internal/record
+            - github.com/herbygillot/dockhand/internal/verify
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: the caller reads the repo and passes the facts in; a judgment that opens git needs one to be tested
+            - pkg: github.com/herbygillot/dockhand/internal/forge
+              desc: verdict decides from a PR's facts, mapped by the caller — it never runs gh itself
+            - pkg: github.com/herbygillot/dockhand/internal/tool
+              desc: which binaries this machine has is a fact, discovered once by the caller, not asked for mid-decision
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: custody of the notes is the ledger's; verdict judges the record it is handed
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine calls verdict, so verdict must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/intent
+              desc: what the user asked for is resolved before the judgment, never during it
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: verdict returns the decision; wording it is a separate job with its own goldens
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd calls verdict, so verdict must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: runstate carries streams, a clock and process state, which are the three things a judgment must not have
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: verdict may speak verify's vocabulary but never the provider that boots and polls workers
+            - pkg: os/exec
+              desc: a decision that shells out is not a decision, it is a second opinion from the machine
+            - pkg: net
+              desc: the network is the caller's; a verdict has to reach the same answer offline
+        # verdict's own tests: the same judgment package, plus the
+        # harness and the file reading the corpus sweep does. The two
+        # denials are the holes prefix matching leaves in the allowances
+        # above them — os/exec sits under os, and the tart provider
+        # under verify — and they are the two a test would reach for
+        # first if a judgment ever needed a machine to reproduce.
+        verdict-tests:
+          files:
+            - "**/internal/verdict/*_test.go"
+          allow:
+            - errors
+            - fmt
+            - iter
+            - os
+            - path/filepath
+            - regexp
+            - slices
+            - sort
+            - strings
+            - testing
+            - github.com/stretchr/testify
+            - github.com/herbygillot/dockhand/internal/corpustest
+            - github.com/herbygillot/dockhand/internal/exitcode
+            - github.com/herbygillot/dockhand/internal/platform
+            - github.com/herbygillot/dockhand/internal/record
+            - github.com/herbygillot/dockhand/internal/verify
+          deny:
+            - pkg: os/exec
+              desc: a table test that shells out is testing the machine, not the judgment
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: the corpus is files; a test that boots a worker proves something else
+        # record is the wire and nothing else — the note's field order,
+        # its states, and the strict codec that refuses a future schema
+        # or a sha that does not match. Everything that stores, judges or
+        # renders a note imports it, so it must not learn where a note is
+        # kept, who writes one, or what any of it is worth.
+        record:
+          files:
+            - "**/internal/record/**"
+            - "!**/internal/record/*_test.go"
+          allow:
+            - encoding/json
+            - errors
+            - fmt
+            - sort
+            - github.com/herbygillot/dockhand/internal/verify
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: record makes the bytes; putting them somewhere is the ledger's job
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: the ledger imports record, not the other way about
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the wire format must not depend on the verbs that happen to write it
+            - pkg: github.com/herbygillot/dockhand/internal/verdict
+              desc: a record says what was observed; what that is worth is verdict's to say
+        # record's own tests: the wire, the harness, and the clock a job
+        # timestamp needs. The bytes are pinned as string constants, so
+        # nothing here reads a file or a repository.
+        record-tests:
+          files:
+            - "**/internal/record/*_test.go"
+          allow:
+            - encoding/json
+            - errors
+            - fmt
+            - sort
+            - strings
+            - testing
+            - time
+            - github.com/stretchr/testify
+            - github.com/herbygillot/dockhand/internal/verify
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: record makes the bytes; putting them somewhere is the ledger's job
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: the ledger imports record, not the other way about
+            - pkg: github.com/herbygillot/dockhand/internal/verdict
+              desc: a record says what was observed; what that is worth is verdict's to say
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: the tests pin bytes; a provider under them would prove something else
+        # ledger holds custody of the notes — the read, the flock, the
+        # re-read inside it, the write, the scans. It touches git and the
+        # lockfile because that is the entire job. What it must not
+        # acquire is an opinion, since a scan that decides what it found
+        # puts that decision back behind I/O, or a caller's terminal.
+        ledger:
+          files:
+            - "**/internal/ledger/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/verdict
+              desc: the ledger hands records back and the caller asks verdict; a scan that judges hides the judgment behind a repo
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine calls the ledger, so the ledger must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/intent
+              desc: custody of the notes does not vary with what the user asked for
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd calls the ledger, so the ledger must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: what is said under the lock belongs to the verb that took it; a ledger that prints owns output ordering it cannot see
+        # verify names a job and its outcome, and record embeds a Job, so
+        # verify sits below record. An import the other way is a cycle;
+        # this says so before the compiler does, with the reason on it.
+        # The whole tree is covered because a provider has no business
+        # knowing that its results are written down.
+        verify-below-the-record:
+          files:
+            - "**/internal/verify/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/record
+              desc: record embeds verify.Job, so verify must not know what a note is
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: a provider reports what a job did; whether that is written down is the ledger's business
+        # The vocabulary itself stays cheap to import: verify's own files
+        # may not reach the builder, so a package that only wants to name
+        # a job does not drag a MacPorts build in behind it. The
+        # providers underneath are the deliberate exception, because
+        # booting a worker and provisioning it is build work, which is
+        # why this rule stops at the package's own files.
+        verify-vocabulary:
+          files:
+            - "**/internal/verify/*.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/macports/build
+              desc: what a build needs is the provider's concern; verify only names the job and reports its outcome
 
 formatters:
   enable:

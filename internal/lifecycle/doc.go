@@ -8,13 +8,20 @@
 // namespace, entirely in the object database; the user's HEAD and
 // working tree are never touched. SubmitVerification stages that
 // commit's portdir and hands it to the verify provider, recording the
-// running job as the commit's Note — the verdict set kept under
-// refs/notes/dockhand/verify, keyed by sha and local to the machine
-// that wrote it. SettleRuns polls what is running and writes what it
-// learns back under the notes lock; CancelStale and DiscardBranch
-// release what superseded or abandoned commits still hold. ChangedPort
-// says what a branch actually changed, by evaluation, because a
-// portdir's name is not that.
+// running job THROUGH the ledger. SettleRuns polls what is running and
+// writes what it learns back under the notes lock; CancelStale and
+// DiscardBranch release what superseded or abandoned commits still
+// hold. ChangedPort says what a branch actually changed, by evaluation,
+// because a portdir's name is not that.
+//
+// What a verification record IS belongs to record — the wire format,
+// its states, the strict codec. Where one LIVES belongs to ledger,
+// which owns the notes ref and the lock over it. What one is WORTH
+// belongs to verdict, which decides from values and never looks at
+// anything. What stays here is the effectful sequencing that carries
+// those three out, and the sentences the verbs say while it does:
+// RecordRun writes through the ledger and then tells the user what was
+// recorded, because what a verb says belongs to the verb.
 //
 // The package sits above the domain packages and below cmd, and it is
 // the one thing besides an Action that takes a runstate.Context: the

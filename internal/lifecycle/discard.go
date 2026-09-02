@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -37,8 +39,9 @@ func DiscardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 		return err
 	}
 	defer unlock()
+	l := ledger.Open(repo)
 	for _, sha := range own {
-		n, err := ReadNote(ctx, repo, sha)
+		n, err := l.Read(ctx, sha)
 		if errors.Is(err, git.ErrNoNote) {
 			continue
 		}
@@ -48,7 +51,7 @@ func DiscardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 		// A running job's worker, or a failed job's kept environment:
 		// either way a VM this branch owns, released with it.
 		for _, run := range n.Runs {
-			if run.State != "running" && run.Handle == "" {
+			if run.State != record.Running && run.Handle == "" {
 				continue
 			}
 			if prov, perr := rs.VerifyProvider(ctx); perr == nil {
@@ -59,7 +62,7 @@ func DiscardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 				fmt.Fprintf(rs.Err, "warning: %s holds worker %s, and no provider is available to release it\n", git.Abbrev(sha), run.Job.ID)
 			}
 		}
-		if err := repo.NoteRemove(ctx, git.VerifyNotesRef, sha); err != nil {
+		if err := l.Remove(ctx, sha); err != nil {
 			return err
 		}
 	}

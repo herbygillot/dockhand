@@ -17,11 +17,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
@@ -86,10 +88,10 @@ func promoteRepo(t *testing.T) (*git.Repo, string) {
 	gittest.BareFork(t, repo, "herbygillot", "herby")
 	// A passed, linted run makes the branch promotable.
 	ctx := context.Background()
-	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq")
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
 	require.NoError(t, err)
-	n.Runs["Testos"] = lifecycle.Run{State: "passed", Linted: true, Lint: "clean"}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	n.Runs["Testos"] = record.Run{State: "passed", Linted: true, Lint: "clean"}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 	return repo, sha
 }
 
@@ -126,7 +128,7 @@ func TestPromoteRefusesADuplicate(t *testing.T) {
 	rs, _, _ := promoteState(t, repo, gh)
 
 	err := promoteAction{target: "jq"}.Execute(context.Background(), rs)
-	var dup *forge.DuplicatePRError
+	var dup *verdict.DuplicatePRError
 	require.ErrorAs(t, err, &dup)
 	assert.Empty(t, repo.TrackedRemote(context.Background(), "dockhand/jq-1.8"),
 		"a refused promotion pushes nothing")
@@ -180,11 +182,11 @@ func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
 	// as unverified — no --no-verify demanded on top.
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()
-	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]lifecycle.Run{"Testos": {State: "running",
+	n.Runs = map[string]record.Run{"Testos": {State: "running",
 		Job: verify.Job{Provider: "fake", ID: "fake-9"}}}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	fake := &verifytest.Fake{}
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
@@ -202,19 +204,19 @@ func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
 	assert.Contains(t, body, "Not locally verified", "the PR only says verified or not")
 	assert.NotContains(t, body, "canceled", "local state is the local user's business")
 
-	after, err := lifecycle.ReadNote(ctx, repo, sha)
+	after, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, "canceled", after.Runs["Testos"].State, "the note stays honest locally")
+	assert.Equal(t, record.Canceled, after.Runs["Testos"].State, "the note stays honest locally")
 }
 
 func TestPromoteMidVerificationKeepsThePassedEvidence(t *testing.T) {
 	repo, sha := promoteRepo(t) // fixture already records a passed, linted run
 	ctx := context.Background()
-	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs["Oldos"] = lifecycle.Run{State: "running",
+	n.Runs["Oldos"] = record.Run{State: "running",
 		Job: verify.Job{Provider: "fake", ID: "fake-8"}}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	fake := &verifytest.Fake{}
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/2"}
@@ -238,10 +240,10 @@ func TestPromoteUnverifiedComplainsAndProceeds(t *testing.T) {
 	// only a completed FAILED build still refuses without --no-verify.
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()
-	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]lifecycle.Run{}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	n.Runs = map[string]record.Run{}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/3"}
 	rs, _, errb := promoteState(t, repo, gh)
@@ -259,11 +261,11 @@ func TestPromoteUnverifiedComplainsAndProceeds(t *testing.T) {
 func TestPromoteBlockedPromotesWithTheDependencyNamed(t *testing.T) {
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()
-	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]lifecycle.Run{"Testos": {State: "blocked",
+	n.Runs = map[string]record.Run{"Testos": {State: "blocked",
 		Detail: "dependency olm (nomaintainer) fails to build; the change itself is untested"}}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
 	rs, _, errb := promoteState(t, repo, gh)
@@ -282,10 +284,10 @@ func TestPromoteBlockedPromotesWithTheDependencyNamed(t *testing.T) {
 func TestPromoteStillRefusesAFailedBuild(t *testing.T) {
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()
-	n, err := lifecycle.ReadNote(ctx, repo, sha)
+	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]lifecycle.Run{"Testos": {State: "failed", Handle: "kept-1"}}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	n.Runs = map[string]record.Run{"Testos": {State: "failed", Handle: "kept-1"}}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	gh := &ghFake{login: "herbygillot"}
 	rs, _, _ := promoteState(t, repo, gh)

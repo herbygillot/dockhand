@@ -9,7 +9,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -46,7 +48,8 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	defer unlock()
-	n, err := lifecycle.ReadNote(ctx, repo, tip)
+	l := ledger.Open(repo)
+	n, err := l.Read(ctx, tip)
 	if errors.Is(err, git.ErrNoNote) {
 		fmt.Fprintf(rs.Err, "%s has no verification to cancel\n", branch)
 		return nil
@@ -61,7 +64,7 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	touched := false
 	for plat, run := range n.Runs {
 		switch {
-		case run.State == "running":
+		case run.State == record.Running:
 			prov, perr := rs.VerifyProvider(ctx)
 			if perr != nil {
 				return perr
@@ -69,9 +72,9 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 			if rerr := prov.Release(ctx, run.Job); rerr != nil {
 				fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
 			}
-			run.State, run.Detail = "canceled", "canceled by the user"
+			run.State, run.Detail = record.Canceled, "canceled by the user"
 			fmt.Fprintf(rs.Out, "canceled verification of %s on %s (worker %s released)\n", branch, plat, run.Job.ID)
-		case run.State == "failed" && run.Handle != "":
+		case run.State == record.Failed && run.Handle != "":
 			prov, perr := rs.VerifyProvider(ctx)
 			if perr != nil {
 				return perr
@@ -92,7 +95,7 @@ func (a cancelAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		fmt.Fprintf(rs.Err, "%s has no running verification or kept environment\n", branch)
 		return nil
 	}
-	return lifecycle.WriteNote(ctx, repo, n)
+	return l.Write(ctx, n)
 }
 
 // Cancel builds the cancel subcommand.

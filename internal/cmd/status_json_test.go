@@ -15,7 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
@@ -40,7 +40,7 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
 	}
-	writeRuns(t, repo, sha, map[string]lifecycle.Run{"Testos": {State: "running",
+	writeRuns(t, repo, sha, map[string]record.Run{"Testos": {State: "running",
 		Job: verify.Job{Provider: "fake", ID: "fake-1"}, Linted: true}})
 
 	var out, errb bytes.Buffer
@@ -55,7 +55,7 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 	assert.Equal(t, "dockhand/jq-1.8", b.Branch)
 	assert.Equal(t, sha, b.Tip)
 	require.NotNil(t, b.Note)
-	assert.Equal(t, "passed", b.Note.Runs["Testos"].State, "the JSON mode settles, same as the human one")
+	assert.Equal(t, record.Passed, b.Note.Runs["Testos"].State, "the JSON mode settles, same as the human one")
 	assert.Equal(t, "clean", b.Note.Runs["Testos"].Lint)
 	assert.Nil(t, b.PR, "an unpromoted branch carries no PR object")
 	assert.False(t, b.Cleaned)

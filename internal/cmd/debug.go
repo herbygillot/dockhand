@@ -12,7 +12,9 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
@@ -61,9 +63,9 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 		return debugEnv{}, err
 	}
 
-	reachable := map[string]lifecycle.Run{}
+	reachable := map[string]record.Run{}
 	for plat, r := range n.Runs {
-		if r.State == "running" || r.Handle != "" {
+		if r.State == record.Running || r.Handle != "" {
 			reachable[plat] = r
 		}
 	}
@@ -75,7 +77,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 			return debugEnv{}, err
 		}
 		if _, ok := reachable[r.Name]; !ok {
-			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, lifecycle.SummarizeNote(n))
+			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, verdict.Summarize(n))
 		}
 		plat = r.Name
 	case len(reachable) == 1:
@@ -83,7 +85,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 			plat = p
 		}
 	case len(reachable) == 0:
-		return debugEnv{}, fmt.Errorf("%s: no environment to reach (%s); `dockhand verify %s` starts one", branch, lifecycle.SummarizeNote(n), branch)
+		return debugEnv{}, fmt.Errorf("%s: no environment to reach (%s); `dockhand verify %s` starts one", branch, verdict.Summarize(n), branch)
 	default:
 		var plats []string
 		for p := range reachable {
@@ -92,7 +94,9 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 		return debugEnv{}, usagef("%s has environments on %s; pick one with --on", branch, strings.Join(plats, ", "))
 	}
 	run := reachable[plat]
-	env := debugEnv{Job: run.Job, State: run.State, Port: n.Port, Plat: plat}
+	// The state is prose from here on — "kept" is one of the words this
+	// field holds, and no note ever carried that one.
+	env := debugEnv{Job: run.Job, State: string(run.State), Port: n.Port, Plat: plat}
 	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return debugEnv{}, err

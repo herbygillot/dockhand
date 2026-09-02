@@ -16,7 +16,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/exitcode"
-	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/intent/bumprevision"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
@@ -42,6 +41,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/upstream"
 	upstreamforge "github.com/herbygillot/dockhand/internal/upstream/forge"
 	"github.com/herbygillot/dockhand/internal/vendored"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -291,9 +291,9 @@ func exitTable() []exitRow {
 			err: &lifecycle.BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
 				"%s carries %d commit(s) beyond the mint — --force replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
 				branch, 1, branch)}, as: new(*lifecycle.BranchInFlightError)},
-		exitRow{name: "*forge.DuplicatePRError (promote)",
-			err: &forge.DuplicatePRError{Title: "jq: update to 1.8", URL: "https://github.com/macports/macports-ports/pull/1"},
-			as:  new(*forge.DuplicatePRError)},
+		exitRow{name: "*verdict.DuplicatePRError (promote)",
+			err: &verdict.DuplicatePRError{Title: "jq: update to 1.8", URL: "https://github.com/macports/macports-ports/pull/1"},
+			as:  new(*verdict.DuplicatePRError)},
 		// A Coder anywhere in the chain wins, even under a sentinel.
 		exitRow{name: "precedence: tree.ErrNotPortsTree wrapping *plan.Decline",
 			err: fmt.Errorf("%w: %w", tree.ErrNotPortsTree, &plan.Decline{Type: plan.AlreadyCurrent}),

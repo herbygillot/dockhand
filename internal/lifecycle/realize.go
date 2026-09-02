@@ -10,10 +10,13 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -115,19 +118,33 @@ type Minted struct {
 // mints nothing and returns nil, nil.
 func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force bool) (*Minted, error) {
 	branch, message := git.MintBranchName(p.Slug), p.Summary
-	if len(p.Edits) == 0 {
+	hasEdits := len(p.Edits) > 0
+	// The decision is asked twice, and the order is the reason: the
+	// empty-plan answer is reached before the plan is resolved against
+	// the repository at all, so a plan with nothing in it never reports
+	// drift, while the branch probe below happens after, so a drift
+	// refusal precedes a replacement. The first call cannot need the
+	// probe; the second is the same question with the probe's answer in
+	// it.
+	switch verdict.DecideMint(hasEdits, force, false) {
+	case verdict.NothingToMint:
 		// A no-op realized as a branch would be an empty commit.
 		fmt.Fprintln(rs.Out, "no edits; no branch minted")
-		if force {
-			fmt.Fprintln(rs.Err, "an existing in-flight branch, if any, stands: --force replaces only when there is something to replace it with")
-		}
 		return nil, nil
+	case verdict.NothingToReplace:
+		fmt.Fprintln(rs.Out, "no edits; no branch minted")
+		fmt.Fprintln(rs.Err, "an existing in-flight branch, if any, stands: --force replaces only when there is something to replace it with")
+		return nil, nil
+	case verdict.MintBranch, verdict.ReplaceThenMint:
+		// Both mint; which of the two it is cannot be settled until the
+		// plan has been resolved against the repository below.
 	}
 	repo, primary, path, edited, err := planOnBase(ctx, rs, p)
 	if err != nil {
 		return nil, err
 	}
-	if force && repo.HasBranch(ctx, branch) {
+	hasBranch := verdict.MintProbesBranch(hasEdits, force) && repo.HasBranch(ctx, branch)
+	if verdict.DecideMint(hasEdits, force, hasBranch) == verdict.ReplaceThenMint {
 		if err := replaceInFlight(ctx, rs, repo, primary, branch); err != nil {
 			return nil, err
 		}
@@ -180,21 +197,6 @@ func (e *VerifyDeferredError) Unwrap() error { return e.Cause }
 // not start, and the obstacle is capacity or environment.
 func (e *VerifyDeferredError) ExitCode() int { return exitcode.Environment }
 
-// defaultRelease is the release a run lands on when the caller named
-// none: the provider's first base, which RealVMProvider orders newest
-// first. A run is keyed by release name, so the zero release must
-// resolve here, before anything is recorded — and a provider with no
-// bases at all is the no-environment refusal, not an index past the
-// end of an empty list. No provider today reports an empty list —
-// RealVMProvider refuses to build without a base — so the refusal is
-// the guard for one that does.
-func defaultRelease(caps verify.Capabilities) (platform.Release, error) {
-	if len(caps.Platforms) == 0 {
-		return platform.Release{}, fmt.Errorf("%w: no base images", verify.ErrNoEnvironment)
-	}
-	return caps.Platforms[0], nil
-}
-
 // SubmitVerification stages the minted commit's portdir out of the
 // object database — the working tree is irrelevant to what the branch
 // carries — submits it to the VM provider, and records the running job
@@ -221,9 +223,13 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 		return err
 	}
 	// The platform resolves before anything is recorded: a run is keyed
-	// by release name, and "the default" is not a key.
+	// by release name, and "the default" is not a key. The provider is
+	// asked what it offers only when the caller named nothing, because
+	// Capabilities is an interface method with no purity promise on it —
+	// a provider that answered by talking to a hypervisor would be doing
+	// so on every submit for an answer already in hand.
 	if release.IsZero() {
-		if release, err = defaultRelease(prov.Capabilities()); err != nil {
+		if release, err = verdict.ResolveRelease(release, prov.Capabilities().Platforms); err != nil {
 			return later(err)
 		}
 	}
@@ -244,13 +250,18 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 	// the branch's content, which is what was materialized. The same
 	// session answers use_xcode, so a port that needs a full Xcode is
 	// probed for one before the build starts, not forty minutes in.
-	pf, kerr := preflightOn(ctx, rs, staged, release)
-	if kerr != nil {
+	pre := map[string]verdict.Preflight{}
+	if pf, kerr := preflightOn(ctx, rs, staged, release); kerr != nil {
+		// An evaluation that could not run is not evidence that the port
+		// declines anything, so the release goes unlisted and is
+		// scheduled as an ordinary build.
 		fmt.Fprintf(rs.Err, "warning: pre-flight evaluation: %v\n", kerr)
-	} else if pf.KnownFail {
-		return RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
-			State: "unsupported", Detail: "declares known_fail on " + release.Name,
-		}, fmt.Sprintf("%s declares known_fail on %s; recorded unsupported — no build attempted", portName, release.Name))
+	} else {
+		pre[release.Name] = pf
+	}
+	sched := verdict.SchedulePlatforms(portName, []platform.Release{release}, pre)[0]
+	if sched.Declined != nil {
+		return RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, *sched.Declined, sched.Message)
 	}
 	job, err := prov.Submit(ctx, verify.Request{
 		Port:       portName,
@@ -258,7 +269,7 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 		Platform:   release,
 		Owner:      m.Repo.Root,
 		Test:       test,
-		NeedsXcode: pf.UseXcode,
+		NeedsXcode: sched.NeedsXcode,
 	})
 	if err != nil {
 		// A full provider (two-slot cap), a capability refusal, or a
@@ -267,15 +278,15 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 		// than left to a later verify — a field run saw an intent-path
 		// refusal show as bare "unverified" with the reason only in
 		// scrollback.
-		if rerr := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
-			State: "deferred", Detail: err.Error(),
+		if rerr := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, record.Run{
+			State: record.Deferred, Detail: err.Error(),
 		}, ""); rerr != nil {
 			fmt.Fprintf(rs.Err, "warning: recording the deferred run: %v\n", rerr)
 		}
 		return later(err)
 	}
-	if err := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, Run{
-		State: "running", Job: job, Tested: test, Linted: true,
+	if err := RecordRun(ctx, rs, m.Repo, m.Sha, portName, release.Name, record.Run{
+		State: record.Running, Job: job, Tested: test, Linted: true,
 	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID)); err != nil {
 		// Submit-and-record is a transaction: a job whose note cannot
 		// be persisted is a running VM no settlement can ever find, so
@@ -298,18 +309,12 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 // RecordRun writes one platform's run into the commit's note — the
 // read-modify-write every per-platform update goes through — and tells
 // the user what was recorded.
-func RecordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, releaseName string, r Run, msg string) error {
-	unlock, err := repo.LockNotes(ctx)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	n, err := LoadOrStartNote(ctx, repo, sha, portName)
-	if err != nil {
-		return err
-	}
-	n.Runs[releaseName] = r
-	if err := WriteNote(ctx, repo, n); err != nil {
+//
+// The note half is the ledger's, lock and re-read included; the
+// sentence about it is this package's, because what a verb says
+// belongs to the verb.
+func RecordRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, portName, releaseName string, r record.Run, msg string) error {
+	if err := ledger.Open(repo).RecordRun(ctx, sha, portName, releaseName, r); err != nil {
 		return err
 	}
 	if msg != "" {
@@ -349,25 +354,30 @@ func FollowRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, sha, p
 		case <-time.After(4 * time.Second):
 		}
 	}
-	n, err := LoadOrStartNote(ctx, repo, sha, portName)
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, portName)
 	if err != nil {
 		return err
 	}
 	if err := SettleRuns(ctx, rs, repo, &n); err != nil {
 		return err
 	}
-	switch r := n.Runs[plat]; r.State {
-	case "passed":
+	r := n.Runs[plat]
+	switch r.State {
+	case record.Passed:
 		fmt.Fprintf(rs.Err, "passed on %s; worker released\n", plat)
 		return nil
-	case "unsupported":
+	case record.Unsupported:
 		fmt.Fprintf(rs.Err, "%s declines %s: %s\n", portName, plat, r.Detail)
 		return nil
-	case "failed":
+	case record.Failed:
 		return &VerifyFailedError{Port: portName, Handle: r.Handle}
-	default:
-		return fmt.Errorf("%w: %s", verify.ErrNoEnvironment, r.Detail)
+	case record.Running, record.Blocked, record.Canceled, record.Superseded,
+		record.Deferred, record.Errored:
 	}
+	// Everything else, an unknown state included: the follow watched the
+	// job to its end and the settle still reached no verdict about the
+	// port, which makes it the machine's answer rather than the port's.
+	return fmt.Errorf("%w: %s", verify.ErrNoEnvironment, r.Detail)
 }
 
 // RealizeOpts is one invocation's choice of realization, shared by
@@ -442,11 +452,11 @@ func markVerified(ctx context.Context, rs *runstate.Context, m *Minted, p *plan.
 		if perr != nil {
 			return perr
 		}
-		if release, perr = defaultRelease(prov.Capabilities()); perr != nil {
+		if release, perr = verdict.ResolveRelease(release, prov.Capabilities().Platforms); perr != nil {
 			return perr
 		}
 	}
-	return RecordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, Run{State: "passed", Tested: tested, Linted: true, Lint: lint},
+	return RecordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, record.Run{State: record.Passed, Tested: tested, Linted: true, Lint: lint},
 		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
 }
 

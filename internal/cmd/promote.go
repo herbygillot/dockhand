@@ -9,8 +9,10 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
 // promoteAction publishes a verified branch: push it to the user's
@@ -68,29 +70,20 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if canceled > 0 {
 		fmt.Fprintf(rs.Err, "canceled %d running verification(s) — promoting without waiting\n", canceled)
 	}
-	n, verified, err := lifecycle.PromotableVerdictFor(ctx, repo, tip)
+	n, verified, err := ledger.Open(repo).EvidenceFor(ctx, tip)
 	if err != nil {
 		return err
 	}
-	if !verified {
-		// Invoking promote is already the publication choice, so an
-		// unverified branch promotes with a complaint, never a demanded
-		// flag — the friction ruling, extended here at the reviewer's
-		// and the user's shared urging. The one refusal that remains is
-		// distinct NEGATIVE evidence: a completed failed build, which
-		// --no-verify alone overrides.
-		if n.AnyState("failed") && !a.noVerify {
-			return fmt.Errorf("%s: tip %s has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway", branch, git.Abbrev(tip))
-		}
-		// A blocked run is the one unverified shape with a story worth
-		// telling: the change is untested because a neighbor is broken,
-		// and the maintainer deciding to promote anyway deserves the
-		// name of the neighbor in front of them.
-		for _, plat := range n.Platforms() {
-			if r := n.Runs[plat]; r.State == "blocked" {
-				fmt.Fprintf(rs.Err, "verification blocked on %s: %s\n", plat, r.Detail)
-			}
-		}
+	// The gate itself is a judgment about the verdict set, so it is made
+	// where the other judgments are; what is left here is saying so.
+	gate := verdict.DecidePublish(n, verified, branch, git.Abbrev(tip), a.noVerify)
+	if gate.Refusal != nil {
+		return gate.Refusal
+	}
+	for _, line := range gate.Blocked {
+		fmt.Fprintln(rs.Err, line)
+	}
+	if gate.SayUnverified {
 		fmt.Fprintln(rs.Err, "promoting unverified; the PR will say so")
 	}
 
@@ -118,15 +111,15 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err != nil {
 		return err
 	}
-	own, err := repo.OwnCommits(ctx, tip, primary)
+	ownCommits, err := repo.OwnCommits(ctx, tip, primary)
 	if err != nil {
 		return err
 	}
 	title := a.title
 	if title == "" {
 		subject := tip
-		if len(own) > 0 {
-			subject = own[len(own)-1]
+		if len(ownCommits) > 0 {
+			subject = ownCommits[len(ownCommits)-1]
 		}
 		title, err = repo.Subject(ctx, subject)
 		if err != nil {
@@ -143,16 +136,14 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
 		ownFound = false
 	}
-	if ownFound && ownPR.MergedAt != "" {
-		return fmt.Errorf("PR #%d for %s already merged (%s) — `dockhand clean` retires the branch", ownPR.Number, branch, ownPR.HTMLURL)
+	own := prFact(ownPR, ownFound)
+	if err := verdict.MergedDeadEnd(own, branch); err != nil {
+		return err
 	}
 
 	checkedPRs := false
 	if !a.noPRCheck {
-		port := n.Port
-		if before, _, found := strings.Cut(title, ":"); port == "" && found {
-			port = strings.TrimSpace(before)
-		}
+		port := verdict.PortName(n.Port, title)
 		switch prs, serr := forge.OpenPortPRs(ctx, rs.RunGH, upstream, port); {
 		case port == "":
 			fmt.Fprintln(rs.Err, "warning: no port name to search open PRs by; skipping the duplicate check")
@@ -163,17 +154,15 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 			fmt.Fprintf(rs.Err, "warning: could not search for open PRs: %v\n", serr)
 		default:
 			checkedPRs = true
-			for _, pr := range prs {
-				if ownFound && pr.Number == ownPR.Number {
-					continue
-				}
-				if strings.EqualFold(strings.TrimSpace(pr.Title), strings.TrimSpace(title)) {
-					return &forge.DuplicatePRError{Title: pr.Title, URL: pr.HTMLURL}
-				}
-				// Same port, different change: not a duplicate, but a
-				// maintainer coordinating both will want to know now
-				// rather than at review.
-				fmt.Fprintf(rs.Err, "note: an open PR already touches this port: #%d %q (%s)\n", pr.Number, pr.Title, pr.HTMLURL)
+			// The advisories are for the PRs the search walked past
+			// before the duplicate, so they are said before the refusal
+			// is returned — the same order the walk itself produced.
+			dup := verdict.CheckDuplicates(prFacts(prs), own, title)
+			for _, note := range dup.Notes {
+				fmt.Fprintln(rs.Err, note)
+			}
+			if dup.Refusal != nil {
+				return dup.Refusal
 			}
 		}
 	}
@@ -181,21 +170,21 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err := a.push(ctx, rs, repo, forkRemote, forkOwner, branch); err != nil {
 		return err
 	}
-	body := forge.PromoteBody(n, verified, a.closes, len(own), checkedPRs)
-	if ownFound && ownPR.State == "open" {
+	body := forge.PromoteBody(n, verified, a.closes, len(ownCommits), checkedPRs)
+	if own.Found && own.Open {
 		if a.force {
 			// A replaced branch usually means a new version: the PR's
 			// commits moved with the push, and its title and body are
 			// stale until told otherwise.
-			if _, err := rs.RunGH(ctx, "pr", "edit", fmt.Sprint(ownPR.Number), "--repo", upstream,
+			if _, err := rs.RunGH(ctx, "pr", "edit", fmt.Sprint(own.Number), "--repo", upstream,
 				"--title", title, "--body", body); err != nil {
-				return fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", ownPR.Number, err)
+				return fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", own.Number, err)
 			}
-			fmt.Fprintf(rs.Err, "PR #%d replaced: branch force-pushed, title and body refreshed\n", ownPR.Number)
+			fmt.Fprintf(rs.Err, "PR #%d replaced: branch force-pushed, title and body refreshed\n", own.Number)
 		} else {
-			fmt.Fprintf(rs.Err, "PR #%d already open for this branch; the push updated it\n", ownPR.Number)
+			fmt.Fprintf(rs.Err, "PR #%d already open for this branch; the push updated it\n", own.Number)
 		}
-		fmt.Fprintln(rs.Out, ownPR.HTMLURL)
+		fmt.Fprintln(rs.Out, own.URL)
 		return nil
 	}
 

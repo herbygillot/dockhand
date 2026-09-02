@@ -33,7 +33,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -121,21 +122,21 @@ func growBranch(t *testing.T, repo *git.Repo, branch, content, message string) s
 
 // writeRuns records runs on a commit's note for port jq, keeping any
 // the note already holds.
-func writeRuns(t *testing.T, repo *git.Repo, sha string, runs map[string]lifecycle.Run) {
+func writeRuns(t *testing.T, repo *git.Repo, sha string, runs map[string]record.Run) {
 	t.Helper()
 	ctx := context.Background()
-	n, err := lifecycle.LoadOrStartNote(ctx, repo, sha, "jq")
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
 	require.NoError(t, err)
 	for plat, r := range runs {
 		n.Runs[plat] = r
 	}
-	require.NoError(t, lifecycle.WriteNote(ctx, repo, n))
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 }
 
 // runningRun is a linted run in flight on the fake provider, started
 // at the pinned time.
-func runningRun(jobID string) lifecycle.Run {
-	return lifecycle.Run{State: "running",
+func runningRun(jobID string) record.Run {
+	return record.Run{State: "running",
 		Job: verify.Job{Provider: "fake", ID: jobID, Started: goldenStart}, Linted: true}
 }
 
@@ -166,26 +167,26 @@ func goldenStatesRepo(t *testing.T) (*git.Repo, *verifytest.Fake) {
 		{"vanished", "3.3", "fake-vanished"},
 	} {
 		sha := mintBranch(t, repo, c.suffix, c.version)
-		writeRuns(t, repo, sha, map[string]lifecycle.Run{"Testos": runningRun(c.job)})
+		writeRuns(t, repo, sha, map[string]record.Run{"Testos": runningRun(c.job)})
 	}
 
 	// Seeded settled, in the shapes cancel, deferral and supersession
 	// leave behind.
-	writeRuns(t, repo, mintBranch(t, repo, "canceled", "2.4"), map[string]lifecycle.Run{
+	writeRuns(t, repo, mintBranch(t, repo, "canceled", "2.4"), map[string]record.Run{
 		"Testos": {State: "canceled", Job: verify.Job{Provider: "fake", ID: "fake-canceled", Started: goldenStart},
 			Detail: "canceled by the user"},
 	})
-	writeRuns(t, repo, mintBranch(t, repo, "deferred", "2.5"), map[string]lifecycle.Run{
+	writeRuns(t, repo, mintBranch(t, repo, "deferred", "2.5"), map[string]record.Run{
 		"Testos": {State: "deferred", Detail: (&verify.CapacityError{Busy: 2, Cap: 2}).Error()},
 	})
-	writeRuns(t, repo, mintBranch(t, repo, "superseded", "3.0"), map[string]lifecycle.Run{
+	writeRuns(t, repo, mintBranch(t, repo, "superseded", "3.0"), map[string]record.Run{
 		"Testos": {State: "superseded", Job: verify.Job{Provider: "fake", ID: "fake-superseded", Started: goldenStart},
 			Detail: "canceled: the branch moved to " + git.Abbrev(base)},
 	})
 	// A verdict set: passed and tested on one platform, declined on
 	// another — the multi-line rendering.
 	multi := mintBranch(t, repo, "multi", "2.1")
-	writeRuns(t, repo, multi, map[string]lifecycle.Run{
+	writeRuns(t, repo, multi, map[string]record.Run{
 		"Testos": {State: "passed", Tested: true, Linted: true, Lint: "clean"},
 		"Oldos":  {State: "unsupported", Detail: "declares known_fail on Oldos"},
 	})
@@ -194,7 +195,7 @@ func goldenStatesRepo(t *testing.T) (*git.Repo, *verifytest.Fake) {
 	// same tree as a verified commit under a reworded message.
 	mintBranch(t, repo, "unnoted", "3.1")
 	behind := mintBranch(t, repo, "behind", "2.2")
-	writeRuns(t, repo, behind, map[string]lifecycle.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}})
+	writeRuns(t, repo, behind, map[string]record.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}})
 	growBranch(t, repo, "dockhand/jq-behind", "version 2.2\nrevision 1\n", "jq: rebuild against the new libjq")
 	_, err = repo.Mint(ctx, git.MintRequest{
 		Branch: "dockhand/jq-amended", Base: primary, Path: "sysutils/jq/Portfile",
@@ -237,7 +238,7 @@ func goldenPromotedRepo(t *testing.T) (*git.Repo, *goldenGh) {
 	ctx := context.Background()
 	gittest.BareFork(t, repo, "herbygillot", "herby")
 
-	passed := map[string]lifecycle.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}}
+	passed := map[string]record.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}}
 	for _, c := range []struct {
 		suffix, version string
 		noted, pushed   bool

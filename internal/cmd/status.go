@@ -12,10 +12,13 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -96,12 +99,12 @@ func pumpDeferred(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		if err != nil {
 			continue // cleaned mid-pass, or never a branch
 		}
-		n, err := lifecycle.ReadNote(ctx, repo, tip)
+		n, err := ledger.Open(repo).Read(ctx, tip)
 		if err != nil {
 			continue
 		}
 		for _, plat := range n.Platforms() {
-			if n.Runs[plat].State != "deferred" {
+			if n.Runs[plat].State != record.Deferred {
 				continue
 			}
 			rel, derr := branchPortdir(ctx, repo, br, tip)
@@ -127,7 +130,7 @@ func pumpDeferred(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 // used — both read the run as deferred, both submitted, and the second
 // RecordRun overwrote the first's job, leaving a worker no note
 // accounted for. Schema 2 has no field to claim a run with (a peer
-// binary's WriteNote round-trips the struct and drops what it does not
+// binary's write round-trips the record and drops what it does not
 // know), so the claim is a lock held from the re-read through the
 // record: the holder re-reads the note, and a run no longer deferred
 // was started or settled by the other claimant — skipped, silently,
@@ -164,7 +167,7 @@ func pumpRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, br, tip,
 		return true
 	}
 	defer unlock()
-	n, err := lifecycle.ReadNote(ctx, repo, tip)
+	n, err := ledger.Open(repo).Read(ctx, tip)
 	if err != nil {
 		// No note is a branch discarded under this pass: nothing left
 		// to start. Anything else — a peer's newer schema, a corrupt
@@ -176,7 +179,7 @@ func pumpRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, br, tip,
 		return false
 	}
 	run := n.Runs[plat]
-	if run.State != "deferred" {
+	if run.State != record.Deferred {
 		return false
 	}
 	// The note names what this branch verifies — for a minted
@@ -193,8 +196,8 @@ func pumpRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, br, tip,
 	}, portName, release, false, run.Tested)
 	var vde *lifecycle.VerifyDeferredError
 	if errors.As(err, &vde) {
-		if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, plat, lifecycle.Run{
-			State: "deferred", Detail: vde.Reason, Tested: run.Tested,
+		if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, plat, record.Run{
+			State: record.Deferred, Detail: vde.Reason, Tested: run.Tested,
 		}, ""); rerr != nil {
 			fmt.Fprintf(rs.Err, "warning: re-recording deferred run: %v\n", rerr)
 		}
@@ -253,7 +256,7 @@ type statusBranch struct {
 	Branch string `json:"branch"`
 	Tip    string `json:"tip,omitempty"`
 	// Note is the tip's verdict set, absent when the tip has none.
-	Note *lifecycle.Note `json:"note,omitempty"`
+	Note *record.Record `json:"note,omitempty"`
 	// Drift is the human sentence about an unnoted tip — content
 	// identity, commits behind — kept as prose: it is a finding, not a
 	// state machine.
@@ -352,7 +355,9 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 		return prOutcome{promoted: true}
 	}
 	o := prOutcome{promoted: true, found: true, pr: pr}
-	if pr.MergedAt != "" && !ps.noClean {
+	// --no-clean withholds the deletion without changing the verdict:
+	// what a merged PR means does not depend on being asked to act.
+	if verdict.DecideRetire(true, prFact(pr, true)).Cleans(ps.noClean) {
 		if err := lifecycle.DiscardBranch(ctx, rs, ps.repo, branch, true); err != nil {
 			o.cleanErr = err.Error()
 			return o
@@ -365,25 +370,13 @@ func (ps *prStatus) judge(ctx context.Context, rs *runstate.Context, branch stri
 // reconcile is judge's human rendering: (cleaned, line).
 func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch string) (cleaned bool, line string) {
 	o := ps.judge(ctx, rs, branch)
-	switch {
-	case !o.promoted:
-		return false, ""
-	case o.errText != "":
-		return false, "PR state unavailable: " + o.errText
-	case !o.found:
-		return false, "promoted; no PR found"
-	case o.cleanErr != "":
-		return false, fmt.Sprintf("PR #%d merged; cleaning failed: %s", o.pr.Number, o.cleanErr)
-	case o.cleaned:
-		return true, fmt.Sprintf("PR #%d merged — branch cleaned", o.pr.Number)
-	case o.pr.MergedAt != "":
-		// --no-clean: report the merge, withhold the deletion.
-		return false, fmt.Sprintf("PR #%d merged — `dockhand clean` removes the branch", o.pr.Number)
-	case o.pr.State == "open":
-		return false, fmt.Sprintf("PR #%d open (%s)", o.pr.Number, o.pr.HTMLURL)
-	default:
-		return false, fmt.Sprintf("PR #%d closed without merging", o.pr.Number)
-	}
+	return o.cleaned, verdict.Reconciliation{
+		Promoted: o.promoted,
+		Err:      o.errText,
+		PR:       prFact(o.pr, o.found),
+		Cleaned:  o.cleaned,
+		CleanErr: o.cleanErr,
+	}.Line()
 }
 
 // reportOrphanWorkers names running workers no note accounts for: a

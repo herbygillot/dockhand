@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // update rewrites the goldens under testdata/golden from what the code
@@ -19,15 +19,15 @@ import (
 // upstream, not as test maintenance.
 var update = flag.Bool("update", false, "rewrite golden files")
 
-func templateNote(runs map[string]lifecycle.Run) lifecycle.Note {
-	return lifecycle.Note{Sha: "0123456789abcdef0123",
+func templateNote(runs map[string]record.Run) record.Record {
+	return record.Record{Sha: "0123456789abcdef0123",
 		Port: "jq", Runs: runs}
 }
 
 // The body is the upstream PR template with only vouchable boxes
 // checked: install passed and tested, a single minted commit.
 func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
-	n := templateNote(map[string]lifecycle.Run{
+	n := templateNote(map[string]record.Run{
 		"Sonoma":   {State: "passed", Tested: true},
 		"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
 	})
@@ -50,7 +50,7 @@ func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
 }
 
 func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
-	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
+	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
 	body := PromoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Sonoma: built in a pristine VM")
 	assert.Contains(t, body, "- [ ] checked that there aren't other open [pull requests]")
@@ -60,17 +60,17 @@ func TestPromoteBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
 
 func TestPromoteBodySignsOffEveryBody(t *testing.T) {
 	signoff := "\nAutomated by [dockhand](" + RepoURL + ")\n"
-	verified := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
+	verified := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
 	for name, body := range map[string]string{
 		"verified":   PromoteBody(verified, true, "", 1, true),
-		"unverified": PromoteBody(lifecycle.Note{}, false, "", 1, false),
+		"unverified": PromoteBody(record.Record{}, false, "", 1, false),
 	} {
 		assert.True(t, strings.HasSuffix(body, signoff), "%s body must end with the sign-off", name)
 	}
 }
 
 func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
-	body := PromoteBody(lifecycle.Note{}, false, "12345", 1, false)
+	body := PromoteBody(record.Record{}, false, "12345", 1, false)
 	assert.Contains(t, body, "Not locally verified")
 	assert.Contains(t, body, "Closes: https://trac.macports.org/ticket/12345")
 	assert.NotContains(t, body, "###### Tested on")
@@ -80,7 +80,7 @@ func TestPromoteBodyUnverifiedChecksNothing(t *testing.T) {
 }
 
 func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
-	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed"}})
+	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
 	body := PromoteBody(n, true, "", 3, false)
 	assert.Contains(t, body, "- [ ] followed our [Commit Message Guidelines]")
 	assert.Contains(t, body, "- [ ] squashed and [minimized your commits]")
@@ -90,7 +90,7 @@ func TestPromoteBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
 // template's own lines (modulo the strikethrough rewrite): a drifted
 // checklist would read as dockhand inventing its own ceremony.
 func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
-	n := templateNote(map[string]lifecycle.Run{"Sonoma": {State: "passed", Tested: true}})
+	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed", Tested: true}})
 	body := PromoteBody(n, true, "7", 1, true)
 	require.True(t, strings.HasPrefix(body, "#### Description\n"))
 	for _, section := range []string{"###### Type(s)", "###### Tested on", "###### Verification"} {
@@ -100,7 +100,7 @@ func TestPromoteBodyKeepsTheTemplateShape(t *testing.T) {
 }
 
 func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
-	n := templateNote(map[string]lifecycle.Run{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
+	n := templateNote(map[string]record.Run{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
 	body := PromoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 	// The checked box is only honest if the evidence line states what
@@ -109,7 +109,7 @@ func TestPromoteBodyChecksLintWhenTheRunLinted(t *testing.T) {
 }
 
 func TestPromoteBodyStatesLintWarnings(t *testing.T) {
-	n := templateNote(map[string]lifecycle.Run{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
+	n := templateNote(map[string]record.Run{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
 	body := PromoteBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Tahoe: linted with 2 warnings, built and tested in a pristine VM")
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
@@ -122,7 +122,7 @@ const goldenDir = "testdata/golden"
 // The golden is named for the variant, so a diff names what changed.
 type bodyVariant struct {
 	name       string
-	runs       map[string]lifecycle.Run
+	runs       map[string]record.Run
 	verified   bool
 	closes     string
 	ownCommits int
@@ -137,48 +137,48 @@ type bodyVariant struct {
 // says verified or not.
 var bodyVariants = []bodyVariant{
 	{name: "verified_one_platform",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed"}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_several_platforms",
-		runs: map[string]lifecycle.Run{
+		runs: map[string]record.Run{
 			"Sequoia": {State: "passed"},
 			"Sonoma":  {State: "passed"},
 			"Ventura": {State: "passed"},
 		},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_with_unsupported",
-		runs: map[string]lifecycle.Run{
+		runs: map[string]record.Run{
 			"Sequoia":  {State: "passed"},
 			"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
 		},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_tested",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed", Tested: true}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed", Tested: true}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_linted_without_summary",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed", Linted: true}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed", Linted: true}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_lint_clean",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed", Linted: true, Lint: "clean"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed", Linted: true, Lint: "clean"}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_lint_warnings",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed", Linted: true, Lint: "2 warnings"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed", Linted: true, Lint: "2 warnings"}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	// A lint summary with no Linted record is a note nothing wrote:
 	// the claim needs both halves, so neither the line nor the box
 	// carries it. Its golden is byte-identical to verified_one_platform,
 	// which is the point.
 	{name: "verified_lint_summary_without_linted",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed", Lint: "clean"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed", Lint: "clean"}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_tested_and_lint_clean",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed", Tested: true, Linted: true, Lint: "clean"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed", Tested: true, Linted: true, Lint: "clean"}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	// The checklist boxes read the set: one tested, linted platform
 	// checks them for the whole body while each evidence line keeps
 	// its own record.
 	{name: "verified_evidence_differs_by_platform",
-		runs: map[string]lifecycle.Run{
+		runs: map[string]record.Run{
 			"Sequoia":  {State: "passed", Tested: true, Linted: true, Lint: "clean"},
 			"Sonoma":   {State: "passed"},
 			"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
@@ -189,7 +189,7 @@ var bodyVariants = []bodyVariant{
 	// slot, superseded, errored. None of it reaches the reviewer, so
 	// the golden is byte-identical to verified_one_platform.
 	{name: "verified_omits_non_verdict_states",
-		runs: map[string]lifecycle.Run{
+		runs: map[string]record.Run{
 			"Sequoia":  {State: "passed"},
 			"Sonoma":   {State: "canceled", Detail: "canceled: promoted without waiting"},
 			"Ventura":  {State: "blocked", Detail: "dependency oniguruma failed to build"},
@@ -199,13 +199,13 @@ var bodyVariants = []bodyVariant{
 		},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_with_closes",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed"}},
 		verified: true, closes: "71234", ownCommits: 1, checkedPRs: true},
 	{name: "verified_many_commits",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed"}},
 		verified: true, ownCommits: 3, checkedPRs: true},
 	{name: "verified_prs_unchecked",
-		runs:     map[string]lifecycle.Run{"Sequoia": {State: "passed"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed"}},
 		verified: true, ownCommits: 1, checkedPRs: false},
 	{name: "unverified",
 		ownCommits: 1, checkedPRs: true},
@@ -214,11 +214,11 @@ var bodyVariants = []bodyVariant{
 	// golden is byte-identical to unverified: an unverified body
 	// ignores the note entirely.
 	{name: "unverified_failed_overridden",
-		runs:       map[string]lifecycle.Run{"Sequoia": {State: "failed", Handle: "dockhand-jq-1", Detail: "Failed to build jq: boom"}},
+		runs:       map[string]record.Run{"Sequoia": {State: "failed", Handle: "dockhand-jq-1", Detail: "Failed to build jq: boom"}},
 		ownCommits: 1, checkedPRs: true},
 	// Likewise byte-identical to unverified.
 	{name: "unverified_blocked_and_canceled",
-		runs: map[string]lifecycle.Run{
+		runs: map[string]record.Run{
 			"Sequoia": {State: "blocked", Detail: "dependency oniguruma failed to build"},
 			"Sonoma":  {State: "canceled", Detail: "canceled: promoted without waiting"},
 		},

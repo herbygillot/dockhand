@@ -359,7 +359,9 @@ compare_manifests() { # baseline-manifest rerun-manifest
 record() {
 	mkdir -p "$out"
 	# Only what this script wrote is removed: LIVEPROOF_OUT may be
-	# anywhere the user pointed it.
+	# anywhere the user pointed it. A check's own rerun directory is
+	# its to remove, so only the fixed path older versions left behind
+	# is swept here.
 	rm -rf "$out/rerun"
 	rm -f "$out"/*.out "$out"/*.err "$out"/*.code "$out/manifest.sha256" "$out/meta"
 	echo "liveproof: recording into $out (tree at $tree_head)"
@@ -386,18 +388,29 @@ check() {
 		die 2 "no baseline in $out and none recorded in $mirror; run \`$0 record\` first"
 	fi
 
-	local rerun=$out/rerun
-	rm -rf "$rerun"
-	mkdir -p "$rerun"
-	echo "liveproof: rerunning into $rerun (tree at $tree_head)"
-	run_all "$rerun"
-	write_manifest "$rerun"
-	write_meta "$rerun"
+	# The rerun directory is unique per invocation, and removed on the
+	# way out. A fixed path was a trap once two agents shared the
+	# checkout: a second `check` starting mid-compare wiped the first
+	# one's captures, which showed up as two files arriving empty and
+	# read exactly like a parity regression. Every difference is printed
+	# as it is found, so nothing is lost by not keeping the directory;
+	# a run killed before its trap leaves one behind, under a name no
+	# other run will reuse.
+	#
+	# rerun_dir is deliberately not local: the trap fires after this
+	# function has returned, and a local would be gone by then.
+	mkdir -p "$out"
+	rerun_dir=$(mktemp -d "$out/rerun.XXXXXX")
+	trap 'rm -rf "$rerun_dir"' EXIT
+	echo "liveproof: rerunning into $rerun_dir (tree at $tree_head)"
+	run_all "$rerun_dir"
+	write_manifest "$rerun_dir"
+	write_meta "$rerun_dir"
 
 	if [[ -f $out/manifest.sha256 ]]; then
-		compare_captures "$out" "$rerun"
+		compare_captures "$out" "$rerun_dir"
 	else
-		compare_manifests "$mirror/manifest.sha256" "$rerun/manifest.sha256"
+		compare_manifests "$mirror/manifest.sha256" "$rerun_dir/manifest.sha256"
 	fi
 
 	local recorded_head recorded_network

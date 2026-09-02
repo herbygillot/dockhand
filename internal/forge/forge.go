@@ -1,8 +1,11 @@
 // Package forge is everything dockhand says to GitHub: the gh seam,
 // pull-request lookup and search, fork and upstream resolution, and
 // the PR body composed in the shape of macports-ports' own template.
-// It sits above lifecycle (it reads verdict notes to compose bodies)
-// and below cmd (which orchestrates the two).
+// It sits above record (it quotes a verification record to compose a
+// body) and below cmd, which orchestrates the two. What a pull request
+// MEANS is not decided here: cmd maps what gh answered into the facts
+// the verdict package weighs, so no judgment has to know gh's spelling
+// and the forge keeps none of its own.
 package forge
 
 import (
@@ -11,28 +14,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tool"
 )
-
-// DuplicatePRError is promote's refusal when an open upstream PR
-// already claims the same change: a duplicate spends reviewer
-// attention on the purest kind of waste. Refusal with a remedy (exit
-// 5), not a failure — the other PR may be theirs to join, or
-// --no-pr-check promotes past it deliberately.
-type DuplicatePRError struct {
-	Title string
-	URL   string
-}
-
-func (e *DuplicatePRError) Error() string {
-	return fmt.Sprintf("an open PR already proposes %q: %s — join it, retitle with --title, or --no-pr-check to promote anyway", e.Title, e.URL)
-}
-
-// ExitCode: a duplicate refusal is a decline with a remedy.
-func (e *DuplicatePRError) ExitCode() int { return exitcode.Declined }
 
 // lintClause phrases a note's lint record for the evidence line.
 func lintClause(lint string) string {
@@ -81,7 +66,7 @@ const RepoURL = "https://github.com/herbygillot/dockhand"
 // the accepted currency: the verdict set is enumerated in full, an
 // unverified promotion says so, and the install checkbox strikes the
 // template's command through in favour of the one actually run.
-func PromoteBody(n lifecycle.Note, verified bool, closes string, ownCommits int, checkedPRs bool) string {
+func PromoteBody(n record.Record, verified bool, closes string, ownCommits int, checkedPRs bool) string {
 	var b strings.Builder
 	b.WriteString("#### Description\n\n")
 	var passed []string
@@ -95,7 +80,7 @@ func PromoteBody(n lifecycle.Note, verified bool, closes string, ownCommits int,
 		for _, plat := range n.Platforms() {
 			r := n.Runs[plat]
 			switch r.State {
-			case "passed":
+			case record.Passed:
 				what := "built in a pristine VM"
 				if r.Tested {
 					what, tested = "built and tested in a pristine VM", true
@@ -111,8 +96,15 @@ func PromoteBody(n lifecycle.Note, verified bool, closes string, ownCommits int,
 				}
 				parts = append(parts, plat+": "+what)
 				passed = append(passed, plat)
-			case "unsupported":
+			case record.Unsupported:
 				parts = append(parts, plat+": the port declines this platform (known_fail)")
+			case record.Running, record.Failed, record.Blocked, record.Canceled,
+				record.Superseded, record.Deferred, record.Errored:
+				// Nothing to vouch for. This list enumerates what was
+				// established about the change, and a run still going, one
+				// that failed, or one that never reached the change
+				// establishes nothing — promote's own gate is where a
+				// failure is answered for, not the body.
 			}
 		}
 		// One verdict per line: GitHub keeps single newlines in PR

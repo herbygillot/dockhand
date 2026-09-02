@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -19,7 +20,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -96,7 +99,7 @@ func runVerification(ctx context.Context, rs *runstate.Context, portName, portdi
 	switch st.State {
 	case verify.Passed:
 		fmt.Fprintln(rs.Err, "passed")
-		return lifecycle.LintSummary(log), prov.Release(ctx, job)
+		return verdict.LintSummary(log), prov.Release(ctx, job)
 	case verify.Failed:
 		fmt.Fprintln(rs.Err, "FAILED")
 		tail := log
@@ -276,8 +279,8 @@ func submitRelease(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 		return false, err
 	}
 	defer unlock()
-	if n, nerr := lifecycle.ReadNote(ctx, repo, tip); nerr == nil {
-		if run, ok := n.Runs[r.Name]; ok && run.State == "running" {
+	if n, nerr := ledger.Open(repo).Read(ctx, tip); nerr == nil {
+		if run, ok := n.Runs[r.Name]; ok && run.State == record.Running {
 			fmt.Fprintf(rs.Err, "already verifying on %s (%s); `dockhand status` follows it\n",
 				r.Name, time.Since(run.Job.Started).Round(time.Second))
 			return false, nil
@@ -288,8 +291,8 @@ func submitRelease(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 	}, portName, r, false, test)
 	var vde *lifecycle.VerifyDeferredError
 	if errors.As(err, &vde) {
-		if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, r.Name, lifecycle.Run{
-			State: "deferred", Detail: vde.Reason,
+		if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, r.Name, record.Run{
+			State: record.Deferred, Detail: vde.Reason,
 		}, fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)); rerr != nil {
 			return false, rerr
 		}
@@ -304,12 +307,12 @@ func submitRelease(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 // the submit recorded; a submit the pre-flight settled without a build
 // (known_fail, recorded unsupported) leaves nothing running to follow.
 func followStarted(ctx context.Context, rs *runstate.Context, repo *git.Repo, tip, portName, plat string, prov verify.Verifier) error {
-	n, err := lifecycle.ReadNote(ctx, repo, tip)
+	n, err := ledger.Open(repo).Read(ctx, tip)
 	if err != nil {
 		return err
 	}
 	run, ok := n.Runs[plat]
-	if !ok || run.State != "running" {
+	if !ok || run.State != record.Running {
 		return nil
 	}
 	return lifecycle.FollowRun(ctx, rs, repo, tip, portName, plat, prov, run.Job)
@@ -329,7 +332,7 @@ func branchPortName(ctx context.Context, rs *runstate.Context, repo *git.Repo, t
 	if target != branch {
 		return target, nil
 	}
-	if n, err := lifecycle.ReadNote(ctx, repo, tip); err == nil && n.Port != "" {
+	if n, err := ledger.Open(repo).Read(ctx, tip); err == nil && n.Port != "" {
 		return n.Port, nil
 	}
 	return lifecycle.ChangedPort(ctx, rs, repo, tip, rel)
