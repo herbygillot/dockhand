@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+  released kept environment of dockhand/jq-1.8 on Testos (the failed verdict stands)
+--- stderr

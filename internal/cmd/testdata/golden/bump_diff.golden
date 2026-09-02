@@ -1,0 +1,36 @@
+exit: 0
+--- stdout
+  diff --git a/devel/bumpee/Portfile b/devel/bumpee/Portfile
+  index ac25e98..2a715fd 100644
+  --- a/devel/bumpee/Portfile
+  +++ b/devel/bumpee/Portfile
+  @@ -3,8 +3,8 @@
+   PortSystem          1.0
+   
+   name                bumpee
+  -version             1.0
+  -revision            2
+  +version             2.0
+  +revision            0
+   categories          devel
+   maintainers         nomaintainer
+   license             MIT
+  @@ -13,6 +13,6 @@ long_description    A synthetic port whose upstream releases live beside it \
+                       under files/upstream, so a bump fetches them without a network.
+   
+   master_sites        file://${portpath}/files/upstream
+  -checksums           rmd160  ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2 \
+  -                    sha256  f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c \
+  -                    size    175
+  +checksums           rmd160  616164255fbcc648c856bba04549a8619647e274 \
+  +                    sha256  554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320 \
+  +                    size    225
+--- stderr
+  plan: bump <portdir>, 5 edits
+    version:         1.0 -> 2.0
+    revision reset:  2 -> 0
+    checksum rmd160: ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2 -> 616164255fbcc648c856bba04549a8619647e274
+    checksum sha256: f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c -> 554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320
+    checksum size:   175 -> 225
+  predicted delta:
+    bumpee: checksums rmd160 ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2 sha256 f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c size 175 -> rmd160 616164255fbcc648c856bba04549a8619647e274 sha256 554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320 size 225; distfiles bumpee-1.0.tar.gz -> bumpee-2.0.tar.gz; revision 2 -> 0; version 1.0 -> 2.0

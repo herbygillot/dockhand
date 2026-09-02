@@ -1,0 +1,10 @@
+# The port under test fails in its own build phase. The phase line is
+# the detail; the See and Follow pointers and the trailer are not.
+# The environment is kept: this is the branch's own breakage to debug.
+# RECONSTRUCTED from TestSettleRunsRecordsTheFailureDiagnosis, not
+# captured: see README.md.
+port: jq
+outcome: failed
+state: failed
+detail: Failed to build jq: command execution failed
+lint: clean

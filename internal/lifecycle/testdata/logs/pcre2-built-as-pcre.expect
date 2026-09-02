@@ -1,0 +1,14 @@
+# The pcre2 field case (macports-ports-46): the branch changed the
+# subport pcre2 in devel/pcre, verify submitted the portdir's base
+# name, and the guest built the untouched pcre 8.45 from its archive,
+# cleanly. Nothing in this log is wrong and no log reader can tell —
+# naming what a branch changed is ChangedPort's job (changedport_test)
+# and branchPortName's in cmd — so the readers must settle a plain
+# pass and invent no trouble. The port here is what the note names
+# after the fix; the log is what the guest wrote before it.
+# RECONSTRUCTED from changedport.go's header and the pcre2 comments in
+# cmd, not captured: see README.md.
+port: pcre2
+outcome: passed
+state: passed
+lint: 1 warning

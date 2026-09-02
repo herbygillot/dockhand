@@ -1,0 +1,29 @@
+--->  Verifying Portfile for php56-apcu
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/php/php-apcu
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/php/php-apcu
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: org.macports.load registered provides 'load', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.unload registered provides 'unload', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.distfiles registered provides 'distfiles', a pre-existing procedure. Target override will not be provided
+DEBUG: adding the default universal variant
+--->  Computing dependencies for php56-apcu
+DEBUG: php56-apcu has no conflicts
+DEBUG: Searching for dependency: php56
+DEBUG: Found Dependency: receipt exists for php56
+DEBUG: Executing org.macports.main (php56-apcu)
+--->  Fetching distfiles for php56-apcu
+DEBUG: Executing proc-pre-org.macports.fetch-fetch-0
+Error: php56-apcu @4.0.11 cannot currently be compiled with Xcode 12 or later
+Error: Failed to fetch php56-apcu: incompatible Xcode version
+DEBUG: Error code: NONE
+DEBUG: Backtrace: incompatible Xcode version
+    while executing
+"return -code error "incompatible Xcode version""
+    (procedure "proc-pre-org.macports.fetch-fetch-0" line 3)
+    invoked from within
+"$pre $targetname"
+Warning: targets not executed for php56-apcu: org.macports.activate org.macports.destroot org.macports.install org.macports.build org.macports.configure org.macports.patch org.macports.extract org.macports.checksum org.macports.fetch
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_php_php-apcu/php56-apcu/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port php56-apcu failed

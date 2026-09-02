@@ -27,6 +27,12 @@ type Fake struct {
 	Vanished map[string]bool
 	// Logs scripts Log per job ID.
 	Logs map[string]string
+	// LogErr makes Log fail per job ID — the guest whose log cannot be
+	// read, for the settle paths that must still record a verdict.
+	LogErr map[string]error
+	// ReleaseErr makes Release fail per job ID — the worker tart could
+	// not delete, for the settle paths that must say so.
+	ReleaseErr map[string]error
 	// ExecOut scripts Exec per job ID — the fake implements
 	// verify.Executor so the guest-reaching verbs are testable, but
 	// deliberately not InteractiveShell: a fake terminal proves
@@ -72,6 +78,9 @@ func (f *Fake) Poll(_ context.Context, job verify.Job) (verify.Status, error) {
 }
 
 func (f *Fake) Log(_ context.Context, job verify.Job) (string, error) {
+	if err := f.LogErr[job.ID]; err != nil {
+		return "", err
+	}
 	return f.Logs[job.ID], nil
 }
 
@@ -86,6 +95,9 @@ func (f *Fake) Exec(_ context.Context, job verify.Job, _ ...string) (string, err
 }
 
 func (f *Fake) Release(_ context.Context, job verify.Job) error {
+	if err := f.ReleaseErr[job.ID]; err != nil {
+		return err
+	}
 	f.Released = append(f.Released, job.ID)
 	return nil
 }

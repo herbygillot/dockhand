@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -99,8 +101,7 @@ func pumpDeferred(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 			continue
 		}
 		for _, plat := range n.Platforms() {
-			run := n.Runs[plat]
-			if run.State != "deferred" {
+			if n.Runs[plat].State != "deferred" {
 				continue
 			}
 			rel, derr := branchPortdir(ctx, repo, br, tip)
@@ -113,39 +114,114 @@ func pumpDeferred(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 				fmt.Fprintf(rs.Err, "%s: deferred %s not retried: no such platform is provisioned\n", br, plat)
 				continue
 			}
-			// The note names what this branch verifies — for a minted
-			// branch, the SUBPORT the plan bumped. The portdir's base
-			// name is the parent port, and submitting that would build
-			// the untouched main port and call the branch verified
-			// (field-caught on pcre2, whose portdir is devel/pcre).
-			portName := n.Port
-			if portName == "" {
-				portName = filepath.Base(rel)
-			}
-			err := lifecycle.SubmitVerification(ctx, rs, &lifecycle.Minted{
-				Repo: repo, Branch: br, Sha: tip, RelPort: rel,
-			}, portName, release, false, run.Tested)
-			var vde *lifecycle.VerifyDeferredError
-			if errors.As(err, &vde) {
-				if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, plat, lifecycle.Run{
-					State: "deferred", Detail: vde.Reason, Tested: run.Tested,
-				}, ""); rerr != nil {
-					fmt.Fprintf(rs.Err, "warning: re-recording deferred run: %v\n", rerr)
-				}
-				var cap_ *verify.CapacityError
-				if errors.As(err, &cap_) {
-					fmt.Fprintf(rs.Err, "still waiting for a slot: %s on %s (and anything deferred after it)\n", br, plat)
-					return
-				}
-				fmt.Fprintf(rs.Err, "still deferred: %s on %s — %s\n", br, plat, vde.Reason)
-				continue
-			}
-			if err != nil {
-				fmt.Fprintf(rs.Err, "%s: deferred %s not retried: %v\n", br, plat, err)
+			if pumpRun(ctx, rs, repo, br, tip, rel, plat, release) {
+				return
 			}
 		}
 	}
 }
+
+// pumpRun retries one deferred run and reports whether the pass should
+// stop here. The retry is a claim as much as a submit: two status
+// passes sharing a checkout — two agents, which is how the tool is now
+// used — both read the run as deferred, both submitted, and the second
+// RecordRun overwrote the first's job, leaving a worker no note
+// accounted for. Schema 2 has no field to claim a run with (a peer
+// binary's WriteNote round-trips the struct and drops what it does not
+// know), so the claim is a lock held from the re-read through the
+// record: the holder re-reads the note, and a run no longer deferred
+// was started or settled by the other claimant — skipped, silently,
+// because that claimant announced it.
+func pumpRun(ctx context.Context, rs *runstate.Context, repo *git.Repo, br, tip, rel, plat string, release platform.Release) (stop bool) {
+	// Lock order, checked against every holder at HEAD 82f2f2c. The
+	// submit lock has two takers, this pump and verifyBranch, and
+	// neither takes it under any other lock. Inside it,
+	// SubmitVerification takes tart's admission lock (Provider.Submit,
+	// released once the guest is visibly running, before stage and
+	// launch) and then the notes flock (RecordRun, released before the
+	// compensating Release runs) — in sequence, never nested in each
+	// other. No holder of either inner lock reaches back for this one,
+	// and neither inner lock is taken under the other: the admission
+	// holders (Provider.Submit, RunOnBase, provision's boot) never
+	// touch notes, and the notes holders (SettleRuns, RecordRun,
+	// CancelStale, CancelRunning, DiscardBranch, cancel) call only
+	// Provider.Release, which is `tart stop` and `tart delete` and
+	// takes no admission. submit → admission and submit → notes are
+	// the only edges; there is no cycle. Why it is a lock of its own
+	// and not the notes lock is on git.(*Repo).LockSubmit.
+	unlock, err := repo.LockSubmit(ctx, submitLockWait)
+	if errors.Is(err, lockfile.ErrHeld) {
+		// The expected contention: a peer mid-submit holds it past the
+		// wait, and would hold it for every run after this one too.
+		// The pass stops, and the peer's own status names what it
+		// started. Not the lock's own text, which sends the user
+		// hunting a hung process that is booting a guest on purpose.
+		fmt.Fprintf(rs.Err, "%s: deferred %s not retried: another dockhand is starting deferred runs in this repository; its status names what it started\n", br, plat)
+		return true
+	}
+	if err != nil {
+		fmt.Fprintf(rs.Err, "%s: deferred %s not retried: %v\n", br, plat, err)
+		return true
+	}
+	defer unlock()
+	n, err := lifecycle.ReadNote(ctx, repo, tip)
+	if err != nil {
+		// No note is a branch discarded under this pass: nothing left
+		// to start. Anything else — a peer's newer schema, a corrupt
+		// note, git failing — is a run this pass could not judge, and
+		// the second read exists to notice a peer's writes, so it says.
+		if !errors.Is(err, git.ErrNoNote) {
+			fmt.Fprintf(rs.Err, "%s: deferred %s not retried: %v\n", br, plat, err)
+		}
+		return false
+	}
+	run := n.Runs[plat]
+	if run.State != "deferred" {
+		return false
+	}
+	// The note names what this branch verifies — for a minted
+	// branch, the SUBPORT the plan bumped. The portdir's base
+	// name is the parent port, and submitting that would build
+	// the untouched main port and call the branch verified
+	// (field-caught on pcre2, whose portdir is devel/pcre).
+	portName := n.Port
+	if portName == "" {
+		portName = filepath.Base(rel)
+	}
+	err = lifecycle.SubmitVerification(ctx, rs, &lifecycle.Minted{
+		Repo: repo, Branch: br, Sha: tip, RelPort: rel,
+	}, portName, release, false, run.Tested)
+	var vde *lifecycle.VerifyDeferredError
+	if errors.As(err, &vde) {
+		if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, plat, lifecycle.Run{
+			State: "deferred", Detail: vde.Reason, Tested: run.Tested,
+		}, ""); rerr != nil {
+			fmt.Fprintf(rs.Err, "warning: re-recording deferred run: %v\n", rerr)
+		}
+		var cap_ *verify.CapacityError
+		if errors.As(err, &cap_) {
+			fmt.Fprintf(rs.Err, "still waiting for a slot: %s on %s (and anything deferred after it)\n", br, plat)
+			return true
+		}
+		fmt.Fprintf(rs.Err, "still deferred: %s on %s — %s\n", br, plat, vde.Reason)
+		return false
+	}
+	if err != nil {
+		fmt.Fprintf(rs.Err, "%s: deferred %s not retried: %v\n", br, plat, err)
+	}
+	return false
+}
+
+// submitLockWait bounds a claimant's wait for a peer's submit — the
+// pump's, and verify's. A submit that never boots — a capacity refusal,
+// a test double — is over in a couple of seconds, and waiting it out
+// lets the re-read find the run started and skip cleanly; a submit
+// that boots a guest holds the lock for minutes, which no claimant
+// should sit through: the peer is starting the very run this one
+// would have. A variable so the contention test need not wait it out;
+// the tests in internal/cmd are serial by design (none calls
+// t.Parallel), which is what makes assigning it from a test safe.
+var submitLockWait = 5 * time.Second
 
 // platformNamed resolves a run's recorded platform key against the
 // provider's provisioned platforms.

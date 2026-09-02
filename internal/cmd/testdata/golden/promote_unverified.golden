@@ -1,0 +1,44 @@
+exit: 0
+--- stdout
+  https://x/pr/1
+--- stderr
+  canceled 1 running verification(s) — promoting without waiting
+  verification blocked on Testos: dependency olm (nomaintainer) fails to build; the change itself is untested
+  promoting unverified; the PR will say so
+  note: an open PR already touches this port: #124 "jq: fix the build on Oldos" (https://x/124)
+  pushed dockhand/jq-1.8 to herby (herbygillot)
+--- gh pr create (arguments)
+  pr
+  create
+  --repo
+  macports/macports-ports
+  --head
+  herbygillot:dockhand/jq-1.8
+  --title
+  jq: update to 1.8
+  --body
+--- gh pr create (body)
+  #### Description
+  
+  Not locally verified: no verification environment on the submitting machine.
+  
+  ###### Type(s)
+  
+  - [ ] bugfix
+  - [ ] enhancement
+  - [ ] security fix
+  
+  ###### Verification
+  Have you
+  
+  - [x] followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?
+  - [x] squashed and [minimized your commits](https://guide.macports.org/#project.github)?
+  - [x] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?
+  - [ ] referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?
+  - [ ] checked your Portfile with `port lint`?
+  - [ ] tried existing tests with `sudo port test`?
+  - [ ] tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM
+  - [ ] tested basic functionality of all binary files?
+  - [ ] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?
+  
+  Automated by [dockhand](https://github.com/herbygillot/dockhand)

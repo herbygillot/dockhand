@@ -1,0 +1,4 @@
+exit: 1
+--- stdout
+--- stderr
+  dockhand: PR #50 for dockhand/jq-1.8 already merged (https://x/50) — `dockhand clean` retires the branch

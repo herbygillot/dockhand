@@ -1,0 +1,12 @@
+# The port refuses the platform in words the readers recognize. A
+# correct refusal is not a failure: the run settles unsupported, the
+# detail is the fixed phrase rather than the log's line, and the
+# worker is released because a refusal leaves nothing to debug.
+# RECONSTRUCTED from TestSettleRunsReadsARefusalAsUnsupported, with a
+# pre-fetch refusal's DEBUG context around it; not captured: see
+# README.md.
+port: jq
+outcome: failed
+state: unsupported
+detail: the port declines to build on this platform
+lint: clean

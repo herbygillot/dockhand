@@ -1,0 +1,5 @@
+exit: 0
+--- stdout
+--- stderr
+  warning: pre-flight evaluation: prefix: no MacPorts installation found (no port-tclsh under /nonexistent/dockhand-golden-prefix)
+  verify: submitted jq on Testos (job fake-1); `dockhand status` follows it

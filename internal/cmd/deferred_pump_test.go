@@ -9,7 +9,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,6 +20,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -131,4 +135,171 @@ func TestStatusPumpRetriesNonCapacityDeferralsAndContinues(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "deferred", n.Runs["Testos"].State,
 		"a deferral whose remedy is unmet re-records honestly and does not block the pass")
+}
+
+// Two status passes over one repository — two agents sharing a
+// checkout — find the same deferred run at the same moment. Before the
+// pump lock, both submitted and the second RecordRun overwrote the
+// first's job: a worker no note accounted for. The two passes share
+// one Fake on purpose: it has no mutex, so a concurrent Submit is also
+// a data race the -race build reports, which is how the unlocked pump
+// fails even when the assertions below might have been lucky.
+func TestStatusPumpTwoPassesSubmitOnce(t *testing.T) {
+	tartOnPath(t)
+	repo, sha := lifecycleRepo(t)
+	deferredNote(t, repo, sha, "all 2 verification slots are busy (2 VMs running)")
+
+	fake := &verifytest.Fake{}
+	rs1, _, errb1 := pumpState(repo, fake)
+	rs2, _, errb2 := pumpState(repo, fake)
+	t.Cleanup(rs1.Close)
+	t.Cleanup(rs2.Close)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	start := make(chan struct{})
+	for i, rs := range []*runstate.Context{rs1, rs2} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = statusAction{noClean: true}.Execute(context.Background(), rs)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+
+	require.Len(t, fake.Submitted, 1, "two passes, one submission")
+	assert.Equal(t, "jq", fake.Submitted[0].Port)
+	n, err := lifecycle.ReadNote(context.Background(), repo, sha)
+	require.NoError(t, err)
+	r := n.Runs["Testos"]
+	assert.Equal(t, "running", r.State)
+	assert.Equal(t, "fake-1", r.Job.ID, "the note carries the one job that was started")
+	assert.Equal(t, 1, strings.Count(errb1.String()+errb2.String(), "verify: submitted jq on Testos"),
+		"exactly one pass announced the start")
+}
+
+// A peer holding the submit lock past the wait is a peer mid-submit:
+// the pass reports, submits nothing, and stops — the run it would have
+// started is being started, and the note it would have re-read is
+// about to say so. The line names the expected case, not the lock's
+// own wedged-holder advice.
+func TestStatusPumpYieldsToAPeerHoldingTheLock(t *testing.T) {
+	tartOnPath(t)
+	repo, sha := lifecycleRepo(t)
+	deferredNote(t, repo, sha, "all 2 verification slots are busy (2 VMs running)")
+	prev := submitLockWait
+	submitLockWait = 0
+	t.Cleanup(func() { submitLockWait = prev })
+
+	unlock, err := repo.LockSubmit(context.Background(), 0)
+	require.NoError(t, err)
+	t.Cleanup(unlock)
+
+	fake := &verifytest.Fake{}
+	rs, _, errb := pumpState(repo, fake)
+	require.NoError(t, statusAction{noClean: true}.Execute(context.Background(), rs))
+
+	assert.Empty(t, fake.Submitted, "the peer's submit is the one that counts")
+	assert.Contains(t, errb.String(), "dockhand/jq-1.8: deferred Testos not retried: another dockhand is starting deferred runs in this repository; its status names what it started")
+	assert.NotContains(t, errb.String(), "hung", "a peer booting a guest is not a hung dockhand")
+	n, err := lifecycle.ReadNote(context.Background(), repo, sha)
+	require.NoError(t, err)
+	assert.Equal(t, "deferred", n.Runs["Testos"].State, "the note is the peer's to change")
+}
+
+// A verify and a status over one deferred run — one agent runs
+// `dockhand verify`, another `dockhand status` — make the same claim
+// under the same lock: one submission, one job in the note, and the
+// shared mutex-free Fake makes an unlocked pair a data race too.
+func TestVerifyAndStatusPumpSubmitOnce(t *testing.T) {
+	tartOnPath(t)
+	repo, sha := lifecycleRepo(t)
+	deferredNote(t, repo, sha, "all 2 verification slots are busy (2 VMs running)")
+
+	fake := &verifytest.Fake{}
+	rs1, _, errb1 := pumpState(repo, fake)
+	rs2, _, errb2 := pumpState(repo, fake)
+	rs1.PrefixPath, rs2.PrefixPath = goldenNoPrefix, goldenNoPrefix
+	t.Cleanup(rs1.Close)
+	t.Cleanup(rs2.Close)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	start := make(chan struct{})
+	actions := []Action{verifyAction{target: "dockhand/jq-1.8"}, statusAction{noClean: true}}
+	for i, rs := range []*runstate.Context{rs1, rs2} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = actions[i].Execute(context.Background(), rs)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+
+	require.Len(t, fake.Submitted, 1, "a verify and a status, one submission")
+	assert.Equal(t, "jq", fake.Submitted[0].Port)
+	n, err := lifecycle.ReadNote(context.Background(), repo, sha)
+	require.NoError(t, err)
+	r := n.Runs["Testos"]
+	assert.Equal(t, "running", r.State)
+	assert.Equal(t, "fake-1", r.Job.ID, "the note carries the one job that was started")
+	assert.Equal(t, 1, strings.Count(errb1.String()+errb2.String(), "verify: submitted jq on Testos"),
+		"exactly one claimant announced the start")
+}
+
+// verify yielding to a peer's claim is an error naming the peer's
+// work, carrying the lock sentinel, and never a second submission.
+func TestVerifyYieldsToAPeerHoldingTheLock(t *testing.T) {
+	tartOnPath(t)
+	repo, sha := lifecycleRepo(t)
+	deferredNote(t, repo, sha, "all 2 verification slots are busy (2 VMs running)")
+	prev := submitLockWait
+	submitLockWait = 0
+	t.Cleanup(func() { submitLockWait = prev })
+
+	unlock, err := repo.LockSubmit(context.Background(), 0)
+	require.NoError(t, err)
+	t.Cleanup(unlock)
+
+	fake := &verifytest.Fake{}
+	rs, _, _ := pumpState(repo, fake)
+	rs.PrefixPath = goldenNoPrefix
+	err = verifyAction{target: "dockhand/jq-1.8"}.Execute(context.Background(), rs)
+	require.ErrorIs(t, err, lockfile.ErrHeld)
+	assert.NotContains(t, err.Error(), "hung", "a peer booting a guest is not a hung dockhand")
+	assert.Empty(t, fake.Submitted, "the peer's submit is the one that counts")
+	n, err := lifecycle.ReadNote(context.Background(), repo, sha)
+	require.NoError(t, err)
+	assert.Equal(t, "deferred", n.Runs["Testos"].State, "the note is the peer's to change")
+}
+
+// A note the pump cannot read under the lock — a peer's newer schema,
+// here — is reported, not mistaken for a branch discarded mid-pass.
+func TestStatusPumpReportsAnUnreadableNoteUnderTheLock(t *testing.T) {
+	tartOnPath(t)
+	repo, sha := lifecycleRepo(t)
+	deferredNote(t, repo, sha, "all 2 verification slots are busy (2 VMs running)")
+
+	// The pump's first read succeeds and finds the run deferred; the
+	// note is then rewritten as a newer dockhand's before the locked
+	// re-read, which is exactly what a peer's write looks like.
+	fake := &verifytest.Fake{}
+	rs, _, errb := pumpState(repo, fake)
+	rs.Verifier = func(ctx context.Context) (verify.Verifier, error) {
+		newer := fmt.Sprintf(`{"schema": 99, "sha": %q, "port": "jq", "runs": {}}`, sha)
+		require.NoError(t, repo.NoteWrite(ctx, git.VerifyNotesRef, sha, []byte(newer)))
+		return fake, nil
+	}
+	require.NoError(t, statusAction{noClean: true}.Execute(context.Background(), rs))
+
+	assert.Empty(t, fake.Submitted, "a run this pass cannot judge is not started")
+	assert.Contains(t, errb.String(), "dockhand/jq-1.8: deferred Testos not retried: note on "+sha+" was written by a newer dockhand")
 }

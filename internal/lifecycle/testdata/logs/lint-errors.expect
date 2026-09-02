@@ -1,0 +1,13 @@
+# port lint leads every verification and its errors fail the run, so
+# the runner stops here and the log is lint's output alone. The first
+# Error line is lint's own finding and becomes the detail; it names no
+# phase, so nothing is blamed. The lint summary still reads the
+# warning count — errors are not counted, the exit code already failed
+# the run on them — though the note records lint only on a pass.
+# RECONSTRUCTED from LintArgs's contract in build.go, not captured:
+# see README.md.
+port: jq
+outcome: failed
+state: failed
+detail: Missing required field: description
+lint: 1 warning

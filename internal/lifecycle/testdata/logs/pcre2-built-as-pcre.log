@@ -1,0 +1,32 @@
+--->  Verifying Portfile for pcre
+--->  0 errors and 1 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/devel/pcre
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/devel/pcre
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: org.macports.load registered provides 'load', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.unload registered provides 'unload', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.distfiles registered provides 'distfiles', a pre-existing procedure. Target override will not be provided
+DEBUG: adding the default universal variant
+DEBUG: Reading variant descriptions from /opt/local/var/macports/sources/rsync.macports.org/macports/release/tarball/ports/_resources/port1.0/variant_descriptions.conf
+--->  Computing dependencies for pcre
+DEBUG: pcre has no conflicts
+DEBUG: Searching for dependency: bzip2
+DEBUG: Found Dependency: receipt exists for bzip2
+DEBUG: Searching for dependency: libedit
+DEBUG: Found Dependency: receipt exists for libedit
+DEBUG: Searching for dependency: zlib
+DEBUG: Found Dependency: receipt exists for zlib
+DEBUG: Executing org.macports.main (pcre)
+--->  Fetching archive for pcre
+DEBUG: Executing org.macports.archivefetch (pcre)
+--->  Attempting to fetch pcre-8.45_0.darwin_24.arm64.tbz2 from https://packages.macports.org/pcre
+--->  Attempting to fetch pcre-8.45_0.darwin_24.arm64.tbz2.rmd160 from https://packages.macports.org/pcre
+DEBUG: Executing org.macports.install (pcre)
+--->  Installing pcre @8.45_0
+DEBUG: Using /usr/bin/tar
+DEBUG: Using /usr/bin/bzip2
+--->  Activating pcre @8.45_0
+DEBUG: Executing org.macports.activate (pcre)
+--->  Cleaning pcre
+DEBUG: Executing org.macports.clean (pcre)
+DEBUG: Cleaning logs for pcre

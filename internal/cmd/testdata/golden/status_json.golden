@@ -1,0 +1,272 @@
+exit: 0
+--- stdout
+  {
+    "repository": "<repo>",
+    "branches": [
+      {
+        "branch": "dockhand/jq-amended",
+        "tip": "d4798d50ed090cf5409f873a6807af15885eb369",
+        "drift": "unsupported (Oldos), passed (Testos) at c49914c23ab7 — the tip differs only in commit metadata"
+      },
+      {
+        "branch": "dockhand/jq-behind",
+        "tip": "4cb6cc181ad57531948c0caae6b2c4dd3111e309",
+        "drift": "tip unverified; passed (Testos) at 44cfc9eea250, 1 commit(s) behind — `dockhand verify dockhand/jq-behind` tests the tip"
+      },
+      {
+        "branch": "dockhand/jq-blocked",
+        "tip": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
+        "note": {
+          "schema": 2,
+          "sha": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
+          "tree": "bdc4e4255b93a66942d4056c4bdac45a9f31ad3b",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "blocked",
+              "job": {
+                "provider": "fake",
+                "id": "fake-blocked",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "detail": "dependency olm (nomaintainer) fails to build; the change itself is untested",
+              "linted": true
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-canceled",
+        "tip": "eb753d9e44140cbc2ccc481b736f4ff322c26460",
+        "note": {
+          "schema": 2,
+          "sha": "eb753d9e44140cbc2ccc481b736f4ff322c26460",
+          "tree": "4d86f9adc00f64307479b82eebf5cfc55732791f",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "canceled",
+              "job": {
+                "provider": "fake",
+                "id": "fake-canceled",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "detail": "canceled by the user"
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-deferred",
+        "tip": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+        "note": {
+          "schema": 2,
+          "sha": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+          "tree": "37b48172a8691ff4e65237ab66161b810828d73a",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "deferred",
+              "job": {
+                "provider": "",
+                "id": "",
+                "started": "0001-01-01T00:00:00Z"
+              },
+              "detail": "all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees"
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-errored",
+        "tip": "ff6909944aa24b75917e6a2386831bbaccedee4f",
+        "note": {
+          "schema": 2,
+          "sha": "ff6909944aa24b75917e6a2386831bbaccedee4f",
+          "tree": "2edcc85811b2bee4f64477da526adbc3606adb65",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "errored",
+              "job": {
+                "provider": "fake",
+                "id": "fake-errored",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "detail": "guest agent unreachable after boot",
+              "linted": true
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-failed",
+        "tip": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
+        "note": {
+          "schema": 2,
+          "sha": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
+          "tree": "e707f5799d1e8f56e2e2b4ac98a8c8cf60b82cad",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "failed",
+              "job": {
+                "provider": "fake",
+                "id": "fake-failed",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "handle": "dockhand-worker-failed",
+              "detail": "Failed to build jq: command execution failed",
+              "linted": true
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-multi",
+        "tip": "c49914c23ab7c5853d1a794b1764194e11b220ef",
+        "note": {
+          "schema": 2,
+          "sha": "c49914c23ab7c5853d1a794b1764194e11b220ef",
+          "tree": "235585d927f147c08d938f896f075d420efe93ce",
+          "port": "jq",
+          "runs": {
+            "Oldos": {
+              "state": "unsupported",
+              "job": {
+                "provider": "",
+                "id": "",
+                "started": "0001-01-01T00:00:00Z"
+              },
+              "detail": "declares known_fail on Oldos"
+            },
+            "Testos": {
+              "state": "passed",
+              "job": {
+                "provider": "",
+                "id": "",
+                "started": "0001-01-01T00:00:00Z"
+              },
+              "tested": true,
+              "linted": true,
+              "lint": "clean"
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-passed",
+        "tip": "7159f6b651e49cae47422560120e93ebc494acc9",
+        "note": {
+          "schema": 2,
+          "sha": "7159f6b651e49cae47422560120e93ebc494acc9",
+          "tree": "84638b5a25febc78bd8ac7cad517ef4d88764262",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "passed",
+              "job": {
+                "provider": "fake",
+                "id": "fake-passed",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "linted": true,
+              "lint": "2 warnings"
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-running",
+        "tip": "116445bf5b788ea72de3b40b24cf0cc7fc3e6aba",
+        "note": {
+          "schema": 2,
+          "sha": "116445bf5b788ea72de3b40b24cf0cc7fc3e6aba",
+          "tree": "e21e3fc7397b56e81918c6a9d9d582e6193610ac",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "running",
+              "job": {
+                "provider": "fake",
+                "id": "fake-running",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "linted": true
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-superseded",
+        "tip": "b8d948c84becca542331ac4d1622c6e1b6d52517",
+        "note": {
+          "schema": 2,
+          "sha": "b8d948c84becca542331ac4d1622c6e1b6d52517",
+          "tree": "4c5f3c03363a3f573101b4039b185070084121e3",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "superseded",
+              "job": {
+                "provider": "fake",
+                "id": "fake-superseded",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "detail": "canceled: the branch moved to 997767bd393f"
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-unnoted",
+        "tip": "432ff13a796927c17281d069c1a1f4480afb42c5",
+        "drift": "unverified"
+      },
+      {
+        "branch": "dockhand/jq-unsupported",
+        "tip": "658b4cdd52878e239942187bd93941095efbe507",
+        "note": {
+          "schema": 2,
+          "sha": "658b4cdd52878e239942187bd93941095efbe507",
+          "tree": "f2e739afaa755dbd865d03d14e0bbb63d39f1cd0",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "unsupported",
+              "job": {
+                "provider": "fake",
+                "id": "fake-unsupported",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "detail": "the port declines to build on this platform",
+              "linted": true
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-vanished",
+        "tip": "89bbf5e1bf38441d2b88809fc20b24ab321baf10",
+        "note": {
+          "schema": 2,
+          "sha": "89bbf5e1bf38441d2b88809fc20b24ab321baf10",
+          "tree": "2b58d0fb93e34e9d1e82ef4047702deecaec3772",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "errored",
+              "job": {
+                "provider": "fake",
+                "id": "fake-vanished",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "detail": "job vanished: its worker no longer exists",
+              "linted": true
+            }
+          }
+        }
+      }
+    ]
+  }
+--- stderr

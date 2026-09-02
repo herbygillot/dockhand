@@ -1,0 +1,146 @@
+exit: 0
+--- stdout
+  {
+    "repository": "<repo>",
+    "branches": [
+      {
+        "branch": "dockhand/jq-closed",
+        "tip": "27423649d22e7bb6bb26e23e7bf2f737e76e5fd6",
+        "note": {
+          "schema": 2,
+          "sha": "27423649d22e7bb6bb26e23e7bf2f737e76e5fd6",
+          "tree": "be6606a642ed16da8a03b68cb8b28dd624715cca",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "passed",
+              "job": {
+                "provider": "",
+                "id": "",
+                "started": "0001-01-01T00:00:00Z"
+              },
+              "linted": true,
+              "lint": "clean"
+            }
+          }
+        },
+        "pr": {
+          "number": 78,
+          "title": "jq: update to 2.0",
+          "state": "closed",
+          "merged_at": "",
+          "html_url": "https://x/78"
+        }
+      },
+      {
+        "branch": "dockhand/jq-landed",
+        "tip": "8da38abbbd45bd262760af9e7e0bb1e099b052f1",
+        "drift": "unverified",
+        "pr": {
+          "number": 80,
+          "title": "jq: update to 1.7",
+          "state": "closed",
+          "merged_at": "2026-09-01T00:00:00Z",
+          "html_url": "https://x/80"
+        },
+        "cleaned": true
+      },
+      {
+        "branch": "dockhand/jq-local",
+        "tip": "44cfc9eea2501444a372ea718e90925fa4f59c3f",
+        "note": {
+          "schema": 2,
+          "sha": "44cfc9eea2501444a372ea718e90925fa4f59c3f",
+          "tree": "d1384642b121f26c6f76906d0538f55192ce3b6f",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "passed",
+              "job": {
+                "provider": "",
+                "id": "",
+                "started": "0001-01-01T00:00:00Z"
+              },
+              "linted": true,
+              "lint": "clean"
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-merged",
+        "tip": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
+        "note": {
+          "schema": 2,
+          "sha": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
+          "tree": "bdc4e4255b93a66942d4056c4bdac45a9f31ad3b",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "passed",
+              "job": {
+                "provider": "",
+                "id": "",
+                "started": "0001-01-01T00:00:00Z"
+              },
+              "linted": true,
+              "lint": "clean"
+            }
+          }
+        },
+        "pr": {
+          "number": 79,
+          "title": "jq: update to 2.3",
+          "state": "closed",
+          "merged_at": "2026-09-01T00:00:00Z",
+          "html_url": "https://x/79"
+        },
+        "cleaned": true
+      },
+      {
+        "branch": "dockhand/jq-nopr",
+        "tip": "eb753d9e44140cbc2ccc481b736f4ff322c26460",
+        "drift": "unverified"
+      },
+      {
+        "branch": "dockhand/jq-open",
+        "tip": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+        "note": {
+          "schema": 2,
+          "sha": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+          "tree": "37b48172a8691ff4e65237ab66161b810828d73a",
+          "port": "jq",
+          "runs": {
+            "Testos": {
+              "state": "passed",
+              "job": {
+                "provider": "",
+                "id": "",
+                "started": "0001-01-01T00:00:00Z"
+              },
+              "linted": true,
+              "lint": "clean"
+            }
+          }
+        },
+        "pr": {
+          "number": 77,
+          "title": "jq: update to 2.5",
+          "state": "open",
+          "merged_at": "",
+          "html_url": "https://x/77"
+        }
+      },
+      {
+        "branch": "dockhand/jq-outage",
+        "tip": "ff6909944aa24b75917e6a2386831bbaccedee4f",
+        "drift": "unverified",
+        "pr_error": "gh api: HTTP 502 from api.github.com (scripted outage)"
+      }
+    ]
+  }
+--- stderr
+  removed dockhand/jq-landed from "herby"
+  discarded dockhand/jq-landed (8da38abbbd45)
+  removed dockhand/jq-merged from "herby"
+  discarded dockhand/jq-merged (7a42be6e7ed1)

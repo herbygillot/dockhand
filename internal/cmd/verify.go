@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -192,6 +193,9 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // tip is left alone; a running job the branch has moved past is
 // canceled first, its worker released and its note marked superseded,
 // because a verdict about an abandoned sha is a slot spent on nothing.
+// Each release's submit is a claim under the repository's submit lock,
+// the same claim status's pump makes: a verify racing a status over
+// one deferred run used to start it twice.
 func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, target, branch string, on []string, test, trace bool) error {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
@@ -221,33 +225,23 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, tar
 		return err
 	}
 
-	n, nerr := lifecycle.ReadNote(ctx, repo, tip)
 	var deferred int
 	for _, r := range releases {
-		if nerr == nil {
-			if run, ok := n.Runs[r.Name]; ok && run.State == "running" {
-				fmt.Fprintf(rs.Err, "already verifying on %s (%s); `dockhand status` follows it\n",
-					r.Name, time.Since(run.Job.Started).Round(time.Second))
-				continue
-			}
-		}
-		err := lifecycle.SubmitVerification(ctx, rs, &lifecycle.Minted{
-			Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
-		}, portName, r, trace, test)
+		started, err := submitRelease(ctx, rs, repo, branch, tip, rel, portName, r, test)
 		var vde *lifecycle.VerifyDeferredError
 		if errors.As(err, &vde) {
 			// No slot for this platform right now: recorded, reported,
 			// and the remaining releases still get their chance.
-			if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, r.Name, lifecycle.Run{
-				State: "deferred", Detail: vde.Reason,
-			}, fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)); rerr != nil {
-				return rerr
-			}
 			deferred++
 			continue
 		}
 		if err != nil {
 			return err
+		}
+		if trace && started {
+			if err := followStarted(ctx, rs, repo, tip, portName, r.Name, prov); err != nil {
+				return err
+			}
 		}
 	}
 	if deferred > 0 {
@@ -260,6 +254,66 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, tar
 			Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", deferred)}
 	}
 	return nil
+}
+
+// submitRelease claims one release's run for the branch and submits it,
+// under the repository's submit lock from the re-read through the
+// record — the claim pumpRun makes, made the same way, so a verify and
+// a status over one deferred run cannot both start it. The note is
+// read under the lock, because what it says outside is what a peer
+// may already have changed: a run already running is left alone, and
+// a deferral is re-recorded with its reason before the lock goes, so
+// the record can never land on top of a peer's start. started reports
+// a submit that went through, for --trace to follow once the claim is
+// released.
+func submitRelease(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch, tip, rel, portName string, r platform.Release, test bool) (started bool, err error) {
+	unlock, err := repo.LockSubmit(ctx, submitLockWait)
+	if errors.Is(err, lockfile.ErrHeld) {
+		// The expected contention — a peer's pump booting a guest — is
+		// not a hung process, so the lock's own advice would mislead.
+		return false, fmt.Errorf("%w: a verification is being submitted in this repository; `dockhand status` shows what it started, then `dockhand verify %s` again", lockfile.ErrHeld, branch)
+	}
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	if n, nerr := lifecycle.ReadNote(ctx, repo, tip); nerr == nil {
+		if run, ok := n.Runs[r.Name]; ok && run.State == "running" {
+			fmt.Fprintf(rs.Err, "already verifying on %s (%s); `dockhand status` follows it\n",
+				r.Name, time.Since(run.Job.Started).Round(time.Second))
+			return false, nil
+		}
+	}
+	err = lifecycle.SubmitVerification(ctx, rs, &lifecycle.Minted{
+		Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
+	}, portName, r, false, test)
+	var vde *lifecycle.VerifyDeferredError
+	if errors.As(err, &vde) {
+		if rerr := lifecycle.RecordRun(ctx, rs, repo, tip, portName, r.Name, lifecycle.Run{
+			State: "deferred", Detail: vde.Reason,
+		}, fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)); rerr != nil {
+			return false, rerr
+		}
+		return false, err
+	}
+	return err == nil, err
+}
+
+// followStarted streams the run submitRelease just started — after the
+// claim is released, because a build's forty minutes must hold no lock
+// a peer's status pump waits on. The job is read back from the note
+// the submit recorded; a submit the pre-flight settled without a build
+// (known_fail, recorded unsupported) leaves nothing running to follow.
+func followStarted(ctx context.Context, rs *runstate.Context, repo *git.Repo, tip, portName, plat string, prov verify.Verifier) error {
+	n, err := lifecycle.ReadNote(ctx, repo, tip)
+	if err != nil {
+		return err
+	}
+	run, ok := n.Runs[plat]
+	if !ok || run.State != "running" {
+		return nil
+	}
+	return lifecycle.FollowRun(ctx, rs, repo, tip, portName, plat, prov, run.Job)
 }
 
 // branchPortName names what a branch verification builds. The

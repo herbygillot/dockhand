@@ -1,0 +1,29 @@
+--->  Verifying Portfile for jq
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/sysutils/jq
+DEBUG: OS darwin/20.6.0 (Mac OS X 11.7) arch arm64
+DEBUG: org.macports.load registered provides 'load', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.unload registered provides 'unload', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.distfiles registered provides 'distfiles', a pre-existing procedure. Target override will not be provided
+DEBUG: adding the default universal variant
+--->  Computing dependencies for jq
+DEBUG: jq has no conflicts
+DEBUG: Searching for dependency: oniguruma
+DEBUG: Found Dependency: receipt exists for oniguruma
+DEBUG: Executing org.macports.main (jq)
+--->  Fetching distfiles for jq
+DEBUG: Executing proc-pre-org.macports.fetch-fetch-0
+Error: jq is known to fail on this platform
+Error: Failed to fetch jq: known to fail
+DEBUG: Error code: NONE
+DEBUG: Backtrace: known to fail
+    while executing
+"return -code error "known to fail""
+    (procedure "proc-pre-org.macports.fetch-fetch-0" line 3)
+    invoked from within
+"$pre $targetname"
+Warning: targets not executed for jq: org.macports.activate org.macports.destroot org.macports.install org.macports.build org.macports.configure org.macports.patch org.macports.extract org.macports.checksum org.macports.fetch
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_sysutils_jq/jq/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port jq failed

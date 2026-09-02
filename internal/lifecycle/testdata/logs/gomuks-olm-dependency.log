@@ -1,0 +1,49 @@
+--->  Verifying Portfile for gomuks
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/net/gomuks
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/net/gomuks
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: org.macports.load registered provides 'load', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.unload registered provides 'unload', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.distfiles registered provides 'distfiles', a pre-existing procedure. Target override will not be provided
+DEBUG: adding the default universal variant
+DEBUG: Reading variant descriptions from /opt/local/var/macports/sources/rsync.macports.org/macports/release/tarball/ports/_resources/port1.0/variant_descriptions.conf
+--->  Computing dependencies for gomuks
+DEBUG: gomuks has no conflicts
+DEBUG: Searching for dependency: go
+DEBUG: Found Dependency: receipt exists for go
+DEBUG: Searching for dependency: olm
+DEBUG: Didn't find receipt, going to depspec regex for: olm
+--->  Dependencies to be installed: olm
+DEBUG: Changing to port directory: /opt/local/var/macports/sources/rsync.macports.org/macports/release/tarball/ports/devel/olm
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: Executing org.macports.main (olm)
+--->  Fetching archive for olm
+DEBUG: Executing org.macports.archivefetch (olm)
+--->  Attempting to fetch olm-3.2.16_0.darwin_24.arm64.tbz2 from https://packages.macports.org/olm
+DEBUG: Fetching archive failed: The requested URL returned error: 404
+--->  Fetching distfiles for olm
+DEBUG: Executing org.macports.fetch (olm)
+--->  Verifying checksums for olm
+DEBUG: Executing org.macports.checksum (olm)
+--->  Extracting olm
+DEBUG: Executing org.macports.extract (olm)
+--->  Configuring olm
+DEBUG: Executing org.macports.configure (olm)
+--->  Building olm
+DEBUG: Executing org.macports.build (olm)
+DEBUG: Assembled command: 'cd "/opt/local/var/macports/build/_opt_local_var_macports_sources_rsync.macports.org_macports_release_tarball_ports_devel_olm/olm/work/build" && /usr/bin/make -j8 -w all VERBOSE=ON'
+Error: Failed to build olm: command execution failed
+DEBUG: Error code: CHILDSTATUS 4311 2
+DEBUG: Backtrace: command execution failed
+    while executing
+"system {*}$notty {*}$nice $fullcmdstring"
+    invoked from within
+"command_exec -callback portprogress::target_progress_callback build"
+    (procedure "portbuild::build_main" line 8)
+    invoked from within
+"$procedure $targetname"
+Warning: targets not executed for olm: org.macports.activate org.macports.destroot org.macports.install
+Error: See /opt/local/var/macports/logs/_opt_local_var_macports_sources_rsync.macports.org_macports_release_tarball_ports_devel_olm/olm/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port gomuks failed

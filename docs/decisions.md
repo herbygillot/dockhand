@@ -499,6 +499,31 @@ blocks round-trip exactly. This narrows the old "never reflow tool
 output" stance to "never touch anything but whitespace between opaque
 words".
 
+**Amended (2026-09-02, a deferred submit is a claim).** Two dockhands
+sharing a checkout — the status pump and `dockhand verify <branch>`,
+or two status passes — both read a run as deferred, both submitted,
+and the second RecordRun overwrote the first's job: a worker no note
+accounted for, a slot spent twice. Schema 2 has no field to claim a
+run with (a peer binary's WriteNote round-trips the struct and drops
+what it does not know), so the claim is a lock: every deferred submit
+runs under a per-repository submit lock held from a re-read of the
+note through the record, and a run the re-read finds no longer
+deferred was started or settled by the other claimant and is skipped.
+It is a lock of its own, not the notes lock, for two reasons: the
+record inside the submit takes the notes lock on a fresh file
+description, so a claimant holding it would wait itself out; and a
+submit that boots a guest holds its lock for minutes, which no other
+note writer should sit through. A claimant that finds the lock held
+past a short wait yields with a named refusal (lockfile.ErrHeld,
+worded as the expected case — a peer mid-submit — not a hung
+process), because the peer is starting the very run it would have.
+Lock order is submit → admission and submit → notes, never nested the
+other way; the analysis stands above the pump. The lock lives in the
+git common dir beside the notes lock, so linked worktrees share it.
+This is the parity-safe closure; the schema-3 claim marker (Queued →
+Submitting under the notes flock, CAS to Running) replaces it when the
+record can carry one.
+
 **Why.** Even the "synchronous" backend takes fifteen seconds to nine minutes,
 long enough that a blocking call is a lie the first time someone interrupts a
 run. The serializable Job forced the tart guest to drive its own build and

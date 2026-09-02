@@ -1,0 +1,6 @@
+exit: 0
+--- stdout
+  https://x/77
+--- stderr
+  pushed dockhand/jq-1.8 to herby (herbygillot)
+  PR #77 already open for this branch; the push updated it

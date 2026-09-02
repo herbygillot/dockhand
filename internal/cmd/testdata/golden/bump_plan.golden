@@ -1,0 +1,110 @@
+exit: 0
+--- stdout
+  {
+    "format": 2,
+    "intent": "bump",
+    "port": "bumpee",
+    "slug": "bumpee-2.0",
+    "summary": "bumpee: update to 2.0",
+    "portdir": "<portdir>",
+    "portfile_sha256": "5ea1d1c7c8464d9ef6f0983922cdf42501e39f6119264957a4177ac27a61553a",
+    "edits": [
+      {
+        "start": 205,
+        "end": 208,
+        "old": "1.0",
+        "new": "2.0",
+        "reason": "version"
+      },
+      {
+        "start": 229,
+        "end": 230,
+        "old": "2",
+        "new": "0",
+        "reason": "revision reset"
+      },
+      {
+        "start": 629,
+        "end": 669,
+        "old": "ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2",
+        "new": "616164255fbcc648c856bba04549a8619647e274",
+        "reason": "checksum rmd160"
+      },
+      {
+        "start": 700,
+        "end": 764,
+        "old": "f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c",
+        "new": "554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320",
+        "reason": "checksum sha256"
+      },
+      {
+        "start": 795,
+        "end": 798,
+        "old": "175",
+        "new": "225",
+        "reason": "checksum size"
+      }
+    ],
+    "predicted": [
+      {
+        "subport": "bumpee",
+        "changes": [
+          {
+            "field": "checksums",
+            "old": [
+              "rmd160",
+              "ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2",
+              "sha256",
+              "f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c",
+              "size",
+              "175"
+            ],
+            "new": [
+              "rmd160",
+              "616164255fbcc648c856bba04549a8619647e274",
+              "sha256",
+              "554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320",
+              "size",
+              "225"
+            ]
+          },
+          {
+            "field": "distfiles",
+            "old": [
+              "bumpee-1.0.tar.gz"
+            ],
+            "new": [
+              "bumpee-2.0.tar.gz"
+            ]
+          },
+          {
+            "field": "revision",
+            "old": [
+              "2"
+            ],
+            "new": [
+              "0"
+            ]
+          },
+          {
+            "field": "version",
+            "old": [
+              "1.0"
+            ],
+            "new": [
+              "2.0"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+--- stderr
+  plan: bump <portdir>, 5 edits
+    version:         1.0 -> 2.0
+    revision reset:  2 -> 0
+    checksum rmd160: ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2 -> 616164255fbcc648c856bba04549a8619647e274
+    checksum sha256: f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c -> 554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320
+    checksum size:   175 -> 225
+  predicted delta:
+    bumpee: checksums rmd160 ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2 sha256 f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c size 175 -> rmd160 616164255fbcc648c856bba04549a8619647e274 sha256 554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320 size 225; distfiles bumpee-1.0.tar.gz -> bumpee-2.0.tar.gz; revision 2 -> 0; version 1.0 -> 2.0

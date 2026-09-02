@@ -1,0 +1,15 @@
+# A refusal in the port's own words, carrying no marker: the php
+# PortGroup's Xcode 12 guard (portgroups/php-1.1.tcl) sets known_fail
+# and refuses in pre-fetch. Dockhand's pre-flight records known_fail
+# ports unsupported before any VM boots, so this log is what a guest
+# writes when a refusal reaches it anyway — and the conservative
+# reading keeps it failed, with the port's own complaint as the detail
+# (the ui_error line precedes the phase line, so it is the first
+# substantive Error) and the environment kept. The phase line names
+# the port itself, so nothing is blamed.
+# RECONSTRUCTED from the PortGroup's guard, not captured: see README.md.
+port: php56-apcu
+outcome: failed
+state: failed
+detail: php56-apcu @4.0.11 cannot currently be compiled with Xcode 12 or later
+lint: clean

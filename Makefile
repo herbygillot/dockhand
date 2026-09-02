@@ -44,3 +44,11 @@ check: lint
 clean:
 	rm -f $(BINARY)
 	go clean
+
+# liveproof drives the built binary over real ports in a local
+# macports-ports checkout and diffs every byte of its output against
+# the recorded baseline (scripts/liveproof.sh). It needs MacPorts and
+# that checkout, which is why it is not part of check.
+.PHONY: liveproof
+liveproof:
+	scripts/liveproof.sh check

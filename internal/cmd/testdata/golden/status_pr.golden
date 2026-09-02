@@ -1,0 +1,22 @@
+exit: 0
+--- stdout
+  dockhand/jq-closed
+    passed (Testos)
+    PR #78 closed without merging
+  discarded dockhand/jq-landed (8da38abbbd45)
+  dockhand/jq-landed               PR #80 merged — branch cleaned
+  dockhand/jq-local                passed (Testos)
+  discarded dockhand/jq-merged (7a42be6e7ed1)
+  dockhand/jq-merged               PR #79 merged — branch cleaned
+  dockhand/jq-nopr
+    unverified
+    promoted; no PR found
+  dockhand/jq-open
+    passed (Testos)
+    PR #77 open (https://x/77)
+  dockhand/jq-outage
+    unverified
+    PR state unavailable: gh api: HTTP 502 from api.github.com (scripted outage)
+--- stderr
+  removed dockhand/jq-landed from "herby"
+  removed dockhand/jq-merged from "herby"

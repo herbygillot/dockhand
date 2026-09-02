@@ -1,0 +1,7 @@
+exit: 3
+--- stdout
+--- stderr
+  warning: pre-flight evaluation: prefix: no MacPorts installation found (no port-tclsh under /nonexistent/dockhand-golden-prefix)
+  deferred Testos: all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees
+  dockhand: verification not started: 1 release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met
+  the branch stands — `dockhand status` starts it when it can, or run `dockhand verify dockhand/jq-1.8` yourself

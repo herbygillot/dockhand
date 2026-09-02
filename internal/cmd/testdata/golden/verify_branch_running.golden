@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+--- stderr
+  already verifying on Testos (<elapsed>); `dockhand status` follows it

@@ -1,0 +1,47 @@
+--->  Verifying Portfile for jq
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/sysutils/jq
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: org.macports.load registered provides 'load', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.unload registered provides 'unload', a pre-existing procedure. Target override will not be provided
+DEBUG: org.macports.distfiles registered provides 'distfiles', a pre-existing procedure. Target override will not be provided
+DEBUG: adding the default universal variant
+DEBUG: Reading variant descriptions from /opt/local/var/macports/sources/rsync.macports.org/macports/release/tarball/ports/_resources/port1.0/variant_descriptions.conf
+--->  Computing dependencies for jq
+DEBUG: jq has no conflicts
+DEBUG: Searching for dependency: oniguruma
+DEBUG: Found Dependency: receipt exists for oniguruma
+DEBUG: Executing org.macports.main (jq)
+--->  Fetching distfiles for jq
+DEBUG: Executing org.macports.fetch (jq)
+--->  Attempting to fetch jq-1.8.0.tar.gz from https://github.com/jqlang/jq/releases/download/jq-1.8.0/
+--->  Verifying checksums for jq
+DEBUG: Executing org.macports.checksum (jq)
+--->  Checksumming jq-1.8.0.tar.gz
+DEBUG: Correct (rmd160) checksum for jq-1.8.0.tar.gz
+DEBUG: Correct (sha256) checksum for jq-1.8.0.tar.gz
+DEBUG: Correct (size) checksum for jq-1.8.0.tar.gz
+--->  Extracting jq
+DEBUG: Executing org.macports.extract (jq)
+--->  Applying patches to jq
+DEBUG: Executing org.macports.patch (jq)
+--->  Configuring jq
+DEBUG: Executing org.macports.configure (jq)
+--->  Building jq
+DEBUG: Executing org.macports.build (jq)
+DEBUG: Assembled command: 'cd "/opt/local/var/macports/build/_tmp_dockhand-overlay_sysutils_jq/jq/work/jq-1.8.0" && /usr/bin/make -j8 -w all'
+Error: Failed to build jq: command execution failed
+DEBUG: Error code: CHILDSTATUS 4520 2
+DEBUG: Backtrace: command execution failed
+    while executing
+"system {*}$notty {*}$nice $fullcmdstring"
+    invoked from within
+"command_exec -callback portprogress::target_progress_callback build"
+    (procedure "portbuild::build_main" line 8)
+    invoked from within
+"$procedure $targetname"
+Warning: targets not executed for jq: org.macports.activate org.macports.destroot org.macports.install
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_sysutils_jq/jq/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port jq failed

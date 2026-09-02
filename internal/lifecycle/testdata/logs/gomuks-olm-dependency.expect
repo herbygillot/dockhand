@@ -1,0 +1,14 @@
+# The gomuks field case: the dependency olm failed before the change
+# was ever reached, and the verdict blamed the bump. A failure naming
+# a DIFFERENT port than the one under test records as blocked —
+# untested, not disproven — and its worker is released. The trailer
+# "Processing of port gomuks failed" names the port under test, but it
+# comes last; the first substantive Error line is what is read.
+# RECONSTRUCTED from TestSettleRunsDependencyFailureIsBlocked and
+# docs/decisions.md, not captured: see README.md.
+port: gomuks
+outcome: failed
+state: blocked
+blamed: olm
+detail: dependency olm fails to build; the change itself is untested
+lint: clean

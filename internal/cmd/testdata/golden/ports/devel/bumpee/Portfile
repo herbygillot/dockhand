@@ -1,0 +1,18 @@
+# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+
+PortSystem          1.0
+
+name                bumpee
+version             1.0
+revision            2
+categories          devel
+maintainers         nomaintainer
+license             MIT
+description         synthetic bump target for dockhand's golden tests
+long_description    A synthetic port whose upstream releases live beside it \
+                    under files/upstream, so a bump fetches them without a network.
+
+master_sites        file://${portpath}/files/upstream
+checksums           rmd160  ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2 \
+                    sha256  f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c \
+                    size    175
