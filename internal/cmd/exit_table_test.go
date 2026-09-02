@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"syscall"
 	"testing"
 
@@ -38,6 +39,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	upstreamforge "github.com/herbygillot/dockhand/internal/upstream/forge"
 	"github.com/herbygillot/dockhand/internal/vendored"
@@ -64,10 +66,115 @@ func TestExitBandsAreTodaysValues(t *testing.T) {
 	assert.Equal(t, 0, exitcode.OK)
 	assert.Equal(t, 1, exitcode.Failure)
 	assert.Equal(t, 2, exitcode.Usage)
-	assert.Equal(t, 3, exitcode.Environment)
-	assert.Equal(t, 4, exitcode.Tree)
-	assert.Equal(t, 5, exitcode.Declined)
-	assert.Equal(t, 6, exitcode.Verify)
+
+	assert.Equal(t, 10, exitcode.PlanDeclined)
+	assert.Equal(t, 11, exitcode.BranchInFlight)
+	assert.Equal(t, 12, exitcode.AlreadyCurrent)
+	assert.Equal(t, 13, exitcode.Ambiguous)
+
+	assert.Equal(t, 20, exitcode.DuplicatePR)
+	assert.Equal(t, 21, exitcode.PRMerged)
+	assert.Equal(t, 22, exitcode.Superseded)
+	assert.Equal(t, 23, exitcode.Held)
+	assert.Equal(t, 24, exitcode.MachineGate)
+
+	assert.Equal(t, 30, exitcode.NoMacPorts)
+	assert.Equal(t, 31, exitcode.EvalStartup)
+	assert.Equal(t, 32, exitcode.RootRefused)
+	assert.Equal(t, 33, exitcode.ToolMissing)
+	assert.Equal(t, 34, exitcode.NoVerifyEnv)
+	assert.Equal(t, 35, exitcode.ProvisionFailed)
+	assert.Equal(t, 36, exitcode.VerifierBusy)
+
+	assert.Equal(t, 40, exitcode.NotPortsTree)
+	assert.Equal(t, 41, exitcode.PortNotFound)
+	assert.Equal(t, 42, exitcode.NotARepo)
+	assert.Equal(t, 43, exitcode.Drift)
+	assert.Equal(t, 44, exitcode.BranchNotFound)
+
+	assert.Equal(t, 50, exitcode.FetchFailed)
+	assert.Equal(t, 51, exitcode.WitnessUnreachable)
+	assert.Equal(t, 52, exitcode.WitnessAPI)
+	assert.Equal(t, 53, exitcode.LatestUnresolved)
+
+	assert.Equal(t, 60, exitcode.VerifyQueued)
+	assert.Equal(t, 61, exitcode.VerifyAwaitingSlot)
+	assert.Equal(t, 62, exitcode.PromotionPending)
+
+	assert.Equal(t, 70, exitcode.VerifyFailed)
+	assert.Equal(t, 71, exitcode.VerifyBlocked)
+	assert.Equal(t, 72, exitcode.VerifyUnsupported)
+	assert.Equal(t, 73, exitcode.VerifyErrored)
+
+	assert.Equal(t, 80, exitcode.MintedSubmitErrored)
+	assert.Equal(t, 81, exitcode.PushedPRFailed)
+	assert.Equal(t, 82, exitcode.PRRefreshFailed)
+	assert.Equal(t, 83, exitcode.SweepHardErrors)
+}
+
+// The decade is the family, which is what lets a script write `case
+// $?/10` once and keep working when a code it has never heard of is
+// added beside the ones it knows. This holds that property over the
+// whole contract: every code the table can produce classifies, and it
+// classifies by its decade rather than by a list somebody has to
+// maintain.
+//
+// The three below ten are the exception the numbering was built
+// around: they predate the bands and keep the shell's own meanings, so
+// they are named individually and a script written before dockhand had
+// families still reads them right.
+func TestExitFamiliesAreTheDecade(t *testing.T) {
+	assert.Equal(t, "success", exitcode.Family(exitcode.OK))
+	assert.Equal(t, "failure", exitcode.Family(exitcode.Failure))
+	assert.Equal(t, "usage", exitcode.Family(exitcode.Usage))
+
+	bands := map[string]int{
+		"declined":    10,
+		"refused":     20,
+		"environment": 30,
+		"tree":        40,
+		"upstream":    50,
+		"pending":     60,
+		"verdict":     70,
+		"partial":     80,
+	}
+	for family, base := range bands {
+		for code := base; code < base+10; code++ {
+			assert.Equal(t, family, exitcode.Family(code), "code %d", code)
+		}
+	}
+
+	// Outside the contract there is no family, said as nothing rather
+	// than guessed at from the nearest band: a caller that reads a code
+	// dockhand did not write should learn that, not be told a story.
+	for _, code := range []int{3, 4, 5, 6, 7, 8, 9, 90, 99, 127, -1} {
+		assert.Empty(t, exitcode.Family(code), "code %d", code)
+	}
+
+	// And the property that matters: every row's band classifies, and
+	// into the family its decade names. A code added to a band later is
+	// already classified, which is the whole point of the decade.
+	for _, row := range exitTable() {
+		got := ExitCode(row.err)
+		assert.NotEmpty(t, exitcode.Family(got), "%s: code %d has no family", row.name, got)
+		if got > exitcode.Usage {
+			assert.Equal(t, exitcode.Family(got/10*10), exitcode.Family(got),
+				"%s: code %d does not read as its own decade", row.name, got)
+		}
+	}
+}
+
+// The twin a document carries is the status the process leaves behind.
+// They are two publications of one fact and the only way they can
+// disagree is if something derives one of them twice, so this holds
+// them to the same classifier over the whole table.
+func TestExitTwinAgreesWithTheExitCode(t *testing.T) {
+	for _, row := range exitTable() {
+		twin := TwinOf(row.err)
+		assert.Equal(t, ExitCode(row.err), twin.Code, "%s: twin disagrees with the exit code", row.name)
+		assert.Equal(t, exitcode.Family(twin.Code), twin.Family, "%s: twin's family is not its code's", row.name)
+	}
+	assert.Equal(t, exitcode.Twin{Code: 0, Family: "success"}, TwinOf(nil))
 }
 
 // exitRow is one line of the table: an error built as the code builds
@@ -111,7 +218,10 @@ func exitTable() []exitRow {
 	parseErr := json.Unmarshal([]byte("{not json"), &notJSON)
 
 	capacity := &verify.CapacityError{Busy: 2, Cap: 2}
-	// submit's `later` closure: the branch stands, the
+	// The same refusal with somebody standing there: the gate stamps
+	// Synchronous, because nothing is queued for an ask that leaves.
+	waiting := &verify.CapacityError{Busy: 2, Cap: 2, Synchronous: true}
+	// submit's queue: the branch stands, the
 	// cause rides along typed so status's pump can tell a full machine
 	// from a missing capability.
 	later := func(cause error) error {
@@ -128,6 +238,9 @@ func exitTable() []exitRow {
 	noProvider := verify.NoProvider
 	noteErr := fmt.Errorf("note on %s does not parse: %w — `git notes --ref=%s remove %s` clears it",
 		sha, parseErr, git.VerifyNotesRef, sha)
+	// What the finder hands back for a tool it did not resolve: the
+	// sentinel mid-sentence, which is the shape every gh call wraps.
+	ghMissing := fmt.Errorf("%s %w on PATH", tool.Gh, tool.ErrNotFound)
 
 	var rows []exitRow
 	add := func(want int, r ...exitRow) {
@@ -170,51 +283,38 @@ func exitTable() []exitRow {
 			is:  []error{tree.ErrNotPortsTree}, as: new(*UsageError)},
 	)
 
-	// Band 3: the machine.
-	add(exitcode.Environment,
-		exitRow{name: "*verify.CapacityError (tart.Admit)", err: capacity, as: new(*verify.CapacityError)},
-		exitRow{name: "*engine.VerifyDeferredError (verifyBranch summary, no cause)",
-			err: &engine.VerifyDeferredError{Branch: branch,
-				Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", 1)},
-			as: new(*engine.VerifyDeferredError)},
-		exitRow{name: "*engine.VerifyDeferredError over *verify.CapacityError (submit)",
-			err: later(capacity), as: new(*verify.CapacityError)},
-		exitRow{name: "*engine.VerifyDeferredError over verify.ErrNoEnvironment (submit)",
-			err: later(noEnv("no base images; run `dockhand provision tart --macos <release>` first")),
-			is:  []error{verify.ErrNoEnvironment}, as: new(*engine.VerifyDeferredError)},
-		exitRow{name: "*engine.VerifyDeferredError over verify.ErrUnsupported (submit)",
-			err: later(fmt.Errorf("%w: %s is not a <category>/<port> directory", verify.ErrUnsupported, "stage-jq")),
-			is:  []error{verify.ErrUnsupported}, as: new(*engine.VerifyDeferredError)},
-		exitRow{name: "*engine.VerifyDeferredError over an untyped submit failure (submit)",
-			err: later(errors.New("the agent never answered")), as: new(*engine.VerifyDeferredError)},
-		exitRow{name: "verify.ErrNoEnvironment", err: verify.ErrNoEnvironment, is: []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoProvider", err: verify.ErrNoProvider, is: []error{verify.ErrNoProvider}},
-		exitRow{name: "verify.ErrNoProvider (realVMProvider: tart missing)",
-			err: noProvider("tart is not installed (`port install tart`); --no-verify skips verification"),
-			is:  []error{verify.ErrNoProvider}},
-		exitRow{name: "verify.ErrNoEnvironment (realVMProvider: no bases)",
-			err: noEnv("no base images; run `dockhand provision tart --macos <release>` first"),
-			is:  []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (RunVerification: Errored verdict)",
-			err: noEnv("%s", "the guest agent timed out"), is: []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (resolveReleaseSet: no base images)",
-			err: noBases, is: []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (resolveReleaseSet: --on release without a base)",
-			err: noBaseFor, is: []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (provision: base missing after provisioning)",
-			err: noEnv("base image %s is not present after provisioning", "dockhand-base-sequoia"),
-			is:  []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrUnsupported", err: verify.ErrUnsupported, is: []error{verify.ErrUnsupported}},
-		exitRow{name: "verify.ErrUnsupported (tart.Provider: unserved release)",
-			err: fmt.Errorf("%w: no base for %s", verify.ErrUnsupported, "Sequoia"), is: []error{verify.ErrUnsupported}},
+	// Band 30-36: the machine. Every code here has an installation or a
+	// provisioning remedy, which is what separates them from the tree
+	// band below — and what makes them worth telling apart at all: a
+	// script that reads 3x knows the answer is "fix this machine", and
+	// the code says which part of it.
+	add(exitcode.NoMacPorts,
 		exitRow{name: "prefix.ErrNotInstalled (prefix.Find)",
 			err: fmt.Errorf("%w (no port-tclsh on PATH or under /opt/local)", prefix.ErrNotInstalled),
 			is:  []error{prefix.ErrNotInstalled}},
+	)
+	add(exitcode.EvalStartup,
 		exitRow{name: "eval.ErrStartup over shim.ErrNoShims (session.Start)",
 			err: fmt.Errorf("%w: %w", eval.ErrStartup, shim.ErrNoShims), is: []error{eval.ErrStartup, shim.ErrNoShims}},
 		exitRow{name: "eval.ErrStartup (session.Start: shim initialization)",
 			err: fmt.Errorf("%w: initializing shim: %w", eval.ErrStartup, errors.New("broken pipe")),
 			is:  []error{eval.ErrStartup}},
+		exitRow{name: "session.ErrStartup over shell.Start (session.Start)",
+			err: fmt.Errorf("%w: %w", session.ErrStartup, errors.New("fork/exec /nowhere/bin/port-tclsh: no such file or directory")),
+			is:  []error{session.ErrStartup, eval.ErrStartup}},
+		exitRow{name: "session.ErrStartup (portfetch.New over session.Start: shim initialization)",
+			err: fmt.Errorf("%w: initializing shim: %w", session.ErrStartup, errors.New("broken pipe")),
+			is:  []error{session.ErrStartup}},
+		// The witness wrapper must not take an evaluator that will not
+		// start: a Coder outranks a sentinel, so wrapping this would
+		// relabel a broken tclsh "upstream unreachable" and send the
+		// user off to look at a website. Unreachable returns it bare,
+		// and this row is what holds it to that.
+		exitRow{name: "precedence: upstream.Unreachable declines to band eval.ErrStartup",
+			err: upstream.Unreachable("livecheck", fmt.Errorf("%w: %w", eval.ErrStartup, errors.New("broken pipe"))),
+			is:  []error{eval.ErrStartup}},
+	)
+	add(exitcode.RootRefused,
 		exitRow{name: "eval.ErrRootRefused", err: eval.ErrRootRefused, is: []error{eval.ErrRootRefused}},
 		exitRow{name: "portfetch.ErrRootRefused", err: portfetch.ErrRootRefused, is: []error{portfetch.ErrRootRefused}},
 		// The session owns the bootstrap eval and portfetch share, and
@@ -223,19 +323,67 @@ func exitTable() []exitRow {
 		// silently drop the other package's.
 		exitRow{name: "session.ErrRootRefused (session.Start; eval and portfetch alias it)",
 			err: session.ErrRootRefused, is: []error{session.ErrRootRefused, eval.ErrRootRefused, portfetch.ErrRootRefused}},
-		exitRow{name: "session.ErrStartup over shell.Start (session.Start)",
-			err: fmt.Errorf("%w: %w", session.ErrStartup, errors.New("fork/exec /nowhere/bin/port-tclsh: no such file or directory")),
-			is:  []error{session.ErrStartup, eval.ErrStartup}},
-		exitRow{name: "session.ErrStartup (portfetch.New over session.Start: shim initialization)",
-			err: fmt.Errorf("%w: initializing shim: %w", session.ErrStartup, errors.New("broken pipe")),
-			is:  []error{session.ErrStartup}},
+	)
+	// ErrNoProvider reaches here only from the verbs that were ASKED to
+	// verify. The implicit submit inside a write intent intercepts the
+	// same sentinel, says the branch is unverified and exits zero — the
+	// contract narrowing rather than failing — which the intent test
+	// below holds in place.
+	add(exitcode.ToolMissing,
+		exitRow{name: "verify.ErrNoProvider", err: verify.ErrNoProvider, is: []error{verify.ErrNoProvider}},
+		exitRow{name: "verify.ErrNoProvider (realVMProvider: tart missing)",
+			err: noProvider("tart is not installed (`port install tart`); --no-verify skips verification"),
+			is:  []error{verify.ErrNoProvider}},
+	)
+	// Every one of these is raised with somebody standing there, before
+	// anything is minted: nothing was queued and nobody will come back
+	// for it. The asynchronous mirror — a submit that defers instead —
+	// is VerifyAwaitingSlot, in the pending band.
+	add(exitcode.NoVerifyEnv,
+		exitRow{name: "verify.ErrNoEnvironment", err: verify.ErrNoEnvironment, is: []error{verify.ErrNoEnvironment}},
+		exitRow{name: "verify.ErrNoEnvironment (realVMProvider: no bases)",
+			err: noEnv("no base images; run `dockhand provision tart --macos <release>` first"),
+			is:  []error{verify.ErrNoEnvironment}},
+		exitRow{name: "verify.ErrNoEnvironment (resolveReleaseSet: no base images)",
+			err: noBases, is: []error{verify.ErrNoEnvironment}},
+		exitRow{name: "verify.ErrNoEnvironment (resolveReleaseSet: --on release without a base)",
+			err: noBaseFor, is: []error{verify.ErrNoEnvironment}},
+		exitRow{name: "verify.ErrNoEnvironment (provision: base missing after provisioning)",
+			err: noEnv("base image %s is not present after provisioning", "dockhand-base-sequoia"),
+			is:  []error{verify.ErrNoEnvironment}},
+		// The tart tree wraps the child's error with %w in six places,
+		// and an *exec.ExitError answers ExitCode. The sentinel is what
+		// classifies this, and it stays that way because Coder asks for
+		// DockhandExit — a name os/exec cannot answer by accident. The
+		// row that proves it against a real child is below.
+		exitRow{name: "verify.ErrNoEnvironment over an *exec.ExitError (tart stage: preparing the overlay)",
+			err: fmt.Errorf("%w: preparing the overlay: %w", verify.ErrNoEnvironment, childExit(66)),
+			is:  []error{verify.ErrNoEnvironment}},
+	)
+	add(exitcode.ProvisionFailed,
+		exitRow{name: "*cmd.provisionFailedError (provisionAll)",
+			err: &provisionFailedError{Releases: []string{"Sequoia", "Sonoma"}}, as: new(*provisionFailedError)},
+	)
+	// The full machine met by someone waiting. Same fact as
+	// VerifyQueued, different answer, and the difference is only that
+	// nothing was queued — which is why the flag is stamped by the
+	// caller standing there and never by the provider counting slots.
+	// Four callers stamp it: the gate and `verify <portdir>` through
+	// RunVerification, and `exec` and `provision` through
+	// waitingRefusal, whose own test is below.
+	add(exitcode.VerifierBusy,
+		exitRow{name: "*verify.CapacityError synchronous (the --verify gate, verify <portdir>, exec, provision)",
+			err: waiting, as: new(*verify.CapacityError)},
 	)
 
-	// Band 4: the tree.
-	add(exitcode.Tree,
+	// Band 40-44: the tree. Dockhand was pointed at the wrong place;
+	// the remedy is a different path, branch or flag, never an install.
+	add(exitcode.NotPortsTree,
 		exitRow{name: "tree.ErrNotPortsTree", err: tree.ErrNotPortsTree, is: []error{tree.ErrNotPortsTree}},
 		exitRow{name: "tree.ErrNotPortsTree wrapped (tree.Open)",
 			err: fmt.Errorf("%s: %w", "/nowhere", tree.ErrNotPortsTree), is: []error{tree.ErrNotPortsTree}},
+	)
+	add(exitcode.PortNotFound,
 		exitRow{name: "tree.ErrPortNotFound (tree.Resolve)",
 			err: fmt.Errorf("%q: %w", "someport", tree.ErrPortNotFound), is: []error{tree.ErrPortNotFound}},
 		// tree.Resolve names the missing PortIndex in prose; the
@@ -245,6 +393,8 @@ func exitTable() []exitRow {
 		exitRow{name: "tree.ErrPortNotFound (tree.Resolve: no PortIndex)",
 			err: fmt.Errorf("%q: %w (the tree has no PortIndex; run portindex to enable name lookup)", "someport", tree.ErrPortNotFound),
 			is:  []error{tree.ErrPortNotFound}},
+	)
+	add(exitcode.NotARepo,
 		exitRow{name: "git.ErrNotARepo (git.Open)",
 			err: fmt.Errorf("%w: %s", git.ErrNotARepo, "/nowhere"), is: []error{git.ErrNotARepo}},
 		exitRow{name: "git.ErrNotARepo (planOnBase)",
@@ -252,10 +402,106 @@ func exitTable() []exitRow {
 				fmt.Errorf("%w: %s", git.ErrNotARepo, "/nowhere")),
 			is: []error{git.ErrNotARepo}},
 	)
+	// Drift is the tree having moved out from under a plan: nothing
+	// failed and nothing is missing, what was planned against is not
+	// what is there. Its sibling ErrMismatch stays in the failure band
+	// on purpose — a delta that differs from the prediction is the
+	// operation going wrong, not the tree changing — and its rows are
+	// below.
+	add(exitcode.Drift,
+		exitRow{name: "plan.ErrDrift (verifyPlan)",
+			err: fmt.Errorf("%w: %s", plan.ErrDrift, "/tree/sysutils/jq"), is: []error{plan.ErrDrift}},
+		exitRow{name: "plan.ErrDrift (planOnBase)",
+			err: fmt.Errorf("%w: the Portfile on %s is not the one planned against — commit your work there first, or use --in-place", plan.ErrDrift, "main"),
+			is:  []error{plan.ErrDrift}},
+		exitRow{name: "plan.ErrDrift raw (Materialize)", err: plan.ErrDrift, is: []error{plan.ErrDrift}},
+	)
+	add(exitcode.BranchNotFound,
+		exitRow{name: "*engine.BranchNotFoundError (ResolveBranch)",
+			err: &engine.BranchNotFoundError{Target: "jq"}, as: new(*engine.BranchNotFoundError)},
+	)
 
-	// Band 5: a judgment with a remedy. plan.Decline is every planner's
-	// refusal; the sweep test below insists each DeclineType has a row.
-	add(exitcode.Declined,
+	// Band 50-53: somebody else's. Nothing local is wrong and the same
+	// invocation may work in an hour.
+	add(exitcode.FetchFailed,
+		exitRow{name: "distfile.ErrUnavailable (Fetch: no url served the file)",
+			err: distfile.ErrUnavailable, is: []error{distfile.ErrUnavailable}},
+	)
+	add(exitcode.WitnessUnreachable,
+		exitRow{name: "*upstream.WitnessError over upstream.ErrNoGit (Tags)",
+			err: &upstream.WitnessError{Witness: "git", Err: upstream.ErrNoGit},
+			is:  []error{upstream.ErrNoGit}, as: new(*upstream.WitnessError)},
+		// The ls-remote refusal is deliberately NOT wrapped: an
+		// *exec.ExitError carries an ExitCode of its own, and %w here
+		// would hand git's child status straight to dockhand's. The
+		// wrapper supplies the band and the child's words stay text.
+		exitRow{name: "*upstream.WitnessError over an ls-remote refusal (Tags)",
+			err: &upstream.WitnessError{Witness: "ls-remote",
+				Err: fmt.Errorf("upstream: ls-remote %s: %s", "https://example/x.git", "exit status 128")},
+			as: new(*upstream.WitnessError)},
+		exitRow{name: "*upstream.WitnessError over a livecheck that could not run (Check)",
+			err: upstream.Unreachable("livecheck", fmt.Errorf("portfetch: livecheck of %s: %s", "sysutils/jq", "dial tcp: connection refused")),
+			as:  new(*upstream.WitnessError)},
+	)
+	// The witnesses ran and left no version anyone may act on. It is
+	// the same *plan.Decline a judgment produces — the words are the
+	// planner's either way — banded apart by the verdict underneath,
+	// which does not survive being formatted into Detail.
+	add(exitcode.LatestUnresolved,
+		exitRow{name: "*upstream.UnresolvedError over *plan.Decline LatestUnresolved (NoSignal)",
+			err: upstream.Unresolved(upstream.NoSignal, &plan.Decline{Type: plan.LatestUnresolved,
+				Detail: fmt.Sprintf("%s (%s)", upstream.NoSignal, "livecheck found nothing and the forge has no tags")}),
+			as: new(*upstream.UnresolvedError)},
+		exitRow{name: "*upstream.UnresolvedError (LivecheckRot)",
+			err: upstream.Unresolved(upstream.LivecheckRot, &plan.Decline{Type: plan.LatestUnresolved,
+				Detail: fmt.Sprintf("%s (%s)", upstream.LivecheckRot, "forge has 1.9")}),
+			as: new(*upstream.UnresolvedError)},
+		exitRow{name: "*upstream.UnresolvedError (LivecheckBehind)",
+			err: upstream.Unresolved(upstream.LivecheckBehind, &plan.Decline{Type: plan.LatestUnresolved,
+				Detail: fmt.Sprintf("%s (%s)", upstream.LivecheckBehind, "livecheck 1.7, newest stable-looking tag 1.9")}),
+			as: new(*upstream.UnresolvedError)},
+		exitRow{name: "*upstream.UnresolvedError (LivecheckAhead, uncorroborated)",
+			err: upstream.Unresolved(upstream.LivecheckAhead, &plan.Decline{Type: plan.LatestUnresolved,
+				Detail: fmt.Sprintf("%s (%s)", upstream.LivecheckAhead, "no forge tag matches either")}),
+			as: new(*upstream.UnresolvedError)},
+	)
+
+	// Band 60-62: nobody's problem yet. Nothing failed and nothing
+	// finished; the remedy is to ask again later, which is why these
+	// can never share a band with a refusal.
+	add(exitcode.VerifyQueued,
+		exitRow{name: "*verify.CapacityError (tart.Admit)", err: capacity, as: new(*verify.CapacityError)},
+		exitRow{name: "*engine.VerifyDeferredError over *verify.CapacityError (submit)",
+			err: later(capacity), as: new(*verify.CapacityError)},
+		// The summary carries no cause: every release it counts was
+		// recorded deferred, which is what queued means.
+		exitRow{name: "*engine.VerifyDeferredError (verifyBranch summary, no cause)",
+			err: &engine.VerifyDeferredError{Branch: branch,
+				Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", 1)},
+			as: new(*engine.VerifyDeferredError)},
+		// A followed run found deferred is queued work, not a verdict.
+		// Reachable only through a racing writer — what the follow
+		// watched was Running — and it is banded here because lumping
+		// queued work in with "the environment could not answer" is the
+		// confusion the pending band exists to end.
+		exitRow{name: "*verdict.QueuedError (Follow: the settle found the run deferred)",
+			err: &verdict.QueuedError{Port: "jq", Platform: "Sequoia", Detail: "all 2 verification slots are busy"},
+			as:  new(*verdict.QueuedError)},
+	)
+	// A deferral over a missing environment is queued, not refused: the
+	// run is on the note and status starts it once a base exists. The
+	// synchronous ask with the same obstacle is NoVerifyEnv above, and
+	// the pair reads exactly like VerifyQueued and VerifierBusy do.
+	add(exitcode.VerifyAwaitingSlot,
+		exitRow{name: "*engine.VerifyDeferredError over verify.ErrNoEnvironment (submit)",
+			err: later(noEnv("no base images; run `dockhand provision tart --macos <release>` first")),
+			is:  []error{verify.ErrNoEnvironment}, as: new(*engine.VerifyDeferredError)},
+	)
+
+	// Band 10-13: the PLAN's problem. dockhand understood the request,
+	// could have carried it out, and judged that it should not. The
+	// sweep test below insists each DeclineType has a row.
+	add(exitcode.PlanDeclined,
 		exitRow{name: "*plan.Decline AlreadyCurrent (bump.Plan: --to is the current version)",
 			err: &plan.Decline{Type: plan.AlreadyCurrent, Detail: "jq is already at 1.8"}, as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline AlreadyCurrent without detail (refresh: sums already match)",
@@ -278,9 +524,14 @@ func exitTable() []exitRow {
 			err: &plan.Decline{Type: plan.TargetNotReached, Detail: "version stayed at 1.7"}, as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline UnexpectedChange (bump.Plan)",
 			err: &plan.Decline{Type: plan.UnexpectedChange, Detail: "revision moved with the version"}, as: new(*plan.Decline)},
-		exitRow{name: "*plan.Decline LatestUnresolved (bump.ResolveLatest)",
-			err: &plan.Decline{Type: plan.LatestUnresolved,
-				Detail: fmt.Sprintf("%s (%s)", "no signal", "livecheck found nothing and the forge has no tags")}, as: new(*plan.Decline)},
+		// PrereleaseNewest is the one unresolved verdict that stays here:
+		// both witnesses spoke and agreed, and what they agreed on is a
+		// beta, so the refusal is dockhand's own. Every other unresolved
+		// verdict is upstream's and is banded 53 above.
+		exitRow{name: "*plan.Decline LatestUnresolved (bump.ResolveLatest: PrereleaseNewest is a judgment)",
+			err: upstream.Unresolved(upstream.PrereleaseNewest, &plan.Decline{Type: plan.LatestUnresolved,
+				Detail: fmt.Sprintf("%s (%s)", upstream.PrereleaseNewest, "newest tag 2.0-beta1 is prerelease-style")}),
+			as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline VendoredBlock (refresh: go.vendors)",
 			err: &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}, as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline wrapped",
@@ -292,28 +543,131 @@ func exitTable() []exitRow {
 		exitRow{name: "*portstyle.Decline NotLiteral with candidates (portstyle.Locate)",
 			err: &portstyle.Decline{Type: portstyle.NotLiteral, Field: info.FieldVersion,
 				Candidates: []portstyle.Candidate{{Style: portstyle.SetVariable, Literal: false}}}, as: new(*portstyle.Decline)},
-		exitRow{name: "*engine.BranchInFlightError (mint translating git.ErrBranchExists)",
-			err: &engine.BranchInFlightError{Branch: branch}, as: new(*engine.BranchInFlightError)},
-		exitRow{name: "*engine.BranchInFlightError with Reason (replaceInFlight: --force refused)",
-			err: &engine.BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
-				"%s carries %d commit(s) beyond the mint — --force replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
-				branch, 1, branch)}, as: new(*engine.BranchInFlightError)},
-		exitRow{name: "*verdict.DuplicatePRError (promote)",
-			err: &verdict.DuplicatePRError{Title: "jq: update to 1.8", URL: "https://github.com/macports/macports-ports/pull/1"},
-			as:  new(*verdict.DuplicatePRError)},
 		// A Coder anywhere in the chain wins, even under a sentinel.
 		exitRow{name: "precedence: tree.ErrNotPortsTree wrapping *plan.Decline",
 			err: fmt.Errorf("%w: %w", tree.ErrNotPortsTree, &plan.Decline{Type: plan.AlreadyCurrent}),
 			is:  []error{tree.ErrNotPortsTree}, as: new(*plan.Decline)},
 	)
 
-	// Band 6: the port does not build. Its own band because it is its
-	// own kind of outcome — the tool worked, the machine worked.
-	add(exitcode.Verify,
+	// The decline that withheld something on the way past. Nothing
+	// populates Withheld yet — the riders arrive with the sweep — and
+	// the code lands now, with this row, so the contract cannot quietly
+	// change when they do.
+	add(exitcode.AlreadyCurrent,
+		exitRow{name: "*plan.Decline AlreadyCurrent with withheld riders (a sweep's held-back changes)",
+			err: &plan.Decline{Type: plan.AlreadyCurrent, Detail: "jq is already at 1.8",
+				Withheld: []string{"revision reset"}}, as: new(*plan.Decline)},
+	)
+	add(exitcode.BranchInFlight,
+		exitRow{name: "*engine.BranchInFlightError (mint translating git.ErrBranchExists)",
+			err: &engine.BranchInFlightError{Branch: branch}, as: new(*engine.BranchInFlightError)},
+		exitRow{name: "*engine.BranchInFlightError with Reason (replaceInFlight: --force refused)",
+			err: &engine.BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
+				"%s carries %d commit(s) beyond the mint — --force replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
+				branch, 1, branch)}, as: new(*engine.BranchInFlightError)},
+	)
+	// Ambiguity is one code whether the target names several branches
+	// or the branch names several contexts: the request did not say
+	// enough, and naming the one settles it either way.
+	add(exitcode.Ambiguous,
+		exitRow{name: "*verdict.AmbiguousTargetError (ResolveBranch)",
+			err: &verdict.AmbiguousTargetError{Target: "jq",
+				Matches: []string{"dockhand/jq-1.8", "dockhand/jq-1.9"}}, as: new(*verdict.AmbiguousTargetError)},
+		exitRow{name: "*engine.AmbiguousContextError (SubjectOf: the branch changes several contexts)",
+			err: &engine.AmbiguousContextError{Contexts: []string{"demo", "demo2"}}, as: new(*engine.AmbiguousContextError)},
+	)
+
+	// Band 20-24: the DESTINATION's problem. The change is fine; the
+	// place it would go will not take it, and the remedy is about the
+	// branch or the pull request rather than the edit.
+	add(exitcode.DuplicatePR,
+		exitRow{name: "*verdict.DuplicatePRError (promote)",
+			err: &verdict.DuplicatePRError{Title: "jq: update to 1.8", URL: "https://github.com/macports/macports-ports/pull/1"},
+			as:  new(*verdict.DuplicatePRError)},
+	)
+	add(exitcode.PRMerged,
+		exitRow{name: "*verdict.PRMergedError (promote: MergedDeadEnd)",
+			err: &verdict.PRMergedError{Number: 7, Branch: branch, URL: "https://github.com/macports/macports-ports/pull/7"},
+			as:  new(*verdict.PRMergedError)},
+	)
+	// Work a newer sibling replaced. The code was reserved for exactly
+	// this and a followed run that the branch moved out from under is
+	// the first thing to produce it: nothing failed, and the answer the
+	// run was about to give is about bytes that are no longer the tip.
+	add(exitcode.Superseded,
+		exitRow{name: "*verdict.SupersededError (Follow: the branch moved while the build ran)",
+			err: &verdict.SupersededError{Port: "jq", Platform: "Sequoia"},
+			as:  new(*verdict.SupersededError)},
+	)
+
+	// Band 70-73: verification ANSWERED, and not with a pass. The band
+	// is about what the run concluded, which is why it holds the port's
+	// failure alongside the three ways a run ends concluding nothing —
+	// the distinction the single old "environment" answer destroyed by
+	// telling a user whose neighbour was broken to provision something.
+	add(exitcode.VerifyFailed,
 		exitRow{name: "*engine.VerifyFailedError (Follow --trace)",
 			err: &engine.VerifyFailedError{Port: "jq"}, as: new(*engine.VerifyFailedError)},
 		exitRow{name: "*engine.VerifyFailedError with environment kept (RunVerification)",
 			err: &engine.VerifyFailedError{Port: "jq", Handle: "dockhand-jq-1"}, as: new(*engine.VerifyFailedError)},
+		// promote refusing over a failed run exits with the run: the
+		// refusal is that verdict being enforced, not a way promote can
+		// break.
+		exitRow{name: "*verdict.FailedVerificationError (promote's gate)",
+			err: &verdict.FailedVerificationError{Branch: branch, Tip: tip}, as: new(*verdict.FailedVerificationError)},
+	)
+	add(exitcode.VerifyBlocked,
+		exitRow{name: "*verdict.BlockedError (Follow: the settle recorded blocked)",
+			err: &verdict.BlockedError{Port: "jq", Platform: "Sequoia", Detail: "oniguruma failed to build"},
+			as:  new(*verdict.BlockedError)},
+	)
+	add(exitcode.VerifyUnsupported,
+		exitRow{name: "*verdict.UnsupportedError (the provider cannot run the request)",
+			err: &verdict.UnsupportedError{Port: "jq", Platform: "Sequoia", Detail: "no base for Sequoia"},
+			as:  new(*verdict.UnsupportedError)},
+		exitRow{name: "verify.ErrUnsupported", err: verify.ErrUnsupported, is: []error{verify.ErrUnsupported}},
+		exitRow{name: "verify.ErrUnsupported (tart.Provider: unserved release)",
+			err: fmt.Errorf("%w: no base for %s", verify.ErrUnsupported, "Sequoia"), is: []error{verify.ErrUnsupported}},
+		// Nothing frees a capability refusal, so the deferral over one
+		// is not pending: the provider has said it cannot run what was
+		// asked for, and that is a verdict about the request.
+		exitRow{name: "*engine.VerifyDeferredError over verify.ErrUnsupported (submit)",
+			err: later(fmt.Errorf("%w: %s is not a <category>/<port> directory", verify.ErrUnsupported, "stage-jq")),
+			is:  []error{verify.ErrUnsupported}, as: new(*engine.VerifyDeferredError)},
+	)
+	add(exitcode.VerifyErrored,
+		exitRow{name: "*verdict.ErroredError (RunVerification: the Errored verdict)",
+			err: &verdict.ErroredError{Port: "jq", Platform: "Sequoia", Detail: "the guest agent timed out"},
+			as:  new(*verdict.ErroredError)},
+		exitRow{name: "*verdict.ErroredError (Follow: a run in a state this build does not know)",
+			err: &verdict.ErroredError{Port: "jq", Platform: "Sequoia", Detail: "reticulating"},
+			as:  new(*verdict.ErroredError)},
+		// A cancel shares the code and not the sentence. None of the
+		// ruled numbers names a person stopping a run, so the band is
+		// the one that says the verification ended without a verdict —
+		// but "could not answer: canceled" contradicts itself, and the
+		// reason is what tells the two apart.
+		exitRow{name: "*verdict.CanceledError (Follow: `dockhand cancel` from another terminal)",
+			err: &verdict.CanceledError{Port: "jq", Platform: "Sequoia", Detail: "canceled by the user"},
+			as:  new(*verdict.CanceledError)},
+	)
+
+	// Band 80-83: the operation did HALF ITS WORK, and the half it did
+	// stands. Re-running is neither free nor always safe, so a script
+	// has to be able to tell these from "nothing happened".
+	add(exitcode.MintedSubmitErrored,
+		exitRow{name: "*engine.VerifyDeferredError over an untyped submit failure (submit)",
+			err: later(errors.New("the agent never answered")), as: new(*engine.VerifyDeferredError)},
+	)
+	add(exitcode.PushedPRFailed,
+		exitRow{name: "*engine.PushedPRError (promote: PR create failed after push)",
+			err: &engine.PushedPRError{Branch: branch, Remote: "fork",
+				Err: fmt.Errorf("gh %s: %s", "pr", "HTTP 422")}, as: new(*engine.PushedPRError)},
+	)
+	add(exitcode.PRRefreshFailed,
+		exitRow{name: "*engine.PRRefreshError (promote: PR edit failed after push)",
+			err: &engine.PRRefreshError{Branch: branch, Remote: "fork", Number: 7,
+				Err: fmt.Errorf("gh %s: %s", "pr", "HTTP 422")}, as: new(*engine.PRRefreshError)},
 	)
 
 	// Band 1: everything else. The untyped refusals are built here
@@ -337,24 +691,10 @@ func exitTable() []exitRow {
 			err: rpc.CallError{Msg: `invalid command name "nope"`}, as: new(rpc.CallError)},
 		exitRow{name: "rpc.CallError wrapped (eval: a snapshot's Tcl error)",
 			err: fmt.Errorf("evaluating %s: %w", "sysutils/jq", rpc.CallError{Msg: "can't read \"x\": no such variable"}), as: new(rpc.CallError)},
-		exitRow{name: "promote: failed-verification refusal (untyped fmt.Errorf)",
-			err: fmt.Errorf("%s: tip %s has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway", branch, tip)},
-		exitRow{name: "promote: merged-PR dead end (untyped fmt.Errorf)",
-			err: fmt.Errorf("PR #%d for %s already merged (%s) — `dockhand clean` retires the branch", 7, branch, "https://github.com/macports/macports-ports/pull/7")},
-		exitRow{name: "promote: PR create failed after push",
-			err: fmt.Errorf("the branch is pushed; opening the PR failed: %w", fmt.Errorf("gh %s: %s", "pr", "HTTP 422"))},
-		exitRow{name: "promote: PR edit failed after push",
-			err: fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", 7, fmt.Errorf("gh %s: %s", "pr", "HTTP 422"))},
-		exitRow{name: "engine.ErrAmbiguousTarget (ResolveBranch)",
-			err: fmt.Errorf("%w: %q names %d branches (%s); use the full branch name", engine.ErrAmbiguousTarget, "jq", 2, "dockhand/jq-1.8, dockhand/jq-1.9"),
-			is:  []error{engine.ErrAmbiguousTarget}},
-		exitRow{name: "ResolveBranch: no dockhand branch (untyped fmt.Errorf)",
-			err: fmt.Errorf("no dockhand branch for %q; `dockhand status` lists what is in flight", "jq")},
-		exitRow{name: "plan.ErrDrift (verifyPlan)",
-			err: fmt.Errorf("%w: %s", plan.ErrDrift, "/tree/sysutils/jq"), is: []error{plan.ErrDrift}},
-		exitRow{name: "plan.ErrDrift (planOnBase)",
-			err: fmt.Errorf("%w: the Portfile on %s is not the one planned against — commit your work there first, or use --in-place", plan.ErrDrift, "main"),
-			is:  []error{plan.ErrDrift}},
+		// ErrMismatch sits one line from ErrDrift in apply.go and reads
+		// like its twin; it is not. Drift is the tree having moved, and
+		// has the tree's band. A delta that differs from the prediction
+		// is the operation going wrong, which is this one.
 		exitRow{name: "plan.ErrMismatch (Apply)", err: plan.ErrMismatch, is: []error{plan.ErrMismatch}},
 		exitRow{name: "plan.ErrMismatch (Apply: edited Portfile does not evaluate)",
 			err: fmt.Errorf("%w: edited Portfile failed to evaluate: %w", plan.ErrMismatch, errors.New("invalid command name")),
@@ -393,14 +733,17 @@ func exitTable() []exitRow {
 		// printed, and only a deliberate change moves the second.
 		exitRow{name: "engine.SubjectOf: evaluation failed",
 			err: fmt.Errorf("lifecycle: evaluating %s at %s: %w", "sysutils/jq", tip, errors.New("Portfile: invalid command name"))},
-		exitRow{name: "engine.SubjectOf: several contexts",
-			err: fmt.Errorf("lifecycle: the branch changes %d contexts (%s); name the one to verify: `dockhand verify <subport>`", 2, "demo, demo2")},
 		exitRow{name: "verify: job ended in state (RunVerification)",
 			err: fmt.Errorf("verify: job ended in state %s", "running")},
+		// Not the sweep's band: SweepHardErrors is a sweep finishing
+		// with errors that were not declines, and the sweep verb does
+		// not exist. exec is a probe, and a probe reporting how many
+		// releases ran its command and did not like the answer is an
+		// ordinary failure. The one refusal that must NOT be counted
+		// into this summary is a full machine — the command never ran
+		// — and exec returns that one instead, banded 36 above.
 		exitRow{name: "exec: the command failed on N of M releases",
 			err: fmt.Errorf("exec: the command failed on %d of %d releases", 1, 2)},
-		exitRow{name: "provision: aggregate failure (provisionAll)",
-			err: fmt.Errorf("provisioning failed for %s", "Sequoia, Sonoma")},
 		exitRow{name: "log/shell: environment no longer exists (debugTarget)",
 			err: fmt.Errorf("environment %s no longer exists", "dockhand-jq-1")},
 		exitRow{name: "log/shell: no verification record (debugTarget over git.ErrNoNote)",
@@ -421,8 +764,13 @@ func exitTable() []exitRow {
 			err: fmt.Errorf("cannot read owner/repo from remote %q (%s)", "origin", "nonsense")},
 		exitRow{name: "gh.RealGhOut: gh failed",
 			err: fmt.Errorf("gh %s: %s", "api", "HTTP 401")},
-		exitRow{name: "gh.RealGhOut: gh missing",
-			err: errors.New("gh not found on PATH (`port install gh`)")},
+		// Built through the sentinel, the way RealGhOut builds it: the
+		// row used to be a bare errors.New with the same words, which
+		// would have kept asserting this band after tool.ErrNotFound
+		// moved and passed for the wrong reason. A row that does not
+		// carry what the site carries proves nothing.
+		exitRow{name: "gh.RealGhOut: gh missing (tool.ErrNotFound)",
+			err: fmt.Errorf("%w (`port install gh`)", ghMissing), is: []error{tool.ErrNotFound}},
 		exitRow{name: "gh.LookupPR: unreadable tracked remote",
 			err: fmt.Errorf("cannot read an owner from remote %q", "herby")},
 		exitRow{name: "gh.QueryPR: unreadable JSON",
@@ -433,8 +781,9 @@ func exitTable() []exitRow {
 			err: fmt.Errorf("no remote %q", "nope")},
 		exitRow{name: "gh.ForkRemote: unreadable override remote",
 			err: fmt.Errorf("remote %q: cannot read an owner from %s", "nope", "nonsense")},
-		exitRow{name: "gh.ForkRemote: gh needed",
-			err: fmt.Errorf("finding your fork needs gh: %w (or pass --remote)", errors.New("gh not found on PATH (`port install gh`)"))},
+		exitRow{name: "gh.ForkRemote: gh needed (tool.ErrNotFound)",
+			err: fmt.Errorf("finding your fork needs gh: %w (or pass --remote)",
+				fmt.Errorf("%w (`port install gh`)", ghMissing)), is: []error{tool.ErrNotFound}},
 		exitRow{name: "gh.ForkRemote: several fork remotes",
 			err: fmt.Errorf("%d remotes belong to %s; pass --remote", 2, "herbygillot")},
 		exitRow{name: "git plumbing failure (execGit)",
@@ -462,10 +811,15 @@ func exitTable() []exitRow {
 	// up (checksums into plan.Decline, shim.ErrNoShims into
 	// eval.ErrStartup, portindex.ErrNoIndex into tree.ErrPortNotFound)
 	// have their wrapped rows in the bands above; raw, they are 1.
+	//
+	// The sweep is what proves a sentinel that gained a band elsewhere
+	// did not silently gain one here — which is why every sentinel the
+	// contract DOES name is out of it, in a row of its own:
+	// distfile.ErrUnavailable, plan.ErrDrift, upstream.ErrNoGit and the
+	// verify and tree families all sit above.
 	for _, s := range []error{
 		checksums.ErrUnresolved,
 		checksums.ErrMalformed,
-		distfile.ErrUnavailable,
 		distfile.ErrMemberMissing,
 		distfile.ErrMemberAmbiguous,
 		vendored.ErrNoBlock,
@@ -483,7 +837,6 @@ func exitTable() []exitRow {
 		rpc.ErrHandshake,
 		rpc.ErrBroken,
 		info.ErrMalformedSelection,
-		upstream.ErrNoGit,
 		upstreamforge.ErrUnbound,
 		bumprevision.ErrNoReason,
 		tree.ErrNoTreeAbove,
@@ -494,6 +847,145 @@ func exitTable() []exitRow {
 		add(exitcode.Failure, exitRow{name: "raw sentinel " + s.Error(), err: s, is: []error{s}})
 	}
 	return rows
+}
+
+// childExit runs a process that exits with the given status and returns
+// the *exec.ExitError it produced. The real type, not a stand-in: what
+// the rows using it are about is a structural accident of os/exec's own
+// method set, which a fake cannot reproduce and cannot disprove.
+func childExit(code int) error {
+	return exec.Command("/bin/sh", "-c", fmt.Sprintf("exit %d", code)).Run()
+}
+
+// A child process's exit status is not a dockhand band, and cannot
+// become one by being wrapped.
+//
+// *exec.ExitError answers ExitCode(), so an interface asking for that
+// method is satisfied by every child process dockhand ever runs — and
+// the typed half of the mapping is consulted FIRST, so a chain that
+// wrapped a raw exec error would hand the child's status to $?, past
+// the sentinel that knows better. The tart tree wraps exactly that way
+// in six places. Coder therefore asks for DockhandExit, a name nothing
+// outside this repository writes, and these are the numbers that used
+// to come out: a guest exiting 66 made `case $?/10` conclude "nobody's
+// problem yet, ask again later" about a verification environment that
+// had failed.
+func TestAChildsExitStatusCannotOccupyABand(t *testing.T) {
+	for _, code := range []int{1, 3, 5, 66, 128} {
+		t.Run(fmt.Sprintf("child %d", code), func(t *testing.T) {
+			child := childExit(code)
+			var ee *exec.ExitError
+			require.ErrorAs(t, child, &ee)
+			require.Equal(t, code, ee.ExitCode(), "the child really does carry this status")
+
+			var coder exitcode.Coder
+			assert.NotErrorAs(t, child, &coder, "and it is not a dockhand band")
+
+			// Wrapped the way internal/verify/tart/tart.go writes it.
+			err := fmt.Errorf("%w: preparing the overlay: %w", verify.ErrNoEnvironment, child)
+			assert.Equal(t, exitcode.NoVerifyEnv, ExitCode(err),
+				"the sentinel classifies it; the child's status is not consulted")
+			assert.Equal(t, "environment", exitcode.Family(ExitCode(err)))
+		})
+	}
+}
+
+// Every ask that waits for its answer says so, so that a full machine
+// answers the code for "nothing was queued" rather than the one for
+// "come back later".
+//
+// Two callers stamp it in the engine, where RunVerification serves the
+// --verify gate and `verify <portdir>`; the other two are exec and
+// provision, which go through this helper. Before it, `exec` counted a
+// refusal it never got to run as a failed command and exited 1, and
+// `provision tart` told the user `dockhand status` would start work
+// that nothing had recorded.
+func TestWaitingRefusalStampsTheAsksThatLeave(t *testing.T) {
+	full := &verify.CapacityError{Busy: 2, Cap: 2}
+	require.Equal(t, exitcode.VerifyQueued, ExitCode(full), "unstamped, it is a deferred run")
+
+	assert.True(t, waitingRefusal(full))
+	assert.True(t, full.Synchronous)
+	assert.Equal(t, exitcode.VerifierBusy, ExitCode(full), "somebody is standing there")
+	assert.Equal(t, "verifier-busy", TwinOf(full).Reason)
+
+	// Through the wrapping each site adds, because neither caller gets
+	// the refusal bare.
+	wrapped := fmt.Errorf("provisioning %s: %w", "Sequoia", &verify.CapacityError{Busy: 2, Cap: 2})
+	assert.True(t, waitingRefusal(wrapped))
+	assert.Equal(t, exitcode.VerifierBusy, ExitCode(wrapped))
+
+	// And nothing else is touched: a probe whose command really did run
+	// and fail is still an ordinary failure.
+	assert.False(t, waitingRefusal(fmt.Errorf("exec: the command failed on %d of %d releases", 1, 2)))
+	assert.False(t, waitingRefusal(nil))
+}
+
+// The twin's reason is a key: one reason, one code. Several reasons may
+// share a code — two producers of the same outcome name themselves the
+// same way — but a reason that spanned two codes would be the coarser
+// of the two fields, which is backwards. The band says which KIND of
+// problem this is; the reason says WHICH, and a consumer filtering on
+// it must not have to read the code to learn what it filtered.
+//
+// Two collisions were found this way and both were fixed by naming:
+// upstream's unresolved wrapper stopped borrowing the decline's
+// "latest-unresolved" (the two are 53 and 10, and the reason was the
+// only thing that could have told them apart), and a decline that
+// withheld riders names itself apart from one that withheld nothing.
+func TestEveryTwinReasonNamesOneCode(t *testing.T) {
+	codes := map[string]map[int]string{}
+	for _, row := range exitTable() {
+		twin := TwinOf(row.err)
+		if twin.Reason == "" {
+			continue
+		}
+		if codes[twin.Reason] == nil {
+			codes[twin.Reason] = map[int]string{}
+		}
+		codes[twin.Reason][twin.Code] = row.name
+	}
+	for reason, rows := range codes {
+		assert.Len(t, rows, 1, "reason %q spans several codes: %v", reason, rows)
+	}
+}
+
+// The sentinel half of the mapping names itself too. Without this the
+// twin could say nothing at all for a third of the contract's codes —
+// harmless while the only documents are the plan, the status report and
+// the decline, and wrong the first time a verb publishes one on a
+// machine that has no MacPorts.
+func TestSentinelOutcomesCarryAReason(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		code   int
+		reason string
+	}{
+		{prefix.ErrNotInstalled, exitcode.NoMacPorts, "no-macports"},
+		{eval.ErrStartup, exitcode.EvalStartup, "eval-startup"},
+		{eval.ErrRootRefused, exitcode.RootRefused, "root-refused"},
+		{verify.ErrNoProvider, exitcode.ToolMissing, "no-verify-provider"},
+		{verify.ErrNoEnvironment, exitcode.NoVerifyEnv, "no-verify-environment"},
+		{tree.ErrNotPortsTree, exitcode.NotPortsTree, "not-ports-tree"},
+		{tree.ErrPortNotFound, exitcode.PortNotFound, "port-not-found"},
+		{git.ErrNotARepo, exitcode.NotARepo, "not-a-repo"},
+		{plan.ErrDrift, exitcode.Drift, "drift"},
+		{distfile.ErrUnavailable, exitcode.FetchFailed, "fetch-failed"},
+		{verify.ErrUnsupported, exitcode.VerifyUnsupported, "verification-unsupported"},
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			// Wrapped, because no site returns a sentinel bare.
+			err := fmt.Errorf("dockhand: %w: %s", tc.err, "context the site adds")
+			assert.Equal(t, exitcode.Of(tc.code, tc.reason), TwinOf(err))
+		})
+	}
+
+	// An error the mapping does not recognize carries no reason rather
+	// than an invented one, and a typed error's own name wins over the
+	// table's: the type says more about the same error.
+	assert.Equal(t, exitcode.Of(exitcode.Failure, ""), TwinOf(errors.New("boom")))
+	assert.Equal(t, "verification-unsupported",
+		TwinOf(&verdict.UnsupportedError{Port: "jq"}).Reason)
 }
 
 func TestExitTableParity(t *testing.T) {

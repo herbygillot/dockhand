@@ -1,4 +1,4 @@
-exit: 5
+exit: 20
 --- stdout
 --- stderr
   dockhand: an open PR already proposes "jq: update to 1.8": https://x/123 — join it, retitle with --title, or --no-pr-check to promote anyway

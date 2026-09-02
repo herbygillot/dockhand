@@ -19,6 +19,8 @@
 #   PORTS_TREE         a macports-ports checkout (default ~/Source/macports-ports)
 #   LIVEPROOF_OUT      where captures go (default .liveproof, relative to the repo)
 #   LIVEPROOF_NETWORK  1 also runs the invocations that reach the network (default 0)
+#   LIVEPROOF_TREE_MOVED  1 records anyway when the tree has moved past the
+#                      recorded baseline (see `record` for why it refuses)
 #
 # Requirements: a MacPorts installation (`port version` answers), the
 # checkout, and Go to build the binary. The evaluator resolves
@@ -27,10 +29,10 @@
 # installation knows.
 #
 # Invocations, per port:
-#   bump --to <current> --plan       offline: declines AlreadyCurrent (exit 5)
+#   bump --to <current> --plan       offline: declines AlreadyCurrent (exit 10)
 #                                    before any distfile would be fetched
 #   bump --to <current> --diff       offline: the same decline, on the diff road
-#   bump-revision --plan --reason x  offline: a plan (exit 0), or a decline (exit 5)
+#   bump-revision --plan --reason x  offline: a plan (exit 0), or a decline (exit 10)
 #                                    where the Portfile carries no revision line
 #   classify                         offline: the evaluator alone
 #   refresh-checksums --plan         NETWORK: fetches the port's distfiles to
@@ -357,6 +359,21 @@ compare_manifests() { # baseline-manifest rerun-manifest
 # --- modes ---
 
 record() {
+	# A re-record against a moved tree bakes two kinds of difference
+	# into one new baseline: the change being proved, and whatever
+	# upstream did to these ports in the meantime. The hashes cannot
+	# tell them apart afterwards, so the refusal is here, where the
+	# person doing it can still choose — check out the recorded
+	# revision, or say the move is intended and be able to name what it
+	# brought. `check` reports the same fact as context for a diff; at
+	# record time it decides whether the baseline means anything.
+	local recorded_head
+	recorded_head=$(sed -n 's/^ports_tree_head: //p' "$mirror/meta" 2>/dev/null || true)
+	if [[ -n $recorded_head && $recorded_head != "$tree_head" && ${LIVEPROOF_TREE_MOVED:-0} != 1 ]]; then
+		die 2 "the recorded baseline is at tree $recorded_head and this tree is at $tree_head;
+  a re-record here mixes upstream's changes into the diff. Check out $recorded_head,
+  or re-record with LIVEPROOF_TREE_MOVED=1 and say in the commit what the move brought"
+	fi
 	mkdir -p "$out"
 	# Only what this script wrote is removed: LIVEPROOF_OUT may be
 	# anywhere the user pointed it. A check's own rerun directory is

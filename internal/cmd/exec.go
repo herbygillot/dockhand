@@ -42,6 +42,14 @@ func (a execAction) Execute(ctx context.Context, rs *runstate.Context) error {
 			fmt.Fprintln(rs.Out, strings.TrimRight(out, "\n"))
 		}
 		if err != nil {
+			// A full machine is not this command failing on a release.
+			// The probe never ran, nothing was queued for it, and the cap
+			// is machine-wide — so every remaining release meets the same
+			// wall — which makes counting it as a failure both a lie about
+			// what happened and a waste of the boots that follow.
+			if waitingRefusal(err) {
+				return err
+			}
 			failed++
 			fmt.Fprintf(rs.Err, "%s: %v\n", r.Name, err)
 		}

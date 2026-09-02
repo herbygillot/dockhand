@@ -3,7 +3,6 @@ package upstream
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 
@@ -24,14 +23,18 @@ var ErrNoGit = errors.New("upstream: git not found on PATH")
 func Tags(ctx context.Context, tools *tool.Finder, r Repo) ([]string, error) {
 	git, err := tools.Find(tool.Git)
 	if err != nil {
-		return nil, ErrNoGit
+		// Banded where it is raised, like every other way this witness
+		// fails: one of the two resolvers cannot run, which is upstream's
+		// answer being unavailable rather than the machine being unfit
+		// for the work — the livecheck witness may still answer.
+		return nil, &WitnessError{Witness: "git", Err: ErrNoGit}
 	}
 	out, _, err := tool.Output(ctx, git, tool.Opts{
 		Args: []string{"ls-remote", "--tags", r.URL},
 		Env:  append(os.Environ(), "GIT_TERMINAL_PROMPT=0"),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("upstream: ls-remote %s: %s", r.URL, err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
+		return nil, lsRemoteFailed(r.URL, err)
 	}
 
 	var versions []string

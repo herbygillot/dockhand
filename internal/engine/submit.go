@@ -20,9 +20,8 @@ import (
 // no bases, full slots, a mid-submit failure — after its branch was
 // successfully minted. The branch stands (the git commit/push shape:
 // nobody deletes the commit because the push failed), but the
-// invocation's contract was mint AND submit, so the exit is nonzero:
-// exit 3, because the obstacle is the machine's. --no-verify narrows
-// the contract to mint alone.
+// invocation's contract was mint AND submit, so the exit is nonzero.
+// --no-verify narrows the contract to mint alone.
 type VerifyDeferredError struct {
 	Branch string
 	Reason string
@@ -38,9 +37,68 @@ func (e *VerifyDeferredError) Error() string {
 
 func (e *VerifyDeferredError) Unwrap() error { return e.Cause }
 
-// ExitCode is the machine band: the branch stands, verification could
-// not start, and the obstacle is capacity or environment.
-func (e *VerifyDeferredError) ExitCode() int { return exitcode.Environment }
+// DockhandExit reads the cause, because "the run did not start" is not one
+// outcome: a full machine will free on its own, an unprovisioned
+// release will not until someone provisions it, a capability refusal
+// never will, and a submit that broke after the mint left half the
+// work standing. All four used to answer the machine's band, which
+// told a user waiting on a queue to go and fix something.
+//
+// The band is never the synchronous one here even when the cause could
+// carry it: a deferral is by definition nobody standing there, and the
+// run was recorded for status to start.
+func (e *VerifyDeferredError) DockhandExit() int {
+	var full *verify.CapacityError
+	switch {
+	case errors.As(e.Cause, &full):
+		return exitcode.VerifyQueued
+	case errors.Is(e.Cause, verify.ErrNoEnvironment):
+		// Queued rather than refused: the run is on the note, and the
+		// event that frees it is a provisioning the user may already be
+		// running. The synchronous mirror — an ask with nobody to queue
+		// for — is NoVerifyEnv, and cmd's table owns it.
+		return exitcode.VerifyAwaitingSlot
+	case errors.Is(e.Cause, verify.ErrUnsupported):
+		// Nothing frees this one. The provider has said it cannot run
+		// what was asked for, which is a verdict about the request.
+		return exitcode.VerifyUnsupported
+	}
+	// The summary a multi-release verify returns carries no cause: each
+	// release it counts was recorded deferred and status retries them,
+	// which is what queued means. Everything else here is a submit that
+	// broke after the branch was minted.
+	if e.Cause == nil {
+		return exitcode.VerifyQueued
+	}
+	return exitcode.MintedSubmitErrored
+}
+
+// Code names the deferral for a machine. The cause's own name is
+// preferred where it has one: the band says a run did not start, and
+// this says which of the four reasons it was.
+func (e *VerifyDeferredError) Code() string {
+	// Capacity first, and not through the cause's own name: a refusal
+	// stamped synchronous somewhere upstream would name itself
+	// "verifier-busy" while this exits queued, and a reason that
+	// contradicts its band is worse than a coarse one.
+	var full *verify.CapacityError
+	if errors.As(e.Cause, &full) {
+		return "verify-queued"
+	}
+	var namer exitcode.Reasoner
+	if errors.As(e.Cause, &namer) {
+		return namer.Code()
+	}
+	switch {
+	case errors.Is(e.Cause, verify.ErrNoEnvironment):
+		return "verify-awaiting-slot"
+	case errors.Is(e.Cause, verify.ErrUnsupported):
+		return "verification-unsupported"
+	case e.Cause == nil:
+		return "verify-queued"
+	}
+	return "minted-submit-errored"
+}
 
 // submit stages the minted commit's portdir out of the object database
 // — the working tree is irrelevant to what the branch carries —
@@ -49,9 +107,6 @@ func (e *VerifyDeferredError) ExitCode() int { return exitcode.Environment }
 // the branch stands — but it is a contract failure: VerifyDeferredError
 // carries that split.
 func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release platform.Release, trace, test bool) error {
-	later := func(cause error) error {
-		return &VerifyDeferredError{Branch: m.Branch, Reason: cause.Error(), Cause: cause}
-	}
 	prov, err := e.Verifier(ctx)
 	if err != nil {
 		if errors.Is(err, verify.ErrNoProvider) {
@@ -66,7 +121,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 			return nil
 		}
 		if errors.Is(err, verify.ErrNoEnvironment) {
-			return later(err)
+			return e.queue(ctx, m, portName, release, err)
 		}
 		return err
 	}
@@ -78,7 +133,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 	// so on every submit for an answer already in hand.
 	if release.IsZero() {
 		if release, err = verdict.ResolveRelease(release, prov.Capabilities().Platforms); err != nil {
-			return later(err)
+			return e.queue(ctx, m, portName, release, err)
 		}
 	}
 	root, err := e.Temp()
@@ -126,12 +181,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 		// than left to a later verify — a field run saw an intent-path
 		// refusal show as bare "unverified" with the reason only in
 		// scrollback.
-		if rerr := e.recordRun(ctx, m.Repo, m.Sha, portName, release.Name, record.Run{
-			State: record.Deferred, Detail: err.Error(),
-		}, ""); rerr != nil {
-			fmt.Fprintf(e.Err, "warning: recording the deferred run: %v\n", rerr)
-		}
-		return later(err)
+		return e.queue(ctx, m, portName, release, err)
 	}
 	if err := e.recordRun(ctx, m.Repo, m.Sha, portName, release.Name, record.Run{
 		State: record.Running, Job: job, Tested: test, Linted: true,
@@ -152,6 +202,30 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 		return e.Follow(ctx, m.Repo, m.Sha, portName, release.Name, prov, job)
 	}
 	return nil
+}
+
+// queue is the one way a submit gives up: the run nothing could start
+// is written onto the note, and the deferral goes back to the caller.
+//
+// The note is what makes a deferral recoverable — `dockhand status`
+// retries what it finds recorded — so it is written before the error
+// travels, and a failure to write it is a warning rather than the
+// answer: the branch stands either way, and losing the reason to a
+// second failure would leave the tip reading as bare "unverified".
+//
+// A run is keyed by release, so one that never resolved a release
+// cannot be recorded. That is only reachable on a machine whose
+// provider offers no platform at all, where there is nothing for
+// status to retry against until a base exists.
+func (e *Engine) queue(ctx context.Context, m *Minted, portName string, release platform.Release, cause error) error {
+	if !release.IsZero() {
+		if rerr := e.recordRun(ctx, m.Repo, m.Sha, portName, release.Name, record.Run{
+			State: record.Deferred, Detail: cause.Error(),
+		}, ""); rerr != nil {
+			fmt.Fprintf(e.Err, "warning: recording the deferred run: %v\n", rerr)
+		}
+	}
+	return &VerifyDeferredError{Branch: m.Branch, Reason: cause.Error(), Cause: cause}
 }
 
 // recordRun writes one platform's run into the commit's note — the

@@ -529,8 +529,14 @@ func ResolveLatest(ctx context.Context, tools *tool.Finder, h port.Handle, f *po
 		return "", upstream.Report{}, err
 	}
 	if report.Latest == "" {
-		return "", report, &plan.Decline{Type: plan.LatestUnresolved,
-			Detail: fmt.Sprintf("%s (%s)", report.Verdict, report.Detail)}
+		// One decline, two bands. What a user reads is the same sentence
+		// either way — the decline words it — and what a script reads is
+		// not: witnesses that produced nothing usable are upstream's
+		// problem, while a newest version dockhand judged unfit to act on
+		// is dockhand's own refusal. The verdict is what tells them
+		// apart, and it does not survive being formatted into Detail.
+		return "", report, upstream.Unresolved(report.Verdict, &plan.Decline{Type: plan.LatestUnresolved,
+			Detail: fmt.Sprintf("%s (%s)", report.Verdict, report.Detail)})
 	}
 	return report.Latest, report, nil
 }

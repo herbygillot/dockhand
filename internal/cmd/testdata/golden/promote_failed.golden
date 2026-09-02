@@ -1,4 +1,4 @@
-exit: 1
+exit: 70
 --- stdout
 --- stderr
   dockhand: dockhand/jq-1.8: tip 7d234eb5bd04 has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway

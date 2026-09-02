@@ -2,6 +2,11 @@ exit: 0
 --- stdout
   {
     "repository": "<repo>",
-    "branches": []
+    "branches": [],
+    "exit": {
+      "code": 0,
+      "family": "success",
+      "reason": ""
+    }
   }
 --- stderr

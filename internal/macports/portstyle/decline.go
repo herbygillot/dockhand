@@ -59,10 +59,56 @@ type Decline struct {
 	Candidates []Candidate
 }
 
-// Error implements the error interface.
+// Error implements the error interface. The remedy rides on the end,
+// in the shape every refusal in dockhand uses — the finding, then a
+// dash, then what to do about it.
 func (d *Decline) Error() string {
-	return fmt.Sprintf("portstyle: %s: %s", d.Field, d.Type)
+	msg := fmt.Sprintf("portstyle: %s: %s", d.Field, d.Type)
+	if remedy := d.Remedy(); remedy != "" {
+		msg += " — " + remedy
+	}
+	return msg
 }
 
-// ExitCode: a decline is a successful judgment, exit band 5.
-func (d *Decline) ExitCode() int { return exitcode.Declined }
+// Code names the decline for a machine: the twin's reason. Prefixed,
+// because a location decline and a plan decline are different findings
+// and a script filtering on the token must not confuse them.
+func (d *Decline) Code() string {
+	switch d.Type {
+	case FieldUnsupported:
+		return "style-field-unsupported"
+	case UnknownStyle:
+		return "style-unknown"
+	case NotLiteral:
+		return "style-not-literal"
+	}
+	return "style-unknown-decline"
+}
+
+// Remedy is what the user can do about it, in one clause.
+//
+// It hangs on the *Decline rather than on the type, because the useful
+// sentence depends on the field: a Portfile with no revision line is a
+// placement problem — dockhand has no convention for inserting one,
+// and near a fifth of the tree carries none — while an unrecognized
+// version carrier is a style problem. Told apart by the type alone,
+// one of them gets the other's advice.
+func (d *Decline) Remedy() string {
+	switch d.Type {
+	case FieldUnsupported:
+		return "dockhand does not locate this field; edit the Portfile by hand"
+	case UnknownStyle:
+		if d.Field == info.FieldRevision {
+			return "add a `revision` line to the Portfile yourself; dockhand will not guess where one belongs"
+		}
+		return "the field is not written in a style dockhand recognizes; edit the Portfile by hand"
+	case NotLiteral:
+		return "the value is computed rather than written; edit what computes it"
+	}
+	return ""
+}
+
+// DockhandExit: a decline is a successful judgment, and it exits in the
+// declined band with the planner refusals it sits one level under —
+// location failed, so no plan could be trusted.
+func (d *Decline) DockhandExit() int { return exitcode.PlanDeclined }

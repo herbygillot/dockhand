@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
@@ -153,6 +154,28 @@ func (e *Engine) changedPort(ctx context.Context, repo *git.Repo, tip, rel strin
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return "", fmt.Errorf("lifecycle: the branch changes %d contexts (%s); name the one to verify: `dockhand verify <subport>`",
-		len(names), strings.Join(names, ", "))
+	return "", &AmbiguousContextError{Contexts: names}
 }
+
+// AmbiguousContextError is a branch whose change moved several
+// evaluation contexts at once: the verification needs one subject and
+// the branch names more than one.
+//
+// It shares its band with the ambiguous branch target, because it is
+// the same shape one level down — the request did not say enough, and
+// naming the one settles it. The `lifecycle:` prefix outlived the
+// package that gave it: the code moved to the engine and the sentence
+// did not, because the words are what a user reads and a move does not
+// get to reword them.
+type AmbiguousContextError struct{ Contexts []string }
+
+func (e *AmbiguousContextError) Error() string {
+	return fmt.Sprintf("lifecycle: the branch changes %d contexts (%s); name the one to verify: `dockhand verify <subport>`",
+		len(e.Contexts), strings.Join(e.Contexts, ", "))
+}
+
+// DockhandExit: the declined band's ambiguity code — say which.
+func (e *AmbiguousContextError) DockhandExit() int { return exitcode.Ambiguous }
+
+// Code names the refusal for a machine.
+func (e *AmbiguousContextError) Code() string { return "ambiguous-context" }

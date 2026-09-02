@@ -116,7 +116,7 @@ func RealGhOut(tools *tool.Finder) Runner {
 		}
 		out, _, err := tool.Output(ctx, bin, tool.Opts{Args: args})
 		if err != nil {
-			return "", fmt.Errorf("gh %s: %s", args[0], err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
+			return "", fmt.Errorf("gh %s: %s", args[0], err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
 		}
 		return string(out), nil
 	}

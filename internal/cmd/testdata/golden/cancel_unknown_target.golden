@@ -1,4 +1,4 @@
-exit: 1
+exit: 44
 --- stdout
 --- stderr
   dockhand: no dockhand branch for "nope"; `dockhand status` lists what is in flight

@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -57,13 +58,50 @@ func (e *Engine) Follow(ctx context.Context, repo *git.Repo, sha, portName, plat
 		return nil
 	case record.Failed:
 		return &VerifyFailedError{Port: portName, Handle: r.Handle}
-	case record.Running, record.Blocked, record.Canceled, record.Superseded,
-		record.Deferred, record.Errored:
+	case record.Blocked:
+		// The port is untested, not disproven: something it depends on
+		// failed first. Its own code because the remedy is the
+		// neighbour's, and for years this answered "no environment
+		// available" and sent people off to provision a machine that
+		// was fine.
+		return &verdict.BlockedError{Port: portName, Platform: plat, Detail: r.Detail}
+	case record.Canceled:
+		// Somebody stopped this from another terminal. Nothing failed, so
+		// it must not read as the environment failing — the sentence that
+		// used to come out of here, "could not answer: canceled",
+		// contradicted itself.
+		return &verdict.CanceledError{Port: portName, Platform: plat, Detail: r.Detail}
+	case record.Superseded:
+		// The branch moved while the build ran: whatever this run was
+		// about to say is about bytes that are no longer the tip.
+		return &verdict.SupersededError{Port: portName, Platform: plat, Detail: r.Detail}
+	case record.Deferred:
+		// Queued work, which is the pending band's whole reason for
+		// existing. Reachable only by a racing writer — the run being
+		// followed was Running — and lumping it in below is precisely the
+		// confusion the bands were drawn to end.
+		return &verdict.QueuedError{Port: portName, Platform: plat, Detail: r.Detail}
+	case record.Running, record.Errored:
 	}
 	// Everything else, an unknown state included: the follow watched the
 	// job to its end and the settle still reached no verdict about the
-	// port, which makes it the machine's answer rather than the port's.
-	return fmt.Errorf("%w: %s", verify.ErrNoEnvironment, r.Detail)
+	// port. A guest that crashed and a note that says something this
+	// build has never heard of end the same way from here — the
+	// verification is over and nothing was learned — and the state the
+	// settle wrote is what says which it was.
+	return &verdict.ErroredError{Port: portName, Platform: plat, Detail: detailOr(r.Detail, string(r.State))}
+}
+
+// detailOr falls back to the run's own state when it left no account of
+// itself: a state this build does not know says nothing in Detail, and
+// a refusal that trails off after a colon reads as a bug. The states
+// that are answered by name above do not need it — an outcome with
+// nothing to add says only what happened.
+func detailOr(detail, state string) string {
+	if detail != "" {
+		return detail
+	}
+	return state
 }
 
 // FollowStarted streams the run a submit has just started — after the

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
@@ -67,7 +68,11 @@ type Policy struct {
 // intent produced it (D21).
 func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) error {
 	if o.PlanOnly {
-		return p.Encode(e.Out)
+		// A plan printed is the whole contract of --plan, so the twin it
+		// carries is success: the decline that would say otherwise never
+		// reaches here — a planner that declines returns before Run is
+		// called, and the verb writes the decline's own document.
+		return p.Encode(e.Out, exitcode.Of(exitcode.OK, ""))
 	}
 	if o.Diff {
 		return e.diffFromPlan(ctx, p)

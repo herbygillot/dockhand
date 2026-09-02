@@ -29,8 +29,10 @@ func Check(ctx context.Context, tools *tool.Finder, h port.Handle, f *portfetch.
 	lc, err := f.Livecheck(ctx, h.Target.Portdir, h.Target.Subport)
 	if err != nil {
 		// The check could not run (site down, unknown type): an error,
-		// never a rot verdict.
-		return Report{}, err
+		// never a rot verdict — and an error about upstream rather than
+		// about this machine, unless the evaluator underneath is what
+		// failed, which Unreachable leaves alone.
+		return Report{}, Unreachable("livecheck", err)
 	}
 	obs := Observation{Current: declared.Version}
 	switch {

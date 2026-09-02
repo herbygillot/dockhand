@@ -232,27 +232,24 @@ var (
 	ErrUnknownJob = errors.New("verify: unknown job")
 )
 
-// NoProvider reports a machine with no verify provider, in the one
-// sentence dockhand has always printed for a machine that cannot
-// verify: "no environment available", and then the caller's remedy.
+// NoProvider reports a machine with no verify provider at all, in its
+// own words and then the caller's remedy.
 //
-// The sentence and the sentinel part company here on purpose. Telling
-// a missing provider from a missing base image is a distinction the
-// CODE needs — one narrows the contract, the other asks for
-// provisioning — and it was drawn by splitting the sentinel. The user's
-// situation did not split with it: either way the machine cannot
-// verify, and the clause that follows already names which remedy
-// applies. So callers gain errors.Is(err, ErrNoProvider) and readers
-// lose nothing, which is what makes the split free.
+// The sentence used to be ErrNoEnvironment's, borrowed so the two
+// refusals could not drift apart in a release note. They are meant to
+// differ now: the two exit in different codes with different remedies —
+// a tool to install against a base to provision — and a refusal that
+// answers 33 while opening with 34's noun tells a script one thing and
+// the person reading it another. The sentinel split was the first half
+// of that distinction; these words are the half a human reads.
 func NoProvider(detail string) error { return &noProvider{detail: detail} }
 
-// noProvider is NoProvider's error. Its words are ErrNoEnvironment's so
-// the two refusals cannot drift apart in a release note; its identity
-// is ErrNoProvider's, and nothing else — a caller asking whether this
-// machine merely wants provisioning must hear no.
+// noProvider is NoProvider's error. Its words and its identity are both
+// ErrNoProvider's, and nothing else — a caller asking whether this
+// machine merely wants provisioning must hear no, and so must a reader.
 type noProvider struct{ detail string }
 
-func (e *noProvider) Error() string { return ErrNoEnvironment.Error() + ": " + e.detail }
+func (e *noProvider) Error() string { return ErrNoProvider.Error() + ": " + e.detail }
 
 func (e *noProvider) Is(target error) bool { return target == ErrNoProvider }
 
@@ -290,14 +287,42 @@ type Verifier interface {
 // two-minute agent timeout.
 type CapacityError struct {
 	Busy, Cap int
+	// Synchronous says someone is waiting on this answer: the --verify
+	// gate, `verify <portdir>`, an exec. Nothing is queued in that case
+	// and nobody will come back for it, which is a different outcome
+	// from the same refusal met by a submit that defers.
+	//
+	// The provider cannot fill this in — admission counts slots and has
+	// no idea who is asking — so it is stamped by the caller that knows
+	// it is standing there.
+	Synchronous bool
 }
 
 func (e *CapacityError) Error() string {
 	return fmt.Sprintf("all %d verification slots are busy (%d VMs running); `dockhand status` starts it when one frees", e.Cap, e.Busy)
 }
 
-// ExitCode: the machine band.
-func (e *CapacityError) ExitCode() int { return exitcode.Environment }
+// DockhandExit: a full machine met by a submit is pending — the run is
+// deferred and status starts it when a slot frees, so nothing is
+// wrong and the caller should ask again. Met by someone waiting, the
+// same fact is the machine refusing the ask, because there is no
+// deferred run to come back for.
+func (e *CapacityError) DockhandExit() int {
+	if e.Synchronous {
+		return exitcode.VerifierBusy
+	}
+	return exitcode.VerifyQueued
+}
+
+// Code names the refusal for a machine, and says which of the two it
+// was: the twin's reason is what a script reads when the band alone
+// does not say whether anything is still coming.
+func (e *CapacityError) Code() string {
+	if e.Synchronous {
+		return "verifier-busy"
+	}
+	return "verify-queued"
+}
 
 // Executor is the optional capability of reaching inside a live
 // environment: run one command and return its output. tart implements

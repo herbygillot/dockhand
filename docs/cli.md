@@ -56,7 +56,7 @@ verbs consume branches and shas rather than plan files — `verify` tests a
 commit, whoever made it; `status` reconciles the `dockhand/*` namespace;
 `promote` pushes the branch it finds, and first searches upstream's
 open PRs by the `<port>:` title convention: an identical title is
-refused as a duplicate (exit 5, `--no-pr-check` overrides), a
+refused as a duplicate (exit 20, `--no-pr-check` overrides), a
 same-port PR is surfaced as a note, and a clean search checks the
 template's other-open-PRs box. A branch whose own PR is already open
 is re-promotion: the push updates that PR instead of opening a second. The deliberate opt-out is `--in-place`:
@@ -461,38 +461,347 @@ they may want separate verbs.
 
 ## Exit codes
 
-An exit status answers *whose problem is this*: the invocation, the machine,
-the tree, or the operation. And refusal is a feature, so a decline must be
-distinguishable from all of them:
+An exit status answers *whose problem is this*: the invocation, the plan
+dockhand declined to make, the destination that would not take it, the
+machine, the tree, upstream, the verification, or an operation that got
+halfway. Refusal is a feature, so a decline must be distinguishable from
+every one of those — and so must a queue, which is nobody's problem yet.
 
-- `0` — success (a plan produced; a sweep completed, even with declines)
-- `1` — the operation failed
-- `2` — usage: bad flag, unknown command, invalid arguments
-- `3` — environment: MacPorts missing, tclsh broken, running as root
-- `4` — ports tree: not a tree, port not found
-- `5` — declined: a point intent refused to produce a plan
+**The bands are decades, and that is the point of the numbering.** A caller
+that wants the *shape* of the answer rather than the answer reads `$?/10`,
+and keeps working when a code it has never heard of is added beside the ones
+it knows:
+
+```sh
+dockhand bump jq; status=$?
+case $status in
+  0) ;;                       # done
+  1) ;;                       # it went wrong, and nothing says whose fault
+  2) ;;                       # the invocation is wrong
+  *) case $((status / 10)) in
+       1) ;;                  # declined
+       2) ;;                  # refused
+       3) ;;                  # environment
+       4) ;;                  # tree
+       5) ;;                  # upstream
+       6) ;;                  # pending
+       7) ;;                  # verdict
+       8) ;;                  # partial
+     esac ;;
+esac
+```
+
+`0`, `1` and `2` predate the bands and keep the shell's own meanings: a
+script written before dockhand had families still reads them right, which is
+why they were not renumbered into a decade of their own. `3` through `9` are
+unassigned and have no family: `3`–`6` were the old environment, tree,
+declined and verify codes, and a code dockhand does not write should be
+learned as unrecognized rather than guessed at from the nearest band.
 
 `2` follows the near-universal usage-error convention (POSIX utilities,
-bash, grep), which is why *declined* — an earlier draft had it at `2` — moved
-to `5`, out of the error band entirely. The distinction the codes preserve is
-remedy: `2` says reread `--help`, `3` says fix the machine, `4` says fix the
-tree or the name, `1` says the operation itself went wrong.
+bash, grep), which is why *declined* — an earlier draft had it at `2`, then
+at `5` — kept moving away from it, and now has a decade of its own. The
+distinction the codes have always preserved is remedy, and the decades are
+that distinction stated at a scale that stops running out of room.
 
-The table and its lookup live in `internal/cmd` (exit.go), mapped from typed
-errors by identity — never by message text.
+### The families
 
-One case splits an invocation's contract from its progress: a bump whose
-branch minted but whose verification could not start — no bases, both
-slots taken — exits `3` while the branch stands, the git commit/push
-shape (a failed push never deletes the commit). The message names the
-follow-up (`dockhand verify <branch>`), and `--no-verify` narrows the
-contract to minting alone, restoring exit `0`.
+| Band | Family | Whose problem it is | What the remedy is about |
+|---|---|---|---|
+| `0` | success | — | proceed |
+| `1` | failure | unattributed — the band of last resort, and every band below exists to take a case out of it | report it |
+| `2` | usage | the invocation's | `--help`, never the machine or the tree |
+| `10`–`13` | declined | the plan's: dockhand understood the request, could have carried it out, and judged it should not | nothing broke and nothing was written; the next move is the user's |
+| `20`–`24` | refused | the destination's: the change is fine, the place it would go will not take it | the branch or the pull request, never the edit |
+| `30`–`36` | environment | the machine's | installing or provisioning something |
+| `40`–`44` | tree | where dockhand was pointed | a different path, branch or flag — never an install |
+| `50`–`53` | upstream | somebody else's | waiting, or the port's livecheck |
+| `60`–`62` | pending | nobody's yet: nothing failed and nothing finished | asking again later |
+| `70`–`73` | verdict | the verification answered, and not with a pass | the log, or the port |
+| `80`–`83` | partial | the operation did half its work, and that half stands | knowing what stands before re-running |
 
-The point/sweep asymmetry lands here directly. A point intent that declines
-exits `5`: the user asked for one thing and did not get it. A sweep that
-declines on 40 of 340 ports exits `0`: that is a success with a tail, and the
-declines are output, not failure. If both exited alike, every CI wrapper
-around a sweep would be wrong.
+The families are the contract a script should branch on. The fine codes
+below are the contract a script may branch on when the family is too coarse,
+and they exist because the remedies inside one family are not
+interchangeable.
+
+### Declined — `10`–`13`
+
+| Code | Name | What happened |
+|---|---|---|
+| `10` | `PlanDeclined` | a planner refused to produce a plan it cannot stand behind, or a field could not be located to edit |
+| `11` | `BranchInFlight` | the port already has a change in flight; discard it, pick it up, or `--force` |
+| `12` | `AlreadyCurrent` | nothing to do — and riders went undone with it |
+| `13` | `Ambiguous` | the target names several in-flight branches, or the branch changes several evaluation contexts; say which |
+
+Every decline carries its remedy in the sentence, which is what keeps a
+decline from reading as a failure. `12` is its own code so a sweep can tell
+"nothing to do" from "nothing to do, and here is what that cost"; the path
+is present and nothing populates the riders yet.
+
+### Refused — `20`–`24`
+
+| Code | Name | What happened |
+|---|---|---|
+| `20` | `DuplicatePR` | an open upstream PR already proposes this change; join it, `--title`, or `--no-pr-check` |
+| `21` | `PRMerged` | the branch's own PR already merged — a dead end, not a conflict; `dockhand clean` retires it |
+| `22` | `Superseded` | work a newer sibling has already replaced: a followed run whose branch moved out from under it |
+| `23` | `Held` | *reserved:* a branch deliberately held back from publication |
+| `24` | `MachineGate` | *reserved:* an automatic publication a policy refused, where a human asking would be allowed it |
+
+`23` is a held *branch*. A held lock file is an ordinary failure and stays
+in band `1`; the names are one word apart and the bands are not.
+
+`22` is the destination refusing in the sense that matters: the answer the
+superseded run was about to give is about bytes that are no longer the tip.
+Nothing failed and the port is fine, which is why it is not in the verdict
+band with the runs that ended without one.
+
+### Environment — `30`–`36`
+
+| Code | Name | What happened |
+|---|---|---|
+| `30` | `NoMacPorts` | no MacPorts installation to read |
+| `31` | `EvalStartup` | the Tcl evaluator would not come up |
+| `32` | `RootRefused` | dockhand declining to run as root |
+| `33` | `ToolMissing` | a tool the work needs is not on this machine |
+| `34` | `NoVerifyEnv` | a synchronous ask with no environment to answer it |
+| `35` | `ProvisionFailed` | provisioning ran and did not finish |
+| `36` | `VerifierBusy` | a synchronous ask refused for want of a slot |
+
+`33` is reached only from the verbs that were *asked* to verify — `verify`,
+`log`, `shell`, `exec`. The implicit submit inside a write intent meets the
+same missing provider, says on stderr that the branch is unverified, and
+exits `0`: the contract narrowing rather than failing.
+
+`34` and `36` are the synchronous halves of a pair. Met by a submit that
+defers instead, the same two facts are `61` and `60` — the difference is
+whether anyone is still standing there, and whether a run was recorded for
+`status` to start.
+
+Four asks wait for their answer and then leave, so four stamp `36`: the
+`--verify` gate, `verify <portdir>`, `exec`, and `provision`. The provider
+counts slots and cannot know who asked, which is why the caller says so.
+`exec` returns the refusal rather than counting it as a release whose
+command failed — the command never ran — and ends there, because the cap is
+machine-wide and the next release would meet the same wall.
+
+### Tree — `40`–`44`
+
+| Code | Name | What happened |
+|---|---|---|
+| `40` | `NotPortsTree` | not a MacPorts ports tree |
+| `41` | `PortNotFound` | the tree does not carry that port |
+| `42` | `NotARepo` | the branch workflow needs a git checkout; `--in-place` edits the tree directly |
+| `43` | `Drift` | the Portfile is no longer the one that was planned against |
+| `44` | `BranchNotFound` | the target names no in-flight branch; `dockhand status` lists what is |
+
+### Upstream — `50`–`53`
+
+| Code | Name | What happened |
+|---|---|---|
+| `50` | `FetchFailed` | no URL would serve the distfile |
+| `51` | `WitnessUnreachable` | a witness could not run at all: a livecheck whose site is down, an `ls-remote` the forge refused, a git that is not there |
+| `52` | `WitnessAPI` | *reserved:* a forge or registry API that answered an error or a rate limit |
+| `53` | `LatestUnresolved` | the witnesses ran and left no trustworthy newest version between them; name it with `--to`, or fix the port's livecheck |
+
+`50` is a sentinel the ruled table did not name and the bands claim anyway:
+a distfile no URL would serve was an unattributed failure, band `1`, which
+is the answer this whole band exists to take cases out of. It is a
+renumbering like the rest, said here so it is not read as one that happened
+by accident.
+
+A witness that fails because the *machine* failed keeps the machine's band:
+an evaluator that will not start, or a refusal to run as root, surfaces
+through livecheck and still exits `31` or `32`. Relabelling those "upstream
+unreachable" would send a user to look at a website.
+
+`52` is reserved rather than produced. A forge API error or a rate limit
+today falls back to the tag witness silently and the bump still lands;
+making the code reachable is a change to that fallback, not a renumbering.
+
+`53` covers only the verdicts that left nothing to act on: no signal at all,
+and the three shapes of a livecheck that cannot be trusted against the forge
+(rotted, behind, or ahead with nothing to corroborate it). A judgment over
+*sound* witnesses — the newest tags are all prereleases — is dockhand's own
+refusal and exits `10` with the other declines. The verdicts that resolve
+(agreement, one witness only, a tag without a release, a prerelease that is
+lateral or superseded) set a version and exit `0`; if one of them ever stops
+setting a version, it is a judgment over sound witnesses too, and it stays
+at `10` rather than sliding into this band by default.
+
+### Pending — `60`–`62`
+
+| Code | Name | What happened |
+|---|---|---|
+| `60` | `VerifyQueued` | a run deferred for want of a slot, or a followed run the settle found still queued; `dockhand status` starts it when one frees |
+| `61` | `VerifyAwaitingSlot` | a run queued for an environment this machine has not provisioned yet |
+| `62` | `PromotionPending` | *reserved:* a published destination still awaiting its verdict |
+
+Nothing here failed. These must never share a band with a refusal, because
+the remedy is to ask again rather than to fix anything.
+
+### Verdict — `70`–`73`
+
+| Code | Name | What happened |
+|---|---|---|
+| `70` | `VerifyFailed` | the run completed and the port does not build — and `promote` refusing over one, which is that same answer being enforced |
+| `71` | `VerifyBlocked` | the run never reached the change: a dependency failed first, so the port is untested rather than disproven |
+| `72` | `VerifyUnsupported` | the provider cannot run what was asked for |
+| `73` | `VerifyErrored` | the verification ended without a verdict: the environment could not answer, or a person stopped the run |
+
+`73` is a fact about the machine and exits here anyway, because what
+happened is that the verification ended without a verdict — which is what a
+caller waiting on one needs to hear. All three of `71`, `72` and `73` used
+to come back as "no environment available", which sent a user whose
+neighbour was broken off to provision a machine that was fine.
+
+A cancel shares `73` and not its sentence. None of the ruled numbers names
+a person stopping their own build, so it lands in the band that says the
+verification ended without a verdict — but "could not answer: canceled" is
+a sentence that contradicts itself, and the twin's `reason` is what tells
+the two apart: `verification-errored` against `verification-canceled`. The
+other two ways a followed run can end without a verdict leave this band
+entirely: a superseded run is `22`, and one still waiting for a slot is
+`60`.
+
+`72` is not a port declining a platform. That is the record's *unsupported*
+state, it is frequently the change working exactly as intended, and the
+verbs say so and exit `0`.
+
+The `verify.ErrUnsupported` sentinel moves here from the old `3`, the
+retired environment code, for the reason the row gives: nothing is missing
+that provisioning would supply. Like `50`, it is a renumbering the ruled
+table did not enumerate and the bands require.
+
+### Partial — `80`–`83`
+
+| Code | Name | What happened |
+|---|---|---|
+| `80` | `MintedSubmitErrored` | the branch is minted; the verification submit broke |
+| `81` | `PushedPRFailed` | the branch is pushed; the pull request would not open |
+| `82` | `PRRefreshFailed` | the branch is pushed; its pull request still describes the change it used to carry |
+| `83` | `SweepHardErrors` | *reserved:* a sweep that finished with errors that were not declines |
+
+Re-running is not free and not always safe, so these can never be folded
+into `1`: a script must be able to tell "nothing happened" from "the branch
+is pushed and the PR is not".
+
+### Where the mapping lives
+
+A typed error owns its band **where it is defined**, by implementing
+`DockhandExit() int` — so the band cannot be forgotten in a table two
+packages away, which is the trap every new error type used to walk into.
+`internal/cmd/exit.go` holds only the other half: the sentinels, which cannot
+carry a method, and which name a dozen packages `internal/exitcode` would
+have to import to see them. Typed errors are consulted first, so a sentinel
+wrapped by an error that knows better keeps the better band.
+`internal/exitcode` holds the constants and `Family`, which is the only thing
+that may name a decade. Nothing anywhere is mapped by message text.
+
+The method is named `DockhandExit` and not the obvious `ExitCode` because
+the obvious name is not dockhand's to claim: `*exec.ExitError` answers
+`ExitCode()`, so an interface asking for it is satisfied by every child
+process dockhand runs. Typed errors are consulted first, so a chain that
+wrapped a raw `git` or `tart` failure would hand the child's status straight
+to `$?` — past the sentinel that knew better, and into a band the child has
+never heard of. A guest exiting `66` made `case $?/10` conclude "nobody's
+problem yet, ask again later" about a verification environment that had
+failed. The odd name is the fix: nothing outside this repository writes it.
+
+### The status, said inside the document
+
+Every JSON document dockhand emits carries its own exit status, as the last
+key, so a consumer that captured stdout through a pipe and lost `$?` still
+knows how the run ended:
+
+```json
+{
+  "repository": "/opt/mports/macports-ports",
+  "branches": [],
+  "exit": { "code": 0, "family": "success", "reason": "" }
+}
+```
+
+`reason` is a stable machine token — `already-current`, `duplicate-pr`,
+`verification-blocked` — for a caller that needs *which problem* rather than
+*which kind*. It is not the prose with the spaces taken out: the message may
+be reworded and these bytes may not.
+
+**A reason names exactly one code.** Several reasons may share a code — two
+producers of the same outcome name themselves the same way — but a reason
+that spanned two codes would be the coarser of the two fields, which is
+backwards, and a consumer filtering on it would have to read the code anyway
+to learn what it had filtered. So the wrapper that bands an unresolved
+verdict as upstream's says `witness-unresolved` where the decline it carries
+says `latest-unresolved` (`53` against `10` — the reason is the only thing
+that could have told those two apart), and a decline that withheld riders
+says `already-current-withheld` where one that withheld nothing says
+`already-current` (`12` against `10`).
+
+Sentinel-classified outcomes carry a reason too — `no-macports`,
+`not-a-repo`, `drift` — even though the sentinels themselves cannot carry a
+method. Without that, a third of the contract's codes could publish no
+reason at all, which is harmless while the only documents are the plan, the
+status report and the decline, and wrong the first time a verb emits one on
+a machine that has no MacPorts.
+
+`--plan` with nothing to plan emits the decline itself, on the stream the
+plan would have used, with the two things a decline knows that a bare status
+does not:
+
+```json
+{
+  "exit": {
+    "code": 10,
+    "family": "declined",
+    "reason": "already-current",
+    "detail": "1.8.2",
+    "remedy": "nothing needs doing here; ask for a different state if this is not the one you meant"
+  }
+}
+```
+
+Before this, a declined `--plan` wrote nothing at all to stdout and left its
+reason in an English sentence on stderr, so every consumer had two parsers
+or one blind spot. `--diff` gets no such document: its stdout is a patch
+somebody pipes into `git apply`, and one flag with two output languages
+breaks the consumer that trusts it.
+
+`status --json` publishes the twin on its failure paths for the same
+reason. A pass that never reached a report has nothing to report, so the
+document is the twin and nothing else:
+
+```json
+{
+  "exit": { "code": 42, "family": "tree", "reason": "not-a-repo" }
+}
+```
+
+The twin is built from the same error the process exits on, never derived a
+second time. A document that could disagree with `$?` is worse than no
+document.
+
+### Two asymmetries the codes carry
+
+**Contract against progress.** A bump whose branch minted but whose
+verification could not start leaves the branch standing — the git
+commit/push shape, where a failed push never deletes the commit — and the
+exit says which of four things happened, because they do not share a remedy:
+every slot busy, `60`, and `dockhand status` starts it when one frees; the
+release not provisioned, `61`, and it starts when someone provisions it; the
+provider unable to run the request at all, `72`, which nothing will free;
+the submit broken after the mint, `80`. The message names the follow-up
+(`dockhand verify <branch>`), and `--no-verify` narrows the contract to
+minting alone, restoring exit `0`.
+
+**Point against sweep.** A point intent that declines exits in the declined
+band — `10` for an ordinary refusal: the user asked for one thing and did
+not get it. A sweep that declines on 40 of 340 ports exits `0`; that is a
+success with a tail, and the declines are output, not failure. If both
+exited alike, every CI wrapper around a sweep would be wrong. dockhand has
+no sweep verb yet, and `83` is reserved for the day one finishes with errors
+that were not declines.
 
 ---
 

@@ -110,7 +110,12 @@
       "name": "dockhand-worker-elsewhere",
       "owner": "/other/ports"
     }
-  ]
+  ],
+  "exit": {
+    "code": 0,
+    "family": "success",
+    "reason": ""
+  }
 }
 --- stderr
 removed dockhand/jq-landed from "herby"

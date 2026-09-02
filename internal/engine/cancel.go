@@ -29,9 +29,14 @@ func (e *VerifyFailedError) Error() string {
 	return msg
 }
 
-// ExitCode places verification failure in its own band: not the tool,
-// not the machine, not the invocation — the port does not build.
-func (e *VerifyFailedError) ExitCode() int { return exitcode.Verify }
+// DockhandExit places verification failure in the verdict band: not the
+// tool, not the machine, not the invocation — the run answered, and
+// the port does not build. It shares the code with promote's refusal
+// over one, which is that same answer being enforced.
+func (e *VerifyFailedError) DockhandExit() int { return exitcode.VerifyFailed }
+
+// Code names the outcome for a machine.
+func (e *VerifyFailedError) Code() string { return "verification-failed" }
 
 // Cancel is the one cancel: everything a branch still holds, given
 // back. The superseded commits go first — workers the branch has

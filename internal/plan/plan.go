@@ -19,6 +19,7 @@ import (
 	"sort"
 
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
@@ -63,13 +64,23 @@ type Plan struct {
 	Predicted      []ContextDelta `json:"predicted"`
 }
 
-// Encode writes the plan as JSON. Under D21 a plan is internal
-// interchange; this rendering survives only as --plan's debugging
-// output, and nothing reads one back.
-func (p *Plan) Encode(w io.Writer) error {
+// Encode writes the plan as JSON, with the process's own exit status
+// said inside it. Under D21 a plan is internal interchange; this
+// rendering survives only as --plan's debugging output, and nothing
+// reads one back.
+//
+// The twin is an argument rather than a field on Plan: how a process
+// ended is the command line's fact, and a plan is the same value
+// whether it is printed, committed or verified. The envelope embeds
+// the plan, so the plan's own keys keep their order and the exit
+// object lands last.
+func (p *Plan) Encode(w io.Writer, exit exitcode.Twin) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(p)
+	return enc.Encode(struct {
+		*Plan
+		Exit exitcode.Twin `json:"exit"`
+	}{Plan: p, Exit: exit})
 }
 
 // FromDelta renders an info.Delta in the plan's canonical wire form:

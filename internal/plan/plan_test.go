@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/text"
 )
@@ -30,7 +31,7 @@ func TestEncodeRendersThePlan(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	require.NoError(t, p.Encode(&buf))
+	require.NoError(t, p.Encode(&buf, exitcode.Of(exitcode.OK, "")))
 	out := buf.String()
 	assert.Contains(t, out, `"intent": "bump"`)
 	assert.Contains(t, out, `"portdir": "/tree/sysutils/foo"`)

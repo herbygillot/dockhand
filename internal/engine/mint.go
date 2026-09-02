@@ -54,9 +54,9 @@ func (e *Engine) planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, 
 }
 
 // BranchInFlightError is the refusal an intent gives when its port
-// already has a branch: refusal is a feature (exit 5), not a failure —
-// the user asked for one thing, and the reason they did not get it is
-// a judgment with a remedy, not something broken.
+// already has a branch: refusal is a feature, not a failure — the user
+// asked for one thing, and the reason they did not get it is a
+// judgment with a remedy, not something broken.
 type BranchInFlightError struct {
 	Branch string
 	// Reason overrides the default message: --force's narrower refusal
@@ -71,8 +71,13 @@ func (e *BranchInFlightError) Error() string {
 	return fmt.Sprintf("a change for this port is already in flight: %s — discard it, pick up where it left off, or --force to replace it", e.Branch)
 }
 
-// ExitCode: refusal is a feature — a decline, never a failure.
-func (e *BranchInFlightError) ExitCode() int { return exitcode.Declined }
+// DockhandExit: its own code inside the declined band. A caller sweeping
+// ports needs "already in flight" apart from every other decline —
+// the remedy is a different verb, not a different request.
+func (e *BranchInFlightError) DockhandExit() int { return exitcode.BranchInFlight }
+
+// Code names the refusal for a machine.
+func (e *BranchInFlightError) Code() string { return "branch-in-flight" }
 
 // replaceInFlight clears the way for --force: the standing branch goes
 // through discard's own demolition — running verification canceled,

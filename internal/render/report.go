@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verdict"
 )
@@ -262,6 +263,11 @@ type statusJSON struct {
 	Repository    string         `json:"repository"`
 	Branches      []statusBranch `json:"branches"`
 	OrphanWorkers []Orphan       `json:"orphan_workers,omitempty"`
+	// Exit is the process's own status, said inside the document as
+	// well as beside it: a consumer that captured stdout through a pipe
+	// and lost $? still knows how the run ended. Last, so every key
+	// above it keeps the offset it has always had.
+	Exit exitcode.Twin `json:"exit"`
 }
 
 type statusBranch struct {
@@ -289,12 +295,17 @@ type statusBranch struct {
 // An encoder rather than a marshal: the trailing newline and the
 // HTML escaping of a PR title carrying & or < are both part of what has
 // always been published.
-func (r Report) JSON(out, errw io.Writer) error {
+//
+// The exit twin is the caller's to supply, for the reason this package
+// takes a clock read rather than reading one: the status a process
+// leaves behind is not a function of the report, and a document that
+// worked its own out could disagree with $?.
+func (r Report) JSON(out, errw io.Writer, exit exitcode.Twin) error {
 	for _, b := range r.Branches {
 		Prose(b.Prose, errw, errw)
 	}
 	Prose(r.Drain, errw, errw)
-	doc := statusJSON{Repository: r.Repository, Branches: []statusBranch{}, OrphanWorkers: r.Orphans}
+	doc := statusJSON{Repository: r.Repository, Branches: []statusBranch{}, OrphanWorkers: r.Orphans, Exit: exit}
 	for _, b := range r.Branches {
 		doc.Branches = append(doc.Branches, statusBranch{
 			Branch:  b.Branch,

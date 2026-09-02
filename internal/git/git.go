@@ -176,7 +176,7 @@ func execGit(ctx context.Context, tools *tool.Finder, dir string, stdin []byte, 
 		Stdin: in,
 	})
 	if err != nil {
-		return nil, code, fmt.Errorf("git %s: %s", args[0], err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
+		return nil, code, fmt.Errorf("git %s: %s", args[0], err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
 	}
 	return out, 0, nil
 }

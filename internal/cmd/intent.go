@@ -2,14 +2,18 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
+	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
@@ -71,7 +75,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	}
 	p, err := planner.Plan(ctx, h, df)
 	if err != nil {
-		return err
+		return a.sayDecline(rs, err)
 	}
 
 	// The summary comes first whatever happens next: when the plan is
@@ -95,6 +99,82 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		opts.Verified, opts.GateLint = true, lint
 	}
 	return eng.Run(ctx, p, opts)
+}
+
+// declineDocument is what --plan emits when there is no plan: the
+// decline, machine-readable, on the stream the plan would have used.
+//
+// A caller asking for JSON gets JSON however the run ends. Before
+// this, a declined --plan wrote nothing at all to stdout and left the
+// reason in an English sentence on stderr, so every consumer of --plan
+// had two parsers or one blind spot.
+type declineDocument struct {
+	Exit declineExit `json:"exit"`
+}
+
+// declineExit is the twin with the two things a decline knows that a
+// bare exit status does not: what specifically was found, and what to
+// do about it. They ride inside the exit object rather than beside it
+// because they are the same fact at a finer grain — the reason names
+// the kind, the detail names the instance.
+type declineExit struct {
+	exitcode.Twin
+	Detail string `json:"detail,omitempty"`
+	Remedy string `json:"remedy,omitempty"`
+}
+
+// sayDecline writes the decline document when the caller asked for one
+// and returns the error either way. The error still travels: the
+// document says what happened and the exit status is what a shell
+// reads, and the two are built from the same error so they cannot
+// disagree.
+//
+// Only --plan gets a document. --diff's stdout is a patch — a stream
+// somebody pipes into `git apply` — and giving one flag two output
+// languages would break the consumer that trusts it.
+func (a intentAction) sayDecline(rs *runstate.Context, err error) error {
+	detail, remedy, ok := declineFacts(err)
+	if !a.opts.PlanOnly || !ok {
+		return err
+	}
+	doc := declineDocument{Exit: declineExit{
+		Twin:   TwinOf(err),
+		Detail: detail,
+		Remedy: remedy,
+	}}
+	enc := json.NewEncoder(rs.Out)
+	enc.SetIndent("", "  ")
+	if werr := enc.Encode(doc); werr != nil {
+		// The decline is the answer and the document is how it was
+		// asked for; a stdout that will not take it is worth saying,
+		// and worth saying without replacing the reason.
+		fmt.Fprintf(rs.Err, "warning: writing the decline document: %v\n", werr)
+	}
+	return err
+}
+
+// declineFacts reads the two things a decline knows that a bare exit
+// status does not — what specifically was found, and what to do about
+// it — from either of the two decline types, and reports whether the
+// error is a decline at all.
+//
+// Both are named here rather than reached for through an interface,
+// because they say the same two things in different shapes: a
+// planner's decline carries its detail as prose the planner wrote,
+// while a location decline's detail IS the field it could not find.
+// Missing the second is how the revision-less Portfile — the most
+// common decline in the tree after already-current — ended up as the
+// one --plan that still wrote nothing to stdout.
+func declineFacts(err error) (detail, remedy string, ok bool) {
+	var p *plan.Decline
+	if errors.As(err, &p) {
+		return p.Detail, p.Type.Remedy(), true
+	}
+	var s *portstyle.Decline
+	if errors.As(err, &s) {
+		return s.Field.String(), s.Remedy(), true
+	}
+	return "", "", false
 }
 
 // intentFlags declares the realization flags every write intent

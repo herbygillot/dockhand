@@ -73,21 +73,124 @@ func (t DeclineType) String() string {
 	return "unknown decline"
 }
 
+// Code is the type's stable machine name: the token a document's exit
+// twin carries and a script branches on when the band is too coarse.
+// It is not String with the spaces taken out — String is prose and may
+// be reworded, these bytes are a contract and may not.
+func (t DeclineType) Code() string {
+	switch t {
+	case AlreadyCurrent:
+		return "already-current"
+	case TransformedStyle:
+		return "transformed-style"
+	case FetchNotDriven:
+		return "fetch-not-driven"
+	case ChecksumsNotLocated:
+		return "checksums-not-located"
+	case SubportsChanged:
+		return "subports-changed"
+	case TargetNotReached:
+		return "target-not-reached"
+	case UnexpectedChange:
+		return "unexpected-change"
+	case LatestUnresolved:
+		return "latest-unresolved"
+	case VendoredBlock:
+		return "vendored-block"
+	}
+	return "unknown-decline"
+}
+
+// Remedy is what the user can do about the decline, in one clause.
+//
+// It hangs on the TYPE, so every producer of a type has to be able to
+// stand behind the same sentence — which is a real constraint, not a
+// formality: AlreadyCurrent is raised by a bump at the version it was
+// given and by a refresh whose sums already match, so a remedy naming
+// --to would be false the moment refresh raised it. Where the
+// producers differ, the remedy names the SHAPE of the fix rather than
+// a command, and the Detail the producer wrote says which case this
+// is. The same vocabulary leak was found once already, in String; the
+// note there records it.
+//
+// A type with nothing useful to say returns empty, and Error says
+// nothing rather than padding the sentence.
+func (t DeclineType) Remedy() string {
+	switch t {
+	case AlreadyCurrent:
+		return "nothing needs doing here; ask for a different state if this is not the one you meant"
+	case TransformedStyle:
+		return "edit the carrier in the Portfile by hand; dockhand will not invent the transform back"
+	case FetchNotDriven:
+		return "find what actually drives the fetch and move that first"
+	case ChecksumsNotLocated:
+		return "dockhand rewrites only the checksums a Portfile writes plainly; write them there, or regenerate the block that supplies them"
+	case SubportsChanged:
+		return "land the subport change on its own first, then run this again"
+	case TargetNotReached:
+		return "`--debug` prints the carrier and the shadow evaluation; edit what actually drives the field"
+	case UnexpectedChange:
+		return "land the unrelated change on its own first; `--debug` names what moved"
+	case LatestUnresolved:
+		return "name the version with `--to`, or fix the port's livecheck so it finds what upstream publishes"
+	case VendoredBlock:
+		return "regenerate the vendored block and commit that first; dockhand will not edit around it"
+	}
+	return ""
+}
+
 // Decline is a planner's refusal, stated precisely. Like portstyle's,
 // it is an error so it travels normal plumbing and typed so callers
 // branch on it; a decline is a first-class outcome, not a failure.
 type Decline struct {
 	Type   DeclineType
 	Detail string
+	// Withheld names what the decline held back with it: the riders a
+	// sweep would have carried on the change it is not making. It moves
+	// the exit code, because "nothing to do" and "nothing to do, and
+	// these went undone with it" are different answers to a caller
+	// deciding whether to look.
+	Withheld []string
 }
 
-// Error implements the error interface.
+// Error implements the error interface. The remedy rides on the end of
+// the sentence, in the shape every refusal in dockhand uses — the
+// finding, then a dash, then what to do about it — because a decline
+// the user cannot act on is a decline they will read as a failure.
 func (d *Decline) Error() string {
-	if d.Detail == "" {
-		return fmt.Sprintf("plan: declined: %s", d.Type)
+	msg := fmt.Sprintf("plan: declined: %s", d.Type)
+	if d.Detail != "" {
+		msg += ": " + d.Detail
 	}
-	return fmt.Sprintf("plan: declined: %s: %s", d.Type, d.Detail)
+	if remedy := d.Type.Remedy(); remedy != "" {
+		msg += " — " + remedy
+	}
+	return msg
 }
 
-// ExitCode: a decline is a successful judgment, exit band 5.
-func (d *Decline) ExitCode() int { return exitcode.Declined }
+// Code names the decline for a machine: the twin's reason.
+//
+// The withheld case names itself, rather than sharing the plain
+// already-current token with the code beside it. A reason that spanned
+// two codes would be the coarser of the two fields, which is backwards
+// — the band says which KIND of problem this is and the reason says
+// WHICH — and a consumer filtering on the reason would have to read the
+// code anyway to learn whether anything went undone.
+func (d *Decline) Code() string {
+	if d.Type == AlreadyCurrent && len(d.Withheld) > 0 {
+		return "already-current-withheld"
+	}
+	return d.Type.Code()
+}
+
+// DockhandExit: a decline is a successful judgment, and it exits in the
+// declined band rather than the failure one. A decline that withheld
+// riders gets its own code inside that band — the outcome is the same,
+// the consequence is not, and a caller sweeping ports needs to see the
+// difference without reading the prose.
+func (d *Decline) DockhandExit() int {
+	if d.Type == AlreadyCurrent && len(d.Withheld) > 0 {
+		return exitcode.AlreadyCurrent
+	}
+	return exitcode.PlanDeclined
+}

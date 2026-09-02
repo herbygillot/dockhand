@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/platform"
 )
 
@@ -77,4 +78,23 @@ func TestSupportsIsPerRelease(t *testing.T) {
 	assert.True(t, c.Supports(platform.Release{}), "the zero release asks for the default")
 	assert.False(t, Capabilities{}.Supports(platform.Release{}),
 		"a provider with no platforms has no default either")
+}
+
+// The same refusal, two outcomes: a submit that defers is pending
+// work, and an ask someone is waiting on is the machine saying no.
+// Only the caller can tell the two apart, so only the caller stamps
+// it.
+func TestCapacityErrorBandTurnsOnWhoIsWaiting(t *testing.T) {
+	deferred := &CapacityError{Busy: 2, Cap: 2}
+	assert.Equal(t, exitcode.VerifyQueued, deferred.DockhandExit())
+	assert.Equal(t, "pending", exitcode.Family(deferred.DockhandExit()))
+	assert.Equal(t, "verify-queued", deferred.Code())
+
+	waiting := &CapacityError{Busy: 2, Cap: 2, Synchronous: true}
+	assert.Equal(t, exitcode.VerifierBusy, waiting.DockhandExit())
+	assert.Equal(t, "environment", exitcode.Family(waiting.DockhandExit()))
+	assert.Equal(t, "verifier-busy", waiting.Code())
+
+	assert.Equal(t, deferred.Error(), waiting.Error(),
+		"the sentence is the same fact and is written into notes; only the band moved")
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
@@ -100,6 +101,55 @@ func TestFollowReturnsTheFailureItWatched(t *testing.T) {
 	n, rerr := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, rerr)
 	assert.Equal(t, record.Failed, n.Runs["Testos"].State, "the follow settles what it saw")
+}
+
+// A run that ended without a verdict is not one answer but four, and
+// three of them are nobody's failure. The follow watched the job to its
+// end and the settle left the note as it found it — the run is no
+// longer Running, so the settle has nothing to conclude — and what the
+// note says is what the follow reports.
+//
+// All four used to come back as "the environment could not answer",
+// which is a fact about the machine: a user who canceled their own
+// build from another terminal was told their machine had broken, and a
+// run still waiting for a slot was reported as a verification that had
+// ended.
+func TestFollowAnswersEachWayARunCanEndWithoutOne(t *testing.T) {
+	for _, tc := range []struct {
+		state  record.RunState
+		detail string
+		as     any
+		msg    string
+	}{
+		{record.Canceled, "canceled by the user", new(*verdict.CanceledError),
+			"verification of jq on Testos was canceled: canceled by the user"},
+		{record.Superseded, "", new(*verdict.SupersededError),
+			"verification of jq on Testos was superseded by a newer run"},
+		{record.Deferred, "all 2 verification slots are busy", new(*verdict.QueuedError),
+			"verification of jq on Testos has not started yet: all 2 verification slots are busy — `dockhand status` starts it when it can"},
+		{record.Errored, "the guest agent timed out", new(*verdict.ErroredError),
+			"verification of jq on Testos could not answer: the guest agent timed out"},
+	} {
+		t.Run(string(tc.state), func(t *testing.T) {
+			repo, sha := engineRepo(t)
+			ctx := context.Background()
+			fake := &verifytest.Fake{States: map[string]verify.Status{"fake-1": {State: verify.Errored}}}
+			n := runningNote(t, repo, sha, "fake-1")
+			// What a racing writer leaves behind: `dockhand cancel` in
+			// another terminal, a mint that superseded this run, a pump
+			// that put it back in the queue.
+			n.Runs["Testos"] = record.Run{State: tc.state, Detail: tc.detail,
+				Job: verify.Job{Provider: "fake", ID: "fake-1"}}
+			require.NoError(t, ledger.Open(repo).Write(ctx, n))
+
+			var out, errb bytes.Buffer
+			err := testEngine(t, repo, fake, &out, &errb).
+				Follow(ctx, repo, sha, "jq", "Testos", fake, verify.Job{Provider: "fake", ID: "fake-1"})
+
+			require.ErrorAs(t, err, tc.as)
+			assert.Equal(t, tc.msg, err.Error())
+		})
+	}
 }
 
 // The two watchers disagree about an interrupted poll, and that is the

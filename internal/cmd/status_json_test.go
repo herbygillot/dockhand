@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
@@ -43,6 +44,10 @@ type statusDoc struct {
 		Name  string `json:"name"`
 		Owner string `json:"owner"`
 	} `json:"orphan_workers"`
+	// Exit is the twin every JSON document carries: how the run ended,
+	// said inside the document as well as beside it, for a consumer
+	// that took stdout through a pipe and lost $?.
+	Exit exitcode.Twin `json:"exit"`
 }
 
 // lifecycleRepo is a ports-tree-shaped git repo with one dockhand
@@ -83,6 +88,33 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 	assert.Equal(t, "clean", b.Note.Runs["Testos"].Lint)
 	assert.Nil(t, b.PR, "an unpromoted branch carries no PR object")
 	assert.False(t, b.Cleaned)
+	assert.Equal(t, exitcode.Of(exitcode.OK, ""), got.Exit,
+		"the document says how the run ended, for a consumer that lost $?")
+}
+
+// A pass that never reached a report still publishes how it ended. The
+// caller asked for JSON; giving them an English sentence on stderr and
+// an empty stdout is the blind spot --plan's decline document was added
+// to close, and leaving it open for the other JSON verb would have made
+// the promise in docs/cli.md — that a consumer which lost $? still
+// knows how the run ended — true only when nothing went wrong.
+func TestStatusJSONSaysHowAFailedPassEnded(t *testing.T) {
+	var out, errb bytes.Buffer
+	rs := &runstate.Context{TreeRoot: t.TempDir(), Tools: testFinder(), Out: &out, Err: &errb}
+
+	err := statusAction{json: true}.Execute(context.Background(), rs)
+
+	require.ErrorIs(t, err, git.ErrNotARepo, "the error still travels; the document does not replace it")
+	var got statusDoc
+	require.NoError(t, json.Unmarshal(out.Bytes(), &got), "stdout must be one JSON document: %s", out.String())
+	assert.Equal(t, exitcode.Of(exitcode.NotARepo, "not-a-repo"), got.Exit)
+	assert.Equal(t, got.Exit.Code, ExitCode(err), "the document and $? are one fact")
+	assert.Empty(t, got.Branches, "a pass that did not run reports no branches")
+
+	// And the human mode is untouched: it says nothing on stdout.
+	out.Reset()
+	require.Error(t, statusAction{}.Execute(context.Background(), rs))
+	assert.Empty(t, out.String())
 }
 
 func TestStatusJSONKeepsStdoutPureUnderAutoclean(t *testing.T) {

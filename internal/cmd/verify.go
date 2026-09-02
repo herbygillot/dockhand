@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
 // verifyAction proves a port builds as it sits, in a pristine
@@ -37,10 +38,16 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	eng := rs.Deps()
 	if repo, err := rs.Repo(ctx); err == nil {
 		branch, rerr := eng.Resolve(ctx, repo, a.target)
+		var ambiguous *verdict.AmbiguousTargetError
 		switch {
 		case rerr == nil:
 			return verifyBranch(ctx, rs, eng, repo, a.target, branch, a.on, a.test, a.trace)
-		case errors.Is(rerr, engine.ErrAmbiguousTarget):
+		case errors.As(rerr, &ambiguous):
+			// The fall-through below verifies the working tree, which is
+			// the right answer for a target with no branch and the wrong
+			// one for a target with several: silently verifying something
+			// the user did not name is the failure this refusal exists to
+			// prevent.
 			return rerr
 		}
 	}

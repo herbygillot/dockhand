@@ -97,7 +97,12 @@ exit: 0
           }
         ]
       }
-    ]
+    ],
+    "exit": {
+      "code": 0,
+      "family": "success",
+      "reason": ""
+    }
   }
 --- stderr
   plan: bump <portdir>, 5 edits

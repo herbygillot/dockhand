@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -153,7 +154,9 @@ func provisionTart() *cobra.Command {
 // machine lock on its own. Sweep semantics: a release whose Xcode
 // requirement cannot be met from the given archives is SKIPPED with
 // the reason, not a reason to abort the ones that can proceed; hard
-// provisioning failures are collected and returned together.
+// provisioning failures are collected and returned together. The one
+// obstacle that ends the sweep is a full machine, because it is not a
+// fact about any release: the next boot would meet it too.
 func (a provisionTartAction) provisionAll(ctx context.Context, rs *runstate.Context, t provision.Tart) error {
 	releases, err := t.Provisioned(ctx)
 	if err != nil {
@@ -172,12 +175,39 @@ func (a provisionTartAction) provisionAll(ctx context.Context, rs *runstate.Cont
 		}
 		fmt.Fprintf(rs.Err, "== provisioning %s\n", r.Name)
 		if perr := t.Provision(ctx, r, rs.Err); perr != nil {
+			// A full machine ends the sweep instead of joining the tally.
+			// The cap is machine-wide, so every release left would meet
+			// the same refusal, and reporting that as "provisioning failed
+			// for Sequoia, Sonoma, Ventura" would name three releases
+			// nothing is wrong with. The single-release form answers the
+			// same code for the same fact.
+			if waitingRefusal(perr) {
+				return perr
+			}
 			fmt.Fprintf(rs.Err, "%s failed: %v\n", r.Name, perr)
 			failed = append(failed, r.Name)
 		}
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("provisioning failed for %s", strings.Join(failed, ", "))
+		return &provisionFailedError{Releases: failed}
 	}
 	return nil
 }
+
+// provisionFailedError is a provisioning sweep that ran and did not
+// finish for every release it was given. Typed so it carries which
+// ones, and so it exits in the machine band with the rest of the
+// obstacles provisioning exists to clear: the sweep is the one verb
+// whose whole job is fixing that band, and reporting its own failure
+// as a plain failure told a script nothing about what to retry.
+type provisionFailedError struct{ Releases []string }
+
+func (e *provisionFailedError) Error() string {
+	return fmt.Sprintf("provisioning failed for %s", strings.Join(e.Releases, ", "))
+}
+
+// DockhandExit: the machine band — provisioning ran and did not finish.
+func (e *provisionFailedError) DockhandExit() int { return exitcode.ProvisionFailed }
+
+// Code names the failure for a machine.
+func (e *provisionFailedError) Code() string { return "provision-failed" }

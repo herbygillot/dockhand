@@ -66,7 +66,7 @@ func TestClassifyBadPrefix(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(portdir, "Portfile"), []byte("PortSystem 1.0\n"), 0o644))
 	err := run(t, "classify", "-p", t.TempDir(), portdir)
 	require.ErrorIs(t, err, prefix.ErrNotInstalled)
-	assert.Equal(t, exitcode.Environment, ExitCode(err))
+	assert.Equal(t, exitcode.NoMacPorts, ExitCode(err))
 }
 
 func TestClassifyClusteredShortFlags(t *testing.T) {
@@ -99,7 +99,7 @@ func TestExitCodesThroughExecution(t *testing.T) {
 	assert.Equal(t, exitcode.Usage, code(t, "doctor", "extra"))
 	assert.Equal(t, exitcode.Usage, code(t, "classify", "-t", t.TempDir()))
 	assert.Equal(t, exitcode.Usage, code(t, "classify", "someport"))
-	assert.Equal(t, exitcode.Tree, code(t, "classify", "-at", t.TempDir()))
+	assert.Equal(t, exitcode.NotPortsTree, code(t, "classify", "-at", t.TempDir()))
 }
 
 func TestExitCodeMapping(t *testing.T) {
@@ -107,26 +107,28 @@ func TestExitCodeMapping(t *testing.T) {
 	assert.Equal(t, exitcode.Failure, ExitCode(errors.New("boom")))
 	assert.Equal(t, exitcode.Usage, ExitCode(usagef("bad invocation")))
 	assert.Equal(t, exitcode.Usage, ExitCode(fmt.Errorf("outer: %w", usagef("inner"))))
-	assert.Equal(t, exitcode.Tree, ExitCode(fmt.Errorf("outer: %w", tree.ErrPortNotFound)))
-	assert.Equal(t, exitcode.Tree, ExitCode(tree.ErrNotPortsTree))
-	assert.Equal(t, exitcode.Environment, ExitCode(prefix.ErrNotInstalled))
-	assert.Equal(t, exitcode.Environment, ExitCode(fmt.Errorf("sweep: %w", eval.ErrStartup)))
-	assert.Equal(t, exitcode.Environment, ExitCode(eval.ErrRootRefused))
+	assert.Equal(t, exitcode.PortNotFound, ExitCode(fmt.Errorf("outer: %w", tree.ErrPortNotFound)))
+	assert.Equal(t, exitcode.NotPortsTree, ExitCode(tree.ErrNotPortsTree))
+	assert.Equal(t, exitcode.NoMacPorts, ExitCode(prefix.ErrNotInstalled))
+	assert.Equal(t, exitcode.EvalStartup, ExitCode(fmt.Errorf("sweep: %w", eval.ErrStartup)))
+	assert.Equal(t, exitcode.RootRefused, ExitCode(eval.ErrRootRefused))
 	// A minted branch whose verification could not start: the branch
-	// stands, and the exit says the machine owes a follow-up.
-	assert.Equal(t, exitcode.Environment, ExitCode(&engine.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
-	assert.Equal(t, exitcode.Verify, ExitCode(&engine.VerifyFailedError{Port: "jq"}))
-	// The two ways of having no verification are one band and two
-	// remedies, and they must stay distinguishable: a machine with no
+	// stands, and with no cause to read the deferral is a queued run
+	// that `dockhand status` will come back for.
+	assert.Equal(t, exitcode.VerifyQueued, ExitCode(&engine.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
+	assert.Equal(t, exitcode.VerifyFailed, ExitCode(&engine.VerifyFailedError{Port: "jq"}))
+	// The two ways of having no verification are two codes in one
+	// family, and they must stay distinguishable: a machine with no
 	// tart narrows a bump's contract, where one with no base images
-	// fails it.
-	assert.Equal(t, exitcode.Environment, ExitCode(fmt.Errorf("wrapped: %w", verify.ErrNoProvider)))
+	// fails it. One is a tool to install, the other a base to build.
+	assert.Equal(t, exitcode.ToolMissing, ExitCode(fmt.Errorf("wrapped: %w", verify.ErrNoProvider)))
+	assert.Equal(t, exitcode.NoVerifyEnv, ExitCode(fmt.Errorf("wrapped: %w", verify.ErrNoEnvironment)))
 	require.NotErrorIs(t, verify.ErrNoProvider, verify.ErrNoEnvironment)
 	require.NotErrorIs(t, verify.ErrNoEnvironment, verify.ErrNoProvider)
 	// An in-flight branch is a refusal with a remedy, and a tree that
 	// is not a git checkout is a fact about the tree.
-	assert.Equal(t, exitcode.Declined, ExitCode(&engine.BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
-	assert.Equal(t, exitcode.Tree, ExitCode(fmt.Errorf("wrapped: %w", git.ErrNotARepo)))
+	assert.Equal(t, exitcode.BranchInFlight, ExitCode(&engine.BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
+	assert.Equal(t, exitcode.NotARepo, ExitCode(fmt.Errorf("wrapped: %w", git.ErrNotARepo)))
 }
 
 // failWriter fails every write, standing in for the cases a redirected
@@ -197,11 +199,16 @@ func TestBumpRevisionRequiresAReason(t *testing.T) {
 }
 
 // The tart-less refusal, pinned to the byte. It is the sentence a user
-// meets on a machine that cannot verify at all; no golden reaches it,
-// because every golden run wires a provider; and it did not move when
-// the sentinel under it split from ErrNoEnvironment. A sentence with no
-// pin is a sentence that changes by accident, which is how this one
-// nearly did.
+// meets on a machine that cannot verify at all, and no golden reaches
+// it, because every golden run wires a provider.
+//
+// The opening noun moved with the bands: it read "no environment
+// available", borrowed from ErrNoEnvironment back when both refusals
+// exited alike. They do not any more — this one is 33, a tool to
+// install, and the borrowed noun is 34's, a base to provision — so a
+// script and the person reading over its shoulder were being told
+// different things. The remedy clause is untouched; only the head of
+// the sentence moved, and it moved once, here.
 func TestTartLessRefusalKeepsItsSentence(t *testing.T) {
 	tools := tool.NewFinder(func(string) (string, error) {
 		return "", errors.New("executable file not found in $PATH")
@@ -211,10 +218,10 @@ func TestTartLessRefusalKeepsItsSentence(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t,
-		"verify: no environment available: tart is not installed (`port install tart`); --no-verify skips verification",
+		"verify: no verify provider: tart is not installed (`port install tart`); --no-verify skips verification",
 		err.Error())
 	require.ErrorIs(t, err, verify.ErrNoProvider, "the sentinel is what a caller branches on")
 	require.NotErrorIs(t, err, verify.ErrNoEnvironment,
 		"and it is not the refusal whose remedy is provisioning")
-	assert.Equal(t, exitcode.Environment, ExitCode(err), "both refusals exit in the machine band")
+	assert.Equal(t, exitcode.ToolMissing, ExitCode(err), "a tool to install, not a base to provision")
 }

@@ -39,11 +39,14 @@ func TestDecidePublishRefusesOnlyAFailedBuild(t *testing.T) {
 		d.Refusal.Error())
 	assert.False(t, d.SayUnverified, "a refused promotion never reaches the complaint")
 
-	// A refusal to publish is the operation failing, not a policy
-	// declining: it stays in the failure band, so it must not carry an
-	// exit code of its own.
-	var coder exitcode.Coder
-	assert.NotErrorAs(t, d.Refusal, &coder, "the failed-verification refusal exits in the failure band")
+	// The refusal is the failing run's verdict being enforced, so it
+	// exits with that verdict rather than among the ways promote itself
+	// can break.
+	var refusal *FailedVerificationError
+	require.ErrorAs(t, d.Refusal, &refusal)
+	assert.Equal(t, exitcode.VerifyFailed, refusal.DockhandExit())
+	assert.Equal(t, "verdict", exitcode.Family(refusal.DockhandExit()))
+	assert.Equal(t, "verification-failed", refusal.Code())
 
 	// --no-verify overrides exactly this refusal and nothing else.
 	d = DecidePublish(failed, false, "dockhand/jq", "abc1234", true)
@@ -105,8 +108,11 @@ func TestMergedDeadEnd(t *testing.T) {
 	assert.Equal(t,
 		"PR #42 for dockhand/jq already merged (https://example.invalid/pr/42) — `dockhand clean` retires the branch",
 		err.Error())
-	var coder exitcode.Coder
-	assert.NotErrorAs(t, err, &coder, "a dead end exits in the failure band")
+	var dead *PRMergedError
+	require.ErrorAs(t, err, &dead)
+	assert.Equal(t, exitcode.PRMerged, dead.DockhandExit(), "a dead end is the destination refusing, not a failure")
+	assert.Equal(t, "refused", exitcode.Family(dead.DockhandExit()))
+	assert.Equal(t, 42, dead.Number, "the number is the answer; a caller should not parse it back out")
 }
 
 func TestPortName(t *testing.T) {
@@ -136,7 +142,8 @@ func TestCheckDuplicates(t *testing.T) {
 		require.Error(t, d.Refusal)
 		var dup *DuplicatePRError
 		require.ErrorAs(t, d.Refusal, &dup)
-		assert.Equal(t, exitcode.Declined, dup.ExitCode(), "refusal is a feature, not a failure")
+		assert.Equal(t, exitcode.DuplicatePR, dup.DockhandExit(), "refusal is a feature, not a failure")
+		assert.Equal(t, "refused", exitcode.Family(dup.DockhandExit()), "the destination will not take it")
 		assert.Equal(t,
 			`an open PR already proposes "jq: update to 1.8.1": https://example.invalid/pr/9 — join it, retitle with --title, or --no-pr-check to promote anyway`,
 			d.Refusal.Error())

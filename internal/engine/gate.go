@@ -74,6 +74,15 @@ func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, 
 		Test:     test,
 	})
 	if err != nil {
+		// Someone is standing here. The provider counted slots and has
+		// no idea who asked, so the fact that nothing is being queued —
+		// the --verify gate and `verify <portdir>` both wait for their
+		// answer and then leave — is stamped by the caller that knows
+		// it. It changes the band, not the sentence.
+		var full *verify.CapacityError
+		if errors.As(err, &full) {
+			full.Synchronous = true
+		}
 		return "", err
 	}
 	caps := prov.Capabilities()
@@ -103,7 +112,11 @@ func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, 
 		return "", &VerifyFailedError{Port: portName, Handle: st.Handle}
 	case verify.Errored:
 		_ = prov.Release(context.WithoutCancel(ctx), job)
-		return "", fmt.Errorf("%w: %s", verify.ErrNoEnvironment, st.Detail)
+		// The environment could not answer. It reported the machine's
+		// band until now, which is the same confusion the background
+		// follow had: a crashed guest agent is not a missing base, and
+		// telling the user to provision one wastes the evening.
+		return "", &verdict.ErroredError{Port: portName, Platform: on.Name, Detail: st.Detail}
 	case verify.Running:
 	}
 	return "", fmt.Errorf("verify: job ended in state %s", st.State)

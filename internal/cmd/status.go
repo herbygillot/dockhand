@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -36,19 +37,41 @@ var _ Action = statusAction{}
 func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	repo, err := rs.Repo(ctx)
 	if err != nil {
-		return err
+		return a.failed(rs, err)
 	}
 	e := rs.Deps()
 	rep, err := e.Reconcile(ctx, engine.ReconcileOpts{NoClean: a.noClean, Drain: true})
 	if err != nil {
-		return err
+		return a.failed(rs, err)
 	}
 	rep.Orphans = e.Orphans(ctx, repo)
 	if a.json {
-		return rep.JSON(rs.Out, rs.Err)
+		// The document says success because reaching here is success:
+		// every way this pass can fail has already returned above, and a
+		// write that fails from inside JSON publishes nothing for a twin
+		// to be wrong about.
+		return rep.JSON(rs.Out, rs.Err, exitcode.Of(exitcode.OK, ""))
 	}
 	rep.Text(rs.Out, rs.Err)
 	return nil
+}
+
+// failed publishes the twin when the pass never reached a report, and
+// returns the error either way.
+//
+// A caller that asked for JSON gets JSON however the run ends — the
+// same decision --plan made when it started emitting the decline
+// itself. Without it, `status --json` against a directory that is not a
+// checkout wrote nothing at all to stdout and left the reason in an
+// English sentence, so a consumer that captured stdout through a pipe
+// and lost $? had a blind spot exactly where it most needed an answer.
+// The document says only the twin: what the pass would have reported is
+// precisely what could not be learned.
+func (a statusAction) failed(rs *runstate.Context, err error) error {
+	if !a.json {
+		return err
+	}
+	return sayExit(rs, err)
 }
 
 // Status builds the status subcommand.

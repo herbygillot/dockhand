@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verdict"
@@ -153,7 +154,7 @@ func TestReportRenderings(t *testing.T) {
 	})
 	t.Run("report_json", func(t *testing.T) {
 		var out, errb bytes.Buffer
-		require.NoError(t, sampleReport().JSON(&out, &errb))
+		require.NoError(t, sampleReport().JSON(&out, &errb, exitcode.Of(exitcode.OK, "")))
 		checkReport(t, "report_json", &out, &errb)
 	})
 	entries, err := os.ReadDir(reportDir)
@@ -170,7 +171,7 @@ func TestReportRenderings(t *testing.T) {
 
 func TestReportJSONEmitsAnEmptyNamespaceAsAnEmptyList(t *testing.T) {
 	var out, errb bytes.Buffer
-	require.NoError(t, Report{Repository: "/checkout/ports"}.JSON(&out, &errb))
+	require.NoError(t, Report{Repository: "/checkout/ports"}.JSON(&out, &errb, exitcode.Of(exitcode.OK, "")))
 	assert.Contains(t, out.String(), `"branches": []`,
 		"the key is always there and never null; a consumer indexes it")
 	assert.NotContains(t, out.String(), "orphan_workers",
@@ -198,7 +199,7 @@ func TestReportCleanedBranchDropsItsStandingButKeepsItInTheDocument(t *testing.T
 	assert.NotContains(t, out.String(), "dockhand/jq-landed\n  unverified")
 
 	var jout, jerr bytes.Buffer
-	require.NoError(t, sampleReport().JSON(&jout, &jerr))
+	require.NoError(t, sampleReport().JSON(&jout, &jerr, exitcode.Of(exitcode.OK, "")))
 	assert.Contains(t, jout.String(), `"drift": "unverified"`)
 	assert.Contains(t, jout.String(), `"cleaned": true`)
 }

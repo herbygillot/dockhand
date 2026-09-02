@@ -8,12 +8,65 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/verdict"
 )
+
+// The two ways a promotion ends half done. Both leave the fork branch
+// published and the pull request not, and that is the whole reason
+// they are types: re-running a promote is not free — it force-pushes,
+// it retitles, it spends a review notification — so a script has to be
+// able to tell "nothing happened" from "the branch is up, finish the
+// PR by hand". They carry the branch and the remote for the same
+// reason: a caller told only that something failed cannot say where
+// the work is standing.
+//
+// The words are unchanged from when these were plain errors; only
+// their identity is new.
+type PushedPRError struct {
+	Branch string
+	Remote string
+	Err    error
+}
+
+func (e *PushedPRError) Error() string {
+	return fmt.Sprintf("the branch is pushed; opening the PR failed: %v", e.Err)
+}
+
+func (e *PushedPRError) Unwrap() error { return e.Err }
+
+// DockhandExit: the partial band — half the work stands.
+func (e *PushedPRError) DockhandExit() int { return exitcode.PushedPRFailed }
+
+// Code names the outcome for a machine.
+func (e *PushedPRError) Code() string { return "pushed-pr-failed" }
+
+// PRRefreshError is the same partial publication met by a branch whose
+// pull request already existed: the push landed and the PR still
+// describes the change it used to carry.
+type PRRefreshError struct {
+	Branch string
+	Remote string
+	Number int
+	Err    error
+}
+
+func (e *PRRefreshError) Error() string {
+	return fmt.Sprintf("the branch is pushed; refreshing PR #%d failed: %v", e.Number, e.Err)
+}
+
+func (e *PRRefreshError) Unwrap() error { return e.Err }
+
+// DockhandExit: the partial band — the branch moved, its description did
+// not.
+func (e *PRRefreshError) DockhandExit() int { return exitcode.PRRefreshFailed }
+
+// Code names the outcome for a machine.
+func (e *PRRefreshError) Code() string { return "pr-refresh-failed" }
 
 // PromoteOpts is everything a promotion takes besides the branch:
 // where it pushes, what the pull request says, and which of promote's
@@ -201,7 +254,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 			// stale until told otherwise.
 			if _, err := e.Gh(ctx, "pr", "edit", fmt.Sprint(own.Number), "--repo", upstream,
 				"--title", title, "--body", body); err != nil {
-				return fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", own.Number, err)
+				return &PRRefreshError{Branch: branch, Remote: forkRemote, Number: own.Number, Err: err}
 			}
 			fmt.Fprintf(e.Err, "PR #%d replaced: branch force-pushed, title and body refreshed\n", own.Number)
 		} else {
@@ -217,7 +270,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 		"--head", forkOwner + ":" + branch, "--title", title, "--body", body}
 	url, err := e.Gh(ctx, args...)
 	if err != nil {
-		return fmt.Errorf("the branch is pushed; opening the PR failed: %w", err)
+		return &PushedPRError{Branch: branch, Remote: forkRemote, Err: err}
 	}
 	url = strings.TrimSpace(url)
 	fmt.Fprintln(e.Out, url)

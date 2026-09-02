@@ -1,4 +1,4 @@
-exit: 3
+exit: 60
 --- stdout
 --- stderr
   warning: pre-flight evaluation: prefix: no MacPorts installation found (no port-tclsh under /nonexistent/dockhand-golden-prefix)

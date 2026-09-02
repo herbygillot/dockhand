@@ -42,7 +42,7 @@ func Generate(ctx context.Context, tools *tool.Finder, pkg, version string) ([]b
 	}
 	out, _, err := tool.Output(ctx, bin, tool.Opts{Args: []string{"get", pkg, version}})
 	if err != nil {
-		return nil, fmt.Errorf("vendored: %s: %s", ToolName, err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
+		return nil, fmt.Errorf("vendored: %s: %s", ToolName, err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
 	}
 	return ExtractBlock(out)
 }

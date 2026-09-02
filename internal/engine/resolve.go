@@ -2,18 +2,34 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
-// ErrAmbiguousTarget marks a port name that names several in-flight
-// branches: branchable state, because verify falls through to state
-// mode when no branch exists but must refuse — not silently verify the
-// working tree — when several do.
-var ErrAmbiguousTarget = errors.New("ambiguous target")
+// BranchNotFoundError is a target that names no in-flight branch. It
+// sits next to the ambiguity it is the other half of: one switch
+// produces both, and a caller that can tell "no branch" from "several
+// branches" can offer the right next move for each.
+//
+// The tree band, not a failure: nothing is broken and nothing about
+// the request is malformed — dockhand was pointed at a branch that is
+// not there.
+type BranchNotFoundError struct{ Target string }
+
+func (e *BranchNotFoundError) Error() string {
+	return fmt.Sprintf("no dockhand branch for %q; `dockhand status` lists what is in flight", e.Target)
+}
+
+// DockhandExit: the tree band — a different branch, not a different
+// machine.
+func (e *BranchNotFoundError) DockhandExit() int { return exitcode.BranchNotFound }
+
+// Code names the refusal for a machine.
+func (e *BranchNotFoundError) Code() string { return "branch-not-found" }
 
 // Resolve accepts a branch name outright, or a port name that names
 // exactly one in-flight branch.
@@ -35,8 +51,8 @@ func (e *Engine) Resolve(ctx context.Context, repo *git.Repo, target string) (st
 	case 1:
 		return matches[0], nil
 	case 0:
-		return "", fmt.Errorf("no dockhand branch for %q; `dockhand status` lists what is in flight", target)
+		return "", &BranchNotFoundError{Target: target}
 	default:
-		return "", fmt.Errorf("%w: %q names %d branches (%s); use the full branch name", ErrAmbiguousTarget, target, len(matches), strings.Join(matches, ", "))
+		return "", &verdict.AmbiguousTargetError{Target: target, Matches: matches}
 	}
 }

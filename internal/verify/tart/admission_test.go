@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -47,7 +48,11 @@ func TestAdmitRefusesTypedAtCapacity(t *testing.T) {
 	require.ErrorAs(t, err, &cap_)
 	assert.Equal(t, 2, cap_.Busy)
 	assert.Contains(t, err.Error(), "all 2 verification slots are busy")
-	assert.Equal(t, 3, cap_.ExitCode(), "capacity is the machine band")
+	// Admission counts slots and cannot know who is asking, so what it
+	// builds is the deferrable refusal: pending work, until a caller
+	// standing there stamps it synchronous.
+	assert.Equal(t, exitcode.VerifyQueued, cap_.DockhandExit(), "an unstamped refusal is a deferred run")
+	assert.False(t, cap_.Synchronous, "the provider never fills this in")
 
 	// A refusal holds no lock: the next caller with room admits.
 	unlock, err := Admit(context.Background(), tools, 3)

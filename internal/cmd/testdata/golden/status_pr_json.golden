@@ -137,7 +137,12 @@ exit: 0
         "drift": "unverified",
         "pr_error": "gh api: HTTP 502 from api.github.com (scripted outage)"
       }
-    ]
+    ],
+    "exit": {
+      "code": 0,
+      "family": "success",
+      "reason": ""
+    }
   }
 --- stderr
   removed dockhand/jq-landed from "herby"
