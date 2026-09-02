@@ -193,10 +193,12 @@ func parseLivecheck(out string) (LivecheckResult, error) {
 	return r, nil
 }
 
-// Vercmp compares two versions under MacPorts' own ordering: negative
+// vercmp compares two versions under MacPorts' own ordering: negative
 // when a < b, zero when equal, positive when a > b. Version comparison
-// is base's semantics or it is wrong.
-func (f *Fetcher) Vercmp(ctx context.Context, a, b string) (int, error) {
+// is base's semantics or it is wrong, which is why this stays with no
+// production caller: it is the oracle the pure-Go macports.VerCmp is
+// tested against.
+func (f *Fetcher) vercmp(ctx context.Context, a, b string) (int, error) {
 	reply, err := f.sess.Call(ctx, "vercmp", a, b)
 	if err != nil {
 		return 0, err

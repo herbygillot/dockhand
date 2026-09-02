@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +20,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/lockfile"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
@@ -29,15 +27,11 @@ import (
 
 // tartOnPath makes TartPresent answer yes regardless of the machine,
 // so the pump's gate opens in tests; every other tool still resolves
-// for real (git is genuinely needed).
+// for real (git is genuinely needed). tartAbsent (golden_fixtures_test.go)
+// is its counterpart, and stubTart is the mechanism.
 func tartOnPath(t *testing.T) {
 	t.Helper()
-	t.Cleanup(platform.StubLookup(func(name string) (string, error) {
-		if name == string(platform.Tart) {
-			return "/stub/tart", nil
-		}
-		return exec.LookPath(name)
-	}))
+	stubTart(t, "/stub/tart", nil)
 }
 
 func deferredNote(t *testing.T, repo *git.Repo, sha, detail string) {
@@ -51,7 +45,7 @@ func deferredNote(t *testing.T, repo *git.Repo, sha, detail string) {
 
 func pumpState(repo *git.Repo, fake *verifytest.Fake) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
 	var out, errb bytes.Buffer
-	return &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb,
+	return &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb,
 		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}, &out, &errb
 }
 

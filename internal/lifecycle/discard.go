@@ -56,7 +56,7 @@ func DiscardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 					fmt.Fprintf(rs.Err, "warning: releasing %s: %v\n", run.Job.ID, rerr)
 				}
 			} else {
-				fmt.Fprintf(rs.Err, "warning: %s holds worker %s, and no provider is available to release it\n", sha[:12], run.Job.ID)
+				fmt.Fprintf(rs.Err, "warning: %s holds worker %s, and no provider is available to release it\n", git.Abbrev(sha), run.Job.ID)
 			}
 		}
 		if err := repo.NoteRemove(ctx, git.VerifyNotesRef, sha); err != nil {
@@ -79,6 +79,6 @@ func DiscardBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 	if err := repo.DeleteBranch(ctx, branch); err != nil {
 		return err
 	}
-	fmt.Fprintf(rs.Out, "discarded %s (%s)\n", branch, tip[:12])
+	fmt.Fprintf(rs.Out, "discarded %s (%s)\n", branch, git.Abbrev(tip))
 	return nil
 }

@@ -1,7 +1,11 @@
-package cargo2port
+package cargo
 
 import (
 	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,8 +14,14 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/testenv"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
+
+// tools is the finder the generator and the archiver resolve through:
+// the real one, because these tests run the real cargo2port and read
+// real tarballs, gated by testenv where the tool may be absent.
+var tools = tool.NewFinder(nil)
 
 func TestCratesParsesTriples(t *testing.T) {
 	crates, err := Crates("aho-corasick 1.1.3 8e60d34 libgit2-sys 0.17.0+1.8.1 10472326")
@@ -57,7 +67,7 @@ checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
 
 func TestGenerateWritesABlock(t *testing.T) {
 	testenv.Tool(t, ToolName)
-	block, err := Generate(context.Background(), tempdir.Root{}, []byte(oneCrateLock), LayoutJustify)
+	block, err := Generate(context.Background(), tools, tempdir.Root{}, []byte(oneCrateLock), LayoutJustify)
 	require.NoError(t, err)
 	assert.Contains(t, string(block), "cargo.crates")
 	assert.Contains(t, string(block), "aho-corasick")
@@ -74,21 +84,49 @@ func TestGenerateWritesABlock(t *testing.T) {
 // the tool says so on stdout and exits zero.
 func TestGenerateRejectsLockWithNoCrates(t *testing.T) {
 	testenv.Tool(t, ToolName)
-	_, err := Generate(context.Background(), tempdir.Root{}, []byte("version = 3\n"), LayoutJustify)
+	_, err := Generate(context.Background(), tools, tempdir.Root{}, []byte("version = 3\n"), LayoutJustify)
 	require.ErrorIs(t, err, vendored.ErrEmptyBlock)
 }
 
 func TestGenerateReportsToolFailure(t *testing.T) {
 	testenv.Tool(t, ToolName)
-	_, err := Generate(context.Background(), tempdir.Root{}, []byte("this is not toml\n"), LayoutJustify)
+	_, err := Generate(context.Background(), tools, tempdir.Root{}, []byte("this is not toml\n"), LayoutJustify)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, vendored.ErrEmptyBlock, "a parse failure is not an empty block")
+}
+
+// scripted is a finder whose cargo2port is a shell script with the
+// given body, every other lookup answered for real.
+func scripted(t *testing.T, body string) *tool.Finder {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), ToolName)
+	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755))
+	return tool.NewFinder(func(name string) (string, error) {
+		if name == string(tool.Cargo2Port) {
+			return path, nil
+		}
+		return exec.LookPath(name)
+	})
+}
+
+func TestGenerateNamesTheGeneratorWhenItIsMissing(t *testing.T) {
+	absent := tool.NewFinder(func(string) (string, error) { return "", errors.New("absent") })
+	_, err := Generate(context.Background(), absent, tempdir.Root{}, []byte(oneCrateLock), LayoutJustify)
+	require.ErrorIs(t, err, vendored.ErrNoGenerator)
+	assert.Equal(t, "vendored: block generator not found: cargo2port", err.Error())
+}
+
+func TestGenerateWordsAToolFailureWithItsStderr(t *testing.T) {
+	scripted := scripted(t, "echo 'error: could not parse Cargo.lock' >&2\nexit 1\n")
+	_, err := Generate(context.Background(), scripted, tempdir.Root{}, []byte(oneCrateLock), LayoutJustify)
+	require.Error(t, err)
+	assert.Equal(t, "vendored: cargo2port: error: could not parse Cargo.lock", err.Error())
 }
 
 // afterCommandName strips the leading "cargo.crates" and the line
 // continuations, leaving the word list the option evaluates to.
 func afterCommandName(block string) string {
-	body := block[len(Kind.String()):]
+	body := block[len(vendored.CargoCrates.String()):]
 	out := make([]rune, 0, len(body))
 	for _, r := range body {
 		if r == '\\' || r == '\n' {
@@ -118,7 +156,7 @@ name = "libgit2-sys"
 version = "0.17.0+1.8.1"
 checksum = "10472326a8a6477c3c20a64547b0059e4b0d086869eee31e6d7da728a8eb7224"
 `
-	block, err := Generate(context.Background(), tempdir.Root{}, []byte(lock), LayoutJustify)
+	block, err := Generate(context.Background(), tools, tempdir.Root{}, []byte(lock), LayoutJustify)
 	require.NoError(t, err)
 
 	// Justified means the version column is right-aligned: every version

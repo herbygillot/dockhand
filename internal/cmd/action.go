@@ -13,13 +13,17 @@ import (
 // command line and executes it against the run; a test constructs one
 // directly and skips the command line entirely.
 //
-// An Action is the last layer that sees a runstate.Context. It is where
-// orchestration lives — invoking one or more intents and the workflow
-// around them — and everything it calls takes narrow arguments: an
-// evaluator, a fetcher, a portdir. Usage-shaped validation (mutually
-// exclusive flags, malformed arguments) belongs in the builder at the
-// cobra boundary, where UsageError lives; what remains in Execute is
-// the behavior.
+// An Action is where orchestration lives — invoking one or more
+// intents and the workflow around them — and it shares the
+// runstate.Context with exactly one thing it calls: the lifecycle
+// engine, which needs the run's streams, seams, and services
+// throughout. Everything else takes narrow arguments: an evaluator, a
+// fetcher, a portdir. The planned Engine refactor (S5 in the overhaul
+// plan) constructs the engine from the Context once, and an Action
+// becomes the last layer that sees one. Usage-shaped validation
+// (mutually exclusive flags, malformed arguments) belongs in the
+// builder at the cobra boundary, where UsageError lives; what remains
+// in Execute is the behavior.
 type Action interface {
 	Execute(ctx context.Context, rs *runstate.Context) error
 }

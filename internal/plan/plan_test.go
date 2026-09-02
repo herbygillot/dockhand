@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/text"
 )
 
 // Encode is --plan's debugging rendering; nothing reads a plan back
@@ -63,5 +64,74 @@ func TestFromDeltaCanonical(t *testing.T) {
 	for _, ch := range wire[1].Changes {
 		assert.Empty(t, ch.Old, ch.Field)
 		assert.NotEmpty(t, ch.New, ch.Field)
+	}
+}
+
+// Materialize is the one precondition-then-apply; the three
+// realizations that call it each wrap its errors in their own words,
+// so what it returns must be bare enough for all of them: ErrDrift
+// itself on a hash miss, edit.Apply's error untouched after a match.
+func TestMaterialize(t *testing.T) {
+	src := []byte("name jq\nversion 1.8.1\nrevision 0\n")
+	good := []edit.Edit{
+		{Start: 16, End: 21, Old: "1.8.1", New: "1.8.2", Reason: "version"},
+	}
+	// Two edits on one span: refused by text.Apply after every Old has
+	// been checked, so the failure is the apply's, not a stale plan's.
+	overlapping := []edit.Edit{
+		{Start: 16, End: 21, Old: "1.8.1", New: "1.8.2", Reason: "version"},
+		{Start: 16, End: 21, Old: "1.8.1", New: "1.9.0", Reason: "version"},
+	}
+
+	tests := []struct {
+		name  string
+		hash  string
+		edits []edit.Edit
+		check func(t *testing.T, got []byte, err error)
+	}{
+		{
+			name:  "hash match yields edit.Apply's bytes",
+			hash:  edit.FileSHA256(src),
+			edits: good,
+			check: func(t *testing.T, got []byte, err error) {
+				require.NoError(t, err)
+				want, aerr := edit.Apply(src, good)
+				require.NoError(t, aerr)
+				assert.Equal(t, want, got)
+				assert.Equal(t, "name jq\nversion 1.8.2\nrevision 0\n", string(got))
+			},
+		},
+		{
+			name:  "hash miss is ErrDrift bare",
+			hash:  edit.FileSHA256([]byte("name jq\nversion 1.8.0\nrevision 0\n")),
+			edits: good,
+			check: func(t *testing.T, got []byte, err error) {
+				require.ErrorIs(t, err, ErrDrift)
+				// Bare: the sentinel itself, with nothing wrapped around
+				// it that the callers would have to speak around.
+				assert.Same(t, ErrDrift, err)
+				assert.Nil(t, got)
+			},
+		},
+		{
+			name:  "apply failure after a match is edit.Apply's error, not drift",
+			hash:  edit.FileSHA256(src),
+			edits: overlapping,
+			check: func(t *testing.T, got []byte, err error) {
+				require.Error(t, err)
+				require.NotErrorIs(t, err, ErrDrift)
+				var ee text.EditError
+				require.ErrorAs(t, err, &ee)
+				assert.Equal(t, text.Overlap, ee.Type)
+				assert.Nil(t, got)
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &Plan{PortfileSHA256: tc.hash, Edits: tc.edits}
+			got, err := p.Materialize(src)
+			tc.check(t, got, err)
+		})
 	}
 }

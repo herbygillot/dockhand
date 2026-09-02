@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
@@ -286,7 +287,7 @@ func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip stri
 		if err != nil || n.Tree != tipTree || !n.AnyState("passed") {
 			continue
 		}
-		return fmt.Sprintf("%s at %s — the tip differs only in commit metadata", SummarizeNote(n), sha[:12]), nil
+		return fmt.Sprintf("%s at %s — the tip differs only in commit metadata", SummarizeNote(n), git.Abbrev(sha)), nil
 	}
 	shas, err := repo.RevList(ctx, branch, 32)
 	if err != nil {
@@ -301,7 +302,7 @@ func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip stri
 			continue
 		}
 		return fmt.Sprintf("tip unverified; %s at %s, %d commit(s) behind — `dockhand verify %s` tests the tip",
-			SummarizeNote(n), sha[:12], behind, branch), nil
+			SummarizeNote(n), git.Abbrev(sha), behind, branch), nil
 	}
 	return "unverified", nil
 }
@@ -314,11 +315,11 @@ type Orphan struct {
 	Owner string `json:"owner,omitempty"`
 }
 
-func OrphanWorkers(ctx context.Context, repo *git.Repo) []Orphan {
-	if !TartPresent() {
+func OrphanWorkers(ctx context.Context, tools *tool.Finder, repo *git.Repo) []Orphan {
+	if !TartPresent(tools) {
 		return nil
 	}
-	out, err := tart.CLI(ctx, nil, "list", "--quiet")
+	out, err := tart.CLI(ctx, tools, nil, "list", "--quiet")
 	if err != nil {
 		return nil
 	}

@@ -1,4 +1,4 @@
-// Package cargo2port is the cargo side of vendored dependency blocks:
+// Package cargo is the cargo side of vendored dependency blocks:
 // the cargo.crates option as the cargo_fetch PortGroup reads and expands
 // it, and the cargo2port tool that writes one from a Cargo.lock.
 //
@@ -15,21 +15,18 @@
 // existing block's geometry could be proven (Assess) — only the
 // whitespace between opaque words is ever touched — and the tool's
 // verbatim output otherwise.
-package cargo2port
+package cargo
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/tempdir"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
 
@@ -39,8 +36,6 @@ const (
 	ToolName = "cargo2port"
 	// LockName is the file the generator reads.
 	LockName = "Cargo.lock"
-	// Kind is the block this package generates.
-	Kind = vendored.CargoCrates
 )
 
 // Crate is one entry of a cargo.crates block.
@@ -61,10 +56,10 @@ func (c Crate) Distfile() string { return c.Name + "-" + c.Version + ".crate" }
 func Crates(option string) ([]Crate, error) {
 	words, errs := syntax.ListValues(option)
 	if len(errs) != 0 {
-		return nil, fmt.Errorf("%w: %s: %w", vendored.ErrMalformed, Kind, errs[0])
+		return nil, fmt.Errorf("%w: %s: %w", vendored.ErrMalformed, vendored.CargoCrates, errs[0])
 	}
 	if len(words)%3 != 0 {
-		return nil, fmt.Errorf("%w: %s holds %d words, not whole triples", vendored.ErrMalformed, Kind, len(words))
+		return nil, fmt.Errorf("%w: %s holds %d words, not whole triples", vendored.ErrMalformed, vendored.CargoCrates, len(words))
 	}
 	crates := make([]Crate, 0, len(words)/3)
 	for i := 0; i < len(words); i += 3 {
@@ -102,8 +97,8 @@ func Supplied(crates []Crate) []string {
 // Lockfile reads Cargo.lock out of a port's own distfiles, returning the
 // contents and the distfile that carried it. worksrcdir picks between
 // copies when an archive holds more than one.
-func Lockfile(ctx context.Context, archives []string, worksrcdir string) (data []byte, from string, err error) {
-	return distfile.Extract(ctx, archives, worksrcdir, LockName)
+func Lockfile(ctx context.Context, tools *tool.Finder, archives []string, worksrcdir string) (data []byte, from string, err error) {
+	return distfile.Extract(ctx, tools, archives, worksrcdir, LockName)
 }
 
 // Generate writes a cargo.crates block from lockfile contents, returning
@@ -118,9 +113,11 @@ func Lockfile(ctx context.Context, archives []string, worksrcdir string) (data [
 //
 // The lockfile is passed as bytes rather than a path because it comes
 // from inside a distfile: the caller extracted it, and staging it under
-// root keeps every caller from having to.
-func Generate(ctx context.Context, root tempdir.Root, lock []byte, layout Layout) ([]byte, error) {
-	bin, err := platform.Find(platform.Cargo2Port)
+// root keeps every caller from having to. The tool is resolved through
+// the run's finder; a miss is ErrNoGenerator naming the tool, and a
+// failed run reads "vendored: cargo2port: <stderr>".
+func Generate(ctx context.Context, tools *tool.Finder, root tempdir.Root, lock []byte, layout Layout) ([]byte, error) {
+	bin, err := tools.Find(tool.Cargo2Port)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", vendored.ErrNoGenerator, ToolName)
 	}
@@ -134,16 +131,9 @@ func Generate(ctx context.Context, root tempdir.Root, lock []byte, layout Layout
 		return nil, err
 	}
 
-	var out, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, bin, layout.alignFlag(), path)
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("vendored: %s: %s", ToolName, msg)
+	out, _, err := tool.Output(ctx, bin, tool.Opts{Args: []string{layout.alignFlag(), path}})
+	if err != nil {
+		return nil, fmt.Errorf("vendored: %s: %s", ToolName, err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
 	}
-	return vendored.ValidateBlock(out.Bytes(), Kind)
+	return vendored.ValidateBlock(out, vendored.CargoCrates)
 }

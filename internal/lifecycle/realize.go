@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -23,8 +23,10 @@ import (
 // the edited bytes — computed from the base commit's blob, never the
 // working file, with the plan's precondition hash held against that
 // blob. Both realizations that speak git — mint and diff — start here.
-func planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary, path string, edited []byte, err error) {
-	repo, err = git.Open(ctx, p.Portdir)
+// tools is the run's finder, which the opened repository drives git
+// through.
+func planOnBase(ctx context.Context, tools *tool.Finder, p *plan.Plan) (repo *git.Repo, primary, path string, edited []byte, err error) {
+	repo, err = git.Open(ctx, tools, p.Portdir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			// Wrapped, not swallowed: the identity is what routes this
@@ -46,10 +48,10 @@ func planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary, pat
 	if err != nil {
 		return nil, "", "", nil, err
 	}
-	if edit.FileSHA256(base) != p.PortfileSHA256 {
+	edited, err = p.Materialize(base)
+	if errors.Is(err, plan.ErrDrift) {
 		return nil, "", "", nil, fmt.Errorf("%w: the Portfile on %s is not the one planned against — commit your work there first, or use --in-place", plan.ErrDrift, primary)
 	}
-	edited, err = edit.Apply(base, p.Edits)
 	if err != nil {
 		return nil, "", "", nil, err
 	}
@@ -113,7 +115,7 @@ type Minted struct {
 // user's HEAD and working tree are never touched. A plan with no edits
 // mints nothing and returns nil, nil.
 func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force bool) (*Minted, error) {
-	branch, message := "dockhand/"+p.Slug, p.Summary
+	branch, message := git.MintBranchName(p.Slug), p.Summary
 	if len(p.Edits) == 0 {
 		// A no-op realized as a branch would be an empty commit.
 		fmt.Fprintln(rs.Out, "no edits; no branch minted")
@@ -122,7 +124,7 @@ func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 		}
 		return nil, nil
 	}
-	repo, primary, path, edited, err := planOnBase(ctx, p)
+	repo, primary, path, edited, err := planOnBase(ctx, rs.Tools, p)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +150,7 @@ func MintFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, force
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(rs.Out, "branch: %s (%s)\n", branch, sha[:12])
+	fmt.Fprintf(rs.Out, "branch: %s (%s)\n", branch, git.Abbrev(sha))
 	fmt.Fprintf(rs.Err, "your checkout is untouched — `git checkout %s` to add changes\n", branch)
 	return &Minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}, nil
 }
@@ -179,6 +181,21 @@ func (e *VerifyDeferredError) Unwrap() error { return e.Cause }
 // not start, and the obstacle is capacity or environment.
 func (e *VerifyDeferredError) ExitCode() int { return exitcode.Environment }
 
+// defaultRelease is the release a run lands on when the caller named
+// none: the provider's first base, which RealVMProvider orders newest
+// first. A run is keyed by release name, so the zero release must
+// resolve here, before anything is recorded — and a provider with no
+// bases at all is the no-environment refusal, not an index past the
+// end of an empty list. No provider today reports an empty list —
+// RealVMProvider refuses to build without a base — so the refusal is
+// the guard for one that does.
+func defaultRelease(caps verify.Capabilities) (platform.Release, error) {
+	if len(caps.Platforms) == 0 {
+		return platform.Release{}, fmt.Errorf("%w: no base images", verify.ErrNoEnvironment)
+	}
+	return caps.Platforms[0], nil
+}
+
 // SubmitVerification stages the minted commit's portdir out of the
 // object database — the working tree is irrelevant to what the branch
 // carries — submits it to the VM provider, and records the running job
@@ -186,7 +203,7 @@ func (e *VerifyDeferredError) ExitCode() int { return exitcode.Environment }
 // failure — the branch stands — but it is a contract failure:
 // VerifyDeferredError carries that split.
 func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, portName string, release platform.Release, trace, test bool) error {
-	if !TartPresent() {
+	if !TartPresent(rs.Tools) {
 		// No provider, no contract: the machine cannot verify at all,
 		// so this is a --no-verify bump that says so — and the branch
 		// may be promoted as it is, unverified.
@@ -207,7 +224,9 @@ func SubmitVerification(ctx context.Context, rs *runstate.Context, m *Minted, po
 	// The platform resolves before anything is recorded: a run is keyed
 	// by release name, and "the default" is not a key.
 	if release.IsZero() {
-		release = prov.Capabilities().Platforms[0]
+		if release, err = defaultRelease(prov.Capabilities()); err != nil {
+			return later(err)
+		}
 	}
 	root, err := rs.TempDir()
 	if err != nil {
@@ -399,8 +418,9 @@ func RealizePlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, o Real
 	}
 	if o.Verified {
 		// The --verify gate built exactly these bytes — the minted blob
-		// and the gate's shadow are both edit.Apply over the same base —
-		// so the verdict transfers to the commit by content identity.
+		// and the gate's shadow are both the plan's Materialize over the
+		// same base — so the verdict transfers to the commit by content
+		// identity.
 		// Recording it beats resubmitting: the same build twice proves
 		// nothing the first one did not.
 		return markVerified(ctx, rs, m, p, o.On, o.Test, o.GateLint)
@@ -423,7 +443,9 @@ func markVerified(ctx context.Context, rs *runstate.Context, m *Minted, p *plan.
 		if perr != nil {
 			return perr
 		}
-		release = prov.Capabilities().Platforms[0]
+		if release, perr = defaultRelease(prov.Capabilities()); perr != nil {
+			return perr
+		}
 	}
 	return RecordRun(ctx, rs, m.Repo, m.Sha, p.Port, release.Name, Run{State: "passed", Tested: tested, Linted: true, Lint: lint},
 		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
@@ -455,7 +477,7 @@ func diffFromPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan) error
 		fmt.Fprintln(rs.Err, "no edits; nothing to diff")
 		return nil
 	}
-	repo, primary, path, edited, err := planOnBase(ctx, p)
+	repo, primary, path, edited, err := planOnBase(ctx, rs.Tools, p)
 	if err != nil {
 		return err
 	}

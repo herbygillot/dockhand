@@ -6,17 +6,15 @@
 package forge
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
-	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // DuplicatePRError is promote's refusal when an open upstream PR
@@ -73,12 +71,8 @@ func OpenPortPRs(ctx context.Context, gh Runner, upstream, port string) ([]PullR
 	return prs, nil
 }
 
-// PromoteBody renders the PR body: what was done and what was — or
-// was not — verified, stated plainly: candour is the accepted
-// currency, and unverified assertions are what draw "did you verify
-// this?".
-// RepoURL is where the PR body's "dockhand" points, so a
-// reviewer meeting the tool in a PR can see what vouched for the claim.
+// RepoURL is where the PR body's "dockhand" links point, so a reviewer
+// meeting the tool in a PR can see what vouched for the claim.
 const RepoURL = "https://github.com/herbygillot/dockhand"
 
 // PromoteBody renders the PR body in the shape of macports-ports' own
@@ -123,7 +117,7 @@ func PromoteBody(n lifecycle.Note, verified bool, closes string, ownCommits int,
 		}
 		// One verdict per line: GitHub keeps single newlines in PR
 		// bodies, so the set reads as the list it is.
-		fmt.Fprintf(&b, "Verified with [dockhand](%s) at commit `%s`\n", RepoURL, n.Sha[:12])
+		fmt.Fprintf(&b, "Verified with [dockhand](%s) at commit `%s`\n", RepoURL, git.Abbrev(n.Sha))
 		for _, part := range parts {
 			fmt.Fprintf(&b, "  — %s.\n", part)
 		}
@@ -147,7 +141,7 @@ func PromoteBody(n lifecycle.Note, verified bool, closes string, ownCommits int,
 		}
 		fmt.Fprintf(&b, "- [%s] %s\n", mark, item)
 	}
-	// The single lifecycle.Minted commit is the one whose message dockhand wrote
+	// The single minted commit is the one whose message dockhand wrote
 	// in project format; a branch the user grew past it is theirs to
 	// vouch for.
 	single := ownCommits == 1
@@ -211,29 +205,28 @@ func OwnerRepoFromURL(url string) (owner, repo string, ok bool) {
 }
 
 // Runner is the gh seam's shape: one invocation, stdout back. The
-// composition root wires RealGhOut into runstate.Context; every forge
-// function takes a Runner rather than reaching for a package variable,
-// which is what lets a test hand in a scripted GitHub without mutating
-// globals.
+// composition root wires RealGhOut's runner into runstate.Context;
+// every forge function takes a Runner rather than reaching for a
+// package variable, which is what lets a test hand in a scripted
+// GitHub without mutating globals.
 type Runner func(ctx context.Context, args ...string) (string, error)
 
-// RealGhOut runs the actual gh CLI.
-func RealGhOut(ctx context.Context, args ...string) (string, error) {
-	bin, err := platform.Find(platform.Gh)
-	if err != nil {
-		return "", fmt.Errorf("%w (`port install gh`)", err)
-	}
-	cmd := exec.CommandContext(ctx, bin, args...)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
-		if msg == "" {
-			msg = err.Error()
+// RealGhOut is the runner over the actual gh CLI, resolved through the
+// run's finder. A miss names the remedy; a failed call reads
+// "gh <subcommand>: <stderr>", with the exec error standing in for a
+// stderr gh left empty.
+func RealGhOut(tools *tool.Finder) Runner {
+	return func(ctx context.Context, args ...string) (string, error) {
+		bin, err := tools.Find(tool.Gh)
+		if err != nil {
+			return "", fmt.Errorf("%w (`port install gh`)", err)
 		}
-		return "", fmt.Errorf("gh %s: %s", args[0], msg)
+		out, _, err := tool.Output(ctx, bin, tool.Opts{Args: args})
+		if err != nil {
+			return "", fmt.Errorf("gh %s: %s", args[0], err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
+		}
+		return string(out), nil
 	}
-	return out.String(), nil
 }
 
 // PullRequest is the slice of GitHub's PR object clean reads.
@@ -262,7 +255,7 @@ func LookupPR(ctx context.Context, gh Runner, repo *git.Repo, remotes map[string
 }
 
 // QueryPR is the head-ref lookup itself, for callers that already know
-// the fork owner — promote does, and a branch --force just re-lifecycle.Minted
+// the fork owner — promote does, and a branch --force just re-minted
 // has no tracking config to derive it from until the push restores it.
 func QueryPR(ctx context.Context, gh Runner, upstream, owner, branch string) (pr PullRequest, found bool, err error) {
 	out, err := gh(ctx, "api",
@@ -317,5 +310,3 @@ func ForkRemote(ctx context.Context, gh Runner, repo *git.Repo, override string)
 	}
 	return found[0], login, nil
 }
-
-// Promote builds the promote subcommand.

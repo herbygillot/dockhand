@@ -24,6 +24,25 @@ var ErrDrift = errors.New("plan: Portfile changed since the plan was made")
 // predicted one. The Portfile has been restored to its pre-apply bytes.
 var ErrMismatch = errors.New("plan: observed delta differs from prediction")
 
+// Materialize is the one home for the plan's precondition: src must
+// hash to PortfileSHA256, and only then are the edits applied to it.
+// Every realization — the in-place apply below, the commit minted from
+// a base blob, the gate's shadow — computes its bytes here, so the
+// verdict one of them reaches transfers to the others by content
+// identity rather than by three hand-copied sequences agreeing.
+//
+// A hash miss returns ErrDrift bare: each caller names what drifted
+// (the file's path, the branch, the portdir) in its own words, and a
+// suffix added here would sit inside every one of those messages. An
+// apply failure after the hash matched is returned as edit.Apply
+// produced it; whether that counts as drift is the caller's call.
+func (p *Plan) Materialize(src []byte) ([]byte, error) {
+	if edit.FileSHA256(src) != p.PortfileSHA256 {
+		return nil, ErrDrift
+	}
+	return edit.Apply(src, p.Edits)
+}
+
 // Apply executes the plan: verify the precondition hash, write the
 // edits, re-evaluate, and demand the observed delta equal the predicted
 // one exactly. On mismatch the original bytes are restored — a plan
@@ -37,11 +56,10 @@ func (p *Plan) Apply(ctx context.Context, ev *eval.Evaluator) (info.Delta, error
 	if err != nil {
 		return info.Delta{}, err
 	}
-	if edit.FileSHA256(src) != p.PortfileSHA256 {
+	after, err := p.Materialize(src)
+	if errors.Is(err, ErrDrift) {
 		return info.Delta{}, fmt.Errorf("%w: %s", ErrDrift, path)
 	}
-
-	after, err := edit.Apply(src, p.Edits)
 	if err != nil {
 		// The precondition hash already matched, so a mismatch here is a
 		// corrupt plan rather than a moved file — but either way the

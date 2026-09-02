@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
@@ -144,7 +145,7 @@ const xcodeDiskGB = 100
 // partition map is repaired first (non-interactive yes — the prompt
 // is about a recovery partition that these images do not carry), then
 // the container takes all remaining space.
-func expandGuestDisk(ctx context.Context, vm string, say func(string, ...any)) error {
+func expandGuestDisk(ctx context.Context, tools *tool.Finder, vm string, say func(string, ...any)) error {
 	say("expanding the guest filesystem into the grown disk")
 	// repairDisk settles the map after the host-side GPT edit — and,
 	// measured, often absorbs the freed space into the container by
@@ -154,7 +155,7 @@ func expandGuestDisk(ctx context.Context, vm string, say func(string, ...any)) e
 sudo -n /bin/sh -c 'yes | /usr/sbin/diskutil repairDisk disk0' >/dev/null
 sudo -n /usr/sbin/diskutil apfs resizeContainer disk0s2 0 >/dev/null 2>&1 || true
 /bin/df -g / | /usr/bin/awk 'NR==2 {print $4}'`
-	out, err := tart.Exec(ctx, vm, "/bin/sh", "-c", script)
+	out, err := tart.Exec(ctx, tools, vm, "/bin/sh", "-c", script)
 	if err != nil {
 		return fmt.Errorf("%w: expanding the guest filesystem: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
@@ -196,7 +197,7 @@ sudo -n mv /private/tmp/Xcode.app /Applications/Xcode.app
 sudo -n xcode-select -s /Applications/Xcode.app/Contents/Developer
 sudo -n xcodebuild -license accept
 sudo -n xcodebuild -runFirstLaunch`
-	if out, err := tart.Exec(ctx, vm, "/bin/sh", "-c", script); err != nil {
+	if out, err := tart.Exec(ctx, t.Tools, vm, "/bin/sh", "-c", script); err != nil {
 		return fmt.Errorf("%w: installing Xcode %s: %s", verify.ErrNoEnvironment, version, strings.TrimSpace(out))
 	}
 	return t.assertXcode(ctx, vm)
@@ -206,8 +207,8 @@ sudo -n xcodebuild -runFirstLaunch`
 // when it has none — a fact worth a line wherever an image is already
 // booted (recheck), because use_xcode ports are refused against a base
 // without one.
-func XcodeVersionOf(ctx context.Context, vm string) string {
-	out, err := tart.Exec(ctx, vm, "/usr/bin/xcodebuild", "-version")
+func XcodeVersionOf(ctx context.Context, tools *tool.Finder, vm string) string {
+	out, err := tart.Exec(ctx, tools, vm, "/usr/bin/xcodebuild", "-version")
 	if err != nil || !strings.HasPrefix(strings.TrimSpace(out), "Xcode ") {
 		return ""
 	}
@@ -219,12 +220,12 @@ func XcodeVersionOf(ctx context.Context, vm string) string {
 // stance as every other provisioning step: the check, not the exit
 // status, is what says the image has the capability.
 func (t Tart) assertXcode(ctx context.Context, vm string) error {
-	out, err := tart.Exec(ctx, vm, "/usr/bin/xcodebuild", "-version")
+	out, err := tart.Exec(ctx, t.Tools, vm, "/usr/bin/xcodebuild", "-version")
 	if err != nil || !strings.Contains(out, "Xcode") {
 		return fmt.Errorf("%w: xcodebuild does not answer from the installed Xcode: %s",
 			verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
-	if out, err := tart.Exec(ctx, vm, "/usr/bin/clang", "--version"); err != nil ||
+	if out, err := tart.Exec(ctx, t.Tools, vm, "/usr/bin/clang", "--version"); err != nil ||
 		!strings.Contains(out, "clang version") {
 		return fmt.Errorf("%w: clang stopped answering after Xcode was selected: %s",
 			verify.ErrNoEnvironment, strings.TrimSpace(out))

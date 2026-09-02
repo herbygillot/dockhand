@@ -1,4 +1,4 @@
-package cargo2port
+package cargo
 
 import (
 	"context"
@@ -185,7 +185,7 @@ func buildGithubBlock(ctx context.Context, rc vendored.Regen, crates []gitCrate)
 		// manifest instead of a package manifest"). The tarball is in
 		// hand for its checksum, so the root manifest is judged here,
 		// before any branch is minted.
-		manifest, _, merr := distfile.Extract(ctx, []string{dest}, "", "Cargo.toml")
+		manifest, _, merr := distfile.Extract(ctx, rc.Tools, []string{dest}, "", "Cargo.toml")
 		if merr != nil {
 			return "", &plan.Decline{Type: plan.VendoredBlock,
 				Detail: fmt.Sprintf("%s's repository %s@%s carries no readable root Cargo.toml", c.Name, c.Repo, shortRev(c.Revision))}

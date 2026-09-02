@@ -1,13 +1,13 @@
 package distfile
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // maxMemberSize bounds what is read out of an archive. The files worth
@@ -27,15 +27,15 @@ var (
 	ErrMemberAmbiguous = errors.New("distfile: several candidates and no way to choose")
 )
 
-// tarPath is macOS's libarchive tar, which reads every format a distfile
-// arrives in — gzip, bzip2, xz, zip — so this package drives one tool
-// rather than carrying format handling of its own. It is a variable for
-// tests.
-var tarPath = "/usr/bin/tar"
-
 // Extract reads the named file out of a set of fetched distfiles,
 // returning its contents and the distfile that carried it. Candidates
 // are tried in order and the first that yields the file wins.
+//
+// The archiver is tool.Tar, resolved through the run's finder: the
+// libarchive tar reads every format a distfile arrives in — gzip,
+// bzip2, xz, zip — so this package drives one tool rather than
+// carrying format handling of its own. A machine without it is
+// reported as the finder words it, before any candidate is tried.
 //
 // The candidates are whatever a port fetches for itself, and not all of
 // them are archives — ports fetch loose man pages as distfiles. So
@@ -47,11 +47,15 @@ var tarPath = "/usr/bin/tar"
 // bytes already fetched, rather than downloading a second time, is what
 // lets a caller claim that what it read and the checksum it recorded
 // describe the same artifact.
-func Extract(ctx context.Context, archives []string, preferDir, name string) (data []byte, from string, err error) {
+func Extract(ctx context.Context, tools *tool.Finder, archives []string, preferDir, name string) (data []byte, from string, err error) {
+	tar, err := tools.Find(tool.Tar)
+	if err != nil {
+		return nil, "", err
+	}
 	var why []string
 	for _, archive := range archives {
 		base := path.Base(archive)
-		names, err := members(ctx, archive)
+		names, err := members(ctx, tar, archive)
 		if err != nil {
 			why = append(why, base+": not an archive")
 			continue
@@ -61,7 +65,7 @@ func Extract(ctx context.Context, archives []string, preferDir, name string) (da
 			why = append(why, base+": "+err.Error())
 			continue
 		}
-		body, err := extract(ctx, archive, member)
+		body, err := extract(ctx, tar, archive, member)
 		if err != nil {
 			return nil, "", err
 		}
@@ -75,16 +79,13 @@ func Extract(ctx context.Context, archives []string, preferDir, name string) (da
 }
 
 // members lists an archive's entries.
-func members(ctx context.Context, archive string) ([]string, error) {
-	var out, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, tarPath, "-tf", archive)
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("distfile: listing %s: %s", path.Base(archive), stderrOr(stderr, err))
+func members(ctx context.Context, tar, archive string) ([]string, error) {
+	out, _, err := tool.Output(ctx, tar, tool.Opts{Args: []string{"-tf", archive}})
+	if err != nil {
+		return nil, fmt.Errorf("distfile: listing %s: %s", path.Base(archive), err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
 	}
 	var names []string
-	for line := range strings.Lines(out.String()) {
+	for line := range strings.Lines(string(out)) {
 		if n := strings.TrimRight(strings.TrimSuffix(line, "\n"), "/"); n != "" {
 			names = append(names, strings.TrimPrefix(n, "./"))
 		}
@@ -123,23 +124,13 @@ func pickMember(members []string, preferDir, name string) (string, error) {
 }
 
 // extract reads one member's bytes out of an archive.
-func extract(ctx context.Context, archive, member string) ([]byte, error) {
-	var out, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, tarPath, "-xOf", archive, member)
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("distfile: extracting %s from %s: %s", member, path.Base(archive), stderrOr(stderr, err))
+func extract(ctx context.Context, tar, archive, member string) ([]byte, error) {
+	out, _, err := tool.Output(ctx, tar, tool.Opts{Args: []string{"-xOf", archive, member}})
+	if err != nil {
+		return nil, fmt.Errorf("distfile: extracting %s from %s: %s", member, path.Base(archive), err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
 	}
-	if out.Len() > maxMemberSize {
-		return nil, fmt.Errorf("distfile: %s is %d bytes, past the %d byte cap", member, out.Len(), maxMemberSize)
+	if len(out) > maxMemberSize {
+		return nil, fmt.Errorf("distfile: %s is %d bytes, past the %d byte cap", member, len(out), maxMemberSize)
 	}
-	return out.Bytes(), nil
-}
-
-func stderrOr(stderr bytes.Buffer, err error) string {
-	if msg := strings.TrimSpace(stderr.String()); msg != "" {
-		return msg
-	}
-	return err.Error()
+	return out, nil
 }

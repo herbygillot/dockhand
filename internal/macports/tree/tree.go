@@ -1,9 +1,11 @@
 // Package tree knows the shape of a ports tree on disk: where portdirs
-// are, how to enumerate them, and how to find a port by name —
-// including ResolveTarget, which turns any reference a MacPorts user
-// writes (a name, a path, a category/dir) into a portdir, consulting
-// the tree's own PortIndex for names. It reads directory structure and
-// the index only — what a port means is the evaluator's business.
+// are, how to enumerate them, and how to find a port by name. A
+// reference a MacPorts user writes resolves to a Target in two halves:
+// PathTarget answers a portdir path with no tree at all, and
+// Tree.Resolve turns the tree-bound forms — a category/dir, an indexed
+// port or subport name, a directory name — into one, consulting the
+// tree's own PortIndex for names. It reads directory structure and the
+// index only — what a port means is the evaluator's business.
 package tree
 
 import (

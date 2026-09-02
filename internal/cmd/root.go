@@ -15,9 +15,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // Root builds the dockhand command tree. The run it will execute is
@@ -40,12 +42,15 @@ const logo = `     _            _    _                     _
 // newRoot builds the tree along with the run it belongs to. Execute
 // needs both — the run has to be closed however the command ends.
 func newRoot(version string) (*cobra.Command, *runstate.Context) {
-	// The composition root: the two external-service seams are wired
-	// here and only here. Tests build a Context with fakes instead of
-	// mutating package state.
+	// The composition root: the one tool finder — over the real PATH
+	// search — and the two external-service seams built over it are
+	// wired here and only here. Tests build a Context with fakes
+	// instead of mutating package state.
+	tools := tool.NewFinder(nil)
 	rc := &runstate.Context{
-		Verifier: lifecycle.RealVMProvider,
-		Gh:       forge.RealGhOut,
+		Tools:    tools,
+		Verifier: lifecycle.RealVMProvider(tools),
+		Gh:       forge.RealGhOut(tools),
 	}
 	root := &cobra.Command{
 		Use:          "dockhand",
@@ -96,7 +101,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	})
 	// The verbs are grouped by family, and the families are the
 	// architecture's own: intents change a port, the lifecycle verbs
-	// work the branches an intent lifecycle.Minted, the environment verbs build
+	// work the branches an intent minted, the environment verbs build
 	// and reach into the VMs verification runs in, and the reports read
 	// without writing. Registration order is display order — the help
 	// reads as the workflow, so the workflow decides the order, not the
@@ -161,7 +166,7 @@ func execute(ctx context.Context, version string, args []string, out, errOut io.
 	if _, _, err := root.Find(args); err != nil {
 		root.PrintErrln(root.ErrPrefix(), err.Error())
 		root.PrintErrf("Run '%v --help' for usage.\n", root.CommandPath())
-		return ExitUsage
+		return exitcode.Usage
 	}
 	return ExitCode(root.ExecuteContext(ctx))
 }

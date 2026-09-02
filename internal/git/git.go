@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // ErrNotARepo reports a directory that no git repository contains.
@@ -38,6 +38,9 @@ var ErrBranchExists = errors.New("git: branch already exists")
 // Repo is one repository, addressed by its top-level working directory.
 type Repo struct {
 	Root string
+	// tools is the run's finder, set by Open and carried so every
+	// command the repository runs resolves git the way doctor did.
+	tools *tool.Finder
 }
 
 // exitFatal is git's exit code for fatal errors — for rev-parse
@@ -45,22 +48,23 @@ type Repo struct {
 // unusable here, exits the same way).
 const exitFatal = 128
 
-// Open finds the repository containing dir.
-func Open(ctx context.Context, dir string) (*Repo, error) {
-	out, code, err := execGit(ctx, dir, nil, "rev-parse", "--show-toplevel")
+// Open finds the repository containing dir, resolving git through the
+// run's finder.
+func Open(ctx context.Context, tools *tool.Finder, dir string) (*Repo, error) {
+	out, code, err := execGit(ctx, tools, dir, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
 		if code == exitFatal {
 			return nil, fmt.Errorf("%w: %s", ErrNotARepo, dir)
 		}
 		return nil, err
 	}
-	return &Repo{Root: strings.TrimRight(string(out), "\n")}, nil
+	return &Repo{Root: strings.TrimRight(string(out), "\n"), tools: tools}, nil
 }
 
 // git runs one git command in the repository and returns its trimmed
 // stdout.
 func (r *Repo) git(ctx context.Context, args ...string) (string, error) {
-	out, _, err := execGit(ctx, r.Root, nil, args...)
+	out, _, err := execGit(ctx, r.tools, r.Root, nil, args...)
 	return strings.TrimRight(string(out), "\n"), err
 }
 
@@ -114,13 +118,11 @@ func (r *Repo) Pager(ctx context.Context) string {
 			return v
 		}
 	}
-	bin, err := platform.Find(platform.Git)
+	bin, err := r.tools.Find(tool.Git)
 	if err != nil {
 		return "cat"
 	}
-	cmd := exec.CommandContext(ctx, bin, "-C", r.Root, "var", "GIT_PAGER")
-	cmd.Env = scrubbedEnv()
-	out, err := cmd.Output()
+	out, _, err := tool.Output(ctx, bin, tool.Opts{Args: []string{"-C", r.Root, "var", "GIT_PAGER"}, Env: scrubbedEnv()})
 	pager := strings.TrimSpace(string(out))
 	if err != nil || pager == "" {
 		return "cat"
@@ -153,32 +155,30 @@ func RunPager(ctx context.Context, pager string, content []byte, out, errOut io.
 }
 
 // execGit runs one git command with the scrubbed environment,
-// surfacing the exit code for the callers that classify by it.
-func execGit(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, int, error) {
-	bin, err := platform.Find(platform.Git)
+// surfacing the exit code for the callers that classify by it. A
+// failure reads "git <subcommand>: <stderr>", with the exec error in
+// place of a stderr git left empty; a finder miss passes through as
+// the finder worded it.
+func execGit(ctx context.Context, tools *tool.Finder, dir string, stdin []byte, args ...string) ([]byte, int, error) {
+	bin, err := tools.Find(tool.Git)
 	if err != nil {
 		return nil, 0, err
 	}
-	cmd := exec.CommandContext(ctx, bin, append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(scrubbedEnv(), "GIT_PAGER=cat")
+	// A nil []byte must stay a nil io.Reader: a typed nil reader would
+	// be read from.
+	var in io.Reader
 	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
+		in = bytes.NewReader(stdin)
 	}
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		code := -1
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			code = ee.ExitCode()
-		}
-		msg := strings.TrimSpace(errb.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, code, fmt.Errorf("git %s: %s", args[0], msg)
+	out, code, err := tool.Output(ctx, bin, tool.Opts{
+		Args:  append([]string{"-C", dir}, args...),
+		Env:   append(scrubbedEnv(), "GIT_PAGER=cat"),
+		Stdin: in,
+	})
+	if err != nil {
+		return nil, code, fmt.Errorf("git %s: %s", args[0], err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
 	}
-	return out.Bytes(), 0, nil
+	return out, 0, nil
 }
 
 // RevParse resolves a revision to its object name.
@@ -219,7 +219,7 @@ func (r *Repo) PrimaryBranch(ctx context.Context) (string, error) {
 // BlobAt returns one file's bytes as a revision's tree records them.
 // path is slash-separated, relative to the repository root.
 func (r *Repo) BlobAt(ctx context.Context, rev, path string) ([]byte, error) {
-	out, _, err := execGit(ctx, r.Root, nil, "cat-file", "blob", rev+":"+path)
+	out, _, err := execGit(ctx, r.tools, r.Root, nil, "cat-file", "blob", rev+":"+path)
 	if err != nil {
 		return nil, fmt.Errorf("%s:%s: %w", rev, path, err)
 	}
@@ -311,13 +311,13 @@ func (r *Repo) GraftTree(ctx context.Context, base, path string, content []byte)
 // standard a/ and b/ path prefixes, and never colors — so what it
 // prints is what `git apply` accepts.
 func (r *Repo) DiffTrees(ctx context.Context, a, b string) ([]byte, error) {
-	out, _, err := execGit(ctx, r.Root, nil, "diff-tree", "-p", a, b)
+	out, _, err := execGit(ctx, r.tools, r.Root, nil, "diff-tree", "-p", a, b)
 	return out, err
 }
 
 // gitStdin runs one git command with the given stdin.
 func (r *Repo) gitStdin(ctx context.Context, stdin []byte, args ...string) (string, error) {
-	out, _, err := execGit(ctx, r.Root, stdin, args...)
+	out, _, err := execGit(ctx, r.tools, r.Root, stdin, args...)
 	return strings.TrimRight(string(out), "\n"), err
 }
 

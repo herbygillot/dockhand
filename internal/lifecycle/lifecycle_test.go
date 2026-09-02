@@ -19,12 +19,31 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/testenv"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
+
+// realTools is the finder every fixture and run state here carries:
+// the real PATH search, because git is genuinely driven. A test that
+// needs tart present says so with tartStubbed.
+var realTools = tool.NewFinder(nil)
+
+// tartStubbed is a finder that answers the tart lookup with a stub
+// path and every other lookup for real, so a gate that asks whether
+// tart exists opens on a machine without it.
+func tartStubbed() *tool.Finder {
+	return tool.NewFinder(func(name string) (string, error) {
+		if name == string(tool.Tart) {
+			return "/stub/tart", nil
+		}
+		return exec.LookPath(name)
+	})
+}
 
 // lifecycleRepo is a ports-tree-shaped git repo with one dockhand
 // branch Minted, its tip returned alongside.
@@ -49,7 +68,7 @@ func lifecycleRepo(t *testing.T) (*git.Repo, string) {
 	run("add", ".")
 	run("commit", "--quiet", "-m", "initial tree")
 
-	repo, err := git.Open(context.Background(), dir)
+	repo, err := git.Open(context.Background(), realTools, dir)
 	require.NoError(t, err)
 	primary, err := repo.PrimaryBranch(context.Background())
 	require.NoError(t, err)
@@ -76,7 +95,7 @@ func runningNote(t *testing.T, repo *git.Repo, sha, jobID string) Note {
 func testState(t *testing.T, fake *verifytest.Fake) *runstate.Context {
 	t.Helper()
 	var buf bytes.Buffer
-	rs := &runstate.Context{Out: &buf, Err: &buf}
+	rs := &runstate.Context{Tools: realTools, Out: &buf, Err: &buf}
 	if fake != nil {
 		rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
 	}
@@ -384,11 +403,13 @@ func TestSubmitReleasesTheJobWhenRecordingFails(t *testing.T) {
 	// unreadable (strict validation refuses it), recording fails after
 	// the job started — and the compensation must release exactly that
 	// job rather than leave a VM no settlement can find.
-	testenv.Tool(t, "tart") // SubmitVerification's degradation gate asks for the tool itself
 	repo, sha := lifecycleRepo(t)
 	writeRawNote(t, repo, sha, "{not json")
 	fake := &verifytest.Fake{}
 	rs := testState(t, fake)
+	// SubmitVerification's degradation gate asks the finder for the
+	// tool itself; the stub opens it whatever the machine has.
+	rs.Tools = tartStubbed()
 
 	rel, err := repo.PrimaryBranch(context.Background())
 	_ = rel
@@ -433,4 +454,37 @@ func TestCancelRunningNeedsNoProviderWhenNothingRuns(t *testing.T) {
 	canceled, err := CancelRunning(ctx, rs, repo, sha, "x")
 	require.NoError(t, err)
 	assert.Zero(t, canceled)
+}
+
+// baseless is a verifier with no base images. No provider today
+// reports one — RealVMProvider refuses to build without a base and
+// the fake defaults to one — so the guard against indexing an empty
+// list is driven by this override.
+type baseless struct{ *verifytest.Fake }
+
+func (baseless) Capabilities() verify.Capabilities { return verify.Capabilities{} }
+
+func TestZeroReleaseRefusesWhenTheProviderHasNoBases(t *testing.T) {
+	repo, sha := lifecycleRepo(t)
+	ctx := context.Background()
+	fake := &verifytest.Fake{}
+	rs := testState(t, nil)
+	rs.Verifier = func(context.Context) (verify.Verifier, error) { return baseless{fake}, nil }
+	rs.Tools = tartStubbed()
+	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
+
+	// On the submit road the branch stands and the contract failed.
+	err := SubmitVerification(ctx, rs, m, "jq", platform.Release{}, false, false)
+	var deferred *VerifyDeferredError
+	require.ErrorAs(t, err, &deferred)
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.Empty(t, fake.Submitted, "the zero release never resolved, so nothing was submitted")
+
+	// On the pre-verified road the refusal comes back raw, and nothing
+	// is recorded under a release that does not exist.
+	err = markVerified(ctx, rs, m, &plan.Plan{Port: "jq"}, platform.Release{}, false, "clean")
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.NotErrorAs(t, err, &deferred)
+	_, err = ReadNote(ctx, repo, sha)
+	assert.ErrorIs(t, err, git.ErrNoNote)
 }

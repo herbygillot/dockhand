@@ -17,7 +17,6 @@
 package tart
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -33,6 +32,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/build"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -71,6 +71,10 @@ type Provider struct {
 	// ephemeral prefix, which is by definition not the conventional
 	// one; the zero value means the conventional one.
 	Prefix prefix.Prefix
+	// Tools resolves tart and the host tar: the run's one finder,
+	// handed in by whoever assembles the provider, so the tart doctor
+	// reported is the tart every guest is driven with.
+	Tools *tool.Finder
 }
 
 // The provider is the contract, provably: a Verifier that drifts
@@ -151,18 +155,18 @@ func (p Provider) Capabilities() verify.Capabilities {
 
 // CLI executes a tart subcommand, optionally piping stdin. It is
 // exported because provisioning drives the same tool: one place knows
-// how tart is invoked.
-func CLI(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
-	bin, err := platform.Find(platform.Tart)
+// how tart is invoked. The transcript is stdout and stderr merged, and
+// it comes back whether or not tart succeeded, with the exec error as
+// it came — tart's diagnostics land on either stream, and callers read
+// the output after a non-zero exit (HasVM parses a listing that may
+// have exited non-zero). tart is resolved through the run's finder,
+// and a miss is the no-environment fact, not a raw exec error.
+func CLI(ctx context.Context, tools *tool.Finder, stdin io.Reader, args ...string) (string, error) {
+	bin, err := tools.Find(tool.Tart)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
 	}
-	var buf bytes.Buffer
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Stdin = stdin
-	cmd.Stdout, cmd.Stderr = &buf, &buf
-	err = cmd.Run()
-	return buf.String(), err
+	return tool.Run(ctx, bin, tool.Opts{Args: args, Stdin: stdin})
 }
 
 // HasVM reports whether a local VM of exactly this name exists. Exact,
@@ -170,8 +174,8 @@ func CLI(ctx context.Context, stdin io.Reader, args ...string) (string, error) {
 // dockhand-base-sonoma-anything — the same hazard GoldenName's naming
 // avoids, and one that substring matching against `tart list` output
 // walked straight into.
-func HasVM(ctx context.Context, name string) (bool, error) {
-	out, err := CLI(ctx, nil, "list", "--source", "local")
+func HasVM(ctx context.Context, tools *tool.Finder, name string) (bool, error) {
+	out, err := CLI(ctx, tools, nil, "list", "--source", "local")
 	if err != nil {
 		return false, fmt.Errorf("%w: listing local VMs: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
@@ -186,8 +190,8 @@ func HasVM(ctx context.Context, name string) (bool, error) {
 
 // Exec runs a command in the guest. Arguments are argv, not a command
 // line: nothing here is quoted because nothing here reaches a shell.
-func Exec(ctx context.Context, vm string, argv ...string) (string, error) {
-	return CLI(ctx, nil, append([]string{"exec", vm}, argv...)...)
+func Exec(ctx context.Context, tools *tool.Finder, vm string, argv ...string) (string, error) {
+	return CLI(ctx, tools, nil, append([]string{"exec", vm}, argv...)...)
 }
 
 // Submit clones the base, stages the edited ports, and starts a
@@ -202,7 +206,7 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	if err != nil {
 		return verify.Job{}, err
 	}
-	if ok, err := HasVM(ctx, base.VM); err != nil {
+	if ok, err := HasVM(ctx, p.Tools, base.VM); err != nil {
 		return verify.Job{}, err
 	} else if !ok {
 		return verify.Job{}, fmt.Errorf("%w: no base VM %q (see doctor)", verify.ErrNoEnvironment, base.VM)
@@ -214,7 +218,7 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	// timeout. The lock is held until the new VM is itself visible as
 	// running, so concurrent submitters cannot both count the same
 	// free slot.
-	unlockAdmission, err := Admit(ctx, p.Capabilities().Concurrent)
+	unlockAdmission, err := Admit(ctx, p.Tools, p.Capabilities().Concurrent)
 	if err != nil {
 		return verify.Job{}, err
 	}
@@ -226,7 +230,7 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	}()
 
 	name := WorkerPrefix + stamp()
-	if out, err := CLI(ctx, nil, "clone", base.VM, name); err != nil {
+	if out, err := CLI(ctx, p.Tools, nil, "clone", base.VM, name); err != nil {
 		return verify.Job{}, fmt.Errorf("%w: clone: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	job := verify.Job{Provider: "tart", ID: name, Started: time.Now()}
@@ -252,17 +256,17 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	// at capacity, out of disk — surfaces as itself.
 	runErr := make(chan error, 1)
 	go func() {
-		_, err := CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+		_, err := CLI(context.WithoutCancel(ctx), p.Tools, nil, "run", "--no-graphics", name)
 		runErr <- err
 	}()
-	if err := WaitRunning(ctx, name, runErr); err != nil {
+	if err := WaitRunning(ctx, p.Tools, name, runErr); err != nil {
 		return fail(err)
 	}
 	// The slot is visibly occupied; the machine lock can pass on.
 	admitted = false
 	unlockAdmission()
 
-	if err := WaitAgent(ctx, name); err != nil {
+	if err := WaitAgent(ctx, p.Tools, name); err != nil {
 		return fail(err)
 	}
 	if err := p.assertClean(ctx, name); err != nil {
@@ -273,7 +277,7 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		// so asking it costs a second — and refusing here releases the
 		// slot instead of keeping a guaranteed failure as a debug
 		// environment nobody needs.
-		if out, xerr := Exec(ctx, name, "/usr/bin/xcodebuild", "-version"); xerr != nil || !strings.Contains(out, "Xcode") {
+		if out, xerr := Exec(ctx, p.Tools, name, "/usr/bin/xcodebuild", "-version"); xerr != nil || !strings.Contains(out, "Xcode") {
 			return fail(fmt.Errorf("%w: %s requires a full Xcode installation and this base has none — provision with --xcode, or promote unverified", verify.ErrNoEnvironment, req.Port))
 		}
 	}
@@ -289,9 +293,9 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 // WaitAgent waits for the guest agent to answer, which is the only
 // readiness signal that matters once an image is provisioned: there is
 // no address to wait for.
-func WaitAgent(ctx context.Context, vm string) error {
+func WaitAgent(ctx context.Context, tools *tool.Finder, vm string) error {
 	for i := 0; i < 120; i++ {
-		if _, err := Exec(ctx, vm, "/usr/bin/true"); err == nil {
+		if _, err := Exec(ctx, tools, vm, "/usr/bin/true"); err == nil {
 			return nil
 		}
 		select {
@@ -309,7 +313,7 @@ func WaitAgent(ctx context.Context, vm string) error {
 // then quietly test the tree's copy of the port instead of the one
 // under test.
 func (p Provider) stage(ctx context.Context, vm string, req verify.Request) error {
-	if _, err := Exec(ctx, vm, "/bin/sh", "-c", "rm -rf "+overlayDir+" && mkdir -p "+overlayDir); err != nil {
+	if _, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", "rm -rf "+overlayDir+" && mkdir -p "+overlayDir); err != nil {
 		return fmt.Errorf("%w: preparing the overlay: %w", verify.ErrNoEnvironment, err)
 	}
 	for _, dir := range req.Portdirs {
@@ -319,9 +323,11 @@ func (p Provider) stage(ctx context.Context, vm string, req verify.Request) erro
 		}
 		// tar rather than a file copy: the portdir's files/ carries the
 		// patchfiles, and a port staged without them fails in a way that
-		// looks like the port's fault.
+		// looks like the port's fault. The host tar streams into the
+		// guest's over `tart exec -i`, so this stays a pipeline rather
+		// than a one-shot command.
 		root := filepath.Dir(filepath.Dir(filepath.Clean(dir)))
-		tarBin, err := platform.Find(platform.Tar)
+		tarBin, err := p.Tools.Find(tool.Tar)
 		if err != nil {
 			return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
 		}
@@ -333,14 +339,14 @@ func (p Provider) stage(ctx context.Context, vm string, req verify.Request) erro
 		if err := tar.Start(); err != nil {
 			return fmt.Errorf("%w: reading %s: %w", verify.ErrNoEnvironment, dir, err)
 		}
-		out, xerr := CLI(ctx, pipe, "exec", "-i", vm, "/usr/bin/tar", "xf", "-", "-C", overlayDir)
+		out, xerr := CLI(ctx, p.Tools, pipe, "exec", "-i", vm, "/usr/bin/tar", "xf", "-", "-C", overlayDir)
 		werr := tar.Wait()
 		if xerr != nil || werr != nil {
 			return fmt.Errorf("%w: staging %s: %s", verify.ErrNoEnvironment, dir, strings.TrimSpace(out))
 		}
 	}
 
-	out, err := Exec(ctx, vm, "/bin/sh", "-c", "cd "+overlayDir+" && exec "+p.prefixOf().Portindex())
+	out, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", "cd "+overlayDir+" && exec "+p.prefixOf().Portindex())
 	if err != nil {
 		return fmt.Errorf("%w: indexing the overlay: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
@@ -359,7 +365,7 @@ func (p Provider) stage(ctx context.Context, vm string, req verify.Request) erro
 	conf := p.prefixOf().SourcesConf()
 	line := build.SourcesLine(overlayDir)
 	script := fmt.Sprintf(`grep -qxF "$1" %[1]s || { printf '%%s\n' "$1" | cat - %[1]s > /tmp/sc && sudo -n cp /tmp/sc %[1]s; }`, conf)
-	if out, err := Exec(ctx, vm, "/bin/sh", "-c", script, "sh", line); err != nil {
+	if out, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", script, "sh", line); err != nil {
 		return fmt.Errorf("%w: adding the overlay source: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	return nil
@@ -393,24 +399,24 @@ nohup /bin/sh -c '
 // rather than to this process.
 func (p Provider) launch(ctx context.Context, vm string, req verify.Request) error {
 	argv := build.InstallArgs(req.Port, req.Variants, len(req.FromSource) > 0)
-	if _, err := Exec(ctx, vm, "/bin/sh", "-c", "mkdir -p "+stateDir); err != nil {
+	if _, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", "mkdir -p "+stateDir); err != nil {
 		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
 	}
 	body := strings.NewReader(strings.Join(argv, "\n") + "\n")
-	if out, err := CLI(ctx, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv"); err != nil {
+	if out, err := CLI(ctx, p.Tools, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv"); err != nil {
 		return fmt.Errorf("%w: writing the argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	lint := strings.NewReader(strings.Join(build.LintArgs(req.Port), "\n") + "\n")
-	if out, err := CLI(ctx, lint, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.lint"); err != nil {
+	if out, err := CLI(ctx, p.Tools, lint, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.lint"); err != nil {
 		return fmt.Errorf("%w: writing the lint argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	if req.Test {
 		body := strings.NewReader(strings.Join(build.TestArgs(req.Port, req.Variants), "\n") + "\n")
-		if out, err := CLI(ctx, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.test"); err != nil {
+		if out, err := CLI(ctx, p.Tools, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.test"); err != nil {
 			return fmt.Errorf("%w: writing the test argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 		}
 	}
-	if out, err := Exec(ctx, vm, "/bin/sh", "-c", runner(p.prefixOf().Port())); err != nil {
+	if out, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", runner(p.prefixOf().Port())); err != nil {
 		return fmt.Errorf("%w: launching the build: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	return nil
@@ -424,30 +430,40 @@ func (p Provider) Exec(ctx context.Context, job verify.Job, argv ...string) (str
 	if job.Provider != "tart" {
 		return "", fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
 	}
-	if ok, err := HasVM(ctx, job.ID); err != nil {
+	if ok, err := HasVM(ctx, p.Tools, job.ID); err != nil {
 		return "", err
 	} else if !ok {
 		return "", fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
-	return Exec(ctx, job.ID, argv...)
+	return Exec(ctx, p.Tools, job.ID, argv...)
 }
 
 // Shell implements verify.InteractiveShell: a login shell inside the
 // worker, on the process's real terminal. The TTY is requested only
 // when there is one: -t on a piped stdin dies on the terminal-size
 // ioctl, and a pipe of commands is a legitimate way to use a shell.
+// Whether there is one is the kernel's answer (tool.IsTerminal), not
+// the file mode's: /dev/null is a character device too, and a shell
+// fed from it must run without a terminal rather than die asking for
+// its size.
 func (p Provider) Shell(ctx context.Context, job verify.Job) error {
 	if job.Provider != "tart" {
 		return fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
 	}
+	bin, err := p.Tools.Find(tool.Tart)
+	if err != nil {
+		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
+	}
 	args := []string{"exec", "-i"}
-	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+	if tool.IsTerminal(os.Stdin.Fd()) {
 		args = append(args, "-t")
 	}
 	args = append(args, job.ID, "/bin/zsh", "-l")
-	cmd := exec.CommandContext(ctx, "tart", args...)
+	// The process's own streams, not a transcript: this is the one
+	// interactive command, and it stays on os/exec for that reason.
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		// The shell's own exit status is the user's business.
@@ -461,12 +477,12 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 	if job.Provider != "tart" {
 		return verify.Status{}, fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
 	}
-	if ok, err := HasVM(ctx, job.ID); err != nil {
+	if ok, err := HasVM(ctx, p.Tools, job.ID); err != nil {
 		return verify.Status{}, err
 	} else if !ok {
 		return verify.Status{}, fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
-	state, err := Exec(ctx, job.ID, "/bin/cat", stateDir+"/state")
+	state, err := Exec(ctx, p.Tools, job.ID, "/bin/cat", stateDir+"/state")
 	if err != nil {
 		// The guest is not answering yet, or no longer is. Either way it
 		// has not reported an outcome, and inventing one would be worse.
@@ -493,12 +509,12 @@ func (p Provider) Log(ctx context.Context, job verify.Job) (string, error) {
 	if job.Provider != "tart" {
 		return "", fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
 	}
-	if ok, err := HasVM(ctx, job.ID); err != nil {
+	if ok, err := HasVM(ctx, p.Tools, job.ID); err != nil {
 		return "", err
 	} else if !ok {
 		return "", fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
-	log, err := Exec(ctx, job.ID, "/bin/cat", stateDir+"/log")
+	log, err := Exec(ctx, p.Tools, job.ID, "/bin/cat", stateDir+"/log")
 	if err != nil {
 		return "", fmt.Errorf("reading the build log from %s: %w", job.ID, err)
 	}
@@ -508,7 +524,7 @@ func (p Provider) Log(ctx context.Context, job verify.Job) (string, error) {
 // Release discards the worker, and with it any debug handle.
 func (p Provider) Release(ctx context.Context, job verify.Job) error {
 	defer clearAttribution(job.ID)
-	_, _ = CLI(ctx, nil, "stop", job.ID)
+	_, _ = CLI(ctx, p.Tools, nil, "stop", job.ID)
 	// A delete can race a guest that is still coming up — tart refuses
 	// to remove a running VM, and stop is not instantaneous. Retrying
 	// briefly costs nothing and is the difference between a released
@@ -516,7 +532,7 @@ func (p Provider) Release(ctx context.Context, job verify.Job) error {
 	var out string
 	var err error
 	for i := 0; i < 10; i++ {
-		if out, err = CLI(ctx, nil, "delete", job.ID); err == nil {
+		if out, err = CLI(ctx, p.Tools, nil, "delete", job.ID); err == nil {
 			return nil
 		}
 		select {
@@ -524,7 +540,7 @@ func (p Provider) Release(ctx context.Context, job verify.Job) error {
 			return ctx.Err()
 		case <-time.After(time.Second):
 		}
-		_, _ = CLI(ctx, nil, "stop", job.ID)
+		_, _ = CLI(ctx, p.Tools, nil, "stop", job.ID)
 	}
 	return fmt.Errorf("verify/tart: releasing %s: %s", job.ID, strings.TrimSpace(out))
 }
@@ -556,7 +572,7 @@ func GoldenName(r platform.Release) string {
 // drifted is a fact about this machine; blaming the port for it would
 // be the worst kind of wrong answer, because it looks like a real one.
 func (p Provider) assertClean(ctx context.Context, vm string) error {
-	out, err := Exec(ctx, vm, "/bin/sh", "-c", build.CleanScript(p.prefixOf().Port()))
+	out, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", build.CleanScript(p.prefixOf().Port()))
 	if err != nil {
 		return fmt.Errorf("%w: checking the environment: %w", verify.ErrNoEnvironment, err)
 	}

@@ -29,7 +29,7 @@ type provisionTartAction struct {
 var _ Action = provisionTartAction{}
 
 func (a provisionTartAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	t := provision.Tart{MacPorts: a.macports, CPUs: a.cpus, MemoryMB: a.memoryMB, XcodeDir: a.xcode}
+	t := provision.Tart{MacPorts: a.macports, CPUs: a.cpus, MemoryMB: a.memoryMB, XcodeDir: a.xcode, Tools: rs.Tools}
 	if a.all {
 		return a.provisionAll(ctx, rs, t)
 	}
@@ -50,7 +50,7 @@ func (a provisionTartAction) Execute(ctx context.Context, rs *runstate.Context) 
 		// the cheap half of provisioning, and a base someone poked at
 		// deserves them without the download.
 		name := tart.BaseName(a.release)
-		ok, err := tart.HasVM(ctx, name)
+		ok, err := tart.HasVM(ctx, rs.Tools, name)
 		if err != nil {
 			return err
 		}
@@ -60,15 +60,15 @@ func (a provisionTartAction) Execute(ctx context.Context, rs *runstate.Context) 
 		}
 		fmt.Fprintf(rs.Err, "rechecking %s\n", name)
 		//nolint:errcheck // the guest is detached by design
-		go tart.CLI(ctx, nil, "run", "--no-graphics", name)
-		defer func() { _, _ = tart.CLI(ctx, nil, "stop", name) }()
-		if err := tart.WaitAgent(ctx, name); err != nil {
+		go tart.CLI(ctx, rs.Tools, nil, "run", "--no-graphics", name)
+		defer func() { _, _ = tart.CLI(ctx, rs.Tools, nil, "stop", name) }()
+		if err := tart.WaitAgent(ctx, rs.Tools, name); err != nil {
 			return err
 		}
 		if err := t.AssertPristineFor(ctx, name); err != nil {
 			return err
 		}
-		if v := provision.XcodeVersionOf(ctx, name); v != "" {
+		if v := provision.XcodeVersionOf(ctx, rs.Tools, name); v != "" {
 			fmt.Fprintf(rs.Err, "full Xcode: %s\n", v)
 		} else {
 			fmt.Fprintln(rs.Err, "full Xcode: none — use_xcode ports will be refused; `provision tart --xcode` adds one")
@@ -155,7 +155,7 @@ func provisionTart() *cobra.Command {
 // the reason, not a reason to abort the ones that can proceed; hard
 // provisioning failures are collected and returned together.
 func (a provisionTartAction) provisionAll(ctx context.Context, rs *runstate.Context, t provision.Tart) error {
-	releases, err := (provision.Tart{}).Provisioned(ctx)
+	releases, err := t.Provisioned(ctx)
 	if err != nil {
 		return err
 	}

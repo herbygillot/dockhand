@@ -13,20 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// Process exit codes. An exit status answers "whose problem is this":
-// the invocation, the machine, the tree, or the operation. Documented
-// in docs/cli.md; once dockhand ships these are a contract for scripts
-// branching on $?.
-const (
-	ExitOK          = exitcode.OK
-	ExitFailure     = exitcode.Failure
-	ExitUsage       = exitcode.Usage
-	ExitEnvironment = exitcode.Environment
-	ExitTree        = exitcode.Tree
-	ExitDeclined    = exitcode.Declined
-	ExitVerify      = exitcode.Verify
-)
-
 // UsageError marks a failure as the invocation being wrong — the remedy
 // is rereading --help, not fixing the machine or the tree. Flag-parse
 // errors are wrapped into it by Root's FlagErrorFunc; argument

@@ -8,7 +8,8 @@
 // the port's own, checking that a generator produced a block at all,
 // and turning a regenerated block into an edit. What a particular
 // block's entries look like, and which tool writes them, belongs to a
-// subpackage named for that tool — see vendored/cargo2port.
+// subpackage per ecosystem — vendored/cargo, and vendored/go2port,
+// which keeps its tool's name because go is a keyword.
 //
 // The boundary has to be found in two senses. In the source a block is
 // one command, whose span is the replacement target. In an evaluated
@@ -177,7 +178,7 @@ func ValidateBlock(out []byte, k Kind) ([]byte, error) {
 // Edit replaces a located block with a regenerated one, verbatim from
 // the caller. Whether the block is the generator's own layout or the
 // tool's tokens re-laid under the existing block's proven geometry is
-// the generator package's judgment (see cargo2port.Assess); this
+// the generator package's judgment (see cargo.Assess); this
 // package still never interprets what a block holds.
 func Edit(src []byte, span text.Span, block []byte, k Kind) edit.Edit {
 	return edit.Edit{

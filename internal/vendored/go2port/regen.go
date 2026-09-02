@@ -68,7 +68,7 @@ func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) ([]edit.Edit, e
 			Detail: "go.vendors present but go.package or git.branch is empty; the module ref is unknowable"}
 	}
 	slog.Debug("regenerating go.vendors", "package", pkg, "ref", ref)
-	block, err := Generate(ctx, pkg, ref)
+	block, err := Generate(ctx, rc.Tools, pkg, ref)
 	if err != nil {
 		return nil, err
 	}

@@ -38,7 +38,7 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	branches, err := repo.Branches(ctx, "dockhand/")
+	branches, err := repo.Branches(ctx, git.BranchNamespace)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // eight deferred branches against an idle machine because the old
 // message promised a pump that did not exist.
 func pumpDeferred(ctx context.Context, rs *runstate.Context, repo *git.Repo, branches []string) {
-	if !lifecycle.TartPresent() {
+	if !lifecycle.TartPresent(rs.Tools) {
 		return
 	}
 	for _, br := range branches {
@@ -291,7 +291,7 @@ func statusAsJSON(ctx context.Context, rs *runstate.Context, repo *git.Repo, bra
 		out.Branches = append(out.Branches, b)
 	}
 	pumpDeferred(ctx, &prose, repo, branches)
-	if workers := lifecycle.OrphanWorkers(ctx, repo); len(workers) > 0 {
+	if workers := lifecycle.OrphanWorkers(ctx, rs.Tools, repo); len(workers) > 0 {
 		out.OrphanWorkers = workers
 	}
 	enc := json.NewEncoder(rs.Out)
@@ -392,7 +392,7 @@ func (ps *prStatus) reconcile(ctx context.Context, rs *runstate.Context, branch 
 // forgotten worker is an expensive kind of quiet. Best-effort — a
 // machine without tart has no workers to report.
 func reportOrphanWorkers(ctx context.Context, rs *runstate.Context, repo *git.Repo) {
-	for _, o := range lifecycle.OrphanWorkers(ctx, repo) {
+	for _, o := range lifecycle.OrphanWorkers(ctx, rs.Tools, repo) {
 		if o.Owner != "" {
 			fmt.Fprintf(rs.Out, "%-32s worker from %s — `dockhand status` there follows it\n", o.Name, o.Owner)
 			continue

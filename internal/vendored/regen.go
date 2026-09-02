@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/tempdir"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // Regen is everything the planner knows at regeneration time, bundled
@@ -36,6 +37,9 @@ type Regen struct {
 	Fetch distfile.Fetcher
 	// TempDir stages whatever a generator needs on disk.
 	TempDir tempdir.Root
+	// Tools resolves the generators a family runs and the archiver it
+	// reads a distfile with — the run's one finder, handed down.
+	Tools *tool.Finder
 }
 
 // Regenerator is one vendored-block family's whole story: whether a

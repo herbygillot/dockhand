@@ -80,7 +80,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		// distinct NEGATIVE evidence: a completed failed build, which
 		// --no-verify alone overrides.
 		if n.AnyState("failed") && !a.noVerify {
-			return fmt.Errorf("%s: tip %s has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway", branch, tip[:12])
+			return fmt.Errorf("%s: tip %s has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway", branch, git.Abbrev(tip))
 		}
 		// A blocked run is the one unverified shape with a story worth
 		// telling: the change is untested because a neighbor is broken,
@@ -110,7 +110,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		return err
 	}
 	// The branch's own commits, oldest last (rev-list order): the
-	// oldest is the one dockhand lifecycle.Minted, and its subject is already in
+	// oldest is the one dockhand minted, and its subject is already in
 	// project format (`<port>: <description>`) — later commits are
 	// fixups whose subjects would make bad titles. The count also
 	// answers the template's squashed-and-minimized checkbox.
@@ -137,7 +137,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	// duplication: the push below updates that PR in place, and opening
 	// a second one would be the duplicate this verb refuses elsewhere.
 	// Looked up by the fork owner, never by tracking config — a branch
-	// --force just re-lifecycle.Minted has none until the push restores it.
+	// --force just re-minted has none until the push restores it.
 	ownPR, ownFound, err := forge.QueryPR(ctx, rs.RunGH, upstream, forkOwner, branch)
 	if err != nil {
 		fmt.Fprintf(rs.Err, "warning: could not check for this branch's own PR: %v\n", err)
@@ -210,7 +210,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 }
 
 // push publishes the branch to the fork: an ordinary push, or the
-// with-lease force that replaces a re-lifecycle.Minted branch's copy.
+// with-lease force that replaces a re-minted branch's copy.
 func (a promoteAction) push(ctx context.Context, rs *runstate.Context, repo *git.Repo, remote, owner, branch string) error {
 	if a.force {
 		if err := repo.PushForce(ctx, remote, branch); err != nil {

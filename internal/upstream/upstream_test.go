@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/testenv"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 func TestCoords(t *testing.T) {
@@ -128,7 +129,7 @@ func TestTags(t *testing.T) {
 	run("tag", "-a", "v2.0.0-rc1", "-m", "rc") // annotated: exercises peeled dedup
 	run("tag", "other-3.0")                    // wrong scheme: excluded
 
-	versions, err := Tags(context.Background(), Repo{URL: dir, TagPrefix: "v"})
+	versions, err := Tags(context.Background(), tool.NewFinder(nil), Repo{URL: dir, TagPrefix: "v"})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"1.0.0", "1.1.0", "2.0.0-rc1"}, versions)
 }
@@ -164,7 +165,7 @@ func TestTagsStripsSuffix(t *testing.T) {
 	run("tag", "v1.1.0-release")
 	run("tag", "v2.0.0") // suffix missing: not this port's scheme
 
-	versions, err := Tags(context.Background(),
+	versions, err := Tags(context.Background(), tool.NewFinder(nil),
 		Repo{URL: dir, TagPrefix: "v", TagSuffix: "-release"})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"1.0.0", "1.1.0"}, versions)

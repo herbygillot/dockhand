@@ -1,4 +1,4 @@
-package cargo2port
+package cargo
 
 import (
 	"context"
@@ -14,14 +14,16 @@ import (
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
 
-// Blocks is the cargo family's Regenerator: cargo.crates regenerated
-// from the Cargo.lock inside the new distfile, cargo.crates_github
-// vetoed because no generator writes it.
+// Blocks is the cargo family's Regenerator: cargo.crates and
+// cargo.crates_github regenerated together from the Cargo.lock inside
+// the new distfile — the lock rules on which sources are registry and
+// which are git, so the two blocks always describe one crate set. The
+// one veto left is a patch over the lockfile.
 type Blocks struct{}
 
 var _ vendored.Regenerator = Blocks{}
 
-func (Blocks) Kind() vendored.Kind { return Kind }
+func (Blocks) Kind() vendored.Kind { return vendored.CargoCrates }
 
 func (Blocks) Present(vals info.Values) bool {
 	return vals.Vendored.CargoCrates != "" || vals.Vendored.CargoCratesGithub != ""
@@ -30,9 +32,9 @@ func (Blocks) Present(vals info.Values) bool {
 // Veto refuses the one way cargo regeneration would be dishonest,
 // judged before any network: a patch over the lockfile — the built
 // crate set is then not the one upstream shipped, so regenerating
-// from the distfile's copy would state something untrue. The
-// crates_github form is no longer a veto: both blocks regenerate from
-// the new lock together.
+// from the distfile's copy would state something untrue. Both blocks
+// regenerate from the new lock together, so the git form is not a
+// veto.
 func (Blocks) Veto(vals info.Values) (string, bool) {
 	if pf, ok := patchesLockfile(vals); ok {
 		return fmt.Sprintf("%s rewrites %s, so the built crate set is not the one upstream shipped", pf, LockName), true
@@ -57,11 +59,11 @@ func (Blocks) Supplied(_ context.Context, rc vendored.Regen) ([]string, error) {
 // distfile describe the same bytes — re-laid under the existing
 // block's proven geometry when Assess can prove one.
 func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) ([]edit.Edit, error) {
-	span, err := vendored.Locate(rc.Src, rc.CST, portstyle.ScopeOf(rc.Src, rc.Vals.Name), Kind)
+	span, err := vendored.Locate(rc.Src, rc.CST, portstyle.ScopeOf(rc.Src, rc.Vals.Name), vendored.CargoCrates)
 	if err != nil {
 		return nil, err
 	}
-	lock, from, err := Lockfile(ctx, rc.Fetched, rc.ShadowVals.Worksrcdir)
+	lock, from, err := Lockfile(ctx, rc.Tools, rc.Fetched, rc.ShadowVals.Worksrcdir)
 	if err != nil {
 		return nil, err
 	}
@@ -75,15 +77,15 @@ func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) ([]edit.Edit, e
 	}
 	geom, proven := Assess(span.Text(rc.Src))
 	slog.Debug("assessed block layout", "layout", string(geom.Layout), "proven", proven)
-	block, err := Generate(ctx, rc.TempDir, lock, geom.Layout)
+	block, err := Generate(ctx, rc.Tools, rc.TempDir, lock, geom.Layout)
 	if err != nil {
 		return nil, err
 	}
 	if proven {
 		block = Reformat(block, geom)
 	}
-	slog.Debug("regenerated block", "kind", Kind.String(), "bytes", len(block))
-	edits := []edit.Edit{vendored.Edit(rc.Src, span, block, Kind)}
+	slog.Debug("regenerated block", "kind", vendored.CargoCrates.String(), "bytes", len(block))
+	edits := []edit.Edit{vendored.Edit(rc.Src, span, block, vendored.CargoCrates)}
 	ghEdits, err := githubEdits(ctx, rc, span, git)
 	if err != nil {
 		return nil, err

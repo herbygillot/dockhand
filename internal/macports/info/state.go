@@ -67,11 +67,11 @@ type Livecheck struct {
 type Vendored struct {
 	GoVendors   string
 	CargoCrates string
-	// CargoCratesGithub is the cargo block's second form, for crates
-	// taken from a git revision rather than the registry. Two ports in
-	// the tree use it; it supplies distfiles the same way, but no
-	// generator writes it, so an intent that regenerates cargo.crates
-	// must still refuse a port carrying this.
+	// CargoCratesGithub is the cargo block's second form, for crates the
+	// port takes from a GitHub branch rather than the registry. It
+	// supplies distfiles the same way, and the cargo family regenerates
+	// it alongside cargo.crates from the one Cargo.lock: a git source
+	// the new version introduces lands here, and one it drops leaves.
 	CargoCratesGithub string
 }
 

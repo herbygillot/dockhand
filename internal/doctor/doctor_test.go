@@ -8,19 +8,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 func TestReportRendering(t *testing.T) {
 	origVer := runVersion
 	t.Cleanup(func() { runVersion = origVer })
-	t.Cleanup(platform.StubLookup(func(name string) (string, error) {
+	// The probe runs over a stated machine, not this one: a finder
+	// whose PATH search answers for exactly two tools.
+	tools := tool.NewFinder(func(name string) (string, error) {
 		switch name {
 		case "port-tclsh", "git":
 			return "/opt/local/bin/" + name, nil
 		}
 		return "", errors.New("not found")
-	}))
+	})
 	runVersion = func(path string, args ...string) string {
 		if strings.Contains(path, "git") {
 			return "git version 2.4.0"
@@ -28,7 +30,7 @@ func TestReportRendering(t *testing.T) {
 		return ""
 	}
 
-	out := Probe().String()
+	out := Probe(tools).String()
 	require.Contains(t, out, "port-tclsh   /opt/local/bin/port-tclsh")
 	require.Contains(t, out, "tclsh        missing")
 	require.Contains(t, out, "below the 2.5 floor")

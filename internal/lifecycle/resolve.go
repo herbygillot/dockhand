@@ -21,13 +21,13 @@ func ResolveBranch(ctx context.Context, repo *git.Repo, target string) (string, 
 	if repo.HasBranch(ctx, target) {
 		return target, nil
 	}
-	branches, err := repo.Branches(ctx, "dockhand/")
+	branches, err := repo.Branches(ctx, git.BranchNamespace)
 	if err != nil {
 		return "", err
 	}
 	var matches []string
 	for _, br := range branches {
-		if strings.HasPrefix(br, "dockhand/"+target+"-") {
+		if strings.HasPrefix(br, git.BranchNamespace+target+"-") {
 			matches = append(matches, br)
 		}
 	}

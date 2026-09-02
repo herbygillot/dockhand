@@ -9,8 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
+
+// tools is the finder these tests hand in. The machine is stubbed
+// below `tart list`, so it is never asked for tart.
+var tools = tool.NewFinder(nil)
 
 const tartListFixture = `Source Name              Disk   Size  Accessed      State
 local  dockhand-base-a   50 GB  23 GB 15 hours ago  stopped
@@ -31,13 +36,13 @@ func stubMachine(t *testing.T, list string) {
 	tmp := t.TempDir()
 	origCache, origList := cacheDir, listVMs
 	cacheDir = func() (string, error) { return tmp, nil }
-	listVMs = func(context.Context) (string, error) { return list, nil }
+	listVMs = func(context.Context, *tool.Finder) (string, error) { return list, nil }
 	t.Cleanup(func() { cacheDir = origCache; listVMs = origList })
 }
 
 func TestAdmitRefusesTypedAtCapacity(t *testing.T) {
 	stubMachine(t, tartListFixture) // two running
-	_, err := Admit(context.Background(), 2)
+	_, err := Admit(context.Background(), tools, 2)
 	var cap_ *verify.CapacityError
 	require.ErrorAs(t, err, &cap_)
 	assert.Equal(t, 2, cap_.Busy)
@@ -45,19 +50,19 @@ func TestAdmitRefusesTypedAtCapacity(t *testing.T) {
 	assert.Equal(t, 3, cap_.ExitCode(), "capacity is the machine band")
 
 	// A refusal holds no lock: the next caller with room admits.
-	unlock, err := Admit(context.Background(), 3)
+	unlock, err := Admit(context.Background(), tools, 3)
 	require.NoError(t, err)
 	unlock()
 }
 
 func TestAdmitSerializesConcurrentStarts(t *testing.T) {
 	stubMachine(t, "Source Name Disk Size Accessed State\n") // empty machine
-	unlock, err := Admit(context.Background(), 2)
+	unlock, err := Admit(context.Background(), tools, 2)
 	require.NoError(t, err)
 
 	second := make(chan error, 1)
 	go func() {
-		u2, err := Admit(context.Background(), 2)
+		u2, err := Admit(context.Background(), tools, 2)
 		if err == nil {
 			u2()
 		}

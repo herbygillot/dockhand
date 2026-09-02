@@ -17,7 +17,7 @@ type doctorAction struct{}
 var _ Action = doctorAction{}
 
 func (doctorAction) Execute(_ context.Context, rs *runstate.Context) error {
-	_, err := fmt.Fprint(rs.Out, doctor.Probe())
+	_, err := fmt.Fprint(rs.Out, doctor.Probe(rs.Tools))
 	return err
 }
 

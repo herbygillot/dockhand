@@ -1,3 +1,21 @@
+// Package runstate is one dockhand run: what the user asked for
+// through the global flags, and the run-scoped facilities every
+// command draws from — the prefix, the repository, the temp root,
+// evaluators, the fetch session — each resolved once and shut down
+// together, so every part of one invocation agrees on which
+// installation, which repository, and which tree it is in, and a
+// failed run leaves nothing behind. The tool finder, the verify
+// provider and the gh seam are fields, wired by the composition root
+// and stood in by tests; a package-level seam would be mutable global
+// state.
+//
+// The layering rule: a Context reaches the application layer — cmd's
+// Actions and the lifecycle engine, which needs the run's streams,
+// seams, and services throughout — and stops there. The domain
+// packages (planners, styles, evaluation, vendored families) take only
+// what they need — a Prefix, an Evaluator, a tempdir.Root — because a
+// planner that accepted a Context would be a planner that could reach
+// the command line.
 package runstate
 
 import (
@@ -14,22 +32,17 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/tempdir"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// Context is one dockhand run's state: what the user asked for through the
-// global flags, and the run-scoped facilities every command draws from.
-// Commands took these from *cobra.Command directly, which meant each
-// re-derived the prefix and the tree for itself and acquired evaluators
-// two different ways. One run, resolved once.
-//
-// The layering rule, restated after the lifecycle extraction: Context
-// reaches the APPLICATION layer — Actions and the lifecycle engine,
-// which needs the run's streams, seams, and services throughout — and
-// stops there. The DOMAIN packages (planners, styles, evaluation,
-// vendored families) still take only what they need — a Prefix, an
-// Evaluator, a tempdir.Root — because a planner that accepted a
-// Context would be a planner that could reach the command line.
+// Context is one dockhand run's state: what the user asked for through
+// the global flags, and the run-scoped facilities every command draws
+// from — each resolved once, so every part of one invocation agrees
+// on which installation, repository, and tree it is in. The root
+// command builds it from the global flags and carries it on the
+// context.Context (Into/From); the package comment says how far it
+// reaches.
 type Context struct {
 	// TreeRoot and PrefixPath are as the user gave them; empty means
 	// discover. Debug is the flag, already applied to the logger.
@@ -37,6 +50,13 @@ type Context struct {
 	PrefixPath string
 	Debug      bool
 
+	// Tools finds the external programs this run drives — git, tart,
+	// gh, the block generators — one finder built at the composition
+	// root and handed to every component that execs, so doctor's
+	// answer and the working code's are the same lookup. A pointer:
+	// the finder carries a lock and a memo, and status copies this
+	// Context by value to reroute its prose.
+	Tools *tool.Finder
 	// Verifier resolves the machine's verify provider — wired by the
 	// composition root (cmd's Root), stood in by tests. A package-level
 	// seam would be mutable global state; a Context field is the same
@@ -108,7 +128,7 @@ func (rc *Context) Prefix() (prefix.Prefix, error) {
 		if rc.PrefixPath != "" {
 			rc.pfx, rc.pfxErr = prefix.New(rc.PrefixPath)
 		} else {
-			rc.pfx, rc.pfxErr = prefix.Find()
+			rc.pfx, rc.pfxErr = prefix.Find(rc.Tools)
 		}
 	}
 	return rc.pfx, rc.pfxErr
@@ -126,7 +146,7 @@ func (rc *Context) Repo(ctx context.Context) (*git.Repo, error) {
 		if dir == "" {
 			dir = "."
 		}
-		rc.repo, rc.repoErr = git.Open(ctx, dir)
+		rc.repo, rc.repoErr = git.Open(ctx, rc.Tools, dir)
 		if rc.repoErr == nil {
 			slog.Debug("repository", "root", rc.repo.Root)
 		}

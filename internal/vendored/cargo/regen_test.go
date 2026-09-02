@@ -1,4 +1,4 @@
-package cargo2port
+package cargo
 
 import (
 	"os"

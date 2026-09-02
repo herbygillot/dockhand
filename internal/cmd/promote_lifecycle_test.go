@@ -109,8 +109,9 @@ func promoteRepo(t *testing.T) (*git.Repo, string) {
 func promoteState(t *testing.T, repo *git.Repo, gh *ghFake) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb, Gh: gh.run,
-		Verifier: lifecycle.RealVMProvider}
+	tools := testFinder()
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: tools, Out: &out, Err: &errb, Gh: gh.run,
+		Verifier: lifecycle.RealVMProvider(tools)}
 	return rs, &out, &errb
 }
 
@@ -127,7 +128,7 @@ func TestPromoteOpensThePR(t *testing.T) {
 	assert.Contains(t, body, "Testos: linted clean, built in a pristine VM")
 	assert.Contains(t, body, "- [x] checked that there aren't other open [pull requests]",
 		"a clean search checks the box")
-	assert.Contains(t, creates[0], "jq: update to 1.8", "the title is the lifecycle.Minted commit's subject")
+	assert.Contains(t, creates[0], "jq: update to 1.8", "the title is the minted commit's subject")
 	assert.Equal(t, "herby", repo.TrackedRemote(context.Background(), "dockhand/jq-1.8"))
 }
 

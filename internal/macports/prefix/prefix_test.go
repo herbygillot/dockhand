@@ -4,19 +4,20 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
-func fakeLookPath(t *testing.T, fn func(string) (string, error)) {
-	t.Helper()
-	t.Cleanup(platform.StubLookup(fn))
+// finder builds the run's tool finder over a fake PATH search, so
+// discovery is tested against a stated machine rather than this one.
+func finder(fn func(string) (string, error)) *tool.Finder {
+	return tool.NewFinder(fn)
 }
 
 // installed builds a directory that passes for an installation.
@@ -24,7 +25,7 @@ func installed(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bin"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "bin", macports.TclShellName), []byte("#!"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bin", string(tool.PortTclsh)), []byte("#!"), 0o755))
 	return dir
 }
 
@@ -46,29 +47,29 @@ func TestNewValidates(t *testing.T) {
 }
 
 func TestFindViaPath(t *testing.T) {
-	fakeLookPath(t, func(string) (string, error) {
+	tools := finder(func(string) (string, error) {
 		return "/opt/somewhere/bin/port-tclsh", nil
 	})
-	p, err := find("/nonexistent")
+	p, err := find(tools, "/nonexistent")
 	require.NoError(t, err)
 	assert.Equal(t, Prefix("/opt/somewhere"), p)
 }
 
 func TestFindViaDefaultPrefix(t *testing.T) {
-	fakeLookPath(t, func(string) (string, error) {
+	tools := finder(func(string) (string, error) {
 		return "", errors.New("not on PATH")
 	})
 	dir := installed(t)
-	p, err := find(dir)
+	p, err := find(tools, dir)
 	require.NoError(t, err)
 	assert.Equal(t, Prefix(dir), p)
 }
 
 func TestFindNotInstalled(t *testing.T) {
-	fakeLookPath(t, func(string) (string, error) {
+	tools := finder(func(string) (string, error) {
 		return "", errors.New("not on PATH")
 	})
-	_, err := find(t.TempDir())
+	_, err := find(tools, t.TempDir())
 	require.ErrorIs(t, err, ErrNotInstalled)
 }
 
@@ -109,4 +110,25 @@ func TestLayoutPathsNeedNoValidation(t *testing.T) {
 	e := Prefix("/opt/dockhand/e/abc123")
 	assert.Equal(t, "/opt/dockhand/e/abc123/bin/portindex", e.Portindex())
 	assert.Equal(t, "/opt/dockhand/e/abc123/etc/macports/sources.conf", e.SourcesConf())
+}
+
+// A failing port client is reported in os/exec's words, not its own:
+// Version has always wrapped "exit status N", and the seam's failure
+// type stops at the seam.
+func TestVersionWrapsExecsOwnWordsOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "bin"), 0o755))
+	port := filepath.Join(dir, "bin", "port")
+	require.NoError(t, os.WriteFile(port, []byte("#!/bin/sh\necho 'Error: port version failed' >&2\nexit 1\n"), 0o755))
+
+	_, err := runVersion(context.Background(), port, "version")
+	require.Error(t, err)
+	var ee *exec.ExitError
+	require.ErrorAs(t, err, &ee)
+	var f *tool.Failure
+	assert.NotErrorAs(t, err, &f, "the seam's failure type does not reach the caller")
+
+	_, err = Prefix(dir).Version(context.Background())
+	require.ErrorAs(t, err, &ee)
+	assert.Equal(t, "prefix: "+port+" version: exit status 1", err.Error())
 }

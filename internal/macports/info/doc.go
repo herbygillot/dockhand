@@ -3,5 +3,8 @@
 // every consumer of port knowledge shares — identity (who a context is) and
 // state (what it evaluates to) — with no machinery attached: naming a port,
 // keying a snapshot, or comparing two of them never requires importing the
-// evaluator. Only macports/eval produces these values.
+// evaluator. Real values come from macports/eval, the one producer in
+// the tree; the types themselves are plain data, which is what lets
+// plan render an added context against an empty Values and a test
+// build one by hand.
 package info

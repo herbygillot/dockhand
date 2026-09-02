@@ -29,7 +29,7 @@ func TestCancelReleasesAKeptFailureEnvironment(t *testing.T) {
 
 	fake := &verifytest.Fake{}
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb,
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb,
 		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 
 	require.NoError(t, cancelAction{target: "jq"}.Execute(ctx, rs))
@@ -55,7 +55,7 @@ func TestCancelWithNothingToFreeSaysSo(t *testing.T) {
 
 	fake := &verifytest.Fake{}
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb,
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb,
 		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 
 	require.NoError(t, cancelAction{target: "jq"}.Execute(ctx, rs))
@@ -70,7 +70,7 @@ func TestCancelWithNothingToFreeSaysSo(t *testing.T) {
 func TestBranchPortNameHonorsTargetThenNote(t *testing.T) {
 	repo, sha := lifecycleRepo(t)
 	ctx := context.Background()
-	rs := &runstate.Context{TreeRoot: repo.Root}
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder()}
 
 	// The user typed a port name and it matched the branch: that name
 	// is the port, portdir base be damned.

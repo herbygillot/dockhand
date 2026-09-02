@@ -1,12 +1,12 @@
-// Package macports holds core MacPorts facts: the names, paths, and defaults
-// that MacPorts itself defines. Subpackages build machinery on these facts
-// (tree resolves targets, eval evaluates them, base probes the
-// installation); this package stays declarative.
+// Package macports holds core MacPorts facts: the names, paths, and
+// defaults that MacPorts itself defines, and VerCmp — base's own
+// version ordering, a fact of MacPorts rather than of any machine.
+// Subpackages build machinery on these facts (tree resolves targets,
+// eval evaluates them, prefix probes the installation).
 //
-// Everything here is a convention or a default, not a probe result. What is
-// actually true of a given machine — where its prefix is, which tools are
-// present — is discovered at runtime (see base), never assumed from these
-// values.
+// Nothing here is a probe result. What is actually true of a given
+// machine — where its prefix is, which tools are present — is
+// discovered at runtime (see prefix), never assumed from these values.
 package macports
 
 const (
@@ -31,11 +31,9 @@ const (
 	// accelerator alongside it.
 	IndexQuickFile = "PortIndex.quick"
 
-	// TclShellName is the file name of MacPorts' Tcl shell, installed
-	// under an installation prefix's bin directory.
-	TclShellName = "port-tclsh"
-
-	// CommandName is the file name of the port client, alongside it.
+	// CommandName is the file name of the port client, in an
+	// installation prefix's bin directory beside port-tclsh — which is
+	// named once, as tool.PortTclsh, because dockhand also drives it.
 	CommandName = "port"
 
 	// IndexCommandName is the name of the tool that builds a tree's

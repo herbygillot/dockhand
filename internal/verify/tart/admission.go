@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/lockfile"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -32,7 +33,7 @@ var cacheDir = func() (string, error) {
 // start — until its new VM is itself visible as running — so two
 // dockhands serialize their starts instead of both counting the same
 // free slot.
-func Admit(ctx context.Context, capacity int) (func(), error) {
+func Admit(ctx context.Context, tools *tool.Finder, capacity int) (func(), error) {
 	dir, err := cacheDir()
 	if err != nil {
 		return nil, err
@@ -41,7 +42,7 @@ func Admit(ctx context.Context, capacity int) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	busy, err := runningVMs(ctx)
+	busy, err := runningVMs(ctx, tools)
 	if err != nil {
 		unlock()
 		return nil, err
@@ -55,8 +56,8 @@ func Admit(ctx context.Context, capacity int) (func(), error) {
 
 // listVMs reads `tart list` — a variable so the admission behavior is
 // testable without tart.
-var listVMs = func(ctx context.Context) (string, error) {
-	return CLI(ctx, nil, "list")
+var listVMs = func(ctx context.Context, tools *tool.Finder) (string, error) {
+	return CLI(ctx, tools, nil, "list")
 }
 
 // runningVMs counts every running VM on the machine, whoever started
@@ -67,8 +68,8 @@ var listVMs = func(ctx context.Context) (string, error) {
 // lock and cannot be made to; the live recount narrows that race to
 // the admission window but cannot close it, and Apple's own cap is
 // the final arbiter.
-func runningVMs(ctx context.Context) (int, error) {
-	out, err := listVMs(ctx)
+func runningVMs(ctx context.Context, tools *tool.Finder) (int, error) {
+	out, err := listVMs(ctx, tools)
 	if err != nil {
 		return 0, fmt.Errorf("%w: listing VMs for admission: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
@@ -94,10 +95,10 @@ func countRunning(out string) int {
 // visibly — and so a `tart run` that fails at startup surfaces as its
 // own error rather than being discovered through a two-minute agent
 // timeout.
-func WaitRunning(ctx context.Context, vm string, runErr <-chan error) error {
+func WaitRunning(ctx context.Context, tools *tool.Finder, vm string, runErr <-chan error) error {
 	deadline := time.After(30 * time.Second)
 	for {
-		out, err := CLI(ctx, nil, "list")
+		out, err := CLI(ctx, tools, nil, "list")
 		if err == nil {
 			for _, line := range strings.Split(out, "\n") {
 				fields := strings.Fields(line)

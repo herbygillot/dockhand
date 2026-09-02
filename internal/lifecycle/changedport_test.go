@@ -55,7 +55,7 @@ func subportRepo(t *testing.T) (*git.Repo, string) {
 	run("add", ".")
 	run("commit", "--quiet", "-m", "initial tree")
 
-	repo, err := git.Open(context.Background(), dir)
+	repo, err := git.Open(context.Background(), realTools, dir)
 	require.NoError(t, err)
 	primary, err := repo.PrimaryBranch(context.Background())
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestChangedPortNamesTheSubportTheBranchMoves(t *testing.T) {
 	testenv.PortTclsh(t)
 	repo, sha := subportRepo(t)
 	var buf bytes.Buffer
-	rs := &runstate.Context{Out: &buf, Err: &buf}
+	rs := &runstate.Context{Tools: realTools, Out: &buf, Err: &buf}
 
 	name, err := ChangedPort(context.Background(), rs, repo, sha, "sysutils/demo")
 	require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestChangedPortFallsBackWhenNothingEvaluatedMoves(t *testing.T) {
 	})
 	require.NoError(t, err)
 	var buf bytes.Buffer
-	rs := &runstate.Context{Out: &buf, Err: &buf}
+	rs := &runstate.Context{Tools: realTools, Out: &buf, Err: &buf}
 
 	name, err := ChangedPort(context.Background(), rs, repo, sha, "sysutils/demo")
 	require.NoError(t, err)

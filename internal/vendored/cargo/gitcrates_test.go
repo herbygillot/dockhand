@@ -1,4 +1,4 @@
-package cargo2port
+package cargo
 
 import (
 	"archive/tar"
@@ -161,7 +161,7 @@ func repoTarball(manifest string) []byte {
 
 func TestBuildGithubBlockFetchesEachRevisionAndRendersTheTreeShape(t *testing.T) {
 	fake := &fetchFake{}
-	block, err := buildGithubBlock(t.Context(), vendored.Regen{Fetch: fake}, []gitCrate{
+	block, err := buildGithubBlock(t.Context(), vendored.Regen{Fetch: fake, Tools: tools}, []gitCrate{
 		{Name: "ratatui-core", Repo: "sxyazi/ratatui", Branch: "fix", Revision: "dde5e05e59606cbba07340bd1cbb2d88866bc4a5"},
 		{Name: "other", Repo: "o/p", Branch: "main", Revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 	})
@@ -184,7 +184,7 @@ func TestBuildGithubBlockFetchesEachRevisionAndRendersTheTreeShape(t *testing.T)
 // yazi failure, judged before any branch is minted.
 func TestBuildGithubBlockDeclinesAWorkspaceRepo(t *testing.T) {
 	fake := &fetchFake{manifest: "[workspace]\nmembers = [\"ratatui-core\"]\n"}
-	_, err := buildGithubBlock(t.Context(), vendored.Regen{Fetch: fake}, []gitCrate{
+	_, err := buildGithubBlock(t.Context(), vendored.Regen{Fetch: fake, Tools: tools}, []gitCrate{
 		{Name: "ratatui-core", Repo: "yazi-rs/ratatui", Branch: "fix", Revision: "dde5e05e59606cbba07340bd1cbb2d88866bc4a5"},
 	})
 	var d *plan.Decline
@@ -241,6 +241,7 @@ func githubRegen(t *testing.T, portfile string) vendored.Regen {
 		Src: src, CST: cst,
 		Vals:  info.Values{Name: "demo"},
 		Fetch: &fetchFake{},
+		Tools: tools,
 	}
 }
 

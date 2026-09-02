@@ -7,8 +7,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
@@ -35,47 +35,51 @@ func (e *VerifyFailedError) Error() string {
 // not the machine, not the invocation — the port does not build.
 func (e *VerifyFailedError) ExitCode() int { return exitcode.Verify }
 
-// TartPresent reports whether the local verify provider exists at all.
-// Its absence is a different fact from "present but unprovisioned": a
-// machine without tart cannot verify, so verification quietly leaves
-// the contract (bump warns and proceeds; promote warns and allows),
-// where a machine with tart and no bases is asked to provision.
-func TartPresent() bool {
-	return platform.Have(platform.Tart)
+// TartPresent reports whether the local verify provider exists at all,
+// as the run's finder sees the machine. Its absence is a different
+// fact from "present but unprovisioned": a machine without tart cannot
+// verify, so verification quietly leaves the contract (bump warns and
+// proceeds; promote warns and allows), where a machine with tart and
+// no bases is asked to provision.
+func TartPresent(tools *tool.Finder) bool {
+	return tools.Have(tool.Tart)
 }
 
-// RealVMProvider resolves the machine's verify provider — the tart
-// provider assembled from the base images actually present. Both ways
-// of having no environment (tart absent, tart present with no bases)
-// are ErrNoEnvironment with the remedy named, which is what routes a
-// bump to "the branch stands" rather than a raw exec error. It is
-// wired into runstate.Context by the composition root; everything in
-// this package reaches it through rs.VerifyProvider, which is what
-// lets tests stand in an in-memory verifier without mutating globals.
-func RealVMProvider(ctx context.Context) (verify.Verifier, error) {
-	if _, err := platform.Find(platform.Tart); err != nil {
-		return nil, fmt.Errorf(
-			"%w: tart is not installed (`port install tart`); --no-verify skips verification",
-			verify.ErrNoEnvironment)
+// RealVMProvider builds the resolver of the machine's verify provider
+// — the tart provider assembled from the base images actually present,
+// found through the run's finder. Both ways of having no environment
+// (tart absent, tart present with no bases) are ErrNoEnvironment with
+// the remedy named, which is what routes a bump to "the branch stands"
+// rather than a raw exec error. The composition root wires the
+// resolver into runstate.Context; everything in this package reaches
+// it through rs.VerifyProvider, which is what lets tests stand in an
+// in-memory verifier without mutating globals.
+func RealVMProvider(tools *tool.Finder) func(ctx context.Context) (verify.Verifier, error) {
+	return func(ctx context.Context) (verify.Verifier, error) {
+		if _, err := tools.Find(tool.Tart); err != nil {
+			return nil, fmt.Errorf(
+				"%w: tart is not installed (`port install tart`); --no-verify skips verification",
+				verify.ErrNoEnvironment)
+		}
+		releases, err := (provision.Tart{Tools: tools}).Provisioned(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(releases) == 0 {
+			return nil, fmt.Errorf(
+				"%w: no base images; run `dockhand provision tart --macos <release>` first",
+				verify.ErrNoEnvironment)
+		}
+		// Newest first: the provider's default is its first base, and
+		// the default a quick bump wants is the current OS — the
+		// mundane-build check — not the oldest. Platform-floor
+		// archaeology asks for old releases by name.
+		bases := make([]tart.Base, 0, len(releases))
+		for i := len(releases) - 1; i >= 0; i-- {
+			bases = append(bases, tart.Base{VM: tart.BaseName(releases[i]), Release: releases[i]})
+		}
+		return tart.Provider{Bases: bases, Tools: tools}, nil
 	}
-	releases, err := (provision.Tart{}).Provisioned(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(releases) == 0 {
-		return nil, fmt.Errorf(
-			"%w: no base images; run `dockhand provision tart --macos <release>` first",
-			verify.ErrNoEnvironment)
-	}
-	// Newest first: the provider's default is its first base, and the
-	// default a quick bump wants is the current OS — the mundane-build
-	// check — not the oldest. Platform-floor archaeology asks for old
-	// releases by name.
-	bases := make([]tart.Base, 0, len(releases))
-	for i := len(releases) - 1; i >= 0; i-- {
-		bases = append(bases, tart.Base{VM: tart.BaseName(releases[i]), Release: releases[i]})
-	}
-	return tart.Provider{Bases: bases}, nil
 }
 
 // CancelStale releases everything a branch's superseded commits still
@@ -118,18 +122,18 @@ func CancelStale(ctx context.Context, rs *runstate.Context, repo *git.Repo, bran
 				if err := prov.Release(ctx, run.Job); err != nil {
 					fmt.Fprintf(rs.Err, "warning: canceling %s: %v\n", run.Job.ID, err)
 				}
-				run.State, run.Detail = "superseded", "canceled: the branch moved to "+tip[:12]
+				run.State, run.Detail = "superseded", "canceled: the branch moved to "+git.Abbrev(tip)
 			case run.State == "failed" && run.Handle != "":
 				if err := prov.Release(ctx, run.Job); err != nil {
 					fmt.Fprintf(rs.Err, "warning: releasing kept environment %s: %v\n", run.Handle, err)
 				}
 				run.State, run.Handle = "superseded", ""
-				run.Detail = "failed here, then the branch moved to " + tip[:12] + " — kept environment released"
+				run.Detail = "failed here, then the branch moved to " + git.Abbrev(tip) + " — kept environment released"
 			default:
 				continue
 			}
 			n.Runs[plat], changed = run, true
-			fmt.Fprintf(rs.Err, "released stale verification of %s on %s (branch moved past it)\n", sha[:12], plat)
+			fmt.Fprintf(rs.Err, "released stale verification of %s on %s (branch moved past it)\n", git.Abbrev(sha), plat)
 		}
 		if changed {
 			if err := WriteNote(ctx, repo, n); err != nil {

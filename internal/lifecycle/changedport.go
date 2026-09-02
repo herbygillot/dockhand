@@ -64,7 +64,7 @@ func ChangedPort(ctx context.Context, rs *runstate.Context, repo *git.Repo, tip,
 		h := port.New(tree.Target{Portdir: filepath.Join(stage, filepath.FromSlash(rel))}, p.Evaluators()[0])
 		snap, err := h.Snapshot(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("lifecycle: evaluating %s at %s: %w", rel, sha[:12], err)
+			return nil, fmt.Errorf("lifecycle: evaluating %s at %s: %w", rel, git.Abbrev(sha), err)
 		}
 		return snap, nil
 	}

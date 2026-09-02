@@ -45,7 +45,7 @@ func lifecycleRepo(t *testing.T) (*git.Repo, string) {
 	run("add", ".")
 	run("commit", "--quiet", "-m", "initial tree")
 
-	repo, err := git.Open(context.Background(), dir)
+	repo, err := git.Open(context.Background(), testFinder(), dir)
 	require.NoError(t, err)
 	primary, err := repo.PrimaryBranch(context.Background())
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 	runningNote(t, repo, sha, "fake-1")
 
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb,
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb,
 		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 	require.NoError(t, statusAction{json: true}.Execute(context.Background(), rs))
 
@@ -117,7 +117,7 @@ func TestStatusJSONKeepsStdoutPureUnderAutoclean(t *testing.T) {
 	require.NoError(t, repo.Push(context.Background(), "herby", "dockhand/jq-1.8"))
 
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb, Gh: gh.run,
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb, Gh: gh.run,
 		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 	require.NoError(t, statusAction{json: true}.Execute(context.Background(), rs))
 

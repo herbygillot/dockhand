@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
@@ -64,7 +65,7 @@ func TestClassifyBadPrefix(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(portdir, "Portfile"), []byte("PortSystem 1.0\n"), 0o644))
 	err := run(t, "classify", "-p", t.TempDir(), portdir)
 	require.ErrorIs(t, err, prefix.ErrNotInstalled)
-	assert.Equal(t, ExitEnvironment, ExitCode(err))
+	assert.Equal(t, exitcode.Environment, ExitCode(err))
 }
 
 func TestClassifyClusteredShortFlags(t *testing.T) {
@@ -90,34 +91,34 @@ func TestVersionForms(t *testing.T) {
 
 func TestExitCodesThroughExecution(t *testing.T) {
 	t.Setenv("DOCKHAND_TREE", "")
-	assert.Equal(t, ExitOK, code(t, "version"))
-	assert.Equal(t, ExitOK, code(t, "--help"))
-	assert.Equal(t, ExitUsage, code(t, "nonsense"))
-	assert.Equal(t, ExitUsage, code(t, "classify", "--no-such-flag"))
-	assert.Equal(t, ExitUsage, code(t, "doctor", "extra"))
-	assert.Equal(t, ExitUsage, code(t, "classify", "-t", t.TempDir()))
-	assert.Equal(t, ExitUsage, code(t, "classify", "someport"))
-	assert.Equal(t, ExitTree, code(t, "classify", "-at", t.TempDir()))
+	assert.Equal(t, exitcode.OK, code(t, "version"))
+	assert.Equal(t, exitcode.OK, code(t, "--help"))
+	assert.Equal(t, exitcode.Usage, code(t, "nonsense"))
+	assert.Equal(t, exitcode.Usage, code(t, "classify", "--no-such-flag"))
+	assert.Equal(t, exitcode.Usage, code(t, "doctor", "extra"))
+	assert.Equal(t, exitcode.Usage, code(t, "classify", "-t", t.TempDir()))
+	assert.Equal(t, exitcode.Usage, code(t, "classify", "someport"))
+	assert.Equal(t, exitcode.Tree, code(t, "classify", "-at", t.TempDir()))
 }
 
 func TestExitCodeMapping(t *testing.T) {
-	assert.Equal(t, ExitOK, ExitCode(nil))
-	assert.Equal(t, ExitFailure, ExitCode(errors.New("boom")))
-	assert.Equal(t, ExitUsage, ExitCode(usagef("bad invocation")))
-	assert.Equal(t, ExitUsage, ExitCode(fmt.Errorf("outer: %w", usagef("inner"))))
-	assert.Equal(t, ExitTree, ExitCode(fmt.Errorf("outer: %w", tree.ErrPortNotFound)))
-	assert.Equal(t, ExitTree, ExitCode(tree.ErrNotPortsTree))
-	assert.Equal(t, ExitEnvironment, ExitCode(prefix.ErrNotInstalled))
-	assert.Equal(t, ExitEnvironment, ExitCode(fmt.Errorf("sweep: %w", eval.ErrStartup)))
-	assert.Equal(t, ExitEnvironment, ExitCode(eval.ErrRootRefused))
-	// A lifecycle.Minted branch whose verification could not start: the branch
+	assert.Equal(t, exitcode.OK, ExitCode(nil))
+	assert.Equal(t, exitcode.Failure, ExitCode(errors.New("boom")))
+	assert.Equal(t, exitcode.Usage, ExitCode(usagef("bad invocation")))
+	assert.Equal(t, exitcode.Usage, ExitCode(fmt.Errorf("outer: %w", usagef("inner"))))
+	assert.Equal(t, exitcode.Tree, ExitCode(fmt.Errorf("outer: %w", tree.ErrPortNotFound)))
+	assert.Equal(t, exitcode.Tree, ExitCode(tree.ErrNotPortsTree))
+	assert.Equal(t, exitcode.Environment, ExitCode(prefix.ErrNotInstalled))
+	assert.Equal(t, exitcode.Environment, ExitCode(fmt.Errorf("sweep: %w", eval.ErrStartup)))
+	assert.Equal(t, exitcode.Environment, ExitCode(eval.ErrRootRefused))
+	// A minted branch whose verification could not start: the branch
 	// stands, and the exit says the machine owes a follow-up.
-	assert.Equal(t, ExitEnvironment, ExitCode(&lifecycle.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
-	assert.Equal(t, ExitVerify, ExitCode(&lifecycle.VerifyFailedError{Port: "jq"}))
+	assert.Equal(t, exitcode.Environment, ExitCode(&lifecycle.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
+	assert.Equal(t, exitcode.Verify, ExitCode(&lifecycle.VerifyFailedError{Port: "jq"}))
 	// An in-flight branch is a refusal with a remedy, and a tree that
 	// is not a git checkout is a fact about the tree.
-	assert.Equal(t, ExitDeclined, ExitCode(&lifecycle.BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
-	assert.Equal(t, ExitTree, ExitCode(fmt.Errorf("wrapped: %w", git.ErrNotARepo)))
+	assert.Equal(t, exitcode.Declined, ExitCode(&lifecycle.BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
+	assert.Equal(t, exitcode.Tree, ExitCode(fmt.Errorf("wrapped: %w", git.ErrNotARepo)))
 }
 
 // failWriter fails every write, standing in for the cases a redirected
@@ -146,45 +147,45 @@ func TestDoctorSucceedsWhenItsReportLands(t *testing.T) {
 // bump's flag contradictions are caught before anything is resolved or
 // evaluated, so these hold on a machine with no MacPorts at all.
 func TestBumpToAndLatestAreExclusive(t *testing.T) {
-	assert.Equal(t, ExitUsage, code(t, "bump", "--to", "1.0", "--latest", "someport"))
+	assert.Equal(t, exitcode.Usage, code(t, "bump", "--to", "1.0", "--latest", "someport"))
 }
 
 func TestBumpRejectsToLatestAsAVersion(t *testing.T) {
-	assert.Equal(t, ExitUsage, code(t, "bump", "--to", "latest", "someport"))
+	assert.Equal(t, exitcode.Usage, code(t, "bump", "--to", "latest", "someport"))
 }
 
 func TestBumpTakesExactlyOnePort(t *testing.T) {
-	assert.Equal(t, ExitUsage, code(t, "bump"))
-	assert.Equal(t, ExitUsage, code(t, "bump", "a", "b"))
+	assert.Equal(t, exitcode.Usage, code(t, "bump"))
+	assert.Equal(t, exitcode.Usage, code(t, "bump", "a", "b"))
 }
 
 func TestRefreshChecksumsTakesExactlyOnePort(t *testing.T) {
-	assert.Equal(t, ExitUsage, code(t, "refresh-checksums"))
-	assert.Equal(t, ExitUsage, code(t, "refresh-checksums", "a", "b"))
+	assert.Equal(t, exitcode.Usage, code(t, "refresh-checksums"))
+	assert.Equal(t, exitcode.Usage, code(t, "refresh-checksums", "a", "b"))
 }
 
 // "refresh" is the short form a hand types; the canonical name matches
 // the intent catalogue.
 func TestRefreshAliasResolves(t *testing.T) {
-	assert.Equal(t, ExitUsage, code(t, "refresh"),
+	assert.Equal(t, exitcode.Usage, code(t, "refresh"),
 		"the alias reaches the same command, whose arity check fires")
 }
 
 // provision's usage errors are caught before anything touches tart, so
 // these hold on a machine with nothing installed.
 func TestProvisionTartRequiresARelease(t *testing.T) {
-	assert.Equal(t, ExitUsage, code(t, "provision", "tart"))
-	assert.Equal(t, ExitUsage, code(t, "provision", "tart", "--macos", "cheetah"),
+	assert.Equal(t, exitcode.Usage, code(t, "provision", "tart"))
+	assert.Equal(t, exitcode.Usage, code(t, "provision", "tart", "--macos", "cheetah"),
 		"an unknown release is a usage error naming the input, not a guess")
-	assert.Equal(t, ExitUsage, code(t, "provision", "tart", "extra-arg"))
+	assert.Equal(t, exitcode.Usage, code(t, "provision", "tart", "extra-arg"))
 }
 
 // The reason is the human half of a revbump; without it the command is
 // a usage error before anything is resolved.
 func TestBumpRevisionRequiresAReason(t *testing.T) {
-	assert.Equal(t, ExitUsage, code(t, "bump-revision", "someport"))
-	assert.Equal(t, ExitUsage, code(t, "revbump", "someport"), "the alias shares the check")
-	assert.Equal(t, ExitUsage, code(t, "bump-revision"))
+	assert.Equal(t, exitcode.Usage, code(t, "bump-revision", "someport"))
+	assert.Equal(t, exitcode.Usage, code(t, "revbump", "someport"), "the alias shares the check")
+	assert.Equal(t, exitcode.Usage, code(t, "bump-revision"))
 }
 
 func TestOwnerRepoFromURL(t *testing.T) {

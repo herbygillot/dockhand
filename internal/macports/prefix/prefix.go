@@ -13,12 +13,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // ErrNotInstalled reports that no MacPorts installation could be found.
@@ -31,7 +30,7 @@ type Prefix string
 
 // PortTclsh returns the path of the installation's Tcl shell.
 func (p Prefix) PortTclsh() string {
-	return filepath.Join(string(p), "bin", macports.TclShellName)
+	return filepath.Join(string(p), "bin", string(tool.PortTclsh))
 }
 
 // Port returns the path of the installation's port client.
@@ -57,30 +56,39 @@ func (p Prefix) SourcesConf() string {
 func New(dir string) (Prefix, error) {
 	p := Prefix(dir)
 	if _, err := os.Stat(p.PortTclsh()); err != nil {
-		return "", fmt.Errorf("%w (no %s under %s)", ErrNotInstalled, macports.TclShellName, dir)
+		return "", fmt.Errorf("%w (no %s under %s)", ErrNotInstalled, tool.PortTclsh, dir)
 	}
 	return p, nil
 }
 
 // Find discovers an installation: port-tclsh on PATH, whose location
-// implies the prefix, else the conventional default prefix.
-func Find() (Prefix, error) {
-	return find(macports.DefaultPrefix)
+// implies the prefix, else the conventional default prefix. The
+// lookup runs through the run's finder, so what doctor reported and
+// what the run resolves are one answer.
+func Find(tools *tool.Finder) (Prefix, error) {
+	return find(tools, macports.DefaultPrefix)
 }
 
-func find(defaultPrefix string) (Prefix, error) {
-	if path, err := platform.Find(platform.PortTclsh); err == nil {
+func find(tools *tool.Finder, defaultPrefix string) (Prefix, error) {
+	if path, err := tools.Find(tool.PortTclsh); err == nil {
 		return Prefix(filepath.Dir(filepath.Dir(path))), nil
 	}
 	if p, err := New(defaultPrefix); err == nil {
 		return p, nil
 	}
-	return "", fmt.Errorf("%w (no %s on PATH or under %s)", ErrNotInstalled, macports.TclShellName, defaultPrefix)
+	return "", fmt.Errorf("%w (no %s on PATH or under %s)", ErrNotInstalled, tool.PortTclsh, defaultPrefix)
 }
 
-// runVersion is indirected for hermetic tests.
+// runVersion is indirected for hermetic tests. A failure is handed
+// back as os/exec reported it — "exit status 1", a start failure —
+// rather than as the port client's stderr, because that is the text
+// Version has always wrapped and the callers log.
 var runVersion = func(ctx context.Context, path string, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, path, args...).Output()
+	out, _, err := tool.Output(ctx, path, tool.Opts{Args: args})
+	var f *tool.Failure
+	if errors.As(err, &f) {
+		err = f.Err
+	}
 	return string(out), err
 }
 

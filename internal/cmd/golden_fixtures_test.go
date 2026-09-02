@@ -33,9 +33,9 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/testenv"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
@@ -115,7 +115,7 @@ func goldenRepo(t *testing.T) *git.Repo {
 	}
 	run("add", ".")
 	run("commit", "--quiet", "-m", "initial tree")
-	repo, err := git.Open(context.Background(), dir)
+	repo, err := git.Open(context.Background(), testFinder(), dir)
 	require.NoError(t, err)
 	return repo
 }
@@ -221,7 +221,7 @@ func goldenStatesRepo(t *testing.T) (*git.Repo, *verifytest.Fake) {
 	})
 	writeRuns(t, repo, mintBranch(t, repo, "superseded", "3.0"), map[string]lifecycle.Run{
 		"Testos": {State: "superseded", Job: verify.Job{Provider: "fake", ID: "fake-superseded", Started: goldenStart},
-			Detail: "canceled: the branch moved to " + base[:12]},
+			Detail: "canceled: the branch moved to " + git.Abbrev(base)},
 	})
 	// A verdict set: passed and tested on one platform, declined on
 	// another — the multi-line rendering.
@@ -361,17 +361,48 @@ func (g *goldenGh) run(_ context.Context, args ...string) (string, error) {
 	return "", fmt.Errorf("goldenGh: unscripted call %v", args)
 }
 
+// testTools is the finder a test's run resolves tools through, when a
+// test has stated one: tartAbsent and tartOnPath install a finder that
+// answers for tart by name and falls through to the real PATH search
+// for everything else (git is genuinely needed). It is state of the
+// test binary, not of the product — the product has no package-level
+// finder — and it is safe because the tests in this package are serial
+// by design (none calls t.Parallel). testFinder reads it, so the
+// fixtures and states built after the helper ran pick it up and the
+// helpers' call sites stay as they are.
+var testTools *tool.Finder
+
+// stubTart installs a finder for the rest of the test that answers the
+// tart lookup with path and err, and every other lookup for real.
+func stubTart(t *testing.T, path string, err error) {
+	t.Helper()
+	prev := testTools
+	testTools = tool.NewFinder(func(name string) (string, error) {
+		if name == string(tool.Tart) {
+			return path, err
+		}
+		return exec.LookPath(name)
+	})
+	t.Cleanup(func() { testTools = prev })
+}
+
+// testFinder is the finder a fixture or a run state should carry: the
+// stated one when a test stated one, else the real PATH search — the
+// composition root's own answer, for the verbs whose transcript does
+// not depend on tart.
+func testFinder() *tool.Finder {
+	if testTools != nil {
+		return testTools
+	}
+	return tool.NewFinder(nil)
+}
+
 // tartAbsent stubs the tool lookup so TartPresent answers no: no
 // deferred pump, no orphan sweep, whatever the machine has installed.
 // tartOnPath (deferred_pump_test.go) is its counterpart.
 func tartAbsent(t *testing.T) {
 	t.Helper()
-	t.Cleanup(platform.StubLookup(func(name string) (string, error) {
-		if name == string(platform.Tart) {
-			return "", errors.New("tart stubbed absent")
-		}
-		return exec.LookPath(name)
-	}))
+	stubTart(t, "", errors.New("tart stubbed absent"))
 }
 
 // goldenState is a run against the repository with the fake provider
@@ -379,7 +410,7 @@ func tartAbsent(t *testing.T) {
 // provider unwired, which is its own transcript.
 func goldenState(repo *git.Repo, fake *verifytest.Fake) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Out: &out, Err: &errb}
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb}
 	if fake != nil {
 		rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
 )
 
@@ -28,7 +29,7 @@ type provisionXcodeAction struct {
 var _ Action = provisionXcodeAction{}
 
 func (a provisionXcodeAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	releases, err := a.targets(ctx)
+	releases, err := a.targets(ctx, rs.Tools)
 	if err != nil {
 		return err
 	}
@@ -82,12 +83,12 @@ refusing them; re-run with --from %s to check readiness.
 
 // targets picks which releases to explain: the named one, else every
 // release with a provisioned base, else the modern set.
-func (a provisionXcodeAction) targets(ctx context.Context) ([]platform.Release, error) {
+func (a provisionXcodeAction) targets(ctx context.Context, tools *tool.Finder) ([]platform.Release, error) {
 	if !a.release.IsZero() {
 		return []platform.Release{a.release}, nil
 	}
-	if lifecycle.TartPresent() {
-		if rels, err := (provision.Tart{}).Provisioned(ctx); err == nil && len(rels) > 0 {
+	if lifecycle.TartPresent(tools) {
+		if rels, err := (provision.Tart{Tools: tools}).Provisioned(ctx); err == nil && len(rels) > 0 {
 			return rels, nil
 		}
 	}

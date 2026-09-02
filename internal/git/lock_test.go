@@ -22,7 +22,7 @@ func TestSubmitLockIsSharedAcrossLinkedWorktrees(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "linked")
 	out, err := exec.Command("git", "-C", r.Root, "worktree", "add", "--quiet", wt).CombinedOutput()
 	require.NoError(t, err, "%s", out)
-	linked, err := Open(ctx, wt)
+	linked, err := Open(ctx, tools, wt)
 	require.NoError(t, err)
 
 	p1, err := r.commonDirFile(ctx, "dockhand-submit.lock")

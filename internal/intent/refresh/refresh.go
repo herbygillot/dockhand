@@ -33,7 +33,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/vendored"
-	"github.com/herbygillot/dockhand/internal/vendored/cargo2port"
+	"github.com/herbygillot/dockhand/internal/vendored/cargo"
 )
 
 // Refresh is the intent to make a port's recorded checksums true again.
@@ -78,11 +78,11 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}
 	}
 
-	supplied, err := cargo2port.SuppliedIn(vals.Vendored.CargoCrates)
+	supplied, err := cargo.SuppliedIn(vals.Vendored.CargoCrates)
 	if err != nil {
 		return nil, fmt.Errorf("refresh: %w", err)
 	}
-	gitSupplied, err := cargo2port.GithubSuppliedIn(vals.Vendored.CargoCratesGithub)
+	gitSupplied, err := cargo.GithubSuppliedIn(vals.Vendored.CargoCratesGithub)
 	if err != nil {
 		return nil, fmt.Errorf("refresh: %w", err)
 	}

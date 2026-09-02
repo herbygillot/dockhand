@@ -92,10 +92,10 @@ func TestFetchHonorsPortUserAgent(t *testing.T) {
 func TestVercmp(t *testing.T) {
 	f := newFetcher(t)
 	ctx := context.Background()
-	n, err := f.Vercmp(ctx, "1.10", "1.9")
+	n, err := f.vercmp(ctx, "1.10", "1.9")
 	require.NoError(t, err)
 	assert.Positive(t, n)
-	n, err = f.Vercmp(ctx, "1.0", "1.0")
+	n, err = f.vercmp(ctx, "1.0", "1.0")
 	require.NoError(t, err)
 	assert.Zero(t, n)
 }
@@ -198,7 +198,7 @@ func TestVerCmpDifferential(t *testing.T) {
 	}
 	for _, a := range versions {
 		for _, b := range versions {
-			oracle, err := f.Vercmp(ctx, a, b)
+			oracle, err := f.vercmp(ctx, a, b)
 			require.NoError(t, err)
 			require.Equal(t, sign(oracle), sign(macports.VerCmp(a, b)),
 				"VerCmp(%q, %q) disagrees with the oracle", a, b)

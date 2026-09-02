@@ -12,7 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/testenv"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
+
+// tools is the finder the extractor resolves its archiver through: the
+// real one, because the archives here are real.
+var tools = tool.NewFinder(nil)
 
 func TestPickMember(t *testing.T) {
 	cases := []struct {
@@ -89,7 +94,7 @@ func tarballWith(t *testing.T, files map[string]string) string {
 }
 
 // requireTar gates on the archiver the extractor drives. It goes
-// through testenv rather than stat'ing tarPath directly so that a run
+// through testenv rather than stat'ing tool.Tar directly so that a run
 // which is supposed to have tar fails instead of quietly skipping.
 func requireTar(t *testing.T) {
 	t.Helper()
@@ -105,7 +110,7 @@ func TestExtractReadsTheFileUnderThePreferredDirectory(t *testing.T) {
 		"demo-1.0/vendor/dep/Cargo.lock": "version = 9\n",
 		"demo-1.0/src/main.rs":           "fn main() {}\n",
 	})
-	got, from, err := Extract(context.Background(), []string{archive}, "demo-1.0", "Cargo.lock")
+	got, from, err := Extract(context.Background(), tools, []string{archive}, "demo-1.0", "Cargo.lock")
 	require.NoError(t, err)
 	assert.Equal(t, want, string(got))
 	assert.Equal(t, archive, from)
@@ -121,7 +126,7 @@ func TestExtractSkipsCandidatesThatAreNotArchives(t *testing.T) {
 	require.NoError(t, os.WriteFile(manpage, []byte(".TH DEMO 1\n"), 0o644))
 	archive := tarballWith(t, map[string]string{"demo-1.0/Cargo.lock": want})
 
-	got, from, err := Extract(context.Background(), []string{manpage, archive}, "demo-1.0", "Cargo.lock")
+	got, from, err := Extract(context.Background(), tools, []string{manpage, archive}, "demo-1.0", "Cargo.lock")
 	require.NoError(t, err)
 	assert.Equal(t, want, string(got))
 	assert.Equal(t, archive, from, "the man page is skipped, the tarball answers")
@@ -133,7 +138,7 @@ func TestExtractTakesTheFirstCandidateThatCarriesTheFile(t *testing.T) {
 	requireTar(t)
 	bootstrap := tarballWith(t, map[string]string{"toolchain/bin/rustc": "binary\n"})
 	source := tarballWith(t, map[string]string{"demo-1.0/Cargo.lock": "version = 3\n"})
-	got, from, err := Extract(context.Background(), []string{bootstrap, source}, "demo-1.0", "Cargo.lock")
+	got, from, err := Extract(context.Background(), tools, []string{bootstrap, source}, "demo-1.0", "Cargo.lock")
 	require.NoError(t, err)
 	assert.Equal(t, "version = 3\n", string(got))
 	assert.Equal(t, source, from)
@@ -142,7 +147,7 @@ func TestExtractTakesTheFirstCandidateThatCarriesTheFile(t *testing.T) {
 func TestExtractMissingFromEveryCandidate(t *testing.T) {
 	requireTar(t)
 	archive := tarballWith(t, map[string]string{"demo-1.0/Cargo.toml": "[package]\n"})
-	_, _, err := Extract(context.Background(), []string{archive}, "demo-1.0", "Cargo.lock")
+	_, _, err := Extract(context.Background(), tools, []string{archive}, "demo-1.0", "Cargo.lock")
 	require.ErrorIs(t, err, ErrMemberMissing)
 	assert.Contains(t, err.Error(), "src.tar.gz")
 }
@@ -150,6 +155,6 @@ func TestExtractMissingFromEveryCandidate(t *testing.T) {
 func TestExtractEmptyMemberIsNotAnAnswer(t *testing.T) {
 	requireTar(t)
 	archive := tarballWith(t, map[string]string{"demo-1.0/Cargo.lock": ""})
-	_, _, err := Extract(context.Background(), []string{archive}, "demo-1.0", "Cargo.lock")
+	_, _, err := Extract(context.Background(), tools, []string{archive}, "demo-1.0", "Cargo.lock")
 	require.ErrorIs(t, err, ErrMemberMissing)
 }

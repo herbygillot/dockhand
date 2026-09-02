@@ -57,6 +57,8 @@ import (
 // ships. The numbers are pinned here, not merely the names, so a
 // renumbering surfaces as a single failure naming the band rather than
 // as a scattering of subtest failures whose cause is a package away.
+// exitcode's names are the only ones: cmd has no table of its own that
+// could drift from them.
 func TestExitBandsAreTodaysValues(t *testing.T) {
 	assert.Equal(t, 0, exitcode.OK)
 	assert.Equal(t, 1, exitcode.Failure)
@@ -65,14 +67,6 @@ func TestExitBandsAreTodaysValues(t *testing.T) {
 	assert.Equal(t, 4, exitcode.Tree)
 	assert.Equal(t, 5, exitcode.Declined)
 	assert.Equal(t, 6, exitcode.Verify)
-	// cmd's names are the same numbers, not a second table.
-	assert.Equal(t, exitcode.OK, ExitOK)
-	assert.Equal(t, exitcode.Failure, ExitFailure)
-	assert.Equal(t, exitcode.Usage, ExitUsage)
-	assert.Equal(t, exitcode.Environment, ExitEnvironment)
-	assert.Equal(t, exitcode.Tree, ExitTree)
-	assert.Equal(t, exitcode.Declined, ExitDeclined)
-	assert.Equal(t, exitcode.Verify, ExitVerify)
 }
 
 // exitRow is one line of the table: an error built as the code builds
@@ -529,7 +523,7 @@ func TestExitTableUnknownCommandIsPreflighted(t *testing.T) {
 	t.Setenv("DOCKHAND_TREE", "")
 	var out, errb bytes.Buffer
 	got := execute(context.Background(), "test", []string{"nonsense"}, &out, &errb)
-	assert.Equal(t, ExitUsage, got)
+	assert.Equal(t, exitcode.Usage, got)
 	assert.Empty(t, out.String())
 	assert.Contains(t, errb.String(), "dockhand: ")
 	assert.Contains(t, errb.String(), "Run 'dockhand --help' for usage.")

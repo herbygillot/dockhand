@@ -47,7 +47,7 @@ func (t *Tree) index() (*portindex.Index, error) {
 
 // Resolve resolves the tree-bound reference forms: "category/dir" under
 // the root, an indexed port or subport name, or a portdir's directory
-// name (a filesystem path never needs a Tree — see ResolveTarget).
+// name (a filesystem path never needs a Tree — see PathTarget).
 // The index consulted is always this tree's own — never another
 // source's — so name and edit target come from the same tree; a stale
 // index entry falls through to the directory walk, and whatever is

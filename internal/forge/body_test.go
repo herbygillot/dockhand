@@ -25,7 +25,7 @@ func templateNote(runs map[string]lifecycle.Run) lifecycle.Note {
 }
 
 // The body is the upstream PR template with only vouchable boxes
-// checked: install passed and tested, single lifecycle.Minted commit.
+// checked: install passed and tested, a single minted commit.
 func TestPromoteBodyChecksWhatItCanVouchFor(t *testing.T) {
 	n := templateNote(map[string]lifecycle.Run{
 		"Sonoma":   {State: "passed", Tested: true},

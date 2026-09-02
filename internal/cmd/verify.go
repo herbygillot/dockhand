@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/lockfile"
@@ -34,10 +33,10 @@ func verifyPlan(ctx context.Context, rs *runstate.Context, p *plan.Plan, release
 	if err != nil {
 		return "", err
 	}
-	if edit.FileSHA256(src) != p.PortfileSHA256 {
+	edited, err := p.Materialize(src)
+	if errors.Is(err, plan.ErrDrift) {
 		return "", fmt.Errorf("%w: %s", plan.ErrDrift, p.Portdir)
 	}
-	edited, err := edit.Apply(src, p.Edits)
 	if err != nil {
 		return "", err
 	}
@@ -360,7 +359,7 @@ func branchPortdir(ctx context.Context, repo *git.Repo, branch, tip string) (str
 		}
 	}
 	if len(portdirs) != 1 {
-		return "", fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, len(portdirs), base[:12])
+		return "", fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, len(portdirs), git.Abbrev(base))
 	}
 	for d := range portdirs {
 		return d, nil

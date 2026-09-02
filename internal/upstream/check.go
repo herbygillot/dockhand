@@ -8,13 +8,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // Check runs both resolvers for the handle's context and judges their
 // testimony. The livecheck resolver is the port's own livecheck phase,
 // driven whole; style is the port's located version carrier, which
-// decides whether a git forge exists to ask.
-func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style portstyle.Type, declared info.Livecheck, gh GhRunner) (Report, error) {
+// decides whether a git forge exists to ask. tools resolves the git
+// the tag resolver runs.
+func Check(ctx context.Context, tools *tool.Finder, h port.Handle, f *portfetch.Fetcher, style portstyle.Type, declared info.Livecheck, gh GhRunner) (Report, error) {
 	// Only the forge coordinates need a read of their own: which option
 	// names to ask for depends on the carrier style, so they cannot live
 	// in a struct. The livecheck configuration came with the values the
@@ -55,7 +57,7 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 			slog.Debug("forge releases", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
 			obs.ForgeVersions, obs.Authoritative = versions, true
 		} else {
-			versions, err := Tags(ctx, repo)
+			versions, err := Tags(ctx, tools, repo)
 			if err != nil {
 				return Report{}, err
 			}
@@ -74,7 +76,7 @@ func Check(ctx context.Context, h port.Handle, f *portfetch.Fetcher, style ports
 		// because the corroboration is a refinement of a verdict
 		// already reached, not a resolver of its own.
 		if repo, ok := coords(style, opts); ok {
-			if tags, terr := Tags(ctx, repo); terr == nil {
+			if tags, terr := Tags(ctx, tools, repo); terr == nil {
 				report = corroborate(report, tags)
 			} else {
 				slog.Debug("tag corroboration unavailable", "err", terr)

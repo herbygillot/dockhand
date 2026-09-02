@@ -1,10 +1,18 @@
 package go2port
 
 import (
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/tool"
+	"github.com/herbygillot/dockhand/internal/vendored"
 )
 
 const generatedPortfile = `# -*- coding: utf-8; mode: tcl -*-
@@ -51,4 +59,32 @@ func TestExtractBlockRefusesOutputWithNoBlock(t *testing.T) {
 	_, err := ExtractBlock([]byte("PortSystem 1.0\nname foo\n"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no go.vendors block")
+}
+
+// scripted is a finder whose go2port is a shell script with the given
+// body, every other lookup answered for real.
+func scripted(t *testing.T, body string) *tool.Finder {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), ToolName)
+	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755))
+	return tool.NewFinder(func(name string) (string, error) {
+		if name == string(tool.Go2Port) {
+			return path, nil
+		}
+		return exec.LookPath(name)
+	})
+}
+
+func TestGenerateNamesTheGeneratorWhenItIsMissing(t *testing.T) {
+	absent := tool.NewFinder(func(string) (string, error) { return "", errors.New("absent") })
+	_, err := Generate(context.Background(), absent, "example.com/m", "v1.0.0")
+	require.ErrorIs(t, err, vendored.ErrNoGenerator)
+	assert.Equal(t, "vendored: block generator not found: go2port", err.Error())
+}
+
+func TestGenerateWordsAToolFailureWithItsStderr(t *testing.T) {
+	tools := scripted(t, "echo 'no such module' >&2\nexit 1\n")
+	_, err := Generate(context.Background(), tools, "example.com/m", "v1.0.0")
+	require.Error(t, err)
+	assert.Equal(t, "vendored: go2port: no such module", err.Error())
 }

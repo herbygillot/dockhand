@@ -13,7 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/testenv"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
+
+// tools is the finder every repository here opens with: the real PATH
+// search, because the git under test is the real one.
+var tools = tool.NewFinder(nil)
 
 // newRepo builds a small repository shaped like a ports tree: one
 // category, one portdir, one Portfile, committed on one branch.
@@ -41,7 +46,7 @@ func newRepo(t *testing.T) *Repo {
 	run("add", ".")
 	run("commit", "--quiet", "-m", "initial tree")
 
-	r, err := Open(context.Background(), filepath.Join(dir, "sysutils", "jq"))
+	r, err := Open(context.Background(), tools, filepath.Join(dir, "sysutils", "jq"))
 	require.NoError(t, err)
 	// macOS: t.TempDir lives under /private via symlink; compare resolved.
 	want, _ := filepath.EvalSymlinks(dir)
@@ -52,7 +57,7 @@ func newRepo(t *testing.T) *Repo {
 
 func TestOpenRefusesAPlainDirectory(t *testing.T) {
 	testenv.Tool(t, "git")
-	_, err := Open(context.Background(), t.TempDir())
+	_, err := Open(context.Background(), tools, t.TempDir())
 	require.ErrorIs(t, err, ErrNotARepo)
 }
 
@@ -411,7 +416,7 @@ func TestNotesLockIsSharedAcrossLinkedWorktrees(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "linked")
 	out, err := exec.Command("git", "-C", r.Root, "worktree", "add", "--quiet", wt).CombinedOutput()
 	require.NoError(t, err, "%s", out)
-	linked, err := Open(ctx, wt)
+	linked, err := Open(ctx, tools, wt)
 	require.NoError(t, err)
 
 	p1, err := r.notesLockPath(ctx)
@@ -421,4 +426,38 @@ func TestNotesLockIsSharedAcrossLinkedWorktrees(t *testing.T) {
 	r1, _ := filepath.EvalSymlinks(p1)
 	r2, _ := filepath.EvalSymlinks(p2)
 	assert.Equal(t, r1, r2, "one repository, one notes lock, however many worktrees")
+}
+
+// Abbrev is the twelve-character sha every message prints, and for a
+// real forty-character sha it must be byte-identical to sha[:12] — the
+// goldens carry that width. Input already that short or shorter comes
+// back whole rather than indexed past its end.
+func TestAbbrevIsTwelveCharactersOrTheWholeInput(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	require.Len(t, sha, 40)
+	assert.Equal(t, sha[:12], Abbrev(sha))
+	assert.Equal(t, "0123456789ab", Abbrev(sha))
+	assert.Equal(t, "0123456789abc"[:12], Abbrev("0123456789abc"), "one over the width still truncates")
+	assert.Equal(t, "0123456789ab", Abbrev("0123456789ab"), "exactly the width is returned as is")
+	assert.Equal(t, "0123456", Abbrev("0123456"), "shorter input is returned whole")
+	assert.Empty(t, Abbrev(""))
+}
+
+// A name minted under the namespace is one Branches lists under it:
+// the constant is slash-terminated, the ref-namespace shape Branches
+// matches by, and MintBranchName adds nothing but the slug.
+func TestMintBranchNameRoundTripsThroughBranches(t *testing.T) {
+	assert.Equal(t, "dockhand/jq-1.8", MintBranchName("jq-1.8"))
+	assert.True(t, strings.HasSuffix(BranchNamespace, "/"), "Branches needs a slash-terminated prefix")
+
+	r := newRepo(t)
+	ctx := context.Background()
+	_, err := r.Mint(ctx, MintRequest{
+		Branch: MintBranchName("jq-1.8"), Base: "HEAD",
+		Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n"), Message: "jq: update to 1.8",
+	})
+	require.NoError(t, err)
+	got, err := r.Branches(ctx, BranchNamespace)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dockhand/jq-1.8"}, got)
 }

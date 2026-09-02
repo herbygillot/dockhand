@@ -203,6 +203,51 @@ path and the one its author does not live.
 
 **Note.** The probe's unit should be `(tool, path, version, satisfies_floor)` from the start. Retrofitting versions onto a presence check ends up sprinkled through the codebase.
 
+**Amended (2026-09-02, tools are found through one injected finder).**
+"Resolved from PATH at startup" is no longer the mechanism. Every
+tool dockhand drives — git, gh, tart, curl, the Tcl shells, the block
+generators — is a `tool.Tool` resolved by one `tool.Finder`: built
+once at the composition root (cmd's Root) over os/exec's own PATH
+search, and handed explicitly to every component that execs — a field
+on the run's Context, a parameter to `git.Open` that the Repo carries,
+a field on `tart.Provider` and `provision.Tart`, the closure the gh
+runner and the verify-provider resolver are built as, a parameter to
+the upstream tag resolver, a field on the vendored regeneration
+context, a parameter to distfile's extractor, prefix discovery, and
+doctor's probe. Nothing is resolved at startup: a lookup runs at first
+use and its success is memoized per finder, misses never — a tool
+installed mid-process is found, not remembered absent. The point of
+one finder is that doctor and the working code cannot disagree about
+what the machine has, because they ask the same object; the point of
+injection over a package-level provider is that a test builds its own
+finder over a fake lookup — per-tool overrides with real fallthrough,
+so a tart-less machine runs the tart-present goldens and a tart-bearing
+one runs the tart-absent ones — and no tool-lookup seam or
+process-wide finder memo remains in the product. (The package-level
+run-a-version and list-VMs indirections in doctor, prefix and tart's
+admission are a different seam — what a tool says, not where it is —
+and carry over unchanged.) Six wrappers word their failures over
+`tool.Output` (stdout as data, stderr as the story), each keeping its
+own grammar and miss: git passes the finder's words through, gh
+appends the install hint, upstream and the generators substitute their
+sentinels. tart's wrapper stays merged-stream over `tool.Run`, because
+its callers parse the transcript after a non-zero exit.
+
+The host tar is one decision too: `tool.Tar` pins /usr/bin/tar,
+macOS's libarchive bsdtar, rather than searching PATH. distfile needs
+it — a distfile arrives as gzip, bzip2, xz or zip, and reading one
+member to stdout across all of those is what bsdtar does and a GNU tar
+on PATH (MacPorts' gnutar, a coreutils shadow) cannot — and tart's
+staging stream and git's materialized archive, which consume plain
+ustar and would work with any tar, use the same one so that there is
+one answer to "which tar" rather than three. The tars run inside a
+guest are the guest's own and outside this decision. The pin shows
+only where no tar can be found, which no golden pins and no Mac
+reaches: tart's staging stream and git's materialized archive report
+`/usr/bin/tar not found` where they reported a bare `tar` missing from
+PATH, and distfile's extractor refuses once, up front, rather than
+recording every candidate as not an archive.
+
 **Cost to reverse.** Low.
 
 ---
@@ -327,6 +372,22 @@ escape; rule [9]'s prepass makes it whitespace even inside braces) and
 surfaced one principled oracle split, now documented in the harness: a file
 ending in backslash-newline is accepted by `source` but pends under
 `info complete`; the parser sides with `source`.
+
+**Amended (2026-09-02, the visitor ceremony removed).** No total consumer
+ever materialised. The generic-method visitors D1 recorded as the CST's
+compile-time exhaustiveness mechanism — SegmentVisitor/VisitSegment and
+ItemVisitor/VisitItem in `internal/tcl/syntax` — had zero implementations
+and zero callers: every consumer outside the package (the checksum
+rewriter, the toolchain bump, the portstyle locator, the vendored
+regenerator) walks the tree through the Commands iterator, and the
+switches inside the package are kept total by the sealed interfaces and
+`gochecksumtype` at CI time. Deleted as dead ceremony. The enforcement
+kit is two mechanisms now, not three; D1's list stands as the record of
+what was designed, and the cost D1 accepted — CI-time rather than
+compile-time exhaustiveness wherever a switch stands in for a visitor —
+is simply the whole cost. Reinstating is cheap (a few dozen lines) and
+should wait for a consumer that needs a compile-time break rather than
+a lint failure.
 
 ---
 
@@ -523,6 +584,22 @@ git common dir beside the notes lock, so linked worktrees share it.
 This is the parity-safe closure; the schema-3 claim marker (Queued →
 Submitting under the notes flock, CAS to Running) replaces it when the
 record can carry one.
+
+**Amended (2026-09-02, the shell asks the kernel for its terminal).**
+`dockhand shell` requests a TTY from `tart exec` (-t) only when stdin
+is one, because -t on anything else dies on the terminal-size ioctl.
+The check was the file mode — os.ModeCharDevice — which is the wrong
+question: /dev/null is a character device too, so a shell fed from it
+asked for a terminal and died. The check is now the kernel's own
+answer (`tool.IsTerminal`, a termios ioctl — TIOCGETA on darwin,
+TCGETS on linux, no on anything else — through the stdlib syscall
+package, no new module). The observable change is the intended one: a
+redirected stdin no longer passes -t, and the shell runs without a
+terminal instead of failing. The shell also resolves tart through the
+run's finder like every other tart site, rather than naming it bare
+for os/exec to search. The pager decision on stdout in the diff
+realization keeps its file-mode check; it was not the bug, and it is
+not this ruling.
 
 **Why.** Even the "synchronous" backend takes fifteen seconds to nine minutes,
 long enough that a blocking call is a lie the first time someone interrupts a

@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // goDirectiveRE matches go.mod's `go` directive — the module's declared
@@ -27,12 +28,12 @@ var goDirectiveRE = regexp.MustCompile(`(?m)^go\s+(\d+\.\d+(?:\.\d+)?)\s*$`)
 //
 // ok is false when there is nothing to do — no declaration, no go.mod,
 // no directive, or the series is unchanged.
-func toolchainMinEdit(ctx context.Context, src []byte, cst *syntax.Script, contextName string, fetched []string, worksrcdir string) (edit.Edit, bool, error) {
+func toolchainMinEdit(ctx context.Context, tools *tool.Finder, src []byte, cst *syntax.Script, contextName string, fetched []string, worksrcdir string) (edit.Edit, bool, error) {
 	span, declared, found := locateToolchainMin(src, cst, contextName)
 	if !found {
 		return edit.Edit{}, false, nil
 	}
-	mod, from, err := distfile.Extract(ctx, fetched, worksrcdir, "go.mod")
+	mod, from, err := distfile.Extract(ctx, tools, fetched, worksrcdir, "go.mod")
 	if err != nil {
 		// A project with no go.mod cannot say what it needs; the
 		// declaration the maintainer made stands.

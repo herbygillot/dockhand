@@ -37,7 +37,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 	// involved: the environment a pre-mint --verify failure keeps has
 	// no branch, and the printed handle is all a user holds.
 	if strings.HasPrefix(target, tart.WorkerPrefix) {
-		ok, err := tart.HasVM(ctx, target)
+		ok, err := tart.HasVM(ctx, rs.Tools, target)
 		if err != nil {
 			return debugEnv{}, err
 		}

@@ -34,7 +34,7 @@ func (cleanAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	branches, err := repo.Branches(ctx, "dockhand/")
+	branches, err := repo.Branches(ctx, git.BranchNamespace)
 	if err != nil {
 		return err
 	}

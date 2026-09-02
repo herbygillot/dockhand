@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
@@ -47,6 +48,10 @@ type Tart struct {
 	// Prefix is where MacPorts goes in the guest; the zero value is the
 	// conventional one.
 	Prefix prefix.Prefix
+	// Tools resolves tart: the run's one finder, handed in by whoever
+	// builds the provisioner, so provisioning drives the tart doctor
+	// reported.
+	Tools *tool.Finder
 }
 
 func (t Tart) prefixOf() prefix.Prefix {
@@ -97,11 +102,11 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	say := func(f string, a ...any) { fmt.Fprintf(w, f+"\n", a...) }
 
 	say("pulling %s", imageRef(r))
-	if out, err := tart.CLI(ctx, nil, "pull", imageRef(r)); err != nil {
+	if out, err := tart.CLI(ctx, t.Tools, nil, "pull", imageRef(r)); err != nil {
 		return fmt.Errorf("%w: pulling %s: %s", verify.ErrNoEnvironment, imageRef(r), strings.TrimSpace(out))
 	}
-	_, _ = tart.CLI(ctx, nil, "delete", name)
-	if out, err := tart.CLI(ctx, nil, "clone", imageRef(r), name); err != nil {
+	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", name)
+	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", imageRef(r), name); err != nil {
 		return fmt.Errorf("%w: cloning to %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
 	}
 
@@ -121,7 +126,7 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 		say("sizing %s: %d cpus, %d MB", name, cpus, memMB)
 	}
 	if cpus > 0 && memMB > 0 {
-		if out, err := tart.CLI(ctx, nil, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memMB)); err != nil {
+		if out, err := tart.CLI(ctx, t.Tools, nil, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memMB)); err != nil {
 			return fmt.Errorf("%w: sizing %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
 		}
 	}
@@ -132,7 +137,7 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 		// grows here (thin on the host: only written blocks cost) and
 		// the APFS container inside grows after boot.
 		say("growing the disk to %d GB (Xcode needs room to expand)", xcodeDiskGB)
-		if out, err := tart.CLI(ctx, nil, "set", name, "--disk-size", strconv.Itoa(xcodeDiskGB)); err != nil {
+		if out, err := tart.CLI(ctx, t.Tools, nil, "set", name, "--disk-size", strconv.Itoa(xcodeDiskGB)); err != nil {
 			return fmt.Errorf("%w: growing %s's disk: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
 		}
 		// The guest recovery partition would sit between the container
@@ -152,23 +157,23 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	// Provisioning's boot spends a licence slot like any worker, so it
 	// goes through the same admission: with builds in flight the answer
 	// is a fast typed refusal, never a mid-provision hang.
-	unlockAdmission, err := tart.Admit(ctx, tart.Provider{}.Capabilities().Concurrent)
+	unlockAdmission, err := tart.Admit(ctx, t.Tools, tart.Provider{}.Capabilities().Concurrent)
 	if err != nil {
 		return err
 	}
 	runErr := make(chan error, 1)
 	go func() {
-		_, err := tart.CLI(context.WithoutCancel(ctx), nil, "run", "--no-graphics", name)
+		_, err := tart.CLI(context.WithoutCancel(ctx), t.Tools, nil, "run", "--no-graphics", name)
 		runErr <- err
 	}()
-	defer func() { _, _ = tart.CLI(context.WithoutCancel(ctx), nil, "stop", name) }()
-	if err := tart.WaitRunning(ctx, name, runErr); err != nil {
+	defer func() { _, _ = tart.CLI(context.WithoutCancel(ctx), t.Tools, nil, "stop", name) }()
+	if err := tart.WaitRunning(ctx, t.Tools, name, runErr); err != nil {
 		unlockAdmission()
 		return err
 	}
 	unlockAdmission()
 
-	host, err := guestIP(ctx, name)
+	host, err := guestIP(ctx, t.Tools, name)
 	if err != nil {
 		return err
 	}
@@ -185,7 +190,7 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 			verify.ErrNoEnvironment, err, strings.TrimSpace(out))
 	}
 	say("waiting for the agent to answer")
-	if err := tart.WaitAgent(ctx, name); err != nil {
+	if err := tart.WaitAgent(ctx, t.Tools, name); err != nil {
 		return fmt.Errorf("%w: the agent was installed but does not answer: %w", verify.ErrNoEnvironment, err)
 	}
 
@@ -199,7 +204,7 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 		if err != nil {
 			return err
 		}
-		if err := expandGuestDisk(ctx, name, say); err != nil {
+		if err := expandGuestDisk(ctx, t.Tools, name, say); err != nil {
 			return err
 		}
 		if err := t.installXcode(ctx, name, host, xip, xv, say); err != nil {
@@ -224,20 +229,20 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	// old pair intact or a proven image one free clone away.
 	say("swapping the proven image in")
 	golden := tart.GoldenName(r)
-	if _, err := tart.CLI(context.WithoutCancel(ctx), nil, "stop", name); err != nil {
+	if _, err := tart.CLI(context.WithoutCancel(ctx), t.Tools, nil, "stop", name); err != nil {
 		slog.Debug("stopping before the swap", "vm", name, "err", err)
 	}
-	_, _ = tart.CLI(ctx, nil, "delete", golden)
-	if out, err := tart.CLI(ctx, nil, "clone", name, golden); err != nil {
+	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", golden)
+	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", name, golden); err != nil {
 		return fmt.Errorf("%w: taking the golden copy %s: %s",
 			verify.ErrNoEnvironment, golden, strings.TrimSpace(out))
 	}
-	_, _ = tart.CLI(ctx, nil, "delete", base)
-	if out, err := tart.CLI(ctx, nil, "clone", name, base); err != nil {
+	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", base)
+	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", name, base); err != nil {
 		return fmt.Errorf("%w: installing the base %s: %s",
 			verify.ErrNoEnvironment, base, strings.TrimSpace(out))
 	}
-	_, _ = tart.CLI(ctx, nil, "delete", name)
+	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", name)
 
 	say("provisioned %s — %s, MacPorts %s%s (golden: %s)", base, r, version, xcodeNote, golden)
 	return nil
@@ -245,8 +250,8 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 
 // guestIP waits for the guest to have an address, which is needed only
 // for the SSH bootstrap.
-func guestIP(ctx context.Context, vm string) (string, error) {
-	out, err := tart.CLI(ctx, nil, "ip", vm, "--wait", "300")
+func guestIP(ctx context.Context, tools *tool.Finder, vm string) (string, error) {
+	out, err := tart.CLI(ctx, tools, nil, "ip", vm, "--wait", "300")
 	if err != nil {
 		return "", fmt.Errorf("%w: %s never got an address: %s",
 			verify.ErrNoEnvironment, vm, strings.TrimSpace(out))
@@ -264,7 +269,7 @@ curl -fsSL -o %[1]s %[2]s
 sudo -n installer -pkg %[1]s -target /
 rm -f %[1]s
 sudo -n %[3]s -v selfupdate`, pkg, build.InstallerURL(version, r), t.prefixOf().Port())
-	if out, err := tart.Exec(ctx, vm, "/bin/sh", "-c", script); err != nil {
+	if out, err := tart.Exec(ctx, t.Tools, vm, "/bin/sh", "-c", script); err != nil {
 		return fmt.Errorf("%w: installing MacPorts: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	return nil
@@ -280,7 +285,7 @@ func (t Tart) assertPristine(ctx context.Context, vm string) error {
   [ -e "$d" ] && echo "PRESENT: $d"
 done
 exit 0`
-	out, err := tart.Exec(ctx, vm, "/bin/sh", "-c", check)
+	out, err := tart.Exec(ctx, t.Tools, vm, "/bin/sh", "-c", check)
 	if err != nil {
 		return fmt.Errorf("%w: checking for foreign prefixes: %w", verify.ErrNoEnvironment, err)
 	}
@@ -288,7 +293,7 @@ exit 0`
 		return fmt.Errorf("%w: a foreign package manager is present:\n%s",
 			verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
-	if out, err := tart.Exec(ctx, vm, t.prefixOf().Port(), "version"); err != nil ||
+	if out, err := tart.Exec(ctx, t.Tools, vm, t.prefixOf().Port(), "version"); err != nil ||
 		!strings.Contains(out, "Version:") {
 		return fmt.Errorf("%w: MacPorts does not answer: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
@@ -337,7 +342,7 @@ fi
 echo "installing: $label"
 sudo -n softwareupdate --install "$label"
 sudo -n rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress`
-	out, err := tart.Exec(ctx, vm, "/bin/sh", "-c", install)
+	out, err := tart.Exec(ctx, t.Tools, vm, "/bin/sh", "-c", install)
 	if err != nil {
 		return fmt.Errorf("%w: installing the command line tools: %s",
 			verify.ErrNoEnvironment, strings.TrimSpace(out))
@@ -365,12 +370,12 @@ sudo -n rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress`
 // variant, which is exactly the kind of thing an assertion is for and
 // an assumption is not.
 func (t Tart) assertToolchain(ctx context.Context, vm string) error {
-	if out, err := tart.Exec(ctx, vm, "/usr/bin/xcode-select", "-p"); err != nil {
+	if out, err := tart.Exec(ctx, t.Tools, vm, "/usr/bin/xcode-select", "-p"); err != nil {
 		return fmt.Errorf("%w: no developer tools in the image: %s\n"+
 			"the published image may be missing the command line tools its template installs",
 			verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
-	out, err := tart.Exec(ctx, vm, "/usr/bin/clang", "--version")
+	out, err := tart.Exec(ctx, t.Tools, vm, "/usr/bin/clang", "--version")
 	if err != nil || !strings.Contains(out, "clang version") {
 		return fmt.Errorf("%w: the image has no working compiler: %s",
 			verify.ErrNoEnvironment, strings.TrimSpace(out))
@@ -396,7 +401,7 @@ func (t Tart) AssertPristineFor(ctx context.Context, vm string) error {
 func (t Tart) Provisioned(ctx context.Context) ([]platform.Release, error) {
 	var found []platform.Release
 	for _, r := range platform.Releases {
-		ok, err := tart.HasVM(ctx, tart.BaseName(r))
+		ok, err := tart.HasVM(ctx, t.Tools, tart.BaseName(r))
 		if err != nil {
 			return nil, err
 		}
@@ -415,14 +420,14 @@ func (t Tart) Provisioned(ctx context.Context) ([]platform.Release, error) {
 // where re-provisioning costs a download.
 func (t Tart) Restore(ctx context.Context, r platform.Release) error {
 	golden, base := tart.GoldenName(r), tart.BaseName(r)
-	out, err := tart.CLI(ctx, nil, "list", "--source", "local")
+	out, err := tart.CLI(ctx, t.Tools, nil, "list", "--source", "local")
 	if err != nil || !strings.Contains(out, golden) {
 		return fmt.Errorf("%w: no golden copy %q to restore from; provision the release again",
 			verify.ErrNoEnvironment, golden)
 	}
-	_, _ = tart.CLI(ctx, nil, "stop", base)
-	_, _ = tart.CLI(ctx, nil, "delete", base)
-	if out, err := tart.CLI(ctx, nil, "clone", golden, base); err != nil {
+	_, _ = tart.CLI(ctx, t.Tools, nil, "stop", base)
+	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", base)
+	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", golden, base); err != nil {
 		return fmt.Errorf("%w: restoring %s from %s: %s",
 			verify.ErrNoEnvironment, base, golden, strings.TrimSpace(out))
 	}

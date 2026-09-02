@@ -1,14 +1,13 @@
 package upstream
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"os"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 )
 
 // ErrNoGit reports that the forge resolver needs git and the machine
@@ -19,27 +18,24 @@ var ErrNoGit = errors.New("upstream: git not found on PATH")
 // trip, unauthenticated and unmetered, the same call for every git
 // forge. Peeled duplicates are dropped, and the port's declared tag
 // prefix and suffix are stripped — a tag not matching the scheme is
-// not a version of this port and is excluded.
-func Tags(ctx context.Context, r Repo) ([]string, error) {
-	git, err := platform.Find(platform.Git)
+// not a version of this port and is excluded. git is resolved through
+// the run's finder; GIT_TERMINAL_PROMPT=0 keeps a private repository
+// from hanging on a credential prompt.
+func Tags(ctx context.Context, tools *tool.Finder, r Repo) ([]string, error) {
+	git, err := tools.Find(tool.Git)
 	if err != nil {
 		return nil, ErrNoGit
 	}
-	var out, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, git, "ls-remote", "--tags", r.URL)
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("upstream: ls-remote %s: %s", r.URL, msg)
+	out, _, err := tool.Output(ctx, git, tool.Opts{
+		Args: []string{"ls-remote", "--tags", r.URL},
+		Env:  append(os.Environ(), "GIT_TERMINAL_PROMPT=0"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("upstream: ls-remote %s: %s", r.URL, err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
 	}
 
 	var versions []string
-	for line := range strings.Lines(out.String()) {
+	for line := range strings.Lines(string(out)) {
 		_, ref, ok := strings.Cut(strings.TrimSpace(line), "\t")
 		if !ok {
 			continue

@@ -38,7 +38,7 @@ func (a execAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	var failed int
 	for _, r := range releases {
 		fmt.Fprintf(rs.Err, "=== %s\n", r)
-		out, err := tart.RunOnBase(ctx, tart.BaseName(r), a.argv)
+		out, err := tart.RunOnBase(ctx, rs.Tools, tart.BaseName(r), a.argv)
 		if out != "" {
 			fmt.Fprintln(rs.Out, strings.TrimRight(out, "\n"))
 		}

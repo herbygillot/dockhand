@@ -27,9 +27,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/text"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/vendored"
-	"github.com/herbygillot/dockhand/internal/vendored/cargo2port"
+	"github.com/herbygillot/dockhand/internal/vendored/cargo"
 	"github.com/herbygillot/dockhand/internal/vendored/go2port"
 )
 
@@ -49,6 +50,11 @@ type Bump struct {
 	// It is how a stealth update is caught, where an upstream re-rolled
 	// a release at the same version and the same URL.
 	Force bool
+	// Tools resolves what a plan may have to run beyond the evaluator:
+	// the vendored-block generators and the archiver that reads a
+	// lockfile or go.mod out of a distfile. The command hands in the
+	// run's finder; a planner that reads no distfile never touches it.
+	Tools *tool.Finder
 }
 
 var _ plan.Planner = Bump{}
@@ -232,6 +238,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			Shadow: shadow, ShadowVals: shadowVals,
 			TempDir: h.TempDir,
 			Fetch:   fetch,
+			Tools:   b.Tools,
 		}
 		var supplied []string
 		for _, r := range regenerators {
@@ -315,7 +322,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		// The declared Go floor follows the new go.mod when its series
 		// moved — update-only; a port that never declared one is never
 		// gated by dockhand either.
-		if tc, ok, err := toolchainMinEdit(ctx, src, cst, vals.Name, fetched, shadowVals.Worksrcdir); err != nil {
+		if tc, ok, err := toolchainMinEdit(ctx, b.Tools, src, cst, vals.Name, fetched, shadowVals.Worksrcdir); err != nil {
 			return nil, err
 		} else if ok {
 			edits = append(edits, tc)
@@ -489,8 +496,9 @@ func probeCarrier(ctx context.Context, h port.Handle, src []byte, span text.Span
 // ResolveLatest answers what version "latest" means for a port, by
 // running upstream's two-resolver check against its version carrier. A
 // verdict that does not yield a trustworthy latest — rot, disagreement,
-// no signal — declines rather than guessing.
-func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher, gh upstream.GhRunner) (string, upstream.Report, error) {
+// no signal — declines rather than guessing. tools resolves the git
+// the forge's tags are read with.
+func ResolveLatest(ctx context.Context, tools *tool.Finder, h port.Handle, f *portfetch.Fetcher, gh upstream.GhRunner) (string, upstream.Report, error) {
 	src, cst, err := h.Source()
 	if err != nil {
 		return "", upstream.Report{}, err
@@ -516,7 +524,7 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher, gh 
 		}
 		style = cand.Style
 	}
-	report, err := upstream.Check(ctx, h, f, style, vals.Livecheck, gh)
+	report, err := upstream.Check(ctx, tools, h, f, style, vals.Livecheck, gh)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}
@@ -531,7 +539,7 @@ func ResolveLatest(ctx context.Context, h port.Handle, f *portfetch.Fetcher, gh 
 // closed list bump consults instead of an if-chain, so the next
 // family is a registration here rather than another lobe on the
 // planner.
-var regenerators = []vendored.Regenerator{cargo2port.Blocks{}, go2port.Blocks{}}
+var regenerators = []vendored.Regenerator{cargo.Blocks{}, go2port.Blocks{}}
 
 // Modeline is the editor header the MacPorts best-practices page
 // prescribes; a bump adds it to a Portfile that opens without one.

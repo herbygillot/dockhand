@@ -8,21 +8,20 @@ package doctor
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
-	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
 )
 
 // provisioned is indirected for hermetic tests; the default asks the
 // provisioner what bases exist.
-var provisioned = func(ctx context.Context) ([]string, error) {
-	rels, err := (provision.Tart{}).Provisioned(ctx)
+var provisioned = func(ctx context.Context, tools *tool.Finder) ([]string, error) {
+	rels, err := (provision.Tart{Tools: tools}).Provisioned(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -34,13 +33,13 @@ var provisioned = func(ctx context.Context) ([]string, error) {
 }
 
 // runVersion is indirected for hermetic tests; binary discovery goes
-// through platform.Find — the SAME provider every component execs
-// through, which is what keeps this report honest: doctor cannot say
-// "available" about a tool the working code would fail to find, nor
-// the reverse, because there is exactly one finder.
+// through the run's tool.Finder — the SAME finder every component
+// execs through, which is what keeps this report honest: doctor cannot
+// say "available" about a tool the working code would fail to find,
+// nor the reverse, because there is exactly one finder.
 var (
 	runVersion = func(path string, args ...string) string {
-		out, err := exec.Command(path, args...).Output()
+		out, _, err := tool.Output(context.Background(), path, tool.Opts{Args: args})
 		if err != nil {
 			return ""
 		}
@@ -69,11 +68,11 @@ type Report struct {
 	VMBases []string
 }
 
-// Probe examines the machine.
-func Probe() Report {
-	find := func(tool platform.Tool, fallback string) Tool {
-		t := Tool{Name: string(tool)}
-		path, err := platform.FindWith(tool, fallback)
+// Probe examines the machine through the run's finder.
+func Probe(tools *tool.Finder) Report {
+	find := func(which tool.Tool, fallback string) Tool {
+		t := Tool{Name: string(which)}
+		path, err := tools.FindWith(which, fallback)
 		if err != nil {
 			return t
 		}
@@ -81,7 +80,7 @@ func Probe() Report {
 		return t
 	}
 
-	portTclsh := find(platform.PortTclsh, prefix.Prefix(macports.DefaultPrefix).PortTclsh())
+	portTclsh := find(tool.PortTclsh, prefix.Prefix(macports.DefaultPrefix).PortTclsh())
 	if portTclsh.Found {
 		// The MacPorts version is not trivia: it selects the Tcl shims
 		// dockhand speaks to this installation with.
@@ -101,8 +100,8 @@ func Probe() Report {
 			portTclsh.Note = "version undetermined; dockhand will use its newest shim"
 		}
 	}
-	tclsh := find(platform.Tclsh, "")
-	git := find(platform.Git, "")
+	tclsh := find(tool.Tclsh, "")
+	git := find(tool.Git, "")
 	if git.Found {
 		git.Version = strings.TrimPrefix(runVersion(git.Path, "--version"), "git version ")
 		// The write path (D21) needs notes (ancient: full subcommand
@@ -117,20 +116,20 @@ func Probe() Report {
 			git.Note = "below the 2.5 floor required for worktree-aware plumbing (--git-common-dir)"
 		}
 	}
-	gh := find(platform.Gh, "")
+	gh := find(tool.Gh, "")
 	if gh.Found {
 		gh.Version = runVersion(gh.Path, "--version")
 	}
-	curl := find(platform.Curl, "")
-	tart := find(platform.Tart, "")
+	curl := find(tool.Curl, "")
+	tart := find(tool.Tart, "")
 	var bases []string
 	if tart.Found {
-		if rels, err := provisioned(context.Background()); err == nil {
+		if rels, err := provisioned(context.Background(), tools); err == nil {
 			bases = rels
 		}
 	}
-	go2port := find(platform.Go2Port, "")
-	cargo2port := find(platform.Cargo2Port, "")
+	go2port := find(tool.Go2Port, "")
+	cargo2port := find(tool.Cargo2Port, "")
 
 	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port},
 		VMBases: bases}
@@ -140,9 +139,9 @@ func Probe() Report {
 // combination implies.
 func (r Report) String() string {
 	var b strings.Builder
-	byName := map[string]Tool{}
+	byName := map[tool.Tool]Tool{}
 	for _, t := range r.Tools {
-		byName[t.Name] = t
+		byName[tool.Tool(t.Name)] = t
 		if t.Found {
 			fmt.Fprintf(&b, "  %-12s %s", t.Name, t.Path)
 			if t.Version != "" {
@@ -164,20 +163,20 @@ func (r Report) String() string {
 			fmt.Fprintf(&b, "  %-24s unavailable (%s)\n", name, whyNot)
 		}
 	}
-	cap(byName[macports.TclShellName].Found, "evaluation", "no port-tclsh: install MacPorts")
-	cap(byName["git"].Found && byName["git"].Note == "", "branch workflow", "git missing or below floor")
-	cap(byName["gh"].Found, "GitHub integration", "no gh")
-	cap(byName["curl"].Found, "non-http distfile fetch", "no curl: only http(s) sources reachable")
+	cap(byName[tool.PortTclsh].Found, "evaluation", "no port-tclsh: install MacPorts")
+	cap(byName[tool.Git].Found && byName[tool.Git].Note == "", "branch workflow", "git missing or below floor")
+	cap(byName[tool.Gh].Found, "GitHub integration", "no gh")
+	cap(byName[tool.Curl].Found, "non-http distfile fetch", "no curl: only http(s) sources reachable")
 	switch {
-	case !byName["tart"].Found:
+	case !byName[tool.Tart].Found:
 		cap(false, "VM verification", "no tart")
 	case len(r.VMBases) == 0:
 		cap(false, "VM verification", "no base images: run `dockhand provision tart`")
 	default:
 		fmt.Fprintf(&b, "  %-24s available (%s)\n", "VM verification", strings.Join(r.VMBases, ", "))
 	}
-	cap(byName["go2port"].Found, "Go vendored blocks", "no go2port")
-	cap(byName["cargo2port"].Found, "Rust vendored blocks", "no cargo2port")
+	cap(byName[tool.Go2Port].Found, "Go vendored blocks", "no go2port")
+	cap(byName[tool.Cargo2Port].Found, "Rust vendored blocks", "no cargo2port")
 	return b.String()
 }
 

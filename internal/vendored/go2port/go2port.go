@@ -13,14 +13,11 @@
 package go2port
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
 
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
 
@@ -35,24 +32,19 @@ const (
 // Generate computes a go.vendors block for a module at a version, by
 // running the tool and extracting the block from the portfile it
 // writes. pkg is the port's evaluated go.package — the module path the
-// golang PortGroup derived from go.setup.
-func Generate(ctx context.Context, pkg, version string) ([]byte, error) {
-	bin, err := platform.Find(platform.Go2Port)
+// golang PortGroup derived from go.setup. The tool is resolved through
+// the run's finder; a miss is ErrNoGenerator naming the tool, and a
+// failed run reads "vendored: go2port: <stderr>".
+func Generate(ctx context.Context, tools *tool.Finder, pkg, version string) ([]byte, error) {
+	bin, err := tools.Find(tool.Go2Port)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", vendored.ErrNoGenerator, ToolName)
 	}
-	var out, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, bin, "get", pkg, version)
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("vendored: %s: %s", ToolName, msg)
+	out, _, err := tool.Output(ctx, bin, tool.Opts{Args: []string{"get", pkg, version}})
+	if err != nil {
+		return nil, fmt.Errorf("vendored: %s: %s", ToolName, err) //nolint:errorlint // not wrapped: the exec error beneath carries the child's exit status, which ExitCode would take for a band
 	}
-	return ExtractBlock(out.Bytes())
+	return ExtractBlock(out)
 }
 
 // ExtractBlock locates the go.vendors block inside a generated
