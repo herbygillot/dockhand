@@ -15,10 +15,10 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/intent/bumprevision"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/macports/build"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -111,15 +111,21 @@ func exitTable() []exitRow {
 	parseErr := json.Unmarshal([]byte("{not json"), &notJSON)
 
 	capacity := &verify.CapacityError{Busy: 2, Cap: 2}
-	// SubmitVerification's `later` closure: the branch stands, the
+	// submit's `later` closure: the branch stands, the
 	// cause rides along typed so status's pump can tell a full machine
 	// from a missing capability.
 	later := func(cause error) error {
-		return &lifecycle.VerifyDeferredError{Branch: branch, Reason: cause.Error(), Cause: cause}
+		return &engine.VerifyDeferredError{Branch: branch, Reason: cause.Error(), Cause: cause}
 	}
 	noEnv := func(format string, a ...any) error {
 		return fmt.Errorf("%w: "+format, append([]any{verify.ErrNoEnvironment}, a...)...)
 	}
+	// The other half of the provider split: no tart at all, whose
+	// remedy is installing one rather than provisioning a base. Built
+	// through verify.NoProvider, the way the composition root builds it,
+	// so the row carries the bytes a user is shown rather than a second
+	// spelling of them.
+	noProvider := verify.NoProvider
 	noteErr := fmt.Errorf("note on %s does not parse: %w — `git notes --ref=%s remove %s` clears it",
 		sha, parseErr, git.VerifyNotesRef, sha)
 
@@ -167,28 +173,29 @@ func exitTable() []exitRow {
 	// Band 3: the machine.
 	add(exitcode.Environment,
 		exitRow{name: "*verify.CapacityError (tart.Admit)", err: capacity, as: new(*verify.CapacityError)},
-		exitRow{name: "*lifecycle.VerifyDeferredError (verifyBranch summary, no cause)",
-			err: &lifecycle.VerifyDeferredError{Branch: branch,
+		exitRow{name: "*engine.VerifyDeferredError (verifyBranch summary, no cause)",
+			err: &engine.VerifyDeferredError{Branch: branch,
 				Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", 1)},
-			as: new(*lifecycle.VerifyDeferredError)},
-		exitRow{name: "*lifecycle.VerifyDeferredError over *verify.CapacityError (SubmitVerification)",
+			as: new(*engine.VerifyDeferredError)},
+		exitRow{name: "*engine.VerifyDeferredError over *verify.CapacityError (submit)",
 			err: later(capacity), as: new(*verify.CapacityError)},
-		exitRow{name: "*lifecycle.VerifyDeferredError over verify.ErrNoEnvironment (SubmitVerification)",
+		exitRow{name: "*engine.VerifyDeferredError over verify.ErrNoEnvironment (submit)",
 			err: later(noEnv("no base images; run `dockhand provision tart --macos <release>` first")),
-			is:  []error{verify.ErrNoEnvironment}, as: new(*lifecycle.VerifyDeferredError)},
-		exitRow{name: "*lifecycle.VerifyDeferredError over verify.ErrUnsupported (SubmitVerification)",
+			is:  []error{verify.ErrNoEnvironment}, as: new(*engine.VerifyDeferredError)},
+		exitRow{name: "*engine.VerifyDeferredError over verify.ErrUnsupported (submit)",
 			err: later(fmt.Errorf("%w: %s is not a <category>/<port> directory", verify.ErrUnsupported, "stage-jq")),
-			is:  []error{verify.ErrUnsupported}, as: new(*lifecycle.VerifyDeferredError)},
-		exitRow{name: "*lifecycle.VerifyDeferredError over an untyped submit failure (SubmitVerification)",
-			err: later(errors.New("the agent never answered")), as: new(*lifecycle.VerifyDeferredError)},
+			is:  []error{verify.ErrUnsupported}, as: new(*engine.VerifyDeferredError)},
+		exitRow{name: "*engine.VerifyDeferredError over an untyped submit failure (submit)",
+			err: later(errors.New("the agent never answered")), as: new(*engine.VerifyDeferredError)},
 		exitRow{name: "verify.ErrNoEnvironment", err: verify.ErrNoEnvironment, is: []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (RealVMProvider: tart missing)",
-			err: noEnv("tart is not installed (`port install tart`); --no-verify skips verification"),
-			is:  []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (RealVMProvider: no bases)",
+		exitRow{name: "verify.ErrNoProvider", err: verify.ErrNoProvider, is: []error{verify.ErrNoProvider}},
+		exitRow{name: "verify.ErrNoProvider (realVMProvider: tart missing)",
+			err: noProvider("tart is not installed (`port install tart`); --no-verify skips verification"),
+			is:  []error{verify.ErrNoProvider}},
+		exitRow{name: "verify.ErrNoEnvironment (realVMProvider: no bases)",
 			err: noEnv("no base images; run `dockhand provision tart --macos <release>` first"),
 			is:  []error{verify.ErrNoEnvironment}},
-		exitRow{name: "verify.ErrNoEnvironment (runVerification: Errored verdict)",
+		exitRow{name: "verify.ErrNoEnvironment (RunVerification: Errored verdict)",
 			err: noEnv("%s", "the guest agent timed out"), is: []error{verify.ErrNoEnvironment}},
 		exitRow{name: "verify.ErrNoEnvironment (resolveReleaseSet: no base images)",
 			err: noBases, is: []error{verify.ErrNoEnvironment}},
@@ -285,12 +292,12 @@ func exitTable() []exitRow {
 		exitRow{name: "*portstyle.Decline NotLiteral with candidates (portstyle.Locate)",
 			err: &portstyle.Decline{Type: portstyle.NotLiteral, Field: info.FieldVersion,
 				Candidates: []portstyle.Candidate{{Style: portstyle.SetVariable, Literal: false}}}, as: new(*portstyle.Decline)},
-		exitRow{name: "*lifecycle.BranchInFlightError (MintFromPlan translating git.ErrBranchExists)",
-			err: &lifecycle.BranchInFlightError{Branch: branch}, as: new(*lifecycle.BranchInFlightError)},
-		exitRow{name: "*lifecycle.BranchInFlightError with Reason (replaceInFlight: --force refused)",
-			err: &lifecycle.BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
+		exitRow{name: "*engine.BranchInFlightError (mint translating git.ErrBranchExists)",
+			err: &engine.BranchInFlightError{Branch: branch}, as: new(*engine.BranchInFlightError)},
+		exitRow{name: "*engine.BranchInFlightError with Reason (replaceInFlight: --force refused)",
+			err: &engine.BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
 				"%s carries %d commit(s) beyond the mint — --force replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
-				branch, 1, branch)}, as: new(*lifecycle.BranchInFlightError)},
+				branch, 1, branch)}, as: new(*engine.BranchInFlightError)},
 		exitRow{name: "*verdict.DuplicatePRError (promote)",
 			err: &verdict.DuplicatePRError{Title: "jq: update to 1.8", URL: "https://github.com/macports/macports-ports/pull/1"},
 			as:  new(*verdict.DuplicatePRError)},
@@ -303,10 +310,10 @@ func exitTable() []exitRow {
 	// Band 6: the port does not build. Its own band because it is its
 	// own kind of outcome — the tool worked, the machine worked.
 	add(exitcode.Verify,
-		exitRow{name: "*lifecycle.VerifyFailedError (FollowRun --trace)",
-			err: &lifecycle.VerifyFailedError{Port: "jq"}, as: new(*lifecycle.VerifyFailedError)},
-		exitRow{name: "*lifecycle.VerifyFailedError with environment kept (runVerification)",
-			err: &lifecycle.VerifyFailedError{Port: "jq", Handle: "dockhand-jq-1"}, as: new(*lifecycle.VerifyFailedError)},
+		exitRow{name: "*engine.VerifyFailedError (Follow --trace)",
+			err: &engine.VerifyFailedError{Port: "jq"}, as: new(*engine.VerifyFailedError)},
+		exitRow{name: "*engine.VerifyFailedError with environment kept (RunVerification)",
+			err: &engine.VerifyFailedError{Port: "jq", Handle: "dockhand-jq-1"}, as: new(*engine.VerifyFailedError)},
 	)
 
 	// Band 1: everything else. The untyped refusals are built here
@@ -338,9 +345,9 @@ func exitTable() []exitRow {
 			err: fmt.Errorf("the branch is pushed; opening the PR failed: %w", fmt.Errorf("gh %s: %s", "pr", "HTTP 422"))},
 		exitRow{name: "promote: PR edit failed after push",
 			err: fmt.Errorf("the branch is pushed; refreshing PR #%d failed: %w", 7, fmt.Errorf("gh %s: %s", "pr", "HTTP 422"))},
-		exitRow{name: "lifecycle.ErrAmbiguousTarget (ResolveBranch)",
-			err: fmt.Errorf("%w: %q names %d branches (%s); use the full branch name", lifecycle.ErrAmbiguousTarget, "jq", 2, "dockhand/jq-1.8, dockhand/jq-1.9"),
-			is:  []error{lifecycle.ErrAmbiguousTarget}},
+		exitRow{name: "engine.ErrAmbiguousTarget (ResolveBranch)",
+			err: fmt.Errorf("%w: %q names %d branches (%s); use the full branch name", engine.ErrAmbiguousTarget, "jq", 2, "dockhand/jq-1.8, dockhand/jq-1.9"),
+			is:  []error{engine.ErrAmbiguousTarget}},
 		exitRow{name: "ResolveBranch: no dockhand branch (untyped fmt.Errorf)",
 			err: fmt.Errorf("no dockhand branch for %q; `dockhand status` lists what is in flight", "jq")},
 		exitRow{name: "plan.ErrDrift (verifyPlan)",
@@ -371,18 +378,24 @@ func exitTable() []exitRow {
 			err: fmt.Errorf("note on %s was written by a newer dockhand (schema %d, this build speaks %d); upgrade dockhand", sha, 99, 2)},
 		exitRow{name: "note validation: sha mismatch (ReadNote)",
 			err: fmt.Errorf("note on %s claims to describe %s — corrupt; `git notes --ref=%s remove %s` clears it", sha, "ffff", git.VerifyNotesRef, sha)},
-		exitRow{name: "submit-and-record compensation: release failed too (SubmitVerification)",
+		exitRow{name: "submit-and-record compensation: release failed too (submit)",
 			err: fmt.Errorf("recording the run failed (%w) and releasing %s failed too: %w — `tart delete %s` frees the slot",
 				noteErr, "fake-1", errors.New("tart delete: no such vm"), "fake-1")},
-		exitRow{name: "submit-and-record compensation: worker released (SubmitVerification)",
+		exitRow{name: "submit-and-record compensation: worker released (submit)",
 			err: fmt.Errorf("recording the run failed; the worker was released: %w", noteErr)},
 		exitRow{name: "verify: branch changes several portdirs (branchPortdir)",
 			err: fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, 2, tip)},
-		exitRow{name: "lifecycle.ChangedPort: evaluation failed",
+		// The `lifecycle:` prefix outlived the package that gave it: the
+		// code moved to the engine and the sentence did not, because the
+		// words are what a user reads and a move does not get to reword
+		// them. Both rows carry the literal text for that reason — the
+		// name says where the error is built, the literal says what is
+		// printed, and only a deliberate change moves the second.
+		exitRow{name: "engine.SubjectOf: evaluation failed",
 			err: fmt.Errorf("lifecycle: evaluating %s at %s: %w", "sysutils/jq", tip, errors.New("Portfile: invalid command name"))},
-		exitRow{name: "lifecycle.ChangedPort: several contexts",
+		exitRow{name: "engine.SubjectOf: several contexts",
 			err: fmt.Errorf("lifecycle: the branch changes %d contexts (%s); name the one to verify: `dockhand verify <subport>`", 2, "demo, demo2")},
-		exitRow{name: "verify: job ended in state (runVerification)",
+		exitRow{name: "verify: job ended in state (RunVerification)",
 			err: fmt.Errorf("verify: job ended in state %s", "running")},
 		exitRow{name: "exec: the command failed on N of M releases",
 			err: fmt.Errorf("exec: the command failed on %d of %d releases", 1, 2)},

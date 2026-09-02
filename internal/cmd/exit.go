@@ -43,6 +43,10 @@ func ExitCode(err error) int {
 	}
 	switch {
 	case errors.Is(err, verify.ErrNoEnvironment),
+		// A machine with no provider and one with no base images differ
+		// only in remedy; both are the machine's obstacle, so both exit
+		// here.
+		errors.Is(err, verify.ErrNoProvider),
 		errors.Is(err, verify.ErrUnsupported),
 		errors.Is(err, prefix.ErrNotInstalled),
 		errors.Is(err, eval.ErrStartup),

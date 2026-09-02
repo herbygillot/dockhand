@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/lifecycle"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -28,11 +28,20 @@ func (a discardAction) Execute(ctx context.Context, rs *runstate.Context) error 
 	if err != nil {
 		return err
 	}
-	branch, err := lifecycle.ResolveBranch(ctx, repo, a.target)
+	eng := rs.Deps()
+	branch, err := eng.Resolve(ctx, repo, a.target)
 	if err != nil {
 		return err
 	}
-	return lifecycle.DiscardBranch(ctx, rs, repo, branch, false)
+	// The demolition reports what it did as lines rather than printing
+	// them, because its four callers put them in four different places.
+	// Here they fall where they were written: the deletion on stdout,
+	// the advisories about what was left behind on stderr. Printed on
+	// the failure path too — a demolition that stopped halfway still did
+	// the half it did, and the user is owed the account of it.
+	said, err := eng.Discard(ctx, repo, branch, false)
+	render.Prose(said, rs.Out, rs.Err)
+	return err
 }
 
 // Discard builds the discard subcommand.

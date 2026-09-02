@@ -1,4 +1,4 @@
-package lifecycle
+package engine
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/platform"
-	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
@@ -24,13 +23,12 @@ import (
 // The answer is verdict's own Preflight: what the evaluation found is
 // a fact the scheduling judgment weighs, and there is nothing here to
 // hold it that verdict does not already declare.
-func preflightOn(ctx context.Context, rs *runstate.Context, portdir string, r platform.Release) (verdict.Preflight, error) {
-	pfx, err := rs.Prefix()
-	if err != nil {
-		return verdict.Preflight{}, err
-	}
+//
+// The session is this function's own and not the run's: the frame is
+// the TARGET release's, and the run's evaluator carries the host's.
+func (e *Engine) preflightOn(ctx context.Context, portdir string, r platform.Release) (verdict.Preflight, error) {
 	frame := info.Platform{OS: "macosx", Major: r.Darwin, Arch: "arm"}
-	ev, err := eval.Start(ctx, pfx, eval.WithPlatform(frame))
+	ev, err := e.Session(ctx, eval.WithPlatform(frame))
 	if err != nil {
 		return verdict.Preflight{}, err
 	}

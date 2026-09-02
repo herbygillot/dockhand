@@ -9,11 +9,13 @@
 // and stood in by tests; a package-level seam would be mutable global
 // state.
 //
-// The layering rule: a Context reaches the application layer — cmd's
-// Actions and the lifecycle engine, which needs the run's streams,
-// seams, and services throughout — and stops there. The domain
-// packages (planners, styles, evaluation, vendored families) take only
-// what they need — a Prefix, an Evaluator, a tempdir.Root — because a
+// The layering rule: a Context reaches cmd's Actions and stops there.
+// The engine below them takes an engine.Deps instead — the same
+// facilities, each as the func that resolves it — and Deps builds it
+// (the one constructor), so the run's memos stay the run's while
+// nothing under cmd can reach a command line. The domain packages
+// (planners, styles, evaluation, vendored families) take only what
+// they need — a Prefix, an Evaluator, a tempdir.Root — because a
 // planner that accepted a Context would be a planner that could reach
 // the command line.
 package runstate
@@ -44,24 +46,43 @@ import (
 // context.Context (Into/From); the package comment says how far it
 // reaches.
 type Context struct {
+	// noCopy makes `go vet`'s copylocks check refuse a copy of this
+	// value. status used to take one — a by-value copy with its prose
+	// rerouted to stderr — and the copy carried every memo's "not yet
+	// resolved" flag with it, so it composed a second verify provider
+	// and created a second temporary root that the original's Close
+	// never removed. Rerouting prose is the renderer's job now, nothing
+	// copies a run, and this is what keeps it that way.
+	_ noCopy
+
 	// TreeRoot and PrefixPath are as the user gave them; empty means
 	// discover. Debug is the flag, already applied to the logger.
 	TreeRoot   string
 	PrefixPath string
 	Debug      bool
 
+	// Version is the running binary's, as the composition root knows
+	// it — a fact about the run, carried so the words that name the
+	// tool need not reach for a package-level global.
+	Version string
+
 	// Tools finds the external programs this run drives — git, tart,
 	// gh, the block generators — one finder built at the composition
 	// root and handed to every component that execs, so doctor's
 	// answer and the working code's are the same lookup. A pointer:
-	// the finder carries a lock and a memo, and status copies this
-	// Context by value to reroute its prose.
+	// the finder carries a lock and a memo, and one run asks the
+	// machine each question once.
 	Tools *tool.Finder
 	// Verifier resolves the machine's verify provider — wired by the
 	// composition root (cmd's Root), stood in by tests. A package-level
 	// seam would be mutable global state; a Context field is the same
 	// injection every other service here gets.
 	Verifier func(ctx context.Context) (verify.Verifier, error)
+	// Lister resolves the backend that can say what this machine is
+	// running, for the worker audit — the same seam and the same
+	// standing in, and a second one because listing workers needs only
+	// the backend where verifying needs a base image to run on.
+	Lister func(ctx context.Context) (verify.Verifier, error)
 	// Gh runs one gh invocation and returns its stdout — the GitHub
 	// seam, wired and stood in the same way.
 	Gh func(ctx context.Context, args ...string) (string, error)
@@ -96,6 +117,21 @@ type Context struct {
 
 	closers []func()
 }
+
+// noCopy is the standard vet-only marker: it has the Lock/Unlock pair
+// copylocks looks for and no lock behind them, because what must not be
+// copied here is not a mutex but a set of one-shot memos.
+//
+// The receivers are pointers, and that is the whole mechanism.
+// copylocks reports a type only when a pointer to it is a sync.Locker
+// and a value of it is not — that asymmetry is how the check tells an
+// embedded lock from an embedded interface. Value receivers here would
+// make noCopy itself a Locker, the asymmetry would vanish, and the
+// marker would compile, read correctly, and catch nothing.
+type noCopy struct{}
+
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
 
 // Init fills the context from what the flag layer parsed. It runs once
 // per execution, before any command's own work. Flag extraction stays
@@ -158,10 +194,10 @@ func (rc *Context) Repo(ctx context.Context) (*git.Repo, error) {
 
 // RepoFor is Repo, for a realization that named a portdir: the run's
 // repository is resolved once, and the first asker anchors it — the
-// tree (or the working directory) for the lifecycle verbs, the portdir
-// an intent names for the realizations that speak git. Both name the
-// same checkout whenever the portdir is in the tree, and a portdir
-// named from outside any tree still finds its own.
+// tree (or the working directory) for the branch verbs, the portdir an
+// intent names for the realizations that speak git. Both name the same
+// checkout whenever the portdir is in the tree, and a portdir named
+// from outside any tree still finds its own.
 func (rc *Context) RepoFor(ctx context.Context, dir string) (*git.Repo, error) {
 	if !rc.repoDone {
 		rc.repoDone = true
@@ -303,6 +339,19 @@ func (c *Context) VerifyProvider(ctx context.Context) (verify.Verifier, error) {
 		c.prov, c.provErr = c.Verifier(ctx)
 	}
 	return c.prov, c.provErr
+}
+
+// WorkerLister resolves the backend the worker audit asks, refusing
+// plainly when none was wired.
+//
+// Unmemoized, unlike VerifyProvider: what it composes reads nothing
+// about the machine — no base images listed, no VM touched — so asking
+// twice costs a struct. The audit asks once per pass anyway.
+func (c *Context) WorkerLister(ctx context.Context) (verify.Verifier, error) {
+	if c.Lister == nil {
+		return nil, errors.New("no worker lister wired into this run")
+	}
+	return c.Lister(ctx)
 }
 
 // RunGH runs one gh invocation through the wired seam.

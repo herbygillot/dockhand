@@ -1,0 +1,118 @@
+--- stdout
+{
+  "repository": "/checkout/ports",
+  "branches": [
+    {
+      "branch": "dockhand/jq-local",
+      "tip": "44cfc9eea250",
+      "note": {
+        "schema": 2,
+        "sha": "0123456789abcdef0123",
+        "tree": "",
+        "port": "jq",
+        "runs": {
+          "Testos": {
+            "state": "passed",
+            "job": {
+              "provider": "",
+              "id": "",
+              "started": "0001-01-01T00:00:00Z"
+            },
+            "linted": true,
+            "lint": "clean"
+          }
+        }
+      }
+    },
+    {
+      "branch": "dockhand/jq-landed",
+      "tip": "8da38abbbd45",
+      "drift": "unverified",
+      "pr": {
+        "number": 80,
+        "title": "jq: update to 1.7",
+        "state": "closed",
+        "merged_at": "2026-09-01T00:00:00Z",
+        "html_url": "https://x/80"
+      },
+      "cleaned": true
+    },
+    {
+      "branch": "dockhand/jq-open",
+      "tip": "5e687c527fc9",
+      "note": {
+        "schema": 2,
+        "sha": "0123456789abcdef0123",
+        "tree": "",
+        "port": "jq",
+        "runs": {
+          "Testos": {
+            "state": "passed",
+            "job": {
+              "provider": "",
+              "id": "",
+              "started": "0001-01-01T00:00:00Z"
+            },
+            "linted": true,
+            "lint": "clean"
+          }
+        }
+      },
+      "pr": {
+        "number": 77,
+        "title": "jq: update to 2.5",
+        "state": "open",
+        "merged_at": "",
+        "html_url": "https://x/77"
+      }
+    },
+    {
+      "branch": "dockhand/jq-running",
+      "tip": "997767bd393f",
+      "note": {
+        "schema": 2,
+        "sha": "997767bd393f",
+        "tree": "",
+        "port": "jq",
+        "runs": {
+          "Testos": {
+            "state": "running",
+            "job": {
+              "provider": "fake",
+              "id": "fake-1",
+              "started": "2026-09-01T11:58:30Z"
+            }
+          }
+        }
+      }
+    },
+    {
+      "branch": "dockhand/jq-unreadable",
+      "error": "reading the note: bad object"
+    },
+    {
+      "branch": "dockhand/jq-outage",
+      "tip": "ff6909944aa2",
+      "drift": "unverified",
+      "pr_error": "gh api: HTTP 502 from api.github.com"
+    },
+    {
+      "branch": "dockhand/jq-unswept",
+      "tip": "ff6909944aa2",
+      "drift": "unverified"
+    }
+  ],
+  "orphan_workers": [
+    {
+      "name": "dockhand-worker-stray"
+    },
+    {
+      "name": "dockhand-worker-elsewhere",
+      "owner": "/other/ports"
+    }
+  ]
+}
+--- stderr
+removed dockhand/jq-landed from "herby"
+discarded dockhand/jq-landed (8da38abbbd45)
+still deferred: dockhand/jq-local on Testos — all 2 verification slots are busy

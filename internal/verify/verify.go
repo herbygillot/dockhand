@@ -212,13 +212,49 @@ var (
 	// a proposition it does not answer, a platform it is not.
 	ErrUnsupported = errors.New("verify: provider cannot meet this request")
 	// ErrNoEnvironment reports that the machine cannot supply the
-	// environment — no VM tool, no base image. It is a doctor-shaped
-	// fact, never a finding about a port.
+	// environment — the provider exists and has nothing to run on. It
+	// is a doctor-shaped fact, never a finding about a port, and its
+	// remedy is provisioning.
 	ErrNoEnvironment = errors.New("verify: no environment available")
+	// ErrNoProvider reports that the machine has no verify provider at
+	// all. It is deliberately not ErrNoEnvironment: a machine with no
+	// provider cannot verify, so verification quietly leaves the
+	// contract (bump warns and proceeds, promote warns and allows),
+	// where a provider with no base images is asked to provision.
+	// Both exit in the machine band; only the remedy differs.
+	//
+	// It is a sentinel to branch on and not a sentence to print:
+	// NoProvider builds the refusal a user reads, and says why the two
+	// are not the same words.
+	ErrNoProvider = errors.New("verify: no verify provider")
 	// ErrUnknownJob reports a job the provider does not recognize,
 	// which is what a stale job file looks like.
 	ErrUnknownJob = errors.New("verify: unknown job")
 )
+
+// NoProvider reports a machine with no verify provider, in the one
+// sentence dockhand has always printed for a machine that cannot
+// verify: "no environment available", and then the caller's remedy.
+//
+// The sentence and the sentinel part company here on purpose. Telling
+// a missing provider from a missing base image is a distinction the
+// CODE needs — one narrows the contract, the other asks for
+// provisioning — and it was drawn by splitting the sentinel. The user's
+// situation did not split with it: either way the machine cannot
+// verify, and the clause that follows already names which remedy
+// applies. So callers gain errors.Is(err, ErrNoProvider) and readers
+// lose nothing, which is what makes the split free.
+func NoProvider(detail string) error { return &noProvider{detail: detail} }
+
+// noProvider is NoProvider's error. Its words are ErrNoEnvironment's so
+// the two refusals cannot drift apart in a release note; its identity
+// is ErrNoProvider's, and nothing else — a caller asking whether this
+// machine merely wants provisioning must hear no.
+type noProvider struct{ detail string }
+
+func (e *noProvider) Error() string { return ErrNoEnvironment.Error() + ": " + e.detail }
+
+func (e *noProvider) Is(target error) bool { return target == ErrNoProvider }
 
 // Verifier is an environment that can answer propositions about a port.
 //
@@ -279,6 +315,32 @@ type Executor interface {
 // shell inside an environment, wired to the process's own terminal.
 type InteractiveShell interface {
 	Shell(ctx context.Context, job Job) error
+}
+
+// Worker is one environment a provider is running, named the way the
+// provider names it. Owner is the checkout that started it, when
+// anything says: attribution is informational everywhere it is
+// written, so an unattributed worker is a worker rather than an error.
+type Worker struct {
+	Name  string
+	Owner string
+}
+
+// WorkerLister is the optional capability of naming every environment
+// the provider is running right now, whoever started it and whether or
+// not any record here accounts for it. It exists because a provider
+// with a hard cap on concurrent environments turns one forgotten
+// worker into a slot nobody gets back, and the audit that finds it was
+// reaching past this package into a named backend — which is silently
+// wrong the day the job's provider is not that backend.
+//
+// The listing is the provider's whole answer; deciding which of those
+// workers is unaccounted for needs records the provider does not have,
+// and stays the caller's. A caller that needs this type-asserts, and
+// one that meets a provider without it has learned nothing about that
+// provider's workers rather than learning there are none.
+type WorkerLister interface {
+	Workers(ctx context.Context) ([]Worker, error)
 }
 
 // Await polls until the job is terminal or the context ends. It is a

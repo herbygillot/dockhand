@@ -1,8 +1,8 @@
 // Package corpustest reads the settle corpus's .expect sidecars.
 //
-// The corpus at internal/lifecycle/testdata/logs is swept twice — the
+// The corpus at internal/engine/testdata/logs is swept twice — the
 // judgments alone in internal/verdict, and the effectful settle that
-// carries them out in internal/lifecycle — over one copy of the files,
+// carries them out in internal/engine — over one copy of the files,
 // so that a real `dockhand log` capture dropped in is picked up by both
 // with no code change. What a sidecar's keys mean, which words each one
 // admits, and the invariant tying a blamed port to a blocked state are
@@ -11,7 +11,7 @@
 //
 // It sits outside both packages deliberately. verdict's purity is held
 // at its import block, tests included, and a sidecar reader living in
-// lifecycle would put the effectful sweep's own package inside it.
+// the engine would put the effectful sweep's own package inside it.
 package corpustest
 
 import (

@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/tool"
@@ -87,7 +86,7 @@ func (a provisionXcodeAction) targets(ctx context.Context, tools *tool.Finder) (
 	if !a.release.IsZero() {
 		return []platform.Release{a.release}, nil
 	}
-	if lifecycle.TartPresent(tools) {
+	if tools.Have(tool.Tart) {
 		if rels, err := (provision.Tart{Tools: tools}).Provisioned(ctx); err == nil && len(rels) > 0 {
 			return rels, nil
 		}

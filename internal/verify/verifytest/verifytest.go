@@ -1,5 +1,5 @@
-// Package verifytest is the in-memory Verifier the lifecycle tests
-// stand in for tart: scriptable states, recorded releases, no VM. It
+// Package verifytest is the in-memory Verifier the engine tests stand
+// in for tart: scriptable states, recorded releases, no VM. It
 // exists because everything between a submitted job and a settled note
 // — settle, follow, cancel, discard — was provable only by live runs,
 // and every regression in that band was being caught by a human.
@@ -38,6 +38,14 @@ type Fake struct {
 	// deliberately not InteractiveShell: a fake terminal proves
 	// nothing.
 	ExecOut map[string]string
+	// Live scripts Workers: every environment this provider is running,
+	// accounted for or not. Named for what it holds rather than for the
+	// method, because a field and a method cannot share a name.
+	Live []verify.Worker
+	// WorkersErr makes Workers fail — the audit the machine will not
+	// answer, which a caller must absorb rather than report as an
+	// empty machine.
+	WorkersErr error
 
 	// Submitted records every request, in order.
 	Submitted []verify.Request
@@ -100,4 +108,44 @@ func (f *Fake) Release(_ context.Context, job verify.Job) error {
 	}
 	f.Released = append(f.Released, job.ID)
 	return nil
+}
+
+var _ verify.WorkerLister = (*Fake)(nil)
+
+func (f *Fake) Workers(context.Context) ([]verify.Worker, error) {
+	if f.WorkersErr != nil {
+		return nil, f.WorkersErr
+	}
+	return f.Live, nil
+}
+
+// Incapable is a Verifier and nothing else: no Executor, no
+// WorkerLister. It exists because a caller's graceful refusal for a
+// provider that cannot answer is otherwise untestable — with only Fake
+// to stand in, every optional capability is always present, and the
+// branch that says so honestly never runs.
+//
+// It wraps a Fake rather than embedding one so the capabilities cannot
+// creep back in by promotion: adding a method to Fake must not quietly
+// give Incapable that method too.
+type Incapable struct{ Fake *Fake }
+
+var _ verify.Verifier = Incapable{}
+
+func (i Incapable) Capabilities() verify.Capabilities { return i.Fake.Capabilities() }
+
+func (i Incapable) Submit(ctx context.Context, req verify.Request) (verify.Job, error) {
+	return i.Fake.Submit(ctx, req)
+}
+
+func (i Incapable) Poll(ctx context.Context, job verify.Job) (verify.Status, error) {
+	return i.Fake.Poll(ctx, job)
+}
+
+func (i Incapable) Log(ctx context.Context, job verify.Job) (string, error) {
+	return i.Fake.Log(ctx, job)
+}
+
+func (i Incapable) Release(ctx context.Context, job verify.Job) error {
+	return i.Fake.Release(ctx, job)
 }

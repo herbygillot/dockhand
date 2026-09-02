@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lockfile"
@@ -26,8 +27,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
-// tartOnPath makes TartPresent answer yes regardless of the machine,
-// so the pump's gate opens in tests; every other tool still resolves
+// tartOnPath makes the drain's gate answer yes regardless of the
+// machine, so the pump runs in tests; every other tool still resolves
 // for real (git is genuinely needed). tartAbsent (golden_fixtures_test.go)
 // is its counterpart, and stubTart is the mechanism.
 func tartOnPath(t *testing.T) {
@@ -186,9 +187,9 @@ func TestStatusPumpYieldsToAPeerHoldingTheLock(t *testing.T) {
 	tartOnPath(t)
 	repo, sha := lifecycleRepo(t)
 	deferredNote(t, repo, sha, "all 2 verification slots are busy (2 VMs running)")
-	prev := submitLockWait
-	submitLockWait = 0
-	t.Cleanup(func() { submitLockWait = prev })
+	prev := engine.SubmitLockWait
+	engine.SubmitLockWait = 0
+	t.Cleanup(func() { engine.SubmitLockWait = prev })
 
 	unlock, err := repo.LockSubmit(context.Background(), 0)
 	require.NoError(t, err)
@@ -256,9 +257,9 @@ func TestVerifyYieldsToAPeerHoldingTheLock(t *testing.T) {
 	tartOnPath(t)
 	repo, sha := lifecycleRepo(t)
 	deferredNote(t, repo, sha, "all 2 verification slots are busy (2 VMs running)")
-	prev := submitLockWait
-	submitLockWait = 0
-	t.Cleanup(func() { submitLockWait = prev })
+	prev := engine.SubmitLockWait
+	engine.SubmitLockWait = 0
+	t.Cleanup(func() { engine.SubmitLockWait = prev })
 
 	unlock, err := repo.LockSubmit(context.Background(), 0)
 	require.NoError(t, err)

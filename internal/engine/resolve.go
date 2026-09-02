@@ -1,4 +1,4 @@
-package lifecycle
+package engine
 
 import (
 	"context"
@@ -15,9 +15,9 @@ import (
 // working tree — when several do.
 var ErrAmbiguousTarget = errors.New("ambiguous target")
 
-// ResolveBranch accepts a branch name outright, or a port name
-// that names exactly one in-flight branch.
-func ResolveBranch(ctx context.Context, repo *git.Repo, target string) (string, error) {
+// Resolve accepts a branch name outright, or a port name that names
+// exactly one in-flight branch.
+func (e *Engine) Resolve(ctx context.Context, repo *git.Repo, target string) (string, error) {
 	if repo.HasBranch(ctx, target) {
 		return target, nil
 	}

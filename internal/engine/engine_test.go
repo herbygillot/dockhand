@@ -1,6 +1,6 @@
-package lifecycle
+package engine
 
-// The lifecycle tests: everything between a submitted job and a
+// The engine tests: everything between a submitted job and a
 // settled note — settle, follow, discard — driven hermetically through
 // the VMProvider seam by verifytest.Fake and a throwaway git repo.
 // This band was previously proven only by live runs, which meant every
@@ -9,6 +9,8 @@ package lifecycle
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,35 +23,27 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
-// realTools is the finder every fixture and run state here carries:
-// the real PATH search, because git is genuinely driven. A test that
-// needs tart present says so with tartStubbed.
+// realTools is the finder every fixture and engine here carries: the
+// real PATH search, because git is genuinely driven. Nothing in this
+// package asks the finder whether tart exists — the submit road asks
+// the composed provider, and the fake is always composable — so no
+// test needs to stub the lookup.
 var realTools = tool.NewFinder(nil)
 
-// tartStubbed is a finder that answers the tart lookup with a stub
-// path and every other lookup for real, so a gate that asks whether
-// tart exists opens on a machine without it.
-func tartStubbed() *tool.Finder {
-	return tool.NewFinder(func(name string) (string, error) {
-		if name == string(tool.Tart) {
-			return "/stub/tart", nil
-		}
-		return exec.LookPath(name)
-	})
-}
-
-// lifecycleRepo is a ports-tree-shaped git repo with one dockhand
+// engineRepo is a ports-tree-shaped git repo with one dockhand
 // branch Minted, its tip returned alongside.
-func lifecycleRepo(t *testing.T) (*git.Repo, string) {
+func engineRepo(t *testing.T) (*git.Repo, string) {
 	t.Helper()
 	ctx := context.Background()
 	repo := gittest.PortsTree(t, realTools)
@@ -72,28 +66,89 @@ func runningNote(t *testing.T, repo *git.Repo, sha, jobID string) record.Record 
 	return n
 }
 
-// testState is the run a lifecycle test drives: the repository's root
-// stated, the real finder, both streams into one buffer, and the fake
-// wired as the verifier when the test has one.
-func testState(t *testing.T, repo *git.Repo, fake *verifytest.Fake) *runstate.Context {
+// lockNotesRef leaves a ref lock lying on one notes ref, so that reads
+// of it keep working and the next write cannot take it. It is how a
+// note write is made to fail on purpose — the shape of a peer mid-write
+// or a full disk, with none of the timing — for the paths whose whole
+// contract is what they say when one does.
+func lockNotesRef(t *testing.T, repo *git.Repo, ref string) {
+	t.Helper()
+	lock := filepath.Join(repo.Root, ".git", "refs", "notes", ref+".lock")
+	require.NoError(t, os.MkdirAll(filepath.Dir(lock), 0o755))
+	require.NoError(t, os.WriteFile(lock, nil, 0o644))
+}
+
+// testState is the run an engine test drives: the repository stated,
+// the real finder, both streams into one buffer, and the fake wired as
+// the verifier when the test has one. Deps is built here rather than
+// borrowed from runstate because runstate imports this package — the
+// wiring itself is proven where the verbs are, in internal/cmd.
+func testState(t *testing.T, repo *git.Repo, fake *verifytest.Fake) *Engine {
 	t.Helper()
 	var buf bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: realTools, Out: &buf, Err: &buf}
+	return testEngine(t, repo, fake, &buf, &buf)
+}
+
+// testEngine is testState with the two streams named, for the tests
+// that read them apart.
+func testEngine(t *testing.T, repo *git.Repo, fake *verifytest.Fake, out, errOut io.Writer) *Engine {
+	t.Helper()
+	// Lazily, and once: a root created for every test would leave a
+	// directory behind for the many that never stage anything, and two
+	// roots in one run would be the leak the run-scoped root exists to
+	// prevent.
+	var (
+		once     sync.Once
+		root     tempdir.Root
+		rootErr  error
+		provider = func(context.Context) (verify.Verifier, error) {
+			return nil, errors.New("no verify provider wired into this run")
+		}
+	)
 	if fake != nil {
-		rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+		provider = func(context.Context) (verify.Verifier, error) { return fake, nil }
 	}
-	return rs
+	return New(Deps{
+		Repo:    func(context.Context) (*git.Repo, error) { return repo, nil },
+		RepoFor: func(context.Context, string) (*git.Repo, error) { return repo, nil },
+		Ledger:  ledger.Open,
+		// One fake answers both seams, which is what a real machine does
+		// too: the same backend, asked two questions with different
+		// preconditions. The tests that care about the gap set them apart
+		// themselves.
+		Verifier: provider,
+		Lister:   provider,
+		Temp: func() (tempdir.Root, error) {
+			once.Do(func() {
+				if root, rootErr = tempdir.New(); rootErr == nil {
+					t.Cleanup(func() { _ = root.Remove() })
+				}
+			})
+			return root, rootErr
+		},
+		Session: func(ctx context.Context, opts ...eval.Option) (*eval.Evaluator, error) {
+			pfx, err := prefix.Find(realTools)
+			if err != nil {
+				return nil, err
+			}
+			return eval.Start(ctx, pfx, opts...)
+		},
+		Tools:    realTools,
+		TreeRoot: repo.Root,
+		Out:      out,
+		Err:      errOut,
+	})
 }
 
 func TestSettleRunsPassReleasesAndKeepsLintEvidence(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  Verifying Portfile for jq\n--->  0 errors and 2 warnings found.\n--->  Activating jq\n"},
 	}
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
+	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, record.Passed, r.State)
 	assert.Equal(t, "2 warnings", r.Lint, "lint evidence is read before the release")
@@ -106,14 +161,14 @@ func TestSettleRunsPassReleasesAndKeepsLintEvidence(t *testing.T) {
 }
 
 func TestSettleRunsFailureKeepsTheDebugHandle(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
 		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "ld: symbol not found\n"},
 	}
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
+	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, record.Failed, r.State)
 	assert.Equal(t, "fake-1", r.Handle, "the failure's environment is the debug handle")
@@ -121,14 +176,14 @@ func TestSettleRunsFailureKeepsTheDebugHandle(t *testing.T) {
 }
 
 func TestSettleRunsReadsARefusalAsUnsupported(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
 		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "Error: jq is known to fail on this platform\n"},
 	}
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
+	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, record.Unsupported, r.State, "a correct refusal is not a failure")
 	assert.Empty(t, r.Handle, "a refusal leaves nothing to debug")
@@ -136,18 +191,18 @@ func TestSettleRunsReadsARefusalAsUnsupported(t *testing.T) {
 }
 
 func TestSettleRunsVanishedJobIsErrored(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{Vanished: map[string]bool{"fake-1": true}}
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
+	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, record.Errored, r.State)
 	assert.Contains(t, r.Detail, "vanished")
 }
 
 func TestDiscardBranchReleasesEverythingItHolds(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{}
 	ctx := context.Background()
 	n := runningNote(t, repo, sha, "fake-1")
@@ -155,16 +210,17 @@ func TestDiscardBranchReleasesEverythingItHolds(t *testing.T) {
 		Job: verify.Job{Provider: "fake", ID: "fake-9"}}
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
-	require.NoError(t, DiscardBranch(ctx, testState(t, repo, fake), repo, "dockhand/jq-1.8", false))
+	_, err := testState(t, repo, fake).Discard(ctx, repo, "dockhand/jq-1.8", false)
+	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"fake-1", "fake-9"}, fake.Released,
 		"the running worker and the kept failure both go")
 	assert.False(t, repo.HasBranch(ctx, "dockhand/jq-1.8"))
-	_, err := ledger.Open(repo).Read(ctx, sha)
+	_, err = ledger.Open(repo).Read(ctx, sha)
 	assert.ErrorIs(t, err, git.ErrNoNote, "no note debris survives the branch")
 }
 
 func TestFollowRunSettlesAndSpeaksTheVerdict(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\nbuild output\n"},
@@ -172,10 +228,9 @@ func TestFollowRunSettlesAndSpeaksTheVerdict(t *testing.T) {
 	runningNote(t, repo, sha, "fake-1")
 
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: realTools, Out: &out, Err: &errb,
-		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
+	eng := testEngine(t, repo, fake, &out, &errb)
 	job := verify.Job{Provider: "fake", ID: "fake-1"}
-	require.NoError(t, FollowRun(context.Background(), rs, repo, sha, "jq", "Testos", fake, job))
+	require.NoError(t, eng.Follow(context.Background(), repo, sha, "jq", "Testos", fake, job))
 	assert.Contains(t, out.String(), "build output", "the log streams to stdout")
 	assert.Contains(t, errb.String(), "passed on Testos; worker released")
 
@@ -189,7 +244,7 @@ func TestConcurrentRecordsBothSurvive(t *testing.T) {
 	// Two dockhands share this checkout now — an agent and its user —
 	// and RecordRun is read-modify-write of a whole note. Without the
 	// notes lock, one of these two platforms' runs is silently lost.
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{}
 	ctx := context.Background()
 
@@ -199,7 +254,7 @@ func TestConcurrentRecordsBothSurvive(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = RecordRun(ctx, testState(t, repo, fake), repo, sha, "jq", plat,
+			errs[i] = testState(t, repo, fake).recordRun(ctx, repo, sha, "jq", plat,
 				record.Run{State: "running", Job: verify.Job{Provider: "fake", ID: "fake-" + plat}}, "")
 		}()
 	}
@@ -213,7 +268,7 @@ func TestConcurrentRecordsBothSurvive(t *testing.T) {
 }
 
 func TestSettleRunsRecordsTheFailureDiagnosis(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
 		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
 		Logs: map[string]string{"fake-1": "--->  Building jq\n" +
@@ -222,7 +277,7 @@ func TestSettleRunsRecordsTheFailureDiagnosis(t *testing.T) {
 	}
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
+	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, record.Failed, r.State)
 	assert.Equal(t, "Failed to build jq: command execution failed", r.Detail,
@@ -235,7 +290,7 @@ func TestSettleRunsRecordsTheFailureDiagnosis(t *testing.T) {
 // its worker is released, because the breakage belongs to a port the
 // branch never touched.
 func TestSettleRunsDependencyFailureIsBlocked(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
 		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
 		Logs: map[string]string{"fake-1": "--->  Building olm\n" +
@@ -244,7 +299,7 @@ func TestSettleRunsDependencyFailureIsBlocked(t *testing.T) {
 	}
 	n := runningNote(t, repo, sha, "fake-1")
 
-	require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
+	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
 	r := n.Runs["Testos"]
 	assert.Equal(t, record.Blocked, r.State)
 	assert.Equal(t, "dependency olm fails to build; the change itself is untested", r.Detail)
@@ -278,7 +333,7 @@ func TestNomaintainerDepReadsTheDependencysPortfile(t *testing.T) {
 func TestSettleRunsRereadsUnderTheLock(t *testing.T) {
 	// The caller's copy predates a concurrent record; settling must not
 	// write that staleness back over it.
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
@@ -288,10 +343,10 @@ func TestSettleRunsRereadsUnderTheLock(t *testing.T) {
 	stale := n // the copy a slow status would hold
 
 	// A concurrent dockhand records a second platform meanwhile.
-	require.NoError(t, RecordRun(ctx, testState(t, repo, nil), repo, sha, "jq", "Oldos",
+	require.NoError(t, testState(t, repo, nil).recordRun(ctx, repo, sha, "jq", "Oldos",
 		record.Run{State: "deferred", Detail: "slot full"}, ""))
 
-	require.NoError(t, SettleRuns(ctx, testState(t, repo, fake), repo, &stale))
+	require.NoError(t, testState(t, repo, fake).settle(ctx, repo, &stale))
 	assert.Len(t, stale.Runs, 2, "the settle re-read; the concurrent record survives")
 	assert.Equal(t, record.Passed, stale.Runs["Testos"].State)
 	assert.Equal(t, record.Deferred, stale.Runs["Oldos"].State)
@@ -308,7 +363,7 @@ func TestTclTrue(t *testing.T) {
 }
 
 func TestNoteValidationRefusesWhatItCannotHonour(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	ctx := context.Background()
 
 	// Malformed: named as corrupt, with the removal command.
@@ -347,19 +402,16 @@ func TestSubmitReleasesTheJobWhenRecordingFails(t *testing.T) {
 	// unreadable (strict validation refuses it), recording fails after
 	// the job started — and the compensation must release exactly that
 	// job rather than leave a VM no settlement can find.
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	gittest.Note(t, repo, sha, "{not json")
 	fake := &verifytest.Fake{}
-	rs := testState(t, repo, fake)
-	// SubmitVerification's degradation gate asks the finder for the
-	// tool itself; the stub opens it whatever the machine has.
-	rs.Tools = tartStubbed()
+	eng := testState(t, repo, fake)
 
 	rel, err := repo.PrimaryBranch(context.Background())
 	_ = rel
 	require.NoError(t, err)
 	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
-	err = SubmitVerification(context.Background(), rs, m, "jq", platform.Release{Name: "Testos", Darwin: 99}, false, false)
+	err = eng.submit(context.Background(), m, "jq", platform.Release{Name: "Testos", Darwin: 99}, false, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "the worker was released")
 	require.Len(t, fake.Submitted, 1, "the job did start")
@@ -370,7 +422,7 @@ func TestPromotionRefusesACorruptTipNote(t *testing.T) {
 	// A corrupt or future-schema note on the tip must refuse promotion
 	// outright — never read as absence, through which an older
 	// same-tree note could authorize publication.
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	ctx := context.Background()
 	gittest.Note(t, repo, sha, "{not json")
 	_, _, err := ledger.Open(repo).EvidenceFor(ctx, sha)
@@ -383,23 +435,6 @@ func TestPromotionRefusesACorruptTipNote(t *testing.T) {
 	assert.Contains(t, err.Error(), "newer dockhand")
 }
 
-func TestCancelRunningNeedsNoProviderWhenNothingRuns(t *testing.T) {
-	// CI's tart-less runners caught the eager provider lookup: a note
-	// with nothing running must cancel nothing without ever asking for
-	// a provider.
-	repo, sha := lifecycleRepo(t)
-	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "passed"}
-	require.NoError(t, ledger.Open(repo).Write(ctx, n))
-
-	rs := testState(t, repo, nil) // Verifier unset: resolving it would error
-	canceled, err := CancelRunning(ctx, rs, repo, sha, "x")
-	require.NoError(t, err)
-	assert.Zero(t, canceled)
-}
-
 // baseless is a verifier with no base images. No provider today
 // reports one — RealVMProvider refuses to build without a base and
 // the fake defaults to one — so the guard against indexing an empty
@@ -409,16 +444,15 @@ type baseless struct{ *verifytest.Fake }
 func (baseless) Capabilities() verify.Capabilities { return verify.Capabilities{} }
 
 func TestZeroReleaseRefusesWhenTheProviderHasNoBases(t *testing.T) {
-	repo, sha := lifecycleRepo(t)
+	repo, sha := engineRepo(t)
 	ctx := context.Background()
 	fake := &verifytest.Fake{}
-	rs := testState(t, repo, nil)
-	rs.Verifier = func(context.Context) (verify.Verifier, error) { return baseless{fake}, nil }
-	rs.Tools = tartStubbed()
+	eng := testState(t, repo, nil)
+	eng.Verifier = func(context.Context) (verify.Verifier, error) { return baseless{fake}, nil }
 	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
 
 	// On the submit road the branch stands and the contract failed.
-	err := SubmitVerification(ctx, rs, m, "jq", platform.Release{}, false, false)
+	err := eng.submit(ctx, m, "jq", platform.Release{}, false, false)
 	var deferred *VerifyDeferredError
 	require.ErrorAs(t, err, &deferred)
 	require.ErrorIs(t, err, verify.ErrNoEnvironment)
@@ -426,7 +460,7 @@ func TestZeroReleaseRefusesWhenTheProviderHasNoBases(t *testing.T) {
 
 	// On the pre-verified road the refusal comes back raw, and nothing
 	// is recorded under a release that does not exist.
-	err = markVerified(ctx, rs, m, &plan.Plan{Port: "jq"}, platform.Release{}, false, "clean")
+	err = eng.markVerified(ctx, m, &plan.Plan{Port: "jq"}, platform.Release{}, false, "clean")
 	require.ErrorIs(t, err, verify.ErrNoEnvironment)
 	assert.NotErrorAs(t, err, &deferred)
 	_, err = ledger.Open(repo).Read(ctx, sha)

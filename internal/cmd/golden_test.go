@@ -24,6 +24,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -222,6 +224,32 @@ func TestGoldenStatusPump(t *testing.T) {
 	checkGolden(t, "status_pump", tr, rewrite{repo.Root, "<repo>"})
 }
 
+// The worker audit's two sentences, which no golden pinned while the
+// audit ran tart directly and every status fixture stubbed tart away.
+// It is asked of the provider now, so the fake answers it and the
+// machine's own tart is stubbed absent — which is the whole of what
+// changed: a wired provider reports its workers on a machine the audit
+// used to skip for want of tart on PATH.
+//
+// One worker per case the filters distinguish: the running job's, which
+// the notes account for and which must not appear; another checkout's,
+// named with its owner; this checkout's own, named without one; and an
+// unattributed worker, which is a worker rather than an error.
+func TestGoldenStatusOrphans(t *testing.T) {
+	tartAbsent(t)
+	repo, sha := goldenLifecycleRepo(t)
+	writeRuns(t, repo, sha, map[string]record.Run{"Testos": runningRun("dockhand-worker-mine")})
+	fake := &verifytest.Fake{Live: []verify.Worker{
+		{Name: "dockhand-worker-mine"},
+		{Name: "dockhand-worker-elsewhere", Owner: "/elsewhere/ports"},
+		{Name: "dockhand-worker-ours", Owner: repo.Root},
+		{Name: "dockhand-worker-nameless"},
+	}}
+	rs, out, errb := goldenState(repo, fake)
+	tr := capture(t, rs, out, errb, statusAction{})
+	checkGolden(t, "status_orphans", tr, rewrite{repo.Root, "<repo>"})
+}
+
 func TestGoldenStatusPR(t *testing.T) {
 	tartAbsent(t)
 	repo, gh := goldenPromotedRepo(t)
@@ -249,7 +277,41 @@ func TestGoldenStatusPRJSON(t *testing.T) {
 	checkGolden(t, "status_pr_json", tr, rewrite{repo.Root, "<repo>"})
 }
 
+// A namespace with nothing in it: the sentence names the checkout,
+// because run from the wrong one "no branches" is true and useless.
+// tart reads as present so the two phases an empty pass could still
+// reach — the drain and the worker audit — are reached and say nothing;
+// with it absent the case would prove only that the gate is shut.
+func TestGoldenStatusEmpty(t *testing.T) {
+	tartOnPath(t)
+	repo := goldenRepo(t)
+	rs, out, errb := goldenState(repo, &verifytest.Fake{})
+	tr := capture(t, rs, out, errb, statusAction{})
+	checkGolden(t, "status_empty", tr, rewrite{repo.Root, "<repo>"})
+}
+
+// The same emptiness as a document: `branches` is an empty array and
+// not null, which is what a consumer iterating it depends on.
+func TestGoldenStatusEmptyJSON(t *testing.T) {
+	tartOnPath(t)
+	repo := goldenRepo(t)
+	rs, out, errb := goldenState(repo, &verifytest.Fake{})
+	tr := capture(t, rs, out, errb, statusAction{json: true})
+	checkGolden(t, "status_empty_json", tr, rewrite{repo.Root, "<repo>"})
+}
+
 // ---- clean -----------------------------------------------------------
+
+// The sweep's own empty pass: the same sentence status prints, and no
+// worker audit under it — clean asks one question of each branch and
+// has none to ask.
+func TestGoldenCleanEmpty(t *testing.T) {
+	tartOnPath(t)
+	repo := goldenRepo(t)
+	rs, out, errb := goldenState(repo, &verifytest.Fake{})
+	tr := capture(t, rs, out, errb, cleanAction{})
+	checkGolden(t, "clean_empty", tr, rewrite{repo.Root, "<repo>"})
+}
 
 func TestGoldenClean(t *testing.T) {
 	repo, gh := goldenPromotedRepo(t)
@@ -487,4 +549,47 @@ func TestGoldenBumpInPlace(t *testing.T) {
 	tr := captureExecute(t, "bump", "--to", "2.0", "--in-place", portdir)
 	tr.sections = []section{fileSection(t, "Portfile (after)", filepath.Join(portdir, "Portfile"))}
 	checkGolden(t, "bump_in_place", tr, rewrite{portdir, "<portdir>"})
+}
+
+// --force over a standing branch, the one path where a demolition is
+// reported inside another verb's output. Four lines whose order is the
+// whole claim: the announcement, the fork copy's fate and the checkout
+// reassurance on stderr, and — between them, on stdout — the sentence
+// saying the branch went. That last one is a returned fact rather than
+// something discard prints, so nothing else in the suite notices when
+// it stops being printed here.
+//
+// --no-verify because the transcript must not depend on whether the
+// machine running it has tart: the replacement is the subject, and
+// submitting a verification is a different verb's story.
+func TestGoldenBumpForceReplace(t *testing.T) {
+	testenv.PortTclsh(t)
+	portdir, repo := goldenPortForkRepo(t)
+	first := captureExecute(t, "bump", "--to", "2.0", "--no-verify", portdir)
+	require.Equal(t, 0, first.exit, "the mint --force replaces must succeed first:\n%s", first.render())
+	branches, err := repo.Branches(t.Context(), git.BranchNamespace)
+	require.NoError(t, err)
+	require.Len(t, branches, 1, "one minted branch stands, to be replaced")
+	// Pushed so the branch has a tracking remote: the fork copy's line
+	// is part of what --force says, and it is said only for a branch
+	// that has one.
+	require.NoError(t, repo.Push(t.Context(), "herby", branches[0]))
+
+	tr := captureExecute(t, "bump", "--to", "2.0", "--no-verify", "--force", portdir)
+	checkGolden(t, "bump_force_replace", tr, rewrite{portdir, "<portdir>"})
+}
+
+// goldenPortForkRepo is goldenPortRepo with the two remotes a promoted
+// branch has, and the repository handed back so a case can push to
+// them. The bump fixture's own helpers keep only the portdir, which is
+// all the other bump goldens need.
+func goldenPortForkRepo(t *testing.T) (string, *git.Repo) {
+	t.Helper()
+	pinGitDates(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	portdir := copyBumpee(t, root)
+	repo := gittest.Init(t, testFinder(), root, nil)
+	gittest.BareFork(t, repo, "herbygillot", "herby")
+	return portdir, repo
 }

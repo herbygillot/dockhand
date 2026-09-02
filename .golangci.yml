@@ -232,8 +232,6 @@ linters:
               desc: the engine calls render, so render must not call back
             - pkg: github.com/herbygillot/dockhand/internal/intent
               desc: what the user asked for is resolved before the words are chosen, never while choosing them
-            - pkg: github.com/herbygillot/dockhand/internal/lifecycle
-              desc: settling a run polls a worker and writes a note; DescribeChange takes the settled record instead
             - pkg: github.com/herbygillot/dockhand/internal/cmd
               desc: cmd calls render, so render must not call back
             - pkg: github.com/herbygillot/dockhand/internal/runstate
@@ -244,6 +242,35 @@ linters:
               desc: a sentence that shells out is not a function of its arguments, and no golden can pin one
             - pkg: net
               desc: the same values have to render the same bytes offline
+        # engine is the effectful layer: it mints, submits, settles,
+        # cancels and discards, so it may touch git, the ledger, the
+        # provider vocabulary and the renderers. What it must not
+        # acquire is a way back up to the run or the command line, or a
+        # way down into one particular provider. runstate builds the
+        # engine's Deps, so an import the other way is a cycle; cmd
+        # calls the engine; and naming tart here would make the layer
+        # that decides WHAT to verify depend on the one thing that
+        # knows HOW. The orphan audit is what that costs and what it
+        # buys: it used to run tart itself and now asks a
+        # verify.WorkerLister the composition root wired, so denying the
+        # backend here costs the audit nothing and gains it a backend a
+        # test can stand in for.
+        engine:
+          files:
+            - "**/internal/engine/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: runstate constructs the engine's Deps; an import back is a cycle, and a Context here would put the command line inside the engine
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd calls the engine, so the engine must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: the engine says what to verify; which hypervisor does it is the composition root's choice, wired in as a verify.Verifier
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart/provision
+              desc: provisioning is a machine-shaped verb of its own; the engine consumes the provider it produces
+            - pkg: github.com/herbygillot/dockhand/internal/upstream
+              desc: where a release comes from is the planners' business; the engine realizes plans already made
+            - pkg: github.com/herbygillot/dockhand/internal/vendored
+              desc: the vendored families are a planner's concern; an engine that regenerated one would be planning
         # ledger holds custody of the notes — the read, the flock, the
         # re-read inside it, the write, the scans. It touches git and the
         # lockfile because that is the entire job. What it must not

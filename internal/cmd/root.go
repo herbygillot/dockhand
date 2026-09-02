@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -18,10 +19,74 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/gh"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/tool"
+	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/tart"
+	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
 )
+
+// realVMProvider builds the resolver of the machine's verify provider
+// — the tart provider assembled from the base images actually present,
+// found through the run's finder. The two ways of having no
+// environment are told apart, because their remedies are: no tart at
+// all is ErrNoProvider, and the verbs narrow their contract around it
+// (a bump warns and proceeds, a promote warns and allows); tart with
+// no base images is ErrNoEnvironment, and the remedy is provisioning.
+// Both exit in the machine band.
+//
+// It lives at the composition root rather than in the engine because
+// it names the provider: the engine may speak verify's vocabulary and
+// never the tart that implements it.
+func realVMProvider(tools *tool.Finder) func(ctx context.Context) (verify.Verifier, error) {
+	return func(ctx context.Context) (verify.Verifier, error) {
+		if _, err := tools.Find(tool.Tart); err != nil {
+			// The sentinel is new and the sentence is not: verify.NoProvider
+			// carries ErrNoProvider under the words this refusal has always
+			// used. What a caller can ask changed here; what a user reads
+			// did not.
+			return nil, verify.NoProvider(
+				"tart is not installed (`port install tart`); --no-verify skips verification")
+		}
+		releases, err := (provision.Tart{Tools: tools}).Provisioned(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(releases) == 0 {
+			return nil, fmt.Errorf(
+				"%w: no base images; run `dockhand provision tart --macos <release>` first",
+				verify.ErrNoEnvironment)
+		}
+		// Newest first: the provider's default is its first base, and
+		// the default a quick bump wants is the current OS — the
+		// mundane-build check — not the oldest. Platform-floor
+		// archaeology asks for old releases by name.
+		bases := make([]tart.Base, 0, len(releases))
+		for i := len(releases) - 1; i >= 0; i-- {
+			bases = append(bases, tart.Base{VM: tart.BaseName(releases[i]), Release: releases[i]})
+		}
+		return tart.Provider{Bases: bases, Tools: tools}, nil
+	}
+}
+
+// realWorkerLister builds the resolver of the backend the worker audit
+// asks. tart on PATH is the whole gate — the same question the audit
+// asked before it went through a capability — because listing guests
+// needs no base image. That is the point of it being a separate
+// resolver: realVMProvider refuses on a machine whose bases are gone,
+// and a machine whose bases are gone is exactly where a cloned worker
+// outlives them and pins one of two slots.
+//
+// The refusal's words never reach a user: the audit is best-effort and
+// renders every refusal as silence.
+func realWorkerLister(tools *tool.Finder) func(ctx context.Context) (verify.Verifier, error) {
+	return func(context.Context) (verify.Verifier, error) {
+		if _, err := tools.Find(tool.Tart); err != nil {
+			return nil, verify.NoProvider("tart is not installed")
+		}
+		return tart.Provider{Tools: tools}, nil
+	}
+}
 
 // Root builds the dockhand command tree. The run it will execute is
 // created here and populated once the global flags are parsed, so every
@@ -50,7 +115,9 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	tools := tool.NewFinder(nil)
 	rc := &runstate.Context{
 		Tools:    tools,
-		Verifier: lifecycle.RealVMProvider(tools),
+		Version:  version,
+		Verifier: realVMProvider(tools),
+		Lister:   realWorkerLister(tools),
 		Gh:       gh.RealGhOut(tools),
 	}
 	root := &cobra.Command{

@@ -1,4 +1,4 @@
-package lifecycle
+package engine
 
 import (
 	"bytes"
@@ -6,47 +6,33 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/render"
-	"github.com/herbygillot/dockhand/internal/runstate"
-	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
-	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
 
-// DescribeBranch renders one branch's verification standing, polling
-// and settling whatever is still running on its tip.
+// inspect observes one branch: the tip, its settled note (nil when
+// unnoted), and the drift finding that stands in for a note when there
+// is none.
 //
-// The reading is here and the wording is render's. This function is the
-// join: it settles the tip, then hands over what it learned — the
-// record, the drift finding, and the clock a running run's elapsed time
-// is measured against. Reading the clock here rather than inside the
-// renderer is what lets a golden pin the sentence.
-func DescribeBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string) ([]string, error) {
-	_, n, drift, err := InspectBranch(ctx, rs, repo, branch)
-	if err != nil {
-		return nil, err
-	}
-	return render.DescribeChange(n, drift, time.Now()), nil
-}
-
-// InspectBranch is the structured half DescribeBranch and the JSON
-// rendering share: the tip, its settled note (nil when unnoted), and
-// the drift finding for an unnoted tip.
-func InspectBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, branch string) (string, *record.Record, string, error) {
+// This is the reconciler's whole reading of a branch, and it is
+// deliberately the only one: both renderings draw on the same three
+// values, so there is no way for the human report and the machine one
+// to disagree about what a branch is doing. The wording is render's,
+// and the clock a running run's elapsed time is measured against is
+// read by the pass rather than in here, so a golden can pin the
+// sentence.
+func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string) (string, *record.Record, string, error) {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return "", nil, "", err
 	}
-	n, err := ledger.Open(repo).Read(ctx, tip)
+	n, err := e.Ledger(repo).Read(ctx, tip)
 	if errors.Is(err, git.ErrNoNote) {
-		drift, derr := describeUnverifiedTip(ctx, repo, branch, tip)
+		drift, derr := e.describeUnverifiedTip(ctx, repo, branch, tip)
 		if derr != nil {
 			return tip, nil, "", derr
 		}
@@ -56,40 +42,42 @@ func InspectBranch(ctx context.Context, rs *runstate.Context, repo *git.Repo, br
 		return tip, nil, "", err
 	}
 	if n.AnyState(record.Running) {
-		if err := SettleRuns(ctx, rs, repo, &n); err != nil {
+		if err := e.settle(ctx, repo, &n); err != nil {
 			return tip, nil, "", err
 		}
 	}
 	return tip, &n, "", nil
 }
 
-// SettleRuns polls every running run and writes what it learns back to
-// the note. Poll never mutates and Release is the caller's: status
+// settle polls every running run and writes what it learns back to the
+// note. Poll never mutates and Release is the caller's: status
 // releases the worker on pass — a kept green environment is a wasted
 // slot — and keeps it on failure, where it is the debug handle. A
 // failure whose log shows the port refusing the platform records as
 // unsupported instead, and its worker is released: a correct refusal
 // leaves nothing to debug.
-func SettleRuns(ctx context.Context, rs *runstate.Context, repo *git.Repo, n *record.Record) error {
-	prov, err := rs.VerifyProvider(ctx)
+//
+// The polling happens outside the notes lock and only the writing
+// inside it. That is the split a reconciler needs: a poll is a round
+// trip per run and a log fetch is another, and holding the flock across
+// them stalls every peer sharing the checkout for as long as the
+// slowest provider takes. What it costs is that the note can move while
+// this pass is asking, and the compare below is what pays for it — a
+// judgment is written only if the run it was reached from is still the
+// run on the note, state and job both. Two agents share a checkout now,
+// and a cancel that lands mid-poll must not come back as passed.
+//
+// A dropped judgment has already released its worker, which is the
+// honest order: the run it was judging is over either way, and the
+// claimant that moved the note released the same worker or is about to.
+func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) error {
+	prov, err := e.Verifier(ctx)
 	if err != nil {
 		return nil // running, cannot poll; the note stands as is
 	}
-	// The critical section spans the whole read-modify-write, and the
-	// note is RE-READ under the lock: the caller's copy may predate a
-	// concurrent dockhand's record — two agents share this checkout
-	// now — and settling a stale copy would write the lost update this
-	// lock exists to prevent.
-	unlock, err := repo.LockNotes(ctx)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	l := ledger.Open(repo)
-	if fresh, rerr := l.Read(ctx, n.Sha); rerr == nil {
-		*n = fresh
-	}
-	changed := false
+	// judged is what this pass concluded, and from is the run each
+	// conclusion was reached from — the two halves of the compare.
+	judged, from := map[string]record.Run{}, map[string]record.Run{}
 	for plat, r := range n.Runs {
 		if r.State != record.Running {
 			continue
@@ -141,12 +129,71 @@ func SettleRuns(ctx context.Context, rs *runstate.Context, repo *git.Repo, n *re
 			// survives our own cancellation and its answer goes nowhere.
 			_ = prov.Release(context.WithoutCancel(ctx), r.Job)
 		}
-		n.Runs[plat], changed = j.Run, true
+		judged[plat], from[plat] = j.Run, r
 	}
-	if !changed {
+	if len(judged) == 0 {
 		return nil
 	}
-	return l.Write(ctx, *n)
+	// The write is the ledger's own read-modify-write, which re-reads
+	// under the flock. A run whose state moved since it was observed was
+	// settled, canceled or superseded by somebody who saw a note this
+	// pass did not, so this pass's word about it is dropped rather than
+	// merged; a pass that lands none of its judgments writes nothing at
+	// all, which is what keeps a poll from adding a notes object.
+	//
+	// The compare is on the run's identity and not on its state word
+	// alone, because the word alone cannot see a run that came back. A
+	// peer that cancels the run and starts another leaves the platform
+	// reading running again, and a compare that only asked for "running"
+	// would write this pass's verdict about the canceled job over the
+	// live one: a verdict the user never asked for, and a worker no note
+	// names any more.
+	var settled *record.Record
+	if err := e.Ledger(repo).Update(ctx, n.Sha, n.Port, func(fresh *record.Record) error {
+		applied := false
+		for plat, run := range judged {
+			was, observed := fresh.Runs[plat], from[plat]
+			if was.State != observed.State || was.Job.ID != observed.Job.ID {
+				continue
+			}
+			fresh.Runs[plat] = run
+			applied = true
+		}
+		// The caller's copy becomes what the note says, so that a dropped
+		// judgment leaves the reader looking at the peer's record rather
+		// than at the poll this pass threw away. The exception is a note
+		// that is no longer there: a peer's discard removes it mid-pass,
+		// LoadOrStart mints a record for the commit, and handing that back
+		// would describe a deleted branch as noted with no runs. Every run
+		// judged here was running when it was observed, so a record that
+		// knows none of them is not the note being settled.
+		if knowsAny(*fresh, judged) {
+			cur := *fresh
+			settled = &cur
+		}
+		if !applied {
+			return ledger.ErrUnchanged
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if settled != nil {
+		*n = *settled
+	}
+	return nil
+}
+
+// knowsAny reports whether a record carries a run for any of the
+// platforms judged — the test of whether it is the note those
+// judgments were made about at all.
+func knowsAny(n record.Record, judged map[string]record.Run) bool {
+	for plat := range judged {
+		if _, ok := n.Runs[plat]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // nomaintainerDep reports whether a blamed dependency's Portfile says
@@ -179,12 +226,12 @@ func nomaintainerDep(treeRoot, dep string) bool {
 // a `git notes show`, so a tip whose content some record already covers
 // — the amend this function mostly exists for — costs the reads up to
 // that record and no rev-list.
-func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip string) (string, error) {
+func (e *Engine) describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip string) (string, error) {
 	tipTree, err := repo.RevParse(ctx, tip+"^{tree}")
 	if err != nil {
 		return "", err
 	}
-	l := ledger.Open(repo)
+	l := e.Ledger(repo)
 	shas, err := l.All(ctx)
 	if err != nil {
 		return "", err
@@ -227,61 +274,15 @@ func describeUnverifiedTip(ctx context.Context, repo *git.Repo, branch, tip stri
 	return verdict.DriftBehind(branch, behind), nil
 }
 
-// OrphanWorkers lists them: running workers no note accounts for.
-// Orphan is a running worker no note here accounts for, with the
-// owning checkout when the attribution sidecar knows it.
-type Orphan struct {
-	Name  string `json:"name"`
-	Owner string `json:"owner,omitempty"`
-}
-
-func OrphanWorkers(ctx context.Context, tools *tool.Finder, repo *git.Repo) []Orphan {
-	if !TartPresent(tools) {
-		return nil
-	}
-	out, err := tart.CLI(ctx, tools, nil, "list", "--quiet")
-	if err != nil {
-		return nil
-	}
-	tracked := map[string]bool{}
-	l := ledger.Open(repo)
-	if noted, err := l.All(ctx); err == nil {
-		for _, sha := range noted {
-			if n, err := l.Read(ctx, sha); err == nil {
-				for _, r := range n.Runs {
-					tracked[r.Job.ID] = true
-					tracked[r.Handle] = true
-				}
-			}
-		}
-	}
-	var orphans []Orphan
-	for _, line := range strings.Split(out, "\n") {
-		vm := strings.TrimSpace(line)
-		if !strings.HasPrefix(vm, tart.WorkerPrefix) || tracked[vm] {
-			continue
-		}
-		o := Orphan{Name: vm}
-		// The attribution sidecar can name the checkout that started a
-		// worker this repository's notes know nothing about — the
-		// cross-repo half of the untracked-worker story.
-		if owner := tart.OwnerOf(vm); owner != "" && owner != repo.Root {
-			o.Owner = owner
-		}
-		orphans = append(orphans, o)
-	}
-	return orphans
-}
-
 // LatestNote is the branch's most recent verification record: the
 // tip's note, or the nearest one behind it.
-func LatestNote(ctx context.Context, repo *git.Repo, branch string) (record.Record, error) {
+func (e *Engine) LatestNote(ctx context.Context, repo *git.Repo, branch string) (record.Record, error) {
 	shas, err := repo.RevList(ctx, branch, 32)
 	if err != nil {
 		return record.Record{}, err
 	}
 	for _, sha := range shas {
-		if n, err := ledger.Open(repo).Read(ctx, sha); err == nil {
+		if n, err := e.Ledger(repo).Read(ctx, sha); err == nil {
 			return n, nil
 		}
 	}

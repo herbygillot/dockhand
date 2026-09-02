@@ -1,7 +1,6 @@
-package lifecycle
+package engine
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
-	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
@@ -50,10 +48,7 @@ func subportRepo(t *testing.T) (*git.Repo, string) {
 func TestChangedPortNamesTheSubportTheBranchMoves(t *testing.T) {
 	testenv.PortTclsh(t)
 	repo, sha := subportRepo(t)
-	var buf bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: realTools, Out: &buf, Err: &buf}
-
-	name, err := ChangedPort(context.Background(), rs, repo, sha, "sysutils/demo")
+	name, err := testState(t, repo, nil).changedPort(context.Background(), repo, sha, "sysutils/demo")
 	require.NoError(t, err)
 	assert.Equal(t, "demo2", name, "the changed context, never the portdir's base name")
 }
@@ -70,10 +65,7 @@ func TestChangedPortFallsBackWhenNothingEvaluatedMoves(t *testing.T) {
 		Content: append([]byte(subportPortfile), []byte("# touched\n")...), Message: "demo: comment only",
 	})
 	require.NoError(t, err)
-	var buf bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: realTools, Out: &buf, Err: &buf}
-
-	name, err := ChangedPort(context.Background(), rs, repo, sha, "sysutils/demo")
+	name, err := testState(t, repo, nil).changedPort(context.Background(), repo, sha, "sysutils/demo")
 	require.NoError(t, err)
 	assert.Equal(t, "demo", name, "an unevaluatable distinction falls back to the portdir's name")
 }

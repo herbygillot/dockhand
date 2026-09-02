@@ -2,12 +2,12 @@ package verdict
 
 // The guest-log corpus, swept where the judgments now live.
 //
-// The corpus itself stays at internal/lifecycle/testdata/logs and is
+// The corpus itself stays at internal/engine/testdata/logs and is
 // read from here by relative path. It is not copied: a corpus is only
 // worth having if a real `dockhand log` capture dropped into it is
 // picked up everywhere with no code change, and two copies would drift
 // the first time someone replaced a reconstruction with a capture. The
-// directory's README says how to add one, and the lifecycle package
+// directory's README says how to add one, and the engine package
 // sweeps the same files through the effectful settle. What a .expect
 // sidecar means is stated once too, in corpustest, so the two sweeps
 // cannot come to read one differently.
@@ -32,7 +32,7 @@ import (
 
 // corpusDir is the one copy of the corpus, in the package whose settle
 // the judgments were extracted from.
-const corpusDir = "../lifecycle/testdata/logs"
+const corpusDir = "../engine/testdata/logs"
 
 func TestLogCorpus(t *testing.T) {
 	logs, err := filepath.Glob(filepath.Join(corpusDir, "*.log"))

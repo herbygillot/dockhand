@@ -472,6 +472,59 @@ func (p Provider) Shell(ctx context.Context, job verify.Job) error {
 	return err
 }
 
+// listQuiet reads `tart list --quiet` — VM names, one per line, from
+// every source. A variable for the same reason listVMs is one: the
+// audit has to be provable without tart on the machine.
+var listQuiet = func(ctx context.Context, tools *tool.Finder) (string, error) {
+	return CLI(ctx, tools, nil, "list", "--quiet")
+}
+
+// Workers implements verify.WorkerLister: every guest this provider
+// names as a worker, running or not, whichever checkout started it.
+//
+// Every one of them, deliberately — a worker no note here accounts for
+// is exactly what the audit exists to find, so filtering by anyone's
+// records would filter away the answer. The attribution sidecar names
+// the checkout when it can; a worker it says nothing about comes back
+// unattributed rather than omitted, because an unattributed worker
+// still holds a slot.
+func (p Provider) Workers(ctx context.Context) ([]verify.Worker, error) {
+	out, err := listQuiet(ctx, p.Tools)
+	if err != nil {
+		// Both halves, because they carry different failures: tart's own
+		// diagnostics land in the transcript, and a tart that is not on
+		// the machine at all produces no transcript and an error that
+		// already says so.
+		if detail := strings.TrimSpace(out); detail != "" {
+			return nil, fmt.Errorf("%w: listing workers: %s", verify.ErrNoEnvironment, detail)
+		}
+		return nil, fmt.Errorf("%w: listing workers: %w", verify.ErrNoEnvironment, err)
+	}
+	names := workerNames(out)
+	workers := make([]verify.Worker, 0, len(names))
+	for _, vm := range names {
+		workers = append(workers, verify.Worker{Name: vm, Owner: OwnerOf(vm)})
+	}
+	return workers, nil
+}
+
+// The capability is the contract, provably.
+var _ verify.WorkerLister = Provider{}
+
+// workerNames picks this provider's guests out of a `tart list
+// --quiet` listing. Prefix, not substring: the name is dockhand's own
+// and a base or a golden must never read as a worker.
+func workerNames(out string) []string {
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		vm := strings.TrimSpace(line)
+		if strings.HasPrefix(vm, WorkerPrefix) {
+			names = append(names, vm)
+		}
+	}
+	return names
+}
+
 // Poll reads the guest's own record of where the build got to.
 func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, error) {
 	if job.Provider != "tart" {

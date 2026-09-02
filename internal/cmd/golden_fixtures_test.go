@@ -346,8 +346,8 @@ func testFinder() *tool.Finder {
 	return tool.NewFinder(nil)
 }
 
-// tartAbsent stubs the tool lookup so TartPresent answers no: no
-// deferred pump, no orphan sweep, whatever the machine has installed.
+// tartAbsent stubs the tool lookup so the machine reads as having no
+// tart: no deferred pump, no orphan sweep, whatever is installed.
 // tartOnPath (deferred_pump_test.go) is its counterpart.
 func tartAbsent(t *testing.T) {
 	t.Helper()
@@ -361,7 +361,11 @@ func goldenState(repo *git.Repo, fake *verifytest.Fake) (*runstate.Context, *byt
 	var out, errb bytes.Buffer
 	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb}
 	if fake != nil {
+		// Both seams, from the one fake: a golden run stands in for a
+		// machine, and a machine that can verify can also say what it is
+		// running.
 		rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+		rs.Lister = rs.Verifier
 	}
 	return rs, &out, &errb
 }

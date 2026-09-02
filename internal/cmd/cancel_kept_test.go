@@ -64,18 +64,18 @@ func TestCancelWithNothingToFreeSaysSo(t *testing.T) {
 	assert.Empty(t, fake.Released)
 }
 
-// branchPortName's authority order, field-driven (pcre2 built as
-// pcre): the user's own word wins, then the note's recorded port; the
-// evaluation-derived tier is exercised in lifecycle's ChangedPort
-// tests.
-func TestBranchPortNameHonorsTargetThenNote(t *testing.T) {
+// SubjectOf's authority order, field-driven (pcre2 built as pcre):
+// the user's own word wins, then the note's recorded port; the
+// evaluation-derived tier is exercised in the engine's own
+// changed-context tests.
+func TestSubjectOfHonorsTargetThenNote(t *testing.T) {
 	repo, sha := lifecycleRepo(t)
 	ctx := context.Background()
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder()}
+	eng := (&runstate.Context{TreeRoot: repo.Root, Tools: testFinder()}).Deps()
 
 	// The user typed a port name and it matched the branch: that name
 	// is the port, portdir base be damned.
-	name, err := branchPortName(ctx, rs, repo, "jq2", "dockhand/jq2-1.8", sha, "sysutils/jq")
+	name, err := eng.SubjectOf(ctx, repo, "jq2", "dockhand/jq2-1.8", sha, "sysutils/jq")
 	require.NoError(t, err)
 	assert.Equal(t, "jq2", name)
 
@@ -84,7 +84,7 @@ func TestBranchPortNameHonorsTargetThenNote(t *testing.T) {
 	require.NoError(t, err)
 	n.Runs["Testos"] = record.Run{State: "deferred", Detail: "slots busy"}
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
-	name, err = branchPortName(ctx, rs, repo, "dockhand/jq-1.8", "dockhand/jq-1.8", sha, "sysutils/jq")
+	name, err = eng.SubjectOf(ctx, repo, "dockhand/jq-1.8", "dockhand/jq-1.8", sha, "sysutils/jq")
 	require.NoError(t, err)
 	assert.Equal(t, "jq2", name, "the note was written from the plan's subport at bump time")
 }

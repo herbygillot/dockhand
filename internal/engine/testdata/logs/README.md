@@ -20,11 +20,11 @@ the environment is disposable and the log is the artifact.
 
 ## Dropping in a real capture
 
-    dockhand log <branch> > internal/lifecycle/testdata/logs/<name>.log
+    dockhand log <branch> > internal/engine/testdata/logs/<name>.log
 
 Then write `<name>.expect` by hand from what you saw in the field —
 the point of a corpus is that a person states the truth and the code
-is measured against it — and run `go test ./internal/lifecycle/`. Name
+is measured against it — and run `go test ./internal/engine/`. Name
 the file for the port and the shape (`gomuks-olm-dependency`), and
 replace a reconstruction below with the real thing whenever one lands:
 keep the name, rewrite the sidecar's provenance comment.

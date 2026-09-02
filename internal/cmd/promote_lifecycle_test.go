@@ -20,7 +20,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/ledger"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/verdict"
@@ -100,7 +99,7 @@ func promoteState(t *testing.T, repo *git.Repo, gh *ghFake) (*runstate.Context, 
 	var out, errb bytes.Buffer
 	tools := testFinder()
 	rs := &runstate.Context{TreeRoot: repo.Root, Tools: tools, Out: &out, Err: &errb, Gh: gh.run,
-		Verifier: lifecycle.RealVMProvider(tools)}
+		Verifier: realVMProvider(tools)}
 	return rs, &out, &errb
 }
 

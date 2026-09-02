@@ -1,6 +1,8 @@
 package tart
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -113,4 +116,61 @@ func TestGoldenNameDoesNotContainBaseName(t *testing.T) {
 		assert.NotContains(t, GoldenName(r), BaseName(r), "release %s", r.Name)
 		assert.NotContains(t, GoldenName(r), " ", "a VM name may not carry the space in Big Sur")
 	}
+}
+
+// The audit names workers and nothing else: a base image and a golden
+// live in the same listing, and either one deleted as an orphan costs
+// a provisioning run.
+func TestWorkerNamesPickOnlyWorkers(t *testing.T) {
+	seq, _ := platform.ByName("Sequoia")
+	listing := strings.Join([]string{
+		BaseName(seq),
+		"dockhand-worker-1",
+		"someone-elses-vm",
+		"  dockhand-worker-2  ",
+		GoldenName(seq),
+		"",
+	}, "\n")
+
+	assert.Equal(t, []string{"dockhand-worker-1", "dockhand-worker-2"}, workerNames(listing))
+	assert.Empty(t, workerNames(""), "an empty listing names nothing")
+}
+
+// stubWorkers points the listing and the attribution sidecar at
+// disposable state, so the audit is provable without tart.
+func stubWorkers(t *testing.T, list string, err error) {
+	t.Helper()
+	tmp := t.TempDir()
+	origCache, origList := cacheDir, listQuiet
+	cacheDir = func() (string, error) { return tmp, nil }
+	listQuiet = func(context.Context, *tool.Finder) (string, error) { return list, err }
+	t.Cleanup(func() { cacheDir = origCache; listQuiet = origList })
+}
+
+// Every worker comes back, attributed or not: the ones no record
+// accounts for are exactly what the audit exists to find, so the
+// provider filters by nobody's records.
+func TestWorkersReportEveryWorkerWithItsOwner(t *testing.T) {
+	seq, _ := platform.ByName("Sequoia")
+	stubWorkers(t, strings.Join([]string{
+		BaseName(seq), "dockhand-worker-1", "dockhand-worker-2", "unrelated-vm",
+	}, "\n"), nil)
+	writeAttribution("dockhand-worker-1", "/Users/someone/ports")
+
+	got, err := Provider{Tools: tools}.Workers(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []verify.Worker{
+		{Name: "dockhand-worker-1", Owner: "/Users/someone/ports"},
+		{Name: "dockhand-worker-2"},
+	}, got, "an unattributed worker still holds a slot")
+}
+
+// A machine that will not answer is a machine fact, never an empty
+// machine: reporting no workers here would report a busy machine as
+// idle.
+func TestWorkersRefuseWhenTheMachineWillNotAnswer(t *testing.T) {
+	stubWorkers(t, "", errors.New("exit status 1"))
+	_, err := Provider{Tools: tools}.Workers(t.Context())
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.Contains(t, err.Error(), "exit status 1", "the cause survives the wrapping")
 }

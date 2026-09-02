@@ -1,7 +1,7 @@
 package cmd
 
-// Fixtures for cmd-level lifecycle-adjacent tests: the ports-tree-shaped
-// repo with one minted dockhand branch that lifecycle's own tests start
+// Fixtures for the cmd-level branch tests: the ports-tree-shaped repo
+// with one minted dockhand branch that the engine's own tests start
 // from, built over gittest so the two packages share one fixture.
 
 import (
@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -20,6 +21,29 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
+
+// statusDoc is `status --json`'s published document, restated here
+// rather than reached for. The renderer's own type is unexported on
+// purpose — the document is a contract, not a value to pass around —
+// and a test that names the keys it expects is checking the contract
+// instead of agreeing with whatever the renderer currently marshals.
+type statusDoc struct {
+	Repository string `json:"repository"`
+	Branches   []struct {
+		Branch  string          `json:"branch"`
+		Tip     string          `json:"tip"`
+		Note    *record.Record  `json:"note"`
+		Drift   string          `json:"drift"`
+		PR      *gh.PullRequest `json:"pr"`
+		PRError string          `json:"pr_error"`
+		Cleaned bool            `json:"cleaned"`
+		Error   string          `json:"error"`
+	} `json:"branches"`
+	OrphanWorkers []struct {
+		Name  string `json:"name"`
+		Owner string `json:"owner"`
+	} `json:"orphan_workers"`
+}
 
 // lifecycleRepo is a ports-tree-shaped git repo with one dockhand
 // branch minted, its tip returned alongside.
@@ -48,7 +72,7 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 	require.NoError(t, statusAction{json: true}.Execute(context.Background(), rs))
 
-	var got statusJSON
+	var got statusDoc
 	require.NoError(t, json.Unmarshal(out.Bytes(), &got), "stdout must be one JSON document: %s", out.String())
 	require.Len(t, got.Branches, 1)
 	b := got.Branches[0]
@@ -80,7 +104,7 @@ func TestStatusJSONKeepsStdoutPureUnderAutoclean(t *testing.T) {
 		Verifier: func(context.Context) (verify.Verifier, error) { return fake, nil }}
 	require.NoError(t, statusAction{json: true}.Execute(context.Background(), rs))
 
-	var got statusJSON
+	var got statusDoc
 	require.NoError(t, json.Unmarshal(out.Bytes(), &got), "stdout must be one JSON document: %s", out.String())
 	require.Len(t, got.Branches, 1)
 	assert.True(t, got.Branches[0].Cleaned)

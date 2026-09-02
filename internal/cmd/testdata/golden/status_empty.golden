@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+  no dockhand branches in <repo>
+--- stderr

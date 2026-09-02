@@ -1,4 +1,4 @@
-package lifecycle
+package engine
 
 // The settle over the log corpus, composed. What each reader says
 // about a guest log is verdict's own table test now; what runs here is
@@ -88,9 +88,9 @@ func TestSettleRunsProviderFailuresTable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, sha := lifecycleRepo(t)
+			repo, sha := engineRepo(t)
 			n := seededNote(t, repo, sha, "jq", tc.linted)
-			require.NoError(t, SettleRuns(context.Background(), testState(t, repo, tc.fake), repo, &n))
+			require.NoError(t, testState(t, repo, tc.fake).settle(context.Background(), repo, &n))
 			r := n.Runs["Testos"]
 			assert.Equal(t, tc.state, string(r.State), "state")
 			assert.Equal(t, tc.detail, r.Detail, "detail")
@@ -121,11 +121,11 @@ func TestLogCorpus(t *testing.T) {
 			log := string(raw)
 			exp := corpustest.Read(t, strings.TrimSuffix(path, ".log")+".expect")
 
-			// Composed, through SettleRuns itself: the state the note
+			// Composed, through settle itself: the state the note
 			// records, the detail it carries, and what happens to the
 			// worker — kept for a failure, released for anything else,
 			// because only one's own breakage is worth a slot.
-			repo, sha := lifecycleRepo(t)
+			repo, sha := engineRepo(t)
 			st := verify.Status{State: verify.Failed, Handle: "fake-1"}
 			if exp.Outcome == "passed" {
 				st = verify.Status{State: verify.Passed, Handle: "fake-1"}
@@ -136,7 +136,7 @@ func TestLogCorpus(t *testing.T) {
 			}
 			n := corpusNote(t, repo, sha, exp.Port)
 
-			require.NoError(t, SettleRuns(context.Background(), testState(t, repo, fake), repo, &n))
+			require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
 			r := n.Runs["Testos"]
 			// The sidecar is plain text, so the wire word is what it
 			// names: the state converts to it rather than the corpus

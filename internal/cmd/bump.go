@@ -56,7 +56,7 @@ func Bump() *cobra.Command {
 						fmt.Fprintf(rs.Err, "latest: %s (%s)\n", resolved, rep.Verdict)
 						v = resolved
 					}
-					return bump.Bump{Version: v, Force: f.opts.Force, Tools: rs.Tools}, nil
+					return bump.Bump{Version: v, Force: f.force, Tools: rs.Tools}, nil
 				},
 			}, nil
 		}),

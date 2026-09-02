@@ -13,12 +13,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/lifecycle"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/tool"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // run executes the command tree with output discarded, returning the
@@ -112,11 +114,18 @@ func TestExitCodeMapping(t *testing.T) {
 	assert.Equal(t, exitcode.Environment, ExitCode(eval.ErrRootRefused))
 	// A minted branch whose verification could not start: the branch
 	// stands, and the exit says the machine owes a follow-up.
-	assert.Equal(t, exitcode.Environment, ExitCode(&lifecycle.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
-	assert.Equal(t, exitcode.Verify, ExitCode(&lifecycle.VerifyFailedError{Port: "jq"}))
+	assert.Equal(t, exitcode.Environment, ExitCode(&engine.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
+	assert.Equal(t, exitcode.Verify, ExitCode(&engine.VerifyFailedError{Port: "jq"}))
+	// The two ways of having no verification are one band and two
+	// remedies, and they must stay distinguishable: a machine with no
+	// tart narrows a bump's contract, where one with no base images
+	// fails it.
+	assert.Equal(t, exitcode.Environment, ExitCode(fmt.Errorf("wrapped: %w", verify.ErrNoProvider)))
+	require.NotErrorIs(t, verify.ErrNoProvider, verify.ErrNoEnvironment)
+	require.NotErrorIs(t, verify.ErrNoEnvironment, verify.ErrNoProvider)
 	// An in-flight branch is a refusal with a remedy, and a tree that
 	// is not a git checkout is a fact about the tree.
-	assert.Equal(t, exitcode.Declined, ExitCode(&lifecycle.BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
+	assert.Equal(t, exitcode.Declined, ExitCode(&engine.BranchInFlightError{Branch: "dockhand/jq-1.8.1"}))
 	assert.Equal(t, exitcode.Tree, ExitCode(fmt.Errorf("wrapped: %w", git.ErrNotARepo)))
 }
 
@@ -185,4 +194,27 @@ func TestBumpRevisionRequiresAReason(t *testing.T) {
 	assert.Equal(t, exitcode.Usage, code(t, "bump-revision", "someport"))
 	assert.Equal(t, exitcode.Usage, code(t, "revbump", "someport"), "the alias shares the check")
 	assert.Equal(t, exitcode.Usage, code(t, "bump-revision"))
+}
+
+// The tart-less refusal, pinned to the byte. It is the sentence a user
+// meets on a machine that cannot verify at all; no golden reaches it,
+// because every golden run wires a provider; and it did not move when
+// the sentinel under it split from ErrNoEnvironment. A sentence with no
+// pin is a sentence that changes by accident, which is how this one
+// nearly did.
+func TestTartLessRefusalKeepsItsSentence(t *testing.T) {
+	tools := tool.NewFinder(func(string) (string, error) {
+		return "", errors.New("executable file not found in $PATH")
+	})
+
+	_, err := realVMProvider(tools)(context.Background())
+
+	require.Error(t, err)
+	assert.Equal(t,
+		"verify: no environment available: tart is not installed (`port install tart`); --no-verify skips verification",
+		err.Error())
+	require.ErrorIs(t, err, verify.ErrNoProvider, "the sentinel is what a caller branches on")
+	require.NotErrorIs(t, err, verify.ErrNoEnvironment,
+		"and it is not the refusal whose remedy is provisioning")
+	assert.Equal(t, exitcode.Environment, ExitCode(err), "both refusals exit in the machine band")
 }
