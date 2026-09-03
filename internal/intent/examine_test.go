@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/edit"
-	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -22,7 +21,7 @@ func parsed(t *testing.T, src string) ([]byte, *syntax.Script) {
 
 func TestExamineOffersTheModelineOnlyWhenMissing(t *testing.T) {
 	src, cst := parsed(t, "PortSystem 1.0\nname x\n")
-	ex := Examine(src, cst, nil, nil, info.Values{}, nil)
+	ex := Examine(Portfile{Src: src, CST: cst})
 	require.Len(t, ex.Riders, 1)
 	assert.Equal(t, RuleModeline, ex.Riders[0].Rule)
 	assert.Equal(t, 0, ex.Riders[0].Edit.Start)
@@ -37,13 +36,13 @@ func TestExamineOffersTheModelineOnlyWhenMissing(t *testing.T) {
 		"# vi: set ts=4:",
 	} {
 		src, cst := parsed(t, first+"\nPortSystem 1.0\n")
-		ex := Examine(src, cst, nil, nil, info.Values{}, nil)
+		ex := Examine(Portfile{Src: src, CST: cst})
 		assert.Empty(t, ex.Riders, "an existing modeline is never second-guessed: %s", first)
 	}
 
 	// An ordinary leading comment is not a modeline.
 	src, cst = parsed(t, "# This port is maintained upstream\nPortSystem 1.0\n")
-	ex = Examine(src, cst, nil, nil, info.Values{}, nil)
+	ex = Examine(Portfile{Src: src, CST: cst})
 	assert.Len(t, ex.Riders, 1)
 }
 
@@ -100,12 +99,16 @@ func TestSweepReportsTheRulesItDropped(t *testing.T) {
 	assert.Empty(t, dropped, "a rule with nothing to offer was not dropped; it had nothing to drop")
 }
 
-// The rest of the shape is declared, not implemented. The assertion is
-// here so that the day a rule starts producing one, the step that did
-// it is the step that changed this line.
-func TestExamineProducesNoCascadesOrFindingsYet(t *testing.T) {
-	src, cst := parsed(t, "PortSystem 1.0\n")
-	ex := Examine(src, cst, nil, nil, info.Values{}, []string{"a-dependent"})
+// Cascades are still declared and not implemented, and a Portfile that
+// says nothing about revision bumps produces no finding either. Both
+// halves matter: the first is the shape waiting for something that
+// REQUIRES a change elsewhere, and the second is the promise that the
+// instruction rule is silent over the ordinary port — 41630 of them in
+// a real tree, and a rule that spoke for any of them would hold every
+// unattended publication in the tree.
+func TestExamineProducesNoCascadesAndNoFindingsForAnOrdinaryPortfile(t *testing.T) {
+	src, cst := parsed(t, "PortSystem 1.0\n# an ordinary comment about the build\nname x\n")
+	ex := Examine(Portfile{Src: src, CST: cst, Dependents: []string{"a-dependent"}})
 	assert.Empty(t, ex.Cascades)
 	assert.Empty(t, ex.Findings)
 }

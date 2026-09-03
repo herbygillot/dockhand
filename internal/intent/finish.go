@@ -105,8 +105,18 @@ type FinishOpts struct {
 	// nothing about it reaches the plan, whose bytes are a hash gate.
 	Witness string
 	// Dependents are the ports that depend on this one, passed to
-	// Examine for the cascade rules. Nothing gathers them yet.
+	// Examine for the finding rules.
 	Dependents []string
+	// Portdir overrides the directory the plan records, for a planner
+	// whose handle is deliberately a copy.
+	//
+	// One planner needs it: a cohort member is planned from the bytes
+	// the BRANCH TIP holds rather than from the working tree, which
+	// means shadowing those bytes and evaluating the shadow — so the
+	// handle's own portdir is a temporary directory, and a plan naming
+	// it would name somewhere the change can never land. Empty keeps the
+	// handle's own, which is every other planner.
+	Portdir string
 }
 
 // Finish is the tail every intent runs once its edits are computed:
@@ -191,9 +201,19 @@ func Finish(ctx context.Context, h port.Handle, src []byte, edits []edit.Edit, i
 	// reordered it in place would be a surprise waiting for the first
 	// planner that looks at its own edits afterwards.
 	out := slices.Clone(edits)
+	// The examination happens whatever the rider policy is, and only its
+	// riders are policy. --no-riders says what this change carries, not
+	// what dockhand is allowed to have noticed: a maintainer's written
+	// instruction to revbump a dependent is a fact about the port, and a
+	// flag about housekeeping edits must not suppress it.
+	ex := Examine(Portfile{
+		Src: src, CST: opts.CST, Portdir: portdirOf(h, opts),
+		Before: opts.Before, After: after, Vals: opts.Vals,
+		Dependents: opts.Dependents,
+	})
 	var riders []Rider
 	if opts.Riders != RidersNone {
-		riders = Examine(src, opts.CST, opts.Before, after, opts.Vals, opts.Dependents).Riders
+		riders = ex.Riders
 	}
 	if len(riders) > 0 {
 		held, err := ridersHold(ctx, h, src, out, riders, opts.Before, predicted)
@@ -230,13 +250,25 @@ func Finish(ctx context.Context, h port.Handle, src []byte, edits []edit.Edit, i
 		Slug:           id.Slug,
 		Summary:        id.Summary,
 		ClosesTicket:   id.ClosesTicket,
-		Portdir:        h.Target.Portdir,
+		Portdir:        portdirOf(h, opts),
 		Subport:        h.Target.Subport,
 		PortfileSHA256: edit.FileSHA256(src),
 		Edits:          out,
 		Riders:         Names(riders),
+		Findings:       ex.Findings,
 		Predicted:      plan.FromDelta(predicted),
 	}, nil
+}
+
+// portdirOf is the directory a plan records: the handle's own, unless
+// the planner said otherwise because its handle is a copy. It is read
+// twice — once for the plan and once for the finding that cites a
+// Portfile path — and they must be the same answer.
+func portdirOf(h port.Handle, opts FinishOpts) string {
+	if opts.Portdir != "" {
+		return opts.Portdir
+	}
+	return h.Target.Portdir
 }
 
 // ridersHold is the second half of the double proof: apply the riders on

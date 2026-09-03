@@ -1,0 +1,35 @@
+===> dockhand manifest: port
+libwidget
+===> dockhand manifest: version
+  libwidget @3.0.0_0+universal (active)
+===> dockhand manifest: platform
+26.6.2 arm64
+===> dockhand manifest: files
+/tmp/dhfat3/lib/libwidget.3.0.0.dylib
+/tmp/dhfat3/lib/libwidget.3.dylib
+/tmp/dhfat3/share/widget.pc
+===> dockhand manifest: id
+/tmp/dhfat3/lib/libwidget.3.0.0.dylib (architecture x86_64):
+/opt/local/lib/libwidget.3.dylib
+/tmp/dhfat3/lib/libwidget.3.0.0.dylib (architecture arm64):
+/opt/local/lib/libwidget.3.dylib
+/tmp/dhfat3/lib/libwidget.3.dylib (architecture x86_64):
+/opt/local/lib/libwidget.3.dylib
+/tmp/dhfat3/lib/libwidget.3.dylib (architecture arm64):
+/opt/local/lib/libwidget.3.dylib
+/tmp/dhfat3/share/widget.pc: is not an object file
+===> dockhand manifest: links
+/tmp/dhfat3/lib/libwidget.3.0.0.dylib (architecture x86_64):
+	/opt/local/lib/libwidget.3.dylib (compatibility version 3.0.0, current version 3.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/tmp/dhfat3/lib/libwidget.3.0.0.dylib (architecture arm64):
+	/opt/local/lib/libwidget.3.dylib (compatibility version 3.0.0, current version 3.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/tmp/dhfat3/lib/libwidget.3.dylib (architecture x86_64):
+	/opt/local/lib/libwidget.3.dylib (compatibility version 3.0.0, current version 3.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/tmp/dhfat3/lib/libwidget.3.dylib (architecture arm64):
+	/opt/local/lib/libwidget.3.dylib (compatibility version 3.0.0, current version 3.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/tmp/dhfat3/share/widget.pc: is not an object file
+===> dockhand manifest: end

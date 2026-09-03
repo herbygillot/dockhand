@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -255,6 +256,12 @@ func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string,
 		// the note holds, so the names have to survive the mint — a diff
 		// cannot say which of its hunks was a rider.
 		r.Riders = p.Riders
+		// What examining the port turned up, stamped as it is appended.
+		// The judgment has no clock — a finding is made from bytes and
+		// says nothing about when — so the moment is the realizer's, and
+		// it is the moment the note learned it rather than the moment the
+		// comment was written.
+		r.Findings = stampFindings(p.Findings, time.Now())
 		r.Destination = dest
 		// The same ticket the trailer names, so that the pull request
 		// body can cite it without being told again — and so that a

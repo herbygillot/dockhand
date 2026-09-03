@@ -42,6 +42,9 @@ type BumpRevision struct {
 	// already-current — the counter always has a successor — so this is
 	// only ever the fold, never a withholding.
 	Riders intent.RiderPolicy
+	// Dependents are what the tree's reverse index says depends on this
+	// port, carried through to the instruction-comment finding rule.
+	Dependents []string
 }
 
 var _ intent.Planner = BumpRevision{}
@@ -110,7 +113,8 @@ func (b BumpRevision) Plan(ctx context.Context, h port.Handle, _ distfile.Fetche
 			Accept: func(predicted info.Delta) error {
 				return accept(vals, next, predicted)
 			},
-			Riders: b.Riders,
+			Riders:     b.Riders,
+			Dependents: b.Dependents,
 			// A revbump spends no network, so the only evidence it can
 			// offer is the edit itself: the revision line was written and
 			// the result evaluated. That is enough to be falsifiable — when

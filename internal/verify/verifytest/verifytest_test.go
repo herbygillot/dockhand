@@ -52,16 +52,31 @@ func TestFakeManifestsAreScripted(t *testing.T) {
 	job := verify.Job{Provider: "fake", ID: "fake-1"}
 	want := verify.Manifests{
 		Baseline:       &verify.Manifest{Port: "jq", Version: "1.7", Platform: "darwin 24 arm64"},
-		BaselineSource: "binary archive",
+		BaselineSource: verify.BaselineArchive,
 		Installed: &verify.Manifest{Port: "jq", Version: "1.8", Platform: "darwin 24 arm64",
 			Files:  []string{"/opt/local/bin/jq", "/opt/local/lib/libjq.1.dylib"},
 			Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "2.0.0", CurrentVersion: "2.0.0"}}},
-		Links: map[string][]string{"/opt/local/lib/libjq.1.dylib": {"/opt/local/bin/jq"}},
+		Links: map[string]map[string][]string{
+			"oniguruma": {"/opt/local/lib/libjq.1.dylib": {"/opt/local/bin/onig"}},
+		},
 	}
 	f := &Fake{Inventory: map[string]verify.Manifests{job.ID: want}}
 	got, err := f.Manifests(t.Context(), job)
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
+
+	// The refusal is a state too, and it carries its reason: "none" alone
+	// is the shape of a guess, and the finding a caller writes from it
+	// has to say which unavailability this was.
+	declined := verify.Manifests{
+		Installed:      want.Installed,
+		BaselineSource: verify.BaselineNone,
+		BaselineReason: "the archive was never published for this frame",
+	}
+	got, err = (&Fake{Inventory: map[string]verify.Manifests{job.ID: declined}}).Manifests(t.Context(), job)
+	require.NoError(t, err)
+	assert.Nil(t, got.Baseline)
+	assert.Equal(t, "the archive was never published for this frame", got.BaselineReason)
 
 	// Nothing to compare is a state a real provider reports, so a job
 	// nobody scripted must not look like a job nobody knows.
@@ -142,4 +157,22 @@ func TestFakeStatusCarriesASubject(t *testing.T) {
 	st, err = (&Fake{}).Poll(t.Context(), job)
 	require.NoError(t, err)
 	assert.Empty(t, st.Subject)
+}
+
+// Declaring the capability and implementing the interface are two
+// different facts, and the fake has to be able to hold them apart.
+//
+// The provider that could describe an installation and does not say so
+// is a real state — a provider reconfigured between the submit that
+// decided and the settle that asks — and a caller must refuse it by name
+// rather than discover it as a request nobody can answer. With the
+// declaration wired to the method it would be untestable.
+func TestTheManifestCapabilityIsDeclaredSeparatelyFromTheMethod(t *testing.T) {
+	quiet := &Fake{}
+	assert.False(t, quiet.Capabilities().InstalledManifest,
+		"a fake that says nothing must not set Request.Manifest across the tree")
+	_, isManifester := any(quiet).(verify.Manifester)
+	assert.True(t, isManifester, "and it implements the interface all the same")
+
+	assert.True(t, (&Fake{CanManifest: true}).Capabilities().InstalledManifest)
 }

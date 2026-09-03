@@ -131,6 +131,7 @@ The pipe is available when you want it. Sweeps never want it.
 ```
 bump <sel> [--to <version> | --latest] [--recheck]   # no flag: latest
 bump-revision <sel>                # alias: revbump
+bump-revision --for <branch>       # the plural invocation: accept a revbump proposal
 bump-epoch <sel>
 refresh-checksums <sel>            # never auto-promotable; carries its cause
 vendor <sel>                       # regenerate vendored block (T3)
@@ -142,6 +143,14 @@ migrate <sel> --idiom <name>
 ```
 
 Notes on naming and shape:
+
+- **`bump-revision --for <branch>` is the same verb asked a different
+  question.** The edit is bump-revision's edit; what changes is who chose the
+  ports and who wrote the reason. On the single-port road a person names both,
+  and with `--for` the proposal a verification measured holds both — which is
+  why it needs no `--reason` and takes no port. It never mints: the members
+  land as one more commit on the branch that already carries the change,
+  because they move for one reason and it is the same reason.
 
 - **`bump-revision` and `revbump` are the same verb.** The canonical name
   follows the family's shape (`bump`, `bump-revision`, `bump-epoch`); the
@@ -348,10 +357,19 @@ rung; see the open questions.
 
 ```
 dockhand status <sel> [--source=local|ci|all]
-dockhand dismiss <finding-id> [--reason ...]
+dockhand bump-revision --for <branch>    # accept a revbump proposal: one more commit
+dockhand dismiss <branch|port>           # record that you looked and said no
 dockhand debug <finding-id>              # shell into the preserved environment
 dockhand bump --from-finding <finding-id>
 ```
+
+A finding is answered per **branch** and not per finding id. The two answers
+are the two verbs above, and both are things a person types: `bump-revision
+--for` builds the cohort the measurement put forward, and `dismiss` records
+the refusal — which is an answer worth keeping rather than an absence, since a
+finding that vanished when declined would be proposed again on the next pass.
+Nothing else answers one, and `24` above is what holds an unattended
+publication until something does.
 
 `status` is the reflex command. It deserves its name early, even in a version
 that reports only one kind of finding.
@@ -607,10 +625,18 @@ ever going to ride, which puts the decline back at `10`.
 | `21` | `PRMerged` | the branch's own PR already merged — a dead end, not a conflict; `dockhand clean` retires it |
 | `22` | `Superseded` | work a newer sibling has already replaced: a followed run whose branch moved out from under it |
 | `23` | `Held` | *reserved:* a branch deliberately held back from publication |
-| `24` | `MachineGate` | *reserved:* an automatic publication a policy refused, where a human asking would be allowed it |
+| `24` | `MachineGate` | an unattended publication of a change still carrying an unanswered finding; a human asking for the same thing is told what they are publishing past and allowed it |
 
 `23` is a held *branch*. A held lock file is an ordinary failure and stays
 in band `1`; the names are one word apart and the bands are not.
+
+`24` is the only code whose meaning depends on **who asked**, and that is
+what it was reserved for. A finding proposes and never executes, so a change
+carrying an unanswered proposal is carrying a question; an unattended road has
+nobody to have read it and is refused, while a person promoting is looking at
+the proposal on their own `status` output and publishing anyway is their
+answer. There is no unattended publisher yet, so nothing reaches `24` from a
+verb today — what a person meets is the advisory naming the open finding.
 
 `22` is the destination refusing in the sense that matters: the answer the
 superseded run was about to give is about bytes that are no longer the tip.

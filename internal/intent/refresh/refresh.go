@@ -42,6 +42,9 @@ type Refresh struct {
 	// Riders is the run's rider policy, carried here so that the
 	// already-current decline below can name what it held back with it.
 	Riders intent.RiderPolicy
+	// Dependents are what the tree's reverse index says depends on this
+	// port, carried through to the instruction-comment finding rule.
+	Dependents []string
 }
 
 var _ intent.Planner = Refresh{}
@@ -197,8 +200,9 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 			Accept: func(predicted info.Delta) error {
 				return accept(vals, predicted)
 			},
-			ViaSet: viaSet,
-			Riders: r.Riders,
+			ViaSet:     viaSet,
+			Riders:     r.Riders,
+			Dependents: r.Dependents,
 			// The bytes are the witness, and this intent has the best kind:
 			// a fetch that deliberately refused the mirrors, so what was
 			// hashed is what upstream serves right now. A prediction that

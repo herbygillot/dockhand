@@ -48,6 +48,17 @@ func (e *Engine) Follow(ctx context.Context, repo *git.Repo, sha, portName, plat
 	if err := e.settle(ctx, repo, &n); err != nil {
 		return err
 	}
+	// A cohort's failure is named by the member that earned it, and not
+	// by the port the follow was watching. The headline of a cohort
+	// whose fourth member failed comes back blocked with the fourth
+	// member blamed, which is a true sentence about the headline and the
+	// wrong answer to "what happened": the build failed, and the exit
+	// status a caller reads has to say so about the port that did it.
+	// A change with one subject reaches exactly today's answer, because
+	// its only subject is the port being followed.
+	if failed, ok := failedMember(n, plat); ok {
+		return &VerifyFailedError{Port: failed, Handle: n.Jobs[plat].Handle}
+	}
 	r := n.Runs[record.RunKey(portName, plat)]
 	switch r.State {
 	case record.Passed:
@@ -181,4 +192,20 @@ func (e *Engine) stream(ctx context.Context, prov verify.Verifier, job verify.Jo
 		case <-time.After(followPoll):
 		}
 	}
+}
+
+// failedMember names the subject whose build failed on one release, in
+// the record's own build order.
+//
+// Build order and not map order: a cohort stops at its first failure,
+// so there is one failure to find, and a walk that reported whichever
+// the map handed it first would answer differently on different runs
+// for a record that somehow carried two.
+func failedMember(n record.Record, release string) (string, bool) {
+	for _, s := range n.Subjects {
+		if n.Runs[record.RunKey(s.Port, release)].State == record.Failed {
+			return s.Port, true
+		}
+	}
+	return "", false
 }

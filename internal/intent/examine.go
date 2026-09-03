@@ -95,22 +95,55 @@ type Cascade struct {
 // second type here would exist only to be mapped onto the first. A
 // finding made at plan time carries record.Proposed and leaves At to
 // whoever appends it, which is the disposition's stated purpose.
+//
+// Proposed is load-bearing for the one finding that ships here. An
+// instruction comment is the port maintainer's written statement that
+// this change is incomplete without a revbump elsewhere, and the
+// machine gate holds an unattended publication until a person has
+// answered it — by running the cohort verb, or by dismissing it. A
+// human's own promote is never held: they are looking at the sentence.
 type Examination struct {
 	Riders   []Rider
 	Cascades []Cascade
 	Findings []record.Finding
 }
 
+// Portfile is everything Examine reads about one port: the bytes, the
+// tree they parse to, where they live, the two snapshots the prediction
+// was made between, the evaluated state of the context being changed,
+// and the ports the index says depend on it.
+//
+// A struct and not eight arguments. Before and After are the same type
+// and would swap silently at a call site, Portdir and the dependents
+// are read only by the finding rules, and what comes out of here is
+// bound for a note — which is the one place a value quietly arriving in
+// the wrong field is worth a build failure instead.
+type Portfile struct {
+	Src []byte
+	CST *syntax.Script
+	// Portdir is where the Portfile lives, as the run resolved it. It is
+	// read only to word a finding's Source, and the last two elements of
+	// it are what a note keeps: the whole path is this machine's, and a
+	// note outlives it.
+	Portdir       string
+	Before, After info.Snapshot
+	Vals          info.Values
+	// Dependents are the ports the index says depend on this one. They
+	// narrow a finding's reading rather than widening it — a token the
+	// index already calls a dependent is a port whatever an English word
+	// list thinks of it — and nothing here proposes one.
+	Dependents []string
+}
+
 // Examine looks at a change that has already been predicted and reports
 // what else it noticed: riders to fold in, cascades it requires, and
 // findings nobody asked about.
 //
-// One rule runs today — the modeline — and the rest of the shape is
-// declared rather than implemented. before and after are the snapshots
-// the prediction was made from, vals the evaluated state at the current
-// version, and dependents the ports that depend on this one; all three
-// are what the cascade and finding rules will read, and none of them are
-// consulted by the modeline rule.
+// Two rules run today. The modeline offers a rider; the
+// instruction-comment rule states a finding, quoting the maintainer's
+// own sentence verbatim. Cascades are still declared rather than
+// produced: a cascade is REQUIRED where a finding proposes, and nothing
+// dockhand can read from a Portfile alone is required.
 //
 // Every rider it offers has already passed the FIRST half of the double
 // proof: the edit touches only bytes Tcl never evaluates. The second
@@ -120,10 +153,15 @@ type Examination struct {
 // one is structural and free, that one is semantic and expensive, and a
 // rider needs both.
 //
-// It takes no context because it does no I/O. The day a rule needs to
-// look something up, that is the day this grows one.
-func Examine(src []byte, cst *syntax.Script, before, after info.Snapshot, vals info.Values, dependents []string) Examination {
-	return Examination{Riders: Riders(src, cst)}
+// It takes no context because it does no I/O. Reading a comment is
+// reading bytes the caller already handed over, and deriving a source
+// path is arithmetic on a string. The day a rule needs to look
+// something up, that is the day this grows one.
+func Examine(p Portfile) Examination {
+	return Examination{
+		Riders:   Riders(p.Src, p.CST),
+		Findings: instructionFindings(p.Src, p.Portdir, p.Vals.Name, p.Dependents),
+	}
 }
 
 // Riders is the rule sweep on its own: what this source offers, with

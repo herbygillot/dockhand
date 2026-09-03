@@ -335,6 +335,16 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 		fmt.Fprintf(&b, "  — %s.\n", line)
 	}
 
+	// The cohort, before the riders and after the evidence: it is part
+	// of what this change IS — the dependents it revbumped and the
+	// measurement it did so on — where a rider is something the change
+	// carried along. Empty for a change with no cohort and no
+	// refutation, so an ordinary bump's body is byte-identical to what
+	// it always was.
+	if cohort := CohortBody(n); cohort != "" {
+		fmt.Fprintf(&b, "\n%s", cohort)
+	}
+
 	if prov := provenance(n, o.Head); prov != "" {
 		fmt.Fprintf(&b, "\n%s\n", prov)
 	}
@@ -440,19 +450,30 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 
 // unrunCause says why a promotion carries no run at all.
 //
-// Three shapes reach here and they are three different facts. A tip
-// with no record was never minted by this checkout, or its note is
-// gone; a record bound for the branch was minted with --no-verify, so
-// nobody ever asked for a verdict and the pump steps over it; and a
-// record bound further with no runs is the machine having no
-// verification environment to submit to. The last of those is the
-// sentence the body used to print for all of them.
+// Four shapes reach here and they are four different facts. A tip with
+// no record was never minted by this checkout, or its note is gone; a
+// record bound for the branch was minted with --no-verify, so nobody
+// ever asked for a verdict and the pump steps over it; a record whose
+// evidence was earned at another tip has runs — just not its own, which
+// is the ordinary shape of an extended branch; and a record bound
+// further with no runs at all is the machine having no verification
+// environment to submit to. The last of those is the sentence the body
+// used to print for all of them.
+//
+// The evidence arm is not a nicety. A cohort commit inherits the
+// headline's verification by design and carries no runs of its own, so
+// the body was publishing "nothing was run" directly above an ABI
+// measurement — two sentences that cannot both be true, with no sha
+// offered for the reader to go and check which one was.
 func unrunCause(n record.Record) string {
 	switch {
 	case n.Sha == "":
 		return "there is no verification record for this branch head"
 	case n.Destination == record.ToBranch:
 		return "this branch was minted with --no-verify, so no verification was ever asked for"
+	case n.Evidence != nil && n.Evidence.From != "":
+		return "this commit adds to a change that was verified at `" + abbrevSha(n.Evidence.From) +
+			"`, and its own verification has not come back"
 	default:
 		return "no verification environment on the submitting machine, so nothing was run"
 	}

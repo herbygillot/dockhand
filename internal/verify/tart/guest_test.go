@@ -505,3 +505,21 @@ exit 0
 		return string(b)
 	}
 }
+
+// A one-port request that ALSO asks for a manifest hands the guest the
+// same three calls and the same frozen runner. What the manifest costs
+// is paid before the launch — a roster, a baseline record, a capture,
+// all written by the submit — and none of it reaches here.
+//
+// The distinction matters because the acceptance test's first
+// verification is exactly this shape: one port, a manifest, and a build
+// that must be the build every one-port verification has always been.
+func TestAManifestDoesNotChangeWhatTheGuestIsAskedToBuild(t *testing.T) {
+	tools, transcript := stubTartIO(t)
+	p := Provider{Tools: tools}
+
+	require.NoError(t, p.launch(t.Context(), "dockhand-worker-cafe",
+		verify.Request{Ports: []string{"jq"}, Manifest: true}))
+
+	assert.Equal(t, soloTranscript, transcript())
+}

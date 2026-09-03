@@ -193,7 +193,11 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 		}
 	}
 	add("intent", "Change a port:", intentCommands()...)
-	add("test", "Test the port:", Verify(), Status(), Cancel())
+	// dismiss sits with the verbs that read a verification's answer,
+	// because that is what it answers: a proposal is something a
+	// settlement found, and saying no to one is the other half of the
+	// cohort verb that says yes.
+	add("test", "Test the port:", Verify(), Status(), Cancel(), Dismiss())
 	add("submit", "Submit the port:", Promote())
 	add("env", "Troubleshoot the port:", Log(), Shell())
 	add("branch", "Housekeeping:", Discard(), Clean(), Provision())

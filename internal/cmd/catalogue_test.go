@@ -62,7 +62,11 @@ var intentSurface = []struct {
 		name:    "bump-revision",
 		aliases: []string{"revbump"},
 		short:   "Increment a port's revision (requires --reason)",
-		own:     []string{"reason"},
+		// --for is the plural invocation: it names a branch whose revbump
+		// proposal is being accepted, and takes no port. It is bump-
+		// revision's own because the edit is bump-revision's edit — what
+		// changes is who chose the ports and who wrote the reason.
+		own: []string{"for", "reason"},
 	},
 	{
 		name:    "refresh-checksums",

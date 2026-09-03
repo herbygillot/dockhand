@@ -200,7 +200,11 @@ func (p Provider) Capabilities() verify.Capabilities {
 		// platform.
 		Concurrent: concurrent,
 		Evidence:   Evidence,
-		Xcode:      xcode,
+		// The guest is still holding the installation when anyone asks,
+		// which is the whole reason this provider can answer and a
+		// provider whose environment is gone by settle cannot.
+		InstalledManifest: true,
+		Xcode:             xcode,
 	}
 }
 
@@ -249,6 +253,16 @@ func Exec(ctx context.Context, tools *tool.Finder, vm string, argv ...string) (s
 // detached build. It returns once the build is running — about eleven
 // seconds for this provider, because the clone is free and the boot is
 // not.
+//
+// A request asking for a manifest takes longer, and by a different kind
+// of amount. Before anything of the change is staged, the merge base's
+// portdir is staged and installed binary-only so the change has an
+// honest before to be measured against — a download of the port's
+// published archive and its runtime dependencies, bounded (nothing is
+// compiled and no build dependency is pulled) but not eleven seconds.
+// Saying so here matters because the remedy for a submit that looks hung
+// is to kill it, and killing this one leaks the worker and the licence
+// slot with it.
 func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, error) {
 	// An empty slice and an empty headline are the same malformed
 	// request: both name nothing to build, and a request that named
@@ -336,7 +350,7 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 			return fail(fmt.Errorf("%w: %s requires a full Xcode installation and this base has none — provision with --xcode, or promote unverified", verify.ErrNoEnvironment, req.Ports[0]))
 		}
 	}
-	if err := p.stage(ctx, name, req); err != nil {
+	if err := p.prepare(ctx, name, req); err != nil {
 		return fail(err)
 	}
 	if err := p.launch(ctx, name, req); err != nil {
@@ -418,16 +432,22 @@ func WaitAgent(ctx context.Context, tools *tool.Finder, vm string) error {
 	return fmt.Errorf("%w: guest agent never answered in %s", verify.ErrNoEnvironment, vm)
 }
 
-// stage copies the edited portdirs in and indexes them ahead of the
-// guest's own tree. The index is checked rather than assumed: a
-// Portfile that does not parse indexes to nothing, and the build would
-// then quietly test the tree's copy of the port instead of the one
-// under test.
-func (p Provider) stage(ctx context.Context, vm string, req verify.Request) error {
+// stage copies portdirs in and indexes them ahead of the guest's own
+// tree. The index is checked rather than assumed: a Portfile that does
+// not parse indexes to nothing, and the build would then quietly test
+// the tree's copy of the port instead of the one under test.
+//
+// It takes the directories rather than the request because it is called
+// twice for two different sets of them: once with the merge base's, to
+// take a baseline, and once with the branch's, to build. The `rm -rf` is
+// what makes the second call a replacement of the first rather than a
+// merge — an overlay holding both versions would index two ports where
+// the tree has one.
+func (p Provider) stage(ctx context.Context, vm string, portdirs []string) error {
 	if _, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", "rm -rf "+overlayDir+" && mkdir -p "+overlayDir); err != nil {
 		return fmt.Errorf("%w: preparing the overlay: %w", verify.ErrNoEnvironment, err)
 	}
-	for _, dir := range req.Portdirs {
+	for _, dir := range portdirs {
 		category, name, err := build.Layout(dir)
 		if err != nil {
 			return fmt.Errorf("%w: %w", verify.ErrUnsupported, err)

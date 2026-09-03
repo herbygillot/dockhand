@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,7 +17,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
+	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
@@ -96,6 +100,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// version behind in the catalogue it was built from.
 	params := a.params
 	params.Tools = rs.Tools
+	params.Dependents = dependentRoster(rs, targets[0])
 	if a.resolve != nil && params.Riders != intent.RidersOnly {
 		if err := a.resolve(ctx, rs, h, pf, &params); err != nil {
 			return err
@@ -153,6 +158,59 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	return eng.Run(ctx, p, opts)
 }
 
+// dependentRoster is what the tree's reverse index says depends on this
+// port, read only where a finding rule would use it.
+//
+// The gate is the Portfile itself, and it is a cost gate rather than a
+// correctness one. The roster's one reader is the instruction-comment
+// rule, which consults it to vouch for a token its word list would
+// otherwise stop on — and only for a Portfile that already carries a
+// revbump-instruction comment, which a few dozen ports in a 41630-port
+// tree do. Building the reverse index is a full sequential pass over
+// the PortIndex, so filling this unconditionally would spend that pass
+// on every `--plan` of every leaf port to narrow a roster nothing was
+// going to read.
+//
+// An unreadable Portfile or an unindexed tree answers with nothing, and
+// that is not a silent loss: the rule's fallback is the word list it
+// uses for every ordinary port, and its own refusal — stop at the first
+// token you cannot justify, beside a verbatim quote — is what a reader
+// finishes by hand. A note is written to stderr where the comment
+// exists and the index could not answer, so a roster that came out
+// short says why.
+func dependentRoster(rs *runstate.Context, target tree.Target) []string {
+	path, err := target.Portfile()
+	if err != nil {
+		return nil
+	}
+	src, err := os.ReadFile(path)
+	if err != nil || !intent.MentionsRevbump(src) {
+		return nil
+	}
+	name := target.Subport
+	if name == "" {
+		// Resolved by location, so the index never named it. The portdir's
+		// basename is the parent port's name, which is the right lookup
+		// for the directory being edited — a subport would have arrived
+		// with Subport set.
+		name = filepath.Base(target.Portdir)
+	}
+	t, err := rs.Tree()
+	if err == nil {
+		var rev portindex.Reverse
+		if rev, err = t.Dependents(); err == nil {
+			var out []string
+			for _, d := range rev.ByPort[strings.ToLower(name)] {
+				out = append(out, d.Name)
+			}
+			return out
+		}
+	}
+	fmt.Fprintf(rs.Err, "note: %s carries a revision-bump comment and the reverse index could not be read (%v); the ports it names are read from the comment's own words alone\n",
+		filepath.Base(filepath.Dir(path))+"/"+filepath.Base(path), err)
+	return nil
+}
+
 // intentVerb is one row of the write-intent catalogue: the kit's own
 // Definition, and the three things a cobra command needs that a
 // Definition has no business carrying — the one-line help, the verb's
@@ -177,6 +235,23 @@ type intentVerb struct {
 	// Resolve fills in what the command line could not, with the run's
 	// handle and fetcher in hand. Only bump has one.
 	Resolve func(ctx context.Context, rs *runstate.Context, h port.Handle, f *portfetch.Fetcher, p *intent.Params) error
+	// Plural declares the verb's cohort mode: it registers the flags
+	// that ask for one and returns the reader of them, which answers
+	// with the Action to run instead of the single-port road — or with
+	// nil, for the ordinary invocation.
+	//
+	// Only bump-revision has one, and that is a property of the intents
+	// rather than of this shape: a cohort is a set of revision bumps
+	// answering one measurement, and what makes it one commit is that
+	// every member's edit is the same mechanical edit for the same
+	// stated reason. A plural bump would be several unrelated changes
+	// sharing a branch.
+	//
+	// It is what lets the verb take no port argument: the arity check
+	// below asks this first, because `bump-revision --for <branch>`
+	// names a branch and every member on it, and demanding a port would
+	// be demanding the answer the proposal already holds.
+	Plural func(c *cobra.Command, f *intentFlags) func() (Action, error)
 }
 
 // intentCatalogue is every write intent dockhand offers, in the order
@@ -211,13 +286,35 @@ func intentCommand(v intentVerb) *cobra.Command {
 		f      intentFlags
 		params intent.Params
 		check  func() error
+		plural func() (Action, error)
 	)
+	// The plural invocation names a branch and every member on it, so it
+	// takes no port. The arity check asks the flags before it counts
+	// arguments, which is the one thing cobra's own ExactArgs cannot do.
+	arity := func(cmd *cobra.Command, args []string) error {
+		if plural != nil {
+			if a, err := plural(); a != nil || err != nil {
+				return noArgs(cmd, args)
+			}
+		}
+		return exactArgs(1)(cmd, args)
+	}
 	c := &cobra.Command{
 		Use:     v.Name + " <port|subport|portdir>",
 		Aliases: v.Aliases,
 		Short:   v.Short,
-		Args:    exactArgs(1),
+		Args:    arity,
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
+			// The cohort mode first, because it answers a different
+			// question with different parameters: the ports it changes come
+			// from a proposal and the reason from the measurement, so the
+			// verb's own --reason check below is asking for a justification
+			// the branch already carries.
+			if plural != nil {
+				if a, err := plural(); a != nil || err != nil {
+					return a, err
+				}
+			}
 			// The verb's own contradictions first: a --to that fights
 			// --latest is a plainer thing to be told than a --trace that
 			// fights --plan, and the caller who typed both is owed the
@@ -250,11 +347,18 @@ func intentCommand(v intentVerb) *cobra.Command {
 	if v.Flags != nil {
 		check = v.Flags(c, &params, &f)
 	}
+	// After the shared flags exist, because the cohort mode reads them:
+	// --no-verify and --on mean the same thing on both roads, and a
+	// plural mode with its own spellings would be two vocabularies for
+	// one question.
+	f.register(c)
+	if v.Plural != nil {
+		plural = v.Plural(c, &f)
+	}
 	// Shared by every intent, because every change may close a ticket
 	// and the trailer is written at mint whatever the verb was.
 	c.Flags().StringVar(&params.ClosesTicket, "closes", "",
 		"Trac ticket number this change closes; becomes a Closes: trailer in the commit")
-	f.register(c)
 	return c
 }
 

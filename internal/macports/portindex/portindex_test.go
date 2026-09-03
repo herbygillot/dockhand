@@ -6,12 +6,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 )
+
+// entryText renders one entry the way MacPorts' portindex writes it:
+// a "name length" header line, then the payload and its newline, with
+// no separator before the next entry. The declared length covers that
+// newline and is counted in UTF-16 code units — Tcl's own `string
+// length` — which is why it is spelled out here rather than taken from
+// len(). A fixture that writes a byte count, as this one used to,
+// agrees with a reader that cannot read a real tree.
+func entryText(name, payload string) string {
+	body := payload + "\n"
+	return fmt.Sprintf("%s %d\n%s", name, len(utf16.Encode([]rune(body))), body)
+}
 
 // writeIndex writes a synthetic PortIndex (and optionally its quick
 // accelerator) from name→payload pairs, in order.
@@ -21,7 +34,7 @@ func writeIndex(t *testing.T, root string, entries [][2]string, withQuick bool) 
 	for _, e := range entries {
 		name, payload := e[0], e[1]
 		fmt.Fprintf(&quick, "%s %d\n", strings.ToLower(name), index.Len())
-		fmt.Fprintf(&index, "%s %d\n%s\n", name, len(payload), payload)
+		index.WriteString(entryText(name, payload))
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(root, macports.IndexFile), []byte(index.String()), 0o644))
 	if withQuick {
@@ -102,7 +115,7 @@ func quickFor(entries [][2]string) []byte {
 	for _, e := range entries {
 		name, payload := e[0], e[1]
 		fmt.Fprintf(&quick, "%s %d\n", strings.ToLower(name), pos)
-		pos += len(fmt.Sprintf("%s %d\n%s\n", name, len(payload), payload))
+		pos += len(entryText(name, payload))
 	}
 	return []byte(quick.String())
 }

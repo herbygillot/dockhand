@@ -87,6 +87,15 @@ linters:
             - iter
             - regexp
             - sort
+            # strconv, for the one comparison that cannot be made as
+            # text: a Mach-O compatibility version is numbers, and real
+            # libraries reach two digits — this machine's own libImath
+            # announces 30.0.0 — so "10.0.0" < "2.0.0" as a string would
+            # call an ordinary upgrade a break. A digit compare
+            # hand-rolled to stay off this list would be the same
+            # arithmetic with its bugs hidden. It reads nothing, which
+            # is what this list is about.
+            - strconv
             - strings
             - github.com/herbygillot/dockhand/internal/exitcode
             - github.com/herbygillot/dockhand/internal/platform

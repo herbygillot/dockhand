@@ -62,6 +62,23 @@ type Fake struct {
 	// ProbeErr makes Probe fail per job ID — the guest that will not
 	// run the port's own binaries.
 	ProbeErr map[string]error
+	// CanManifest is what Capabilities reports for InstalledManifest: a
+	// provider that can describe an installation from inside the
+	// environment that made it.
+	//
+	// A field rather than a method because the method name Manifests is
+	// taken, on Live and Inventory's precedent. It is false by default
+	// deliberately, and that is not laziness: the capability is what a
+	// caller reads to decide whether to ask for a manifest at all, so a
+	// fake that claimed it by default would set Request.Manifest across
+	// every engine test in the tree and change what those tests submit.
+	//
+	// Declaring it is also deliberately separate from implementing
+	// Manifester. The fake implements the interface always, so a test
+	// that leaves this false is scripting exactly the provider that
+	// could describe an installation and does not say so — which is the
+	// mismatch the caller must refuse by name rather than discover.
+	CanManifest bool
 	// Evidence and Xcode are what Capabilities reports for the two
 	// facts a provider knows about itself. Both zero by default, so a
 	// test that does not care answers exactly as this fake always has.
@@ -84,11 +101,12 @@ func (f *Fake) Capabilities() verify.Capabilities {
 		plats = []platform.Release{{Name: "Testos", Darwin: 99}}
 	}
 	return verify.Capabilities{
-		Platforms:  plats,
-		Concurrent: 2,
-		Pristine:   true,
-		Evidence:   f.Evidence,
-		Xcode:      f.Xcode,
+		Platforms:         plats,
+		Concurrent:        2,
+		Pristine:          true,
+		Evidence:          f.Evidence,
+		InstalledManifest: f.CanManifest,
+		Xcode:             f.Xcode,
 	}
 }
 

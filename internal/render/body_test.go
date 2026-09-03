@@ -641,6 +641,22 @@ var bodyVariants = []bodyVariant{
 	{name: "unverified_prs_unchecked",
 		note: func(n *record.Record) { n.Destination = record.ToVerdict },
 		opts: unchecked()},
+
+	// The cohort. Three dispositions, three bodies: a proposal a person
+	// accepted is a list of revbumped ports with the link proof each
+	// one's own run recorded; one they promoted past is said out loud
+	// rather than dressed up as a cohort; and one they dismissed is a
+	// decision a reviewer is entitled to see. All three restate the
+	// criterion verbatim, once.
+	{name: "verified_cohort",
+		note:     func(n *record.Record) { *n = cohortNoteFor(record.Accepted, cohortLinks) },
+		verified: true, opts: withCommits(2)},
+	{name: "verified_cohort_proposed",
+		note:     func(n *record.Record) { *n = cohortNoteFor(record.Proposed, nil) },
+		verified: true, opts: vouchedOpts},
+	{name: "verified_cohort_dismissed",
+		note:     func(n *record.Record) { *n = cohortNoteFor(record.Dismissed, nil) },
+		verified: true, opts: vouchedOpts},
 }
 
 // Each variant's whole body is pinned: a checklist box flipping, a
@@ -741,9 +757,18 @@ func TestPRBodyUnverifiedCausesAreAllDifferent(t *testing.T) {
 // remedy, so the failure reads as the change it is.
 func checkGolden(t *testing.T, name, got string) {
 	t.Helper()
-	path := filepath.Join(goldenDir, name+".golden")
+	checkGoldenIn(t, goldenDir, name, got)
+}
+
+// checkGoldenIn is checkGolden with the directory named, for the
+// goldens that are not pull request bodies: a commit message is pinned
+// the same way and swept for staleness by a different test, so it must
+// not sit in the directory that sweep reads.
+func checkGoldenIn(t *testing.T, dir, name, got string) {
+	t.Helper()
+	path := filepath.Join(dir, name+".golden")
 	if *update {
-		require.NoError(t, os.MkdirAll(goldenDir, 0o755))
+		require.NoError(t, os.MkdirAll(dir, 0o755))
 		require.NoError(t, os.WriteFile(path, []byte(got), 0o644))
 		return
 	}

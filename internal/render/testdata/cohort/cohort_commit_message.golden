@@ -1,0 +1,23 @@
+libwidget: revbump 3 dependents of libwidget 3.0
+
+install name /opt/local/lib/libwidget.2.dylib → /opt/local/lib/libwidget.3.dylib; libwidget compatibility_version 2.0.0 → 3.0.0 (narrowed), measured between libwidget@2.4.1 (binary archive) and @3.0 (built from source) on Testos
+
+this criterion is necessary and not sufficient: an install name and a compatibility version can sit still while symbols are removed, and a break confined to a header or to a plugin's own contract is invisible to otool.
+
+The comment in gis/gdal/Portfile asks for this:
+
+  # Please increase the revision of gdal-hdf5 and gdal-kea whenever
+  # libwidget's version is updated.
+
+Revision bumped:
+  gdal (gis/gdal): depends_lib
+  grass (gis/grass): depends_lib; nomaintainer
+  mapnik (gis/mapnik): depends_lib; named by the comment in gis/gdal/Portfile
+
+Not bumped here — do these by hand:
+  php80-Judy: plan: declined: the Portfile's shape does not say where a revision line belongs: the version is carried by a `set` variable, which is not a line a revision belongs under
+
+Examined and not bumped:
+  cmake (devel/cmake): depends_build only: it links nothing this change publishes
+  djview-qt5 (aqua/djview): replaced by djview
+  osm2pgsql (gis/osm2pgsql): already in flight on dockhand/osm2pgsql-2.0

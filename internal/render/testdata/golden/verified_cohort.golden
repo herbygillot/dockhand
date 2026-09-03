@@ -1,0 +1,39 @@
+#### Description
+
+Verified with [dockhand](https://github.com/herbygillot/dockhand):
+  — libwidget on Sequoia: built from source in a pristine VM.
+  — gdal on Sequoia: built from source in a pristine VM.
+  — grass on Sequoia: built from source in a pristine VM.
+
+ABI changed: install name /opt/local/lib/libwidget.2.dylib → /opt/local/lib/libwidget.3.dylib; libwidget compatibility_version 2.0.0 → 3.0.0 (narrowed), measured between libwidget@2.4.1 (binary archive) and @3.0 (built from source) on Testos.
+this criterion is necessary and not sufficient: an install name and a compatibility version can sit still while symbols are removed, and a break confined to a header or to a plugin's own contract is invisible to otool.
+
+Revision bumped in this change:
+  — gdal (gis/gdal): depends_lib; /opt/local/lib/libgdal.36.dylib links against /opt/local/lib/libwidget.3.dylib
+  — grass (gis/grass): depends_lib; nomaintainer; links nothing that moved
+
+Examined and not bumped:
+  — cmake (devel/cmake): depends_build only: it links nothing this change publishes
+
+Branch head `0123456789ab`.
+
+###### Type(s)
+
+- [ ] bugfix
+- [ ] enhancement
+- [ ] security fix
+
+###### Tested on
+- macOS Sequoia — built in a pristine VM, via dockhand
+
+###### Verification
+Have you
+
+- [ ] followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?
+- [ ] squashed and [minimized your commits](https://guide.macports.org/#project.github)?
+- [x] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?
+- [ ] checked your Portfile with `port lint`?
+- [ ] tried existing tests with `sudo port test`?
+- [x] tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM
+
+Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3

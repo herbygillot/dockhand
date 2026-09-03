@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
@@ -94,6 +95,13 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 	// seen is what each conclusion was reached from — the two halves of
 	// the compare.
 	judged, seen := map[string]record.Run{}, map[string]observed{}
+	// What the settlement noticed that nobody asked about, gathered per
+	// guest and appended once with the verdicts. It is collected inside
+	// the poll loop because the evidence it rests on only exists while
+	// the guest is still held, and written in the same note update as
+	// the runs because a finding about a run that was dropped by the
+	// compare would be a question about a verdict this pass never wrote.
+	var found []record.Finding
 	// What the guests should do, decided per release because a guest is
 	// per release: keep it when any subject in it wants it kept, and say
 	// so when a release that was expected to go back does not.
@@ -145,6 +153,23 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 				in.Nomaintainer = nomaintainerDep(repo.Root, d)
 			}
 		}
+		// The evidence slot, between the log fetch and the release. The
+		// order is the whole of it: the guest is still holding both sides
+		// of the comparison and the binaries a probe runs, and
+		// returnGuests below puts them out of reach. What it cannot do is
+		// fail — an environment that built the port and then could not
+		// describe it is a missing observation, never a verdict — so
+		// describe absorbs its own refusals and the finding says the check
+		// was unavailable.
+		// It runs only on a guest that has finished. A comparison taken
+		// against a half-finished install would measure the change against
+		// itself, and an ABI reading of a build still in flight is the
+		// strongest false break there is.
+		ev := guestEvidence{ByPort: map[string]installEvidence{}}
+		if !in.Vanished && in.Status.State.Terminal() {
+			ev = e.describe(ctx, prov, job.Job, in)
+			found = append(found, e.findCohort(ctx, repo, *n, &ev)...)
+		}
 		js := verdict.JudgeCohort(in)
 		for _, s := range in.Subjects {
 			was := in.Runs[s.Port]
@@ -158,7 +183,7 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 			if !ok || !j.Settled {
 				continue
 			}
-			run := j.Run
+			run := attach(j.Run, ev.ByPort[s.Port])
 			run.Platform = rel
 			if run.State == record.Passed {
 				// What the pass proves, in the provider's own words, stamped
@@ -185,9 +210,10 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 			seen[key] = observed{Run: was, JobID: job.Job.ID}
 		}
 	}
-	if len(judged) == 0 {
+	if len(judged) == 0 && len(found) == 0 {
 		return nil
 	}
+	stamped := stampFindings(found, time.Now())
 	// The write is the ledger's own read-modify-write, which re-reads
 	// under the flock. A run whose state moved since it was observed was
 	// settled, canceled or superseded by somebody who saw a note this
@@ -223,6 +249,13 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 			}
 			job.Handle = held.Handle
 			fresh.Jobs[rel] = job
+			applied = true
+		}
+		// The findings go on with the verdicts they were measured
+		// beside, and only the ones the record does not already carry: a
+		// proposal a person dismissed must not come back proposed
+		// because a later pass reached the same measurement.
+		if mergeFindings(&fresh.Findings, stamped) {
 			applied = true
 		}
 		// The caller's copy becomes what the note says, so that a dropped

@@ -38,11 +38,33 @@ func PathTarget(ref string) (Target, bool) {
 // index lazily opens the tree's own PortIndex, caching the result —
 // hit or miss — for the Tree's lifetime.
 func (t *Tree) index() (*portindex.Index, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.lockedIndex()
+}
+
+// lockedIndex is index with the caller already holding the lock, so
+// that a cache built from the index fills both under one acquisition.
+func (t *Tree) lockedIndex() (*portindex.Index, error) {
 	if !t.idxLoaded {
 		t.idx, t.idxErr = portindex.Open(t.root)
 		t.idxLoaded = true
 	}
 	return t.idx, t.idxErr
+}
+
+// indexLookup resolves a name against the tree's index under the
+// tree's lock. An Index rebuilds its own offsets when a stale quick
+// file misroutes a lookup, so a lookup writes as well as reads and two
+// concurrent resolutions of the same tree would race over it.
+func (t *Tree) indexLookup(ref string) (portindex.Entry, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	idx, err := t.lockedIndex()
+	if err != nil {
+		return portindex.Entry{}, err
+	}
+	return idx.Lookup(ref)
 }
 
 // Resolve resolves the tree-bound reference forms: "category/dir" under
@@ -57,13 +79,11 @@ func (t *Tree) Resolve(ref string) (Target, error) {
 		return Target{Portdir: filepath.Join(t.root, ref)}, nil
 	}
 
-	idx, idxErr := t.index()
+	entry, idxErr := t.indexLookup(ref)
 	if idxErr == nil {
-		if entry, err := idx.Lookup(ref); err == nil {
-			dir := filepath.Join(t.root, filepath.FromSlash(entry.Portdir))
-			if _, err := os.Stat(filepath.Join(dir, macports.PortfileName)); err == nil {
-				return Target{Portdir: dir, Subport: entry.Name}, nil
-			}
+		dir := filepath.Join(t.root, filepath.FromSlash(entry.Portdir))
+		if _, err := os.Stat(filepath.Join(dir, macports.PortfileName)); err == nil {
+			return Target{Portdir: dir, Subport: entry.Name}, nil
 		}
 	}
 

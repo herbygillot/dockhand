@@ -78,6 +78,41 @@ func Portgroups(t *testing.T) []string {
 	return names(t, filepath.Join(corpusRoot(t), "portgroups"))
 }
 
+// PortIndexSample returns the directory holding the checked-in
+// PortIndex slice and its accelerator — the third corpus half, and the
+// only one that is a generated file rather than a hand-written one.
+//
+// It is a real index, not a written-out one: the selected entries were
+// copied verbatim, headers and all, out of a PortIndex that MacPorts'
+// own portindex produced. Re-serializing them would recompute the
+// declared lengths and destroy the two properties worth testing — that
+// the length counts the payload's trailing newline and counts it in
+// UTF-16 code units — which is exactly how the synthetic fixture this
+// replaced agreed with a reader that could not read a real tree.
+func PortIndexSample(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(corpusRoot(t), "portindex")
+}
+
+// PortIndexTree stages the sample index inside a fresh directory shaped
+// like a ports tree, so tree.Open accepts it, and returns the root.
+// There are no portdirs under it: the index is the fact under test, and
+// what a name resolves to on disk is resolve's business.
+func PortIndexTree(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "_resources", "port1.0", "group"), 0o755); err != nil {
+		t.Fatalf("staging a ports tree: %v", err)
+	}
+	src := PortIndexSample(t)
+	for _, name := range []string{"PortIndex", "PortIndex.quick"} {
+		if err := os.WriteFile(filepath.Join(root, name), fixture(t, filepath.Join(src, name)), 0o644); err != nil {
+			t.Fatalf("staging %s: %v", name, err)
+		}
+	}
+	return root
+}
+
 // names lists one corpus half, sorted. The order is fixed here rather
 // than left to the filesystem so that a sweep reports its failures in
 // the same order on every machine.

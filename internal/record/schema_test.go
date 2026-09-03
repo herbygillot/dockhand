@@ -74,7 +74,7 @@ func populated() Record {
 				Linted:         true,
 				Lint:           "2 warnings",
 				FromSource:     true,
-				Manifest:       &verify.Manifest{Port: "jq", Version: "1.9", Platform: "Testos", Files: []string{"/opt/local/bin/jq"}, Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "1.0.0", CurrentVersion: "1.9.0"}}},
+				Manifest:       &verify.Manifest{Port: "jq", Version: "1.9", Platform: "Testos", Files: []string{"/opt/local/bin/jq"}, Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", Arch: "arm64", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "1.0.0", CurrentVersion: "1.9.0"}}},
 				Baseline:       &verify.Manifest{Port: "jq", Version: "1.8", Platform: "Testos", Files: []string{}, Dylibs: []verify.Dylib{}},
 				BaselineSource: "archive",
 				Links:          []string{"/opt/local/bin/jq links against /opt/local/lib/libjq.1.dylib"},
@@ -215,6 +215,7 @@ const wirePopulated = `{
         "dylibs": [
           {
             "path": "/opt/local/lib/libjq.1.dylib",
+            "arch": "arm64",
             "install_name": "/opt/local/lib/libjq.1.dylib",
             "compat_version": "1.0.0",
             "current_version": "1.9.0"

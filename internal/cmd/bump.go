@@ -24,7 +24,7 @@ var bumpVerb = intentVerb{
 		Fetches: true,
 		New: func(p intent.Params) (intent.Planner, error) {
 			return bump.Bump{Version: p.Version, Force: p.Recheck, Tools: p.Tools,
-				ClosesTicket: p.ClosesTicket, Riders: p.Riders}, nil
+				ClosesTicket: p.ClosesTicket, Riders: p.Riders, Dependents: p.Dependents}, nil
 		},
 	},
 	Short: "Bump a port to a new version, as a branch",

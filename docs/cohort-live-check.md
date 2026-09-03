@@ -361,3 +361,672 @@ holding in mind while doing the above:
   and blame does not depend on it — the judge matches the log's name against
   the roster, not against a position — but ordering members by declared
   dependency is a real improvement waiting for a step of its own.
+
+---
+
+## D. The ABI baseline
+
+Parts A–C prove what the guest builds. This part proves what it *measures*,
+and it is the one thing in S12 that no test here can reach: the baseline is a
+download of a published binary archive into a booted VM, and everything
+offline stands on `verifytest.Fake` or on otool output captured on the host.
+
+The recipe under test, in the order the guest runs it:
+
+| # | Command in the guest | Why it is that command |
+|---|---|---|
+| 1 | stage the **merge base's** portdirs into `/tmp/dockhand-overlay` | the guest's own tree is frozen at provisioning and may not hold the version the change is leaving |
+| 2 | `sudo -n port -N -b install <headline> <variants>` | `-b` installs the published archive and **refuses to build**; the variants are the branch build's, because an archive is named by version, revision and variants |
+| 3 | `port -q installed <headline>` | port(1)'s exit status cannot answer this: on a port that is not installed it exits **0** and prints nothing |
+| 4 | `port -q contents` + `otool -arch all -D` + `otool -arch all -L`, framed into `/tmp/dockhand-verify/manifest.pre` | `-arch all` so a universal file always reports every slice; batched through `xargs -0` because a per-file loop is minutes |
+| 5 | `sudo -n port -N -f uninstall <headline>` | `-f` because MacPorts otherwise refuses while dependents are installed and asks a question a detached runner never sees; the dependencies stay, which is what the branch build would have pulled |
+| 6 | stage the **branch's** portdirs over the same overlay, then launch | steps 1 and 6 write the same directory, which is why 1–5 come first |
+
+**D1. Make a branch whose headline has a published archive.** Any port with a
+binary archive on the buildbot, edited so the portdir is part of the change.
+
+```
+cd <macports-ports checkout>
+git switch -c live/baseline origin/master
+printf '\n' >> textproc/oniguruma/Portfile
+git commit -am 'oniguruma: live baseline check'
+```
+
+**D2. Verify it, and watch the submit take longer than eleven seconds.**
+
+```
+time /tmp/dockhand verify live/baseline
+```
+
+- **Worked:** the submit returns having downloaded and activated the archive —
+  tens of seconds, not eleven, and not minutes. Nothing compiled: `-b` selects
+  only `depends_lib` and `depends_run`.
+- **A finding:** a submit that takes *minutes*. That is a source build, which
+  means `-b` was dropped and the "before" is a build nobody ever shipped.
+
+**D3. Read what the environment recorded, while it is still there.**
+
+```
+/tmp/dockhand shell live/baseline
+# inside the guest:
+cat  /tmp/dockhand-verify/manifest.ports
+cat  /tmp/dockhand-verify/baseline
+head -20 /tmp/dockhand-verify/manifest.pre
+tail -1  /tmp/dockhand-verify/manifest.pre
+port -q installed oniguruma
+ls /tmp/dockhand-overlay/textproc/oniguruma
+exit
+```
+
+- **Worked:** `manifest.ports` holds the roster, headline first, one per line.
+  `baseline` holds exactly `archive` and nothing else. `manifest.pre` opens
+  with `===> dockhand manifest: port` and **ends with**
+  `===> dockhand manifest: end` — the closing line is the whole durability
+  guarantee, and a capture without it is refused rather than parsed.
+  `port -q installed oniguruma` shows the **branch's** version or nothing at
+  all, never the merge base's: step 5 took the baseline back off.
+  The overlay holds the branch's Portfile, not the merge base's.
+- **A finding, and the worst one available:** `port -q installed` still showing
+  the merge base's version. The old version left active makes the branch's
+  install a no-op or an upgrade, and the run would pass without ever building
+  the change. dockhand is supposed to refuse the submit outright in that case —
+  see `internal/verify/tart/baseline.go`, "would not uninstall".
+- **A finding:** `manifest.pre` present while `baseline` says `none`, or the
+  reverse; a `manifest.pre` with no `end` line.
+
+**D4. Confirm the measurement is of the merge base and not of the change.**
+
+```
+grep -A2 'dockhand manifest: version' /tmp/dockhand-verify/manifest.pre   # in the guest
+```
+
+- **Worked:** the version is the one the branch is leaving — the merge base's,
+  not the branch's. This is the single fact the whole comparison rests on.
+- **A finding:** the branch's version. The baseline was taken after the staging
+  and the change was measured against itself, which always reports that
+  nothing moved.
+
+**D5. Now the honest refusal: a port with no archive.** Bump a port to a
+version that has never been built, so `-b` cannot find anything.
+
+```
+cd <macports-ports checkout>
+git switch -c live/baseline-none origin/master
+$EDITOR <some portdir>/Portfile         # set a version that does not exist upstream
+git commit -am 'live: no archive for the merge base'
+/tmp/dockhand verify live/baseline-none
+```
+
+- **Worked:** the submit **succeeds** — a check that could not be made is not a
+  submit that failed — and in the guest `/tmp/dockhand-verify/baseline` reads
+  `none` on the first line with MacPorts' own refusal quoted on the second:
+  `Error: Failed to unarchive …: Archive for … not found, required when
+  binary-only is set!`. No `manifest.pre`.
+- **A finding:** a submit that refused; a `baseline` file saying `none` with no
+  reason under it; an empty `manifest.pre` written anyway. An empty baseline
+  compares as every library removed, which is the strongest false break there
+  is, and detecting the refusal by name is the only thing standing between that
+  and a nine-port revbump proposal nobody asked for.
+
+**D6. Confirm the settle reads both sides.**
+
+```
+/tmp/dockhand status --json | python3 -m json.tool | grep -B2 -A6 baseline_source
+```
+
+- **Worked:** the run carries `baseline_source` of `archive` (or `none` with a
+  reason), a `baseline` manifest where there is one, a `manifest` for what was
+  installed, and `links` naming the members bound to the headline's install
+  names — and nothing else in `links`: a dependent links against libSystem too,
+  and a map carrying that answers a question nobody asked.
+- **A finding:** `baseline_source` empty. "We did not look" and "we looked and
+  there was nothing" are different answers, and only one of them is an answer.
+
+**D7. Clean up.**
+
+```
+/tmp/dockhand cancel live/baseline ; /tmp/dockhand discard live/baseline
+/tmp/dockhand cancel live/baseline-none ; /tmp/dockhand discard live/baseline-none
+tart list
+```
+
+### What part D cannot answer
+
+The compatibility-version ruling. `ABIDelta` treats an install-name change, a
+removal and a **decreasing** compatibility version as breaks, and an increasing
+one as widened — because dyld requires the loaded library's compatibility
+version to be at least what the dependent recorded, so an increase is not a
+load-time break. Whether an increase should still earn a revbump proposal is a
+maintainer's call and no VM can settle it.
+
+---
+
+## E. The acceptance test — a proposal, and the two ways to answer it
+
+Parts A through D prove the substrate: one guest, per-member verdicts, and a
+manifest with an honest before. Part E is the thing the whole overhaul was
+asked for — *"bundle revbumps to downstream ports if we are currently doing a
+bump update to a port that ends up changing the target port's ABI"* — and the
+part of it no fake can reach is the sequence: a real bump, a real measurement,
+a proposal a person reads, and a second commit that only exists because they
+accepted it.
+
+Everything below is over the real reverse index, which means the port has to
+be one that genuinely has dependents. Pick a **small library with few
+dependents and a soname that actually moves**; the walkthrough's `libwidget`
+does not exist. `graphics/libgeotiff` (four dependents) and `devel/brotli` are
+the two the maintainer's own tree makes cheapest. A port with eighty
+dependents is a correct answer and an evening.
+
+**E1. Make sure the tree has a PortIndex, then bump the library.**
+
+The reverse index is read out of `PortIndex` at the tree root. That file is
+**generated by `portindex(1)` and is not carried in a macports-ports clone**,
+so a fresh checkout has none — and with none there is no cohort decision to
+make. Check it first; every measurement below rests on it.
+
+```
+cd <macports-ports checkout>
+ls -l PortIndex PortIndex.quick        # both must exist
+portindex                              # ~1-2 minutes if they do not
+/tmp/dockhand bump <the library> --to <a version whose dylib soname moves>
+/tmp/dockhand status
+```
+
+- **Worked:** a branch, and a run building. Exit 0 or 60.
+- **A finding:** a decline. Pick another version — E needs a bump that reaches
+  a build, and which version that is, is a fact about the port.
+- **A finding:** `portindex` refusing, or `PortIndex` older than the checkout.
+  A stale index proposes a cohort over yesterday's tree, which is a member list
+  that may name ports the branch tip does not carry — E5 declines those by
+  name, but the roster is still the wrong roster.
+
+**E2. Let it settle, and read the proposal.**
+
+```
+/tmp/dockhand status
+```
+
+- **Worked:** under the branch, three lines in this order — the verdict, then
+  `ABI changed: install name … → …, measured between …@<old> (binary archive)
+  and @<new> (source not recorded) on <release>`, then `proposal: N dependents
+  need a revision bump (…) — `dockhand bump-revision --for <branch>` builds the
+  cohort, `dockhand dismiss <branch>` records that you looked and said no`.
+  The exit status is **0**: a proposal is advisory and human-gated, and a
+  status that failed over one would make the tool something to avoid running.
+  The second half of that sentence says `(source not recorded)` rather than
+  `(built from source)` unless the run was `--recheck` or a checksum refresh.
+  Nothing in a manifest records how an installation was produced, so the
+  criterion states the absence instead of assuming; `(built from source)` on a
+  plain bump would be a claim nobody measured.
+- **A finding, and the most important one in part E:** a proposal whose
+  criterion says `ABI unchanged` or `ABI check unavailable`. Nothing is
+  proposed on either, by construction — if a proposal appears beside one of
+  those sentences, the gate between the measurement and the cohort has gone.
+- **A finding, and the likeliest way this whole part quietly passes:** **no
+  proposal and no `ABI` line at all**, on a port that has dependents. A leaf
+  port settles exactly that way on purpose — the measurement's one consumer is
+  the cohort decision — so silence here means either the index says nothing
+  depends on the library (check with E3's `port echo depends:`) or the index
+  could not be read. The second one now says so: an unreadable index records
+  `ABI check unavailable: the ports tree's reverse index could not be read …
+  (run `portindex` in the tree to generate one)`. If neither sentence appears
+  and `port echo depends:` names ports, the gate between the tree and the
+  finding has gone.
+- **Also a finding:** a member in the proposal that lives in the headline's own
+  portdir. That is a port this change is already editing, and a cohort that
+  planned it would edit the Portfile it just changed.
+
+**E3. Check the roster against the tree by hand.** This is the step that
+cannot be automated, because it is the check on the automation.
+
+```
+port echo depends:<the library> | sort          # or grep the PortIndex
+/tmp/dockhand status --json | python3 -m json.tool | less   # findings[].candidates
+```
+
+- **Worked:** every proposed member declares the library under `depends_lib` or
+  `depends_run`; every `depends_build`-only dependent appears with
+  `"proposed": false` and the reason saying so; every candidate's `portdir` is
+  a directory that exists, **including for subports** — `php80-Judy` must read
+  `php/php-Judy` and not `php/php80-Judy`.
+- **A finding:** a member missing from the proposal that `port echo depends:`
+  names. A dropped `lib:`, `bin:` or `path:` token is a dependent left broken
+  with nothing said about it, which is the one failure this step cannot
+  tolerate.
+
+**E4. The machine gate refuses; a person is allowed past.** There is no
+unattended publisher yet, so this is checked from the other side: a human
+promote must say what it is publishing past.
+
+```
+/tmp/dockhand promote <branch> --no-pr
+```
+
+- **Worked:** on stderr, `promoting with dependent-revbump still proposed;
+  `dockhand dismiss <branch>` records that you looked and said no`, and the
+  push proceeds. A person is looking at the proposal, and promoting anyway is
+  their answer.
+- **A finding:** a refusal. Exit 24 is the machine's gate and must never meet a
+  person at the keyboard.
+- Undo it before continuing: `git push <fork> --delete <branch>`.
+
+**E5. Accept the proposal.**
+
+```
+/tmp/dockhand bump-revision --for <branch>
+git -C . log --format='%H %s' origin/master..<branch>
+git -C . show --stat <branch>
+```
+
+- **Worked:** the new tip on stdout, **one** additional commit, and its diff is
+  one `revision` line per member portdir and nothing else. The subject reads
+  `<library>: revbump N dependents of <library> <version>`, and the body opens
+  with the criterion from E2 **word for word**, followed by the caveat
+  (`this criterion is necessary and not sufficient…`), the members with their
+  reasons, and the ports examined and not bumped.
+- **A finding:** two commits; a diff touching anything but `revision` lines; a
+  modeline inserted into a dependent's Portfile (a cohort carries no riders);
+  a criterion in the body that is a paraphrase of the one status printed. One
+  claim, said once, is what lets a reviewer check it with `otool` by hand.
+- **A finding:** a member edited whose Portfile in your working tree differs
+  from the branch's. The plan is made from the branch tip's blob, never the
+  worktree; the way to provoke it is to edit a member's Portfile in the
+  worktree before running this and confirm the commit ignores your edit.
+
+**E6. The members that declined.**
+
+- **Worked:** every member the planner could not plan is named on stderr as
+  `<port>: not bumped — plan: declined: …` with the remedy, the cohort
+  proceeded with the rest, and the note's candidate row for it now reads
+  `proposed, then declined: … — do this one by hand`.
+- **A finding:** a silent drop. A member that vanishes between E2's proposal
+  and E5's commit is a dependent left broken with nothing said about it.
+- **A finding:** every member declining and the verb still committing. With
+  nothing to bump there is no cohort, and the verb must decline by name.
+
+**E7. The cohort's own verification.**
+
+```
+/tmp/dockhand status
+```
+
+- **Worked:** one job on the platform, N+1 runs — the headline and every member
+  — and the members build **from source**, because each one's rev+1 names an
+  archive that does not exist. That rebuild against the new library is the
+  evidence the whole proposal was for.
+- **A finding:** a member that installed from a binary archive. Its revision
+  did not move, or the archive server has an artifact it should not.
+- **A finding:** two jobs. The capacity arithmetic counts environments, and a
+  cohort is one build.
+
+**E8. A member that fails.** Break one member's Portfile on the branch and
+re-verify.
+
+```
+git -C . commit --amend --no-edit          # or a fresh branch; whichever you prefer
+/tmp/dockhand verify <branch> --trace
+```
+
+- **Worked:** exit **70**, and the message names **the member**, not the
+  headline. The headline's own run reads `blocked` with the member blamed, and
+  the environment is kept once for the whole guest.
+- **A finding:** exit 71 naming the headline. True about the headline and the
+  wrong answer to "what happened": the build failed, and the status a caller
+  reads has to say so about the port that did it.
+
+**E9. Publish, and read the body.**
+
+```
+/tmp/dockhand promote <branch> --no-pr      # then read the body it would send
+```
+
+- **Worked:** the pull request body carries the criterion verbatim, the caveat
+  under it (`this criterion is necessary and not sufficient…`), the revbumped
+  ports each with their **own** link proof (`… links against …`), the
+  build-only dependents listed as not revbumped with the reason, the declined
+  members, and — if the measurement said so — the `ABI unchanged` refutation.
+- **A finding:** a member listed as revbumped with a link proof naming a
+  library that did **not** move. The proof is taken against the install names
+  the measurement says a dependent can no longer rely on, not against
+  everything the headline publishes — a multi-library port has dependents of
+  the libraries that stood still, and a line naming one of those under
+  "Revision bumped in this change" is evidence for a claim the measurement does
+  not support.
+- **A finding:** every member reading `; links nothing that moved`. That
+  sentence is a measurement and a real answer — the member is build-only in
+  fact — but all of them saying it at once means the per-member captures did
+  not reach the settlement, and the honest-looking sentence is covering an
+  absence.
+
+**E9b. The same body, read one step earlier.** E9's body is read after E7
+settled, so the new tip has runs of its own and the header is about them. This
+is the window before that, and it needs a **third branch**, because a proposal
+is answered once: bump another library, wait for its proposal, then accept it
+without asking for the cohort's own verification.
+
+```
+/tmp/dockhand bump <a third library> --to <a version whose dylib soname moves>
+# wait for the proposal, then:
+/tmp/dockhand bump-revision --for <branch> --no-verify
+/tmp/dockhand promote <branch> --no-pr      # read the HEADER, not the cohort section
+```
+
+- **Worked:** the first sentence reads `this commit adds to a change that was
+  verified at `<sha>`, and its own verification has not come back`, and the
+  `<sha>` is the tip from E1 — the one the measurement was actually taken on,
+  reachable in the branch's history. The cohort section below it is unaffected:
+  the criterion, the members, the declined ports.
+- **A finding, and the one this step exists for:** the header reading `no
+  verification environment on the submitting machine, so nothing was run` on a
+  machine that has tart and has just verified the headline. An extended tip
+  carries no runs of its own by design and carries an ABI measurement, so that
+  sentence sits directly above a claim it contradicts, with no sha offered for
+  the reader to check which one is true.
+- Clean up before continuing: `/tmp/dockhand discard <branch>`, and
+  `git push <fork> --delete <branch>` if the promote pushed it.
+
+**E10. The other answer.** On a second branch, dismiss instead.
+
+```
+/tmp/dockhand bump <another library> --to <version>
+# wait for the proposal, then:
+/tmp/dockhand dismiss <branch>
+/tmp/dockhand status
+```
+
+- **Worked:** `dismissed on <branch>: dependent-revbump` on stdout, `the
+  measurement stands on the note; only the answer to it changed` on stderr, and
+  a second `dismiss` of the same branch declines by name. `status` no longer
+  prints the proposal line and still prints the `ABI changed:` line — the
+  measurement did not stop being true because somebody disagreed about what to
+  do with it.
+- **A finding:** the finding gone from `status --json`. A dismissal that
+  deleted the measurement would propose it again on the next pass.
+
+**E11. Clean up.**
+
+```
+/tmp/dockhand cancel <branch> ; /tmp/dockhand discard <branch>
+tart list
+```
+
+### What part E cannot answer
+
+Whether the proposal was **right**. Every mechanical criterion here is
+necessary and never sufficient: an install name and a compatibility version can
+sit still while symbols are removed, and a break confined to a header or to a
+plugin's own contract leaves no trace in either. E3 is the check on the
+roster's completeness and a maintainer's own knowledge is the check on its
+correctness — which is why nothing here is ever included on the measurement's
+authority alone, and why both answers to a proposal are verbs a person types.
+
+## F. The ABI cohort, end to end, on the fork
+
+Part E probes the mechanism one joint at a time and provokes each refusal.
+Part F is the other thing a live check owes: **one uninterrupted run of the
+whole feature the overhaul was asked for**, on a real library, with a real VM,
+ending in a body a reviewer would read. Nothing here is contrived — no broken
+member, no third branch, no amend. If part F does not read like an ordinary
+afternoon, the feature is not finished, whatever part E said.
+
+Budget: two guest builds (the headline, then the headline plus its members),
+so an evening for a small library and a day for a large one. Do part D first;
+F assumes the baseline recipe already works on this machine.
+
+**F0. Preconditions, all of them checkable in one screen.**
+
+```
+tart list                                   # the base image is present, no strays
+git -C <macports-ports checkout> remote -v  # a fork remote, and it is yours
+git -C <macports-ports checkout> status -sb # clean, on the primary branch
+ls -l <macports-ports checkout>/PortIndex   # present, and newer than the last pull
+/tmp/dockhand --version
+```
+
+- **Worked:** every line answers, `PortIndex` exists, the working tree is clean.
+- **If not:** `portindex` in the checkout for a missing index; commit or stash
+  anything uncommitted — a plan is made against the tip and a dirty worktree is
+  a different set of bytes. Do not continue with strays in `tart list`: the
+  capacity arithmetic counts environments, and a stray is one of the two slots.
+
+**F1. Choose a library that will actually move, with two or three dependents.**
+
+The whole part turns on picking a port whose next version changes a `dylib`
+install name or its compatibility version. Two or three dependents keeps the
+second build to an evening and still exercises ordering, the subport collapse
+and the build-only listing.
+
+```
+cd <macports-ports checkout>
+port echo depends:<candidate> | wc -l       # 2-4 is the target
+port livecheck <candidate>                  # is there a newer version at all
+port -q installed <candidate>               # what this machine has, for comparison
+otool -D $(port contents <candidate> | grep '\.dylib$' | head -1)
+```
+
+- **Worked:** a candidate with a handful of dependents, a newer upstream
+  version, and a versioned install name (`…/libfoo.2.dylib`) — a versioned
+  soname is what a soname bump moves.
+- **Capture if not:** the candidate list you rejected and why. A port whose
+  install name carries no version (`…/libfoo.dylib`) can still narrow its
+  compatibility version, but it will not produce the headline clause, and part
+  F reads differently. Say which you picked in the report either way.
+
+**F2. `--plan` first. Nothing is written.**
+
+```
+/tmp/dockhand bump <library> --to <version> --plan
+```
+
+- **Worked:** a plan document on stdout, exit 0, and `git status -sb` still
+  clean. The plan names the portdir, the edits, and the predicted delta.
+- **A finding:** any file changed on disk. `--plan` is a document and nothing
+  else; a plan that wrote is the one thing this flag promises against.
+- **Capture if it declines:** the whole decline, verbatim, and
+  `/tmp/dockhand bump <library> --to <version> --plan --riders none` to see
+  whether a housekeeping rider is what moved. A decline here is a fact about
+  the port and usually means a different version, not a bug.
+
+**F3. Mint and verify for real.**
+
+```
+/tmp/dockhand bump <library> --to <version>
+/tmp/dockhand status
+tart list                                   # one guest, and it is dockhand's
+```
+
+- **Worked:** a branch `dockhand/<library>-<version>`, exit 0 (submitted) or 60
+  (queued), and a run building. `tart list` shows exactly one dockhand worker.
+- **Capture if not:** `/tmp/dockhand status --json`, and `tart list` again after
+  a minute. A submit that queued is not a failure — 60 says the slots are full.
+
+**F4. Let it finish, and read what the measurement said.**
+
+```
+/tmp/dockhand status                        # repeat until the run settles
+```
+
+- **Worked:** four things, in this order, under the branch:
+  1. `passed (<release>)`
+  2. `ABI changed: install name /opt/local/lib/libfoo.2.dylib →
+     /opt/local/lib/libfoo.3.dylib, measured between <library>@<old> (binary
+     archive) and @<new> (source not recorded) on <release>`
+  3. `proposal: N dependents need a revision bump (…) — …`
+  4. exit **0**. A proposal is advisory and human-gated.
+- **A finding:** `ABI check unavailable: no baseline …`. The archive for the
+  version being left was not published for this release, so there was nothing
+  to compare against — real, and the run is not usable for part F. Note the
+  reason verbatim and go back to F1.
+- **A finding:** `ABI unchanged`. The version you picked did not move the
+  soname. Also real; back to F1.
+- **A finding:** no ABI line at all. Then either the index says nothing depends
+  on the library — check with `port echo depends:<library>` — or it could not
+  be read, which now says so by name. Neither sentence appearing while
+  `port echo depends:` names ports is the failure that matters here.
+- **Capture if it fails:** `/tmp/dockhand status --json`, and from it the whole
+  `findings` array **and** the run's `manifest` and `baseline` blocks — those
+  two are the exact sides the criterion was computed from, and without them a
+  wrong sentence cannot be traced to which side was wrong. A passed run hands
+  its environment back, so the guest's own copies
+  (`/tmp/dockhand-verify/manifest.pre` and `manifest.0`) are only reachable
+  while the environment is kept, which is what a *failure* does:
+  `/tmp/dockhand shell <branch>` then `cat /tmp/dockhand-verify/manifest.pre`.
+
+**F5. Check the roster by hand. This is the check on the automation.**
+
+```
+port echo depends:<library> | sort
+/tmp/dockhand status --json | python3 -m json.tool | less    # findings[].candidates
+```
+
+- **Worked:** every name `port echo depends:` prints appears as a candidate;
+  every proposed one declares the library under `depends_lib` or `depends_run`;
+  every `depends_build`-only one is present with `"proposed": false` and the
+  reason; every `portdir` is a directory that exists — **for a subport that is
+  the parent's directory**, so `php80-Judy` reads `php/php-Judy`.
+- **A finding:** a name in `port echo depends:` and not in the candidates. A
+  dropped dependency token is a dependent left broken with nothing said about
+  it, which is the one outcome this feature exists to prevent.
+- **Capture:** the two lists, diffed. `comm -3` between them is the report.
+
+**F6. Accept the proposal.**
+
+```
+/tmp/dockhand bump-revision --for dockhand/<library>-<version>
+git log --format='%H %s' origin/master..dockhand/<library>-<version>
+git show --stat dockhand/<library>-<version>
+git show dockhand/<library>-<version> | head -60
+```
+
+- **Worked:** the new tip on stdout; **exactly two** commits on the branch; the
+  second commit's diff is one `revision` line per member portdir and nothing
+  else; its subject is `<library>: revbump N dependents of <library> <version>`;
+  its body opens with the criterion from F4 **word for word**, then the caveat
+  (`this criterion is necessary and not sufficient…`), then the members with
+  their reasons, then the ports examined and not bumped.
+- **A finding:** a reworded criterion. One claim, said once, is what lets a
+  reviewer check it with `otool` by hand.
+- **A finding:** a commit per member. N dependents moving for one reason are
+  one logical change.
+- **Capture if a member declines:** the stderr line for it and the note's
+  candidate row (`status --json`). A decline is correct behaviour — the
+  Portfile's shape did not say where a revision line belongs — and the cohort
+  proceeding with N−k is the point. A member vanishing with nothing said is not.
+
+**F7. The cohort's own verification.**
+
+```
+/tmp/dockhand status
+tart list
+```
+
+- **Worked:** one job, N+1 runs — the headline first, then each member in
+  dependency order — and each member builds **from source**, because its rev+1
+  names an archive that does not exist. That rebuild against the new library is
+  the evidence the proposal was for. `tart list` shows one worker.
+- **A finding:** two jobs. A cohort is one build, in one environment.
+- **A finding:** a member that installed from a binary archive; its revision did
+  not actually move.
+- **Capture if it stalls:** `/tmp/dockhand shell <branch>`, then
+  `cat /tmp/dockhand-verify/state ; ls -1 /tmp/dockhand-verify`. The per-subject
+  markers say how far the runner got.
+
+**F8. Publish to the fork, without opening a pull request.**
+
+```
+/tmp/dockhand promote dockhand/<library>-<version> --no-pr
+git ls-remote <fork> 'refs/heads/dockhand/*'
+```
+
+- **Worked:** exit 0, the branch on the fork, and no pull request. The machine
+  gate does not appear: the proposal was accepted at F6, so there is nothing
+  unanswered to hold.
+- **A finding:** exit 24. That gate is the machine's and must never meet a
+  person at the keyboard — and after F6 there is no open proposal for it to
+  hold anyway.
+- **Capture if it refuses:** the whole error and `status --json`'s `findings`
+  with their `disposition` values.
+
+**F9. Read the body as a reviewer would.** This is the last link and the only
+one a reviewer ever sees.
+
+No verb prints the body without publishing it — `--no-pr` pushes the branch and
+renders nothing — so there are two ways to read it and they are not equivalent.
+The first is the real thing:
+
+```
+# (a) in a checkout whose upstream remote is YOUR OWN fork, so the pull
+#     request opens against you and nobody else is notified:
+git -C . remote -v                          # confirm upstream points at your fork
+/tmp/dockhand promote dockhand/<library>-<version>
+gh pr view <the url it printed> --json body -q .body | less
+gh pr close <the url it printed>            # when you are done reading
+
+# (b) otherwise, check the note the body vouches for, item by item:
+/tmp/dockhand status --json | python3 -m json.tool | less
+```
+
+Prefer (a). Everything the body says is supposed to be a fact the note already
+carries, but *which* facts it selects and how it words them is the half (b)
+cannot show — and it is the half a reviewer reads. If you take (b), say so in
+the report: F9 was checked against the record and not against the body.
+
+Read for all seven, in order:
+
+1. The per-platform verification lines, in the provider's own words, and
+   **`built from source`** only where the run genuinely was.
+2. `ABI changed: …` — the criterion from F4, **verbatim**.
+3. The caveat directly under it: `this criterion is necessary and not
+   sufficient: an install name and a compatibility version can sit still while
+   symbols are removed…`.
+4. `Revision bumped in this change:` with one line per member, each carrying
+   its **own** link proof — `<file> links against <the install name that
+   moved>` — or `links nothing that moved` where the sweep found none.
+5. `Examined and not bumped:` with the build-only dependents and the reason.
+6. Any member the planner declined, as `proposed, then declined: … — do this
+   one by hand`.
+7. `Branch head <sha>`, the tree date, and the dockhand version.
+
+- **A finding:** a link proof naming a library that did not move. The proof is
+  filtered to the names the measurement says a dependent can no longer rely on;
+  a multi-library port has dependents of the libraries that stood still, and
+  naming one of those under "Revision bumped" is evidence for a claim the
+  measurement does not support.
+- **A finding:** every member reading `links nothing that moved`. That is a
+  real answer for one member and a missing capture for all of them at once.
+- **A finding:** `no verification environment on the submitting machine` in the
+  header. This tip has runs of its own after F7; the sentence is false and it
+  is public.
+- **A finding:** the caveat absent. It reaches a reviewer only from the body,
+  and the two cases that need it most — a proposal published while still
+  proposed, and a dismissed one — write no cohort commit to carry it.
+- **Capture:** the whole body, and `status --json` beside it. Every sentence in
+  the body is supposed to be a fact the note already carries; a sentence with
+  no counterpart in the JSON is the interesting kind of wrong.
+- **A finding about this step itself:** that reading the body at all takes a
+  pull request. There is no verb that renders it to a terminal, so the one
+  artifact a reviewer sees is the one a maintainer cannot preview. Worth
+  recording as a gap rather than working around silently.
+
+**F10. Clean up.**
+
+```
+/tmp/dockhand cancel dockhand/<library>-<version>
+/tmp/dockhand discard dockhand/<library>-<version>
+git push <fork> --delete dockhand/<library>-<version>
+tart list
+git -C . status -sb
+```
+
+- **Worked:** no dockhand workers, no branch on the fork, a clean worktree.
+
+### What part F cannot answer
+
+Whether the revision bumps were **necessary**. F proves the chain carried a
+measurement from a guest to a reviewer without losing or inventing anything;
+it cannot prove the measurement was the right thing to measure. An install name
+and a compatibility version can sit still while symbols are removed, and a
+break confined to a header or to a plugin's own contract leaves no trace in
+either — which is why F6 is a verb a person types, and why F9's caveat is in
+the body rather than in this file.

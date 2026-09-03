@@ -18,7 +18,7 @@ var bumpRevisionVerb = intentVerb{
 		Aliases: []string{"revbump"},
 		New: func(p intent.Params) (intent.Planner, error) {
 			return bumprevision.BumpRevision{Reason: p.Reason, ClosesTicket: p.ClosesTicket,
-				Riders: p.Riders}, nil
+				Riders: p.Riders, Dependents: p.Dependents}, nil
 		},
 	},
 	Short: "Increment a port's revision (requires --reason)",
@@ -31,4 +31,14 @@ var bumpRevisionVerb = intentVerb{
 			return nil
 		}
 	},
+	// The plural invocation: `bump-revision --for <branch>` accepts the
+	// revbump proposal a verification measured, revbumping the
+	// dependents it put forward as one more commit on that branch.
+	//
+	// It is this verb and not one of its own because the edit is this
+	// verb's edit. What changes is who chose the ports and who wrote the
+	// reason: on the single-port road a person names both, and here the
+	// proposal holds both — which is why --for needs no --reason and
+	// takes no port.
+	Plural: cohortMode,
 }

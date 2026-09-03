@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -291,13 +292,16 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 	// and used twice, because the request and the note must say the same
 	// thing about the same member.
 	fromSource := s.fromSourcePorts(ports)
+	manifest, baseline := e.manifestAsk(ctx, m, prov, portName, members, root)
 	job, err := prov.Submit(ctx, verify.Request{
 		Ports:      ports,
 		Portdirs:   portdirs,
+		Baseline:   baseline,
 		Platform:   release,
 		Owner:      m.Repo.Root,
 		Test:       s.Test,
 		NeedsXcode: needsXcode,
+		Manifest:   manifest,
 		FromSource: fromSource,
 	})
 	if err != nil {
@@ -515,4 +519,66 @@ func (e *Engine) askVerdict(ctx context.Context, repo *git.Repo, tip string) {
 	}); err != nil {
 		fmt.Fprintf(e.Err, "warning: recording that a verdict was asked for: %v\n", err)
 	}
+}
+
+// manifestAsk decides whether this submission asks the environment to
+// describe what it installed, and stages the "before" it will be
+// measured against.
+//
+// Two conditions, and both of them are about whether anybody will read
+// the answer. The port must have dependents, because the one consumer
+// of an ABI measurement is the cohort decision and a port nothing
+// depends on has no cohort; and the provider must declare it can
+// describe an installation, because the walk happens inside the
+// environment while the build is there to be walked, so a request that
+// had not said so up front would be asking for something the provider
+// was never told to collect.
+//
+// The baseline is the MERGE-BASE portdirs, staged on the host. The
+// guest's own ports tree cannot answer the question: it is frozen at
+// provisioning time and may hold a newer version than the branch
+// started from, an older one, or not carry the port at all. What the
+// change is leaving is what the base commit said, and only the caller
+// holding the repository can produce it.
+//
+// Every refusal here is silent and none of them fails the submit. A
+// tree with no index, a base that cannot be resolved, a portdir that
+// did not exist at the merge base — a port ADDED on the branch is
+// exactly that last one — all mean the same thing: there is no honest
+// before, so none is staged, and the finding at settle says the check
+// was unavailable and names why. A verification refused for want of a
+// baseline would be a build nobody asked to skip.
+func (e *Engine) manifestAsk(ctx context.Context, m *Minted, prov verify.Verifier, port string, members []Member, root tempdir.Root) (bool, []string) {
+	if !prov.Capabilities().InstalledManifest {
+		return false, nil
+	}
+	deps, _, err := e.dependentsOf(port)
+	if err != nil || len(deps) == 0 {
+		// The unreadable fields are the settlement's to report, not this
+		// call's: what is decided here is only whether to collect a
+		// manifest, and a short reverse index changes nothing about that.
+		return false, nil
+	}
+	base, err := e.Ledger(m.Repo).Read(ctx, m.Sha)
+	if err != nil || base.Base.Sha == "" {
+		// The manifest is still worth asking for: the installed side is
+		// a real observation, and a comparison with no before is a
+		// named refusal rather than a reason to collect nothing.
+		return true, nil
+	}
+	stage, _, err := root.MakeDir("baseline-" + port)
+	if err != nil {
+		return true, nil
+	}
+	var out []string
+	for _, mem := range members {
+		if merr := m.Repo.Materialize(ctx, base.Base.Sha, mem.Portdir, stage); merr != nil {
+			// Absent at the base. For the headline that is a port this
+			// branch added, which is the honest no-baseline case; for a
+			// member it is one the cohort brought with it.
+			continue
+		}
+		out = append(out, filepath.Join(stage, filepath.FromSlash(mem.Portdir)))
+	}
+	return true, out
 }

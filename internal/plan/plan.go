@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // Format is the plan wire format version this build writes.
@@ -74,6 +75,23 @@ type Plan struct {
 	// A plan with no riders omits the key, so every plan that predates
 	// them hashes to exactly what it did.
 	Riders []string `json:"riders,omitempty"`
+	// Findings are what examining the port turned up that nobody asked
+	// about — today, an instruction comment telling whoever updates this
+	// port to bump something else, quoted verbatim.
+	//
+	// They ride on the plan because the realizer is what writes a note,
+	// and a finding made at plan time has nowhere else to go: the
+	// examination happens with the source and the parse tree in hand,
+	// and the record is born at mint. Nothing here is a proposal the
+	// plan acts on — a finding proposes and never executes — so a plan
+	// carrying one produces exactly the same edits as one that does not.
+	//
+	// Absent rather than null when there is none, on Riders' precedent,
+	// so every plan document that predates them hashes to what it did.
+	// It is record's own type: there is one findings vocabulary in this
+	// tree and it is the note's, because a finding that cannot be
+	// recorded is a finding nobody can answer.
+	Findings []record.Finding `json:"findings,omitempty"`
 	// Predicted is the delta the shadow evaluation says these edits
 	// produce, in canonical wire form.
 	//

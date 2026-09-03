@@ -1,0 +1,116 @@
+===> dockhand manifest: port
+brotli
+===> dockhand manifest: version
+  brotli @1.2.0_0 (active)
+===> dockhand manifest: platform
+26.6.2 arm64
+===> dockhand manifest: files
+/opt/local/bin/brotli
+/opt/local/include/brotli/decode.h
+/opt/local/include/brotli/encode.h
+/opt/local/include/brotli/port.h
+/opt/local/include/brotli/shared_dictionary.h
+/opt/local/include/brotli/types.h
+/opt/local/lib/libbrotlicommon.1.2.0.dylib
+/opt/local/lib/libbrotlicommon.1.dylib
+/opt/local/lib/libbrotlicommon.dylib
+/opt/local/lib/libbrotlidec.1.2.0.dylib
+/opt/local/lib/libbrotlidec.1.dylib
+/opt/local/lib/libbrotlidec.dylib
+/opt/local/lib/libbrotlienc.1.2.0.dylib
+/opt/local/lib/libbrotlienc.1.dylib
+/opt/local/lib/libbrotlienc.dylib
+/opt/local/lib/pkgconfig/libbrotlicommon.pc
+/opt/local/lib/pkgconfig/libbrotlidec.pc
+/opt/local/lib/pkgconfig/libbrotlienc.pc
+/opt/local/share/man/man1/brotli.1.gz
+/opt/local/share/man/man3/constants.h.3.gz
+/opt/local/share/man/man3/decode.h.3.gz
+/opt/local/share/man/man3/encode.h.3.gz
+/opt/local/share/man/man3/types.h.3.gz
+===> dockhand manifest: id
+/opt/local/bin/brotli:
+/opt/local/include/brotli/decode.h: is not an object file
+/opt/local/include/brotli/encode.h: is not an object file
+/opt/local/include/brotli/port.h: is not an object file
+/opt/local/include/brotli/shared_dictionary.h: is not an object file
+/opt/local/include/brotli/types.h: is not an object file
+/opt/local/lib/libbrotlicommon.1.2.0.dylib:
+/opt/local/lib/libbrotlicommon.1.dylib
+/opt/local/lib/libbrotlicommon.1.dylib:
+/opt/local/lib/libbrotlicommon.1.dylib
+/opt/local/lib/libbrotlicommon.dylib:
+/opt/local/lib/libbrotlicommon.1.dylib
+/opt/local/lib/libbrotlidec.1.2.0.dylib:
+/opt/local/lib/libbrotlidec.1.dylib
+/opt/local/lib/libbrotlidec.1.dylib:
+/opt/local/lib/libbrotlidec.1.dylib
+/opt/local/lib/libbrotlidec.dylib:
+/opt/local/lib/libbrotlidec.1.dylib
+/opt/local/lib/libbrotlienc.1.2.0.dylib:
+/opt/local/lib/libbrotlienc.1.dylib
+/opt/local/lib/libbrotlienc.1.dylib:
+/opt/local/lib/libbrotlienc.1.dylib
+/opt/local/lib/libbrotlienc.dylib:
+/opt/local/lib/libbrotlienc.1.dylib
+/opt/local/lib/pkgconfig/libbrotlicommon.pc: is not an object file
+/opt/local/lib/pkgconfig/libbrotlidec.pc: is not an object file
+/opt/local/lib/pkgconfig/libbrotlienc.pc: is not an object file
+/opt/local/share/man/man1/brotli.1.gz: is not an object file
+/opt/local/share/man/man3/constants.h.3.gz: is not an object file
+/opt/local/share/man/man3/decode.h.3.gz: is not an object file
+/opt/local/share/man/man3/encode.h.3.gz: is not an object file
+/opt/local/share/man/man3/types.h.3.gz: is not an object file
+===> dockhand manifest: links
+/opt/local/bin/brotli:
+	/opt/local/lib/libbrotlienc.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/opt/local/lib/libbrotlidec.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/opt/local/include/brotli/decode.h: is not an object file
+/opt/local/include/brotli/encode.h: is not an object file
+/opt/local/include/brotli/port.h: is not an object file
+/opt/local/include/brotli/shared_dictionary.h: is not an object file
+/opt/local/include/brotli/types.h: is not an object file
+/opt/local/lib/libbrotlicommon.1.2.0.dylib:
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/opt/local/lib/libbrotlicommon.1.dylib:
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/opt/local/lib/libbrotlicommon.dylib:
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+/opt/local/lib/libbrotlidec.1.2.0.dylib:
+	/opt/local/lib/libbrotlidec.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+/opt/local/lib/libbrotlidec.1.dylib:
+	/opt/local/lib/libbrotlidec.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+/opt/local/lib/libbrotlidec.dylib:
+	/opt/local/lib/libbrotlidec.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+/opt/local/lib/libbrotlienc.1.2.0.dylib:
+	/opt/local/lib/libbrotlienc.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+/opt/local/lib/libbrotlienc.1.dylib:
+	/opt/local/lib/libbrotlienc.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+/opt/local/lib/libbrotlienc.dylib:
+	/opt/local/lib/libbrotlienc.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)
+	/opt/local/lib/libbrotlicommon.1.dylib (compatibility version 1.0.0, current version 1.2.0)
+/opt/local/lib/pkgconfig/libbrotlicommon.pc: is not an object file
+/opt/local/lib/pkgconfig/libbrotlidec.pc: is not an object file
+/opt/local/lib/pkgconfig/libbrotlienc.pc: is not an object file
+/opt/local/share/man/man1/brotli.1.gz: is not an object file
+/opt/local/share/man/man3/constants.h.3.gz: is not an object file
+/opt/local/share/man/man3/decode.h.3.gz: is not an object file
+/opt/local/share/man/man3/encode.h.3.gz: is not an object file
+/opt/local/share/man/man3/types.h.3.gz: is not an object file
+===> dockhand manifest: end

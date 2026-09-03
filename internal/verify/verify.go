@@ -92,6 +92,23 @@ type Capabilities struct {
 	// this string holds what the environment proves, not the words a
 	// reader will meet.
 	Evidence string
+	// InstalledManifest says the provider can describe an installation
+	// from inside the environment that made it — the Manifester
+	// capability, declared up front.
+	//
+	// It is a capability and not a Proposition because the propositions
+	// are what a build PROVES about a port, and a manifest proves
+	// nothing: it is an observation, which a judgment later weighs.
+	//
+	// Declaring it up front is what lets Request.Manifest be decided at
+	// submit, which is the only moment it can be — the walk happens in
+	// the environment while the build is there to be walked. The
+	// Manifester type assertion at settle is the second gate, and the
+	// two are deliberately separate: a provider reconfigured between
+	// them produces a request nobody can answer, and a caller that
+	// checked only one would report that as an ABI result rather than as
+	// a check that was unavailable.
+	InstalledManifest bool
 	// Xcode says which bases carry a full Xcode installation, for the
 	// ports that set use_xcode.
 	//
@@ -154,6 +171,33 @@ type Request struct {
 	// Each must be a <category>/<port> directory: the indexer walks
 	// categories, so a portdir alone indexes nothing.
 	Portdirs []string
+	// Baseline are the same directories as they stood before the change
+	// — the merge base's copies, staged on the host — for a provider
+	// that can measure what the change is leaving.
+	//
+	// It is a separate list rather than a flag because the environment's
+	// own ports tree cannot answer the question. A guest is provisioned
+	// once and its tree is frozen at that moment; it may hold a newer
+	// version than the branch started from, an older one, or the port
+	// may not be in it at all. The honest before is the merge-base
+	// portdir, which only the caller holding the repository can produce.
+	//
+	// Empty means take no baseline here, which is both "there is nothing
+	// to compare against" and how a caller that already holds a banked
+	// measurement asks. A provider that cannot take one says so by name
+	// rather than reporting an empty comparison.
+	Baseline []string
+	// Banked says the caller already holds a measurement for this
+	// Portfile blob on this platform, so the environment must not spend
+	// a download taking one.
+	//
+	// The provider never carries the banked value itself: a manifest
+	// banked in this repository is the caller's fact, and a provider
+	// that stored one would be keeping records. What it does with this
+	// is record BaselineBanked and skip the install, so the answer that
+	// comes back names the source the caller will supply the value for
+	// instead of claiming there was none.
+	Banked bool
 	// Variants is the frame to build under. The zero value is the
 	// default frame, which is not the same as "no variants" — a port's
 	// default_variants still apply.

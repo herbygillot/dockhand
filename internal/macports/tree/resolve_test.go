@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,13 +29,17 @@ func treeWith(t *testing.T, portdirs ...string) string {
 }
 
 // writeIndex writes a PortIndex of name→portdir entries at the tree
-// root.
+// root. The declared length covers the payload's own trailing newline —
+// there is no separator byte between entries — and counts UTF-16 code
+// units, which for these ASCII payloads is the character count. The
+// real thing is the checked-in slice these tests' neighbours use; this
+// one exists so a resolution test can name its own portdirs.
 func writeIndex(t *testing.T, root string, entries map[string]string) {
 	t.Helper()
 	var index strings.Builder
 	for name, portdir := range entries {
-		payload := fmt.Sprintf("name %s portdir %s", name, portdir)
-		fmt.Fprintf(&index, "%s %d\n%s\n", name, len(payload), payload)
+		body := fmt.Sprintf("name %s portdir %s\n", name, portdir)
+		fmt.Fprintf(&index, "%s %d\n%s", name, len(utf16.Encode([]rune(body))), body)
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(root, macports.IndexFile), []byte(index.String()), 0o644))
 }

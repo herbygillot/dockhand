@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -33,14 +34,30 @@ var ErrNoTreeAbove = errors.New("tree: no ports tree contains this directory")
 
 // Tree is a ports tree rooted at a directory, validated on open by the
 // presence of the PortGroup resources directory — the one structural
-// feature every checkout shares. Resolve caches the tree's PortIndex on
-// first use; a Tree is not safe for concurrent use.
+// feature every checkout shares.
+//
+// A Tree caches what it reads about itself: the PortIndex on first
+// resolution, and the reverse dependency and maintainer indexes on
+// first ask. One Tree is shared for a whole run and handed to workers
+// that fan out over a pool, so the lazy fills are guarded — the cost is
+// one uncontended lock per lookup, and the alternative is a data race
+// the first time a cohort is planned in parallel.
+//
+// The lock covers this type's own caches, nothing more. What the tree
+// holds on disk can still change underneath it.
 type Tree struct {
 	root string
 
-	idx       *portindex.Index
-	idxErr    error
-	idxLoaded bool
+	mu          sync.Mutex
+	idx         *portindex.Index
+	idxErr      error
+	idxLoaded   bool
+	deps        portindex.Reverse
+	depsErr     error
+	depsLoaded  bool
+	maint       map[string][]string
+	maintErr    error
+	maintLoaded bool
 }
 
 // Open validates and returns the tree rooted at path.

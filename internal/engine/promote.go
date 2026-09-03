@@ -90,6 +90,27 @@ type PromoteOpts struct {
 	NoPRCheck bool
 	// Force replaces the fork branch and refreshes the open PR.
 	Force bool
+	// Invoker is who asked for this publication. The zero value is
+	// record.Human, which is every caller today: promote is a person
+	// typing a verb.
+	//
+	// It is a parameter and never inferred from the call site, because
+	// one gate turns on it. A change still carrying an unanswered
+	// proposal publishes for a person — they are looking at the
+	// advisory, and promoting anyway is their answer — and is refused
+	// for the machine, which has nobody to have read it. A field that
+	// could be widened by accident at a new call site is the one way
+	// that refusal stops meaning anything.
+	Invoker record.Driver
+}
+
+// invoker is who this promotion is attributed to, with the zero value
+// read as the caller every verb has today.
+func (o PromoteOpts) invoker() record.Driver {
+	if o.Invoker == "" {
+		return record.Human
+	}
+	return o.Invoker
 }
 
 // Promote publishes a verified branch: push it to the user's fork under
@@ -155,6 +176,17 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	if gate.Refusal != nil {
 		return gate.Refusal
 	}
+	// The machine gate, beside the verdict gate and not inside it: what
+	// a verdict set is worth is a judgment about evidence, and this is a
+	// judgment about whether anybody has read a question. An unattended
+	// road is refused; a person is told what they are publishing past
+	// and allowed to, which is the difference the code was reserved for.
+	if err := GateMachinePublish(n, branch, o.invoker()); err != nil {
+		return err
+	}
+	for _, f := range Proposals(n) {
+		fmt.Fprintf(e.Err, "promoting with %s still proposed; `dockhand dismiss %s` records that you looked and said no\n", f.Kind, branch)
+	}
 	for _, line := range gate.Blocked {
 		fmt.Fprintln(e.Err, line)
 	}
@@ -166,7 +198,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	// is the one whose number stays zero.
 	pub := Publication{MintSha: tip, Branch: branch,
 		Port: n.Headline().Port, Target: n.Headline().Target,
-		Verified: verified, Invoker: record.Human}
+		Verified: verified, Invoker: o.invoker()}
 
 	forkRemote, forkOwner, err := gh.ForkRemote(ctx, e.Gh, repo, o.Remote)
 	if err != nil {

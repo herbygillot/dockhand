@@ -169,6 +169,12 @@ func (b BranchReport) standing(now time.Time) []string {
 		lines = []string{"error: " + b.ObserveErr}
 	} else {
 		lines = DescribeChange(b.Note, b.Drift, now)
+		// What the settlement found beside the verdicts, and the two
+		// verbs that answer it. Under the standings rather than among
+		// them: a proposal is not a verdict about the change, and a
+		// reader scanning for "passed" must not have to read past an
+		// advisory to find it.
+		lines = append(lines, ProposalLines(b.Note, b.Branch)...)
 	}
 	extra := b.Retire.Line()
 	switch {

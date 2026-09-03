@@ -68,6 +68,9 @@ type Bump struct {
 	// already-current declines below can name what they held back with
 	// them.
 	Riders intent.RiderPolicy
+	// Dependents are what the tree's reverse index says depends on this
+	// port, carried through to the instruction-comment finding rule.
+	Dependents []string
 }
 
 var _ intent.Planner = Bump{}
@@ -392,9 +395,10 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			Accept: func(predicted info.Delta) error {
 				return b.accept(vals, predicted, moving, exact)
 			},
-			ViaSet:  checksumsViaSet,
-			Riders:  b.Riders,
-			Witness: witness,
+			ViaSet:     checksumsViaSet,
+			Riders:     b.Riders,
+			Witness:    witness,
+			Dependents: b.Dependents,
 		})
 }
 

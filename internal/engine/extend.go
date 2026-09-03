@@ -68,7 +68,9 @@ type ExtendRequest struct {
 // no diff can reconstruct any of it. So the error travels, naming the
 // tip that exists, and the branch can be looked at.
 //
-// No verb calls this yet.
+// BuildCohort is its one caller: accepting a revbump proposal is the
+// only thing that adds a commit to a change that has already been
+// verified once.
 func (e *Engine) Extend(ctx context.Context, repo *git.Repo, req ExtendRequest) (string, error) {
 	l := e.Ledger(repo)
 	if _, err := l.Read(ctx, req.ExpectedTip); err != nil && !errors.Is(err, git.ErrNoNote) {
