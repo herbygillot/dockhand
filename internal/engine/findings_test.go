@@ -456,7 +456,7 @@ func TestAPortfilesInstructionCommentSurvivesIntoTheMintedNote(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, p.Findings, 1, "the planner read the comment while it had the bytes")
 
-	require.NoError(t, eng.Run(ctx, p, Policy{Destination: record.ToBranch}))
+	require.NoError(t, runPlan(t, ctx, &eng, p, Policy{Destination: record.ToBranch}))
 
 	tip, err := repo.RevParse(ctx, "dockhand/"+p.Slug)
 	require.NoError(t, err)

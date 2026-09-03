@@ -30,6 +30,17 @@ type WitnessError struct {
 	// message already uses: "livecheck", "ls-remote".
 	Witness string
 	Err     error
+	// Said is the host's own words, kept apart from dockhand's framing
+	// of them.
+	//
+	// It exists because the framing carries the repository URL, and the
+	// only test there is for "this host is refusing us" is a substring
+	// match over words — so a repository whose URL happens to contain
+	// "403" or "abuse" would wall its whole forge over an unrelated
+	// error, and one refusal walls every other port behind that host.
+	// Empty where nothing but dockhand spoke, and the whole message
+	// stands in then.
+	Said string
 }
 
 func (e *WitnessError) Error() string { return e.Err.Error() }
@@ -75,9 +86,17 @@ func Unreachable(witness string, err error) error {
 // git's 128 to dockhand's exit contract. Coder asks for DockhandExit
 // now and the trap is gone; the formatting stays because a child's
 // status is still not dockhand's to hand on.
+// Said carries git's own words alone, because the message this builds
+// puts the repository URL in front of them and the refusal test is a
+// substring match: without it, a repository named .../forbidden-api
+// that failed to resolve would wall github.com for everybody.
 func lsRemoteFailed(url string, err error) error {
-	//nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
-	return &WitnessError{Witness: "ls-remote", Err: fmt.Errorf("upstream: ls-remote %s: %s", url, err)}
+	return &WitnessError{
+		Witness: "ls-remote",
+		//nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
+		Err:  fmt.Errorf("upstream: ls-remote %s: %s", url, err),
+		Said: err.Error(),
+	}
 }
 
 // UnresolvedError is a judgment that ended with no version anyone may
@@ -152,12 +171,18 @@ func Unresolved(v Verdict, decline error) error {
 // Latest and exit zero, so nothing asks about them now; a change that
 // leaves one of them without a Latest must not silently move it into
 // upstream's band, and this is the line that stops it.
+//
+// ForgeCurrent is a judgment for the same reason PrereleaseNewest is:
+// the forge was asked, it answered, and dockhand concluded from what it
+// said. That the conclusion was "and therefore nothing else is worth
+// asking" makes it a decision about cost, not a gap in the testimony —
+// upstream did not go silent, it said there is nothing there.
 func Judged(v Verdict) bool {
 	switch v {
 	case NoSignal, LivecheckRot, LivecheckBehind, LivecheckAhead, LivecheckUncorroborated:
 		return false
 	case PrereleaseNewest, TagWithoutRelease, PrereleaseLateral, PrereleaseSuperseded,
-		Agreement, LivecheckOnly, ForgeOnly:
+		Agreement, LivecheckOnly, ForgeOnly, ForgeCurrent:
 		return true
 	}
 	return false

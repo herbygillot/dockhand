@@ -768,7 +768,7 @@ table did not enumerate and the bands require.
 | `80` | `MintedSubmitErrored` | the branch is minted; the verification submit broke |
 | `81` | `PushedPRFailed` | the branch is pushed; the pull request would not open |
 | `82` | `PRRefreshFailed` | the branch is pushed; its pull request still describes the change it used to carry |
-| `83` | `SweepHardErrors` | *reserved:* a sweep that finished with errors that were not declines |
+| `83` | `SweepHardErrors` | a sweep finished with rows that were not declines |
 
 Re-running is not free and not always safe, so these can never be folded
 into `1`: a script must be able to tell "nothing happened" from "the branch
@@ -886,9 +886,21 @@ minting alone, restoring exit `0`.
 band — `10` for an ordinary refusal: the user asked for one thing and did
 not get it. A sweep that declines on 40 of 340 ports exits `0`; that is a
 success with a tail, and the declines are output, not failure. If both
-exited alike, every CI wrapper around a sweep would be wrong. dockhand has
-no sweep verb yet, and `83` is reserved for the day one finishes with errors
-that were not declines.
+exited alike, every CI wrapper around a sweep would be wrong.
+
+`83` is produced rather than reserved. Five roads reach it: `bump`,
+`refresh-checksums` and `bump-revision` under a selector, and `outdated`,
+and the sweep grammar's own abandonment. All five agree on the rule — exit
+`0` when every port was either handled or declined, `83` when some rows were
+neither — and all five decide it the same way, by band rather than by
+enumerating codes: `hardBand` in `internal/cmd/intentsweep.go` for the write
+verbs, `Outcome.Hard` in `internal/upstream/staged.go` for the report. What
+is deliberately *not* in it: a port that is outdated, a port that declined,
+and a host that refused dockhand and was left alone. The first is the
+report's subject, the second is the commonest outcome of a real sweep, and
+the third is somebody else's problem — a walled sweep exits `0` and the
+census tail says how many ports were not examined and that running again
+finishes them.
 
 ---
 

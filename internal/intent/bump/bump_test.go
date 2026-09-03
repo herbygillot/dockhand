@@ -156,6 +156,11 @@ func TestBumpDeclinesAlreadyCurrent(t *testing.T) {
 	assert.Equal(t, plan.AlreadyCurrent, d.Type)
 	assert.Empty(t, d.Withheld)
 	assert.Equal(t, exitcode.PlanDeclined, d.DockhandExit())
+	// The carrier's own literal decided it, before anything was
+	// fetched — so this one may be remembered, and it is the commonest
+	// decline a real sweep produces.
+	assert.Equal(t, plan.ByPortfile, d.Determined)
+	assert.True(t, d.Memoizable())
 }
 
 func TestBumpDeclinesFetchNotDriven(t *testing.T) {

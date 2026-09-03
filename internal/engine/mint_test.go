@@ -70,7 +70,7 @@ func TestMintBearsTheRecord(t *testing.T) {
 	var out, errb bytes.Buffer
 	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
 
-	require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, "bump", "1.8"),
+	require.NoError(t, runPlan(t, ctx, eng, bumpPlan(t, repo, "bump", "1.8"),
 		Policy{Destination: record.ToBranch}))
 
 	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")
@@ -111,7 +111,7 @@ func TestMintDefaultsToAVerdictDestination(t *testing.T) {
 	var out, errb bytes.Buffer
 	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
 
-	require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, "bump", "1.8"), Policy{}))
+	require.NoError(t, runPlan(t, ctx, eng, bumpPlan(t, repo, "bump", "1.8"), Policy{}))
 
 	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestSubmitRecordsTheGuestAndItsClaim(t *testing.T) {
 	var out, errb bytes.Buffer
 	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
 
-	require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, "bump", "1.8"), Policy{Test: true}))
+	require.NoError(t, runPlan(t, ctx, eng, bumpPlan(t, repo, "bump", "1.8"), Policy{Test: true}))
 
 	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")
 	require.NoError(t, err)
@@ -171,7 +171,7 @@ func TestFromSourceIsWrittenForARederivationOnly(t *testing.T) {
 			var out, errb bytes.Buffer
 			eng := testEngine(t, repo, fake, &out, &errb)
 
-			require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, tc.intent, tc.target), Policy{}))
+			require.NoError(t, runPlan(t, ctx, eng, bumpPlan(t, repo, tc.intent, tc.target), Policy{}))
 
 			require.Len(t, fake.Submitted, 1)
 			if tc.want {
@@ -199,8 +199,8 @@ func TestMintSupersedesTheOlderBranchForThePort(t *testing.T) {
 	var out, errb bytes.Buffer
 	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
 
-	require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, "bump", "1.8"), Policy{Destination: record.ToBranch}))
-	require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, "bump", "1.9"), Policy{Destination: record.ToBranch}))
+	require.NoError(t, runPlan(t, ctx, eng, bumpPlan(t, repo, "bump", "1.8"), Policy{Destination: record.ToBranch}))
+	require.NoError(t, runPlan(t, ctx, eng, bumpPlan(t, repo, "bump", "1.9"), Policy{Destination: record.ToBranch}))
 
 	old, err := repo.RevParse(ctx, "dockhand/jq-1.8")
 	require.NoError(t, err)
@@ -286,7 +286,7 @@ func TestMintWritesTheClosesTrailer(t *testing.T) {
 
 	p := bumpPlan(t, repo, "bump", "1.8")
 	p.ClosesTicket = "71234"
-	require.NoError(t, eng.Run(ctx, p, Policy{Destination: record.ToBranch}))
+	require.NoError(t, runPlan(t, ctx, eng, p, Policy{Destination: record.ToBranch}))
 
 	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")
 	require.NoError(t, err, "the branch is named after the change, not after the ticket")
@@ -310,7 +310,7 @@ func TestMintWithoutATicketIsTheSummaryAlone(t *testing.T) {
 	var out, errb bytes.Buffer
 	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
 
-	require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, "bump", "1.8"),
+	require.NoError(t, runPlan(t, ctx, eng, bumpPlan(t, repo, "bump", "1.8"),
 		Policy{Destination: record.ToBranch}))
 
 	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")

@@ -17,12 +17,89 @@ import (
 // InFlight is what a realization does about a branch already standing
 // for this port. Refusing is the default because the standing branch
 // may carry work; replacing is the user asking for it by name.
+//
+// Advance and Supersede are the sweep road's two answers, and they are
+// two because a sweep meets a standing branch in two different
+// situations. Neither ever demolishes anything: a selector that
+// destroyed in-flight work at scale would be the one mistake nobody
+// could undo.
 type InFlight int
 
 const (
 	Refuse InFlight = iota
 	Replace
+	// Advance leaves a standing branch alone: the change it carries is
+	// the change being planned, so there is nothing to mint and nothing
+	// wrong. It is what makes resume-by-rerun work — rerunning an
+	// interrupted sweep meets its own branches and steps over them,
+	// which is why a resume needs no journal.
+	Advance
+	// Supersede mints beside a standing branch rather than over it. The
+	// older branch keeps everything it learned and gains the field
+	// saying a newer sibling has replaced it; it is an end state of its
+	// own, and nothing discards it. A sweep that auto-discarded here
+	// would throw away a verdict somebody may still be reading.
+	Supersede
 )
+
+// sweeping reports whether this policy came from a selector, which is
+// the whole of what mint needs to know about the two above: a standing
+// branch is never a refusal and never a demolition.
+func (o Policy) sweeping() bool {
+	return o.OnInFlight == Advance || o.OnInFlight == Supersede
+}
+
+// Realization is what a run did with a plan, in a word its caller can
+// act on without reading the prose it printed.
+//
+// It exists for the sweep. One port's realization is reported to a
+// person in sentences on two streams, and reporting a thousand needs
+// the same facts as data — which of the two is on stdout is the
+// caller's business, but neither may be recovered by scraping the
+// other.
+type Realization int
+
+const (
+	// NotRealized is the zero value, and it means the run did not get
+	// as far as a realization: the error beside it says why. It is
+	// first so that the zero Realized cannot be mistaken for a plan
+	// that had nothing to do — a mint that failed and a mint that was
+	// unnecessary are opposite answers and must not share a value.
+	NotRealized Realization = iota
+	// NothingRealized is a plan with no edits: nothing was written and
+	// nothing was refused.
+	NothingRealized
+	// PlanShown is --plan or --diff: the document is the whole act.
+	PlanShown
+	// EditApplied is --in-place: the Portfile on disk changed, and
+	// nothing was committed.
+	EditApplied
+	// BranchMinted is the default road: a branch exists that did not
+	// before.
+	BranchMinted
+	// BranchStood is a sweep meeting the branch it would have minted.
+	// Nothing was written, and that is the right answer rather than a
+	// refusal.
+	BranchStood
+)
+
+// Realized is what a realization did. The error a run returns says how
+// to talk about it — a deferred verification and an errored submit are
+// both a minted branch — so the two are returned together and neither
+// stands in for the other.
+type Realized struct {
+	Realization Realization
+	// Branch is the branch minted, or the one already standing under
+	// BranchStood. Empty for the realizations that mint nothing.
+	Branch string
+	// Sha is the minted commit, when there is one.
+	Sha string
+	// Superseded names the branches this mint pushed aside: other
+	// in-flight branches for the same port, now recorded as replaced by
+	// this one. They are not discarded, and naming them is the only way
+	// a sweep can say a port's older change was set down.
+	Superseded []string
+}
 
 // Policy is one invocation's choice of realization, shared by every
 // intent that writes: print the plan, print the diff, edit in place,
@@ -97,27 +174,45 @@ func (o Policy) fromSource(intent string) bool {
 // Run carries a plan to its chosen realization. Every write intent
 // arrives here, so a plan becomes a branch the same way whichever
 // intent produced it (D21).
-func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) error {
+//
+// What it did comes back beside the error rather than through it,
+// because the two are different questions and a sweep asks both: a
+// deferred verification and an errored submit are both a branch that
+// now exists, and a caller reading only the error would call the first
+// a failure and the second nothing at all. A single-port invocation
+// still says everything it says in prose on the two streams; the
+// Realized is what a thousand of them can be counted by.
+func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) (Realized, error) {
 	if o.PlanOnly {
 		// A plan printed is the whole contract of --plan, so the twin it
 		// carries is success: the decline that would say otherwise never
 		// reaches here — a planner that declines returns before Run is
 		// called, and the verb writes the decline's own document.
-		return p.Encode(e.Out, exitcode.Of(exitcode.OK, ""))
+		return Realized{Realization: PlanShown}, p.Encode(e.Out, exitcode.Of(exitcode.OK, ""))
 	}
 	if o.Diff {
-		return e.diffFromPlan(ctx, p)
+		return Realized{Realization: PlanShown}, e.diffFromPlan(ctx, p)
 	}
 	if o.InPlace {
 		// The deliberate opt-out (D21): edit where the user stands,
 		// uncommitted — for the user running their own workflow, and
 		// the only write mode a non-git tree has.
-		return e.applyPlan(ctx, p)
+		return Realized{Realization: EditApplied}, e.applyPlan(ctx, p)
 	}
 	m, err := e.mint(ctx, p, o)
-	if err != nil || m == nil {
-		return err
+	if err != nil {
+		return Realized{}, err
 	}
+	if m == nil {
+		return Realized{Realization: NothingRealized}, nil
+	}
+	if m.Stood {
+		// A sweep meeting the branch it would have minted. Nothing was
+		// written, nothing is owed, and the standing branch is the
+		// answer.
+		return Realized{Realization: BranchStood, Branch: m.Branch}, nil
+	}
+	done := Realized{Realization: BranchMinted, Branch: m.Branch, Sha: m.Sha, Superseded: m.Superseded}
 	if o.Verified {
 		// The --verify gate built exactly these bytes — the minted blob
 		// and the gate's shadow are both the plan's Materialize over the
@@ -125,18 +220,18 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) error {
 		// identity.
 		// Recording it beats resubmitting: the same build twice proves
 		// nothing the first one did not.
-		return e.markVerified(ctx, m, p, o)
+		return done, e.markVerified(ctx, m, p, o)
 	}
 	if o.destination() == record.ToBranch {
 		// The contract stops at the branch, and the record says so, so
 		// nothing will submit this later either: the drain reads the
 		// destination and steps over a change nobody asked a verdict of.
-		return nil
+		return done, nil
 	}
 	// The branch is live the moment it exists (D21): verification is
 	// submitted against the tip and the guest drives its own build, so
 	// this process is free to exit; status collects the verdict.
-	return e.submit(ctx, m, submission{
+	return done, e.submit(ctx, m, submission{
 		Port: p.Port, Release: o.On, Test: o.Test,
 		FromSource: o.fromSource(p.Intent), Trace: o.Trace,
 	})

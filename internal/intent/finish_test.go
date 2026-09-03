@@ -351,3 +351,67 @@ func TestFinishAsksAboutSubportsBeforeTheIntentJudges(t *testing.T) {
 	assert.Equal(t, plan.SubportsChanged, d.Type)
 	assert.Equal(t, "1 added, 1 removed", d.Detail)
 }
+
+// The shared tail's guards inherit the asking intent's determinacy, and
+// what that closes is a memo that would suppress a fetch.
+//
+// The three guards here are ruled ByPortfile at the type, correctly:
+// every other producer of them reads the Portfile. For
+// refresh-checksums they are not, and they are not reachable at all
+// without the network — the verb fetches with the mirrors disabled and
+// reaches this tail only when what upstream served differs from what
+// the Portfile records. Memoized under a key that names no network, one
+// such refusal answers the next run of the same unchanged Portfile and
+// no distfile is fetched: the permanent suppression the memo's own
+// documentation says it must not have.
+func TestFinishStampsTheIntentsDeterminacyOnItsGuards(t *testing.T) {
+	ctx := context.Background()
+	id := Identity{Intent: "refresh-checksums", Slug: "finishee-checksums", Summary: "finishee: c"}
+
+	// SubportsUnchanged: a structural change.
+	h := synthetic(t, "version 1.0\nrevision 0\nsubport finishee-extra {}")
+	src, opts := subject(t, h)
+	opts.Determined = plan.ByNetwork
+	at := bytes.Index(src, []byte("subport finishee-extra {}"))
+	require.GreaterOrEqual(t, at, 0)
+	_, err := Finish(ctx, h, src, []edit.Edit{{
+		Start: at, End: at + len("subport finishee-extra {}"),
+		Old: "subport finishee-extra {}", New: "subport finishee-other {}", Reason: "rename",
+	}}, id, opts)
+	d := declineOf(t, err)
+	assert.Equal(t, plan.SubportsChanged, d.Type)
+	assert.Equal(t, plan.ByNetwork, d.Determined)
+	assert.False(t, d.Memoizable(), "a decline a fetch decided must never be remembered")
+
+	// OnlyFields, and the intent's own Accept, on the same road.
+	h = synthetic(t, "version 1.0\nrevision 0")
+	src, opts = subject(t, h)
+	opts.Determined = plan.ByNetwork
+	opts.MayChange = map[info.Field]bool{info.FieldRevision: true}
+	at = bytes.Index(src, []byte("version 1.0"))
+	require.GreaterOrEqual(t, at, 0)
+	edits := []edit.Edit{{Start: at + len("version "), End: at + len("version 1.0"),
+		Old: "1.0", New: "2.0", Reason: "version"}}
+	_, err = Finish(ctx, h, src, edits, id, opts)
+	d = declineOf(t, err)
+	assert.Equal(t, plan.UnexpectedChange, d.Type)
+	assert.False(t, d.Memoizable())
+
+	opts.Accept = func(info.Delta) error {
+		return &plan.Decline{Type: plan.FetchNotDriven, Detail: "the edits moved no checksums"}
+	}
+	_, err = Finish(ctx, h, src, edits, id, opts)
+	d = declineOf(t, err)
+	assert.Equal(t, plan.FetchNotDriven, d.Type)
+	assert.False(t, d.Memoizable())
+
+	// Left unstated — which is bump, whose guards are gated on a version
+	// edit rather than on what a fetch returned — the type's own ruling
+	// stands and the decline stays memoizable.
+	opts.Determined, opts.Accept = plan.Unstated, nil
+	_, err = Finish(ctx, h, src, edits, Identity{Intent: "bump-revision", Slug: "s", Summary: "s"}, opts)
+	d = declineOf(t, err)
+	assert.Equal(t, plan.UnexpectedChange, d.Type)
+	assert.Equal(t, plan.Unstated, d.Determined)
+	assert.True(t, d.Memoizable())
+}

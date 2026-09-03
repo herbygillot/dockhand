@@ -2,8 +2,11 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"os/exec"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/tool"
+	"github.com/herbygillot/dockhand/internal/upstream/courtesy"
 )
 
 func TestCoords(t *testing.T) {
@@ -648,20 +652,101 @@ func TestReleasesParsesAndFiltersGitHubsAnswer(t *testing.T) {
 			{"tag_name":"v0.4.95","prerelease":false,"draft":false},
 			{"tag_name":"nonconforming","prerelease":false,"draft":false}]`, nil
 	}
-	vs, ok := Releases(context.Background(), gh, Repo{URL: "https://github.com/superfly/flyctl.git", TagPrefix: "v"})
-	require.True(t, ok)
+	vs, _, err := Manners{}.releases(context.Background(), gh,
+		Repo{URL: "https://github.com/superfly/flyctl.git", TagPrefix: "v"}, "")
+	require.NoError(t, err)
 	assert.Equal(t, []string{"0.4.96", "0.4.95"}, vs,
 		"prereleases, drafts, and nonconforming tags all excluded")
 }
 
+// The three answers, told apart. A repository that publishes no
+// releases and a call that could not be made mean opposite things to a
+// sweep — the first says the tags are the whole truth, the second says
+// the authoritative witness was lost and every remaining port will be
+// judged on the heuristic it exists to correct — and they used to be
+// the same false.
 func TestReleasesFallsBackHonestly(t *testing.T) {
-	_, ok := Releases(context.Background(), nil, Repo{URL: "https://github.com/x/y"})
-	assert.False(t, ok, "no gh, no releases")
-	gh := func(context.Context, ...string) (string, error) { return "[]", nil }
-	_, ok = Releases(context.Background(), gh, Repo{URL: "https://github.com/x/y"})
-	assert.False(t, ok, "a tag-only repo answers with tags, not an empty forge")
-	_, ok = Releases(context.Background(), gh, Repo{URL: "https://gitlab.com/x/y"})
-	assert.False(t, ok, "the releases API is GitHub's alone")
+	ctx := context.Background()
+	vs, _, err := Manners{}.releases(ctx, nil, Repo{URL: "https://github.com/x/y"}, "")
+	assert.Empty(t, vs, "no gh, no releases")
+	require.NoError(t, err, "having no gh is not a failed call")
+
+	empty := func(context.Context, ...string) (string, error) { return "[]", nil }
+	vs, _, err = Manners{}.releases(ctx, empty, Repo{URL: "https://github.com/x/y"}, "")
+	assert.Empty(t, vs, "a tag-only repo answers with tags, not an empty forge")
+	require.NoError(t, err, "a repository that publishes no releases is not a failure")
+
+	vs, _, err = Manners{}.releases(ctx, empty, Repo{URL: "https://gitlab.com/x/y"}, "")
+	assert.Empty(t, vs, "the releases API is GitHub's alone")
+	require.NoError(t, err)
+
+	refuse := func(context.Context, ...string) (string, error) {
+		return "", errors.New("gh api: HTTP 403: API rate limit exceeded")
+	}
+	vs, _, err = Manners{}.releases(ctx, refuse, Repo{URL: "https://github.com/x/y"}, "")
+	assert.Empty(t, vs)
+	require.Error(t, err, "a refused call must not read as a repository with no releases")
+	assert.Contains(t, err.Error(), "rate limit")
+}
+
+// A refused releases call walls the host, exactly as a refused
+// ls-remote does. Before, the refusal was absorbed: nothing walled,
+// and every remaining port silently lost its authoritative witness.
+func TestARefusedReleasesCallWallsTheAPI(t *testing.T) {
+	m := Manners{Pacer: courtesy.NewPacer(courtesy.Policy{Ceiling: 2, Backoff: time.Hour}, nil)}
+	refuse := func(context.Context, ...string) (string, error) {
+		return "", errors.New("gh api: HTTP 403: You have exceeded a secondary rate limit")
+	}
+	_, _, err := m.releases(context.Background(), refuse, Repo{URL: "https://github.com/x/y"}, "")
+	require.Error(t, err)
+
+	left, up := m.Pacer.Walled("api.github.com")
+	assert.True(t, up, "a forge that refused dockhand is still being asked")
+	assert.Positive(t, left)
+
+	// The second repository on the same API is refused without a call.
+	_, _, err = m.releases(context.Background(), func(context.Context, ...string) (string, error) {
+		t.Error("the request the wall exists to prevent was made anyway")
+		return "", nil
+	}, Repo{URL: "https://github.com/other/repo"}, "")
+	require.ErrorIs(t, err, courtesy.ErrWalled)
+}
+
+// gh answers a 304 with a non-zero exit, and tool.Output discards a
+// failed command's stdout — so the whole payoff of asking
+// conditionally arrives as an error with the status in its text. Read
+// it, or every unchanged releases feed loses its authoritative witness
+// the moment the TTL expires, which is the opposite of what
+// revalidation is for.
+func TestAConditionalReleasesCallReadsA304OutOfGhsFailure(t *testing.T) {
+	dir := t.TempDir()
+	cache := courtesy.NewCache(dir, time.Hour, nil)
+	repo := Repo{URL: "https://github.com/x/y", TagPrefix: "v"}
+	m := Manners{Cache: cache}
+
+	first := func(_ context.Context, args ...string) (string, error) {
+		assert.NotContains(t, strings.Join(args, " "), "If-None-Match",
+			"the first call has nothing to revalidate against")
+		return "HTTP/2.0 200 OK\nETag: W/\"abc\"\n\n[{\"tag_name\":\"v1.2.0\"}]", nil
+	}
+	vs, _, err := m.releases(context.Background(), first, repo, "d1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1.2.0"}, vs)
+
+	// The TTL expires and the feed has not changed. gh prints the 304
+	// head and exits non-zero; what reaches us is the error alone.
+	stale := courtesy.NewCache(dir, time.Nanosecond, nil)
+	asked := 0
+	notMod := func(_ context.Context, args ...string) (string, error) {
+		asked++
+		assert.Contains(t, strings.Join(args, " "), `If-None-Match: W/"abc"`)
+		return "", errors.New(`gh api: HTTP 304: Not Modified (https://api.github.com/repos/x/y/releases)`)
+	}
+	vs, src, err := Manners{Cache: stale}.releases(context.Background(), notMod, repo, "d1")
+	require.NoError(t, err, "a 304 is the answer, not a failure")
+	assert.Equal(t, 1, asked)
+	assert.Equal(t, courtesy.Revalidated, src, "the census must show the cheap answer it was")
+	assert.Equal(t, []string{"1.2.0"}, vs, "the stored feed stands")
 }
 
 func TestJudgeAuthoritativeReleasesOutrankTagHeuristics(t *testing.T) {

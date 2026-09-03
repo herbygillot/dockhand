@@ -61,7 +61,13 @@ func (Housekeeping) Plan(ctx context.Context, h port.Handle, _ distfile.Fetcher)
 				strings.Join(ruleNames(dropped), ", ") +
 				" had an edit and it was dropped for touching evaluated bytes, which is a bug in the rule"
 		}
-		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: detail}
+		// The rules this build carries, run against these bytes. The
+		// build is not in the memo's key and does not have to be: the
+		// memo format is bumped by hand whenever a rule that produces or
+		// suppresses a decline changes, which is what ledger.MemoFormat
+		// is for.
+		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: detail,
+			Determined: plan.ByPortfile}
 	}
 	return Finish(ctx, h, src, nil,
 		Identity{

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -53,18 +54,20 @@ var bumpVerb = intentVerb{
 			return nil
 		}
 	},
-	Resolve: func(ctx context.Context, rs *runstate.Context, h port.Handle, pf *portfetch.Fetcher, p *intent.Params) error {
+	Resolve: func(ctx context.Context, rs *runstate.Context, w io.Writer, h port.Handle, pf *portfetch.Fetcher, p *intent.Params, m upstream.Manners) error {
 		if p.Version != "" {
 			return nil
 		}
 		// No stated version: latest is the intent. The gh seam rides
 		// along so the forge's own releases outrank its raw tags where
-		// they exist.
-		resolved, rep, err := bump.ResolveLatest(ctx, rs.Tools, h, pf, upstream.GhRunner(rs.RunGH))
+		// they exist, and the Manners decide how hard the forge is
+		// asked — nothing for one port, the sweep's pacing and cache
+		// for a selector's worth of them.
+		resolved, rep, err := bump.ResolveLatest(ctx, rs.Tools, h, pf, upstream.GhRunner(rs.RunGH), m)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(rs.Err, "latest: %s (%s)\n", resolved, rep.Verdict)
+		fmt.Fprintf(w, "latest: %s (%s)\n", resolved, rep.Verdict)
 		p.Version = resolved
 		return nil
 	},

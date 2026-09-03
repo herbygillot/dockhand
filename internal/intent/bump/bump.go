@@ -140,8 +140,12 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// the target's own.
 	moving := carrier.Text(src) != b.Version
 	if !moving && !b.Force {
+		// The carrier's own literal, read off the Portfile before
+		// anything is fetched. Nothing but the bytes and the evaluation
+		// decided it, which is exactly what the memo's key holds.
 		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: carrier.Text(src),
-			Withheld: intent.Withheld(src, cst, b.Riders)}
+			Withheld:   intent.Withheld(src, cst, b.Riders),
+			Determined: plan.ByPortfile}
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
@@ -191,9 +195,12 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// refusal about dockhand's falsifiability rule reach the user in the
 	// failure band.
 	if !moving && len(vals.Checksums) == 0 {
+		// The evaluation, and nothing else: a port that records no
+		// checksums records none whatever upstream is serving today.
 		return nil, &plan.Decline{Type: plan.AlreadyCurrent,
-			Detail:   fmt.Sprintf("%s records no checksums, so a re-derivation at %s has nothing to fetch and nothing to compare", vals.Name, b.Version),
-			Withheld: intent.Withheld(src, cst, b.Riders)}
+			Detail:     fmt.Sprintf("%s records no checksums, so a re-derivation at %s has nothing to fetch and nothing to compare", vals.Name, b.Version),
+			Withheld:   intent.Withheld(src, cst, b.Riders),
+			Determined: plan.ByPortfile}
 	}
 
 	// What this run spent, named for the case where the shadow ends up
@@ -305,8 +312,12 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			return nil, err
 		}
 		if len(ownNew) == 0 {
+			// What a family says it supplies can come out of an archive
+			// it fetched and extracted, so this answer is not the
+			// Portfile's alone even though its kind usually is.
 			return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
-				Detail: "every distfile comes from a vendored block"}
+				Detail:     "every distfile comes from a vendored block",
+				Determined: plan.ByNetwork}
 		}
 
 		fetchDir, removeFetched, err := h.TempDir.MakeDir("distfiles")
@@ -444,21 +455,30 @@ func (b Bump) accept(vals info.Values, predicted info.Delta, moving, exact bool)
 	// and whether anything downstream moved is the finding rather than
 	// the requirement, since an upstream that re-rolled nothing is the
 	// ordinary case.
+	// Every refusal below reads a shadow prediction: the Portfile with
+	// the version edit applied, evaluated. What a fetch returned is not
+	// in it — this judgment is made before any distfile is looked at —
+	// so all four follow from the bytes and the environment the memo's
+	// key already holds.
 	if moving {
 		if !versionReached {
 			return &plan.Decline{Type: plan.TargetNotReached,
-				Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
+				Detail:     fmt.Sprintf("%s would not become %s", vals.Version, b.Version),
+				Determined: plan.ByPortfile}
 		}
 		if len(vals.Distfiles) > 0 && !distfilesMoved {
 			return &plan.Decline{Type: plan.FetchNotDriven,
-				Detail: "distfiles unchanged by the version edit"}
+				Detail:     "distfiles unchanged by the version edit",
+				Determined: plan.ByPortfile}
 		}
 		if len(vals.Checksums) > 0 && !checksumsMoved {
-			return &plan.Decline{Type: plan.FetchNotDriven, Detail: "checksums unchanged"}
+			return &plan.Decline{Type: plan.FetchNotDriven, Detail: "checksums unchanged",
+				Determined: plan.ByPortfile}
 		}
 	} else if versionChanged {
 		return &plan.Decline{Type: plan.UnexpectedChange,
-			Detail: fmt.Sprintf("version moved from %s during a re-derivation at the same version", vals.Version)}
+			Detail:     fmt.Sprintf("version moved from %s during a re-derivation at the same version", vals.Version),
+			Determined: plan.ByPortfile}
 	}
 	return nil
 }
@@ -513,7 +533,14 @@ func probeCarrier(ctx context.Context, h port.Handle, src []byte, span text.Span
 // verdict that does not yield a trustworthy latest — rot, disagreement,
 // no signal — declines rather than guessing. tools resolves the git
 // the forge's tags are read with.
-func ResolveLatest(ctx context.Context, tools *tool.Finder, h port.Handle, f *portfetch.Fetcher, gh upstream.GhRunner) (string, upstream.Report, error) {
+//
+// m is the politeness the witnesses are consulted under, and it passes
+// straight through. Its zero value is one port asking one question,
+// which is what this has always been; a selector-scale bump hands in a
+// paced, caching one, because resolving "latest" for a thousand ports
+// is a thousand questions for one forge and nothing else about this
+// road knows that.
+func ResolveLatest(ctx context.Context, tools *tool.Finder, h port.Handle, f *portfetch.Fetcher, gh upstream.GhRunner, m upstream.Manners) (string, upstream.Report, error) {
 	src, cst, err := h.Source()
 	if err != nil {
 		return "", upstream.Report{}, err
@@ -539,7 +566,7 @@ func ResolveLatest(ctx context.Context, tools *tool.Finder, h port.Handle, f *po
 		}
 		style = cand.Style
 	}
-	report, err := upstream.Check(ctx, tools, h, f, style, vals.Livecheck, gh)
+	report, err := upstream.Check(ctx, tools, h, f, style, vals.Livecheck, gh, m)
 	if err != nil {
 		return "", upstream.Report{}, err
 	}

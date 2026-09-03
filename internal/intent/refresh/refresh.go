@@ -155,7 +155,10 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 	}
 	reps, err := checksums.Replacements(checksums.ForFiles(recorded, own), sums)
 	if err != nil {
-		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error()}
+		// Over the sums the fetch above produced. Everything from here
+		// down is an answer about what upstream served.
+		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error(),
+			Determined: plan.ByNetwork}
 	}
 	edits, unlocated, viaSet := rewrite.Edits(src, cst, portstyle.ScopeOf(src, vals.Name), vals.Name, reps)
 	for _, u := range unlocated {
@@ -163,12 +166,20 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 		// is a checksum value and every value must be found: one that is
 		// not written literally cannot be made true by editing.
 		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
-			Detail: fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason)}
+			Detail:     fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason),
+			Determined: plan.ByNetwork}
 	}
 	if len(edits) == 0 {
+		// The one decline in the tree that must never be remembered.
+		// The event this verb exists to catch — an upstream re-rolling
+		// an artifact at an unchanged version — is precisely the event
+		// in which the Portfile's bytes do NOT move, so a memo of this
+		// answer, keyed by those bytes, would suppress the detection
+		// permanently.
 		return nil, &plan.Decline{Type: plan.AlreadyCurrent,
-			Detail:   "recorded checksums match what upstream serves",
-			Withheld: intent.Withheld(src, cst, r.Riders)}
+			Detail:     "recorded checksums match what upstream serves",
+			Withheld:   intent.Withheld(src, cst, r.Riders),
+			Determined: plan.ByNetwork}
 	}
 
 	// The tail is intent.Finish, as it is for every intent: shadow the
@@ -203,6 +214,15 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 			ViaSet:     viaSet,
 			Riders:     r.Riders,
 			Dependents: r.Dependents,
+			// Every decline this tail can raise for this verb is an
+			// answer about what a server just served. The fetch above
+			// disables the mirrors and this tail is reached only when
+			// what came back differs from what the Portfile records, so
+			// a guard that fires here fired because of bytes nothing in
+			// the memo's key can see. Memoized, one such refusal would
+			// answer the next run of the same unchanged Portfile and no
+			// distfile would be fetched at all.
+			Determined: plan.ByNetwork,
 			// The bytes are the witness, and this intent has the best kind:
 			// a fetch that deliberately refused the mirrors, so what was
 			// hashed is what upstream serves right now. A prediction that

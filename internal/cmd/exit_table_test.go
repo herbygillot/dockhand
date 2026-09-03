@@ -36,6 +36,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/sweep"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -704,6 +705,19 @@ func exitTable(t *testing.T) []exitRow {
 			err: &engine.PRRefreshError{Branch: branch, Remote: "fork", Number: 7,
 				Err: fmt.Errorf("gh %s: %s", "pr", "HTTP 422")}, as: new(*engine.PRRefreshError)},
 	)
+	// The two ways a selector-scale write verb ends badly, and both are
+	// half-done work rather than nothing: the ports before the bad one
+	// have branches. The first is the census's own exit — rows that
+	// were not declines — and the second is the dispatch loop losing
+	// its evaluators with targets still queued.
+	add(exitcode.SweepHardErrors,
+		exitRow{name: "*cmd.SweepFailedError (a sweep whose census counted hard rows)",
+			err: &SweepFailedError{Hard: 2, Total: 40, First: "jq"}, as: new(*SweepFailedError)},
+		exitRow{name: "*sweep.AbandonedError (the pool died with targets still queued)",
+			err: &sweep.AbandonedError{Targets: []tree.Target{{Portdir: "/tree/sysutils/jq"}},
+				Cause: errors.New("no evaluator would start")},
+			is: []error{sweep.ErrAbandoned}, as: new(*sweep.AbandonedError)},
+	)
 
 	// Band 1: everything else. The untyped refusals are built here
 	// exactly as their sites build them — fmt.Errorf with no sentinel
@@ -790,9 +804,10 @@ func exitTable(t *testing.T) []exitRow {
 			err: fmt.Errorf("lifecycle: evaluating %s at %s: %w", "sysutils/jq", tip, errors.New("Portfile: invalid command name"))},
 		exitRow{name: "verify: job ended in state (RunVerification)",
 			err: fmt.Errorf("verify: job ended in state %s", "running")},
-		// Not the sweep's band: SweepHardErrors is a sweep finishing
-		// with errors that were not declines, and the sweep verb does
-		// not exist. exec is a probe, and a probe reporting how many
+		// Not the sweep's band: SweepHardErrors is a write verb over a
+		// selector finishing with rows that were not declines, and it
+		// has its own two rows above. exec is a probe, and a probe
+		// reporting how many
 		// releases ran its command and did not like the answer is an
 		// ordinary failure. The one refusal that must NOT be counted
 		// into this summary is a full machine — the command never ran

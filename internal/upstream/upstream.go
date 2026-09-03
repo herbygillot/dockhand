@@ -97,6 +97,23 @@ const (
 	// and resolve, which published a version on one witness's word
 	// while telling the reader two had agreed.
 	LivecheckUncorroborated
+	// ForgeCurrent means the forge was asked, holds nothing that
+	// outranks the version the port rides, and so no second witness
+	// was paid for. It is the staged observer's own conclusion and
+	// Judge never returns it — the only verdict in this list that is
+	// reached by deciding NOT to gather testimony.
+	//
+	// It is a member rather than a sentence in a report because the
+	// alternative was worse in a way that took a bug to see. An
+	// observation with no livecheck reading in it, handed to Judge,
+	// comes back LivecheckRot: livecheck did not run, so it named
+	// nothing, and the rule that reads a silent livecheck as a rotted
+	// regex cannot tell "matched nothing" from "was never asked". A
+	// staged sweep would have charged thousands of perfectly healthy
+	// ports with a broken livecheck it never executed. So the staged
+	// conclusion is its own verdict, and Judge is left to rule on
+	// testimony that was actually taken.
+	ForgeCurrent
 )
 
 func (v Verdict) String() string {
@@ -125,6 +142,8 @@ func (v Verdict) String() string {
 		return "livecheck matched a prerelease; the release stands"
 	case LivecheckUncorroborated:
 		return "livecheck stands alone: no forge tag corroborates it"
+	case ForgeCurrent:
+		return "the forge holds nothing newer, so no second witness was asked"
 	}
 	return "unknown verdict"
 }

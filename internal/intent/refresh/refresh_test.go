@@ -142,6 +142,14 @@ func TestRefreshDeclinesWhenAlreadyTrue(t *testing.T) {
 	// code, from a refresh that had nothing to hold.
 	assert.Equal(t, []string{"modeline"}, d.Withheld)
 	assert.Equal(t, exitcode.AlreadyCurrent, d.DockhandExit())
+	// And it is the one decline in the tree that must never be
+	// remembered. A memo of "recorded checksums match what upstream
+	// serves", keyed by the Portfile's bytes, would suppress the
+	// detection of the very event this verb exists to catch — an
+	// upstream re-rolling an artifact at an unchanged version, in which
+	// those bytes do not move.
+	assert.Equal(t, plan.ByNetwork, d.Determined)
+	assert.False(t, d.Memoizable())
 }
 
 // The defining difference from bump: no version edit means no version

@@ -53,6 +53,11 @@ func TestHousekeepingDeclinesWhenEveryRuleAlreadyHolds(t *testing.T) {
 	assert.Empty(t, d.Withheld)
 	assert.Equal(t, exitcode.PlanDeclined, d.DockhandExit())
 	assert.Contains(t, d.Detail, "needs no housekeeping")
+	// This build's rules against these bytes, and nothing else. The
+	// build is not in the memo's key and does not have to be:
+	// ledger.MemoFormat is bumped by hand when a rule changes.
+	assert.Equal(t, plan.ByPortfile, d.Determined)
+	assert.True(t, d.Memoizable())
 }
 
 // A rule that had an edit and lost it to the first proof is a different

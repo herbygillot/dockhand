@@ -62,7 +62,7 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	targets, err := resolveTargets(rs, false, []string{a.target})
+	targets, err := resolveTargets(ctx, rs, false, []string{a.target})
 	if err != nil {
 		return err
 	}

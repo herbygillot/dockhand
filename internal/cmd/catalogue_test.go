@@ -88,8 +88,8 @@ func TestIntentCatalogueBuildsTheVerbsItDeclares(t *testing.T) {
 			assert.Equal(t, want.name, c.Name(), "registration order is display order")
 			assert.Equal(t, want.aliases, c.Aliases)
 			assert.Equal(t, want.short, c.Short)
-			assert.Equal(t, want.name+" <port|subport|portdir>", c.Use,
-				"every intent takes one port, and says so the same way")
+			assert.Equal(t, want.name+" "+intentArgSketch, c.Use,
+				"every intent takes one selector, and says so the same way")
 
 			var names []string
 			c.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })

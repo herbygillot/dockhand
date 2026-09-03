@@ -3,7 +3,6 @@ package upstream
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -13,34 +12,41 @@ import (
 // nil means "tags only", which is every caller without gh.
 type GhRunner func(ctx context.Context, args ...string) (string, error)
 
-// Releases lists a GitHub repository's release versions — upstream's
-// own authoritative word on what is a release and what is stable,
-// which the tag heuristic can only approximate. flyctl field-proved
-// the gap: bare calver CI tags (v2023.11.0) that look perfectly
-// stable by name and were never releases at all.
+// A GitHub repository's release versions are upstream's own
+// authoritative word on what is a release and what is stable, which the
+// tag heuristic can only approximate. flyctl field-proved the gap: bare
+// calver CI tags (v2023.11.0) that look perfectly stable by name and
+// were never releases at all.
 //
-// ok is false when the answer cannot stand in for the tag list: not a
-// GitHub repo, no gh, the call failed, or the repo simply publishes
-// no releases (tag-only repos are common and legitimate). The caller
-// falls back to tags.
-func Releases(ctx context.Context, gh GhRunner, r Repo) ([]string, bool) {
-	if gh == nil {
-		return nil, false
-	}
-	owner, name, ok := githubPath(r.URL)
-	if !ok {
-		return nil, false
-	}
-	out, err := gh(ctx, "api", fmt.Sprintf("repos/%s/%s/releases?per_page=100", owner, name))
-	if err != nil {
-		return nil, false
-	}
+// The witness itself is Manners.releases, and there is exactly one of
+// it. There used to be two — a plain one here for the single port and a
+// conditional, paced, cached one for the sweep — and the plain one
+// answered "the call failed" and "this repository publishes no
+// releases" with the same false. That is the difference between a
+// forge that is rate-limiting dockhand and a tag-only repository, and
+// collapsing them meant a rate-limited run silently judged every
+// remaining port on the heuristic the feed exists to correct, with
+// nothing walled and nothing said.
+
+// releaseVersions reads a releases feed into this port's versions:
+// drafts and anything upstream flagged prerelease are dropped, and the
+// port's tag scheme is applied to what remains.
+//
+// false when the feed cannot stand in for the tag list — unparseable,
+// or empty once filtered, which is the common and legitimate case of a
+// repository that tags and never cuts a release.
+//
+// One copy, called by the single-port path above and by the staged
+// observer, because it is the rule that decides which versions a
+// verdict is reached over: two copies would be two answers to "what
+// counts as a release", and the second one would drift silently.
+func releaseVersions(body []byte, r Repo) ([]string, bool) {
 	var rels []struct {
 		TagName    string `json:"tag_name"`
 		Prerelease bool   `json:"prerelease"`
 		Draft      bool   `json:"draft"`
 	}
-	if json.Unmarshal([]byte(out), &rels) != nil {
+	if json.Unmarshal(body, &rels) != nil {
 		return nil, false
 	}
 	var versions []string

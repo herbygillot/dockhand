@@ -107,6 +107,28 @@ type FinishOpts struct {
 	// Dependents are the ports that depend on this one, passed to
 	// Examine for the finding rules.
 	Dependents []string
+	// Determined is what decided the declines this tail may raise, for
+	// the decline memo. Unstated leaves each decline's type-level ruling
+	// to stand, which is right for an intent whose guards are reached
+	// from the Portfile alone.
+	//
+	// refresh-checksums is why this field exists, and the hazard is
+	// worth stating where the field is. Its guards are unreachable
+	// except through the network: the verb fetches from upstream with
+	// the mirrors deliberately disabled, and it reaches this tail only
+	// when what upstream served differs from what the Portfile records.
+	// So SubportsUnchanged, ViaSetIsolated and OnlyFields — all ruled
+	// ByPortfile at the type, correctly, because every OTHER producer of
+	// them reads the Portfile — are for this verb answers about what a
+	// server sent. Memoized under a key that does not name the network,
+	// one such refusal would be replayed at the next run of the same
+	// unchanged Portfile and no distfile would be fetched at all: the
+	// permanent suppression of the fetch the verb exists to perform.
+	//
+	// The type's ruling is the ceiling and a producer may only narrow
+	// it, so this can make a decline unmemoizable and can never make
+	// one memoizable.
+	Determined plan.Determinacy
 	// Portdir overrides the directory the plan records, for a planner
 	// whose handle is deliberately a copy.
 	//
@@ -149,6 +171,30 @@ type FinishOpts struct {
 // headline is shadowed even when it has no edits: comparing a shadow
 // against the real portdir would blame the rider for every difference
 // between a portdir and a copy of one.
+// determined stamps the intent's own statement of what decided a
+// decline onto the decline the shared tail just raised.
+//
+// It is here rather than in the guards because the guards are shared
+// and the answer is not: SubportsUnchanged asks one question, and for
+// bump it is answered by the Portfile's own bytes while for
+// refresh-checksums it is answered by whatever a server just served.
+// The guards cannot know which intent is asking, and the intent cannot
+// reach inside a decline it did not construct — so the tail, which has
+// both, does it.
+//
+// A type assertion and not errors.As: a wrapped decline had something
+// added to it by the wrapper, and this is stamping the bare refusal a
+// guard just built.
+func determined(err error, d plan.Determinacy) error {
+	if d == plan.Unstated {
+		return err
+	}
+	if decl, bare := err.(*plan.Decline); bare { //nolint:errorlint // the wrapping is the thing being tested for
+		decl.Determined = d
+	}
+	return err
+}
+
 func Finish(ctx context.Context, h port.Handle, src []byte, edits []edit.Edit, id Identity, opts FinishOpts) (*plan.Plan, error) {
 	if len(opts.Before) == 0 {
 		return nil, ErrNoBefore
@@ -180,20 +226,20 @@ func Finish(ctx context.Context, h port.Handle, src []byte, edits []edit.Edit, i
 		return nil, ErrNoWitness
 	}
 	if err := SubportsUnchanged(predicted); err != nil {
-		return nil, err
+		return nil, determined(err, opts.Determined)
 	}
 	if opts.ViaSet {
 		if err := ViaSetIsolated(predicted, opts.Vals.Name); err != nil {
-			return nil, err
+			return nil, determined(err, opts.Determined)
 		}
 	}
 	if opts.Accept != nil {
 		if err := opts.Accept(predicted); err != nil {
-			return nil, err
+			return nil, determined(err, opts.Determined)
 		}
 	}
 	if err := OnlyFields(predicted, opts.MayChange); err != nil {
-		return nil, err
+		return nil, determined(err, opts.Determined)
 	}
 
 	// The edit list is copied before anything is added to it or it is

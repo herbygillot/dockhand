@@ -166,6 +166,13 @@ type Decline struct {
 	// these went undone with it" are different answers to a caller
 	// deciding whether to look.
 	Withheld []string
+	// Determined is the producer's own statement about what decided this
+	// answer, for the decline memo. It may only narrow what the type's
+	// ruling already allows — see Determinacy in memoizable.go, where
+	// the rule and the reason for it live together. The zero value says
+	// nothing, which on a type whose producers disagree means the
+	// decline is not remembered.
+	Determined Determinacy
 }
 
 // Error implements the error interface. The remedy rides on the end of

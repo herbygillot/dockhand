@@ -119,6 +119,16 @@ type Minted struct {
 	Branch  string
 	Sha     string // full commit sha
 	RelPort string // repo-relative portdir path
+	// Stood says nothing was minted because the branch this change
+	// would have created is already standing, and the policy asked to
+	// advance past it rather than refuse. Only Branch is filled.
+	Stood bool
+	// Superseded names the port's other in-flight branches, now
+	// recorded as replaced by this one. They still exist and still hold
+	// what they learned; the field is here so a sweep can say a port's
+	// older change was set down rather than leaving it to be discovered
+	// in a note.
+	Superseded []string
 }
 
 // mint realizes a plan as a branch (D21): the edited Portfile is
@@ -159,6 +169,23 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 		// Both mint; which of the two it is cannot be settled until the
 		// plan has been resolved against the repository below.
 	}
+	if o.OnInFlight == Advance {
+		// Advance asks one question and asks it before anything else:
+		// is the branch this change would create already standing? A
+		// yes ends it — there is nothing to write, so there is nothing
+		// to resolve against the tree and no drift to report about a
+		// file nobody is going to touch. That is what makes a rerun
+		// cheap on the ports an interrupted sweep already minted, and
+		// it is the whole difference between this and Supersede, which
+		// has a branch to mint and must do the work.
+		//
+		// A repository that will not open falls through to the road
+		// below, where the failure is reported properly rather than
+		// read as "no branch".
+		if repo, err := e.RepoFor(ctx, p.Portdir); err == nil && repo.HasBranch(ctx, branch) {
+			return &Minted{Repo: repo, Branch: branch, Stood: true}, nil
+		}
+	}
 	repo, primary, path, edited, err := e.planOnBase(ctx, p)
 	if err != nil {
 		return nil, err
@@ -181,6 +208,15 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 	})
 	if err != nil {
 		if errors.Is(err, git.ErrBranchExists) {
+			if o.sweeping() {
+				// Supersede's own encounter with the branch it would
+				// have minted, and Advance's when something minted it
+				// between the probe and here. A sweep racing another
+				// sweep — or itself, rerun — is still a sweep meeting a
+				// branch that already carries this change, and that is
+				// an answer rather than a failure.
+				return &Minted{Repo: repo, Branch: branch, Stood: true}, nil
+			}
 			return nil, &BranchInFlightError{Branch: branch}
 		}
 		return nil, err
@@ -191,7 +227,7 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 	}
 	m := &Minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}
 	e.bear(ctx, m, p, primary, o.destination())
-	e.supersedeSiblings(ctx, repo, branch, p.Port)
+	m.Superseded = e.supersedeSiblings(ctx, repo, branch, p.Port)
 	fmt.Fprintf(e.Out, "branch: %s (%s)\n", branch, git.Abbrev(sha))
 	fmt.Fprintf(e.Err, "your checkout is untouched — `git checkout %s` to add changes\n", branch)
 	return m, nil
@@ -339,15 +375,18 @@ func targetIn(slug, port string) string {
 //
 // Silent on success. There is no superseded phase in the report yet, so
 // the note knows something the branch's line does not; saying it here
-// instead would be that line, in the wrong place.
-func (e *Engine) supersedeSiblings(ctx context.Context, repo *git.Repo, minted, port string) {
+// instead would be that line, in the wrong place. What it marked comes
+// back instead, in the order the branches were listed, for the sweep
+// that must say it in a row rather than a sentence.
+func (e *Engine) supersedeSiblings(ctx context.Context, repo *git.Repo, minted, port string) []string {
 	if port == "" {
-		return
+		return nil
 	}
 	branches, err := repo.Branches(ctx, git.BranchNamespace)
 	if err != nil {
-		return
+		return nil
 	}
+	var marked []string
 	l := e.Ledger(repo)
 	for _, br := range branches {
 		if br == minted {
@@ -371,6 +410,9 @@ func (e *Engine) supersedeSiblings(ctx context.Context, repo *git.Repo, minted, 
 			return nil
 		}); err != nil {
 			fmt.Fprintf(e.Err, "warning: recording %s as superseded by %s: %v\n", br, minted, err)
+			continue
 		}
+		marked = append(marked, br)
 	}
+	return marked
 }

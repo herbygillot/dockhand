@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 // intentAction is the one road every write intent travels, and the
@@ -52,27 +54,50 @@ type intentAction struct {
 	// run existed. Only bump has one: --latest is a question for the
 	// forge, and it is settled here so that no intent ever sees the
 	// word.
-	resolve func(ctx context.Context, rs *runstate.Context, h port.Handle, f *portfetch.Fetcher, p *intent.Params) error
+	//
+	// It says what it resolved on the writer it is handed rather than
+	// on the run's stderr, because where that sentence goes depends on
+	// how many ports are being asked about. One port says it to the
+	// user; a sweep of four hundred says it four hundred times from
+	// four hundred goroutines, which is both a data race and a
+	// transcript nobody can read.
+	//
+	// The Manners it is handed decide how hard the forge is asked, for
+	// the same reason: one port needs none of it, and the four hundred
+	// that arrive at the same forge in the same minute need all of it.
+	// The zero value is the single-port road, so nothing about one
+	// invocation changes.
+	resolve func(ctx context.Context, rs *runstate.Context, w io.Writer, h port.Handle, f *portfetch.Fetcher, p *intent.Params, m upstream.Manners) error
 }
 
 var _ Action = intentAction{}
 
+// Execute resolves the selector and takes one of two roads.
+//
+// Arity decides, and only arity. A selector that named one port is the
+// single-port road exactly as it always was: the same prose on the same
+// streams, the same exit codes, no row and no census. That a sweep of
+// one is internally the same thing is true and must stay invisible —
+// the live proof drives single targets and every golden pins one.
+//
+// A bare token that names both a category and a port stays ambiguous
+// here for the same reason. Where it expands to exactly one port, that
+// is what `bump guile` has always meant and it keeps meaning it; the
+// refusal the collision deserves belongs to the plural road, where the
+// cost of guessing wrong is hundreds of branches.
 func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
-	targets, err := resolveTargets(rs, false, []string{a.params.Target})
+	res, err := resolveSelector(ctx, rs, a.params.Target)
 	if err != nil {
 		return err
 	}
-	if len(targets) != 1 {
-		// --replace says the same thing in its own terms, because with
-		// --replace the arity is not a formality: a category name that
-		// expanded to nine ports is nine in-flight branches the user did
-		// not picture demolishing.
-		if a.opts.OnInFlight == engine.Replace {
-			return usagef("--replace replaces one port's in-flight branch; %q names %d",
-				a.params.Target, len(targets))
-		}
-		return usagef("%s takes exactly one port; %q names %d", a.def.Name, a.params.Target, len(targets))
+	if len(res.Targets) == 1 {
+		return a.single(ctx, rs, res.Targets[0])
 	}
+	return a.many(ctx, rs, res)
+}
+
+// single is the one-port road: plan it, show it, realize it.
+func (a intentAction) single(ctx context.Context, rs *runstate.Context, target tree.Target) error {
 	ev, err := rs.Evaluator(ctx)
 	if err != nil {
 		return err
@@ -81,7 +106,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if err != nil {
 		return err
 	}
-	h := port.New(targets[0], ev).WithTempDir(root)
+	h := port.New(target, ev).WithTempDir(root)
 
 	// The fetcher is acquired only for planners that read the network,
 	// and handed on as the interface — nil stays a nil interface, not a
@@ -100,9 +125,12 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// version behind in the catalogue it was built from.
 	params := a.params
 	params.Tools = rs.Tools
-	params.Dependents = dependentRoster(rs, targets[0])
+	params.Dependents = dependentRoster(rs, target)
 	if a.resolve != nil && params.Riders != intent.RidersOnly {
-		if err := a.resolve(ctx, rs, h, pf, &params); err != nil {
+		// The zero Manners, which is the single port's: unpaced,
+		// uncached, and asking with git's own user agent, exactly as
+		// this road has always asked.
+		if err := a.resolve(ctx, rs, rs.Err, h, pf, &params, upstream.Manners{}); err != nil {
 			return err
 		}
 	}
@@ -155,7 +183,8 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		// nowhere.
 		opts.Verified, opts.GateProof = true, proof
 	}
-	return eng.Run(ctx, p, opts)
+	_, err = eng.Run(ctx, p, opts)
+	return err
 }
 
 // dependentRoster is what the tree's reverse index says depends on this
@@ -233,8 +262,10 @@ type intentVerb struct {
 	// engine needs. A verb with no flags of its own leaves this nil.
 	Flags func(c *cobra.Command, p *intent.Params, f *intentFlags) func() error
 	// Resolve fills in what the command line could not, with the run's
-	// handle and fetcher in hand. Only bump has one.
-	Resolve func(ctx context.Context, rs *runstate.Context, h port.Handle, f *portfetch.Fetcher, p *intent.Params) error
+	// handle and fetcher in hand. Only bump has one. Its prose goes to
+	// the writer it is given, and it asks upstream under the Manners it
+	// is given, for the reasons intentAction.resolve states.
+	Resolve func(ctx context.Context, rs *runstate.Context, w io.Writer, h port.Handle, f *portfetch.Fetcher, p *intent.Params, m upstream.Manners) error
 	// Plural declares the verb's cohort mode: it registers the flags
 	// that ask for one and returns the reader of them, which answers
 	// with the Action to run instead of the single-port road — or with
@@ -278,9 +309,18 @@ func intentCommands() []*cobra.Command {
 	return cmds
 }
 
-// intentCommand builds one verb's command. Every intent takes one port
-// and shares the realization flags, so the argument sketch, the arity
-// check, the flag set and the road they all travel are written once.
+// intentArgSketch is the one argument every write intent takes, and
+// the grammar's own forms are spelled out because a user who only ever
+// sees `<port>` never learns that the verb sweeps. One argument and not
+// several: `all` is only itself, and a caller wanting two categories
+// runs the verb twice — which is also the only way the two get their
+// own exit statuses.
+const intentArgSketch = "<port|subport|portdir|category:x|maintainer:handle|all>"
+
+// intentCommand builds one verb's command. Every intent takes one
+// selector and shares the realization flags, so the argument sketch,
+// the arity check, the flag set and the road they all travel are
+// written once.
 func intentCommand(v intentVerb) *cobra.Command {
 	var (
 		f      intentFlags
@@ -300,7 +340,7 @@ func intentCommand(v intentVerb) *cobra.Command {
 		return exactArgs(1)(cmd, args)
 	}
 	c := &cobra.Command{
-		Use:     v.Name + " <port|subport|portdir>",
+		Use:     v.Name + " " + intentArgSketch,
 		Aliases: v.Aliases,
 		Short:   v.Short,
 		Args:    arity,
