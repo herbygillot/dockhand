@@ -42,14 +42,28 @@ func (Blocks) Veto(vals info.Values) (string, bool) {
 	return "", false
 }
 
+// VetoRefresh never refuses. A refresh re-hashes the port's own
+// distfile and leaves the block alone, and the crates the block pins
+// are a different set of bytes from a different place: nothing about
+// re-recording what upstream serves for the source tarball makes the
+// recorded crate sums less true. The block's own records are subtracted
+// by Supplied, so the refresh never sees them.
+func (Blocks) VetoRefresh(info.Values) (string, bool) { return "", false }
+
+// Supplied names what the two blocks contribute, and reports a
+// malformed block as the error it is — unprefixed, because a family
+// speaks for its block and not for whichever intent happens to be
+// asking. The errors already say "vendored:" and name the block; the
+// intent that called adds its own verb at the call site, so a message
+// carries exactly one.
 func (Blocks) Supplied(_ context.Context, rc vendored.Regen) ([]string, error) {
 	supplied, err := SuppliedIn(rc.Vals.Vendored.CargoCrates)
 	if err != nil {
-		return nil, fmt.Errorf("bump: %w", err)
+		return nil, err
 	}
 	git, err := GithubSuppliedIn(rc.Vals.Vendored.CargoCratesGithub)
 	if err != nil {
-		return nil, fmt.Errorf("bump: %w", err)
+		return nil, err
 	}
 	return append(supplied, git...), nil
 }

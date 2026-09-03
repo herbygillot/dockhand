@@ -1,9 +1,12 @@
 package testenv
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRequired(t *testing.T) {
@@ -45,4 +48,15 @@ func TestNetworkIsOptIn(t *testing.T) {
 		t.Setenv("DOCKHAND_TEST_REQUIRE", c.env)
 		assert.Equal(t, c.want, required("network"), "env=%q", c.env)
 	}
+}
+
+// The prefix is derived from the discovered port-tclsh rather than
+// configured, which is what makes every gated test work on a MacPorts
+// in /opt/local and one somewhere else. Gated like the tool itself, so
+// it skips on the same condition everything derived from it does.
+func TestMacPortsPrefixIsTheInstallationTheToolWasFoundIn(t *testing.T) {
+	pfx := MacPortsPrefix(t)
+	require.NotEmpty(t, pfx)
+	_, err := os.Stat(filepath.Join(string(pfx), "bin", "port-tclsh"))
+	assert.NoError(t, err, "the prefix should contain the port-tclsh it was derived from")
 }

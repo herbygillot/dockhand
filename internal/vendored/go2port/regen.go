@@ -8,7 +8,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
 
@@ -22,7 +21,21 @@ func (Blocks) Kind() vendored.Kind { return Kind }
 
 func (Blocks) Present(vals info.Values) bool { return vals.Vendored.GoVendors != "" }
 
+// Veto never refuses: a bump moves the version, and the version is what
+// go2port needs to recompute the block from the module's own go.mod at
+// the new ref. Everything that could still go wrong is discovered with
+// the shadow in hand, and declines from Regenerate.
 func (Blocks) Veto(info.Values) (string, bool) { return "", false }
+
+// VetoRefresh always refuses, and this is the family's own reason
+// rather than the refreshing intent's — which is the point of asking
+// here. The block records a sha256 per module, computed by go2port from
+// bytes a refresh has no version move to go and fetch. Rewriting only
+// the port's own sums would leave every module line pinning whatever
+// was true before, on a Portfile that now claims to be current.
+func (Blocks) VetoRefresh(info.Values) (string, bool) {
+	return "go.vendors pins module bytes a refresh never fetches, so the block would go on vouching for what upstream replaced", true
+}
 
 // Supplied inverts rather than reimplements: the vendor distfile
 // naming lives deep in the golang PortGroup (per-forge rules in
@@ -64,7 +77,7 @@ func (Blocks) Regenerate(ctx context.Context, rc vendored.Regen) ([]edit.Edit, e
 	pkg := strings.TrimSpace(opts["go.package"])
 	ref := strings.TrimSpace(opts["git.branch"])
 	if pkg == "" || ref == "" {
-		return nil, &plan.Decline{Type: plan.VendoredBlock,
+		return nil, &vendored.Decline{Kind: Kind,
 			Detail: "go.vendors present but go.package or git.branch is empty; the module ref is unknowable"}
 	}
 	slog.Debug("regenerating go.vendors", "package", pkg, "ref", ref)

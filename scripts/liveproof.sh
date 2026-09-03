@@ -96,6 +96,13 @@ cd "$repo"
 # one, a perl5 port (transformed carrier, subports, a revision line), an
 # R port, a second cargo port, and a go2port-shaped port with a
 # go.vendors block and no revision line.
+# What this list does NOT cover: every port in it already opens with a
+# modeline, so no capture here contains a rider edit and this gate says
+# nothing about the rider fold. That path is pinned by fixture instead,
+# in internal/intent/bump's TestBumpCarriesTheModelineRider, which runs
+# a bump over a modeline-less Portfile and its modeline-carrying twin
+# and demands the same prediction from both. A port whose first line is
+# not a modeline belongs here the next time this baseline is recorded.
 ports='
 jq|sysutils/jq|1.8.2|1.8.1
 ruff|devel/ruff|0.16.5|0.16.4

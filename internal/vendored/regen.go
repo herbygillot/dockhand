@@ -44,11 +44,20 @@ type Regen struct {
 
 // Regenerator is one vendored-block family's whole story: whether a
 // context carries its block, which distfiles that block supplies (so
-// the checksum machinery leaves them alone), any reason regeneration
-// would be dishonest, and the regeneration itself. Bump iterates a
-// registry of these instead of growing an if-chain — the contract
-// exists so the third family (Zig, when its resolver lands) is a
-// registration, not another lobe on the planner.
+// the checksum machinery leaves them alone), any reason a change beside
+// the block would be dishonest, and the regeneration itself. The
+// intents iterate the registry in vendored/families instead of growing
+// an if-chain — the contract exists so the next family (Zig, when its
+// resolver lands) is a registration, not another lobe on a planner.
+//
+// There are two refusals rather than one because the two intents ask
+// different questions of the same block. A bump regenerates it, so what
+// it needs to know is whether regenerating would state something untrue.
+// A refresh has no version move to hang a regeneration on: it changes
+// the port's own checksums and leaves the block exactly where it is, so
+// what it needs to know is whether the block can stay put while they
+// move. A family can answer yes to one and no to the other, and cargo
+// does.
 type Regenerator interface {
 	// Kind names the block.
 	Kind() Kind
@@ -58,6 +67,10 @@ type Regenerator interface {
 	// any network is spent; ok reports a veto. The zero Regenerator
 	// behaviour is no veto.
 	Veto(vals info.Values) (reason string, ok bool)
+	// VetoRefresh returns a reason a checksum refresh beside this block
+	// must refuse — the port's own distfiles re-hashed while the block
+	// keeps the values it has; ok reports a veto.
+	VetoRefresh(vals info.Values) (reason string, ok bool)
 	// Supplied names the distfiles the block contributes — the set the
 	// checksum machinery must not treat as the port's own. It runs
 	// before any fetch, so rc.Fetched is empty here.

@@ -9,13 +9,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 func newPlatformEvaluator(t *testing.T, p info.Platform) *Evaluator {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	e, err := Start(ctx, testPrefix(t), WithPlatform(p))
+	e, err := Start(ctx, testenv.MacPortsPrefix(t), WithPlatform(p))
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	return e

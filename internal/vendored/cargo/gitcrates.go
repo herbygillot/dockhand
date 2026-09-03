@@ -11,7 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 	"github.com/herbygillot/dockhand/internal/vendored"
@@ -87,18 +86,18 @@ func gitCrates(lock []byte) ([]gitCrate, error) {
 		}
 		m := gitSourceRE.FindStringSubmatch(src)
 		if m == nil {
-			return nil, &plan.Decline{Type: plan.VendoredBlock,
+			return nil, &vendored.Decline{Kind: vendored.CargoCratesGithub,
 				Detail: fmt.Sprintf("%s has a git source this tool cannot read: %s", name, src)}
 		}
 		url, query, rev := m[1], m[2], m[3]
 		repo, ok := githubRepo(url)
 		if !ok {
-			return nil, &plan.Decline{Type: plan.VendoredBlock,
+			return nil, &vendored.Decline{Kind: vendored.CargoCratesGithub,
 				Detail: fmt.Sprintf("%s is vendored from %s; cargo.crates_github expresses GitHub sources only", name, url)}
 		}
 		branch, ok := strings.CutPrefix(query, "branch=")
 		if !ok || branch == "" || strings.Contains(branch, "&") {
-			return nil, &plan.Decline{Type: plan.VendoredBlock,
+			return nil, &vendored.Decline{Kind: vendored.CargoCratesGithub,
 				Detail: fmt.Sprintf("%s is pinned by %q; cargo.crates_github expresses branch references only", name, query)}
 		}
 		out = append(out, gitCrate{Name: name, Repo: repo, Branch: branch, Revision: rev})
@@ -187,11 +186,11 @@ func buildGithubBlock(ctx context.Context, rc vendored.Regen, crates []gitCrate)
 		// before any branch is minted.
 		manifest, _, merr := distfile.Extract(ctx, rc.Tools, []string{dest}, "", "Cargo.toml")
 		if merr != nil {
-			return "", &plan.Decline{Type: plan.VendoredBlock,
+			return "", &vendored.Decline{Kind: vendored.CargoCratesGithub,
 				Detail: fmt.Sprintf("%s's repository %s@%s carries no readable root Cargo.toml", c.Name, c.Repo, shortRev(c.Revision))}
 		}
 		if !packageManifest(manifest) {
-			return "", &plan.Decline{Type: plan.VendoredBlock,
+			return "", &vendored.Decline{Kind: vendored.CargoCratesGithub,
 				Detail: fmt.Sprintf("%s lives in a cargo workspace at %s; cargo.crates_github imports a repository as one package, and cargo refuses a virtual manifest", c.Name, c.Repo)}
 		}
 		fmt.Fprintf(&b, "\n    %s %s %s \\", c.Name, c.Repo, c.Branch)

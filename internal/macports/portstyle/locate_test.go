@@ -1,13 +1,13 @@
 package portstyle
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 // All tests are hermetic: values are handcrafted or known fixture facts,
@@ -41,9 +41,7 @@ func mustDecline(t *testing.T, src string, vals info.Values, want DeclineType) *
 
 func fixture(t *testing.T, name string) string {
 	t.Helper()
-	src, err := os.ReadFile("../testdata/portfiles/" + name)
-	require.NoError(t, err)
-	return string(src)
+	return string(testenv.Portfile(t, name))
 }
 
 func TestLocateVersionLine(t *testing.T) {

@@ -1,15 +1,8 @@
 package cmd
 
 import (
-	"context"
-
-	"github.com/spf13/cobra"
-
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/intent/refresh"
-	"github.com/herbygillot/dockhand/internal/macports/port"
-	"github.com/herbygillot/dockhand/internal/macports/portfetch"
-	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
 // refreshCaution is printed with every refresh summary. The intent
@@ -21,29 +14,19 @@ const refreshCaution = "note: these checksums changed at an UNCHANGED version â€
 	"the artifact. Establish why before this change goes anywhere public: it may\n" +
 	"be a benign re-tar, or it may be a supply-chain event.\n"
 
-// RefreshChecksums builds the refresh-checksums subcommand: make a
-// port's recorded checksums true again at its unchanged version.
-func RefreshChecksums() *cobra.Command {
-	var f intentFlags
-	c := &cobra.Command{
-		Use:     "refresh-checksums <port|subport|portdir>",
+// refreshVerb is the catalogue's entry for making a port's recorded
+// checksums true again at its unchanged version. It is the one verb the
+// registration shape reproduces with nothing left over: no flags of its
+// own, and nothing to resolve.
+var refreshVerb = intentVerb{
+	Definition: intent.Definition{
+		Name:    "refresh-checksums",
 		Aliases: []string{"refresh"},
-		Short:   "Re-fetch a port's distfiles and repair its recorded checksums",
-		Args:    exactArgs(1),
-		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
-			if err := f.check(); err != nil {
-				return nil, err
-			}
-			return intentAction{
-				verb: "refresh-checksums", target: args[0],
-				opts: f.opts, verify: f.verifyIt, fetches: true,
-				caution: refreshCaution,
-				prepare: func(context.Context, *runstate.Context, port.Handle, *portfetch.Fetcher) (plan.Planner, error) {
-					return refresh.Refresh{}, nil
-				},
-			}, nil
-		}),
-	}
-	f.register(c)
-	return c
+		Fetches: true,
+		Caution: refreshCaution,
+		New: func(p intent.Params) (intent.Planner, error) {
+			return refresh.Refresh{ClosesTicket: p.ClosesTicket}, nil
+		},
+	},
+	Short: "Re-fetch a port's distfiles and repair its recorded checksums",
 }

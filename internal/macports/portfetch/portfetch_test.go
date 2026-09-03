@@ -16,14 +16,12 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 func newFetcher(t *testing.T) *Fetcher {
 	t.Helper()
-	tclsh := testenv.PortTclsh(t)
-	f, err := New(context.Background(), prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))), tempdir.Root{})
+	f, err := New(context.Background(), testenv.MacPortsPrefix(t), tempdir.Root{})
 	require.NoError(t, err)
 	t.Cleanup(f.Close)
 	return f

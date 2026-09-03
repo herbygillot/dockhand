@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -31,10 +32,27 @@ type promoteAction struct {
 
 var _ Action = promoteAction{}
 
+// promoteClosesNote is what a late ticket costs, said once at the point
+// it is typed.
+//
+// The commit message was written at mint and promote does not rewrite
+// it: an amend would move the sha out from under a branch the user may
+// have built on, and out from under the evidence that names it. So the
+// ticket reaches the pull request body and nothing else, and the
+// checklist box that asks for the ticket in the COMMIT message stays
+// unchecked — honestly, because the commit does not have it.
+const promoteClosesNote = "note: --closes reaches the pull request body only. The commit message was\n" +
+	"written when the branch was minted and is not rewritten here, so the\n" +
+	"\"referenced existing tickets ... in commit message\" box stays unchecked.\n" +
+	"Plan the change with --closes to put the trailer in the commit itself.\n"
+
 func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	repo, err := rs.Repo(ctx)
 	if err != nil {
 		return err
+	}
+	if a.closes != "" {
+		fmt.Fprint(rs.Err, promoteClosesNote)
 	}
 	return rs.Deps().Promote(ctx, repo, a.target, engine.PromoteOpts{
 		Remote:    a.remote,

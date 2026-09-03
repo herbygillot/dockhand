@@ -247,7 +247,16 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	if err := e.push(ctx, repo, forkRemote, forkOwner, branch, o.Force); err != nil {
 		return err
 	}
-	body := render.PRBody(n, verified, o.Closes, len(ownCommits), checkedPRs)
+	// The ticket the mint already recorded stands unless this promotion
+	// names another. A change planned with --closes carries the trailer
+	// in its commit and the number in its record; making the promoter
+	// retype it would be asking twice for the same fact and getting a
+	// body that disagrees with the commit for the trouble.
+	closes := o.Closes
+	if closes == "" {
+		closes = n.ClosesTicket
+	}
+	body := render.PRBody(n, verified, closes, len(ownCommits), checkedPRs)
 	if own.Found && own.Open {
 		if o.Force {
 			// A replaced branch usually means a new version: the PR's

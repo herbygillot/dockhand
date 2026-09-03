@@ -4,8 +4,14 @@
 // new distfiles for checksums — so the plan it emits is complete and
 // its prediction exact. The vocabulary it speaks at its boundaries
 // lives where each piece belongs: declines and edit realization in
-// plan, the fetcher seam in distfile. internal/intent is a namespace,
-// not a package — it holds the intents and nothing else.
+// plan, the fetcher seam in distfile, and the shape and tail every
+// intent shares in the parent package.
+//
+// What is here is what only a bump knows — locating the version
+// carrier and proving it drives the value, subtracting what a vendored
+// block supplies, deciding what must have moved for a bump to have
+// happened. The apply-shadow-diff-guard-assemble tail it used to end
+// with is intent.Finish.
 package bump
 
 import (
@@ -21,6 +27,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -30,8 +37,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/vendored"
-	"github.com/herbygillot/dockhand/internal/vendored/cargo"
-	"github.com/herbygillot/dockhand/internal/vendored/go2port"
+	"github.com/herbygillot/dockhand/internal/vendored/families"
 )
 
 // Bump is the intent to move a port to a new upstream version. The port
@@ -39,7 +45,7 @@ import (
 // desired end state, the handle names the subject.
 //
 // The assertion is the catalogue's shape (D20) made mechanical: every
-// intent is a plan.Planner, and one that drifts fails to build.
+// intent is an intent.Planner, and one that drifts fails to build.
 type Bump struct {
 	Version string
 	// Force plans a bump to a version the port already carries. The
@@ -55,9 +61,12 @@ type Bump struct {
 	// lockfile or go.mod out of a distfile. The command hands in the
 	// run's finder; a planner that reads no distfile never touches it.
 	Tools *tool.Finder
+	// ClosesTicket is the Trac ticket this bump closes, bound for the
+	// minted commit's trailer. It changes nothing about what is planned.
+	ClosesTicket string
 }
 
-var _ plan.Planner = Bump{}
+var _ intent.Planner = Bump{}
 
 // bumpMayChange are the fields a bump is allowed to move. Everything
 // else moving is evidence the edits did more than asked, and the plan
@@ -76,7 +85,6 @@ var bumpMayChange = map[info.Field]bool{
 // set. The returned error is an *plan.Decline or *portstyle.Decline
 // when the refusal is a judgment rather than a failure.
 func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (*plan.Plan, error) {
-	portdir := h.Target.Portdir
 	src, cst, err := h.Source()
 	if err != nil {
 		return nil, err
@@ -163,12 +171,37 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		slog.Debug("carrier proven by counterfactual", "style", style.String(), "span", carrier)
 	}
 
+	// A forced re-derivation exists to catch a stealth update: fetch the
+	// distfiles again and see whether they still hash to what the
+	// Portfile records. A port that records no checksums has nothing to
+	// compare, and with the version staying put there is nothing else
+	// downstream to re-derive — no fetch, no vendored block, no declared
+	// toolchain floor, since all three hang off the recorded sums. So
+	// this run cannot produce a plan that claims anything, and the
+	// honest answer is the one the tail's witness rule asks an intent
+	// for: decline first, in the port's own terms, rather than let a
+	// refusal about dockhand's falsifiability rule reach the user in the
+	// failure band.
+	if !moving && len(vals.Checksums) == 0 {
+		return nil, &plan.Decline{Type: plan.AlreadyCurrent,
+			Detail: fmt.Sprintf("%s records no checksums, so a re-derivation at %s has nothing to fetch and nothing to compare", vals.Name, b.Version)}
+	}
+
+	// What this run spent, named for the case where the shadow ends up
+	// showing nothing at all. A bump that fetched holds the strongest
+	// kind of evidence — bytes off the network, hashed — and a bump that
+	// only rewrote the carrier still did something the shadow can
+	// contradict, which accept below then says in the intent's own
+	// words. The third case, a forced run that would spend neither, is
+	// the decline above and never reaches the tail.
+	witness := ""
+	if moving {
+		witness = "the version carrier was rewritten and the Portfile re-evaluated"
+	}
+
 	// The version edit.
 	var edits []edit.Edit
 	checksumsViaSet := false
-	if me, ok := modelineEdit(src); ok {
-		edits = append(edits, me)
-	}
 	if moving {
 		edits = append(edits, edit.Edit{
 			Start: carrier.Start, End: carrier.End,
@@ -247,7 +280,10 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			}
 			sup, serr := r.Supplied(ctx, rc)
 			if serr != nil {
-				return nil, serr
+				// A family speaks for its block and names it; which intent
+				// was asking is this package's to say, and saying it here
+				// is what keeps one prefix per message.
+				return nil, fmt.Errorf("bump: %w", serr)
 			}
 			supplied = append(supplied, sup...)
 		}
@@ -294,6 +330,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			sums[file] = s
 			fetched = append(fetched, dest)
 		}
+		witness = "the target version's distfiles were fetched and hashed"
 		recorded, err := checksums.Parse(checksumOldTokens)
 		if err != nil {
 			return nil, fmt.Errorf("bump: %w", err)
@@ -329,69 +366,53 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		}
 	}
 
-	// Shadow the full edit set for the exact prediction.
-	finalSrc, err := edit.Apply(src, edits)
-	if err != nil {
-		return nil, err
-	}
-	final, cleanup, err := h.Shadow(finalSrc)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	after, err := final.Snapshot(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("bump: shadow evaluation: %w", err)
-	}
-	predicted := before.Diff(after)
-	slog.Debug("shadow prediction", "changed", len(predicted.Changed), "added", len(predicted.Added), "removed", len(predicted.Removed))
-
-	// A checksum located in a set variable stands outside any checksums
-	// command, so the corroboration that placed it is one subport's
-	// evaluation — and two subports can record an identical value. The
-	// total shadow is the proof the aliasing hazard demands: with such
-	// an edit in play, no context but the bumped one may move at all.
-	if checksumsViaSet {
-		if key, moved := predicted.OtherContext(vals.Name); moved {
-			return nil, &plan.Decline{Type: plan.UnexpectedChange,
-				Detail: fmt.Sprintf("a checksum edit landed in a set variable, and %s moved with it; the carrier is ambiguous", key.Subport)}
-		}
-	}
-
-	if err := b.accept(vals, predicted, moving, exact); err != nil {
-		return nil, err
-	}
-
-	slices.SortFunc(edits, func(a, b edit.Edit) int { return a.Start - b.Start })
-	return &plan.Plan{
-		Format:         plan.Format,
-		Intent:         "bump",
-		Port:           vals.Name,
-		Slug:           vals.Name + "-" + b.Version,
-		Summary:        fmt.Sprintf("%s: update to %s", vals.Name, b.Version),
-		Portdir:        portdir,
-		Subport:        h.Target.Subport,
-		PortfileSHA256: edit.FileSHA256(src),
-		Edits:          edits,
-		Predicted:      plan.FromDelta(predicted),
-	}, nil
+	// Everything from here — shadow the full edit set, diff it, refuse
+	// what the prediction did not promise, fold in the riders, assemble
+	// — is the tail every intent runs, and it is written once. What is
+	// left in this package is what only a bump knows: which spans to
+	// rewrite, and what has to have moved for a bump to have happened.
+	return intent.Finish(ctx, h, src, edits,
+		intent.Identity{
+			Intent:       "bump",
+			Slug:         vals.Name + "-" + b.Version,
+			Summary:      fmt.Sprintf("%s: update to %s", vals.Name, b.Version),
+			ClosesTicket: b.ClosesTicket,
+		},
+		intent.FinishOpts{
+			Before:    before,
+			Vals:      vals,
+			CST:       cst,
+			MayChange: bumpMayChange,
+			Accept: func(predicted info.Delta) error {
+				return b.accept(vals, predicted, moving, exact)
+			},
+			ViaSet:  checksumsViaSet,
+			Riders:  bumpRiders,
+			Witness: witness,
+		})
 }
 
-// accept is the bump's judgment of its own predicted delta. moving and
-// exact are the carrier's terms: moving says the carrier literal was
-// rewritten, and exact says carrier and evaluated vocabulary coincide —
-// when they do not (a transform sits between), the evaluated version's
-// new value is the Portfile's business, and movement is the
-// requirement.
-func (b Bump) accept(vals info.Values, predicted info.Delta, moving, exact bool) error {
-	if len(predicted.Added) > 0 || len(predicted.Removed) > 0 {
-		return &plan.Decline{Type: plan.SubportsChanged,
-			Detail: fmt.Sprintf("%d added, %d removed", len(predicted.Added), len(predicted.Removed))}
-	}
+// bumpRiders are the rules a bump adopts from Examine. The modeline is
+// the only one there is, and a bump is where it belongs: a version bump
+// already rewrites the file's most-read lines, so a missing editor
+// header costs nothing extra to add and no reviewer has to think about
+// it separately.
+var bumpRiders = map[intent.Rule]bool{intent.RuleModeline: true}
 
-	key := info.SubportKey{Subport: vals.Name}
+// accept is the bump's judgment of its own predicted delta — the half
+// of the old tail that is genuinely this intent's. The structural
+// questions it used to ask first and last, that no context appeared or
+// vanished and that nothing outside bumpMayChange moved, are Finish's
+// now and identical for every intent.
+//
+// moving and exact are the carrier's terms: moving says the carrier
+// literal was rewritten, and exact says carrier and evaluated
+// vocabulary coincide — when they do not (a transform sits between),
+// the evaluated version's new value is the Portfile's business, and
+// movement is the requirement.
+func (b Bump) accept(vals info.Values, predicted info.Delta, moving, exact bool) error {
 	var versionChanged, versionReached, distfilesMoved, checksumsMoved bool
-	for _, ch := range predicted.Changed[key] {
+	for _, ch := range intent.OwnChanges(predicted, vals.Name) {
 		switch ch.Field {
 		case info.FieldVersion:
 			versionChanged = true
@@ -435,15 +456,6 @@ func (b Bump) accept(vals info.Values, predicted info.Delta, moving, exact bool)
 	} else if versionChanged {
 		return &plan.Decline{Type: plan.UnexpectedChange,
 			Detail: fmt.Sprintf("version moved from %s during a re-derivation at the same version", vals.Version)}
-	}
-
-	for key, changes := range predicted.Changed {
-		for _, ch := range changes {
-			if !bumpMayChange[ch.Field] {
-				return &plan.Decline{Type: plan.UnexpectedChange,
-					Detail: fmt.Sprintf("%s: %s", key.Subport, ch.Field)}
-			}
-		}
 	}
 	return nil
 }
@@ -541,29 +553,13 @@ func ResolveLatest(ctx context.Context, tools *tool.Finder, h port.Handle, f *po
 	return report.Latest, report, nil
 }
 
-// regenerators is the registry of vendored-block families — the
-// closed list bump consults instead of an if-chain, so the next
-// family is a registration here rather than another lobe on the
-// planner.
-var regenerators = []vendored.Regenerator{cargo.Blocks{}, go2port.Blocks{}}
-
-// Modeline is the editor header the MacPorts best-practices page
-// prescribes; a bump adds it to a Portfile that opens without one.
-const Modeline = "# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4"
-
-// modelineEdit inserts the modeline when the Portfile's very first
-// line is not one. Detection is deliberately loose — any leading
-// comment carrying an emacs -*- block or a vim: stanza counts — so an
-// existing modeline in either dialect, however configured, is never
-// second-guessed or rewritten.
-func modelineEdit(src []byte) (edit.Edit, bool) {
-	first, _, _ := bytes.Cut(src, []byte("\n"))
-	if bytes.HasPrefix(first, []byte("#")) &&
-		(bytes.Contains(first, []byte("-*-")) || bytes.Contains(first, []byte("vim:")) || bytes.Contains(first, []byte("vi:"))) {
-		return edit.Edit{}, false
-	}
-	return edit.Edit{Start: 0, End: 0, Old: "", New: Modeline + "\n", Reason: "modeline"}, true
-}
+// regenerators is the registry of vendored-block families — the closed
+// list bump consults instead of an if-chain. It lives in
+// vendored/families now that a refresh consults the same list: a
+// registry owned by one intent is a registry the other has to reach
+// into. What families adds beyond the list is the translation, so a
+// family's refusal arrives here already wearing the plan's vocabulary.
+var regenerators = families.All()
 
 // zigPackageHash is the shape of a Zig 0.12+ package hash as ports pin
 // them: name, semver, and a long base64url fingerprint, e.g.

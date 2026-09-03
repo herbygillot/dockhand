@@ -85,8 +85,7 @@ func TestWithVersionRecordsAStatedEmptyVersion(t *testing.T) {
 // One session answers both halves: the fetcher's vercmp and the
 // evaluator's snapshot, over the same port-tclsh.
 func TestStartServesBothHalvesInOneSession(t *testing.T) {
-	tclsh := testenv.PortTclsh(t)
-	pfx := prefix.Prefix(filepath.Dir(filepath.Dir(tclsh)))
+	pfx := testenv.MacPortsPrefix(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	s, err := Start(ctx, pfx)

@@ -2,7 +2,6 @@ package portstyle
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -39,9 +38,7 @@ func TestPerl5ConvertVersion(t *testing.T) {
 // extracted from the fixture and evaluated in a plain tclsh: the oracle is
 // never dockhand, converter included.
 func TestPerl5ConvertVersionDifferential(t *testing.T) {
-	src, err := os.ReadFile("../testdata/portgroups/perl5-1.0.tcl")
-	require.NoError(t, err)
-	text := string(src)
+	text := string(testenv.Portgroup(t, "perl5-1.0.tcl"))
 	i := strings.Index(text, "proc perl5_convert_version")
 	require.Positive(t, i)
 	j := strings.Index(text[i:], "\n}")

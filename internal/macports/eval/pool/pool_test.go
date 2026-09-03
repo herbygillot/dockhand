@@ -14,14 +14,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
-// testPrefix derives the installation prefix from the discovered
-// port-tclsh, skipping when the machine has none.
-func testPrefix(t *testing.T) prefix.Prefix {
-	t.Helper()
-	tclsh := testenv.PortTclsh(t)
-	return prefix.Prefix(filepath.Dir(filepath.Dir(tclsh)))
-}
-
 func portdirWith(t *testing.T, portfile string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -31,7 +23,7 @@ func portdirWith(t *testing.T, portfile string) string {
 
 func TestPoolLifecycle(t *testing.T) {
 	ctx := context.Background()
-	p, err := New(ctx, testPrefix(t), 2)
+	p, err := New(ctx, testenv.MacPortsPrefix(t), 2)
 	require.NoError(t, err)
 	defer p.Close()
 	evs := p.Evaluators()

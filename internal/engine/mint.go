@@ -135,7 +135,7 @@ type Minted struct {
 // no place to keep any of it — and a --no-verify branch therefore
 // gains a note where it used to have none.
 func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, error) {
-	branch, message := git.MintBranchName(p.Slug), p.Summary
+	branch, message := git.MintBranchName(p.Slug), commitMessage(p)
 	force := o.OnInFlight == Replace
 	hasEdits := len(p.Edits) > 0
 	// The decision is asked twice, and the order is the reason: the
@@ -196,6 +196,36 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 	return m, nil
 }
 
+// tracTicket is where a MacPorts ticket lives. The pull request body
+// writes the same URL from the same number; until render owns the whole
+// commit message, the two spellings are two — and this is the one that
+// goes somewhere nothing rewrites.
+const tracTicket = "https://trac.macports.org/ticket/"
+
+// commitMessage is what the minted commit says: the plan's summary as
+// its subject, and — when the intent was given a ticket — the Closes:
+// trailer the project's commit guidelines ask for.
+//
+// It is composed here rather than by the planner because Summary is the
+// plan's identity and a trailer is not: the plan's bytes are a hash
+// gate, and a subject that grew a second paragraph would be a different
+// plan for the same change. The ticket rides as its own field, and the
+// realizer is where a field becomes a message.
+//
+// The full URL rather than the bare number, because that is what the
+// guidelines ask for, and because the checklist box a reviewer ticks
+// says "with full URL".
+func commitMessage(p *plan.Plan) string {
+	if p.ClosesTicket == "" {
+		return p.Summary
+	}
+	// A blank line before it: git reads a trailer only in the last
+	// paragraph, and a subject line is a paragraph. No trailing newline,
+	// because git supplies one and a summary-only message has none —
+	// the two messages differ by the trailer and by nothing else.
+	return fmt.Sprintf("%s\n\nCloses: %s%s", p.Summary, tracTicket, p.ClosesTicket)
+}
+
 // bear opens the minted commit's record: who the change is about,
 // where it is bound, who asked, and what it was minted on top of.
 //
@@ -221,6 +251,10 @@ func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string,
 			Target:  targetIn(p.Slug, p.Port),
 		}}
 		r.Destination = dest
+		// The same ticket the trailer names, so that the pull request
+		// body can cite it without being told again — and so that a
+		// reader of the note can see what the commit claims to close.
+		r.ClosesTicket = p.ClosesTicket
 		// A person ran the verb. The machine value exists for the sweep,
 		// which has no caller yet, and neither value is ever an input to
 		// a gate: a field that could widen what the unattended road is

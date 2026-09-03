@@ -270,3 +270,63 @@ func TestPumpFindsAQueuedRunThatNoJobNames(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, record.Running, runOf(again, "Testos").State)
 }
+
+// The Closes: trailer, from the plan's field to the commit's bytes.
+//
+// It is the whole of ruling 5: the ticket reaches the commit message,
+// where the project's guidelines want it and where nothing rewrites it,
+// and it reaches nothing else. The subject is still the plan's summary
+// and the branch is still named after the change.
+func TestMintWritesTheClosesTrailer(t *testing.T) {
+	ctx := context.Background()
+	repo := gittest.PortsTree(t, realTools)
+	var out, errb bytes.Buffer
+	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
+
+	p := bumpPlan(t, repo, "bump", "1.8")
+	p.ClosesTicket = "71234"
+	require.NoError(t, eng.Run(ctx, p, Policy{Destination: record.ToBranch}))
+
+	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")
+	require.NoError(t, err, "the branch is named after the change, not after the ticket")
+
+	subject, err := repo.Subject(ctx, tip)
+	require.NoError(t, err)
+	assert.Equal(t, "jq: update to 1.8", subject, "a trailer is not a subject")
+	assert.Equal(t, "jq: update to 1.8\n\nCloses: https://trac.macports.org/ticket/71234\n",
+		commitBody(t, repo, tip), "the full URL, in the last paragraph, where git reads a trailer")
+
+	n, err := ledger.Open(repo).Read(ctx, tip)
+	require.NoError(t, err)
+	assert.Equal(t, "71234", n.ClosesTicket,
+		"the record carries the number so the pull request body need not be told again")
+}
+
+// A plan with no ticket mints exactly the message it always did.
+func TestMintWithoutATicketIsTheSummaryAlone(t *testing.T) {
+	ctx := context.Background()
+	repo := gittest.PortsTree(t, realTools)
+	var out, errb bytes.Buffer
+	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
+
+	require.NoError(t, eng.Run(ctx, bumpPlan(t, repo, "bump", "1.8"),
+		Policy{Destination: record.ToBranch}))
+
+	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")
+	require.NoError(t, err)
+	assert.Equal(t, "jq: update to 1.8\n", commitBody(t, repo, tip))
+
+	n, err := ledger.Open(repo).Read(ctx, tip)
+	require.NoError(t, err)
+	assert.Empty(t, n.ClosesTicket)
+}
+
+// commitBody is a commit's whole message, which Repo.Subject
+// deliberately is not: the trailer is the part below the subject, so
+// reading only the first line would pass whatever this writes.
+func commitBody(t *testing.T, repo *git.Repo, sha string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", repo.Root, "log", "-1", "--format=%B", sha).Output()
+	require.NoError(t, err)
+	return string(out)
+}

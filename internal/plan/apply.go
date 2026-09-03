@@ -11,9 +11,32 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
+
+// Snapshotter evaluates every context a portdir defines. Apply asks
+// twice — once before the write and once after — and the difference
+// between the two answers is the observed delta the prediction has to
+// equal.
+//
+// It is an interface here rather than the evaluator itself because
+// this parameter was one of the three references that put the Tcl
+// shell in plan's dependency set, and through plan in the dependency
+// set of everything that prints a plan — render included, whose whole
+// promise is that a published byte is a function of its arguments.
+// Naming the evaluator bought nothing: of its dozen methods Apply
+// calls this one, twice. Naming the question instead makes that
+// promise a property of the import graph rather than a habit, and it
+// costs nothing, because the signature below is the evaluator's
+// verbatim and the evaluator satisfies it with no adapter.
+//
+// The variants parameter stays even though Apply passes "" at both
+// calls. Narrowing it to the two arguments Apply uses would end that
+// free satisfaction and put a shim at every call site, which is a
+// worse trade than one unused parameter.
+type Snapshotter interface {
+	Snapshot(ctx context.Context, portdir string, variants info.VariantSet) (info.Snapshot, error)
+}
 
 // ErrDrift reports that the Portfile no longer matches the plan's
 // precondition: it changed between plan time and apply time, and the
@@ -50,7 +73,7 @@ func (p *Plan) Materialize(src []byte) ([]byte, error) {
 //
 // The returned delta is the observed one, for reporting; on success it
 // equals the prediction by construction.
-func (p *Plan) Apply(ctx context.Context, ev *eval.Evaluator) (info.Delta, error) {
+func (p *Plan) Apply(ctx context.Context, ev Snapshotter) (info.Delta, error) {
 	path := filepath.Join(p.Portdir, macports.PortfileName)
 	src, err := os.ReadFile(path)
 	if err != nil {

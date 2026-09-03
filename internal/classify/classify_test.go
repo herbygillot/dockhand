@@ -12,17 +12,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 func newEvaluator(t *testing.T) *eval.Evaluator {
 	t.Helper()
-	tclsh := testenv.PortTclsh(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	e, err := eval.Start(ctx, prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))))
+	e, err := eval.Start(ctx, testenv.MacPortsPrefix(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	return e
@@ -40,13 +38,6 @@ func portdir(t *testing.T, portfile string) string {
 	return dir
 }
 
-func fixturedir(t *testing.T, name string) string {
-	t.Helper()
-	src, err := os.ReadFile("../macports/testdata/portfiles/" + name)
-	require.NoError(t, err)
-	return portdir(t, string(src))
-}
-
 func TestClassifyLiteralVersion(t *testing.T) {
 	e := newEvaluator(t)
 	r := Port(context.Background(), handle(e, portdir(t, "PortSystem 1.0\nname x\nversion 1.2.3\ncategories devel\n")))
@@ -57,7 +48,7 @@ func TestClassifyLiteralVersion(t *testing.T) {
 
 func TestClassifyPortgroupStyle(t *testing.T) {
 	e := newEvaluator(t)
-	r := Port(context.Background(), handle(e, fixturedir(t, "math__ivy")))
+	r := Port(context.Background(), handle(e, testenv.PortfileDir(t, "math__ivy")))
 	require.Equal(t, Located, r.Outcome)
 	require.Equal(t, portstyle.GoSetup, r.Style)
 }

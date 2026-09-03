@@ -50,40 +50,73 @@ func Check(ctx context.Context, tools *tool.Finder, h port.Handle, f *portfetch.
 		// empty.
 	}
 
-	if repo, ok := coords(style, opts); ok {
-		// Releases first, tags as the fallback: a repo that publishes
-		// releases has said authoritatively which tags count. The name
-		// heuristic still judges what remains — upstream flags are a
-		// filter, not a verdict (mergestat marks betas as releases).
-		if versions, ok := Releases(ctx, gh, repo); ok {
-			slog.Debug("forge releases", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
-			obs.ForgeVersions, obs.Authoritative = versions, true
-		} else {
-			versions, err := Tags(ctx, tools, repo)
-			if err != nil {
-				return Report{}, err
-			}
-			slog.Debug("forge tags", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
-			obs.ForgeVersions = versions
+	// The coordinates are derived once and carried: the corroboration
+	// below needs the same repository, and deriving it twice was a
+	// second chance for the two reads to disagree about what port this
+	// even is.
+	repo, onAForge := coords(style, opts)
+	if onAForge {
+		versions, authoritative, err := observeForge(ctx, tools, gh, repo)
+		if err != nil {
+			return Report{}, err
 		}
+		obs.ForgeVersions, obs.Authoritative = versions, authoritative
 	}
 
 	slog.Debug("upstream observation", "livecheck", obs.Livecheck, "disabled", obs.LivecheckDisabled, "forgeVersions", len(obs.ForgeVersions))
 	report := Judge(obs)
-	if report.Verdict == LivecheckAhead && obs.Authoritative {
+	if onAForge && report.Verdict == LivecheckAhead && obs.Authoritative {
 		// Livecheck outran the releases feed, which only speaks for
 		// tags upstream blessed as releases — a version tagged but
 		// never released (the gopass satellite repos) is invisible to
 		// it. The tags themselves are the second witness; best-effort,
 		// because the corroboration is a refinement of a verdict
 		// already reached, not a resolver of its own.
-		if repo, ok := coords(style, opts); ok {
-			if tags, terr := Tags(ctx, tools, repo); terr == nil {
-				report = corroborate(report, tags)
-			} else {
-				slog.Debug("tag corroboration unavailable", "err", terr)
-			}
+		//
+		// Authoritative is only ever set from a releases feed, so the
+		// tags have not been read yet and this is the first ask, not a
+		// second one. The forge test is repeated rather than inferred
+		// from that: the repository is what Tags is asked about, and a
+		// guard on the thing being used holds whatever a later edit does
+		// to where Authoritative is assigned.
+		if tags, terr := Tags(ctx, tools, repo); terr == nil {
+			report = corroborate(report, tags)
+		} else {
+			slog.Debug("tag corroboration unavailable", "err", terr)
 		}
 	}
 	return report, nil
+}
+
+// observeForge asks the forge what versions exist, and reports whether
+// the answer is authoritative.
+//
+// Two witnesses, consulted in order, and the order is the whole rule.
+// Releases first: a repository that publishes them has said which of
+// its tags it means, and that is a statement no heuristic can improve
+// on. Tags only when there are no releases to read — never as a
+// supplement, because a project that publishes releases and also carries
+// build tags would otherwise have its own judgment diluted by ours.
+//
+// Authoritative travels with the releases and not with the tags, and it
+// means exactly one thing: upstream said so. It is not a claim that the
+// list is right. The name heuristic still judges every entry, because
+// upstream's flags are a filter and not a verdict — mergestat marks
+// betas as releases — so an authoritative list of the wrong versions is
+// still the wrong versions.
+//
+// A tags failure is returned. There is no third witness under it, so
+// continuing would mean judging the port on the livecheck alone while
+// reporting a verdict that reads as if both had spoken.
+func observeForge(ctx context.Context, tools *tool.Finder, gh GhRunner, repo Repo) ([]string, bool, error) {
+	if versions, ok := Releases(ctx, gh, repo); ok {
+		slog.Debug("forge releases", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
+		return versions, true, nil
+	}
+	versions, err := Tags(ctx, tools, repo)
+	if err != nil {
+		return nil, false, err
+	}
+	slog.Debug("forge tags", "forge", repo.Forge.Name, "url", repo.URL, "versions", len(versions))
+	return versions, false, nil
 }

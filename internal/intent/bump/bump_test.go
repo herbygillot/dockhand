@@ -16,37 +16,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/tempdir"
-
+	"github.com/herbygillot/dockhand/internal/exitcode"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
+	"github.com/herbygillot/dockhand/internal/macports/port/porttest"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
-	"github.com/herbygillot/dockhand/internal/macports/prefix"
-	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
-// testPrefix derives the installation prefix from the discovered
-// port-tclsh, skipping when the machine has none.
-func testPrefix(t *testing.T) prefix.Prefix {
-	t.Helper()
-	return prefix.Prefix(filepath.Dir(filepath.Dir(testenv.PortTclsh(t))))
-}
-
-func newEvaluator(t *testing.T) *eval.Evaluator {
-	t.Helper()
-	ev, err := eval.Start(context.Background(), testPrefix(t))
-	require.NoError(t, err)
-	t.Cleanup(func() { ev.Close() })
-	return ev
-}
+// The live evaluator, the fetcher and the handle are porttest's: four
+// packages had written them, and a helper that skips in one and requires
+// in another is how a broken MacPorts looks green here and red there.
+func newEvaluator(t *testing.T) *eval.Evaluator { return porttest.Evaluator(t) }
 
 // handle binds a portdir to an evaluator, as the command does.
 func handle(portdir string, ev *eval.Evaluator) port.Handle {
-	return port.New(tree.Target{Portdir: portdir}, ev)
+	return porttest.Handle(ev, portdir)
 }
 
 // servedFor is the body distServer returns for a path. Two versions are
@@ -222,6 +210,118 @@ long_description version via a set variable plans
 	assert.True(t, versionEdit, "the set literal is the carrier")
 }
 
+// The modeline is Examine's rider now rather than an edit the planner
+// appends, and a bump is the intent that adopts it. It must still reach
+// the plan, still as a zero-width insertion at the very top, and still
+// sort ahead of everything else — the rider is folded in after the
+// prediction, so this is the assertion that the move did not quietly
+// drop it.
+func TestBumpCarriesTheModelineRider(t *testing.T) {
+	ev := newEvaluator(t)
+	dir := t.TempDir()
+	// No modeline, and no checksums: the rider is the only thing that
+	// can put an edit at offset 0.
+	portfile := `PortSystem 1.0
+name unheaded
+version 1.0
+categories devel
+maintainers nomaintainer
+license MIT
+description no modeline
+long_description a Portfile that opens without an editor header
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
+
+	p, err := Bump{Version: "2.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+	require.NoError(t, err)
+	require.NotEmpty(t, p.Edits)
+	assert.Equal(t, "modeline", p.Edits[0].Reason, "the insertion at offset 0 sorts first")
+	assert.Equal(t, 0, p.Edits[0].Start)
+	assert.Equal(t, 0, p.Edits[0].End)
+	assert.Equal(t, intent.Modeline+"\n", p.Edits[0].New)
+
+	// And a Portfile that already opens with one is never second-guessed.
+	withHeader := filepath.Join(t.TempDir(), macports.PortfileName)
+	require.NoError(t, os.MkdirAll(filepath.Dir(withHeader), 0o755))
+	require.NoError(t, os.WriteFile(withHeader, []byte(intent.Modeline+"\n"+portfile), 0o644))
+	p2, err := Bump{Version: "2.0"}.Plan(context.Background(), handle(filepath.Dir(withHeader), ev), newFetcher(t))
+	require.NoError(t, err)
+	for _, e := range p2.Edits {
+		assert.NotEqual(t, "modeline", e.Reason)
+	}
+
+	// The rider moved out of the shadowed source and into the fold that
+	// happens after it, so the question this pins is whether the
+	// prediction still says the same thing either way. It must: a
+	// leading comment cannot change what a Portfile evaluates to, and
+	// the two runs above differ in exactly that comment. The gate that
+	// compares plan bytes across real ports cannot ask this — every port
+	// in its table already carries a modeline, so no capture it takes
+	// contains a rider at all.
+	assert.Equal(t, p2.Predicted, p.Predicted,
+		"the rider is folded in after the shadow, so it must not perturb the prediction")
+	assert.Equal(t, p2.Summary, p.Summary)
+	assert.Equal(t, p2.Slug, p.Slug)
+	rest := make([]string, 0, len(p.Edits))
+	for _, e := range p.Edits[1:] {
+		rest = append(rest, e.Reason+": "+e.Old+" -> "+e.New)
+	}
+	other := make([]string, 0, len(p2.Edits))
+	for _, e := range p2.Edits {
+		other = append(other, e.Reason+": "+e.Old+" -> "+e.New)
+	}
+	assert.Equal(t, other, rest, "the rider is the only difference the missing header makes")
+}
+
+// A forced re-derivation that would fetch nothing and move no version
+// has nothing to re-derive, and a plan it produced could be
+// contradicted by nothing. Before the shared tail it emitted an empty
+// plan and exited successfully; now it declines — in the declined band,
+// in the port's own terms — rather than reaching the tail's witness
+// backstop, which would land in the failure band with a sentence about
+// dockhand's own falsifiability rule.
+//
+// Both spellings of the port are held to it. The one that already opens
+// with a modeline has no rider to offer, and the one that does not is
+// the case that would otherwise slip through: a rider is not a bump,
+// and a branch whose entire content is an editor header is not what
+// --force was asked for.
+func TestBumpForceWithoutAFetchOrAMoveDeclines(t *testing.T) {
+	ev := newEvaluator(t)
+	body := `PortSystem 1.0
+name inert
+version 1.0
+categories devel
+maintainers nomaintainer
+license MIT
+description nothing to fetch
+long_description a port recording no checksums at all
+`
+	for _, tc := range []struct {
+		name     string
+		portfile string
+	}{
+		{"with a modeline", intent.Modeline + "\n" + body},
+		{"without one, so a rider is on offer", body},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(tc.portfile), 0o644))
+
+			p, err := Bump{Version: "1.0", Force: true}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+			require.Nil(t, p)
+			var d *plan.Decline
+			require.ErrorAs(t, err, &d)
+			assert.Equal(t, plan.AlreadyCurrent, d.Type)
+			assert.Contains(t, d.Detail, "inert records no checksums")
+			assert.Equal(t, exitcode.PlanDeclined, d.DockhandExit(),
+				"a judgment about the port, not a malfunction")
+			assert.NotErrorIs(t, err, intent.ErrNoWitness,
+				"the intent answers for itself; the backstop is for an intent that does not")
+		})
+	}
+}
+
 func TestBumpDeclinesComputedVersion(t *testing.T) {
 	// Genuinely computed: the set literal is a fragment of the value,
 	// so nothing corroborates and no literal candidate remains for the
@@ -246,13 +346,7 @@ long_description computed version declines
 
 // newFetcher builds the MacPorts-driven fetcher against the discovered
 // installation, mirroring what cmd wires in.
-func newFetcher(t *testing.T) *portfetch.Fetcher {
-	t.Helper()
-	f, err := portfetch.New(context.Background(), testPrefix(t), tempdir.Root{})
-	require.NoError(t, err)
-	t.Cleanup(f.Close)
-	return f
-}
+func newFetcher(t *testing.T) *portfetch.Fetcher { return porttest.Fetcher(t) }
 
 // --force plans at the version the port already carries. The version
 // itself is not rewritten — that edit would change nothing — and the

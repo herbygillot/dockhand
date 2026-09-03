@@ -7,9 +7,11 @@
 //
 // It mirrors the mport handle mportopen returns, with one deliberate
 // difference worth stating: MacPorts' handle owns a Tcl interpreter and
-// must be closed. A Handle owns nothing. Its evaluator is borrowed,
+// must be closed. A Handle owns nothing. Its oracle is borrowed,
 // typically from a pool, and outlives it — so a Handle is a value,
 // copied and derived freely, with no Close and no lifetime of its own.
+// Owning nothing is also why the oracle is an interface: a handle that
+// only asks questions does not need to know what answers them.
 package port
 
 import (
@@ -23,12 +25,48 @@ import (
 	"github.com/herbygillot/dockhand/internal/tempdir"
 )
 
+// Oracle is what a Handle asks: the five questions a caller can put to
+// a port, answered by whatever can answer them. *eval.Evaluator is the
+// answer in production, and the interface is transcribed from its
+// method set rather than designed beside it, so it is satisfied without
+// an adapter and the assertion below fails to compile if either drifts.
+//
+// It exists so a scripted oracle can stand in. What a planner decides
+// from a port's evaluated state — whether the version arrived, whether
+// anything else moved, whether the fetch followed — is judgment, and
+// judgment tested only through a live Tcl shell is judgment tested on
+// machines that have MacPorts installed. The two questions a fake
+// cannot answer honestly stay where they are: what MacPorts actually
+// evaluates, and what a real Portfile does under a real PortGroup, are
+// eval's own tests and the intents' end-to-end ones.
+//
+// Close and Top are deliberately absent. A Handle owns nothing, so it
+// has no business closing what it borrowed, and the census asks Top of
+// the evaluator directly.
+type Oracle interface {
+	// Values evaluates one context.
+	Values(ctx context.Context, portdir, subport string, variants info.VariantSet) (info.Values, error)
+	// Snapshot evaluates every context a portdir defines.
+	Snapshot(ctx context.Context, portdir string, variants info.VariantSet) (info.Snapshot, error)
+	// Subports lists the subports a Portfile defines.
+	Subports(ctx context.Context, portdir string) ([]string, error)
+	// Options reads named port options, omitting those the port lacks.
+	Options(ctx context.Context, portdir, subport string, variants info.VariantSet, names ...string) (map[string]string, error)
+	// FetchInfo reports a context's fetch surface.
+	FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (eval.FetchInfo, error)
+}
+
+// The evaluator is the oracle, unchanged. A signature that drifts on
+// either side is a build failure here rather than a nil interface at a
+// call site.
+var _ Oracle = (*eval.Evaluator)(nil)
+
 // Handle addresses one evaluation context: the Portfile at Target's
 // portdir, the subport Target names — the top-level port when empty —
 // under Variants.
 type Handle struct {
 	Target   tree.Target
-	Ev       *eval.Evaluator
+	Ev       Oracle
 	Variants info.VariantSet
 	// TempDir is where Shadow materializes its copies. The zero value
 	// is the system temporary directory, so a handle built without one
@@ -39,7 +77,7 @@ type Handle struct {
 
 // New returns a handle on a resolved target, under the default variant
 // frame.
-func New(target tree.Target, ev *eval.Evaluator) Handle {
+func New(target tree.Target, ev Oracle) Handle {
 	return Handle{Target: target, Ev: ev}
 }
 

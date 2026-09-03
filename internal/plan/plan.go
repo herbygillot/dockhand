@@ -51,12 +51,17 @@ type ContextDelta struct {
 // from these — a branch is dockhand/<slug>, a commit message is the
 // summary — instead of every realizer re-deriving names the planner
 // already had.
+// ClosesTicket is the one part of the identity that is not a name. It
+// is carried here rather than folded into Summary because Summary is
+// the commit's subject and a trailer is not a subject: the realizer
+// composes the message from both, and the plan states which is which.
 type Plan struct {
 	Format         int            `json:"format"`
 	Intent         string         `json:"intent"`
 	Port           string         `json:"port"`
 	Slug           string         `json:"slug"`
 	Summary        string         `json:"summary"`
+	ClosesTicket   string         `json:"closes_ticket,omitempty"`
 	Portdir        string         `json:"portdir"`
 	Subport        string         `json:"subport,omitempty"`
 	PortfileSHA256 string         `json:"portfile_sha256"`

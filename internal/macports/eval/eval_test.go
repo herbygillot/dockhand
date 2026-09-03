@@ -9,22 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/testenv"
 )
-
-// testPrefix derives the installation prefix from the discovered
-// port-tclsh, skipping when the machine has none.
-func testPrefix(t *testing.T) prefix.Prefix {
-	t.Helper()
-	return prefix.Prefix(filepath.Dir(filepath.Dir(testenv.PortTclsh(t))))
-}
 
 func newEvaluator(t *testing.T) *Evaluator {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	e, err := Start(ctx, testPrefix(t))
+	e, err := Start(ctx, testenv.MacPortsPrefix(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { e.Close() })
 	return e
@@ -77,9 +69,7 @@ depends_lib         port:zlib port:openssl
 // as reliably.
 func TestSnapshotComputedVersion(t *testing.T) {
 	e := newEvaluator(t)
-	src, err := os.ReadFile("../testdata/portfiles/math__ivy")
-	require.NoError(t, err)
-	dir := portdirWith(t, string(src))
+	dir := testenv.PortfileDir(t, "math__ivy")
 	snap, err := e.Snapshot(context.Background(), dir, "")
 	require.NoError(t, err)
 	v, ok := snap[info.SubportKey{Subport: "ivy"}]

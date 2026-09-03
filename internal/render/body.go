@@ -150,7 +150,15 @@ func PRBody(n record.Record, verified bool, closes string, ownCommits int, check
 	box(single, "followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?")
 	box(single, "squashed and [minimized your commits](https://guide.macports.org/#project.github)?")
 	box(checkedPRs, "checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?")
-	box(false, "referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?")
+	// The record's own ticket, not the closes argument beside it. A
+	// ticket named at plan time is in the minted commit's trailer, with
+	// the full URL, and bear() copied it here from the plan that wrote
+	// it; a ticket named at promote time reaches this body and nothing
+	// else, and leaves this field empty. Checking the box off the record
+	// is what keeps the claim true in both directions — the honesty
+	// ruling cuts against understating what the commit says as much as
+	// against overstating it.
+	box(n.ClosesTicket != "", "referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?")
 	box(linted, "checked your Portfile with `port lint`?")
 	box(tested, "tried existing tests with `sudo port test`?")
 	box(len(passed) > 0, "tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM")

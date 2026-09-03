@@ -1,14 +1,13 @@
 package portstyle
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
 // setupSkiplist names X.setup procs that deliberately have no style entry:
@@ -36,14 +35,11 @@ func TestStyleTableCoversPortgroupRegistry(t *testing.T) {
 		tabled[vs.command] = vs.word
 	}
 
-	entries, err := os.ReadDir("../testdata/portgroups")
-	require.NoError(t, err)
 	checked := 0
-	for _, ent := range entries {
-		src, err := os.ReadFile(filepath.Join("../testdata/portgroups", ent.Name()))
-		require.NoError(t, err)
+	for _, file := range testenv.Portgroups(t) {
+		src := testenv.Portgroup(t, file)
 		tree, errs := syntax.Parse(src)
-		require.Empty(t, errs, ent.Name())
+		require.Empty(t, errs, file)
 
 		for name, params := range setupProcs(src, tree) {
 			pos := versionParam(params)
@@ -58,7 +54,7 @@ func TestStyleTableCoversPortgroupRegistry(t *testing.T) {
 			checked++
 			require.Contains(t, tabled, name,
 				"%s (%s): setup proc with version parameter %q at word %d is not in the style table",
-				name, ent.Name(), params[pos-1], pos)
+				name, file, params[pos-1], pos)
 			require.Equal(t, pos, tabled[name],
 				"%s: table word index disagrees with proc signature %v", name, params)
 		}

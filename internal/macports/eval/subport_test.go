@@ -2,19 +2,20 @@ package eval
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
+// The corpus fixtures are asked for by name and staged by testenv; a
+// portdir is the only form a Portfile is evaluable in, so the accessor
+// hands one back.
 func fixturePortdir(t *testing.T, name string) string {
 	t.Helper()
-	src, err := os.ReadFile("../testdata/portfiles/" + name)
-	require.NoError(t, err)
-	return portdirWith(t, string(src))
+	return testenv.PortfileDir(t, name)
 }
 
 func key(subport string) info.SubportKey {

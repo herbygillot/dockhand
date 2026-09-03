@@ -21,24 +21,27 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"slices"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/checksums/rewrite"
 	"github.com/herbygillot/dockhand/internal/distfile"
-	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/vendored"
-	"github.com/herbygillot/dockhand/internal/vendored/cargo"
+	"github.com/herbygillot/dockhand/internal/vendored/families"
 )
 
 // Refresh is the intent to make a port's recorded checksums true again.
-type Refresh struct{}
+type Refresh struct {
+	// ClosesTicket is the Trac ticket this repair closes, bound for the
+	// minted commit's trailer.
+	ClosesTicket string
+}
 
-var _ plan.Planner = Refresh{}
+var _ intent.Planner = Refresh{}
 
 // refreshMayChange is the whole of what a refresh may move. The version
 // staying put is not listed because it is enforced the other way: any
@@ -52,7 +55,7 @@ var refreshMayChange = map[info.Field]bool{
 // serve today, and where the recorded values disagree, edit them to
 // what is true. The returned error is an *plan.Decline when the
 // refusal is a judgment rather than a failure.
-func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (*plan.Plan, error) {
+func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (*plan.Plan, error) {
 	src, cst, err := h.Source()
 	if err != nil {
 		return nil, err
@@ -69,23 +72,33 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 		return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
 			Detail: "port records no checksums to refresh"}
 	}
-	// go.vendors ports decline as bump's do: their sums live in a block
-	// no one regenerates yet. cargo.crates ports proceed — the block's
-	// records are subtracted below, and refreshing the port's own
-	// distfile does not touch the crates.
-	if vals.Vendored.GoVendors != "" {
-		return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}
+	// Each block the port carries answers for itself, in its own words:
+	// whether the port's own sums can move while the block stays put,
+	// and which distfiles the block supplies so the refresh leaves them
+	// alone. Asking the family is the point — it is what knows what its
+	// block pins and what a stale line in it would claim. A refresh has
+	// no version move to hang a regeneration on, so a family that says
+	// no is refusing outright, where a bump would regenerate instead.
+	//
+	// Nothing here is fetched yet, so Regen carries only what Supplied
+	// reads: the source, the context and its evaluated state.
+	rc := vendored.Regen{Src: src, CST: cst, Handle: h, Vals: vals}
+	var supplied []string
+	for _, r := range families.All() {
+		if !r.Present(vals) {
+			continue
+		}
+		if reason, veto := r.VetoRefresh(vals); veto {
+			return nil, &plan.Decline{Type: plan.VendoredBlock, Detail: reason}
+		}
+		sup, err := r.Supplied(ctx, rc)
+		if err != nil {
+			// A family speaks for its block and names it; which intent was
+			// asking is this package's to say.
+			return nil, fmt.Errorf("refresh: %w", err)
+		}
+		supplied = append(supplied, sup...)
 	}
-
-	supplied, err := cargo.SuppliedIn(vals.Vendored.CargoCrates)
-	if err != nil {
-		return nil, fmt.Errorf("refresh: %w", err)
-	}
-	gitSupplied, err := cargo.GithubSuppliedIn(vals.Vendored.CargoCratesGithub)
-	if err != nil {
-		return nil, fmt.Errorf("refresh: %w", err)
-	}
-	supplied = append(supplied, gitSupplied...)
 	own, err := vendored.Own(vals.Distfiles, supplied)
 	if err != nil {
 		return nil, fmt.Errorf("refresh: %w", err)
@@ -151,78 +164,52 @@ func (Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) 
 			Detail: "recorded checksums match what upstream serves"}
 	}
 
-	// Shadow the edits for the exact prediction, as every intent does:
-	// the plan states what will change, and applying it holds the
-	// change to that statement.
-	edited, err := edit.Apply(src, edits)
-	if err != nil {
-		return nil, err
-	}
-	shadow, cleanup, err := h.Shadow(edited)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	after, err := shadow.Snapshot(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("refresh: shadow evaluation: %w", err)
-	}
-	predicted := before.Diff(after)
-	// The same sibling proof bump runs: a set-variable carrier is
-	// corroborated by one subport's evaluation, so no other context may
-	// move with it.
-	if viaSet {
-		if key, moved := predicted.OtherContext(vals.Name); moved {
-			return nil, &plan.Decline{Type: plan.UnexpectedChange,
-				Detail: fmt.Sprintf("a checksum edit landed in a set variable, and %s moved with it; the carrier is ambiguous", key.Subport)}
-		}
-	}
-	if err := accept(vals, predicted); err != nil {
-		return nil, err
-	}
-
-	slices.SortFunc(edits, func(a, b edit.Edit) int { return a.Start - b.Start })
-	return &plan.Plan{
-		Format:         plan.Format,
-		Intent:         "refresh-checksums",
-		Port:           vals.Name,
-		Slug:           vals.Name + "-checksums",
-		Summary:        vals.Name + ": update checksums",
-		Portdir:        h.Target.Portdir,
-		Subport:        h.Target.Subport,
-		PortfileSHA256: edit.FileSHA256(src),
-		Edits:          edits,
-		Predicted:      plan.FromDelta(predicted),
-	}, nil
+	// The tail is intent.Finish, as it is for every intent: shadow the
+	// edits, diff, refuse what the prediction did not promise, assemble.
+	// The plan states what will change, and applying it holds the change
+	// to that statement.
+	//
+	// No riders. The modeline is a bump's to carry, because a bump is
+	// already rewriting the lines everyone reads; a refresh touching two
+	// checksum values should show a reviewer two checksum values and
+	// nothing else, at the one moment they are most owed an undistracted
+	// diff.
+	return intent.Finish(ctx, h, src, edits,
+		intent.Identity{
+			Intent:       "refresh-checksums",
+			Slug:         vals.Name + "-checksums",
+			Summary:      vals.Name + ": update checksums",
+			ClosesTicket: r.ClosesTicket,
+		},
+		intent.FinishOpts{
+			Before:    before,
+			Vals:      vals,
+			CST:       cst,
+			MayChange: refreshMayChange,
+			Accept: func(predicted info.Delta) error {
+				return accept(vals, predicted)
+			},
+			ViaSet: viaSet,
+			// The bytes are the witness, and this intent has the best kind:
+			// a fetch that deliberately refused the mirrors, so what was
+			// hashed is what upstream serves right now. A prediction that
+			// shows nothing then means the edits missed their target, which
+			// accept says below in its own words.
+			Witness: "the port's distfiles were fetched from upstream and hashed",
+		})
 }
 
 // accept is the refresh's judgment of its own predicted delta: the
-// checksums moved, and nothing else did. The version staying put is the
-// intent's defining property — a version that moves under a "refresh"
-// is some other change wearing this one's name.
+// checksums moved. That nothing else moved is Finish's question, asked
+// against refreshMayChange — and it is how the version staying put is
+// enforced, which is this intent's defining property. A version that
+// moves under a "refresh" is some other change wearing this one's name.
 func accept(vals info.Values, predicted info.Delta) error {
-	if len(predicted.Added) > 0 || len(predicted.Removed) > 0 {
-		return &plan.Decline{Type: plan.SubportsChanged,
-			Detail: fmt.Sprintf("%d added, %d removed", len(predicted.Added), len(predicted.Removed))}
-	}
-	key := info.SubportKey{Subport: vals.Name}
-	var checksumsMoved bool
-	for _, ch := range predicted.Changed[key] {
+	for _, ch := range intent.OwnChanges(predicted, vals.Name) {
 		if ch.Field == info.FieldChecksums {
-			checksumsMoved = true
+			return nil
 		}
 	}
-	if !checksumsMoved {
-		return &plan.Decline{Type: plan.FetchNotDriven,
-			Detail: "the edits moved no checksums"}
-	}
-	for key, changes := range predicted.Changed {
-		for _, ch := range changes {
-			if !refreshMayChange[ch.Field] {
-				return &plan.Decline{Type: plan.UnexpectedChange,
-					Detail: fmt.Sprintf("%s: %s", key.Subport, ch.Field)}
-			}
-		}
-	}
-	return nil
+	return &plan.Decline{Type: plan.FetchNotDriven,
+		Detail: "the edits moved no checksums"}
 }

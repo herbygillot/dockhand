@@ -18,6 +18,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
@@ -30,9 +31,12 @@ type BumpRevision struct {
 	// plan — and eventually the commit — carries the judgment that
 	// produced it.
 	Reason string
+	// ClosesTicket is the Trac ticket this revision bump closes, bound
+	// for the minted commit's trailer.
+	ClosesTicket string
 }
 
-var _ plan.Planner = BumpRevision{}
+var _ intent.Planner = BumpRevision{}
 
 // ErrNoReason reports a revbump with no stated why. The edit is
 // mechanical; the reason is the part only the caller has.
@@ -42,8 +46,8 @@ var ErrNoReason = errors.New("bumprevision: a revision bump needs a reason")
 // *plan.Decline or *portstyle.Decline when the refusal is a judgment.
 //
 // The fetcher is unused: nothing is downloaded to count. It is in the
-// signature because every intent is a plan.Planner, and a uniform shape
-// is worth one ignored parameter.
+// signature because every intent is an intent.Planner, and a uniform
+// shape is worth one ignored parameter.
 func (b BumpRevision) Plan(ctx context.Context, h port.Handle, _ distfile.Fetcher) (*plan.Plan, error) {
 	if b.Reason == "" {
 		return nil, ErrNoReason
@@ -78,71 +82,64 @@ func (b BumpRevision) Plan(ctx context.Context, h port.Handle, _ distfile.Fetche
 	}
 	next := strconv.Itoa(n + 1)
 
+	// The reason travels twice, and both journeys are the plan's: into
+	// the edit's own Reason, which is what a reader of the plan sees
+	// beside the rewritten line, and into the Summary, which becomes the
+	// commit's subject. The Identity carries no third copy — a field
+	// nothing reads would promise a commit body that no realizer writes.
 	edits := []edit.Edit{{
 		Start: loc.Span.Start, End: loc.Span.End,
 		Old: loc.Span.Text(src), New: next,
 		Reason: "revision +1: " + b.Reason,
 	}}
 
-	finalSrc, err := edit.Apply(src, edits)
-	if err != nil {
-		return nil, err
-	}
-	shadow, cleanup, err := h.Shadow(finalSrc)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-	after, err := shadow.Snapshot(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("bumprevision: shadow evaluation: %w", err)
-	}
-	predicted := before.Diff(after)
-	if err := accept(vals, next, predicted); err != nil {
-		return nil, err
-	}
-
-	slices.SortFunc(edits, func(a, b edit.Edit) int { return a.Start - b.Start })
-	return &plan.Plan{
-		Format:         plan.Format,
-		Intent:         "bump-revision",
-		Port:           vals.Name,
-		Slug:           vals.Name + "-rev" + next,
-		Summary:        vals.Name + ": " + b.Reason,
-		Portdir:        h.Target.Portdir,
-		Subport:        h.Target.Subport,
-		PortfileSHA256: edit.FileSHA256(src),
-		Edits:          edits,
-		Predicted:      plan.FromDelta(predicted),
-	}, nil
+	// The tail is intent.Finish, as it is for every intent. What is left
+	// here is the arithmetic and the one judgment: that the integer this
+	// plan names is the one the Portfile will actually evaluate to.
+	return intent.Finish(ctx, h, src, edits,
+		intent.Identity{
+			Intent:       "bump-revision",
+			Slug:         vals.Name + "-rev" + next,
+			Summary:      vals.Name + ": " + b.Reason,
+			ClosesTicket: b.ClosesTicket,
+		},
+		intent.FinishOpts{
+			Before:    before,
+			Vals:      vals,
+			CST:       cst,
+			MayChange: revisionMayChange,
+			Accept: func(predicted info.Delta) error {
+				return accept(vals, next, predicted)
+			},
+			// A revbump spends no network, so the only evidence it can
+			// offer is the edit itself: the revision line was rewritten and
+			// the result evaluated. That is enough to be falsifiable — when
+			// the shadow shows nothing moved, accept below says so — and it
+			// is why an empty prediction here is a decline about the port
+			// rather than a refusal to have planned.
+			Witness: "the revision line was rewritten and the Portfile re-evaluated",
+		})
 }
 
+// revisionMayChange is the whole of what a revision bump may move. It
+// was once written into accept's own loop as a not-equal test; as a set
+// it is the same rule said in the vocabulary every intent shares.
+var revisionMayChange = map[info.Field]bool{info.FieldRevision: true}
+
 // accept is the intent's judgment of its own predicted delta: the
-// revision arrived at its successor in the port's own context, and
-// nothing else moved anywhere. A shared revision line moving every
-// subport's revision together is the expected shape, not a violation —
-// each context's change must simply be the revision and only the
-// revision.
+// revision arrived at its successor in the port's own context. That
+// nothing else moved anywhere is Finish's question now, asked of every
+// intent against its own permitted set.
+//
+// A shared revision line moving every subport's revision together is
+// the expected shape, not a violation — the port's own context need
+// only be among them.
 func accept(vals info.Values, next string, predicted info.Delta) error {
-	if len(predicted.Added) > 0 || len(predicted.Removed) > 0 {
-		return &plan.Decline{Type: plan.SubportsChanged,
-			Detail: fmt.Sprintf("%d added, %d removed", len(predicted.Added), len(predicted.Removed))}
-	}
-	var reached bool
-	for key, changes := range predicted.Changed {
-		for _, ch := range changes {
-			if ch.Field != info.FieldRevision {
-				return &plan.Decline{Type: plan.UnexpectedChange,
-					Detail: fmt.Sprintf("%s: %s", key.Subport, ch.Field)}
-			}
-			if key.Subport == vals.Name && slices.Equal(ch.New, []string{next}) {
-				reached = true
-			}
+	for _, ch := range intent.OwnChanges(predicted, vals.Name) {
+		if ch.Field == info.FieldRevision && slices.Equal(ch.New, []string{next}) {
+			return nil
 		}
 	}
-	if !reached {
-		return &plan.Decline{Type: plan.TargetNotReached,
-			Detail: fmt.Sprintf("revision would not become %s", next)}
-	}
-	return nil
+	return &plan.Decline{Type: plan.TargetNotReached,
+		Detail: fmt.Sprintf("revision would not become %s", next)}
 }

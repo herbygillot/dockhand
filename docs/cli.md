@@ -352,9 +352,12 @@ promotion therefore carries a commit plan:
   an update must contain ": update to" — so titles are load-bearing for the
   project's own tooling.
 - **Trailers.** Trac references go in the commit body as
-  `Closes: https://trac.macports.org/ticket/NNNNN`, exactly. `promote` takes
-  an optional `--closes <ticket>`, and findings carry ticket URLs when they
-  originate from one.
+  `Closes: https://trac.macports.org/ticket/NNNNN`, exactly. The trailer comes
+  from `--closes <ticket>` at plan time — every intent verb takes it — because
+  only a commit dockhand is about to write can carry one. `promote --closes`
+  is the late spelling: it reaches the PR body alone, leaves the commit-message
+  checklist box unchecked, and says so on stderr. Findings carry ticket URLs
+  when they originate from one.
 
 All of this is mechanical, and it is the cheapest goodwill available: the PR
 evidence found review labour dominated by convention-incompleteness rather

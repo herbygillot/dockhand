@@ -312,3 +312,48 @@ func TestStatusNoCleanReportsWithoutDeleting(t *testing.T) {
 	assert.Contains(t, out.String(), "PR #9 merged — `dockhand clean` removes the branch")
 	assert.True(t, repo.HasBranch(ctx, "dockhand/jq-1.8"), "--no-clean withholds the deletion")
 }
+
+// Ruling 5's other half. A ticket named at promote time reaches the
+// pull request body and nothing else: the commit was written at mint
+// and is not rewritten, so the checklist box that asks for the ticket
+// in the COMMIT message stays unchecked, and the user is told why once,
+// at the point they typed the flag.
+func TestPromoteClosesReachesTheBodyAndSaysSo(t *testing.T) {
+	repo, _ := promoteRepo(t)
+	gh := &ghFake{login: "herbygillot", createURL: "https://github.com/macports/macports-ports/pull/999"}
+	rs, _, errb := promoteState(t, repo, gh)
+
+	require.NoError(t, promoteAction{target: "jq", closes: "71234"}.Execute(context.Background(), rs))
+	creates := gh.called("create")
+	require.Len(t, creates, 1)
+	body := creates[0][len(creates[0])-1]
+	assert.Contains(t, body, "Closes: https://trac.macports.org/ticket/71234")
+	assert.Contains(t, body, "- [ ] referenced existing tickets on [Trac]",
+		"the box asks about the commit message, which this ticket never reached")
+	assert.True(t, strings.HasPrefix(errb.String(), promoteClosesNote),
+		"said once, first, at the point the flag was typed:\n%s", errb.String())
+}
+
+// A change planned with --closes carries the number in its record, so
+// the body cites it without the promoter retyping it — and without the
+// note, because nothing here is late.
+func TestPromoteCitesTheTicketTheMintRecorded(t *testing.T) {
+	repo, sha := promoteRepo(t)
+	ctx := context.Background()
+	l := ledger.Open(repo)
+	require.NoError(t, l.Update(ctx, sha, func(r *record.Record) error {
+		r.ClosesTicket = "71234"
+		return nil
+	}))
+	gh := &ghFake{login: "herbygillot", createURL: "https://github.com/macports/macports-ports/pull/999"}
+	rs, _, errb := promoteState(t, repo, gh)
+
+	require.NoError(t, promoteAction{target: "jq"}.Execute(ctx, rs))
+	creates := gh.called("create")
+	require.Len(t, creates, 1)
+	body := creates[0][len(creates[0])-1]
+	assert.Contains(t, body, "Closes: https://trac.macports.org/ticket/71234")
+	assert.Contains(t, body, "- [x] referenced existing tickets on [Trac]",
+		"the trailer is in the commit this record was born from, so the box says so")
+	assert.NotContains(t, errb.String(), "--closes", "nothing was late, so nothing is said")
+}

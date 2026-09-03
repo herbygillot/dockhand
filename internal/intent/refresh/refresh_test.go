@@ -14,44 +14,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
+	"github.com/herbygillot/dockhand/internal/macports/port/porttest"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
-	"github.com/herbygillot/dockhand/internal/macports/prefix"
-	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/tempdir"
-	"github.com/herbygillot/dockhand/internal/testenv"
 )
 
-// testPrefix derives the installation prefix from the discovered
-// port-tclsh, skipping when the machine has none.
-func testPrefix(t *testing.T) prefix.Prefix {
-	t.Helper()
-	return prefix.Prefix(filepath.Dir(filepath.Dir(testenv.PortTclsh(t))))
-}
-
-func newEvaluator(t *testing.T) *eval.Evaluator {
-	t.Helper()
-	ev, err := eval.Start(context.Background(), testPrefix(t))
-	require.NoError(t, err)
-	t.Cleanup(func() { ev.Close() })
-	return ev
-}
+// The live evaluator, the fetcher and the handle are porttest's, so
+// every package that wants one skips on the same condition.
+func newEvaluator(t *testing.T) *eval.Evaluator { return porttest.Evaluator(t) }
 
 func handle(portdir string, ev *eval.Evaluator) port.Handle {
-	return port.New(tree.Target{Portdir: portdir}, ev)
+	return porttest.Handle(ev, portdir)
 }
 
-func newFetcher(t *testing.T) *portfetch.Fetcher {
-	t.Helper()
-	f, err := portfetch.New(context.Background(), testPrefix(t), tempdir.Root{})
-	require.NoError(t, err)
-	t.Cleanup(f.Close)
-	return f
-}
+func newFetcher(t *testing.T) *portfetch.Fetcher { return porttest.Fetcher(t) }
 
 // distServer serves fixed bytes: a refresh happens at ONE version, so
 // unlike a bump's fixture there is nothing path-dependent to model.
@@ -165,20 +146,27 @@ long_description no checksums recorded at all
 	assert.Equal(t, plan.ChecksumsNotLocated, d.Type)
 }
 
-// accept is pure: a version that moves under a "refresh" is some other
-// change wearing this one's name, whatever moved it.
-func TestAcceptRefusesAMovingVersion(t *testing.T) {
-	vals := info.Values{Name: "foo", Version: "1.0"}
+// A version that moves under a "refresh" is some other change wearing
+// this one's name, whatever moved it. The rule is refreshMayChange
+// listing checksums and nothing else, and Finish is what asks it — so
+// it is tested here against the set this package declares. accept is
+// satisfied by the same delta, because the checksums did move: the two
+// questions are separate, and both must be asked.
+func TestOnlyChecksumsMayMove(t *testing.T) {
 	key := info.SubportKey{Subport: "foo"}
-	err := accept(vals, info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+	predicted := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
 		key: {
 			{Field: info.FieldChecksums, Old: []string{"a"}, New: []string{"b"}},
 			{Field: info.FieldVersion, Old: []string{"1.0"}, New: []string{"2.0"}},
 		},
-	}})
+	}}
+	require.NoError(t, accept(info.Values{Name: "foo", Version: "1.0"}, predicted))
+
+	err := intent.OnlyFields(predicted, refreshMayChange)
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.UnexpectedChange, d.Type)
+	assert.Equal(t, "foo: version", d.Detail)
 }
 
 func TestAcceptRequiresChecksumsToMove(t *testing.T) {

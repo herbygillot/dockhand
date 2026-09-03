@@ -22,8 +22,11 @@ package testenv
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports/prefix"
 )
 
 // required reports whether DOCKHAND_TEST_REQUIRE demands the named tool.
@@ -70,6 +73,22 @@ func Tclsh(t *testing.T) string {
 func PortTclsh(t *testing.T) string {
 	t.Helper()
 	return Tool(t, "port-tclsh")
+}
+
+// MacPortsPrefix derives the installation prefix from the discovered
+// port-tclsh, skipping — or failing, under DOCKHAND_TEST_REQUIRE — on the
+// same condition every other tool does.
+//
+// It is here rather than beside the evaluator because seven test
+// packages had written this same two-directories-up derivation for
+// themselves, and the four that cannot import a helper living under
+// macports/port without a cycle are precisely the ones closest to the
+// installation. A derivation written once skips once; written seven
+// times it is seven chances for a machine with a broken MacPorts to look
+// green in one package and red in another.
+func MacPortsPrefix(t *testing.T) prefix.Prefix {
+	t.Helper()
+	return prefix.Prefix(filepath.Dir(filepath.Dir(PortTclsh(t))))
 }
 
 // Network gates a test that reaches outside this machine, and is

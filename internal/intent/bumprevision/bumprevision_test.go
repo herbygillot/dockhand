@@ -9,25 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
+	"github.com/herbygillot/dockhand/internal/macports/port/porttest"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/macports/prefix"
-	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/testenv"
 )
-
-func newEvaluator(t *testing.T) *eval.Evaluator {
-	t.Helper()
-	tclsh := testenv.PortTclsh(t)
-	ev, err := eval.Start(context.Background(), prefix.Prefix(filepath.Dir(filepath.Dir(tclsh))))
-	require.NoError(t, err)
-	t.Cleanup(func() { ev.Close() })
-	return ev
-}
 
 func portWith(t *testing.T, lines string) port.Handle {
 	t.Helper()
@@ -36,7 +25,7 @@ func portWith(t *testing.T, lines string) port.Handle {
 		"\ncategories devel\nmaintainers nomaintainer\nlicense MIT\n" +
 		"description synthetic revbump target\nlong_description synthetic revbump target\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(pf), 0o644))
-	return port.New(tree.Target{Portdir: dir}, newEvaluator(t))
+	return porttest.LiveHandle(t, dir)
 }
 
 func TestPlanIncrementsTheRevision(t *testing.T) {
@@ -68,31 +57,39 @@ func TestPlanRequiresAReason(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoReason)
 }
 
-// accept is pure: anything but the revision moving is a violation, and
-// the revision must arrive at its successor.
-func TestAcceptOnlyTheRevisionMayMove(t *testing.T) {
-	vals := info.Values{Name: "foo", Revision: "3"}
+// Anything but the revision moving is a violation. The sweep that says
+// so is Finish's now, asked against this intent's permitted set — so
+// the rule is tested where the set is declared, and accept is left to
+// judge arrival alone. Note that the revision here DOES arrive: what
+// makes this a decline is the version travelling with it.
+func TestOnlyTheRevisionMayMove(t *testing.T) {
 	key := info.SubportKey{Subport: "foo"}
-	err := accept(vals, "4", info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+	predicted := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
 		key: {
 			{Field: info.FieldRevision, Old: []string{"3"}, New: []string{"4"}},
 			{Field: info.FieldVersion, Old: []string{"1.0"}, New: []string{"2.0"}},
 		},
-	}})
+	}}
+	require.NoError(t, accept(info.Values{Name: "foo", Revision: "3"}, "4", predicted),
+		"the revision did arrive; the intent's own judgment is satisfied")
+
+	err := intent.OnlyFields(predicted, revisionMayChange)
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.UnexpectedChange, d.Type)
+	assert.Equal(t, "foo: version", d.Detail)
 }
 
 // A shared revision line moves every subport's revision together; that
-// is the expected shape, not a violation.
-func TestAcceptSubportsRevbumpTogether(t *testing.T) {
+// is the expected shape, not a violation, under either question.
+func TestSubportsRevbumpTogether(t *testing.T) {
 	vals := info.Values{Name: "foo", Revision: "0"}
-	err := accept(vals, "1", info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+	predicted := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
 		{Subport: "foo"}:     {{Field: info.FieldRevision, Old: []string{"0"}, New: []string{"1"}}},
 		{Subport: "foo-sub"}: {{Field: info.FieldRevision, Old: []string{"0"}, New: []string{"1"}}},
-	}})
-	require.NoError(t, err)
+	}}
+	require.NoError(t, accept(vals, "1", predicted))
+	require.NoError(t, intent.OnlyFields(predicted, revisionMayChange))
 }
 
 func TestAcceptRequiresArrival(t *testing.T) {
@@ -101,4 +98,23 @@ func TestAcceptRequiresArrival(t *testing.T) {
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.TargetNotReached, d.Type)
+}
+
+// A declared change of reason. This intent used to fold the field sweep
+// into the loop that computed arrival, so a delta violating both rules
+// at once was reported as the sweep's UnexpectedChange. Finish asks the
+// intent's own question first — the order bump and refresh already used
+// — so it is now reported as TargetNotReached, which is the more useful
+// half: a revbump whose revision did not arrive has not happened at
+// all, whatever else moved.
+func TestBothViolatedAtOnceReportsTheArrivalFailure(t *testing.T) {
+	vals := info.Values{Name: "foo", Revision: "3"}
+	predicted := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+		{Subport: "foo"}: {{Field: info.FieldVersion, Old: []string{"1.0"}, New: []string{"2.0"}}},
+	}}
+	var arrival, sweep *plan.Decline
+	require.ErrorAs(t, accept(vals, "4", predicted), &arrival)
+	require.ErrorAs(t, intent.OnlyFields(predicted, revisionMayChange), &sweep)
+	assert.Equal(t, plan.TargetNotReached, arrival.Type, "the one Finish asks first, and reports")
+	assert.Equal(t, plan.UnexpectedChange, sweep.Type, "the one this intent used to report instead")
 }

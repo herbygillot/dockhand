@@ -17,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
-	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/vendored"
 )
@@ -56,11 +55,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	assert.Empty(t, crates)
 }
 
-func declineFor(t *testing.T, source string) *plan.Decline {
+func declineFor(t *testing.T, source string) *vendored.Decline {
 	t.Helper()
 	lock := fmt.Sprintf("[[package]]\nname = \"thing\"\nsource = %q\n", source)
 	_, err := gitCrates([]byte(lock))
-	var d *plan.Decline
+	var d *vendored.Decline
 	require.ErrorAs(t, err, &d, source)
 	assert.Contains(t, d.Detail, "thing", "the decline names the crate")
 	return d
@@ -187,7 +186,7 @@ func TestBuildGithubBlockDeclinesAWorkspaceRepo(t *testing.T) {
 	_, err := buildGithubBlock(t.Context(), vendored.Regen{Fetch: fake, Tools: tools}, []gitCrate{
 		{Name: "ratatui-core", Repo: "yazi-rs/ratatui", Branch: "fix", Revision: "dde5e05e59606cbba07340bd1cbb2d88866bc4a5"},
 	})
-	var d *plan.Decline
+	var d *vendored.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Contains(t, d.Detail, "ratatui-core lives in a cargo workspace at yazi-rs/ratatui")
 }

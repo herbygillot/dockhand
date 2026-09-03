@@ -214,12 +214,20 @@ linters:
         # it could take its own, the golden pinning a running run's line
         # would depend on when the test ran.
         #
-        # A deny list rather than verdict's allow list, because render
-        # imports plan in order to print one, and plan's own dependencies
-        # already reach the Tcl shell; an allow list here would claim a
-        # closure the import graph does not have. What render promises is
-        # narrower than verdict's purity and these are the edges that
-        # would end it: it never looks at anything itself.
+        # A deny list rather than verdict's allow list. It used to be one
+        # because it had to be: render imports plan in order to print
+        # one, and plan named a port handle, a fetcher and an evaluator,
+        # so the Tcl shell was already inside render's closure and an
+        # allow list would have claimed a property the import graph did
+        # not have. The plan rule below ended that — plan is a leaf now,
+        # and `go list -deps ./internal/render | grep os/exec` is empty —
+        # so the closure is real and an allow list here has become
+        # affordable. It stays a deny list for a different reason: what
+        # render promises is narrower than verdict's purity, these are
+        # the edges that would end it, and the reason each one is
+        # forbidden is worth saying at the import line where someone
+        # would add it. The os/exec entry is what the property is checked
+        # against.
         render:
           files:
             - "**/internal/render/**"
@@ -354,6 +362,55 @@ linters:
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/macports/build
               desc: what a build needs is the provider's concern; verify only names the job and reports its outcome
+        # A plan is an inert value: the edits, their provenance, the
+        # precondition hash, the predicted delta. Everything that reads
+        # one imports this package, render included, so what plan can
+        # reach every renderer can reach — and for three symbols on two
+        # lines it reached the Tcl shell. The Planner interface named a
+        # port handle and a fetcher as parameter types in a declaration
+        # plan does not implement, and Apply took the evaluator itself
+        # to ask it one question, twice. Nothing was called through any
+        # of them; the types alone put os/exec in the dependency set of
+        # every package that prints a plan, which is exactly the closure
+        # the render rule above could not previously claim.
+        #
+        # The three edges are named separately because plan had three
+        # independent routes down to os/exec and closing two would have
+        # left the third open: distfile reaches it through tool, port
+        # reaches it through eval and prefix, and eval reaches it again
+        # through the Tcl session. The whole subtree is covered, tests
+        # included — plan's tests script a Snapshotter rather than start
+        # an evaluator, and a test that reached for a real one would be
+        # the first sign the seam had gone.
+        plan:
+          files:
+            - "**/internal/plan/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/macports/port
+              desc: a plan is an inert value; the handle that could evaluate one belongs to the intent that made it
+            - pkg: github.com/herbygillot/dockhand/internal/distfile
+              desc: fetching is spent at plan time by the planner, never by the plan
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: Apply takes a Snapshotter, which is the two questions it actually asks; naming the evaluator here puts the Tcl shell back in render's dependency set
+            - pkg: os/exec
+              desc: the three edges above are the routes that existed, and this is the property they were denied for
+        # A vendored family holds one block's format and the tool that
+        # writes it, and nothing above that. It says why a block cannot
+        # be honest — the family is the only thing that knows — but what
+        # that refusal MEANS to a plan is the planning layer's
+        # vocabulary, and a generator package that names it has taken on
+        # the whole layer to raise one error. So the families speak
+        # vendored.Decline, and the translation happens once, in
+        # vendored/families, which is the boundary the intents import and
+        # the one directory this rule exempts. Crossed in one place it is
+        # a boundary; crossed at every call site it is a convention.
+        vendored:
+          files:
+            - "**/internal/vendored/**"
+            - "!**/internal/vendored/families/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/plan
+              desc: a family knows a block's format, not what a plan is; raise a vendored.Decline and let vendored/families map it
 
 formatters:
   enable:

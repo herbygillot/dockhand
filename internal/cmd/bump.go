@@ -6,63 +6,61 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/intent/bump"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
-	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
-// Bump builds the bump subcommand: move a port to a new version. The
-// behavior is intentAction's — this constructor contributes only the
-// flags and the planner: resolving "latest" is the one thing the
-// command line knows that the intent does not.
-func Bump() *cobra.Command {
-	var (
-		to     string
-		latest bool
-		f      intentFlags
-	)
-	c := &cobra.Command{
-		Use:   "bump <port|subport|portdir>",
-		Short: "Bump a port to a new version, as a branch",
-		Args:  exactArgs(1),
-		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
+// bumpVerb is the catalogue's entry for moving a port to a new version.
+// The behavior is intentAction's — this row contributes only the flags,
+// the planner, and the one thing the command line knows that the intent
+// does not: what "latest" resolves to.
+var bumpVerb = intentVerb{
+	Definition: intent.Definition{
+		Name:    "bump",
+		Fetches: true,
+		New: func(p intent.Params) (intent.Planner, error) {
+			return bump.Bump{Version: p.Version, Force: p.Recheck, Tools: p.Tools, ClosesTicket: p.ClosesTicket}, nil
+		},
+	},
+	Short: "Bump a port to a new version, as a branch",
+	Flags: func(c *cobra.Command, p *intent.Params, f *intentFlags) func() error {
+		c.Flags().StringVar(&p.Version, "to", "", "the version to bump to")
+		c.Flags().BoolVar(&p.Latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
+		return func() error {
 			switch {
-			case to != "" && latest:
-				return nil, usagef("--to and --latest are mutually exclusive")
-			case to == "latest":
+			case p.Version != "" && p.Latest:
+				return usagef("--to and --latest are mutually exclusive")
+			case p.Version == "latest":
 				// The literal string would be planned as a version;
 				// resolving the newest release is a different workflow.
-				return nil, usagef("use --latest to resolve the newest release")
+				return usagef("use --latest to resolve the newest release")
 			}
-			if err := f.check(); err != nil {
-				return nil, err
-			}
-			return intentAction{
-				verb: "bump", target: args[0],
-				opts: f.opts, verify: f.verifyIt, fetches: true,
-				prepare: func(ctx context.Context, rs *runstate.Context, h port.Handle, pf *portfetch.Fetcher) (plan.Planner, error) {
-					v := to
-					if v == "" {
-						// No stated version: latest is the intent. The gh
-						// seam rides along so the forge's own releases
-						// outrank its raw tags where they exist.
-						resolved, rep, err := bump.ResolveLatest(ctx, rs.Tools, h, pf, upstream.GhRunner(rs.RunGH))
-						if err != nil {
-							return nil, err
-						}
-						fmt.Fprintf(rs.Err, "latest: %s (%s)\n", resolved, rep.Verdict)
-						v = resolved
-					}
-					return bump.Bump{Version: v, Force: f.force, Tools: rs.Tools}, nil
-				},
-			}, nil
-		}),
-	}
-	c.Flags().StringVar(&to, "to", "", "the version to bump to")
-	c.Flags().BoolVar(&latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
-	f.register(c)
-	return c
+			// One switch, two meanings, and the plan-time one is the
+			// parameter: --force replaces the in-flight branch at
+			// realization, and asks for the re-derivation here. They are
+			// spelled the same today and named apart, so that the day
+			// they are spelled apart nothing about the planner moves.
+			p.Recheck = f.force
+			return nil
+		}
+	},
+	Resolve: func(ctx context.Context, rs *runstate.Context, h port.Handle, pf *portfetch.Fetcher, p *intent.Params) error {
+		if p.Version != "" {
+			return nil
+		}
+		// No stated version: latest is the intent. The gh seam rides
+		// along so the forge's own releases outrank its raw tags where
+		// they exist.
+		resolved, rep, err := bump.ResolveLatest(ctx, rs.Tools, h, pf, upstream.GhRunner(rs.RunGH))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(rs.Err, "latest: %s (%s)\n", resolved, rep.Verdict)
+		p.Version = resolved
+		return nil
+	},
 }
