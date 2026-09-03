@@ -89,8 +89,8 @@ type PublishDecision struct {
 	// exits in the verdict band — with the run whose answer it is
 	// enforcing, rather than among the ways promote itself can break.
 	Refusal error
-	// Blocked is one advisory per blocked platform, in the record's
-	// stable platform order, for stderr.
+	// Blocked is one advisory per blocked run, in the record's stable
+	// order, for stderr.
 	Blocked []string
 	// SayUnverified asks the caller to say so before it publishes.
 	SayUnverified bool
@@ -119,10 +119,20 @@ func DecidePublish(r record.Record, promotable bool, branch, tipAbbrev string, n
 		return PublishDecision{Refusal: &FailedVerificationError{Branch: branch, Tip: tipAbbrev}}
 	}
 	d := PublishDecision{SayUnverified: true}
-	for _, plat := range r.Platforms() {
-		if run := r.Runs[plat]; run.State == record.Blocked {
-			d.Blocked = append(d.Blocked, fmt.Sprintf("verification blocked on %s: %s", plat, run.Detail))
+	named := Names(r)
+	for _, ref := range Runs(r) {
+		if ref.Run.State != record.Blocked {
+			continue
 		}
+		// The subject is named only for a cohort. One member's block is
+		// the whole change's, and prefixing the single port a branch is
+		// named for would tell the maintainer something the branch name
+		// on the line above already said.
+		what := "verification"
+		if named {
+			what = ref.Port + "'s verification"
+		}
+		d.Blocked = append(d.Blocked, fmt.Sprintf("%s blocked on %s: %s", what, ref.Platform, ref.Run.Detail))
 	}
 	return d
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
 )
 
@@ -105,22 +104,25 @@ func (e *Engine) releaseAndForget(ctx context.Context, repo *git.Repo, own []str
 		if err != nil {
 			return err
 		}
-		// A running job's worker, or a failed job's kept environment:
-		// either way a VM this branch owns, released with it.
-		for _, run := range n.Runs {
-			if run.State != record.Running && run.Handle == "" {
+		// Every guest the branch still owns, released with it. The jobs
+		// and not the runs: an environment is one thing however many
+		// subjects were building in it, and a job already given back is
+		// not this branch's to give back twice.
+		for _, rel := range releasesIn(n) {
+			job, ok := n.Jobs[rel]
+			if !ok || job.Released {
 				continue
 			}
 			if prov, perr := e.Verifier(ctx); perr == nil {
-				if rerr := prov.Release(ctx, run.Job); rerr != nil {
-					warn("warning: releasing %s: %v", run.Job.ID, rerr)
+				if rerr := prov.Release(ctx, job.Job); rerr != nil {
+					warn("warning: releasing %s: %v", job.Job.ID, rerr)
 				}
 			} else {
 				// A seam that was never wired reads the same here as a
 				// machine with no provider, and the sentence is the same
 				// either way: the worker outlives the branch and somebody
 				// has to be told.
-				warn("warning: %s holds worker %s, and no provider is available to release it", git.Abbrev(sha), run.Job.ID)
+				warn("warning: %s holds worker %s, and no provider is available to release it", git.Abbrev(sha), job.Job.ID)
 			}
 		}
 		if err := l.Remove(ctx, sha); err != nil {

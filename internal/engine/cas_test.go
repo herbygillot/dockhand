@@ -63,10 +63,10 @@ func TestSettleDropsAStalePassOverAPeersCancel(t *testing.T) {
 
 	got, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Canceled, got.Runs["Testos"].State,
+	assert.Equal(t, record.Canceled, runOf(got, "Testos").State,
 		"the peer saw a note this pass did not; a stale pass must not overwrite it")
-	assert.Equal(t, "canceled: promoted without waiting", got.Runs["Testos"].Detail)
-	assert.Equal(t, record.Canceled, n.Runs["Testos"].State,
+	assert.Equal(t, "canceled: promoted without waiting", runOf(got, "Testos").Detail)
+	assert.Equal(t, record.Canceled, runOf(n, "Testos").State,
 		"and the caller's copy reads the note, not the poll it dropped")
 }
 
@@ -83,7 +83,7 @@ func TestSettleAppliesWhenTheRunHasNotMoved(t *testing.T) {
 
 	got, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Passed, got.Runs["Testos"].State,
+	assert.Equal(t, record.Passed, runOf(got, "Testos").State,
 		"the compare guards a run that moved, and nothing else")
 }
 
@@ -126,8 +126,9 @@ func TestSettleDropsAPassOverAJobThatCameBack(t *testing.T) {
 		peer: func() {
 			_, err := peer.cancelRuns(ctx, repo, sha, "canceled by the user", false)
 			require.NoError(t, err)
-			require.NoError(t, peer.recordRun(ctx, repo, sha, "jq", "Testos", record.Run{
-				State: record.Running, Job: verify.Job{Provider: "fake", ID: "fake-99"}}, ""))
+			require.NoError(t, ledger.Open(repo).RecordSubmission(ctx, sha, "Testos",
+				record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-99"}},
+				[]string{"jq"}, record.Run{State: record.Running}))
 		},
 	}
 	eng := testState(t, repo, nil)
@@ -137,9 +138,9 @@ func TestSettleDropsAPassOverAJobThatCameBack(t *testing.T) {
 
 	got, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Running, got.Runs["Testos"].State,
+	assert.Equal(t, record.Running, runOf(got, "Testos").State,
 		"the platform is running a job this pass never watched")
-	assert.Equal(t, "fake-99", got.Runs["Testos"].Job.ID,
+	assert.Equal(t, "fake-99", got.Jobs["Testos"].Job.ID,
 		"and the live job stays the one the note names")
 }
 
@@ -163,7 +164,7 @@ func TestSettleLeavesTheCallersCopyAloneWhenTheNoteIsGone(t *testing.T) {
 
 	require.NoError(t, eng.settle(ctx, repo, &n))
 
-	assert.Equal(t, record.Running, n.Runs["Testos"].State,
+	assert.Equal(t, record.Running, runOf(n, "Testos").State,
 		"the caller keeps what it read; there is no note to replace it with")
 	_, err := ledger.Open(repo).Read(ctx, sha)
 	assert.ErrorIs(t, err, git.ErrNoNote, "and the dropped judgment resurrected nothing")

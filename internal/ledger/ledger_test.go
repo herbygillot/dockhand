@@ -43,14 +43,18 @@ func ledgerRepo(t *testing.T) (*Ledger, *git.Repo, string) {
 	return Open(repo), repo, sha
 }
 
-// passedOn is a settled run, the commonest thing a note holds.
+// passedOn is a settled run, the commonest thing a note holds: one
+// subject, one guest on the platform, one verdict keyed to both.
 func passedOn(sha string, plat string) record.Record {
 	return record.Record{
-		Schema: record.Schema, Sha: sha, Port: "jq",
-		Runs: map[string]record.Run{plat: {
-			State:  record.Passed,
-			Job:    verify.Job{Provider: "fake", ID: "fake-1", Started: started},
-			Tested: true, Linted: true, Lint: "clean",
+		Schema: record.Schema, Sha: sha,
+		Subjects: []record.Subject{{Port: "jq", Names: []string{"jq"}}},
+		Jobs: map[string]record.JobRecord{plat: {
+			Job:  verify.Job{Provider: "fake", ID: "fake-1", Started: started},
+			Test: true,
+		}},
+		Runs: map[string]record.Run{record.RunKey("jq", plat): {
+			State: record.Passed, Platform: plat, Linted: true, Lint: "clean",
 		}},
 	}
 }
@@ -134,9 +138,12 @@ func TestReadRefusesWhatItCannotHonourAndNeverAsAbsence(t *testing.T) {
 	}{
 		{"malformed", "{not json", "does not parse"},
 		{"a schema from the future",
-			`{"schema":99,"sha":"` + sha + `","port":"jq","runs":{}}`, "newer dockhand"},
+			`{"schema":99,"sha":"` + sha + `","runs":{}}`, "newer dockhand"},
+		{"a schema this build no longer reads",
+			`{"schema":2,"sha":"` + sha + `","port":"jq","runs":{}}`,
+			"cannot be carried over"},
 		{"a note describing another commit",
-			`{"schema":2,"sha":"0000000000000000000000000000000000000000","port":"jq","runs":{}}`,
+			`{"schema":3,"sha":"0000000000000000000000000000000000000000","runs":{}}`,
 			"claims to describe"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

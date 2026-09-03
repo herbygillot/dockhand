@@ -88,9 +88,13 @@ func (e *Engine) Cancel(ctx context.Context, repo *git.Repo, target string) erro
 	return nil
 }
 
-// freed is one thing a cancel gave back: the platform whose run held
+// freed is one thing a cancel gave back: the platform whose guest held
 // it, the worker that went back, and whether what was released was a
 // running build or a failed run's kept debug environment.
+//
+// One entry per release and not per run, because one guest is one
+// thing: a cohort of nine canceled on one platform freed one worker,
+// and nine lines saying so would be nine lies about the slot count.
 //
 // Returned rather than printed because the two callers say different
 // things about the same act — the verb names the branch and platform
@@ -104,15 +108,21 @@ type freed struct {
 
 // cancelRuns releases what one commit's note still holds and rewrites
 // it to say so: every running run is canceled with the reason, and
-// with kept set a failed run's debug environment is released too while
-// its verdict stands. A commit with no note holds nothing, and says so
-// with git.ErrNoNote — the callers differ on whether that is worth a
-// sentence.
+// with keepToo set a failed run's debug environment is released too
+// while its verdict stands. A commit with no note holds nothing, and
+// says so with git.ErrNoNote — the callers differ on whether that is
+// worth a sentence.
 //
 // The provider is resolved only once something is actually going to be
 // released. A tart-less machine promotes branches with settled notes
 // all day, and CI proved that an eager lookup broke exactly that.
-func (e *Engine) cancelRuns(ctx context.Context, repo *git.Repo, sha, reason string, kept bool) ([]freed, error) {
+//
+// It releases before it writes, which is the order settle is forbidden.
+// The difference is the lock: this whole function runs inside the notes
+// flock, so no peer can read "finished" and release the same guest in
+// between, and the ledger's own release right — which takes that same
+// flock — cannot be asked for from in here without waiting itself out.
+func (e *Engine) cancelRuns(ctx context.Context, repo *git.Repo, sha, reason string, keepToo bool) ([]freed, error) {
 	unlock, err := repo.LockNotes(ctx)
 	if err != nil {
 		return nil, err
@@ -123,7 +133,7 @@ func (e *Engine) cancelRuns(ctx context.Context, repo *git.Repo, sha, reason str
 	if err != nil {
 		return nil, err
 	}
-	held := n.AnyState(record.Running) || (kept && holdsEnvironment(n))
+	held := n.AnyState(record.Running) || (keepToo && holdsEnvironment(n))
 	if !held {
 		return nil, nil
 	}
@@ -132,24 +142,48 @@ func (e *Engine) cancelRuns(ctx context.Context, repo *git.Repo, sha, reason str
 		return nil, err
 	}
 	var out []freed
-	// In the record's own platform order, so that a commit verified on
-	// several releases reports them the same way twice.
-	for _, plat := range n.Platforms() {
-		run := n.Runs[plat]
+	// In release order, so that a commit verified on several platforms
+	// reports them the same way twice.
+	for _, rel := range releasesIn(n) {
+		job, ok := n.Jobs[rel]
+		if !ok {
+			// A queued run holds nothing: it was never submitted, and
+			// there is no environment behind it to give back.
+			continue
+		}
 		switch {
-		case run.State == record.Running:
-			e.freeWorker(ctx, prov, run.Job, "releasing "+run.Job.ID)
-			run.State, run.Detail = record.Canceled, reason
-			out = append(out, freed{Platform: plat, Worker: run.Job.ID})
-		case kept && run.State == record.Failed && run.Handle != "":
-			e.freeWorker(ctx, prov, run.Job, "releasing kept environment "+run.Handle)
-			run.Handle = ""
-			run.Detail = strings.TrimSuffix(run.Detail, "\n") + " — kept environment released"
-			out = append(out, freed{Platform: plat, Worker: run.Job.ID, Kept: true})
+		case anyRunning(n, rel):
+			e.freeWorker(ctx, prov, job.Job, "releasing "+job.Job.ID)
+			for _, ref := range runsOn(n, rel) {
+				if ref.Run.State != record.Running {
+					continue
+				}
+				run := ref.Run
+				run.State, run.Detail = record.Canceled, reason
+				n.Runs[ref.Key()] = run
+			}
+			job.Released = true
+			n.Jobs[rel] = job
+			out = append(out, freed{Platform: rel, Worker: job.Job.ID})
+		case keepToo && keepsEnvironment(job):
+			e.freeWorker(ctx, prov, job.Job, "releasing kept environment "+job.Handle)
+			for _, ref := range runsOn(n, rel) {
+				if ref.Run.State != record.Failed {
+					continue
+				}
+				run := ref.Run
+				run.Detail = strings.TrimSuffix(run.Detail, "\n") + " — kept environment released"
+				n.Runs[ref.Key()] = run
+			}
+			// The flag goes down and the name stays. What was handed back
+			// is still worth naming to whoever has to go and delete it if
+			// the provider refused.
+			job.Released = true
+			n.Jobs[rel] = job
+			out = append(out, freed{Platform: rel, Worker: job.Job.ID, Kept: true})
 		default:
 			continue
 		}
-		n.Runs[plat] = run
 	}
 	if len(out) == 0 {
 		return nil, nil
@@ -209,20 +243,41 @@ func (e *Engine) SupersedeStale(ctx context.Context, repo *git.Repo, branch, tip
 			return err
 		}
 		changed := false
-		for plat, run := range n.Runs {
+		for _, rel := range releasesIn(n) {
+			job, ok := n.Jobs[rel]
+			if !ok {
+				continue
+			}
+			running := anyRunning(n, rel)
 			switch {
-			case run.State == record.Running:
-				e.freeWorker(ctx, prov, run.Job, "canceling "+run.Job.ID)
-				run.State, run.Detail = record.Superseded, "canceled: the branch moved to "+git.Abbrev(tip)
-			case run.State == record.Failed && run.Handle != "":
-				e.freeWorker(ctx, prov, run.Job, "releasing kept environment "+run.Handle)
-				run.State, run.Handle = record.Superseded, ""
-				run.Detail = "failed here, then the branch moved to " + git.Abbrev(tip) + " — kept environment released"
+			case running:
+				e.freeWorker(ctx, prov, job.Job, "canceling "+job.Job.ID)
+			case keepsEnvironment(job):
+				e.freeWorker(ctx, prov, job.Job, "releasing kept environment "+job.Handle)
 			default:
 				continue
 			}
-			n.Runs[plat], changed = run, true
-			fmt.Fprintf(e.Err, "released stale verification of %s on %s (branch moved past it)\n", git.Abbrev(sha), plat)
+			for _, ref := range runsOn(n, rel) {
+				run := ref.Run
+				switch run.State {
+				case record.Running:
+					run.State, run.Detail = record.Superseded, "canceled: the branch moved to "+git.Abbrev(tip)
+				case record.Failed:
+					run.State = record.Superseded
+					run.Detail = "failed here, then the branch moved to " + git.Abbrev(tip) + " — kept environment released"
+				case record.Queued, record.Submitting, record.Passed, record.Unsupported,
+					record.Blocked, record.Canceled, record.Superseded, record.Errored:
+					// Nothing this sweep supersedes. A run that never
+					// started holds nothing, and one that already reached a
+					// verdict about a commit the branch has moved past is
+					// still what was learned there.
+					continue
+				}
+				n.Runs[ref.Key()] = run
+			}
+			job.Released = true
+			n.Jobs[rel], changed = job, true
+			fmt.Fprintf(e.Err, "released stale verification of %s on %s (branch moved past it)\n", git.Abbrev(sha), rel)
 		}
 		if changed {
 			if err := l.Write(ctx, n); err != nil {
@@ -231,15 +286,4 @@ func (e *Engine) SupersedeStale(ctx context.Context, repo *git.Repo, branch, tip
 		}
 	}
 	return nil
-}
-
-// holdsEnvironment reports whether any run still holds a kept debug
-// environment — the failure side's counterpart to a running run.
-func holdsEnvironment(n record.Record) bool {
-	for _, r := range n.Runs {
-		if r.State == record.Failed && r.Handle != "" {
-			return true
-		}
-	}
-	return false
 }

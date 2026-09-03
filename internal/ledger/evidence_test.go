@@ -2,7 +2,6 @@ package ledger
 
 import (
 	"context"
-	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,27 +15,31 @@ import (
 
 // noteOn writes a record the way production does — started from the
 // commit, so it carries the content identity the same-tree scan reads
-// rather than a hand-built zero tree.
+// rather than a hand-built zero tree. The runs are given per platform
+// and keyed here, because jq is the only subject these tests have.
 func noteOn(t *testing.T, l *Ledger, sha string, runs map[string]record.Run) {
 	t.Helper()
 	ctx := context.Background()
-	r, err := l.LoadOrStart(ctx, sha, "jq")
+	r, err := l.LoadOrStart(ctx, sha)
 	require.NoError(t, err)
-	maps.Copy(r.Runs, runs)
+	r.Subjects = []record.Subject{{Port: "jq", Names: []string{"jq"}}}
+	for plat, run := range runs {
+		run.Platform = plat
+		r.Jobs[plat] = record.JobRecord{
+			Job: verify.Job{Provider: "fake", ID: "fake-" + plat, Started: started},
+		}
+		r.Runs[record.RunKey("jq", plat)] = run
+	}
 	require.NoError(t, l.Write(ctx, r))
 }
 
-// pass and fail are the two runs the gate actually weighs.
+// pass and fail are the two runs the gate actually weighs. Nothing
+// about the environment is on either of them any more: the job and the
+// handle belong to the guest, and the guest is the record's other map.
 var (
-	pass = record.Run{
-		State:  record.Passed,
-		Job:    verify.Job{Provider: "fake", ID: "fake-1", Started: started},
-		Tested: true, Linted: true, Lint: "clean",
-	}
+	pass = record.Run{State: record.Passed, Linted: true, Lint: "clean"}
 	fail = record.Run{
 		State:  record.Failed,
-		Job:    verify.Job{Provider: "fake", ID: "fake-2", Started: started},
-		Handle: "dockhand-worker-2",
 		Detail: "Failed to build jq: command execution failed",
 	}
 )
@@ -85,7 +88,7 @@ func TestEvidenceForRefusesACorruptTipNote(t *testing.T) {
 	for _, tc := range []struct{ name, body, says string }{
 		{"malformed", "{not json", "does not parse"},
 		{"a schema from the future",
-			`{"schema":99,"sha":"` + sha + `","port":"jq","runs":{}}`, "newer dockhand"},
+			`{"schema":99,"sha":"` + sha + `","runs":{}}`, "newer dockhand"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gittest.Note(t, repo, sha, tc.body)

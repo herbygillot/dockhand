@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/verdict"
 )
@@ -122,8 +125,18 @@ type Minted struct {
 // under dockhand's namespace, entirely in the object database — the
 // user's HEAD and working tree are never touched. A plan with no edits
 // mints nothing and returns nil, nil.
-func (e *Engine) mint(ctx context.Context, p *plan.Plan, force bool) (*Minted, error) {
+//
+// It also bears the commit's record. Schema 3's record is born here
+// rather than at the first submit, because everything a subject knows
+// is known here and nowhere later: the directory the change touched,
+// the intent that made it, what it moves to, and how far the
+// invocation's contract reaches. A branch minted with --no-verify
+// submits nothing at all, so a record that waited for a job would have
+// no place to keep any of it — and a --no-verify branch therefore
+// gains a note where it used to have none.
+func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, error) {
 	branch, message := git.MintBranchName(p.Slug), p.Summary
+	force := o.OnInFlight == Replace
 	hasEdits := len(p.Edits) > 0
 	// The decision is asked twice, and the order is the reason: the
 	// empty-plan answer is reached before the plan is resolved against
@@ -175,7 +188,143 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, force bool) (*Minted, e
 	if err != nil {
 		return nil, err
 	}
+	m := &Minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}
+	e.bear(ctx, m, p, primary, o.destination())
+	e.supersedeSiblings(ctx, repo, branch, p.Port)
 	fmt.Fprintf(e.Out, "branch: %s (%s)\n", branch, git.Abbrev(sha))
 	fmt.Fprintf(e.Err, "your checkout is untouched — `git checkout %s` to add changes\n", branch)
-	return &Minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}, nil
+	return m, nil
+}
+
+// bear opens the minted commit's record: who the change is about,
+// where it is bound, who asked, and what it was minted on top of.
+//
+// A failure to write it is a warning and never the mint's answer, on
+// the same terms as a deferral's note: the branch exists either way,
+// and reporting a successful mint as a failure because a note could
+// not be written would be the more misleading of the two. What is lost
+// is the per-subject facts, which the branch's own diff can no longer
+// supply — so it is said out loud rather than swallowed.
+func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string, dest record.Destination) {
+	b := e.baseOf(ctx, m.Repo, base)
+	if err := e.Ledger(m.Repo).Update(ctx, m.Sha, func(r *record.Record) error {
+		r.Slug = p.Slug
+		r.Subjects = []record.Subject{{
+			Port: p.Port,
+			// Written as [Port] and not left empty. The empty slice
+			// already means something else — nobody asked — and the
+			// planner did ask: it evaluated the Portfile and named the
+			// one context this change moves.
+			Names:   []string{p.Port},
+			Portdir: m.RelPort,
+			Intent:  p.Intent,
+			Target:  targetIn(p.Slug, p.Port),
+		}}
+		r.Destination = dest
+		// A person ran the verb. The machine value exists for the sweep,
+		// which has no caller yet, and neither value is ever an input to
+		// a gate: a field that could widen what the unattended road is
+		// allowed to do would be an authorization rather than provenance.
+		r.AskedBy = record.Human
+		r.MintedVia = record.MintedSingle
+		r.Base = b
+		return nil
+	}); err != nil {
+		fmt.Fprintf(e.Err, "warning: recording the change on %s: %v\n", m.Branch, err)
+	}
+}
+
+// baseOf reads the commit a change is minted on top of: the sha, and
+// when that commit was made.
+//
+// Both halves answer different readers — the sha is the honest "before"
+// a baseline is measured at, and the date is how a reader tells a
+// change written against a week-old tree from one written against
+// today's — and each is written only if it could be read. A base that
+// cannot be resolved at all leaves the field absent rather than
+// guessed, which is what omitzero on the record's side is for.
+func (e *Engine) baseOf(ctx context.Context, repo *git.Repo, base string) record.Base {
+	sha, err := repo.RevParse(ctx, base)
+	if err != nil {
+		return record.Base{}
+	}
+	at, err := repo.CommittedAt(ctx, sha)
+	if err != nil {
+		return record.Base{Sha: sha}
+	}
+	return record.Base{Sha: sha, CommittedAt: at}
+}
+
+// targetIn is what a change moves its port to — "1.9", "checksums",
+// "rev2" — recovered from the two values the planner already holds.
+//
+// It is not the branch-name reading that Subject.Target exists to end.
+// That one has a name and nothing else, and must split it somewhere; a
+// slug and the port that built it are both here, so cutting the one
+// off the other is inverting a construction rather than parsing a
+// string. A slug that does not carry the port keeps nothing: a wrong
+// target is worse than an absent one.
+func targetIn(slug, port string) string {
+	if port == "" {
+		return ""
+	}
+	rest, _ := strings.CutPrefix(slug, port+"-")
+	if rest == slug {
+		return ""
+	}
+	return rest
+}
+
+// supersedeSiblings marks the other in-flight branches for this port as
+// replaced by the one just minted.
+//
+// Port-keyed, because that is the relation the record's field names:
+// dockhand/jq-1.8.2 and dockhand/jq-1.8.3 are one port under two branch
+// names, and the in-flight refusal compares branch names, so both
+// stand. The newer branch is the change now. The older one keeps
+// everything it learned and gains the field that says why it will learn
+// nothing more.
+//
+// At mint and never at submit. A submit happens to whichever branch was
+// pointed at — the drain retries an old one, `dockhand verify` names
+// one by hand — so writing the field from there would let an older
+// branch declare a newer one superseded. A mint is the one moment where
+// which of two branches is the newer is not a guess.
+//
+// Silent on success. There is no superseded phase in the report yet, so
+// the note knows something the branch's line does not; saying it here
+// instead would be that line, in the wrong place.
+func (e *Engine) supersedeSiblings(ctx context.Context, repo *git.Repo, minted, port string) {
+	if port == "" {
+		return
+	}
+	branches, err := repo.Branches(ctx, git.BranchNamespace)
+	if err != nil {
+		return
+	}
+	l := e.Ledger(repo)
+	for _, br := range branches {
+		if br == minted {
+			continue
+		}
+		tip, err := repo.RevParse(ctx, br)
+		if err != nil {
+			continue
+		}
+		// Read before the update so that a branch about another port —
+		// which is most of them — costs one note read and no lock.
+		n, err := l.Read(ctx, tip)
+		if err != nil || n.Headline().Port != port || n.SupersededBy == minted {
+			continue
+		}
+		if err := l.Update(ctx, tip, func(r *record.Record) error {
+			if r.Headline().Port != port || r.SupersededBy == minted {
+				return ledger.ErrUnchanged
+			}
+			r.SupersededBy = minted
+			return nil
+		}); err != nil {
+			fmt.Fprintf(e.Err, "warning: recording %s as superseded by %s: %v\n", br, minted, err)
+		}
+	}
 }

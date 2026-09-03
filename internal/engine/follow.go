@@ -41,14 +41,14 @@ func (e *Engine) Follow(ctx context.Context, repo *git.Repo, sha, portName, plat
 	if !finished {
 		return nil
 	}
-	n, err := e.Ledger(repo).LoadOrStart(ctx, sha, portName)
+	n, err := e.Ledger(repo).LoadOrStart(ctx, sha)
 	if err != nil {
 		return err
 	}
 	if err := e.settle(ctx, repo, &n); err != nil {
 		return err
 	}
-	r := n.Runs[plat]
+	r := n.Runs[record.RunKey(portName, plat)]
 	switch r.State {
 	case record.Passed:
 		fmt.Fprintf(e.Err, "passed on %s; worker released\n", plat)
@@ -57,7 +57,9 @@ func (e *Engine) Follow(ctx context.Context, repo *git.Repo, sha, portName, plat
 		fmt.Fprintf(e.Err, "%s declines %s: %s\n", portName, plat, r.Detail)
 		return nil
 	case record.Failed:
-		return &VerifyFailedError{Port: portName, Handle: r.Handle}
+		// The environment a failure kept belongs to the guest, so the
+		// name of it is read from the job and not from the verdict.
+		return &VerifyFailedError{Port: portName, Handle: n.Jobs[plat].Handle}
 	case record.Blocked:
 		// The port is untested, not disproven: something it depends on
 		// failed first. Its own code because the remedy is the
@@ -75,11 +77,13 @@ func (e *Engine) Follow(ctx context.Context, repo *git.Repo, sha, portName, plat
 		// The branch moved while the build ran: whatever this run was
 		// about to say is about bytes that are no longer the tip.
 		return &verdict.SupersededError{Port: portName, Platform: plat, Detail: r.Detail}
-	case record.Deferred:
+	case record.Queued, record.Submitting:
 		// Queued work, which is the pending band's whole reason for
 		// existing. Reachable only by a racing writer — the run being
 		// followed was Running — and lumping it in below is precisely the
-		// confusion the bands were drawn to end.
+		// confusion the bands were drawn to end. A claimed run belongs
+		// here too: somebody is starting it, which is the same answer to
+		// the same question.
 		return &verdict.QueuedError{Port: portName, Platform: plat, Detail: r.Detail}
 	case record.Running, record.Errored:
 	}
@@ -115,11 +119,11 @@ func (e *Engine) FollowStarted(ctx context.Context, repo *git.Repo, tip, portNam
 	if err != nil {
 		return err
 	}
-	run, ok := n.Runs[plat]
+	run, ok := n.Runs[record.RunKey(portName, plat)]
 	if !ok || run.State != record.Running {
 		return nil
 	}
-	return e.Follow(ctx, repo, tip, portName, plat, prov, run.Job)
+	return e.Follow(ctx, repo, tip, portName, plat, prov, n.Jobs[plat].Job)
 }
 
 // Trace is the follow that keeps no record: `log --trace` watches an

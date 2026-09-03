@@ -18,22 +18,26 @@ import (
 var ErrUnchanged = errors.New("ledger: record unchanged")
 
 // LoadOrStart reads the commit's record, or begins one carrying the
-// commit's identity: the start of every per-platform update.
+// commit's identity: the start of every update that has to survive the
+// note not being there yet.
 //
-// Only true absence starts fresh. A malformed note, a schema from the
-// future, a git failure — each propagates, because treating any of
-// them as absence would overwrite the very state that governs worker
+// It takes no port, and that is the schema-3 shape rather than a
+// tidying. A record's ports are its subjects, and a subject is written
+// when the change is minted, from the plan that named it, with the
+// portdir, the intent and the target that make it worth having. A
+// storage layer accepting a port here would invent a subject out of
+// whichever caller happened to open the record first, and invent it
+// stripped of every one of those. What this package can honestly supply
+// is identity — the sha and the tree — so identity is all it supplies.
+//
+// Only true absence starts fresh. A malformed note, a schema this build
+// does not read, a git failure — each propagates, because treating any
+// of them as absence would overwrite the very state that governs worker
 // release and promotion.
-func (l *Ledger) LoadOrStart(ctx context.Context, sha, port string) (record.Record, error) {
+func (l *Ledger) LoadOrStart(ctx context.Context, sha string) (record.Record, error) {
 	r, err := l.Read(ctx, sha)
 	if err == nil {
-		if r.Runs == nil {
-			// Belt to the codec's braces: its fast path only returns a
-			// record whose runs are non-nil, and every caller assigns a
-			// run into the map next, where a nil one panics instead of
-			// erroring.
-			r.Runs = map[string]record.Run{}
-		}
+		ready(&r)
 		return r, nil
 	}
 	if !errors.Is(err, git.ErrNoNote) {
@@ -43,10 +47,26 @@ func (l *Ledger) LoadOrStart(ctx context.Context, sha, port string) (record.Reco
 	if terr != nil {
 		return record.Record{}, terr
 	}
-	return record.Record{
-		Schema: record.Schema, Sha: sha, Tree: tree, Port: port,
-		Runs: map[string]record.Run{},
-	}, nil
+	r = record.Record{Schema: record.Schema, Sha: sha, Tree: tree}
+	ready(&r)
+	return r, nil
+}
+
+// ready makes both of a record's maps assignable.
+//
+// Jobs and Runs are omitempty on the wire and the codec normalizes
+// neither, so a record minted with nothing submitted yet decodes with
+// two nil maps — and the next thing every caller does is assign into
+// one of them, where a nil map panics rather than errors. Doing it once
+// here means no closure has to remember; an empty map costs nothing on
+// the way back out, because Encode drops both.
+func ready(r *record.Record) {
+	if r.Jobs == nil {
+		r.Jobs = map[string]record.JobRecord{}
+	}
+	if r.Runs == nil {
+		r.Runs = map[string]record.Run{}
+	}
 }
 
 // Update is the safe read-modify-write: it takes the notes flock,
@@ -60,6 +80,12 @@ func (l *Ledger) LoadOrStart(ctx context.Context, sha, port string) (record.Reco
 // share a checkout now, and that lost update is what the lock exists
 // to prevent.
 //
+// It is also what makes a compare-and-set possible at all: a closure
+// that checks the fresh record against what it observed before the lock
+// — a run's state, the job its platform names — can drop its own
+// conclusion when the note moved underneath it. Both maps are handed
+// over fresh, so a compare spanning the two sees one consistent read.
+//
 // A closure returning ErrUnchanged leaves the note untouched; any
 // other error abandons the write and reaches the caller.
 //
@@ -67,13 +93,13 @@ func (l *Ledger) LoadOrStart(ctx context.Context, sha, port string) (record.Reco
 // is per open file description and every acquire opens a fresh one, so
 // such a caller would wait itself out. That caller has re-read under
 // its own lock already, and wants Write.
-func (l *Ledger) Update(ctx context.Context, sha, port string, mutate func(r *record.Record) error) error {
+func (l *Ledger) Update(ctx context.Context, sha string, mutate func(r *record.Record) error) error {
 	unlock, err := l.repo.LockNotes(ctx)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	r, err := l.LoadOrStart(ctx, sha, port)
+	r, err := l.LoadOrStart(ctx, sha)
 	if err != nil {
 		return err
 	}
@@ -86,16 +112,55 @@ func (l *Ledger) Update(ctx context.Context, sha, port string, mutate func(r *re
 	return l.Write(ctx, r)
 }
 
-// RecordRun writes one platform's run into the commit's record, under
-// the lock and over a fresh read — the update a submit, a deferral, a
-// cancellation and a pre-mint verdict all arrive at.
+// RecordRun writes one subject's verdict on one platform into the
+// commit's record, under the lock and over a fresh read — the update a
+// deferral, a declined platform, a cancellation and a pre-mint verdict
+// all arrive at. A submission that starts an environment wants
+// RecordSubmission, which lands the guest and its runs together.
 //
-// Telling the user what was recorded is the caller's job, deliberately
-// left out here: the ledger writes notes, and a package that also
-// wrote to a terminal would own an output ordering it cannot see.
+// The run is keyed by RunKey(port, release) from day one, while every
+// change still has a single subject and the port half of the key looks
+// like decoration. Re-keying notes already written is the coordination
+// event this schema exists to spend exactly once.
+//
+// Platform is stamped from the release for the same reason Encode
+// stamps the schema: the key and the field are two spellings of one
+// fact, and a caller keeping them equal by hand would eventually not.
 func (l *Ledger) RecordRun(ctx context.Context, sha, port, release string, run record.Run) error {
-	return l.Update(ctx, sha, port, func(r *record.Record) error {
-		r.Runs[release] = run
+	return l.Update(ctx, sha, func(r *record.Record) error {
+		run.Platform = release
+		adoptSubject(r, port)
+		r.Runs[record.RunKey(port, release)] = run
 		return nil
 	})
+}
+
+// adoptSubject names a port among the record's subjects when nothing
+// already does.
+//
+// Records are born at mint carrying their subjects, so this is reached
+// only where there was no mint to be born at: a verify run over a
+// branch this build did not create, or one whose note a peer discarded
+// mid-pass. Without it the port would survive in the run key alone,
+// where no projection reads it — Headline, Ports and Portdirs all walk
+// the subjects — and the record would render a verdict about nobody.
+//
+// It appends and never rewrites. A subject minted with a portdir, an
+// intent and a target is the good copy, and a bare one arriving later
+// must not flatten it.
+//
+// Names is left empty rather than written as [port], which is the
+// opposite of what the mint path does and is the honest answer here:
+// [port] means the subports were asked about and there are none, and
+// nobody asked. The ledger does not read a Portfile.
+func adoptSubject(r *record.Record, port string) {
+	if port == "" {
+		return
+	}
+	for _, s := range r.Subjects {
+		if s.Port == port {
+			return
+		}
+	}
+	r.Subjects = append(r.Subjects, record.Subject{Port: port})
 }

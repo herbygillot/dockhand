@@ -34,6 +34,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
 	"github.com/herbygillot/dockhand/internal/tcl/shell"
@@ -154,7 +155,7 @@ func TestExitFamiliesAreTheDecade(t *testing.T) {
 	// And the property that matters: every row's band classifies, and
 	// into the family its decade names. A code added to a band later is
 	// already classified, which is the whole point of the decade.
-	for _, row := range exitTable() {
+	for _, row := range exitTable(t) {
 		got := ExitCode(row.err)
 		assert.NotEmpty(t, exitcode.Family(got), "%s: code %d has no family", row.name, got)
 		if got > exitcode.Usage {
@@ -169,7 +170,7 @@ func TestExitFamiliesAreTheDecade(t *testing.T) {
 // disagree is if something derives one of them twice, so this holds
 // them to the same classifier over the whole table.
 func TestExitTwinAgreesWithTheExitCode(t *testing.T) {
-	for _, row := range exitTable() {
+	for _, row := range exitTable(t) {
 		twin := TwinOf(row.err)
 		assert.Equal(t, ExitCode(row.err), twin.Code, "%s: twin disagrees with the exit code", row.name)
 		assert.Equal(t, exitcode.Family(twin.Code), twin.Family, "%s: twin's family is not its code's", row.name)
@@ -196,7 +197,12 @@ type exitRow struct {
 
 // exitTable builds every row. Sites are named by function so the table
 // reads as a map of where each exit comes from.
-func exitTable() []exitRow {
+//
+// It takes the test because some rows are produced by asking the code
+// that owns them, and a producer that unexpectedly succeeded must fail
+// loudly rather than contribute a nil error to a table about errors.
+func exitTable(t *testing.T) []exitRow {
+	t.Helper()
 	ctx := context.Background()
 	const branch = "dockhand/jq-1.8"
 	const sha = "0123456789abcdef0123456789abcdef01234567"
@@ -236,8 +242,17 @@ func exitTable() []exitRow {
 	// so the row carries the bytes a user is shown rather than a second
 	// spelling of them.
 	noProvider := verify.NoProvider
-	noteErr := fmt.Errorf("note on %s does not parse: %w — `git notes --ref=%s remove %s` clears it",
-		sha, parseErr, git.VerifyNotesRef, sha)
+	// The note refusals are asked of the codec rather than restated as
+	// literals: the sentence is record's to word, the identity is what a
+	// caller branches on, and a row that spelled either by hand would
+	// agree with nothing. Each argument is the bytes that refusal
+	// actually meets on disk.
+	refuseNote := func(body string) error {
+		_, err := record.Decode([]byte(body), sha)
+		require.Error(t, err, "these bytes must be refused: %s", body)
+		return err
+	}
+	noteErr := refuseNote("{not json")
 	// What the finder hands back for a tool it did not resolve: the
 	// sentinel mid-sentence, which is the shape every gh call wraps.
 	ghMissing := fmt.Errorf("%s %w on PATH", tool.Gh, tool.ErrNotFound)
@@ -713,11 +728,23 @@ func exitTable() []exitRow {
 			err: fmt.Errorf("%w: %s", verify.ErrUnknownJob, "fake-1"), is: []error{verify.ErrUnknownJob}},
 		exitRow{name: "platform.ErrUnknownRelease raw (every cmd site wraps it in *UsageError)",
 			err: unknownRelease, is: []error{platform.ErrUnknownRelease}},
-		exitRow{name: "note validation: does not parse (ReadNote)", err: noteErr},
-		exitRow{name: "note validation: newer schema (ReadNote)",
-			err: fmt.Errorf("note on %s was written by a newer dockhand (schema %d, this build speaks %d); upgrade dockhand", sha, 99, 2)},
-		exitRow{name: "note validation: sha mismatch (ReadNote)",
-			err: fmt.Errorf("note on %s claims to describe %s — corrupt; `git notes --ref=%s remove %s` clears it", sha, "ffff", git.VerifyNotesRef, sha)},
+		exitRow{name: "note validation: does not parse (record.Decode)",
+			err: noteErr, is: []error{record.ErrMalformed}},
+		exitRow{name: "note validation: newer schema (record.Decode)",
+			err: refuseNote(fmt.Sprintf(`{"schema": 99, "sha": %q}`, sha)),
+			is:  []error{record.ErrSchemaTooNew}},
+		// Every note on disk before this build arrives here, which is
+		// what the clean break costs and what it says out loud: the old
+		// evidence cannot be carried over, so the refusal names both
+		// halves of the remedy — discard the note, then re-earn it. It
+		// is band 1 like its siblings: a note this build cannot read is
+		// a thing gone wrong, not a destination refusing.
+		exitRow{name: "note validation: schema 2, from before the break (record.Decode)",
+			err: refuseNote(fmt.Sprintf(`{"schema": 2, "sha": %q, "port": "jq", "runs": {}}`, sha)),
+			is:  []error{record.ErrSchemaTooOld}},
+		exitRow{name: "note validation: sha mismatch (record.Decode)",
+			err: refuseNote(`{"schema": 3, "sha": "ffff"}`),
+			is:  []error{record.ErrShaMismatch}},
 		exitRow{name: "submit-and-record compensation: release failed too (submit)",
 			err: fmt.Errorf("recording the run failed (%w) and releasing %s failed too: %w — `tart delete %s` frees the slot",
 				noteErr, "fake-1", errors.New("tart delete: no such vm"), "fake-1")},
@@ -935,7 +962,7 @@ func TestWaitingRefusalStampsTheAsksThatLeave(t *testing.T) {
 // withheld riders names itself apart from one that withheld nothing.
 func TestEveryTwinReasonNamesOneCode(t *testing.T) {
 	codes := map[string]map[int]string{}
-	for _, row := range exitTable() {
+	for _, row := range exitTable(t) {
 		twin := TwinOf(row.err)
 		if twin.Reason == "" {
 			continue
@@ -990,7 +1017,7 @@ func TestSentinelOutcomesCarryAReason(t *testing.T) {
 
 func TestExitTableParity(t *testing.T) {
 	seen := map[string]bool{}
-	for _, tc := range exitTable() {
+	for _, tc := range exitTable(t) {
 		require.False(t, seen[tc.name], "duplicate row %q", tc.name)
 		seen[tc.name] = true
 		t.Run(tc.name, func(t *testing.T) {
@@ -1015,7 +1042,7 @@ func TestExitTableCoversEveryDeclineType(t *testing.T) {
 
 	planCovered := map[plan.DeclineType]bool{}
 	styleCovered := map[portstyle.DeclineType]bool{}
-	for _, row := range exitTable() {
+	for _, row := range exitTable(t) {
 		var d *plan.Decline
 		if errors.As(row.err, &d) {
 			planCovered[d.Type] = true

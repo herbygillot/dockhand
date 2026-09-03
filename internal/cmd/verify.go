@@ -73,7 +73,15 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	if portName == "" {
 		portName = filepath.Base(filepath.Clean(targets[0].Portdir))
 	}
-	_, err = eng.RunVerification(ctx, portName, targets[0].Portdir, release, a.test)
+	// State verification takes the archive as it finds it. Whether a
+	// port's binary archive still matches the bytes under test is a
+	// property of the CHANGE — a version bump names an archive that does
+	// not exist yet, a checksum refresh leaves one that predates it —
+	// and state verification has no change to read: it tests a portdir
+	// as it sits, whoever wrote it. Forcing a source build for every
+	// invocation would spend an hour to answer a question nobody asked,
+	// so the answer is the same one MacPorts would give unprompted.
+	_, err = eng.RunVerification(ctx, portName, targets[0].Portdir, release, a.test, false)
 	return err
 }
 

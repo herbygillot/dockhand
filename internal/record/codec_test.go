@@ -4,134 +4,14 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// started is the instant every golden in the tree carries.
-var started = time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-
-// populated exercises every part of the wire format at once: a schema
-// the encoder must overwrite, run keys given out of lexical order, a
-// run with nothing but a state (so the always-emitted zero job shows),
-// a run with a detail and no job, and a run with every omitempty field
-// set and a detail carrying the three bytes encoding/json escapes.
-func populated() Record {
-	return Record{
-		Schema: 99,
-		Sha:    "7159f6b651e49cae47422560120e93ebc494acc9",
-		Tree:   "84638b5a25febc78bd8ac7cad517ef4d88764262",
-		Port:   "jq",
-		Runs: map[string]Run{
-			"Testos": {
-				State:  Failed,
-				Job:    verify.Job{Provider: "fake", ID: "fake-1", Started: started},
-				Handle: "dockhand-worker-failed",
-				Detail: `Failed to build jq: "a & b" <not> ok`,
-				Tested: true,
-				Linted: true,
-				Lint:   "2 warnings",
-			},
-			"Oldos":     {State: Deferred, Detail: "all 2 verification slots are busy"},
-			"Ancientos": {State: Unsupported},
-		},
-	}
-}
-
-// wirePopulated is what lifecycle.WriteNote marshalled for the same
-// content at HEAD 29f3834, captured by encoding a lifecycle.Note built
-// field for field beside populated() and comparing the bytes there.
-// That type and that function are gone as of this step, so the proof
-// is pinned here as bytes rather than left as an import that could not
-// survive the rewire.
-//
-// Everything this string demonstrates is load-bearing: two-space
-// indent, no trailing newline, the five top-level fields in
-// declaration order, run keys sorted by encoding/json (Ancientos
-// before Oldos before Testos, not the order they were written in),
-// "job" emitted even when zero, the omitempty fields appearing only
-// where set and in declaration order, HTML escaping left on so the
-// ampersand and angle brackets in a detail come out as the \u0026,
-// \u003c and \u003e escapes the notes on disk already carry, and the
-// schema stamped 2 over the 99 the caller supplied.
-const wirePopulated = `{
-  "schema": 2,
-  "sha": "7159f6b651e49cae47422560120e93ebc494acc9",
-  "tree": "84638b5a25febc78bd8ac7cad517ef4d88764262",
-  "port": "jq",
-  "runs": {
-    "Ancientos": {
-      "state": "unsupported",
-      "job": {
-        "provider": "",
-        "id": "",
-        "started": "0001-01-01T00:00:00Z"
-      }
-    },
-    "Oldos": {
-      "state": "deferred",
-      "job": {
-        "provider": "",
-        "id": "",
-        "started": "0001-01-01T00:00:00Z"
-      },
-      "detail": "all 2 verification slots are busy"
-    },
-    "Testos": {
-      "state": "failed",
-      "job": {
-        "provider": "fake",
-        "id": "fake-1",
-        "started": "2026-09-01T00:00:00Z"
-      },
-      "handle": "dockhand-worker-failed",
-      "detail": "Failed to build jq: \"a \u0026 b\" \u003cnot\u003e ok",
-      "tested": true,
-      "linted": true,
-      "lint": "2 warnings"
-    }
-  }
-}`
-
-// wireNilRuns is the shape a record with no runs map writes. "runs"
-// carries no omitempty, so a nil map is null on the wire — and Decode
-// reads that back through the legacy lift, not the fast path.
-const wireNilRuns = `{
-  "schema": 2,
-  "sha": "abc",
-  "tree": "def",
-  "port": "jq",
-  "runs": null
-}`
-
-const wireZero = `{
-  "schema": 2,
-  "sha": "",
-  "tree": "",
-  "port": "",
-  "runs": null
-}`
-
-func TestEncodeIsTodaysWireFormat(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		rec  Record
-		want string
-	}{
-		{"every field exercised", populated(), wirePopulated},
-		{"a nil runs map", Record{Sha: "abc", Tree: "def", Port: "jq"}, wireNilRuns},
-		{"the zero record", Record{}, wireZero},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := Encode(tc.rec)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, string(got))
-		})
-	}
-}
+// The schema itself — every field, in order, refused when it is not
+// this one — is pinned in schema_test.go. What is here is the codec's
+// own behaviour around those bytes.
 
 func TestEncodeLeavesTheCallersRecordAlone(t *testing.T) {
 	// The schema is stamped on Encode's own copy. Callers pass a record
@@ -145,7 +25,8 @@ func TestEncodeLeavesTheCallersRecordAlone(t *testing.T) {
 func TestEncodeAgreesWithTheStatusJSONEncoder(t *testing.T) {
 	// status --json re-marshals the record through json.Encoder with
 	// the same indent and HTML escaping left on, so the two wire
-	// surfaces must not diverge.
+	// surfaces must not diverge. The record is the public surface of
+	// that verb, which is why it is checked rather than assumed.
 	var b strings.Builder
 	enc := json.NewEncoder(&b)
 	enc.SetIndent("", "  ")
@@ -156,17 +37,6 @@ func TestEncodeAgreesWithTheStatusJSONEncoder(t *testing.T) {
 	require.NoError(t, err)
 	// Encoder appends a newline; MarshalIndent does not.
 	assert.Equal(t, b.String(), string(got)+"\n")
-}
-
-func TestDecodeReadsBackWhatEncodeWrote(t *testing.T) {
-	r := populated()
-	b, err := Encode(r)
-	require.NoError(t, err)
-	got, err := Decode(b, r.Sha)
-	require.NoError(t, err)
-	want := populated()
-	want.Schema = Schema
-	assert.Equal(t, want, got)
 }
 
 func TestDecodeReadsANoteAsGitStoredIt(t *testing.T) {
@@ -186,23 +56,33 @@ func TestDecodeRefusesWhatItCannotHonour(t *testing.T) {
 	const sha = "7159f6b651e49cae47422560120e93ebc494acc9"
 
 	t.Run("malformed bytes are an error, never an absence", func(t *testing.T) {
+		// A corrupt note that read as "no note" would silently authorize
+		// a fresh start over state that governs worker release.
 		_, err := Decode([]byte("{not json"), sha)
-		require.Error(t, err)
+		require.ErrorIs(t, err, ErrMalformed)
 		assert.Contains(t, err.Error(), "note on "+sha+" does not parse")
 		assert.Contains(t, err.Error(), "`git notes --ref="+NotesRef+" remove "+sha+"` clears it")
 	})
 
+	t.Run("the parse error itself stays reachable", func(t *testing.T) {
+		// The refusal carries both its identity and its cause, so a
+		// caller can match the first and a reader still gets the second.
+		_, err := Decode([]byte("{not json"), sha)
+		var syn *json.SyntaxError
+		require.ErrorAs(t, err, &syn)
+	})
+
 	t.Run("a schema from the future is refused, not half-read", func(t *testing.T) {
-		_, err := Decode([]byte(`{"schema":99,"sha":"`+sha+`","port":"jq","runs":{}}`), sha)
-		require.Error(t, err)
+		_, err := Decode([]byte(`{"schema":99,"sha":"`+sha+`","runs":{}}`), sha)
+		require.ErrorIs(t, err, ErrSchemaTooNew)
 		assert.Equal(t,
-			"note on "+sha+" was written by a newer dockhand (schema 99, this build speaks 2); upgrade dockhand",
+			"note on "+sha+" was written by a newer dockhand (schema 99, this build speaks 3); upgrade dockhand",
 			err.Error())
 	})
 
 	t.Run("a note describing another commit is corrupt", func(t *testing.T) {
-		_, err := Decode([]byte(`{"schema":2,"sha":"ffff","port":"jq","runs":{}}`), sha)
-		require.Error(t, err)
+		_, err := Decode([]byte(`{"schema":3,"sha":"ffff","runs":{}}`), sha)
+		require.ErrorIs(t, err, ErrShaMismatch)
 		assert.Equal(t,
 			"note on "+sha+" claims to describe ffff — corrupt; `git notes --ref="+NotesRef+" remove "+sha+"` clears it",
 			err.Error(),
@@ -210,67 +90,36 @@ func TestDecodeRefusesWhatItCannotHonour(t *testing.T) {
 	})
 
 	t.Run("an empty sha is not a mismatch", func(t *testing.T) {
-		// A note that never recorded its own sha predates the check and
-		// is read, not refused.
-		got, err := Decode([]byte(`{"schema":2,"port":"jq","runs":{}}`), sha)
+		// A note that records no sha names no commit and cannot be a copy
+		// of another one's. The check is for the note that names the
+		// wrong commit.
+		got, err := Decode([]byte(`{"schema":3,"runs":{}}`), sha)
 		require.NoError(t, err)
 		assert.Empty(t, got.Sha)
 	})
-
-	t.Run("a schema-1 note is not sha-checked", func(t *testing.T) {
-		// The check is conditioned on schema 2, so an older note reaches
-		// the lift rather than being refused for a field it predates.
-		got, err := Decode([]byte(`{"schema":1,"sha":"ffff","port":"jq","platform":"Testos","state":"passed"}`), sha)
-		require.NoError(t, err)
-		assert.Equal(t, "ffff", got.Sha)
-	})
 }
 
-func TestDecodeLiftsASchemaOneNote(t *testing.T) {
-	const sha = "7159f6b651e49cae47422560120e93ebc494acc9"
-	body := `{"schema":1,"sha":"` + sha + `","tree":"84638b5","port":"jq","platform":"Testos",` +
-		`"state":"failed","job":{"provider":"fake","id":"fake-1","started":"2026-09-01T00:00:00Z"},` +
-		`"handle":"dockhand-worker-1","detail":"Failed to build jq"}`
-	got, err := Decode([]byte(body), sha)
+func TestDecodeCopiesAnUnknownStateThrough(t *testing.T) {
+	// The reader does not judge a state word, and ParseRunState's
+	// strictness must not leak into the codec: a note carrying a state
+	// this build does not know is read, not refused, because refusing
+	// would strand a record that governs worker release.
+	got, err := Decode([]byte(`{"schema":3,"sha":"abc","runs":{"jq@Testos":{"state":"quantum"}}}`), "abc")
 	require.NoError(t, err)
-	assert.Equal(t, Record{
-		Schema: Schema, Sha: sha, Tree: "84638b5", Port: "jq",
-		Runs: map[string]Run{"Testos": {
-			State:  Failed,
-			Job:    verify.Job{Provider: "fake", ID: "fake-1", Started: started},
-			Handle: "dockhand-worker-1",
-			Detail: "Failed to build jq",
-		}},
-	}, got, "the flat verdict becomes one run keyed by its platform")
+	assert.Equal(t, RunState("quantum"), got.Runs["jq@Testos"].State)
 }
 
-func TestDecodeLiftsAnUnrecordedPlatform(t *testing.T) {
-	got, err := Decode([]byte(`{"schema":1,"port":"jq","state":"passed"}`), "abc")
-	require.NoError(t, err)
-	assert.Equal(t, map[string]Run{unrecordedPlatform: {State: Passed}}, got.Runs)
-}
-
-func TestDecodeLiftsASchemaTwoNoteWithNullRuns(t *testing.T) {
-	// The fast path tests Runs, not the schema alone, and Encode writes
-	// null for a nil map. A note in that shape has always come back as
-	// one unrecorded run in the empty state, and it still does — the
-	// codec does not gain a refusal here.
-	b, err := Encode(Record{Sha: "abc", Tree: "def", Port: "jq"})
+func TestDecodeOfANoteWithNoRuns(t *testing.T) {
+	// A branch minted and never submitted. Its note is a real record
+	// with no runs, not a record to be repaired: nothing is invented for
+	// the empty map, and nothing refuses it.
+	b, err := Encode(Record{Sha: "abc", Tree: "def", Slug: "jq-1.9", Destination: ToBranch})
 	require.NoError(t, err)
 	got, err := Decode(b, "abc")
 	require.NoError(t, err)
 	assert.Equal(t, Record{
-		Schema: Schema, Sha: "abc", Tree: "def", Port: "jq",
-		Runs: map[string]Run{unrecordedPlatform: {}},
+		Schema: Schema, Sha: "abc", Tree: "def", Slug: "jq-1.9", Destination: ToBranch,
 	}, got)
-}
-
-func TestDecodeCopiesAnUnknownStateThrough(t *testing.T) {
-	// The reader has never judged a state word, and ParseRunState's
-	// strictness must not leak into the codec: a note carrying a state
-	// this build does not know is read, not refused, because refusing
-	// would strand a record that governs worker release.
-	got, err := Decode([]byte(`{"schema":2,"sha":"abc","runs":{"Testos":{"state":"quantum"}}}`), "abc")
-	require.NoError(t, err)
-	assert.Equal(t, RunState("quantum"), got.Runs["Testos"].State)
+	assert.Nil(t, got.Runs)
+	assert.Nil(t, got.Jobs)
 }

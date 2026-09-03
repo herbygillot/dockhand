@@ -4,15 +4,17 @@ exit: 0
   dockhand/jq-behind               tip unverified; passed (Testos) at 44cfc9eea250, 1 commit(s) behind — `dockhand verify dockhand/jq-behind` tests the tip
   dockhand/jq-blocked              blocked (Testos) — dependency olm (nomaintainer) fails to build; the change itself is untested
   dockhand/jq-canceled             canceled (Testos) — canceled by the user
-  dockhand/jq-deferred             deferred (Testos) — all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees
   dockhand/jq-errored              errored (Testos) — guest agent unreachable after boot
   dockhand/jq-failed               failed (Testos) — environment kept: dockhand-worker-failed — Failed to build jq: command execution failed
   dockhand/jq-multi
     unsupported (Oldos) — declares known_fail on Oldos
     passed (Testos)
   dockhand/jq-passed               passed (Testos)
+  dockhand/jq-queued               queued (Testos) — all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees
   dockhand/jq-running              verifying (<elapsed>) (Testos)
   dockhand/jq-superseded           superseded (Testos) — canceled: the branch moved to 997767bd393f
+  dockhand/jq-unasked              unverified — minted with --no-verify; `dockhand verify` starts a run
+  dockhand/jq-unasked-grown        unverified
   dockhand/jq-unnoted              unverified
   dockhand/jq-unsupported          unsupported (Testos) — the port declines to build on this platform
   dockhand/jq-vanished             errored (Testos) — job vanished: its worker no longer exists

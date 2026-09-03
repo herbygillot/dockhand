@@ -182,7 +182,7 @@ func TestReconcileRetiresBeforeItDrains(t *testing.T) {
 	repo, sha := promotedRepo(t)
 	ctx := context.Background()
 	require.NoError(t, testState(t, repo, nil).recordRun(ctx, repo, sha, "jq", "Testos",
-		record.Run{State: record.Deferred, Detail: "all slots busy"}, ""))
+		record.Run{State: record.Queued, Detail: "all slots busy"}, ""))
 	fake := &verifytest.Fake{}
 	forge := &forgeFake{prs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/9"}]`}
 	eng := testState(t, repo, fake)

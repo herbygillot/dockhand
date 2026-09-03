@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
 // RepoURL is where the PR body's "dockhand" links point, so a reviewer
@@ -31,6 +32,22 @@ func abbrevSha(sha string) string {
 	return sha
 }
 
+// subjectPrefix names the member an evidence line is about, for a
+// cohort, and names nothing for a change with one subject.
+//
+// A single change's lines already have a subject: the PR is about that
+// port and its title says so, and prefixing every line with it would
+// be noise in the one place candour is the whole point. A cohort's
+// lines need it, because "Sequoia: built in a pristine VM" said nine
+// times over is a claim about nine different ports that reads as one
+// repeated nine times.
+func subjectPrefix(named bool, port string) string {
+	if !named {
+		return ""
+	}
+	return port + " on "
+}
+
 // lintClause phrases a note's lint record for the evidence line.
 func lintClause(lint string) string {
 	if lint == "clean" {
@@ -55,13 +72,19 @@ func PRBody(n record.Record, verified bool, closes string, ownCommits int, check
 	} else {
 		// The whole verdict set, enumerated: a passing platform and a
 		// declining one are both facts a reviewer wants.
+		named := verdict.Names(n)
+		onPlatform := map[string]bool{}
 		var parts []string
-		for _, plat := range n.Platforms() {
-			r := n.Runs[plat]
+		for _, ref := range verdict.Runs(n) {
+			r := ref.Run
+			plat := ref.Platform
 			switch r.State {
 			case record.Passed:
 				what := "built in a pristine VM"
-				if r.Tested {
+				// The test suite was asked of the ENVIRONMENT and so is
+				// recorded on it: one guest runs one submission's tests,
+				// however many subjects installed into it.
+				if ref.Job.Test {
 					what, tested = "built and tested in a pristine VM", true
 				}
 				// The lint claim rides the evidence line, because the
@@ -73,12 +96,19 @@ func PRBody(n record.Record, verified bool, closes string, ownCommits int, check
 				case r.Linted:
 					what, linted = "linted, "+what, true
 				}
-				parts = append(parts, plat+": "+what)
-				passed = append(passed, plat)
+				parts = append(parts, subjectPrefix(named, ref.Port)+plat+": "+what)
+				// The "Tested on" section names environments, so a
+				// platform appears once however many members passed in
+				// it: listing one guest nine times would overstate the
+				// evidence by a factor of nine.
+				if !onPlatform[plat] {
+					onPlatform[plat] = true
+					passed = append(passed, plat)
+				}
 			case record.Unsupported:
-				parts = append(parts, plat+": the port declines this platform (known_fail)")
-			case record.Running, record.Failed, record.Blocked, record.Canceled,
-				record.Superseded, record.Deferred, record.Errored:
+				parts = append(parts, subjectPrefix(named, ref.Port)+plat+": the port declines this platform (known_fail)")
+			case record.Queued, record.Submitting, record.Running, record.Failed,
+				record.Blocked, record.Canceled, record.Superseded, record.Errored:
 				// Nothing to vouch for. This list enumerates what was
 				// established about the change, and a run still going, one
 				// that failed, or one that never reached the change

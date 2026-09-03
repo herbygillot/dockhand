@@ -1,6 +1,6 @@
 exit: 0
 --- stdout
-  dockhand/jq-1.8                  deferred (Testos) — all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees
+  dockhand/jq-1.8                  queued (Testos) — all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees
 --- stderr
   warning: pre-flight evaluation: prefix: no MacPorts installation found (no port-tclsh under /nonexistent/dockhand-golden-prefix)
   verify: submitted jq on Testos (job fake-1); `dockhand status` follows it

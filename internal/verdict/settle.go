@@ -38,8 +38,16 @@ const (
 // this is the whole fact set.
 type RunInput struct {
 	// Run is the run as the note currently holds it. The judgment
-	// modifies a copy, so the fields it does not touch — the job, the
-	// tested and linted boxes — come through unchanged.
+	// modifies a copy, so the fields it does not touch — the lint
+	// record, the from-source flag, the manifests — come through
+	// unchanged.
+	//
+	// What is NOT here is anything about the environment. A guest is
+	// shared by every subject in the change, so its handle, its claim
+	// and whether it has been given back belong to the job, and one
+	// subject's judgment must not be able to write any of them: nine
+	// verdicts reached in one guest would otherwise each name it, and
+	// the eighth to be written would be the one that stood.
 	Run record.Run
 	// Port is the port the NOTE names, which for a subport is its own
 	// name and never the portdir's base. The blame reader compares
@@ -84,7 +92,11 @@ type Judgment struct {
 	// settled, so a caller that writes it back regardless writes the same
 	// bytes rather than a zero value.
 	Run record.Run
-	// Release is what to do with the worker.
+	// Release is what to do with the worker. It is advice about the
+	// guest and not an act on it: one guest holds every subject in the
+	// change, so the caller collects these answers across the runs that
+	// shared it and hands it back once, or keeps it because one of them
+	// asked to.
 	Release ReleaseAction
 }
 
@@ -120,6 +132,11 @@ func NeedsLog(state verify.State, linted bool) bool {
 // dependency breaking before the change was reached leaves it untested
 // rather than disproven. What the port itself broke on stays failed and
 // keeps its environment.
+//
+// Keeping it is said with KeepWorker and never by writing a name onto
+// the run. The environment's name is the guest's, the poll is what
+// knows it, and the caller stamps it on the job once for however many
+// subjects failed inside it.
 func JudgeRun(in RunInput) Judgment {
 	r := in.Run
 	if in.Vanished {
@@ -142,10 +159,10 @@ func JudgeRun(in RunInput) Judgment {
 		}
 		release = ReleaseAndReport
 	case verify.Failed:
-		r.State, r.Handle = record.Failed, in.Status.Handle
+		r.State = record.Failed
 		if in.LogRead {
 			if PortDeclined(in.Log) {
-				r.State, r.Handle = record.Unsupported, ""
+				r.State = record.Unsupported
 				r.Detail = "the port declines to build on this platform"
 				release = ReleaseQuietly
 			} else {
@@ -160,7 +177,7 @@ func JudgeRun(in RunInput) Judgment {
 				// a port this branch never touched (field-measured on
 				// gomuks, whose verdict blamed the bump for olm).
 				if dep, ok := DependencyFailure(r.Detail, in.Port); ok {
-					r.State, r.Handle = record.Blocked, ""
+					r.State = record.Blocked
 					r.Detail = BlockedDetail(dep, in.Nomaintainer)
 					release = ReleaseQuietly
 				}
@@ -173,18 +190,9 @@ func JudgeRun(in RunInput) Judgment {
 	return Judgment{Settled: true, Run: r, Release: release}
 }
 
-// AfterRelease folds a ReleaseAndReport release's outcome back into the
-// run. A worker that would not go is not a verdict about the port, so it
-// changes nothing but the detail — and it says so there rather than on a
-// terminal, because the slot is still gone tomorrow when someone reads
-// the note and wonders where it went.
-//
-// A release the judgment asked for quietly, or none at all, passes
-// through untouched, so a caller may call this unconditionally.
-func (j Judgment) AfterRelease(err error) Judgment {
-	if j.Release != ReleaseAndReport || err == nil {
-		return j
-	}
-	j.Run.Detail = "worker not released: " + err.Error()
-	return j
-}
+// There is no AfterRelease here any more. Folding a failed release back
+// into the run was a method on the judgment while a run owned its own
+// worker; a guest is now shared, so the release happens once for the
+// whole platform, after every verdict in it is written, and what a
+// refusal to release means is news the settle learns after the judgment
+// is over. The caller records it on the runs that were using the guest.

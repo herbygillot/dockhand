@@ -41,10 +41,8 @@ func corpusNote(t *testing.T, repo *git.Repo, sha, port string) record.Record {
 func seededNote(t *testing.T, repo *git.Repo, sha, port string, linted bool) record.Record {
 	t.Helper()
 	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, port)
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "running",
-		Job: verify.Job{Provider: "fake", ID: "fake-1"}, Linted: linted}
+	n := mintedNoteFor(t, repo, sha, port)
+	startedFor(&n, port, "Testos", "fake-1", record.Run{State: record.Running, Linted: linted})
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 	return n
 }
@@ -91,18 +89,18 @@ func TestSettleRunsProviderFailuresTable(t *testing.T) {
 			repo, sha := engineRepo(t)
 			n := seededNote(t, repo, sha, "jq", tc.linted)
 			require.NoError(t, testState(t, repo, tc.fake).settle(context.Background(), repo, &n))
-			r := n.Runs["Testos"]
+			r := runOf(n, "Testos")
 			assert.Equal(t, tc.state, string(r.State), "state")
 			assert.Equal(t, tc.detail, r.Detail, "detail")
 			assert.Equal(t, tc.lint, r.Lint, "lint evidence")
-			assert.Equal(t, tc.handle, r.Handle, "handle")
+			assert.Equal(t, tc.handle, n.Jobs["Testos"].Handle, "handle")
 			assert.Equal(t, tc.released, tc.fake.Released, "released")
 
 			// The settle was written back whatever the provider did: a
 			// fresh read agrees with the one in hand.
 			again, err := ledger.Open(repo).Read(context.Background(), sha)
 			require.NoError(t, err)
-			assert.Equal(t, r, again.Runs["Testos"])
+			assert.Equal(t, r, runOf(again, "Testos"))
 		})
 	}
 }
@@ -137,7 +135,7 @@ func TestLogCorpus(t *testing.T) {
 			n := corpusNote(t, repo, sha, exp.Port)
 
 			require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
-			r := n.Runs["Testos"]
+			r := runFor(n, exp.Port, "Testos")
 			// The sidecar is plain text, so the wire word is what it
 			// names: the state converts to it rather than the corpus
 			// learning a Go type.
@@ -149,10 +147,12 @@ func TestLogCorpus(t *testing.T) {
 				assert.Empty(t, r.Lint, "lint is corroborated on a pass; a failed run's log stays reachable")
 			}
 			if exp.State == "failed" {
-				assert.Equal(t, "fake-1", r.Handle, "the failure's environment is the debug handle")
+				assert.Equal(t, "fake-1", n.Jobs["Testos"].Handle, "the failure's environment is the debug handle")
+				assert.False(t, n.Jobs["Testos"].Released)
 				assert.Empty(t, fake.Released, "a failed run's worker is kept")
 			} else {
-				assert.Empty(t, r.Handle, "nothing of this branch's to debug")
+				assert.Empty(t, n.Jobs["Testos"].Handle, "nothing of this branch's to debug")
+				assert.True(t, n.Jobs["Testos"].Released)
 				assert.Equal(t, []string{"fake-1"}, fake.Released, "the worker is released")
 			}
 		})

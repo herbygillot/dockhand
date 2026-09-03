@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -50,12 +51,12 @@ func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string) (st
 }
 
 // settle polls every running run and writes what it learns back to the
-// note. Poll never mutates and Release is the caller's: status
-// releases the worker on pass — a kept green environment is a wasted
-// slot — and keeps it on failure, where it is the debug handle. A
-// failure whose log shows the port refusing the platform records as
-// unsupported instead, and its worker is released: a correct refusal
-// leaves nothing to debug.
+// note. Poll never mutates and the release is the caller's: status
+// hands a guest back once every run in it has passed — a kept green
+// environment is a wasted slot — and keeps it when one failed, where it
+// is the debug handle. A failure whose log shows the port refusing the
+// platform records as unsupported instead, and its guest goes back: a
+// correct refusal leaves nothing to debug.
 //
 // The polling happens outside the notes lock and only the writing
 // inside it. That is the split a reconciler needs: a poll is a round
@@ -67,23 +68,44 @@ func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string) (st
 // run on the note, state and job both. Two agents share a checkout now,
 // and a cancel that lands mid-poll must not come back as passed.
 //
-// A dropped judgment has already released its worker, which is the
-// honest order: the run it was judging is over either way, and the
-// claimant that moved the note released the same worker or is about to.
+// The verdicts are written BEFORE any guest is handed back, which is
+// the opposite of the order schema 2 used and the only order the split
+// allows. One environment is shared by every subject in the change, so
+// the right to give it back is taken once, under the flock, over a
+// record that already says the runs are over — the ledger's ReleaseJob
+// is that right. Released first and recorded after, two dockhands each
+// reading "finished" would return the same guest twice, which nothing
+// can undo; recorded first, a crash in between leaks an environment,
+// which the orphan audit finds and a person deletes.
 func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) error {
 	prov, err := e.Verifier(ctx)
 	if err != nil {
 		return nil // running, cannot poll; the note stands as is
 	}
-	// judged is what this pass concluded, and from is the run each
-	// conclusion was reached from — the two halves of the compare.
-	judged, from := map[string]record.Run{}, map[string]record.Run{}
-	for plat, r := range n.Runs {
-		if r.State != record.Running {
+	caps := prov.Capabilities()
+	// judged is what this pass concluded, keyed as the runs are, and
+	// seen is what each conclusion was reached from — the two halves of
+	// the compare.
+	judged, seen := map[string]record.Run{}, map[string]observed{}
+	// What the guests should do, decided per release because a guest is
+	// per release: keep it when any subject in it wants it kept, and say
+	// so when a release that was expected to go back does not.
+	keep, report := map[string]bool{}, map[string]bool{}
+	handles := map[string]heldEnv{}
+	for _, ref := range runRefs(*n) {
+		if ref.Run.State != record.Running {
 			continue
 		}
-		in := verdict.RunInput{Run: r, Port: n.Port}
-		st, perr := prov.Poll(ctx, r.Job)
+		job, ok := n.Jobs[ref.Release]
+		if !ok {
+			// A running run whose platform names no job. The note has been
+			// mangled — a submission writes both in one write — and there
+			// is nothing here to poll.
+			continue
+		}
+		in := verdict.RunInput{Run: ref.Run, Port: ref.Port}
+		st, perr := prov.Poll(ctx, job.Job)
+		var dep string
 		switch {
 		case errors.Is(perr, verify.ErrUnknownJob):
 			// The job is gone, and so is the worker: nothing to read and
@@ -100,8 +122,8 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 			// The log is fetched before the release, because releasing a
 			// worker puts its log out of reach — and only when the
 			// judgment will actually read one.
-			if verdict.NeedsLog(st.State, r.Linted) {
-				if log, lerr := prov.Log(ctx, r.Job); lerr == nil {
+			if verdict.NeedsLog(st.State, ref.Run.Linted) {
+				if log, lerr := prov.Log(ctx, job.Job); lerr == nil {
 					in.Log, in.LogRead = log, true
 				}
 			}
@@ -111,8 +133,9 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 			// so a port that merely declined the platform sends nobody
 			// globbing.
 			if st.State == verify.Failed && in.LogRead {
-				if dep, ok := verdict.BlamedDependency(in.Log, n.Port); ok {
-					in.Nomaintainer = nomaintainerDep(repo.Root, dep)
+				if d, blamed := verdict.BlamedDependency(in.Log, ref.Port); blamed {
+					dep = d
+					in.Nomaintainer = nomaintainerDep(repo.Root, d)
 				}
 			}
 		}
@@ -120,16 +143,38 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 		if !j.Settled {
 			continue
 		}
+		run := j.Run
+		run.Platform = ref.Release
+		if run.State == record.Passed {
+			// What the pass proves, in the provider's own words, stamped
+			// as the run settles rather than looked up when it is
+			// rendered: the claim belongs to the environment that was
+			// actually used, and providers get reconfigured.
+			run.Evidence = caps.Evidence
+		}
+		// A run blocked by a port that is itself a member of this change
+		// inherited its neighbour's failure, and the note says whose.
+		// Nothing reaches this at one subject, where a dependency cannot
+		// also be a sibling; the day a cohort lands, it is the difference
+		// between "untested" and "untested because of libwidget".
+		if run.State == record.Blocked && dep != "" && names(*n, dep) {
+			run.Blamed = dep
+		}
 		switch j.Release {
 		case verdict.KeepWorker:
+			keep[ref.Release] = true
+			// A failure keeps its environment, and the name of it belongs
+			// to the guest rather than to the verdict: one guest holds one
+			// environment however many subjects failed in it.
+			if st.Handle != "" {
+				handles[ref.Release] = heldEnv{JobID: job.Job.ID, Handle: st.Handle}
+			}
 		case verdict.ReleaseAndReport:
-			j = j.AfterRelease(prov.Release(ctx, r.Job))
+			report[ref.Release] = true
 		case verdict.ReleaseQuietly:
-			// Nothing waits on this one, so it runs on a context that
-			// survives our own cancellation and its answer goes nowhere.
-			_ = prov.Release(context.WithoutCancel(ctx), r.Job)
 		}
-		judged[plat], from[plat] = j.Run, r
+		judged[ref.Key()] = run
+		seen[ref.Key()] = observed{Run: ref.Run, JobID: job.Job.ID}
 	}
 	if len(judged) == 0 {
 		return nil
@@ -149,14 +194,26 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 	// live one: a verdict the user never asked for, and a worker no note
 	// names any more.
 	var settled *record.Record
-	if err := e.Ledger(repo).Update(ctx, n.Sha, n.Port, func(fresh *record.Record) error {
+	if err := e.Ledger(repo).Update(ctx, n.Sha, func(fresh *record.Record) error {
 		applied := false
-		for plat, run := range judged {
-			was, observed := fresh.Runs[plat], from[plat]
-			if was.State != observed.State || was.Job.ID != observed.Job.ID {
+		for key, run := range judged {
+			was, saw := fresh.Runs[key], seen[key]
+			if was.State != saw.Run.State || fresh.Jobs[was.Platform].Job.ID != saw.JobID {
 				continue
 			}
-			fresh.Runs[plat] = run
+			fresh.Runs[key] = run
+			applied = true
+		}
+		for rel, held := range handles {
+			// The same compare the runs get, for the same reason: a
+			// release whose guest is a different one from the guest this
+			// pass watched must not inherit that guest's environment name.
+			job, ok := fresh.Jobs[rel]
+			if !ok || job.Job.ID != held.JobID || job.Handle == held.Handle {
+				continue
+			}
+			job.Handle = held.Handle
+			fresh.Jobs[rel] = job
 			applied = true
 		}
 		// The caller's copy becomes what the note says, so that a dropped
@@ -181,15 +238,127 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 	if settled != nil {
 		*n = *settled
 	}
+	e.returnGuests(ctx, repo, n, prov, judged, keep, report)
 	return nil
 }
 
-// knowsAny reports whether a record carries a run for any of the
-// platforms judged — the test of whether it is the note those
-// judgments were made about at all.
+// observed is one run as this pass found it, with the job it was
+// living in — the pair the compare before the write is made against.
+// The job's id is carried apart from the run because it is no longer
+// on it: a peer that cancels a run and starts another leaves the same
+// state word behind a different guest.
+type observed struct {
+	Run   record.Run
+	JobID string
+}
+
+// heldEnv is an environment a failure kept: the name of it, and the job
+// it was named for.
+type heldEnv struct{ JobID, Handle string }
+
+// returnGuests hands back every environment this pass finished with.
+//
+// The right to hand one back is the ledger's to grant, over a fresh
+// record under the flock: it is refused while a run in that guest is
+// still live, and granted to exactly one caller. What this function
+// decides is only whether the guest SHOULD go back — a failure keeps
+// its environment as the debug handle — which is a judgment about what
+// a failure is worth and therefore not the ledger's to make.
+func (e *Engine) returnGuests(ctx context.Context, repo *git.Repo, n *record.Record, prov verify.Verifier, judged map[string]record.Run, keep, report map[string]bool) {
+	for _, rel := range releasesIn(*n) {
+		if keep[rel] || !judgedOn(judged, rel) {
+			continue
+		}
+		took, err := e.Ledger(repo).ReleaseJob(ctx, n.Sha, rel)
+		if err != nil || !took {
+			// Refused is the ordinary answer, not a fault: a peer took
+			// the release, or a run in that guest is still building.
+			continue
+		}
+		job := n.Jobs[rel]
+		job.Released = true
+		n.Jobs[rel] = job
+		var rerr error
+		if report[rel] {
+			rerr = prov.Release(ctx, job.Job)
+		} else {
+			// Nothing waits on this one, so it runs on a context that
+			// survives our own cancellation and its answer goes nowhere.
+			_ = prov.Release(context.WithoutCancel(ctx), job.Job)
+		}
+		if rerr != nil {
+			e.noteUnreleased(ctx, repo, n, rel, rerr)
+		}
+	}
+}
+
+// noteUnreleased records a guest that would not go back, on the runs
+// that were using it.
+//
+// A worker the provider refuses to free is not a verdict about the
+// port, so it changes nothing but the detail — and it is said on the
+// note rather than only on a terminal, because the slot is still gone
+// tomorrow when somebody reads the record and wonders where it went.
+//
+// It is a second write and not part of the verdict's own, because it
+// is news that only exists after the guest was asked and said no, and
+// the guest cannot be asked until the verdicts are down. It happens
+// only when a release the caller expected to succeed did not, which is
+// rare enough that the extra notes object is the cheaper half of the
+// trade.
+func (e *Engine) noteUnreleased(ctx context.Context, repo *git.Repo, n *record.Record, release string, cause error) {
+	detail := "worker not released: " + cause.Error()
+	if err := e.Ledger(repo).Update(ctx, n.Sha, func(r *record.Record) error {
+		changed := false
+		for _, ref := range runsOn(*r, release) {
+			run := ref.Run
+			run.Detail = detail
+			r.Runs[ref.Key()] = run
+			changed = true
+		}
+		if !changed {
+			return ledger.ErrUnchanged
+		}
+		return nil
+	}); err != nil {
+		fmt.Fprintf(e.Err, "warning: recording an unreleased worker on %s: %v\n", release, err)
+		return
+	}
+	for _, ref := range runsOn(*n, release) {
+		run := ref.Run
+		run.Detail = detail
+		n.Runs[ref.Key()] = run
+	}
+}
+
+// judgedOn reports whether this pass concluded anything about a
+// release. A guest nothing was judged on is somebody else's to hand
+// back — the pass that judges it.
+func judgedOn(judged map[string]record.Run, release string) bool {
+	for _, run := range judged {
+		if run.Platform == release {
+			return true
+		}
+	}
+	return false
+}
+
+// names reports whether a port is one of the record's own subjects.
+func names(n record.Record, port string) bool {
+	for _, s := range n.Subjects {
+		if s.Port == port {
+			return true
+		}
+	}
+	return false
+}
+
+// knowsAny reports whether a record carries any of the runs judged —
+// the test of whether it is the note those judgments were made about at
+// all.
 func knowsAny(n record.Record, judged map[string]record.Run) bool {
-	for plat := range judged {
-		if _, ok := n.Runs[plat]; ok {
+	for key := range judged {
+		if _, ok := n.Runs[key]; ok {
 			return true
 		}
 	}

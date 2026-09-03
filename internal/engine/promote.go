@@ -159,7 +159,8 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	// The publication as the audit will record it, filled in as it
 	// happens: a push with no pull request is a publication too, and it
 	// is the one whose number stays zero.
-	pub := Publication{MintSha: tip, Branch: branch, Port: n.Port,
+	pub := Publication{MintSha: tip, Branch: branch,
+		Port: n.Headline().Port, Target: n.Headline().Target,
 		Verified: verified, Invoker: record.Human}
 
 	forkRemote, forkOwner, err := gh.ForkRemote(ctx, e.Gh, repo, o.Remote)
@@ -219,7 +220,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 
 	checkedPRs := false
 	if !o.NoPRCheck {
-		port := verdict.PortName(n.Port, title)
+		port := verdict.PortName(n.Headline().Port, title)
 		switch prs, serr := gh.OpenPortPRs(ctx, e.Gh, upstream, port); {
 		case port == "":
 			fmt.Fprintln(e.Err, "warning: no port name to search open PRs by; skipping the duplicate check")

@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
+	"github.com/herbygillot/dockhand/internal/verdict"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
@@ -61,12 +62,7 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 		return debugEnv{}, err
 	}
 
-	reachable := map[string]record.Run{}
-	for plat, r := range n.Runs {
-		if r.State == record.Running || r.Handle != "" {
-			reachable[plat] = r
-		}
-	}
+	reachable, plats := reachableEnvs(n)
 	var plat string
 	switch {
 	case on != "":
@@ -78,31 +74,65 @@ func debugTarget(ctx context.Context, rs *runstate.Context, target, on string) (
 			return debugEnv{}, fmt.Errorf("%s has no reachable environment on %s (%s)", branch, r.Name, render.SummarizeRecord(n))
 		}
 		plat = r.Name
-	case len(reachable) == 1:
-		for p := range reachable {
-			plat = p
-		}
-	case len(reachable) == 0:
+	case len(plats) == 1:
+		plat = plats[0]
+	case len(plats) == 0:
 		return debugEnv{}, fmt.Errorf("%s: no environment to reach (%s); `dockhand verify %s` starts one", branch, render.SummarizeRecord(n), branch)
 	default:
-		var plats []string
-		for p := range reachable {
-			plats = append(plats, p)
-		}
 		return debugEnv{}, usagef("%s has environments on %s; pick one with --on", branch, strings.Join(plats, ", "))
 	}
-	run := reachable[plat]
-	// The state is prose from here on — "kept" is one of the words this
-	// field holds, and no note ever carried that one.
-	env := debugEnv{Job: run.Job, State: string(run.State), Port: n.Port, Plat: plat}
+	env := reachable[plat]
 	prov, err := rs.VerifyProvider(ctx)
 	if err != nil {
 		return debugEnv{}, err
 	}
-	if _, err := prov.Poll(ctx, run.Job); errors.Is(err, verify.ErrUnknownJob) {
-		return debugEnv{}, fmt.Errorf("%s: environment %s no longer exists", branch, run.Job.ID)
+	if _, err := prov.Poll(ctx, env.Job); errors.Is(err, verify.ErrUnknownJob) {
+		return debugEnv{}, fmt.Errorf("%s: environment %s no longer exists", branch, env.Job.ID)
 	}
 	return env, nil
+}
+
+// reachableEnvs is every environment of a record a user could still
+// enter, keyed by platform, with the platform names in the record's own
+// order for the refusal that lists them.
+//
+// One entry per PLATFORM and never per run, which is the two-map split
+// showing up in a verb: a guest is one environment however many
+// subjects were built in it, and a map keyed by run would offer the
+// same VM under nine names and ask the user to choose between them.
+//
+// Two shapes reach it. A build still going is reachable because it is
+// running; a finished one is reachable because its guest was kept as
+// the debug handle — and kept means both halves, a name AND not yet
+// given back. The name outlives the release that gave it back, since it
+// is what a person deletes by hand when the provider refused, so a
+// record naming one is not by itself somewhere anybody can connect to.
+func reachableEnvs(n record.Record) (map[string]debugEnv, []string) {
+	envs := map[string]debugEnv{}
+	var plats []string
+	for _, ref := range verdict.Runs(n) {
+		if !ref.Submitted {
+			continue
+		}
+		// Kept is both halves: a name, and not yet given back.
+		kept := ref.Job.Handle != "" && !ref.Job.Released
+		if ref.Run.State != record.Running && !kept {
+			continue
+		}
+		if _, seen := envs[ref.Platform]; seen {
+			continue
+		}
+		plats = append(plats, ref.Platform)
+		// The state is prose from here on — "kept" is one of the words
+		// this field holds, and no note ever carried that one. It is the
+		// FIRST run in the guest that names it, which at one subject is
+		// the only one; a cohort's guest is described by its headline,
+		// which is the member the branch is about.
+		envs[ref.Platform] = debugEnv{
+			Job: ref.Job.Job, State: string(ref.Run.State), Port: ref.Port, Plat: ref.Platform,
+		}
+	}
+	return envs, plats
 }
 
 // logAction prints the build log out of the target's verification

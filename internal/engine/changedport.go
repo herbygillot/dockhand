@@ -66,8 +66,11 @@ func (e *Engine) SubjectOf(ctx context.Context, repo *git.Repo, target, branch, 
 	if target != branch {
 		return target, nil
 	}
-	if n, err := e.Ledger(repo).Read(ctx, tip); err == nil && n.Port != "" {
-		return n.Port, nil
+	if n, err := e.Ledger(repo).Read(ctx, tip); err == nil && n.Headline().Port != "" {
+		// The headline and not "the record's port": a change's subjects
+		// are ordered, and the first is the one the branch is named for
+		// and the one a verification is about.
+		return n.Headline().Port, nil
 	}
 	return e.changedPort(ctx, repo, tip, rel)
 }

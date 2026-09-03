@@ -69,8 +69,7 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
 		Logs:   map[string]string{"fake-1": "--->  0 errors and 0 warnings found.\n"},
 	}
-	writeRuns(t, repo, sha, map[string]record.Run{"Testos": {State: "running",
-		Job: verify.Job{Provider: "fake", ID: "fake-1"}, Linted: true}})
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": runningOn("fake-1")})
 
 	var out, errb bytes.Buffer
 	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb,
@@ -84,8 +83,13 @@ func TestStatusJSONReportsTheSettledTruth(t *testing.T) {
 	assert.Equal(t, "dockhand/jq-1.8", b.Branch)
 	assert.Equal(t, sha, b.Tip)
 	require.NotNil(t, b.Note)
-	assert.Equal(t, record.Passed, b.Note.Runs["Testos"].State, "the JSON mode settles, same as the human one")
-	assert.Equal(t, "clean", b.Note.Runs["Testos"].Lint)
+	// The run is keyed by subject and platform both, from day one: the
+	// day a cohort lands, nothing has to re-key the notes that exist.
+	run := b.Note.Runs[record.RunKey("jq", "Testos")]
+	assert.Equal(t, record.Passed, run.State, "the JSON mode settles, same as the human one")
+	assert.Equal(t, "clean", run.Lint)
+	assert.Equal(t, "Testos", run.Platform, "the platform is on the run as well as in the key")
+	assert.True(t, b.Note.Jobs["Testos"].Released, "a green environment is a wasted slot")
 	assert.Nil(t, b.PR, "an unpromoted branch carries no PR object")
 	assert.False(t, b.Cleaned)
 	assert.Equal(t, exitcode.Of(exitcode.OK, ""), got.Exit,

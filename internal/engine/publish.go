@@ -18,10 +18,16 @@ type Publication struct {
 	// the push happened and not whatever the branch points at later.
 	MintSha string
 	Branch  string
-	// Port is the note's own, which names the subport the verification
-	// was about. The portdir's base name is a guess and is not accepted
-	// here in its place: an empty port is recorded as empty.
+	// Port is the headline subject's, which names the subport the
+	// verification was about. The portdir's base name is a guess and is
+	// not accepted here in its place: an empty port is recorded as empty.
 	Port string
+	// Target is what the change moves that port to, as the record kept
+	// it — the value the planner named, rather than a reading of the
+	// branch name. Empty for a record minted before subjects carried
+	// one, or by something other than a mint, where the reading below is
+	// still the best answer available.
+	Target string
 	// PRNumber is the pull request the publication opened or updated,
 	// zero when the change was pushed with no PR asked for.
 	PRNumber int
@@ -66,7 +72,7 @@ func (e *Engine) Publish(ctx context.Context, repo *git.Repo, p Publication) err
 		MintSha: p.MintSha,
 		Branch:  p.Branch,
 		Port:    p.Port,
-		Target:  targetOf(p.Branch, p.Port),
+		Target:  targetOr(p.Target, p.Branch, p.Port),
 		// Every mint today has exactly one named target — the intent road
 		// refuses a second — so there is nothing that could make this
 		// anything else, and writing it as a constant is the honest way to
@@ -81,6 +87,22 @@ func (e *Engine) Publish(ctx context.Context, repo *git.Repo, p Publication) err
 		PRNumber:    p.PRNumber,
 		PublishedAt: stamp(time.Now()),
 	})
+}
+
+// targetOr prefers what the record remembers over what a branch name
+// can be read to say.
+//
+// The recorded value is the planner's own: it was written at mint from
+// the slug and the port the planner held apart, so it is the answer and
+// not an inference about one. The reading below survives for the
+// records that carry no target — one minted before subjects had the
+// field, or a branch dockhand did not mint — where a coarse answer
+// still beats none.
+func targetOr(recorded, branch, port string) string {
+	if recorded != "" {
+		return recorded
+	}
+	return targetOf(branch, port)
 }
 
 // targetOf reads what a change moves its port to out of the branch

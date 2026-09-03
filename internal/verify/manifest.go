@@ -1,5 +1,13 @@
 package verify
 
+// The json tags below are lowercase because these values are written
+// into a verification note, whose every other key is lowercase; without
+// tags their exported Go names would be the wire keys. None of them
+// carries omitempty, and that is deliberate: a baseline and an
+// installed manifest are read side by side, and a key that vanishes
+// when its value is empty makes the two blocks misalign exactly where
+// the difference is.
+
 // Dylib is one shared library an installed port carries, as the linker
 // records it rather than as the filesystem shows it.
 //
@@ -11,16 +19,16 @@ package verify
 // manifest.
 type Dylib struct {
 	// Path is where the library sits in the installation.
-	Path string
+	Path string `json:"path"`
 	// InstallName is what the library announces itself as — what a
 	// dependent links against, which is not always where it was found.
-	InstallName string
+	InstallName string `json:"install_name"`
 	// CompatVersion is the compatibility version a dependent must
 	// satisfy.
-	CompatVersion string
+	CompatVersion string `json:"compat_version"`
 	// CurrentVersion is the library's own version, which may move
 	// freely as long as CompatVersion does not.
-	CurrentVersion string
+	CurrentVersion string `json:"current_version"`
 }
 
 // Manifest is one installation seen from outside: which port, at which
@@ -36,15 +44,15 @@ type Dylib struct {
 // judgment — a file that vanished may be a regression or the point of
 // the change — and judgments are made where the plan is, not here.
 type Manifest struct {
-	Port     string
-	Version  string
-	Platform string
+	Port     string `json:"port"`
+	Version  string `json:"version"`
+	Platform string `json:"platform"`
 	// Files are the paths the port owns, as the package manager lists
 	// them.
-	Files []string
+	Files []string `json:"files"`
 	// Dylibs are the shared libraries among those files, with what the
 	// linker recorded in each.
-	Dylibs []Dylib
+	Dylibs []Dylib `json:"dylibs"`
 }
 
 // Manifests is a comparison's two sides and the bindings that make a
@@ -54,6 +62,10 @@ type Manifest struct {
 // different things: a port that has never been installed has no
 // baseline to be measured against, and a build that did not get far
 // enough to install produced nothing to measure.
+//
+// This type carries no json tags, unlike the others in this file. It never
+// reaches a note: it is one provider's answer to one question, taken
+// apart by the caller into the fields a run records.
 type Manifests struct {
 	// Baseline is the installation the change is measured against.
 	Baseline *Manifest
@@ -72,6 +84,14 @@ type Manifests struct {
 	// the whole installation is present at once, and it is keyed by
 	// install name rather than by path because the install name is what
 	// the dependents actually recorded.
+	//
+	// A record's Run.Links is a slice and stays one. The two are not one
+	// field spelled twice: this is the observation, whole, so the
+	// caller can ask about any library; the note keeps the conclusion
+	// drawn about the libraries the finding is actually about, already
+	// attributed and already worded as the lines a reader checks.
+	// Copying the map onto the note would store the question again
+	// instead of the answer.
 	Links map[string][]string
 }
 
@@ -82,7 +102,7 @@ type Manifests struct {
 // a version string proves something only when the line above it says
 // which binary was asked and how.
 type ProbeLine struct {
-	Binary string
-	Argv   string
-	Output string
+	Binary string `json:"binary"`
+	Argv   string `json:"argv"`
+	Output string `json:"output"`
 }

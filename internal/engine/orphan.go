@@ -71,11 +71,29 @@ func (e *Engine) Orphans(ctx context.Context, repo *git.Repo) []render.Orphan {
 }
 
 // trackedEnvironments is every environment this repository's notes
-// account for, under both names an environment is recorded by: a
-// running run's job and a kept failure's handle. Both, because a kept
+// account for, under both names an environment is recorded by: the
+// job's id and the handle a kept failure named. Both, because a kept
 // environment is a worker with no running job behind it — counting
-// only jobs would report every held failure as an orphan, which is the
+// only ids would report every held failure as an orphan, which is the
 // one state the audit must not misread.
+//
+// The jobs and not the runs, which is where schema 3 keeps an
+// environment: N subjects share one guest, so the names are per job
+// and reading them per run would be counting the same worker once for
+// each verdict about it.
+//
+// A job the note says went back accounts for nothing, and skipping it
+// is what makes the release order safe. ReleaseJob puts the flag down
+// BEFORE the provider is asked, because handing the same guest back
+// twice cannot be undone and a leak can — but "can be undone" is only
+// true if something finds the leak. A released job still tracked would
+// hold its worker's name against the audit forever, so a release that
+// crashed in between, or one whose provider simply refused, would be
+// invisible in exactly the state the ordering was chosen to survive.
+// The skip is safe in both directions: a guest that really did go back
+// is gone and matches no live worker, and a kept failure has Released
+// false and stays tracked by its handle, which is the one state the
+// audit must not misread.
 //
 // Unreadable notes are skipped rather than reported. The audit is
 // advisory, and a note that cannot be read is a branch's problem,
@@ -92,9 +110,12 @@ func (e *Engine) trackedEnvironments(ctx context.Context, repo *git.Repo) map[st
 		if err != nil {
 			continue
 		}
-		for _, r := range n.Runs {
-			tracked[r.Job.ID] = true
-			tracked[r.Handle] = true
+		for _, job := range n.Jobs {
+			if job.Released {
+				continue
+			}
+			tracked[job.Job.ID] = true
+			tracked[job.Handle] = true
 		}
 	}
 	return tracked

@@ -13,6 +13,12 @@
 // It has no opinion about output either. What is said under the lock
 // belongs to the verb that took it; a ledger that printed would own an
 // ordering it cannot see.
+//
+// The one thing it writes that nobody handed it is a bare subject for a
+// port it is asked to record a run against and cannot find — see
+// adoptSubject. That is not an opinion about the change; it is the
+// record staying readable, since a run whose port no subject names is a
+// verdict about nobody.
 package ledger
 
 import (

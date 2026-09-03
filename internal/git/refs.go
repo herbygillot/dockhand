@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/tool"
 )
@@ -118,6 +119,28 @@ func (r *Repo) DiffNames(ctx context.Context, a, b string) ([]string, error) {
 // Subject is one commit's subject line.
 func (r *Repo) Subject(ctx context.Context, sha string) (string, error) {
 	return r.git(ctx, "log", "-1", "--format=%s", sha)
+}
+
+// CommittedAt is when a commit was made, in UTC.
+//
+// The committer date and not the author's: what a record wants to know
+// is how old the tree a change was built against actually is, and a
+// rebased or cherry-picked commit carries an author date from before
+// the tree it now sits on.
+//
+// Strict RFC 3339 (%cI) rather than a unix stamp, because the parse is
+// then the format's own and a value git could not produce cannot be
+// silently read as the epoch.
+func (r *Repo) CommittedAt(ctx context.Context, rev string) (time.Time, error) {
+	out, err := r.git(ctx, "log", "-1", "--format=%cI", rev)
+	if err != nil {
+		return time.Time{}, err
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(out))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("git: reading the commit date of %s: %w", Abbrev(rev), err)
+	}
+	return t.UTC(), nil
 }
 
 // OwnCommits lists the commits reachable from rev but not from base —

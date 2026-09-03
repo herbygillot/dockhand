@@ -36,13 +36,20 @@ func tartOnPath(t *testing.T) {
 	stubTart(t, "/stub/tart", nil)
 }
 
+// deferredNote is a run waiting for a slot: queued, with the reason,
+// and no job — nothing was submitted, so there is no environment to
+// describe and no guest for the pump to think it must give back.
 func deferredNote(t *testing.T, repo *git.Repo, sha, detail string) {
 	t.Helper()
-	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "deferred", Detail: detail}
-	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	writeRuns(t, repo, sha, map[string]platRun{
+		"Testos": {Run: record.Run{State: record.Queued, Detail: detail}},
+	})
+}
+
+// testosRun reads the one run these fixtures write, by the key the
+// ledger writes it under.
+func testosRun(n record.Record, port string) record.Run {
+	return n.Runs[record.RunKey(port, "Testos")]
 }
 
 func pumpState(repo *git.Repo, fake *verifytest.Fake) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
@@ -72,7 +79,7 @@ func TestStatusStartsDeferredVerifications(t *testing.T) {
 
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Running, n.Runs["Testos"].State, "deferred became running, not a stale replay")
+	assert.Equal(t, record.Running, testosRun(n, "jq").State, "queued became running, not a stale replay")
 }
 
 // The pcre2 shape: the note names a subport of a portdir whose base
@@ -81,10 +88,9 @@ func TestStatusPumpSubmitsTheNotesSubport(t *testing.T) {
 	tartOnPath(t)
 	repo, sha := lifecycleRepo(t)
 	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq2")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "deferred", Detail: "slots busy"}
-	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	writeSubjectRuns(t, repo, sha, "jq2", map[string]platRun{
+		"Testos": {Run: record.Run{State: record.Queued, Detail: "slots busy"}},
+	})
 
 	fake := &verifytest.Fake{}
 	rs, _, _ := pumpState(repo, fake)
@@ -96,8 +102,8 @@ func TestStatusPumpSubmitsTheNotesSubport(t *testing.T) {
 
 	after, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, "jq2", after.Port, "the note keeps naming the subport")
-	assert.Equal(t, record.Running, after.Runs["Testos"].State)
+	assert.Equal(t, "jq2", after.Headline().Port, "the note keeps naming the subport")
+	assert.Equal(t, record.Running, testosRun(after, "jq2").State)
 }
 
 func TestStatusStopsPumpingAtCapacityWithAFreshReason(t *testing.T) {
@@ -112,8 +118,8 @@ func TestStatusStopsPumpingAtCapacityWithAFreshReason(t *testing.T) {
 	assert.Contains(t, errb.String(), "still waiting for a slot: dockhand/jq-1.8 on Testos")
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	r := n.Runs["Testos"]
-	assert.Equal(t, record.Deferred, r.State)
+	r := testosRun(n, "jq")
+	assert.Equal(t, record.Queued, r.State)
 	assert.Contains(t, r.Detail, "`dockhand status` starts it when one frees",
 		"the recorded reason is re-derived, not the stale count replayed")
 }
@@ -130,7 +136,7 @@ func TestStatusPumpRetriesNonCapacityDeferralsAndContinues(t *testing.T) {
 	assert.Contains(t, errb.String(), "still deferred: dockhand/jq-1.8 on Testos")
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Deferred, n.Runs["Testos"].State,
+	assert.Equal(t, record.Queued, testosRun(n, "jq").State,
 		"a deferral whose remedy is unmet re-records honestly and does not block the pass")
 }
 
@@ -172,9 +178,9 @@ func TestStatusPumpTwoPassesSubmitOnce(t *testing.T) {
 	assert.Equal(t, "jq", fake.Submitted[0].Ports[0])
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	r := n.Runs["Testos"]
+	r := testosRun(n, "jq")
 	assert.Equal(t, record.Running, r.State)
-	assert.Equal(t, "fake-1", r.Job.ID, "the note carries the one job that was started")
+	assert.Equal(t, "fake-1", n.Jobs["Testos"].Job.ID, "the note carries the one job that was started")
 	assert.Equal(t, 1, strings.Count(errb1.String()+errb2.String(), "verify: submitted jq on Testos"),
 		"exactly one pass announced the start")
 }
@@ -205,7 +211,7 @@ func TestStatusPumpYieldsToAPeerHoldingTheLock(t *testing.T) {
 	assert.NotContains(t, errb.String(), "hung", "a peer booting a guest is not a hung dockhand")
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Deferred, n.Runs["Testos"].State, "the note is the peer's to change")
+	assert.Equal(t, record.Queued, testosRun(n, "jq").State, "the note is the peer's to change")
 }
 
 // A verify and a status over one deferred run — one agent runs
@@ -245,9 +251,9 @@ func TestVerifyAndStatusPumpSubmitOnce(t *testing.T) {
 	assert.Equal(t, "jq", fake.Submitted[0].Ports[0])
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	r := n.Runs["Testos"]
+	r := testosRun(n, "jq")
 	assert.Equal(t, record.Running, r.State)
-	assert.Equal(t, "fake-1", r.Job.ID, "the note carries the one job that was started")
+	assert.Equal(t, "fake-1", n.Jobs["Testos"].Job.ID, "the note carries the one job that was started")
 	assert.Equal(t, 1, strings.Count(errb1.String()+errb2.String(), "verify: submitted jq on Testos"),
 		"exactly one claimant announced the start")
 }
@@ -275,7 +281,7 @@ func TestVerifyYieldsToAPeerHoldingTheLock(t *testing.T) {
 	assert.Empty(t, fake.Submitted, "the peer's submit is the one that counts")
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Deferred, n.Runs["Testos"].State, "the note is the peer's to change")
+	assert.Equal(t, record.Queued, testosRun(n, "jq").State, "the note is the peer's to change")
 }
 
 // A note the pump cannot read under the lock — a peer's newer schema,

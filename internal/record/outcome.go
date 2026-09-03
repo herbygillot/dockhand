@@ -16,6 +16,14 @@ import (
 // gate anywhere reads it, and recording it exists so that a later
 // question about how a change reached review can be answered by a query
 // instead of an estimate.
+//
+// One type serves both wires. The audit row's asked_by and the
+// verification record's are the same fact about the same act, and two
+// enumerations that had to agree by convention would eventually stop
+// agreeing. Both refs therefore carry these words: the audit ref
+// carries no schema stamp by design and cannot be migrated at all, so
+// a rename here would be a change the audit's readers could not be
+// told about.
 type Driver string
 
 const (

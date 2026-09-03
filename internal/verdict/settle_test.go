@@ -1,7 +1,6 @@
 package verdict
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,12 +10,19 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// running is a run as RecordRun leaves it after a submit.
+// running is a run as a submission leaves it: building, on a named
+// platform, carrying what was asked of the build.
+//
+// It names no job and holds no handle. Both moved to the JobRecord the
+// platform names, which is a fact about the guest that every subject in
+// the change shares — and a judgment that could reach either would be
+// able to write it, which is the thing the split exists to forbid.
 func running(linted bool) record.Run {
 	return record.Run{
-		State:  record.Running,
-		Job:    verify.Job{Provider: "fake", ID: "fake-1"},
-		Linted: linted,
+		State:      record.Running,
+		Platform:   "Sequoia",
+		Linted:     linted,
+		FromSource: true,
 	}
 }
 
@@ -48,7 +54,6 @@ func TestJudgeRunTable(t *testing.T) {
 		state   record.RunState
 		detail  string
 		lint    string
-		handle  string
 		release ReleaseAction
 	}{
 		{name: "a job the provider no longer knows",
@@ -77,12 +82,12 @@ func TestJudgeRunTable(t *testing.T) {
 				Status: verify.Status{State: verify.Failed, Handle: "fake-1"},
 				Log:    failLog, LogRead: true},
 			settled: true, state: record.Failed,
-			detail: "Failed to build jq: command execution failed", handle: "fake-1",
+			detail:  "Failed to build jq: command execution failed",
 			release: KeepWorker},
 		{name: "a failure whose log cannot be read still settles failed",
 			in: RunInput{Run: running(true), Port: "jq",
 				Status: verify.Status{State: verify.Failed, Handle: "fake-1"}, LogRead: false},
-			settled: true, state: record.Failed, handle: "fake-1", release: KeepWorker},
+			settled: true, state: record.Failed, release: KeepWorker},
 		{name: "a refusal is not a failure",
 			in: RunInput{Run: running(true), Port: "jq",
 				Status: verify.Status{State: verify.Failed, Handle: "fake-1"},
@@ -118,14 +123,13 @@ func TestJudgeRunTable(t *testing.T) {
 			assert.Equal(t, tc.state, j.Run.State, "state")
 			assert.Equal(t, tc.detail, j.Run.Detail, "detail")
 			assert.Equal(t, tc.lint, j.Run.Lint, "lint evidence")
-			assert.Equal(t, tc.handle, j.Run.Handle, "handle")
 			assert.Equal(t, tc.release, j.Release, "release")
-			// The job and the boxes the note already held come through
-			// untouched: a settlement records an outcome, it does not
-			// rewrite what the submission said.
-			assert.Equal(t, tc.in.Run.Job, j.Run.Job, "job")
+			// What the submission recorded comes through untouched: a
+			// settlement records an outcome, it does not rewrite what
+			// was asked for.
+			assert.Equal(t, tc.in.Run.Platform, j.Run.Platform, "platform")
 			assert.Equal(t, tc.in.Run.Linted, j.Run.Linted, "linted")
-			assert.Equal(t, tc.in.Run.Tested, j.Run.Tested, "tested")
+			assert.Equal(t, tc.in.Run.FromSource, j.Run.FromSource, "from source")
 		})
 	}
 }
@@ -140,30 +144,29 @@ func TestJudgeRunLeavesARunningRunAlone(t *testing.T) {
 	assert.Equal(t, in.Run, j.Run)
 }
 
-// A worker that would not go is not a verdict about the port. It costs
-// a slot, so the passing run's note says where it went; every other
-// release is compensation nothing waits on, and its failure changes
-// nothing.
-func TestAfterRelease(t *testing.T) {
-	stuck := errors.New("tart delete: vm is busy")
-
-	pass := JudgeRun(RunInput{Run: running(true), Port: "jq",
-		Status: verify.Status{State: verify.Passed, Handle: "fake-1"},
-		Log:    "--->  0 errors and 2 warnings found.\n", LogRead: true})
-	require.Equal(t, ReleaseAndReport, pass.Release)
-	assert.Equal(t, "worker not released: tart delete: vm is busy",
-		pass.AfterRelease(stuck).Run.Detail)
-	assert.Empty(t, pass.AfterRelease(nil).Run.Detail, "a release that worked says nothing")
-
-	quiet := JudgeRun(RunInput{Run: running(true), Port: "jq",
-		Status: verify.Status{State: verify.Failed, Handle: "fake-1"},
-		Log:    "--->  Skipping jq: known_fail on Monterey\n", LogRead: true})
-	require.Equal(t, ReleaseQuietly, quiet.Release)
-	assert.Equal(t, quiet, quiet.AfterRelease(stuck),
-		"a compensating release's failure changes nothing")
-
+// The environment the poll named never reaches the run. A failure asks
+// for the guest to be kept and the caller stamps the name on the job,
+// once for however many subjects failed in it; a judgment that wrote it
+// on the run would have nine copies of one guest's name and no way to
+// tell which of them was current.
+//
+// Stated over the whole status set rather than on the failure alone,
+// because the leak this forbids is a field assignment and any branch
+// could grow one.
+func TestJudgeRunNeverRecordsTheGuest(t *testing.T) {
+	for _, st := range []verify.Status{
+		{State: verify.Passed, Handle: "fake-1"},
+		{State: verify.Failed, Handle: "fake-1"},
+		{State: verify.Errored, Handle: "fake-1", Detail: "guest agent never came up"},
+	} {
+		j := JudgeRun(RunInput{Run: running(true), Port: "jq", Status: st,
+			Log: "--->  0 errors and 2 warnings found.\n", LogRead: true})
+		require.True(t, j.Settled)
+		assert.NotContains(t, j.Run.Detail, "fake-1",
+			"%s: the guest's name is the job's, and no run may carry it", st.State)
+	}
+	// And a failure says keep, which is the whole of how it asks.
 	kept := JudgeRun(RunInput{Run: running(true), Port: "jq",
 		Status: verify.Status{State: verify.Failed, Handle: "fake-1"}})
-	require.Equal(t, KeepWorker, kept.Release)
-	assert.Equal(t, kept, kept.AfterRelease(stuck))
+	assert.Equal(t, KeepWorker, kept.Release)
 }

@@ -10,13 +10,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// blocked builds a verdict set with a blocked run carrying a detail.
+// blockedOn builds a verdict set with a blocked run carrying a detail.
 func blockedOn(plat, detail string, rest map[string]record.RunState) record.Record {
 	r := set(rest)
-	if r.Runs == nil {
-		r.Runs = map[string]record.Run{}
-	}
-	r.Runs[plat] = record.Run{State: record.Blocked, Detail: detail}
+	runOn(r, plat, record.Run{State: record.Blocked, Detail: detail})
 	return r
 }
 
@@ -61,7 +58,8 @@ func TestDecidePublishComplainsWithoutRefusing(t *testing.T) {
 	}{
 		{"nothing recorded at all", nil},
 		{"a run still going", map[string]record.RunState{"Sequoia": record.Running}},
-		{"a queued run", map[string]record.RunState{"Sequoia": record.Deferred}},
+		{"a queued run", map[string]record.RunState{"Sequoia": record.Queued}},
+		{"a claimed run not yet started", map[string]record.RunState{"Sequoia": record.Submitting}},
 		{"a platform the port declines", map[string]record.RunState{"Sequoia": record.Unsupported}},
 		{"a canceled run", map[string]record.RunState{"Sequoia": record.Canceled}},
 		{"an errored environment", map[string]record.RunState{"Sequoia": record.Errored}},
@@ -83,7 +81,8 @@ func TestDecidePublishComplainsWithoutRefusing(t *testing.T) {
 func TestDecidePublishNamesTheBlockedNeighbours(t *testing.T) {
 	r := blockedOn("Sonoma", "dependency olm fails to build; the change itself is untested",
 		map[string]record.RunState{"Sequoia": record.Running})
-	r.Runs["Monterey"] = record.Run{State: record.Blocked, Detail: "dependency zlib (nomaintainer) fails to build; the change itself is untested"}
+	runOn(r, "Monterey", record.Run{State: record.Blocked,
+		Detail: "dependency zlib (nomaintainer) fails to build; the change itself is untested"})
 
 	d := DecidePublish(r, false, "dockhand/jq", "abc1234", false)
 	require.NoError(t, d.Refusal)
@@ -94,7 +93,7 @@ func TestDecidePublishNamesTheBlockedNeighbours(t *testing.T) {
 	}, d.Blocked)
 
 	// A refused promotion reports nothing: it never gets that far.
-	r.Runs["Ventura"] = record.Run{State: record.Failed}
+	runOn(r, "Ventura", record.Run{State: record.Failed})
 	assert.Empty(t, DecidePublish(r, false, "dockhand/jq", "abc1234", false).Blocked)
 }
 

@@ -18,60 +18,79 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
+// Proof is what a synchronous verification proved: the job it ran in,
+// what lint said in its log, and the provider's own phrase for what a
+// pass in that environment is worth.
+//
+// All three, rather than the lint summary alone, because the pre-mint
+// gate carries them onto the branch's record: the job is the
+// environment the verdict was earned in, already handed back, and the
+// evidence is the claim that belongs to it. A record naming no
+// environment at all would say a verdict had been reached nowhere, and
+// a gate-verified tip is supposed to read exactly like a
+// background-verified one.
+type Proof struct {
+	Job      verify.Job
+	Lint     string
+	Evidence string
+}
+
 // VerifyPlan proves a plan's port builds before anything real is
 // written. The edited port is rematerialized from the plan itself —
 // read the Portfile, hold it to the plan's precondition hash, apply the
 // edits, shadow the result — so the port under test is exactly what
 // apply would write.
-func (e *Engine) VerifyPlan(ctx context.Context, p *plan.Plan, release platform.Release, test bool) (string, error) {
+func (e *Engine) VerifyPlan(ctx context.Context, p *plan.Plan, release platform.Release, test bool) (Proof, error) {
 	src, err := os.ReadFile(filepath.Join(p.Portdir, macports.PortfileName))
 	if err != nil {
-		return "", err
+		return Proof{}, err
 	}
 	edited, err := p.Materialize(src)
 	if errors.Is(err, plan.ErrDrift) {
-		return "", fmt.Errorf("%w: %s", plan.ErrDrift, p.Portdir)
+		return Proof{}, fmt.Errorf("%w: %s", plan.ErrDrift, p.Portdir)
 	}
 	if err != nil {
-		return "", err
+		return Proof{}, err
 	}
 	root, err := e.Temp()
 	if err != nil {
-		return "", err
+		return Proof{}, err
 	}
 	// Shadow needs no evaluator: it is a copy, and the guest does the
 	// evaluating from here on.
 	h := port.New(tree.Target{Portdir: p.Portdir}, nil).WithTempDir(root)
 	shadow, cleanup, err := h.Shadow(edited)
 	if err != nil {
-		return "", err
+		return Proof{}, err
 	}
 	defer cleanup()
 
-	lint, err := e.RunVerification(ctx, p.Port, shadow.Target.Portdir, release, test)
-	if err != nil {
-		return "", err
-	}
-	return lint, nil
+	// The gate builds what the branch will carry, so it builds it under
+	// the same terms: a change that leaves the port's archive matching
+	// bytes it replaced is verified from source or verified against the
+	// archive it was supposed to be testing.
+	return e.RunVerification(ctx, p.Port, shadow.Target.Portdir, release, test, fromSource(p.Intent))
 }
 
 // RunVerification submits one portdir to the VM provider and reports
 // the verdict. Both verification modes arrive here: a plan's shadowed
-// portdir, and a portdir as it sits in the tree. The returned lint is
-// the run's evidence on a pass — the same summary a settled background
-// run records — so a gate-verified tip's note says exactly what a
-// background-verified one would.
-func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, release platform.Release, test bool) (string, error) {
+// portdir, and a portdir as it sits in the tree.
+func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, release platform.Release, test, source bool) (Proof, error) {
 	prov, err := e.Verifier(ctx)
 	if err != nil {
-		return "", err
+		return Proof{}, err
+	}
+	var ignore []string
+	if source {
+		ignore = []string{portName}
 	}
 	job, err := prov.Submit(ctx, verify.Request{
-		Ports:    []string{portName},
-		Portdirs: []string{portdir},
-		Platform: release,
-		Owner:    e.TreeRoot,
-		Test:     test,
+		Ports:      []string{portName},
+		Portdirs:   []string{portdir},
+		Platform:   release,
+		Owner:      e.TreeRoot,
+		Test:       test,
+		FromSource: ignore,
 	})
 	if err != nil {
 		// Someone is standing here. The provider counted slots and has
@@ -83,7 +102,7 @@ func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, 
 		if errors.As(err, &full) {
 			full.Synchronous = true
 		}
-		return "", err
+		return Proof{}, err
 	}
 	caps := prov.Capabilities()
 	on := release
@@ -95,12 +114,12 @@ func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, 
 	if err != nil {
 		fmt.Fprintln(e.Err)
 		_ = prov.Release(context.WithoutCancel(ctx), job)
-		return "", err
+		return Proof{}, err
 	}
 	switch st.State {
 	case verify.Passed:
 		fmt.Fprintln(e.Err, "passed")
-		return verdict.LintSummary(log), prov.Release(ctx, job)
+		return Proof{Job: job, Lint: verdict.LintSummary(log), Evidence: caps.Evidence}, prov.Release(ctx, job)
 	case verify.Failed:
 		fmt.Fprintln(e.Err, "FAILED")
 		tail := log
@@ -109,17 +128,17 @@ func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, 
 		}
 		fmt.Fprintln(e.Err, tail)
 		// The environment is kept on purpose: it is the debug handle.
-		return "", &VerifyFailedError{Port: portName, Handle: st.Handle}
+		return Proof{}, &VerifyFailedError{Port: portName, Handle: st.Handle}
 	case verify.Errored:
 		_ = prov.Release(context.WithoutCancel(ctx), job)
 		// The environment could not answer. It reported the machine's
 		// band until now, which is the same confusion the background
 		// follow had: a crashed guest agent is not a missing base, and
 		// telling the user to provision one wastes the evening.
-		return "", &verdict.ErroredError{Port: portName, Platform: on.Name, Detail: st.Detail}
+		return Proof{}, &verdict.ErroredError{Port: portName, Platform: on.Name, Detail: st.Detail}
 	case verify.Running:
 	}
-	return "", fmt.Errorf("verify: job ended in state %s", st.State)
+	return Proof{}, fmt.Errorf("verify: job ended in state %s", st.State)
 }
 
 // awaitVerdict polls to a terminal state, then fetches the log once —

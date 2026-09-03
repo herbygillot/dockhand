@@ -15,8 +15,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// PumpDeferred starts what was deferred, now that this status pass
-// has settled finished runs and freed their slots. Every deferred run
+// PumpDeferred starts what was queued, now that this status pass
+// has settled finished runs and freed their slots. Every queued run
 // gets one attempt, whatever its recorded reason — conditions change
 // (a base provisioned, a slot freed), and the attempt re-records the
 // truth either way. The one early exit is a typed capacity refusal:
@@ -43,39 +43,58 @@ func (e *Engine) PumpDeferred(ctx context.Context, repo *git.Repo, branches []st
 		if err != nil {
 			continue
 		}
-		for _, plat := range n.Platforms() {
-			if n.Runs[plat].State != record.Deferred {
+		if n.Destination == record.ToBranch {
+			// Nobody asked for a verdict about this change. A branch is
+			// where its contract stops, and a pump that started a build
+			// anyway would be inventing the ask — spending a slot, and an
+			// hour of the machine, on an answer the user declined.
+			continue
+		}
+		// Over the runs and not the platforms: a queued run was never
+		// submitted, so no job names its release and Platforms would
+		// answer with the empty set for precisely the records this pass
+		// exists to find.
+		for _, ref := range runRefs(n) {
+			if ref.Run.State != record.Queued {
 				continue
 			}
-			rel, derr := ChangedPortdirs(ctx, repo, br, tip)
-			if derr != nil {
-				fmt.Fprintf(e.Err, "%s: deferred %s not retried: %v\n", br, plat, derr)
-				continue
+			plat := ref.Release
+			rel := ref.Portdir
+			if rel == "" {
+				// A branch this build did not mint carries no portdir on
+				// its subject; git still knows what it changed.
+				var derr error
+				if rel, derr = ChangedPortdirs(ctx, repo, br, tip); derr != nil {
+					fmt.Fprintf(e.Err, "%s: deferred %s not retried: %v\n", br, plat, derr)
+					continue
+				}
 			}
 			release, ok := e.platformNamed(ctx, plat)
 			if !ok {
 				fmt.Fprintf(e.Err, "%s: deferred %s not retried: no such platform is provisioned\n", br, plat)
 				continue
 			}
-			if e.pumpRun(ctx, repo, br, tip, rel, plat, release) {
+			if e.pumpRun(ctx, repo, br, tip, rel, ref, release) {
 				return
 			}
 		}
 	}
 }
 
-// pumpRun retries one deferred run and reports whether the pass should
+// pumpRun retries one queued run and reports whether the pass should
 // stop here. The retry is a claim as much as a submit: two status
 // passes sharing a checkout — two agents, which is how the tool is now
-// used — both read the run as deferred, both submitted, and the second
-// recordRun overwrote the first's job, leaving a worker no note
-// accounted for. Schema 2 has no field to claim a run with (a peer
-// binary's write round-trips the record and drops what it does not
-// know), so the claim is a lock held from the re-read through the
-// record: the holder re-reads the note, and a run no longer deferred
-// was started or settled by the other claimant — skipped, silently,
-// because that claimant announced it.
-func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip, rel, plat string, release platform.Release) (stop bool) {
+// used — both read the run as queued, both submitted, and the second
+// write overwrote the first's job, leaving a worker no note accounted
+// for. Schema 3 has the field to claim with — the job's own claim, and
+// the submitting state a claimed run reads — but the protocol that
+// reads them is a concurrency change of its own, so what still enforces
+// the claim is this lock, held from the re-read through the record: the
+// holder re-reads the note, and a run no longer queued was started or
+// settled by the other claimant — skipped, silently, because that
+// claimant announced it.
+func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip, rel string, was runRef, release platform.Release) (stop bool) {
+	plat := was.Release
 	// Lock order, checked against every holder at HEAD 82f2f2c. The
 	// submit lock has two takers, this pump and SubmitRelease, and
 	// neither takes it under any other lock. Inside it, submit takes
@@ -117,28 +136,32 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip, rel, plat
 		}
 		return false
 	}
-	run := n.Runs[plat]
-	if run.State != record.Deferred {
-		return false
-	}
 	// The note names what this branch verifies — for a minted
 	// branch, the SUBPORT the plan bumped. The portdir's base
 	// name is the parent port, and submitting that would build
 	// the untouched main port and call the branch verified
 	// (field-caught on pcre2, whose portdir is devel/pcre).
-	portName := n.Port
+	portName := was.Port
 	if portName == "" {
 		portName = filepath.Base(rel)
 	}
-	err = e.submit(ctx, &Minted{
-		Repo: repo, Branch: br, Sha: tip, RelPort: rel,
-	}, portName, release, false, run.Tested)
+	run, ok := n.Runs[record.RunKey(portName, plat)]
+	if !ok || run.State != record.Queued {
+		return false
+	}
+	// What the previous attempt was for is carried into this one. The
+	// test suite is not: it is asked of an environment, and a queued run
+	// has no environment to have been asked of — so an unattended retry
+	// submits the install this pass can honestly stand behind, and the
+	// note says so rather than claiming a test nobody ran.
+	s := submission{Port: portName, Release: release, FromSource: run.FromSource}
+	err = e.submit(ctx, &Minted{Repo: repo, Branch: br, Sha: tip, RelPort: rel}, s)
 	var vde *VerifyDeferredError
 	if errors.As(err, &vde) {
 		if rerr := e.recordRun(ctx, repo, tip, portName, plat, record.Run{
-			State: record.Deferred, Detail: vde.Reason, Tested: run.Tested,
+			State: record.Queued, Detail: vde.Reason, FromSource: run.FromSource,
 		}, ""); rerr != nil {
-			fmt.Fprintf(e.Err, "warning: re-recording deferred run: %v\n", rerr)
+			fmt.Fprintf(e.Err, "warning: re-recording queued run: %v\n", rerr)
 		}
 		var cap_ *verify.CapacityError
 		if errors.As(err, &cap_) {

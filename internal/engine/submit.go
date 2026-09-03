@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -100,13 +101,41 @@ func (e *VerifyDeferredError) Code() string {
 	return "minted-submit-errored"
 }
 
+// submission is what a submit needs beyond the branch: which subject,
+// which release, and the two facts about the build that the record
+// keeps — whether the port's test suite runs after the install, and
+// whether the binary archive must be ignored.
+//
+// A struct rather than four more positional arguments, because two of
+// the four are bools that read identically at a call site and the
+// record is what they end up in: a caller that swapped them would
+// write a note claiming a test nobody ran.
+type submission struct {
+	Port       string
+	Release    platform.Release
+	Test       bool
+	FromSource bool
+	Trace      bool
+}
+
+// fromSourcePorts is the request's list of ports whose binary archives
+// must be ignored. One subject today, and the list is the request's
+// shape rather than a flag because a cohort ignores archives per member.
+func (s submission) fromSourcePorts() []string {
+	if !s.FromSource {
+		return nil
+	}
+	return []string{s.Port}
+}
+
 // submit stages the minted commit's portdir out of the object database
 // — the working tree is irrelevant to what the branch carries —
-// submits it to the VM provider, and records the running job as the
-// commit's note. Submission not starting is not a minting failure —
+// submits it to the VM provider, and records the guest and its runs as
+// the commit's note. Submission not starting is not a minting failure —
 // the branch stands — but it is a contract failure: VerifyDeferredError
 // carries that split.
-func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release platform.Release, trace, test bool) error {
+func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
+	portName := s.Port
 	prov, err := e.Verifier(ctx)
 	if err != nil {
 		if errors.Is(err, verify.ErrNoProvider) {
@@ -121,7 +150,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 			return nil
 		}
 		if errors.Is(err, verify.ErrNoEnvironment) {
-			return e.queue(ctx, m, portName, release, err)
+			return e.queue(ctx, m, s, err)
 		}
 		return err
 	}
@@ -131,11 +160,12 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 	// Capabilities is an interface method with no purity promise on it —
 	// a provider that answered by talking to a hypervisor would be doing
 	// so on every submit for an answer already in hand.
-	if release.IsZero() {
-		if release, err = verdict.ResolveRelease(release, prov.Capabilities().Platforms); err != nil {
-			return e.queue(ctx, m, portName, release, err)
+	if s.Release.IsZero() {
+		if s.Release, err = verdict.ResolveRelease(s.Release, prov.Capabilities().Platforms); err != nil {
+			return e.queue(ctx, m, s, err)
 		}
 	}
+	release := s.Release
 	root, err := e.Temp()
 	if err != nil {
 		return err
@@ -171,8 +201,12 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 		Portdirs:   []string{staged},
 		Platform:   release,
 		Owner:      m.Repo.Root,
-		Test:       test,
+		Test:       s.Test,
 		NeedsXcode: sched.NeedsXcode,
+		// The archive is ignored where a pass earned against it would
+		// prove nothing: the change left the port's version and revision
+		// where they were, so the archive that matches them predates it.
+		FromSource: s.fromSourcePorts(),
 	})
 	if err != nil {
 		// A full provider (two-slot cap), a capability refusal, or a
@@ -181,11 +215,28 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 		// than left to a later verify — a field run saw an intent-path
 		// refusal show as bare "unverified" with the reason only in
 		// scrollback.
-		return e.queue(ctx, m, portName, release, err)
+		return e.queue(ctx, m, s, err)
 	}
-	if err := e.recordRun(ctx, m.Repo, m.Sha, portName, release.Name, record.Run{
-		State: record.Running, Job: job, Tested: test, Linted: true,
-	}, fmt.Sprintf("verify: submitted %s on %s (job %s); `dockhand status` follows it", portName, release.Name, job.ID)); err != nil {
+	// One guest and every verdict started in it, in one note. The job
+	// carries what is true of the environment — the test that was asked
+	// of it, and who owns the submission — and the run carries what is
+	// being concluded about the port.
+	if err := e.Ledger(m.Repo).RecordSubmission(ctx, m.Sha, release.Name,
+		record.JobRecord{
+			Job:  job,
+			Test: s.Test,
+			// The owner is recorded, and the submit lock is what still
+			// enforces it: this field is the claim the protocol will read
+			// once that lock is retired, which is a concurrency change and
+			// a commit of its own. Stamped from the guest's own start
+			// rather than from a second clock read, because that is the
+			// moment this session took the environment and the note should
+			// not carry two answers to when.
+			Claim: &record.Claim{By: claimant(), At: job.Started.UTC()},
+		},
+		[]string{portName},
+		record.Run{State: record.Running, Linted: true, FromSource: s.FromSource},
+	); err != nil {
 		// Submit-and-record is a transaction: a job whose note cannot
 		// be persisted is a running VM no settlement can ever find, so
 		// the compensation is release, on a context that survives the
@@ -198,7 +249,8 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 		}
 		return fmt.Errorf("recording the run failed; the worker was released: %w", err)
 	}
-	if trace {
+	fmt.Fprintf(e.Err, "verify: submitted %s on %s (job %s); `dockhand status` follows it\n", portName, release.Name, job.ID)
+	if s.Trace {
 		return e.Follow(ctx, m.Repo, m.Sha, portName, release.Name, prov, job)
 	}
 	return nil
@@ -217,12 +269,17 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 // cannot be recorded. That is only reachable on a machine whose
 // provider offers no platform at all, where there is nothing for
 // status to retry against until a base exists.
-func (e *Engine) queue(ctx context.Context, m *Minted, portName string, release platform.Release, cause error) error {
-	if !release.IsZero() {
-		if rerr := e.recordRun(ctx, m.Repo, m.Sha, portName, release.Name, record.Run{
-			State: record.Deferred, Detail: cause.Error(),
+//
+// A queued run has no job, and none is invented for it. Nothing was
+// submitted, so there is no guest to describe, and a job record
+// written empty to keep the maps the same length would be the record
+// claiming an environment that does not exist.
+func (e *Engine) queue(ctx context.Context, m *Minted, s submission, cause error) error {
+	if !s.Release.IsZero() {
+		if rerr := e.recordRun(ctx, m.Repo, m.Sha, s.Port, s.Release.Name, record.Run{
+			State: record.Queued, Detail: cause.Error(), FromSource: s.FromSource,
 		}, ""); rerr != nil {
-			fmt.Fprintf(e.Err, "warning: recording the deferred run: %v\n", rerr)
+			fmt.Fprintf(e.Err, "warning: recording the queued run: %v\n", rerr)
 		}
 	}
 	return &VerifyDeferredError{Branch: m.Branch, Reason: cause.Error(), Cause: cause}
@@ -248,13 +305,24 @@ func (e *Engine) recordRun(ctx context.Context, repo *git.Repo, sha, portName, r
 // SubmitRelease claims one release's run for the branch and submits it,
 // under the repository's submit lock from the re-read through the
 // record — the claim pumpRun makes, made the same way, so a verify and
-// a status over one deferred run cannot both start it. The note is
+// a status over one queued run cannot both start it. The note is
 // read under the lock, because what it says outside is what a peer
 // may already have changed: a run already running is left alone, and
 // a deferral is re-recorded with its reason before the lock goes, so
 // the record can never land on top of a peer's start. started reports
 // a submit that went through, for --trace to follow once the claim is
 // released.
+//
+// What the note already knows about the build is carried into the new
+// one: whether the archive must be ignored is a property of the change
+// and not of the invocation, and a user who asked once should not have
+// to ask again to have the same thing verified.
+//
+// It also settles the destination. `dockhand verify <branch>` is a
+// person asking for a verdict about that branch, which is exactly what
+// the field records — so a change minted with --no-verify and then
+// verified by hand stops being a change nobody asked a verdict of, and
+// the drain will retry it if this attempt is queued.
 func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip, rel, portName string, r platform.Release, test bool) (started bool, err error) {
 	unlock, err := repo.LockSubmit(ctx, SubmitLockWait)
 	if errors.Is(err, lockfile.ErrHeld) {
@@ -266,24 +334,48 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip,
 		return false, err
 	}
 	defer unlock()
+	s := submission{Port: portName, Release: r, Test: test}
 	if n, nerr := e.Ledger(repo).Read(ctx, tip); nerr == nil {
-		if run, ok := n.Runs[r.Name]; ok && run.State == record.Running {
-			fmt.Fprintf(e.Err, "already verifying on %s (%s); `dockhand status` follows it\n",
-				r.Name, time.Since(run.Job.Started).Round(time.Second))
-			return false, nil
+		if run, ok := n.Runs[record.RunKey(portName, r.Name)]; ok {
+			if run.State == record.Running {
+				fmt.Fprintf(e.Err, "already verifying on %s (%s); `dockhand status` follows it\n",
+					r.Name, time.Since(n.Jobs[r.Name].Job.Started).Round(time.Second))
+				return false, nil
+			}
+			s.FromSource = run.FromSource
 		}
 	}
-	err = e.submit(ctx, &Minted{
-		Repo: repo, Branch: branch, Sha: tip, RelPort: rel,
-	}, portName, r, false, test)
+	e.askVerdict(ctx, repo, tip)
+	err = e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: tip, RelPort: rel}, s)
 	var vde *VerifyDeferredError
 	if errors.As(err, &vde) {
 		if rerr := e.recordRun(ctx, repo, tip, portName, r.Name, record.Run{
-			State: record.Deferred, Detail: vde.Reason,
+			State: record.Queued, Detail: vde.Reason, FromSource: s.FromSource,
 		}, fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)); rerr != nil {
 			return false, rerr
 		}
 		return false, err
 	}
 	return err == nil, err
+}
+
+// askVerdict records that somebody has now asked for a verdict about
+// this change, whatever it was minted for.
+//
+// A destination is where the contract reaches and not where it started:
+// a branch minted with --no-verify is never drained, and the one thing
+// that can honestly change that is a person naming it to `dockhand
+// verify`. Written best-effort, because the submit that follows is the
+// answer to what was asked and a bookkeeping failure must not stand in
+// its way.
+func (e *Engine) askVerdict(ctx context.Context, repo *git.Repo, tip string) {
+	if err := e.Ledger(repo).Update(ctx, tip, func(r *record.Record) error {
+		if r.Destination == record.ToVerdict || r.Destination == record.ToPublished {
+			return ledger.ErrUnchanged
+		}
+		r.Destination = record.ToVerdict
+		return nil
+	}); err != nil {
+		fmt.Fprintf(e.Err, "warning: recording that a verdict was asked for: %v\n", err)
+	}
 }

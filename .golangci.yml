@@ -162,6 +162,13 @@ linters:
             - errors
             - fmt
             - sort
+            # time is a type and not a clock. Schema 3 records when a
+            # claim was taken, when a hold went on, when the base was
+            # committed; the values are always the caller's clock read,
+            # passed in. Nothing here calls time.Now, and a leaf that
+            # did would make a note's bytes depend on when they were
+            # written rather than on what was observed.
+            - time
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/git

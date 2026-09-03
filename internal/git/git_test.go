@@ -656,6 +656,24 @@ func TestNotesRoundTripAndAbsence(t *testing.T) {
 	assert.JSONEq(t, `{"state":"passed"}`, string(got))
 }
 
+// Absence is exit 1 and nothing else. git's fatal band — exit 128, a
+// held ref lock or an object it cannot read — used to answer here as
+// "no note", which the ledger starts a blank record on and then writes
+// back over the live one. An unresolvable revision is the fatal this
+// test can produce on demand.
+func TestANoteGitCouldNotReadIsNotAnAbsentNote(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	sha, err := r.RevParse(ctx, "HEAD")
+	require.NoError(t, err)
+	require.NoError(t, r.NoteWrite(ctx, VerifyNotesRef, sha, []byte(`{"state":"running"}`)))
+
+	_, err = r.NoteRead(ctx, VerifyNotesRef, "no-such-revision")
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrNoNote,
+		"git failed to resolve the object; it did not say the object has no note")
+}
+
 func TestBranchesMatchesTheNamespaceNotSubstrings(t *testing.T) {
 	r := newRepo(t)
 	ctx := context.Background()

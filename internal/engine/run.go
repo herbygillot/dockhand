@@ -23,18 +23,6 @@ const (
 	Replace
 )
 
-// Destination is how far one invocation's contract reaches.
-// ToVerification is the default — mint the branch AND submit its
-// verification — and ToBranch narrows it to the branch alone, which is
-// what --no-verify asks for. Nothing persists it yet; the note learns
-// about a destination with schema 3.
-type Destination int
-
-const (
-	ToVerification Destination = iota
-	ToBranch
-)
-
 // Policy is one invocation's choice of realization, shared by every
 // intent that writes: print the plan, print the diff, edit in place,
 // or — the default — mint the branch and submit verification.
@@ -47,21 +35,48 @@ type Policy struct {
 	// OnInFlight is --force: replace what is already in flight for this
 	// port, rather than refusing.
 	OnInFlight InFlight
-	// Destination is --no-verify: stop at the branch.
-	Destination Destination
+	// Destination is how far this invocation's contract reaches, and it
+	// is now the record's own type: the value is written onto the note
+	// at mint, so an engine enum would have been a second spelling of a
+	// wire word. The zero value is the default road — mint and submit —
+	// which record.ToVerdict names; --no-verify asks for record.ToBranch.
+	Destination record.Destination
 	// On is the release to verify on, already parsed by the caller;
 	// the zero value means the provider default. Flag parsing is the
 	// CLI's business, not the engine's.
 	On platform.Release
-	// GateLint is the gate's lint evidence, carried to the minted
-	// commit's note so a gate-verified tip reads exactly like a
-	// background-verified one.
-	GateLint string
+	// GateProof is what the synchronous --verify gate proved, carried
+	// to the minted commit's note so a gate-verified tip reads exactly
+	// like a background-verified one: the job it ran in, what lint
+	// said, and the provider's own phrase for what the pass is worth.
+	GateProof Proof
 	// Verified says the synchronous --verify gate already ran and
 	// passed on this plan's content, so realization records the verdict
 	// instead of buying the same build twice.
 	Verified bool
 }
+
+// destination is the record's word for how far this policy reaches.
+// The zero Policy asks for a verdict, which is the road every intent
+// takes unless --no-verify narrows it.
+func (o Policy) destination() record.Destination {
+	if o.Destination == "" {
+		return record.ToVerdict
+	}
+	return o.Destination
+}
+
+// fromSource reports whether an intent's change leaves the port's
+// binary archive matching bytes the change replaced.
+//
+// A version bump does not: the new version names an archive that does
+// not exist yet, so MacPorts builds from source without being asked. A
+// revision bump does not either, for the same reason one level down —
+// the revision is part of the archive's name. A checksum refresh does:
+// the version and the revision both stand, the archive that matches
+// them predates the change, and a pass earned by unpacking it verified
+// nothing about the distfile the change is actually about.
+func fromSource(intent string) bool { return intent == "refresh-checksums" }
 
 // Run carries a plan to its chosen realization. Every write intent
 // arrives here, so a plan becomes a branch the same way whichever
@@ -83,7 +98,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) error {
 		// the only write mode a non-git tree has.
 		return e.applyPlan(ctx, p)
 	}
-	m, err := e.mint(ctx, p, o.OnInFlight == Replace)
+	m, err := e.mint(ctx, p, o)
 	if err != nil || m == nil {
 		return err
 	}
@@ -94,32 +109,54 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) error {
 		// identity.
 		// Recording it beats resubmitting: the same build twice proves
 		// nothing the first one did not.
-		return e.markVerified(ctx, m, p, o.On, o.Test, o.GateLint)
+		return e.markVerified(ctx, m, p, o)
 	}
-	if o.Destination == ToBranch {
+	if o.destination() == record.ToBranch {
+		// The contract stops at the branch, and the record says so, so
+		// nothing will submit this later either: the drain reads the
+		// destination and steps over a change nobody asked a verdict of.
 		return nil
 	}
 	// The branch is live the moment it exists (D21): verification is
 	// submitted against the tip and the guest drives its own build, so
 	// this process is free to exit; status collects the verdict.
-	return e.submit(ctx, m, p.Port, o.On, o.Trace, o.Test)
+	return e.submit(ctx, m, submission{
+		Port: p.Port, Release: o.On, Test: o.Test,
+		FromSource: fromSource(p.Intent), Trace: o.Trace,
+	})
 }
 
 // markVerified writes the minted commit's note as passed, on the
 // strength of the pre-mint gate having built identical content.
-func (e *Engine) markVerified(ctx context.Context, m *Minted, p *plan.Plan, release platform.Release, tested bool, lint string) error {
+//
+// It writes the job as well as the run, and the job is written
+// released: the gate waited for its own answer and handed the
+// environment back before returning, so a record that named no
+// environment at all would say a verdict had been reached nowhere.
+func (e *Engine) markVerified(ctx context.Context, m *Minted, p *plan.Plan, o Policy) error {
+	release := o.On
 	if release.IsZero() {
 		// The gate ran, so a provider exists; its default names the run.
 		prov, perr := e.Verifier(ctx)
 		if perr != nil {
 			return perr
 		}
-		if release, perr = verdict.ResolveRelease(release, prov.Capabilities().Platforms); perr != nil {
-			return perr
+		var rerr error
+		if release, rerr = verdict.ResolveRelease(release, prov.Capabilities().Platforms); rerr != nil {
+			return rerr
 		}
 	}
-	return e.recordRun(ctx, m.Repo, m.Sha, p.Port, release.Name, record.Run{State: record.Passed, Tested: tested, Linted: true, Lint: lint},
-		fmt.Sprintf("verified before minting; the tip is recorded as passed on %s", release.Name))
+	if err := e.Ledger(m.Repo).RecordSubmission(ctx, m.Sha, release.Name,
+		record.JobRecord{Job: o.GateProof.Job, Test: o.Test, Released: true},
+		[]string{p.Port},
+		record.Run{
+			State: record.Passed, Linted: true, Lint: o.GateProof.Lint,
+			Evidence: o.GateProof.Evidence, FromSource: fromSource(p.Intent),
+		}); err != nil {
+		return err
+	}
+	fmt.Fprintf(e.Err, "verified before minting; the tip is recorded as passed on %s\n", release.Name)
+	return nil
 }
 
 // applyPlan carries out a plan against the working tree — the

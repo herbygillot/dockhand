@@ -238,7 +238,7 @@ func TestGoldenStatusPump(t *testing.T) {
 func TestGoldenStatusOrphans(t *testing.T) {
 	tartAbsent(t)
 	repo, sha := goldenLifecycleRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{"Testos": runningRun("dockhand-worker-mine")})
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": runningOn("dockhand-worker-mine")})
 	fake := &verifytest.Fake{Live: []verify.Worker{
 		{Name: "dockhand-worker-mine"},
 		{Name: "dockhand-worker-elsewhere", Owner: "/elsewhere/ports"},
@@ -327,9 +327,9 @@ func TestGoldenClean(t *testing.T) {
 // branch was amended away from is released as stale on the way.
 func TestGoldenCancel(t *testing.T) {
 	repo, old := goldenLifecycleRepo(t)
-	writeRuns(t, repo, old, map[string]record.Run{"Testos": runningRun("fake-1")})
+	writeRuns(t, repo, old, map[string]platRun{"Testos": runningOn("fake-1")})
 	tip := growBranch(t, repo, "dockhand/jq-1.8", "version 1.8\nrevision 1\n", "jq: rebuild")
-	writeRuns(t, repo, tip, map[string]record.Run{"Testos": runningRun("fake-2")})
+	writeRuns(t, repo, tip, map[string]platRun{"Testos": runningOn("fake-2")})
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	tr := capture(t, rs, out, errb, cancelAction{target: "jq"})
 	checkGolden(t, "cancel", tr, rewrite{repo.Root, "<repo>"})
@@ -337,8 +337,7 @@ func TestGoldenCancel(t *testing.T) {
 
 func TestGoldenCancelKept(t *testing.T) {
 	repo, sha := goldenLifecycleRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{"Testos": {State: "failed", Handle: "fake-1",
-		Job: verify.Job{Provider: "fake", ID: "fake-1", Started: goldenStart}, Detail: "Failed to build jq: boom"}})
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": keptOn("fake-1", "Failed to build jq: boom")})
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	tr := capture(t, rs, out, errb, cancelAction{target: "jq"})
 	checkGolden(t, "cancel_kept", tr, rewrite{repo.Root, "<repo>"})
@@ -346,7 +345,7 @@ func TestGoldenCancelKept(t *testing.T) {
 
 func TestGoldenCancelNothing(t *testing.T) {
 	repo, sha := goldenLifecycleRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}})
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": passedOn("fake-1")})
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	tr := capture(t, rs, out, errb, cancelAction{target: "jq"})
 	checkGolden(t, "cancel_nothing", tr, rewrite{repo.Root, "<repo>"})
@@ -365,10 +364,9 @@ func TestGoldenCancelUnknownTarget(t *testing.T) {
 // released, the fork copy deliberately left, the branch gone.
 func TestGoldenDiscard(t *testing.T) {
 	repo, sha := goldenPromoteRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{
-		"Testos": runningRun("fake-1"),
-		"Oldos": {State: "failed", Handle: "fake-9",
-			Job: verify.Job{Provider: "fake", ID: "fake-9", Started: goldenStart}, Detail: "Failed to build jq: boom"},
+	writeRuns(t, repo, sha, map[string]platRun{
+		"Testos": runningOn("fake-1"),
+		"Oldos":  keptOn("fake-9", "Failed to build jq: boom"),
 	})
 	require.NoError(t, repo.Push(t.Context(), "herby", "dockhand/jq-1.8"))
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
@@ -380,7 +378,7 @@ func TestGoldenDiscard(t *testing.T) {
 // is named as the thing nobody released.
 func TestGoldenDiscardUnwiredProvider(t *testing.T) {
 	repo, sha := goldenLifecycleRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{"Testos": runningRun("fake-1")})
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": runningOn("fake-1")})
 	rs, out, errb := goldenState(repo, nil)
 	tr := capture(t, rs, out, errb, discardAction{target: "jq"})
 	checkGolden(t, "discard_unwired_provider", tr, rewrite{repo.Root, "<repo>"})
@@ -439,9 +437,10 @@ func TestGoldenPromoteDuplicate(t *testing.T) {
 // the same port noted — and the PR body saying so.
 func TestGoldenPromoteUnverified(t *testing.T) {
 	repo, sha := goldenPromoteRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{
-		"Testos": {State: "blocked", Detail: "dependency olm (nomaintainer) fails to build; the change itself is untested"},
-		"Oldos":  runningRun("fake-9"),
+	writeRuns(t, repo, sha, map[string]platRun{
+		"Testos": {Job: spentGuest("fake-8"), Run: record.Run{State: record.Blocked,
+			Detail: "dependency olm (nomaintainer) fails to build; the change itself is untested"}},
+		"Oldos": runningOn("fake-9"),
 	})
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1",
 		searchHit: `{"items":[{"number":124,"title":"jq: fix the build on Oldos","state":"open","html_url":"https://x/124"}]}`}
@@ -465,8 +464,7 @@ func TestGoldenPromoteMerged(t *testing.T) {
 
 func TestGoldenPromoteFailed(t *testing.T) {
 	repo, sha := goldenPromoteRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{"Testos": {State: "failed", Handle: "kept-1",
-		Job: verify.Job{Provider: "fake", ID: "kept-1", Started: goldenStart}, Detail: "Failed to build jq: boom"}})
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": keptOn("kept-1", "Failed to build jq: boom")})
 	gh := &ghFake{login: "herbygillot"}
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	rs.Gh = gh.run
@@ -514,7 +512,7 @@ func TestGoldenVerifyBranchDeferredAtCapacity(t *testing.T) {
 func TestGoldenVerifyBranchRunning(t *testing.T) {
 	tartOnPath(t)
 	repo, sha := goldenLifecycleRepo(t)
-	writeRuns(t, repo, sha, map[string]record.Run{"Testos": runningRun("fake-1")})
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": runningOn("fake-1")})
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	rs.PrefixPath = goldenNoPrefix
 	tr := capture(t, rs, out, errb, verifyAction{target: "jq"})

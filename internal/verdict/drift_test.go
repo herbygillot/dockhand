@@ -70,6 +70,29 @@ func TestDrift(t *testing.T) {
 				[]Ancestor{{Noted: noted("abc1234", "t0", failed), Behind: 1}}))
 	})
 
+	// Schema 3 bears a record at mint, so a --no-verify branch that has
+	// grown a commit has an ancestor carrying a note that holds nothing.
+	// The behind sentence claims the change was verified at a commit the
+	// branch moved past, which of that ancestor is false twice over — so
+	// it is stepped over, and the honest bare word is what is left.
+	t.Run("an ancestor holding no verdict is not the drift", func(t *testing.T) {
+		minted := noted("abc1234", "t0", nil)
+		assert.Empty(t, minted.Record.Runs)
+		assert.Equal(t, "unverified",
+			drift("t1", "dockhand/jq", nil, []Ancestor{{Noted: minted, Behind: 1}}))
+	})
+
+	// And it is stepped OVER, not stopped at: a real verdict further back
+	// is still the gap the sentence is about.
+	t.Run("the nearest ancestor that holds one is the drift", func(t *testing.T) {
+		assert.Equal(t,
+			"tip unverified; passed (Sequoia) at def5678, 2 commit(s) behind — `dockhand verify dockhand/jq` tests the tip",
+			drift("t1", "dockhand/jq", nil, []Ancestor{
+				{Noted: noted("abc1234", "t0", nil), Behind: 1},
+				{Noted: noted("def5678", "t0", passed), Behind: 2},
+			}))
+	})
+
 	// Content identity is checked before ancestry, so a tip whose
 	// content was verified under another sha never reads as behind.
 	t.Run("content identity wins over ancestry", func(t *testing.T) {

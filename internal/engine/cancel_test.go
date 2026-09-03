@@ -17,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
@@ -34,8 +33,9 @@ func TestCancelReleasesTheTipsRunningWorker(t *testing.T) {
 	assert.Equal(t, "canceled verification of dockhand/jq-1.8 on Testos (worker fake-1 released)\n", out.String())
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Canceled, n.Runs["Testos"].State)
-	assert.Equal(t, "canceled by the user", n.Runs["Testos"].Detail)
+	assert.Equal(t, record.Canceled, runOf(n, "Testos").State)
+	assert.Equal(t, "canceled by the user", runOf(n, "Testos").Detail)
+	assert.True(t, n.Jobs["Testos"].Released, "the guest is recorded as given back")
 }
 
 func TestCancelReleasesAKeptEnvironmentAndKeepsTheVerdict(t *testing.T) {
@@ -51,9 +51,9 @@ func TestCancelReleasesAKeptEnvironmentAndKeepsTheVerdict(t *testing.T) {
 	assert.Equal(t, "released kept environment of dockhand/jq-1.8 on Testos (the failed verdict stands)\n", out.String())
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	r := n.Runs["Testos"]
+	r := runOf(n, "Testos")
 	assert.Equal(t, record.Failed, r.State, "cancel frees the environment, never the evidence")
-	assert.Empty(t, r.Handle)
+	assert.True(t, n.Jobs["Testos"].Released)
 	assert.Equal(t, "Failed to build jq: boom — kept environment released", r.Detail)
 }
 
@@ -73,7 +73,7 @@ func TestCancelRecordsEvenWhenTheProviderRefusesToRelease(t *testing.T) {
 	assert.Contains(t, out.String(), "canceled verification of dockhand/jq-1.8")
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Canceled, n.Runs["Testos"].State)
+	assert.Equal(t, record.Canceled, runOf(n, "Testos").State)
 }
 
 func TestCancelWithNoNoteSaysThereIsNothingToCancel(t *testing.T) {
@@ -95,9 +95,8 @@ func TestCancelWithNoNoteSaysThereIsNothingToCancel(t *testing.T) {
 func TestCancelNeedsNoProviderWhenNothingIsHeld(t *testing.T) {
 	repo, sha := engineRepo(t)
 	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "passed"}
+	n := mintedNote(t, repo, sha)
+	n.Runs[record.RunKey("jq", "Testos")] = record.Run{State: record.Passed, Platform: "Testos"}
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	var out, errb bytes.Buffer
@@ -127,7 +126,8 @@ func TestCancelRunsLeavesAKeptEnvironmentToThePromotion(t *testing.T) {
 
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, "fake-1", n.Runs["Testos"].Handle)
+	assert.Equal(t, "fake-1", n.Jobs["Testos"].Handle)
+	assert.False(t, n.Jobs["Testos"].Released)
 }
 
 // Several platforms are reported in the record's own order, so that a
@@ -135,11 +135,9 @@ func TestCancelRunsLeavesAKeptEnvironmentToThePromotion(t *testing.T) {
 func TestCancelReportsPlatformsInTheRecordsOrder(t *testing.T) {
 	repo, sha := engineRepo(t)
 	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
+	n := mintedNote(t, repo, sha)
 	for _, plat := range []string{"Testos", "Aaaos", "Zzzos"} {
-		n.Runs[plat] = record.Run{State: "running",
-			Job: verify.Job{Provider: "fake", ID: "fake-" + plat}}
+		started(&n, plat, "fake-"+plat, record.Run{State: record.Running})
 	}
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 

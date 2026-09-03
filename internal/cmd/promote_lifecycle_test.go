@@ -86,11 +86,7 @@ func promoteRepo(t *testing.T) (*git.Repo, string) {
 	repo, sha := lifecycleRepo(t)
 	gittest.BareFork(t, repo, "herbygillot", "herby")
 	// A passed, linted run makes the branch promotable.
-	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "passed", Linted: true, Lint: "clean"}
-	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": passedOn("fake-passed")})
 	return repo, sha
 }
 
@@ -181,11 +177,13 @@ func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
 	// as unverified — no --no-verify demanded on top.
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()
+	// The passed run is replaced outright: this branch is mid-build and
+	// nothing about it has settled.
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]record.Run{"Testos": {State: "running",
-		Job: verify.Job{Provider: "fake", ID: "fake-9"}}}
+	n.Jobs, n.Runs = nil, nil
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": runningOn("fake-9")})
 
 	fake := &verifytest.Fake{}
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
@@ -205,17 +203,14 @@ func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
 
 	after, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Canceled, after.Runs["Testos"].State, "the note stays honest locally")
+	assert.Equal(t, record.Canceled, after.Runs[record.RunKey("jq", "Testos")].State,
+		"the note stays honest locally")
 }
 
 func TestPromoteMidVerificationKeepsThePassedEvidence(t *testing.T) {
 	repo, sha := promoteRepo(t) // fixture already records a passed, linted run
 	ctx := context.Background()
-	n, err := ledger.Open(repo).Read(ctx, sha)
-	require.NoError(t, err)
-	n.Runs["Oldos"] = record.Run{State: "running",
-		Job: verify.Job{Provider: "fake", ID: "fake-8"}}
-	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	writeRuns(t, repo, sha, map[string]platRun{"Oldos": runningOn("fake-8")})
 
 	fake := &verifytest.Fake{}
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/2"}
@@ -241,7 +236,7 @@ func TestPromoteUnverifiedComplainsAndProceeds(t *testing.T) {
 	ctx := context.Background()
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]record.Run{}
+	n.Jobs, n.Runs = nil, nil
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/3"}
@@ -262,9 +257,11 @@ func TestPromoteBlockedPromotesWithTheDependencyNamed(t *testing.T) {
 	ctx := context.Background()
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]record.Run{"Testos": {State: "blocked",
-		Detail: "dependency olm (nomaintainer) fails to build; the change itself is untested"}}
+	n.Jobs, n.Runs = nil, nil
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": {Job: spentGuest("fake-blocked"),
+		Run: record.Run{State: record.Blocked,
+			Detail: "dependency olm (nomaintainer) fails to build; the change itself is untested"}}})
 
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
 	rs, _, errb := promoteState(t, repo, gh)
@@ -283,10 +280,13 @@ func TestPromoteBlockedPromotesWithTheDependencyNamed(t *testing.T) {
 func TestPromoteStillRefusesAFailedBuild(t *testing.T) {
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()
+	// The passed run is replaced outright by a failure whose guest is
+	// still standing as the debug handle.
 	n, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
-	n.Runs = map[string]record.Run{"Testos": {State: "failed", Handle: "kept-1"}}
+	n.Jobs, n.Runs = nil, nil
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": keptOn("kept-1", "")})
 
 	gh := &ghFake{login: "herbygillot"}
 	rs, _, _ := promoteState(t, repo, gh)

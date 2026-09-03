@@ -8,14 +8,34 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// set builds a verdict set from platform-to-state pairs, which is all
-// the tally judgments read.
+// subject is the port every one-subject fixture here is about.
+const subject = "jq"
+
+// set builds a one-subject verdict set from platform-to-state pairs,
+// which is all the tally judgments read.
+//
+// The runs are keyed and stamped the way the ledger writes them —
+// RunKey(port, release), with the platform on the run as well as in the
+// key — because a fixture that keyed by release alone would be testing
+// a note shape nothing writes, and every projection here reaches a run
+// through its subject.
 func set(states map[string]record.RunState) record.Record {
-	r := record.Record{Schema: 2, Sha: "cafe", Port: "jq", Runs: map[string]record.Run{}}
+	r := record.Record{
+		Schema:   record.Schema,
+		Sha:      "cafe",
+		Subjects: []record.Subject{{Port: subject, Names: []string{subject}}},
+		Runs:     map[string]record.Run{},
+	}
 	for plat, s := range states {
-		r.Runs[plat] = record.Run{State: s}
+		runOn(r, plat, record.Run{State: s})
 	}
 	return r
+}
+
+// runOn puts one run on one platform of the fixture's subject.
+func runOn(r record.Record, plat string, run record.Run) {
+	run.Platform = plat
+	r.Runs[record.RunKey(subject, plat)] = run
 }
 
 // Promotable and Weigh answer the same question in two shapes, and they
@@ -43,7 +63,9 @@ func TestPromotableAndWeighAgree(t *testing.T) {
 		{"a refusal alone proves nothing",
 			map[string]record.RunState{"Sequoia": record.Unsupported}, record.Neutral},
 		{"still running", map[string]record.RunState{"Sequoia": record.Running}, record.Neutral},
-		{"queued", map[string]record.RunState{"Sequoia": record.Deferred}, record.Neutral},
+		{"queued", map[string]record.RunState{"Sequoia": record.Queued}, record.Neutral},
+		{"claimed but not yet started",
+			map[string]record.RunState{"Sequoia": record.Submitting}, record.Neutral},
 		{"canceled and superseded say nothing either",
 			map[string]record.RunState{"Sequoia": record.Canceled, "Sonoma": record.Superseded}, record.Neutral},
 		{"an errored environment is a fact about the machine",
@@ -64,7 +86,6 @@ func TestPromotableAndWeighAgree(t *testing.T) {
 }
 
 func TestSummarize(t *testing.T) {
-	assert.Empty(t, Summarize(record.Record{}), "an empty set has no clause")
 	assert.Equal(t, "passed (Sequoia)",
 		Summarize(set(map[string]record.RunState{"Sequoia": record.Passed})))
 	// Platform order is the record's own, which is sorted — the clause
@@ -72,4 +93,45 @@ func TestSummarize(t *testing.T) {
 	assert.Equal(t, "failed (Monterey), passed (Sequoia), blocked (Sonoma)",
 		Summarize(set(map[string]record.RunState{
 			"Sequoia": record.Passed, "Sonoma": record.Blocked, "Monterey": record.Failed})))
+}
+
+// A record holding no verdict is now an ordinary shape: schema 3 bears
+// the record at mint, so every --no-verify branch has one and so does
+// every mint on a machine with no verify provider. The clause is read
+// into the middle of a sentence — "no environment to reach (%s)" — and
+// an empty one leaves the reader a pair of brackets around nothing.
+func TestSummarizeAnswersAWordForARecordWithNoRuns(t *testing.T) {
+	assert.Equal(t, "unverified", Summarize(record.Record{}))
+	assert.Equal(t, "unverified", Summarize(record.Record{
+		Schema: record.Schema, Sha: "cafe",
+		Subjects:    []record.Subject{{Port: subject, Names: []string{subject}}},
+		Destination: record.ToBranch,
+	}), "a change bound to the branch alone will never hold one")
+}
+
+// A queued run names a platform no job does. The summary must still
+// report it: a change whose only run is waiting for a slot is exactly
+// when a reader asks what is happening, and a clause built from the
+// submitted platforms alone would answer with silence.
+func TestSummarizeReportsAQueuedRunWithNoJob(t *testing.T) {
+	r := set(map[string]record.RunState{"Sequoia": record.Queued})
+	assert.Empty(t, r.Platforms(), "nothing was submitted")
+	assert.Equal(t, "queued (Sequoia)", Summarize(r))
+}
+
+// A cohort's verdicts name their subject. One is not enough to act on
+// otherwise: "failed (Sonoma)" about a nine-member change says a
+// failure happened and not which port to go and look at.
+func TestSummarizeNamesEachSubjectOfACohort(t *testing.T) {
+	r := record.Record{
+		Schema: record.Schema, Sha: "cafe",
+		Subjects: []record.Subject{{Port: "libwidget"}, {Port: "widget-tools"}},
+		Runs: map[string]record.Run{
+			record.RunKey("libwidget", "Sequoia"):    {State: record.Failed, Platform: "Sequoia"},
+			record.RunKey("widget-tools", "Sequoia"): {State: record.Blocked, Platform: "Sequoia"},
+		},
+	}
+	// Build order, headline first — not sorted, because the order is
+	// the order the change happens in.
+	assert.Equal(t, "libwidget failed (Sequoia), widget-tools blocked (Sequoia)", Summarize(r))
 }

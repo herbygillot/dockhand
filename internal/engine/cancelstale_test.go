@@ -20,13 +20,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
+// keptFailureNote is the shape a failure leaves behind: the verdict on
+// the run, and the environment on the guest that produced it.
 func keptFailureNote(t *testing.T, repo *git.Repo, sha string) {
 	t.Helper()
 	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "failed", Handle: "fake-1",
-		Job: verify.Job{Provider: "fake", ID: "fake-1"}, Detail: "Failed to build jq: boom"}
+	n := mintedNote(t, repo, sha)
+	started(&n, "Testos", "fake-1", record.Run{State: record.Failed, Detail: "Failed to build jq: boom"})
+	n.Jobs["Testos"] = record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-1"}, Handle: "fake-1"}
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 }
 
@@ -45,9 +46,9 @@ func TestSupersedeStaleReleasesKeptEnvironmentOfASupersededFailure(t *testing.T)
 	assert.Equal(t, []string{"fake-1"}, fake.Released, "the kept environment is a slot spent on dead code")
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	r := n.Runs["Testos"]
+	r := runOf(n, "Testos")
 	assert.Equal(t, record.Superseded, r.State)
-	assert.Empty(t, r.Handle)
+	assert.True(t, n.Jobs["Testos"].Released, "the guest is recorded as given back")
 	assert.Contains(t, r.Detail, "kept environment released")
 	assert.Contains(t, r.Detail, "failed here")
 }
@@ -72,7 +73,7 @@ func TestSupersedeStaleReachesAmendedAwayFailures(t *testing.T) {
 	assert.Equal(t, []string{"fake-1"}, fake.Released)
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Superseded, n.Runs["Testos"].State)
+	assert.Equal(t, record.Superseded, runOf(n, "Testos").State)
 }
 
 // Another branch's kept failure is not this branch's to release.
@@ -91,5 +92,5 @@ func TestSupersedeStaleLeavesOtherBranchesEnvironmentsAlone(t *testing.T) {
 	assert.Empty(t, fake.Released, "jq's kept environment belongs to jq's branch")
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Failed, n.Runs["Testos"].State)
+	assert.Equal(t, record.Failed, runOf(n, "Testos").State)
 }

@@ -6,20 +6,33 @@
       "branch": "dockhand/jq-local",
       "tip": "44cfc9eea250",
       "note": {
-        "schema": 2,
+        "schema": 3,
         "sha": "0123456789abcdef0123",
         "tree": "",
-        "port": "jq",
-        "runs": {
+        "subjects": [
+          {
+            "port": "jq",
+            "names": [
+              "jq"
+            ]
+          }
+        ],
+        "jobs": {
           "Testos": {
-            "state": "passed",
             "job": {
-              "provider": "",
-              "id": "",
+              "provider": "fake",
+              "id": "fake-Testos",
               "started": "0001-01-01T00:00:00Z"
-            },
+            }
+          }
+        },
+        "runs": {
+          "jq@Testos": {
+            "state": "passed",
+            "platform": "Testos",
             "linted": true,
-            "lint": "clean"
+            "lint": "clean",
+            "links": null
           }
         }
       }
@@ -41,20 +54,33 @@
       "branch": "dockhand/jq-open",
       "tip": "5e687c527fc9",
       "note": {
-        "schema": 2,
+        "schema": 3,
         "sha": "0123456789abcdef0123",
         "tree": "",
-        "port": "jq",
-        "runs": {
+        "subjects": [
+          {
+            "port": "jq",
+            "names": [
+              "jq"
+            ]
+          }
+        ],
+        "jobs": {
           "Testos": {
-            "state": "passed",
             "job": {
-              "provider": "",
-              "id": "",
+              "provider": "fake",
+              "id": "fake-Testos",
               "started": "0001-01-01T00:00:00Z"
-            },
+            }
+          }
+        },
+        "runs": {
+          "jq@Testos": {
+            "state": "passed",
+            "platform": "Testos",
             "linted": true,
-            "lint": "clean"
+            "lint": "clean",
+            "links": null
           }
         }
       },
@@ -70,20 +96,52 @@
       "branch": "dockhand/jq-running",
       "tip": "997767bd393f",
       "note": {
-        "schema": 2,
+        "schema": 3,
         "sha": "997767bd393f",
         "tree": "",
-        "port": "jq",
-        "runs": {
+        "subjects": [
+          {
+            "port": "jq",
+            "names": [
+              "jq"
+            ]
+          }
+        ],
+        "jobs": {
           "Testos": {
-            "state": "running",
             "job": {
               "provider": "fake",
-              "id": "fake-1",
+              "id": "fake-Testos",
               "started": "2026-09-01T11:58:30Z"
             }
           }
+        },
+        "runs": {
+          "jq@Testos": {
+            "state": "running",
+            "platform": "Testos",
+            "links": null
+          }
         }
+      }
+    },
+    {
+      "branch": "dockhand/jq-unasked",
+      "tip": "b21bd0e5a1c7",
+      "note": {
+        "schema": 3,
+        "sha": "b21bd0e5a1c7",
+        "tree": "",
+        "slug": "jq-1.8.1",
+        "subjects": [
+          {
+            "port": "jq",
+            "names": [
+              "jq"
+            ]
+          }
+        ],
+        "destination": "branch"
       }
     },
     {

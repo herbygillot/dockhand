@@ -75,7 +75,7 @@ func TestFollowDetachesWhenAnInterruptStopsThePoll(t *testing.T) {
 	assert.Contains(t, errb.String(), "detached; `dockhand status` follows it from here")
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Running, n.Runs["Testos"].State,
+	assert.Equal(t, record.Running, runOf(n, "Testos").State,
 		"a detached follow settles nothing: the build is still going")
 }
 
@@ -100,7 +100,7 @@ func TestFollowReturnsTheFailureItWatched(t *testing.T) {
 	assert.Equal(t, "fake-1", failed.Handle, "the kept environment is named for debugging")
 	n, rerr := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, rerr)
-	assert.Equal(t, record.Failed, n.Runs["Testos"].State, "the follow settles what it saw")
+	assert.Equal(t, record.Failed, runOf(n, "Testos").State, "the follow settles what it saw")
 }
 
 // A run that ended without a verdict is not one answer but four, and
@@ -125,7 +125,7 @@ func TestFollowAnswersEachWayARunCanEndWithoutOne(t *testing.T) {
 			"verification of jq on Testos was canceled: canceled by the user"},
 		{record.Superseded, "", new(*verdict.SupersededError),
 			"verification of jq on Testos was superseded by a newer run"},
-		{record.Deferred, "all 2 verification slots are busy", new(*verdict.QueuedError),
+		{record.Queued, "all 2 verification slots are busy", new(*verdict.QueuedError),
 			"verification of jq on Testos has not started yet: all 2 verification slots are busy — `dockhand status` starts it when it can"},
 		{record.Errored, "the guest agent timed out", new(*verdict.ErroredError),
 			"verification of jq on Testos could not answer: the guest agent timed out"},
@@ -138,8 +138,7 @@ func TestFollowAnswersEachWayARunCanEndWithoutOne(t *testing.T) {
 			// What a racing writer leaves behind: `dockhand cancel` in
 			// another terminal, a mint that superseded this run, a pump
 			// that put it back in the queue.
-			n.Runs["Testos"] = record.Run{State: tc.state, Detail: tc.detail,
-				Job: verify.Job{Provider: "fake", ID: "fake-1"}}
+			started(&n, "Testos", "fake-1", record.Run{State: tc.state, Detail: tc.detail})
 			require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 			var out, errb bytes.Buffer

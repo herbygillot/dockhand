@@ -62,16 +62,41 @@ func Weigh(r record.Record) record.Weight {
 }
 
 // Summarize compresses a verdict set to one clause — "passed (Sequoia),
-// failed (Sonoma)" — in the record's own stable platform order. It is
-// the drift lines' phrasing, and it exists here because Drift cannot
-// state a drift finding without it and must stay pure to do so.
+// failed (Sonoma)" — in the record's own stable order. It is the drift
+// lines' phrasing, and it exists here because Drift cannot state a
+// drift finding without it and must stay pure to do so.
+//
+// One part per RUN and not per platform, which is what the two-map
+// split makes different: a platform is a guest and a run is what one
+// subject concluded inside it, so a cohort on two platforms has more
+// verdicts than platforms. A cohort's parts name their subject,
+// because "failed (Sonoma)" about a change with nine members is a
+// sentence a reader cannot act on.
 //
 // The wire word is the clause's text: a state renders as the byte
 // sequence the notes and the goldens already carry.
+//
+// A record with no runs answers "unverified" rather than nothing.
+// Schema 3 bears the record at mint, so a verdict set with nothing in
+// it is now an ordinary shape — every --no-verify branch has one, and
+// so does every mint on a machine with no verify provider — and every
+// caller here reads the clause into the middle of a sentence. An empty
+// string would put a reader's answer between a space and a bracket:
+// "no environment to reach ()". The word is the same one DriftBehind
+// ends on when nothing anywhere covers a tip, because it is the same
+// fact.
 func Summarize(r record.Record) string {
+	named := Names(r)
 	var parts []string
-	for _, plat := range r.Platforms() {
-		parts = append(parts, string(r.Runs[plat].State)+" ("+plat+")")
+	for _, ref := range Runs(r) {
+		part := string(ref.Run.State) + " (" + ref.Platform + ")"
+		if named {
+			part = ref.Port + " " + part
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return "unverified"
 	}
 	return strings.Join(parts, ", ")
 }

@@ -22,7 +22,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verdict"
-	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // reportClock is the pass's clock read, fixed so that a running run's
@@ -30,8 +29,10 @@ import (
 var reportClock = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
 func passed(plat string) *record.Record {
-	return &record.Record{Schema: 2, Sha: "0123456789abcdef0123", Port: "jq",
-		Runs: map[string]record.Run{plat: {State: record.Passed, Linted: true, Lint: "clean"}}}
+	n := templateNote(map[string]record.Run{
+		plat: {State: record.Passed, Linted: true, Lint: "clean"},
+	}, nil)
+	return &n
 }
 
 // sampleReport is one pass over a namespace holding every shape the
@@ -75,10 +76,16 @@ func sampleReport() Report {
 			{
 				Branch: "dockhand/jq-running",
 				Tip:    "997767bd393f",
-				Note: &record.Record{Schema: 2, Sha: "997767bd393f", Port: "jq",
-					Runs: map[string]record.Run{"Testos": {State: record.Running,
-						Job: verify.Job{Provider: "fake", ID: "fake-1",
-							Started: reportClock.Add(-90 * time.Second)}}}},
+				Note:   running("Testos", reportClock.Add(-90*time.Second)),
+			},
+			{
+				// A branch minted with --no-verify: the record exists from
+				// the moment the branch does and will never hold a run,
+				// because nobody asked for a verdict and the drain steps
+				// over it. Schema 2 had no note here at all.
+				Branch: "dockhand/jq-unasked",
+				Tip:    "b21bd0e5a1c7",
+				Note:   unasked(),
 			},
 			{
 				Branch:     "dockhand/jq-unreadable",
@@ -108,6 +115,25 @@ func sampleReport() Report {
 			{Name: "dockhand-worker-stray"},
 			{Name: "dockhand-worker-elsewhere", Owner: "/other/ports"},
 		},
+	}
+}
+
+// running is a branch mid-build: one run, in the guest that started at
+// the given time.
+func running(plat string, started time.Time) *record.Record {
+	n := templateNote(map[string]record.Run{plat: {State: record.Running}},
+		map[string]guest{plat: {Started: started}})
+	n.Sha = "997767bd393f"
+	return &n
+}
+
+// unasked is a branch minted with --no-verify: subjects, a destination
+// that stops at the branch, and no run there ever will be.
+func unasked() *record.Record {
+	return &record.Record{
+		Schema: record.Schema, Sha: "b21bd0e5a1c7", Slug: "jq-1.8.1",
+		Subjects:    []record.Subject{{Port: "jq", Names: []string{"jq"}}},
+		Destination: record.ToBranch,
 	}
 }
 

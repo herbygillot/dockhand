@@ -6,13 +6,21 @@
 //
 // mint realizes a plan as one commit under dockhand's branch
 // namespace, entirely in the object database; the user's HEAD and
-// working tree are never touched. submit stages that commit's portdir
-// and hands it to the verify provider, recording the running job
-// THROUGH the ledger. settle polls what is running and writes what it
-// learns back under the notes lock; supersedeStale and Discard release
-// what superseded or abandoned commits still hold. changedPort says
-// what a branch actually changed, by evaluation, because a portdir's
-// name is not that.
+// working tree are never touched — and it bears the commit's record,
+// because the subjects, the destination and the base are known there
+// and nowhere later. submit stages that commit's portdir and hands it
+// to the verify provider, recording the guest and its runs together
+// THROUGH the ledger. settle polls what is running, writes what it
+// learns under the notes lock, and only then asks the ledger for the
+// right to hand a guest back; SupersedeStale and Discard release what
+// superseded or abandoned commits still hold. changedPort says what a
+// branch actually changed, by evaluation, because a portdir's name is
+// not that.
+//
+// A record's two maps are read here through its subjects: one job per
+// release, one run per subject per release, so a verb that acts on a
+// run reaches it by the subject it is about and the release it ran on
+// rather than by splitting a key the record already holds apart.
 //
 // What a verification record IS belongs to record — the wire format,
 // its states, the strict codec. Where one LIVES belongs to ledger,

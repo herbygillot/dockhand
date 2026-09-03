@@ -30,10 +30,9 @@ import (
 func keptNote(t *testing.T, repo *git.Repo, sha, handle string) {
 	t.Helper()
 	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: record.Failed, Handle: handle,
-		Detail: "Failed to build jq: boom"}
+	n := mintedNote(t, repo, sha)
+	started(&n, "Testos", "", record.Run{State: record.Failed, Detail: "Failed to build jq: boom"})
+	n.Jobs["Testos"] = record.JobRecord{Handle: handle}
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 }
 
@@ -61,6 +60,29 @@ func TestOrphansSkipsAKeptFailuresEnvironment(t *testing.T) {
 
 	assert.Empty(t, testState(t, repo, fake).Orphans(context.Background(), repo),
 		"a kept failure's environment is accounted for by its handle")
+}
+
+// The control the release order is paid for with. ReleaseJob puts the
+// flag down before the provider is asked, on the argument that a leak
+// can be found and a double release cannot be undone — and that
+// argument only holds if something finds the leak. A guest whose note
+// says it went back but whose worker is still standing is exactly what
+// a crash in that window, or a release the provider refused, leaves
+// behind, and it must read as an orphan.
+func TestOrphansReportAGuestTheNoteSaysWentBackButDidNot(t *testing.T) {
+	repo, sha := engineRepo(t)
+	ctx := context.Background()
+	n := mintedNote(t, repo, sha)
+	started(&n, "Testos", "dockhand-worker-leaked", record.Run{State: record.Passed})
+	job := n.Jobs["Testos"]
+	job.Released = true
+	n.Jobs["Testos"] = job
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	fake := &verifytest.Fake{Live: []verify.Worker{{Name: "dockhand-worker-leaked"}}}
+
+	assert.Equal(t, []render.Orphan{{Name: "dockhand-worker-leaked"}},
+		testState(t, repo, fake).Orphans(ctx, repo),
+		"a released job accounts for nothing; the worker outliving it is the leak")
 }
 
 func TestOrphansNamesTheOwningCheckoutButNotThisOne(t *testing.T) {

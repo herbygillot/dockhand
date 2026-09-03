@@ -59,10 +59,20 @@ func (r *Repo) NoteAppend(ctx context.Context, ref, sha string, content []byte) 
 
 // NoteRead returns a commit's note under the ref, ErrNoNote when there
 // is none.
+//
+// Only exit 1 is absence. `git notes show` answers a commit nobody
+// annotated with "no note found for object" and exit 1, whether the ref
+// exists or not; exit 128 is git's fatal band — a ref another process
+// holds locked, an object it cannot read, a resource it cannot get —
+// and those must propagate. Reading a fatal as absence is not a
+// cosmetic miscount: LoadOrStart begins a blank record on ErrNoNote and
+// Update writes it back, so one transient git failure would erase the
+// job, the claim and the released flag that govern whether a guest may
+// be handed back.
 func (r *Repo) NoteRead(ctx context.Context, ref, sha string) ([]byte, error) {
 	out, code, err := execGit(ctx, r.tools, r.Root, nil, "notes", "--ref="+ref, "show", sha)
 	if err != nil {
-		if code == 1 || code == exitFatal {
+		if code == 1 {
 			return nil, fmt.Errorf("%w: %s", ErrNoNote, sha)
 		}
 		return nil, err

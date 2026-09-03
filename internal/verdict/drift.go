@@ -63,11 +63,26 @@ func DriftOverTree(tipTree string, noted iter.Seq[Noted]) string {
 // commit the branch has since moved past — the sha gap that IS the
 // drift mechanism — or never verified at all.
 //
-// The nearest ancestor is the FIRST the caller yields, walking the
-// rev-list from the tip, so a caller that reorders the walk changes
-// which commit the sentence reports the gap to.
+// The nearest ancestor is the FIRST the caller yields that holds a
+// verdict, walking the rev-list from the tip, so a caller that reorders
+// the walk changes which commit the sentence reports the gap to.
+//
+// An ancestor with no runs is stepped over, and that is the judgment
+// rather than a tidying. This sentence claims the change was verified
+// at a commit the branch has moved past; schema 3 bears a record at
+// mint, so the commit a --no-verify branch was minted at now carries a
+// note holding nothing, and reporting it would say a change was
+// verified where nothing ever ran. Stepping over it leaves the bare
+// "unverified", which is what such a branch actually is. The skip is
+// here and not in the caller's iterator because it is the same kind of
+// reading as DriftOverTree's — a record that is not evidence is not
+// evidence — and both belong where they can be argued without a
+// repository.
 func DriftBehind(branch string, behind iter.Seq[Ancestor]) string {
 	for a := range behind {
+		if len(a.Record.Runs) == 0 {
+			continue
+		}
 		return fmt.Sprintf("tip unverified; %s at %s, %d commit(s) behind — `dockhand verify %s` tests the tip",
 			Summarize(a.Record), a.Sha, a.Behind, branch)
 	}

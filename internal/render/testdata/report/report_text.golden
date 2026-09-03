@@ -6,6 +6,7 @@ dockhand/jq-open
   passed (Testos)
   PR #77 open (https://x/77)
 dockhand/jq-running              verifying (1m30s) (Testos)
+dockhand/jq-unasked              unverified — minted with --no-verify; `dockhand verify` starts a run
 dockhand/jq-unreadable           error: reading the note: bad object
 dockhand/jq-outage
   unverified

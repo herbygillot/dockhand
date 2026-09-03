@@ -99,11 +99,9 @@ func TestLogCorpus(t *testing.T) {
 					assert.Empty(t, j.Run.Lint, "lint is corroborated on a pass; a failed run's log stays reachable")
 				}
 				if exp.State == "failed" {
-					assert.Equal(t, "fake-1", j.Run.Handle, "the failure's environment is the debug handle")
-					assert.Equal(t, KeepWorker, j.Release, "a failed run's worker is kept")
+					assert.Equal(t, KeepWorker, j.Release, "a failed run's environment is the debug handle")
 				} else {
-					assert.Empty(t, j.Run.Handle, "nothing of this branch's to debug")
-					assert.NotEqual(t, KeepWorker, j.Release, "the worker is released")
+					assert.NotEqual(t, KeepWorker, j.Release, "nothing of this branch's to debug; the guest goes back")
 				}
 			})
 

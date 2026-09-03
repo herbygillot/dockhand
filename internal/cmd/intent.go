@@ -15,6 +15,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
@@ -92,11 +93,16 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		// never becomes a branch or lands in a tree. A pass carries into
 		// the realization — the verdict is about these exact bytes, so
 		// the branch records it rather than building them again.
-		lint, err := eng.VerifyPlan(ctx, p, opts.On, opts.Test)
+		proof, err := eng.VerifyPlan(ctx, p, opts.On, opts.Test)
 		if err != nil {
 			return err
 		}
-		opts.Verified, opts.GateLint = true, lint
+		// The whole proof and not the lint summary alone: the minted
+		// commit's record names the environment the verdict was earned
+		// in, so a gate-verified tip reads exactly like a
+		// background-verified one instead of claiming a pass reached
+		// nowhere.
+		opts.Verified, opts.GateProof = true, proof
 	}
 	return eng.Run(ctx, p, opts)
 }
@@ -231,7 +237,11 @@ func (f *intentFlags) check() error {
 		f.opts.OnInFlight = engine.Replace
 	}
 	if f.noVerify {
-		f.opts.Destination = engine.ToBranch
+		// The record's own word, because the engine writes this onto the
+		// note at mint: a destination that stops at the branch is a fact
+		// about the change and not a mood of this invocation, and the
+		// drain reads it back to know that nobody asked for a verdict.
+		f.opts.Destination = record.ToBranch
 	}
 	release, err := releaseFlag(f.on)
 	if err != nil {

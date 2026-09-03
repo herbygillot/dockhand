@@ -54,14 +54,51 @@ func engineRepo(t *testing.T) (*git.Repo, string) {
 	return repo, sha
 }
 
-// runningNote writes a schema-2 note with one running job on the tip.
+// mintedNote is a record as a mint leaves it: identity, and the one
+// subject the change is about. Every fixture starts here, because the
+// runs are reached through the subjects — a record with a run and no
+// subject is a verdict about nobody, and no verb walks one.
+func mintedNote(t *testing.T, repo *git.Repo, sha string) record.Record {
+	t.Helper()
+	return mintedNoteFor(t, repo, sha, "jq")
+}
+
+// mintedNoteFor is mintedNote with the subject named, for the corpus
+// sweep, whose port is whatever the log it replays was about.
+func mintedNoteFor(t *testing.T, repo *git.Repo, sha, port string) record.Record {
+	t.Helper()
+	n, err := ledger.Open(repo).LoadOrStart(context.Background(), sha)
+	require.NoError(t, err)
+	n.Subjects = []record.Subject{{Port: port, Names: []string{port}, Portdir: "sysutils/" + port}}
+	return n
+}
+
+// started places one guest on a release and one subject's run inside
+// it — the pair a submission writes, in the shape RecordSubmission
+// would leave.
+func started(n *record.Record, plat, jobID string, run record.Run) {
+	startedFor(n, "jq", plat, jobID, run)
+}
+
+func startedFor(n *record.Record, port, plat, jobID string, run record.Run) {
+	n.Jobs[plat] = record.JobRecord{Job: verify.Job{Provider: "fake", ID: jobID}}
+	run.Platform = plat
+	n.Runs[record.RunKey(port, plat)] = run
+}
+
+// runOf reads one subject's verdict on a platform.
+func runOf(n record.Record, plat string) record.Run { return runFor(n, "jq", plat) }
+
+func runFor(n record.Record, port, plat string) record.Run {
+	return n.Runs[record.RunKey(port, plat)]
+}
+
+// runningNote writes a note with one running job on the tip.
 func runningNote(t *testing.T, repo *git.Repo, sha, jobID string) record.Record {
 	t.Helper()
 	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "running",
-		Job: verify.Job{Provider: "fake", ID: jobID}, Linted: true}
+	n := mintedNote(t, repo, sha)
+	started(&n, "Testos", jobID, record.Run{State: record.Running, Linted: true})
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 	return n
 }
@@ -143,21 +180,26 @@ func testEngine(t *testing.T, repo *git.Repo, fake *verifytest.Fake, out, errOut
 func TestSettleRunsPassReleasesAndKeepsLintEvidence(t *testing.T) {
 	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{
-		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
-		Logs:   map[string]string{"fake-1": "--->  Verifying Portfile for jq\n--->  0 errors and 2 warnings found.\n--->  Activating jq\n"},
+		States:   map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}},
+		Logs:     map[string]string{"fake-1": "--->  Verifying Portfile for jq\n--->  0 errors and 2 warnings found.\n--->  Activating jq\n"},
+		Evidence: "built in a pristine VM",
 	}
 	n := runningNote(t, repo, sha, "fake-1")
 
 	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
-	r := n.Runs["Testos"]
+	r := runOf(n, "Testos")
 	assert.Equal(t, record.Passed, r.State)
 	assert.Equal(t, "2 warnings", r.Lint, "lint evidence is read before the release")
+	assert.Equal(t, "built in a pristine VM", r.Evidence,
+		"what the pass proves is stamped from the provider that proved it")
 	assert.Equal(t, []string{"fake-1"}, fake.Released, "a green environment is a wasted slot")
 
-	// And the settle was written back: a fresh read agrees.
+	// And the settle was written back: a fresh read agrees, with the
+	// guest recorded as given back.
 	again, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Passed, again.Runs["Testos"].State)
+	assert.Equal(t, record.Passed, runOf(again, "Testos").State)
+	assert.True(t, again.Jobs["Testos"].Released, "the flag goes down before the provider is asked")
 }
 
 func TestSettleRunsFailureKeepsTheDebugHandle(t *testing.T) {
@@ -169,9 +211,10 @@ func TestSettleRunsFailureKeepsTheDebugHandle(t *testing.T) {
 	n := runningNote(t, repo, sha, "fake-1")
 
 	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
-	r := n.Runs["Testos"]
-	assert.Equal(t, record.Failed, r.State)
-	assert.Equal(t, "fake-1", r.Handle, "the failure's environment is the debug handle")
+	assert.Equal(t, record.Failed, runOf(n, "Testos").State)
+	assert.Equal(t, "fake-1", n.Jobs["Testos"].Handle,
+		"the failure's environment is the debug handle, and it belongs to the guest")
+	assert.False(t, n.Jobs["Testos"].Released)
 	assert.Empty(t, fake.Released, "a failed run's worker is kept")
 }
 
@@ -184,9 +227,8 @@ func TestSettleRunsReadsARefusalAsUnsupported(t *testing.T) {
 	n := runningNote(t, repo, sha, "fake-1")
 
 	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
-	r := n.Runs["Testos"]
-	assert.Equal(t, record.Unsupported, r.State, "a correct refusal is not a failure")
-	assert.Empty(t, r.Handle, "a refusal leaves nothing to debug")
+	assert.Equal(t, record.Unsupported, runOf(n, "Testos").State, "a correct refusal is not a failure")
+	assert.Empty(t, n.Jobs["Testos"].Handle, "a refusal leaves nothing to debug")
 	assert.Equal(t, []string{"fake-1"}, fake.Released)
 }
 
@@ -196,9 +238,10 @@ func TestSettleRunsVanishedJobIsErrored(t *testing.T) {
 	n := runningNote(t, repo, sha, "fake-1")
 
 	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
-	r := n.Runs["Testos"]
+	r := runOf(n, "Testos")
 	assert.Equal(t, record.Errored, r.State)
 	assert.Contains(t, r.Detail, "vanished")
+	assert.Empty(t, fake.Released, "the worker is already gone; nothing is asked of the provider")
 }
 
 func TestDiscardBranchReleasesEverythingItHolds(t *testing.T) {
@@ -206,8 +249,8 @@ func TestDiscardBranchReleasesEverythingItHolds(t *testing.T) {
 	fake := &verifytest.Fake{}
 	ctx := context.Background()
 	n := runningNote(t, repo, sha, "fake-1")
-	n.Runs["Oldos"] = record.Run{State: "failed", Handle: "fake-9",
-		Job: verify.Job{Provider: "fake", ID: "fake-9"}}
+	started(&n, "Oldos", "fake-9", record.Run{State: record.Failed})
+	n.Jobs["Oldos"] = record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-9"}, Handle: "fake-9"}
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 	_, err := testState(t, repo, fake).Discard(ctx, repo, "dockhand/jq-1.8", false)
@@ -236,8 +279,8 @@ func TestFollowRunSettlesAndSpeaksTheVerdict(t *testing.T) {
 
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
-	assert.Equal(t, record.Passed, n.Runs["Testos"].State)
-	assert.Equal(t, "clean", n.Runs["Testos"].Lint)
+	assert.Equal(t, record.Passed, runOf(n, "Testos").State)
+	assert.Equal(t, "clean", runOf(n, "Testos").Lint)
 }
 
 func TestConcurrentRecordsBothSurvive(t *testing.T) {
@@ -255,7 +298,7 @@ func TestConcurrentRecordsBothSurvive(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			errs[i] = testState(t, repo, fake).recordRun(ctx, repo, sha, "jq", plat,
-				record.Run{State: "running", Job: verify.Job{Provider: "fake", ID: "fake-" + plat}}, "")
+				record.Run{State: record.Running}, "")
 		}()
 	}
 	wg.Wait()
@@ -278,7 +321,7 @@ func TestSettleRunsRecordsTheFailureDiagnosis(t *testing.T) {
 	n := runningNote(t, repo, sha, "fake-1")
 
 	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
-	r := n.Runs["Testos"]
+	r := runOf(n, "Testos")
 	assert.Equal(t, record.Failed, r.State)
 	assert.Equal(t, "Failed to build jq: command execution failed", r.Detail,
 		"the diagnosis rides the note; the See-pointer boilerplate does not")
@@ -300,10 +343,11 @@ func TestSettleRunsDependencyFailureIsBlocked(t *testing.T) {
 	n := runningNote(t, repo, sha, "fake-1")
 
 	require.NoError(t, testState(t, repo, fake).settle(context.Background(), repo, &n))
-	r := n.Runs["Testos"]
+	r := runOf(n, "Testos")
 	assert.Equal(t, record.Blocked, r.State)
 	assert.Equal(t, "dependency olm fails to build; the change itself is untested", r.Detail)
-	assert.Empty(t, r.Handle, "the breakage is not this branch's to debug")
+	assert.Empty(t, r.Blamed, "olm is a dependency, not a member of this change")
+	assert.Empty(t, n.Jobs["Testos"].Handle, "the breakage is not this branch's to debug")
 	assert.Equal(t, []string{"fake-1"}, fake.Released, "a blocked run must not park a scarce slot")
 }
 
@@ -344,12 +388,12 @@ func TestSettleRunsRereadsUnderTheLock(t *testing.T) {
 
 	// A concurrent dockhand records a second platform meanwhile.
 	require.NoError(t, testState(t, repo, nil).recordRun(ctx, repo, sha, "jq", "Oldos",
-		record.Run{State: "deferred", Detail: "slot full"}, ""))
+		record.Run{State: record.Queued, Detail: "slot full"}, ""))
 
 	require.NoError(t, testState(t, repo, fake).settle(ctx, repo, &stale))
 	assert.Len(t, stale.Runs, 2, "the settle re-read; the concurrent record survives")
-	assert.Equal(t, record.Passed, stale.Runs["Testos"].State)
-	assert.Equal(t, record.Deferred, stale.Runs["Oldos"].State)
+	assert.Equal(t, record.Passed, runOf(stale, "Testos").State)
+	assert.Equal(t, record.Queued, runOf(stale, "Oldos").State)
 }
 
 // tclTrue mirrors [string is true], which is how mpbb judges known_fail.
@@ -374,17 +418,24 @@ func TestNoteValidationRefusesWhatItCannotHonour(t *testing.T) {
 	assert.Contains(t, err.Error(), "notes --ref="+git.VerifyNotesRef+" remove")
 
 	// And crucially: a read error never becomes a fresh empty note.
-	_, err = ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
+	_, err = ledger.Open(repo).LoadOrStart(ctx, sha)
 	require.Error(t, err, "a malformed note must not be treated as absence")
 
 	// A schema from the future is refused, not half-read.
-	gittest.Note(t, repo, sha, `{"schema":99,"sha":"`+sha+`","port":"jq","runs":{}}`)
+	gittest.Note(t, repo, sha, `{"schema":99,"sha":"`+sha+`","runs":{}}`)
 	_, err = ledger.Open(repo).Read(ctx, sha)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "newer dockhand")
 
+	// So is the schema this build broke with. There is no lift: the old
+	// evidence is discarded and re-earned.
+	gittest.Note(t, repo, sha, `{"schema":2,"sha":"`+sha+`","port":"jq","runs":{}}`)
+	_, err = ledger.Open(repo).Read(ctx, sha)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "notes --ref="+git.VerifyNotesRef+" remove")
+
 	// A note describing a different commit is corrupt.
-	gittest.Note(t, repo, sha, `{"schema":2,"sha":"0000000000000000000000000000000000000000","port":"jq","runs":{}}`)
+	gittest.Note(t, repo, sha, `{"schema":3,"sha":"0000000000000000000000000000000000000000","runs":{}}`)
 	_, err = ledger.Open(repo).Read(ctx, sha)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "claims to describe")
@@ -392,7 +443,7 @@ func TestNoteValidationRefusesWhatItCannotHonour(t *testing.T) {
 	// True absence still starts fresh.
 	out, rerr := exec.Command("git", "-C", repo.Root, "notes", "--ref="+git.VerifyNotesRef, "remove", sha).CombinedOutput()
 	require.NoError(t, rerr, "%s", out)
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha)
 	require.NoError(t, err)
 	assert.Equal(t, sha, n.Sha)
 }
@@ -407,11 +458,9 @@ func TestSubmitReleasesTheJobWhenRecordingFails(t *testing.T) {
 	fake := &verifytest.Fake{}
 	eng := testState(t, repo, fake)
 
-	rel, err := repo.PrimaryBranch(context.Background())
-	_ = rel
-	require.NoError(t, err)
 	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
-	err = eng.submit(context.Background(), m, "jq", platform.Release{Name: "Testos", Darwin: 99}, false, false)
+	err := eng.submit(context.Background(), m, submission{
+		Port: "jq", Release: platform.Release{Name: "Testos", Darwin: 99}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "the worker was released")
 	require.Len(t, fake.Submitted, 1, "the job did start")
@@ -429,7 +478,7 @@ func TestPromotionRefusesACorruptTipNote(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not parse")
 
-	gittest.Note(t, repo, sha, `{"schema":99,"sha":"`+sha+`","port":"jq","runs":{}}`)
+	gittest.Note(t, repo, sha, `{"schema":99,"sha":"`+sha+`","runs":{}}`)
 	_, _, err = ledger.Open(repo).EvidenceFor(ctx, sha)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "newer dockhand")
@@ -452,7 +501,7 @@ func TestZeroReleaseRefusesWhenTheProviderHasNoBases(t *testing.T) {
 	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
 
 	// On the submit road the branch stands and the contract failed.
-	err := eng.submit(ctx, m, "jq", platform.Release{}, false, false)
+	err := eng.submit(ctx, m, submission{Port: "jq"})
 	var deferred *VerifyDeferredError
 	require.ErrorAs(t, err, &deferred)
 	require.ErrorIs(t, err, verify.ErrNoEnvironment)
@@ -460,7 +509,7 @@ func TestZeroReleaseRefusesWhenTheProviderHasNoBases(t *testing.T) {
 
 	// On the pre-verified road the refusal comes back raw, and nothing
 	// is recorded under a release that does not exist.
-	err = eng.markVerified(ctx, m, &plan.Plan{Port: "jq"}, platform.Release{}, false, "clean")
+	err = eng.markVerified(ctx, m, &plan.Plan{Port: "jq"}, Policy{GateProof: Proof{Lint: "clean"}})
 	require.ErrorIs(t, err, verify.ErrNoEnvironment)
 	assert.NotErrorAs(t, err, &deferred)
 	_, err = ledger.Open(repo).Read(ctx, sha)

@@ -120,24 +120,108 @@ func growBranch(t *testing.T, repo *git.Repo, branch, content, message string) s
 	return sha
 }
 
-// writeRuns records runs on a commit's note for port jq, keeping any
-// the note already holds.
-func writeRuns(t *testing.T, repo *git.Repo, sha string, runs map[string]record.Run) {
-	t.Helper()
-	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	for plat, r := range runs {
-		n.Runs[plat] = r
-	}
-	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+// platRun is one platform's row in a fixture note: the guest, and the
+// verdict reached inside it.
+//
+// Two values because the record keeps two. A run says what was
+// concluded about one subject; a job says what the environment was,
+// whether the test suite was asked of it and whether it has been given
+// back — facts about a guest that every subject in a change shares. A
+// fixture that spelled them as one value would be pinning a note shape
+// nothing writes.
+//
+// A zero Job means no guest at all, which is what a queued run has: it
+// was never submitted, so there is no environment to describe.
+type platRun struct {
+	Job record.JobRecord
+	Run record.Run
 }
 
-// runningRun is a linted run in flight on the fake provider, started
-// at the pinned time.
-func runningRun(jobID string) record.Run {
-	return record.Run{State: "running",
-		Job: verify.Job{Provider: "fake", ID: jobID, Started: goldenStart}, Linted: true}
+// writeRuns records runs on a commit's note for port jq, keeping
+// anything the note already holds.
+func writeRuns(t *testing.T, repo *git.Repo, sha string, rows map[string]platRun) {
+	t.Helper()
+	writeSubjectRuns(t, repo, sha, "jq", rows)
+}
+
+// writeSubjectRuns is the same for a note about some other port — the
+// subport shape, where what the note names is not the portdir's base.
+//
+// The subject is written here because these fixtures commit with
+// gittest rather than through mint, so nothing bore the record: the
+// port would otherwise survive in the run keys alone, where no
+// projection reads it, and the note would render a verdict about
+// nobody.
+func writeSubjectRuns(t *testing.T, repo *git.Repo, sha, port string, rows map[string]platRun) {
+	t.Helper()
+	ctx := context.Background()
+	l := ledger.Open(repo)
+	n, err := l.LoadOrStart(ctx, sha)
+	require.NoError(t, err)
+	if len(n.Subjects) == 0 {
+		n.Subjects = []record.Subject{{Port: port, Names: []string{port}}}
+	}
+	for plat, row := range rows {
+		if row.Job.Job.ID != "" {
+			n.Jobs[plat] = row.Job
+		}
+		row.Run.Platform = plat
+		n.Runs[record.RunKey(port, plat)] = row.Run
+	}
+	require.NoError(t, l.Write(ctx, n))
+}
+
+// bearRecord opens a commit's record the way mint bears one: the
+// subjects, and how far the change's contract reaches. No run, because
+// a mint has submitted nothing yet — and for a change bound to the
+// branch alone, there never will be one.
+func bearRecord(t *testing.T, repo *git.Repo, sha string, dest record.Destination) {
+	t.Helper()
+	ctx := context.Background()
+	l := ledger.Open(repo)
+	n, err := l.LoadOrStart(ctx, sha)
+	require.NoError(t, err)
+	n.Subjects = []record.Subject{{Port: "jq", Names: []string{"jq"}}}
+	n.Destination = dest
+	require.NoError(t, l.Write(ctx, n))
+}
+
+// liveGuest is an environment still standing on the fake provider,
+// started at the pinned time. handle names it when a failure kept it as
+// the debug handle, and is empty for a build still going — the note
+// learns the name when the run settles, not when it starts.
+func liveGuest(jobID, handle string) record.JobRecord {
+	return record.JobRecord{
+		Job:    verify.Job{Provider: "fake", ID: jobID, Started: goldenStart},
+		Handle: handle,
+	}
+}
+
+// spentGuest is an environment that was entered and given back, which
+// is what a settled pass leaves behind.
+func spentGuest(jobID string) record.JobRecord {
+	return record.JobRecord{
+		Job:      verify.Job{Provider: "fake", ID: jobID, Started: goldenStart},
+		Released: true,
+	}
+}
+
+// runningOn is a linted run in flight in the named guest.
+func runningOn(jobID string) platRun {
+	return platRun{Job: liveGuest(jobID, ""), Run: record.Run{State: record.Running, Linted: true}}
+}
+
+// keptOn is a failure whose guest is still standing as the debug
+// handle. The provider names the environment after the job, which is
+// what the settle stamps onto the record.
+func keptOn(jobID, detail string) platRun {
+	return platRun{Job: liveGuest(jobID, jobID), Run: record.Run{State: record.Failed, Detail: detail}}
+}
+
+// passedOn is a settled pass: linted clean, and its guest handed back.
+func passedOn(jobID string) platRun {
+	return platRun{Job: spentGuest(jobID),
+		Run: record.Run{State: record.Passed, Linted: true, Lint: "clean"}}
 }
 
 // goldenStatesRepo is one branch per state the renderers distinguish,
@@ -167,35 +251,62 @@ func goldenStatesRepo(t *testing.T) (*git.Repo, *verifytest.Fake) {
 		{"vanished", "3.3", "fake-vanished"},
 	} {
 		sha := mintBranch(t, repo, c.suffix, c.version)
-		writeRuns(t, repo, sha, map[string]record.Run{"Testos": runningRun(c.job)})
+		writeRuns(t, repo, sha, map[string]platRun{"Testos": runningOn(c.job)})
 	}
 
 	// Seeded settled, in the shapes cancel, deferral and supersession
 	// leave behind.
-	writeRuns(t, repo, mintBranch(t, repo, "canceled", "2.4"), map[string]record.Run{
-		"Testos": {State: "canceled", Job: verify.Job{Provider: "fake", ID: "fake-canceled", Started: goldenStart},
-			Detail: "canceled by the user"},
+	writeRuns(t, repo, mintBranch(t, repo, "canceled", "2.4"), map[string]platRun{
+		"Testos": {Job: spentGuest("fake-canceled"),
+			Run: record.Run{State: record.Canceled, Detail: "canceled by the user"}},
 	})
-	writeRuns(t, repo, mintBranch(t, repo, "deferred", "2.5"), map[string]record.Run{
-		"Testos": {State: "deferred", Detail: (&verify.CapacityError{Busy: 2, Cap: 2}).Error()},
+	// A queued run names no job: nothing was submitted, so there is no
+	// environment to describe.
+	writeRuns(t, repo, mintBranch(t, repo, "queued", "2.5"), map[string]platRun{
+		"Testos": {Run: record.Run{State: record.Queued,
+			Detail: (&verify.CapacityError{Busy: 2, Cap: 2}).Error()}},
 	})
-	writeRuns(t, repo, mintBranch(t, repo, "superseded", "3.0"), map[string]record.Run{
-		"Testos": {State: "superseded", Job: verify.Job{Provider: "fake", ID: "fake-superseded", Started: goldenStart},
-			Detail: "canceled: the branch moved to " + git.Abbrev(base)},
+	writeRuns(t, repo, mintBranch(t, repo, "superseded", "3.0"), map[string]platRun{
+		"Testos": {Job: spentGuest("fake-superseded"),
+			Run: record.Run{State: record.Superseded,
+				Detail: "canceled: the branch moved to " + git.Abbrev(base)}},
 	})
 	// A verdict set: passed and tested on one platform, declined on
-	// another — the multi-line rendering.
+	// another — the multi-line rendering. The test was asked of the
+	// guest, so it is recorded on the job.
 	multi := mintBranch(t, repo, "multi", "2.1")
-	writeRuns(t, repo, multi, map[string]record.Run{
-		"Testos": {State: "passed", Tested: true, Linted: true, Lint: "clean"},
-		"Oldos":  {State: "unsupported", Detail: "declares known_fail on Oldos"},
+	writeRuns(t, repo, multi, map[string]platRun{
+		"Testos": {Job: record.JobRecord{
+			Job:  verify.Job{Provider: "fake", ID: "fake-multi", Started: goldenStart},
+			Test: true, Released: true},
+			Run: record.Run{State: record.Passed, Linted: true, Lint: "clean"}},
+		// Declined before anything was submitted, so the platform names no
+		// job at all — a terminal run with no guest behind it, which is
+		// what the pre-flight decline actually records and the only shape
+		// besides a queued run that has none.
+		"Oldos": {Run: record.Run{State: record.Unsupported, Detail: "declares known_fail on Oldos"}},
 	})
+
+	// A branch minted with --no-verify. Schema 3 bears the record at
+	// mint, so this branch has a note from the moment it exists and will
+	// never hold a run: nobody asked for a verdict, and the drain steps
+	// over a change bound to the branch alone. Under schema 2 there was
+	// no note here at all and the standing read as bare drift.
+	bearRecord(t, repo, mintBranch(t, repo, "unasked", "3.4"), record.ToBranch)
+
+	// The same branch after the user grew it. The tip has no note and
+	// the commit behind it has one holding nothing, which is the shape
+	// the drift walk must not read as "verified at a commit the branch
+	// moved past": there is no verdict back there to have been passed.
+	bearRecord(t, repo, mintBranch(t, repo, "unasked-grown", "3.5"), record.ToBranch)
+	growBranch(t, repo, "dockhand/jq-unasked-grown", "version 3.5\nrevision 1\n",
+		"jq: fix the livecheck while I am here")
 
 	// Unnoted tips: never verified; verified a commit behind; and the
 	// same tree as a verified commit under a reworded message.
 	mintBranch(t, repo, "unnoted", "3.1")
 	behind := mintBranch(t, repo, "behind", "2.2")
-	writeRuns(t, repo, behind, map[string]record.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}})
+	writeRuns(t, repo, behind, map[string]platRun{"Testos": passedOn("fake-behind")})
 	growBranch(t, repo, "dockhand/jq-behind", "version 2.2\nrevision 1\n", "jq: rebuild against the new libjq")
 	_, err = repo.Mint(ctx, git.MintRequest{
 		Branch: "dockhand/jq-amended", Base: primary, Commits: []git.Commit{{
@@ -240,7 +351,7 @@ func goldenPromotedRepo(t *testing.T) (*git.Repo, *goldenGh) {
 	ctx := context.Background()
 	gittest.BareFork(t, repo, "herbygillot", "herby")
 
-	passed := map[string]record.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}}
+	passed := map[string]platRun{"Testos": passedOn("fake-passed")}
 	for _, c := range []struct {
 		suffix, version string
 		noted, pushed   bool

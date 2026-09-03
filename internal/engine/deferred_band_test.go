@@ -80,7 +80,8 @@ func TestSubmitWithoutAProviderNarrowsTheContract(t *testing.T) {
 	}
 	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
 
-	err := eng.submit(context.Background(), m, "jq", platform.Release{Name: "Testos", Darwin: 99}, false, false)
+	err := eng.submit(context.Background(), m, submission{
+		Port: "jq", Release: platform.Release{Name: "Testos", Darwin: 99}})
 
 	require.NoError(t, err, "no provider, no contract: the branch stands and the run succeeded")
 	assert.Contains(t, errb.String(), "no verification possible")
@@ -100,13 +101,15 @@ func TestADeferredSubmitRecordsWhatStatusWillRetry(t *testing.T) {
 	}, &out, &errb)
 	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
 
-	err := eng.submit(ctx, m, "jq", platform.Release{Name: "Testos", Darwin: 99}, false, false)
+	err := eng.submit(ctx, m, submission{
+		Port: "jq", Release: platform.Release{Name: "Testos", Darwin: 99}})
 
 	var deferred *VerifyDeferredError
 	require.ErrorAs(t, err, &deferred)
 	assert.Equal(t, exitcode.VerifyQueued, deferred.DockhandExit())
 	n, rerr := eng.Ledger(repo).Read(ctx, sha)
 	require.NoError(t, rerr)
-	assert.Equal(t, record.Deferred, n.Runs["Testos"].State,
+	assert.Equal(t, record.Queued, runOf(n, "Testos").State,
 		"status retries what it finds recorded, so the reason has to be on the note")
+	assert.Empty(t, n.Jobs, "nothing was submitted, so no guest is claimed")
 }

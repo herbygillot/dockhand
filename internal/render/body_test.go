@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // update rewrites the goldens under testdata/golden from what the code
@@ -20,18 +22,65 @@ import (
 // upstream, not as test maintenance.
 var update = flag.Bool("update", false, "rewrite golden files")
 
-func templateNote(runs map[string]record.Run) record.Record {
-	return record.Record{Sha: "0123456789abcdef0123",
-		Port: "jq", Runs: runs}
+// guest is what a fixture's platform ran in — the JobRecord half of
+// the record.
+//
+// It is stated apart from the run because the record states it apart,
+// and that split is exactly what these renderings have to read
+// correctly: the test suite is asked of an environment and the handle
+// names one, so neither can be read off a verdict any more.
+type guest struct {
+	Test bool
+	// Handle and Released are two facts, not one. A release does not
+	// erase the name: the handle says what was handed back, which is
+	// what a person deletes by hand when the provider refused.
+	Handle   string
+	Released bool
+	Started  time.Time
+}
+
+// templateNote builds a one-subject record from platform-keyed runs and
+// the guests they ran in.
+//
+// The runs are keyed and stamped the way the ledger writes them —
+// RunKey(port, release), with the platform on the run as well as in the
+// key — because every projection reaches a run through its subject, and
+// a fixture keyed by release alone would pin a note shape nothing
+// writes. A queued run gets no job: nothing was submitted for it, and a
+// record naming an environment no run entered is the corruption the
+// readers are meant to notice.
+func templateNote(runs map[string]record.Run, guests map[string]guest) record.Record {
+	n := record.Record{
+		Schema:   record.Schema,
+		Sha:      "0123456789abcdef0123",
+		Subjects: []record.Subject{{Port: "jq", Names: []string{"jq"}}},
+		Jobs:     map[string]record.JobRecord{},
+		Runs:     map[string]record.Run{},
+	}
+	for plat, r := range runs {
+		r.Platform = plat
+		n.Runs[record.RunKey("jq", plat)] = r
+		if r.State == record.Queued {
+			continue
+		}
+		g := guests[plat]
+		n.Jobs[plat] = record.JobRecord{
+			Job:      verify.Job{Provider: "fake", ID: "fake-" + plat, Started: g.Started},
+			Test:     g.Test,
+			Handle:   g.Handle,
+			Released: g.Released,
+		}
+	}
+	return n
 }
 
 // The body is the upstream PR template with only vouchable boxes
 // checked: install passed and tested, a single minted commit.
 func TestPRBodyChecksWhatItCanVouchFor(t *testing.T) {
 	n := templateNote(map[string]record.Run{
-		"Sonoma":   {State: "passed", Tested: true},
-		"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
-	})
+		"Sonoma":   {State: record.Passed},
+		"Monterey": {State: record.Unsupported, Detail: "declares known_fail on Monterey"},
+	}, map[string]guest{"Sonoma": {Test: true}})
 	body := PRBody(n, true, "", 1, true)
 
 	assert.Contains(t, body,
@@ -51,7 +100,7 @@ func TestPRBodyChecksWhatItCanVouchFor(t *testing.T) {
 }
 
 func TestPRBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
-	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
+	n := templateNote(map[string]record.Run{"Sonoma": {State: record.Passed}}, nil)
 	body := PRBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Sonoma: built in a pristine VM")
 	assert.Contains(t, body, "- [ ] checked that there aren't other open [pull requests]")
@@ -61,7 +110,7 @@ func TestPRBodyWithoutTestsLeavesTheTestBoxOpen(t *testing.T) {
 
 func TestPRBodySignsOffEveryBody(t *testing.T) {
 	signoff := "\nAutomated by [dockhand](" + RepoURL + ")\n"
-	verified := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
+	verified := templateNote(map[string]record.Run{"Sonoma": {State: record.Passed}}, nil)
 	for name, body := range map[string]string{
 		"verified":   PRBody(verified, true, "", 1, true),
 		"unverified": PRBody(record.Record{}, false, "", 1, false),
@@ -81,7 +130,7 @@ func TestPRBodyUnverifiedChecksNothing(t *testing.T) {
 }
 
 func TestPRBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
-	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed"}})
+	n := templateNote(map[string]record.Run{"Sonoma": {State: record.Passed}}, nil)
 	body := PRBody(n, true, "", 3, false)
 	assert.Contains(t, body, "- [ ] followed our [Commit Message Guidelines]")
 	assert.Contains(t, body, "- [ ] squashed and [minimized your commits]")
@@ -91,7 +140,8 @@ func TestPRBodyManyCommitsAreTheUsersToVouchFor(t *testing.T) {
 // template's own lines (modulo the strikethrough rewrite): a drifted
 // checklist would read as dockhand inventing its own ceremony.
 func TestPRBodyKeepsTheTemplateShape(t *testing.T) {
-	n := templateNote(map[string]record.Run{"Sonoma": {State: "passed", Tested: true}})
+	n := templateNote(map[string]record.Run{"Sonoma": {State: record.Passed}},
+		map[string]guest{"Sonoma": {Test: true}})
 	body := PRBody(n, true, "7", 1, true)
 	require.True(t, strings.HasPrefix(body, "#### Description\n"))
 	for _, section := range []string{"###### Type(s)", "###### Tested on", "###### Verification"} {
@@ -101,7 +151,7 @@ func TestPRBodyKeepsTheTemplateShape(t *testing.T) {
 }
 
 func TestPRBodyChecksLintWhenTheRunLinted(t *testing.T) {
-	n := templateNote(map[string]record.Run{"Tahoe": {State: "passed", Linted: true, Lint: "clean"}})
+	n := templateNote(map[string]record.Run{"Tahoe": {State: record.Passed, Linted: true, Lint: "clean"}}, nil)
 	body := PRBody(n, true, "", 1, false)
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
 	// The checked box is only honest if the evidence line states what
@@ -110,7 +160,8 @@ func TestPRBodyChecksLintWhenTheRunLinted(t *testing.T) {
 }
 
 func TestPRBodyStatesLintWarnings(t *testing.T) {
-	n := templateNote(map[string]record.Run{"Tahoe": {State: "passed", Linted: true, Lint: "2 warnings", Tested: true}})
+	n := templateNote(map[string]record.Run{"Tahoe": {State: record.Passed, Linted: true, Lint: "2 warnings"}},
+		map[string]guest{"Tahoe": {Test: true}})
 	body := PRBody(n, true, "", 1, false)
 	assert.Contains(t, body, "Tahoe: linted with 2 warnings, built and tested in a pristine VM")
 	assert.Contains(t, body, "- [x] checked your Portfile with `port lint`?")
@@ -149,8 +200,13 @@ const goldenDir = "testdata/golden"
 // bodyVariant is one input shape promote can hand PRBody today.
 // The golden is named for the variant, so a diff names what changed.
 type bodyVariant struct {
-	name       string
-	runs       map[string]record.Run
+	name string
+	runs map[string]record.Run
+	// guests is what each platform's run ran in. The test suite and the
+	// kept environment live here because the record puts them here: one
+	// guest is entered by every subject in the change, so neither is a
+	// property of a verdict any more.
+	guests     map[string]guest
 	verified   bool
 	closes     string
 	ownCommits int
@@ -181,7 +237,8 @@ var bodyVariants = []bodyVariant{
 		},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_tested",
-		runs:     map[string]record.Run{"Sequoia": {State: "passed", Tested: true}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed"}},
+		guests:   map[string]guest{"Sequoia": {Test: true}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_linted_without_summary",
 		runs:     map[string]record.Run{"Sequoia": {State: "passed", Linted: true}},
@@ -200,29 +257,32 @@ var bodyVariants = []bodyVariant{
 		runs:     map[string]record.Run{"Sequoia": {State: "passed", Lint: "clean"}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	{name: "verified_tested_and_lint_clean",
-		runs:     map[string]record.Run{"Sequoia": {State: "passed", Tested: true, Linted: true, Lint: "clean"}},
+		runs:     map[string]record.Run{"Sequoia": {State: "passed", Linted: true, Lint: "clean"}},
+		guests:   map[string]guest{"Sequoia": {Test: true}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	// The checklist boxes read the set: one tested, linted platform
 	// checks them for the whole body while each evidence line keeps
 	// its own record.
 	{name: "verified_evidence_differs_by_platform",
 		runs: map[string]record.Run{
-			"Sequoia":  {State: "passed", Tested: true, Linted: true, Lint: "clean"},
+			"Sequoia":  {State: "passed", Linted: true, Lint: "clean"},
 			"Sonoma":   {State: "passed"},
 			"Monterey": {State: "unsupported", Detail: "declares known_fail on Monterey"},
 		},
+		guests:   map[string]guest{"Sequoia": {Test: true}},
 		verified: true, ownCommits: 1, checkedPRs: true},
 	// Every state that is not a verdict is local business: canceled
-	// by this very promote, blocked on a neighbor, deferred for a
-	// slot, superseded, errored. None of it reaches the reviewer, so
-	// the golden is byte-identical to verified_one_platform.
+	// by this very promote, blocked on a neighbor, queued for a slot,
+	// claimed but not yet started, superseded, errored. None of it
+	// reaches the reviewer, so the golden is byte-identical to
+	// verified_one_platform.
 	{name: "verified_omits_non_verdict_states",
 		runs: map[string]record.Run{
 			"Sequoia":  {State: "passed"},
 			"Sonoma":   {State: "canceled", Detail: "canceled: promoted without waiting"},
 			"Ventura":  {State: "blocked", Detail: "dependency oniguruma failed to build"},
-			"Monterey": {State: "deferred", Detail: "2 of 2 workers busy"},
-			"Tahoe":    {State: "superseded"},
+			"Monterey": {State: "queued", Detail: "2 of 2 workers busy"},
+			"Tahoe":    {State: "submitting"},
 			"Big Sur":  {State: "errored", Detail: "worker vanished"},
 		},
 		verified: true, ownCommits: 1, checkedPRs: true},
@@ -242,7 +302,8 @@ var bodyVariants = []bodyVariant{
 	// golden is byte-identical to unverified: an unverified body
 	// ignores the note entirely.
 	{name: "unverified_failed_overridden",
-		runs:       map[string]record.Run{"Sequoia": {State: "failed", Handle: "dockhand-jq-1", Detail: "Failed to build jq: boom"}},
+		runs:       map[string]record.Run{"Sequoia": {State: "failed", Detail: "Failed to build jq: boom"}},
+		guests:     map[string]guest{"Sequoia": {Handle: "dockhand-jq-1"}},
 		ownCommits: 1, checkedPRs: true},
 	// Likewise byte-identical to unverified.
 	{name: "unverified_blocked_and_canceled",
@@ -268,7 +329,7 @@ func TestPRBodyGoldens(t *testing.T) {
 		require.False(t, rendered[v.name], "variant %q is listed twice", v.name)
 		rendered[v.name] = true
 		t.Run(v.name, func(t *testing.T) {
-			body := PRBody(templateNote(v.runs), v.verified, v.closes, v.ownCommits, v.checkedPRs)
+			body := PRBody(templateNote(v.runs, v.guests), v.verified, v.closes, v.ownCommits, v.checkedPRs)
 			checkGolden(t, v.name, body)
 		})
 	}
@@ -377,4 +438,38 @@ func diffLines(s string) []string {
 		lines = append(lines, `\ No newline at end of file`)
 	}
 	return lines
+}
+
+// A cohort's evidence lines name the member each one is about. Nine
+// members that all built on Sequoia would otherwise produce nine
+// identical lines, which reads as one claim repeated rather than nine
+// ports vouched for — and the "Tested on" section still names one
+// environment per platform, because that is how many there were.
+func TestPRBodyNamesEachMemberOfACohortOnce(t *testing.T) {
+	n := record.Record{
+		Sha:      "0123456789abcdef0123",
+		Subjects: []record.Subject{{Port: "libwidget"}, {Port: "widget-tools"}},
+		Jobs: map[string]record.JobRecord{
+			"Sequoia": {Job: verify.Job{Provider: "fake", ID: "fake-1"}, Test: true, Released: true},
+		},
+		Runs: map[string]record.Run{
+			record.RunKey("libwidget", "Sequoia"):    {State: record.Passed, Platform: "Sequoia"},
+			record.RunKey("widget-tools", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
+		},
+	}
+	body := PRBody(n, true, "", 1, true)
+	assert.Contains(t, body,
+		"  — libwidget on Sequoia: built and tested in a pristine VM.\n"+
+			"  — widget-tools on Sequoia: built and tested in a pristine VM.\n")
+	assert.Equal(t, 1, strings.Count(body, "- macOS Sequoia — pristine tart VM, via dockhand"),
+		"two verdicts, one environment")
+}
+
+// A single change's lines carry no port: the PR is about that port and
+// its title says so, and prefixing every line would be noise in the one
+// place candour is the whole point.
+func TestPRBodyDoesNotNameTheSubjectOfASingleChange(t *testing.T) {
+	body := PRBody(templateNote(map[string]record.Run{"Sequoia": {State: record.Passed}}, nil), true, "", 1, true)
+	assert.Contains(t, body, "  — Sequoia: built in a pristine VM.\n")
+	assert.NotContains(t, body, "jq on Sequoia")
 }

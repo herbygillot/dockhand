@@ -86,11 +86,10 @@ func promotableRepo(t *testing.T) (*git.Repo, string) {
 	t.Helper()
 	repo, sha := engineRepo(t)
 	gittest.BareFork(t, repo, "herbygillot", "herby")
-	ctx := context.Background()
-	n, err := ledger.Open(repo).LoadOrStart(ctx, sha, "jq")
-	require.NoError(t, err)
-	n.Runs["Testos"] = record.Run{State: "passed", Linted: true, Lint: "clean"}
-	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	n := mintedNote(t, repo, sha)
+	n.Subjects[0].Target = "1.8"
+	started(&n, "Testos", "fake-1", record.Run{State: record.Passed, Linted: true, Lint: "clean"})
+	require.NoError(t, ledger.Open(repo).Write(context.Background(), n))
 	return repo, sha
 }
 
@@ -121,6 +120,7 @@ func TestPromotingTwiceConvergesOnOnePR(t *testing.T) {
 		assert.Equal(t, "dockhand/jq-1.8", row.Branch)
 		assert.Equal(t, record.Human, row.AskedBy)
 		assert.Equal(t, record.Verified, row.Evidence)
+		assert.Equal(t, "1.8", row.Target, "the audit reads the target the record kept")
 	}
 }
 

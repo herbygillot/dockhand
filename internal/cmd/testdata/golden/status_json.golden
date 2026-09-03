@@ -17,20 +17,34 @@ exit: 0
         "branch": "dockhand/jq-blocked",
         "tip": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
           "tree": "bdc4e4255b93a66942d4056c4bdac45a9f31ad3b",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "blocked",
               "job": {
                 "provider": "fake",
                 "id": "fake-blocked",
                 "started": "2026-09-01T00:00:00Z"
               },
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "blocked",
+              "platform": "Testos",
               "detail": "dependency olm (nomaintainer) fails to build; the change itself is untested",
-              "linted": true
+              "linted": true,
+              "links": null
             }
           }
         }
@@ -39,40 +53,33 @@ exit: 0
         "branch": "dockhand/jq-canceled",
         "tip": "eb753d9e44140cbc2ccc481b736f4ff322c26460",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "eb753d9e44140cbc2ccc481b736f4ff322c26460",
           "tree": "4d86f9adc00f64307479b82eebf5cfc55732791f",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "canceled",
               "job": {
                 "provider": "fake",
                 "id": "fake-canceled",
                 "started": "2026-09-01T00:00:00Z"
               },
-              "detail": "canceled by the user"
+              "released": true
             }
-          }
-        }
-      },
-      {
-        "branch": "dockhand/jq-deferred",
-        "tip": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
-        "note": {
-          "schema": 2,
-          "sha": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
-          "tree": "37b48172a8691ff4e65237ab66161b810828d73a",
-          "port": "jq",
+          },
           "runs": {
-            "Testos": {
-              "state": "deferred",
-              "job": {
-                "provider": "",
-                "id": "",
-                "started": "0001-01-01T00:00:00Z"
-              },
-              "detail": "all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees"
+            "jq@Testos": {
+              "state": "canceled",
+              "platform": "Testos",
+              "detail": "canceled by the user",
+              "links": null
             }
           }
         }
@@ -81,20 +88,34 @@ exit: 0
         "branch": "dockhand/jq-errored",
         "tip": "ff6909944aa24b75917e6a2386831bbaccedee4f",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "ff6909944aa24b75917e6a2386831bbaccedee4f",
           "tree": "2edcc85811b2bee4f64477da526adbc3606adb65",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "errored",
               "job": {
                 "provider": "fake",
                 "id": "fake-errored",
                 "started": "2026-09-01T00:00:00Z"
               },
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "errored",
+              "platform": "Testos",
               "detail": "guest agent unreachable after boot",
-              "linted": true
+              "linted": true,
+              "links": null
             }
           }
         }
@@ -103,21 +124,34 @@ exit: 0
         "branch": "dockhand/jq-failed",
         "tip": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
           "tree": "e707f5799d1e8f56e2e2b4ac98a8c8cf60b82cad",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "failed",
               "job": {
                 "provider": "fake",
                 "id": "fake-failed",
                 "started": "2026-09-01T00:00:00Z"
               },
-              "handle": "dockhand-worker-failed",
+              "handle": "dockhand-worker-failed"
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "failed",
+              "platform": "Testos",
               "detail": "Failed to build jq: command execution failed",
-              "linted": true
+              "linted": true,
+              "links": null
             }
           }
         }
@@ -126,30 +160,41 @@ exit: 0
         "branch": "dockhand/jq-multi",
         "tip": "c49914c23ab7c5853d1a794b1764194e11b220ef",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "c49914c23ab7c5853d1a794b1764194e11b220ef",
           "tree": "235585d927f147c08d938f896f075d420efe93ce",
-          "port": "jq",
-          "runs": {
-            "Oldos": {
-              "state": "unsupported",
-              "job": {
-                "provider": "",
-                "id": "",
-                "started": "0001-01-01T00:00:00Z"
-              },
-              "detail": "declares known_fail on Oldos"
-            },
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "passed",
               "job": {
-                "provider": "",
-                "id": "",
-                "started": "0001-01-01T00:00:00Z"
+                "provider": "fake",
+                "id": "fake-multi",
+                "started": "2026-09-01T00:00:00Z"
               },
-              "tested": true,
+              "test": true,
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Oldos": {
+              "state": "unsupported",
+              "platform": "Oldos",
+              "detail": "declares known_fail on Oldos",
+              "links": null
+            },
+            "jq@Testos": {
+              "state": "passed",
+              "platform": "Testos",
               "linted": true,
-              "lint": "clean"
+              "lint": "clean",
+              "links": null
             }
           }
         }
@@ -158,20 +203,59 @@ exit: 0
         "branch": "dockhand/jq-passed",
         "tip": "7159f6b651e49cae47422560120e93ebc494acc9",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "7159f6b651e49cae47422560120e93ebc494acc9",
           "tree": "84638b5a25febc78bd8ac7cad517ef4d88764262",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "passed",
               "job": {
                 "provider": "fake",
                 "id": "fake-passed",
                 "started": "2026-09-01T00:00:00Z"
               },
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "passed",
+              "platform": "Testos",
               "linted": true,
-              "lint": "2 warnings"
+              "lint": "2 warnings",
+              "links": null
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-queued",
+        "tip": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+        "note": {
+          "schema": 3,
+          "sha": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+          "tree": "37b48172a8691ff4e65237ab66161b810828d73a",
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "runs": {
+            "jq@Testos": {
+              "state": "queued",
+              "platform": "Testos",
+              "detail": "all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees",
+              "links": null
             }
           }
         }
@@ -180,19 +264,32 @@ exit: 0
         "branch": "dockhand/jq-running",
         "tip": "116445bf5b788ea72de3b40b24cf0cc7fc3e6aba",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "116445bf5b788ea72de3b40b24cf0cc7fc3e6aba",
           "tree": "e21e3fc7397b56e81918c6a9d9d582e6193610ac",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "running",
               "job": {
                 "provider": "fake",
                 "id": "fake-running",
                 "started": "2026-09-01T00:00:00Z"
-              },
-              "linted": true
+              }
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "running",
+              "platform": "Testos",
+              "linted": true,
+              "links": null
             }
           }
         }
@@ -201,22 +298,59 @@ exit: 0
         "branch": "dockhand/jq-superseded",
         "tip": "b8d948c84becca542331ac4d1622c6e1b6d52517",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "b8d948c84becca542331ac4d1622c6e1b6d52517",
           "tree": "4c5f3c03363a3f573101b4039b185070084121e3",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "superseded",
               "job": {
                 "provider": "fake",
                 "id": "fake-superseded",
                 "started": "2026-09-01T00:00:00Z"
               },
-              "detail": "canceled: the branch moved to 997767bd393f"
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "superseded",
+              "platform": "Testos",
+              "detail": "canceled: the branch moved to 997767bd393f",
+              "links": null
             }
           }
         }
+      },
+      {
+        "branch": "dockhand/jq-unasked",
+        "tip": "04bae2dab04c449e1e25c017f4aa46313ee9255e",
+        "note": {
+          "schema": 3,
+          "sha": "04bae2dab04c449e1e25c017f4aa46313ee9255e",
+          "tree": "f3f184d4ad0e5a07d11e2c662e88827424ef4ad3",
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "destination": "branch"
+        }
+      },
+      {
+        "branch": "dockhand/jq-unasked-grown",
+        "tip": "51dbaa41081a9c8e9e2c360ad574c130f7347bd7",
+        "drift": "unverified"
       },
       {
         "branch": "dockhand/jq-unnoted",
@@ -227,20 +361,34 @@ exit: 0
         "branch": "dockhand/jq-unsupported",
         "tip": "658b4cdd52878e239942187bd93941095efbe507",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "658b4cdd52878e239942187bd93941095efbe507",
           "tree": "f2e739afaa755dbd865d03d14e0bbb63d39f1cd0",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "unsupported",
               "job": {
                 "provider": "fake",
                 "id": "fake-unsupported",
                 "started": "2026-09-01T00:00:00Z"
               },
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "unsupported",
+              "platform": "Testos",
               "detail": "the port declines to build on this platform",
-              "linted": true
+              "linted": true,
+              "links": null
             }
           }
         }
@@ -249,20 +397,33 @@ exit: 0
         "branch": "dockhand/jq-vanished",
         "tip": "89bbf5e1bf38441d2b88809fc20b24ab321baf10",
         "note": {
-          "schema": 2,
+          "schema": 3,
           "sha": "89bbf5e1bf38441d2b88809fc20b24ab321baf10",
           "tree": "2b58d0fb93e34e9d1e82ef4047702deecaec3772",
-          "port": "jq",
-          "runs": {
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
             "Testos": {
-              "state": "errored",
               "job": {
                 "provider": "fake",
                 "id": "fake-vanished",
                 "started": "2026-09-01T00:00:00Z"
-              },
+              }
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "errored",
+              "platform": "Testos",
               "detail": "job vanished: its worker no longer exists",
-              "linted": true
+              "linted": true,
+              "links": null
             }
           }
         }

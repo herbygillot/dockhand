@@ -3,16 +3,63 @@ package record
 import (
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPlatformsSortsForStableRendering(t *testing.T) {
-	r := Record{Runs: map[string]Run{
-		"Testos":    {State: Passed},
-		"Ancientos": {State: Unsupported},
-		"Oldos":     {State: Deferred},
+func TestHeadlineIsTheFirstSubject(t *testing.T) {
+	r := Record{Subjects: []Subject{
+		{Port: "libwidget", Target: "3.0"},
+		{Port: "widget-tools", Target: "rev2"},
 	}}
-	assert.Equal(t, []string{"Ancientos", "Oldos", "Testos"}, r.Platforms())
+	assert.Equal(t, "libwidget", r.Headline().Port)
+	assert.Equal(t, "3.0", r.Headline().Target)
+}
+
+func TestHeadlineOfARecordWithNoSubjects(t *testing.T) {
+	// The zero Subject names no port, which is the same answer an empty
+	// record gives everywhere else.
+	assert.Equal(t, Subject{}, Record{}.Headline())
+}
+
+func TestPortsKeepBuildOrder(t *testing.T) {
+	// Not sorted: the order is the order a cohort must be built in, and
+	// Ports[0] is the headline.
+	r := Record{Subjects: []Subject{{Port: "libwidget"}, {Port: "widget-tools"}, {Port: "aardvark"}}}
+	assert.Equal(t, []string{"libwidget", "widget-tools", "aardvark"}, r.Ports())
+	assert.Empty(t, Record{}.Ports())
+}
+
+func TestPortdirsAreStageable(t *testing.T) {
+	// This projection feeds staging, so it drops the empties and the
+	// repeats: staging one directory twice is at best wasted work, and
+	// staging "" is not a thing to do at all.
+	r := Record{Subjects: []Subject{
+		{Port: "libwidget", Portdir: "devel/libwidget"},
+		{Port: "libwidget-tools", Portdir: "devel/libwidget"},
+		{Port: "aardvark"},
+		{Port: "zebra", Portdir: "science/zebra"},
+	}}
+	assert.Equal(t, []string{"devel/libwidget", "science/zebra"}, r.Portdirs())
+	assert.Empty(t, Record{}.Portdirs())
+}
+
+func TestPlatformsProjectTheJobsAndNotTheRuns(t *testing.T) {
+	// Three subjects on two platforms is two environments. Reading the
+	// run keys would answer six, with the wrong words in them.
+	r := Record{
+		Jobs: map[string]JobRecord{
+			"Testos":    {Job: verify.Job{ID: "fake-1"}},
+			"Ancientos": {Job: verify.Job{ID: "fake-2"}},
+		},
+		Runs: map[string]Run{
+			RunKey("jq", "Testos"):           {State: Passed, Platform: "Testos"},
+			RunKey("oniguruma", "Testos"):    {State: Passed, Platform: "Testos"},
+			RunKey("jq", "Ancientos"):        {State: Unsupported, Platform: "Ancientos"},
+			RunKey("oniguruma", "Ancientos"): {State: Unsupported, Platform: "Ancientos"},
+		},
+	}
+	assert.Equal(t, []string{"Ancientos", "Testos"}, r.Platforms(), "sorted for stable rendering")
 }
 
 func TestPlatformsOfAnEmptyRecord(t *testing.T) {
@@ -21,8 +68,8 @@ func TestPlatformsOfAnEmptyRecord(t *testing.T) {
 
 func TestAnyState(t *testing.T) {
 	r := Record{Runs: map[string]Run{
-		"Testos": {State: Passed},
-		"Oldos":  {State: Blocked},
+		RunKey("jq", "Testos"): {State: Passed},
+		RunKey("jq", "Oldos"):  {State: Blocked},
 	}}
 	assert.True(t, r.AnyState(Passed))
 	assert.True(t, r.AnyState(Blocked))
@@ -36,18 +83,19 @@ func TestPromotable(t *testing.T) {
 		runs map[string]Run
 		want bool
 	}{
-		{"a single pass", map[string]Run{"Testos": {State: Passed}}, true},
-		{"a pass beside a port that declines the platform",
-			map[string]Run{"Testos": {State: Passed}, "Oldos": {State: Unsupported}}, true},
-		{"a pass beside a dependency that blocked the test",
-			map[string]Run{"Testos": {State: Passed}, "Oldos": {State: Blocked}}, true,
-		},
-		{"a pass beside a run still going",
-			map[string]Run{"Testos": {State: Passed}, "Oldos": {State: Running}}, true},
-		{"a failure alongside the pass, which is the question review asks",
-			map[string]Run{"Testos": {State: Passed}, "Oldos": {State: Failed}}, false},
-		{"nothing passed yet", map[string]Run{"Testos": {State: Running}}, false},
-		{"the machine could not answer", map[string]Run{"Testos": {State: Errored}}, false},
+		{"a single pass", map[string]Run{RunKey("jq", "Testos"): {State: Passed}}, true},
+		{"a pass beside a port that declines the platform", map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Unsupported}}, true},
+		{"a pass beside a dependency that blocked the test", map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Blocked}}, true},
+		{"a pass beside a run still going", map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Running}}, true},
+		{"a pass beside a run still being submitted", map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Submitting}}, true},
+		{"one member of the cohort failed, which is the question review asks", map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Failed}}, false},
+		{"nothing passed yet", map[string]Run{RunKey("jq", "Testos"): {State: Running}}, false},
+		{"the machine could not answer", map[string]Run{RunKey("jq", "Testos"): {State: Errored}}, false},
 		{"no runs at all", nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

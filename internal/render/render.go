@@ -63,34 +63,96 @@ const (
 )
 
 // RecordLines is the human rendering of a verdict set: one line per
-// platform, in the record's stable order.
+// RUN, in the record's stable order.
+//
+// Per run and not per platform, which is what the two-map split makes
+// different: a platform is one guest and a run is what one subject
+// concluded inside it, so a cohort has more lines than it has
+// environments. A cohort's lines name their subject; a single change's
+// do not, because the branch on the line above is already its name.
 //
 // now is the caller's clock read. A running run's line states how long
 // it has been going, and reading the clock in here would make the one
 // rendering a golden pins depend on when the test ran.
 func RecordLines(n record.Record, now time.Time) []string {
+	named := verdict.Names(n)
+	refs := verdict.Runs(n)
+	names := namesTheGuest(refs)
 	var lines []string
-	for _, plat := range n.Platforms() {
-		r := n.Runs[plat]
+	for i, ref := range refs {
 		// The wire word is the line's own text until a running run
-		// replaces it with its elapsed time.
-		s := string(r.State)
-		if r.State == record.Running {
-			s = fmt.Sprintf("verifying (%s)", now.Sub(r.Job.Started).Round(time.Second))
+		// replaces it with its elapsed time. A running run whose
+		// platform names no job is a mangled record — a submission
+		// writes both in one write — so it keeps the bare word rather
+		// than reporting a build that has been going since year one.
+		s := string(ref.Run.State)
+		if ref.Run.State == record.Running && ref.Submitted {
+			s = fmt.Sprintf("verifying (%s)", now.Sub(ref.Job.Job.Started).Round(time.Second))
 		}
-		line := fmt.Sprintf("%s (%s)", s, plat)
-		if r.Handle != "" {
-			line += " — environment kept: " + r.Handle
+		line := fmt.Sprintf("%s (%s)", s, ref.Platform)
+		if named {
+			line = ref.Port + ": " + line
 		}
-		if r.Detail != "" {
-			line += " — " + r.Detail
+		if names[i] {
+			line += " — environment kept: " + ref.Job.Handle
+		}
+		if ref.Run.Detail != "" {
+			line += " — " + ref.Run.Detail
 		}
 		lines = append(lines, line)
 	}
 	if len(lines) == 0 {
-		return []string{"no runs recorded"}
+		return []string{unrun(n)}
 	}
 	return lines
+}
+
+// namesTheGuest picks the lines that name a still-standing
+// environment, by their index among the runs.
+//
+// One line per platform, because there is one guest per platform: a
+// cohort that printed the name beside each of nine verdicts would be
+// describing nine environments that do not exist. And the failure's
+// line, because a failure is the only thing that keeps one — putting
+// the handle on a neighbour's pass would offer a reader an environment
+// as the outcome of a build that did not keep it.
+//
+// Both halves of the guest's answer are read. A handle outlives the
+// release that gave it back — it is what a person deletes by hand when
+// the provider refused — so a note naming one is not by itself an
+// environment anybody can still enter.
+func namesTheGuest(refs []verdict.RunRef) map[int]bool {
+	chosen := map[string]int{}
+	for i, ref := range refs {
+		if ref.Job.Handle == "" || ref.Job.Released {
+			continue
+		}
+		was, seen := chosen[ref.Platform]
+		if !seen || (refs[was].Run.State != record.Failed && ref.Run.State == record.Failed) {
+			chosen[ref.Platform] = i
+		}
+	}
+	out := make(map[int]bool, len(chosen))
+	for _, i := range chosen {
+		out[i] = true
+	}
+	return out
+}
+
+// unrun is the standing of a record that exists and holds no verdict.
+//
+// Schema 3 bears the record at mint, so this is now an ordinary shape
+// rather than the impossible one it used to be: a branch minted with
+// --no-verify has a note from the moment it exists and will never have
+// a run, because nobody asked for one and the drain steps over it. That
+// is a different fact from a change whose verdict simply has not
+// started, and a reader who cannot tell them apart will wait all
+// afternoon for a build nothing is going to run.
+func unrun(n record.Record) string {
+	if n.Destination == record.ToBranch {
+		return "unverified — minted with --no-verify; `dockhand verify` starts a run"
+	}
+	return "unverified"
 }
 
 // DescribeChange is a branch's standing in lines: the settled record's
@@ -103,6 +165,13 @@ func RecordLines(n record.Record, now time.Time) []string {
 // history walk a drift finding needs. The caller does all of it and
 // hands over what it learned; nil means no record covers the tip, which
 // is when drift is the whole line.
+//
+// Nil is now a narrower thing than it was. A minted branch bears its
+// record straight away, so a tip with no note is one this build did not
+// mint or one whose note a peer removed — and a change that was minted
+// and never verified reaches RecordLines with no runs instead, which
+// says so in its own words rather than through a drift finding about a
+// history it has none of.
 func DescribeChange(n *record.Record, drift string, now time.Time) []string {
 	if n == nil {
 		return []string{drift}
