@@ -152,7 +152,7 @@ func (e *Engine) diffFromPlan(ctx context.Context, p *plan.Plan) error {
 	if err != nil {
 		return err
 	}
-	tree, err := repo.GraftTree(ctx, primary, path, edited)
+	tree, err := repo.GraftTree(ctx, primary, []git.File{{Path: path, Content: edited}})
 	if err != nil {
 		return err
 	}

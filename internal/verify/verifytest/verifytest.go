@@ -46,6 +46,27 @@ type Fake struct {
 	// answer, which a caller must absorb rather than report as an
 	// empty machine.
 	WorkersErr error
+	// Inventory scripts Manifests per job ID. Named for what it holds
+	// rather than for the method, on Live's precedent.
+	Inventory map[string]verify.Manifests
+	// ManifestsErr makes Manifests fail per job ID — the environment
+	// that built the port and then could not describe it, which is a
+	// missing comparison and never a finding about the port.
+	ManifestsErr map[string]error
+	// Probes scripts Probe, by job ID and then by port. The port is a
+	// second key rather than part of the first because a cohort's
+	// members are probed as themselves, and a test that had to spell a
+	// job and a port into one string would be scripting a cache key
+	// instead of an answer.
+	Probes map[string]map[string][]verify.ProbeLine
+	// ProbeErr makes Probe fail per job ID — the guest that will not
+	// run the port's own binaries.
+	ProbeErr map[string]error
+	// Evidence and Xcode are what Capabilities reports for the two
+	// facts a provider knows about itself. Both zero by default, so a
+	// test that does not care answers exactly as this fake always has.
+	Evidence string
+	Xcode    map[platform.Release]bool
 
 	// Submitted records every request, in order.
 	Submitted []verify.Request
@@ -62,7 +83,13 @@ func (f *Fake) Capabilities() verify.Capabilities {
 	if len(plats) == 0 {
 		plats = []platform.Release{{Name: "Testos", Darwin: 99}}
 	}
-	return verify.Capabilities{Platforms: plats, Concurrent: 2, Pristine: true}
+	return verify.Capabilities{
+		Platforms:  plats,
+		Concurrent: 2,
+		Pristine:   true,
+		Evidence:   f.Evidence,
+		Xcode:      f.Xcode,
+	}
 }
 
 func (f *Fake) Submit(_ context.Context, req verify.Request) (verify.Job, error) {
@@ -119,11 +146,39 @@ func (f *Fake) Workers(context.Context) ([]verify.Worker, error) {
 	return f.Live, nil
 }
 
+var (
+	_ verify.Manifester = (*Fake)(nil)
+	_ verify.Prober     = (*Fake)(nil)
+)
+
+// Manifests answers what a test scripted, and the zero Manifests for a
+// job it said nothing about. Nothing to compare is a state a real
+// provider reports too — a build that never installed anything has no
+// installed manifest — so an unscripted job must not look like a
+// missing one.
+func (f *Fake) Manifests(_ context.Context, job verify.Job) (verify.Manifests, error) {
+	if err := f.ManifestsErr[job.ID]; err != nil {
+		return verify.Manifests{}, err
+	}
+	return f.Inventory[job.ID], nil
+}
+
+// Probe answers the lines scripted for this job's port, and none for a
+// port nothing was scripted for. A port with no probe lines is a port
+// nothing was run against, which is what a provider that knows no
+// probes for it reports.
+func (f *Fake) Probe(_ context.Context, job verify.Job, port string) ([]verify.ProbeLine, error) {
+	if err := f.ProbeErr[job.ID]; err != nil {
+		return nil, err
+	}
+	return f.Probes[job.ID][port], nil
+}
+
 // Incapable is a Verifier and nothing else: no Executor, no
-// WorkerLister. It exists because a caller's graceful refusal for a
-// provider that cannot answer is otherwise untestable — with only Fake
-// to stand in, every optional capability is always present, and the
-// branch that says so honestly never runs.
+// WorkerLister, no Manifester, no Prober. It exists because a caller's
+// graceful refusal for a provider that cannot answer is otherwise
+// untestable — with only Fake to stand in, every optional capability is
+// always present, and the branch that says so honestly never runs.
 //
 // It wraps a Fake rather than embedding one so the capabilities cannot
 // creep back in by promotion: adding a method to Fake must not quietly

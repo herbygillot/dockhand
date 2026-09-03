@@ -45,6 +45,19 @@ func TestCapabilitiesClaimOnlyViability(t *testing.T) {
 	assert.True(t, c.Interactive, "a failed run leaves the guest as its handle")
 }
 
+// A request that names nothing to build is malformed, and refusing it
+// costs nothing — the guard is ahead of the base lookup, so no VM is
+// listed and none is cloned. An empty name at the head is the same
+// malformation as an empty slice: a cohort assembled wrong would
+// otherwise boot a guest to install "".
+func TestSubmitRefusesARequestThatNamesNoPort(t *testing.T) {
+	for _, ports := range [][]string{nil, {}, {""}, {"", "jq"}} {
+		_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: ports})
+		require.ErrorIs(t, err, verify.ErrUnsupported)
+		assert.Contains(t, err.Error(), "no port named")
+	}
+}
+
 // A job from another provider is not this provider's to poll.
 func TestPollRejectsAForeignJob(t *testing.T) {
 	_, err := Provider{}.Poll(t.Context(), verify.Job{Provider: "github", ID: "123"})
@@ -68,6 +81,45 @@ func TestCapabilitiesListEveryBase(t *testing.T) {
 
 	tahoe, _ := platform.ByName("Tahoe")
 	assert.False(t, c.Supports(tahoe), "no image, no claim")
+}
+
+// What a pass proves is the provider's sentence, because only the
+// provider knows what its environment guarantees. It is a clone of a
+// prepared base, so nothing from the last verification is in it.
+func TestCapabilitiesStateTheirEvidence(t *testing.T) {
+	seq, _ := platform.ByName("Sequoia")
+	c := Provider{Bases: []Base{{VM: "mp-base", Release: seq}}}.Capabilities()
+	assert.Equal(t, "built in a pristine VM", c.Evidence)
+}
+
+// A base nothing has spoken for gets no entry, and no entry means "ask
+// the guest" — not "no Xcode". Filling the map in with false for every
+// unspoken base would refuse every use_xcode port on every base,
+// including the ones that would have built, which is why the difference
+// between "told none" and "not told" has to survive into the map.
+func TestCapabilitiesSpeakForOnlyTheBasesTheyWereToldAbout(t *testing.T) {
+	seq, _ := platform.ByName("Sequoia")
+	son, _ := platform.ByName("Sonoma")
+	yes, no := true, false
+
+	// Today's machine: bases assembled from what is provisioned, and
+	// nothing anywhere records an Xcode.
+	silent := Provider{Bases: []Base{
+		{VM: "dockhand-base-sequoia", Release: seq},
+		{VM: "dockhand-base-sonoma", Release: son},
+	}}.Capabilities()
+	assert.Empty(t, silent.Xcode, "no base is spoken for, so every one of them is asked")
+	_, known := silent.Xcode[seq]
+	assert.False(t, known)
+
+	told := Provider{Bases: []Base{
+		{VM: "dockhand-base-sequoia", Release: seq, Xcode: &yes},
+		{VM: "dockhand-base-sonoma", Release: son, Xcode: &no},
+	}}.Capabilities()
+	assert.True(t, told.Xcode[seq])
+	has, known := told.Xcode[son]
+	assert.True(t, known, "a base told to have none is a different fact from one nobody spoke for")
+	assert.False(t, has)
 }
 
 func TestBaseForPicksTheRequestedRelease(t *testing.T) {

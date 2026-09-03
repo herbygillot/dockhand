@@ -67,7 +67,7 @@ func (e *Engine) RunVerification(ctx context.Context, portName, portdir string, 
 		return "", err
 	}
 	job, err := prov.Submit(ctx, verify.Request{
-		Port:     portName,
+		Ports:    []string{portName},
 		Portdirs: []string{portdir},
 		Platform: release,
 		Owner:    e.TreeRoot,

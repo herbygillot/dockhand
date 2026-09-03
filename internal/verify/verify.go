@@ -79,6 +79,30 @@ type Capabilities struct {
 	// Concurrent is how many verifications may run at once. For a
 	// macOS guest this is Apple's licence limit, not the machine's.
 	Concurrent int
+	// Evidence is the provider's own phrase for what a pass proves —
+	// "built in a pristine VM" for a VM backend, and something weaker
+	// for a backend whose runners carry whatever the last job left. It
+	// is the provider's to word because only the provider knows what
+	// its environment guarantees, and it is a sentence rather than a
+	// flag because it is stamped into the record and read by a person.
+	//
+	// It is the claim and not the finished line: a renderer states it
+	// and composes around it — the run that was tested says so, the run
+	// that was linted carries a clause in front — so a caller holding
+	// this string holds what the environment proves, not the words a
+	// reader will meet.
+	Evidence string
+	// Xcode says which bases carry a full Xcode installation, for the
+	// ports that set use_xcode.
+	//
+	// An entry is something the provider knows; a release with no entry
+	// is one it has not been told about, which is not the same fact as
+	// a base it knows has none. The distinction is the whole point of a
+	// map rather than a set: the honest answer today is discovered by
+	// asking a booted worker, so a missing entry must keep meaning
+	// "ask" — read as "no Xcode" it would refuse every use_xcode port
+	// on every base, including the ones that would have built.
+	Xcode map[platform.Release]bool
 }
 
 // Answers reports whether the provider claims a proposition.
@@ -106,12 +130,24 @@ func (c Capabilities) Supports(r platform.Release) bool {
 	return false
 }
 
-// Request is one verification: build this port, from these portdirs,
+// Request is one verification: build these ports, from these portdirs,
 // under this variant frame.
 type Request struct {
-	// Port is what to install — a port or subport name, as `port`
-	// itself would be given it.
-	Port string
+	// Ports are what to install — port or subport names, as `port`
+	// itself would be given them.
+	//
+	// Ports[0] is the headline: the port the verification is about, the
+	// one a refusal names and the one the record is filed under. The
+	// rest ride along in the same environment, in the order they are to
+	// be built, because a cohort that must be built together is one
+	// build and not several — a request that could name only one port
+	// would force a caller with a cohort into one environment per
+	// member, which is the cost the cohort exists to avoid.
+	//
+	// Every caller passes one today, and one is what every provider
+	// builds. An empty slice, or an empty name at the head, is a
+	// malformed request rather than a request for nothing.
+	Ports []string
 	// Portdirs are the directories the plan touched, on the host. They
 	// are staged ahead of the environment's own ports tree, so the port
 	// under test is the edited one and everything else is the tree's.
@@ -141,6 +177,20 @@ type Request struct {
 	// steps): `port test` builds but never destroots or activates, so
 	// it cannot stand in for the install that verification is.
 	Test bool
+	// Manifest also collects what the install laid down — its files and
+	// the libraries among them — from the environment that built it.
+	//
+	// It is asked for rather than always gathered because it costs a
+	// walk of the installed port inside the guest, and a caller that
+	// only wants to know whether the port builds should not pay for a
+	// comparison it will not read.
+	//
+	// The request is where the asking belongs even though a Manifester
+	// hands the answer back afterwards: the walk happens in the
+	// environment while the build is there to be walked, so a caller
+	// that had not said so up front would be asking a provider for
+	// something it was never told to collect.
+	Manifest bool
 	// FromSource names ports whose binary archives must be ignored.
 	// A version bump does not need this: the new version yields an
 	// archive name that does not exist yet, so MacPorts builds from
@@ -205,6 +255,19 @@ type Status struct {
 	// too — to see what landed, or to run something else against it.
 	// The environment is held until the job is released.
 	Handle string
+	// Subject names the port a terminal state is about, when the
+	// provider knows which. A cohort stops at its first failure, and
+	// that failure is a finding about one member: a status that only
+	// said "failed" would leave the caller to attribute it, which is
+	// the guess that lands a working port's name on a broken one's
+	// verdict.
+	//
+	// It is empty when the provider cannot say, which is every provider
+	// today — one environment builds the request's headline, so naming
+	// it again in the answer would add nothing. A caller reads the
+	// request when this is empty, and SubjectLog splits the log the
+	// same way for the same reason.
+	Subject string
 }
 
 var (
@@ -366,6 +429,46 @@ type Worker struct {
 // provider's workers rather than learning there are none.
 type WorkerLister interface {
 	Workers(ctx context.Context) ([]Worker, error)
+}
+
+// Manifester is the optional capability of saying what an installation
+// actually looks like from inside the environment that made it: the
+// files the port laid down, the libraries among them, and the same
+// picture of whatever it is being compared against. Nothing implements
+// it yet: verifytest.Fake is the tree's only Manifester, and tart is
+// where the real one belongs because the guest is still holding the
+// install — a provider whose environment is gone by the time anyone
+// asks cannot. A caller that needs it type-asserts, and the graceful
+// refusal for a provider without it is the caller's to phrase.
+//
+// It is a capability of its own rather than a use of Executor because
+// what comes back is a value and not a terminal's worth of text:
+// asking through Exec would put the parsing of one provider's output
+// in every caller, which is how a debug verb ends up knowing what tart
+// prints.
+//
+// The manifests are the provider's whole answer. Whether a difference
+// between two of them is a regression or the point of the change needs
+// the plan, which the provider does not have, and stays the caller's.
+type Manifester interface {
+	Manifests(ctx context.Context, job Job) (Manifests, error)
+}
+
+// Prober is the optional capability of running an installed port's own
+// binaries in the environment and reporting what they said — the
+// cheapest evidence that a build which succeeded also produced
+// something that runs.
+//
+// It names a port because a job may have built several and each is
+// probed as itself, and it answers in lines that carry the argv beside
+// the output because a probe's output is only evidence to a reader who
+// can see what produced it.
+//
+// A caller that needs it type-asserts, and one that meets a provider
+// without it has learned nothing about the port's binaries rather than
+// learning they are broken.
+type Prober interface {
+	Probe(ctx context.Context, job Job, port string) ([]ProbeLine, error)
 }
 
 // Await polls until the job is terminal or the context ends. It is a

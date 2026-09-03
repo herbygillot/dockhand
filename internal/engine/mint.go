@@ -156,11 +156,14 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, force bool) (*Minted, e
 		}
 	}
 	sha, err := repo.Mint(ctx, git.MintRequest{
-		Branch:  branch,
-		Base:    primary,
-		Path:    path,
-		Content: edited,
-		Message: message,
+		Branch: branch,
+		Base:   primary,
+		// One commit carrying one file: a plan is one port's edit, and
+		// the chain and the file list are both at their length of one.
+		Commits: []git.Commit{{
+			Files:   []git.File{{Path: path, Content: edited}},
+			Message: message,
+		}},
 	})
 	if err != nil {
 		if errors.Is(err, git.ErrBranchExists) {

@@ -61,8 +61,13 @@ func TestChangedPortFallsBackWhenNothingEvaluatedMoves(t *testing.T) {
 	// A change evaluation cannot see — a comment stands in for the
 	// files-only patch, which moves no evaluated context either.
 	sha, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: "dockhand/demo-comment", Base: primary, Path: "sysutils/demo/Portfile",
-		Content: append([]byte(subportPortfile), []byte("# touched\n")...), Message: "demo: comment only",
+		Branch: "dockhand/demo-comment", Base: primary, Commits: []git.Commit{{
+			Files: []git.File{{
+				Path:    "sysutils/demo/Portfile",
+				Content: append([]byte(subportPortfile), []byte("# touched\n")...),
+			}},
+			Message: "demo: comment only",
+		}},
 	})
 	require.NoError(t, err)
 	name, err := testState(t, repo, nil).changedPort(context.Background(), repo, sha, "sysutils/demo")

@@ -61,7 +61,8 @@ func TestStatusStartsDeferredVerifications(t *testing.T) {
 	require.NoError(t, statusAction{noClean: true}.Execute(context.Background(), rs))
 
 	require.Len(t, fake.Submitted, 1, "the deferred run must actually start")
-	assert.Equal(t, "jq", fake.Submitted[0].Port)
+	assert.Equal(t, []string{"jq"}, fake.Submitted[0].Ports,
+		"the request carries a cohort of one: the headline, and nothing riding along")
 	// The note's port is the submission target — a subport branch in a
 	// parent-named portdir must not collapse to the parent (pcre2 in
 	// devel/pcre, field-caught): deferredNote records port "jq", and
@@ -90,7 +91,7 @@ func TestStatusPumpSubmitsTheNotesSubport(t *testing.T) {
 	require.NoError(t, statusAction{noClean: true}.Execute(ctx, rs))
 
 	require.Len(t, fake.Submitted, 1)
-	assert.Equal(t, "jq2", fake.Submitted[0].Port,
+	assert.Equal(t, "jq2", fake.Submitted[0].Ports[0],
 		"the note's port, never the portdir's base name")
 
 	after, err := ledger.Open(repo).Read(ctx, sha)
@@ -168,7 +169,7 @@ func TestStatusPumpTwoPassesSubmitOnce(t *testing.T) {
 	require.NoError(t, errs[1])
 
 	require.Len(t, fake.Submitted, 1, "two passes, one submission")
-	assert.Equal(t, "jq", fake.Submitted[0].Port)
+	assert.Equal(t, "jq", fake.Submitted[0].Ports[0])
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
 	r := n.Runs["Testos"]
@@ -241,7 +242,7 @@ func TestVerifyAndStatusPumpSubmitOnce(t *testing.T) {
 	require.NoError(t, errs[1])
 
 	require.Len(t, fake.Submitted, 1, "a verify and a status, one submission")
-	assert.Equal(t, "jq", fake.Submitted[0].Port)
+	assert.Equal(t, "jq", fake.Submitted[0].Ports[0])
 	n, err := ledger.Open(repo).Read(context.Background(), sha)
 	require.NoError(t, err)
 	r := n.Runs["Testos"]

@@ -198,8 +198,10 @@ func goldenStatesRepo(t *testing.T) (*git.Repo, *verifytest.Fake) {
 	writeRuns(t, repo, behind, map[string]record.Run{"Testos": {State: "passed", Linted: true, Lint: "clean"}})
 	growBranch(t, repo, "dockhand/jq-behind", "version 2.2\nrevision 1\n", "jq: rebuild against the new libjq")
 	_, err = repo.Mint(ctx, git.MintRequest{
-		Branch: "dockhand/jq-amended", Base: primary, Path: "sysutils/jq/Portfile",
-		Content: []byte("version 2.1\n"), Message: "jq: update to 2.1 (reworded)",
+		Branch: "dockhand/jq-amended", Base: primary, Commits: []git.Commit{{
+			Files:   []git.File{{Path: "sysutils/jq/Portfile", Content: []byte("version 2.1\n")}},
+			Message: "jq: update to 2.1 (reworded)",
+		}},
 	})
 	require.NoError(t, err)
 
@@ -263,8 +265,10 @@ func goldenPromotedRepo(t *testing.T) (*git.Repo, *goldenGh) {
 	primary, err := repo.PrimaryBranch(ctx)
 	require.NoError(t, err)
 	_, err = repo.Mint(ctx, git.MintRequest{
-		Branch: "dockhand/jq-landed", Base: primary, Path: "sysutils/jq/Portfile",
-		Content: []byte("version 1.7\n"), Message: "jq: update to 1.7",
+		Branch: "dockhand/jq-landed", Base: primary, Commits: []git.Commit{{
+			Files:   []git.File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.7\n")}},
+			Message: "jq: update to 1.7",
+		}},
 	})
 	require.NoError(t, err)
 	require.NoError(t, repo.Push(ctx, "herby", "dockhand/jq-landed"))

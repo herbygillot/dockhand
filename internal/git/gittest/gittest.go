@@ -98,11 +98,16 @@ func PortsTree(t *testing.T, tools *tool.Finder) *git.Repo {
 
 // Commit mints branch off base with one file changed — the
 // object-database mint dockhand itself makes, worktree untouched — and
-// returns the new tip.
+// returns the new tip. One commit carrying one file: the chain of one
+// that every fixture here wants, and the shape the goldens were
+// recorded against.
 func Commit(t *testing.T, repo *git.Repo, branch, base, path, content, message string) string {
 	t.Helper()
 	sha, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: branch, Base: base, Path: path, Content: []byte(content), Message: message,
+		Branch: branch, Base: base, Commits: []git.Commit{{
+			Files:   []git.File{{Path: path, Content: []byte(content)}},
+			Message: message,
+		}},
 	})
 	require.NoError(t, err)
 	return sha

@@ -167,7 +167,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, portName string, release
 		return e.recordRun(ctx, m.Repo, m.Sha, portName, release.Name, *sched.Declined, sched.Message)
 	}
 	job, err := prov.Submit(ctx, verify.Request{
-		Port:       portName,
+		Ports:      []string{portName},
 		Portdirs:   []string{staged},
 		Platform:   release,
 		Owner:      m.Repo.Root,

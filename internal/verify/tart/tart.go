@@ -49,6 +49,25 @@ import (
 type Base struct {
 	VM      string
 	Release platform.Release
+	// Xcode says whether this image carries a full Xcode installation,
+	// when anything has said so.
+	//
+	// Nil is "nobody has said", which is not the same claim as false.
+	// Nothing on this host records which image has an Xcode — the fact
+	// is discovered by running xcodebuild in a booted guest — so an
+	// image nothing has spoken for must still be asked rather than
+	// refused, and a pointer is how the difference survives into the
+	// capability.
+	//
+	// Nothing sets it today, and that emptiness is a gap rather than an
+	// oversight: provisioning is the one component that knows, since it
+	// is what installs the Xcode under --xcode, and it folds the fact
+	// into a line it prints and then discards. Provisioned answers in
+	// releases alone, so whoever assembles the provider has nothing to
+	// read it back from. Filling this in means provisioning recording
+	// the fact where Provisioned can find it; until then every base
+	// arrives nil and the guest is asked.
+	Xcode *bool
 }
 
 // Provider verifies against tart guests cloned from prepared bases.
@@ -129,6 +148,21 @@ const (
 	stateDir = "/tmp/dockhand-verify"
 	// concurrent is Apple's limit on macOS guests, not the machine's.
 	concurrent = 2
+	// Evidence is this provider's own phrase for what a pass proves. A
+	// clone of a prepared base carries nothing from the last
+	// verification, so a port that installed here installed against what
+	// it declared and what the tree supplies and nothing else — a
+	// stronger claim than a warm runner can make, which is why the
+	// wording belongs to the provider rather than to whoever renders it.
+	//
+	// The PR body states these same words from its own literal today,
+	// and composes around them: a tested run reads "built and tested in
+	// a pristine VM", a linted one carries a clause in front. So this is
+	// the provider's claim about its environment and not the finished
+	// sentence. The two meet when a settled record carries the phrase;
+	// until then they are deliberately separate strings, because render
+	// must not learn to ask a provider anything.
+	Evidence = "built in a pristine VM"
 )
 
 // Capabilities reports what this provider answers. Only viability is
@@ -137,8 +171,20 @@ const (
 // proposition exists to detect.
 func (p Provider) Capabilities() verify.Capabilities {
 	platforms := make([]platform.Release, 0, len(p.Bases))
+	// Only the bases something has actually spoken for get an entry. A
+	// release left out of the map is one this provider has not been told
+	// about, and the caller asks the guest; filling it in with false for
+	// every unspoken base would refuse every use_xcode port, including
+	// the ones that would have built.
+	var xcode map[platform.Release]bool
 	for _, b := range p.Bases {
 		platforms = append(platforms, b.Release)
+		if b.Xcode != nil {
+			if xcode == nil {
+				xcode = make(map[platform.Release]bool, len(p.Bases))
+			}
+			xcode[b.Release] = *b.Xcode
+		}
 	}
 	return verify.Capabilities{
 		Name:         "tart",
@@ -150,6 +196,8 @@ func (p Provider) Capabilities() verify.Capabilities {
 		// rather than of any one image: two guests total, not two per
 		// platform.
 		Concurrent: concurrent,
+		Evidence:   Evidence,
+		Xcode:      xcode,
 	}
 }
 
@@ -199,7 +247,10 @@ func Exec(ctx context.Context, tools *tool.Finder, vm string, argv ...string) (s
 // seconds for this provider, because the clone is free and the boot is
 // not.
 func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, error) {
-	if req.Port == "" {
+	// An empty slice and an empty headline are the same malformed
+	// request: both name nothing to build, and a request that named
+	// nothing would boot a guest to install it.
+	if len(req.Ports) == 0 || req.Ports[0] == "" {
 		return verify.Job{}, fmt.Errorf("%w: no port named", verify.ErrUnsupported)
 	}
 	base, err := p.baseFor(req.Platform)
@@ -273,12 +324,8 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		return fail(err)
 	}
 	if req.NeedsXcode {
-		// Derived, never recorded (D19): the worker is already booted,
-		// so asking it costs a second — and refusing here releases the
-		// slot instead of keeping a guaranteed failure as a debug
-		// environment nobody needs.
-		if out, xerr := Exec(ctx, p.Tools, name, "/usr/bin/xcodebuild", "-version"); xerr != nil || !strings.Contains(out, "Xcode") {
-			return fail(fmt.Errorf("%w: %s requires a full Xcode installation and this base has none — provision with --xcode, or promote unverified", verify.ErrNoEnvironment, req.Port))
+		if !p.hasXcode(ctx, base.Release, name) {
+			return fail(fmt.Errorf("%w: %s requires a full Xcode installation and this base has none — provision with --xcode, or promote unverified", verify.ErrNoEnvironment, req.Ports[0]))
 		}
 	}
 	if err := p.stage(ctx, name, req); err != nil {
@@ -288,6 +335,34 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		return fail(err)
 	}
 	return job, nil
+}
+
+// hasXcode answers whether this environment can meet use_xcode, through
+// the capability rather than past it. A base the provider was told
+// about is answered from what it was told; one nothing has spoken for
+// is asked, because an absent entry is "nobody said" and not "no
+// Xcode".
+//
+// The absent entry is the whole point. Derived, never recorded (D19):
+// nothing on this host knows which image carries an Xcode, so the
+// honest answer comes from a booted guest, where it costs a second and
+// the refusal releases the slot instead of keeping a guaranteed failure
+// as a debug environment nobody needs. Nothing speaks for a base today,
+// so every one of them is asked — the same question, of the same guest,
+// at the same point in the submit, as before the capability existed.
+//
+// What the capability buys is the seam, not a new decision. The refusal
+// stays where it is, after the clone and the boot, even for a base the
+// map declares has no Xcode: the refusal there goes through fail(),
+// which releases the worker it is refusing on behalf of, so hoisting it
+// ahead of the clone would rework an error path that nothing can reach
+// yet. The shape lands; the decision does not move.
+func (p Provider) hasXcode(ctx context.Context, r platform.Release, vm string) bool {
+	if told, known := p.Capabilities().Xcode[r]; known {
+		return told
+	}
+	out, err := Exec(ctx, p.Tools, vm, "/usr/bin/xcodebuild", "-version")
+	return err == nil && strings.Contains(out, "Xcode")
 }
 
 // WaitAgent waits for the guest agent to answer, which is the only
@@ -395,25 +470,69 @@ nohup /bin/sh -c '
 `
 }
 
+// argvFile is one instruction file for the runner: where it lands in
+// the guest, what it is called in a failure the user reads, and the
+// exact bytes that go in it.
+type argvFile struct {
+	Name string
+	What string
+	Body string
+}
+
+// Dest is where the file lands. The shell redirect is the transport, so
+// a change here is as fatal to a build as a change to the words.
+func (f argvFile) Dest() string { return stateDir + "/" + f.Name }
+
+// argvFiles is everything the guest is told to do, in the order launch
+// writes it. The runner consumes them lint, then test, then install —
+// the order is its own, and one line of a file becomes exactly one word
+// of port(1)'s argv, so a stray, missing or reordered line is a
+// different build.
+//
+// It is a pure function of the request, separate from the writing, so
+// that what a guest would be asked to run can be asserted without
+// booting one. That matters more than the tidiness: this is the whole
+// instruction set, and nothing else in the tree pins it.
+//
+// Only the headline port is built. The rest of Ports ride along in the
+// request shape for the cohort that will be built together later, and
+// nothing here reads them: one environment builds one port today, and
+// writing a second name into these files would ask port(1) for
+// something no caller has requested.
+//
+// argv.test is absent rather than empty when no test was asked for. The
+// runner skips a file that is not there, so absence is the control
+// flow; an empty file would run port(1) with no arguments at all.
+func argvFiles(req verify.Request) []argvFile {
+	port := req.Ports[0]
+	files := []argvFile{
+		{Name: "argv", What: "the argv",
+			Body: argvBody(build.InstallArgs(port, req.Variants, len(req.FromSource) > 0))},
+		{Name: "argv.lint", What: "the lint argv",
+			Body: argvBody(build.LintArgs(port))},
+	}
+	if req.Test {
+		files = append(files, argvFile{Name: "argv.test", What: "the test argv",
+			Body: argvBody(build.TestArgs(port, req.Variants))})
+	}
+	return files
+}
+
+// argvBody is the file format the runner reads back: one argv word per
+// line, newline-terminated, because the runner appends every line it
+// reads to "$@" and reads until the file ends.
+func argvBody(argv []string) string { return strings.Join(argv, "\n") + "\n" }
+
 // launch starts the build detached, so the job belongs to the guest
 // rather than to this process.
 func (p Provider) launch(ctx context.Context, vm string, req verify.Request) error {
-	argv := build.InstallArgs(req.Port, req.Variants, len(req.FromSource) > 0)
 	if _, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", "mkdir -p "+stateDir); err != nil {
 		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
 	}
-	body := strings.NewReader(strings.Join(argv, "\n") + "\n")
-	if out, err := CLI(ctx, p.Tools, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv"); err != nil {
-		return fmt.Errorf("%w: writing the argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
-	}
-	lint := strings.NewReader(strings.Join(build.LintArgs(req.Port), "\n") + "\n")
-	if out, err := CLI(ctx, p.Tools, lint, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.lint"); err != nil {
-		return fmt.Errorf("%w: writing the lint argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
-	}
-	if req.Test {
-		body := strings.NewReader(strings.Join(build.TestArgs(req.Port, req.Variants), "\n") + "\n")
-		if out, err := CLI(ctx, p.Tools, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+stateDir+"/argv.test"); err != nil {
-			return fmt.Errorf("%w: writing the test argv: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+	for _, f := range argvFiles(req) {
+		body := strings.NewReader(f.Body)
+		if out, err := CLI(ctx, p.Tools, body, "exec", "-i", vm, "/bin/sh", "-c", "cat > "+f.Dest()); err != nil {
+			return fmt.Errorf("%w: writing %s: %s", verify.ErrNoEnvironment, f.What, strings.TrimSpace(out))
 		}
 	}
 	if out, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", runner(p.prefixOf().Port())); err != nil {
