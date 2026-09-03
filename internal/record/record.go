@@ -215,10 +215,25 @@ func (r Record) AnyState(s RunState) bool {
 }
 
 // Promotable is the gate promote applies to a verdict set: at least
-// one run passed, and none failed. A port declining a platform
-// (unsupported) does not block — that refusal is often the change
-// working — but an unexplained failure does, because it is exactly the
-// question review will ask.
+// one run passed, none failed, and every SUBJECT answered for. A port
+// declining a platform (unsupported) does not block — that refusal is
+// often the change working — but an unexplained failure does, because
+// it is exactly the question review will ask.
+//
+// The per-subject clause is what plurality added, and it is not the
+// same rule stated twice. A cohort's runs are summed over the whole
+// map, so a change whose headline passed and whose dependent was
+// blocked by a stranger, or errored, or never reached at all, satisfies
+// "one passed and none failed" — and publishing it would put a port
+// into a pull request on evidence that does not exist. That is the same
+// thing the settle's unbuilt guard refuses to invent, refused again at
+// the gate that would have spent it.
+//
+// A record naming no subjects is answered by the run map alone. Every
+// change dockhand mints names its subjects, so this is a note written
+// by something else or from before the schema, and inventing a roster
+// for it out of the run keys would be a guess in the direction that
+// blocks a publication.
 //
 // It is stated here, on the record, so the rule has one home; the
 // verdict package presents it as a judgment rather than restating it.
@@ -226,5 +241,46 @@ func (r Record) AnyState(s RunState) bool {
 // does a finding still proposed — belong with those steps' verbs, and
 // are deliberately not smuggled in with the schema.
 func (r Record) Promotable() bool {
-	return r.AnyState(Passed) && !r.AnyState(Failed)
+	if !r.AnyState(Passed) || r.AnyState(Failed) {
+		return false
+	}
+	for _, s := range r.Subjects {
+		if !r.proven(s.Port) {
+			return false
+		}
+	}
+	return true
+}
+
+// proven reports whether one subject's own runs argue for publishing
+// it: a pass somewhere, or nothing but refusals.
+//
+// The second clause is Promotable's unsupported rule read per member
+// rather than per record. A port that declined every platform it was
+// asked about has said the change is right about it, and a cohort where
+// one member declines everywhere must not be stuck for want of a pass
+// that port has told us it will never give. Anything else — queued,
+// running, blocked, errored, no run at all — is a member nobody has an
+// answer for yet.
+// The key is what says which subject a run is about; nothing on a run
+// repeats it.
+func (r Record) proven(port string) bool {
+	// Every run is looked at before the answer is given. A pass on one
+	// platform beside a cancellation on another is a proven member, and
+	// a reader that stopped at the first run it met would answer
+	// differently depending on which one the map handed it first.
+	seen, allRefused := false, true
+	for key, run := range r.Runs {
+		if runPort(key) != port {
+			continue
+		}
+		if run.State == Passed {
+			return true
+		}
+		seen = true
+		if run.State != Unsupported {
+			allRefused = false
+		}
+	}
+	return seen && allRefused
 }

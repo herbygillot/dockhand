@@ -66,6 +66,30 @@ func SplitSubjects(log string) map[string]string {
 	return out
 }
 
+// SubjectOrder is the subjects the log's markers announced, in the
+// order the markers appeared, repeats included.
+//
+// It is the companion SplitSubjects cannot be. A map has no order, so a
+// reader asking "which subject was the runner inside when it stopped"
+// can only answer from the map by imposing an order of its own — and
+// the obvious one, the roster's, is wrong for exactly the log this
+// package promises to carry: a runner that returns to a port it already
+// built announces it again, and the member the guest gave up inside is
+// the one the FILE names last, not the one that sorts last in the
+// change.
+//
+// Repeats are kept rather than collapsed for the same reason. The last
+// element is the whole point, and a set would not have one.
+func SubjectOrder(log string) []string {
+	var out []string
+	for line := range strings.Lines(log) {
+		if name, marker := subjectOf(line); marker {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // SubjectLog is the log a reader should judge one port by: that
 // subject's section of a cohort log, and the whole log when nothing
 // marked a subject at all.

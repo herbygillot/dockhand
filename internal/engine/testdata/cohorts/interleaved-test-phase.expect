@@ -1,0 +1,28 @@
+# An interleaved log: both members are announced twice, once to build
+# and once to test, so each member's output arrives in two pieces with
+# the other member's in between.
+#
+# This is not what today's runner writes — it announces a member once
+# and runs lint, test and install under that one marker — but it is the
+# shape verify.SplitSubjects deliberately permits ("a runner that
+# returns to a port ... loses neither half"), and a judge that assumed
+# one marker per member would read the second half of jq's output as
+# oniguruma's. The verdicts below are only reachable if the sections
+# accumulate: jq's lint line is in its first piece and its failure is
+# in its second, and both must land on jq.
+#
+# It also pins how far the runner is taken to have got. The stopper is
+# the last member the FILE announces, so it is jq here — the guest was
+# writing jq's section when it gave up, which is what a marker means.
+# Reading the roster's order instead would agree in this file only
+# because jq happens to sort last; interleaved-return-failure is the
+# same shape with the failure on the return visit, where the two orders
+# disagree and only one of them names the port that broke.
+# SYNTHESIZED from verify.SplitSubjects's repeat-marker contract, not
+# captured: see README.md.
+members: oniguruma jq
+outcome: failed
+oniguruma.state: passed
+oniguruma.lint: clean
+jq.state: failed
+jq.detail: Failed to test jq: command execution failed

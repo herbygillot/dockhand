@@ -178,6 +178,11 @@ func JudgeRun(in RunInput) Judgment {
 				// gomuks, whose verdict blamed the bump for olm).
 				if dep, ok := DependencyFailure(r.Detail, in.Port); ok {
 					r.State = record.Blocked
+					// Blamed names a MEMBER of the change, and this is a
+					// port outside it, so a blame an earlier settlement
+					// wrote is cleared rather than left standing beside a
+					// detail that contradicts it.
+					r.Blamed = ""
 					r.Detail = BlockedDetail(dep, in.Nomaintainer)
 					release = ReleaseQuietly
 				}

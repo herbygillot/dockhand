@@ -1,0 +1,27 @@
+# interleaved-test-phase's mirror, and the one that decides whether the
+# stopper is read from the FILE's order or from the roster's. Both
+# members are announced to build, and then the runner returns to the
+# FIRST of them to test it, and the test fails.
+#
+# Read in roster order the last member announced is jq, so jq would take
+# a failure printed under oniguruma's marker — with an empty detail,
+# because jq's own section holds no Error line — and oniguruma, sitting
+# ahead of that stopper with a marker of its own, would be settled
+# passed and counted toward a promotion. The member that broke published
+# and the member that did not condemned, from one sentence's worth of
+# ordering.
+#
+# Read in the file's order the stopper is oniguruma, which is where the
+# guest actually was, and the failure lands on the port whose test
+# suite failed. jq is blocked rather than passed: its install finished,
+# but the guest gave up before jq's own test phase ran, and a member
+# whose sweep was cut short is untested rather than proven.
+# SYNTHESIZED from verify.SplitSubjects's repeat-marker contract, not
+# captured: see README.md.
+members: oniguruma jq
+outcome: failed
+oniguruma.state: failed
+oniguruma.detail: Failed to test oniguruma: command execution failed
+jq.state: blocked
+jq.blamed: oniguruma
+jq.detail: oniguruma fails to build; this member is untested

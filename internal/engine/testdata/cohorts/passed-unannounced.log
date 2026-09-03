@@ -1,0 +1,17 @@
+===> dockhand subject: oniguruma
+--->  Verifying Portfile for oniguruma
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+--->  Computing dependencies for oniguruma
+--->  Fetching distfiles for oniguruma
+--->  Verifying checksums for oniguruma
+--->  Extracting oniguruma
+--->  Configuring oniguruma
+--->  Building oniguruma
+DEBUG: Executing org.macports.build (oniguruma)
+--->  Staging oniguruma into destroot
+--->  Installing oniguruma @6.9.10_0
+--->  Activating oniguruma @6.9.10_0
+DEBUG: Executing org.macports.activate (oniguruma)
+--->  Cleaning oniguruma

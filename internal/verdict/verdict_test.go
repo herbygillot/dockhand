@@ -42,6 +42,12 @@ func runOn(r record.Record, plat string, run record.Run) {
 // are held together here rather than by one calling the other: they are
 // read in different places, and a divergence should fail rather than
 // propagate.
+//
+// Every record here has one subject, which is where the two are equal.
+// A weight is a tally over the runs and a promotion also asks whether
+// every member was answered for, so at a cohort the gate is the
+// stricter of the two — TestPromotableSumsOverEveryMember is where that
+// difference is stated.
 func TestPromotableAndWeighAgree(t *testing.T) {
 	cases := []struct {
 		name   string

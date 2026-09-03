@@ -20,36 +20,174 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 )
 
-// ChangedPortdirs derives the one portdir a branch changes against its
+// ChangedPortdirs derives the portdirs a branch changes against its
 // merge base with the primary branch — from git alone, so a human
-// commit's changes count the same as a minted one's.
-func ChangedPortdirs(ctx context.Context, repo *git.Repo, branch, tip string) (string, error) {
+// commit's changes count the same as a minted one's — and holds that
+// answer against what the tip's record claims.
+//
+// Plural, and the refusal that used to make it singular is gone. "One
+// at a time for now" was a stand-in for a substrate that could carry
+// only one subject; the substrate carries a cohort now, so a hand-made
+// branch touching several portdirs verifies as the one change it is.
+//
+// The cross-check is why this is a method. Two sources describe the
+// same change and neither is authoritative alone: the record says what
+// the change staged when it was minted, and git says what the branch
+// actually touches now. Where they disagree, both readings are wrong —
+// staging the record's set under-stages a portdir a later commit
+// added, which is a verification of something other than the branch,
+// and staging git's set verifies a directory the change never claimed.
+// So it refuses, naming both sides, and lets a person say which is
+// true.
+//
+// A record that names no portdir at all is not a disagreement. A
+// subject adopted at submit time carries a port and nothing else, and
+// a branch nobody minted has no record to ask; both mean nobody said,
+// and git's answer stands unopposed.
+func (e *Engine) ChangedPortdirs(ctx context.Context, repo *git.Repo, branch, tip string) ([]string, error) {
 	primary, err := repo.PrimaryBranch(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	base, err := repo.MergeBase(ctx, primary, tip)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	paths, err := repo.DiffNames(ctx, base, tip)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	portdirs := map[string]bool{}
+	// Sorted, and deduplicated on the way in. The order is not
+	// cosmetic: it becomes the build order of a cohort whose record
+	// does not state one, and Subjects[0] is the headline a refusal
+	// names — so an answer that came back in map order would give the
+	// same branch a different headline on two consecutive runs.
+	//
+	// Deterministic is all it is. This sorts PORTDIRS, so the order is
+	// alphabetical by category and says nothing about which member
+	// depends on which — a branch touching sysutils/jq and
+	// textproc/oniguruma builds the dependent first, decided by a
+	// category name. Nothing here topologically sorts anything and no
+	// reader may assume it does. What makes that survivable is that
+	// blame does not turn on the order: a member's install pulls its
+	// siblings in as ordinary dependencies whatever position they hold,
+	// and the judge recovers the culprit by matching the log's name
+	// against the change's roster rather than against a position in it.
+	// Ordering members by declared dependency is a real improvement and
+	// a change of its own — the pre-flight already opens every Portfile
+	// — and it is not smuggled in here.
+	seen := map[string]bool{}
+	var derived []string
 	for _, p := range paths {
 		parts := strings.SplitN(p, "/", 3)
-		if len(parts) >= 3 {
-			portdirs[parts[0]+"/"+parts[1]] = true
+		if len(parts) < 3 || seen[parts[0]+"/"+parts[1]] {
+			continue
+		}
+		d := parts[0] + "/" + parts[1]
+		seen[d] = true
+		derived = append(derived, d)
+	}
+	sort.Strings(derived)
+	if len(derived) == 0 {
+		return nil, fmt.Errorf("verify: %s changes no portdir against %s; there is nothing to verify", branch, git.Abbrev(base))
+	}
+	n, err := e.Ledger(repo).Read(ctx, tip)
+	if err != nil {
+		// No record, or one this build cannot read. The second is a
+		// refusal everywhere it matters — the ledger says so to the verbs
+		// that write — and here it is only the absence of a second
+		// opinion about what git already answered.
+		return derived, nil
+	}
+	recorded := n.Portdirs()
+	if len(recorded) == 0 {
+		return derived, nil
+	}
+	if !sameSet(recorded, derived) {
+		return nil, fmt.Errorf(
+			"verify: %s changes %s against %s, but its record names %s; the two disagree, so nothing is staged — `dockhand discard %s` and re-mint, or verify the portdirs by hand",
+			branch, strings.Join(derived, ", "), git.Abbrev(base), strings.Join(recorded, ", "), branch)
+	}
+	// The record's own order wins where it agrees, because it knows
+	// something git does not: which subject is the headline, and the
+	// order the members must be built in.
+	return recorded, nil
+}
+
+// sameSet reports whether two portdir lists name the same directories,
+// order and repeats aside. Order is a property of the record and not
+// of the diff, so comparing it would refuse a change that agrees.
+func sameSet(a, b []string) bool {
+	in := make(map[string]bool, len(a))
+	for _, s := range a {
+		in[s] = true
+	}
+	for _, s := range b {
+		if !in[s] {
+			return false
+		}
+		delete(in, s)
+	}
+	return len(in) == 0
+}
+
+// Member is one subject of a verification: the port to build, and the
+// directory the branch changed that it is built out of.
+//
+// The pair is what a submission needs and what only a derivation can
+// supply. A portdir's base name is not its port's name (devel/pcre
+// carries pcre2), and a port name does not say which directory a
+// branch touched, so the two are carried together from the one place
+// that established them.
+type Member struct {
+	Port    string
+	Portdir string
+}
+
+// SubjectsOf names what a branch verification builds: one member per
+// changed portdir, in the order the portdirs came back, headline
+// first.
+//
+// One portdir is today's question and is answered by today's function,
+// unchanged and unshared. That is deliberate: SubjectOf's resolution
+// order — the port the user named, then the tip note's headline, then
+// evaluation — is the behaviour every single-subject verification has,
+// and a plural rewrite that happened to agree in the common case would
+// still be a different function answering it.
+//
+// Several portdirs cannot use that order. The user's target names one
+// port and a cohort builds all of them, and the note's headline
+// answers for one portdir out of several — so each directory is asked
+// about itself: the record's own subject for it when the record has
+// one, and evaluation of the directory when it does not.
+func (e *Engine) SubjectsOf(ctx context.Context, repo *git.Repo, target, branch, tip string, rels []string) ([]Member, error) {
+	if len(rels) == 1 {
+		name, err := e.SubjectOf(ctx, repo, target, branch, tip, rels[0])
+		if err != nil {
+			return nil, err
+		}
+		return []Member{{Port: name, Portdir: rels[0]}}, nil
+	}
+	byDir := map[string]string{}
+	if n, err := e.Ledger(repo).Read(ctx, tip); err == nil {
+		for _, s := range n.Subjects {
+			if s.Portdir != "" && s.Port != "" {
+				byDir[s.Portdir] = s.Port
+			}
 		}
 	}
-	if len(portdirs) != 1 {
-		return "", fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, len(portdirs), git.Abbrev(base))
+	out := make([]Member, 0, len(rels))
+	for _, rel := range rels {
+		name, ok := byDir[rel]
+		if !ok {
+			var err error
+			if name, err = e.changedPort(ctx, repo, tip, rel); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, Member{Port: name, Portdir: rel})
 	}
-	for d := range portdirs {
-		return d, nil
-	}
-	return "", nil // unreachable
+	return out, nil
 }
 
 // SubjectOf names what a branch verification builds. The portdir's

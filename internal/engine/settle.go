@@ -58,10 +58,17 @@ func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string) (st
 // platform records as unsupported instead, and its guest goes back: a
 // correct refusal leaves nothing to debug.
 //
+// The asking is done once per guest and not once per run. A change's
+// members build together inside one environment and write into one log,
+// so a poll per member would be N round trips for one answer — and,
+// worse, N answers taken at N different instants, which is how one
+// member is judged against a guest that had not failed yet and its
+// sibling against the same guest after it had.
+//
 // The polling happens outside the notes lock and only the writing
 // inside it. That is the split a reconciler needs: a poll is a round
-// trip per run and a log fetch is another, and holding the flock across
-// them stalls every peer sharing the checkout for as long as the
+// trip per guest and a log fetch is another, and holding the flock
+// across them stalls every peer sharing the checkout for as long as the
 // slowest provider takes. What it costs is that the note can move while
 // this pass is asking, and the compare below is what pays for it — a
 // judgment is written only if the run it was reached from is still the
@@ -92,20 +99,19 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 	// so when a release that was expected to go back does not.
 	keep, report := map[string]bool{}, map[string]bool{}
 	handles := map[string]heldEnv{}
-	for _, ref := range runRefs(*n) {
-		if ref.Run.State != record.Running {
+	for _, rel := range releasesIn(*n) {
+		in := cohortOn(*n, rel)
+		if !buildingIn(in) {
 			continue
 		}
-		job, ok := n.Jobs[ref.Release]
+		job, ok := n.Jobs[rel]
 		if !ok {
 			// A running run whose platform names no job. The note has been
 			// mangled — a submission writes both in one write — and there
 			// is nothing here to poll.
 			continue
 		}
-		in := verdict.RunInput{Run: ref.Run, Port: ref.Port}
 		st, perr := prov.Poll(ctx, job.Job)
-		var dep string
 		switch {
 		case errors.Is(perr, verify.ErrUnknownJob):
 			// The job is gone, and so is the worker: nothing to read and
@@ -121,60 +127,63 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 			in.Status = st
 			// The log is fetched before the release, because releasing a
 			// worker puts its log out of reach — and only when the
-			// judgment will actually read one.
-			if verdict.NeedsLog(st.State, ref.Run.Linted) {
+			// judgment will actually read one. One fetch for the whole
+			// guest: the members share the file, and the cutting is the
+			// judgment's.
+			if verdict.NeedsLog(st.State, lintedIn(in)) {
 				if log, lerr := prov.Log(ctx, job.Job); lerr == nil {
 					in.Log, in.LogRead = log, true
 				}
 			}
-			// Whether a blamed dependency has a maintainer is a fact
-			// about the tree, which a judgment cannot go and read. The
-			// guarded reader answers whether it is even worth looking,
-			// so a port that merely declined the platform sends nobody
-			// globbing.
-			if st.State == verify.Failed && in.LogRead {
-				if d, blamed := verdict.BlamedDependency(in.Log, ref.Port); blamed {
-					dep = d
-					in.Nomaintainer = nomaintainerDep(repo.Root, d)
+			// Whether a blamed port has a maintainer is a fact about the
+			// tree, which a judgment cannot go and read. The guarded
+			// reader answers whether it is even worth looking, so a port
+			// that merely declined the platform sends nobody globbing —
+			// and it is asked once, because a cohort stops at its first
+			// failure and therefore has one thing to blame.
+			if d, blamed := verdict.CohortBlame(in); blamed {
+				in.Nomaintainer = nomaintainerDep(repo.Root, d)
+			}
+		}
+		js := verdict.JudgeCohort(in)
+		for _, s := range in.Subjects {
+			was := in.Runs[s.Port]
+			if was.State != record.Running {
+				// A member that already reached a verdict is in the cohort
+				// so that the log's blame can find it, and out of the write
+				// because this pass did not watch it.
+				continue
+			}
+			j, ok := js[s.Port]
+			if !ok || !j.Settled {
+				continue
+			}
+			run := j.Run
+			run.Platform = rel
+			if run.State == record.Passed {
+				// What the pass proves, in the provider's own words, stamped
+				// as the run settles rather than looked up when it is
+				// rendered: the claim belongs to the environment that was
+				// actually used, and providers get reconfigured.
+				run.Evidence = caps.Evidence
+			}
+			switch j.Release {
+			case verdict.KeepWorker:
+				keep[rel] = true
+				// A failure keeps its environment, and the name of it belongs
+				// to the guest rather than to the verdict: one guest holds one
+				// environment however many subjects failed in it.
+				if st.Handle != "" {
+					handles[rel] = heldEnv{JobID: job.Job.ID, Handle: st.Handle}
 				}
+			case verdict.ReleaseAndReport:
+				report[rel] = true
+			case verdict.ReleaseQuietly:
 			}
+			key := record.RunKey(s.Port, rel)
+			judged[key] = run
+			seen[key] = observed{Run: was, JobID: job.Job.ID}
 		}
-		j := verdict.JudgeRun(in)
-		if !j.Settled {
-			continue
-		}
-		run := j.Run
-		run.Platform = ref.Release
-		if run.State == record.Passed {
-			// What the pass proves, in the provider's own words, stamped
-			// as the run settles rather than looked up when it is
-			// rendered: the claim belongs to the environment that was
-			// actually used, and providers get reconfigured.
-			run.Evidence = caps.Evidence
-		}
-		// A run blocked by a port that is itself a member of this change
-		// inherited its neighbour's failure, and the note says whose.
-		// Nothing reaches this at one subject, where a dependency cannot
-		// also be a sibling; the day a cohort lands, it is the difference
-		// between "untested" and "untested because of libwidget".
-		if run.State == record.Blocked && dep != "" && names(*n, dep) {
-			run.Blamed = dep
-		}
-		switch j.Release {
-		case verdict.KeepWorker:
-			keep[ref.Release] = true
-			// A failure keeps its environment, and the name of it belongs
-			// to the guest rather than to the verdict: one guest holds one
-			// environment however many subjects failed in it.
-			if st.Handle != "" {
-				handles[ref.Release] = heldEnv{JobID: job.Job.ID, Handle: st.Handle}
-			}
-		case verdict.ReleaseAndReport:
-			report[ref.Release] = true
-		case verdict.ReleaseQuietly:
-		}
-		judged[ref.Key()] = run
-		seen[ref.Key()] = observed{Run: ref.Run, JobID: job.Job.ID}
 	}
 	if len(judged) == 0 {
 		return nil
@@ -343,10 +352,52 @@ func judgedOn(judged map[string]record.Run, release string) bool {
 	return false
 }
 
-// names reports whether a port is one of the record's own subjects.
-func names(n record.Record, port string) bool {
+// cohortOn assembles one guest's settlement input: every member with a
+// run on that release, in build order, with the runs as the note holds
+// them.
+//
+// The subjects go in whole rather than reduced to their ports, because
+// the judgment matches a log's blame against Subject.Names: a member
+// carried in as a bare name would answer to none of its subports, and
+// its own failure in one of them would read as a stranger's — which is
+// the difference between keeping the environment that could prove it
+// and handing that environment back.
+//
+// Every member on the guest goes in, terminal ones included. They are
+// not this pass's to write, but they are part of what the runner built,
+// and a roster missing them would let a sibling's name in the log be
+// read as a port outside the change.
+func cohortOn(n record.Record, release string) verdict.CohortInput {
+	in := verdict.CohortInput{Runs: make(map[string]record.Run, len(n.Subjects))}
 	for _, s := range n.Subjects {
-		if s.Port == port {
+		run, ok := n.Runs[record.RunKey(s.Port, release)]
+		if !ok {
+			continue
+		}
+		in.Subjects = append(in.Subjects, s)
+		in.Runs[s.Port] = run
+	}
+	return in
+}
+
+// buildingIn reports whether any member of a cohort is still using its
+// guest — the test of whether this guest is worth a poll at all.
+func buildingIn(in verdict.CohortInput) bool {
+	for _, run := range in.Runs {
+		if run.State == record.Running {
+			return true
+		}
+	}
+	return false
+}
+
+// lintedIn reports whether any member still building led with lint,
+// which is the whole of why a passing guest's log is worth fetching.
+// One member that linted is enough: the fetch is per guest, and the
+// members that did not lint simply find no summary in their sections.
+func lintedIn(in verdict.CohortInput) bool {
+	for _, run := range in.Runs {
+		if run.State == record.Running && run.Linted {
 			return true
 		}
 	}

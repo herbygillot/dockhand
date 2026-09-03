@@ -87,9 +87,12 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 
 // verifyBranch submits a branch's tip for verification in the
 // background, exactly as the mint that created it would have: the
-// changed portdir is derived from git — diff against the merge base
+// changed portdirs are derived from git — diff against the merge base
 // with the primary branch, so a human commit's changes count too — and
-// materialized from the object database. A job already running for the
+// materialized from the object database. All of them, and not one: a
+// branch that touches several portdirs is one change with several
+// subjects, built together in one environment, and the refusal that
+// used to send such a branch away is gone. A job already running for the
 // tip is left alone; a running job the branch has moved past is
 // canceled first, its worker released and its note marked superseded,
 // because a verdict about an abandoned sha is a slot spent on nothing.
@@ -116,18 +119,18 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, eng *engine.Engine,
 		return err
 	}
 
-	rel, err := engine.ChangedPortdirs(ctx, repo, branch, tip)
+	rels, err := eng.ChangedPortdirs(ctx, repo, branch, tip)
 	if err != nil {
 		return err
 	}
-	portName, err := eng.SubjectOf(ctx, repo, target, branch, tip, rel)
+	members, err := eng.SubjectsOf(ctx, repo, target, branch, tip, rels)
 	if err != nil {
 		return err
 	}
 
 	var deferred int
 	for _, r := range releases {
-		started, err := eng.SubmitRelease(ctx, repo, branch, tip, rel, portName, r, test)
+		started, err := eng.SubmitRelease(ctx, repo, branch, tip, members, r, test)
 		var vde *engine.VerifyDeferredError
 		if errors.As(err, &vde) {
 			// No slot for this platform right now: recorded, reported,
@@ -139,7 +142,9 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, eng *engine.Engine,
 			return err
 		}
 		if trace && started {
-			if err := eng.FollowStarted(ctx, repo, tip, portName, r.Name, prov); err != nil {
+			// The headline's run, because --trace follows one build and a
+			// cohort's members share the guest whose log it prints.
+			if err := eng.FollowStarted(ctx, repo, tip, members[0].Port, r.Name, prov); err != nil {
 				return err
 			}
 		}

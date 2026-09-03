@@ -103,3 +103,52 @@ func TestPromotable(t *testing.T) {
 		})
 	}
 }
+
+// The gate asks after every member and not only after the run map. A
+// cohort reaches shapes one subject cannot — a pass beside a member
+// nothing ever built — and the run arithmetic reads those as
+// promotable, which publishes a port on evidence that does not exist.
+func TestPromotableAnswersForEverySubject(t *testing.T) {
+	cohort := []Subject{{Port: "jq"}, {Port: "oniguruma"}}
+	for _, tc := range []struct {
+		name     string
+		subjects []Subject
+		runs     map[string]Run
+		want     bool
+	}{
+		{"both members passed", cohort, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Passed}}, true},
+		{"a member blocked by a stranger was never built", cohort, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Blocked}}, false},
+		{"a member the guest said nothing about", cohort, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Errored}}, false},
+		{"a member still queued", cohort, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Queued}}, false},
+		{"a member with no run at all", cohort, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}}, false},
+		// A port that declined every platform it was asked about has
+		// said the change is right about it, which is the unsupported
+		// rule read per member.
+		{"a member that declines every platform", cohort, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Unsupported}}, true},
+		{"a member proven on one platform and declining the other", cohort, map[string]Run{
+			RunKey("jq", "Testos"):        {State: Passed},
+			RunKey("oniguruma", "Testos"): {State: Unsupported},
+			RunKey("oniguruma", "Oldos"):  {State: Passed}}, true},
+		// The map hands its keys over in no order, so a member's pass
+		// must be found whichever run is met first.
+		{"a member proven on one platform and canceled on the other", cohort, map[string]Run{
+			RunKey("jq", "Testos"):        {State: Passed},
+			RunKey("oniguruma", "Testos"): {State: Passed},
+			RunKey("oniguruma", "Oldos"):  {State: Canceled}}, true},
+		// A note naming no subjects is answered by the runs alone: it
+		// was written by something that does not name them, and a roster
+		// guessed out of the keys would be a guess that blocks.
+		{"a record that names no subjects", nil, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Blocked}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, Record{Subjects: tc.subjects, Runs: tc.runs}.Promotable())
+		})
+	}
+}

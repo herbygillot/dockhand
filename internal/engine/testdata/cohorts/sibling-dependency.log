@@ -1,0 +1,30 @@
+===> dockhand subject: jq
+--->  Verifying Portfile for jq
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/sysutils/jq
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: adding the default universal variant
+--->  Computing dependencies for jq
+DEBUG: jq has no conflicts
+DEBUG: Searching for dependency: oniguruma
+DEBUG: Didn't find receipt, going to depspec regex for: oniguruma
+--->  Dependencies to be installed: oniguruma
+DEBUG: Found port in file:///tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: Executing org.macports.main (oniguruma)
+--->  Fetching distfiles for oniguruma
+--->  Attempting to fetch onig-6.9.10.tar.gz from https://github.com/kkos/oniguruma/releases/download/v6.9.10/
+--->  Verifying checksums for oniguruma
+--->  Extracting oniguruma
+--->  Configuring oniguruma
+DEBUG: Executing org.macports.configure (oniguruma)
+--->  Building oniguruma
+DEBUG: Executing org.macports.build (oniguruma)
+DEBUG: Assembled command: 'cd "/opt/local/var/macports/build/_tmp_dockhand-overlay_textproc_oniguruma/oniguruma/work/onig-6.9.10" && /usr/bin/make -j8 -w all'
+Error: Failed to build oniguruma: command execution failed
+DEBUG: Error code: CHILDSTATUS 5417 2
+Warning: targets not executed for oniguruma: org.macports.activate org.macports.destroot org.macports.install
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_textproc_oniguruma/oniguruma/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port jq failed

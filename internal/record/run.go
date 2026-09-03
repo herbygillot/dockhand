@@ -19,6 +19,19 @@ import (
 // this schema exists to avoid having twice.
 func RunKey(port, release string) string { return port + "@" + release }
 
+// runPort is RunKey's subject half, read back. It is here, beside the
+// join it undoes, because the two are one fact: neither name can carry
+// an "@", so the first one is the separator and a key with none names
+// nobody.
+func runPort(key string) string {
+	for i := 0; i < len(key); i++ {
+		if key[i] == '@' {
+			return key[:i]
+		}
+	}
+	return ""
+}
+
 // JobRecord is one submitted environment: the job the provider handed
 // back, the environment it is holding, and what this checkout knows
 // about who owns it.

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
@@ -116,16 +118,54 @@ type submission struct {
 	Test       bool
 	FromSource bool
 	Trace      bool
+	// Members is every subject this submission builds, in build order,
+	// for a change that has more than one. Empty is the single-subject
+	// submission — the shape every caller but a cohort verification
+	// makes — and Port with the Minted's RelPort is the whole of it.
+	//
+	// It is a field rather than a second entry point because a cohort is
+	// not a different kind of submission: one guest, one staged overlay,
+	// one job, and the members diverge only when the log comes back.
+	Members []Member
+}
+
+// members is what this submission builds, headline first: the cohort
+// when there is one, and otherwise the pair the caller already handed
+// over as Port and the branch's own portdir.
+func (s submission) members(headlineDir string) []Member {
+	if len(s.Members) == 0 {
+		return []Member{{Port: s.Port, Portdir: headlineDir}}
+	}
+	return s.Members
 }
 
 // fromSourcePorts is the request's list of ports whose binary archives
-// must be ignored. One subject today, and the list is the request's
-// shape rather than a flag because a cohort ignores archives per member.
-func (s submission) fromSourcePorts() []string {
-	if !s.FromSource {
+// must be ignored, out of the members actually being built. The list is
+// the request's shape rather than a flag because a cohort ignores
+// archives per member, and it is the headline's property: the change
+// left ITS version and revision where they were, so the archive that
+// matches them predates it, while a dependent riding along has an
+// archive that is exactly what its own recorded verdict is about.
+//
+// Intersected with what is being built, not asserted over the roster.
+// A headline that declined the platform at pre-flight is not in the
+// guest at all, and naming it here would put a port in the request that
+// no argv mentions.
+func (s submission) fromSourcePorts(ports []string) []string {
+	if !s.FromSource || !slices.Contains(ports, s.Port) {
 		return nil
 	}
 	return []string{s.Port}
+}
+
+// memberPorts is the roster as the record spells it: one port per
+// member, in build order, headline first.
+func memberPorts(members []Member) []string {
+	out := make([]string, 0, len(members))
+	for _, mem := range members {
+		out = append(out, mem.Port)
+	}
+	return out
 }
 
 // submit stages the minted commit's portdir out of the object database
@@ -136,6 +176,8 @@ func (s submission) fromSourcePorts() []string {
 // carries that split.
 func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 	portName := s.Port
+	members := s.members(m.RelPort)
+	roster := memberPorts(members)
 	prov, err := e.Verifier(ctx)
 	if err != nil {
 		if errors.Is(err, verify.ErrNoProvider) {
@@ -150,7 +192,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 			return nil
 		}
 		if errors.Is(err, verify.ErrNoEnvironment) {
-			return e.queue(ctx, m, s, err)
+			return e.queue(ctx, m, s, err, roster)
 		}
 		return err
 	}
@@ -162,7 +204,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 	// so on every submit for an answer already in hand.
 	if s.Release.IsZero() {
 		if s.Release, err = verdict.ResolveRelease(s.Release, prov.Capabilities().Platforms); err != nil {
-			return e.queue(ctx, m, s, err)
+			return e.queue(ctx, m, s, err, roster)
 		}
 	}
 	release := s.Release
@@ -174,39 +216,89 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 	if err != nil {
 		return err
 	}
-	if err := m.Repo.Materialize(ctx, m.Sha, m.RelPort, stage); err != nil {
-		return err
+	// Every member's directory into one staging root, and from there
+	// into one overlay in front of one guest's ports tree. A cohort
+	// that must be built together is one build: the capacity arithmetic
+	// counts environments, and it does not change because the change
+	// has more subjects.
+	//
+	// mpbb's list-time exclusion, borrowed, and now asked of each
+	// member: evaluation answers known_fail in a second, before any VM
+	// boots — and it answers for the branch's content, which is what was
+	// materialized. The same session answers use_xcode, so a port that
+	// needs a full Xcode is probed for one before the build starts, not
+	// forty minutes in; one member needing it is the whole guest needing
+	// it, because there is one guest.
+	//
+	// A member that declines is recorded and left out rather than
+	// declining the change: the others are still buildable, and a
+	// known_fail on one port is a fact about that port. At one subject
+	// that is exactly today's behaviour, because leaving the only member
+	// out leaves nothing to submit.
+	// The roster goes onto the note, in build order, before any verdict
+	// about any member does. Subjects are built by adoption for a change
+	// nobody minted, adoption appends in call order, and the loop below
+	// records a declining member's refusal as it meets it — so a record
+	// that learned its members from those refusals would be headlined by
+	// whichever port pre-flight threw out first, and Headline() drives
+	// the branch's resolution, the pull request's target and the member
+	// an unattributable failure lands on.
+	//
+	// Only for a cohort, and not because one member is a special case:
+	// at one member there is no order to get wrong, and this is the step
+	// that must not add a note write to the single-subject path.
+	if len(roster) > 1 {
+		if err := e.Ledger(m.Repo).AdoptSubjects(ctx, m.Sha, roster); err != nil {
+			return err
+		}
 	}
-	staged := filepath.Join(stage, filepath.FromSlash(m.RelPort))
-	// mpbb's list-time exclusion, borrowed: evaluation answers
-	// known_fail in a second, before any VM boots — and it answers for
-	// the branch's content, which is what was materialized. The same
-	// session answers use_xcode, so a port that needs a full Xcode is
-	// probed for one before the build starts, not forty minutes in.
-	pre := map[string]verdict.Preflight{}
-	if pf, kerr := e.preflightOn(ctx, staged, release); kerr != nil {
-		// An evaluation that could not run is not evidence that the port
-		// declines anything, so the release goes unlisted and is
-		// scheduled as an ordinary build.
-		fmt.Fprintf(e.Err, "warning: pre-flight evaluation: %v\n", kerr)
-	} else {
-		pre[release.Name] = pf
+	var ports, portdirs []string
+	needsXcode := false
+	for _, mem := range members {
+		if err := m.Repo.Materialize(ctx, m.Sha, mem.Portdir, stage); err != nil {
+			return err
+		}
+		staged := filepath.Join(stage, filepath.FromSlash(mem.Portdir))
+		pre := map[string]verdict.Preflight{}
+		if pf, kerr := e.preflightOn(ctx, staged, release); kerr != nil {
+			// An evaluation that could not run is not evidence that the port
+			// declines anything, so the release goes unlisted and is
+			// scheduled as an ordinary build.
+			fmt.Fprintf(e.Err, "warning: pre-flight evaluation: %v\n", kerr)
+		} else {
+			pre[release.Name] = pf
+		}
+		sched := verdict.SchedulePlatforms(mem.Port, []platform.Release{release}, pre)[0]
+		if sched.Declined != nil {
+			if rerr := e.recordRun(ctx, m.Repo, m.Sha, mem.Port, release.Name, *sched.Declined, sched.Message); rerr != nil {
+				return rerr
+			}
+			continue
+		}
+		needsXcode = needsXcode || sched.NeedsXcode
+		ports = append(ports, mem.Port)
+		portdirs = append(portdirs, staged)
 	}
-	sched := verdict.SchedulePlatforms(portName, []platform.Release{release}, pre)[0]
-	if sched.Declined != nil {
-		return e.recordRun(ctx, m.Repo, m.Sha, portName, release.Name, *sched.Declined, sched.Message)
+	if len(ports) == 0 {
+		// Every member declined this platform before anything booted.
+		// Their verdicts are on the note; there is no environment to ask
+		// for and nothing for one to do.
+		return nil
 	}
+	// The archive is ignored where a pass earned against it would prove
+	// nothing: the change left the port's version and revision where
+	// they were, so the archive that matches them predates it. Read once
+	// and used twice, because the request and the note must say the same
+	// thing about the same member.
+	fromSource := s.fromSourcePorts(ports)
 	job, err := prov.Submit(ctx, verify.Request{
-		Ports:      []string{portName},
-		Portdirs:   []string{staged},
+		Ports:      ports,
+		Portdirs:   portdirs,
 		Platform:   release,
 		Owner:      m.Repo.Root,
 		Test:       s.Test,
-		NeedsXcode: sched.NeedsXcode,
-		// The archive is ignored where a pass earned against it would
-		// prove nothing: the change left the port's version and revision
-		// where they were, so the archive that matches them predates it.
-		FromSource: s.fromSourcePorts(),
+		NeedsXcode: needsXcode,
+		FromSource: fromSource,
 	})
 	if err != nil {
 		// A full provider (two-slot cap), a capability refusal, or a
@@ -214,8 +306,11 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 		// simply unverified. The deferred run is recorded here rather
 		// than left to a later verify — a field run saw an intent-path
 		// refusal show as bare "unverified" with the reason only in
-		// scrollback.
-		return e.queue(ctx, m, s, err)
+		// scrollback. For the members that were going to be built, and
+		// not for the roster: one that declined the platform has its
+		// answer already, and a deferral written over it would claim a
+		// build is coming for a port that said it cannot be built here.
+		return e.queue(ctx, m, s, err, ports)
 	}
 	// One guest and every verdict started in it, in one note. The job
 	// carries what is true of the environment — the test that was asked
@@ -234,8 +329,16 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 			// not carry two answers to when.
 			Claim: &record.Claim{By: claimant(), At: job.Started.UTC()},
 		},
-		[]string{portName},
-		record.Run{State: record.Running, Linted: true, FromSource: s.FromSource},
+		ports,
+		func(port string) record.Run {
+			// Every member is running and every member led with lint,
+			// because that is what one guest was told to do. Whether the
+			// archive was ignored is the member's own: the argv says it of
+			// one port, and a note that said it of the others would vouch
+			// for a build from source that never happened.
+			return record.Run{State: record.Running, Linted: true,
+				FromSource: slices.Contains(fromSource, port)}
+		},
 	); err != nil {
 		// Submit-and-record is a transaction: a job whose note cannot
 		// be persisted is a running VM no settlement can ever find, so
@@ -249,7 +352,10 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 		}
 		return fmt.Errorf("recording the run failed; the worker was released: %w", err)
 	}
-	fmt.Fprintf(e.Err, "verify: submitted %s on %s (job %s); `dockhand status` follows it\n", portName, release.Name, job.ID)
+	// Every member the guest is building, because one guest builds them
+	// all and a line naming only the headline would understate what the
+	// slot is spending an hour on. One name joins to itself.
+	fmt.Fprintf(e.Err, "verify: submitted %s on %s (job %s); `dockhand status` follows it\n", strings.Join(ports, ", "), release.Name, job.ID)
 	if s.Trace {
 		return e.Follow(ctx, m.Repo, m.Sha, portName, release.Name, prov, job)
 	}
@@ -274,12 +380,31 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 // submitted, so there is no guest to describe, and a job record
 // written empty to keep the maps the same length would be the record
 // claiming an environment that does not exist.
-func (e *Engine) queue(ctx context.Context, m *Minted, s submission, cause error) error {
+//
+// One queued run per member of the set handed in, because the deferral
+// is true of all of them: a cohort that recorded only its headline
+// would leave the others reading as unverified for no stated reason,
+// and the drain walks runs — so the members it never wrote would never
+// be retried.
+//
+// The set is the caller's to name and is not re-derived here, because
+// which members a deferral is about depends on where it happened. A
+// machine with no environment at all defers the whole roster; a
+// provider that refused after pre-flight defers only the members that
+// were going to be built, and writing "queued" over a member that has
+// already declined the platform would replace its verdict with a
+// promise, leaving the change reading as still verifying until a drain
+// re-evaluated it.
+func (e *Engine) queue(ctx context.Context, m *Minted, s submission, cause error, ports []string) error {
 	if !s.Release.IsZero() {
-		if rerr := e.recordRun(ctx, m.Repo, m.Sha, s.Port, s.Release.Name, record.Run{
-			State: record.Queued, Detail: cause.Error(), FromSource: s.FromSource,
-		}, ""); rerr != nil {
-			fmt.Fprintf(e.Err, "warning: recording the queued run: %v\n", rerr)
+		fromSource := s.fromSourcePorts(ports)
+		for _, port := range ports {
+			if rerr := e.recordRun(ctx, m.Repo, m.Sha, port, s.Release.Name, record.Run{
+				State: record.Queued, Detail: cause.Error(),
+				FromSource: slices.Contains(fromSource, port),
+			}, ""); rerr != nil {
+				fmt.Fprintf(e.Err, "warning: recording the queued run: %v\n", rerr)
+			}
 		}
 	}
 	return &VerifyDeferredError{Branch: m.Branch, Reason: cause.Error(), Cause: cause}
@@ -323,7 +448,15 @@ func (e *Engine) recordRun(ctx context.Context, repo *git.Repo, sha, portName, r
 // the field records — so a change minted with --no-verify and then
 // verified by hand stops being a change nobody asked a verdict of, and
 // the drain will retry it if this attempt is queued.
-func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip, rel, portName string, r platform.Release, test bool) (started bool, err error) {
+//
+// The members are the change's, headline first, and they are what is
+// submitted: a cohort goes into one environment as one build, so the
+// claim is made once for all of them and the note gains one job with
+// one run per member.
+func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip string, members []Member, r platform.Release, test bool) (started bool, err error) {
+	if len(members) == 0 {
+		return false, fmt.Errorf("verify: %s has no subject to verify", branch)
+	}
 	unlock, err := repo.LockSubmit(ctx, SubmitLockWait)
 	if errors.Is(err, lockfile.ErrHeld) {
 		// The expected contention — a peer's pump booting a guest — is
@@ -334,7 +467,8 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip,
 		return false, err
 	}
 	defer unlock()
-	s := submission{Port: portName, Release: r, Test: test}
+	portName := members[0].Port
+	s := submission{Port: portName, Release: r, Test: test, Members: members}
 	if n, nerr := e.Ledger(repo).Read(ctx, tip); nerr == nil {
 		if run, ok := n.Runs[record.RunKey(portName, r.Name)]; ok {
 			if run.State == record.Running {
@@ -346,14 +480,17 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip,
 		}
 	}
 	e.askVerdict(ctx, repo, tip)
-	err = e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: tip, RelPort: rel}, s)
+	err = e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: tip, RelPort: members[0].Portdir}, s)
 	var vde *VerifyDeferredError
 	if errors.As(err, &vde) {
-		if rerr := e.recordRun(ctx, repo, tip, portName, r.Name, record.Run{
-			State: record.Queued, Detail: vde.Reason, FromSource: s.FromSource,
-		}, fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)); rerr != nil {
-			return false, rerr
-		}
+		// One line and no second write. The deferral is one event, so a
+		// sentence per member would report one full machine as several —
+		// and the runs are already down: queue wrote them, for exactly
+		// the members the deferral was about. Re-recording the headline
+		// here would overwrite whatever the submit had already concluded
+		// about it, which for a headline that declined the platform at
+		// pre-flight means replacing its refusal with a promise.
+		fmt.Fprintf(e.Err, "deferred %s: %s\n", r.Name, vde.Reason)
 		return false, err
 	}
 	return err == nil, err

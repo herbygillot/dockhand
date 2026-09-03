@@ -54,31 +54,78 @@ func (e *Engine) PumpDeferred(ctx context.Context, repo *git.Repo, branches []st
 		// submitted, so no job names its release and Platforms would
 		// answer with the empty set for precisely the records this pass
 		// exists to find.
+		//
+		// One attempt per release per branch, and not one per run. A
+		// cohort's members share a guest, so the first queued run on a
+		// release is a claim on all of them and the submit it makes covers
+		// the rest; deriving the change again for every member would run
+		// the diff and the evaluation N times over to ask for one
+		// environment. A change with one subject has one run per release
+		// and never reaches the guard.
+		tried := map[string]bool{}
 		for _, ref := range runRefs(n) {
-			if ref.Run.State != record.Queued {
+			if ref.Run.State != record.Queued || tried[ref.Release] {
 				continue
 			}
+			tried[ref.Release] = true
 			plat := ref.Release
-			rel := ref.Portdir
-			if rel == "" {
-				// A branch this build did not mint carries no portdir on
-				// its subject; git still knows what it changed.
-				var derr error
-				if rel, derr = ChangedPortdirs(ctx, repo, br, tip); derr != nil {
-					fmt.Fprintf(e.Err, "%s: deferred %s not retried: %v\n", br, plat, derr)
-					continue
-				}
+			members, derr := e.deferredMembers(ctx, repo, br, tip, n, ref)
+			if derr != nil {
+				fmt.Fprintf(e.Err, "%s: deferred %s not retried: %v\n", br, plat, derr)
+				continue
 			}
 			release, ok := e.platformNamed(ctx, plat)
 			if !ok {
 				fmt.Fprintf(e.Err, "%s: deferred %s not retried: no such platform is provisioned\n", br, plat)
 				continue
 			}
-			if e.pumpRun(ctx, repo, br, tip, rel, ref, release) {
+			if e.pumpRun(ctx, repo, br, tip, members, ref, release) {
 				return
 			}
 		}
 	}
+}
+
+// deferredMembers is what a retry of one queued run actually submits.
+//
+// At one subject it is today's answer and reaches nothing new: the
+// run's own port and the portdir its subject recorded, with git
+// standing in for a portdir a hand-made branch's subject never had.
+// The record is asked first precisely so that the ordinary case never
+// runs a diff — and so that the plural cross-check, which can refuse,
+// is never in front of a retry that works today.
+//
+// A change whose record names several portdirs is a cohort, and its
+// queued runs were deferred together in one environment and go back
+// together: the whole member set is derived, and the run this pass was
+// walking is a claim on the cohort rather than on a member. The build
+// order is the derivation's and is not rearranged to suit whichever
+// run the walk reached first — a dependent built before its dependency
+// is not the same build.
+func (e *Engine) deferredMembers(ctx context.Context, repo *git.Repo, branch, tip string, n record.Record, ref runRef) ([]Member, error) {
+	if ref.Portdir != "" && len(n.Portdirs()) < 2 {
+		return []Member{{Port: ref.Port, Portdir: ref.Portdir}}, nil
+	}
+	rels, err := e.ChangedPortdirs(ctx, repo, branch, tip)
+	if err != nil {
+		return nil, err
+	}
+	if len(rels) == 1 {
+		// The note names what this branch verifies — for a minted
+		// branch, the SUBPORT the plan bumped. The portdir's base name is
+		// the parent port, and submitting that would build the untouched
+		// main port and call the branch verified (field-caught on pcre2,
+		// whose portdir is devel/pcre).
+		port := ref.Port
+		if port == "" {
+			port = filepath.Base(rels[0])
+		}
+		return []Member{{Port: port, Portdir: rels[0]}}, nil
+	}
+	// The branch stands in for the target: a pump has nobody at the
+	// keyboard to have named one, so every member is resolved from the
+	// record or from the directory itself.
+	return e.SubjectsOf(ctx, repo, branch, branch, tip, rels)
 }
 
 // pumpRun retries one queued run and reports whether the pass should
@@ -93,7 +140,7 @@ func (e *Engine) PumpDeferred(ctx context.Context, repo *git.Repo, branches []st
 // holder re-reads the note, and a run no longer queued was started or
 // settled by the other claimant — skipped, silently, because that
 // claimant announced it.
-func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip, rel string, was runRef, release platform.Release) (stop bool) {
+func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip string, members []Member, was runRef, release platform.Release) (stop bool) {
 	plat := was.Release
 	// Lock order, checked against every holder at HEAD 82f2f2c. The
 	// submit lock has two takers, this pump and SubmitRelease, and
@@ -136,14 +183,12 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip, rel strin
 		}
 		return false
 	}
-	// The note names what this branch verifies — for a minted
-	// branch, the SUBPORT the plan bumped. The portdir's base
-	// name is the parent port, and submitting that would build
-	// the untouched main port and call the branch verified
-	// (field-caught on pcre2, whose portdir is devel/pcre).
+	// The claim is on the run this pass was walking, whatever else
+	// rides with it: a member already started or settled by a peer is
+	// that peer's, and the re-read is what says so.
 	portName := was.Port
 	if portName == "" {
-		portName = filepath.Base(rel)
+		portName = members[0].Port
 	}
 	run, ok := n.Runs[record.RunKey(portName, plat)]
 	if !ok || run.State != record.Queued {
@@ -154,8 +199,13 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip, rel strin
 	// has no environment to have been asked of — so an unattended retry
 	// submits the install this pass can honestly stand behind, and the
 	// note says so rather than claiming a test nobody ran.
-	s := submission{Port: portName, Release: release, FromSource: run.FromSource}
-	err = e.submit(ctx, &Minted{Repo: repo, Branch: br, Sha: tip, RelPort: rel}, s)
+	//
+	// The headline is the cohort's and not this run's. Every member goes
+	// back into one environment, and the members the walk has not
+	// reached yet will find their runs no longer queued and step over
+	// them.
+	s := submission{Port: members[0].Port, Release: release, FromSource: run.FromSource, Members: members}
+	err = e.submit(ctx, &Minted{Repo: repo, Branch: br, Sha: tip, RelPort: members[0].Portdir}, s)
 	var vde *VerifyDeferredError
 	if errors.As(err, &vde) {
 		if rerr := e.recordRun(ctx, repo, tip, portName, plat, record.Run{

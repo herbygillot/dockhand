@@ -1,0 +1,56 @@
+===> dockhand subject: oniguruma
+--->  Verifying Portfile for oniguruma
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: adding the default universal variant
+--->  Computing dependencies for oniguruma
+DEBUG: oniguruma has no conflicts
+DEBUG: Executing org.macports.main (oniguruma)
+--->  Fetching distfiles for oniguruma
+DEBUG: Executing org.macports.fetch (oniguruma)
+--->  Attempting to fetch onig-6.9.10.tar.gz from https://github.com/kkos/oniguruma/releases/download/v6.9.10/
+--->  Verifying checksums for oniguruma
+DEBUG: Correct (rmd160) checksum for onig-6.9.10.tar.gz
+DEBUG: Correct (sha256) checksum for onig-6.9.10.tar.gz
+--->  Extracting oniguruma
+DEBUG: Executing org.macports.extract (oniguruma)
+--->  Configuring oniguruma
+DEBUG: Executing org.macports.configure (oniguruma)
+--->  Building oniguruma
+DEBUG: Executing org.macports.build (oniguruma)
+--->  Staging oniguruma into destroot
+DEBUG: Executing org.macports.destroot (oniguruma)
+--->  Installing oniguruma @6.9.10_0
+DEBUG: Executing org.macports.install (oniguruma)
+--->  Activating oniguruma @6.9.10_0
+DEBUG: Executing org.macports.activate (oniguruma)
+--->  Cleaning oniguruma
+===> dockhand subject: jq
+--->  Verifying Portfile for jq
+--->  0 errors and 1 warnings found.
+Warning: Line 14 has trailing whitespace before newline
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/sysutils/jq
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: adding the default universal variant
+--->  Computing dependencies for jq
+DEBUG: jq has no conflicts
+DEBUG: Searching for dependency: oniguruma
+DEBUG: Found Dependency: receipt exists for oniguruma
+DEBUG: Executing org.macports.main (jq)
+--->  Fetching distfiles for jq
+DEBUG: Executing org.macports.fetch (jq)
+--->  Verifying checksums for jq
+DEBUG: Correct (sha256) checksum for jq-1.8.0.tar.gz
+--->  Extracting jq
+--->  Configuring jq
+DEBUG: Executing org.macports.configure (jq)
+--->  Building jq
+DEBUG: Executing org.macports.build (jq)
+--->  Staging jq into destroot
+--->  Installing jq @1.8.0_1
+--->  Activating jq @1.8.0_1
+DEBUG: Executing org.macports.activate (jq)
+--->  Cleaning jq

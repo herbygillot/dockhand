@@ -290,7 +290,7 @@ func TestTheReReadLetsAClosureDropAStaleJudgment(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, l.RecordSubmission(ctx, sha, "Testos",
 		record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-1", Started: started}},
-		[]string{"jq"}, record.Run{State: record.Running}))
+		[]string{"jq"}, SameRun(record.Run{State: record.Running})))
 
 	observed, err := l.Read(ctx, sha)
 	require.NoError(t, err)
@@ -301,7 +301,7 @@ func TestTheReReadLetsAClosureDropAStaleJudgment(t *testing.T) {
 	// is a different one.
 	require.NoError(t, l.RecordSubmission(ctx, sha, "Testos",
 		record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-99", Started: started}},
-		[]string{"jq"}, record.Run{State: record.Running}))
+		[]string{"jq"}, SameRun(record.Run{State: record.Running})))
 
 	key := record.RunKey("jq", "Testos")
 	require.NoError(t, l.Update(ctx, sha, func(fresh *record.Record) error {
@@ -328,7 +328,7 @@ func TestTheReReadAppliesAJudgmentTheNoteStillAgreesWith(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, l.RecordSubmission(ctx, sha, "Testos",
 		record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-1", Started: started}},
-		[]string{"jq"}, record.Run{State: record.Running}))
+		[]string{"jq"}, SameRun(record.Run{State: record.Running})))
 
 	observed, err := l.Read(ctx, sha)
 	require.NoError(t, err)

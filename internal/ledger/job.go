@@ -24,20 +24,35 @@ import (
 // run whose platform names no job — and a settlement, a sweep and a
 // release check each read one of those as a fault.
 //
-// Every port gets the same run, which is what a submission actually is:
-// N subjects go into one environment behind one job, all of them
-// running, and they diverge only when the log comes back and says which
-// one broke. Platform is stamped from the release, as in RecordRun.
-func (l *Ledger) RecordSubmission(ctx context.Context, sha, release string, job record.JobRecord, ports []string, run record.Run) error {
+// The run is asked for per port rather than handed over once. What a
+// submission asserts is shared — N subjects go into one environment
+// behind one job, all of them running, and they diverge only when the
+// log comes back and says which one broke — but not everything a run
+// carries is a verdict. Whether a member's binary archive was ignored
+// is a property of the argv THAT MEMBER was handed, and one template
+// copied across the roster would have the note claim of a dependent
+// something the guest was never told to do. Platform is stamped from
+// the release, as in RecordRun.
+func (l *Ledger) RecordSubmission(ctx context.Context, sha, release string, job record.JobRecord, ports []string, run func(port string) record.Run) error {
 	return l.Update(ctx, sha, func(r *record.Record) error {
-		run.Platform = release
 		r.Jobs[release] = job
 		for _, port := range ports {
 			adoptSubject(r, port)
-			r.Runs[record.RunKey(port, release)] = run
+			started := run(port)
+			started.Platform = release
+			r.Runs[record.RunKey(port, release)] = started
 		}
 		return nil
 	})
+}
+
+// SameRun states one run for every subject: the caller saying it has
+// nothing to tell the members apart by. It is spelled out rather than
+// left as an overload, so a submission that DOES differ per member —
+// the archive one of them must ignore — cannot be written by accident
+// as one that does not.
+func SameRun(run record.Run) func(string) record.Run {
+	return func(string) record.Run { return run }
 }
 
 // ReleaseJob takes the sole right to hand one guest back, and answers

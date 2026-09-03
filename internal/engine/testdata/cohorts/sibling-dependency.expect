@@ -1,0 +1,25 @@
+# The headline is the dependent this time, so the runner announces jq
+# first and jq's install pulls its sibling out of the staged overlay
+# and builds it as an ordinary dependency. oniguruma breaks there,
+# under jq's marker, having never been announced as a subject at all.
+#
+# This is the case that decides whether the blame reader is looking at
+# the change's roster or only at the port whose section it is reading.
+# A reader asking "is the port named here the one this section belongs
+# to" gets no for jq, calls oniguruma a dependency, and blocks jq on a
+# stranger — handing back the environment the failure was supposed to
+# keep, and recording nothing at all against the member that actually
+# broke. The roster answers instead: oniguruma is one of us, so this is
+# our failure, and the guest stays.
+#
+# It is the marked twin of TestABlockedSubjectBlamesItsSibling, which
+# drives the same shape through a log with no markers in it.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: jq oniguruma
+outcome: failed
+jq.state: blocked
+jq.blamed: oniguruma
+jq.detail: oniguruma fails to build; this member is untested
+oniguruma.state: failed
+oniguruma.detail: Failed to build oniguruma: command execution failed

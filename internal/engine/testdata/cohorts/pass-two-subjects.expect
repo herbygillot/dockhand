@@ -1,0 +1,19 @@
+# A clean cohort: the library the change is about, then the dependent
+# it revision-bumped, both built inside one guest and both green. The
+# guest's aggregate state file says passed and every member's own
+# section says so too.
+#
+# The two lint lines are the point of this file. oniguruma's section
+# reports no warnings and jq's reports one, so a reader that took the
+# whole log rather than each member's own section would record "clean"
+# for both — the first summary in the file — and jq's warning would
+# vanish from a PR body that vouches for it. Nothing else here
+# distinguishes a split log from an unsplit one.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: oniguruma jq
+outcome: passed
+oniguruma.state: passed
+oniguruma.lint: clean
+jq.state: passed
+jq.lint: 1 warning

@@ -238,7 +238,8 @@ func TestPumpNeverDrainsABranchDestination(t *testing.T) {
 
 	// The same record, once somebody has asked: `dockhand verify` says a
 	// verdict is wanted, and the drain agrees from then on.
-	_, err := eng.SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha, "sysutils/jq", "jq",
+	_, err := eng.SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha,
+		[]Member{{Port: "jq", Portdir: "sysutils/jq"}},
 		fake.Capabilities().Platforms[0], false)
 	require.NoError(t, err)
 	again, err := ledger.Open(repo).Read(ctx, sha)

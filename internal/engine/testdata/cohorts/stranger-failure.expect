@@ -1,0 +1,25 @@
+# A port outside the change breaks, in the middle of a cohort that had
+# already proven half of itself. oniguruma built and is passed on its
+# own evidence; jq was reached, and what broke under it was pkgconfig,
+# which this branch never touched.
+#
+# jq is blocked with the stranger named in its detail and nothing in
+# its blamed field. Blamed names a SUBJECT — the sibling whose failure
+# a member inherited — and a port outside the change is not one; a
+# reader that found pkgconfig there would go looking for it among the
+# change's own members and find nothing.
+#
+# This is the shape that shows plurality has a consequence the single
+# case never had: the record now holds a pass and a block and no
+# failure at all, which is Record.Promotable's "at least one passed and
+# none failed". The promote gate is the schema's and this corpus only
+# states what the settle wrote, but the combination is new and worth
+# seeing here.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: oniguruma jq
+outcome: failed
+oniguruma.state: passed
+oniguruma.lint: clean
+jq.state: blocked
+jq.detail: dependency pkgconfig fails to build; the change itself is untested

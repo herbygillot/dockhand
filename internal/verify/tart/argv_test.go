@@ -1,6 +1,7 @@
 package tart
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,16 +72,28 @@ func TestArgvFilesCarryVariantsAndSource(t *testing.T) {
 	assert.Equal(t, "-d\n-N\n-k\ntest\njq\n-doc\n+ssl\n", files[2].Body)
 }
 
-// One environment builds one port. The request can carry a cohort
-// because the shape the record needs already exists, but nothing builds
-// it yet: a second name reaching port(1) would be a build no caller
-// asked for. The day that changes, this test is what has to change with
-// it, deliberately.
-func TestArgvFilesBuildOnlyTheHeadline(t *testing.T) {
-	files := argvFiles(verify.Request{Ports: []string{"jq", "oniguruma"}})
+// One environment now builds the cohort it was given, and this test is
+// the one that changed to say so — it was written predicting its own
+// replacement, on the day a second name reaching port(1) stopped being a
+// build no caller asked for.
+//
+// What it asserts now is the boundary rather than the refusal: a request
+// naming one port still produces exactly the files a request naming one
+// port has always produced, and a second name is the only thing that
+// changes anything. The cohort's own shape is guest_test.go's business;
+// this file's is that one subject did not move.
+func TestASecondPortIsTheOnlyThingThatMovesTheHeadlinesFiles(t *testing.T) {
+	solo := argvFiles(verify.Request{Ports: []string{"jq"}})
+	require.Len(t, solo, 2)
+	assert.Equal(t, "/tmp/dockhand-verify/argv", solo[0].Dest())
+	assert.Equal(t, "-d\n-N\ninstall\njq\n", solo[0].Body)
 
-	for _, f := range files {
-		assert.NotContains(t, f.Body, "oniguruma", "%s named a port nobody asked to build", f.Name)
+	cohort := argvFiles(verify.Request{Ports: []string{"jq", "oniguruma"}})
+	assert.NotEqual(t, solo[0].Dest(), cohort[0].Dest(),
+		"a cohort names its files by position, so no member owns the bare name")
+	var named bool
+	for _, f := range cohort {
+		named = named || strings.Contains(f.Body, "oniguruma")
 	}
-	assert.Equal(t, "-d\n-N\ninstall\njq\n", files[0].Body)
+	assert.True(t, named, "the second port is built now, not carried")
 }

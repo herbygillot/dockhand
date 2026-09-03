@@ -135,6 +135,35 @@ func (l *Ledger) RecordRun(ctx context.Context, sha, port, release string, run r
 	})
 }
 
+// AdoptSubjects names a change's whole roster among the record's
+// subjects, in build order, before anything is concluded about any of
+// them.
+//
+// Order is the reason it exists. Subjects[0] is the headline — the port
+// the branch is named for, the one a refusal names, the one a later
+// verify resolves the branch to — and the subjects of a record nobody
+// minted are built by adoption, in whatever order the calls happen to
+// arrive. A submission that recorded one member's verdict before
+// stating the roster would put that member at the head of the change:
+// a pre-flight refusal, of all things, renaming what the change is
+// about.
+//
+// It writes nothing when the record already names every port, which is
+// every change dockhand minted. A note object per submission that had
+// nothing to add is noise in the ref and a difference a reader can see.
+func (l *Ledger) AdoptSubjects(ctx context.Context, sha string, ports []string) error {
+	return l.Update(ctx, sha, func(r *record.Record) error {
+		was := len(r.Subjects)
+		for _, port := range ports {
+			adoptSubject(r, port)
+		}
+		if len(r.Subjects) == was {
+			return ErrUnchanged
+		}
+		return nil
+	})
+}
+
 // adoptSubject names a port among the record's subjects when nothing
 // already does.
 //

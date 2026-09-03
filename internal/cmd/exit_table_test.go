@@ -770,8 +770,16 @@ func exitTable(t *testing.T) []exitRow {
 				noteErr, "fake-1", errors.New("tart delete: no such vm"), "fake-1")},
 		exitRow{name: "submit-and-record compensation: worker released (submit)",
 			err: fmt.Errorf("recording the run failed; the worker was released: %w", noteErr)},
-		exitRow{name: "verify: branch changes several portdirs (branchPortdir)",
-			err: fmt.Errorf("verify: %s changes %d portdirs against %s; one at a time for now", branch, 2, tip)},
+		// "one at a time for now" is gone: several portdirs are a cohort
+		// now, and the two refusals that replace it are about a branch
+		// that changes nothing and a branch whose record and whose diff
+		// disagree. Both are band 1 — the same band the retired sentence
+		// landed in — because neither is a destination refusing.
+		exitRow{name: "verify: branch changes no portdir (ChangedPortdirs)",
+			err: fmt.Errorf("verify: %s changes no portdir against %s; there is nothing to verify", branch, tip)},
+		exitRow{name: "verify: the record and the diff disagree (ChangedPortdirs)",
+			err: fmt.Errorf("verify: %s changes %s against %s, but its record names %s; the two disagree, so nothing is staged — `dockhand discard %s` and re-mint, or verify the portdirs by hand",
+				branch, "sysutils/jq, textproc/oniguruma", tip, "sysutils/jq", branch)},
 		// The `lifecycle:` prefix outlived the package that gave it: the
 		// code moved to the engine and the sentence did not, because the
 		// words are what a user reads and a move does not get to reword

@@ -31,7 +31,7 @@ func submitted(t *testing.T, l *Ledger, sha, plat, jobID string) {
 			Handle: "dockhand-worker-1",
 			Test:   true,
 		},
-		cohort, record.Run{State: record.Running}))
+		cohort, SameRun(record.Run{State: record.Running})))
 }
 
 func TestRecordSubmissionWritesOneGuestAndAVerdictPerSubject(t *testing.T) {

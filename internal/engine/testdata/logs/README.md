@@ -10,6 +10,12 @@ through `SettleRuns`, with the `verifytest` fake standing in for the
 guest. A log dropped here is picked up with no code change; a log
 without a sidecar fails the sweep by name.
 
+Every log here has ONE subject in it, which is what a change with one
+member produces and what every log in the field is. A log carrying
+several members' output is a different shape with a different sidecar,
+and it lives next door in `testdata/cohorts` — a log with no subject
+marker in it belongs here.
+
 A guest log is `/tmp/dockhand-verify/log` in the worker: the combined
 stdout and stderr of `port lint <port>`, then `port -d -N -k test
 <port>` when the run asked for tests, then `port -d -N [-s] install

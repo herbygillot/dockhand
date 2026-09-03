@@ -83,8 +83,25 @@ var failedPortRE = regexp.MustCompile(`^Failed to [a-z]+ ([A-Za-z0-9._+-]+):`)
 // regexp is anchored, so feeding it anything else silently matches
 // nothing.
 func DependencyFailure(summary, port string) (string, bool) {
+	name, ok := failedPort(summary)
+	if !ok || name == port {
+		return "", false
+	}
+	return name, true
+}
+
+// failedPort is the port a failure summary blames, whoever it turns out
+// to be: DependencyFailure without the question of whether that is the
+// port under test.
+//
+// A cohort has to ask that question of every member rather than of one,
+// and it cannot ask it by calling DependencyFailure N times: a summary
+// naming a sibling would come back "yes, a dependency" from every
+// member except the sibling itself, which is the same answer a stranger
+// gives and means the opposite thing.
+func failedPort(summary string) (string, bool) {
 	m := failedPortRE.FindStringSubmatch(summary)
-	if m == nil || m[1] == port {
+	if m == nil {
 		return "", false
 	}
 	return m[1], true
@@ -122,4 +139,32 @@ func BlockedDetail(dep string, nomaintainer bool) string {
 		who = " (nomaintainer)"
 	}
 	return fmt.Sprintf("dependency %s%s fails to build; the change itself is untested", dep, who)
+}
+
+// BlockedByMember names the sibling that stopped a cohort before this
+// member was reached.
+//
+// It is a second sentence rather than BlockedDetail with a different
+// name in it, because BlockedDetail ends "the change itself is
+// untested" and that is a true thing to say about a stranger breaking
+// and a false one about a sibling. A cohort's sibling IS the change:
+// part of it was built, part of it broke, and the part that never ran
+// is what this sentence is about.
+//
+// A decline is worded apart for the same reason. A member that refuses
+// the platform stopped the cohort without failing at anything, and a
+// reader told it "fails to build" would go looking for a breakage that
+// is not there.
+//
+// What it says of the blocked member is "untested" and not "never
+// built", because the two are different and only one of them is always
+// true: the member the runner gave up inside had started, and the
+// members behind it in the queue had not, and both of them come out of
+// a cohort with nothing proven about them.
+func BlockedByMember(member string, declined bool) string {
+	what := "fails to build"
+	if declined {
+		what = "declines this platform"
+	}
+	return fmt.Sprintf("%s %s; this member is untested", member, what)
 }

@@ -1,0 +1,20 @@
+# A runner fault, and the one shape in this corpus that no correct
+# guest can produce: the aggregate state file says the whole job
+# passed, and the log announces only one of the two members. The other
+# was never built, and there is no output anywhere that says otherwise.
+#
+# It is here because of what the alternative would authorize. A
+# promotion sums the passes over every member, so a member defaulted to
+# passed on the strength of a passing job would put a port into a pull
+# request on evidence that does not exist — the one way a cohort can be
+# published on a build nobody ran. Errored instead: it is not a finding
+# about jq, so the guest goes back, and the note says plainly that the
+# guest had nothing to say about it.
+# SYNTHESIZED to exercise the guard; no runner writes this: see
+# README.md.
+members: oniguruma jq
+outcome: passed
+oniguruma.state: passed
+oniguruma.lint: clean
+jq.state: errored
+jq.detail: the guest reported no output for this subject

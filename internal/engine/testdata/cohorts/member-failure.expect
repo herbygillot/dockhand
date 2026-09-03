@@ -1,0 +1,18 @@
+# The headline breaks and the cohort stops there. jq's marker is never
+# printed and jq's state file is never written, because the runner
+# breaks at the first member that fails — so jq's silence in this file
+# is not an absence of news, it is the news: the port was never built.
+#
+# That is the difference this corpus exists to hold. oniguruma is
+# failed, which is a finding about the change, and its environment is
+# kept for somebody to enter. jq is blocked and says whose fault that
+# is, which is not a finding about jq at all.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: oniguruma jq
+outcome: failed
+oniguruma.state: failed
+oniguruma.detail: Failed to build oniguruma: command execution failed
+jq.state: blocked
+jq.blamed: oniguruma
+jq.detail: oniguruma fails to build; this member is untested

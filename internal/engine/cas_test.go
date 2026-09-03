@@ -128,7 +128,7 @@ func TestSettleDropsAPassOverAJobThatCameBack(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, ledger.Open(repo).RecordSubmission(ctx, sha, "Testos",
 				record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-99"}},
-				[]string{"jq"}, record.Run{State: record.Running}))
+				[]string{"jq"}, ledger.SameRun(record.Run{State: record.Running})))
 		},
 	}
 	eng := testState(t, repo, nil)

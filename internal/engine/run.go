@@ -7,6 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -164,10 +165,12 @@ func (e *Engine) markVerified(ctx context.Context, m *Minted, p *plan.Plan, o Po
 	if err := e.Ledger(m.Repo).RecordSubmission(ctx, m.Sha, release.Name,
 		record.JobRecord{Job: o.GateProof.Job, Test: o.Test, Released: true},
 		[]string{p.Port},
-		record.Run{
+		// One port, so there is nothing to tell members apart by: the
+		// gate proved this one and the run says what it proved.
+		ledger.SameRun(record.Run{
 			State: record.Passed, Linted: true, Lint: o.GateProof.Lint,
 			Evidence: o.GateProof.Evidence, FromSource: o.fromSource(p.Intent),
-		}); err != nil {
+		})); err != nil {
 		return err
 	}
 	fmt.Fprintf(e.Err, "verified before minting; the tip is recorded as passed on %s\n", release.Name)

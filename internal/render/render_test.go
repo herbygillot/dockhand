@@ -163,3 +163,46 @@ func TestSummarizeRecordCompressesTheSetToOneClause(t *testing.T) {
 	}, nil)
 	assert.Equal(t, "passed (Sequoia), failed (Sonoma)", SummarizeRecord(n))
 }
+
+// Two platforms and two members: four verdicts, two environments. The
+// walk is subject-major, so a reader meets the change the way the
+// commit series is written — the headline and everywhere it was tried,
+// then the member it brought with it — and each platform's kept guest
+// is named exactly once, beside the failure that kept it.
+func TestRecordLinesNameEverySubjectOnEveryPlatformAndEachGuestOnce(t *testing.T) {
+	n := record.Record{
+		Subjects: []record.Subject{{Port: "libwidget"}, {Port: "widget-tools"}},
+		Jobs: map[string]record.JobRecord{
+			"Sequoia": {Job: verify.Job{ID: "fake-1"}, Handle: "dockhand-worker-seq"},
+			"Sonoma":  {Job: verify.Job{ID: "fake-2"}},
+		},
+		Runs: map[string]record.Run{
+			record.RunKey("libwidget", "Sequoia"): {State: record.Failed, Platform: "Sequoia",
+				Detail: "Failed to build libwidget"},
+			record.RunKey("libwidget", "Sonoma"): {State: record.Passed, Platform: "Sonoma"},
+			record.RunKey("widget-tools", "Sequoia"): {State: record.Blocked, Platform: "Sequoia",
+				Detail: "libwidget failed first"},
+			record.RunKey("widget-tools", "Sonoma"): {State: record.Passed, Platform: "Sonoma"},
+		},
+	}
+	assert.Equal(t, []string{
+		"libwidget: failed (Sequoia) — environment kept: dockhand-worker-seq — Failed to build libwidget",
+		"libwidget: passed (Sonoma)",
+		"widget-tools: blocked (Sequoia) — libwidget failed first",
+		"widget-tools: passed (Sonoma)",
+	}, RecordLines(n, time.Now()))
+}
+
+// And the same record with one subject names nobody: the branch on the
+// line above is already the subject's name, so a cohort's attribution
+// would be a word every single change had to read past.
+func TestRecordLinesLeaveOneSubjectUnnamed(t *testing.T) {
+	n := record.Record{
+		Subjects: []record.Subject{{Port: "libwidget"}},
+		Jobs:     map[string]record.JobRecord{"Sonoma": {Job: verify.Job{ID: "fake-2"}}},
+		Runs: map[string]record.Run{
+			record.RunKey("libwidget", "Sonoma"): {State: record.Passed, Platform: "Sonoma"},
+		},
+	}
+	assert.Equal(t, []string{"passed (Sonoma)"}, RecordLines(n, time.Now()))
+}

@@ -837,12 +837,16 @@ func TestPRBodyNamesEachMemberOfACohortOnce(t *testing.T) {
 }
 
 // A cohort member that was never built is named on a verified body too.
-// Promotable() is a pass somewhere and no failure anywhere, which a
-// cohort whose second subject is merely Blocked satisfies — so the
-// suppression that keeps this promotion's own cancellations out of a
-// verified body would have published "verified with dockhand" over a
-// port nothing built, with the blamed sentence that says so suppressed
-// along with it.
+//
+// The gate refuses this shape now — Promotable answers for every
+// subject, and a member with no pass anywhere has nothing behind it —
+// so what this pins is the second line of the same defence. A body is
+// rendered from whatever record it is handed, including one whose
+// subjects nothing named (a note the gate answers from the runs alone),
+// and the suppression that keeps this promotion's own cancellations out
+// of a verified body must not take the blamed sentence with it: that
+// would publish "verified with dockhand" over a port nothing built and
+// delete the line saying so.
 func TestPRBodyNamesACohortMemberThatNeverBuilt(t *testing.T) {
 	n := record.Record{
 		Sha:      "0123456789abcdef0123",
@@ -854,7 +858,8 @@ func TestPRBodyNamesACohortMemberThatNeverBuilt(t *testing.T) {
 				Blamed: "libwidget"},
 		},
 	}
-	require.True(t, n.Promotable(), "the shape this test is about is one promote treats as verified")
+	require.False(t, n.Promotable(),
+		"a member with no pass anywhere is what the gate now refuses; this body is rendered past it")
 	body := PRBody(n, true, vouched())
 	assert.Contains(t, body,
 		"  — libwidget on Sequoia: built in a pristine VM.\n"+

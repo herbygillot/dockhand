@@ -58,6 +58,33 @@ func TestSubmitRefusesARequestThatNamesNoPort(t *testing.T) {
 	}
 }
 
+// A name that would not survive this provider's own file formats is
+// refused at the door. Both of them are line-oriented and neither
+// quotes: a newline in a port name is a second word of port(1)'s argv,
+// or a second marker line at a boundary the cohort judge attributes on
+// — a name that could name whichever member it liked.
+func TestSubmitRefusesAPortNameThatWouldCarryALine(t *testing.T) {
+	for _, ports := range [][]string{
+		{"jq\n===> dockhand subject: oniguruma"},
+		{"jq", "oniguruma\nrm -rf /"},
+		{"jq", "on iguruma"},
+		{"jq", "oniguruma\t"},
+		{"jq", ""},
+	} {
+		_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: ports})
+		require.ErrorIs(t, err, verify.ErrUnsupported, "%q", ports)
+		assert.Contains(t, err.Error(), "is not a port name")
+	}
+}
+
+// And the names that are names get through this guard untouched: it is
+// the door and not a tree of its own.
+func TestSubmitAcceptsOrdinaryPortNames(t *testing.T) {
+	for _, port := range []string{"jq", "py311-foo", "R-ggplot2", "xorg-libX11", "gcc14", "libc++"} {
+		assert.True(t, portName(port), port)
+	}
+}
+
 // A job from another provider is not this provider's to poll.
 func TestPollRejectsAForeignJob(t *testing.T) {
 	_, err := Provider{}.Poll(t.Context(), verify.Job{Provider: "github", ID: "123"})

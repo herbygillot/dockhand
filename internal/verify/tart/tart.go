@@ -25,11 +25,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/build"
+	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tool"
@@ -253,6 +256,11 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	if len(req.Ports) == 0 || req.Ports[0] == "" {
 		return verify.Job{}, fmt.Errorf("%w: no port named", verify.ErrUnsupported)
 	}
+	for _, port := range req.Ports {
+		if !portName(port) {
+			return verify.Job{}, fmt.Errorf("%w: %q is not a port name", verify.ErrUnsupported, port)
+		}
+	}
 	base, err := p.baseFor(req.Platform)
 	if err != nil {
 		return verify.Job{}, err
@@ -335,6 +343,34 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		return fail(err)
 	}
 	return job, nil
+}
+
+// portName reports whether a name can be carried into the guest as
+// itself.
+//
+// Two of this provider's file formats are line-oriented and neither
+// quotes: an argv file becomes one word of port(1)'s argv per line, and
+// a subject marker becomes one line of the log that the judge splits a
+// cohort on. So a name carrying a newline is not one port with an odd
+// name — it is two argv words, or a second marker line naming whatever
+// the rest of it says, at a boundary the attribution then trusts. The
+// refusal is here, at the door, because everything past it treats these
+// names as data that cannot bite.
+//
+// Whitespace and the control characters are what it refuses, rather
+// than an allowed alphabet: MacPorts port names are a narrow class in
+// practice, but the guest is what defines them and this provider is not
+// the place to invent a stricter tree.
+func portName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if r <= ' ' || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // hasXcode answers whether this environment can meet use_xcode, through
@@ -449,22 +485,129 @@ func (p Provider) stage(ctx context.Context, vm string, req verify.Request) erro
 // runner drives the build and records its own outcome. The argv it runs
 // is read from a file rather than interpolated, so a port or variant
 // name is data to this script and never syntax.
-func runner(portCmd string) string {
+//
+// These bytes are frozen. This script is one argv word the guest
+// executes, so a change to it is a change to the build itself, and a
+// single-subject verification must run today what it ran yesterday. The
+// cohort is a second script rather than a generalization of this one
+// (cohortRunner): a loop that could serve both would have to differ in
+// its own structure at one subject, and there is no way to write that
+// difference without moving these bytes. guest_test.go pins them.
+func runner(portCmd string) string { return runnerAt(stateDir, portCmd) }
+
+// runnerAt is runner with the state directory named rather than assumed,
+// so the script can be run for real against a scratch directory in a
+// test. At stateDir it produces runner's exact bytes, and that is the
+// claim the golden makes.
+func runnerAt(dir, portCmd string) string {
 	return `set -u
-mkdir -p ` + stateDir + `
-echo running > ` + stateDir + `/state
-: > ` + stateDir + `/log
+mkdir -p ` + dir + `
+echo running > ` + dir + `/state
+: > ` + dir + `/log
 nohup /bin/sh -c '
   ok=yes
-  for f in ` + stateDir + `/argv.lint ` + stateDir + `/argv.test ` + stateDir + `/argv; do
+  for f in ` + dir + `/argv.lint ` + dir + `/argv.test ` + dir + `/argv; do
     [ -f "$f" ] || continue
     set --
     while IFS= read -r a; do set -- "$@" "$a"; done < "$f"
-    sudo -n ` + portCmd + ` "$@" >> ` + stateDir + `/log 2>&1 || { ok=no; break; }
+    sudo -n ` + portCmd + ` "$@" >> ` + dir + `/log 2>&1 || { ok=no; break; }
   done
   if [ "$ok" = yes ]
-  then echo passed > ` + stateDir + `/state
-  else echo failed > ` + stateDir + `/state
+  then echo passed > ` + dir + `/state
+  else echo failed > ` + dir + `/state
+  fi
+' >/dev/null 2>&1 &
+`
+}
+
+// cohortRunner drives a cohort: n subjects in one environment, each
+// linted, optionally tested, then installed, in the order launch wrote
+// them. It is reached only when a request names more than one port.
+//
+// The differences from the single-subject runner are all consequences of
+// there being members to tell apart:
+//
+// The marker line comes out of a file rather than an echo. The runner
+// must announce whose output follows, and the announcement carries a
+// port name — so the name arrives the way every other name arrives, as
+// the contents of a file written over stdin, and never as a word this
+// script interpolates. Nothing here is syntax that a port could have
+// written.
+//
+// A state file per subject, written by rename rather than by truncation.
+// The guest's own record is the only thing that survives dockhand
+// exiting (D17), and at n subjects the aggregate file says only where
+// the JOB got to — so these say where each member did. Rename because
+// `echo x > f` is truncate-then-write: a reader that lands in that
+// window sees an empty file, and an empty file is how this protocol
+// spells "the runner never started". One such window per job was
+// already a hazard; n of them is n times the same wrong answer.
+//
+// Nothing reads them yet, and that is worth stating plainly rather than
+// leaving a reader to infer a durability guarantee that is only half
+// built. Poll reads the aggregate state and the judge attributes from
+// the log's markers, so today a guest that died mid-cohort still polls
+// as running forever. Two readers are waiting on these files: a
+// reconciler that could tell "died after member 1" from "still
+// building", and the judge, for which a state file is the one piece of
+// corroboration a build under test cannot write into the log. Whether
+// the second is worth having — the guest log is written by the change
+// under test, and a maintainer's own bump is not hostile — is a ruling
+// this step deliberately leaves to the maintainer.
+//
+// The break is kept, and it is what makes a later member's silence
+// meaningful. A cohort stops at its first failure: the members after it
+// leave no marker in the log and no state file, which is exactly the
+// difference between a port that was disproven and one that was never
+// reached.
+//
+// The link proof runs only where a caller asked for a manifest, and only
+// for a dependent — the members after the headline. What it proves is
+// what those dependents actually bound to, which is a question only the
+// environment holding the whole installation can answer. Its read of
+// port(1)'s output drops the IFS= that every other read here keeps,
+// deliberately: `port contents` indents its paths, and a path read with
+// its indent intact is a file that does not exist.
+func cohortRunner(portCmd string, n int) string { return cohortRunnerAt(stateDir, portCmd, n) }
+
+func cohortRunnerAt(dir, portCmd string, n int) string {
+	return `set -u
+mkdir -p ` + dir + `
+echo running > ` + dir + `/.state && mv -f ` + dir + `/.state ` + dir + `/state
+: > ` + dir + `/log
+nohup /bin/sh -c '
+  d=` + dir + `
+  n=` + strconv.Itoa(n) + `
+  ok=yes
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    [ -f "$d/subject.$i" ] && cat "$d/subject.$i" >> "$d/log"
+    member=yes
+    for f in "$d/argv.$i.lint" "$d/argv.$i.test" "$d/argv.$i"; do
+      [ -f "$f" ] || continue
+      set --
+      while IFS= read -r a; do set -- "$@" "$a"; done < "$f"
+      sudo -n ` + portCmd + ` "$@" >> "$d/log" 2>&1 || { member=no; break; }
+    done
+    if [ "$member" = yes ] && [ -f "$d/links.$i" ]; then
+      set --
+      while IFS= read -r a; do set -- "$@" "$a"; done < "$d/links.$i"
+      sudo -n ` + portCmd + ` "$@" 2>/dev/null | while read -r p; do
+        [ -f "$p" ] || continue
+        /usr/bin/otool -L "$p" 2>/dev/null
+      done >> "$d/log"
+    fi
+    if [ "$member" = yes ]
+    then echo passed > "$d/.state.$i" && mv -f "$d/.state.$i" "$d/state.$i"
+    else echo failed > "$d/.state.$i" && mv -f "$d/.state.$i" "$d/state.$i"
+         ok=no
+         break
+    fi
+    i=$((i+1))
+  done
+  if [ "$ok" = yes ]
+  then echo passed > "$d/.state" && mv -f "$d/.state" "$d/state"
+  else echo failed > "$d/.state" && mv -f "$d/.state" "$d/state"
   fi
 ' >/dev/null 2>&1 &
 `
@@ -492,22 +635,36 @@ func (f argvFile) Dest() string { return stateDir + "/" + f.Name }
 // It is a pure function of the request, separate from the writing, so
 // that what a guest would be asked to run can be asserted without
 // booting one. That matters more than the tidiness: this is the whole
-// instruction set, and nothing else in the tree pins it.
+// instruction set, and the tests that pin it are the only thing standing
+// between a refactor and a build nobody in the field has run.
 //
-// Only the headline port is built. The rest of Ports ride along in the
-// request shape for the cohort that will be built together later, and
-// nothing here reads them: one environment builds one port today, and
-// writing a second name into these files would ask port(1) for
-// something no caller has requested.
+// A request naming one port produces exactly the files it always has,
+// under exactly the names it always used, and nothing else: no marker,
+// no per-subject state, no index in a filename. That is not a
+// convenience for the reader but the whole compatibility claim — one
+// subject is what every caller in the tree asks for, and a guest that
+// received one extra byte would be running a build nobody has verified.
+// A cohort is therefore a separate shape, reached only when there is
+// more than one port to build.
 //
 // argv.test is absent rather than empty when no test was asked for. The
 // runner skips a file that is not there, so absence is the control
 // flow; an empty file would run port(1) with no arguments at all.
 func argvFiles(req verify.Request) []argvFile {
+	if len(req.Ports) < 2 {
+		return soloArgvFiles(req)
+	}
+	return cohortArgvFiles(req)
+}
+
+// soloArgvFiles is the single-subject instruction set, frozen: the three
+// names, the two orders, and the bodies a one-port request has always
+// produced.
+func soloArgvFiles(req verify.Request) []argvFile {
 	port := req.Ports[0]
 	files := []argvFile{
 		{Name: "argv", What: "the argv",
-			Body: argvBody(build.InstallArgs(port, req.Variants, len(req.FromSource) > 0))},
+			Body: argvBody(build.InstallArgs(port, req.Variants, fromSource(req, port)))},
 		{Name: "argv.lint", What: "the lint argv",
 			Body: argvBody(build.LintArgs(port))},
 	}
@@ -516,6 +673,100 @@ func argvFiles(req verify.Request) []argvFile {
 			Body: argvBody(build.TestArgs(port, req.Variants))})
 	}
 	return files
+}
+
+// cohortArgvFiles is the instruction set for several subjects in one
+// environment: the same three files per member, plus the marker that
+// says whose output follows, plus the link proof where one was asked
+// for.
+//
+// Every name is built from the member's position and never from its
+// name. A file's name is the one part of this protocol that does reach
+// guest shell syntax — launch writes each one with `cat > <dest>` — so a
+// scheme that spelled the port into the path would put a string the
+// change under test controls into a command, and would break outright on
+// any port name carrying a character a shell reads. The port names
+// travel where every other name travels: inside the files.
+//
+// The subjects are written in the request's order, which is the order
+// they are to be built, headline first.
+func cohortArgvFiles(req verify.Request) []argvFile {
+	files := make([]argvFile, 0, 5*len(req.Ports))
+	for i, port := range req.Ports {
+		// The variant frame is the request's, and a request is about its
+		// headline: a cohort's other members are the dependents that ride
+		// along, and handing +ssl to one that declares no such variant is
+		// a refusal from port(1) rather than a build. A member that needs
+		// its own frame needs a request that can carry one, which this
+		// shape does not have and no caller has asked for.
+		var variants info.VariantSet
+		if i == 0 {
+			variants = req.Variants
+		}
+		files = append(files,
+			argvFile{
+				Name: fmt.Sprintf("subject.%d", i),
+				What: "the subject marker for " + port,
+				// The runner cats this into the log; the newline is the
+				// runner's to deliver and SubjectMarker does not carry one.
+				Body: verify.SubjectMarker(port) + "\n",
+			},
+			argvFile{
+				Name: fmt.Sprintf("argv.%d", i),
+				What: "the argv for " + port,
+				Body: argvBody(build.InstallArgs(port, variants, fromSource(req, port))),
+			},
+			argvFile{
+				Name: fmt.Sprintf("argv.%d.lint", i),
+				What: "the lint argv for " + port,
+				Body: argvBody(build.LintArgs(port)),
+			},
+		)
+		if req.Test {
+			files = append(files, argvFile{
+				Name: fmt.Sprintf("argv.%d.test", i),
+				What: "the test argv for " + port,
+				Body: argvBody(build.TestArgs(port, variants)),
+			})
+		}
+		// The headline is what the change is about; the proof a caller
+		// wants is that the members standing on it still bind to what it
+		// now publishes. Asking the headline what it links against would
+		// answer a question nobody posed.
+		if req.Manifest && i > 0 {
+			files = append(files, argvFile{
+				Name: fmt.Sprintf("links.%d", i),
+				What: "the link proof argv for " + port,
+				Body: argvBody(contentsArgs(port)),
+			})
+		}
+	}
+	return files
+}
+
+// contentsArgs asks port(1) what an installed port laid down, one path
+// per line and no header. It is spelled here rather than in the build
+// package because nothing outside this provider's link proof asks the
+// question yet, and a shared helper with one caller is a guess about the
+// second one.
+func contentsArgs(port string) []string { return []string{"-q", "contents", port} }
+
+// fromSource reports whether this member must ignore its binary archive.
+//
+// It asks about the member, not about the list. -s is a property of the
+// port being built: a cohort where the headline is a re-derivation at an
+// unchanged version and the rest are untouched dependents must build
+// exactly the headline from source, and reading the list as a flag would
+// drag every member into a source build that takes minutes instead of
+// seconds.
+//
+// At one subject this is the same answer the old request-wide test gave
+// for every caller in the tree — both pass a list whose only entry is
+// the headline — but it is a different rule, and a request that named a
+// port it was not building no longer forces a source build of the one it
+// was.
+func fromSource(req verify.Request, port string) bool {
+	return slices.Contains(req.FromSource, port)
 }
 
 // argvBody is the file format the runner reads back: one argv word per
@@ -535,10 +786,22 @@ func (p Provider) launch(ctx context.Context, vm string, req verify.Request) err
 			return fmt.Errorf("%w: writing %s: %s", verify.ErrNoEnvironment, f.What, strings.TrimSpace(out))
 		}
 	}
-	if out, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", runner(p.prefixOf().Port())); err != nil {
+	if out, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", launchScript(p.prefixOf().Port(), req)); err != nil {
 		return fmt.Errorf("%w: launching the build: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// launchScript picks the script this request needs. The choice is made
+// on the request and nowhere else: a request naming one port gets the
+// frozen single-subject runner, byte for byte, whatever else it asks
+// for — a test, a variant frame, a manifest. Nothing but a second port
+// reaches the cohort.
+func launchScript(portCmd string, req verify.Request) string {
+	if len(req.Ports) > 1 {
+		return cohortRunner(portCmd, len(req.Ports))
+	}
+	return runner(portCmd)
 }
 
 // Exec implements verify.Executor: one command inside the worker,

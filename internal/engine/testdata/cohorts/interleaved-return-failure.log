@@ -1,0 +1,44 @@
+===> dockhand subject: oniguruma
+--->  Verifying Portfile for oniguruma
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+--->  Computing dependencies for oniguruma
+--->  Fetching distfiles for oniguruma
+--->  Verifying checksums for oniguruma
+--->  Extracting oniguruma
+--->  Configuring oniguruma
+--->  Building oniguruma
+DEBUG: Executing org.macports.build (oniguruma)
+--->  Staging oniguruma into destroot
+--->  Installing oniguruma @6.9.10_0
+--->  Activating oniguruma @6.9.10_0
+===> dockhand subject: jq
+--->  Verifying Portfile for jq
+--->  0 errors and 1 warnings found.
+Warning: Line 14 has trailing whitespace before newline
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+--->  Computing dependencies for jq
+DEBUG: Searching for dependency: oniguruma
+DEBUG: Found Dependency: receipt exists for oniguruma
+--->  Fetching distfiles for jq
+--->  Verifying checksums for jq
+--->  Extracting jq
+--->  Configuring jq
+--->  Building jq
+DEBUG: Executing org.macports.build (jq)
+--->  Staging jq into destroot
+--->  Installing jq @1.8.0_1
+--->  Activating jq @1.8.0_1
+===> dockhand subject: oniguruma
+--->  Testing oniguruma
+DEBUG: Executing org.macports.test (oniguruma)
+DEBUG: Assembled command: 'cd "/opt/local/var/macports/build/_tmp_dockhand-overlay_textproc_oniguruma/oniguruma/work/onig-6.9.10" && /usr/bin/make test'
+FAIL: test_utf8
+Error: Failed to test oniguruma: command execution failed
+DEBUG: Error code: CHILDSTATUS 5602 2
+Warning: targets not executed for oniguruma: org.macports.test
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_textproc_oniguruma/oniguruma/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port oniguruma failed

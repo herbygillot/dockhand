@@ -1,0 +1,49 @@
+===> dockhand subject: oniguruma
+--->  Verifying Portfile for oniguruma
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/textproc/oniguruma
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+--->  Computing dependencies for oniguruma
+DEBUG: Executing org.macports.main (oniguruma)
+--->  Fetching distfiles for oniguruma
+--->  Verifying checksums for oniguruma
+--->  Extracting oniguruma
+--->  Configuring oniguruma
+--->  Building oniguruma
+DEBUG: Executing org.macports.build (oniguruma)
+--->  Staging oniguruma into destroot
+--->  Installing oniguruma @6.9.10_0
+--->  Activating oniguruma @6.9.10_0
+DEBUG: Executing org.macports.activate (oniguruma)
+--->  Cleaning oniguruma
+===> dockhand subject: jq
+--->  Verifying Portfile for jq
+--->  0 errors and 1 warnings found.
+Warning: Line 14 has trailing whitespace before newline
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/sysutils/jq
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+--->  Computing dependencies for jq
+DEBUG: jq has no conflicts
+DEBUG: Searching for dependency: oniguruma
+DEBUG: Found Dependency: receipt exists for oniguruma
+DEBUG: Searching for dependency: pkgconfig
+DEBUG: Didn't find receipt, going to depspec regex for: pkgconfig
+--->  Dependencies to be installed: pkgconfig
+DEBUG: Changing to port directory: /opt/local/var/macports/sources/rsync.macports.org/macports/release/tarball/ports/devel/pkgconfig
+DEBUG: Executing org.macports.main (pkgconfig)
+--->  Fetching archive for pkgconfig
+DEBUG: Fetching archive failed: The requested URL returned error: 404
+--->  Fetching distfiles for pkgconfig
+--->  Extracting pkgconfig
+--->  Configuring pkgconfig
+--->  Building pkgconfig
+DEBUG: Executing org.macports.build (pkgconfig)
+DEBUG: Assembled command: 'cd "/opt/local/var/macports/build/_opt_local_var_macports_sources_rsync.macports.org_macports_release_tarball_ports_devel_pkgconfig/pkgconfig/work/pkg-config-0.29.2" && /usr/bin/make -j8 -w all'
+Error: Failed to build pkgconfig: command execution failed
+DEBUG: Error code: CHILDSTATUS 5311 2
+Warning: targets not executed for pkgconfig: org.macports.activate org.macports.destroot org.macports.install
+Error: See /opt/local/var/macports/logs/_opt_local_var_macports_sources_rsync.macports.org_macports_release_tarball_ports_devel_pkgconfig/pkgconfig/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port jq failed
