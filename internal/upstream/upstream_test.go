@@ -121,6 +121,14 @@ func TestJudgeCensus(t *testing.T) {
 		{"HOLE 1: livecheck disabled and every tag is prerelease-style",
 			Observation{LivecheckDisabled: true, ForgeVersions: []string{"1.9.0-rc1", "2.0.0-beta"}},
 			PrereleaseNewest, ""},
+		{"livecheck disabled, every tag prerelease, and the port already rides one",
+			Observation{LivecheckDisabled: true, Current: "0.5.0-alpha",
+				ForgeVersions: []string{"0.5.0-alpha", "0.6.0-alpha"}},
+			PrereleaseLateral, "0.6.0-alpha"},
+		{"livecheck disabled, every tag prerelease, and the port rides a stable",
+			Observation{LivecheckDisabled: true, Current: "1.0",
+				ForgeVersions: []string{"1.9.0-rc1", "2.0.0-beta"}},
+			PrereleaseNewest, ""},
 
 		// Rule 4: rot.
 		{"livecheck matched nothing while the forge has versions",
@@ -512,6 +520,46 @@ func TestJudgeForgeOnlyWithNothingButPrereleasesDeclines(t *testing.T) {
 	})
 	assert.Equal(t, ForgeOnly, r.Verdict)
 	assert.Equal(t, "1.9.0", r.Latest)
+}
+
+// The lateral escape does not depend on livecheck having run. Whether
+// following a prerelease gives up stability is a question about the
+// port's own version and the forge's tags; livecheck is not a term in
+// it, and which witness is absent decides how many spoke rather than
+// what a regression is.
+//
+// Refusing here would have re-closed the update path PrereleaseLateral
+// was entered to keep open — the verdict's own field case is a port of
+// exactly this shape — so the disabled arm applies the same two rules
+// in the same order as the arm where livecheck answered.
+func TestJudgeForgeAloneKeepsTheLateralEscape(t *testing.T) {
+	lateral := Judge(Observation{
+		LivecheckDisabled: true,
+		Current:           "0.5.0-alpha",
+		ForgeVersions:     []string{"0.5.0-alpha", "0.6.0-alpha"},
+	})
+	assert.Equal(t, PrereleaseLateral, lateral.Verdict)
+	assert.Equal(t, "0.6.0-alpha", lateral.Latest, "alpha to alpha gives up no stability")
+
+	// The safety property is untouched: a port on a stable version is
+	// never offered a prerelease, however the prereleases were found.
+	regression := Judge(Observation{
+		LivecheckDisabled: true,
+		Current:           "1.0",
+		ForgeVersions:     []string{"1.9.0-rc1", "2.0.0-beta"},
+	})
+	assert.Equal(t, PrereleaseNewest, regression.Verdict)
+	assert.Empty(t, regression.Latest)
+
+	// And a lateral move must still be upward: the newest prerelease
+	// being the one the port already rides resolves nothing.
+	standing := Judge(Observation{
+		LivecheckDisabled: true,
+		Current:           "0.6.0-alpha",
+		ForgeVersions:     []string{"0.5.0-alpha", "0.6.0-alpha"},
+	})
+	assert.Equal(t, PrereleaseNewest, standing.Verdict)
+	assert.Empty(t, standing.Latest)
 }
 
 // The gopass-satellite field case: upstream tags v1.17.0 but cuts no

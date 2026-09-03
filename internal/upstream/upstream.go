@@ -218,7 +218,7 @@ func Judge(obs Observation) Report {
 		r.Verdict, r.Latest = LivecheckOnly, obs.Livecheck
 		return r
 	case obs.LivecheckDisabled:
-		return judgeForgeAlone(r)
+		return judgeForgeAlone(obs, r)
 	case obs.Livecheck == "":
 		r.Verdict = LivecheckRot
 		r.Detail = "forge has " + r.ForgeNewest
@@ -245,14 +245,33 @@ func Judge(obs Observation) Report {
 // judgeForgeAlone rules when livecheck is an absent witness by the
 // maintainer's own declaration — never charged with rot — so the forge
 // is the only witness this port offers, and it answered completely.
-func judgeForgeAlone(r Report) Report {
-	// The stable subset decides first. A forge that answered fully may
-	// still have answered with nothing usable, and taking its raw
-	// newest here wrote a -beta into a Portfile as the version — the
-	// one thing every other arm of this function refuses. The refusal
-	// is dockhand's own opinion of sound testimony, so it takes the
-	// PrereleaseNewest shape and its band, and the remedy is --to.
+func judgeForgeAlone(obs Observation, r Report) Report {
 	if r.ForgeNewestStable == "" {
+		// The same two rules the livecheck-enabled arm applies when the
+		// forge has cut nothing stable, in the same order, because the
+		// question they answer is about the PORT and the FORGE and
+		// livecheck is not a term in it. Which witness is absent decides
+		// how many spoke, not what a stability regression is.
+		//
+		// 1. A port already riding prereleases follows them upward
+		// without giving up stability. Refusing here would re-close the
+		// one update path PrereleaseLateral exists to keep open — the
+		// verdict was entered on a field case for exactly this shape,
+		// and losing it to the disabled path would undo that ruling by
+		// a different route.
+		if obs.Current != "" && !Stable(obs.Current) &&
+			macports.VerCmp(r.ForgeNewest, obs.Current) > 0 {
+			r.Verdict, r.Latest = PrereleaseLateral, r.ForgeNewest
+			r.Detail = "livecheck is disabled; the port rides prereleases (" + obs.Current +
+				") and upstream has cut nothing stable"
+			return r
+		}
+		// 2. No lateral escape, so resolving would write a -beta into a
+		// Portfile as the version — the one thing every other arm of
+		// this function refuses, and the falsehood this branch used to
+		// publish. The refusal is dockhand's own opinion of sound
+		// testimony, so it takes the PrereleaseNewest shape and its
+		// band, and the remedy is --to.
 		r.Verdict = PrereleaseNewest
 		r.Detail = "livecheck is disabled and the forge's newest tag " + r.ForgeNewest +
 			" is prerelease-style, with no stable version behind it"
