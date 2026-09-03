@@ -32,9 +32,17 @@ type Policy struct {
 	InPlace  bool
 	Trace    bool
 	Test     bool
-	// OnInFlight is --force: replace what is already in flight for this
+	// OnInFlight is --replace: replace what is already in flight for this
 	// port, rather than refusing.
 	OnInFlight InFlight
+	// FromSource says this invocation's own parameters make the change
+	// one that must be built from source, whatever its intent would have
+	// answered. bump's --recheck is the only one today.
+	//
+	// It only ever widens what fromSource decides, never narrows it: an
+	// intent that is from source by its nature stays so however the run
+	// was invoked.
+	FromSource bool
 	// Destination is how far this invocation's contract reaches, and it
 	// is now the record's own type: the value is written onto the note
 	// at mint, so an engine enum would have been a second spelling of a
@@ -66,17 +74,24 @@ func (o Policy) destination() record.Destination {
 	return o.Destination
 }
 
-// fromSource reports whether an intent's change leaves the port's
-// binary archive matching bytes the change replaced.
+// fromSource reports whether this run's change leaves the port's binary
+// archive matching bytes the change replaced.
 //
-// A version bump does not: the new version names an archive that does
-// not exist yet, so MacPorts builds from source without being asked. A
-// revision bump does not either, for the same reason one level down —
-// the revision is part of the archive's name. A checksum refresh does:
-// the version and the revision both stand, the archive that matches
-// them predates the change, and a pass earned by unpacking it verified
-// nothing about the distfile the change is actually about.
-func fromSource(intent string) bool { return intent == "refresh-checksums" }
+// The intent answers first. A version bump does not: the new version
+// names an archive that does not exist yet, so MacPorts builds from
+// source without being asked. A revision bump does not either, for the
+// same reason one level down — the revision is part of the archive's
+// name. A checksum refresh does: the version and the revision both
+// stand, the archive that matches them predates the change, and a pass
+// earned by unpacking it verified nothing about the distfile the change
+// is actually about.
+//
+// The run may then say so for itself, and only in that direction:
+// bump's --recheck re-derives a port at the version it already carries,
+// which is the refresh's situation reached by a different verb.
+func (o Policy) fromSource(intent string) bool {
+	return o.FromSource || intent == "refresh-checksums"
+}
 
 // Run carries a plan to its chosen realization. Every write intent
 // arrives here, so a plan becomes a branch the same way whichever
@@ -122,7 +137,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) error {
 	// this process is free to exit; status collects the verdict.
 	return e.submit(ctx, m, submission{
 		Port: p.Port, Release: o.On, Test: o.Test,
-		FromSource: fromSource(p.Intent), Trace: o.Trace,
+		FromSource: o.fromSource(p.Intent), Trace: o.Trace,
 	})
 }
 
@@ -151,7 +166,7 @@ func (e *Engine) markVerified(ctx context.Context, m *Minted, p *plan.Plan, o Po
 		[]string{p.Port},
 		record.Run{
 			State: record.Passed, Linted: true, Lint: o.GateProof.Lint,
-			Evidence: o.GateProof.Evidence, FromSource: fromSource(p.Intent),
+			Evidence: o.GateProof.Evidence, FromSource: o.fromSource(p.Intent),
 		}); err != nil {
 		return err
 	}

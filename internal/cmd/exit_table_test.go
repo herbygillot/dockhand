@@ -479,6 +479,14 @@ func exitTable(t *testing.T) []exitRow {
 			err: upstream.Unresolved(upstream.LivecheckAhead, &plan.Decline{Type: plan.LatestUnresolved,
 				Detail: fmt.Sprintf("%s (%s)", upstream.LivecheckAhead, "no forge tag matches either")}),
 			as: new(*upstream.UnresolvedError)},
+		// The forge ran, answered, and said nothing about the version
+		// livecheck named: one witness spoke to the value, so the band
+		// is upstream's. It used to wear the Agreement label and resolve.
+		exitRow{name: "*upstream.UnresolvedError (LivecheckUncorroborated)",
+			err: upstream.Unresolved(upstream.LivecheckUncorroborated, &plan.Decline{Type: plan.LatestUnresolved,
+				Detail: fmt.Sprintf("%s (%s)", upstream.LivecheckUncorroborated,
+					"livecheck 1.2.0 stands alone: the forge's tags are all prerelease-style (newest 2.0.0-beta) and none of them is that version")}),
+			as: new(*upstream.UnresolvedError)},
 	)
 
 	// Band 60-62: nobody's problem yet. Nothing failed and nothing
@@ -540,15 +548,27 @@ func exitTable(t *testing.T) []exitRow {
 		exitRow{name: "*plan.Decline UnexpectedChange (bump.Plan)",
 			err: &plan.Decline{Type: plan.UnexpectedChange, Detail: "revision moved with the version"}, as: new(*plan.Decline)},
 		// PrereleaseNewest is the one unresolved verdict that stays here:
-		// both witnesses spoke and agreed, and what they agreed on is a
-		// beta, so the refusal is dockhand's own. Every other unresolved
-		// verdict is upstream's and is banded 53 above.
+		// the witnesses spoke and what they offered is a beta, so the
+		// refusal is dockhand's own. Every other unresolved verdict is
+		// upstream's and is banded 53 above. The livecheck-disabled port
+		// whose forge has nothing but prerelease tags lands on this row
+		// too: its one witness answered soundly, and declining what it
+		// answered is the same judgment.
 		exitRow{name: "*plan.Decline LatestUnresolved (bump.ResolveLatest: PrereleaseNewest is a judgment)",
 			err: upstream.Unresolved(upstream.PrereleaseNewest, &plan.Decline{Type: plan.LatestUnresolved,
 				Detail: fmt.Sprintf("%s (%s)", upstream.PrereleaseNewest, "newest tag 2.0-beta1 is prerelease-style")}),
 			as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline VendoredBlock (refresh: go.vendors)",
 			err: &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}, as: new(*plan.Decline)},
+		// The insertion's refusal, and it belongs in this band rather
+		// than with the location declines below it: the field WAS
+		// located — there is no revision line, which is a complete
+		// answer — and what dockhand declined is writing one where the
+		// file does not say it goes. That is a judgment about a plan.
+		exitRow{name: "*plan.Decline RevisionShapeAmbiguous (bumprevision: no revision line, subports)",
+			err: &plan.Decline{Type: plan.RevisionShapeAmbiguous,
+				Detail: "the Portfile defines 3 evaluation contexts, and one inserted revision line would move all of them"},
+			as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline wrapped",
 			err: fmt.Errorf("bump: %w", &plan.Decline{Type: plan.AlreadyCurrent}), as: new(*plan.Decline)},
 		exitRow{name: "*portstyle.Decline FieldUnsupported (portstyle.Locate)",
@@ -576,9 +596,9 @@ func exitTable(t *testing.T) []exitRow {
 	add(exitcode.BranchInFlight,
 		exitRow{name: "*engine.BranchInFlightError (mint translating git.ErrBranchExists)",
 			err: &engine.BranchInFlightError{Branch: branch}, as: new(*engine.BranchInFlightError)},
-		exitRow{name: "*engine.BranchInFlightError with Reason (replaceInFlight: --force refused)",
+		exitRow{name: "*engine.BranchInFlightError with Reason (replaceInFlight: --replace refused)",
 			err: &engine.BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
-				"%s carries %d commit(s) beyond the mint — --force replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
+				"%s carries %d commit(s) beyond the mint — --replace replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
 				branch, 1, branch)}, as: new(*engine.BranchInFlightError)},
 	)
 	// Ambiguity is one code whether the target names several branches

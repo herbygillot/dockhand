@@ -92,7 +92,7 @@ func TestUnresolvedSplitsTheJudgmentsFromTheSilences(t *testing.T) {
 	// produced nothing usable, or a newest version dockhand judged
 	// unfit to act on.
 	decline := errors.New("plan: declined: latest could not be resolved: …")
-	for _, v := range []Verdict{NoSignal, LivecheckRot, LivecheckBehind, LivecheckAhead} {
+	for _, v := range []Verdict{NoSignal, LivecheckRot, LivecheckBehind, LivecheckAhead, LivecheckUncorroborated} {
 		out := Unresolved(v, decline)
 		var coder exitcode.Coder
 		require.ErrorAs(t, out, &coder, "%v", v)
@@ -119,7 +119,7 @@ func TestEveryVerdictThatDeclinesIsClassified(t *testing.T) {
 		// asking is safe and answers, not that the answer is used.
 		assert.NotPanics(t, func() { _ = Judged(v) }, "%v", v)
 	}
-	// The taxonomy itself, both ways round. Four verdicts are witnesses
+	// The taxonomy itself, both ways round. Five verdicts are witnesses
 	// that produced nothing usable and go to upstream's band; every
 	// other verdict heard sound witnesses, so a decline over one is
 	// dockhand's own and stays with the plan declines. Three of the
@@ -127,7 +127,15 @@ func TestEveryVerdictThatDeclinesIsClassified(t *testing.T) {
 	// they are pinned here anyway, because the day one of them stops
 	// setting a Latest is the day the classification starts mattering,
 	// and it must not move silently on that day.
-	for _, v := range []Verdict{NoSignal, LivecheckRot, LivecheckBehind, LivecheckAhead} {
+	//
+	// LivecheckUncorroborated sits with the silences and not with the
+	// judgments, which is the harder half of the line to see: the forge
+	// DID run and DID answer. It answered about other versions. Nothing
+	// it said bears on the one livecheck named, so exactly one witness
+	// spoke to the value — the same shape as an uncorroborated
+	// LivecheckAhead, and the opposite of PrereleaseNewest, where both
+	// witnesses named the same newest tag and dockhand refused it.
+	for _, v := range []Verdict{NoSignal, LivecheckRot, LivecheckBehind, LivecheckAhead, LivecheckUncorroborated} {
 		assert.False(t, Judged(v), "%v: a witness that produced nothing is upstream's", v)
 	}
 	for _, v := range []Verdict{PrereleaseNewest, TagWithoutRelease, PrereleaseLateral, PrereleaseSuperseded} {

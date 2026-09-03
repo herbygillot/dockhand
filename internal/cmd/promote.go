@@ -27,7 +27,14 @@ type promoteAction struct {
 	noPR      bool
 	noVerify  bool // promote an unverified tip deliberately
 	noPRCheck bool // skip the duplicate-PR search deliberately
-	force     bool // replace the fork branch and refresh the PR
+	// force force-pushes the fork branch, with lease, and refreshes the
+	// PR. It keeps the name the intents' switch gave up in S10 because it
+	// is git's own word for what it does — a force-push — and it is a
+	// different act on a different thing: --replace destroys a local
+	// branch dockhand minted, this one moves a remote branch dockhand
+	// already published. The lease is the difference that matters: a fork
+	// copy moved from another machine refuses rather than being trampled.
+	force bool
 }
 
 var _ Action = promoteAction{}
@@ -96,6 +103,6 @@ func Promote() *cobra.Command {
 	c.Flags().BoolVar(&noPRCheck, "no-pr-check", false,
 		"skip the search for pre-existing open PRs on the same port")
 	c.Flags().BoolVar(&force, "force", false,
-		"replace the fork branch (force-push with lease) and refresh the open PR's title and body")
+		"force-push the fork branch (with lease) and refresh the open PR's title and body; not the intents' --replace, which demolishes a local branch")
 	return c
 }

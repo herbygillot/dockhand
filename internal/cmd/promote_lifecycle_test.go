@@ -94,8 +94,11 @@ func promoteState(t *testing.T, repo *git.Repo, gh *ghFake) (*runstate.Context, 
 	t.Helper()
 	var out, errb bytes.Buffer
 	tools := testFinder()
+	// A version is set because the body signs off with one, and the
+	// only thing proving promote hands its own over is a body carrying
+	// it out the far end.
 	rs := &runstate.Context{TreeRoot: repo.Root, Tools: tools, Out: &out, Err: &errb, Gh: gh.run,
-		Verifier: realVMProvider(tools)}
+		Version: "1.2.3", Verifier: realVMProvider(tools)}
 	return rs, &out, &errb
 }
 
@@ -112,6 +115,8 @@ func TestPromoteOpensThePR(t *testing.T) {
 	assert.Contains(t, body, "Testos: linted clean, built in a pristine VM")
 	assert.Contains(t, body, "- [x] checked that there aren't other open [pull requests]",
 		"a clean search checks the box")
+	assert.Contains(t, body, "Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3",
+		"the body names the build that wrote it")
 	assert.Contains(t, creates[0], "jq: update to 1.8", "the title is the minted commit's subject")
 	assert.Equal(t, "herby", repo.TrackedRemote(context.Background(), "dockhand/jq-1.8"))
 }
@@ -198,8 +203,12 @@ func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
 	creates := gh.called("create")
 	require.Len(t, creates, 1)
 	body := creates[0][len(creates[0])-1]
-	assert.Contains(t, body, "Not locally verified", "the PR only says verified or not")
-	assert.NotContains(t, body, "canceled", "local state is the local user's business")
+	// The cancellation IS the cause, and the body names it. It used to
+	// say "no verification environment on the submitting machine" here,
+	// which was a statement about a machine that had one and had just
+	// been told not to wait for it.
+	assert.Contains(t, body, "Testos: verification was canceled before it finished")
+	assert.NotContains(t, body, "fake-9", "the worker's name is local business")
 
 	after, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)
@@ -228,6 +237,39 @@ func TestPromoteMidVerificationKeepsThePassedEvidence(t *testing.T) {
 	assert.NotContains(t, joined, "Oldos", "the canceled run never reaches the PR")
 }
 
+// The body names the commit the push actually publishes.
+//
+// EvidenceFor answers a tip carrying no note of its own with a record
+// found over the IDENTICAL TREE at another sha — a message-only amend,
+// a rebase — and that sha is reachable from the notes ref and from no
+// branch. Printed as "Branch head", it sent a reviewer looking up a
+// commit that is not in the pull request, which is the class of
+// falsehood this whole step exists to retire.
+func TestPromoteNamesThePushedHeadAndNotTheRecordsSha(t *testing.T) {
+	repo, noted := promoteRepo(t)
+	ctx := context.Background()
+	primary, err := repo.PrimaryBranch(ctx)
+	require.NoError(t, err)
+	// The same tree under a different message: the amend that moves the
+	// sha and changes nothing a build could notice.
+	amended := gittest.Commit(t, repo, "dockhand/jq-amended", primary, "sysutils/jq/Portfile",
+		"version 1.8\n", "jq: update to 1.8 (reworded)")
+	require.NotEqual(t, noted, amended)
+	gittest.MoveBranch(t, repo, "dockhand/jq-1.8", amended)
+
+	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/3"}
+	rs, _, _ := promoteState(t, repo, gh)
+	require.NoError(t, promoteAction{target: "dockhand/jq-1.8"}.Execute(ctx, rs))
+
+	creates := gh.called("create")
+	require.Len(t, creates, 1)
+	body := creates[0][len(creates[0])-1]
+	assert.Contains(t, body, "Branch head `"+amended[:12]+"`, verified at `"+noted[:12]+"` (identical tree).",
+		"the head is the commit that was pushed; the record's sha says where the verdict was earned")
+	assert.Contains(t, body, "Verified with [dockhand]",
+		"the same-tree record is what makes this promotion verified at all")
+}
+
 func TestPromoteUnverifiedComplainsAndProceeds(t *testing.T) {
 	// The friction ruling, complete: an unverified branch promotes with
 	// a complaint — invoking promote IS the publication choice — and
@@ -246,7 +288,8 @@ func TestPromoteUnverifiedComplainsAndProceeds(t *testing.T) {
 	require.NoError(t, promoteAction{target: "jq"}.Execute(ctx, rs))
 	assert.Contains(t, errb.String(), "promoting unverified; the PR will say so")
 	body := gh.called("create")[0]
-	assert.Contains(t, body[len(body)-1], "Not locally verified")
+	assert.Contains(t, body[len(body)-1],
+		"Not verified: no verification environment on the submitting machine, so nothing was run.")
 }
 
 // A blocked run sits on the unverified side of the gate: the change
@@ -273,8 +316,13 @@ func TestPromoteBlockedPromotesWithTheDependencyNamed(t *testing.T) {
 	creates := gh.called("create")
 	require.Len(t, creates, 1)
 	body := creates[0][len(creates[0])-1]
-	assert.Contains(t, body, "Not locally verified")
-	assert.NotContains(t, body, "olm", "local state is the local user's business")
+	// The body names the cause — this change was never reached — and
+	// stops there. The dependency's own name lives in the run's detail
+	// prose, which is the local log's words; Blamed is the structured
+	// field a body may print, and the ledger writes it only for a
+	// blamed port that is a member of the change.
+	assert.Contains(t, body, "Not verified:\n  — Testos: blocked before this change was reached.")
+	assert.NotContains(t, body, "olm", "the detail's prose is the local user's business")
 }
 
 func TestPromoteStillRefusesAFailedBuild(t *testing.T) {

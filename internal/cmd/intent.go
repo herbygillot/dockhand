@@ -59,6 +59,14 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	if len(targets) != 1 {
+		// --replace says the same thing in its own terms, because with
+		// --replace the arity is not a formality: a category name that
+		// expanded to nine ports is nine in-flight branches the user did
+		// not picture demolishing.
+		if a.opts.OnInFlight == engine.Replace {
+			return usagef("--replace replaces one port's in-flight branch; %q names %d",
+				a.params.Target, len(targets))
+		}
 		return usagef("%s takes exactly one port; %q names %d", a.def.Name, a.params.Target, len(targets))
 	}
 	ev, err := rs.Evaluator(ctx)
@@ -76,7 +84,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// typed nil in disguise.
 	var pf *portfetch.Fetcher
 	var df distfile.Fetcher
-	if a.def.Fetches {
+	if a.def.Fetches && a.params.Riders != intent.RidersOnly {
 		if pf, err = rs.Fetcher(ctx); err != nil {
 			return err
 		}
@@ -88,7 +96,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// version behind in the catalogue it was built from.
 	params := a.params
 	params.Tools = rs.Tools
-	if a.resolve != nil {
+	if a.resolve != nil && params.Riders != intent.RidersOnly {
 		if err := a.resolve(ctx, rs, h, pf, &params); err != nil {
 			return err
 		}
@@ -96,6 +104,15 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	planner, err := a.def.New(params)
 	if err != nil {
 		return err
+	}
+	if params.Riders == intent.RidersOnly {
+		// --riders makes housekeeping the whole change: the verb chose the
+		// port and nothing else of it is used. This is the one place the
+		// road does not run what the catalogue named, and it is still not
+		// a branch on WHICH intent — every verb's housekeeping is the same
+		// change, which is why there is one planner for it rather than
+		// three.
+		planner = intent.Housekeeping{}
 	}
 	p, err := planner.Plan(ctx, h, df)
 	if err != nil {
@@ -106,7 +123,13 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 	// about to be realized, this is the only chance to see what is
 	// being done before it is done.
 	render.RenderPlan(rs.Err, p)
-	if a.def.Caution != "" {
+	// The caution is a fact about the headline edit, so it is printed
+	// only where the headline was planned. Under --riders the verb chose
+	// the port and nothing else of it ran — no fetch, no checksum, no
+	// comparison — and refresh's caution over a modeline insertion named
+	// a supply-chain event that had not happened, over a change that had
+	// not happened, on the operator's own stream.
+	if a.def.Caution != "" && params.Riders != intent.RidersOnly {
 		fmt.Fprint(rs.Err, a.def.Caution)
 	}
 	opts := a.opts
@@ -116,7 +139,7 @@ func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		// never becomes a branch or lands in a tree. A pass carries into
 		// the realization — the verdict is about these exact bytes, so
 		// the branch records it rather than building them again.
-		proof, err := eng.VerifyPlan(ctx, p, opts.On, opts.Test)
+		proof, err := eng.VerifyPlan(ctx, p, opts)
 		if err != nil {
 			return err
 		}
@@ -146,10 +169,10 @@ type intentVerb struct {
 	// Flags declares the verb's own flags on the command, binding them
 	// straight to the parameters they become, and returns the check for
 	// the combinations only this verb can judge. It has the shared
-	// realization flags in hand as well, because --force is one switch
-	// spelling two meanings: replace the in-flight branch, and re-derive
-	// the port from scratch. A verb with no flags of its own leaves this
-	// nil.
+	// realization policy in hand as well, because a verb's own parameter
+	// can imply one: bump's --recheck is a question for the planner, and
+	// a re-derivation that has to be built from source is a fact the
+	// engine needs. A verb with no flags of its own leaves this nil.
 	Flags func(c *cobra.Command, p *intent.Params, f *intentFlags) func() error
 	// Resolve fills in what the command line could not, with the run's
 	// handle and fetcher in hand. Only bump has one.
@@ -199,7 +222,12 @@ func intentCommand(v intentVerb) *cobra.Command {
 			// --latest is a plainer thing to be told than a --trace that
 			// fights --plan, and the caller who typed both is owed the
 			// nearer answer.
-			if check != nil {
+			//
+			// Under --riders they are moot, and skipped rather than
+			// answered. The verb's parameters are not read by a
+			// housekeeping change, so a revbump's required --reason would
+			// be a demand for a justification of an edit nobody is making.
+			if check != nil && !f.riders {
 				if err := check(); err != nil {
 					return nil, err
 				}
@@ -212,6 +240,7 @@ func intentCommand(v intentVerb) *cobra.Command {
 				return nil, err
 			}
 			params.Target, params.ClosesTicket = args[0], ticket
+			params.Riders = f.riderPolicy()
 			return intentAction{
 				def: v.Definition, params: params,
 				opts: f.opts, verify: f.verifyIt, resolve: v.Resolve,
@@ -268,6 +297,11 @@ type declineExit struct {
 	exitcode.Twin
 	Detail string `json:"detail,omitempty"`
 	Remedy string `json:"remedy,omitempty"`
+	// Withheld names the riders this decline held back with it, by rule.
+	// The reason already says a decline withheld something; this says
+	// what, which is the part a sweep deciding whether to come back with
+	// --riders actually needs.
+	Withheld []string `json:"withheld,omitempty"`
 }
 
 // sayDecline writes the decline document when the caller asked for one
@@ -280,14 +314,15 @@ type declineExit struct {
 // somebody pipes into `git apply` — and giving one flag two output
 // languages would break the consumer that trusts it.
 func (a intentAction) sayDecline(rs *runstate.Context, err error) error {
-	detail, remedy, ok := declineFacts(err)
+	detail, remedy, withheld, ok := declineFacts(err)
 	if !a.opts.PlanOnly || !ok {
 		return err
 	}
 	doc := declineDocument{Exit: declineExit{
-		Twin:   TwinOf(err),
-		Detail: detail,
-		Remedy: remedy,
+		Twin:     TwinOf(err),
+		Detail:   detail,
+		Remedy:   remedy,
+		Withheld: withheld,
 	}}
 	enc := json.NewEncoder(rs.Out)
 	enc.SetIndent("", "  ")
@@ -312,16 +347,18 @@ func (a intentAction) sayDecline(rs *runstate.Context, err error) error {
 // Missing the second is how the revision-less Portfile — the most
 // common decline in the tree after already-current — ended up as the
 // one --plan that still wrote nothing to stdout.
-func declineFacts(err error) (detail, remedy string, ok bool) {
+func declineFacts(err error) (detail, remedy string, withheld []string, ok bool) {
 	var p *plan.Decline
 	if errors.As(err, &p) {
-		return p.Detail, p.Type.Remedy(), true
+		return p.Detail, p.Type.Remedy(), p.Withheld, true
 	}
 	var s *portstyle.Decline
 	if errors.As(err, &s) {
-		return s.Field.String(), s.Remedy(), true
+		// A location decline withholds nothing: it is raised before any
+		// rule has been asked, by the layer that could not find a field.
+		return s.Field.String(), s.Remedy(), nil, true
 	}
-	return "", "", false
+	return "", "", nil, false
 }
 
 // intentFlags declares the realization flags every write intent
@@ -331,11 +368,35 @@ type intentFlags struct {
 	opts     engine.Policy
 	on       string
 	verifyIt bool
-	// force and noVerify are bound to cobra by address and mapped into
+	// replace and noVerify are bound to cobra by address and mapped into
 	// the policy by check: what the engine takes is a choice with a
 	// name, and a bool is what a flag is.
-	force    bool
+	//
+	// replace was --force until S10. One switch spelled two questions —
+	// what to do about a branch already in flight, and whether to
+	// re-derive a port at the version it already carries — and a user who
+	// wanted the second got the first as a side effect, which on a
+	// standing branch is a demolition. They are two flags now: --replace
+	// here, and bump's own --recheck.
+	replace  bool
 	noVerify bool
+	// riders and noRiders are the two ends of one policy, spelled as two
+	// switches because that is what a command line has. riderPolicy maps
+	// the pair onto the value the planners take; check refuses the
+	// contradiction first, so the mapping never has to.
+	riders   bool
+	noRiders bool
+}
+
+// riderPolicy is the pair of switches read as the one choice they are.
+func (f *intentFlags) riderPolicy() intent.RiderPolicy {
+	switch {
+	case f.riders:
+		return intent.RidersOnly
+	case f.noRiders:
+		return intent.RidersNone
+	}
+	return intent.RidersAlong
 }
 
 // register declares the shared realization flags on a command.
@@ -349,8 +410,12 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"build the result in a pristine VM before realizing it; failure realizes nothing")
 	c.Flags().BoolVar(&f.noVerify, "no-verify", false,
 		"mint the branch without submitting background verification")
-	c.Flags().BoolVar(&f.force, "force", false,
-		"replace an in-flight branch (canceling its verification) and re-derive the port from scratch")
+	c.Flags().BoolVar(&f.replace, "replace", false,
+		"replace this port's in-flight branch, canceling its verification and removing its notes")
+	c.Flags().BoolVar(&f.riders, "riders", false,
+		"make housekeeping the whole change: plan the riders alone and drop what the verb would have done")
+	c.Flags().BoolVar(&f.noRiders, "no-riders", false,
+		"carry no housekeeping riders, and withhold none when there is nothing else to do")
 	c.Flags().BoolVar(&f.opts.Test, "test", false,
 		"also run the port's test suite (`port test`) in the verification environment")
 	c.Flags().BoolVar(&f.opts.Trace, "trace", false,
@@ -373,9 +438,27 @@ func (f *intentFlags) check() error {
 		return usagef("--trace follows a submitted verification; it needs the default branch realization")
 	case f.opts.Test && (f.noVerify || f.opts.PlanOnly || f.opts.Diff || f.opts.InPlace):
 		return usagef("--test rides a verification; it needs the default branch realization")
+	case f.riders && f.noRiders:
+		return usagef("--riders and --no-riders are mutually exclusive")
+	case f.riders && (f.verifyIt || f.opts.Trace || f.opts.Test):
+		return usagef("riders never trigger a verification; there is nothing in a housekeeping change for a VM to disagree with")
+	case f.replace && (f.opts.PlanOnly || f.opts.Diff || f.opts.InPlace):
+		// --force used to be accepted here and quietly meant the other
+		// thing — the re-derivation — which is why the two are apart now.
+		// A flag about a branch, given to a realization that mints none,
+		// is worth a sentence rather than silence.
+		return usagef("--replace acts on a minted branch; it needs the default branch realization")
 	}
-	if f.force {
+	if f.replace {
 		f.opts.OnInFlight = engine.Replace
+	}
+	if f.riders {
+		// A rider changes nothing a build could notice — that is what the
+		// double proof established — so a housekeeping branch is minted
+		// and left alone rather than costing a VM. The record's own word,
+		// as --no-verify uses it, because the drain reads it back to know
+		// that nobody is owed a verdict.
+		f.opts.Destination = record.ToBranch
 	}
 	if f.noVerify {
 		// The record's own word, because the engine writes this onto the

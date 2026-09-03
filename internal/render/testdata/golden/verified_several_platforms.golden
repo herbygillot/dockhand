@@ -1,9 +1,11 @@
 #### Description
 
-Verified with [dockhand](https://github.com/herbygillot/dockhand) at commit `0123456789ab`
+Verified with [dockhand](https://github.com/herbygillot/dockhand):
   — Sequoia: built in a pristine VM.
   — Sonoma: built in a pristine VM.
   — Ventura: built in a pristine VM.
+
+Branch head `0123456789ab`.
 
 ###### Type(s)
 
@@ -12,9 +14,9 @@ Verified with [dockhand](https://github.com/herbygillot/dockhand) at commit `012
 - [ ] security fix
 
 ###### Tested on
-- macOS Sequoia — pristine tart VM, via dockhand
-- macOS Sonoma — pristine tart VM, via dockhand
-- macOS Ventura — pristine tart VM, via dockhand
+- macOS Sequoia — built in a pristine VM, via dockhand
+- macOS Sonoma — built in a pristine VM, via dockhand
+- macOS Ventura — built in a pristine VM, via dockhand
 
 ###### Verification
 Have you
@@ -22,11 +24,8 @@ Have you
 - [x] followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?
 - [x] squashed and [minimized your commits](https://guide.macports.org/#project.github)?
 - [x] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?
-- [ ] referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?
 - [ ] checked your Portfile with `port lint`?
 - [ ] tried existing tests with `sudo port test`?
 - [x] tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM
-- [ ] tested basic functionality of all binary files?
-- [ ] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?
 
-Automated by [dockhand](https://github.com/herbygillot/dockhand)
+Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3

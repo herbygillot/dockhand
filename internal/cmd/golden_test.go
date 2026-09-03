@@ -549,7 +549,7 @@ func TestGoldenBumpInPlace(t *testing.T) {
 	checkGolden(t, "bump_in_place", tr, rewrite{portdir, "<portdir>"})
 }
 
-// --force over a standing branch, the one path where a demolition is
+// --replace over a standing branch, the one path where a demolition is
 // reported inside another verb's output. Four lines whose order is the
 // whole claim: the announcement, the fork copy's fate and the checkout
 // reassurance on stderr, and — between them, on stdout — the sentence
@@ -557,24 +557,29 @@ func TestGoldenBumpInPlace(t *testing.T) {
 // something discard prints, so nothing else in the suite notices when
 // it stops being printed here.
 //
+// The flag was --force until S10, when it split: this is the half that
+// acts on the branch, and bump's --recheck is the half that re-derives
+// the port. The transcript is the same demolition either way, which is
+// why the golden moves only in the word the announcement prints.
+//
 // --no-verify because the transcript must not depend on whether the
 // machine running it has tart: the replacement is the subject, and
 // submitting a verification is a different verb's story.
-func TestGoldenBumpForceReplace(t *testing.T) {
+func TestGoldenBumpReplace(t *testing.T) {
 	testenv.PortTclsh(t)
 	portdir, repo := goldenPortForkRepo(t)
 	first := captureExecute(t, "bump", "--to", "2.0", "--no-verify", portdir)
-	require.Equal(t, 0, first.exit, "the mint --force replaces must succeed first:\n%s", first.render())
+	require.Equal(t, 0, first.exit, "the mint --replace replaces must succeed first:\n%s", first.render())
 	branches, err := repo.Branches(t.Context(), git.BranchNamespace)
 	require.NoError(t, err)
 	require.Len(t, branches, 1, "one minted branch stands, to be replaced")
 	// Pushed so the branch has a tracking remote: the fork copy's line
-	// is part of what --force says, and it is said only for a branch
+	// is part of what --replace says, and it is said only for a branch
 	// that has one.
 	require.NoError(t, repo.Push(t.Context(), "herby", branches[0]))
 
-	tr := captureExecute(t, "bump", "--to", "2.0", "--no-verify", "--force", portdir)
-	checkGolden(t, "bump_force_replace", tr, rewrite{portdir, "<portdir>"})
+	tr := captureExecute(t, "bump", "--to", "2.0", "--no-verify", "--replace", portdir)
+	checkGolden(t, "bump_replace", tr, rewrite{portdir, "<portdir>"})
 }
 
 // goldenPortForkRepo is goldenPortRepo with the two remotes a promoted

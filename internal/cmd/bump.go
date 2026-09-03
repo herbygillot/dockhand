@@ -23,13 +23,16 @@ var bumpVerb = intentVerb{
 		Name:    "bump",
 		Fetches: true,
 		New: func(p intent.Params) (intent.Planner, error) {
-			return bump.Bump{Version: p.Version, Force: p.Recheck, Tools: p.Tools, ClosesTicket: p.ClosesTicket}, nil
+			return bump.Bump{Version: p.Version, Force: p.Recheck, Tools: p.Tools,
+				ClosesTicket: p.ClosesTicket, Riders: p.Riders}, nil
 		},
 	},
 	Short: "Bump a port to a new version, as a branch",
 	Flags: func(c *cobra.Command, p *intent.Params, f *intentFlags) func() error {
 		c.Flags().StringVar(&p.Version, "to", "", "the version to bump to")
 		c.Flags().BoolVar(&p.Latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
+		c.Flags().BoolVar(&p.Recheck, "recheck", false,
+			"re-derive the port at the version it already carries: fetch again, compare, regenerate")
 		return func() error {
 			switch {
 			case p.Version != "" && p.Latest:
@@ -39,12 +42,14 @@ var bumpVerb = intentVerb{
 				// resolving the newest release is a different workflow.
 				return usagef("use --latest to resolve the newest release")
 			}
-			// One switch, two meanings, and the plan-time one is the
-			// parameter: --force replaces the in-flight branch at
-			// realization, and asks for the re-derivation here. They are
-			// spelled the same today and named apart, so that the day
-			// they are spelled apart nothing about the planner moves.
-			p.Recheck = f.force
+			// A re-derivation is exactly the case where the port's binary
+			// archive is a liar: the version and the revision both stand,
+			// so an archive matching them predates the change, and a pass
+			// earned by unpacking it would have verified nothing about the
+			// distfile the re-derivation went and fetched. refresh-checksums
+			// is from source by its nature for the same reason; --recheck is
+			// the run asking for it.
+			f.opts.FromSource = p.Recheck
 			return nil
 		}
 	},

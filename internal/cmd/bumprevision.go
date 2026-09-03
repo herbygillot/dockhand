@@ -17,7 +17,8 @@ var bumpRevisionVerb = intentVerb{
 		Name:    "bump-revision",
 		Aliases: []string{"revbump"},
 		New: func(p intent.Params) (intent.Planner, error) {
-			return bumprevision.BumpRevision{Reason: p.Reason, ClosesTicket: p.ClosesTicket}, nil
+			return bumprevision.BumpRevision{Reason: p.Reason, ClosesTicket: p.ClosesTicket,
+				Riders: p.Riders}, nil
 		},
 	},
 	Short: "Increment a port's revision (requires --reason)",

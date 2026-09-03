@@ -474,7 +474,11 @@ func tartAbsent(t *testing.T) {
 // provider unwired, which is its own transcript.
 func goldenState(repo *git.Repo, fake *verifytest.Fake) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
 	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb}
+	// A version, because Root() always threads one through and the PR
+	// body signs off with it. Left empty, the promote goldens pinned the
+	// unversioned sign-off — a shape the real CLI cannot produce, in the
+	// three files that exist to show what a real promote writes.
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(), Out: &out, Err: &errb, Version: "1.2.3"}
 	if fake != nil {
 		// Both seams, from the one fake: a golden run stands in for a
 		// machine, and a machine that can verify can also say what it is

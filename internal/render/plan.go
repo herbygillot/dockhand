@@ -23,6 +23,13 @@ func RenderPlan(w io.Writer, p *plan.Plan) {
 	for _, e := range p.Edits {
 		fmt.Fprintf(w, "  %-16s %s -> %s\n", e.Reason+":", e.Old, e.New)
 	}
+	// The riders are already in the list above, spelled as edits. This
+	// line says which of them nobody asked for — the word "also" because
+	// it is the word the pull request body uses for the same fact, and a
+	// reader who meets it twice should meet it once.
+	if len(p.Riders) > 0 {
+		fmt.Fprintf(w, "also: %s\n", strings.Join(p.Riders, ", "))
+	}
 	fmt.Fprintln(w, "predicted delta:")
 	for _, cd := range p.Predicted {
 		var parts []string

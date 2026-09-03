@@ -30,7 +30,7 @@ import (
 //
 // What it did comes back as lines rather than going to a stream,
 // because its four callers put them in four different places: the verb
-// prints them where they fall, --force prints them under its own
+// prints them where they fall, --replace prints them under its own
 // announcement, the sweep prints them above the branch's line, and
 // `status --json` prints all of them to stderr, since prose inside the
 // document breaks the consumer. The lines are returned on the error

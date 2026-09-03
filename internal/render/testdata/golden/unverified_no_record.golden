@@ -1,0 +1,18 @@
+#### Description
+
+Not verified: there is no verification record for this branch head.
+
+###### Type(s)
+
+- [ ] bugfix
+- [ ] enhancement
+- [ ] security fix
+
+###### Verification
+Have you
+
+- [x] followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?
+- [x] squashed and [minimized your commits](https://guide.macports.org/#project.github)?
+- [x] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?
+
+Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3

@@ -1,6 +1,10 @@
 #### Description
 
-Not locally verified: no verification environment on the submitting machine.
+Not verified:
+  — Sequoia: blocked before this change was reached.
+  — Sonoma: verification was canceled before it finished.
+
+Branch head `0123456789ab`.
 
 ###### Type(s)
 
@@ -14,11 +18,5 @@ Have you
 - [x] followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?
 - [x] squashed and [minimized your commits](https://guide.macports.org/#project.github)?
 - [x] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?
-- [ ] referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?
-- [ ] checked your Portfile with `port lint`?
-- [ ] tried existing tests with `sudo port test`?
-- [ ] tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM
-- [ ] tested basic functionality of all binary files?
-- [ ] checked that the Portfile's most important [variants](https://trac.macports.org/wiki/Variants) haven't been broken?
 
-Automated by [dockhand](https://github.com/herbygillot/dockhand)
+Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3

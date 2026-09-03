@@ -15,7 +15,7 @@ func TestDecideMint(t *testing.T) {
 	}{
 		// A no-op realized as a branch would be an empty commit.
 		{name: "no edits", want: NothingToMint},
-		// --force replaces only when there is something to replace it
+		// --replace replaces only when there is something to replace it
 		// with, and a user who asked and got silence would reasonably
 		// believe it happened.
 		{name: "no edits, forced", force: true, want: NothingToReplace},

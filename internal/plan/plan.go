@@ -56,17 +56,35 @@ type ContextDelta struct {
 // the commit's subject and a trailer is not a subject: the realizer
 // composes the message from both, and the plan states which is which.
 type Plan struct {
-	Format         int            `json:"format"`
-	Intent         string         `json:"intent"`
-	Port           string         `json:"port"`
-	Slug           string         `json:"slug"`
-	Summary        string         `json:"summary"`
-	ClosesTicket   string         `json:"closes_ticket,omitempty"`
-	Portdir        string         `json:"portdir"`
-	Subport        string         `json:"subport,omitempty"`
-	PortfileSHA256 string         `json:"portfile_sha256"`
-	Edits          []edit.Edit    `json:"edits"`
-	Predicted      []ContextDelta `json:"predicted"`
+	Format         int         `json:"format"`
+	Intent         string      `json:"intent"`
+	Port           string      `json:"port"`
+	Slug           string      `json:"slug"`
+	Summary        string      `json:"summary"`
+	ClosesTicket   string      `json:"closes_ticket,omitempty"`
+	Portdir        string      `json:"portdir"`
+	Subport        string      `json:"subport,omitempty"`
+	PortfileSHA256 string      `json:"portfile_sha256"`
+	Edits          []edit.Edit `json:"edits"`
+	// Riders names the housekeeping rules whose edits are in Edits, in
+	// the order the rules ran. It is the names and not the edits because
+	// the edits are already here: what a note and a pull request body
+	// need is the vocabulary — "modeline" — that a reader can look up.
+	//
+	// A plan with no riders omits the key, so every plan that predates
+	// them hashes to exactly what it did.
+	Riders []string `json:"riders,omitempty"`
+	// Predicted is the delta the shadow evaluation says these edits
+	// produce, in canonical wire form.
+	//
+	// Absent rather than null when there is none. A housekeeping change
+	// predicts nothing by construction — its witness is the double proof
+	// itself — and it was the first plan document in the tree whose
+	// `predicted` key was JSON null rather than a list, which breaks a
+	// consumer iterating `.predicted[]` that never had to guard before.
+	// An absent key says the same thing the witness sentence says, once,
+	// and it is how Riders and ClosesTicket already behave.
+	Predicted []ContextDelta `json:"predicted,omitempty"`
 }
 
 // Encode writes the plan as JSON, with the process's own exit status

@@ -513,6 +513,42 @@ tool by design, warning rather than gatekeeping. Correctness lives in
 what the tool does locally; the PR speaks the one binary a reviewer
 needs.
 
+**Amended (2026-09-03, the binary keeps its cause).** The half of the
+ruling above that said local state never reaches a reviewer is
+withdrawn, because of what it cost in public. "Verified or not" was
+implemented as one bool and one fixed sentence — "Not locally
+verified: no verification environment on the submitting machine" —
+printed whatever the record held. That cause is true of exactly one of
+the eight shapes that reach an unverified body, and the sentence went
+out over a promotion whose real cause was a neighbour's failed build,
+on a machine that had a verification environment and had just been
+told not to wait for it. A body that states a cause it did not read is
+worse than one that states none. So the binary stands — the header
+still says verified or not, and no gate changed — and under it the
+body now names why: failed and promoted anyway, blocked before the
+change was reached, queued, still running, canceled, superseded,
+errored, never asked for, never recorded. What stays local is the
+PROSE and not the cause: a build log's words, a worker's name, a
+dependency named only inside a detail string. The distinction the
+original ruling was reaching for is between a reviewer's business and
+a user's diagnostics, and a cause is the reviewer's business — it is
+the first thing they would otherwise have to ask for.
+
+The same rule was then applied to the three other claims in the body
+that were stated from a literal rather than read from something. The
+commit named as the branch head is the tip being pushed and not the
+commit the record hangs on: the ledger answers a tip with no note of
+its own with a record found over the identical tree at another sha, so
+those are two facts and the body says both, with the tree identity that
+makes the second evidence for the first. The pristine-VM claim is the
+provider's own sentence off the run, because only the provider knows
+what its environment guarantees and the phrase would have gone on being
+printed over the first backend that proves less. And the three boxes a
+verification run answers are printed for a run that reached a verdict,
+not for a run RECORD — a promotion that overtook a queued or canceled
+run was no more in a position to lint or install than one with no
+record at all, and an unchecked box says a step was declined.
+
 **Amended (2026-09-01, machine-wide admission).** VM capacity is
 admitted, not discovered: under a per-user machine lock
 (~/Library/Caches/dockhand/tart.lock), occupancy is counted live from
@@ -756,7 +792,19 @@ at-latest override — but refuses a branch carrying commits the user
 added past the mint, which only an explicit `discard` may drop. On
 `promote` it force-pushes the fork copy (with lease, so a copy moved
 from another machine refuses rather than tramples) and refreshes the
-open PR's title and body. And `status` never auto-discards — amended (2026-08-31):
+open PR's title and body. Amended (2026-09-03, ruling 15): the one
+meaning was two, and the subsumption is what proved it — replacing a
+standing branch and re-deriving a port at a version that did not move
+are different acts on different objects, and a user who wanted the
+second was buying the first. `--force` is retired from the intent
+verbs and split: `--replace` is the in-flight policy, on one target,
+and `--recheck` is bump's re-derivation parameter, which additionally
+sets the run's from-source flag, because an archive matching an
+unmoved version predates the change and a pass earned by unpacking it
+proves nothing about the distfile just fetched. `promote --force`
+keeps its name — it is git's own word for the force-push-with-lease it
+performs, and it moves a branch dockhand published rather than
+destroying one it minted. And `status` never auto-discards — amended (2026-08-31):
 status now performs exactly one deletion, a branch whose PR merged,
 announced as it happens, because a merged PR is GitHub's own word that
 the work landed — and the fork copy goes with it, in status and in

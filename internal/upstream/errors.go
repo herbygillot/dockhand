@@ -132,12 +132,20 @@ func Unresolved(v Verdict, decline error) error {
 //
 // The split is the taxonomy, and it is stated as a total switch so that
 // it holds wherever it is asked rather than where it happens to be
-// asked today. Four verdicts are witnesses that produced nothing
-// usable: no signal at all, and the three shapes of a livecheck that
-// cannot be trusted against the forge. Every other verdict heard sound
-// witnesses, so a decline over one is dockhand's own refusal and
-// belongs with the plan declines — PrereleaseNewest, which reaches a
-// decline today, and the resolving verdicts, which do not.
+// asked today. Five verdicts are witnesses that produced nothing
+// usable: no signal at all, and the four shapes of a livecheck the
+// forge does not stand behind — rotted, behind, ahead of everything, or
+// standing alone with nothing corroborating it. Every other verdict
+// heard sound witnesses, so a decline over one is dockhand's own
+// refusal and belongs with the plan declines — PrereleaseNewest, which
+// reaches a decline today, and the resolving verdicts, which do not.
+//
+// The question that decides a new member is which side corroborated:
+// witnesses that spoke to a version dockhand then judged unfit are a
+// judgment (the declines), and witnesses that spoke to no version at
+// all are upstream's silence (this band). LivecheckUncorroborated is
+// the second — the forge ran and answered, and nothing it said was
+// about the version livecheck named.
 //
 // The resolving members are answered rather than omitted on purpose.
 // TagWithoutRelease, PrereleaseLateral and PrereleaseSuperseded set a
@@ -146,7 +154,7 @@ func Unresolved(v Verdict, decline error) error {
 // upstream's band, and this is the line that stops it.
 func Judged(v Verdict) bool {
 	switch v {
-	case NoSignal, LivecheckRot, LivecheckBehind, LivecheckAhead:
+	case NoSignal, LivecheckRot, LivecheckBehind, LivecheckAhead, LivecheckUncorroborated:
 		return false
 	case PrereleaseNewest, TagWithoutRelease, PrereleaseLateral, PrereleaseSuperseded,
 		Agreement, LivecheckOnly, ForgeOnly:

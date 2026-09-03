@@ -153,9 +153,11 @@ dockhand bump --plan --to 1.8.2 jq   # print the computation, as JSON
 dockhand bump --in-place jq          # edit the working tree, no branch, no commit
 ```
 
-A port already at the newest release declines — `bump --force` proceeds
-anyway, re-deriving checksums and vendored blocks at the same version,
-which is how you catch an upstream that re-rolled a release.
+A port already at the newest release declines — `bump --recheck`
+proceeds anyway, re-deriving checksums and vendored blocks at the same
+version, which is how you catch an upstream that re-rolled a release.
+It verifies from source, because an archive built for a version that
+did not move says nothing about the distfile just fetched.
 
 ## What can this machine do?
 

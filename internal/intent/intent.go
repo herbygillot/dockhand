@@ -147,11 +147,17 @@ type Params struct {
 	// carries: fetch again, compare, regenerate. It is how a stealth
 	// update is caught.
 	//
-	// One switch spells it today. --force also replaces an in-flight
-	// branch at realization, which is a different question about a
-	// different thing, and the two are named apart here so that the day
-	// they are spelled apart nothing about the planner has to move.
+	// It is --recheck on the command line. One switch spelled it and the
+	// in-flight replacement both until S10, and this field was named apart
+	// from that switch so that the day they were spelled apart nothing
+	// about the planner would have to move. They are --recheck and
+	// --replace now, and nothing here moved.
 	Recheck bool
+	// Riders says what this run does with the housekeeping riders every
+	// headline intent is examined for. It is a run parameter and not an
+	// intent's property: the rules are written once, and which of them
+	// ride is the caller's to say.
+	Riders RiderPolicy
 	// Cohort are the other ports this change is planned alongside. The
 	// substrate is plural and the catalogue runs it at N==1, so this is
 	// always empty today — present so that the day a cohort lands,

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/tool"
@@ -69,44 +70,133 @@ func TestStable(t *testing.T) {
 	}
 }
 
-func TestJudge(t *testing.T) {
-	// Agreement.
-	r := Judge(Observation{Livecheck: "2.0", ForgeVersions: []string{"1.0", "2.0"}})
-	assert.Equal(t, Agreement, r.Verdict)
-	assert.Equal(t, "2.0", r.Latest)
+// TestJudgeCensus enumerates every input shape Judge answers and pins
+// the answer, verdict and Latest together. The arms were nested
+// conditions until two falsehoods were found inside them, and the point
+// of a flat census beside a flat rule list is that closing one arm
+// cannot move another quietly.
+//
+// FIVE rows moved deliberately in the restructure and every other row is
+// what the judge answered before it, asserted unchanged after. Two are
+// the holes the step was for, marked HOLE. The other three are marked
+// EMPTY-FORGE and belong to one widening: rules 1 and 2 asked
+// `ForgeVersions == nil` and now ask `len(...) == 0`, so a forge that
+// was asked and named nothing is judged as the absence it is rather than
+// falling through to the arms below. HEAD answered those three
+// LivecheckRot with a truncated detail, Agreement over a forge that
+// named nothing, and ForgeOnly at an EMPTY version — three falsehoods of
+// exactly the kind the holes were, reached by a different road. The
+// third of them moves a band: ForgeOnly is judged (10) and NoSignal is
+// not (53).
+//
+// None of the three is reachable through upstream.Check today. Tags
+// builds with `var versions []string` and Releases returns nil when its
+// filter empties, so both forge witnesses answer nil rather than an
+// empty slice; the widening is about what Judge does with an observation
+// it can be handed, not about a verdict any port has been given.
+func TestJudgeCensus(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		obs     Observation
+		verdict Verdict
+		latest  string
+	}{
+		// Rules 1 and 2: no forge testimony, nil or empty alike.
+		{"neither witness produced anything",
+			Observation{}, NoSignal, ""},
+		{"livecheck disabled and no forge",
+			Observation{LivecheckDisabled: true}, NoSignal, ""},
+		{"EMPTY-FORGE: the forge was asked and named nothing (HEAD: LivecheckRot, detail \"forge has \")",
+			Observation{ForgeVersions: []string{}}, NoSignal, ""},
+		{"no forge: livecheck stands alone",
+			Observation{Livecheck: "2.0"}, LivecheckOnly, "2.0"},
+		{"EMPTY-FORGE: an empty forge answer is the same absence (HEAD: Agreement over a forge that named nothing)",
+			Observation{Livecheck: "2.0", ForgeVersions: []string{}}, LivecheckOnly, "2.0"},
+		{"EMPTY-FORGE: livecheck disabled, forge named nothing (HEAD: ForgeOnly at an empty version; the band moves 10 -> 53)",
+			Observation{LivecheckDisabled: true, ForgeVersions: []string{}}, NoSignal, ""},
 
-	// Rot: livecheck matched nothing, forge has versions.
-	r = Judge(Observation{Livecheck: "", ForgeVersions: []string{"1.0", "2.0"}})
-	assert.Equal(t, LivecheckRot, r.Verdict)
-	assert.Empty(t, r.Latest)
+		// Rule 3: the forge alone.
+		{"livecheck disabled, forge answers with a stable",
+			Observation{LivecheckDisabled: true, ForgeVersions: []string{"1.0", "2.0"}}, ForgeOnly, "2.0"},
+		{"HOLE 1: livecheck disabled and every tag is prerelease-style",
+			Observation{LivecheckDisabled: true, ForgeVersions: []string{"1.9.0-rc1", "2.0.0-beta"}},
+			PrereleaseNewest, ""},
 
-	// Behind: forge has a newer stable.
-	r = Judge(Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0"}})
-	assert.Equal(t, LivecheckBehind, r.Verdict)
-	assert.Empty(t, r.Latest)
+		// Rule 4: rot.
+		{"livecheck matched nothing while the forge has versions",
+			Observation{ForgeVersions: []string{"1.0", "2.0"}}, LivecheckRot, ""},
 
-	// Only prereleases newer: livecheck's conservatism is policy.
-	r = Judge(Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0.rc.1"}})
-	assert.Equal(t, Agreement, r.Verdict)
-	assert.Equal(t, "1.0", r.Latest)
+		// Rule 5: no stable tag to compare against.
+		{"the port rides prereleases and follows them upward",
+			Observation{Livecheck: "0.6.0-alpha", Current: "0.3.1-alpha", Authoritative: true,
+				ForgeVersions: []string{"0.4.0-alpha", "0.5.0-alpha", "0.6.0-alpha"}},
+			PrereleaseLateral, "0.6.0-alpha"},
+		{"a stable-styled port offered only prereleases regresses",
+			Observation{Livecheck: "2.3.2-beta", Current: "0.5.4", Authoritative: true,
+				ForgeVersions: []string{"2.3.0-beta", "2.3.2-beta"}},
+			PrereleaseNewest, ""},
+		{"the lateral rule moves upward only",
+			Observation{Livecheck: "0.3.0-alpha", Current: "0.3.1-alpha", Authoritative: true,
+				ForgeVersions: []string{"0.3.0-alpha"}},
+			PrereleaseNewest, ""},
+		{"an unknown current version proves no lateral move",
+			Observation{Livecheck: "0.6.0-alpha", Authoritative: true,
+				ForgeVersions: []string{"0.6.0-alpha"}},
+			PrereleaseNewest, ""},
+		{"authoritative beta-named releases still decline",
+			Observation{Livecheck: "2.3.2-beta", Authoritative: true,
+				ForgeVersions: []string{"2.3.0-beta", "2.3.2-beta"}},
+			PrereleaseNewest, ""},
+		{"HOLE 2: a stable livecheck no prerelease tag is equal to",
+			Observation{Livecheck: "1.2.0", ForgeVersions: []string{"2.0.0-beta"}},
+			LivecheckUncorroborated, ""},
+		{"a prerelease-styled tag that IS livecheck's answer corroborates it",
+			Observation{Livecheck: "1.0-prealpha", ForgeVersions: []string{"1.0-pre"}},
+			Agreement, "1.0-prealpha"},
 
-	// Ahead: livecheck newer than every tag.
-	r = Judge(Observation{Livecheck: "3.0", ForgeVersions: []string{"1.0", "2.0"}})
-	assert.Equal(t, LivecheckAhead, r.Verdict)
-
-	// Livecheck disabled, forge answers.
-	r = Judge(Observation{LivecheckDisabled: true, ForgeVersions: []string{"1.0", "2.0"}})
-	assert.Equal(t, ForgeOnly, r.Verdict)
-	assert.Equal(t, "2.0", r.Latest)
-
-	// No forge: livecheck stands alone.
-	r = Judge(Observation{Livecheck: "2.0"})
-	assert.Equal(t, LivecheckOnly, r.Verdict)
-	assert.Equal(t, "2.0", r.Latest)
-
-	// Nothing at all.
-	r = Judge(Observation{LivecheckDisabled: true})
-	assert.Equal(t, NoSignal, r.Verdict)
+		// Rules 6a-6c: livecheck against the newest stable tag.
+		{"behind: the forge has a newer stable",
+			Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0"}}, LivecheckBehind, ""},
+		{"ahead of every tag",
+			Observation{Livecheck: "3.0", ForgeVersions: []string{"1.0", "2.0"}}, LivecheckAhead, ""},
+		{"ahead of an authoritative releases feed",
+			Observation{Livecheck: "1.17.0", Authoritative: true,
+				ForgeVersions: []string{"1.16.0", "1.16.1"}},
+			LivecheckAhead, ""},
+		{"a prerelease whose release the forge has is superseded",
+			Observation{Livecheck: "1.17.0-rc.3", Authoritative: true,
+				ForgeVersions: []string{"1.16.1", "1.17.0"}},
+			PrereleaseSuperseded, "1.17.0"},
+		{"superseded on the tag path too",
+			Observation{Livecheck: "1.17.0-rc.3",
+				ForgeVersions: []string{"1.16.1", "1.17.0", "1.17.0-rc.3"}},
+			PrereleaseSuperseded, "1.17.0"},
+		{"a prerelease with no release behind it declines",
+			Observation{Livecheck: "2.0.0-rc.1", ForgeVersions: []string{"1.0.0", "2.0.0-rc.1"}},
+			PrereleaseNewest, ""},
+		{"livecheck is the raw newest and ahead only of the stable subset",
+			Observation{Livecheck: "2.3.2-beta",
+				ForgeVersions: []string{"1.0.0", "2.3.0-beta", "2.3.2-beta"}},
+			PrereleaseNewest, ""},
+		{"agreement on the newest stable",
+			Observation{Livecheck: "2.0", ForgeVersions: []string{"1.0", "2.0"}}, Agreement, "2.0"},
+		{"only prereleases are newer: livecheck's conservatism is policy",
+			Observation{Livecheck: "1.0", ForgeVersions: []string{"1.0", "2.0.rc.1"}}, Agreement, "1.0"},
+		{"per-PR CI tags never outrank the release livecheck names",
+			Observation{Livecheck: "0.4.96",
+				ForgeVersions: []string{"0.4.94", "0.4.95", "0.4.96", "2026.9.1-pr5150.5", "2026.9.1-pr5150.4"}},
+			Agreement, "0.4.96"},
+		{"authoritative releases outrank tag heuristics",
+			Observation{Livecheck: "0.4.96", Authoritative: true,
+				ForgeVersions: []string{"0.4.94", "0.4.95", "0.4.96"}},
+			Agreement, "0.4.96"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := Judge(tc.obs)
+			assert.Equal(t, tc.verdict, r.Verdict)
+			assert.Equal(t, tc.latest, r.Latest)
+		})
+	}
 }
 
 func TestTags(t *testing.T) {
@@ -350,15 +440,78 @@ func TestJudgePrereleaseLateralWhenThePortRidesPrereleases(t *testing.T) {
 	assert.Empty(t, r.Latest)
 }
 
-// A stable-looking livecheck answer against only-prerelease tags is
-// still trusted: livecheck matching none of them is policy, not rot.
-func TestJudgeStableLivecheckAgainstOnlyPrereleaseTags(t *testing.T) {
+// A stable-looking livecheck answer against only-prerelease tags used
+// to be Agreement — and Agreement means both witnesses named the same
+// version, which the forge had not done. It named betas, none of them
+// this. The label was published on one witness's word while telling the
+// reader two had corroborated it, and a port whose stable releases live
+// off-forge resolved on that basis.
+//
+// What was right about the old reading survives: livecheck matching
+// none of the forge's prerelease tags is the maintainer's policy and
+// never rot. Policy is testimony. It is just not two testimonies, so
+// the outcome is named for what it is and the version is not published.
+func TestJudgeStableLivecheckNoPrereleaseTagCorroborates(t *testing.T) {
 	r := Judge(Observation{
 		Livecheck:     "1.2.0",
 		ForgeVersions: []string{"2.0.0-beta"},
 	})
+	assert.Equal(t, LivecheckUncorroborated, r.Verdict)
+	assert.Empty(t, r.Latest, "one witness never publishes a version")
+	assert.Contains(t, r.Detail, "livecheck 1.2.0 stands alone")
+	assert.Contains(t, r.Detail, "newest 2.0.0-beta")
+	assert.False(t, Judged(r.Verdict),
+		"the forge answered and corroborated nothing: upstream's band, not a decline of dockhand's")
+}
+
+// The arm survives the membership test rather than becoming dead code:
+// a version can be stable by the name heuristic and vercmp-equal to a
+// tag the same heuristic calls a prerelease, through the comparator's
+// own documented quirk (a trailing alpha segment against an exhausted
+// string compares equal). When that happens the forge really did name
+// livecheck's answer, and two witnesses really do agree.
+func TestJudgeAPrereleaseStyledTagCanStillCorroborate(t *testing.T) {
+	require.True(t, Stable("1.0-prealpha"), "the pre token is inside a word")
+	require.False(t, Stable("1.0-pre"))
+	require.Zero(t, macports.VerCmp("1.0-prealpha", "1.0-pre"))
+
+	r := Judge(Observation{
+		Livecheck:     "1.0-prealpha",
+		ForgeVersions: []string{"1.0-pre"},
+	})
 	assert.Equal(t, Agreement, r.Verdict)
-	assert.Equal(t, "1.2.0", r.Latest)
+	assert.Equal(t, "1.0-prealpha", r.Latest, "the maintainer's spelling wins")
+}
+
+// Livecheck disabled is an absent witness by the maintainer's own
+// declaration, so the forge is the only one the port offers — and it
+// answered completely. When everything it has is prerelease-style the
+// old arm resolved to the raw newest, which put a -beta in a Portfile
+// as the version: exactly what every other arm of the judge refuses.
+//
+// The refusal is dockhand's own opinion of sound testimony, so it takes
+// the PrereleaseNewest shape and stays with the plan declines rather
+// than sliding into upstream's band. The decline that reaches the user
+// is plan.LatestUnresolved, whose remedy names `--to`.
+func TestJudgeForgeOnlyWithNothingButPrereleasesDeclines(t *testing.T) {
+	r := Judge(Observation{
+		LivecheckDisabled: true,
+		ForgeVersions:     []string{"1.9.0-rc1", "2.0.0-beta"},
+	})
+	assert.Equal(t, PrereleaseNewest, r.Verdict)
+	assert.Empty(t, r.Latest, "a -beta must never land in a Portfile as the version")
+	assert.Contains(t, r.Detail, "livecheck is disabled")
+	assert.Contains(t, r.Detail, "2.0.0-beta")
+	assert.True(t, Judged(r.Verdict),
+		"the one witness this port has ran and answered soundly; the refusal is dockhand's")
+
+	// A stable tag among them and the forge stands alone as before.
+	r = Judge(Observation{
+		LivecheckDisabled: true,
+		ForgeVersions:     []string{"1.9.0", "2.0.0-beta"},
+	})
+	assert.Equal(t, ForgeOnly, r.Verdict)
+	assert.Equal(t, "1.9.0", r.Latest)
 }
 
 // The gopass-satellite field case: upstream tags v1.17.0 but cuts no

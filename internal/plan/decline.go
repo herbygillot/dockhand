@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 )
@@ -42,6 +43,14 @@ const (
 	// declines the rest; refresh subtracts a cargo block's records and
 	// declines go.vendors.
 	VendoredBlock
+	// RevisionShapeAmbiguous means the Portfile carries no revision line
+	// and its own shape does not say where one belongs. A revision line
+	// sits under the line that carries the version, and dockhand writes
+	// it there when the Portfile admits exactly one such line; every
+	// other shape — subports that would all move together, a version
+	// carried by a set variable, a carrier inside a conditional — is
+	// named here rather than guessed at. The Detail says which.
+	RevisionShapeAmbiguous
 )
 
 func (t DeclineType) String() string {
@@ -69,6 +78,8 @@ func (t DeclineType) String() string {
 		return "latest could not be resolved"
 	case VendoredBlock:
 		return "vendored dependency block requires regeneration"
+	case RevisionShapeAmbiguous:
+		return "the Portfile's shape does not say where a revision line belongs"
 	}
 	return "unknown decline"
 }
@@ -97,6 +108,8 @@ func (t DeclineType) Code() string {
 		return "latest-unresolved"
 	case VendoredBlock:
 		return "vendored-block"
+	case RevisionShapeAmbiguous:
+		return "revision-shape-ambiguous"
 	}
 	return "unknown-decline"
 }
@@ -135,6 +148,8 @@ func (t DeclineType) Remedy() string {
 		return "name the version with `--to`, or fix the port's livecheck so it finds what upstream publishes"
 	case VendoredBlock:
 		return "regenerate the vendored block and commit that first; dockhand will not edit around it"
+	case RevisionShapeAmbiguous:
+		return "add the `revision` line yourself; dockhand writes one only under a version line whose placement leaves nothing to guess"
 	}
 	return ""
 }
@@ -161,6 +176,14 @@ func (d *Decline) Error() string {
 	msg := fmt.Sprintf("plan: declined: %s", d.Type)
 	if d.Detail != "" {
 		msg += ": " + d.Detail
+	}
+	// What went undone rides between the finding and the remedy, because
+	// it is part of the finding: a caller who reads only that the port is
+	// where it was asked to be has not been told the whole answer. The
+	// rules are named, not counted — "modeline" is a thing a reader can
+	// look up, and "1 rider" is not.
+	if len(d.Withheld) > 0 {
+		msg += " (withheld: " + strings.Join(d.Withheld, ", ") + ")"
 	}
 	if remedy := d.Type.Remedy(); remedy != "" {
 		msg += " — " + remedy

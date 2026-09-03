@@ -127,9 +127,14 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	// A promote issued mid-verification is itself the user's answer
 	// about the running build: cancel it with a warning and proceed —
 	// the tool removes friction, the note records the cancellation,
-	// and the PR simply reads as whatever evidence remains. Local
-	// state is the local user's business; the PR only ever says
-	// verified or not.
+	// and the PR reads as whatever evidence remains. The body names
+	// that cancellation as the reason it carries no verdict, which is
+	// a change from the rule this comment used to state: the PR said
+	// only verified or not, and "not" was one fixed sentence blaming a
+	// missing verification environment on a machine that had one and
+	// had just been told not to wait for it. What stays local is the
+	// prose — a build log's words, a worker's name — and never the
+	// cause.
 	freed, err := e.cancelRuns(ctx, repo, tip, "canceled: promoted without waiting", false)
 	if err != nil && !errors.Is(err, git.ErrNoNote) {
 		// A tip with no note is the ordinary unverified shape and holds
@@ -207,7 +212,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	// duplication: the push below updates that PR in place, and opening
 	// a second one would be the duplicate this verb refuses elsewhere.
 	// Looked up by the fork owner, never by tracking config — a branch
-	// --force just re-minted has none until the push restores it.
+	// --replace just re-minted has none until the push restores it.
 	ownPR, ownFound, err := gh.QueryPR(ctx, e.Gh, upstream, forkOwner, branch)
 	if err != nil {
 		fmt.Fprintf(e.Err, "warning: could not check for this branch's own PR: %v\n", err)
@@ -256,7 +261,13 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	if closes == "" {
 		closes = n.ClosesTicket
 	}
-	body := render.PRBody(n, verified, closes, len(ownCommits), checkedPRs)
+	// The tip and not the record's sha: EvidenceFor may have answered
+	// this tip with a record earned over the identical tree at another
+	// commit, and the head this push publishes is the one a reviewer can
+	// look up.
+	body := render.PRBody(n, verified, render.PRBodyOpts{
+		Version: e.Version, Head: tip, Closes: closes,
+		OwnCommits: len(ownCommits), CheckedPRs: checkedPRs})
 	if own.Found && own.Open {
 		if o.Force {
 			// A replaced branch usually means a new version: the PR's

@@ -33,11 +33,12 @@ import (
 // marshals.
 type declineDoc struct {
 	Exit struct {
-		Code   int    `json:"code"`
-		Family string `json:"family"`
-		Reason string `json:"reason"`
-		Detail string `json:"detail"`
-		Remedy string `json:"remedy"`
+		Code     int      `json:"code"`
+		Family   string   `json:"family"`
+		Reason   string   `json:"reason"`
+		Detail   string   `json:"detail"`
+		Remedy   string   `json:"remedy"`
+		Withheld []string `json:"withheld"`
 	} `json:"exit"`
 }
 
@@ -59,8 +60,32 @@ func TestPlanDeclineEmitsItsDocument(t *testing.T) {
 	assert.Equal(t, "already-current", got.Exit.Reason, "the machine name, not the prose")
 	assert.Equal(t, "jq is already at 1.8", got.Exit.Detail)
 	assert.Equal(t, plan.AlreadyCurrent.Remedy(), got.Exit.Remedy)
+	assert.Nil(t, got.Exit.Withheld, "nothing was held back, so the key is absent")
 	assert.Equal(t, got.Exit.Code, ExitCode(err), "the document and $? are one fact")
 	assert.Empty(t, errb.String())
+}
+
+// The same decline having held a rider back. The reason says that
+// something went undone and the withheld list says what — a sweep
+// deciding whether to come back with --riders needs the second, and a
+// list it has to derive from prose is a list it will get wrong.
+func TestPlanDeclineNamesWhatItWithheld(t *testing.T) {
+	d := &plan.Decline{Type: plan.AlreadyCurrent, Detail: "1.8", Withheld: []string{"modeline"}}
+
+	var out, errb bytes.Buffer
+	rs := &runstate.Context{Out: &out, Err: &errb}
+	err := intentAction{opts: engine.Policy{PlanOnly: true}}.sayDecline(rs, fmt.Errorf("bump: %w", d))
+
+	var got declineDoc
+	require.NoError(t, json.Unmarshal(out.Bytes(), &got), "stdout must be one JSON document: %s", out.String())
+	assert.Equal(t, exitcode.AlreadyCurrent, got.Exit.Code)
+	assert.Equal(t, "already-current-withheld", got.Exit.Reason)
+	assert.Equal(t, []string{"modeline"}, got.Exit.Withheld)
+	assert.Equal(t, got.Exit.Code, ExitCode(err))
+
+	// And the sentence a person reads names them too, between the
+	// finding and the remedy, because it is part of the finding.
+	assert.Contains(t, d.Error(), "(withheld: modeline)")
 }
 
 func TestPlanDeclineDocumentCarriesTheUpstreamBand(t *testing.T) {

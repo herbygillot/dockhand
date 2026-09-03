@@ -11,6 +11,6 @@ exit: 0
     checksum size:   175 -> 225
   predicted delta:
     bumpee: checksums rmd160 ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2 sha256 f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c size 175 -> rmd160 616164255fbcc648c856bba04549a8619647e274 sha256 554d68e473d1c7be558e96a3872a6dc580222ec070091ceb63bc0bfc2f578320 size 225; distfiles bumpee-1.0.tar.gz -> bumpee-2.0.tar.gz; revision 2 -> 0; version 1.0 -> 2.0
-  replacing in-flight dockhand/bumpee-2.0 (--force)
+  replacing in-flight dockhand/bumpee-2.0 (--replace)
   the fork copy on "herby" is untouched — `git push herby --delete dockhand/bumpee-2.0` removes it
   your checkout is untouched — `git checkout dockhand/bumpee-2.0` to add changes

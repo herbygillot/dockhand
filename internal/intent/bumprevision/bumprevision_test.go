@@ -30,7 +30,8 @@ func portWith(t *testing.T, lines string) port.Handle {
 
 func TestPlanIncrementsTheRevision(t *testing.T) {
 	h := portWith(t, "version 1.0\nrevision 3")
-	p, err := BumpRevision{Reason: "openssl soname moved"}.Plan(context.Background(), h, nil)
+	p, err := BumpRevision{Reason: "openssl soname moved", Riders: intent.RidersNone}.
+		Plan(context.Background(), h, nil)
 	require.NoError(t, err)
 	require.Len(t, p.Edits, 1)
 	assert.Equal(t, "3", p.Edits[0].Old)
@@ -38,17 +39,153 @@ func TestPlanIncrementsTheRevision(t *testing.T) {
 	assert.Contains(t, p.Edits[0].Reason, "openssl soname moved",
 		"the reason travels in the edit, into the plan and the eventual commit")
 	assert.Equal(t, "bump-revision", p.Intent)
+	assert.Nil(t, p.Riders)
 }
 
-// 18% of Portfiles carry no revision line; giving one a line means an
-// insertion, which needs a placement convention the tree does not have.
-// The decline is Locate's own, propagated because it is the truth.
-func TestPlanDeclinesWithoutARevisionLine(t *testing.T) {
+// A revbump carries the modeline now, on the run's policy rather than
+// on this intent's opinion. It used to carry none: the rule was adopted
+// one intent at a time, and a revbump had not adopted it — which was a
+// difference no user could see and no test asserted a reason for.
+//
+// The prediction is the assertion that matters. The rider is folded in
+// after the shadow and proved against a second one, so a revbump with a
+// modeline must predict exactly what a revbump without it predicts.
+func TestPlanCarriesTheModelineRider(t *testing.T) {
+	h := portWith(t, "version 1.0\nrevision 3")
+	p, err := BumpRevision{Reason: "openssl soname moved"}.Plan(context.Background(), h, nil)
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 2)
+	assert.Equal(t, "modeline", p.Edits[0].Reason, "the insertion at offset 0 sorts first")
+	assert.Equal(t, intent.Modeline+"\n", p.Edits[0].New)
+	assert.Equal(t, []string{"modeline"}, p.Riders)
+
+	bare, err := BumpRevision{Reason: "openssl soname moved", Riders: intent.RidersNone}.
+		Plan(context.Background(), h, nil)
+	require.NoError(t, err)
+	assert.Equal(t, bare.Predicted, p.Predicted)
+	assert.Equal(t, bare.Slug, p.Slug, "a rider does not rename the change it rides on")
+	assert.Equal(t, bare.Summary, p.Summary)
+}
+
+// 18% of Portfiles carry no revision line, and this used to be where a
+// revbump stopped: an insertion needs a placement convention, and the
+// tree's positions do not agree on one. Its RELATION does — a revision
+// sits under the line carrying the version — so the line is written
+// there, at the successor of the implicit 0.
+func TestPlanWritesTheMissingRevisionUnderTheVersion(t *testing.T) {
 	h := portWith(t, "version 1.0")
+	p, err := BumpRevision{Reason: "openssl soname moved", Riders: intent.RidersNone}.
+		Plan(context.Background(), h, nil)
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 1)
+	e := p.Edits[0]
+	assert.Equal(t, e.Start, e.End, "an insertion replaces nothing")
+	assert.Empty(t, e.Old)
+	assert.Equal(t, "revision 1\n", e.New)
+	assert.Contains(t, e.Reason, "openssl soname moved")
+	assert.Equal(t, "revbumpee-rev1", p.Slug, "the counter's successor names the change")
+
+	// The shadow is the whole proof that the line landed where Tcl reads
+	// it: a revision written into a comment would arrive at nothing.
+	require.Len(t, p.Predicted, 1)
+	require.Len(t, p.Predicted[0].Changes, 1)
+	assert.Equal(t, []string{"0"}, p.Predicted[0].Changes[0].Old)
+	assert.Equal(t, []string{"1"}, p.Predicted[0].Changes[0].New)
+}
+
+// The inserted line keeps the Portfile's own value column. MacPorts
+// aligns every value at a fixed offset and the carrier's first argument
+// is where that column starts, whatever the carrier's style is.
+func TestInsertedRevisionKeepsTheValueColumn(t *testing.T) {
+	h := portWith(t, "version             1.0")
+	p, err := BumpRevision{Reason: "r", Riders: intent.RidersNone}.
+		Plan(context.Background(), h, nil)
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 1)
+	assert.Equal(t, "revision            1\n", p.Edits[0].New)
+}
+
+// The inserted revision and the modeline rider are two zero-width edits
+// in one plan, which is the one shape Apply refuses when they share an
+// offset. They do not: the modeline lands at 0 and the revision under
+// the version. Worth pinning because it is the first plan in the tree
+// that carries two insertions at all.
+func TestInsertedRevisionRidesWithTheModeline(t *testing.T) {
+	h := portWith(t, "version 1.0")
+	p, err := BumpRevision{Reason: "openssl soname moved"}.Plan(context.Background(), h, nil)
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 2)
+	assert.Equal(t, "modeline", p.Edits[0].Reason, "the insertion at offset 0 sorts first")
+	assert.Equal(t, "revision 1\n", p.Edits[1].New)
+	assert.Equal(t, []string{"modeline"}, p.Riders)
+
+	bare, err := BumpRevision{Reason: "openssl soname moved", Riders: intent.RidersNone}.
+		Plan(context.Background(), h, nil)
+	require.NoError(t, err)
+	assert.Equal(t, bare.Predicted, p.Predicted, "a rider does not move what the change predicts")
+}
+
+// The declines the insertion does not make. Each row is a shape whose
+// placement would have been a guess, and the point of the type is that
+// the Detail says which shape rather than leaving the user to work it
+// out from a Portfile they already could not read.
+func TestPlanDeclinesEveryAmbiguousRevisionShape(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		lines string
+		says  string
+	}{
+		{"subports", "version 1.0\nsubport revbumpee-extra {}", "evaluation contexts"},
+		{"revision from elsewhere", "version 1.0\neval revision 5", "evaluates to revision 5"},
+		{"version in a set variable", "set v 1.0\nversion ${v}", "`set` variable"},
+		{"carrier inside a conditional", "if {1} {\n    version 1.0\n}", "not written at the Portfile's top level"},
+		// The line's own shape, both ends of it. A revision goes under
+		// the version carrier in that carrier's column, so a carrier
+		// sharing its line with something before it has no column to
+		// speak of, and one whose line is unterminated has no line after
+		// it to write into.
+		{"carrier sharing its line", "set foo 1; version 1.0", "shares its line with something before it"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := portWith(t, tc.lines)
+			_, err := BumpRevision{Reason: "r"}.Plan(context.Background(), h, nil)
+			var d *plan.Decline
+			require.ErrorAs(t, err, &d)
+			assert.Equal(t, plan.RevisionShapeAmbiguous, d.Type)
+			assert.Contains(t, d.Detail, tc.says)
+		})
+	}
+}
+
+// The seventh shape, which portWith cannot build because it always
+// writes lines after the ones it is given: a Portfile whose last line is
+// the version carrier and which ends without a newline. There is no line
+// after the carrier to write the revision into, and appending one would
+// be inventing the file's line ending as well as its revision.
+func TestPlanDeclinesAnUnterminatedCarrierLine(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(
+		"PortSystem 1.0\nname revbumpee\ncategories devel\nmaintainers nomaintainer\n"+
+			"license MIT\ndescription synthetic revbump target\n"+
+			"long_description synthetic revbump target\nversion 1.0"), 0o644))
+
+	_, err := BumpRevision{Reason: "r"}.Plan(context.Background(), porttest.LiveHandle(t, dir), nil)
+	var d *plan.Decline
+	require.ErrorAs(t, err, &d)
+	assert.Equal(t, plan.RevisionShapeAmbiguous, d.Type)
+	assert.Contains(t, d.Detail, "is not terminated")
+}
+
+// The insertion opens on one decline only. A Portfile that DOES write a
+// revision and writes it computed is not a Portfile missing a line, and
+// Locate said that better than this intent could: propagated, as it
+// always was.
+func TestPlanPropagatesAComputedRevision(t *testing.T) {
+	h := portWith(t, "version 1.0\nset r 3\nrevision ${r}")
 	_, err := BumpRevision{Reason: "r"}.Plan(context.Background(), h, nil)
 	var d *portstyle.Decline
 	require.ErrorAs(t, err, &d)
-	assert.Equal(t, portstyle.UnknownStyle, d.Type)
+	assert.Equal(t, portstyle.NotLiteral, d.Type)
 }
 
 func TestPlanRequiresAReason(t *testing.T) {

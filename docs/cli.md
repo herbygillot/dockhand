@@ -64,12 +64,16 @@ edit the Portfile where the user stands, uncommitted, minting nothing — for
 the user folding dockhand's mechanical edit into their own workflow, and the
 only write mode a non-git tree gets (with a loud warning). Lifecycle: an
 intent finding an in-flight branch for its port refuses and names it;
-`--force` replaces it — verification canceled, notes removed, the port
-re-derived from scratch — but only a branch that is exactly the minted
-commit: work the user added past the mint refuses, and `discard` stays
-the explicit act for dropping it. `promote --force` is the same meaning
-at ring 2/3: force-push the fork copy (with lease) and refresh the open
-PR's title and body. `status` reports each
+`--replace` replaces it — verification canceled, notes removed — but
+only a branch that is exactly the minted commit: work the user added
+past the mint refuses, and `discard` stays the explicit act for
+dropping it. Re-deriving a port at the version it already carries is a
+separate question and now a separate flag, `bump --recheck`, which also
+makes the verification build from source: the archive matching an
+unmoved version predates the change. `promote --force` keeps its name
+and is a different act — force-push the fork copy (with lease) and
+refresh the open PR's title and body — because it moves a branch
+dockhand published rather than destroying one it minted. `status` reports each
 promoted branch's PR state and performs one deletion — a branch whose
 PR merged is cleaned, announced, its fork copy deleted with it — while
 `clean` remains the explicit sweep: PR state from
@@ -78,6 +82,33 @@ land, so ancestry proves nothing), confirmed by byte-comparing the touched
 paths against upstream; closed-unmerged branches are kept and flagged. The
 pipe below, and every plan-file argument in this document, describe the
 superseded surface.
+
+**Riders.** Every headline intent is examined for housekeeping it could
+carry — one rule today, the editor modeline a Portfile opens without — and
+a rider rides only on a double proof. The structural half is that the edit
+touches comment and whitespace token spans only, in the tree it was
+computed against *and* in the tree it produces: a boundary insertion must
+write whole lines, so bytes cannot join the token before or after them,
+and the bytes it wrote must still be occupied by no command once they are
+there. The semantic half is that the shadow evaluation predicts exactly
+what it predicted without the rider. Neither is enough on its own. A whole
+command written into the gap between two commands has as innocent a span
+as a modeline, and the prediction cannot see it either — the delta
+observes the twenty metadata fields, and a `configure.args-append` is not
+one of them — so the re-read of the new tree is what refuses it; a comment
+line ending in a backslash continues onto the next line and swallows the
+command below it, which no span can report and only an evaluation can; and
+a rewritten literal that happens to leave the evaluation where it was has
+an identical prediction and is plainly not housekeeping. A rider that
+fails any of them is dropped, the headline change stands, and `--debug`
+names the rule. The proofs certify that a rider is *inert*, never that it
+is *right*: a rule that inserts something already present is a rule bug,
+and no proof here will catch it. Riders never trigger a verification:
+nothing a build could notice has changed, by construction. `--riders`
+makes housekeeping the whole change — the headline is dropped, the plan is
+named after the rules it carries, the verb's own parameters and its
+caution are not read, and the branch is minted without a verdict being
+asked for. `--no-riders` carries none and withholds none.
 
 **Superseded (2026-08-30).** This section originally argued that emitting a
 plan should be the default because it is both convenient and safe, so no flag
@@ -98,7 +129,7 @@ The pipe is available when you want it. Sweeps never want it.
 ## Intent verbs
 
 ```
-bump <sel> [--to <version> | --latest]   # no flag: latest
+bump <sel> [--to <version> | --latest] [--recheck]   # no flag: latest
 bump-revision <sel>                # alias: revbump
 bump-epoch <sel>
 refresh-checksums <sel>            # never auto-promotable; carries its cause
@@ -117,6 +148,24 @@ Notes on naming and shape:
   alias honors the community's own vernacular — reviewers and commit
   messages say "revbump" — by the same borrowing principle that took
   `port`'s selectors. Both spellings are permanent; neither is deprecated.
+- **`bump-revision` writes the line when the Portfile has none.** Near a
+  fifth of the tree carries no `revision`, and such a port is at revision 0
+  implicitly, so the value was never the question — the placement was. The
+  positions in the tree do not agree, but the relation does: a revision sits
+  under the line carrying the version. dockhand writes it there, in that
+  line's own value column, and the shadow evaluation is the proof it landed
+  where Tcl reads it. Every shape where the placement would have been a guess
+  declines `revision-shape-ambiguous` (exit `10`) and the detail says which,
+  and these are all of them: a Portfile with subports, whose one inserted
+  line would move all of them; a port evaluating to a non-zero revision with
+  no line to increment; a version carried by a `set` variable; a version
+  carrier written inside a conditional rather than at the top level; a
+  carrier sharing its line with something before it, so there is no column
+  to write under; a carrier whose line is unterminated, so there is no line
+  after it to write into; and a version carrier that could not be located at
+  all, which folds the location decline's own type into the detail. A
+  Portfile that does write a revision and writes it computed is not this
+  case at all, and keeps its own location decline.
 - **`refresh-checksums`, not `checksums`.** `port checksum` already exists,
   and it *verifies* checksums rather than refreshing them. Reusing `port`'s
   vocabulary to mean something different would be worse than not borrowing at
@@ -533,14 +582,22 @@ interchangeable.
 | Code | Name | What happened |
 |---|---|---|
 | `10` | `PlanDeclined` | a planner refused to produce a plan it cannot stand behind, or a field could not be located to edit |
-| `11` | `BranchInFlight` | the port already has a change in flight; discard it, pick it up, or `--force` |
+| `11` | `BranchInFlight` | the port already has a change in flight; discard it, pick it up, or `--replace` |
 | `12` | `AlreadyCurrent` | nothing to do — and riders went undone with it |
 | `13` | `Ambiguous` | the target names several in-flight branches, or the branch changes several evaluation contexts; say which |
 
 Every decline carries its remedy in the sentence, which is what keeps a
 decline from reading as a failure. `12` is its own code so a sweep can tell
-"nothing to do" from "nothing to do, and here is what that cost"; the path
-is present and nothing populates the riders yet.
+"nothing to do" from "nothing to do, and here is what that cost" — the
+riders a change would have carried, named by rule, held back because there
+was no change to carry them. Those names are what the structural proof
+offered: a decline has no prediction to compare against, so the semantic
+half has not been paid for, and a rule that would fail it would be named
+here and then refused by the `--riders` run this code invites. Nothing can
+reach that with one rule that inserts a comment at offset zero; a second
+rule is where it becomes worth closing. `--riders` plans them as the
+change instead, and `--no-riders` withholds nothing because nothing was
+ever going to ride, which puts the decline back at `10`.
 
 ### Refused — `20`–`24`
 
@@ -624,14 +681,15 @@ today falls back to the tag witness silently and the bump still lands;
 making the code reachable is a change to that fallback, not a renumbering.
 
 `53` covers only the verdicts that left nothing to act on: no signal at all,
-and the three shapes of a livecheck that cannot be trusted against the forge
-(rotted, behind, or ahead with nothing to corroborate it). A judgment over
-*sound* witnesses — the newest tags are all prereleases — is dockhand's own
-refusal and exits `10` with the other declines. The verdicts that resolve
-(agreement, one witness only, a tag without a release, a prerelease that is
-lateral or superseded) set a version and exit `0`; if one of them ever stops
-setting a version, it is a judgment over sound witnesses too, and it stays
-at `10` rather than sliding into this band by default.
+and the four shapes of a livecheck the forge does not stand behind (rotted,
+behind, ahead with nothing to corroborate it, or standing alone with nothing
+corroborating it). A judgment over *sound* witnesses — the newest tags are
+all prereleases — is dockhand's own refusal and exits `10` with the other
+declines. The verdicts that resolve (agreement, one witness only, a tag
+without a release, a prerelease that is lateral or superseded) set a version
+and exit `0`; if one of them ever stops setting a version, it is a judgment
+over sound witnesses too, and it stays at `10` rather than sliding into this
+band by default.
 
 ### Pending — `60`–`62`
 

@@ -62,7 +62,7 @@ func (e *Engine) planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, 
 // judgment with a remedy, not something broken.
 type BranchInFlightError struct {
 	Branch string
-	// Reason overrides the default message: --force's narrower refusal
+	// Reason overrides the default message: --replace's narrower refusal
 	// speaks here.
 	Reason string
 }
@@ -71,7 +71,7 @@ func (e *BranchInFlightError) Error() string {
 	if e.Reason != "" {
 		return e.Reason
 	}
-	return fmt.Sprintf("a change for this port is already in flight: %s — discard it, pick up where it left off, or --force to replace it", e.Branch)
+	return fmt.Sprintf("a change for this port is already in flight: %s — discard it, pick up where it left off, or --replace to replace it", e.Branch)
 }
 
 // DockhandExit: its own code inside the declined band. A caller sweeping
@@ -82,7 +82,7 @@ func (e *BranchInFlightError) DockhandExit() int { return exitcode.BranchInFligh
 // Code names the refusal for a machine.
 func (e *BranchInFlightError) Code() string { return "branch-in-flight" }
 
-// replaceInFlight clears the way for --force: the standing branch goes
+// replaceInFlight clears the way for --replace: the standing branch goes
 // through discard's own demolition — running verification canceled,
 // workers released, notes removed — but only when the branch is
 // exactly what dockhand minted. Commits the user added are theirs;
@@ -95,12 +95,12 @@ func (e *Engine) replaceInFlight(ctx context.Context, repo *git.Repo, primary, b
 	}
 	if len(own) > 1 {
 		return &BranchInFlightError{Branch: branch, Reason: fmt.Sprintf(
-			"%s carries %d commit(s) beyond the mint — --force replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
+			"%s carries %d commit(s) beyond the mint — --replace replaces only what dockhand placed; `dockhand discard %s` first if you mean to drop your own work",
 			branch, len(own)-1, branch)}
 	}
-	fmt.Fprintf(e.Err, "replacing in-flight %s (--force)\n", branch)
+	fmt.Fprintf(e.Err, "replacing in-flight %s (--replace)\n", branch)
 	// The demolition's own words follow the announcement, on the streams
-	// they chose: --force is one of the four places discard's report
+	// they chose: --replace is one of the four places discard's report
 	// lands, and it lands here rather than being swallowed because the
 	// user asked to destroy a branch and is owed the sentence saying it
 	// happened. Printed even when the demolition failed — the half it
@@ -136,7 +136,7 @@ type Minted struct {
 // gains a note where it used to have none.
 func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, error) {
 	branch, message := git.MintBranchName(p.Slug), commitMessage(p)
-	force := o.OnInFlight == Replace
+	replace := o.OnInFlight == Replace
 	hasEdits := len(p.Edits) > 0
 	// The decision is asked twice, and the order is the reason: the
 	// empty-plan answer is reached before the plan is resolved against
@@ -145,14 +145,14 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 	// refusal precedes a replacement. The first call cannot need the
 	// probe; the second is the same question with the probe's answer in
 	// it.
-	switch verdict.DecideMint(hasEdits, force, false) {
+	switch verdict.DecideMint(hasEdits, replace, false) {
 	case verdict.NothingToMint:
 		// A no-op realized as a branch would be an empty commit.
 		fmt.Fprintln(e.Out, "no edits; no branch minted")
 		return nil, nil
 	case verdict.NothingToReplace:
 		fmt.Fprintln(e.Out, "no edits; no branch minted")
-		fmt.Fprintln(e.Err, "an existing in-flight branch, if any, stands: --force replaces only when there is something to replace it with")
+		fmt.Fprintln(e.Err, "an existing in-flight branch, if any, stands: --replace replaces only when there is something to replace it with")
 		return nil, nil
 	case verdict.MintBranch, verdict.ReplaceThenMint:
 		// Both mint; which of the two it is cannot be settled until the
@@ -162,8 +162,8 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 	if err != nil {
 		return nil, err
 	}
-	hasBranch := verdict.MintProbesBranch(hasEdits, force) && repo.HasBranch(ctx, branch)
-	if verdict.DecideMint(hasEdits, force, hasBranch) == verdict.ReplaceThenMint {
+	hasBranch := verdict.MintProbesBranch(hasEdits, replace) && repo.HasBranch(ctx, branch)
+	if verdict.DecideMint(hasEdits, replace, hasBranch) == verdict.ReplaceThenMint {
 		if err := e.replaceInFlight(ctx, repo, primary, branch); err != nil {
 			return nil, err
 		}
@@ -250,6 +250,11 @@ func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string,
 			Intent:  p.Intent,
 			Target:  targetIn(p.Slug, p.Port),
 		}}
+		// The housekeeping the change carried that nobody asked for,
+		// remembered by rule name. The pull request body vouches for what
+		// the note holds, so the names have to survive the mint — a diff
+		// cannot say which of its hunks was a rider.
+		r.Riders = p.Riders
 		r.Destination = dest
 		// The same ticket the trailer names, so that the pull request
 		// body can cite it without being told again — and so that a

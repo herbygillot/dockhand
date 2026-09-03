@@ -187,7 +187,7 @@ func LookupPR(ctx context.Context, gh Runner, repo *git.Repo, remotes map[string
 }
 
 // QueryPR is the head-ref lookup itself, for callers that already know
-// the fork owner — promote does, and a branch --force just re-minted
+// the fork owner — promote does, and a branch --replace just re-minted
 // has no tracking config to derive it from until the push restores it.
 func QueryPR(ctx context.Context, gh Runner, upstream, owner, branch string) (pr PullRequest, found bool, err error) {
 	out, err := gh(ctx, "api",

@@ -29,8 +29,18 @@ import (
 // the ticket every intent may close. They are declared once by
 // intentCommand and register, and a verb that lost one would be a verb
 // whose --plan or --in-place silently stopped existing.
+// The rider pair is shared for the same reason the rest are: every
+// headline intent is examined, so a verb whose --riders was missing
+// would be a verb whose housekeeping silently could not be asked for.
+//
+// --replace is here and --recheck is not, which is the whole of the
+// S10 split stated as data: what to do about a branch already in
+// flight is every intent's question, and re-deriving a port at the
+// version it already carries is bump's alone. One flag named --force
+// answered both.
 var sharedIntentFlags = []string{
-	"closes", "diff", "force", "in-place", "no-verify", "on", "plan", "test", "trace", "verify",
+	"closes", "diff", "in-place", "no-riders", "no-verify", "on", "plan", "replace",
+	"riders", "test", "trace", "verify",
 }
 
 // intentSurface is what each verb shows a user.
@@ -45,7 +55,7 @@ var intentSurface = []struct {
 	{
 		name:    "bump",
 		short:   "Bump a port to a new version, as a branch",
-		own:     []string{"latest", "to"},
+		own:     []string{"latest", "recheck", "to"},
 		fetches: true,
 	},
 	{

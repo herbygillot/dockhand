@@ -25,7 +25,7 @@ var refreshVerb = intentVerb{
 		Fetches: true,
 		Caution: refreshCaution,
 		New: func(p intent.Params) (intent.Planner, error) {
-			return refresh.Refresh{ClosesTicket: p.ClosesTicket}, nil
+			return refresh.Refresh{ClosesTicket: p.ClosesTicket, Riders: p.Riders}, nil
 		},
 	},
 	Short: "Re-fetch a port's distfiles and repair its recorded checksums",

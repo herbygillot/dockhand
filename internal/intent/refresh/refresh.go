@@ -39,6 +39,9 @@ type Refresh struct {
 	// ClosesTicket is the Trac ticket this repair closes, bound for the
 	// minted commit's trailer.
 	ClosesTicket string
+	// Riders is the run's rider policy, carried here so that the
+	// already-current decline below can name what it held back with it.
+	Riders intent.RiderPolicy
 }
 
 var _ intent.Planner = Refresh{}
@@ -161,7 +164,8 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 	}
 	if len(edits) == 0 {
 		return nil, &plan.Decline{Type: plan.AlreadyCurrent,
-			Detail: "recorded checksums match what upstream serves"}
+			Detail:   "recorded checksums match what upstream serves",
+			Withheld: intent.Withheld(src, cst, r.Riders)}
 	}
 
 	// The tail is intent.Finish, as it is for every intent: shadow the
@@ -169,11 +173,15 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 	// The plan states what will change, and applying it holds the change
 	// to that statement.
 	//
-	// No riders. The modeline is a bump's to carry, because a bump is
-	// already rewriting the lines everyone reads; a refresh touching two
-	// checksum values should show a reviewer two checksum values and
-	// nothing else, at the one moment they are most owed an undistracted
-	// diff.
+	// Riders ride here too, on the run's policy and not on this intent's
+	// opinion. The opinion was a real one and is worth stating, because
+	// it is the reason --no-riders exists: a refresh touching two
+	// checksum values shows a reviewer two checksum values, at the one
+	// moment they are most owed an undistracted diff. What that argument
+	// could not survive was being an intent's private rule — a reviewer
+	// who wants the narrow diff wants it from every verb, and a
+	// housekeeping rule nobody can turn on for a refresh is a rule that
+	// silently never runs on two thirds of the catalogue.
 	return intent.Finish(ctx, h, src, edits,
 		intent.Identity{
 			Intent:       "refresh-checksums",
@@ -190,6 +198,7 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 				return accept(vals, predicted)
 			},
 			ViaSet: viaSet,
+			Riders: r.Riders,
 			// The bytes are the witness, and this intent has the best kind:
 			// a fetch that deliberately refused the mirrors, so what was
 			// hashed is what upstream serves right now. A prediction that

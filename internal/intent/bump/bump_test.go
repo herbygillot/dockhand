@@ -140,6 +140,11 @@ func TestBumpPlanEndToEnd(t *testing.T) {
 	assert.Contains(t, string(after), "revision 0")
 }
 
+// A bump asked for the version the port already carries declines — and
+// says what it held back on the way past. This fixture already opens
+// with a modeline, so there is nothing to hold: the decline stays in the
+// ordinary declined band, and the fixture's own header is the reason.
+// The withheld case is the one below it.
 func TestBumpDeclinesAlreadyCurrent(t *testing.T) {
 	ev := newEvaluator(t)
 	srv := distServer(t)
@@ -149,6 +154,8 @@ func TestBumpDeclinesAlreadyCurrent(t *testing.T) {
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.AlreadyCurrent, d.Type)
+	assert.Empty(t, d.Withheld)
+	assert.Equal(t, exitcode.PlanDeclined, d.DockhandExit())
 }
 
 func TestBumpDeclinesFetchNotDriven(t *testing.T) {
@@ -285,7 +292,13 @@ long_description a Portfile that opens without an editor header
 // with a modeline has no rider to offer, and the one that does not is
 // the case that would otherwise slip through: a rider is not a bump,
 // and a branch whose entire content is an editor header is not what
-// --force was asked for.
+// --recheck was asked for.
+//
+// The two also part company on the exit code, and that is the point of
+// the pair. A decline that held a rider back is not the same answer as
+// one that had nothing to hold: the port is where it was asked to be
+// either way, and only one of them cost something. A caller sweeping
+// ports reads 12 and knows to come back with --riders.
 func TestBumpForceWithoutAFetchOrAMoveDeclines(t *testing.T) {
 	ev := newEvaluator(t)
 	body := `PortSystem 1.0
@@ -300,21 +313,27 @@ long_description a port recording no checksums at all
 	for _, tc := range []struct {
 		name     string
 		portfile string
+		riders   intent.RiderPolicy
+		withheld []string
+		exit     int
 	}{
-		{"with a modeline", intent.Modeline + "\n" + body},
-		{"without one, so a rider is on offer", body},
+		{"with a modeline", intent.Modeline + "\n" + body, intent.RidersAlong, nil, exitcode.PlanDeclined},
+		{"without one, so a rider is on offer", body, intent.RidersAlong, []string{"modeline"}, exitcode.AlreadyCurrent},
+		{"without one, and --no-riders", body, intent.RidersNone, nil, exitcode.PlanDeclined},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(tc.portfile), 0o644))
 
-			p, err := Bump{Version: "1.0", Force: true}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+			p, err := Bump{Version: "1.0", Force: true, Riders: tc.riders}.
+				Plan(context.Background(), handle(dir, ev), newFetcher(t))
 			require.Nil(t, p)
 			var d *plan.Decline
 			require.ErrorAs(t, err, &d)
 			assert.Equal(t, plan.AlreadyCurrent, d.Type)
 			assert.Contains(t, d.Detail, "inert records no checksums")
-			assert.Equal(t, exitcode.PlanDeclined, d.DockhandExit(),
+			assert.Equal(t, tc.withheld, d.Withheld)
+			assert.Equal(t, tc.exit, d.DockhandExit(),
 				"a judgment about the port, not a malfunction")
 			assert.NotErrorIs(t, err, intent.ErrNoWitness,
 				"the intent answers for itself; the backstop is for an intent that does not")
@@ -348,7 +367,7 @@ long_description computed version declines
 // installation, mirroring what cmd wires in.
 func newFetcher(t *testing.T) *portfetch.Fetcher { return porttest.Fetcher(t) }
 
-// --force plans at the version the port already carries. The version
+// --recheck plans at the version the port already carries. The version
 // itself is not rewritten — that edit would change nothing — and the
 // revision is left alone: resetting it where the version did not move
 // would send the port backwards in MacPorts' ordering.

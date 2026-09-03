@@ -1,0 +1,30 @@
+#### Description
+
+Verified with [dockhand](https://github.com/herbygillot/dockhand):
+  — Sequoia: built in a pristine VM.
+
+Branch head `0123456789ab`.
+
+Closes: https://trac.macports.org/ticket/71234
+
+###### Type(s)
+
+- [ ] bugfix
+- [ ] enhancement
+- [ ] security fix
+
+###### Tested on
+- macOS Sequoia — built in a pristine VM, via dockhand
+
+###### Verification
+Have you
+
+- [x] followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?
+- [x] squashed and [minimized your commits](https://guide.macports.org/#project.github)?
+- [x] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?
+- [x] referenced existing tickets on [Trac](https://trac.macports.org/wiki/Tickets) with full URL in commit message?
+- [ ] checked your Portfile with `port lint`?
+- [ ] tried existing tests with `sudo port test`?
+- [x] tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM
+
+Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3

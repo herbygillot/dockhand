@@ -64,6 +64,10 @@ type Bump struct {
 	// ClosesTicket is the Trac ticket this bump closes, bound for the
 	// minted commit's trailer. It changes nothing about what is planned.
 	ClosesTicket string
+	// Riders is the run's rider policy, carried here so that the two
+	// already-current declines below can name what they held back with
+	// them.
+	Riders intent.RiderPolicy
 }
 
 var _ intent.Planner = Bump{}
@@ -133,7 +137,8 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// the target's own.
 	moving := carrier.Text(src) != b.Version
 	if !moving && !b.Force {
-		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: carrier.Text(src)}
+		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: carrier.Text(src),
+			Withheld: intent.Withheld(src, cst, b.Riders)}
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
@@ -184,7 +189,8 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// failure band.
 	if !moving && len(vals.Checksums) == 0 {
 		return nil, &plan.Decline{Type: plan.AlreadyCurrent,
-			Detail: fmt.Sprintf("%s records no checksums, so a re-derivation at %s has nothing to fetch and nothing to compare", vals.Name, b.Version)}
+			Detail:   fmt.Sprintf("%s records no checksums, so a re-derivation at %s has nothing to fetch and nothing to compare", vals.Name, b.Version),
+			Withheld: intent.Withheld(src, cst, b.Riders)}
 	}
 
 	// What this run spent, named for the case where the shadow ends up
@@ -387,17 +393,10 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 				return b.accept(vals, predicted, moving, exact)
 			},
 			ViaSet:  checksumsViaSet,
-			Riders:  bumpRiders,
+			Riders:  b.Riders,
 			Witness: witness,
 		})
 }
-
-// bumpRiders are the rules a bump adopts from Examine. The modeline is
-// the only one there is, and a bump is where it belongs: a version bump
-// already rewrites the file's most-read lines, so a missing editor
-// header costs nothing extra to add and no reviewer has to think about
-// it separately.
-var bumpRiders = map[intent.Rule]bool{intent.RuleModeline: true}
 
 // accept is the bump's judgment of its own predicted delta — the half
 // of the old tail that is genuinely this intent's. The structural

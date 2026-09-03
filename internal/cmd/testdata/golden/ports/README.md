@@ -13,7 +13,7 @@ headers, and best compression, so regenerating them reproduces the bytes
 exactly. 1.0 and 2.0 differ in content and in size, so every value the
 Portfile records — rmd160, sha256, size — moves under a bump. The recorded
 checksums for 1.0 are the ones dockhand itself computes: a
-`bump --to 1.0 --force --plan` over the fixture plans zero edits.
+`bump --to 1.0 --recheck --plan` over the fixture plans zero edits.
 
 The goldens pin the Portfile's own sha256 and the byte offsets of its edits,
 so any change to `Portfile` re-records all three bump goldens

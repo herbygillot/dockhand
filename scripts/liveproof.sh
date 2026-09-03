@@ -30,10 +30,12 @@
 #
 # Invocations, per port:
 #   bump --to <current> --plan       offline: declines AlreadyCurrent (exit 10)
-#                                    before any distfile would be fetched
+#                                    before any distfile would be fetched, or
+#                                    12 where a rider was withheld with it
 #   bump --to <current> --diff       offline: the same decline, on the diff road
-#   bump-revision --plan --reason x  offline: a plan (exit 0), or a decline (exit 10)
-#                                    where the Portfile carries no revision line
+#   bump-revision --plan --reason x  offline: a plan (exit 0) — the revision
+#                                    line rewritten, or written in under the
+#                                    version carrier where the Portfile has none
 #   classify                         offline: the evaluator alone
 #   refresh-checksums --plan         NETWORK: fetches the port's distfiles to
 #                                    compare checksums
@@ -94,15 +96,22 @@ cd "$repo"
 # two verbs are then skipped for that port. One port per style the tree
 # is made of: a plain github port, a cargo port that is also a github
 # one, a perl5 port (transformed carrier, subports, a revision line), an
-# R port, a second cargo port, and a go2port-shaped port with a
-# go.vendors block and no revision line.
-# What this list does NOT cover: every port in it already opens with a
-# modeline, so no capture here contains a rider edit and this gate says
-# nothing about the rider fold. That path is pinned by fixture instead,
-# in internal/intent/bump's TestBumpCarriesTheModelineRider, which runs
-# a bump over a modeline-less Portfile and its modeline-carrying twin
-# and demands the same prediction from both. A port whose first line is
-# not a modeline belongs here the next time this baseline is recorded.
+# R port, a second cargo port, a go2port-shaped port with a
+# go.vendors block and no revision line — which is also the one port
+# here whose revbump proves the carrier+1 insertion rather than the
+# increment — and a github port whose Portfile opens with no modeline.
+# That last one is here for the riders. Every other port in this list
+# already carries a modeline, so every rule this build knows already
+# holds for them and no capture of theirs contains a rider edit; with
+# only those, the gate would say nothing about the fold through the
+# assembled binary. bmon makes the fold visible three ways: its revbump
+# carries the modeline beside the increment and still predicts the same
+# delta, and both roads that find nothing else to do — the bump already
+# at its version, and the checksums that already match — decline as
+# already-current-withheld at 12 naming what they held back, rather
+# than as the bare already-current at 10 they would answer for a port
+# with its modeline in place. A port whose first line is not a modeline
+# belongs here for as long as riders do.
 ports='
 jq|sysutils/jq|1.8.2|1.8.1
 ruff|devel/ruff|0.16.5|0.16.4
@@ -110,6 +119,7 @@ p5-algorithm-annotate|perl/p5-algorithm-annotate|0.10|
 R-AER|R/R-AER|1.2-14|1.2-13
 ast-grep|devel/ast-grep|0.45.3|0.45.2
 neo-cowsay|textproc/neo-cowsay|2.0.4|
+bmon|net/bmon|4.0|
 '
 
 verbs='bump-plan bump-diff bump-revision-plan classify refresh-checksums-plan bump-plan-next bump-diff-next'

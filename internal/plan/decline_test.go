@@ -28,7 +28,7 @@ func TestEveryDeclineTypeIsNamedCodedAndRemedied(t *testing.T) {
 		assert.False(t, seen[dt.Code()], "%q is claimed twice", dt.Code())
 		seen[dt.Code()] = true
 	}
-	assert.Len(t, seen, 9, "the taxonomy is nine members; a change to it is a change to the contract")
+	assert.Len(t, seen, 10, "the taxonomy is ten members; a change to it is a change to the contract")
 }
 
 // The sentence is the finding, then the detail, then the remedy — the
@@ -55,13 +55,17 @@ func TestDeclineExitsDeclined(t *testing.T) {
 }
 
 // The withheld path: same outcome, different consequence, so a caller
-// can tell the two apart without reading prose. Nothing populates
-// Withheld yet — the riders arrive later — and the branch is pinned
-// now so that arriving cannot quietly change the exit contract.
+// can tell the two apart without reading prose. intent.Withheld
+// populates it — a rule the sweep would have carried on the change this
+// decline is not making.
 func TestDeclineWithheldRidersGetTheirOwnCode(t *testing.T) {
 	d := &Decline{Type: AlreadyCurrent, Detail: "1.8.2", Withheld: []string{"cargo.crates"}}
 	assert.Equal(t, exitcode.AlreadyCurrent, d.DockhandExit())
 	assert.Equal(t, "declined", exitcode.Family(d.DockhandExit()), "a withheld decline is still a decline")
+	assert.Equal(t,
+		"plan: declined: already in the desired state: 1.8.2 (withheld: cargo.crates) — "+
+			"nothing needs doing here; ask for a different state if this is not the one you meant",
+		d.Error(), "the rules are named in the sentence, between the finding and the remedy")
 
 	assert.Equal(t, exitcode.PlanDeclined, (&Decline{Type: AlreadyCurrent, Withheld: nil}).DockhandExit())
 	assert.Equal(t, exitcode.PlanDeclined,

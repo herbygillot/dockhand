@@ -40,7 +40,7 @@ type Proof struct {
 // read the Portfile, hold it to the plan's precondition hash, apply the
 // edits, shadow the result — so the port under test is exactly what
 // apply would write.
-func (e *Engine) VerifyPlan(ctx context.Context, p *plan.Plan, release platform.Release, test bool) (Proof, error) {
+func (e *Engine) VerifyPlan(ctx context.Context, p *plan.Plan, o Policy) (Proof, error) {
 	src, err := os.ReadFile(filepath.Join(p.Portdir, macports.PortfileName))
 	if err != nil {
 		return Proof{}, err
@@ -66,10 +66,12 @@ func (e *Engine) VerifyPlan(ctx context.Context, p *plan.Plan, release platform.
 	defer cleanup()
 
 	// The gate builds what the branch will carry, so it builds it under
-	// the same terms: a change that leaves the port's archive matching
-	// bytes it replaced is verified from source or verified against the
-	// archive it was supposed to be testing.
-	return e.RunVerification(ctx, p.Port, shadow.Target.Portdir, release, test, fromSource(p.Intent))
+	// the same terms — which is why it takes the whole policy and not
+	// three fields of it: a change that leaves the port's archive
+	// matching bytes it replaced is verified from source or verified
+	// against the archive it was supposed to be testing, and the run's
+	// own --recheck is part of that answer.
+	return e.RunVerification(ctx, p.Port, shadow.Target.Portdir, o.On, o.Test, o.fromSource(p.Intent))
 }
 
 // RunVerification submits one portdir to the VM provider and reports

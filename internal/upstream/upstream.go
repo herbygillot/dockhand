@@ -83,6 +83,20 @@ const (
 	// the judgment, not in the comparator (field-measured on gopass,
 	// declined "livecheck ahead" with the right answer in hand).
 	PrereleaseSuperseded
+	// LivecheckUncorroborated means livecheck named a stable-looking
+	// version and the forge, which was asked and answered, holds
+	// nothing that speaks to it: every tag it has is prerelease-style
+	// and none of them is that version. One witness spoke to the
+	// value.
+	//
+	// It is not Agreement, which claims two witnesses named the same
+	// version — the forge named no such thing. It is not LivecheckOnly
+	// either, which is the honest single witness of a carrier with no
+	// forge to ask; here there IS a forge and it was asked. Naming the
+	// difference is the point: this used to wear the Agreement label
+	// and resolve, which published a version on one witness's word
+	// while telling the reader two had agreed.
+	LivecheckUncorroborated
 )
 
 func (v Verdict) String() string {
@@ -109,6 +123,8 @@ func (v Verdict) String() string {
 		return "prerelease to prerelease: nothing stable is given up"
 	case PrereleaseSuperseded:
 		return "livecheck matched a prerelease; the release stands"
+	case LivecheckUncorroborated:
+		return "livecheck stands alone: no forge tag corroborates it"
 	}
 	return "unknown verdict"
 }
@@ -121,8 +137,12 @@ type Observation struct {
 	// Livecheck is the executed livecheck's answer; empty means the
 	// regex matched nothing.
 	Livecheck string
-	// ForgeVersions are the forge-derived versions; nil means the
-	// carrier has no git forge to ask.
+	// ForgeVersions are the forge-derived versions; empty means no
+	// forge testimony at all. Nil is the carrier with no git forge to
+	// ask, and an empty list is a forge that was asked and named
+	// nothing — the same absence, judged the same way, because a rule
+	// that told them apart would have to say what the second one
+	// witnessed, and it witnessed nothing.
 	ForgeVersions []string
 	// Authoritative says ForgeVersions came from the forge's releases
 	// API — upstream's own stability flag, already filtered. The name
@@ -169,6 +189,14 @@ func Stable(version string) bool {
 
 // Judge rules on an observation. Ordering is macports.VerCmp — a pure
 // comparison, so judging cannot fail.
+//
+// The four gates below decide who spoke at all; the three arms under
+// them decide what was said, and each of those is a flat ordered rule
+// list in its own function rather than conditions nested in a switch.
+// The shape is deliberate and was bought at a price: two arms published
+// a falsehood — a beta resolved as a version, and a single witness
+// labelled agreement — and both hid in the nesting rather than in any
+// one predicate.
 func Judge(obs Observation) Report {
 	r := Report{Livecheck: obs.Livecheck}
 	r.ForgeNewest = newest(obs.ForgeVersions)
@@ -183,86 +211,137 @@ func Judge(obs Observation) Report {
 	r.ForgeNewestStable = newest(stableOf(obs.ForgeVersions))
 
 	switch {
-	case obs.ForgeVersions == nil && obs.Livecheck == "":
+	case len(obs.ForgeVersions) == 0 && obs.Livecheck == "":
 		r.Verdict = NoSignal
 		return r
-	case obs.ForgeVersions == nil:
+	case len(obs.ForgeVersions) == 0:
 		r.Verdict, r.Latest = LivecheckOnly, obs.Livecheck
 		return r
 	case obs.LivecheckDisabled:
-		r.Verdict = ForgeOnly
-		if r.Latest = r.ForgeNewestStable; r.Latest == "" {
-			r.Latest = r.ForgeNewest
-			r.Detail = "only prerelease tags exist"
-		}
-		return r
+		return judgeForgeAlone(r)
 	case obs.Livecheck == "":
 		r.Verdict = LivecheckRot
 		r.Detail = "forge has " + r.ForgeNewest
 		return r
 	}
 
-	against := r.ForgeNewestStable
-	if against == "" {
-		if !Stable(obs.Livecheck) {
-			// A port already riding prereleases — upstream has never
-			// cut anything else — gives up no stability by following
-			// them upward; refusing here closes the port's only
-			// update path. Guarded to an upward move of a known
-			// current version: everything else stays a decline.
-			if obs.Current != "" && !Stable(obs.Current) && macports.VerCmp(obs.Livecheck, obs.Current) > 0 {
-				r.Verdict, r.Latest = PrereleaseLateral, obs.Livecheck
-				r.Detail = "the port rides prereleases (" + obs.Current + ") and upstream has cut nothing stable"
-				return r
-			}
-			// Everything is prerelease-style, livecheck's answer
-			// included: resolving would put a -beta in a Portfile as
-			// the version. Decline, and never charge livecheck.
-			r.Verdict = PrereleaseNewest
-			r.Detail = "newest tag " + r.ForgeNewest + " is prerelease-style, and no stable version exists"
-			return r
-		}
-		// A stable-looking livecheck answer against only-prerelease
-		// tags: livecheck matching none of them is policy, not rot.
-		r.Verdict, r.Latest = Agreement, obs.Livecheck
-		r.Detail = "forge has only prerelease tags"
-		return r
+	if r.ForgeNewestStable == "" {
+		return judgeOnlyPrereleaseTags(obs, r)
 	}
-	c := macports.VerCmp(against, obs.Livecheck)
-	switch {
+	against := r.ForgeNewestStable
+	switch c := macports.VerCmp(against, obs.Livecheck); {
 	case c > 0:
 		r.Verdict = LivecheckBehind
 		r.Detail = "livecheck " + obs.Livecheck + ", newest stable-looking tag " + against
 	case c < 0:
-		// Semver precedence, judged here rather than in VerCmp: a
-		// prerelease orders strictly before its release, so when
-		// livecheck matched one and the forge has its release (or
-		// newer), the release is the answer, not a disagreement.
-		if base, ok := releaseBase(obs.Livecheck); ok && macports.VerCmp(base, against) <= 0 {
-			r.Verdict, r.Latest = PrereleaseSuperseded, against
-			r.Detail = "livecheck matched prerelease " + obs.Livecheck + "; the release " + against + " stands"
-			return r
-		}
-		if macports.VerCmp(obs.Livecheck, r.ForgeNewest) == 0 {
-			// livecheck tracks the forge's raw newest fine; it is ahead
-			// only of the stable subset. Charging livecheck here sent a
-			// field run chasing a livecheck bug that did not exist —
-			// the message printed the newest it never compared against.
-			r.Verdict = PrereleaseNewest
-			r.Detail = "newest tag " + r.ForgeNewest + " is prerelease-style; newest stable is " + against
-			return r
-		}
-		r.Verdict = LivecheckAhead
-		if obs.Authoritative {
-			// The versions compared against were releases, and saying
-			// "tag" here misled a field run: the tag may well exist.
-			r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge release (newest " + r.ForgeNewest + ")"
-		} else {
-			r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge tag (newest " + r.ForgeNewest + ", stable " + against + ")"
-		}
+		return judgeLivecheckAboveStable(obs, r, against)
 	default:
 		// vercmp-equal; the maintainer's spelling wins.
 		r.Verdict, r.Latest = Agreement, obs.Livecheck
+	}
+	return r
+}
+
+// judgeForgeAlone rules when livecheck is an absent witness by the
+// maintainer's own declaration — never charged with rot — so the forge
+// is the only witness this port offers, and it answered completely.
+func judgeForgeAlone(r Report) Report {
+	// The stable subset decides first. A forge that answered fully may
+	// still have answered with nothing usable, and taking its raw
+	// newest here wrote a -beta into a Portfile as the version — the
+	// one thing every other arm of this function refuses. The refusal
+	// is dockhand's own opinion of sound testimony, so it takes the
+	// PrereleaseNewest shape and its band, and the remedy is --to.
+	if r.ForgeNewestStable == "" {
+		r.Verdict = PrereleaseNewest
+		r.Detail = "livecheck is disabled and the forge's newest tag " + r.ForgeNewest +
+			" is prerelease-style, with no stable version behind it"
+		return r
+	}
+	r.Verdict, r.Latest = ForgeOnly, r.ForgeNewestStable
+	return r
+}
+
+// judgeOnlyPrereleaseTags rules when every version the forge lists is
+// prerelease-style, so there is no stable tag to compare against.
+//
+// Ordered rules, most specific first, one guard each: this arm carried
+// its three outcomes as nested conditions, and a falsehood hid in the
+// nesting for as long as it existed.
+func judgeOnlyPrereleaseTags(obs Observation, r Report) Report {
+	// 1. A port already riding prereleases — upstream has never cut
+	// anything else — gives up no stability by following them upward,
+	// and refusing closes the port's only update path. First because
+	// it is the narrowest: a known prerelease current version, and a
+	// strictly upward move off it.
+	if !Stable(obs.Livecheck) && obs.Current != "" && !Stable(obs.Current) &&
+		macports.VerCmp(obs.Livecheck, obs.Current) > 0 {
+		r.Verdict, r.Latest = PrereleaseLateral, obs.Livecheck
+		r.Detail = "the port rides prereleases (" + obs.Current + ") and upstream has cut nothing stable"
+		return r
+	}
+	// 2. Livecheck's own answer is prerelease-style too and rule 1
+	// found no lateral escape: resolving would put a -beta in a
+	// Portfile as the version. Decline, and never charge livecheck.
+	if !Stable(obs.Livecheck) {
+		r.Verdict = PrereleaseNewest
+		r.Detail = "newest tag " + r.ForgeNewest + " is prerelease-style, and no stable version exists"
+		return r
+	}
+	// 3. A stable-looking livecheck answer that no forge tag is equal
+	// to. Livecheck matching none of them is policy rather than rot,
+	// and that much was always right — but policy is ONE witness, and
+	// calling it agreement claimed a second one that never spoke to
+	// this version. The forge ran, answered, and corroborated nothing.
+	if !corroborated(obs.ForgeVersions, obs.Livecheck) {
+		r.Verdict = LivecheckUncorroborated
+		r.Detail = "livecheck " + obs.Livecheck + " stands alone: the forge's tags are all prerelease-style (newest " +
+			r.ForgeNewest + ") and none of them is that version"
+		return r
+	}
+	// 4. A tag IS that version. Both witnesses named it, so they
+	// agree, whatever the tag's own spelling made the stable subset
+	// think of it.
+	r.Verdict, r.Latest = Agreement, obs.Livecheck
+	r.Detail = "forge has only prerelease tags, and one of them is livecheck's answer"
+	return r
+}
+
+// judgeLivecheckAboveStable rules when livecheck's answer outranks the
+// newest stable-looking tag. Ordered rules, most specific first, one
+// guard each, for the same reason as the arm above: three outcomes
+// nested inside one another are three outcomes nobody can audit.
+func judgeLivecheckAboveStable(obs Observation, r Report, against string) Report {
+	// 1. Semver precedence, judged here rather than in VerCmp: a
+	// prerelease orders strictly before its release, so when livecheck
+	// matched one and the forge has its release (or newer), the
+	// release is the answer and not a disagreement. First because it
+	// is the only rule here that resolves.
+	if base, ok := releaseBase(obs.Livecheck); ok && macports.VerCmp(base, against) <= 0 {
+		r.Verdict, r.Latest = PrereleaseSuperseded, against
+		r.Detail = "livecheck matched prerelease " + obs.Livecheck + "; the release " + against + " stands"
+		return r
+	}
+	// 2. Livecheck's answer IS the forge's raw newest: it tracks the
+	// forge fine and is ahead only of the stable subset. Charging
+	// livecheck here sent a field run chasing a livecheck bug that did
+	// not exist — the message printed the newest it never compared
+	// against.
+	if macports.VerCmp(obs.Livecheck, r.ForgeNewest) == 0 {
+		r.Verdict = PrereleaseNewest
+		r.Detail = "newest tag " + r.ForgeNewest + " is prerelease-style; newest stable is " + against
+		return r
+	}
+	// 3. Nothing the forge holds accounts for livecheck's answer: it
+	// may be watching the wrong project, or upstream moved. The detail
+	// names what was actually compared, because saying "tag" over an
+	// authoritative releases feed misled a field run — the tag may
+	// well exist, and check.go goes and asks for it next.
+	r.Verdict = LivecheckAhead
+	if obs.Authoritative {
+		r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge release (newest " + r.ForgeNewest + ")"
+	} else {
+		r.Detail = "livecheck " + obs.Livecheck + ", newer than any forge tag (newest " + r.ForgeNewest + ", stable " + against + ")"
 	}
 	return r
 }
@@ -285,15 +364,28 @@ func releaseBase(version string) (string, bool) {
 // for. A tag vercmp-equal to livecheck's answer resolves the report;
 // its absence hardens the decline's message.
 func corroborate(r Report, tags []string) Report {
-	for _, t := range tags {
-		if macports.VerCmp(t, r.Livecheck) == 0 {
-			r.Verdict, r.Latest = TagWithoutRelease, r.Livecheck
-			r.Detail = "livecheck " + r.Livecheck + " matches a forge tag; upstream cut no release for it"
-			return r
-		}
+	if corroborated(tags, r.Livecheck) {
+		r.Verdict, r.Latest = TagWithoutRelease, r.Livecheck
+		r.Detail = "livecheck " + r.Livecheck + " matches a forge tag; upstream cut no release for it"
+		return r
 	}
 	r.Detail += "; no forge tag matches either"
 	return r
+}
+
+// corroborated reports whether the forge holds the exact version
+// livecheck named — the membership test that turns one witness into
+// two, in the single spelling both askers share. It was a loop inside
+// corroborate while only one arm asked; the second arm that needed it
+// was written without it, and shipped an Agreement nobody had
+// corroborated.
+func corroborated(versions []string, v string) bool {
+	for _, t := range versions {
+		if macports.VerCmp(t, v) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func stableOf(versions []string) []string {

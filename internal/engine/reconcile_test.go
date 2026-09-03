@@ -199,7 +199,7 @@ func TestReconcileRetiresBeforeItDrains(t *testing.T) {
 
 func TestReplaceInFlightAnnouncesThenReportsTheDemolition(t *testing.T) {
 	// The fourth place a discard's report lands, and the one with no
-	// golden above it: --force announces the replacement and then owes
+	// golden above it: --replace announces the replacement and then owes
 	// the user the demolition's own account of what went. When Discard
 	// printed for itself this was free; now it is a line this caller has
 	// to place, and losing it would be silent.
@@ -212,7 +212,7 @@ func TestReplaceInFlightAnnouncesThenReportsTheDemolition(t *testing.T) {
 
 	require.NoError(t, eng.replaceInFlight(ctx, repo, primary, "dockhand/jq-1.8"))
 
-	assert.Equal(t, "replacing in-flight dockhand/jq-1.8 (--force)\n", errb.String(),
+	assert.Equal(t, "replacing in-flight dockhand/jq-1.8 (--replace)\n", errb.String(),
 		"the announcement is the verb's and stays on stderr")
 	assert.Contains(t, out.String(), "discarded dockhand/jq-1.8 (",
 		"and the deletion still says so on stdout")

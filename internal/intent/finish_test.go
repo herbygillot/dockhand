@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,6 +26,18 @@ func synthetic(t *testing.T, lines string) port.Handle {
 	t.Helper()
 	dir := t.TempDir()
 	pf := "PortSystem 1.0\nname finishee\n" + lines +
+		"\ncategories devel\nmaintainers nomaintainer\nlicense MIT\n" +
+		"description synthetic finish target\nlong_description synthetic finish target\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(pf), 0o644))
+	return porttest.LiveHandle(t, dir)
+}
+
+// headed is synthetic's twin for the Portfile that already opens with a
+// modeline, and therefore offers no rider at all.
+func headed(t *testing.T, lines string) port.Handle {
+	t.Helper()
+	dir := t.TempDir()
+	pf := Modeline + "\nPortSystem 1.0\nname finishee\n" + lines +
 		"\ncategories devel\nmaintainers nomaintainer\nlicense MIT\n" +
 		"description synthetic finish target\nlong_description synthetic finish target\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(pf), 0o644))
@@ -124,30 +137,144 @@ func TestFinishOmitsAnAbsentTicket(t *testing.T) {
 	assert.NotContains(t, buf.String(), "closes_ticket")
 }
 
-// A rule Examine offers and the intent does not accept is not folded
-// in. That gate is what lets a rule be written once and adopted one
-// intent at a time — and it is what keeps the intents that have not
-// adopted the modeline byte-identical.
-func TestFinishFoldsInOnlyTheAcceptedRiders(t *testing.T) {
+// Every headline intent is examined now, so what decides whether a
+// rider rides is the run's policy and nothing else. The plan names what
+// it carried, because a note and a pull request body cite the rule
+// rather than the edit.
+func TestFinishFoldsInRidersOnTheRunsPolicy(t *testing.T) {
 	h := synthetic(t, "version 1.0\nrevision 1")
 	src, opts := subject(t, h)
 	opts.MayChange = map[info.Field]bool{info.FieldRevision: true}
 	edits := []edit.Edit{revisionEdit(t, src, "1", "2")}
 	id := Identity{Intent: "bump-revision", Slug: "finishee-rev2", Summary: "finishee: r"}
 
-	declined, err := Finish(context.Background(), h, src, edits, id, opts)
+	carried, err := Finish(context.Background(), h, src, edits, id, opts)
 	require.NoError(t, err)
-	require.Len(t, declined.Edits, 1)
-	assert.Equal(t, "revision +1", declined.Edits[0].Reason)
+	require.Len(t, carried.Edits, 2)
+	assert.Equal(t, "modeline", carried.Edits[0].Reason, "sorted by offset, so a zero-width insertion at 0 leads")
+	assert.Equal(t, Modeline+"\n", carried.Edits[0].New)
+	assert.Equal(t, []string{"modeline"}, carried.Riders)
 
-	opts.Riders = map[Rule]bool{RuleModeline: true}
-	accepted, err := Finish(context.Background(), h, src, edits, id, opts)
+	opts.Riders = RidersNone
+	bare, err := Finish(context.Background(), h, src, edits, id, opts)
 	require.NoError(t, err)
-	require.Len(t, accepted.Edits, 2)
-	assert.Equal(t, "modeline", accepted.Edits[0].Reason, "sorted by offset, so a zero-width insertion at 0 leads")
-	assert.Equal(t, Modeline+"\n", accepted.Edits[0].New)
+	require.Len(t, bare.Edits, 1)
+	assert.Equal(t, "revision +1", bare.Edits[0].Reason)
+	assert.Nil(t, bare.Riders, "no riders is an absent field, not an empty list")
 
+	assert.Equal(t, bare.Predicted, carried.Predicted,
+		"a rider that moved the prediction would not have ridden")
 	assert.Len(t, edits, 1, "the caller's edit list is the caller's; the tail copies before it appends or sorts")
+}
+
+// The semantic half of the double proof, and the case that shows why
+// the structural half cannot stand alone.
+//
+// The rider below inserts a complete comment line above the revision —
+// a line of its own, ending in a newline, in the gap between two
+// commands. The structural proof passes it twice over: nothing it
+// touches was evaluated before, and nothing it wrote is a command after.
+// What it actually does is end in a backslash, which continues a Tcl
+// comment onto the next line and swallows the revision whole. The bytes
+// are a comment in both trees and the port evaluates to something else,
+// which no span can report and only an evaluation can.
+func TestFinishWithholdsARiderThatMovesThePrediction(t *testing.T) {
+	h := synthetic(t, "version 1.0\nrevision 1")
+	src, opts := subject(t, h)
+	opts.MayChange = map[info.Field]bool{info.FieldRevision: true}
+	edits := []edit.Edit{revisionEdit(t, src, "1", "2")}
+	id := Identity{Intent: "bump-revision", Slug: "finishee-rev2", Summary: "finishee: r"}
+
+	const swallow = "# a note \\\n"
+	withRules(t, "commenter", func(s []byte) (edit.Edit, bool) {
+		at := indexOf(t, string(s), "revision ")
+		return edit.Edit{Start: at, End: at, Old: "", New: swallow, Reason: "commenter"}, true
+	})
+
+	// The structural proof passes: the point it lands on begins a
+	// command, the line it writes is its own, and a gap boundary is where
+	// every housekeeping line in a Portfile goes.
+	at := indexOf(t, string(src), "revision ")
+	require.True(t, InCommentOrSpace(src, opts.CST, edit.Edit{Start: at, End: at, New: swallow}))
+	require.Len(t, Riders(src, opts.CST), 1, "so Examine offers it")
+	// And it passes again in the tree it made, where its bytes are a
+	// comment: the revision line is inside that comment rather than
+	// beside it, so there is no command for the range to overlap.
+	require.True(t, stillInert(mustApply(t, src, append(slices.Clone(edits),
+		edit.Edit{Start: at, End: at, New: swallow})),
+		ridersLanded(edits, []Rider{{Rule: "commenter", Edit: edit.Edit{Start: at, End: at, New: swallow}}})))
+
+	// The second does not, and the headline change carries on without it.
+	p, err := Finish(context.Background(), h, src, edits, id, opts)
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 1, "the rider came off; the revision edit is the user's and stands")
+	assert.Equal(t, "revision +1", p.Edits[0].Reason)
+	assert.Nil(t, p.Riders)
+
+	// With nothing but the rider to plan there is nothing left to fall
+	// back to, and the rule's bug is said out loud.
+	opts.Riders = RidersOnly
+	opts.Witness = "the rider edits were proved inert"
+	opts.MayChange = nil
+	_, err = Finish(context.Background(), h, src, nil, id, opts)
+	require.ErrorIs(t, err, ErrRiderMoved)
+	assert.Contains(t, err.Error(), "commenter")
+}
+
+// The structural proof is made in the tree the edits produce as well as
+// in the one they were computed against, and this is the rider that
+// says why.
+//
+// It writes complete lines into the gap in front of a command — an
+// insertion ending in a newline, at a boundary, which is the shape every
+// housekeeping line has and which the old-tree proof therefore cannot
+// distinguish. What it writes is two commands. The semantic proof cannot
+// cover for it either: info.Delta observes twenty metadata fields, and
+// neither configure.args nor a post-extract block is one of them, so the
+// prediction does not move and the smuggled build step rides into a
+// branch that never sees a VM. Measured, with this rule.
+func TestFinishWithholdsARiderThatWritesACommandIntoTheGap(t *testing.T) {
+	h := synthetic(t, "version 1.0\nrevision 1\nconfigure.args --with-foo")
+	src, opts := subject(t, h)
+	opts.MayChange = map[info.Field]bool{info.FieldRevision: true}
+	edits := []edit.Edit{revisionEdit(t, src, "1", "2")}
+	id := Identity{Intent: "bump-revision", Slug: "finishee-rev2", Summary: "finishee: r"}
+
+	const smuggled = "post-extract { system \"echo pwned\" }\nconfigure.args-append --enable-evil\n"
+	withRules(t, "smuggler", func(s []byte) (edit.Edit, bool) {
+		at := indexOf(t, string(s), "configure.args ")
+		return edit.Edit{Start: at, End: at, Old: "", New: smuggled, Reason: "smuggler"}, true
+	})
+
+	// The old tree cannot see it: the bytes land in a gap and end their
+	// line, which is every housekeeping line's shape.
+	at := indexOf(t, string(src), "configure.args ")
+	require.True(t, InCommentOrSpace(src, opts.CST, edit.Edit{Start: at, End: at, New: smuggled}))
+	require.Len(t, Riders(src, opts.CST), 1, "so Examine offers it")
+
+	p, err := Finish(context.Background(), h, src, edits, id, opts)
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 1, "the smuggled commands came off; the revision edit stands")
+	assert.Nil(t, p.Riders)
+}
+
+// A rider whose edits make the Portfile unevaluable fails the proof
+// rather than the run: the shadow it broke is its own, and the headline
+// still evaluates.
+func TestFinishWithholdsARiderThatBreaksTheEvaluation(t *testing.T) {
+	h := synthetic(t, "version 1.0\nrevision 1")
+	src, opts := subject(t, h)
+	opts.MayChange = map[info.Field]bool{info.FieldRevision: true}
+	edits := []edit.Edit{revisionEdit(t, src, "1", "2")}
+
+	withRules(t, "breaker", func([]byte) (edit.Edit, bool) {
+		return edit.Edit{Start: 0, End: 0, Old: "", New: "{\n", Reason: "breaker"}, true
+	})
+	p, err := Finish(context.Background(), h, src, edits,
+		Identity{Intent: "bump-revision", Slug: "finishee-rev2", Summary: "finishee: r"}, opts)
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 1)
+	assert.Nil(t, p.Riders)
 }
 
 // The witness rule: a plan that predicts nothing claims nothing, and a

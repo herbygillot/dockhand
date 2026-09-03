@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
@@ -80,7 +81,7 @@ func TestRefreshRepairsStaleChecksums(t *testing.T) {
 	dir := refreshPort(t, srv.URL+"/dist", "version 1.0",
 		"1111111111111111111111111111111111111111111111111111111111111111", len(content))
 
-	p, err := Refresh{}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+	p, err := Refresh{Riders: intent.RidersNone}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
 	require.NoError(t, err)
 	require.Len(t, p.Edits, 2, "sha256 and rmd160 move; the size already matches and is not an edit")
 	for _, e := range p.Edits {
@@ -88,6 +89,31 @@ func TestRefreshRepairsStaleChecksums(t *testing.T) {
 		assert.NotEqual(t, "revision reset", e.Reason, "nor a revision edit")
 	}
 	assert.Equal(t, "refresh-checksums", p.Intent)
+	assert.Nil(t, p.Riders)
+}
+
+// A refresh carries riders too, on the run's policy. The intent used to
+// refuse them on its own authority, for a reason worth keeping: a
+// reviewer reading a checksum change at an unchanged version is owed a
+// diff with nothing else in it. That reason is now what --no-riders is
+// for, and the test above is the one that asks for it — because a rule
+// only one intent can turn off is a rule the other two never run.
+func TestRefreshCarriesTheModelineRider(t *testing.T) {
+	ev := newEvaluator(t)
+	srv, content := distServer(t)
+	dir := refreshPort(t, srv.URL+"/dist", "version 1.0",
+		"1111111111111111111111111111111111111111111111111111111111111111", len(content))
+
+	p, err := Refresh{}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+	require.NoError(t, err)
+	require.Len(t, p.Edits, 3)
+	assert.Equal(t, "modeline", p.Edits[0].Reason, "the insertion at offset 0 sorts first")
+	assert.Equal(t, []string{"modeline"}, p.Riders)
+
+	bare, err := Refresh{Riders: intent.RidersNone}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+	require.NoError(t, err)
+	assert.Equal(t, bare.Predicted, p.Predicted,
+		"the rider is proved against a shadow of its own; it cannot move the prediction")
 }
 
 func TestRefreshDeclinesWhenAlreadyTrue(t *testing.T) {
@@ -99,7 +125,7 @@ func TestRefreshDeclinesWhenAlreadyTrue(t *testing.T) {
 	f := newFetcher(t)
 	// First plan repairs the rmd160; apply its value into the fixture,
 	// then a second plan must find nothing left to do.
-	p, err := Refresh{}.Plan(context.Background(), handle(dir, ev), f)
+	p, err := Refresh{Riders: intent.RidersNone}.Plan(context.Background(), handle(dir, ev), f)
 	require.NoError(t, err)
 	require.Len(t, p.Edits, 1, "only the placeholder rmd160")
 	src, err := os.ReadFile(filepath.Join(dir, macports.PortfileName))
@@ -111,6 +137,11 @@ func TestRefreshDeclinesWhenAlreadyTrue(t *testing.T) {
 	var d *plan.Decline
 	require.ErrorAs(t, err, &d)
 	assert.Equal(t, plan.AlreadyCurrent, d.Type)
+	// The fixture opens without a modeline, so the decline held one back
+	// and says so — which is a different answer, and a different exit
+	// code, from a refresh that had nothing to hold.
+	assert.Equal(t, []string{"modeline"}, d.Withheld)
+	assert.Equal(t, exitcode.AlreadyCurrent, d.DockhandExit())
 }
 
 // The defining difference from bump: no version edit means no version
