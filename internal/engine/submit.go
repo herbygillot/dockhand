@@ -129,6 +129,13 @@ type submission struct {
 	// not a different kind of submission: one guest, one staged overlay,
 	// one job, and the members diverge only when the log comes back.
 	Members []Member
+	// Withheld are subjects this submission deliberately does not build,
+	// with the sentence saying why. They get their run here rather than
+	// from the caller, because a run is keyed by release name and the
+	// release is not resolved until this function has run — a caller
+	// recording one first keys it under the empty string, where every
+	// later lookup by release misses it and the subject goes silent.
+	Withheld []WithheldMember
 }
 
 // members is what this submission builds, headline first: the cohort
@@ -210,6 +217,13 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 		}
 	}
 	release := s.Release
+	for _, w := range s.Withheld {
+		if rerr := e.recordRun(ctx, m.Repo, m.Sha, w.Port, release.Name, record.Run{
+			State: record.Withheld, Platform: release.Name, Detail: w.Why,
+		}, fmt.Sprintf("%s: bumped, not built here — %s", w.Port, w.Why)); rerr != nil {
+			return rerr
+		}
+	}
 	root, err := e.Temp()
 	if err != nil {
 		return err
@@ -604,4 +618,11 @@ func (e *Engine) manifestAsk(ctx context.Context, m *Minted, prov verify.Verifie
 		return true, nil
 	}
 	return true, out
+}
+
+// WithheldMember is a subject a submission carries but will not build,
+// and the reason a reader is owed for it.
+type WithheldMember struct {
+	Port string
+	Why  string
 }

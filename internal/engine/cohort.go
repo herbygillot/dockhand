@@ -166,23 +166,18 @@ func (e *Engine) BuildCohort(ctx context.Context, repo *git.Repo, target string,
 		return nil
 	}
 	apart := solo(proposal)
-	// The held-back members get their verdict before the guest is asked
-	// for anything, because the guest will never be asked about them.
-	// Written here rather than left to settle: settle reads a member the
-	// log never announced as a runner fault, and this one was never sent.
+	// Handed to the submission rather than recorded here: the release is
+	// resolved inside it, and a run keyed before that is keyed under no
+	// release at all.
+	var held []WithheldMember
 	for _, c := range proposal.Candidates {
-		if !c.Solo || !c.Proposed {
-			continue
-		}
-		if err := e.recordRun(ctx, repo, newTip, c.Port, o.Platform.Name, record.Run{
-			State: record.Withheld, Platform: o.Platform.Name, Detail: withheldDetail(c, head.Port),
-		}, fmt.Sprintf("%s: bumped, not built here — %s", c.Port, withheldDetail(c, head.Port))); err != nil {
-			return err
+		if c.Solo && c.Proposed {
+			held = append(held, WithheldMember{Port: c.Port, Why: withheldDetail(c, head.Port)})
 		}
 	}
 	return e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: newTip, RelPort: head.Portdir},
 		submission{Port: head.Port, Release: o.Platform, Test: o.Test, Trace: o.Trace,
-			Members: cohortRoster(head, built, apart)})
+			Members: cohortRoster(head, built, apart), Withheld: held})
 }
 
 // cohortProposal is the finding the verb answers: the one proposal a

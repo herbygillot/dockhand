@@ -156,3 +156,41 @@ func TestADeferralDoesNotQueueADeclinedMember(t *testing.T) {
 		"the member that declined has its answer, and a deferral is not a newer one")
 	assert.Equal(t, []string{"jq", "oniguruma"}, n.Ports())
 }
+
+// A run is keyed by release name, and the release is not resolved until
+// submit runs — the caller's zero Release means "whatever the provider
+// offers". A withheld member recorded before that resolution lands
+// under the empty string, where every lookup by release misses it, and
+// the subject the state exists to keep visible goes silent instead.
+//
+// Caught on live data: the note held "gegl-devel@" beside "gegl@Tahoe",
+// so status would have shown eight lines for nine subjects with nothing
+// saying why — the exact silent drop the state was added to prevent.
+func TestAWithheldMemberIsKeyedByTheResolvedRelease(t *testing.T) {
+	ctx := context.Background()
+	repo, sha := cohortBranch(t)
+	fake := &verifytest.Fake{}
+	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
+
+	// Release deliberately left zero: this is the road that resolves it.
+	require.NoError(t, testState(t, repo, fake).submit(ctx, m, submission{
+		Port:     "jq",
+		Members:  cohortMembers,
+		Withheld: []WithheldMember{{Port: "oniguruma-devel", Why: "it conflicts with oniguruma"}},
+	}))
+
+	n, err := ledger.Open(repo).Read(ctx, sha)
+	require.NoError(t, err)
+
+	_, unkeyed := n.Runs[record.RunKey("oniguruma-devel", "")]
+	assert.False(t, unkeyed, "an empty release is not a key: nothing reading by release finds it")
+
+	rel := fake.Capabilities().Platforms[0].Name
+	run, ok := n.Runs[record.RunKey("oniguruma-devel", rel)]
+	require.True(t, ok, "the withheld run belongs under the release submit resolved")
+	assert.Equal(t, record.Withheld, run.State)
+	assert.Equal(t, rel, run.Platform, "and it names that release to a reader too")
+
+	assert.NotContains(t, fake.Submitted[0].Ports, "oniguruma-devel",
+		"withheld means withheld: the guest is never asked to build it")
+}
