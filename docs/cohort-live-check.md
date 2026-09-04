@@ -61,7 +61,17 @@ first — the branches themselves are untouched by this, and re-earning their
 evidence is a verification, not a re-bump:
 
 ```
-git -C <macports-ports checkout> update-ref -d refs/notes/dockhand/verify
+git -C ~/Source/macports-ports update-ref -d refs/notes/dockhand/verify
+```
+
+Run it with that path spelled out, not with `-C .`. Deleting a ref that does
+not exist succeeds silently, so the same command aimed at the dockhand source
+tree — which never had the ref — reports nothing and leaves the real notes
+exactly where they were. The check that it worked is a count, not an exit
+code:
+
+```
+git -C ~/Source/macports-ports notes --ref=dockhand/verify list | wc -l   # 0
 ```
 
 If you would rather keep them readable by the old binary, back the ref up under
