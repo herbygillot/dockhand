@@ -21,7 +21,7 @@ exit: 0
   #### Description
   
   Not verified:
-    — Oldos: verification was canceled before it finished.
+    — Oldos: verification was still running when this was promoted.
     — Testos: blocked before this change was reached.
   
   Branch head `2eab82dfb158`.

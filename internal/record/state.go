@@ -144,6 +144,29 @@ func (s RunState) Terminal() bool {
 	return false
 }
 
+// Outcome reports whether a terminal state says something about the
+// subject itself, as opposed to about the machine, a person, or the
+// branch. Passed, failed, unsupported, blocked and withheld are all
+// answers to "what happened to this port here"; errored, canceled and
+// superseded are answers to a different question and settle nothing.
+//
+// This is what best-effort dependents are measured against: a dependent
+// must have an outcome, not merely a terminal run. The distinction is
+// the ruling's own — its argument is that a dependent's build is a fact
+// about the dependent, and these three are not.
+func (s RunState) Outcome() bool {
+	switch s {
+	case Passed, Failed, Unsupported, Blocked, Withheld:
+		return true
+	case Queued, Submitting, Running, Canceled, Superseded, Errored:
+		return false
+	}
+	// An unknown state is not an outcome: a word this build cannot read
+	// says nothing about the port, and the reading that waits is the
+	// one that publishes nothing on it.
+	return false
+}
+
 // Destination is how far one change's contract reaches, recorded when
 // the change is minted.
 //

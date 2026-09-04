@@ -194,8 +194,17 @@ func PhaseOf(pr PRFact) Phase {
 // anything.
 type PublishAsk struct {
 	Record record.Record
-	// Promotable is the caller's reading of the verdict set: some run
-	// passed, none failed, and every subject was proven.
+	// Promotable is the caller's reading of the verdict set: the
+	// headline passed and did not fail, and every dependent reached an
+	// outcome — a pass, a failure, a refusal, or a hold, but not the
+	// machine's silence or a person's cancellation. The dependents are
+	// best effort, and that holds on the unattended road as well as the
+	// human one (maintainer's ruling, 2026-09-04): a machine will
+	// publish a change whose dependent failed, on the same evidence a
+	// person would, and the body names the failure where a reviewer
+	// reads it. The alternative — the machine refusing the ordinary
+	// cohort, since most carry a member that does not build — would spend
+	// the whole road on the least maintained port in every set.
 	Promotable bool
 	Branch     string
 	// Tip is the tip's shortened sha, abbreviated by the caller.

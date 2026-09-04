@@ -212,10 +212,13 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 		case record.Failed, record.Unsupported:
 			executed = true
 		case record.Queued, record.Submitting, record.Running,
-			record.Blocked, record.Canceled, record.Superseded, record.Errored:
+			record.Blocked, record.Canceled, record.Superseded, record.Errored,
+			record.Withheld:
 			// Nothing was answered. A run that never reached a verdict
 			// proves no subject and leaves every question the boxes ask
-			// exactly as unasked as no run at all.
+			// exactly as unasked as no run at all. A withheld run belongs
+			// here too: it is an outcome about the port, and it executed
+			// nothing.
 		}
 	}
 	onPlatform := map[string]bool{}
@@ -316,14 +319,18 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 		// header vouching for the whole of it is exactly the sentence a
 		// reviewer would want contradicted.
 		//
-		// Withheld is named here for the same reason and needs saying
-		// twice, because it now passes the proven test: a held-back
-		// member counts as answered so the cohort can publish at all, and
-		// the price of admitting it is that its line must appear. A
-		// reviewer is being asked to take a revision bump on a port
-		// nobody rebuilt, and an omission is not how you ask.
-		if verified && r.State != record.Passed && r.State != record.Unsupported &&
-			r.State != record.Withheld && proven[ref.Port] {
+		// What a verified body may leave local is this machine's own
+		// afternoon and nothing more: a run this promotion stopped, one
+		// still queued behind it, one the branch moved past. A FAILURE is
+		// never that. With the dependents best effort, a member can be
+		// proven on one platform and failed on another and the change
+		// still publish — and the failure is then the one line a reviewer
+		// most needs, on the body that is otherwise vouching. Found live:
+		// a body that listed gegl's pass on Sonoma and simply omitted its
+		// failure on Sequoia. Same for withheld and blocked: outcomes about
+		// the port are stated; only non-outcomes about the machine are
+		// kept local.
+		if verified && proven[ref.Port] && localToThisMachine(r.State) {
 			continue
 		}
 		if what == "" {
@@ -537,4 +544,32 @@ func provenance(n record.Record, head string) string {
 		return at + ", against " + tree + "."
 	}
 	return at + "."
+}
+
+// localToThisMachine names the run states a verified body keeps to
+// itself for a subject already proven elsewhere: this promotion's own
+// cancellations, runs still queued or building, a branch that moved, an
+// environment that could not answer, and a platform where a stranger's
+// build stopped the change before it was reached. None of those is a
+// verdict about the change.
+//
+// What is NOT here, and must never be: a failure. A subject can be
+// proven on one platform and failed on another and the change still
+// publish, since the dependents are best effort — and then the failure
+// is the one line the reviewer most needs, on the body that is
+// otherwise vouching. It was being dropped, measured live: a body that
+// listed gegl's pass on Sonoma and simply omitted its failure on
+// Sequoia. Withheld and unsupported are outcomes about the port too,
+// and are shown for the same reason.
+func localToThisMachine(s record.RunState) bool {
+	switch s {
+	case record.Queued, record.Submitting, record.Running,
+		record.Canceled, record.Superseded, record.Errored, record.Blocked:
+		return true
+	case record.Passed, record.Failed, record.Unsupported, record.Withheld:
+		return false
+	}
+	// An unknown state is shown rather than hidden: a word this build
+	// cannot read is not something to keep from a reviewer.
+	return false
 }

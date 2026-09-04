@@ -278,7 +278,10 @@ func (r Record) Promotable() bool {
 		if s.Port == head {
 			continue
 		}
-		if !r.settledFor(s.Port) {
+		// Proven anywhere is answered — a pass on one platform beside a
+		// cancellation on another is a member with evidence, not a hole
+		// — and otherwise every run must be an outcome about the port.
+		if !r.proven(s.Port) && !r.settledFor(s.Port) {
 			return false
 		}
 	}
@@ -296,9 +299,19 @@ func (r Record) failed(port string) bool {
 }
 
 // settledFor reports whether a subject has at least one run and every
-// run it has is finished. A subject with no run at all is not settled:
-// nobody has asked about it, which is the hole Promotable exists to
-// find.
+// run it has reached an outcome about the dependent. A subject with no
+// run at all is not settled: nobody has asked about it, which is the
+// hole Promotable exists to find.
+//
+// Not every terminal state is an outcome (maintainer's ruling,
+// 2026-09-04). Best effort rests on the argument that whether a
+// dependent builds is a fact about the dependent, and three terminal
+// states are facts about something else: errored is the machine's
+// failure to answer, by its own reviewer-facing sentence; canceled is
+// a person's "no"; superseded is the branch moving. A promotion that
+// read those as settled would be reading absence of evidence as
+// evidence — and, for canceled, could supply the absence itself by
+// stopping the builds it was about to publish over.
 func (r Record) settledFor(port string) bool {
 	seen := false
 	for key, run := range r.Runs {
@@ -306,7 +319,7 @@ func (r Record) settledFor(port string) bool {
 			continue
 		}
 		seen = true
-		if !run.State.Terminal() {
+		if !run.State.Outcome() {
 			return false
 		}
 	}

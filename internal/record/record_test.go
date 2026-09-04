@@ -130,8 +130,15 @@ func TestPromotableAnswersForEverySubject(t *testing.T) {
 		// exists and to the reviewer in its body.
 		{"a dependent blocked by a stranger", cohort, map[string]Run{
 			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Blocked}}, true},
+		// Errored is the machine's silence, and canceled is a person's
+		// "no": neither says anything about the port, so neither settles
+		// it (ruled 2026-09-04, and the argument is the ruling's own — a
+		// dependent's build is a fact about the dependent, and these are
+		// not).
 		{"a dependent the guest said nothing about", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Errored}}, true},
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Errored}}, false},
+		{"a dependent somebody canceled", cohort, map[string]Run{
+			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Canceled}}, false},
 		{"a dependent that failed", cohort, map[string]Run{
 			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Failed}}, true},
 		// And these did not reach one. No outcome is not a best-effort

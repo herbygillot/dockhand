@@ -981,3 +981,37 @@ func TestPRBodyDoesNotNameTheSubjectOfASingleChange(t *testing.T) {
 	assert.Contains(t, body, "  — Sequoia: built in a pristine VM.\n")
 	assert.NotContains(t, body, "jq on Sequoia")
 }
+
+// A dependent proven on one platform and failed on another publishes —
+// the dependents are best effort — and its failure then has to be on
+// the body, because the body is otherwise vouching. It was being
+// dropped: the suppression that keeps this machine's own cancellations
+// off a verified body took the failure with it. Measured on a live
+// record, which listed gegl's pass on Sonoma and omitted its failure on
+// Sequoia. A verified body must never delete a failure.
+func TestPRBodyKeepsADependentsFailureBesideItsPass(t *testing.T) {
+	n := record.Record{
+		Sha:      "0123456789abcdef0123",
+		Subjects: []record.Subject{{Port: "libraw"}, {Port: "gegl"}},
+		Jobs: map[string]record.JobRecord{
+			"Sequoia": {Job: verify.Job{Provider: "fake", ID: "fake-1"}},
+			"Sonoma":  {Job: verify.Job{Provider: "fake", ID: "fake-2"}},
+		},
+		Runs: map[string]record.Run{
+			record.RunKey("libraw", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
+			record.RunKey("libraw", "Sonoma"):  {State: record.Passed, Platform: "Sonoma"},
+			record.RunKey("gegl", "Sequoia"):   {State: record.Failed, Platform: "Sequoia", Detail: "Failed to build gegl"},
+			record.RunKey("gegl", "Sonoma"):    {State: record.Passed, Platform: "Sonoma"},
+		},
+	}
+	require.True(t, n.Promotable(), "the shape under test is a published one")
+	body := PRBody(n, true, vouched())
+	assert.Contains(t, body, "gegl on Sequoia:", "the failure is on the body")
+	assert.Contains(t, body, "gegl on Sonoma: built in a pristine VM", "and so is the pass")
+
+	// The suppression it is carved out of still holds for what it was
+	// built for: this machine's own afternoon stays local.
+	n.Runs[record.RunKey("gegl", "Ventura")] = record.Run{State: record.Canceled, Platform: "Ventura"}
+	n.Jobs["Ventura"] = record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-3"}}
+	assert.NotContains(t, PRBody(n, true, vouched()), "Ventura")
+}

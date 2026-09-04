@@ -67,6 +67,14 @@ func (e *Engine) Follow(ctx context.Context, repo *git.Repo, sha, portName, plat
 	case record.Unsupported:
 		fmt.Fprintf(e.Err, "%s declines %s: %s\n", portName, plat, r.Detail)
 		return nil
+	case record.Withheld:
+		// Bumped by the change and never sent to the guest, so there was
+		// nothing here to follow. Unreachable from a follow that started
+		// on a running run, and named so that it never falls through to
+		// the environment-failure sentence below — which is the exact
+		// misattribution the state exists to prevent.
+		fmt.Fprintf(e.Err, "%s: bumped, not built here — %s\n", portName, r.Detail)
+		return nil
 	case record.Failed:
 		// The environment a failure kept belongs to the guest, so the
 		// name of it is read from the job and not from the verdict.

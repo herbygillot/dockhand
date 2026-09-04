@@ -473,7 +473,7 @@ func TestStagingRefusesATreeWithNoResources(t *testing.T) {
 
 	err := g.provider().stage(t.Context(), g.vm, []string{dir})
 	require.Error(t, err, "a tree with no _resources cannot serve an archive site")
-	assert.ErrorIs(t, err, verify.ErrNoEnvironment)
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
 	assert.Contains(t, err.Error(), build.ResourcesDir)
 }
 

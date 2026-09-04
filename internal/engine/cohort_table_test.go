@@ -105,12 +105,15 @@ func TestCohortCorpusSettles(t *testing.T) {
 			// for an outcome and not for a good one. The headline is not,
 			// and some run somewhere still has to have passed, or the
 			// change has no evidence behind it at all.
-			terminal := func(state string) bool {
+			// An outcome about the port, as distinct from a terminal
+			// state about the machine or a person: errored and canceled
+			// settle nothing (ruled 2026-09-04).
+			outcome := func(state string) bool {
 				switch state {
-				case "queued", "submitting", "running", "":
-					return false
+				case "passed", "failed", "unsupported", "blocked", "withheld":
+					return true
 				}
-				return true
+				return false
 			}
 			anyPassed := false
 			for _, m := range exp.Members {
@@ -122,7 +125,7 @@ func TestCohortCorpusSettles(t *testing.T) {
 			headOK := head == "passed" || head == "unsupported" || head == "withheld"
 			depsSettled := true
 			for _, m := range exp.Members[1:] {
-				if !terminal(exp.Verdict[m].State) {
+				if !outcome(exp.Verdict[m].State) {
 					depsSettled = false
 				}
 			}

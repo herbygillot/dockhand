@@ -175,6 +175,15 @@ func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
 	// a promote issued mid-verification IS the answer about the
 	// running build. Cancel with a warning, promote, and the PR reads
 	// as unverified — no --no-verify demanded on top.
+	//
+	// Amended 2026-09-04: the evidence is read BEFORE the cancel. A gate
+	// that cancelled first would be judging canceled runs its own
+	// promotion had just written — and with the dependents best effort,
+	// a canceled dependent could then have counted as settled, turning
+	// "promote without waiting" into "publish as verified over builds
+	// this verb just killed". So the body names what was true when the
+	// decision was taken: still running. The cancellation still
+	// happens, and stderr still says so.
 	repo, sha := promoteRepo(t)
 	ctx := context.Background()
 	// The passed run is replaced outright: this branch is mid-build and
@@ -198,11 +207,13 @@ func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
 	creates := gh.called("create")
 	require.Len(t, creates, 1)
 	body := creates[0][len(creates[0])-1]
-	// The cancellation IS the cause, and the body names it. It used to
-	// say "no verification environment on the submitting machine" here,
-	// which was a statement about a machine that had one and had just
-	// been told not to wait for it.
-	assert.Contains(t, body, "Testos: verification was canceled before it finished")
+	// The body names the cause as it stood when the evidence was read:
+	// the build was still running. It used to say "no verification
+	// environment on the submitting machine" here, which was a statement
+	// about a machine that had one and had just been told not to wait
+	// for it; and until 2026-09-04 it said "canceled", which was a
+	// statement about something the promotion itself had just done.
+	assert.Contains(t, body, "Testos: verification was still running when this was promoted")
 	assert.NotContains(t, body, "fake-9", "the worker's name is local business")
 
 	after, err := ledger.Open(repo).Read(ctx, sha)

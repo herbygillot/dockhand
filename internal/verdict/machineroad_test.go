@@ -231,3 +231,64 @@ func TestUnfinishedWaitsOnAStateItCannotRead(t *testing.T) {
 	assert.Equal(t, []string{"Sonoma"}, Unfinished(r),
 		"a word this build cannot read is not evidence, and not finished either")
 }
+
+// The dependents are best effort on the unattended road too (maintainer's
+// ruling, 2026-09-04): a machine publishes a cohort whose dependent
+// failed, on the same evidence a person would, and the body names the
+// failure. Every fixture above is single-subject, which is why this
+// shape was never tested and why a change to Promotable reached the
+// machine road unnoticed — a cohort with a failed dependent is
+// Promotable, and decideForMachine returns before it ever reaches the
+// AnyState(Failed) check. That is now the intended reading, and this
+// pins it as such rather than leaving it to be rediscovered as a bug.
+func TestAMachinePublishesACohortWhoseDependentFailed(t *testing.T) {
+	n := record.Record{
+		Subjects: []record.Subject{{Port: "libraw"}, {Port: "gthumb"}},
+		Runs: map[string]record.Run{
+			record.RunKey("libraw", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
+			record.RunKey("gthumb", "Sequoia"): {State: record.Failed, Platform: "Sequoia"},
+		},
+	}
+	d := DecidePublish(PublishAsk{Record: n, Promotable: n.Promotable(),
+		Branch: "dockhand/libraw-0.22.2", Tip: "abc123", By: record.Machine, Phase: PhaseInFlight})
+	require.NoError(t, d.Refusal, "best effort holds for the machine: the headline passed and the dependent reached an outcome")
+	assert.False(t, d.NoOp)
+}
+
+// And what best effort does not cover, on either road: a dependent
+// whose run ended for a reason that says nothing about the port. The
+// machine's silence and a person's cancellation are not outcomes, so
+// the member is unanswered and the machine must wait or refuse.
+func TestAMachineDoesNotPublishOverAnErroredOrCanceledDependent(t *testing.T) {
+	for _, st := range []record.RunState{record.Errored, record.Canceled} {
+		t.Run(string(st), func(t *testing.T) {
+			n := record.Record{
+				Subjects: []record.Subject{{Port: "libraw"}, {Port: "gthumb"}},
+				Runs: map[string]record.Run{
+					record.RunKey("libraw", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
+					record.RunKey("gthumb", "Sequoia"): {State: st, Platform: "Sequoia"},
+				},
+			}
+			d := DecidePublish(PublishAsk{Record: n, Promotable: n.Promotable(),
+				Branch: "dockhand/libraw-0.22.2", Tip: "abc123", By: record.Machine, Phase: PhaseInFlight})
+			require.Error(t, d.Refusal, "a %s dependent is not an outcome about the port", st)
+		})
+	}
+}
+
+// The headline is never best effort, whoever is asking.
+func TestAMachineNeverPublishesAFailedHeadline(t *testing.T) {
+	n := record.Record{
+		Subjects: []record.Subject{{Port: "libraw"}, {Port: "gegl"}},
+		Runs: map[string]record.Run{
+			record.RunKey("libraw", "Sequoia"): {State: record.Failed, Platform: "Sequoia"},
+			record.RunKey("gegl", "Sequoia"):   {State: record.Passed, Platform: "Sequoia"},
+		},
+	}
+	d := DecidePublish(PublishAsk{Record: n, Promotable: n.Promotable(),
+		Branch: "dockhand/libraw-0.22.2", Tip: "abc123", By: record.Machine, Phase: PhaseInFlight})
+	require.Error(t, d.Refusal)
+	var coder exitcode.Coder
+	require.ErrorAs(t, d.Refusal, &coder)
+	assert.Equal(t, exitcode.VerifyFailed, coder.DockhandExit(), "the failing run's verdict is what is enforced")
+}

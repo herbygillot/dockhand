@@ -1016,3 +1016,93 @@ own name, stays failed.
 
 **Cost to reverse.** Low. Both are additive branches on existing
 verdict paths; removing either restores the prior blame.
+
+## D24 — The dependents are best effort, on both roads; an outcome is about the port, not the machine
+
+**Decision.** Five rulings from the cohort live check of 2026-09-03/04,
+made against a real ports tree and recorded here because until now
+they lived in commit messages and code comments. Each amends something
+above it, and the amendments are named.
+
+**Dependent revision bumps are best effort.** A dependent is owed a
+revision bump because the library it links moved; whether it builds
+today is usually a fact about the dependent. So the promote gate asks
+the HEADLINE for a pass and no failure, and asks each dependent only
+for an outcome: a dependent that failed, was blocked, was withheld, or
+declined the platform is published over, named to the author on stderr
+before the pull request exists, and named to the reviewer in the body
+where the bump is claimed. gthumb, unmaintained and already broken on
+Tahoe for reasons unrelated to libraw, is the case that decided it — a
+gate that held the whole change for it would make every cohort hostage
+to its least maintained member. Some run somewhere must still have
+passed: a change nothing ever built has no evidence to publish on.
+
+This holds on the unattended road as well. The plan's Part 6 and S14's
+delivery line said the machine publishes on "positive evidence only";
+that is amended. A machine publishes a cohort whose dependent failed on
+the same evidence a person would, because the alternative — the machine
+refusing the ordinary cohort, since most carry a member that does not
+build — would spend the whole road on the least maintained port in
+every set. What the machine cannot do is be told; so the body is where
+that road's honesty lives, and a verified body never deletes a failure
+(the suppression that keeps a promotion's own cancellations local was
+taking failures with it, measured live, and no longer does).
+
+**An outcome is about the port.** Best effort does not reach errored,
+canceled or superseded. The argument for best effort is that a
+dependent's build is a fact about the dependent, and those three are
+facts about something else — the machine's silence, a person's "no",
+the branch moving. A dependent in one of those states is unanswered,
+and the change waits. `RunState.Outcome` names the distinction once.
+
+**The evidence is read before anything is cancelled.** `promote`
+without waiting cancels the running builds; it used to cancel first and
+judge second, so the gate judged canceled runs its own promotion had
+just written. With canceled excluded from outcomes that would merely
+have refused, but the ordering was wrong on its own terms, and it now
+reads the record, decides, and only then cancels. The body names what
+was true at the decision — "still running when this was promoted" —
+rather than what the verb then did. D17's amendment of 2026-09-03 said
+"no gate changed"; as of this entry, it has.
+
+**The cohort cap is off.** Ruling 2 set it at ten to twelve; the code
+had eight; it is zero. The proposal names every dependent, the count is
+stated, `bump-revision --for` is the deliberate act of accepting them,
+and `--exclude=a,b` is how a person takes some and not the rest — an
+excluded port is out of the change entirely, listed among the ports
+examined and not bumped, where a reviewer can disagree. A number in a
+source file could not know which eight the maintainer wanted. Part 11's
+risk register names the cap as the capacity mitigation; what mitigates
+capacity now is consent and the exclusion list, and the exposure the
+cap was quietly limiting — a cohort that breaks early leaves the
+members behind it unbuilt — is the runner's stop-at-first-failure,
+recorded in `docs/todo.md` as its own problem.
+
+**Two members MacPorts will not activate together are not built
+together.** A cohort member declaring `conflicts` with a member already
+seated is bumped by the commit and left out of the guest alone, under a
+new run state, `withheld`: this build held the subject back, and
+nothing about the subject is the reason. The seat goes to the name not
+ending in `-devel`, else to whichever is earlier in build order — the
+suffix is a stated convention that settles the case that arrives, a
+stable port and its development twin, and decides about a fifth of the
+tree's conflict pairs on its own. A withheld member counts as answered
+for the gate, and its line is always on the body. Two of the two live
+cohorts examined carried such a pair, so this is the ordinary case.
+
+**`_resources` is named, not pattern-matched.** The tree's own
+infrastructure directory is skipped as a cohort subject by name, and
+the leading underscore is not taken as a rule: it would be a guess at
+a convention MacPorts has never stated, and `_resources` is a fact
+about the tree today. It is staged into every overlay, because a port
+served from a tree without it can reach no binary archive — MacPorts
+resolves archive sites under the port's own tree with the fallback
+disabled — which is why the ABI baseline could not run at all before
+this series.
+
+**Pending, not ruled.** `status` is to become a verb that changes
+nothing anyone else can see, with settling kept (reconciling the
+workers into the ledger is reading the world) and a `cycle` verb taking
+retire, the pump and the publish slot, with one flag per thing it can
+keep rather than a universal `--keep`. Discussed and recorded in
+`docs/todo.md`; to be taken up as a conversation.

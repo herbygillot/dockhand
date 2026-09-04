@@ -231,6 +231,17 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	// had just created. The one cancellation a machine may cause is a
 	// supersede, which happens at mint and is about the branch rather
 	// than about anybody's patience.
+	// The evidence is read BEFORE anything is cancelled (maintainer's
+	// ruling, 2026-09-04). Cancelling first would write canceled runs
+	// into the record this very gate is about to judge, and the gate
+	// would then be judging a state the promotion itself produced. The
+	// cancellations still happen — a person promoting without waiting
+	// means it — but they happen to builds the verdict has already been
+	// taken without.
+	n, verified, err := e.Ledger(repo).EvidenceFor(ctx, tip)
+	if err != nil {
+		return err
+	}
 	if o.invoker() == record.Human {
 		freed, err := e.cancelRuns(ctx, repo, tip, "canceled: promoted without waiting", false)
 		if err != nil && !errors.Is(err, git.ErrNoNote) {
@@ -242,10 +253,6 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 		if len(freed) > 0 {
 			fmt.Fprintf(e.Err, "canceled %d running verification(s) — promoting without waiting\n", len(freed))
 		}
-	}
-	n, verified, err := e.Ledger(repo).EvidenceFor(ctx, tip)
-	if err != nil {
-		return err
 	}
 	// The gate itself is a judgment about the verdict set, so it is made
 	// where the other judgments are; what is left here is saying so.
