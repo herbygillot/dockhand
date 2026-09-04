@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/macports/build"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/tool"
@@ -203,11 +204,20 @@ func (g *fakeGuest) program(name, body string) string {
 
 // portdir writes a staging directory the way the engine materializes
 // one, so stage has something real to tar.
+//
+// That includes _resources, because the engine materializes it too and a
+// tree without it is not a ports tree: MacPorts resolves archive_sites
+// under the port's own tree with no fallback, so an overlay missing it
+// can reach no binary archive and `port -b` fails outright. A fixture
+// that omitted it would model the bug rather than the tree.
 func portdir(t *testing.T, root, side, category, name, portfile string) string {
 	t.Helper()
 	dir := filepath.Join(root, side, category, name)
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Portfile"), []byte(portfile), 0o644))
+	fetch := filepath.Join(root, side, build.ResourcesDir, "port1.0", "fetch")
+	require.NoError(t, os.MkdirAll(fetch, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(fetch, "archive_sites.tcl"), []byte("# fixture\n"), 0o644))
 	return dir
 }
 
@@ -438,4 +448,42 @@ func TestTheBaselineCarriesTheRequestsVariantFrame(t *testing.T) {
 	require.NoError(t, g.provider().prepare(t.Context(), g.vm, req))
 
 	assert.Equal(t, "port -N -b install cairo +quartz -x11", portCalls(g.calls())[0])
+}
+
+// The overlay is a ports tree, and a ports tree has _resources.
+//
+// This is the shape of a real defect: dockhand staged portdirs alone,
+// which indexes and builds perfectly well, so nothing on the offline
+// side noticed. In a guest it meant `port -b install` could reach no
+// archive at all — portarchivefetch resolves archive_sites.tcl under
+// the port's own tree and passes fallback=no — so every ABI baseline
+// declined with "no usable archive sites configured" and the whole
+// comparison was unavailable for every port.
+//
+// Staging is asked to fail loudly on a tree that cannot supply it,
+// because the alternative is what happened: succeeding, and losing the
+// measurement somewhere a person only finds by reading a guest.
+func TestStagingRefusesATreeWithNoResources(t *testing.T) {
+	g := newFakeGuest(t, "")
+	staging := t.TempDir()
+
+	dir := filepath.Join(staging, "branch", "devel", "libwidget")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Portfile"), []byte("version 3.0\n"), 0o644))
+
+	err := g.provider().stage(t.Context(), g.vm, []string{dir})
+	require.Error(t, err, "a tree with no _resources cannot serve an archive site")
+	assert.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.Contains(t, err.Error(), build.ResourcesDir)
+}
+
+// And the ordinary path stages it, beside the portdirs, from the same
+// root — the fixture's portdir helper writes one because the engine
+// materializes one.
+func TestStagingCarriesTheTreeResources(t *testing.T) {
+	g := newFakeGuest(t, "")
+	staging := t.TempDir()
+	dir := portdir(t, staging, "branch", "devel", "libwidget", "version 3.0\n")
+
+	assert.NoError(t, g.provider().stage(t.Context(), g.vm, []string{dir}))
 }

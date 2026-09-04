@@ -86,13 +86,27 @@ creates its branch with `git switch -c`, which leaves you on it, so every
 cleanup step below switches away first. Without that, `discard` fails with
 `cannot delete branch … used by worktree`.
 
-**`promoted; no PR found` is a known false line, not a finding.** A branch
-made with `git switch -c <name> origin/master` has `branch.<name>.remote`
-set to `origin`, and `Engine.retire` reads that key as proof the branch was
-pushed. It was not. `status` will say `promoted; no PR found` for every
-branch in this document, and `discard` will offer you a
-`git push origin --delete` line for a fork copy that does not exist.
-Recorded in `docs/todo.md`; ignore both wherever they appear below.
+**Branch from local `master`, never from `origin/master`.** dockhand
+computes what a branch changes as the diff from its merge base with the
+*local* primary branch — `PrimaryBranch` is documented to never fetch, so
+the local position is the answer, staleness included (D21). Meanwhile
+`status` runs a retire sweep that can advance `origin/master` underneath
+you when one of your own PRs merges. Cut a branch from `origin/master`
+after that, and every upstream commit your local `master` has not caught
+up to becomes part of what dockhand thinks your branch changes — it will
+add those ports to the cohort and build them. Observed live: a branch
+meant to hold `oniguruma6` and `jq` was submitted as `oniguruma6, jq,
+mise`, because dockhand's own `mise` PR had merged two steps earlier.
+Recorded in `docs/todo.md`.
+
+**If you see `promoted; no PR found`, it is a known false line, not a
+finding.** `Engine.retire` reads `branch.<name>.remote` as proof a branch
+was pushed, and branching from a remote-tracking ref sets that key for a
+branch that exists nowhere but locally; `discard` then offers a
+`git push origin --delete` line for a fork copy that is not there.
+Branching from local `master` as above sets no upstream at all, so neither
+should appear — but transcripts from earlier runs of this document show
+both. Recorded in `docs/todo.md`; ignore them wherever they appear.
 
 ---
 
@@ -109,7 +123,7 @@ the result off `status`, and would have nothing to read.
 
 ```
 cd <macports-ports checkout>
-git switch -c dockhand/live-solo-control origin/master
+git switch -c dockhand/live-solo-control master
 printf '\n' >> devel/oniguruma6/Portfile      # any no-op edit; the diff only has to touch the portdir
 git commit -am 'oniguruma6: no-op, live check'
 ```
@@ -173,7 +187,7 @@ would need a revision bump when it moves — the shape the cohort exists for.
 
 ```
 cd <macports-ports checkout>
-git switch -c dockhand/live-cohort-pass origin/master
+git switch -c dockhand/live-cohort-pass master
 # the library: any no-op edit is enough to make the portdir part of the change
 printf '\n' >> devel/oniguruma6/Portfile
 # the dependent: bump its revision by hand
@@ -210,8 +224,12 @@ git show --stat HEAD
 ```
 
 - **Worked:** the branch shows **two** lines, one per member, each naming its
-  port: `oniguruma6: running (<Release>)` and `jq: running (<Release>)`. One
-  job, one environment, two runs.
+  port, `oniguruma6` first: `oniguruma6: verifying (38s) (<Release>)` and
+  `jq: verifying (38s) (<Release>)`. One job, one environment, two runs. The
+  word is `verifying` and not the wire state `running` — a submitted run
+  renders its elapsed time instead of its bare state
+  (`internal/render/render.go`) — and both members show the same elapsed time
+  because they share one job, which is the claim.
 - **A finding:** one line for two members; two environments in `tart list` for
   one branch; a run keyed by release alone.
 
@@ -226,6 +244,7 @@ cat /tmp/dockhand-verify/subject.0
 cat /tmp/dockhand-verify/argv.0
 cat /tmp/dockhand-verify/argv.1
 cat /tmp/dockhand-verify/state.0     # only once the first member has finished
+grep -n 'dockhand subject:' /tmp/dockhand-verify/log
 exit
 ```
 
@@ -233,7 +252,17 @@ exit
   `argv.1`, `argv.1.lint`, `log`, `state`, and `state.<i>` for each member that
   has finished. `subject.0` holds exactly `===> dockhand subject: oniguruma6`.
   `argv.0` holds `-d`, `-N`, `install`, `oniguruma6`; `argv.1` the same for
-  `jq`. No bare `argv` and no bare `argv.lint`.
+  `jq`. No bare `argv` and no bare `argv.lint`. The marker lines appear once
+  each, in build order, `oniguruma6` before `jq`.
+- **Also present, and not a finding:** `baseline`, `manifest.ports`, and
+  `links.<i>` for members whose links were measured. These are the ABI
+  machinery, which part D interrogates; part B only requires that they do not
+  disturb the instruction set.
+- **Read the markers here, not after.** `dockhand log` reaches into a live
+  guest, and a cohort that passes releases its guest — so by B5 the log is
+  gone and `log` correctly answers "no environment to reach". The failing path
+  keeps its environment, which is why C4 can read the log after the fact and
+  B5 cannot.
 - **A finding:** a bare `argv` beside the numbered ones (two instruction sets,
   one guest); a marker file holding anything but one line; a `-s` in an argv
   nobody asked to build from source.
@@ -242,14 +271,17 @@ exit
 
 ```
 /tmp/dockhand status
-/tmp/dockhand log dockhand/live-cohort-pass | grep -n 'dockhand subject:'
 tart list
 ```
 
-- **Worked:** both members read `passed (<Release>)`; the marker lines appear
-  once each, in build order, `oniguruma6` before `jq`; `tart list` shows no
-  `dockhand-worker-*` — one guest, released once, after **both** members were
-  terminal.
+- **Worked:** both members read `passed (<Release>)`, `oniguruma6` first;
+  `tart list` shows no **new** `dockhand-worker-*` — one guest, released once,
+  after **both** members were terminal. Any worker that predates this check is
+  someone else's orphan and stays listed.
+- **Expected here, and answered in part D:** an `ABI check unavailable` line
+  naming `oniguruma6`, because a no-op edit does not move the version and no
+  merge-base portdir was staged, so there is no "before" to measure. The note
+  records this as `baseline_source: "none"`. It is not a finding in part B.
 - **A finding:** the guest released while a member was still running; a member
   reading `errored — the guest reported no output for this subject` (the log
   announced one member and not the other, which no correct runner does); both
@@ -286,7 +318,7 @@ in build order, so the second is never reached.
 
 ```
 cd <macports-ports checkout>
-git switch -c dockhand/live-cohort-fail origin/master
+git switch -c dockhand/live-cohort-fail master
 $EDITOR devel/oniguruma6/Portfile   # add a line: build.cmd false
 printf '\n' >> sysutils/jq/Portfile
 git commit -am 'oniguruma6, jq: live cohort failure check'
@@ -350,6 +382,10 @@ exit
 - **A finding:** no worker (the failure's debug environment was handed back);
   two workers for one branch; a `state.1` file, which would mean the runner
   kept going after a member failed.
+- **Also present, and not a finding:** the ABI staging — `baseline`,
+  `manifest.ports`, and per-member `manifest.<i>`, `links.<i>` and
+  `probe.<i>`. A failed cohort keeps more of these than a passing one does,
+  because nothing consumed them; part D is where they are read.
 
 **C4. Confirm the log's attribution.**
 
@@ -365,12 +401,25 @@ exit
 **C5. Confirm the gate refuses to publish it.**
 
 ```
-/tmp/dockhand promote dockhand/live-cohort-fail
+/tmp/dockhand promote dockhand/live-cohort-fail --no-pr
 ```
 
 - **Worked:** it refuses, and says the verification failed. Do **not** pass
   `--no-verify`.
-- **A finding:** a pull request being opened.
+- **A finding:** anything other than a refusal — in particular the branch
+  appearing on your fork, which means the gate let a failed verification
+  through.
+
+`--no-pr` is there to bound the blast radius, not to soften the test.
+`verdict.DecidePublish` never sees the flag, so the gate decision is
+identical; the evidence gate also returns before `ForkRemote`, the pull
+request lookups and the push, so a working gate costs no network at all.
+What the flag changes is only what a *broken* gate would do: push to your
+own fork, which `git push <fork> --delete <branch>` undoes, instead of
+opening a pull request against `macports/macports-ports` and notifying its
+maintainers. Note that `origin` in this checkout is the canonical
+repository, not a fork — `ForkRemote` resolves the fork by matching your
+`gh` login against each remote's owner.
 
 **C6. Clean up.**
 
@@ -379,7 +428,6 @@ git switch master
 /tmp/dockhand cancel dockhand/live-cohort-fail     # releases the kept environment
 /tmp/dockhand discard dockhand/live-cohort-fail    # removes the branch and its note
 tart list                                 # expect: no dockhand-worker-*
-git -C <macports-ports checkout> switch master
 ```
 
 ---
@@ -430,6 +478,13 @@ holding in mind while doing the above:
   it, and nothing reads them yet. Whether that trust boundary needs closing is
   a maintainer's call, not a test's — see `internal/verify/tart/tart.go`,
   `cohortRunner`.
+- **Build order is only proven on the failing path.** A cohort that passes
+  releases its guest, and the log goes with it; the note records each
+  member's state, evidence, lint and probes, but not the order they ran in.
+  B4 reads the markers from inside the live guest, and C4 reads them from the
+  environment a failure keeps. Nothing durable records the order after a
+  green run.
+
 - **Build order is alphabetical by portdir, not topological.** In part B,
   `oniguruma6` is built before `jq` because `devel` sorts before `sysutils`, and
   the dependent going first is decided by a category name. It is deterministic
@@ -457,20 +512,40 @@ The recipe under test, in the order the guest runs it:
 | 5 | `sudo -n port -N -f uninstall <headline>` | `-f` because MacPorts otherwise refuses while dependents are installed and asks a question a detached runner never sees; the dependencies stay, which is what the branch build would have pulled |
 | 6 | stage the **branch's** portdirs over the same overlay, then launch | steps 1 and 6 write the same directory, which is why 1–5 come first |
 
-**D1. Make a branch whose headline has a published archive.** Any port with a
-binary archive on the buildbot, edited so the portdir is part of the change.
+**D1. Mint a branch with `bump`. A hand-made branch cannot reach this
+part at all.** The baseline is staged only when the ledger holds a record
+whose `Base.Sha` is set (`Engine.manifestAsk`, `internal/engine/submit.go`);
+a branch made with `git switch -c` has no minted record, so `Base.Sha` is
+empty, no merge-base portdir is staged, and every step below reports
+`baseline_source: "none"` for a reason that has nothing to do with what D
+is testing. Parts A–C showed this live: part B's cohort declined with
+"no merge-base portdir was staged" for exactly this reason.
+
+The headline also needs **dependents** — `manifestAsk` collects nothing for
+a port with an empty reverse index — and its **merge-base** version needs a
+published binary archive for this platform, because that is the version
+step 2 installs.
 
 ```
 cd <macports-ports checkout>
-git switch -c dockhand/live-baseline origin/master
-printf '\n' >> devel/oniguruma6/Portfile
-git commit -am 'oniguruma6: live baseline check'
+/tmp/dockhand bump <port>            # or --to <version> to pin one
 ```
 
-**D2. Verify it, and watch the submit take longer than eleven seconds.**
+- **Choosing the port is yours:** it must have dependents, a newer upstream
+  release than the tree holds, and an archive for the version it is
+  *leaving* on this OS and arch. `oniguruma6` satisfies the first; the
+  other two depend on the day and the buildbot.
+- **A finding before you start:** if the mint refuses, that is part E's
+  subject, not D's — read the refusal and pick another port.
+
+**D2. Watch the submit take longer than eleven seconds.**
+
+`bump` submits background verification itself — `--no-verify` is what
+suppresses it — so D1's mint is also the submit, and the clock belongs on
+that one command:
 
 ```
-time /tmp/dockhand verify dockhand/live-baseline
+time /tmp/dockhand bump <port>
 ```
 
 - **Worked:** the submit returns having downloaded and activated the archive —
@@ -482,7 +557,7 @@ time /tmp/dockhand verify dockhand/live-baseline
 **D3. Read what the environment recorded, while it is still there.**
 
 ```
-/tmp/dockhand shell dockhand/live-baseline
+/tmp/dockhand shell dockhand/<port>-<version>
 # inside the guest:
 cat  /tmp/dockhand-verify/manifest.ports
 cat  /tmp/dockhand-verify/baseline
@@ -521,16 +596,33 @@ grep -A2 'dockhand manifest: version' /tmp/dockhand-verify/manifest.pre   # in t
   and the change was measured against itself, which always reports that
   nothing moved.
 
-**D5. Now the honest refusal: a port with no archive.** Bump a port to a
-version that has never been built, so `-b` cannot find anything.
+**D5. Now the honest refusal: a merge-base version with no archive.**
+
+Requires the `_resources` staging fix (2026-09-03). Before it, *every*
+port declined here for the wrong reason — "no usable archive sites
+configured", meaning no site was ever consulted — which is not the same
+answer as "this port has no archive" and cannot stand in for it. If you
+see that sentence again, the binary under test predates the fix.
+
+Note what has to be missing. Step 2 installs the **merge base's** version,
+so the port that exercises this is one whose *current* version has no
+published archive on this OS and arch — not one bumped to a version that
+was never built. The branch's own version is never installed with `-b`.
+On a young OS release many ports qualify; on a settled one, few do.
+
+This branch must be minted too, for the same reason as D1: a hand-made
+branch declines earlier, with the wrong reason, and never reaches the
+archive lookup.
 
 ```
 cd <macports-ports checkout>
-git switch -c dockhand/live-baseline-none origin/master
-$EDITOR <some portdir>/Portfile         # set a version that does not exist upstream
-git commit -am 'live: no archive for the merge base'
-/tmp/dockhand verify dockhand/live-baseline-none
+/tmp/dockhand bump <a port whose current version has no archive here> --to <newer version>
+/tmp/dockhand verify dockhand/<port>-<version>
 ```
+
+If D1's own port declines with MacPorts' archive-not-found error rather
+than measuring a baseline, that *is* this test — swap the two roles and
+find a better-archived port for D1 instead of hunting a worse one here.
 
 - **Worked:** the submit **succeeds** — a check that could not be made is not a
   submit that failed — and in the guest `/tmp/dockhand-verify/baseline` reads

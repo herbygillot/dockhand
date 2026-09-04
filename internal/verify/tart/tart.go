@@ -443,37 +443,68 @@ func WaitAgent(ctx context.Context, tools *tool.Finder, vm string) error {
 // what makes the second call a replacement of the first rather than a
 // merge — an overlay holding both versions would index two ports where
 // the tree has one.
+// tarInto streams one directory of the host's ports tree into the
+// guest's overlay, rel being its path below root.
+//
+// tar rather than a file copy: a portdir's files/ carries the
+// patchfiles, and a port staged without them fails in a way that looks
+// like the port's fault. The host tar streams into the guest's over
+// `tart exec -i`, so this stays a pipeline rather than a one-shot
+// command.
+func (p Provider) tarInto(ctx context.Context, vm, root, rel string) error {
+	tarBin, err := p.Tools.Find(tool.Tar)
+	if err != nil {
+		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
+	}
+	tar := exec.CommandContext(ctx, tarBin, "cf", "-", "-C", root, rel)
+	pipe, err := tar.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := tar.Start(); err != nil {
+		return fmt.Errorf("%w: reading %s: %w", verify.ErrNoEnvironment, filepath.Join(root, rel), err)
+	}
+	out, xerr := CLI(ctx, p.Tools, pipe, "exec", "-i", vm, "/usr/bin/tar", "xf", "-", "-C", overlayDir)
+	werr := tar.Wait()
+	if xerr != nil || werr != nil {
+		return fmt.Errorf("%w: staging %s: %s", verify.ErrNoEnvironment, filepath.Join(root, rel), strings.TrimSpace(out))
+	}
+	return nil
+}
+
 func (p Provider) stage(ctx context.Context, vm string, portdirs []string) error {
 	if _, err := Exec(ctx, p.Tools, vm, "/bin/sh", "-c", "rm -rf "+overlayDir+" && mkdir -p "+overlayDir); err != nil {
 		return fmt.Errorf("%w: preparing the overlay: %w", verify.ErrNoEnvironment, err)
 	}
+	var root string
 	for _, dir := range portdirs {
 		category, name, err := build.Layout(dir)
 		if err != nil {
 			return fmt.Errorf("%w: %w", verify.ErrUnsupported, err)
 		}
-		// tar rather than a file copy: the portdir's files/ carries the
-		// patchfiles, and a port staged without them fails in a way that
-		// looks like the port's fault. The host tar streams into the
-		// guest's over `tart exec -i`, so this stays a pipeline rather
-		// than a one-shot command.
-		root := filepath.Dir(filepath.Dir(filepath.Clean(dir)))
-		tarBin, err := p.Tools.Find(tool.Tar)
-		if err != nil {
-			return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
-		}
-		tar := exec.CommandContext(ctx, tarBin, "cf", "-", "-C", root, filepath.Join(category, name))
-		pipe, err := tar.StdoutPipe()
-		if err != nil {
+		root = filepath.Dir(filepath.Dir(filepath.Clean(dir)))
+		if err := p.tarInto(ctx, vm, root, filepath.Join(category, name)); err != nil {
 			return err
 		}
-		if err := tar.Start(); err != nil {
-			return fmt.Errorf("%w: reading %s: %w", verify.ErrNoEnvironment, dir, err)
-		}
-		out, xerr := CLI(ctx, p.Tools, pipe, "exec", "-i", vm, "/usr/bin/tar", "xf", "-", "-C", overlayDir)
-		werr := tar.Wait()
-		if xerr != nil || werr != nil {
-			return fmt.Errorf("%w: staging %s: %s", verify.ErrNoEnvironment, dir, strings.TrimSpace(out))
+	}
+	// The overlay is a ports tree, not a bag of portdirs, and MacPorts
+	// asks a ports tree for more than its ports. archive_sites.tcl is
+	// the one that matters and the one that bites: portarchivefetch
+	// looks it up under the port's OWN tree and passes fallback=no —
+	// "look up archive sites only from this ports tree, do not fallback
+	// to the default" — so a port served from an overlay without
+	// _resources has no archive site at all, and `port -b install`
+	// fails with "no usable archive sites configured". That is the
+	// baseline's entire second step, which means the ABI comparison
+	// cannot be made for any port anywhere until this is staged.
+	//
+	// The whole directory rather than the one file: it is 1.4 MB beside
+	// a 100 GB guest, every other resource MacPorts resolves this way
+	// gets the same treatment for free, and a tree missing a resource
+	// nobody thought of fails the same silent way this did.
+	if root != "" {
+		if err := p.tarInto(ctx, vm, root, build.ResourcesDir); err != nil {
+			return err
 		}
 	}
 

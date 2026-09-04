@@ -13,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/lockfile"
+	"github.com/herbygillot/dockhand/internal/macports/build"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tempdir"
@@ -579,6 +580,19 @@ func (e *Engine) manifestAsk(ctx context.Context, m *Minted, prov verify.Verifie
 			continue
 		}
 		out = append(out, filepath.Join(stage, filepath.FromSlash(mem.Portdir)))
+	}
+	if len(out) == 0 {
+		return true, nil
+	}
+	// What is staged has to be a ports tree, not a bag of portdirs: the
+	// guest installs the baseline with `port -b`, and MacPorts reads the
+	// archive sites from _resources under the port's own tree with no
+	// fallback. Staged without it, the baseline install can reach no
+	// archive and the whole comparison is lost — so a tree that cannot
+	// carry it declines here, where the reason is still legible, rather
+	// than in the guest as "no usable archive sites configured".
+	if merr := m.Repo.Materialize(ctx, base.Base.Sha, build.ResourcesDir, stage); merr != nil {
+		return true, nil
 	}
 	return true, out
 }

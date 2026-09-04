@@ -166,3 +166,63 @@ stated expectations would muddy every remaining part. Nothing downstream
 depends on fixing it first; part F is unaffected, since that branch is
 genuinely pushed. `docs/cohort-live-check.md` annotates the false line as
 expected wherever it appears.
+
+## A stale primary silently enlarges a hand-made cohort
+
+**Found in the live check (2026-09-03).** A branch cut from
+`origin/master` picks up every upstream commit the local primary branch
+has not caught up to, and dockhand counts those commits' portdirs as
+part of what the branch changes. It then builds them.
+
+Observed: a branch holding one no-op edit to `devel/oniguruma6` and one
+to `sysutils/jq` was submitted as
+`verify: submitted oniguruma6, jq, mise on Tahoe`. The third member came
+from `9515815e0ba mise: update to 2026.9.1` — dockhand's own pull request
+#34485, which merged two steps earlier in the same session.
+
+**Why it happens, and why neither half is wrong on its own.**
+`ChangedPortdirs` diffs from `MergeBase(PrimaryBranch, tip)`, and
+`PrimaryBranch` is documented to never fetch: "the local position is the
+answer, staleness included" (D21, `internal/git/git.go`). That is a
+deliberate and defensible choice — it is what `git diff master...HEAD`
+would say too. Separately, `status` runs a retire sweep that advances
+`origin/master` when one of your PRs merges. Each is reasonable; together
+they mean dockhand can move the remote ref underneath you and then
+attribute the commits it fetched to the next branch you cut from it.
+
+**Branches dockhand mints itself are immune.** `planOnBase` forks from
+`primary`, so the merge base is exactly the fork point. Only hand-made
+branches taken from a remote-tracking ref are affected — which is an
+entirely ordinary thing to do, and what this document used to instruct.
+
+**Consequences, worst first.** A promoted branch's PR body would claim to
+change a port the author never touched. A cohort builds ports nobody
+asked for, spending guest time and a licence slot. And the ABI cohort
+would measure a stranger's port as though it were part of the change.
+
+**Possible answers, none ruled.**
+
+1. Say something. dockhand knows `primary` and can see whether
+   `origin/<primary>` is ahead of it without a fetch. When it is, and the
+   branch's roster includes portdirs from commits the branch does not
+   own, one advisory line naming them. Cheap, no refusal, no behaviour
+   change.
+2. Base on the remote-tracking ref instead. Matches what GitHub will diff
+   the PR against, and contradicts D21's "never fetches" premise.
+3. Count only commits the branch itself introduces — the roster is the
+   union of portdirs touched by `primary..tip` rather than the diff of
+   the endpoints. Narrower and more literal, but it changes what "what
+   this branch changes" means for a branch that legitimately carries a
+   merge.
+
+(1) is the smallest honest step and does not disturb D21. Worth pairing
+with the `status` sweep, since that is what moves the ref.
+
+**A related facet, same root.** `discard`'s advisory calls whatever
+`TrackedRemote` returns "the fork". In a checkout where `origin` is the
+canonical repository and the fork is another remote, a hand-made branch
+tracking `origin` produces `the fork copy on "origin" is untouched` —
+naming the upstream as the fork. `promote` resolves the fork properly,
+by matching the authenticated `gh` login against each remote's owner
+(`gh.ForkRemote`); the advisory should use the same answer rather than
+assuming the tracked remote is the fork.
