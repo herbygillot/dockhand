@@ -226,3 +226,144 @@ naming the upstream as the fork. `promote` resolves the fork properly,
 by matching the authenticated `gh` login against each remote's owner
 (`gh.ForkRemote`); the advisory should use the same answer rather than
 assuming the tracked remote is the fork.
+
+## `status` should only report; a `cycle` verb should do the work
+
+**The ask (maintainer, 2026-09-04).** Reverse `status`'s mandate so it
+is purely read-only, and introduce `dockhand cycle` to carry the pump
+and the flush.
+
+**What `status` does today, beyond reporting.** `statusAction` calls
+`Reconcile` with `Drain: true`, and that pass has four phases, three of
+which write:
+
+1. **Settle.** `inspect` polls each branch's job and, when one has
+   finished, writes its verdict into the note and releases the worker.
+2. **Retire.** A branch whose pull request merged is deleted — locally
+   and on the fork. The report says so as it happens: `removed
+   dockhand/edit-2.0.0 from "herby"`, `discarded dockhand/edit-2.0.0`.
+3. **The publish slot.** `publishPass` runs the machine's publication
+   road, gated by `GateRing3`.
+4. **Drain.** `PumpDeferred` submits what was queued, which boots VMs.
+
+So a command named `status` can delete a local branch, delete a remote
+branch, write notes, release and boot virtual machines, and — on a build
+where the road is enabled — publish. Observed during the live check:
+`status` deleted two merged branches mid-run, and separately advanced
+`origin/master` underneath a checkout, which is what caused the stale
+primary finding above.
+
+**Why this is worth doing.** The name is a promise and it is not being
+kept: `status` is the one verb a person types to find out where things
+stand, including when they are unsure what state the tree is in — which
+is exactly when they least want it acting. It is also the verb a script
+or a watch loop reaches for, and there is currently no way to ask "what
+is the state" without also asking "and change it".
+
+**Shape.** `Reconcile` already separates the phases behind `ReconcileOpts`
+(`RetireOnly` is `clean`'s shape, `NoClean` withholds the deletion,
+`Drain` gates the pump), so the split is mostly a matter of which verb
+sets which flag rather than new machinery. `cycle` would be
+settle + retire + publish slot + drain; `status` would be the observation
+and the rendering alone.
+
+**Where the line falls (maintainer, 2026-09-04).** `status` **keeps
+settling**. Reconciling what the workers did into the ledger is reading
+the world and writing down what it said, and a report that left a
+finished job reading `verifying` would be a worse lie than the write it
+avoided. What moves to `cycle` is anything that acts on the world:
+
+- deleting branches and pull requests (retire, and `clean`'s sweep)
+- submitting work and starting workers (the drain)
+- publishing a pull request (the publish slot)
+
+So "read-only" here means **makes no change anybody else can see** — not
+"writes no bytes". The ledger is dockhand's own account of what it
+observed; a branch, a PR and a VM are the world.
+
+**A boundary this ruling settles by implication, worth stating.**
+Settling *releases* the worker of a finished run, and releasing destroys
+a VM. That stays with `status`: the line drawn is at *starting* work,
+and a released environment is the last step of the verdict being written
+rather than an action of its own. The failure path already keeps its
+environment deliberately, so nothing a person still needs is taken away.
+
+**`status` names the remedy (maintainer, 2026-09-04).** Where work is
+waiting, the report says so and names `dockhand cycle`. With the split
+nothing begins on its own, and a queued run that nobody is told about is
+a run that never starts. This is the same remedy-beside-the-finding
+shape the rest of the output already uses, so it is wording rather than
+machinery — but it is load-bearing wording, and its absence would be the
+whole feature's failure mode.
+
+**`clean` folds into `cycle` (maintainer, 2026-09-04)**, with a `--keep`
+flag: cycle inbound and outbound, and remove nothing.
+
+**What `--keep` should cover.** Today's deletions and releases, so that
+one flag means "act on the world, but take nothing away":
+
+1. **Merged-PR branches** — retire's deletion, local and the fork copy.
+   The named case, and today's `status --no-clean`.
+2. **Superseded branches** — `clean --superseded`. Already conservative
+   by ruling: a supersede is dockhand's own inference, so nothing removes
+   one without being asked. `--keep` should keep it that way rather than
+   quietly inheriting a sweep.
+3. **The environment of a passing run.** Settle releases it; a failure
+   keeps it deliberately. Under `--keep` a green run could hold its guest
+   too, which is what a person wants when the question is "it passed, but
+   what did it actually install?" Weigh against capacity: a kept
+   environment is a spent slot, and two of those is the whole licence.
+4. **Untracked workers.** `status` reports orphans and removes nothing.
+   If `cycle` ever reclaims them, that is a deletion and belongs behind
+   the same flag.
+
+**One flag per concept, not a universal `--keep` (maintainer,
+2026-09-04).** A single flag over all of these would be hard to aim: a
+person withholding one deletion would withhold three, and would have to
+know which three.
+
+There is a second reason the universal flag cannot work, which the list
+above makes visible only once it is written out — **these do not share a
+default.** Removing a merged PR's branch happens today unless asked
+otherwise; removing a superseded branch happens only when asked, by
+ruling, because a supersede is dockhand's own inference. So a uniform
+`--keep-x` family would be withholding for one and meaningless for the
+other. The vocabulary has to follow the default:
+
+- **on by default, `--keep-…` withholds it** — merged-PR branches
+  (`--keep-merged`), which is today's `status --no-clean` under a name
+  that says what it keeps.
+- **off by default, a plain `--…` asks for it** — superseded branches
+  (`--superseded`, the flag `clean` already carries), and reclaiming
+  untracked workers if `cycle` ever does that at all.
+
+**A case that does not fit either, and needs its own answer.** Keeping
+the environment of a *passing* run cannot be a `cycle` flag, because
+releasing it is part of settling and settling stays with `status`. Three
+ways out, none ruled:
+
+1. `status --keep-environments`, a withholding flag on the verb that is
+   otherwise pure observation. Honest, and slightly against the grain of
+   what `status` is becoming.
+2. Split settling: `status` writes the verdict, `cycle` releases the
+   guest. Clean on paper; it means a green run holds a slot until
+   somebody cycles, and two held slots is the whole licence.
+3. Leave it out. A person who needs to look inside a green build has
+   `verify --trace`, and the failure path already keeps its environment.
+
+(3) is the cheapest and may be right — the want is real but rare, and
+the other two both cost something structural.
+
+**Still open.**
+
+- Exit codes: `status` today can exit on a band a write caused. A
+  read-only verb's bands are its own question.
+- The goldens move: every `status` golden that shows a retirement line
+  belongs to `cycle` afterwards.
+- `status --no-clean` disappears with the split — the flag exists to
+  withhold a deletion `status` will no longer do. Whether it is dropped
+  or kept as an accepted no-op is a compatibility question, and this is
+  pre-release, so probably dropped.
+
+**To discuss before implementing.** The maintainer has asked to take
+this one up as a conversation rather than a ticket.
