@@ -37,9 +37,14 @@ func (rc *Context) Deps() *engine.Engine {
 		Temp:     rc.TempDir,
 		Tools:    rc.Tools,
 		TreeRoot: rc.TreeRoot,
-		Version:  rc.Version,
-		Out:      rc.Out,
-		Err:      rc.Err,
+		// The build's answer about unattended publication, carried down as
+		// a value because the engine may not import the package that holds
+		// the constant. A run that granted nothing hands down false, which
+		// is the refusal.
+		MachinePublish: rc.MachinePublish,
+		Version:        rc.Version,
+		Out:            rc.Out,
+		Err:            rc.Err,
 	})
 }
 

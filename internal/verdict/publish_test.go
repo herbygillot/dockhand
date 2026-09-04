@@ -18,7 +18,8 @@ func blockedOn(plat, detail string, rest map[string]record.RunState) record.Reco
 }
 
 func TestDecidePublishPassesAVerifiedTip(t *testing.T) {
-	d := DecidePublish(set(map[string]record.RunState{"Sequoia": record.Passed}), true, "dockhand/jq", "abc1234", false)
+	d := DecidePublish(PublishAsk{Record: set(map[string]record.RunState{"Sequoia": record.Passed}),
+		Promotable: true, Branch: "dockhand/jq", Tip: "abc1234"})
 	require.NoError(t, d.Refusal)
 	assert.False(t, d.SayUnverified, "a verified tip says nothing")
 	assert.Empty(t, d.Blocked)
@@ -29,7 +30,7 @@ func TestDecidePublishPassesAVerifiedTip(t *testing.T) {
 // because invoking promote is already the publication choice.
 func TestDecidePublishRefusesOnlyAFailedBuild(t *testing.T) {
 	failed := set(map[string]record.RunState{"Sequoia": record.Failed})
-	d := DecidePublish(failed, false, "dockhand/jq", "abc1234", false)
+	d := DecidePublish(PublishAsk{Record: failed, Branch: "dockhand/jq", Tip: "abc1234"})
 	require.Error(t, d.Refusal)
 	assert.Equal(t,
 		"dockhand/jq: tip abc1234 has a failed verification — fix it, `dockhand discard` it, or --no-verify to promote anyway",
@@ -46,7 +47,7 @@ func TestDecidePublishRefusesOnlyAFailedBuild(t *testing.T) {
 	assert.Equal(t, "verification-failed", refusal.Code())
 
 	// --no-verify overrides exactly this refusal and nothing else.
-	d = DecidePublish(failed, false, "dockhand/jq", "abc1234", true)
+	d = DecidePublish(PublishAsk{Record: failed, Branch: "dockhand/jq", Tip: "abc1234", NoVerify: true})
 	require.NoError(t, d.Refusal)
 	assert.True(t, d.SayUnverified)
 }
@@ -66,7 +67,7 @@ func TestDecidePublishComplainsWithoutRefusing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			d := DecidePublish(set(tc.states), false, "dockhand/jq", "abc1234", false)
+			d := DecidePublish(PublishAsk{Record: set(tc.states), Branch: "dockhand/jq", Tip: "abc1234"})
 			require.NoError(t, d.Refusal)
 			assert.True(t, d.SayUnverified)
 			assert.Empty(t, d.Blocked)
@@ -84,7 +85,7 @@ func TestDecidePublishNamesTheBlockedNeighbours(t *testing.T) {
 	runOn(r, "Monterey", record.Run{State: record.Blocked,
 		Detail: "dependency zlib (nomaintainer) fails to build; the change itself is untested"})
 
-	d := DecidePublish(r, false, "dockhand/jq", "abc1234", false)
+	d := DecidePublish(PublishAsk{Record: r, Branch: "dockhand/jq", Tip: "abc1234"})
 	require.NoError(t, d.Refusal)
 	assert.True(t, d.SayUnverified)
 	assert.Equal(t, []string{
@@ -94,7 +95,7 @@ func TestDecidePublishNamesTheBlockedNeighbours(t *testing.T) {
 
 	// A refused promotion reports nothing: it never gets that far.
 	runOn(r, "Ventura", record.Run{State: record.Failed})
-	assert.Empty(t, DecidePublish(r, false, "dockhand/jq", "abc1234", false).Blocked)
+	assert.Empty(t, DecidePublish(PublishAsk{Record: r, Branch: "dockhand/jq", Tip: "abc1234"}).Blocked)
 }
 
 func TestMergedDeadEnd(t *testing.T) {

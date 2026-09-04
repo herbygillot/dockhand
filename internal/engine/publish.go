@@ -36,10 +36,28 @@ type Publication struct {
 	// because the record keeps gaining runs after review starts, and the
 	// audit's question is what was known when the change went out.
 	Verified bool
-	// Invoker is who asked for the publication. promote hard-codes
-	// Human; the machine value exists for the reconciler's publish slot,
-	// which has no caller yet.
+	// Invoker is who performed the publication: a person at promote, and
+	// the machine at the reconciler's own slot, which is the caller this
+	// field was reserved for and now has.
+	//
+	// PROVENANCE ONLY once it is written down. Nothing reads it back to
+	// decide what a road may do — the gates take an invoker as a
+	// parameter at their own call sites — because a change that could
+	// authorize itself by claiming its own history is not gated at all.
 	Invoker record.Driver
+	// AskedBy is who asked for the CHANGE, as its own record remembers,
+	// which is not always who published it. The shape the slot exists to
+	// produce is a person's change an unattended pass puts out, and a row
+	// claiming the machine asked for it is the exact inverse of the
+	// provenance the trust ladder's numerator counts.
+	//
+	// The caller supplies it, from the record it is already holding, so
+	// that Publish still reads no record: provenance travels into this
+	// file as a value for the same reason the invoker does. Empty falls
+	// back to the publisher, which is the right answer for a change minted
+	// before the field existed and the only answer available for one
+	// dockhand did not mint.
+	AskedBy record.Driver
 }
 
 // Publish records a publication in the audit log — the opening row of
@@ -79,14 +97,34 @@ func (e *Engine) Publish(ctx context.Context, repo *git.Repo, p Publication) err
 		// say that. When a sweep exists, where a branch came from will be
 		// on its record and read from there, not assumed here.
 		MintedVia: record.MintedSingle,
-		// One act does both today. They are two fields on the wire because
-		// they will part company, not because they can here.
-		AskedBy:     p.Invoker,
+		// The two halves of provenance, parted. They are separate fields on
+		// the wire because they separate in practice — the slot publishes
+		// what somebody else queued, so a human-asked, machine-published row
+		// is the shape the trust ladder's arithmetic counts — and the
+		// parting is made by the CALLER: it hands in what the record
+		// remembers, so this package still reads no record and the
+		// provenance rule stays where it was drawn.
+		AskedBy:     askedOr(p.AskedBy, p.Invoker),
 		PublishedBy: p.Invoker,
 		Evidence:    evidence,
 		PRNumber:    p.PRNumber,
 		PublishedAt: stamp(time.Now()),
 	})
+}
+
+// askedOr falls back to the publisher when the change's own record does
+// not say who asked.
+//
+// A row that named nobody would be a hole in the one log the ladder's
+// arithmetic is computed from, and there is exactly one honest guess to
+// make: on a change dockhand did not mint, or one minted before the
+// field existed, whoever published it is the only party the record can
+// vouch for at all.
+func askedOr(asked, publisher record.Driver) record.Driver {
+	if asked != "" {
+		return asked
+	}
+	return publisher
 }
 
 // targetOr prefers what the record remembers over what a branch name

@@ -226,7 +226,7 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 		return nil, err
 	}
 	m := &Minted{Repo: repo, Branch: branch, Sha: sha, RelPort: rel}
-	e.bear(ctx, m, p, primary, o.destination())
+	e.bear(ctx, m, p, primary, o)
 	m.Superseded = e.supersedeSiblings(ctx, repo, branch, p.Port)
 	fmt.Fprintf(e.Out, "branch: %s (%s)\n", branch, git.Abbrev(sha))
 	fmt.Fprintf(e.Err, "your checkout is untouched — `git checkout %s` to add changes\n", branch)
@@ -272,8 +272,14 @@ func commitMessage(p *plan.Plan) string {
 // not be written would be the more misleading of the two. What is lost
 // is the per-subject facts, which the branch's own diff can no longer
 // supply — so it is said out loud rather than swallowed.
-func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string, dest record.Destination) {
+func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string, o Policy) {
 	b := e.baseOf(ctx, m.Repo, base)
+	// One clock read for the birth. The findings are stamped with it and
+	// so is an auto-hold, and a record whose hold predated its own
+	// findings by a microsecond would be describing two moments that were
+	// one.
+	born := time.Now()
+	target := targetIn(p.Slug, p.Port)
 	if err := e.Ledger(m.Repo).Update(ctx, m.Sha, func(r *record.Record) error {
 		r.Slug = p.Slug
 		r.Subjects = []record.Subject{{
@@ -285,7 +291,7 @@ func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string,
 			Names:   []string{p.Port},
 			Portdir: m.RelPort,
 			Intent:  p.Intent,
-			Target:  targetIn(p.Slug, p.Port),
+			Target:  target,
 		}}
 		// The housekeeping the change carried that nobody asked for,
 		// remembered by rule name. The pull request body vouches for what
@@ -297,23 +303,82 @@ func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string,
 		// says nothing about when — so the moment is the realizer's, and
 		// it is the moment the note learned it rather than the moment the
 		// comment was written.
-		r.Findings = stampFindings(p.Findings, time.Now())
-		r.Destination = dest
+		r.Findings = stampFindings(p.Findings, born)
+		r.Destination = o.destination()
+		// A change minted against a prerelease is born held.
+		//
+		// The intents will plan one — a maintainer asking for an rc by name
+		// is a legitimate thing to ask for, and dockhand does not second
+		// guess a typed version. What it will not do is carry one onward on
+		// its own: an unattended pass that opened a pull request proposing
+		// MacPorts move a port to a release candidate would be spending
+		// reviewer attention on a judgment nobody made, and "the version
+		// upstream tagged" is not that judgment. So the hold is placed at
+		// birth, where the target is known and no network is involved, and
+		// a person releases it with `dockhand unhold` after deciding the
+		// prerelease is the right move.
+		//
+		// A verdict and not a fact: the heuristic is name-based and reads a
+		// string, which is why it lives in the judgment layer beside every
+		// other conclusion drawn from one. The planners ask it the same
+		// question about a version they are being offered, and one regexp
+		// answers both.
+		//
+		// It does NOT stop the verification this same invocation asked
+		// for. The submit is downstream of the mint and is not hold-gated:
+		// a person who typed the verb asked for that build, and refusing to
+		// test a change dockhand had just written for them would be the
+		// hold answering a question nobody put. What the hold governs is
+		// what happens without anybody there — the publication, the runs an
+		// unattended pump would start, the branch a merge would retire.
+		if verdict.Prerelease(target) {
+			r.Hold = &record.Hold{Reason: prereleaseHoldReason(target), At: born}
+		}
 		// The same ticket the trailer names, so that the pull request
 		// body can cite it without being told again — and so that a
 		// reader of the note can see what the commit claims to close.
 		r.ClosesTicket = p.ClosesTicket
-		// A person ran the verb. The machine value exists for the sweep,
-		// which has no caller yet, and neither value is ever an input to
-		// a gate: a field that could widen what the unattended road is
-		// allowed to do would be an authorization rather than provenance.
-		r.AskedBy = record.Human
+		// Who asked, as the invocation DECLARED it: a person unless an
+		// auto mode said otherwise, and never something the engine worked
+		// out for itself. Both fields are provenance and neither is ever
+		// an input to a gate — one that could widen what the unattended
+		// road is allowed to do would be an authorization rather than a
+		// record of what happened, and the machine's own publish road
+		// takes its invoker as a parameter rather than reading it back
+		// from here.
+		r.AskedBy = o.askedBy()
+		r.Agent = o.Agent
 		r.MintedVia = record.MintedSingle
 		r.Base = b
 		return nil
 	}); err != nil {
 		fmt.Fprintf(e.Err, "warning: recording the change on %s: %v\n", m.Branch, err)
+		return
 	}
+	if verdict.Prerelease(target) {
+		// The auto-hold, said out loud, because it is the one hold nobody
+		// asked for. `dockhand hold` announces itself and its release, and
+		// the case that most needs announcing is the one a person did not
+		// type: without this the mint looks entirely ordinary and the news
+		// arrives days later as an exit 23 over a hold nobody remembers
+		// placing.
+		//
+		// It names what the hold does NOT stop, because that is the half a
+		// reader would otherwise get wrong: the verification this same
+		// invocation asked for still runs, and only the acts that happen
+		// with nobody there are withheld.
+		fmt.Fprintf(e.Err, "held at mint: %s\n", prereleaseHoldReason(target))
+		fmt.Fprintf(e.Err, "the verification this invocation asked for still runs; nothing will publish or retire %s until `dockhand unhold %s` releases it\n",
+			m.Branch, m.Branch)
+	}
+}
+
+// prereleaseHoldReason is the sentence a prerelease auto-hold carries,
+// spelled once because it is written onto the record AND said to the
+// person, and a note whose reason differed from the announcement would
+// be two accounts of one act.
+func prereleaseHoldReason(target string) string {
+	return "the target " + target + " is prerelease-style; a person decides whether MacPorts should follow it"
 }
 
 // baseOf reads the commit a change is minted on top of: the sha, and

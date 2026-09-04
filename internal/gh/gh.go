@@ -19,33 +19,69 @@ import (
 	"github.com/herbygillot/dockhand/internal/tool"
 )
 
+// openPRPageSize is how many pull requests one page asks for, which is
+// the REST list endpoint's own maximum. Fewer pages is fewer round
+// trips, and the response is already the shape this package reads.
+const openPRPageSize = 100
+
+// openPRPageLimit bounds the walk. It is a guard against a paging bug
+// looping forever against a live API, not a budget: at a hundred per
+// page it covers ten thousand open pull requests, which is an order of
+// magnitude past any ports tree. Reaching it is an error and never a
+// short answer, for the reason stated on OpenPortPRs.
+const openPRPageLimit = 100
+
 // OpenPortPRs lists the open upstream PRs whose titles claim the same
 // port, leaning on the project convention that a title is
-// `<port>: <description>` — dockhand's own titles included. The search
-// API bounds and ranks the result; the prefix filter runs here because
-// in:title matches the term anywhere in a title.
+// `<port>: <description>` — dockhand's own titles included.
+//
+// It walks `pulls?state=open` rather than asking the search API, which
+// is what it used to do. Search has a rate limit of its own, an order of
+// magnitude tighter than the REST one, and it is spent per promote —
+// which was affordable while every promote was a person typing a verb
+// and stopped being affordable the moment an unattended pass began
+// running the same check once per branch. On the unattended road a
+// rate-limited lookup is not an advisory: it refuses the publication.
+// Trading a bounded, ranked search for a complete walk buys the check
+// the quota it needs and, incidentally, makes it exact — in:title
+// matched the term anywhere in a title, which is why the prefix filter
+// below existed before the walk did.
+//
+// PAGING IS COMPLETE OR IT IS AN ERROR. A truncated walk reads as "no
+// duplicate found", which is the one wrong answer this check can give:
+// it opens a second pull request beside somebody's first. So a page the
+// forge would not serve is returned as a failure, and so is a walk that
+// runs past its bound.
 func OpenPortPRs(ctx context.Context, gh Runner, upstream, port string) ([]PullRequest, error) {
 	if port == "" {
 		return nil, nil
 	}
-	out, err := gh(ctx, "api", "-X", "GET", "search/issues",
-		"-f", fmt.Sprintf("q=repo:%s is:pr is:open in:title %q", upstream, port+":"))
-	if err != nil {
-		return nil, err
-	}
-	var res struct {
-		Items []PullRequest `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		return nil, fmt.Errorf("reading PR search: %w", err)
-	}
 	var prs []PullRequest
-	for _, pr := range res.Items {
-		if strings.HasPrefix(pr.Title, port+":") {
-			prs = append(prs, pr)
+	for page := 1; page <= openPRPageLimit; page++ {
+		out, err := gh(ctx, "api", fmt.Sprintf("repos/%s/pulls?state=open&per_page=%d&page=%d",
+			upstream, openPRPageSize, page))
+		if err != nil {
+			return nil, err
+		}
+		var batch []PullRequest
+		if err := json.Unmarshal([]byte(out), &batch); err != nil {
+			return nil, fmt.Errorf("reading open PRs: %w", err)
+		}
+		for _, pr := range batch {
+			if strings.HasPrefix(pr.Title, port+":") {
+				prs = append(prs, pr)
+			}
+		}
+		// A short page is the last page. The endpoint carries a Link
+		// header saying so too, and `gh api` without --paginate does not
+		// hand it back — the count is the part of the answer this seam can
+		// see, and it is exact at both ends: a full last page costs one
+		// more request that comes back empty.
+		if len(batch) < openPRPageSize {
+			return prs, nil
 		}
 	}
-	return prs, nil
+	return nil, fmt.Errorf("listing open PRs on %s: more than %d pages", upstream, openPRPageLimit)
 }
 
 // UpstreamRepo names the owner/repo the PR targets: the remote the
@@ -146,6 +182,16 @@ type PullRequest struct {
 
 // published is the document `status --json` has always emitted for a
 // pull request: five keys, in this order, none omitted when empty.
+//
+// created_at is deliberately NOT among them, and it is worth saying so
+// now that the human report's ORDER depends on it: the attention bands
+// include "open past its 72-hour review window", which is a function of
+// that timestamp and the clock, so a consumer of the document sees a
+// reordered array it cannot reproduce. The array order is explicitly not
+// part of the contract (render.Report), so this is a gap rather than a
+// break — but widening a published document is the verb's decision and
+// not this package's, and it is not one an ordering change may make on
+// its way past.
 type published struct {
 	Number   int    `json:"number"`
 	Title    string `json:"title"`

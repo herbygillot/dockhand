@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -50,21 +51,109 @@ func TestQueryPRReadsWhatTheListResponseAlreadyCarries(t *testing.T) {
 	assert.Equal(t, "2026-09-01T00:00:01Z", pr.UpdatedAt)
 }
 
-func TestOpenPortPRsGetsTimestampsButNoMergeCommit(t *testing.T) {
-	// A search result is an issue, not a pull: it carries the two
-	// timestamps and keeps the same silence about the merge that it
-	// already keeps about merged_at.
-	run := func(context.Context, ...string) (string, error) {
-		return `{"items":[{"number":3,"title":"jq: update to 2.5","state":"open",
+func TestOpenPortPRsWalksTheRestListAndFiltersByTitle(t *testing.T) {
+	// The duplicate check is off the search quota and onto the list
+	// endpoint, which answers with the same object QueryPR already reads
+	// — so the timestamps come free and the prefix filter is now exact
+	// rather than a narrowing of what in:title matched.
+	var argv []string
+	run := func(_ context.Context, args ...string) (string, error) {
+		argv = args
+		return `[{"number":3,"title":"jq: update to 2.5","state":"open",
 		  "html_url":"https://x/3","created_at":"2026-08-30T10:00:00Z",
-		  "updated_at":"2026-08-31T10:00:00Z"}]}`, nil
+		  "updated_at":"2026-08-31T10:00:00Z"},
+		 {"number":4,"title":"jqdata: update to 1.0","state":"open","html_url":"https://x/4"},
+		 {"number":5,"title":"gnutls: mention jq: in passing","state":"open","html_url":"https://x/5"}]`, nil
 	}
 	prs, err := OpenPortPRs(context.Background(), run, "macports/macports-ports", "jq")
 	require.NoError(t, err)
-	require.Len(t, prs, 1)
+
+	assert.Equal(t, []string{
+		"api", "repos/macports/macports-ports/pulls?state=open&per_page=100&page=1",
+	}, argv, "a plain GET: no -X, no -f, and nothing that costs the search quota")
+	require.Len(t, prs, 1, "jqdata: is another port and a mention is not a claim")
+	assert.Equal(t, 3, prs[0].Number)
 	assert.Equal(t, "2026-08-30T10:00:00Z", prs[0].CreatedAt)
-	assert.Empty(t, prs[0].MergeSha)
-	assert.Empty(t, prs[0].MergedAt)
+}
+
+func TestOpenPortPRsPagesUntilAShortPage(t *testing.T) {
+	// The whole reason paging is worth writing: a truncated walk reads as
+	// "no duplicate found", and that answer opens a second pull request
+	// beside somebody's first.
+	var pages []string
+	run := func(_ context.Context, args ...string) (string, error) {
+		pages = append(pages, args[1])
+		switch len(pages) {
+		case 1:
+			return fullPage(t, 1, "curl: update to 8.0"), nil
+		case 2:
+			return fullPage(t, 101, "openssl: update to 3.5"), nil
+		}
+		return `[{"number":900,"title":"jq: update to 2.5","state":"open","html_url":"https://x/900"}]`, nil
+	}
+	prs, err := OpenPortPRs(context.Background(), run, "macports/macports-ports", "jq")
+	require.NoError(t, err)
+	require.Len(t, prs, 1, "the match was on the third page and the walk reached it")
+	assert.Equal(t, 900, prs[0].Number)
+	assert.Equal(t, []string{
+		"repos/macports/macports-ports/pulls?state=open&per_page=100&page=1",
+		"repos/macports/macports-ports/pulls?state=open&per_page=100&page=2",
+		"repos/macports/macports-ports/pulls?state=open&per_page=100&page=3",
+	}, pages)
+}
+
+func TestOpenPortPRsRefusesRatherThanAnswerShort(t *testing.T) {
+	// A page the forge would not serve, and a walk with no end, are the
+	// two ways the answer could be silently incomplete. Both are errors,
+	// because the caller that must not guess — the unattended pass —
+	// turns an error into a refusal and a short answer into a duplicate.
+	broken := func(context.Context, ...string) (string, error) {
+		return "", errors.New("gh api: HTTP 502 from api.github.com")
+	}
+	_, err := OpenPortPRs(context.Background(), broken, "macports/macports-ports", "jq")
+	require.Error(t, err)
+
+	endless := func(_ context.Context, args ...string) (string, error) {
+		return fullPage(t, 1, "curl: update to 8.0"), nil
+	}
+	_, err = OpenPortPRs(context.Background(), endless, "macports/macports-ports", "jq")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "more than 100 pages")
+
+	// A port nobody named searches for nothing, which is a nil answer and
+	// not a call.
+	var called bool
+	_, err = OpenPortPRs(context.Background(), func(context.Context, ...string) (string, error) {
+		called = true
+		return "[]", nil
+	}, "macports/macports-ports", "")
+	require.NoError(t, err)
+	assert.False(t, called)
+}
+
+// fullPage is a page of exactly openPRPageSize pull requests, which is
+// what tells the walk there may be another one.
+func fullPage(t *testing.T, first int, title string) string {
+	t.Helper()
+	prs := make([]PullRequest, 0, openPRPageSize)
+	for i := 0; i < openPRPageSize; i++ {
+		prs = append(prs, PullRequest{Number: first + i, Title: title, State: "open"})
+	}
+	// Marshalled through a shape that keeps every field, since
+	// PullRequest's own MarshalJSON publishes the document rather than
+	// what this package reads.
+	type wire struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		State  string `json:"state"`
+	}
+	out := make([]wire, 0, len(prs))
+	for _, pr := range prs {
+		out = append(out, wire{pr.Number, pr.Title, pr.State})
+	}
+	b, err := json.Marshal(out)
+	require.NoError(t, err)
+	return string(b)
 }
 
 func TestPullRequestPublishesFiveKeys(t *testing.T) {

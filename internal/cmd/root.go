@@ -118,8 +118,21 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 		Version:  version,
 		Verifier: realVMProvider(tools),
 		Lister:   realWorkerLister(tools),
-		Gh:       gh.RealGhOut(tools),
+		// The agent marker is process state, so it is read here and
+		// nowhere below: an engine that read its own environment would be
+		// deciding provenance rather than being told it.
+		Agent: os.Getenv(agentEnv),
+		// The build's answer about unattended publication, spent here and
+		// only here. machinepublish.go says what it is and why it is a
+		// constant; from here it reaches the engine through Deps, and it
+		// reaches the forge through the guarded runner below.
+		MachinePublish: machinePublishEnabled,
 	}
+	// The gh seam, wrapped so that a machine's WRITE to the forge is
+	// refused underneath every path that could assemble one. The engine
+	// gates its own two funnels as well; this is the layer that holds when
+	// a new one is written by somebody who never read them.
+	rc.Gh = guardForgeWrites(rc, gh.RealGhOut(tools))
 	root := &cobra.Command{
 		Use:          "dockhand",
 		Short:        "A port maintenance utility for MacPorts",
@@ -139,6 +152,14 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 			if err != nil {
 				return err
 			}
+			// Who is running this, resolved once and before any Action —
+			// which is what makes it one invocation's answer rather than
+			// each verb's. auto.go says how it is declared and why nothing
+			// here detects it.
+			invoker, err := resolveInvoker(c)
+			if err != nil {
+				return err
+			}
 			// The logger is configured here, before the run is built:
 			// Init's tree search speaks through it, so --debug can say
 			// which tree was found. It belongs to the command layer
@@ -149,6 +170,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 				level = slog.LevelDebug
 			}
 			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+			rc.Invoker = invoker
 			rc.Init(treeRoot, prefixPath, debug, c.OutOrStdout(), c.ErrOrStderr())
 			c.SetContext(runstate.Into(c.Context(), rc))
 			return nil
@@ -172,6 +194,14 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 
 	root.PersistentFlags().Bool("debug", false,
 		"print debug output to stderr")
+
+	// Auto mode is declared here rather than detected anywhere: the flag
+	// is persistent because who is running an invocation is a fact about
+	// the invocation and not about the verb. Its default is false and the
+	// environment is consulted only where the command line said nothing,
+	// so --auto=false withdraws a standing DOCKHAND_AUTO for one run.
+	root.PersistentFlags().Bool(autoFlag, false,
+		"run as the machine rather than as a person, for cron and launchd (default $"+autoEnv+")")
 
 	// Flag-parse failures are usage errors; cobra's own are untyped.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
@@ -200,7 +230,16 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	add("test", "Test the port:", Verify(), Status(), Cancel(), Dismiss())
 	add("submit", "Submit the port:", Promote())
 	add("env", "Troubleshoot the port:", Log(), Shell())
-	add("branch", "Housekeeping:", Discard(), Clean(), Provision())
+	// auto sits with the housekeeping verbs and after clean, because it
+	// is the pass those two verbs are halves of, run by nobody.
+	//
+	// hold and unhold sit at the front of the same group, ahead of the
+	// verbs that remove things. They are the brake on every road in the
+	// tool — publication, verification, retirement — and a reader
+	// scanning this group for "how do I stop it" should meet them before
+	// they meet `discard`, which is how the question gets answered by
+	// deleting the work instead.
+	add("branch", "Housekeeping:", Hold(), Unhold(), Discard(), Clean(), Auto(), Provision())
 	add("report", "Reports:", Outdated(), Classify(), Doctor())
 	root.AddCommand(Exec(), versionCmd())
 	return root, rc

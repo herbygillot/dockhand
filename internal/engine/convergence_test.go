@@ -50,8 +50,10 @@ func (g *convergingGh) run(_ context.Context, args ...string) (string, error) {
 			return "[]", nil
 		}
 		return fmt.Sprintf(`[{"number":%d,"state":"open","title":"jq: update to 1.8","html_url":"https://x/%d"}]`, num, num), nil
-	case args[0] == "api" && len(args) >= 2 && strings.Contains(args[1], "search/issues"):
-		return `{"items":[]}`, nil
+	// The duplicate check's open-pulls walk. An empty page is a short
+	// page, so one answer ends it.
+	case args[0] == "api" && len(args) >= 2 && strings.Contains(args[1], "/pulls?state=open"):
+		return "[]", nil
 	case args[0] == "pr" && args[1] == "create":
 		head := args[headArg(args, "--head")]
 		g.next++

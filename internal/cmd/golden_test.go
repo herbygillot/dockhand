@@ -424,7 +424,7 @@ func TestGoldenPromoteForce(t *testing.T) {
 func TestGoldenPromoteDuplicate(t *testing.T) {
 	repo, _ := goldenPromoteRepo(t)
 	gh := &ghFake{login: "herbygillot",
-		searchHit: `{"items":[{"number":123,"title":"jq: update to 1.8","state":"open","html_url":"https://x/123"}]}`}
+		searchHit: `[{"number":123,"title":"jq: update to 1.8","state":"open","html_url":"https://x/123"}]`}
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	rs.Gh = gh.run
 	tr := capture(t, rs, out, errb, promoteAction{target: "jq"})
@@ -443,7 +443,7 @@ func TestGoldenPromoteUnverified(t *testing.T) {
 		"Oldos": runningOn("fake-9"),
 	})
 	gh := &ghFake{login: "herbygillot", createURL: "https://x/pr/1",
-		searchHit: `{"items":[{"number":124,"title":"jq: fix the build on Oldos","state":"open","html_url":"https://x/124"}]}`}
+		searchHit: `[{"number":124,"title":"jq: fix the build on Oldos","state":"open","html_url":"https://x/124"}]`}
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	rs.Gh = gh.run
 	tr := capture(t, rs, out, errb, promoteAction{target: "jq"})

@@ -151,6 +151,24 @@ type BranchReport struct {
 	// PR is the forge's object, published as the forge shapes it.
 	PR PullRequestDocument
 
+	// PRCreatedAt is when the pull request was opened, and the zero time
+	// is a lookup that did not say. It is carried beside PR rather than
+	// read out of it because PR is a json.Marshaler and nothing more:
+	// this package may not import the forge client, so a timestamp the
+	// wording needs has to arrive already parsed.
+	//
+	// Separate from Retire.PRFact deliberately. A judgment is a function
+	// of its facts and reaches the same answer offline, next year, twice;
+	// an age is a function of the facts AND the clock, so it belongs on
+	// the report the clock was read for and not among the values a
+	// verdict weighs.
+	PRCreatedAt time.Time
+
+	// Tier is the target port's maintainer tier, read from its Portfile
+	// during observation. Empty when nothing could be read — see Tier,
+	// where the empty value is a real answer.
+	Tier Tier
+
 	// Prose is what retiring this branch said, in the order it said it.
 	// Ordered, and kept with the branch rather than pooled, because a
 	// reader scanning the listing reads "discarded X" as belonging to
@@ -169,6 +187,10 @@ func (b BranchReport) standing(now time.Time) []string {
 		lines = []string{"error: " + b.ObserveErr}
 	} else {
 		lines = DescribeChange(b.Note, b.Drift, now)
+		// Why the change stopped moving, if it did — a hold, or a newer
+		// sibling. Before the proposals, because advice about a change
+		// nothing further will happen to is advice to do work twice.
+		lines = append(lines, StillnessLines(b.Note, b.Branch)...)
 		// What the settlement found beside the verdicts, and the two
 		// verbs that answer it. Under the standings rather than among
 		// them: a proposal is not a verdict about the change, and a
@@ -177,13 +199,18 @@ func (b BranchReport) standing(now time.Time) []string {
 		lines = append(lines, ProposalLines(b.Note, b.Branch)...)
 	}
 	extra := b.Retire.Line()
-	switch {
-	case b.Retire.Cleaned:
+	if b.Retire.Cleaned {
 		return []string{extra}
-	case extra != "":
-		return append(lines, extra)
 	}
-	return lines
+	if extra != "" {
+		lines = append(lines, extra)
+	}
+	// Under the pull request's own line, because they are about it: how
+	// far through its review window it is, and the follow-up its age
+	// earns. The verdict's line says what the pull request IS and these
+	// say how long it has been that way, which is the order a reader
+	// needs them in.
+	return append(lines, WindowLines(b, now)...)
 }
 
 // sweepLine is the branch's line in the sweep.
@@ -200,12 +227,16 @@ func (b BranchReport) sweepLine() string {
 // A branch with one line to say shares a line with its name; a branch
 // with several is named and its lines indented under it. The prose
 // comes first within a branch, because it is about what just happened
-// to the branch the reader is about to see.
+// to the branch the reader is about to see — and because it is kept
+// with its branch rather than pooled, reordering the listing carries
+// each "discarded …" along with the thing it discarded.
+//
+// The order is attention's, not the namespace's. See Ordered.
 func (r Report) Text(out, errw io.Writer) {
 	if len(r.Branches) == 0 {
 		fmt.Fprintf(out, "no dockhand branches in %s\n", r.Repository)
 	}
-	for _, b := range r.Branches {
+	for _, b := range r.Ordered() {
 		Prose(b.Prose, out, errw)
 		lines := b.standing(r.Now)
 		if len(lines) == 1 {
@@ -244,6 +275,14 @@ func (r Report) orphans(out io.Writer) {
 // Sweep is `dockhand clean`: one line per branch, every deletion
 // reported and everything kept saying why. No standings and no worker
 // audit — the sweep asks one question of each branch and answers it.
+//
+// And no attention order: it walks r.Branches as enumerated, which is
+// git's refname order. The sweep has nothing to order by — every line
+// answers the same question, so a listing sorted by which answer wants
+// a person would be sorting by a fact the sweep never read. This is
+// also the tripwire for the ordering landing in the wrong place: if
+// clean's golden ever moves, the sort reached Report.Branches instead
+// of the two renderings that asked for it.
 func (r Report) Sweep(out, errw io.Writer) {
 	if len(r.Branches) == 0 {
 		fmt.Fprintf(out, "no dockhand branches in %s\n", r.Repository)
@@ -307,12 +346,20 @@ type statusBranch struct {
 // leaves behind is not a function of the report, and a document that
 // worked its own out could disagree with $?.
 func (r Report) JSON(out, errw io.Writer, exit exitcode.Twin) error {
-	for _, b := range r.Branches {
+	// The same order the human report lists in, for the same reason the
+	// two renderings draw on one value at all: `status` and `status
+	// --json` are one verb told twice, and a consumer that diffs the
+	// array against what a person read must not find them disagreeing
+	// about which branch wanted attention first. The array's ORDER is not
+	// part of the document's contract — the keys are — so ordering it
+	// costs a positional consumer nothing it was promised.
+	ordered := r.Ordered()
+	for _, b := range ordered {
 		Prose(b.Prose, errw, errw)
 	}
 	Prose(r.Drain, errw, errw)
 	doc := statusJSON{Repository: r.Repository, Branches: []statusBranch{}, OrphanWorkers: r.Orphans, Exit: exit}
-	for _, b := range r.Branches {
+	for _, b := range ordered {
 		doc.Branches = append(doc.Branches, statusBranch{
 			Branch:  b.Branch,
 			Tip:     b.Tip,

@@ -385,7 +385,11 @@ func goldenPromotedRepo(t *testing.T) (*git.Repo, *goldenGh) {
 	require.NoError(t, repo.Push(ctx, "herby", "dockhand/jq-landed"))
 
 	gh := &goldenGh{login: "herbygillot", prs: map[string]string{
-		"dockhand/jq-open":   `[{"number":77,"title":"jq: update to 2.5","state":"open","html_url":"https://x/77"}]`,
+		// created_at is a month before the pinned commit date, so this
+		// pull request is past its review window on any day the suite is
+		// run and lands in the same band every time. The age it renders is
+		// normalized — see prAgeRE, which says what that costs.
+		"dockhand/jq-open":   `[{"number":77,"title":"jq: update to 2.5","state":"open","created_at":"2026-08-01T00:00:00Z","html_url":"https://x/77"}]`,
 		"dockhand/jq-closed": `[{"number":78,"title":"jq: update to 2.0","state":"closed","html_url":"https://x/78"}]`,
 		"dockhand/jq-merged": `[{"number":79,"title":"jq: update to 2.3","state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/79"}]`,
 		"dockhand/jq-landed": `[{"number":80,"title":"jq: update to 1.7","state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/80"}]`,
@@ -609,14 +613,51 @@ type rewrite struct{ from, to string }
 // rendering change.
 var elapsedRE = regexp.MustCompile(`(verifying (?:on \S+ )?\()-?(?:\d+h)?(?:\d+m)?\d+(?:\.\d+)?s\)`)
 
+// prAgeREs match the second value time itself moves: how long a pull
+// request has been open, and how long ago its review window elapsed.
+// The pass reads the real clock and the fixture's created_at is a fixed
+// instant, so the figure grows by one every day the suite is run.
+//
+// EACH IS ANCHORED ON THE SENTENCE IT BELONGS TO — the review window is
+// named on every one of them — because this normalizer runs over every
+// golden in the package and not only over the two that need it. A
+// pattern reading `(open |elapsed )\d+[hd]` would mask any future line
+// that happened to say "open 12h" about something else entirely, and a
+// golden whose text is silently rewritten is a golden that has stopped
+// pinning what it claims to.
+//
+// What the normalizer gives up is stated plainly rather than papered
+// over: these goldens pin the WORDS and the POSITION of the window
+// lines, and not the arithmetic that produces the number. The
+// arithmetic is pinned where it can be — internal/render's own goldens
+// and TestTheWindowSentenceStatesTheAge, both against a clock that does
+// not move. The fixture's created_at is chosen far enough back that the
+// BAND is stable whatever day it is read on, which is the part the
+// ordering depends on; a fixture whose age straddled 72 hours would
+// re-sort this report overnight.
+var prAgeREs = []*regexp.Regexp{
+	// "PR #77 — 12h into the 72-hour review window"
+	regexp.MustCompile(`(— )\d+[hd]( into the 72-hour review window)`),
+	// "PR #77 — open 5d, the 72-hour review window …" and the draft's
+	// "has been open 5d; the 72-hour review window …".
+	regexp.MustCompile(`(open )\d+[hd]([,;] the 72-hour review window)`),
+	// "… review window elapsed 2d ago"
+	regexp.MustCompile(`(review window elapsed )\d+[hd]( ago)`),
+}
+
 // normalize applies the case's replacements — temporary paths, which
-// differ per run — and then the elapsed-time rewrite. Nothing else is
-// touched: shas, job IDs, hashes and every message are pinned raw.
+// differ per run — and then the two clock-dependent rewrites. Nothing
+// else is touched: shas, job IDs, hashes and every message are pinned
+// raw.
 func normalize(s string, rw []rewrite) string {
 	for _, r := range rw {
 		s = strings.ReplaceAll(s, r.from, r.to)
 	}
-	return elapsedRE.ReplaceAllString(s, "${1}<elapsed>)")
+	s = elapsedRE.ReplaceAllString(s, "${1}<elapsed>)")
+	for _, re := range prAgeREs {
+		s = re.ReplaceAllString(s, "${1}<age>${2}")
+	}
+	return s
 }
 
 // ghSections renders the pr create and pr edit calls a promote made:

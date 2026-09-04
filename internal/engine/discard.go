@@ -59,6 +59,17 @@ func (e *Engine) Discard(ctx context.Context, repo *git.Repo, branch string, dro
 	// copy is a network round trip to GitHub, and nothing about it needs
 	// the notes to hold still. Holding a flock every peer's status waits
 	// on across a push is how one hung remote stalls a whole checkout.
+	//
+	// And deliberately outside the machine gate, which is a separate
+	// claim worth making here so it is not re-litigated at the next read.
+	// GateRing3 refuses a machine's PUBLICATION, not a machine's use of
+	// git: ring 3 is other people's attention, spent by the pull request
+	// and by the branch a reviewer is looking at, and this deletes the
+	// user's OWN fork copy of work that has already merged. It is the
+	// sweep's whole job, it already runs unattended under `status` and
+	// `clean`, and a gate worded as "a machine may not push" rather than
+	// "a machine may not publish" would stop it working on a timer and
+	// buy nobody anything.
 	if tracked := repo.TrackedRemote(ctx, branch); tracked != "" {
 		if !dropFork {
 			warn("the fork copy on %q is untouched — `git push %s --delete %s` removes it", tracked, tracked, branch)

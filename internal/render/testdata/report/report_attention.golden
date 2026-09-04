@@ -1,0 +1,29 @@
+--- stdout
+dockhand/jq-failed               failed (Testos)
+dockhand/jq-expired-old
+  passed (Testos)
+  PR #77 open (https://x/77)
+  PR #77 — open 30d, the 72-hour review window elapsed 27d ago (nomaintainer)
+  follow-up draft — dockhand cannot send this; macports-dev or the PR: "PR #77 (jq) has been open 30d; the 72-hour review window elapsed 27d ago. The port is nomaintainer, so there is nobody to review it — it needs a committer."
+dockhand/jq-expired-new
+  passed (Testos)
+  PR #77 open (https://x/77)
+  PR #77 — open 3d, the 72-hour review window elapsed 8h ago (openmaintainer)
+  follow-up draft — dockhand cannot send this; macports-dev or the PR: "PR #77 (jq) has been open 3d; the 72-hour review window elapsed 8h ago. The port is openmaintainer, so a minor update may proceed once the window has passed."
+dockhand/jq-queued               queued (Testos)
+dockhand/jq-passed               passed (Testos)
+dockhand/jq-held
+  passed (Testos)
+  held: waiting on the ticket — `dockhand unhold dockhand/jq-held` releases it
+dockhand/jq-ended-closed
+  passed (Testos)
+  PR #78 closed without merging
+dockhand/jq-ended-superseded
+  passed (Testos)
+  superseded by dockhand/jq-1.9 — `dockhand clean --superseded` removes it
+dockhand/jq-inwindow
+  passed (Testos)
+  PR #77 open (https://x/77)
+  PR #77 — 41h into the 72-hour review window (maintained)
+dockhand/jq-running              verifying (1m30s) (Testos)
+--- stderr

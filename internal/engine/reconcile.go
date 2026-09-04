@@ -37,6 +37,18 @@ type ReconcileOpts struct {
 	// the deferred run it was when the pass began, not as the verifying
 	// run the pass just made it.
 	Drain bool
+
+	// Publish is the machine's publish road, and nil is the answer for
+	// every verb a person types: `status` reports and `clean` sweeps, and
+	// neither of them may open a pull request as a side effect of being
+	// run. The unattended pass hands one in and reads it back — see
+	// PublishSlot, whose Results carry what the pass should exit with.
+	//
+	// A pointer rather than a bool because the road has settings the
+	// caller owns (the per-pass cap, the pacing) and answers the caller
+	// needs; a bool would put the settings somewhere else and the answers
+	// nowhere.
+	Publish *PublishSlot
 }
 
 // Reconcile is the read side: one pass over dockhand/* that observes
@@ -96,6 +108,14 @@ func (e *Engine) Reconcile(ctx context.Context, o ReconcileOpts) (render.Report,
 		e.retire(ctx, repo, f, &b, o, rep.Now)
 		rep.Branches = append(rep.Branches, b)
 	}
+	if o.Publish != nil {
+		// The publish slot: after retire, before drain. publishPass states
+		// both halves of that ordering; the short version is that a branch
+		// whose PR just merged is not a branch to publish, and that the
+		// standings this slot judges must be the ones the pass observed
+		// rather than the ones the drain is about to change.
+		e.publishPass(ctx, repo, &rep, o.Publish)
+	}
 	if o.Drain {
 		// The drain announces what it started, and its words go into the
 		// report behind the branches rather than onto a stream here, so
@@ -147,6 +167,14 @@ func (e *Engine) retire(ctx context.Context, repo *git.Repo, f *forge, b *render
 		return
 	}
 	b.Retire.PR, b.PR = PRFact(pr, true), pr
+	b.PRCreatedAt = prCreatedAt(pr)
+	if !o.RetireOnly && b.Retire.PR.Open {
+		// Only an open pull request has a window left to be inside or past,
+		// and only the report renders one — so this Portfile read costs the
+		// sweep nothing and costs the report one blob per open PR, which is
+		// the handful the reader is waiting on.
+		b.Tier = portTier(ctx, repo, b.Branch, b.Note)
+	}
 	d := verdict.DecideRetire(true, b.Retire.PR)
 	// The audit is closed from the verdict rather than from the
 	// demolition, and before it. From the verdict, because a merged pull
@@ -158,6 +186,9 @@ func (e *Engine) retire(ctx context.Context, repo *git.Repo, f *forge, b *render
 	e.settleOutcome(ctx, repo, b, d, pr.MergeSha, now)
 	if o.RetireOnly {
 		if d != verdict.RetireMerged {
+			return
+		}
+		if e.heldFromDeletion(ctx, repo, b) {
 			return
 		}
 		// Only the merged verdict pays for the byte comparison: it is
@@ -182,6 +213,9 @@ func (e *Engine) retire(ctx context.Context, repo *git.Repo, f *forge, b *render
 	if !d.Cleans(o.NoClean) {
 		return
 	}
+	if e.heldFromDeletion(ctx, repo, b) {
+		return
+	}
 	said, derr := e.Discard(ctx, repo, b.Branch, true)
 	b.Prose = append(b.Prose, said...)
 	if derr != nil {
@@ -191,6 +225,54 @@ func (e *Engine) retire(ctx context.Context, repo *git.Repo, f *forge, b *render
 		return
 	}
 	b.Retire.Cleaned = true
+}
+
+// heldFromDeletion asks the hold, at the last moment before a branch is
+// demolished, and reports whether it said no.
+//
+// It withholds the DELETION and touches nothing else — the same shape
+// --no-clean already has, and for the same reason: what a merged pull
+// request means does not depend on whether anybody is willing to act on
+// it. The audit row is already closed by the time this is asked, which
+// is deliberate. A merge is the change's outcome whether or not the
+// branch survived it, and a hold that also stopped the bookkeeping would
+// make held changes disappear from the one record that counts them.
+//
+// It is asked here, at the two call sites of the demolition, rather than
+// once at the top of retire, so that the note is read only when a
+// deletion is actually imminent. The sweep observes no standings and has
+// no note in hand, so on that road this is a git call per merged branch
+// — a handful — instead of one per promoted branch on every pass.
+//
+// A note that cannot be read is not a hold. The branch is about to be
+// deleted on GitHub's own word that the work landed, and inventing a
+// hold out of an unreadable note would strand exactly the branches whose
+// records are already in trouble.
+func (e *Engine) heldFromDeletion(ctx context.Context, repo *git.Repo, b *render.BranchReport) bool {
+	n := b.Note
+	if n == nil {
+		tip := b.Tip
+		if tip == "" {
+			var err error
+			if tip, err = repo.RevParse(ctx, b.Branch); err != nil {
+				return false
+			}
+		}
+		read, err := e.Ledger(repo).Read(ctx, tip)
+		if err != nil {
+			return false
+		}
+		n = &read
+	}
+	err := GateHold(*n, b.Branch, "the deletion")
+	if err == nil {
+		return false
+	}
+	// Said where it changed what happened, and only there: this is
+	// reached solely on the verdict that would have deleted, so the line
+	// always reports a hold that actually stopped something.
+	b.Prose = append(b.Prose, render.Line{Stream: render.ToErr, Text: err.Error()})
+	return true
 }
 
 // settleOutcome closes this branch's audit row with what the forge said
@@ -255,6 +337,24 @@ func PRFact(pr gh.PullRequest, found bool) verdict.PRFact {
 		Merged: pr.MergedAt != "",
 		Open:   pr.State == "open",
 	}
+}
+
+// prCreatedAt parses the forge's creation timestamp into the time an
+// age is measured from, here at the boundary where its JSON is already
+// being read — the same reason PRFact maps its state words here.
+//
+// A timestamp that is missing or that GitHub spelled some way this does
+// not read comes back as the zero time, which every reader of it treats
+// as "unknown" rather than as "the year one". The error is dropped on
+// purpose and the zero value carries the whole answer: there is exactly
+// one thing a caller can do about an unparseable created_at, and it is
+// what the caller does about an absent one.
+func prCreatedAt(pr gh.PullRequest) time.Time {
+	t, err := time.Parse(time.RFC3339, pr.CreatedAt)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 // forge is what looking a pull request up needs besides the branch: the

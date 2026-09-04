@@ -165,7 +165,7 @@ func checkReport(t *testing.T, name string, out, errb *bytes.Buffer) {
 // reportGoldens is every rendering pinned here, which is also the list
 // the stale sweep below reads: a golden no rendering produces is a
 // shape that stopped existing and leaves with the code.
-var reportGoldens = []string{"report_text", "report_sweep", "report_json"}
+var reportGoldens = []string{"report_text", "report_sweep", "report_json", "report_attention"}
 
 func TestReportRenderings(t *testing.T) {
 	t.Run("report_text", func(t *testing.T) {

@@ -33,6 +33,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -65,6 +66,44 @@ type Context struct {
 	// it — a fact about the run, carried so the words that name the
 	// tool need not reach for a package-level global.
 	Version string
+
+	// Invoker is who declared this run: a person unless an auto mode
+	// said otherwise. It is resolved once by the command layer, before
+	// any Action executes, so two verbs in one invocation cannot
+	// disagree about who is running — and it is declared rather than
+	// detected, which is why nothing on the way here asks whether a
+	// terminal is attached.
+	//
+	// The zero value is not Human by convention; it is unset, and the
+	// command layer always sets it. A run assembled without one is a
+	// wiring gap rather than a person, and the fields it feeds treat it
+	// as such.
+	//
+	// It travels down as PROVENANCE — the mint writes it onto the record
+	// as AskedBy — and never as authorization. A gate that turns on an
+	// invoker takes one as a parameter at its own call site; reading a
+	// Driver back off a record to decide what the unattended road may do
+	// would let a change authorize itself by claiming its own history.
+	Invoker record.Driver
+	// Agent is the AI agent marker the environment carried, read once at
+	// the composition root. Provenance in the same sense as Invoker and
+	// with less standing: it names which agent was driving and grants
+	// nothing, so setting it can neither open nor close a road.
+	Agent string
+
+	// MachinePublish is whether this BUILD permits a machine to spend
+	// ring 3 — to push a branch and open or edit a pull request with an
+	// invoker of record.Machine. The composition root spends a build-time
+	// constant into it and Deps hands it to the engine, which cannot read
+	// the constant itself because it may not import cmd.
+	//
+	// It is a carrier and never a decision: nothing in this package reads
+	// it, and it is named for the permission GRANTED so that its zero
+	// value — every Context a test assembles, every future composition —
+	// is the refusal. Unlike Invoker, which the command layer always
+	// sets, a Context that never sets this one is correct rather than
+	// broken: a run that did not grant the permission did not grant it.
+	MachinePublish bool
 
 	// Tools finds the external programs this run drives — git, tart,
 	// gh, the block generators — one finder built at the composition

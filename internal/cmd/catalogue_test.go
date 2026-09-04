@@ -40,7 +40,7 @@ import (
 // answered both.
 var sharedIntentFlags = []string{
 	"closes", "diff", "in-place", "no-riders", "no-verify", "on", "plan", "replace",
-	"riders", "test", "trace", "verify",
+	"riders", "test", "to-pr", "trace", "verify",
 }
 
 // intentSurface is what each verb shows a user.

@@ -11,11 +11,23 @@ import (
 // thing to tell anyone about an audit. Where these rows are kept is the
 // ledger's business alone.
 
-// Driver is who an act was carried out by — a person at a terminal, or
-// dockhand running unattended. It is provenance and nothing else: no
-// gate anywhere reads it, and recording it exists so that a later
-// question about how a change reached review can be answered by a query
-// instead of an estimate.
+// Driver is who an act was carried out by — a person, or dockhand
+// running unattended.
+//
+// The two uses of this type are not the same thing, and keeping them
+// verbally apart is the whole of the ruling behind it. A RECORDED
+// Driver — Record.AskedBy, and this file's AskedBy and PublishedBy — is
+// provenance and nothing else: no gate reads one back, and it exists so
+// that a later question about how a change reached review is a query
+// rather than an estimate. A Driver PASSED as an invoker is the
+// opposite: it is a decision input, and the publish gates turn on it.
+// Feeding a recorded one into a gate would let a change authorize
+// itself by claiming its own history, which is why the invoker always
+// arrives as a parameter at the call site that decides.
+//
+// Which one a value is is never inferred either. A run's invoker is
+// declared — the `auto` verb, --auto, DOCKHAND_AUTO — and dockhand
+// never asks whether a terminal is attached to work it out.
 //
 // One type serves both wires. The audit row's asked_by and the
 // verification record's are the same fact about the same act, and two
@@ -27,10 +39,12 @@ import (
 type Driver string
 
 const (
-	// Human is a person's own act, which is every publication today.
+	// Human is a person's own act, and the invoker of every verb that
+	// did not declare otherwise.
 	Human Driver = "human"
-	// Machine is dockhand publishing unattended. The word exists here
-	// because the wire is worth defining once; nothing writes it yet.
+	// Machine is dockhand acting unattended: what a run in auto mode
+	// mints is recorded as asked by the machine, and the one unattended
+	// publish road publishes as it.
 	Machine Driver = "machine"
 )
 

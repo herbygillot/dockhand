@@ -155,6 +155,62 @@ func (e *OpenProposalError) DockhandExit() int { return exitcode.MachineGate }
 // Code names the refusal for a machine.
 func (e *OpenProposalError) Code() string { return "open-proposal" }
 
+// MachineDisabledError is the build-time gate: this build does not let
+// any machine spend ring 3, whoever asked and whatever the evidence.
+//
+// It is not a policy about a change and it carries none of a change's
+// facts, which is why it names no branch and no finding. What it says is
+// a fact about the binary: the unattended publish road is built and
+// tested, the trust ladder that would say how many pull requests an
+// unattended pass may open and how fast has not been ruled on, and until
+// it is, the road refuses. A machine that is refused here has done
+// nothing wrong and needs to change nothing — a person publishes the
+// same change with `dockhand promote`.
+//
+// The permission is a PARAMETER and never a package variable. A variable
+// can be set by an init, by a test, or by a future composition that did
+// not know it was granting anything; a parameter cannot be widened
+// without changing every call site, which is the point.
+type MachineDisabledError struct{}
+
+func (e *MachineDisabledError) Error() string {
+	return "this build does not permit unattended publication: the machine publish road is disabled at build time — `dockhand promote` publishes on a person's authority"
+}
+
+// DockhandExit: the refused band's machine gate — an automatic
+// publication a policy refused, where a human asking for the same thing
+// would be allowed it.
+func (e *MachineDisabledError) DockhandExit() int { return exitcode.MachineGate }
+
+// Code names the refusal for a machine.
+func (e *MachineDisabledError) Code() string { return "machine-publish-disabled" }
+
+// GateRing3 is the build-time gate over every publication a machine
+// would make: nil for a person always, nil for a machine only on a build
+// that granted the permission, and the refusal otherwise.
+//
+// Ring 3 is other people's attention, and it is spent by exactly two
+// acts: pushing the fork branch and creating or editing the pull request
+// against upstream. This gate sits inside both funnels — Engine.push and
+// Engine.publishGh — so it dominates them from BELOW rather than
+// standing beside them, and it is called again at the top of every
+// publish road so that the refusal a machine gets is this one and not a
+// complaint about its evidence.
+//
+// Deleting a fork branch is deliberately not gated by it. That is the
+// sweep's whole job, it runs unattended today under `status` and
+// `clean`, and it spends nothing of ring 3: the branch is the user's own
+// and the pull request is what reviewers see. The gate is written as
+// "a machine may not PUBLISH" and not "a machine may not push" for
+// exactly that reason — the other wording stops `clean` working on a
+// timer and buys nothing.
+func GateRing3(by record.Driver, permitted bool) error {
+	if by != record.Machine || permitted {
+		return nil
+	}
+	return &MachineDisabledError{}
+}
+
 // GateMachinePublish is the gate itself: nil for a person, and the
 // refusal for an unattended road that would publish an unanswered
 // proposal.

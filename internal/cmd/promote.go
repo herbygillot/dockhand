@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
@@ -54,6 +55,19 @@ const promoteClosesNote = "note: --closes reaches the pull request body only. Th
 	"Plan the change with --closes to put the trailer in the commit itself.\n"
 
 func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error {
+	// Before the repository and before the network: who is asking is not
+	// a question about this checkout, and a refusal that first had to
+	// open a repository would answer a different one on a machine that
+	// has none.
+	//
+	// promote is the human road by construction — it is not that a
+	// machine promotes as itself and is gated afterwards. There is one
+	// machine publish path, the reconciler's slot, and letting this verb
+	// be a second one would make `dockhand promote --auto` the bypass
+	// around everything guarding the first.
+	if rs.Invoker == record.Machine {
+		return &PromoteIsHumanError{}
+	}
 	repo, err := rs.Repo(ctx)
 	if err != nil {
 		return err

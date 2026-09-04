@@ -50,6 +50,12 @@ type intentAction struct {
 	params intent.Params
 	opts   engine.Policy // which realization, from the shared flags
 	verify bool          // build in a pristine VM before realizing anything
+	// toPR is --to-pr as typed, and road is what the boundary made of it.
+	// Two fields because the flag is a fact about the invocation and the
+	// road is a fact about this machine and this invoker — see topr.go,
+	// where the five rows are.
+	toPR bool
+	road toPRRoad
 	// resolve answers what the command line could not answer before the
 	// run existed. Only bump has one: --latest is a question for the
 	// forge, and it is settled here so that no intent ever sees the
@@ -86,12 +92,40 @@ var _ Action = intentAction{}
 // refusal the collision deserves belongs to the plural road, where the
 // cost of guessing wrong is hundreds of branches.
 func (a intentAction) Execute(ctx context.Context, rs *runstate.Context) error {
+	// The run's provenance onto the realization, here and once: both
+	// roads below take this Action by value, so a single port and a
+	// sweep of four hundred record the same declaration, and neither has
+	// to remember to ask.
+	a.opts.Invoker, a.opts.Agent = rs.Invoker, rs.Agent
+	if a.toPR {
+		// The boundary first, and before the selector expands: which of
+		// --to-pr's two meanings this invocation gets is a fact about the
+		// machine and the invoker, and three of the five rows refuse. A
+		// refusal that arrived after the mint would leave the user a branch
+		// they asked for only as a step toward a publication that was never
+		// going to happen.
+		road, err := toPRBoundary(rs)
+		if err != nil {
+			return err
+		}
+		a.road = road
+		if road == toPRQueued {
+			// The record's own word for "somebody asked for a pull request",
+			// which is what the reconciler's slot reads to know a change is
+			// its business at all. Set here rather than at flag-parse time
+			// because it is the boundary's conclusion and not the flag's.
+			a.opts.Destination = record.ToPublished
+		}
+	}
 	res, err := resolveSelector(ctx, rs, a.params.Target)
 	if err != nil {
 		return err
 	}
 	if len(res.Targets) == 1 {
 		return a.single(ctx, rs, res.Targets[0])
+	}
+	if a.toPR {
+		return toPRSelectorRefusal(a.params.Target, len(res.Targets))
 	}
 	return a.many(ctx, rs, res)
 }
@@ -183,8 +217,52 @@ func (a intentAction) single(ctx context.Context, rs *runstate.Context, target t
 		// nowhere.
 		opts.Verified, opts.GateProof = true, proof
 	}
-	_, err = eng.Run(ctx, p, opts)
-	return err
+	if a.road != toPRImmediate {
+		_, err = eng.Run(ctx, p, opts)
+		return err
+	}
+	return a.mintAndPublish(ctx, rs, eng, p, opts)
+}
+
+// mintAndPublish is --to-pr's immediate form: the ring-3 questions, then
+// the mint, then the human publish road, in one invocation.
+//
+// The prechecks are MINT-FREE and that is the whole reason they exist
+// here rather than being left to promote, which asks both again over the
+// branch it is pushing. A change whose own pull request already merged,
+// or whose title an open one already proposes, is a change this
+// invocation is not going to publish — and learning that after the mint
+// would leave a branch behind for a person to find and remove, in the
+// merged case pointing at work the project has already taken.
+//
+// Publication is Promote with the invoker declared human, which is the
+// same road `dockhand promote` walks and deliberately not a second one:
+// what a pull request says, how a fork remote is found, how a
+// re-publication converges on the pull request already open, and the
+// audit row it leaves are all decided in one place.
+func (a intentAction) mintAndPublish(ctx context.Context, rs *runstate.Context,
+	eng *engine.Engine, p *plan.Plan, opts engine.Policy) error {
+	repo, err := eng.RepoFor(ctx, p.Portdir)
+	if err != nil {
+		return err
+	}
+	if err := eng.PrecheckPublish(ctx, repo, p); err != nil {
+		return err
+	}
+	sayToPRImmediate(rs)
+	done, err := eng.Run(ctx, p, opts)
+	if err != nil {
+		return err
+	}
+	if done.Realization != engine.BranchMinted {
+		// Nothing was minted — an empty plan, or a branch that already
+		// stood. There is no new change to put in front of anybody, and
+		// publishing the branch that was already there is a promote the
+		// person can type if that is what they meant.
+		return nil
+	}
+	return eng.Promote(ctx, repo, done.Branch, engine.PromoteOpts{
+		Invoker: record.Human, Closes: a.params.ClosesTicket})
 }
 
 // dependentRoster is what the tree's reverse index says depends on this
@@ -381,6 +459,7 @@ func intentCommand(v intentVerb) *cobra.Command {
 			return intentAction{
 				def: v.Definition, params: params,
 				opts: f.opts, verify: f.verifyIt, resolve: v.Resolve,
+				toPR: f.toPR,
 			}, nil
 		}),
 	}
@@ -524,6 +603,10 @@ type intentFlags struct {
 	// here, and bump's own --recheck.
 	replace  bool
 	noVerify bool
+	// toPR asks for a pull request in the same breath as the change. What
+	// it can mean here is the boundary's to say — see topr.go — so nothing
+	// but the bare switch is kept at this layer.
+	toPR bool
 	// riders and noRiders are the two ends of one policy, spelled as two
 	// switches because that is what a command line has. riderPolicy maps
 	// the pair onto the value the planners take; check refuses the
@@ -560,6 +643,8 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"make housekeeping the whole change: plan the riders alone and drop what the verb would have done")
 	c.Flags().BoolVar(&f.noRiders, "no-riders", false,
 		"carry no housekeeping riders, and withhold none when there is nothing else to do")
+	c.Flags().BoolVar(&f.toPR, "to-pr", false,
+		"carry the change through to a pull request: queued for the reconciler's publish slot where this machine can verify, and published in this invocation where it cannot")
 	c.Flags().BoolVar(&f.opts.Test, "test", false,
 		"also run the port's test suite (`port test`) in the verification environment")
 	c.Flags().BoolVar(&f.opts.Trace, "trace", false,
@@ -586,6 +671,19 @@ func (f *intentFlags) check() error {
 		return usagef("--riders and --no-riders are mutually exclusive")
 	case f.riders && (f.verifyIt || f.opts.Trace || f.opts.Test):
 		return usagef("riders never trigger a verification; there is nothing in a housekeeping change for a VM to disagree with")
+	case f.toPR && (f.opts.PlanOnly || f.opts.Diff || f.opts.InPlace):
+		return usagef("--to-pr carries a change to a pull request; it needs the default branch realization")
+	case f.toPR && f.noVerify:
+		// Not a contradiction of spelling but of meaning, which is why it
+		// is said rather than resolved: both write Destination, and they
+		// write opposite answers. --no-verify says the change stops at the
+		// branch and nobody is owed a verdict; --to-pr says it carries on
+		// to a pull request. Silently letting one win would make the
+		// destination depend on the order two lines happen to be written
+		// in.
+		return usagef("--no-verify stops the change at the branch and --to-pr carries it to a pull request; ask for one")
+	case f.toPR && f.riders:
+		return usagef("--riders makes housekeeping the whole change, which is not a change to put in front of reviewers")
 	case f.replace && (f.opts.PlanOnly || f.opts.Diff || f.opts.InPlace):
 		// --force used to be accepted here and quietly meant the other
 		// thing — the re-derivation — which is why the two are apart now.

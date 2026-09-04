@@ -82,18 +82,168 @@ func (e *PRMergedError) DockhandExit() int { return exitcode.PRMerged }
 // Code names the refusal for a machine.
 func (e *PRMergedError) Code() string { return "pr-merged" }
 
+// PromotionPendingError is the machine's answer to a change whose
+// verification has not finished: nothing is wrong, nothing is settled,
+// and the next unattended pass will ask again.
+//
+// It exits in the pending band and never in a refusal one, which is the
+// whole reason it is a separate type from the refusals below. An
+// unattended reconciler runs on a timer; a change waiting for its own
+// build is the ordinary state of half the namespace on any given pass,
+// and a caller that read "waiting" as "refused" would page somebody
+// about work that is proceeding exactly as it should.
+type PromotionPendingError struct {
+	Branch string
+	// Platforms are the releases whose runs have not finished, in the
+	// record's stable order. Named rather than counted: which build is
+	// still going is something a reader can look up, and "1 run" is not.
+	Platforms []string
+}
+
+func (e *PromotionPendingError) Error() string {
+	return fmt.Sprintf("%s: verification has not finished (%s); the next pass will ask again",
+		e.Branch, strings.Join(e.Platforms, ", "))
+}
+
+// DockhandExit: the pending band — nobody's problem yet.
+func (e *PromotionPendingError) DockhandExit() int { return exitcode.PromotionPending }
+
+// Code names the outcome for a machine.
+func (e *PromotionPendingError) Code() string { return "promotion-pending" }
+
+// UnprovenError is the machine's inversion of promote's most permissive
+// rule.
+//
+// A person invoking promote has already made the publication choice, so
+// an unverified branch goes out with a complaint: they are looking at
+// the complaint. An unattended pass has nobody looking, and absence of
+// evidence there is not a candour problem but the absence of any reason
+// to spend a reviewer's attention at all. The machine road therefore
+// requires POSITIVE evidence — a pass — and refuses on anything less,
+// including the states a person is merely warned about.
+//
+// It is in the refused band and specifically at the machine gate: the
+// change is fine, the road refused it, and a person asking for the same
+// thing would be allowed it. That is the definition of the code.
+type UnprovenError struct {
+	Branch string
+	// Tip is the tip's shortened sha, abbreviated by the caller.
+	Tip string
+}
+
+func (e *UnprovenError) Error() string {
+	return fmt.Sprintf("%s: tip %s carries no passing verification — an unattended publication needs positive evidence, not the absence of a failure; `dockhand promote %s` publishes it on a person's authority",
+		e.Branch, e.Tip, e.Branch)
+}
+
+// DockhandExit: the refused band's machine gate.
+func (e *UnprovenError) DockhandExit() int { return exitcode.MachineGate }
+
+// Code names the refusal for a machine.
+func (e *UnprovenError) Code() string { return "no-positive-evidence" }
+
+// Phase is how far a change has already travelled toward review. It is
+// what makes an unattended pass idempotent: the machine acts on a change
+// that has not gone out, and a change that already has is work this pass
+// has nothing to do about — not an error, and not a refusal.
+//
+// It is read from the pull request and not from the note. The record
+// says where the change was BOUND when it was minted, which a stale note
+// or a hand-opened PR can both contradict; the forge says where it has
+// actually GOT to, and that is the fact an idempotent pass must key on.
+type Phase string
+
+const (
+	// PhaseInFlight is a change with no pull request: the only phase the
+	// machine may act on.
+	PhaseInFlight Phase = "in-flight"
+	// PhasePublished is a change whose pull request is open. Reviewers
+	// are already looking at it; there is nothing for an unattended pass
+	// to do and nothing wrong.
+	PhasePublished Phase = "published"
+	// PhaseRetired is a change whose pull request merged or closed. An
+	// end state, and the sweep's business rather than the publisher's.
+	PhaseRetired Phase = "retired"
+)
+
+// PhaseOf reads the phase off the pull request the caller looked up. A
+// lookup that found nothing is in flight, which is what "no pull
+// request" means — and it is why a FAILED lookup must never be handed in
+// as the zero fact on the machine road: absent and unknown would become
+// the same answer, and the unattended pass would open a second pull
+// request for a branch that already has one.
+func PhaseOf(pr PRFact) Phase {
+	switch {
+	case !pr.Found:
+		return PhaseInFlight
+	case pr.Merged, !pr.Open:
+		return PhaseRetired
+	default:
+		return PhasePublished
+	}
+}
+
+// PublishAsk is one publication put to the gate: the change, the
+// evidence reading the caller took, and — the two facts the machine road
+// turns on — who is asking and how far the change has already got.
+//
+// A struct rather than seven positional arguments, and every field named
+// at the call site, because two of them are the difference between the
+// road a person walks and the road nobody walks: a By silently defaulted
+// at a new call site is the one way the inversions below stop meaning
+// anything.
+type PublishAsk struct {
+	Record record.Record
+	// Promotable is the caller's reading of the verdict set: some run
+	// passed, none failed, and every subject was proven.
+	Promotable bool
+	Branch     string
+	// Tip is the tip's shortened sha, abbreviated by the caller.
+	Tip string
+	// NoVerify publishes past a failed verification. It is a person's
+	// override and is NOT honoured on the machine road — there is nobody
+	// on that road to have decided it.
+	NoVerify bool
+	// By is who is asking. The zero value is record.Human, which is every
+	// verb a person types.
+	By record.Driver
+	// Phase is how far the change has already got, read from the forge by
+	// the caller. It is consulted on the machine road only: a person
+	// re-promoting an open pull request is refreshing it on purpose.
+	Phase Phase
+}
+
+// by is who this publication is attributed to, with the zero value read
+// as the caller every verb has today.
+func (a PublishAsk) by() record.Driver {
+	if a.By == "" {
+		return record.Human
+	}
+	return a.By
+}
+
 // PublishDecision is what promote's verification gate concluded.
 type PublishDecision struct {
-	// Refusal stops the promotion. The one thing that refuses here is a
-	// completed failed build, so it is a FailedVerificationError and it
-	// exits in the verdict band — with the run whose answer it is
-	// enforcing, rather than among the ways promote itself can break.
+	// Refusal stops the promotion. On the human road the one thing that
+	// refuses is a completed failed build, so it is a
+	// FailedVerificationError and it exits in the verdict band — with the
+	// run whose answer it is enforcing, rather than among the ways
+	// promote itself can break. The machine road adds two: a pending
+	// verification and an unproven tip.
 	Refusal error
 	// Blocked is one advisory per blocked run, in the record's stable
 	// order, for stderr.
 	Blocked []string
-	// SayUnverified asks the caller to say so before it publishes.
+	// SayUnverified asks the caller to say so before it publishes. Never
+	// set on the machine road, which refuses instead of complaining.
 	SayUnverified bool
+	// NoOp says there is nothing to do and nothing wrong: the change has
+	// already gone out. It is separate from a nil Refusal because those
+	// two mean opposite things to the caller — one says publish, the
+	// other says move on — and it is separate from a refusal because an
+	// unattended pass that exited non-zero over work it had already
+	// finished would page somebody every time it succeeded.
+	NoOp bool
 }
 
 // DecidePublish is promote's gate.
@@ -110,17 +260,27 @@ type PublishDecision struct {
 // maintainer deciding to promote anyway deserves the name of the
 // neighbour in front of them.
 //
-// tipAbbrev is the tip's shortened sha, abbreviated by the caller.
-func DecidePublish(r record.Record, promotable bool, branch, tipAbbrev string, noVerify bool) PublishDecision {
-	if promotable {
+// THE MACHINE ROAD INVERTS IT, and decideForMachine below states each
+// inversion beside the human rule it inverts. Everything above is an
+// argument about a person who is standing there: the choice was already
+// made by typing the verb, the complaint reaches somebody, the blocked
+// neighbour's name is put in front of a reader. Take the reader away and
+// every one of those arguments fails, so the unattended road requires a
+// pass, refuses what it cannot prove, and reports a run still going as
+// pending rather than as anything's fault.
+func DecidePublish(a PublishAsk) PublishDecision {
+	if a.by() == record.Machine {
+		return decideForMachine(a)
+	}
+	if a.Promotable {
 		return PublishDecision{}
 	}
-	if r.AnyState(record.Failed) && !noVerify {
-		return PublishDecision{Refusal: &FailedVerificationError{Branch: branch, Tip: tipAbbrev}}
+	if a.Record.AnyState(record.Failed) && !a.NoVerify {
+		return PublishDecision{Refusal: &FailedVerificationError{Branch: a.Branch, Tip: a.Tip}}
 	}
 	d := PublishDecision{SayUnverified: true}
-	named := Names(r)
-	for _, ref := range Runs(r) {
+	named := Names(a.Record)
+	for _, ref := range Runs(a.Record) {
 		if ref.Run.State != record.Blocked {
 			continue
 		}
@@ -135,6 +295,53 @@ func DecidePublish(r record.Record, promotable bool, branch, tipAbbrev string, n
 		d.Blocked = append(d.Blocked, fmt.Sprintf("%s blocked on %s: %s", what, ref.Platform, ref.Run.Detail))
 	}
 	return d
+}
+
+// decideForMachine is the unattended road, one inversion at a time.
+//
+// The order is not cosmetic. Phase comes first because a change already
+// in front of reviewers is not a candidate at all, and every sentence
+// after this point would be about work that does not need doing. Then a
+// pass, which is the only thing that lets an unattended publication
+// through. Then the failure, unconditionally — --no-verify is a person's
+// override and there is no person. Then a run still going, which is
+// pending and not a refusal. What is left is a tip with no evidence
+// either way, and that is where the human road's whole permissiveness
+// gets inverted: a person publishes it with a complaint, the machine
+// does not publish it at all.
+func decideForMachine(a PublishAsk) PublishDecision {
+	if a.Phase != PhaseInFlight {
+		return PublishDecision{NoOp: true}
+	}
+	if a.Promotable {
+		return PublishDecision{}
+	}
+	if a.Record.AnyState(record.Failed) {
+		return PublishDecision{Refusal: &FailedVerificationError{Branch: a.Branch, Tip: a.Tip}}
+	}
+	if unfinished := Unfinished(a.Record); len(unfinished) > 0 {
+		return PublishDecision{Refusal: &PromotionPendingError{Branch: a.Branch, Platforms: unfinished}}
+	}
+	return PublishDecision{Refusal: &UnprovenError{Branch: a.Branch, Tip: a.Tip}}
+}
+
+// Unfinished names the platforms whose runs will still change on their
+// own, in the record's stable order and without repeats.
+//
+// It asks the state's own Terminal, so a state this build cannot read
+// counts as unfinished: the reading that waits is the reading that
+// cannot publish something on a verdict it did not understand.
+func Unfinished(r record.Record) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, ref := range Runs(r) {
+		if ref.Run.State.Terminal() || seen[ref.Platform] {
+			continue
+		}
+		seen[ref.Platform] = true
+		out = append(out, ref.Platform)
+	}
+	return out
 }
 
 // MergedDeadEnd refuses a promotion whose own PR already merged. Nil

@@ -31,7 +31,7 @@ import (
 type ghFake struct {
 	login     string
 	ownPRs    string // JSON array for the head-ref lookup
-	searchHit string // JSON search/issues document
+	searchHit string // JSON array for the open-pulls walk
 	createURL string
 	calls     [][]string
 }
@@ -46,9 +46,13 @@ func (g *ghFake) run(_ context.Context, args ...string) (string, error) {
 			return "[]", nil
 		}
 		return g.ownPRs, nil
-	case args[0] == "api" && contains(args, "search/issues"):
+	// The duplicate check walks `pulls?state=open`, paged. One page
+	// shorter than the page size is the last page, so a single answer
+	// ends the walk and the fake needs no page bookkeeping — the paging
+	// itself is exercised in internal/gh, against the seam that does it.
+	case args[0] == "api" && len(args) >= 2 && strings.Contains(args[1], "/pulls?state=open"):
 		if g.searchHit == "" {
-			return `{"items":[]}`, nil
+			return "[]", nil
 		}
 		return g.searchHit, nil
 	case args[0] == "pr" && args[1] == "create":
@@ -57,15 +61,6 @@ func (g *ghFake) run(_ context.Context, args ...string) (string, error) {
 		return "", nil
 	}
 	return "", fmt.Errorf("ghFake: unscripted call %v", args)
-}
-
-func contains(args []string, s string) bool {
-	for _, a := range args {
-		if a == s {
-			return true
-		}
-	}
-	return false
 }
 
 func (g *ghFake) called(verb string) [][]string {
@@ -124,7 +119,7 @@ func TestPromoteOpensThePR(t *testing.T) {
 func TestPromoteRefusesADuplicate(t *testing.T) {
 	repo, _ := promoteRepo(t)
 	gh := &ghFake{login: "herbygillot",
-		searchHit: `{"items":[{"number":123,"title":"jq: update to 1.8","state":"open","html_url":"https://x/123"}]}`}
+		searchHit: `[{"number":123,"title":"jq: update to 1.8","state":"open","html_url":"https://x/123"}]`}
 	rs, _, _ := promoteState(t, repo, gh)
 
 	err := promoteAction{target: "jq"}.Execute(context.Background(), rs)

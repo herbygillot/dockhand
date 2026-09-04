@@ -140,6 +140,38 @@ type Policy struct {
 	// passed on this plan's content, so realization records the verdict
 	// instead of buying the same build twice.
 	Verified bool
+
+	// Invoker and Agent are the run's provenance, and they sit here for
+	// the same reason Destination does: they are record fields the
+	// invocation decides, and the realizer is where an invocation's
+	// choice becomes a note.
+	//
+	// Both are written at mint and read by nothing else. Neither is ever
+	// an input to a gate — a field that could widen what the unattended
+	// road is allowed to do would be an authorization wearing
+	// provenance's clothes — and neither is ever derived here: who is
+	// running is DECLARED by the caller (the `auto` verb, --auto,
+	// DOCKHAND_AUTO), and an engine that answered it for itself by
+	// reading the environment or a terminal would be detecting what the
+	// ruling says must be declared.
+	Invoker record.Driver
+	Agent   string
+}
+
+// askedBy is who the record will say asked for this change. The zero
+// value reads as record.Human because a person typing a verb is every
+// invocation that did not declare otherwise, and because an unset
+// provenance is better recorded as the common case than as an empty
+// string the ladder's arithmetic would have to guess about.
+//
+// That default is safe only because nothing gates on this value. The
+// publish roads take their invoker as a parameter and have no zero
+// value to fall through.
+func (o Policy) askedBy() record.Driver {
+	if o.Invoker == "" {
+		return record.Human
+	}
+	return o.Invoker
 }
 
 // destination is the record's word for how far this policy reaches.

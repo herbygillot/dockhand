@@ -4,6 +4,146 @@ exit: 0
     "repository": "<repo>",
     "branches": [
       {
+        "branch": "dockhand/jq-failed",
+        "tip": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
+        "note": {
+          "schema": 3,
+          "sha": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
+          "tree": "e707f5799d1e8f56e2e2b4ac98a8c8cf60b82cad",
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
+            "Testos": {
+              "job": {
+                "provider": "fake",
+                "id": "fake-failed",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "handle": "dockhand-worker-failed"
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "failed",
+              "platform": "Testos",
+              "detail": "Failed to build jq: command execution failed",
+              "linted": true,
+              "links": null
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-queued",
+        "tip": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+        "note": {
+          "schema": 3,
+          "sha": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+          "tree": "37b48172a8691ff4e65237ab66161b810828d73a",
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "runs": {
+            "jq@Testos": {
+              "state": "queued",
+              "platform": "Testos",
+              "detail": "all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees",
+              "links": null
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-multi",
+        "tip": "c49914c23ab7c5853d1a794b1764194e11b220ef",
+        "note": {
+          "schema": 3,
+          "sha": "c49914c23ab7c5853d1a794b1764194e11b220ef",
+          "tree": "235585d927f147c08d938f896f075d420efe93ce",
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
+            "Testos": {
+              "job": {
+                "provider": "fake",
+                "id": "fake-multi",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "test": true,
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Oldos": {
+              "state": "unsupported",
+              "platform": "Oldos",
+              "detail": "declares known_fail on Oldos",
+              "links": null
+            },
+            "jq@Testos": {
+              "state": "passed",
+              "platform": "Testos",
+              "linted": true,
+              "lint": "clean",
+              "links": null
+            }
+          }
+        }
+      },
+      {
+        "branch": "dockhand/jq-passed",
+        "tip": "7159f6b651e49cae47422560120e93ebc494acc9",
+        "note": {
+          "schema": 3,
+          "sha": "7159f6b651e49cae47422560120e93ebc494acc9",
+          "tree": "84638b5a25febc78bd8ac7cad517ef4d88764262",
+          "subjects": [
+            {
+              "port": "jq",
+              "names": [
+                "jq"
+              ]
+            }
+          ],
+          "jobs": {
+            "Testos": {
+              "job": {
+                "provider": "fake",
+                "id": "fake-passed",
+                "started": "2026-09-01T00:00:00Z"
+              },
+              "released": true
+            }
+          },
+          "runs": {
+            "jq@Testos": {
+              "state": "passed",
+              "platform": "Testos",
+              "linted": true,
+              "lint": "2 warnings",
+              "links": null
+            }
+          }
+        }
+      },
+      {
         "branch": "dockhand/jq-amended",
         "tip": "d4798d50ed090cf5409f873a6807af15885eb369",
         "drift": "unsupported (Oldos), passed (Testos) at c49914c23ab7 — the tip differs only in commit metadata"
@@ -115,146 +255,6 @@ exit: 0
               "platform": "Testos",
               "detail": "guest agent unreachable after boot",
               "linted": true,
-              "links": null
-            }
-          }
-        }
-      },
-      {
-        "branch": "dockhand/jq-failed",
-        "tip": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
-        "note": {
-          "schema": 3,
-          "sha": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
-          "tree": "e707f5799d1e8f56e2e2b4ac98a8c8cf60b82cad",
-          "subjects": [
-            {
-              "port": "jq",
-              "names": [
-                "jq"
-              ]
-            }
-          ],
-          "jobs": {
-            "Testos": {
-              "job": {
-                "provider": "fake",
-                "id": "fake-failed",
-                "started": "2026-09-01T00:00:00Z"
-              },
-              "handle": "dockhand-worker-failed"
-            }
-          },
-          "runs": {
-            "jq@Testos": {
-              "state": "failed",
-              "platform": "Testos",
-              "detail": "Failed to build jq: command execution failed",
-              "linted": true,
-              "links": null
-            }
-          }
-        }
-      },
-      {
-        "branch": "dockhand/jq-multi",
-        "tip": "c49914c23ab7c5853d1a794b1764194e11b220ef",
-        "note": {
-          "schema": 3,
-          "sha": "c49914c23ab7c5853d1a794b1764194e11b220ef",
-          "tree": "235585d927f147c08d938f896f075d420efe93ce",
-          "subjects": [
-            {
-              "port": "jq",
-              "names": [
-                "jq"
-              ]
-            }
-          ],
-          "jobs": {
-            "Testos": {
-              "job": {
-                "provider": "fake",
-                "id": "fake-multi",
-                "started": "2026-09-01T00:00:00Z"
-              },
-              "test": true,
-              "released": true
-            }
-          },
-          "runs": {
-            "jq@Oldos": {
-              "state": "unsupported",
-              "platform": "Oldos",
-              "detail": "declares known_fail on Oldos",
-              "links": null
-            },
-            "jq@Testos": {
-              "state": "passed",
-              "platform": "Testos",
-              "linted": true,
-              "lint": "clean",
-              "links": null
-            }
-          }
-        }
-      },
-      {
-        "branch": "dockhand/jq-passed",
-        "tip": "7159f6b651e49cae47422560120e93ebc494acc9",
-        "note": {
-          "schema": 3,
-          "sha": "7159f6b651e49cae47422560120e93ebc494acc9",
-          "tree": "84638b5a25febc78bd8ac7cad517ef4d88764262",
-          "subjects": [
-            {
-              "port": "jq",
-              "names": [
-                "jq"
-              ]
-            }
-          ],
-          "jobs": {
-            "Testos": {
-              "job": {
-                "provider": "fake",
-                "id": "fake-passed",
-                "started": "2026-09-01T00:00:00Z"
-              },
-              "released": true
-            }
-          },
-          "runs": {
-            "jq@Testos": {
-              "state": "passed",
-              "platform": "Testos",
-              "linted": true,
-              "lint": "2 warnings",
-              "links": null
-            }
-          }
-        }
-      },
-      {
-        "branch": "dockhand/jq-queued",
-        "tip": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
-        "note": {
-          "schema": 3,
-          "sha": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
-          "tree": "37b48172a8691ff4e65237ab66161b810828d73a",
-          "subjects": [
-            {
-              "port": "jq",
-              "names": [
-                "jq"
-              ]
-            }
-          ],
-          "runs": {
-            "jq@Testos": {
-              "state": "queued",
-              "platform": "Testos",
-              "detail": "all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees",
               "links": null
             }
           }

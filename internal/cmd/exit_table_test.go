@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -207,6 +208,8 @@ func exitTable(t *testing.T) []exitRow {
 	ctx := context.Background()
 	const branch = "dockhand/jq-1.8"
 	const sha = "0123456789abcdef0123456789abcdef01234567"
+	// The moment a hold went on, pinned so the rows read the same twice.
+	held := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	const tip = "0123456789ab"
 	testos := []platform.Release{{Name: "Testos", Darwin: 99}}
 
@@ -459,6 +462,15 @@ func exitTable(t *testing.T) []exitRow {
 			err: upstream.Unreachable("livecheck", fmt.Errorf("portfetch: livecheck of %s: %s", "sysutils/jq", "dial tcp: connection refused")),
 			as:  new(*upstream.WitnessError)},
 	)
+	// The forge answered badly or not at all, on the road where an
+	// unanswered question must stop the work: a person is warned and
+	// carries on, and the unattended pass waits for the next one.
+	add(exitcode.WitnessAPI,
+		exitRow{name: "*engine.ForgeLookupError (the machine road's own-PR lookup)",
+			err: &engine.ForgeLookupError{Branch: branch, What: "this branch's own pull request",
+				Err: errors.New("HTTP 403: API rate limit exceeded")},
+			as: new(*engine.ForgeLookupError)},
+	)
 	// The witnesses ran and left no version anyone may act on. It is
 	// the same *plan.Decline a judgment produces — the words are the
 	// planner's either way — banded apart by the verdict underneath,
@@ -516,6 +528,19 @@ func exitTable(t *testing.T) []exitRow {
 	// run is on the note and status starts it once a base exists. The
 	// synchronous ask with the same obstacle is NoVerifyEnv above, and
 	// the pair reads exactly like VerifyQueued and VerifierBusy do.
+	// The publish slot's two ways of not being finished: a change whose
+	// verification is still going, and a pass that has spent its own cap
+	// or is holding itself to its pacing. Both mean ask again later,
+	// which is the whole of what this band says.
+	add(exitcode.PromotionPending,
+		exitRow{name: "*verdict.PromotionPendingError (the machine road meets a run still going)",
+			err: &verdict.PromotionPendingError{Branch: branch, Platforms: []string{"Sequoia"}},
+			as:  new(*verdict.PromotionPendingError)},
+		exitRow{name: "*engine.PassLimitError (the per-pass PR cap)",
+			err: &engine.PassLimitError{Branch: branch,
+				Why: "this pass has already opened its 1 pull request(s)"},
+			as: new(*engine.PassLimitError)},
+	)
 	add(exitcode.VerifyAwaitingSlot,
 		exitRow{name: "*engine.VerifyDeferredError over verify.ErrNoEnvironment (submit)",
 			err: later(noEnv("no base images; run `dockhand provision tart --macos <release>` first")),
@@ -559,6 +584,13 @@ func exitTable(t *testing.T) []exitRow {
 			err: upstream.Unresolved(upstream.PrereleaseNewest, &plan.Decline{Type: plan.LatestUnresolved,
 				Detail: fmt.Sprintf("%s (%s)", upstream.PrereleaseNewest, "newest tag 2.0-beta1 is prerelease-style")}),
 			as: new(*plan.Decline)},
+		// `unhold` on a branch nothing is holding: the verb was asked to
+		// release something and there was nothing to release. Declined
+		// rather than refused — nothing is wrong and nothing was written —
+		// and typed rather than silent, so a script cannot read "the hold
+		// is lifted" out of a hold that was never there.
+		exitRow{name: "*engine.NotHeldError (unhold on an unheld branch)",
+			err: &engine.NotHeldError{Branch: branch}, as: new(*engine.NotHeldError)},
 		exitRow{name: "*plan.Decline VendoredBlock (refresh: go.vendors)",
 			err: &plan.Decline{Type: plan.VendoredBlock, Detail: "go.vendors"}, as: new(*plan.Decline)},
 		// The insertion's refusal, and it belongs in this band rather
@@ -634,6 +666,41 @@ func exitTable(t *testing.T) []exitRow {
 		exitRow{name: "*verdict.SupersededError (Follow: the branch moved while the build ran)",
 			err: &verdict.SupersededError{Port: "jq", Platform: "Sequoia"},
 			as:  new(*verdict.SupersededError)},
+	)
+	// The machine gate's other half, and the one that never reaches the
+	// engine: promote publishes on a person's authority, so a run that
+	// declared itself unattended is turned away at the verb rather than
+	// gated at the push.
+	// The machine gate proper: the build-time refusal every unattended
+	// publication meets on this build, and the two judgments underneath
+	// it. All three say the same thing about whose problem it is — the
+	// change is fine, the road refused it, and a person asking for the
+	// same thing would be allowed it.
+	add(exitcode.MachineGate,
+		exitRow{name: "*cmd.PromoteIsHumanError (promote in auto mode)",
+			err: &PromoteIsHumanError{}, as: new(*PromoteIsHumanError)},
+		exitRow{name: "*engine.MachineDisabledError (GateRing3: the build-time constant is false)",
+			err: &engine.MachineDisabledError{}, as: new(*engine.MachineDisabledError)},
+		exitRow{name: "*verdict.UnprovenError (the machine road's positive-evidence rule)",
+			err: &verdict.UnprovenError{Branch: branch, Tip: "abc1234"},
+			as:  new(*verdict.UnprovenError)},
+	)
+	// A branch held back. One code for every road, because a hold means
+	// the same thing on all of them — the publication, the verification
+	// the pump would start, the deletion a merged pull request would earn
+	// — and a caller branching on $? wants one answer, not four.
+	add(exitcode.Held,
+		exitRow{name: "*engine.HeldError (the publish gate obeying a hold)",
+			err: &engine.HeldError{Branch: branch, Withheld: "the publication",
+				Hold: &record.Hold{Reason: "waiting on upstream", At: held}},
+			as: new(*engine.HeldError)},
+		exitRow{name: "*engine.HeldError (hold on an already-held branch)",
+			err: &engine.HeldError{Branch: branch, Withheld: "a second hold",
+				Hold: &record.Hold{At: held}}, as: new(*engine.HeldError)},
+		exitRow{name: "*engine.StealthHeldError (the publish slot's re-witness)",
+			err: &engine.StealthHeldError{Branch: branch, Mismatch: []engine.ChecksumMismatch{
+				{File: "jq-1.8.tar.gz", Type: "sha256", Recorded: "aaa", Served: "bbb"}}},
+			as: new(*engine.StealthHeldError)},
 	)
 
 	// Band 70-73: verification ANSWERED, and not with a pass. The band
@@ -846,7 +913,9 @@ func exitTable(t *testing.T) []exitRow {
 		exitRow{name: "gh.QueryPR: unreadable JSON",
 			err: fmt.Errorf("reading PR lookup: %w", parseErr)},
 		exitRow{name: "gh.OpenPortPRs: unreadable JSON",
-			err: fmt.Errorf("reading PR search: %w", parseErr)},
+			err: fmt.Errorf("reading open PRs: %w", parseErr)},
+		exitRow{name: "gh.OpenPortPRs: the walk ran past its bound",
+			err: fmt.Errorf("listing open PRs on %s: more than %d pages", "macports/macports-ports", 100)},
 		exitRow{name: "gh.ForkRemote: no such remote",
 			err: fmt.Errorf("no remote %q", "nope")},
 		exitRow{name: "gh.ForkRemote: unreadable override remote",

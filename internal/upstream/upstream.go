@@ -23,10 +23,8 @@
 package upstream
 
 import (
-	"regexp"
-	"strings"
-
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
 // Verdict classifies what the two resolvers said.
@@ -188,23 +186,19 @@ type Report struct {
 	Detail            string
 }
 
-// prerelease marks versions the stable-newest comparison excludes: the
+// Stable reports whether a version looks like a stable release: the
 // heuristic that keeps a deliberately conservative livecheck from being
-// charged with rot when only prereleases are newer. Name-based and
-// imperfect; the forge API's authoritative flag is a future refinement.
-// pr<digits> is the CI-build spelling flyctl field-tested: per-PR tags
-// (v2026.9.1-pr5150.5) that never become releases, which the stable
-// heuristic read as stable and then outranked the real newest with. A
-// version literally tagged -pr1 is a PR build by any reasonable
-// reading. The authoritative refinement remains the forge API's own
-// prerelease flag, gated on routing resolution through the
-// authenticated gh seam (the tag path is API-free by design).
-var prerelease = regexp.MustCompile(`(?i)(^|[^a-z])(alpha|beta|rc|pre|preview|dev|snapshot|nightly|pr[0-9]+)([^a-z]|$|[0-9])`)
-
-// Stable reports whether a version looks like a stable release.
-func Stable(version string) bool {
-	return !prerelease.MatchString(version)
-}
+// charged with rot when only prereleases are newer.
+//
+// The heuristic itself is verdict.Prerelease and is deliberately not
+// spelled here. It used to be, and it was this package's alone until the
+// mint needed the same answer about the target a change was minted
+// against — a prerelease target is held back from an unattended
+// publication — at which point a second regexp would have been a second
+// heuristic, drifting from this one the first time either was fixed.
+// What stays here is the word this package thinks in: the planners ask
+// whether a version is STABLE, and the negation is the whole difference.
+func Stable(version string) bool { return !verdict.Prerelease(version) }
 
 // Judge rules on an observation. Ordering is macports.VerCmp — a pure
 // comparison, so judging cannot fail.
@@ -388,14 +382,12 @@ func judgeLivecheckAboveStable(obs Observation, r Report, against string) Report
 // the part before its prerelease token, separators trimmed —
 // 1.17.0-rc.3 belongs to 1.17.0. Not-ok for a stable version, or one
 // that is nothing but prerelease token (no base to speak of).
-func releaseBase(version string) (string, bool) {
-	loc := prerelease.FindStringSubmatchIndex(version)
-	if loc == nil {
-		return "", false
-	}
-	base := strings.TrimRight(version[:loc[4]], "-._")
-	return base, base != ""
-}
+//
+// It reads the same token Stable does, so it moved with it: a base
+// computed from one regexp while stability was judged by another would
+// name the release of a version the judgment did not think was a
+// prerelease.
+func releaseBase(version string) (string, bool) { return verdict.PrereleaseBase(version) }
 
 // corroborate re-judges a LivecheckAhead-of-releases report against
 // the tag list, the second witness the releases feed cannot speak

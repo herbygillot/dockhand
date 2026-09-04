@@ -84,6 +84,22 @@ type Deps struct {
 	// owner a gate's verification is attributed to.
 	TreeRoot string
 
+	// MachinePublish is whether THIS BUILD permits a machine to spend
+	// ring 3 — to push a branch and open or edit a pull request with an
+	// invoker of record.Machine. It is false on every build today; the
+	// composition root spends a build-time constant into it, and the
+	// engine cannot read that constant itself because it may not import
+	// cmd.
+	//
+	// It is named for the permission GRANTED and never for one withheld,
+	// and that is the whole of the guarantee: the zero value of a bool is
+	// false, so every engine built by every test, every future
+	// composition and every caller who has not heard of this field
+	// refuses unattended publication by default. A NoMachinePublish that
+	// defaulted to permissive would invert the argument and nobody would
+	// notice until a pass had opened pull requests.
+	MachinePublish bool
+
 	// Version is the running binary's, for the words that name it.
 	Version string
 

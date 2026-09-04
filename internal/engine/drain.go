@@ -50,6 +50,31 @@ func (e *Engine) PumpDeferred(ctx context.Context, repo *git.Repo, branches []st
 			// hour of the machine, on an answer the user declined.
 			continue
 		}
+		if n.SupersededBy != "" {
+			// A newer sibling is the change now, and the ruling is that
+			// nothing but `clean --superseded` touches this branch. The
+			// supersede marks the record and cancels no runs — it cannot,
+			// because it happens at another branch's mint — so a replaced
+			// branch keeps whatever runs it had queued, and a pump without
+			// this line spends a VM slot and an hour of the machine building
+			// a change that has already been replaced.
+			//
+			// Silent, like the destination skip above and unlike the hold: a
+			// hold is a person's act and the pass reports obeying one, while
+			// a supersede is a fact the branch's own status line already
+			// states, once, rather than every ten minutes.
+			continue
+		}
+		if err := GateHold(n, br, "the verification"); err != nil {
+			// Beside the destination check and on the same argument: a
+			// held change must not spend a slot and an hour of the
+			// machine. Said out loud, unlike the destination skip above,
+			// because a hold is a person's act and this is the pass
+			// reporting that it obeyed one — the same voice the retry
+			// failures below are reported in.
+			fmt.Fprintln(e.Err, err)
+			continue
+		}
 		// Over the runs and not the platforms: a queued run was never
 		// submitted, so no job names its release and Platforms would
 		// answer with the empty set for precisely the records this pass
@@ -181,6 +206,25 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip string, me
 		if !errors.Is(err, git.ErrNoNote) {
 			fmt.Fprintf(e.Err, "%s: deferred %s not retried: %v\n", br, plat, err)
 		}
+		return false
+	}
+	// The hold, again, over the note this pass just re-read.
+	//
+	// Not belt and braces. The lock is held across the re-read precisely
+	// so that a peer's write between the walk and the submit is honoured,
+	// and a hold placed in that window is exactly such a write — a person
+	// running `dockhand hold` while a status pass is walking the namespace
+	// is the ordinary way it happens. The walk's check saves the work; this
+	// one is the one that is authoritative.
+	if herr := GateHold(n, br, "the verification"); herr != nil {
+		fmt.Fprintln(e.Err, herr)
+		return false
+	}
+	// And the supersede, again, for the same reason the hold is asked
+	// twice: the lock is held across the re-read precisely so a peer's
+	// write between the walk and the submit is honoured, and a sibling
+	// minted in that window is exactly such a write.
+	if n.SupersededBy != "" {
 		return false
 	}
 	// The claim is on the run this pass was walking, whatever else

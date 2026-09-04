@@ -83,6 +83,74 @@ paths against upstream; closed-unmerged branches are kept and flagged. The
 pipe below, and every plan-file argument in this document, describe the
 superseded surface.
 
+**Auto mode is declared, never inferred (2026-09-02).** The invoker is a
+**person** for every verb unless the invocation says otherwise, and there
+are exactly three ways to say otherwise:
+
+```
+dockhand auto                  # the verb IS the declaration
+dockhand <verb> --auto         # the persistent flag, on any verb
+DOCKHAND_AUTO=1 dockhand ...   # the environment, for a launchd plist
+```
+
+Nothing asks whether a terminal is attached. `tool.IsTerminal` exists and is
+one import away, and reaching for it would make the answer depend on how the
+process was started rather than on what the operator said — a pipe, a CI
+runner or a `script` wrapper would each silently move a person's authority
+onto a machine, or the reverse, with nothing in the invocation to read. The
+command line is the nearer declaration, so `--auto=false` withdraws a
+standing `DOCKHAND_AUTO` for one invocation, and a value that is neither
+true nor false is a usage error rather than a guess.
+
+`AI_AGENT` names which agent was driving, if any. It is recorded beside the
+declaration and read by no gate, so setting it can neither grant nor
+withhold anything.
+
+What the declaration is FOR is **provenance**: the mint writes it onto the
+record as `asked_by`, so a later question about how a change reached review
+is a query rather than an estimate. It is never an input to a gate. The one
+gate that turns on an invoker takes one as a parameter at its own call site;
+reading a driver back off a record to decide what the unattended road may do
+would let a change authorize itself by claiming its own history.
+
+**`dockhand auto`** is one unattended reconciler pass — the cron and launchd
+entrypoint. It runs the same pass `status` runs (observe, judge, retire,
+drain) and adds the one thing `status` and `clean` must never do: it hands
+the reconciler a **publish slot**. Publication through that slot is refused
+on this build; see `24` below.
+
+**`dockhand hold <branch> [--reason ...]`** stops a change: nothing will
+publish, verify or retire it until `dockhand unhold <branch>` releases it.
+Holding an already-held branch is refused rather than silently overwriting
+the reason somebody wrote. A change minted against a prerelease-style target
+is **born held**, announced at the mint — dockhand will plan an rc a
+maintainer asks for by name, but will not carry one onward on its own; the
+verification that same invocation asked for still runs.
+
+**`dockhand cancel <branch>`** stops a running verification and gives its
+environment back, recording on the note why the run stopped. It is a
+person's verb: a machine never cancels, and the one cancellation an
+unattended pass may cause is a supersede, which happens at another branch's
+mint and is about the commit having been replaced rather than about
+anybody's patience.
+
+**`dockhand clean --superseded`** is the intentional removal of branches a
+newer sibling replaced. It is the only thing in the tool that removes a
+branch for having been superseded: the ordinary sweep, the report, the drain
+and the machine's publish slot all leave one exactly where it is.
+
+**`--to-pr`** asks a write intent to carry the change through to a pull
+request, and it means two different things. On a machine that can verify it
+binds the record to the reconciler's publish slot, which publishes it once
+it has a pass — refused on this build, at the moment the record would be
+bound, with nothing minted. On a machine that cannot verify there will never
+be a pass, so the only reading left is an immediate publication on the
+authority of the person who typed it: the ring-3 prechecks are asked first
+and **before anything is minted** (an own PR already merged is `21`, a
+duplicate title is `20`), and then the change is minted and published in the
+one invocation. An unattended run is refused on that road — it has no
+authority to lend — and so is a selector naming more than one port.
+
 **Riders.** Every headline intent is examined for housekeeping it could
 carry — one rule today, the editor modeline a Portfile opens without — and
 a rider rides only on a double proof. The structural half is that the edit
@@ -465,8 +533,32 @@ of everything downstream:
   exactly what a maintainer checking in wants to know. A PR aged well past
   its window is a finding. Its remedy is a polite follow-up through the
   guide's own channels (macports-dev, or a PR comment), and pinging spends
-  attention: ring 3, so dockhand may propose a ping but never sends one
-  unattended, and never twice.
+  attention: ring 3, so dockhand may propose a ping and never sends one.
+  **Amended (2026-09-02, S14).** "Never twice" reads as a promise about the
+  drafting and it is not one: `status` drafts the follow-up on every pass,
+  with no memory that it drafted one before. Never-twice is a property of
+  the *sending*, which dockhand does not do — that is a fact about the tree
+  rather than a rule anything enforces: `internal/gh` has no comment method,
+  no ping, no review and no merge, and the only pull-request writes anywhere
+  are `pr create` and `pr edit` on the publish road. A record that a draft
+  had been shown would be state kept to suppress a line, and the line is how
+  the reader knows the pull request is still waiting.
+- **`status` lists in attention order, not in the namespace's (2026-09-02,
+  S14).** `for-each-ref` order is alphabetical order of a slug nobody chose
+  for reading, so the one branch that failed sat wherever its port name put
+  it. A fleet's report is scanned, not read, and what it is scanned for is
+  the handful of changes that want a person. The ruled sequence is:
+  failures; open PRs past the 72-hour window, oldest first, with their age;
+  queued runs; passed-but-unpromoted; held; the two quiet end states (a PR
+  closed without merging, a branch a newer sibling replaced); everything
+  else in the order it arrived. Within a band the enumeration order
+  survives. The ordering is imposed in the two renderings `status` performs
+  and nowhere lower: a sort applied to the pass itself would reorder
+  `clean`, which asks one question of each branch and has no attention to
+  order by. The window is the same 72 hours for every tier — a literal
+  reading would give nomaintainer ports, 63.5% of the tree, no window at all
+  — and what the tier decides is what the elapsed window *means*, which is
+  what the follow-up draft can honestly say.
 - **`promote` reads `maintainers` as a policy selector.** nomaintainer:
   proceed. openmaintainer: PR, 72-hour clock. maintained: notify and wait,
   and on timeout write the documentation line the policy requires — a
@@ -624,19 +716,42 @@ ever going to ride, which puts the decline back at `10`.
 | `20` | `DuplicatePR` | an open upstream PR already proposes this change; join it, `--title`, or `--no-pr-check` |
 | `21` | `PRMerged` | the branch's own PR already merged — a dead end, not a conflict; `dockhand clean` retires it |
 | `22` | `Superseded` | work a newer sibling has already replaced: a followed run whose branch moved out from under it |
-| `23` | `Held` | *reserved:* a branch deliberately held back from publication |
-| `24` | `MachineGate` | an unattended publication of a change still carrying an unanswered finding; a human asking for the same thing is told what they are publishing past and allowed it |
+| `23` | `Held` | a branch deliberately held back: `dockhand hold` placed it, a prerelease target was born under it, or a publication-time re-witness found upstream serving other bytes |
+| `24` | `MachineGate` | a road refused this invoker where a person asking for the same thing would be allowed it — see the four reasons below |
 
 `23` is a held *branch*. A held lock file is an ordinary failure and stays
 in band `1`; the names are one word apart and the bands are not.
 
+`23`'s reasons are `held` (a hold being obeyed, whoever placed it) and
+`stealth-suspected` (the publication-time re-witness found the distfiles no
+longer hashing to what the change records, so the change is held and a
+proposed finding asks a person about it). A hold refuses **both** invokers:
+it is the human's own instrument, often placed to stop themselves, and one a
+`dockhand promote` walked past would be note-keeping rather than a brake. It
+withholds the publication, the verification, the deletion and the superseded
+sweep, and it never changes a verdict.
+
 `24` is the only code whose meaning depends on **who asked**, and that is
-what it was reserved for. A finding proposes and never executes, so a change
-carrying an unanswered proposal is carrying a question; an unattended road has
-nobody to have read it and is refused, while a person promoting is looking at
-the proposal on their own `status` output and publishing anyway is their
-answer. There is no unattended publisher yet, so nothing reaches `24` from a
-verb today — what a person meets is the advisory naming the open finding.
+what it was reserved for. Its four reasons:
+
+| Reason | What happened |
+|---|---|
+| `open-proposal` | an unattended publication of a change still carrying an unanswered finding; a person promoting is told what they are publishing past and allowed it |
+| `no-positive-evidence` | an unattended publication of a tip with no passing verification; a person publishes an unverified change with a complaint, and absence of evidence is not a reason for a machine to spend a reviewer's attention |
+| `promote-is-human` | `dockhand promote` in auto mode. There is exactly one machine publish path — the reconciler's slot — and a promote that published as the machine would be a second one |
+| `machine-publish-disabled` | this build does not let a machine spend ring 3 at all. The permission is a build-time constant and it is false; flipping it is the trust ladder's ruling to make |
+| `machine-publish-no-verifier` | `--to-pr` in auto mode on a machine that cannot verify: with a verifier the change is queued for the reconciler's slot, and without one the only publication left is an immediate one on a person's authority |
+| `machine-republish` | an unattended publication met a pull request already open for the branch. The slot decides this a phase earlier and calls it work done; reaching the verb with it is a bug above the verb, and the funnel refuses rather than force-updating a review it did not open |
+
+A finding proposes and never executes, so a change carrying an unanswered
+proposal is carrying a question; an unattended road has nobody to have read
+it and is refused, while a person promoting is looking at the proposal on
+their own `status` output and publishing anyway is their answer.
+
+`machine-publish-disabled` is asked of the **machine** even when a person
+typed the verb, wherever what is being bound is the machine's road: `bump
+--to-pr` on a machine that can verify is a request that the reconciler
+publish, and who queues work for a road is not who walks it.
 
 `22` is the destination refusing in the sense that matters: the answer the
 superseded run was about to give is about bytes that are no longer the tip.
@@ -688,7 +803,7 @@ machine-wide and the next release would meet the same wall.
 |---|---|---|
 | `50` | `FetchFailed` | no URL would serve the distfile |
 | `51` | `WitnessUnreachable` | a witness could not run at all: a livecheck whose site is down, an `ls-remote` the forge refused, a git that is not there |
-| `52` | `WitnessAPI` | *reserved:* a forge or registry API that answered an error or a rate limit |
+| `52` | `WitnessAPI` | a forge or registry API that answered an error or a rate limit — and `forge-lookup-failed`, the unattended pass declining to guess at a pull-request question the forge would not answer |
 | `53` | `LatestUnresolved` | the witnesses ran and left no trustworthy newest version between them; name it with `--to`, or fix the port's livecheck |
 
 `50` is a sentinel the ruled table did not name and the bands claim anyway:
@@ -723,10 +838,24 @@ band by default.
 |---|---|---|
 | `60` | `VerifyQueued` | a run deferred for want of a slot, or a followed run the settle found still queued; `dockhand status` starts it when one frees |
 | `61` | `VerifyAwaitingSlot` | a run queued for an environment this machine has not provisioned yet |
-| `62` | `PromotionPending` | *reserved:* a published destination still awaiting its verdict |
+| `62` | `PromotionPending` | an unattended pass left publication work unfinished: a verification still running (`promotion-pending`), a forge that would not answer (`forge-lookup-failed`, which exits `52`), or the pass's own per-pass cap and pacing (`pass-limit`) |
 
 Nothing here failed. These must never share a band with a refusal, because
 the remedy is to ask again rather than to fix anything.
+
+`62` is what `dockhand auto` exits with when its publish slot has work left
+over, and it deliberately reports only the **waiting**. A refusal is stated
+on the branch it is about and does not become the pass's status: on this
+build every candidate is refused with `machine-publish-disabled`, and a cron
+entry that exited non-zero every ten minutes because a road it was never
+asked to walk is closed would read as a broken machine in every log watching
+it.
+
+A forge lookup the unattended pass could not get an answer to exits `52`
+(`forge-lookup-failed`) rather than `62`: nothing local is wrong, the
+question may answer in an hour, and reading an unanswered lookup as "no pull
+request" is what would make a pass open a second one beside somebody's
+first.
 
 ### Verdict — `70`–`73`
 
