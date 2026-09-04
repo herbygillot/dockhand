@@ -36,6 +36,7 @@ type cohortAction struct {
 	test     bool
 	trace    bool
 	on       string
+	exclude  []string
 }
 
 var _ Action = cohortAction{}
@@ -50,7 +51,7 @@ func (a cohortAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	return rs.Deps().BuildCohort(ctx, repo, a.branch, engine.CohortOpts{
-		NoVerify: a.noVerify, Test: a.test, Trace: a.trace, Platform: release})
+		NoVerify: a.noVerify, Test: a.test, Trace: a.trace, Platform: release, Exclude: a.exclude})
 }
 
 // dismissAction records that a person looked at a branch's proposals
@@ -110,10 +111,16 @@ func Dismiss() *cobra.Command {
 // proposal was for.
 func cohortMode(c *cobra.Command, f *intentFlags) func() (Action, error) {
 	var branch string
+	var exclude []string
 	c.Flags().StringVar(&branch, "for", "",
 		"accept the revbump proposal on this branch: revbump its dependents as one more commit (takes no port argument)")
+	c.Flags().StringSliceVar(&exclude, "exclude", nil,
+		"leave these members out of the change entirely: not bumped, not built (comma-separated)")
 	return func() (Action, error) {
 		if branch == "" {
+			if len(exclude) > 0 {
+				return nil, usagef("--exclude names members of a proposal; it needs the --for that accepts one")
+			}
 			return nil, nil
 		}
 		switch {
@@ -127,6 +134,6 @@ func cohortMode(c *cobra.Command, f *intentFlags) func() (Action, error) {
 			return nil, usagef("--verify gates a mint, and --for mints nothing: the cohort's own verification is submitted after the commit unless --no-verify says otherwise")
 		}
 		return cohortAction{branch: branch, noVerify: f.noVerify,
-			test: f.opts.Test, trace: f.opts.Trace, on: f.on}, nil
+			test: f.opts.Test, trace: f.opts.Trace, on: f.on, exclude: exclude}, nil
 	}
 }

@@ -66,7 +66,11 @@ var intentSurface = []struct {
 		// proposal is being accepted, and takes no port. It is bump-
 		// revision's own because the edit is bump-revision's edit — what
 		// changes is who chose the ports and who wrote the reason.
-		own: []string{"for", "reason"},
+		//
+		// --exclude belongs to --for and to nothing else: it names
+		// members of the proposal being accepted, so there is no reading
+		// of it on the single-port road.
+		own: []string{"exclude", "for", "reason"},
 	},
 	{
 		name:    "refresh-checksums",

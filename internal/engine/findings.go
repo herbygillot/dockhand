@@ -35,19 +35,35 @@ import (
 // consumer is the cohort decision — and the answer is a finding a human
 // accepts or dismisses.
 
-// CohortCap is how many members one proposal puts forward, with the
-// rest named as a second cohort rather than dropped.
+// CohortCap is how many members one proposal puts forward. It is off
+// (maintainer's ruling, 2026-09-04): the proposal names every dependent
+// that needs a revision bump, and the size of it is the user's to weigh.
 //
-// It caps BUILDS and not edits, which is why it is this small. A
-// cohort's members are installed one after another in one guest, and
-// the guest stops at its first failure: measured against the real tree,
-// gdal's 82 dependents collapse into 39 portdirs, and a proposal of all
-// of them would be a day inside one environment where any member could
-// leave the rest unbuilt. Eight plus the headline is an evening, and
-// what is past the cap is named — a second cohort after this one lands
-// is a plan a person can act on, where a truncated list is a dependent
-// left broken with nothing said about it.
-const CohortCap = 8
+// It used to be eight, and it capped BUILDS rather than edits — a
+// cohort's members install one after another in one guest, and the
+// guest stops at its first failure, so gdal's 82 dependents collapsing
+// into 39 portdirs would be a day inside one environment in which any
+// member could leave the rest unbuilt. What replaced it is consent
+// rather than arithmetic: the proposal states how many there are,
+// `bump-revision --for` is the deliberate act of accepting them, and
+// `--exclude` is how a person takes some and not the rest. A number
+// this file chose could not have known which eight the maintainer
+// wanted, and named the other seventy-four as a second cohort nobody
+// scheduled.
+//
+// The exposure the cap was also limiting has not gone away and is worth
+// keeping in view: with the dependents best effort, members left
+// unbuilt behind a failure settle terminal and do not block the
+// promotion, so a large cohort that breaks early publishes many
+// revision bumps on little evidence. That is what the count at proposal
+// time and the per-member lines at promotion time are for.
+//
+// Most of that exposure is the runner's doing rather than the cap's,
+// and is fixable: it breaks its loop at the first failure, so a member
+// that does not depend on the one that broke is abandoned along with
+// the ones that do. See docs/todo.md — with the cap off, that is the
+// difference between abandoning seven builds and abandoning a hundred.
+const CohortCap = 0
 
 // stampFindings dates a finding set as it is appended.
 //

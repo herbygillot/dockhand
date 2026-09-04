@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
@@ -90,6 +91,17 @@ type CohortOpts struct {
 	// takes the provider's default. Already parsed by the caller, as
 	// everywhere else in the engine: flag parsing is the CLI's business.
 	Platform platform.Release
+	// Exclude names members to leave out of the change entirely — not
+	// bumped, not built. It is the counterpart to the cap that used to
+	// choose for the user: the proposal names every dependent, and this
+	// is how a person takes some of them.
+	//
+	// Not the same as a withheld member, which IS bumped and only left
+	// out of the guest. An excluded port keeps its old revision, which
+	// means the tree still owes it one — so the commit body lists it
+	// among the ports examined and not bumped, where a reviewer can
+	// disagree.
+	Exclude []string
 }
 
 // BuildCohort accepts a branch's revbump proposal: plan every member
@@ -129,6 +141,15 @@ func (e *Engine) BuildCohort(ctx context.Context, repo *git.Repo, target string,
 	proposal, ok := cohortProposal(n)
 	if !ok {
 		return noProposal(branch, n)
+	}
+	proposal, err = excludeMembers(proposal, o.Exclude)
+	if err != nil {
+		return err
+	}
+	for _, c := range proposal.Candidates {
+		if c.Reason == excludedReason {
+			fmt.Fprintf(e.Err, "%s: excluded, not bumped\n", c.Port)
+		}
 	}
 	head := n.Headline()
 	built, declined, err := e.planCohort(ctx, repo, tip, cohortPlanner(head, proposal), proposal)
@@ -685,3 +706,103 @@ func conflictNamedIn(reason string) string {
 	}
 	return rest
 }
+
+// excludedReason is the candidate reason an excluded member carries. It
+// is matched as well as written, so it is one constant.
+const excludedReason = "excluded by --exclude: not bumped by this change"
+
+// excludeMembers takes the named ports out of a proposal, returning the
+// finding as the commit should record it.
+//
+// A name that matches no proposed member is an error and not a shrug. A
+// person excluding "imagemagick" from a proposal holding "ImageMagick"
+// means to exclude it, and a verb that silently bumped it anyway would
+// have taken an instruction and done the opposite while reporting
+// success.
+func excludeMembers(f record.Finding, exclude []string) (record.Finding, error) {
+	if len(exclude) == 0 {
+		return f, nil
+	}
+	want := make(map[string]bool, len(exclude))
+	for _, name := range exclude {
+		if name = strings.TrimSpace(name); name != "" {
+			want[strings.ToLower(name)] = true
+		}
+	}
+	out := make([]record.Candidate, 0, len(f.Candidates))
+	hit := map[string]bool{}
+	kept := 0
+	for _, c := range f.Candidates {
+		if c.Proposed && want[strings.ToLower(c.Port)] {
+			hit[strings.ToLower(c.Port)] = true
+			c.Proposed, c.Solo, c.Reason = false, false, excludedReason
+			out = append(out, c)
+			continue
+		}
+		if c.Proposed {
+			kept++
+		}
+		out = append(out, c)
+	}
+	var unknown []string
+	for name := range want {
+		if !hit[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return f, &UnknownMemberError{Names: unknown, Members: proposedNames(f)}
+	}
+	if kept == 0 {
+		return f, &EmptyCohortError{}
+	}
+	f.Candidates = out
+	return f, nil
+}
+
+// proposedNames lists what the proposal put forward, for an error that
+// has to say what the user could have named instead.
+func proposedNames(f record.Finding) []string {
+	var out []string
+	for _, c := range f.Candidates {
+		if c.Proposed {
+			out = append(out, c.Port)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// UnknownMemberError reports --exclude naming a port the proposal does
+// not put forward.
+type UnknownMemberError struct {
+	Names   []string
+	Members []string
+}
+
+func (e *UnknownMemberError) Error() string {
+	return fmt.Sprintf("--exclude names %s, which this proposal does not put forward; its members are %s",
+		strings.Join(e.Names, ", "), strings.Join(e.Members, ", "))
+}
+
+// DockhandExit: the declined band. The request was understood and
+// nothing was written.
+func (e *UnknownMemberError) DockhandExit() int { return exitcode.PlanDeclined }
+
+// Code names the refusal for a machine.
+func (e *UnknownMemberError) Code() string { return "unknown-member" }
+
+// EmptyCohortError reports --exclude leaving the cohort with nothing to
+// bump.
+type EmptyCohortError struct{}
+
+func (e *EmptyCohortError) Error() string {
+	return "--exclude leaves no member to bump; `dockhand dismiss` is how a proposal is declined outright"
+}
+
+// DockhandExit: the declined band.
+func (e *EmptyCohortError) DockhandExit() int { return exitcode.PlanDeclined }
+
+// Code names the refusal for a machine.
+func (e *EmptyCohortError) Code() string { return "empty-cohort" }

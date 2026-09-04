@@ -744,3 +744,75 @@ func TestAnExtendedTipSaysWhereItsEvidenceCameFrom(t *testing.T) {
 	assert.Contains(t, body, "ABI changed: install name",
 		"and the measurement it inherited is stated in the same body")
 }
+
+// The proposal names every dependent now that the cap is off, and
+// --exclude is how a person takes some of them. An excluded member is
+// out of the change entirely: not bumped, not built, and listed among
+// the ports examined and not bumped so a reviewer can disagree.
+func TestExcludeTakesAMemberOutOfTheChange(t *testing.T) {
+	f := record.Finding{Candidates: []record.Candidate{
+		{Port: "ImageMagick", Portdir: "graphics/ImageMagick", Proposed: true, Reason: "depends_lib"},
+		{Port: "gegl", Portdir: "graphics/gegl", Proposed: true, Reason: "depends_lib"},
+		{Port: "gthumb", Portdir: "gnome/gthumb", Proposed: true, Reason: "depends_lib"},
+	}}
+
+	got, err := excludeMembers(f, []string{"gthumb"})
+	require.NoError(t, err)
+
+	var proposed, left []string
+	for _, c := range got.Candidates {
+		if c.Proposed {
+			proposed = append(proposed, c.Port)
+		} else {
+			left = append(left, c.Port+": "+c.Reason)
+		}
+	}
+	assert.Equal(t, []string{"ImageMagick", "gegl"}, proposed)
+	assert.Equal(t, []string{"gthumb: " + excludedReason}, left,
+		"named, because a port dropped in silence is one nobody can disagree about")
+}
+
+// Case matters to a reader and not to an intention. What must not
+// happen is the verb bumping a port the user asked it to leave alone.
+func TestExcludeMatchesRegardlessOfCase(t *testing.T) {
+	f := record.Finding{Candidates: []record.Candidate{
+		{Port: "ImageMagick", Proposed: true},
+		{Port: "gegl", Proposed: true},
+	}}
+	got, err := excludeMembers(f, []string{"imagemagick"})
+	require.NoError(t, err)
+	for _, c := range got.Candidates {
+		if c.Port == "ImageMagick" {
+			assert.False(t, c.Proposed, "the user named this port; spelling its case differently is not consent")
+		}
+	}
+}
+
+// A name that matches nothing is an error and not a shrug: the verb
+// would otherwise take an instruction, do the opposite of it, and
+// report success.
+func TestExcludeRefusesANameTheProposalDoesNotHold(t *testing.T) {
+	f := record.Finding{Candidates: []record.Candidate{{Port: "gegl", Proposed: true}}}
+	_, err := excludeMembers(f, []string{"gthumb"})
+	require.Error(t, err)
+
+	var unknown *UnknownMemberError
+	require.ErrorAs(t, err, &unknown)
+	assert.Equal(t, []string{"gthumb"}, unknown.Names)
+	assert.Contains(t, err.Error(), "gegl", "the refusal says what could have been named instead")
+	assert.Equal(t, exitcode.PlanDeclined, unknown.DockhandExit())
+}
+
+// Excluding everything is not how a proposal is turned down. Saying so
+// points at the verb that records the decision, rather than committing
+// an empty cohort that reads as work done.
+func TestExcludingEveryMemberIsRefused(t *testing.T) {
+	f := record.Finding{Candidates: []record.Candidate{
+		{Port: "gegl", Proposed: true}, {Port: "gthumb", Proposed: true}}}
+	_, err := excludeMembers(f, []string{"gegl", "gthumb"})
+	require.Error(t, err)
+
+	var empty *EmptyCohortError
+	require.ErrorAs(t, err, &empty)
+	assert.Contains(t, err.Error(), "dismiss")
+}
