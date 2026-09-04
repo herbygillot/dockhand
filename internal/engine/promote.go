@@ -303,6 +303,13 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	if gate.SayUnverified {
 		fmt.Fprintln(e.Err, "promoting unverified; the PR will say so")
 	}
+	// The dependents do not gate, so this is the only place a person is
+	// told before the pull request exists. Said here and not left to the
+	// body: the body is read by a reviewer afterwards, and the question
+	// "do I want to publish this" is the author's, now.
+	for _, line := range verdict.DependentsNotProven(n) {
+		fmt.Fprintln(e.Err, line)
+	}
 	// The publication as the audit will record it, filled in as it
 	// happens: a push with no pull request is a publication too, and it
 	// is the one whose number stays zero.

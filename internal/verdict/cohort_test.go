@@ -304,14 +304,30 @@ func TestPromotableSumsOverEveryMember(t *testing.T) {
 			record.RunKey("oniguruma", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
 			record.RunKey("jq", "Sequoia"):        {State: record.Failed, Platform: "Sequoia"},
 		}}
-	assert.False(t, n.Promotable(), "a member that failed is a member that failed")
+	assert.True(t, n.Promotable(),
+		"a dependent that failed is best effort: published over, and named to the author and the reviewer")
 
 	n.Runs[record.RunKey("jq", "Sequoia")] = record.Run{State: record.Blocked, Platform: "Sequoia"}
+	assert.True(t, n.Promotable(), "and a dependent nothing built reached an outcome too")
+
+	// What the gate still sums over every member is whether each has an
+	// answer at all. A member mid-build is the case the run arithmetic
+	// alone would misread, and it is why this asks after the subjects
+	// rather than the map.
+	n.Runs[record.RunKey("jq", "Sequoia")] = record.Run{State: record.Running, Platform: "Sequoia"}
+	assert.False(t, n.Promotable(), "jq is still building; its guest has not finished disagreeing")
+
+	delete(n.Runs, record.RunKey("jq", "Sequoia"))
 	assert.False(t, n.Promotable(),
-		"jq was never built, and a promotion that summed only the runs would publish it on oniguruma's pass")
+		"and with no run at all, a promotion that summed only the runs would publish jq on oniguruma's pass")
 
 	n.Runs[record.RunKey("jq", "Sequoia")] = record.Run{State: record.Passed, Platform: "Sequoia"}
 	assert.True(t, n.Promotable(), "both members proven on the platform they were asked about")
+
+	// The headline is not best effort. It is the change itself, and a
+	// dependent's pass does not answer for it.
+	n.Runs[record.RunKey("oniguruma", "Sequoia")] = record.Run{State: record.Failed, Platform: "Sequoia"}
+	assert.False(t, n.Promotable(), "the headline failed")
 }
 
 // A member the runner skipped is not blocked on a member built after

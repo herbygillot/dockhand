@@ -241,15 +241,76 @@ func (r Record) AnyState(s RunState) bool {
 // does a finding still proposed — belong with those steps' verbs, and
 // are deliberately not smuggled in with the schema.
 func (r Record) Promotable() bool {
-	if !r.AnyState(Passed) || r.AnyState(Failed) {
+	// Some run, somewhere, says the change works. This is the record's
+	// rule and not the headline's, and it survives the dependents being
+	// made best effort: a change that nothing ever built has no evidence
+	// to publish on, whatever the reason each individual member had.
+	if !r.AnyState(Passed) {
 		return false
 	}
+	if len(r.Subjects) == 0 {
+		// A note naming no subjects is answered by the runs alone, and
+		// there is no headline to hold to a higher standard than the
+		// rest: without a roster, "dependent" is not a thing this record
+		// can say about anything. So the older, stricter rule stands
+		// here — any failure blocks — rather than a best-effort reading
+		// resting on a distinction the record cannot make.
+		return !r.AnyState(Failed)
+	}
+	head := r.Headline().Port
+	if !r.proven(head) || r.failed(head) {
+		return false
+	}
+	// The dependents are best effort, and the gate says so by not asking
+	// them for a pass (maintainer's ruling, 2026-09-04). A revision bump
+	// is owed to a dependent because the library it links moved; whether
+	// that dependent builds today is frequently a fact about the
+	// dependent — gthumb was already broken on this platform, measured,
+	// and a gate that held the whole change for it would make a cohort
+	// hostage to the least maintained port in it. What the failure earns
+	// is a sentence in the pull request body, not a veto.
+	//
+	// Terminal is still required, and that is not the same relaxation.
+	// A dependent still building is not a best-effort outcome, it is no
+	// outcome: publishing over it would put a body in front of a
+	// reviewer that its own guest is still in the middle of disproving.
 	for _, s := range r.Subjects {
-		if !r.proven(s.Port) {
+		if s.Port == head {
+			continue
+		}
+		if !r.settledFor(s.Port) {
 			return false
 		}
 	}
 	return true
+}
+
+// failed reports whether any of one subject's runs failed.
+func (r Record) failed(port string) bool {
+	for key, run := range r.Runs {
+		if runPort(key) == port && run.State == Failed {
+			return true
+		}
+	}
+	return false
+}
+
+// settledFor reports whether a subject has at least one run and every
+// run it has is finished. A subject with no run at all is not settled:
+// nobody has asked about it, which is the hole Promotable exists to
+// find.
+func (r Record) settledFor(port string) bool {
+	seen := false
+	for key, run := range r.Runs {
+		if runPort(key) != port {
+			continue
+		}
+		seen = true
+		if !run.State.Terminal() {
+			return false
+		}
+	}
+	return seen
 }
 
 // proven reports whether one subject's own runs argue for publishing
@@ -262,6 +323,19 @@ func (r Record) Promotable() bool {
 // that port has told us it will never give. Anything else — queued,
 // running, blocked, errored, no run at all — is a member nobody has an
 // answer for yet.
+//
+// Withheld counts as a refusal, and it is the weaker of the two: an
+// unsupported member is the PORT saying not here, while a withheld one
+// is dockhand saying not with these siblings — the port might well have
+// passed, and nobody asked it. It is admitted anyway because the
+// alternative is worse. A cohort holding two ports that conflict cannot
+// build both in one guest, and most cohorts hold such a pair, so
+// treating the held-back member as unanswered would make the ordinary
+// cohort permanently unpublishable — a gate that refuses everything
+// protects nothing. What it costs is one subject's evidence, and the
+// pull request body states that in the member's own line rather than
+// leaving a reviewer to notice an absence (maintainer's ruling,
+// 2026-09-04).
 // The key is what says which subject a run is about; nothing on a run
 // repeats it.
 func (r Record) proven(port string) bool {
@@ -278,7 +352,7 @@ func (r Record) proven(port string) bool {
 			return true
 		}
 		seen = true
-		if run.State != Unsupported {
+		if run.State != Unsupported && run.State != Withheld {
 			allRefused = false
 		}
 	}

@@ -315,7 +315,15 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 		// is not this machine's afternoon, it is half the change, and the
 		// header vouching for the whole of it is exactly the sentence a
 		// reviewer would want contradicted.
-		if verified && r.State != record.Passed && r.State != record.Unsupported && proven[ref.Port] {
+		//
+		// Withheld is named here for the same reason and needs saying
+		// twice, because it now passes the proven test: a held-back
+		// member counts as answered so the cohort can publish at all, and
+		// the price of admitting it is that its line must appear. A
+		// reviewer is being asked to take a revision bump on a port
+		// nobody rebuilt, and an omission is not how you ask.
+		if verified && r.State != record.Passed && r.State != record.Unsupported &&
+			r.State != record.Withheld && proven[ref.Port] {
 			continue
 		}
 		if what == "" {

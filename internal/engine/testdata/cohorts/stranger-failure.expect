@@ -10,11 +10,14 @@
 # change's own members and find nothing.
 #
 # This is the shape that shows plurality has a consequence the single
-# case never had: the record now holds a pass and a block and no
-# failure at all, which is Record.Promotable's "at least one passed and
-# none failed". The promote gate is the schema's and this corpus only
-# states what the settle wrote, but the combination is new and worth
-# seeing here.
+# case never had: the record holds a pass and a block and no failure at
+# all. Under the gate as it stood, that was promotable by the run
+# arithmetic and refused by the per-subject rule, because jq had nothing
+# behind it. Since 2026-09-04 the dependents are best effort and jq's
+# block no longer refuses the change — it is published over, named to
+# the author on stderr and to the reviewer in the body. The corpus
+# states what the settle wrote either way; what changed is what the gate
+# then does with it.
 # SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
 # not captured: see README.md.
 members: oniguruma jq

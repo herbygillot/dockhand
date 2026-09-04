@@ -109,3 +109,32 @@ func releases(r record.Record) []string {
 // happens to have no runs yet must not print its first member's lines
 // as though the change were about that member alone.
 func Names(r record.Record) bool { return len(r.Subjects) > 1 }
+
+// DependentsNotProven names the members a promotion is publishing
+// without a pass, one line each, for the author to read before the pull
+// request exists.
+//
+// The dependents are best effort and do not gate, which makes this the
+// only warning there is. It states what happened to each rather than a
+// count: "2 dependents did not pass" tells an author to go and look,
+// and the whole cost of looking is the reason they would not.
+//
+// The headline is never listed. It gates, so a promotion that got this
+// far has one, and repeating it here would bury the members that are
+// the point of the sentence.
+func DependentsNotProven(r record.Record) []string {
+	head := r.Headline().Port
+	var out []string
+	for _, ref := range Runs(r) {
+		if ref.Port == head || ref.Run.State == record.Passed {
+			continue
+		}
+		line := "promoting with " + ref.Port + " not proven on " + ref.Platform +
+			": " + string(ref.Run.State)
+		if ref.Run.Detail != "" {
+			line += " — " + ref.Run.Detail
+		}
+		out = append(out, line)
+	}
+	return out
+}

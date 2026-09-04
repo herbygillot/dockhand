@@ -97,20 +97,36 @@ func TestCohortCorpusSettles(t *testing.T) {
 			// blocked by a stranger or never announced has no evidence
 			// behind it, and a gate that summed only the runs would
 			// publish it on a sibling's pass.
-			// One platform in this corpus, so a member is proven by its
-			// own pass and excused by its own refusal, and anything else
-			// leaves it unanswered.
-			anyPassed, allAnswered := false, true
+			// The gate, restated here from the states alone so the corpus
+			// checks the rule rather than repeating the implementation.
+			// One platform, so a member's own run is its whole story.
+			//
+			// The dependents are best effort (2026-09-04): they are asked
+			// for an outcome and not for a good one. The headline is not,
+			// and some run somewhere still has to have passed, or the
+			// change has no evidence behind it at all.
+			terminal := func(state string) bool {
+				switch state {
+				case "queued", "submitting", "running", "":
+					return false
+				}
+				return true
+			}
+			anyPassed := false
 			for _, m := range exp.Members {
-				switch exp.Verdict[m].State {
-				case "passed":
+				if exp.Verdict[m].State == "passed" {
 					anyPassed = true
-				case "unsupported":
-				default:
-					allAnswered = false
 				}
 			}
-			assert.Equal(t, anyPassed && allAnswered, again.Promotable(), "promotable")
+			head := exp.Verdict[exp.Members[0]].State
+			headOK := head == "passed" || head == "unsupported" || head == "withheld"
+			depsSettled := true
+			for _, m := range exp.Members[1:] {
+				if !terminal(exp.Verdict[m].State) {
+					depsSettled = false
+				}
+			}
+			assert.Equal(t, anyPassed && headOK && depsSettled, again.Promotable(), "promotable")
 		})
 	}
 }

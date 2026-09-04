@@ -863,15 +863,15 @@ func TestPRBodyNamesEachMemberOfACohortOnce(t *testing.T) {
 
 // A cohort member that was never built is named on a verified body too.
 //
-// The gate refuses this shape now — Promotable answers for every
-// subject, and a member with no pass anywhere has nothing behind it —
-// so what this pins is the second line of the same defence. A body is
-// rendered from whatever record it is handed, including one whose
-// subjects nothing named (a note the gate answers from the runs alone),
-// and the suppression that keeps this promotion's own cancellations out
-// of a verified body must not take the blamed sentence with it: that
-// would publish "verified with dockhand" over a port nothing built and
-// delete the line saying so.
+// The gate lets this shape through, which is why the line matters. The
+// dependents are best effort as of 2026-09-04: a member nothing built
+// no longer blocks the promotion, so this body is not a second line of
+// defence behind a refusal — it is the only place a reviewer learns
+// that one of the ports being bumped was never rebuilt. The
+// suppression that keeps this promotion's own cancellations out of a
+// verified body must not take the blamed sentence with it, or the
+// publication says "verified with dockhand" over a port nothing built
+// and deletes the sentence that would have said otherwise.
 func TestPRBodyNamesACohortMemberThatNeverBuilt(t *testing.T) {
 	n := record.Record{
 		Sha:      "0123456789abcdef0123",
@@ -883,8 +883,8 @@ func TestPRBodyNamesACohortMemberThatNeverBuilt(t *testing.T) {
 				Blamed: "libwidget"},
 		},
 	}
-	require.False(t, n.Promotable(),
-		"a member with no pass anywhere is what the gate now refuses; this body is rendered past it")
+	require.True(t, n.Promotable(),
+		"a blocked dependent is best effort and publishes; the body is what has to say so")
 	body := PRBody(n, true, vouched())
 	assert.Contains(t, body,
 		"  — libwidget on Sequoia: built in a pristine VM.\n"+
