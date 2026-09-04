@@ -44,6 +44,29 @@ Everything below runs in a `macports-ports` checkout with your fork as a
 remote. Use `/tmp/dockhand` explicitly so an older installed binary cannot be
 the thing under test.
 
+**Two things changed under this document after it was written, and neither is
+a finding when you see it.**
+
+*Status is attention-ordered now.* It leads with failures, then work waiting on
+a slot, then what passed and wants a person, then held work, then the quiet end
+states, then everything else. Parts B and C leave more than one branch standing
+at once, so a failing branch sorting above a passing one is the ordering doing
+its job. This document only ever asserts what a branch's own line **says**;
+where a line appears among the others is not part of any check here.
+
+*The notes are schema 3, and your checkout still holds schema-2 ones.* Until
+`refs/notes/dockhand/verify` is cleared, this binary refuses every note already
+on disk and every step below reads as broken for the wrong reason. Clear it
+first — the branches themselves are untouched by this, and re-earning their
+evidence is a verification, not a re-bump:
+
+```
+git -C <macports-ports checkout> update-ref -d refs/notes/dockhand/verify
+```
+
+If you would rather keep them readable by the old binary, back the ref up under
+another name first; nothing in this document needs them.
+
 ---
 
 ## A. The control run — one port must not have moved
@@ -534,6 +557,12 @@ portindex                              # ~1-2 minutes if they do not
 ```
 
 - **Worked:** a branch, and a run building. Exit 0 or 60.
+- **Also worked, and newer than this document's first draft:** `held at mint:`
+  followed by a reason naming the target as a prerelease, and exit 23. A change
+  minted against a prerelease is born held now, so if the version you picked is
+  an alpha, beta or release candidate, that is the hold doing its job and not a
+  failure. Either pick a stable target, or `/tmp/dockhand unhold <branch>` and
+  carry on — the measurement is the same either way.
 - **A finding:** a decline. Pick another version — E needs a bump that reaches
   a build, and which version that is, is a fact about the port.
 - **A finding:** `portindex` refusing, or `PortIndex` older than the checkout.
