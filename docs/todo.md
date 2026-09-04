@@ -367,3 +367,112 @@ the other two both cost something structural.
 
 **To discuss before implementing.** The maintainer has asked to take
 this one up as a conversation rather than a ticket.
+
+## A cohort stops at the first failure, including for members that do not depend on it
+
+**Observed live (2026-09-03), raised by the maintainer (2026-09-04).**
+The cohort runner breaks out of its loop the moment a member fails:
+
+```sh
+else echo failed > "$d/.state.$i" && mv -f "$d/.state.$i" "$d/state.$i"
+     ok=no
+     break
+```
+
+Everything behind that member is never attempted, and settle records it
+`blocked` on the sibling. In part C of the live check, `mise` — which
+has no relationship to `oniguruma6` at all, and was in the cohort only
+because of the stale-primary bug — came back "oniguruma6 fails to build;
+this member is untested".
+
+**The information to do better is already in hand.** `Dependent.Requires`
+carries each member's own dependency targets, and `dependencyOrder`
+topologically sorts the members with it. What is missing is that the
+guest is never told: the runner is a shell loop over indices with no
+notion of which member needs which.
+
+**Shape.** Stage a `requires.<i>` beside each member's `argv.<i>`,
+holding the indices that member depends on. The runner attempts every
+member, skipping one whose prerequisite has `state.<j>` of `failed`, and
+records why. A member skipped for a failed prerequisite is `blocked` and
+blamed on it, exactly as now; a member with no failed prerequisite is
+built, where today it is abandoned.
+
+**Why it matters more since the cap came off.** With the cap at eight, a
+first-member failure wasted at most seven builds. With the cap off, a
+cohort can hold every dependent a library has — `libffi` has 132 — and
+one early failure abandons all of them. Combined with the dependents
+being best effort, those abandoned members settle terminal and do not
+block the promotion, so the change publishes with many revision bumps
+resting on builds nobody ran. That is honest, because each is named, but
+it is a great deal of honesty about a great deal of nothing.
+
+**Cost, stated plainly.** This is not a small change. It moves the
+frozen runner bytes (`guest_test.go` pins them), the staging that writes
+the argv files, and the blame logic in `verdict/cohort.go`, whose
+`Stopper` and `Culprit` are built on there being exactly one member that
+stopped the run. The cohort corpus's `.expect` files encode the current
+shape and would move with it.
+
+**A question to settle first.** Should a member whose prerequisite
+failed be `blocked` — as now — or is it closer to `withheld`, given the
+runner made a deliberate choice not to attempt it? Blocked reads right:
+something the change is responsible for did fail, and this member is
+untested because of it. Withheld is for a member nothing was wrong with.
+
+## A failed member says nothing for itself in the body's member list
+
+**Found in part F9 of the live check (2026-09-04), on the real body of
+macports/macports-ports#34500.** Each member of a cohort is supposed to
+carry its own link proof, or `links nothing that moved` where the sweep
+found none. A member that failed to build carries neither:
+
+```
+— gegl-devel (graphics/gegl-devel): depends_lib; conflicts with gegl,
+  which this cohort builds — bumped here, and needing a verification of
+  its own
+— gthumb (gnome/gthumb): depends_lib; nomaintainer
+```
+
+The withheld member explains itself where it is listed. The failed one
+does not, and a reviewer reading "Revision bumped in this change" sees a
+port with no evidence beside it and no reason for the absence. The fact
+is in the body — "gthumb on Tahoe: the build failed, and this was
+promoted anyway" — but it is in the verification block above, and
+joining the two is left to the reader.
+
+**Why it matters more now than it would have.** Since the dependents
+became best effort, a failed member no longer blocks the promotion, so
+this list will routinely carry ports that did not build. The line that
+says why should be where the bump is claimed.
+
+**Shape.** The member line already composes a reason from the candidate
+and appends the link proof. Where a member has no proof because its run
+did not reach one, it should say which: "the build failed, so nothing
+was measured", "never built", "links nothing that moved" — the last
+being a real answer and the others being absences with names.
+
+## The body cannot be read without publishing it
+
+**Anticipated by the live check and confirmed at F9 (2026-09-04).** No
+verb renders the pull request body to a terminal. `--no-pr` pushes the
+branch and prints nothing; the only way to see what a reviewer will read
+is to open a pull request, which for this check meant opening one
+against macports/macports-ports and closing it two minutes later.
+
+Reading it here took a throwaway test in `internal/render` that opened
+the repository, read the note off the branch tip and called `PRBody` —
+the same call `promote` makes. That it worked is the point: the body is
+a pure function of the record and could be printed by a verb.
+
+**Shape.** `promote --body` (or `--dry-run`) writing the body to stdout
+and doing nothing else. It needs the same inputs promote gathers — the
+tip, the note, the fork owner, the duplicate-PR check — and the
+duplicate check is a network call, so either the flag skips it and says
+so in the output, or it runs and the flag is not quite free.
+
+**Why it is worth a verb.** The one artifact a reviewer sees is the one
+a maintainer cannot preview, and every change to how bodies are worded
+is currently checked against goldens rather than against a real record.
+The live check's own F9 says to record this as a gap rather than work
+around it silently; the workaround above is the record of it.
