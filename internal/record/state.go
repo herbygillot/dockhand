@@ -56,7 +56,8 @@ const (
 	// and nothing about the subject is the reason. A cohort member that
 	// declares a conflict with a member already in the guest is the case
 	// it was added for: MacPorts will not activate both, so one is
-	// bumped by the change and built by a verification of its own.
+	// bumped by the change and simply not built here. It is owed nothing
+	// further; the person is told, and may choose to force it.
 	//
 	// It is its own word because every neighbouring one would be a
 	// false statement about the port. Blocked says something failed

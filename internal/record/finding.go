@@ -40,9 +40,10 @@ type Candidate struct {
 	Reason string `json:"reason,omitempty"`
 	// Solo says this member is bumped by the change but left out of the
 	// cohort's own build, because a member already in it declares a
-	// conflict and MacPorts will not activate both. It owes a
-	// verification of its own; what it does not owe is a missing
-	// revision, which is why it stays proposed.
+	// conflict and MacPorts will not activate both. What it must not
+	// lose is its revision, which is why it stays proposed; what it is
+	// not owed is a build of its own — the person is told it was
+	// withheld, and that is the answer.
 	Solo bool `json:"solo,omitempty"`
 }
 

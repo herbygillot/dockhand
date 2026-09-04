@@ -282,8 +282,7 @@ func DependentCohort(abi ABI, quotes []Instruction, deps []Dependent, unread []U
 			// It stays proposed because its revision is owed either way:
 			// it links a library that moved.
 			cand.Solo = true
-			cand.Reason += "; conflicts with " + with + ", which this cohort builds — " +
-				"bumped here, and needing a verification of its own"
+			cand.Reason += "; conflicts with " + with + ", which this cohort builds — bumped here, and not built"
 		}
 		if limit > 0 && i >= limit {
 			// Past the cap. It is recorded as examined and not proposed,

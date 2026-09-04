@@ -495,8 +495,12 @@ func solo(f record.Finding) map[string]bool {
 // A member that conflicts with one already in the roster is bumped by
 // the commit and left out here: MacPorts will not activate both, so
 // staging the pair spends a guest proving the second cannot install and
-// stops every member behind it. It owes a verification of its own, and
-// the commit body says so by name.
+// stops every member behind it. It is owed nothing further (maintainer's
+// ruling, 2026-09-04): the person is told it was withheld, on stderr
+// and in the body, and that is the whole of what the tool does about
+// it. Building it anyway — deactivating the sibling first — is an
+// option a person may be given, recorded in docs/todo.md, not a debt
+// the tool carries.
 func cohortRoster(head record.Subject, built []planned, apart map[string]bool) []Member {
 	out := []Member{{Port: head.Port, Portdir: head.Portdir}}
 	for _, b := range built {
@@ -687,9 +691,9 @@ func abiLimits(n record.Record) string {
 func withheldDetail(c record.Candidate, head string) string {
 	with := conflictNamedIn(c.Reason)
 	if with == "" {
-		return "it cannot share a guest with another member of this cohort; it needs a verification of its own"
+		return "it cannot share a guest with another member of this cohort"
 	}
-	return "it conflicts with " + with + ", which this cohort builds; bump verified by a run of its own"
+	return "it conflicts with " + with + ", which this cohort builds"
 }
 
 // conflictNamedIn lifts the sibling's name out of the candidate reason

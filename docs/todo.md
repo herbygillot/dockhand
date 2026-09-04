@@ -510,3 +510,25 @@ does not carry.
 Low severity — the verdict and the gate are unaffected — but it is a
 false statement in a body a reviewer reads, and it will become the
 ordinary case once the runner no longer stops at the first failure.
+
+## Let a person force a withheld member to build
+
+**The ask (maintainer, 2026-09-04), tentative.** A withheld member is
+owed nothing — it is bumped, the person is told it was not built, and
+that is the whole of the tool's obligation. But a person who wants it
+built anyway should be able to say so: force the withheld member into
+the guest, deactivating whatever it conflicts with first.
+
+**Shape.** A flag on `bump-revision --for` — `--force-withheld`, or
+`--build=gegl-devel` naming the member — that seats the member instead
+of holding it back. The runner then needs one new step before that
+member's install: `port -f deactivate <the conflicting sibling>`, so
+MacPorts will activate it. The sibling's own verdict stands as already
+measured; what its deactivation costs is that any member built *after*
+it, which depends on it, now binds the archive's copy rather than the
+cohort's — so a forced member should be built last, after every member
+that might need the sibling active.
+
+**What it is not.** Not the default, and not a scheduled follow-up.
+The ruling is that the tool informs and stops; this is the person
+overriding, and the flag should read that way.
