@@ -476,3 +476,37 @@ a maintainer cannot preview, and every change to how bodies are worded
 is currently checked against goldens rather than against a real record.
 The live check's own F9 says to record this as a gap rather than work
 around it silently; the workaround above is the record of it.
+
+## A stranger that stops the run is named as every later member's dependency
+
+**Found in the confirmation cohort (2026-09-04).** `py310-rawpy` was
+blocked because its dependency `py310-scikit-image` failed to build —
+a stranger, outside the cohort, correctly named. The runner stopped
+there. `py311-rawpy`, next in build order and never reached, settled
+as:
+
+```
+py311-rawpy: blocked (Tahoe) — dependency py310-scikit-image fails to build; the change itself is untested
+```
+
+`py311-rawpy` depends on `py311-scikit-image`, not `py310-`. The
+sentence asserts a dependency edge that does not exist.
+
+**Why.** When the member the runner stopped inside is itself *blocked*
+rather than failed, there is no failed sibling to name as culprit, so
+every member behind it falls through to the stranger sentence — with
+the stranger that stopped the run, not one of their own. The verdict
+(blocked, untested) is right; the attribution is borrowed from a
+sibling.
+
+**Shape.** A member behind a stopper that was blocked by a stranger is
+blocked by the *sibling*, not the stranger: "py310-rawpy could not be
+built, so this member was not reached; it is untested." That is true
+of it and names something a reader can check. Alternatively, keep the
+stranger sentence but only where the stranger is in this member's own
+`Requires`. Either way the sentence must not claim an edge the index
+does not carry.
+
+Low severity — the verdict and the gate are unaffected — but it is a
+false statement in a body a reviewer reads, and it will become the
+ordinary case once the runner no longer stops at the first failure.
