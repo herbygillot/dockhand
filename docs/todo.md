@@ -414,11 +414,17 @@ the argv files, and the blame logic in `verdict/cohort.go`, whose
 stopped the run. The cohort corpus's `.expect` files encode the current
 shape and would move with it.
 
-**A question to settle first.** Should a member whose prerequisite
-failed be `blocked` — as now — or is it closer to `withheld`, given the
-runner made a deliberate choice not to attempt it? Blocked reads right:
-something the change is responsible for did fail, and this member is
-untested because of it. Withheld is for a member nothing was wrong with.
+**Ruled (maintainer, 2026-09-04), so this can now be designed.** A
+member whose prerequisite failed is `blocked`: something the change is
+responsible for did fail, and this member is untested because of it —
+and the sibling sentence, "X fails to build; this member is untested",
+becomes true rather than borrowed, because X really is its
+prerequisite. `withheld` stays narrow, for a member nothing was wrong
+with. And the judge may trust the guest's per-member `state.<i>` files,
+which is the carrier that tells "skipped for a failed prerequisite" from
+"never reached": a Portfile forging its own cohort's state would be a
+maintainer deceiving their own tool about their own bump, which is not
+worth engineering against. Recorded as D25.
 
 ## A failed member says nothing for itself in the body's member list
 

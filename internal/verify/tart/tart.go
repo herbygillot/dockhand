@@ -612,10 +612,14 @@ nohup /bin/sh -c '
 // as running forever. Two readers are waiting on these files: a
 // reconciler that could tell "died after member 1" from "still
 // building", and the judge, for which a state file is the one piece of
-// corroboration a build under test cannot write into the log. Whether
-// the second is worth having — the guest log is written by the change
-// under test, and a maintainer's own bump is not hostile — is a ruling
-// this step deliberately leaves to the maintainer.
+// corroboration a build under test cannot write into the log. The judge
+// may trust them (maintainer's ruling, 2026-09-04): the guest log is
+// written by the change under test, but a Portfile that forged its own
+// cohort's state files would be a maintainer deceiving their own tool
+// about their own bump, and that is not a threat worth engineering
+// against. The state files are the carrier a runner that continues past
+// a failure will need, to tell a member skipped for a failed prerequisite
+// from one it never reached.
 //
 // The break is kept, and it is what makes a later member's silence
 // meaningful. A cohort stops at its first failure: the members after it

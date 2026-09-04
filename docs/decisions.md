@@ -1106,3 +1106,47 @@ workers into the ledger is reading the world) and a `cycle` verb taking
 retire, the pump and the publish slot, with one flag per thing it can
 keep rather than a universal `--keep`. Discussed and recorded in
 `docs/todo.md`; to be taken up as a conversation.
+
+## D25 — A member behind a failed prerequisite is blocked, and the judge trusts the guest's state files
+
+**Decision.** Two rulings made ahead of the runner change they
+unblock. The cohort runner today breaks its loop at the first failing
+member, and every member behind it is blamed on that failure whether
+or not it depends on it — `mise`, unrelated to `oniguruma6`, came back
+"oniguruma6 fails to build; this member is untested". The fix is for
+the runner to continue, skipping only members whose prerequisites
+failed; `Dependent.Requires` already carries the graph. That fix
+cannot be designed without these two answers.
+
+**A member skipped because its prerequisite failed is `blocked`.** The
+state already means "something failed before this subject was reached
+— a dependency, or an earlier member of the cohort; untested, not
+disproven", and after the fix that is exactly and only what it says:
+the sibling sentence names a member this one really depends on.
+`withheld` is not this. It means the build held the subject back and
+nothing about the subject was the reason, and a member whose own
+dependency broke has a reason about itself. Keeping the two apart is
+what lets a reader tell "the tool chose not to" from "it could not
+have".
+
+**The judge may trust the per-member `state.<i>` files.** The guest
+writes two kinds of evidence: the log, written by MacPorts while
+building the change under test, and one state file per member, written
+by dockhand's own runner script. The judge has read the log and held
+the state files as corroboration it had not decided to rely on, because
+in principle a Portfile could write anything into the guest — including
+a forged state file. It relies on them now. The threat is a maintainer's
+own Portfile lying to the maintainer's own tool about the maintainer's
+own bump, which is self-deception and not an attack, and dockhand does
+not engineer against it. What the state files buy is the one
+distinction a continuing runner needs and the log cannot give: a member
+skipped for a failed prerequisite writes no log marker, and neither
+does a member the runner never reached because it died; the state file
+is what says which.
+
+**What this costs when the runner change lands.** `verdict/cohort.go`'s
+blame is built around one `Stopper` and one `Culprit` — exactly one
+member that stopped the run. After the fix there may be several
+failures and several skips, each blamed on its own prerequisite, and
+the seven cohort corpus fixtures, all two-member pairs with a real
+edge, will need siblings with independent members.
