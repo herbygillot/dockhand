@@ -79,32 +79,55 @@ another name first; nothing in this document needs them.
 
 ---
 
+## Two things that are true of every part below
+
+**`discard` cannot delete the branch you are standing on.** Each part
+creates its branch with `git switch -c`, which leaves you on it, so every
+cleanup step below switches away first. Without that, `discard` fails with
+`cannot delete branch … used by worktree`.
+
+**`promoted; no PR found` is a known false line, not a finding.** A branch
+made with `git switch -c <name> origin/master` has `branch.<name>.remote`
+set to `origin`, and `Engine.retire` reads that key as proof the branch was
+pushed. It was not. `status` will say `promoted; no PR found` for every
+branch in this document, and `discard` will offer you a
+`git push origin --delete` line for a fork copy that does not exist.
+Recorded in `docs/todo.md`; ignore both wherever they appear below.
+
+---
+
 ## A. The control run — one port must not have moved
 
 **A1. Make a one-portdir branch by hand.** Any small, quick port you can
-build; `textproc/oniguruma` is used below because part B needs it anyway.
+build; `devel/oniguruma6` is used below because part B needs it anyway.
+
+**The branch has to be named inside the `dockhand/` namespace.** `verify`,
+`shell` and `discard` take any branch name — `Engine.Resolve` accepts one
+outright — but `status` enumerates `refs/heads/dockhand/*` and nothing else,
+so a branch named anything else is verifiable and invisible. A4 below reads
+the result off `status`, and would have nothing to read.
 
 ```
 cd <macports-ports checkout>
-git switch -c live/solo-control origin/master
-printf '\n' >> textproc/oniguruma/Portfile      # any no-op edit; the diff only has to touch the portdir
-git commit -am 'oniguruma: no-op, live check'
+git switch -c dockhand/live-solo-control origin/master
+printf '\n' >> devel/oniguruma6/Portfile      # any no-op edit; the diff only has to touch the portdir
+git commit -am 'oniguruma6: no-op, live check'
 ```
 
 **A2. Verify it.**
 
 ```
-/tmp/dockhand verify live/solo-control
+/tmp/dockhand verify dockhand/live-solo-control
 ```
 
 - **Worked:** one line, naming one port and one release — `verify: submitted
-  oniguruma on <Release> (job dockhand-worker-…)`.
+  oniguruma6 on <Release> (job dockhand-worker-…)`.
 - **A finding:** the line naming two ports, or two jobs starting.
 
 **A3. While it is still building, look at what the guest was told to do.**
 
 ```
-/tmp/dockhand shell live/solo-control
+/tmp/dockhand shell dockhand/live-solo-control
 # inside the guest:
 ls -1 /tmp/dockhand-verify
 cat /tmp/dockhand-verify/argv
@@ -113,8 +136,8 @@ exit
 ```
 
 - **Worked:** `ls` lists **exactly** `argv`, `argv.lint`, `log`, `state` —
-  nothing else. `argv` holds four lines, `-d`, `-N`, `install`, `oniguruma`.
-  `argv.lint` holds two, `lint` and `oniguruma`.
+  nothing else. `argv` holds four lines, `-d`, `-N`, `install`, `oniguruma6`.
+  `argv.lint` holds two, `lint` and `oniguruma6`.
 - **A finding, and the important one:** any `subject.*`, any `argv.0*`, any
   `state.0`, or an `argv` whose lines differ in content or order. A single-port
   verification must produce the file set it has always produced. This is the
@@ -131,13 +154,14 @@ tart list
   of it — a change with one subject is named by its branch and nothing else —
   and `tart list` shows no `dockhand-worker-*`: a green environment is a
   wasted slot and goes back.
-- **A finding:** a line reading `oniguruma: passed (<Release>)`. That is the
+- **A finding:** a line reading `oniguruma6: passed (<Release>)`. That is the
   cohort rendering applied to one subject, and it moves every status golden.
 
 **A5. Clean up before part B.**
 
 ```
-/tmp/dockhand discard live/solo-control
+git switch master
+/tmp/dockhand discard dockhand/live-solo-control
 ```
 
 ---
@@ -149,12 +173,12 @@ would need a revision bump when it moves — the shape the cohort exists for.
 
 ```
 cd <macports-ports checkout>
-git switch -c live/cohort-pass origin/master
+git switch -c dockhand/live-cohort-pass origin/master
 # the library: any no-op edit is enough to make the portdir part of the change
-printf '\n' >> textproc/oniguruma/Portfile
+printf '\n' >> devel/oniguruma6/Portfile
 # the dependent: bump its revision by hand
 $EDITOR sysutils/jq/Portfile                     # revision 0 -> revision 1, or add "revision 1"
-git commit -am 'oniguruma, jq: live cohort check'
+git commit -am 'oniguruma6, jq: live cohort check'
 git show --stat HEAD
 ```
 
@@ -166,13 +190,14 @@ git show --stat HEAD
 **B2. Verify the branch.**
 
 ```
-/tmp/dockhand verify live/cohort-pass
+/tmp/dockhand verify dockhand/live-cohort-pass
 ```
 
 - **Worked:** one line naming **both** ports and **one** job:
-  `verify: submitted jq, oniguruma on <Release> (job dockhand-worker-…)`. The
-  order is alphabetical by portdir (`sysutils/jq` before
-  `textproc/oniguruma`), which is deterministic and deliberately arbitrary.
+  `verify: submitted oniguruma6, jq on <Release> (job dockhand-worker-…)`. The
+  order is alphabetical by portdir (`devel/oniguruma6` before `sysutils/jq`),
+  which is deterministic and deliberately arbitrary — that it also happens to
+  be dependency order here is a coincidence, not a guarantee.
 - **A finding:** two jobs, two lines, or the old refusal — `one at a time for
   now`, or any message about the branch changing more than one portdir. That
   refusal was retired in S11; seeing it means the binary under test is not the
@@ -185,7 +210,7 @@ git show --stat HEAD
 ```
 
 - **Worked:** the branch shows **two** lines, one per member, each naming its
-  port: `jq: running (<Release>)` and `oniguruma: running (<Release>)`. One
+  port: `oniguruma6: running (<Release>)` and `jq: running (<Release>)`. One
   job, one environment, two runs.
 - **A finding:** one line for two members; two environments in `tart list` for
   one branch; a run keyed by release alone.
@@ -194,7 +219,7 @@ git show --stat HEAD
 nothing offline can do.
 
 ```
-/tmp/dockhand shell live/cohort-pass
+/tmp/dockhand shell dockhand/live-cohort-pass
 # inside the guest:
 ls -1 /tmp/dockhand-verify
 cat /tmp/dockhand-verify/subject.0
@@ -206,9 +231,9 @@ exit
 
 - **Worked:** `ls` lists `subject.0`, `argv.0`, `argv.0.lint`, `subject.1`,
   `argv.1`, `argv.1.lint`, `log`, `state`, and `state.<i>` for each member that
-  has finished. `subject.0` holds exactly `===> dockhand subject: jq`.
-  `argv.0` holds `-d`, `-N`, `install`, `jq`; `argv.1` the same for
-  `oniguruma`. No bare `argv` and no bare `argv.lint`.
+  has finished. `subject.0` holds exactly `===> dockhand subject: oniguruma6`.
+  `argv.0` holds `-d`, `-N`, `install`, `oniguruma6`; `argv.1` the same for
+  `jq`. No bare `argv` and no bare `argv.lint`.
 - **A finding:** a bare `argv` beside the numbered ones (two instruction sets,
   one guest); a marker file holding anything but one line; a `-s` in an argv
   nobody asked to build from source.
@@ -217,12 +242,12 @@ exit
 
 ```
 /tmp/dockhand status
-/tmp/dockhand log live/cohort-pass | grep -n 'dockhand subject:'
+/tmp/dockhand log dockhand/live-cohort-pass | grep -n 'dockhand subject:'
 tart list
 ```
 
 - **Worked:** both members read `passed (<Release>)`; the marker lines appear
-  once each, in build order, `jq` before `oniguruma`; `tart list` shows no
+  once each, in build order, `oniguruma6` before `jq`; `tart list` shows no
   `dockhand-worker-*` — one guest, released once, after **both** members were
   terminal.
 - **A finding:** the guest released while a member was still running; a member
@@ -244,7 +269,8 @@ tart list
 **B7. Clean up.**
 
 ```
-/tmp/dockhand discard live/cohort-pass
+git switch master
+/tmp/dockhand discard dockhand/live-cohort-pass
 ```
 
 ---
@@ -260,44 +286,59 @@ in build order, so the second is never reached.
 
 ```
 cd <macports-ports checkout>
-git switch -c live/cohort-fail origin/master
-$EDITOR sysutils/jq/Portfile      # add a line: build.cmd false
-printf '\n' >> textproc/oniguruma/Portfile
-git commit -am 'jq, oniguruma: live cohort failure check'
+git switch -c dockhand/live-cohort-fail origin/master
+$EDITOR devel/oniguruma6/Portfile   # add a line: build.cmd false
+printf '\n' >> sysutils/jq/Portfile
+git commit -am 'oniguruma6, jq: live cohort failure check'
 ```
 
 `build.cmd false` fails in the build phase and produces MacPorts' own
-`Error: Failed to build jq: command execution failed`, which is the exact
-shape the judge reads.
+`Error: Failed to build oniguruma6: command execution failed`, which is the
+exact shape the judge reads.
+
+`oniguruma6` is sabotaged rather than `jq` because `devel` sorts before
+`sysutils`: the broken member has to be the one built first, or the second is
+reached and nothing is blocked.
 
 **C2. Verify, and wait for it.**
 
 ```
-/tmp/dockhand verify live/cohort-fail
+/tmp/dockhand verify dockhand/live-cohort-fail
 /tmp/dockhand status
 ```
 
 - **Worked:** the note settles to
-  - `jq: failed (<Release>) — environment kept: dockhand-worker-… — Failed to
-    build jq: command execution failed`
-  - `oniguruma: blocked (<Release>) — jq fails to build; this member is
+  - `oniguruma6: failed (<Release>) — environment kept: dockhand-worker-… —
+    Failed to build oniguruma6: command execution failed`
+  - `jq: blocked (<Release>) — oniguruma6 fails to build; this member is
     untested`
 
   The failing member owns the failure; the member the runner never reached is
   blocked, blamed on a sibling, and says so in those words — "untested", not
   "failed". Two verdicts, one sentence about each.
-- **A finding, and the one worth the most:** `oniguruma` reading `passed`
-  (a member that was never built recorded as evidence); `oniguruma` reading
-  `failed` (a member disproven by a sibling's breakage); either member blocked
-  on a *dependency* sentence — `dependency jq fails to build; the change
-  itself is untested` — which means the roster match failed and this change's
-  own breakage was read as a stranger's.
+- **A finding, and the one worth the most:** `jq` reading `passed` (a member
+  that was never built recorded as evidence); `jq` reading `failed` (a member
+  disproven by a sibling's breakage); either member blocked on a *dependency*
+  sentence — `dependency oniguruma6 fails to build; the change itself is
+  untested` — which means the roster match failed and this change's own
+  breakage was read as a stranger's.
+
+  Note that `jq` really does depend on `oniguruma6`, which does **not** soften
+  this check. `BlockedByMember` and `BlockedDetail` are chosen by roster
+  membership, not by the dependency graph (`internal/verdict/log.go`): a
+  blocker that is a member of this cohort must get the sibling sentence
+  whatever the ports tree says about it. The give-away half is the ending —
+  "this member is untested" against "the change itself is untested".
+
+  A related signal worth reading: if `jq` fails with MacPorts' own dependency
+  error rather than being blocked, the runner did not stop after a member
+  failed, which is C3's finding arriving by another route.
 
 **C3. Confirm the environment is kept exactly once.**
 
 ```
 tart list
-/tmp/dockhand shell live/cohort-fail
+/tmp/dockhand shell dockhand/live-cohort-fail
 # inside: cat /tmp/dockhand-verify/state ; cat /tmp/dockhand-verify/state.0 ; ls -1 /tmp/dockhand-verify
 exit
 ```
@@ -313,18 +354,18 @@ exit
 **C4. Confirm the log's attribution.**
 
 ```
-/tmp/dockhand log live/cohort-fail | grep -n 'dockhand subject:\|^Error:'
+/tmp/dockhand log dockhand/live-cohort-fail | grep -n 'dockhand subject:\|^Error:'
 ```
 
-- **Worked:** one marker, `===> dockhand subject: jq`, and the `Error: Failed
-  to build jq` line after it. No marker for `oniguruma`.
+- **Worked:** one marker, `===> dockhand subject: oniguruma6`, and the `Error:
+  Failed to build oniguruma6` line after it. No marker for `jq`.
 - **A finding:** a marker for a member the runner never built, or a marker
   printed after the failure.
 
 **C5. Confirm the gate refuses to publish it.**
 
 ```
-/tmp/dockhand promote live/cohort-fail
+/tmp/dockhand promote dockhand/live-cohort-fail
 ```
 
 - **Worked:** it refuses, and says the verification failed. Do **not** pass
@@ -334,8 +375,9 @@ exit
 **C6. Clean up.**
 
 ```
-/tmp/dockhand cancel live/cohort-fail     # releases the kept environment
-/tmp/dockhand discard live/cohort-fail    # removes the branch and its note
+git switch master
+/tmp/dockhand cancel dockhand/live-cohort-fail     # releases the kept environment
+/tmp/dockhand discard dockhand/live-cohort-fail    # removes the branch and its note
 tart list                                 # expect: no dockhand-worker-*
 git -C <macports-ports checkout> switch master
 ```
@@ -388,8 +430,8 @@ holding in mind while doing the above:
   it, and nothing reads them yet. Whether that trust boundary needs closing is
   a maintainer's call, not a test's — see `internal/verify/tart/tart.go`,
   `cohortRunner`.
-- **Build order is alphabetical by portdir, not topological.** In part B, `jq`
-  is built before `oniguruma` because `sysutils` sorts before `textproc`, and
+- **Build order is alphabetical by portdir, not topological.** In part B,
+  `oniguruma6` is built before `jq` because `devel` sorts before `sysutils`, and
   the dependent going first is decided by a category name. It is deterministic
   and blame does not depend on it — the judge matches the log's name against
   the roster, not against a position — but ordering members by declared
@@ -420,15 +462,15 @@ binary archive on the buildbot, edited so the portdir is part of the change.
 
 ```
 cd <macports-ports checkout>
-git switch -c live/baseline origin/master
-printf '\n' >> textproc/oniguruma/Portfile
-git commit -am 'oniguruma: live baseline check'
+git switch -c dockhand/live-baseline origin/master
+printf '\n' >> devel/oniguruma6/Portfile
+git commit -am 'oniguruma6: live baseline check'
 ```
 
 **D2. Verify it, and watch the submit take longer than eleven seconds.**
 
 ```
-time /tmp/dockhand verify live/baseline
+time /tmp/dockhand verify dockhand/live-baseline
 ```
 
 - **Worked:** the submit returns having downloaded and activated the archive —
@@ -440,14 +482,14 @@ time /tmp/dockhand verify live/baseline
 **D3. Read what the environment recorded, while it is still there.**
 
 ```
-/tmp/dockhand shell live/baseline
+/tmp/dockhand shell dockhand/live-baseline
 # inside the guest:
 cat  /tmp/dockhand-verify/manifest.ports
 cat  /tmp/dockhand-verify/baseline
 head -20 /tmp/dockhand-verify/manifest.pre
 tail -1  /tmp/dockhand-verify/manifest.pre
-port -q installed oniguruma
-ls /tmp/dockhand-overlay/textproc/oniguruma
+port -q installed oniguruma6
+ls /tmp/dockhand-overlay/devel/oniguruma6
 exit
 ```
 
@@ -456,7 +498,7 @@ exit
   with `===> dockhand manifest: port` and **ends with**
   `===> dockhand manifest: end` — the closing line is the whole durability
   guarantee, and a capture without it is refused rather than parsed.
-  `port -q installed oniguruma` shows the **branch's** version or nothing at
+  `port -q installed oniguruma6` shows the **branch's** version or nothing at
   all, never the merge base's: step 5 took the baseline back off.
   The overlay holds the branch's Portfile, not the merge base's.
 - **A finding, and the worst one available:** `port -q installed` still showing
@@ -484,10 +526,10 @@ version that has never been built, so `-b` cannot find anything.
 
 ```
 cd <macports-ports checkout>
-git switch -c live/baseline-none origin/master
+git switch -c dockhand/live-baseline-none origin/master
 $EDITOR <some portdir>/Portfile         # set a version that does not exist upstream
 git commit -am 'live: no archive for the merge base'
-/tmp/dockhand verify live/baseline-none
+/tmp/dockhand verify dockhand/live-baseline-none
 ```
 
 - **Worked:** the submit **succeeds** — a check that could not be made is not a
@@ -518,8 +560,9 @@ git commit -am 'live: no archive for the merge base'
 **D7. Clean up.**
 
 ```
-/tmp/dockhand cancel live/baseline ; /tmp/dockhand discard live/baseline
-/tmp/dockhand cancel live/baseline-none ; /tmp/dockhand discard live/baseline-none
+git switch master
+/tmp/dockhand cancel dockhand/live-baseline ; /tmp/dockhand discard dockhand/live-baseline
+/tmp/dockhand cancel dockhand/live-baseline-none ; /tmp/dockhand discard dockhand/live-baseline-none
 tart list
 ```
 
