@@ -819,7 +819,13 @@ git -C . show --stat <branch>
   worktree; the way to provoke it is to edit a member's Portfile in the
   worktree before running this and confirm the commit ignores your edit.
 
-**E6. The members that declined.**
+**E6. The members that declined.** *Untested as of 2026-09-04, and accepted
+as a gap: across four cohorts on libraw and nettle, no member ever failed
+to plan, so the "not bumped — plan: declined" road never ran. It is
+covered offline by the planner's own tests; what has not been seen is the
+verb naming a live decline on stderr and the note's candidate row saying
+"proposed, then declined". Provoking one would mean a member whose
+Portfile the planner cannot rewrite, which is contrived by construction.*
 
 - **Worked:** every member the planner could not plan is named on stderr as
   `<port>: not bumped — plan: declined: …` with the remedy, the cohort
