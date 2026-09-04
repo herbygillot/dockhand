@@ -274,3 +274,50 @@ func TestOneSubjectSubmitsExactlyTodaysRequest(t *testing.T) {
 	assert.Len(t, n.Runs, 1, "one subject, one run")
 	assert.Equal(t, record.Running, runFor(n, "jq", "Testos").State)
 }
+
+// _resources is the tree's own infrastructure — port groups, mirror and
+// archive site lists — and its first two segments look exactly like a
+// portdir. Taken as one it names a port "port1.0", which stages,
+// indexes, and fails in a booted guest against a port that has never
+// existed.
+func TestChangedPortdirsDoesNotMistakeTreeResourcesForAPort(t *testing.T) {
+	ctx := context.Background()
+	repo := gittest.Init(t, realTools, "", map[string]string{"sysutils/jq/Portfile": "version 1.7\n"})
+	primary, err := repo.PrimaryBranch(ctx)
+	require.NoError(t, err)
+	sha := gittest.Commit(t, repo, "dockhand/pg", primary,
+		"_resources/port1.0/fetch/archive_sites.tcl", "# edited\n", "archive sites: a change")
+
+	_, err = testState(t, repo, nil).ChangedPortdirs(ctx, repo, "dockhand/pg", sha)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "port1.0", "no phantom port may be derived from a resource path")
+	assert.Contains(t, err.Error(), "_resources/", "the refusal names what the branch actually changed")
+	assert.Contains(t, err.Error(), "not a port",
+		"and says so: a resource-only branch is not a malformed port change, it is not a port change")
+}
+
+// Skipped as a subject, not as content. A branch that edits a port
+// group and a port is a change to that port, and the port group still
+// reaches the guest because staging materializes _resources from the
+// branch's own tip.
+func TestChangedPortdirsKeepsThePortWhenAResourceRidesAlong(t *testing.T) {
+	ctx := context.Background()
+	repo := gittest.Init(t, realTools, "", map[string]string{"sysutils/jq/Portfile": "version 1.7\n"})
+	primary, err := repo.PrimaryBranch(ctx)
+	require.NoError(t, err)
+	sha, err := repo.Mint(ctx, git.MintRequest{
+		Branch: "dockhand/jq-1.8", Base: primary, Commits: []git.Commit{{
+			Files: []git.File{
+				{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n")},
+				{Path: "_resources/port1.0/fetch/archive_sites.tcl", Content: []byte("# edited\n")},
+			},
+			Message: "jq: update to 1.8, and a tree resource with it",
+		}},
+	})
+	require.NoError(t, err)
+
+	got, err := testState(t, repo, nil).ChangedPortdirs(ctx, repo, "dockhand/jq-1.8", sha)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"sysutils/jq"}, got,
+		"the port is the subject; the resource is carried, not built")
+}

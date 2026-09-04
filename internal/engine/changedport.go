@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/build"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -78,9 +79,34 @@ func (e *Engine) ChangedPortdirs(ctx context.Context, repo *git.Repo, branch, ti
 	// — and it is not smuggled in here.
 	seen := map[string]bool{}
 	var derived []string
+	resources := false
 	for _, p := range paths {
 		parts := strings.SplitN(p, "/", 3)
-		if len(parts) < 3 || seen[parts[0]+"/"+parts[1]] {
+		if len(parts) < 3 {
+			continue
+		}
+		if parts[0] == build.ResourcesDir {
+			// The tree's own infrastructure — port groups, mirror and
+			// archive site lists, livecheck and compiler resources —
+			// and not a category. Taken as one, its first two segments
+			// name a portdir "_resources/port1.0" and a port "port1.0",
+			// which stages, indexes, and fails in a guest against a port
+			// nobody has ever heard of.
+			//
+			// It is skipped as a subject and not as content: staging
+			// materializes _resources from the branch's own tip, so an
+			// edited port group reaches the guest and governs whatever
+			// ports are built beside it. What it is not is a port to
+			// build.
+			//
+			// By name rather than by a leading underscore. The tree has
+			// exactly one of these among 59 top-level directories, and a
+			// rule about underscores would be a guess at a convention
+			// MacPorts has not stated.
+			resources = true
+			continue
+		}
+		if seen[parts[0]+"/"+parts[1]] {
 			continue
 		}
 		d := parts[0] + "/" + parts[1]
@@ -89,6 +115,16 @@ func (e *Engine) ChangedPortdirs(ctx context.Context, repo *git.Repo, branch, ti
 	}
 	sort.Strings(derived)
 	if len(derived) == 0 {
+		// Said apart, because "no portdir" sends a reader looking for a
+		// portdir that should have been there. A branch under
+		// _resources alone is not a malformed port change; it is not a
+		// port change. Every one of the last forty commits touching
+		// _resources upstream touched nothing else, so this is the case
+		// that actually arrives.
+		if resources {
+			return nil, fmt.Errorf("verify: %s changes only %s/ against %s — tree resources, not a port; dockhand has nothing to build here",
+				branch, build.ResourcesDir, git.Abbrev(base))
+		}
 		return nil, fmt.Errorf("verify: %s changes no portdir against %s; there is nothing to verify", branch, git.Abbrev(base))
 	}
 	n, err := e.Ledger(repo).Read(ctx, tip)
