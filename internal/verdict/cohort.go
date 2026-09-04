@@ -125,6 +125,9 @@ func JudgeCohort(in CohortInput) map[string]Judgment {
 	if in.Vanished || in.Status.State != verify.Failed {
 		marked, _ := marks(in)
 		for _, s := range in.Subjects {
+			if withheld(in.Runs[s.Port]) {
+				continue
+			}
 			// A guest that passed while never announcing a member is a
 			// runner fault, not a verdict: the member was not built, and
 			// a pass invented for it would be evidence for a promotion
@@ -166,6 +169,11 @@ func JudgeCohort(in CohortInput) map[string]Judgment {
 			// it was given and every one of them exited zero.
 			out[s.Port] = JudgeRun(sectionInput(in, b.Marked, s.Port,
 				verify.Status{State: verify.Passed, Handle: in.Status.Handle}))
+		case withheld(run):
+			// Held back before the guest was asked for anything, so the
+			// log's silence about it is expected rather than a fault. It
+			// keeps the state the submission gave it.
+			continue
 		case len(b.Marked) > 0 && i < b.Stopper && !b.Marked[s.Port]:
 			// A cohort that announced its members skipped this one, and
 			// then stopped past it. The runner builds in this order and
@@ -426,3 +434,13 @@ func unbuilt(r record.Run) Judgment {
 	r.Detail = "the guest reported no output for this subject"
 	return Judgment{Settled: true, Run: r, Release: ReleaseQuietly}
 }
+
+// withheld reports a run this build deliberately never submitted.
+//
+// It is asked before every reading of the log, because the log is
+// silent about such a member and every rule below reads silence as a
+// fault: unbuilt calls it a runner error, and a blocked rule would
+// blame a sibling for a member no sibling stopped. The submission
+// already said what happened to it and why, and settling must not
+// overwrite an answer with a worse guess.
+func withheld(r record.Run) bool { return r.State == record.Withheld }

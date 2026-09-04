@@ -72,6 +72,12 @@ type Dependent struct {
 	// still breaks, and it is the one a reviewer most needs to know
 	// there is nobody to ask about.
 	Nomaintainer bool
+	// Conflicts is the ports this dependent declares it cannot be
+	// installed beside, lowercased. It constrains which members can
+	// share a guest and nothing else: a conflicting member still needs
+	// its revision bumped, because it still links the library that
+	// moved.
+	Conflicts []string
 	// InFlight names the branch already carrying a change to this port,
 	// and is empty when none does. Two branches revbumping one port is
 	// two revisions and a conflict at merge.
@@ -260,6 +266,7 @@ func DependentCohort(abi ABI, quotes []Instruction, deps []Dependent, unread []U
 		c.Excluded = append(c.Excluded, record.Candidate{Port: d.Port, Portdir: d.Portdir,
 			Reason: cycleReason(tangled)})
 	}
+	solo := coresident(ordered)
 	for _, u := range unread {
 		c.Excluded = append(c.Excluded, record.Candidate{Port: u.Port, Portdir: u.Portdir,
 			Reason: "its " + u.Field + " field could not be read as a list, so whether it depends on " +
@@ -270,6 +277,14 @@ func DependentCohort(abi ABI, quotes []Instruction, deps []Dependent, unread []U
 	for i, d := range ordered {
 		cand := record.Candidate{Port: d.Port, Portdir: d.Portdir, Proposed: true,
 			Reason: proposeReason(d, named[strings.ToLower(d.Port)].Note)}
+		if with, cannot := solo[strings.ToLower(d.Port)]; cannot {
+			// Bumped, and not built beside the member it conflicts with.
+			// It stays proposed because its revision is owed either way:
+			// it links a library that moved.
+			cand.Solo = true
+			cand.Reason += "; conflicts with " + with + ", which this cohort builds — " +
+				"bumped here, and needing a verification of its own"
+		}
 		if limit > 0 && i >= limit {
 			// Past the cap. It is recorded as examined and not proposed,
 			// because this proposal does not put it forward — and it is
@@ -533,3 +548,95 @@ func cycleReason(tangled []Dependent) string {
 func sortCandidates(all []record.Candidate) {
 	sort.SliceStable(all, func(i, j int) bool { return all[i].Port < all[j].Port })
 }
+
+// coresident names the members that cannot be installed beside a
+// member already in the build, mapping each to the one it lost to.
+//
+// MacPorts refuses to activate two ports that declare a conflict, so a
+// cohort holding both would spend a guest discovering that the second
+// will not install — and, because a failed member stops the ones behind
+// it, take uninvolved members down with it. Measured live: gegl and
+// gegl-devel, then libheif and libheif-devel one candidate later. Two of
+// the two cohorts examined carried such a pair, so this is the ordinary
+// case and not a corner.
+//
+// Nothing is removed from the change. A named member is still proposed,
+// still planned and still committed with its revision bumped — a
+// dependent that links a library which moved needs rebuilding whether
+// or not one guest could hold it beside its sibling. What it loses is a
+// seat in THIS build, and it is told so by name.
+//
+// Which one keeps the seat, when two conflict: the one whose name does
+// not end in -devel, and otherwise whichever is already earlier in
+// build order. The suffix is a maintainer's ruling and it settles the
+// case that actually arrives — a stable port and its development twin.
+// It decides about a fifth of the tree's conflict pairs on its own;
+// build order carries the rest, which keeps the outcome from depending
+// on which member a map happened to yield first.
+func coresident(deps []Dependent) map[string]string {
+	solo := map[string]string{}
+	claimed := make(map[string]string, len(deps))
+	seated := make([]string, 0, len(deps))
+	for _, d := range deps {
+		lower := strings.ToLower(d.Port)
+		if with, taken := conflictWith(d, claimed); taken {
+			if !preferred(d.Port, with) {
+				solo[lower] = with
+				continue
+			}
+			// This member takes the seat; the one holding it gives it up.
+			solo[strings.ToLower(with)] = d.Port
+			for name, holder := range claimed {
+				if strings.EqualFold(holder, with) {
+					delete(claimed, name)
+				}
+			}
+			for i, s := range seated {
+				if strings.EqualFold(s, with) {
+					seated = append(seated[:i], seated[i+1:]...)
+					break
+				}
+			}
+		}
+		delete(solo, lower)
+		seated = append(seated, d.Port)
+		claimed[lower] = d.Port
+		for _, c := range d.Conflicts {
+			claimed[c] = d.Port
+		}
+	}
+	return solo
+}
+
+// conflictWith names the member already in the build that this one
+// cannot join, reading the declaration from either side: a conflict is
+// symmetric in MacPorts and both halves are usually written, but a
+// cohort must not depend on both being.
+func conflictWith(d Dependent, claimed map[string]string) (string, bool) {
+	if with, ok := claimed[strings.ToLower(d.Port)]; ok && !strings.EqualFold(with, d.Port) {
+		return with, true
+	}
+	for _, c := range d.Conflicts {
+		if with, ok := claimed[c]; ok && !strings.EqualFold(with, d.Port) {
+			return with, true
+		}
+	}
+	return "", false
+}
+
+// preferred says whether candidate should take the seat from holder.
+//
+// A -devel port is the development twin of the port it conflicts with,
+// so the stable one is what the tree is standing on and the one worth
+// the guest. Where the suffix does not tell them apart, the holder
+// keeps the seat, which leaves build order deciding.
+func preferred(candidate, holder string) bool {
+	return isDevel(holder) && !isDevel(candidate)
+}
+
+// isDevel reports the -devel suffix, case-insensitively.
+func isDevel(port string) bool {
+	return len(port) > len(develSuffix) && strings.EqualFold(port[len(port)-len(develSuffix):], develSuffix)
+}
+
+const develSuffix = "-devel"

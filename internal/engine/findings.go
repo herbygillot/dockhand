@@ -446,6 +446,7 @@ func (e *Engine) findCohort(ctx context.Context, repo *git.Repo, n record.Record
 			InFlight:     inFlight[strings.ToLower(r.Name)],
 			Carried:      carried[strings.ToLower(r.Name)],
 			Requires:     r.Requires,
+			Conflicts:    r.Conflicts,
 		})
 	}
 	short := make([]verdict.Unread, 0, len(unread))

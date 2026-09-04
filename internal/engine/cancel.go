@@ -266,7 +266,8 @@ func (e *Engine) SupersedeStale(ctx context.Context, repo *git.Repo, branch, tip
 					run.State = record.Superseded
 					run.Detail = "failed here, then the branch moved to " + git.Abbrev(tip) + " — kept environment released"
 				case record.Queued, record.Submitting, record.Passed, record.Unsupported,
-					record.Blocked, record.Canceled, record.Superseded, record.Errored:
+					record.Blocked, record.Canceled, record.Superseded, record.Errored,
+					record.Withheld:
 					// Nothing this sweep supersedes. A run that never
 					// started holds nothing, and one that already reached a
 					// verdict about a commit the branch has moved past is

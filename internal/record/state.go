@@ -52,6 +52,21 @@ const (
 	// Errored means the environment could not answer, which is a fact
 	// about the machine and never a finding about the port.
 	Errored RunState = "errored"
+	// Withheld means this build deliberately did not run the subject,
+	// and nothing about the subject is the reason. A cohort member that
+	// declares a conflict with a member already in the guest is the case
+	// it was added for: MacPorts will not activate both, so one is
+	// bumped by the change and built by a verification of its own.
+	//
+	// It is its own word because every neighbouring one would be a
+	// false statement about the port. Blocked says something failed
+	// before this subject was reached, and nothing failed. Unsupported
+	// says the port declines the platform, and it does not — it would
+	// build alone. Queued says the pump submits it when a slot frees,
+	// which is a promise nothing here will keep. Errored is about the
+	// machine. What happened is that dockhand held the subject back, so
+	// the state names dockhand's own act and the detail says why.
+	Withheld RunState = "withheld"
 )
 
 // ErrUnknownRunState reports a state word this build does not know.
@@ -68,7 +83,7 @@ var ErrUnknownRunState = errors.New("record: unknown run state")
 func ParseRunState(s string) (RunState, error) {
 	switch rs := RunState(s); rs {
 	case Queued, Submitting, Running, Passed, Failed,
-		Unsupported, Blocked, Canceled, Superseded, Errored:
+		Unsupported, Blocked, Canceled, Superseded, Errored, Withheld:
 		return rs, nil
 	}
 	return "", fmt.Errorf("%w: %q", ErrUnknownRunState, s)
@@ -105,7 +120,7 @@ func (s RunState) Weight() Weight {
 		return Positive
 	case Failed:
 		return Negative
-	case Queued, Submitting, Running, Unsupported, Blocked, Canceled, Superseded, Errored:
+	case Queued, Submitting, Running, Unsupported, Blocked, Canceled, Superseded, Errored, Withheld:
 		return Neutral
 	}
 	return Neutral
@@ -121,7 +136,7 @@ func (s RunState) Weight() Weight {
 // is treated as unfinished, which is the reading that leaves it alone.
 func (s RunState) Terminal() bool {
 	switch s {
-	case Passed, Failed, Unsupported, Blocked, Canceled, Superseded, Errored:
+	case Passed, Failed, Unsupported, Blocked, Canceled, Superseded, Errored, Withheld:
 		return true
 	case Queued, Submitting, Running:
 		return false

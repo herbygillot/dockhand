@@ -261,6 +261,11 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 				passed = append(passed, ref.Platform)
 				environment[ref.Platform] = evidenceOf(r)
 			}
+		case record.Withheld:
+			// Said as this build's own act, because it is: nothing about
+			// the port stopped it, and a reader who took it as a fault
+			// would go looking for a breakage that is not there.
+			what = "not built here, and bumped anyway"
 		case record.Unsupported:
 			what = "the port declines this platform (known_fail)"
 		case record.Failed:

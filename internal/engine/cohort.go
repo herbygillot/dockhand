@@ -165,9 +165,24 @@ func (e *Engine) BuildCohort(ctx context.Context, repo *git.Repo, target string,
 	if o.NoVerify {
 		return nil
 	}
+	apart := solo(proposal)
+	// The held-back members get their verdict before the guest is asked
+	// for anything, because the guest will never be asked about them.
+	// Written here rather than left to settle: settle reads a member the
+	// log never announced as a runner fault, and this one was never sent.
+	for _, c := range proposal.Candidates {
+		if !c.Solo || !c.Proposed {
+			continue
+		}
+		if err := e.recordRun(ctx, repo, newTip, c.Port, o.Platform.Name, record.Run{
+			State: record.Withheld, Platform: o.Platform.Name, Detail: withheldDetail(c, head.Port),
+		}, fmt.Sprintf("%s: bumped, not built here — %s", c.Port, withheldDetail(c, head.Port))); err != nil {
+			return err
+		}
+	}
 	return e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: newTip, RelPort: head.Portdir},
 		submission{Port: head.Port, Release: o.Platform, Test: o.Test, Trace: o.Trace,
-			Members: cohortRoster(head, built)})
+			Members: cohortRoster(head, built, apart)})
 }
 
 // cohortProposal is the finding the verb answers: the one proposal a
@@ -446,10 +461,33 @@ func revisionTarget(p *plan.Plan) string {
 // The headline rides along because a dependent is built against the new
 // library and the guest's own tree does not have it — the whole cohort
 // is one build, in one environment, in dependency order.
-func cohortRoster(head record.Subject, built []planned) []Member {
+// solo names the members the cohort bumps but does not build, because a
+// member it does build declares a conflict with them.
+func solo(f record.Finding) map[string]bool {
+	out := map[string]bool{}
+	for _, c := range f.Candidates {
+		if c.Solo {
+			out[strings.ToLower(c.Port)] = true
+		}
+	}
+	return out
+}
+
+// cohortRoster is what the guest is asked to build, which is not the
+// same list as what the commit edits.
+//
+// A member that conflicts with one already in the roster is bumped by
+// the commit and left out here: MacPorts will not activate both, so
+// staging the pair spends a guest proving the second cannot install and
+// stops every member behind it. It owes a verification of its own, and
+// the commit body says so by name.
+func cohortRoster(head record.Subject, built []planned, apart map[string]bool) []Member {
 	out := []Member{{Port: head.Port, Portdir: head.Portdir}}
 	for _, b := range built {
 		for _, p := range b.Ports {
+			if apart[strings.ToLower(p)] {
+				continue
+			}
 			out = append(out, Member{Port: p, Portdir: b.Portdir})
 		}
 	}
@@ -623,4 +661,32 @@ func abiLimits(n record.Record) string {
 		}
 	}
 	return ""
+}
+
+// withheldDetail words why a member was bumped and not built.
+//
+// It names the sibling rather than the rule, because the sibling is
+// what a reader can check: `port info --conflicts` answers it, and "the
+// cohort's co-residency rule" answers nothing.
+func withheldDetail(c record.Candidate, head string) string {
+	with := conflictNamedIn(c.Reason)
+	if with == "" {
+		return "it cannot share a guest with another member of this cohort; it needs a verification of its own"
+	}
+	return "it conflicts with " + with + ", which this cohort builds; bump verified by a run of its own"
+}
+
+// conflictNamedIn lifts the sibling's name out of the candidate reason
+// the proposal wrote, so the two sentences cannot drift apart.
+func conflictNamedIn(reason string) string {
+	const marker = "conflicts with "
+	i := strings.Index(reason, marker)
+	if i < 0 {
+		return ""
+	}
+	rest := reason[i+len(marker):]
+	if j := strings.Index(rest, ","); j >= 0 {
+		return rest[:j]
+	}
+	return rest
 }

@@ -52,6 +52,13 @@ type Dependent struct {
 	KnownFail    bool     // the dependent's own known_fail
 	Nomaintainer bool     // the dependent declares the nomaintainer keyword
 	Requires     []string // its own dependency targets, lowercased and sorted
+
+	// Conflicts is the dependent's own conflicts field, lowercased. Two
+	// members that name each other cannot be installed in one guest, so
+	// a cohort that stages both spends a build proving MacPorts will
+	// refuse the second — measured at 2303 index rows, this is ordinary
+	// rather than exotic.
+	Conflicts []string
 }
 
 // BuildOnly reports whether the edge is carried by depends_build alone,
@@ -198,6 +205,7 @@ func (ix *Index) Dependents() (Reverse, error) {
 			KnownFail:    tclTrue(e.Fields["known_fail"]),
 			Requires:     make([]string, 0, len(edges)),
 			Nomaintainer: e.Nomaintainer(),
+			Conflicts:    lowerFields(e.Fields["conflicts"]),
 		}
 		for name := range edges {
 			row.Requires = append(row.Requires, name)
@@ -242,4 +250,18 @@ func tclTrue(v string) bool {
 	default:
 		return false
 	}
+}
+
+// lowerFields reads a whitespace-separated index field as a lowercased
+// list. A single value is written bare and several are braced, and Tcl
+// leaves the braces on the value this reader is handed, so they are
+// trimmed rather than parsed.
+func lowerFields(v string) []string {
+	v = strings.Trim(strings.TrimSpace(v), "{}")
+	if v == "" {
+		return nil
+	}
+	out := strings.Fields(strings.ToLower(v))
+	sort.Strings(out)
+	return out
 }

@@ -147,3 +147,24 @@ func TestDispositionIsTheAnswerToAFinding(t *testing.T) {
 	assert.Equal(t, "accepted", string(Accepted))
 	assert.Equal(t, "dismissed", string(Dismissed))
 }
+
+// Withheld is a state this build gives a subject it chose not to run.
+// It is terminal — nothing will come back to change it — and it weighs
+// nothing, because holding a member back is not evidence for or against
+// the change.
+func TestWithheldIsTerminalAndWeighsNothing(t *testing.T) {
+	assert.True(t, Withheld.Terminal(), "no later reading turns a withheld run into an outcome")
+	assert.Equal(t, Neutral, Withheld.Weight(),
+		"a member nobody built argues neither for the change nor against it")
+
+	got, err := ParseRunState("withheld")
+	require.NoError(t, err, "the word must survive a round trip through the wire")
+	assert.Equal(t, Withheld, got)
+}
+
+// And it must never be mistaken for a pass. A promotion sums the passes
+// over every member, so a withheld member counting as one would
+// authorize publishing on evidence nobody produced.
+func TestWithheldIsNotAPass(t *testing.T) {
+	assert.NotEqual(t, Passed.Weight(), Withheld.Weight())
+}

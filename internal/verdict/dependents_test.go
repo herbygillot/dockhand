@@ -426,3 +426,83 @@ func TestAMixedReadingSaysHowMuchItCouldCompare(t *testing.T) {
 	assert.NotContains(t, c.Declined, "nothing brotli publishes moved",
 		"the plain sentence claims more than the measurement covered")
 }
+
+// conflicting is a dependent that declares it cannot be installed
+// beside the named ports.
+func conflicting(port, portdir string, conflicts ...string) Dependent {
+	d := lib(port, portdir, "libwidget")
+	d.Conflicts = conflicts
+	return d
+}
+
+// solos reads back the members the cohort bumps but will not build.
+func solos(all []record.Candidate) []string {
+	out := []string{}
+	for _, c := range all {
+		if c.Solo {
+			out = append(out, c.Port)
+		}
+	}
+	return out
+}
+
+// Two members that MacPorts will not activate together cannot share a
+// guest. Both are still bumped — each links the library that moved —
+// and the development twin is the one that gives up its seat.
+func TestACohortDoesNotStageTwoMembersThatConflict(t *testing.T) {
+	c := DependentCohort(abiChanged(), nil, []Dependent{
+		conflicting("gegl", "graphics/gegl", "gegl-devel"),
+		conflicting("gegl-devel", "graphics/gegl-devel", "gegl"),
+		lib("gthumb", "gnome/gthumb", "libwidget"),
+	}, nil, 0)
+
+	assert.Equal(t, []string{"gegl", "gegl-devel", "gthumb"}, ports(c.Members),
+		"every member is bumped: a conflict constrains one guest, not what the tree is owed")
+	assert.Equal(t, []string{"gegl-devel"}, solos(c.Members),
+		"the -devel twin gives up the seat")
+	for _, m := range c.Members {
+		assert.True(t, m.Proposed, "%s must stay proposed — its revision is owed either way", m.Port)
+	}
+}
+
+// The suffix decides regardless of which one the index happened to list
+// first: an outcome that depended on ordering here would be a coin toss
+// wearing a rule's clothes.
+func TestTheDevelTwinLosesTheSeatFromEitherOrder(t *testing.T) {
+	c := DependentCohort(abiChanged(), nil, []Dependent{
+		conflicting("gegl-devel", "graphics/gegl-devel", "gegl"),
+		conflicting("gegl", "graphics/gegl", "gegl-devel"),
+	}, nil, 0)
+	assert.Equal(t, []string{"gegl-devel"}, solos(c.Members))
+}
+
+// A conflict is symmetric in MacPorts and both halves are usually
+// written, but a cohort must not need both to be.
+func TestOneSidedConflictDeclarationIsStillHonoured(t *testing.T) {
+	c := DependentCohort(abiChanged(), nil, []Dependent{
+		lib("libheif", "multimedia/libheif", "libwidget"),
+		conflicting("libheif-devel", "multimedia/libheif-devel", "libheif"),
+	}, nil, 0)
+	assert.Equal(t, []string{"libheif-devel"}, solos(c.Members))
+}
+
+// Where the suffix does not tell them apart, build order decides and
+// the member already seated keeps it.
+func TestWithoutADevelSuffixTheSeatGoesByBuildOrder(t *testing.T) {
+	c := DependentCohort(abiChanged(), nil, []Dependent{
+		conflicting("mbedtls", "devel/mbedtls", "mbedtls3"),
+		conflicting("mbedtls3", "devel/mbedtls3", "mbedtls"),
+	}, nil, 0)
+	assert.Equal(t, []string{"mbedtls3"}, solos(c.Members),
+		"the one already in the build keeps the seat")
+}
+
+// Ports that conflict with something outside the cohort constrain
+// nothing: the guest is only ever asked to hold the members.
+func TestAConflictWithAStrangerDoesNotCostASeat(t *testing.T) {
+	c := DependentCohort(abiChanged(), nil, []Dependent{
+		conflicting("gegl", "graphics/gegl", "some-port-nobody-proposed"),
+		lib("gthumb", "gnome/gthumb", "libwidget"),
+	}, nil, 0)
+	assert.Empty(t, solos(c.Members), "no member of this cohort declares that conflict")
+}

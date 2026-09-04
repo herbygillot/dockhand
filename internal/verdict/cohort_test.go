@@ -402,3 +402,29 @@ func TestAStrangerBlockClearsAStaleBlame(t *testing.T) {
 		assert.Empty(t, j.Run.Blamed, "%s: the detail names a stranger, so nothing of ours is blamed", m)
 	}
 }
+
+// A withheld member is one the guest was never asked about, so the
+// log's silence about it is expected. Settling must leave it alone:
+// every rule that reads silence would otherwise blame it on the runner
+// or on a sibling, and neither is what happened.
+func TestSettlingLeavesAWithheldMemberAlone(t *testing.T) {
+	held := record.Run{State: record.Withheld, Platform: "Testos",
+		Detail: "it conflicts with gegl, which this cohort builds"}
+	in := CohortInput{
+		Subjects: []record.Subject{{Port: "gegl"}, {Port: "gegl-devel"}, {Port: "gthumb"}},
+		Runs: map[string]record.Run{
+			"gegl":       {State: record.Running, Platform: "Testos"},
+			"gegl-devel": held,
+			"gthumb":     {State: record.Running, Platform: "Testos"},
+		},
+		Status:  verify.Status{State: verify.Passed, Handle: "fake-1"},
+		Log:     "===> dockhand subject: gegl\n===> dockhand subject: gthumb\n",
+		LogRead: true,
+	}
+	out := JudgeCohort(in)
+
+	_, judged := out["gegl-devel"]
+	assert.False(t, judged, "a member never submitted gets no verdict from a log that never mentions it")
+	assert.Equal(t, record.Passed, out["gthumb"].Run.State,
+		"and the members that did build are unaffected by its absence")
+}

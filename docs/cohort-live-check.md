@@ -485,6 +485,17 @@ holding in mind while doing the above:
   environment a failure keeps. Nothing durable records the order after a
   green run.
 
+- **A revbump cohort orders itself differently, and must.** Part B's rule
+  below is for a cohort derived from a diff. A cohort built by
+  `bump-revision --for` puts the **headline first** and its members after it
+  by port name: observed on libraw, `gnome/gthumb` came last though `gnome`
+  sorts before `graphics`. That is not a lapse in the portdir rule, it is a
+  different construction — the library has to be built before the dependents
+  that link it, or they bind the old copy from the archive and the cohort
+  proves nothing. What neither ordering does is sort the *dependents* among
+  themselves topologically, so a dependent that depends on another dependent
+  is still built in name order.
+
 - **Build order is alphabetical by portdir, not topological.** In part B,
   `oniguruma6` is built before `jq` because `devel` sorts before `sysutils`, and
   the dependent going first is decided by a category name. It is deterministic
