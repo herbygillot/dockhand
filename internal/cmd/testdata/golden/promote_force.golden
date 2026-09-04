@@ -19,7 +19,7 @@ exit: 0
   Verified with [dockhand](https://github.com/herbygillot/dockhand):
     — Testos: linted clean, built in a pristine VM.
   
-  Branch head `7d234eb5bd04`.
+  Branch head `2eab82dfb158`.
   
   ###### Type(s)
   

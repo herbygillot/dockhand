@@ -1,7 +1,7 @@
 exit: 0
 --- stdout
-  discarded dockhand/bumpee-2.0 (c2f08d58593e)
-  branch: dockhand/bumpee-2.0 (c2f08d58593e)
+  discarded dockhand/bumpee-2.0 (81733e4f3d54)
+  branch: dockhand/bumpee-2.0 (81733e4f3d54)
 --- stderr
   plan: bump <portdir>, 5 edits
     version:         1.0 -> 2.0

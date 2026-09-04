@@ -287,6 +287,15 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 		// for and nothing for one to do.
 		return nil
 	}
+	// The staging directory becomes the guest's overlay, and an overlay
+	// is a ports tree rather than a bag of portdirs — MacPorts reads
+	// _resources out of the tree a port came from, and for archive sites
+	// it does so with no fallback. The branch build does not itself need
+	// an archive for the port it is building, but the tree it is served
+	// from has to be a tree, and staging refuses one that is not.
+	if err := m.Repo.Materialize(ctx, m.Sha, build.ResourcesDir, stage); err != nil {
+		return err
+	}
 	// The archive is ignored where a pass earned against it would prove
 	// nothing: the change left the port's version and revision where
 	// they were, so the archive that matches them predates it. Read once

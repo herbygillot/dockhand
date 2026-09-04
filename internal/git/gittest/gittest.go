@@ -82,6 +82,20 @@ func Init(t *testing.T, tools *tool.Finder, dir string, files map[string]string)
 		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
 		require.NoError(t, os.WriteFile(full, []byte(files[path]), 0o644))
 	}
+	{
+		// A ports tree carries _resources, and submission materializes
+		// it beside the portdirs: MacPorts reads its archive sites from
+		// there, under the tree the port came from, with the fallback
+		// disabled. Given to every fixture rather than to the callers
+		// that noticed, because a fixture holding portdirs alone is the
+		// shape of a real defect rather than the shape of a tree.
+		//
+		// In the first commit, never in a branch's, so it stays out of
+		// every diff a test takes.
+		res := filepath.Join(dir, "_resources", "port1.0", "fetch")
+		require.NoError(t, os.MkdirAll(res, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(res, "archive_sites.tcl"), []byte("# fixture\n"), 0o644))
+	}
 	run(t, dir, "add", ".")
 	run(t, dir, "commit", "--quiet", "-m", "initial tree")
 	repo, err := git.Open(context.Background(), tools, dir)

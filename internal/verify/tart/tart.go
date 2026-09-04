@@ -17,6 +17,7 @@
 package tart
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -457,6 +458,12 @@ func (p Provider) tarInto(ctx context.Context, vm, root, rel string) error {
 		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
 	}
 	tar := exec.CommandContext(ctx, tarBin, "cf", "-", "-C", root, rel)
+	// The host tar's stderr, kept: when it is the side that fails — a
+	// directory that is not there, most usefully — the guest's tar exits
+	// cleanly on the empty stream and has nothing to say, and an error
+	// reporting only the guest's silence names no cause at all.
+	var stderr bytes.Buffer
+	tar.Stderr = &stderr
 	pipe, err := tar.StdoutPipe()
 	if err != nil {
 		return err
@@ -467,7 +474,11 @@ func (p Provider) tarInto(ctx context.Context, vm, root, rel string) error {
 	out, xerr := CLI(ctx, p.Tools, pipe, "exec", "-i", vm, "/usr/bin/tar", "xf", "-", "-C", overlayDir)
 	werr := tar.Wait()
 	if xerr != nil || werr != nil {
-		return fmt.Errorf("%w: staging %s: %s", verify.ErrNoEnvironment, filepath.Join(root, rel), strings.TrimSpace(out))
+		why := strings.TrimSpace(out)
+		if host := strings.TrimSpace(stderr.String()); host != "" {
+			why = strings.TrimSpace(host + " " + why)
+		}
+		return fmt.Errorf("%w: staging %s: %s", verify.ErrNoEnvironment, filepath.Join(root, rel), why)
 	}
 	return nil
 }

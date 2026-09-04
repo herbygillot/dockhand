@@ -1,10 +1,10 @@
 exit: 0
 --- stdout
   dockhand/jq-closed               kept — PR #78 closed without merging; rejection is information
-  discarded dockhand/jq-landed (8da38abbbd45)
+  discarded dockhand/jq-landed (8e8a39d9c9d7)
   dockhand/jq-landed               cleaned — PR #80 merged
   dockhand/jq-local                kept — never promoted
-  discarded dockhand/jq-merged (7a42be6e7ed1)
+  discarded dockhand/jq-merged (874f096ab5f1)
   dockhand/jq-merged               cleaned — PR #79 merged (upstream bytes differ: amended on merge, or since superseded)
   dockhand/jq-nopr                 kept — promoted, but no PR found
   dockhand/jq-open                 kept — PR #77 open (https://x/77)

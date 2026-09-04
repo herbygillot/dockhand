@@ -9,9 +9,9 @@ exit: 0
   dockhand/jq-closed
     passed (Testos)
     PR #78 closed without merging
-  discarded dockhand/jq-landed (8da38abbbd45)
+  discarded dockhand/jq-landed (8e8a39d9c9d7)
   dockhand/jq-landed               PR #80 merged — branch cleaned
-  discarded dockhand/jq-merged (7a42be6e7ed1)
+  discarded dockhand/jq-merged (874f096ab5f1)
   dockhand/jq-merged               PR #79 merged — branch cleaned
   dockhand/jq-nopr
     unverified

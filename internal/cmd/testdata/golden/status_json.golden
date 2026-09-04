@@ -5,11 +5,11 @@ exit: 0
     "branches": [
       {
         "branch": "dockhand/jq-failed",
-        "tip": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
+        "tip": "eb27ddfb79c2359fca24e7db6d5ebb901d9cfb02",
         "note": {
           "schema": 3,
-          "sha": "d06ac9fc2ac6bd489e0978d96529b169782a94ae",
-          "tree": "e707f5799d1e8f56e2e2b4ac98a8c8cf60b82cad",
+          "sha": "eb27ddfb79c2359fca24e7db6d5ebb901d9cfb02",
+          "tree": "a078e724057312d5c72c90bd7ad444d70f64d3db",
           "subjects": [
             {
               "port": "jq",
@@ -41,11 +41,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-queued",
-        "tip": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
+        "tip": "b91f385d6cdb57486b20568c4c538ee510410264",
         "note": {
           "schema": 3,
-          "sha": "5e687c527fc9efe14fd2d5ca94779c57af26f34f",
-          "tree": "37b48172a8691ff4e65237ab66161b810828d73a",
+          "sha": "b91f385d6cdb57486b20568c4c538ee510410264",
+          "tree": "1a6474f06bd16d430c02a002493b07f9dd88e839",
           "subjects": [
             {
               "port": "jq",
@@ -66,11 +66,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-multi",
-        "tip": "c49914c23ab7c5853d1a794b1764194e11b220ef",
+        "tip": "5e61daa6b96bbc9fe23a914300ae5ae596c31a94",
         "note": {
           "schema": 3,
-          "sha": "c49914c23ab7c5853d1a794b1764194e11b220ef",
-          "tree": "235585d927f147c08d938f896f075d420efe93ce",
+          "sha": "5e61daa6b96bbc9fe23a914300ae5ae596c31a94",
+          "tree": "b8157e9cc701e928dc5fb82796a14bc38b5836d5",
           "subjects": [
             {
               "port": "jq",
@@ -109,11 +109,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-passed",
-        "tip": "7159f6b651e49cae47422560120e93ebc494acc9",
+        "tip": "20f452db645f645adf4efa211c1abf87c03d02df",
         "note": {
           "schema": 3,
-          "sha": "7159f6b651e49cae47422560120e93ebc494acc9",
-          "tree": "84638b5a25febc78bd8ac7cad517ef4d88764262",
+          "sha": "20f452db645f645adf4efa211c1abf87c03d02df",
+          "tree": "e1bdc5d893dd12be79307d923683cf0358c96821",
           "subjects": [
             {
               "port": "jq",
@@ -145,21 +145,21 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-amended",
-        "tip": "d4798d50ed090cf5409f873a6807af15885eb369",
-        "drift": "unsupported (Oldos), passed (Testos) at c49914c23ab7 — the tip differs only in commit metadata"
+        "tip": "9c0016b64621f245dd68a37c88f35aa6f7933242",
+        "drift": "unsupported (Oldos), passed (Testos) at 5e61daa6b96b — the tip differs only in commit metadata"
       },
       {
         "branch": "dockhand/jq-behind",
-        "tip": "4cb6cc181ad57531948c0caae6b2c4dd3111e309",
-        "drift": "tip unverified; passed (Testos) at 44cfc9eea250, 1 commit(s) behind — `dockhand verify dockhand/jq-behind` tests the tip"
+        "tip": "bc66a6e8a0a46c2cb60ae5cf04058e1df7b6d292",
+        "drift": "tip unverified; passed (Testos) at 73afafe06dd4, 1 commit(s) behind — `dockhand verify dockhand/jq-behind` tests the tip"
       },
       {
         "branch": "dockhand/jq-blocked",
-        "tip": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
+        "tip": "874f096ab5f10cedd4376b8a3318aa70bf2cbb4e",
         "note": {
           "schema": 3,
-          "sha": "7a42be6e7ed19d5592a652c8d16ba6ab99edba04",
-          "tree": "bdc4e4255b93a66942d4056c4bdac45a9f31ad3b",
+          "sha": "874f096ab5f10cedd4376b8a3318aa70bf2cbb4e",
+          "tree": "af9d963a95b862a68687e0dbe80aa4aea105ccd8",
           "subjects": [
             {
               "port": "jq",
@@ -191,11 +191,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-canceled",
-        "tip": "eb753d9e44140cbc2ccc481b736f4ff322c26460",
+        "tip": "d37cca89e08435d6910bd2a2ad7ba38dec2dde3f",
         "note": {
           "schema": 3,
-          "sha": "eb753d9e44140cbc2ccc481b736f4ff322c26460",
-          "tree": "4d86f9adc00f64307479b82eebf5cfc55732791f",
+          "sha": "d37cca89e08435d6910bd2a2ad7ba38dec2dde3f",
+          "tree": "01f09fd6c4ac8d624b68faf657e8edead369ffc7",
           "subjects": [
             {
               "port": "jq",
@@ -226,11 +226,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-errored",
-        "tip": "ff6909944aa24b75917e6a2386831bbaccedee4f",
+        "tip": "01d790b44c8b977335eb7a17543f24011b69245d",
         "note": {
           "schema": 3,
-          "sha": "ff6909944aa24b75917e6a2386831bbaccedee4f",
-          "tree": "2edcc85811b2bee4f64477da526adbc3606adb65",
+          "sha": "01d790b44c8b977335eb7a17543f24011b69245d",
+          "tree": "09c712864e03a586b25ca70c16a8de2d54c7a72a",
           "subjects": [
             {
               "port": "jq",
@@ -262,11 +262,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-running",
-        "tip": "116445bf5b788ea72de3b40b24cf0cc7fc3e6aba",
+        "tip": "0f4794a2f0002fc66fa64ad43f5cc831beaddb59",
         "note": {
           "schema": 3,
-          "sha": "116445bf5b788ea72de3b40b24cf0cc7fc3e6aba",
-          "tree": "e21e3fc7397b56e81918c6a9d9d582e6193610ac",
+          "sha": "0f4794a2f0002fc66fa64ad43f5cc831beaddb59",
+          "tree": "ab948e010ed33a19e81d2b934c831467cd499ebf",
           "subjects": [
             {
               "port": "jq",
@@ -296,11 +296,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-superseded",
-        "tip": "b8d948c84becca542331ac4d1622c6e1b6d52517",
+        "tip": "fbc27e2e65950edf2ceb567fece09cc615856fb7",
         "note": {
           "schema": 3,
-          "sha": "b8d948c84becca542331ac4d1622c6e1b6d52517",
-          "tree": "4c5f3c03363a3f573101b4039b185070084121e3",
+          "sha": "fbc27e2e65950edf2ceb567fece09cc615856fb7",
+          "tree": "b58b53ce74bd5ba814988a5ab9ef851cc1487c57",
           "subjects": [
             {
               "port": "jq",
@@ -323,7 +323,7 @@ exit: 0
             "jq@Testos": {
               "state": "superseded",
               "platform": "Testos",
-              "detail": "canceled: the branch moved to 997767bd393f",
+              "detail": "canceled: the branch moved to 6bddb46c52c4",
               "links": null
             }
           }
@@ -331,11 +331,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-unasked",
-        "tip": "04bae2dab04c449e1e25c017f4aa46313ee9255e",
+        "tip": "a4213aa063db39296bc17483350e58a9890039bf",
         "note": {
           "schema": 3,
-          "sha": "04bae2dab04c449e1e25c017f4aa46313ee9255e",
-          "tree": "f3f184d4ad0e5a07d11e2c662e88827424ef4ad3",
+          "sha": "a4213aa063db39296bc17483350e58a9890039bf",
+          "tree": "24593aa2632b27b2aa112cadec4cda8570efbc52",
           "subjects": [
             {
               "port": "jq",
@@ -349,21 +349,21 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-unasked-grown",
-        "tip": "51dbaa41081a9c8e9e2c360ad574c130f7347bd7",
+        "tip": "b2f64aa44328e4274ce643d066fd6ac586c96afe",
         "drift": "unverified"
       },
       {
         "branch": "dockhand/jq-unnoted",
-        "tip": "432ff13a796927c17281d069c1a1f4480afb42c5",
+        "tip": "1ef4c205d53db8fa512c4dcdc4e43630bcf9ed1b",
         "drift": "unverified"
       },
       {
         "branch": "dockhand/jq-unsupported",
-        "tip": "658b4cdd52878e239942187bd93941095efbe507",
+        "tip": "b2b5ebfa31af8b11eb9e89d9fdfbdbd8a6747c93",
         "note": {
           "schema": 3,
-          "sha": "658b4cdd52878e239942187bd93941095efbe507",
-          "tree": "f2e739afaa755dbd865d03d14e0bbb63d39f1cd0",
+          "sha": "b2b5ebfa31af8b11eb9e89d9fdfbdbd8a6747c93",
+          "tree": "7ab7d171bbed33af13bc59437b0967ef28a840a7",
           "subjects": [
             {
               "port": "jq",
@@ -395,11 +395,11 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-vanished",
-        "tip": "89bbf5e1bf38441d2b88809fc20b24ab321baf10",
+        "tip": "99d504441dfac5ac3c58b3275d0b6dec756e51a6",
         "note": {
           "schema": 3,
-          "sha": "89bbf5e1bf38441d2b88809fc20b24ab321baf10",
-          "tree": "2b58d0fb93e34e9d1e82ef4047702deecaec3772",
+          "sha": "99d504441dfac5ac3c58b3275d0b6dec756e51a6",
+          "tree": "5888213d2620f7328baec69a0592b8403160c1aa",
           "subjects": [
             {
               "port": "jq",

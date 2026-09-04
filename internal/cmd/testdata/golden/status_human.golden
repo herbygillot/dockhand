@@ -6,13 +6,13 @@ exit: 0
     unsupported (Oldos) — declares known_fail on Oldos
     passed (Testos)
   dockhand/jq-passed               passed (Testos)
-  dockhand/jq-amended              unsupported (Oldos), passed (Testos) at c49914c23ab7 — the tip differs only in commit metadata
-  dockhand/jq-behind               tip unverified; passed (Testos) at 44cfc9eea250, 1 commit(s) behind — `dockhand verify dockhand/jq-behind` tests the tip
+  dockhand/jq-amended              unsupported (Oldos), passed (Testos) at 5e61daa6b96b — the tip differs only in commit metadata
+  dockhand/jq-behind               tip unverified; passed (Testos) at 73afafe06dd4, 1 commit(s) behind — `dockhand verify dockhand/jq-behind` tests the tip
   dockhand/jq-blocked              blocked (Testos) — dependency olm (nomaintainer) fails to build; the change itself is untested
   dockhand/jq-canceled             canceled (Testos) — canceled by the user
   dockhand/jq-errored              errored (Testos) — guest agent unreachable after boot
   dockhand/jq-running              verifying (<elapsed>) (Testos)
-  dockhand/jq-superseded           superseded (Testos) — canceled: the branch moved to 997767bd393f
+  dockhand/jq-superseded           superseded (Testos) — canceled: the branch moved to 6bddb46c52c4
   dockhand/jq-unasked              unverified — minted with --no-verify; `dockhand verify` starts a run
   dockhand/jq-unasked-grown        unverified
   dockhand/jq-unnoted              unverified

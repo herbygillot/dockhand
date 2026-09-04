@@ -2,4 +2,4 @@ exit: 0
 --- stdout
   canceled verification of dockhand/jq-1.8 on Testos (worker fake-2 released)
 --- stderr
-  released stale verification of 7d234eb5bd04 on Testos (branch moved past it)
+  released stale verification of 2eab82dfb158 on Testos (branch moved past it)

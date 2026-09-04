@@ -125,9 +125,9 @@ func TestFixturesReproduceTheGoldenShas(t *testing.T) {
 		"devel/olm/Portfile":   "version 3.2.16\nmaintainers nomaintainer\n",
 	})
 	for _, c := range []struct{ version, sha string }{
-		{"2.0", "27423649d22e7bb6bb26e23e7bf2f737e76e5fd6"},
-		{"2.2", "44cfc9eea2501444a372ea718e90925fa4f59c3f"},
-		{"2.3", "7a42be6e7ed19d5592a652c8d16ba6ab99edba04"},
+		{"2.0", "d1acb61bdcd7967566ceef2d89c1522728af8e5e"},
+		{"2.2", "73afafe06dd4db21a2aef0a6d95604ed47669ac3"},
+		{"2.3", "874f096ab5f10cedd4376b8a3318aa70bf2cbb4e"},
 	} {
 		got := Commit(t, repo, "dockhand/jq-"+c.version, "main", "sysutils/jq/Portfile",
 			"version "+c.version+"\n", "jq: update to "+c.version)
