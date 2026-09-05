@@ -19,6 +19,23 @@ import (
 	"github.com/herbygillot/dockhand/internal/tool"
 )
 
+// MaxPRBody is the most characters GitHub accepts in a pull request
+// body. The number is GitHub's and not gh's: the API refuses a longer
+// body with "Body is too long (maximum is 65536 characters)", and gh
+// relays that sentence verbatim — after `gh pr create` has been handed
+// a branch that is already on the fork, which is why promote measures
+// against this before it pushes rather than learning it afterwards.
+//
+// The unit is the one GitHub's own message uses, characters, so a body
+// is measured in code points and not bytes. The difference is real on
+// this template: every evidence line carries an em-dash, and a count
+// in bytes would refuse a body GitHub takes.
+//
+// It is stated here because it is a fact about the forge, the same as
+// the page size below; this package keeps no opinion about what to do
+// with it.
+const MaxPRBody = 65536
+
 // openPRPageSize is how many pull requests one page asks for, which is
 // the REST list endpoint's own maximum. Fewer pages is fewer round
 // trips, and the response is already the shape this package reads.

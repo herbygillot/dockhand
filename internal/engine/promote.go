@@ -7,6 +7,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/gh"
@@ -101,6 +102,47 @@ func (e *PRRefreshError) DockhandExit() int { return exitcode.PRRefreshFailed }
 // Code names the outcome for a machine.
 func (e *PRRefreshError) Code() string { return "pr-refresh-failed" }
 
+// PRBodyTooLongError is a promotion whose rendered body is longer than
+// GitHub will take, refused before the push.
+//
+// Nothing else bounds the body. With the cohort cap off (D24) a change
+// contributes a verification line per member per platform, a member
+// line and its link-proof lines, and libffi has a hundred and thirty
+// dependents. Learned from gh, the bound is learned after the branch is
+// on the fork — `gh pr create` is where GitHub answers — which is the
+// worst outcome this verb has: the partial band, with the author told
+// nothing until then. So the body is measured here, before anything
+// leaves the machine, and the sentence names the size and the limit.
+//
+// IT DOES NOT TRUNCATE. Eliding the member list with a count was the
+// alternative, and it is the wrong one: the member lines are the
+// evidence a reviewer is being asked to accept, and a body that omits
+// some of them is vouching for what it does not show. The remedy is a
+// smaller change.
+//
+// Declined and not refused. The destination would take a shorter body,
+// so what will not go is the change as composed, and the next move —
+// fewer members — is the author's. Nothing was written.
+type PRBodyTooLongError struct {
+	Branch string
+	// Size and Limit are in characters, which is the unit GitHub's own
+	// refusal is written in.
+	Size  int
+	Limit int
+}
+
+func (e *PRBodyTooLongError) Error() string {
+	return fmt.Sprintf("%s: the pull request body is %d characters and GitHub takes at most %d — nothing was pushed. The body is not trimmed to fit, because its member lines are what a reviewer is asked to accept; the remedy is a smaller change, and `--exclude` takes members out when the cohort is accepted with `bump-revision --for`",
+		e.Branch, e.Size, e.Limit)
+}
+
+// DockhandExit: the declined band. The request was understood, nothing
+// is broken, and nothing was written.
+func (e *PRBodyTooLongError) DockhandExit() int { return exitcode.PlanDeclined }
+
+// Code names the refusal for a machine.
+func (e *PRBodyTooLongError) Code() string { return "pr-body-too-long" }
+
 // PromoteOpts is everything a promotion takes besides the branch:
 // where it pushes, what the pull request says, and which of promote's
 // refusals the caller has already answered.
@@ -121,6 +163,11 @@ type PromoteOpts struct {
 	// NoPRCheck skips the search for a pre-existing open PR on the same
 	// port.
 	NoPRCheck bool
+	// Body renders the pull request body to Out and does nothing else:
+	// no cancellation, no push, no pull request, no audit row, and no
+	// question to GitHub. It is the one way to read what a reviewer will
+	// read without opening a pull request to find out.
+	Body bool
 	// Force replaces the fork branch and refreshes the open PR.
 	Force bool
 	// Invoker is who asked for this publication. The zero value is
@@ -242,6 +289,29 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	if err != nil {
 		return err
 	}
+	// --body: the body a reviewer would read, on stdout, and nothing
+	// else. It is a READ, and everything below this line that is not one
+	// is skipped on purpose: the cancellation, which writes canceled runs
+	// into the record; the gates, which guard a publication that is not
+	// happening — a failed build's body is the body --no-verify would
+	// publish, and being able to read it is the point; the fork
+	// resolution and the two pull-request lookups, which ask GitHub; the
+	// push, the pull request and the audit row. What the network would
+	// have decided is one checkbox, and the note on stderr says which,
+	// and why it reads the way it does, rather than guessing its answer.
+	//
+	// Until this existed the only way to read a body was to open the
+	// pull request — against macports-ports, live, and close it two
+	// minutes later (F9, 2026-09-04).
+	if o.Body {
+		own, err := e.ownCommits(ctx, repo, tip)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(e.Err, bodyPreviewNote)
+		fmt.Fprint(e.Out, e.prBody(n, verified, tip, o.Closes, len(own), false))
+		return nil
+	}
 	if o.invoker() == record.Human {
 		freed, err := e.cancelRuns(ctx, repo, tip, "canceled: promoted without waiting", false)
 		if err != nil && !errors.Is(err, git.ErrNoNote) {
@@ -351,11 +421,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	// project format (`<port>: <description>`) — later commits are
 	// fixups whose subjects would make bad titles. The count also
 	// answers the template's squashed-and-minimized checkbox.
-	primary, err := repo.PrimaryBranch(ctx)
-	if err != nil {
-		return err
-	}
-	ownCommits, err := repo.OwnCommits(ctx, tip, primary)
+	ownCommits, err := e.ownCommits(ctx, repo, tip)
 	if err != nil {
 		return err
 	}
@@ -440,25 +506,20 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 		}
 	}
 
+	// The body, rendered and measured BEFORE the push. Nothing in it
+	// depends on the push — the head, the record, the ticket and the
+	// duplicate search's answer are all in hand — and GitHub's bound on
+	// it is the last refusal on this road, so it is asked here, where
+	// refusing still costs nothing. Asked afterwards it was the worst
+	// outcome the verb has: a branch on the fork and `gh pr create`
+	// declining the body, with the author told only then.
+	body := e.prBody(n, verified, tip, o.Closes, len(ownCommits), checkedPRs)
+	if err := boundPRBody(branch, body); err != nil {
+		return err
+	}
 	if err := e.push(ctx, repo, forkRemote, forkOwner, branch, o.force(), o.invoker()); err != nil {
 		return err
 	}
-	// The ticket the mint already recorded stands unless this promotion
-	// names another. A change planned with --closes carries the trailer
-	// in its commit and the number in its record; making the promoter
-	// retype it would be asking twice for the same fact and getting a
-	// body that disagrees with the commit for the trouble.
-	closes := o.Closes
-	if closes == "" {
-		closes = n.ClosesTicket
-	}
-	// The tip and not the record's sha: EvidenceFor may have answered
-	// this tip with a record earned over the identical tree at another
-	// commit, and the head this push publishes is the one a reviewer can
-	// look up.
-	body := render.PRBody(n, verified, render.PRBodyOpts{
-		Version: e.Version, Head: tip, Closes: closes,
-		OwnCommits: len(ownCommits), CheckedPRs: checkedPRs})
 	if own.Found && own.Open {
 		if o.force() {
 			// A replaced branch usually means a new version: the PR's
@@ -500,6 +561,60 @@ func (e *Engine) recordPublication(ctx context.Context, repo *git.Repo, p Public
 	if err := e.Publish(ctx, repo, p); err != nil {
 		fmt.Fprintf(e.Err, "warning: recording the publication: %v\n", err)
 	}
+}
+
+// bodyPreviewNote is what --body costs, said on stderr beside the body
+// and never inside it. The two lookups a promotion makes before it
+// renders are skipped, and exactly one of them shows in the body: the
+// duplicate search, whose clean answer checks a box. The box is left
+// unchecked rather than guessed, and the note says so, so a reader does
+// not take the unchecked box for a step the promotion will skip.
+const bodyPreviewNote = "note: --body renders the body and publishes nothing; GitHub was not asked — the fork was not resolved and open PRs were not searched, so the other-open-PRs box reads unchecked here whatever a promotion would find"
+
+// ownCommits lists the branch's own commits, oldest last (rev-list
+// order): the oldest is the one dockhand minted, and its subject is
+// already in project format (`<port>: <description>`) — later commits
+// are fixups whose subjects would make bad titles. The count also
+// answers the template's squashed-and-minimized checkbox.
+func (e *Engine) ownCommits(ctx context.Context, repo *git.Repo, tip string) ([]string, error) {
+	primary, err := repo.PrimaryBranch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return repo.OwnCommits(ctx, tip, primary)
+}
+
+// prBody renders the body a promotion publishes, from what the verb
+// holds by the time it renders one. It is the one rendering on both
+// roads — the publication and --body — so the preview cannot drift from
+// the pull request.
+//
+// The ticket the mint already recorded stands unless this promotion
+// names another. A change planned with --closes carries the trailer in
+// its commit and the number in its record; making the promoter retype
+// it would be asking twice for the same fact and getting a body that
+// disagrees with the commit for the trouble.
+//
+// The tip and not the record's sha: EvidenceFor may have answered this
+// tip with a record earned over the identical tree at another commit,
+// and the head a push publishes is the one a reviewer can look up.
+func (e *Engine) prBody(n record.Record, verified bool, tip, closes string, ownCommits int, checkedPRs bool) string {
+	if closes == "" {
+		closes = n.ClosesTicket
+	}
+	return render.PRBody(n, verified, render.PRBodyOpts{
+		Version: e.Version, Head: tip, Closes: closes,
+		OwnCommits: ownCommits, CheckedPRs: checkedPRs})
+}
+
+// boundPRBody refuses a body GitHub would not take, measured in
+// GitHub's own unit. PRBodyTooLongError says why it refuses rather than
+// trims.
+func boundPRBody(branch, body string) error {
+	if size := utf8.RuneCountInString(body); size > gh.MaxPRBody {
+		return &PRBodyTooLongError{Branch: branch, Size: size, Limit: gh.MaxPRBody}
+	}
+	return nil
 }
 
 // prNumberIn reads the pull request's number out of the URL `gh pr

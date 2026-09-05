@@ -59,7 +59,15 @@ open PRs by the `<port>:` title convention: an identical title is
 refused as a duplicate (exit 20, `--no-pr-check` overrides), a
 same-port PR is surfaced as a note, and a clean search checks the
 template's other-open-PRs box. A branch whose own PR is already open
-is re-promotion: the push updates that PR instead of opening a second. The deliberate opt-out is `--in-place`:
+is re-promotion: the push updates that PR instead of opening a second.
+`promote --body` prints the body that push would carry and publishes
+nothing — no push, no pull request, no audit row, and GitHub is not
+asked, so the other-open-PRs box reads unchecked and a note on stderr
+says why. The body is measured against GitHub's 65536-character bound
+before anything is pushed: one over it is declined (exit 10,
+`pr-body-too-long`) naming the size and the limit, never trimmed,
+because the member lines are the evidence a reviewer is asked to
+accept. The deliberate opt-out is `--in-place`:
 edit the Portfile where the user stands, uncommitted, minting nothing — for
 the user folding dockhand's mechanical edit into their own workflow, and the
 only write mode a non-git tree gets (with a loud warning). Lifecycle: an
@@ -691,7 +699,7 @@ interchangeable.
 
 | Code | Name | What happened |
 |---|---|---|
-| `10` | `PlanDeclined` | a planner refused to produce a plan it cannot stand behind, or a field could not be located to edit |
+| `10` | `PlanDeclined` | a planner refused to produce a plan it cannot stand behind, a field could not be located to edit, or `promote` composed a pull request body longer than GitHub takes |
 | `11` | `BranchInFlight` | the port already has a change in flight; discard it, pick it up, or `--replace` |
 | `12` | `AlreadyCurrent` | nothing to do — and riders went undone with it |
 | `13` | `Ambiguous` | the target names several in-flight branches, or the branch changes several evaluation contexts; say which |

@@ -483,6 +483,18 @@ func TestGoldenPromoteNoPR(t *testing.T) {
 	checkGolden(t, "promote_no_pr", tr, rewrite{repo.Root, "<repo>"})
 }
 
+// --body: the body on stdout, the skipped lookups on stderr, and no gh
+// call to pin — the sections are there to show the fake made none.
+func TestGoldenPromoteBody(t *testing.T) {
+	repo, _ := goldenPromoteRepo(t)
+	gh := &ghFake{login: "herbygillot", createURL: "https://github.com/macports/macports-ports/pull/999"}
+	rs, out, errb := goldenState(repo, &verifytest.Fake{})
+	rs.Gh = gh.run
+	tr := capture(t, rs, out, errb, promoteAction{target: "jq", body: true})
+	tr.sections = ghSections(gh)
+	checkGolden(t, "promote_body", tr, rewrite{repo.Root, "<repo>"})
+}
+
 // ---- verify <branch> -------------------------------------------------
 
 // A branch verification needs tart stubbed present, so submission is

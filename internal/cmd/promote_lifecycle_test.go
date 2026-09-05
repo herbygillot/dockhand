@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/engine"
+	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/ledger"
@@ -410,4 +412,113 @@ func TestPromoteCitesTheTicketTheMintRecorded(t *testing.T) {
 	assert.Contains(t, body, "- [x] referenced existing tickets on [Trac]",
 		"the trailer is in the commit this record was born from, so the box says so")
 	assert.NotContains(t, errb.String(), "--closes", "nothing was late, so nothing is said")
+}
+
+// The body can be read without publishing it (confirmed at F9,
+// 2026-09-04). --body renders what a reviewer would read to stdout and
+// does nothing else: no cancellation, no push, no pull request, no audit
+// row — and no question to GitHub at all, which the fake proves by
+// recording every call it is asked.
+func TestPromoteBodyRendersAndPublishesNothing(t *testing.T) {
+	repo, sha := promoteRepo(t)
+	ctx := context.Background()
+	// A run still going on a second platform: promoting proper cancels
+	// it, and reading the body must not.
+	writeRuns(t, repo, sha, map[string]platRun{"Oldos": runningOn("fake-8")})
+	fake := &verifytest.Fake{}
+	forge := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
+	rs, out, errb := promoteState(t, repo, forge)
+	rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+
+	require.NoError(t, promoteAction{target: "jq", body: true}.Execute(ctx, rs))
+	body := out.String()
+	assert.True(t, strings.HasPrefix(body, "#### Description\n"), "stdout is the body and nothing else:\n%s", body)
+	assert.Contains(t, body, "Verified with [dockhand]")
+	assert.Contains(t, body, "Testos: linted clean, built in a pristine VM")
+	assert.Contains(t, body, "- [ ] checked that there aren't other open [pull requests]",
+		"the search did not run, so the box it would have checked is honest about it")
+	assert.Contains(t, errb.String(), "note: --body renders the body and publishes nothing")
+	assert.Contains(t, errb.String(), "open PRs were not searched")
+	assert.NotContains(t, body, "--body", "the note is beside the body, never in it")
+
+	assert.Empty(t, forge.calls, "GitHub is asked nothing — not even whose the fork is")
+	assert.Empty(t, repo.TrackedRemote(ctx, "dockhand/jq-1.8"), "nothing was pushed")
+	rows, err := ledger.Open(repo).Outcomes(ctx, sha)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "no audit row: nothing was published")
+	assert.Empty(t, fake.Released, "the running verification is not cancelled")
+	after, err := ledger.Open(repo).Read(ctx, sha)
+	require.NoError(t, err)
+	assert.Equal(t, record.Running, after.Runs[record.RunKey("jq", "Oldos")].State,
+		"and the record is untouched")
+}
+
+// The preview and the publication are one rendering. Promote the branch
+// after reading its body: the create call's body differs from what
+// --body printed in exactly the box the skipped search would have
+// checked, and nowhere else.
+func TestPromoteBodyIsTheBodyPromotePublishes(t *testing.T) {
+	repo, _ := promoteRepo(t)
+	ctx := context.Background()
+	forge := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
+	rs, out, _ := promoteState(t, repo, forge)
+
+	require.NoError(t, promoteAction{target: "jq", body: true}.Execute(ctx, rs))
+	preview := out.String()
+	out.Reset()
+	require.NoError(t, promoteAction{target: "jq"}.Execute(ctx, rs))
+	creates := forge.called("create")
+	require.Len(t, creates, 1)
+	published := creates[0][len(creates[0])-1]
+
+	unchecked := "- [ ] checked that there aren't other open"
+	checked := "- [x] checked that there aren't other open"
+	assert.Contains(t, preview, unchecked)
+	assert.Contains(t, published, checked)
+	assert.Equal(t, strings.Replace(preview, unchecked, checked, 1), published)
+}
+
+// Nothing bounded the pull request body (the reassessment, 2026-09-04).
+// With the cohort cap off a body grows a line per member per platform,
+// and GitHub refuses one past 65536 characters — from `gh pr create`,
+// after the push. A synthetic cohort large enough to cross the line is
+// refused BEFORE the push, in the declined band, naming the size and
+// the limit; nothing is trimmed to fit, and nothing leaves the machine.
+func TestPromoteRefusesABodyGitHubWouldNotTake(t *testing.T) {
+	repo, sha := promoteRepo(t)
+	ctx := context.Background()
+	require.NoError(t, ledger.Open(repo).Update(ctx, sha, func(r *record.Record) error {
+		// Each member passed, so each contributes a verified line and
+		// none of them is a warning on stderr: the size is the only thing
+		// wrong with this change.
+		for i := range 1000 {
+			port := fmt.Sprintf("py313-dependent-of-jq-with-a-long-name-%04d", i)
+			r.Subjects = append(r.Subjects, record.Subject{Port: port, Names: []string{port}})
+			r.Runs[record.RunKey(port, "Testos")] = record.Run{
+				State: record.Passed, Platform: "Testos", Linted: true, Lint: "clean"}
+		}
+		return nil
+	}))
+	forge := &ghFake{login: "herbygillot", createURL: "https://x/pr/1"}
+	rs, out, errb := promoteState(t, repo, forge)
+
+	err := promoteAction{target: "jq"}.Execute(ctx, rs)
+	var long *engine.PRBodyTooLongError
+	require.ErrorAs(t, err, &long)
+	assert.Equal(t, 65536, long.Limit, "GitHub's own number, as gh relays it")
+	assert.Greater(t, long.Size, long.Limit)
+	assert.Equal(t, exitcode.PlanDeclined, ExitCode(err), "declined: the next move is the author's")
+	assert.Equal(t, "pr-body-too-long", long.Code())
+	assert.Contains(t, err.Error(), fmt.Sprintf("%d characters", long.Size), "the size is named")
+	assert.Contains(t, err.Error(), "at most 65536", "and so is the limit")
+	assert.Contains(t, err.Error(), "nothing was pushed")
+
+	assert.Empty(t, repo.TrackedRemote(ctx, "dockhand/jq-1.8"), "refused before the push")
+	assert.NotContains(t, errb.String(), "pushed")
+	assert.Empty(t, forge.called("create"), "no pull request")
+	assert.Empty(t, forge.called("edit"))
+	assert.Empty(t, out.String(), "nothing was published, so no URL is printed")
+	rows, err := ledger.Open(repo).Outcomes(ctx, sha)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "no audit row over a publication that did not happen")
 }

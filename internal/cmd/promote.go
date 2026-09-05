@@ -36,6 +36,11 @@ type promoteAction struct {
 	// already published. The lease is the difference that matters: a fork
 	// copy moved from another machine refuses rather than being trampled.
 	force bool
+	// body prints the pull request body and does nothing else. It is
+	// the one way to read what a reviewer will read without opening a
+	// pull request to find out; what it skips to stay off the network,
+	// the engine says on stderr.
+	body bool
 }
 
 var _ Action = promoteAction{}
@@ -83,6 +88,7 @@ func (a promoteAction) Execute(ctx context.Context, rs *runstate.Context) error 
 		NoVerify:  a.noVerify,
 		NoPRCheck: a.noPRCheck,
 		Force:     a.force,
+		Body:      a.body,
 	})
 }
 
@@ -95,6 +101,7 @@ func Promote() *cobra.Command {
 		noVerify  bool
 		noPRCheck bool
 		force     bool
+		body      bool
 	)
 	c := &cobra.Command{
 		Use:   "promote <branch|port>",
@@ -104,7 +111,7 @@ func Promote() *cobra.Command {
 			return promoteAction{
 				target: args[0], remote: remote,
 				title: title, closes: closes, noPR: noPR, noVerify: noVerify,
-				noPRCheck: noPRCheck, force: force,
+				noPRCheck: noPRCheck, force: force, body: body,
 			}, nil
 		}),
 	}
@@ -118,5 +125,7 @@ func Promote() *cobra.Command {
 		"skip the search for pre-existing open PRs on the same port")
 	c.Flags().BoolVar(&force, "force", false,
 		"force-push the fork branch (with lease) and refresh the open PR's title and body; not the intents' --replace, which demolishes a local branch")
+	c.Flags().BoolVar(&body, "body", false,
+		"print the pull request body to stdout and do nothing else: no push, no PR, no audit row, and GitHub is not asked")
 	return c
 }

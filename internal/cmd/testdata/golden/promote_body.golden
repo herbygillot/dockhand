@@ -1,0 +1,31 @@
+exit: 0
+--- stdout
+  #### Description
+  
+  Verified with [dockhand](https://github.com/herbygillot/dockhand):
+    — Testos: linted clean, built in a pristine VM.
+  
+  Branch head `2eab82dfb158`.
+  
+  ###### Type(s)
+  
+  - [ ] bugfix
+  - [ ] enhancement
+  - [ ] security fix
+  
+  ###### Tested on
+  - macOS Testos — built in a pristine VM, via dockhand
+  
+  ###### Verification
+  Have you
+  
+  - [x] followed our [Commit Message Guidelines](https://trac.macports.org/wiki/CommitMessages)?
+  - [x] squashed and [minimized your commits](https://guide.macports.org/#project.github)?
+  - [ ] checked that there aren't other open [pull requests](https://github.com/macports/macports-ports/pulls) for the same change?
+  - [x] checked your Portfile with `port lint`?
+  - [ ] tried existing tests with `sudo port test`?
+  - [x] tried a full install with ~~`sudo port -vst install`~~ `sudo port install` in a pristine VM
+  
+  Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3
+--- stderr
+  note: --body renders the body and publishes nothing; GitHub was not asked — the fork was not resolved and open PRs were not searched, so the other-open-PRs box reads unchecked here whatever a promotion would find
