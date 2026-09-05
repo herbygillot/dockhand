@@ -2,6 +2,8 @@ package eval
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -41,6 +43,14 @@ func decodeSnapshot(reply string) (info.Values, []string, error) {
 		},
 		Worksrcdir: syntax.ListValue(fields["worksrcdir"]),
 		Filespath:  syntax.ListValue(fields["filespath"]),
+		// The patch phase's own default, written in when the reply
+		// carries nothing: a shim that did not report it — or a fake
+		// that never speaks of patches — describes a port that patches
+		// at -p0, not one that patches at nothing.
+		PatchPreArgs: DefaultPatchPreArgs,
+	}
+	if pre, ok := fields["patch.pre_args"]; ok {
+		v.PatchPreArgs = syntax.ListValue(pre)
 	}
 	var err error
 	for _, f := range []struct {
@@ -71,6 +81,46 @@ func decodeSnapshot(reply string) (info.Values, []string, error) {
 		return info.Values{}, nil, err
 	}
 	return v, subs, nil
+}
+
+// DefaultPatchPreArgs is what patch.pre_args reads when a port has not
+// set it: base's own default from portpatch.tcl, verbatim — the strip
+// level is the 0 the ruling names, and the two flags before it are
+// what base passes with it — copied here because a reply without the
+// key has to say what the patch phase would do rather than nothing.
+// The shim reports the option whenever a port is open, so this is
+// reached only by a fake that never speaks of patches.
+const DefaultPatchPreArgs = "-t -N -p0"
+
+// StripLevel reads the -pN out of a patch.pre_args value: the number of
+// leading path components the patch phase tells patch(1) to discard
+// from every file name in a hunk header.
+//
+// It answers 0 for everything it cannot read — an empty value, a value
+// with no -p in it, a -p followed by something that is not a number —
+// because 0 is base's default and the answer a port that said nothing
+// gets. That is a policy and not a parse: a caller that needs to know
+// whether the port SAID -p0 has the option's own text in
+// Values.PatchPreArgs. Both spellings patch(1) takes are read, "-p1"
+// and "-p 1", and when the option names more than one the last wins,
+// which is what patch(1) does with its own arguments.
+func StripLevel(pre string) int {
+	level := 0
+	args := strings.Fields(pre)
+	for i := 0; i < len(args); i++ {
+		digits, ok := strings.CutPrefix(args[i], "-p")
+		if !ok {
+			continue
+		}
+		if digits == "" && i+1 < len(args) {
+			i++
+			digits = args[i]
+		}
+		if n, err := strconv.Atoi(digits); err == nil && n >= 0 {
+			level = n
+		}
+	}
+	return level
 }
 
 // listField decodes a list-valued dict field, absent fields yielding nil.

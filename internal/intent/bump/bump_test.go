@@ -130,6 +130,8 @@ func TestBumpPlanEndToEnd(t *testing.T) {
 	assert.True(t, fields["revision"])
 	assert.True(t, fields["checksums"])
 	assert.True(t, fields["distfiles"])
+	// No patchfiles, so nothing rides beside the Portfile.
+	assert.Empty(t, p.Files)
 
 	// Apply it: the observed delta must equal the prediction.
 	_, err = p.Apply(context.Background(), ev)

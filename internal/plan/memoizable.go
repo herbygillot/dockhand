@@ -110,6 +110,17 @@ func (t DeclineType) Determinacy() Determinacy {
 		// after resolution, so a run that raises this never had a resolved
 		// input to key on.
 		return ByNetwork
+	case PatchWontRelocate:
+		// Decided by two things the key does not hold, and the same two
+		// that keep VendoredBlock unstated: the patch's own bytes under
+		// the portdir's files/ directory, which a maintainer rewrites
+		// without moving the Portfile, and the source the hunks are
+		// looked for in, which is whatever a server served for the new
+		// version. Every producer relocates against a fetch — there is
+		// no other way to ask the question — so unlike VendoredBlock
+		// there is no producer that could honestly say ByPortfile, and
+		// the ruling is the ceiling rather than a deferral.
+		return ByNetwork
 	case AlreadyCurrent, FetchNotDriven, VendoredBlock:
 		return Unstated
 	}
@@ -174,6 +185,8 @@ func DeclineTypeFor(code string) (DeclineType, bool) {
 		return VendoredBlock, true
 	case "revision-shape-ambiguous":
 		return RevisionShapeAmbiguous, true
+	case "patch-wont-relocate":
+		return PatchWontRelocate, true
 	}
 	return 0, false
 }

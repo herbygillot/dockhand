@@ -252,13 +252,58 @@ recording every candidate as not an archive.
 
 ---
 
-## D12 — Patchfile refresh: tentative
+## D12 — Patchfile refresh: the simplest version, and nothing more
 
-**Undecided.** Detecting staleness at extract time is clearly in scope. Recognising an *obsolete* patch — one that reverse-applies cleanly, meaning upstream merged the fix — and removing it is mechanical and verifiable. Diagnostics for the remainder are useful.
+**Decided 2026-09-04**, having been held since 2026-09-02 on the
+reasoning below, which the ruling turned out to restate. The
+maintainer's words: for each hunk, find its entry point in the new
+source and see whether the patch still applies verbatim with that
+entry point moved up or down; if it is more complicated than that, give
+up outright.
 
-**Why held.** The failure mode is uniquely bad. A patch applied with fuzz in the wrong place yields a port that builds successfully and is subtly wrong — worse than one that fails outright, and invisible to every check in the design. Offsets are safe; fuzz is never accepted unattended. `git apply` may diagnose but must never render the verdict, since three-way merge succeeds where `patch` fails.
+**What shipped.** `macports/patch` parses a unified diff and relocates
+each hunk iff its before-block — every context and removed line, in
+order, byte for byte — occurs exactly once in the target, rewriting only
+the `@@` numbers. No fuzz, no whitespace tolerance, no partial
+application. Not found, found twice, a target the distfile does not
+carry, or a hunk landing on another hunk all give up on the whole patch,
+and the whole patch giving up **declines the bump** (`PatchWontRelocate`,
+exit 10), naming the patch, the file and the hunk. That is nettle 4.0 —
+which cost a VM boot and a baseline install to discover on 2026-09-03 —
+caught at `--plan` time: "files/no-fink.patch: configure.ac hunk #1: its
+before-block occurs nowhere in the file". A patch whose hunks all moved
+rides the plan as a rewritten `files/<name>`; a plan now carries whole
+files beside its Portfile edits, and mint, `--diff`, `--in-place` and the
+verification shadow all write them. It is not a rider: `--no-riders`
+does not touch it, because a bump is not correct without it.
 
-**Cost to reverse.** Low — it is additive.
+**Two choices made in the building, either reversible in a line.** The
+target file is read at exactly `worksrcdir/<path>` with no fallback —
+`distfile.Extract`'s basename fallback would relocate a patch against a
+nested file `patch(1)` will never open — so a flat tarball
+(`extract.mkdir`) declines rather than being read by luck; under "give
+up outright" that is the right side. And the patch list is the shadow
+evaluation's, not the pre-edit Portfile's, because `patchfiles` may be
+conditional on the version just moved to.
+
+**What it does not do, by design.** Recognise an obsolete patch (one
+that reverse-applies, meaning upstream merged it) — that is a second
+verdict and the ruling asked for one. Model `patch.dir` — such a port's
+targets miss and decline, the safe direction. Check anything when the
+plan takes a branch that fetches no distfile — there is no target to
+check against, and the plan proceeds with the patches untouched and
+unmentioned; recorded in `docs/todo.md` as the one gap worth closing.
+
+**Why it was held, and still governs the edges.** The failure mode is
+uniquely bad. A patch applied with fuzz in the wrong place yields a port
+that builds successfully and is subtly wrong — worse than one that fails
+outright, and invisible to every check in the design. Offsets are safe;
+fuzz is never accepted unattended. `git apply` may diagnose but must
+never render the verdict, since three-way merge succeeds where `patch`
+fails. Every "give up" above is that paragraph applied.
+
+**Cost to reverse.** Low — it is additive, and the ruling was for the
+simplest version on purpose.
 
 ---
 

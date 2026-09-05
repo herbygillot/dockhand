@@ -51,6 +51,17 @@ const (
 	// carried by a set variable, a carrier inside a conditional — is
 	// named here rather than guessed at. The Detail says which.
 	RevisionShapeAmbiguous
+	// PatchWontRelocate means a patch the port applies does not carry
+	// over to the new source by the one move dockhand will make for it:
+	// every hunk's before-block found once, verbatim, somewhere in the
+	// new file, with only its line numbers rewritten. A hunk whose lines
+	// are not there, or are there twice, or a file the new source does
+	// not carry at all, is this decline — the whole patch, not the hunk,
+	// because half a refreshed patch is a patch nobody wrote. No fuzz
+	// and no whitespace tolerance, by ruling: anything past a verbatim
+	// relocation is a person's judgment about what the patch was for.
+	// The Detail names the patch, the file, the hunk and why.
+	PatchWontRelocate
 )
 
 func (t DeclineType) String() string {
@@ -80,6 +91,8 @@ func (t DeclineType) String() string {
 		return "vendored dependency block requires regeneration"
 	case RevisionShapeAmbiguous:
 		return "the Portfile's shape does not say where a revision line belongs"
+	case PatchWontRelocate:
+		return "a patch does not relocate onto the new source"
 	}
 	return "unknown decline"
 }
@@ -110,6 +123,8 @@ func (t DeclineType) Code() string {
 		return "vendored-block"
 	case RevisionShapeAmbiguous:
 		return "revision-shape-ambiguous"
+	case PatchWontRelocate:
+		return "patch-wont-relocate"
 	}
 	return "unknown-decline"
 }
@@ -150,6 +165,8 @@ func (t DeclineType) Remedy() string {
 		return "regenerate the vendored block and commit that first; dockhand will not edit around it"
 	case RevisionShapeAmbiguous:
 		return "add the `revision` line yourself; dockhand writes one only under a version line whose placement leaves nothing to guess"
+	case PatchWontRelocate:
+		return "refresh the patch by hand against the new source; dockhand moves a hunk only where its lines recur verbatim, and rewrites nothing inside one"
 	}
 	return ""
 }

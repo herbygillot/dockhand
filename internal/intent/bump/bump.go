@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
 	"github.com/herbygillot/dockhand/internal/distfile"
@@ -247,6 +248,14 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		}
 	}
 
+	// The port's patches, relocated onto the new source: the whole
+	// files the plan writes beside the Portfile, and the names of the
+	// patchfiles that moved, for the summary. Both stay nil on every
+	// path that fetches nothing — a port recording no checksums has no
+	// distfile to look inside, so its patches are left as they are.
+	var files []plan.FileEdit
+	var refreshed []string
+
 	// Shadow the version edits to learn the new distfiles and their
 	// URLs, then fetch them for checksums.
 	checksumOldTokens := vals.Checksums
@@ -362,6 +371,22 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		checksumsViaSet = viaSet
 		edits = append(edits, ck...)
 
+		// The patches the new version applies, moved onto the source
+		// just fetched. The shadow's list and not the original's: a
+		// patchfile conditional on the version is applied or not by
+		// the version the port is going to, and that evaluation is the
+		// shadow's. This is not a rider, and --no-riders does not
+		// reach it. A rider is housekeeping dockhand offers on the side
+		// of a change and the user may refuse; a patch that no longer
+		// applies is the bump itself not being complete, so the policy
+		// is not consulted, and a patch that will not relocate declines
+		// the bump outright rather than shipping a branch whose patch
+		// phase would fail.
+		files, refreshed, err = relocatePatches(ctx, b.Tools, h.Target.Portdir, shadowVals, shadowVals.Worksrcdir, fetched)
+		if err != nil {
+			return nil, err
+		}
+
 		// Each present family regenerates its block for the target — the
 		// crate set and the checksum recorded for the distfile describe
 		// the same bytes, because both came from this fetch.
@@ -386,16 +411,25 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		}
 	}
 
+	// The commit's subject. A refreshed patch is named in it because a
+	// reviewer reading the subject alone should know the change touched
+	// more than the Portfile, and the name is what they would look for
+	// in the diff.
+	summary := fmt.Sprintf("%s: update to %s", vals.Name, b.Version)
+	if len(refreshed) > 0 {
+		summary += ", refresh " + strings.Join(refreshed, ", ")
+	}
+
 	// Everything from here — shadow the full edit set, diff it, refuse
 	// what the prediction did not promise, fold in the riders, assemble
 	// — is the tail every intent runs, and it is written once. What is
 	// left in this package is what only a bump knows: which spans to
 	// rewrite, and what has to have moved for a bump to have happened.
-	return intent.Finish(ctx, h, src, edits,
+	p, err := intent.Finish(ctx, h, src, edits,
 		intent.Identity{
 			Intent:       "bump",
 			Slug:         vals.Name + "-" + b.Version,
-			Summary:      fmt.Sprintf("%s: update to %s", vals.Name, b.Version),
+			Summary:      summary,
 			ClosesTicket: b.ClosesTicket,
 		},
 		intent.FinishOpts{
@@ -411,6 +445,17 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			Witness:    witness,
 			Dependents: b.Dependents,
 		})
+	if err != nil {
+		return nil, err
+	}
+	// The refreshed patches ride on the plan beside the Portfile's
+	// edits. They are set here and not handed to the tail because the
+	// tail proves the Portfile — shadows it, diffs it, judges the delta
+	// — and a whole file is outside that proof: the source it was
+	// relocated against is the witness, and every realization writes
+	// it as it arrives.
+	p.Files = files
+	return p, nil
 }
 
 // accept is the bump's judgment of its own predicted delta — the half

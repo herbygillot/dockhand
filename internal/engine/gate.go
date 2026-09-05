@@ -64,6 +64,17 @@ func (e *Engine) VerifyPlan(ctx context.Context, p *plan.Plan, o Policy) (Proof,
 		return Proof{}, err
 	}
 	defer cleanup()
+	// The plan's whole files go into the shadow too, over the copies
+	// Shadow took from the tree. The gate's verdict is carried onto the
+	// minted commit by content identity — markVerified records the tip
+	// as passed on the strength of the gate having built the same bytes
+	// — and a shadow still carrying the old patch would earn that
+	// verdict for a port the branch does not contain.
+	for _, f := range p.Files {
+		if err := os.WriteFile(filepath.Join(shadow.Target.Portdir, filepath.FromSlash(f.Path)), []byte(f.Content), 0o644); err != nil {
+			return Proof{}, err
+		}
+	}
 
 	// The gate builds what the branch will carry, so it builds it under
 	// the same terms — which is why it takes the whole policy and not

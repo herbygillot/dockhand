@@ -424,11 +424,19 @@ func (e *Engine) planMember(ctx context.Context, repo *git.Repo, tip string, roo
 }
 
 // cohortFiles is the commit's file list: one edited Portfile per
-// planned portdir, in the order the members must be built.
+// planned portdir, in the order the members must be built, each
+// followed by whatever whole files its plan rewrites beside it — the
+// same list planOnBase builds for a single plan. No cohort planner
+// produces one today, a revbump fetching nothing; the carry is here so
+// that the day one does, the commit holds what the plan says and not
+// half of it.
 func cohortFiles(built []planned) []git.File {
 	out := make([]git.File, 0, len(built))
 	for _, b := range built {
 		out = append(out, git.File{Path: b.Portdir + "/" + macports.PortfileName, Content: b.Content})
+		for _, f := range b.Plan.Files {
+			out = append(out, git.File{Path: b.Portdir + "/" + f.Path, Content: []byte(f.Content)})
+		}
 	}
 	return out
 }

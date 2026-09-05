@@ -57,3 +57,21 @@ func TestRenderPlanPadsTheReasonColumn(t *testing.T) {
 		"predicted delta:\n"+
 		"  jq: version 1.0 -> 2.0\n", b.String())
 }
+
+// A whole file the plan rewrites is a line in the same table, its path
+// where the reason goes and what happened to it where the values go.
+// The bytes stay in the JSON.
+func TestRenderPlanListsTheFilesItRewrites(t *testing.T) {
+	var b strings.Builder
+	RenderPlan(&b, &plan.Plan{
+		Intent:  "bump",
+		Portdir: "/tree/devel/jq",
+		Edits:   []edit.Edit{{Reason: "version", Old: "1.0", New: "2.0"}},
+		Files:   []plan.FileEdit{{Path: "files/patch-foo.diff", Content: "@@ -9,1 +9,1 @@\n", Reason: "1 hunk moved"}},
+	})
+	assert.Equal(t, "plan: bump /tree/devel/jq, 1 edits\n"+
+		"  version:         1.0 -> 2.0\n"+
+		"  files/patch-foo.diff: 1 hunk moved\n"+
+		"predicted delta:\n", b.String())
+	assert.NotContains(t, b.String(), "@@", "a patch is a page; the summary names it")
+}

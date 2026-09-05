@@ -44,6 +44,26 @@ type ContextDelta struct {
 	Changes  []Change `json:"changes,omitempty"`
 }
 
+// FileEdit is one whole file the plan rewrites beside the Portfile: a
+// patch under files/ relocated onto the new source, today. Path is
+// relative to the portdir ("files/patch-foo.diff"), slash-separated,
+// and Content is the file's entire new bytes rather than a span edit
+// over its old ones.
+//
+// Whole bytes and not spans, deliberately. The Portfile's edits are
+// spans with a precondition hash because the Portfile is what the user
+// may have touched between plan and realization, and a span edit is
+// what lets the drift be named. A refreshed patch is derived from the
+// fetched source and from the old patch's bytes in the base commit;
+// the planner produced it complete, and a realizer that re-derived it
+// from spans would be re-planning. Reason is the sentence a renderer
+// and a pull request body say about it ("2 hunks moved").
+type FileEdit struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Reason  string `json:"reason"`
+}
+
 // Plan is the value. A plan carries its own identity: the intent that
 // made it knows, at plan time, what the change is called — Port names
 // the evaluation context, Slug is the change's short identity
@@ -67,6 +87,17 @@ type Plan struct {
 	Subport        string      `json:"subport,omitempty"`
 	PortfileSHA256 string      `json:"portfile_sha256"`
 	Edits          []edit.Edit `json:"edits"`
+	// Files are the whole files the plan rewrites beside the Portfile,
+	// each at its portdir-relative path. They ride on the plan for the
+	// same reason the edits do: the intent decided them, and every
+	// realization — the commit, the diff, the gate's shadow — writes
+	// them without deciding anything again. Materialize does not touch
+	// them; it is the Portfile's precondition and the Portfile's edits,
+	// and a file here arrives complete.
+	//
+	// Absent rather than null when there is none, on Riders' precedent,
+	// so every plan document that predates them hashes to what it did.
+	Files []FileEdit `json:"files,omitempty"`
 	// Riders names the housekeeping rules whose edits are in Edits, in
 	// the order the rules ran. It is the names and not the edits because
 	// the edits are already here: what a note and a pull request body

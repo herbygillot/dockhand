@@ -152,6 +152,31 @@ func TestExtractMissingFromEveryCandidate(t *testing.T) {
 	assert.Contains(t, err.Error(), "src.tar.gz")
 }
 
+// ExtractMember takes the path it is given and nothing near it: the
+// nested Makefile that Extract would fall back to for a bare name is
+// not the top-level one a patch names, and a patch relocated onto it
+// would describe a file patch(1) never opens.
+func TestExtractMemberIsExact(t *testing.T) {
+	requireTar(t)
+	archive := tarballWith(t, map[string]string{
+		"demo-1.0/src/Makefile": "all:\n",
+		"demo-1.0/configure":    "#!/bin/sh\n",
+	})
+	ctx := context.Background()
+	_, _, err := ExtractMember(ctx, tools, []string{archive}, "demo-1.0/Makefile")
+	require.ErrorIs(t, err, ErrMemberMissing)
+	assert.Contains(t, err.Error(), "demo-1.0/Makefile")
+
+	got, _, err := Extract(ctx, tools, []string{archive}, "demo-1.0", "Makefile")
+	require.NoError(t, err)
+	assert.Equal(t, "all:\n", string(got), "Extract's fallback is the thing ExtractMember declines")
+
+	got, from, err := ExtractMember(ctx, tools, []string{archive}, "demo-1.0/src/Makefile")
+	require.NoError(t, err)
+	assert.Equal(t, "all:\n", string(got))
+	assert.Equal(t, archive, from)
+}
+
 func TestExtractEmptyMemberIsNotAnAnswer(t *testing.T) {
 	requireTar(t)
 	archive := tarballWith(t, map[string]string{"demo-1.0/Cargo.lock": ""})

@@ -39,6 +39,14 @@ type Values struct {
 	Worksrcdir string
 	Filespath  string
 	Patchfiles []string
+	// PatchPreArgs is what the patch phase hands patch(1) before the
+	// file — "-p0" unless the port says otherwise — and it is here
+	// because the one thing a planner needs from it is the strip level:
+	// a hunk header's path is meaningless until the -pN says how many
+	// of its leading components the patch phase will discard. Kept as
+	// the option's own text rather than parsed here, so what is stored
+	// is what MacPorts saw; eval.StripLevel reads the number out.
+	PatchPreArgs string
 
 	// Livecheck and Vendored are configuration: what a Portfile
 	// declares about how it is maintained, rather than what it is.

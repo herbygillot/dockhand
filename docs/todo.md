@@ -538,3 +538,15 @@ that might need the sibling active.
 **What it is not.** Not the default, and not a scheduled follow-up.
 The ruling is that the tool informs and stops; this is the person
 overriding, and the flag should read that way.
+
+## A bump that fetches nothing leaves its patches unchecked, and says nothing
+
+**Found building D12 (2026-09-04).** Patch relocation runs only where
+the plan fetched the target version's distfiles, because the new source
+is the thing a hunk is relocated against. A bump that takes a branch
+with no fetch — every distfile from a vendored block, say — proceeds
+with its patches untouched, and the plan does not mention that they
+were not checked. That is correct as far as it goes: no target, no
+check. What is missing is the sentence. A plan that could not check a
+port's patches should say so, the way the ABI finding says "unavailable"
+rather than nothing.

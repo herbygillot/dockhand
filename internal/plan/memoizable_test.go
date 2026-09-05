@@ -38,7 +38,7 @@ func TestEveryDeclineTypeRulesOnItsDeterminacy(t *testing.T) {
 		assert.NotEqual(t, "unknown determinacy", d.String(), "%s falls through", dt)
 		counts[d]++
 	}
-	assert.Equal(t, map[Determinacy]int{ByPortfile: 6, Unstated: 3, ByNetwork: 1}, counts,
+	assert.Equal(t, map[Determinacy]int{ByPortfile: 6, Unstated: 3, ByNetwork: 2}, counts,
 		"the rulings are the contract; moving one is a change to what may be remembered")
 }
 
@@ -65,6 +65,14 @@ func TestNetworkDeterminedDeclinesAreNeverMemoizable(t *testing.T) {
 	assert.False(t, (&Decline{Type: LatestUnresolved}).Memoizable())
 	assert.False(t, (&Decline{Type: LatestUnresolved, Determined: ByPortfile}).Memoizable(),
 		"the type's ruling is a ceiling; a producer may narrow it and never widen it")
+
+	// A patch that would not relocate was looked for in what a server
+	// served, against a patch file the key does not hash. A maintainer
+	// who rewrote the patch, or an upstream that re-rolled the tarball,
+	// has changed the answer without moving the Portfile.
+	assert.False(t, (&Decline{Type: PatchWontRelocate}).Memoizable())
+	assert.False(t, (&Decline{Type: PatchWontRelocate, Determined: ByPortfile}).Memoizable(),
+		"no producer relocates without a fetch, so none may claim otherwise")
 
 	// refresh-checksums' own already-current is the dangerous one: its
 	// cause is a fetch, and the supply-chain event it exists to catch is
@@ -267,6 +275,8 @@ func declineTypeNamed(name string) (DeclineType, bool) {
 		return VendoredBlock, true
 	case "RevisionShapeAmbiguous":
 		return RevisionShapeAmbiguous, true
+	case "PatchWontRelocate":
+		return PatchWontRelocate, true
 	}
 	return 0, false
 }

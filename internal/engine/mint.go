@@ -18,44 +18,65 @@ import (
 )
 
 // planOnBase resolves a plan against the repository it will land in:
-// the repo, its primary branch, the Portfile's repo-relative path, and
-// the edited bytes — computed from the base commit's blob, never the
-// working file, with the plan's precondition hash held against that
-// blob. Both realizations that speak git — mint and diff — start here.
-// The repository it opens is the run's, resolved once, and anchored on
-// the portdir the plan named: an intent may name one outside the tree.
-func (e *Engine) planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary, path string, edited []byte, err error) {
+// the repo, its primary branch, and the files the change writes at
+// their repo-relative paths — the edited Portfile computed from the
+// base commit's blob, never the working file, with the plan's
+// precondition hash held against that blob, and after it every whole
+// file the plan rewrites beside the Portfile. Both realizations that
+// speak git — mint and diff — start here and build their tree from
+// this one list, so what --diff shows is what the branch would carry,
+// file for file. The repository it opens is the run's, resolved once,
+// and anchored on the portdir the plan named: an intent may name one
+// outside the tree.
+func (e *Engine) planOnBase(ctx context.Context, p *plan.Plan) (repo *git.Repo, primary string, files []git.File, err error) {
 	repo, err = e.RepoFor(ctx, p.Portdir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			// Wrapped, not swallowed: the identity is what routes this
 			// to the tree exit band.
-			return nil, "", "", nil, fmt.Errorf("%w — the branch workflow needs a git checkout; --in-place edits the tree directly", err)
+			return nil, "", nil, fmt.Errorf("%w — the branch workflow needs a git checkout; --in-place edits the tree directly", err)
 		}
-		return nil, "", "", nil, err
+		return nil, "", nil, err
 	}
 	primary, err = repo.PrimaryBranch(ctx)
 	if err != nil {
-		return nil, "", "", nil, err
+		return nil, "", nil, err
 	}
 	rel, err := repo.RelPath(p.Portdir)
 	if err != nil {
-		return nil, "", "", nil, err
+		return nil, "", nil, err
 	}
-	path = rel + "/" + macports.PortfileName
+	path := rel + "/" + macports.PortfileName
 	base, err := repo.BlobAt(ctx, primary, path)
 	if err != nil {
-		return nil, "", "", nil, err
+		return nil, "", nil, err
 	}
-	edited, err = p.Materialize(base)
+	edited, err := p.Materialize(base)
 	if errors.Is(err, plan.ErrDrift) {
-		return nil, "", "", nil, fmt.Errorf("%w: the Portfile on %s is not the one planned against — commit your work there first, or use --in-place", plan.ErrDrift, primary)
+		return nil, "", nil, fmt.Errorf("%w: the Portfile on %s is not the one planned against — commit your work there first, or use --in-place", plan.ErrDrift, primary)
 	}
 	if err != nil {
-		return nil, "", "", nil, err
+		return nil, "", nil, err
 	}
-	return repo, primary, path, edited, nil
+	files = make([]git.File, 0, 1+len(p.Files))
+	files = append(files, git.File{Path: path, Content: edited})
+	// A plan's whole files join onto the same portdir prefix the
+	// Portfile does: their paths are portdir-relative by contract, and
+	// the graft below refuses an empty segment, so a path that is not
+	// one fails at the tree rather than landing somewhere else.
+	for _, f := range p.Files {
+		files = append(files, git.File{Path: rel + "/" + f.Path, Content: []byte(f.Content)})
+	}
+	return repo, primary, files, nil
 }
+
+// writes reports whether a plan has anything to realize: a Portfile
+// edit, or a whole file rewritten beside it. No planner produces a
+// file without an edit today — a refreshed patch rides on the bump
+// that made it necessary — but "no edits; no branch minted" over a
+// plan that carried a file would be a realization silently dropping
+// half of what it was handed, so the question is asked of both.
+func writes(p *plan.Plan) bool { return len(p.Edits) > 0 || len(p.Files) > 0 }
 
 // BranchInFlightError is the refusal an intent gives when its port
 // already has a branch: refusal is a feature, not a failure — the user
@@ -148,7 +169,7 @@ type Minted struct {
 func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, error) {
 	branch, message := git.MintBranchName(p.Slug), commitMessage(p)
 	replace := o.OnInFlight == Replace
-	hasEdits := len(p.Edits) > 0
+	hasEdits := writes(p)
 	// The decision is asked twice, and the order is the reason: the
 	// empty-plan answer is reached before the plan is resolved against
 	// the repository at all, so a plan with nothing in it never reports
@@ -186,7 +207,7 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 			return &Minted{Repo: repo, Branch: branch, Stood: true}, nil
 		}
 	}
-	repo, primary, path, edited, err := e.planOnBase(ctx, p)
+	repo, primary, files, err := e.planOnBase(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -199,10 +220,14 @@ func (e *Engine) mint(ctx context.Context, p *plan.Plan, o Policy) (*Minted, err
 	sha, err := repo.Mint(ctx, git.MintRequest{
 		Branch: branch,
 		Base:   primary,
-		// One commit carrying one file: a plan is one port's edit, and
-		// the chain and the file list are both at their length of one.
+		// One commit carrying the change: a plan is one port's edit, and
+		// the chain is at its length of one. The file list is the
+		// Portfile and whatever the plan rewrites beside it — a patch
+		// relocated onto the new source — in the same commit rather than
+		// a second, because they move for one reason and a reviewer
+		// reads them as one change.
 		Commits: []git.Commit{{
-			Files:   []git.File{{Path: path, Content: edited}},
+			Files:   files,
 			Message: message,
 		}},
 	})

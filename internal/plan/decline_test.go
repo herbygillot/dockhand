@@ -28,7 +28,7 @@ func TestEveryDeclineTypeIsNamedCodedAndRemedied(t *testing.T) {
 		assert.False(t, seen[dt.Code()], "%q is claimed twice", dt.Code())
 		seen[dt.Code()] = true
 	}
-	assert.Len(t, seen, 10, "the taxonomy is ten members; a change to it is a change to the contract")
+	assert.Len(t, seen, 11, "the taxonomy is eleven members; a change to it is a change to the contract")
 }
 
 // The sentence is the finding, then the detail, then the remedy — the

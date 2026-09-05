@@ -23,6 +23,14 @@ func RenderPlan(w io.Writer, p *plan.Plan) {
 	for _, e := range p.Edits {
 		fmt.Fprintf(w, "  %-16s %s -> %s\n", e.Reason+":", e.Old, e.New)
 	}
+	// The whole files the plan rewrites, in the same column as the
+	// edits so the table reads on: the path is the reason's slot,
+	// because a file's reason is which file it is, and what happened to
+	// it stands where the values would. Its bytes are not printed — a
+	// patch is a page, and the JSON has it.
+	for _, f := range p.Files {
+		fmt.Fprintf(w, "  %-16s %s\n", f.Path+":", f.Reason)
+	}
 	// The riders are already in the list above, spelled as edits. This
 	// line says which of them nobody asked for — the word "also" because
 	// it is the word the pull request body uses for the same fact, and a

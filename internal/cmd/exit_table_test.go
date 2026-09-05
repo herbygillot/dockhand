@@ -602,6 +602,16 @@ func exitTable(t *testing.T) []exitRow {
 			err: &plan.Decline{Type: plan.RevisionShapeAmbiguous,
 				Detail: "the Portfile defines 3 evaluation contexts, and one inserted revision line would move all of them"},
 			as: new(*plan.Decline)},
+		// A patch the bump could not carry across: the plan was a version
+		// away from complete, and what stopped it is a judgment about the
+		// one move dockhand makes for a hunk — verbatim, once, elsewhere —
+		// not a failure of anything. The remedy is a person's edit of the
+		// patch, which is why it is a decline and not a tree error.
+		exitRow{name: "*plan.Decline PatchWontRelocate (bump: a hunk's lines are not in the new source)",
+			err: &plan.Decline{Type: plan.PatchWontRelocate,
+				Detail:     "patch-no-fink.diff: configure.ac hunk 2: its lines do not occur in the new source",
+				Determined: plan.ByNetwork},
+			as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline wrapped",
 			err: fmt.Errorf("bump: %w", &plan.Decline{Type: plan.AlreadyCurrent}), as: new(*plan.Decline)},
 		exitRow{name: "*portstyle.Decline FieldUnsupported (portstyle.Locate)",

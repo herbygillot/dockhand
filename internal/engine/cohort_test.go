@@ -21,6 +21,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/testenv"
@@ -815,4 +816,23 @@ func TestExcludingEveryMemberIsRefused(t *testing.T) {
 	var empty *EmptyCohortError
 	require.ErrorAs(t, err, &empty)
 	assert.Contains(t, err.Error(), "dismiss")
+}
+
+// A member's whole files ride in the cohort commit beside its
+// Portfile, at the member's own portdir, the way planOnBase carries
+// them for a single plan. Exercised on the list builder alone because
+// no cohort planner produces a file today; the carry is what keeps the
+// commit honest when one does.
+func TestCohortFilesCarryEachMembersWholeFiles(t *testing.T) {
+	built := []planned{
+		{Portdir: "graphics/gegl", Plan: &plan.Plan{}, Content: []byte("revision 1\n")},
+		{Portdir: "graphics/gthumb", Content: []byte("revision 2\n"), Plan: &plan.Plan{Files: []plan.FileEdit{
+			{Path: "files/patch-foo.diff", Content: "@@ -9 +9 @@\n", Reason: "1 hunk moved"},
+		}}},
+	}
+	assert.Equal(t, []git.File{
+		{Path: "graphics/gegl/Portfile", Content: []byte("revision 1\n")},
+		{Path: "graphics/gthumb/Portfile", Content: []byte("revision 2\n")},
+		{Path: "graphics/gthumb/files/patch-foo.diff", Content: []byte("@@ -9 +9 @@\n")},
+	}, cohortFiles(built))
 }

@@ -113,6 +113,34 @@ livecheck.regex  {tags/([0-9.]+)\.tar\.gz}
 	require.Equal(t, `tags/([0-9.]+)\.tar\.gz`, v.Livecheck.Regex)
 	require.Equal(t, "1.0", v.Livecheck.Version)
 	require.False(t, v.Vendored.Any())
+	// A port that says nothing about its patch phase patches at base's
+	// default, and the shim reports the option rather than its absence:
+	// the decoder's own default is base's text, so a reply with the key
+	// and one without read the same.
+	require.Equal(t, DefaultPatchPreArgs, v.PatchPreArgs)
+	require.Equal(t, 0, StripLevel(v.PatchPreArgs))
+}
+
+// The patch phase's arguments are the port's own when it sets them,
+// read off the worker the same way every other option is.
+func TestValuesReportsPatchPreArgs(t *testing.T) {
+	e := newEvaluator(t)
+	dir := portdirWith(t, `PortSystem 1.0
+name             stripped
+version          1.0
+categories       devel
+maintainers      nomaintainer
+license          MIT
+description      patch strip probe
+long_description patch strip probe
+patchfiles       patch-foo.diff
+patch.pre_args   -p1
+`)
+	v, err := e.Values(context.Background(), dir, "", "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"patch-foo.diff"}, v.Patchfiles)
+	require.Equal(t, "-p1", v.PatchPreArgs)
+	require.Equal(t, 1, StripLevel(v.PatchPreArgs))
 }
 
 func TestValuesReportsVendoredBlocks(t *testing.T) {

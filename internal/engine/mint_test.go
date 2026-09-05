@@ -322,6 +322,53 @@ func TestMintWithoutATicketIsTheSummaryAlone(t *testing.T) {
 	assert.Empty(t, n.ClosesTicket)
 }
 
+// A plan's whole files land in the same commit as the Portfile, each
+// at its portdir-relative path. One commit and not two, because the
+// patch moved for the version's reason and a reviewer reads them as
+// one change; and the diff realization is built from the same list, so
+// what --diff shows is what the branch carries.
+func TestMintCarriesThePlansFilesBesideThePortfile(t *testing.T) {
+	ctx := context.Background()
+	const stale = "--- a/foo.c\n+++ b/foo.c\n@@ -1,1 +1,1 @@\n-old\n+new\n"
+	const fresh = "--- a/foo.c\n+++ b/foo.c\n@@ -9,1 +9,1 @@\n-old\n+new\n"
+	// The patch exists before the mint, as it does for every refresh: a
+	// relocation rewrites a file the port already applies, and the graft
+	// replaces files but never invents the directory one sits in.
+	repo := gittest.Init(t, realTools, "", map[string]string{
+		"sysutils/jq/Portfile":             "version 1.7\n",
+		"sysutils/jq/files/patch-foo.diff": stale,
+	})
+	var out, errb bytes.Buffer
+	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errb)
+
+	p := bumpPlan(t, repo, "bump", "1.8")
+	p.Files = []plan.FileEdit{{Path: "files/patch-foo.diff", Content: fresh, Reason: "1 hunk moved"}}
+	require.NoError(t, runPlan(t, ctx, eng, p, Policy{Destination: record.ToBranch}))
+
+	primary, err := repo.PrimaryBranch(ctx)
+	require.NoError(t, err)
+	tip, err := repo.RevParse(ctx, "dockhand/jq-1.8")
+	require.NoError(t, err)
+	changed, err := repo.DiffNames(ctx, primary, tip)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"sysutils/jq/Portfile", "sysutils/jq/files/patch-foo.diff"}, changed,
+		"two files, one commit")
+
+	portfile, err := repo.BlobAt(ctx, tip, "sysutils/jq/Portfile")
+	require.NoError(t, err)
+	assert.Equal(t, "version 1.8\n", string(portfile))
+	patch, err := repo.BlobAt(ctx, tip, "sysutils/jq/files/patch-foo.diff")
+	require.NoError(t, err)
+	assert.Equal(t, fresh, string(patch), "the plan's bytes, byte for byte")
+
+	// The same list, shown rather than committed.
+	out.Reset()
+	require.NoError(t, runPlan(t, ctx, eng, p, Policy{Diff: true}))
+	assert.Contains(t, out.String(), "b/sysutils/jq/Portfile")
+	assert.Contains(t, out.String(), "b/sysutils/jq/files/patch-foo.diff")
+	assert.Contains(t, out.String(), "+@@ -9,1 +9,1 @@", "the relocated header is what the diff of the diff shows")
+}
+
 // commitBody is a commit's whole message, which Repo.Subject
 // deliberately is not: the trailer is the part below the subject, so
 // reading only the first line would pass whatever this writes.

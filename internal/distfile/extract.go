@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tool"
@@ -48,6 +49,33 @@ var (
 // lets a caller claim that what it read and the checksum it recorded
 // describe the same artifact.
 func Extract(ctx context.Context, tools *tool.Finder, archives []string, preferDir, name string) (data []byte, from string, err error) {
+	return extractWith(ctx, tools, archives, name, func(names []string) (string, error) {
+		return pickMember(names, preferDir, name)
+	})
+}
+
+// ExtractMember reads one member out of a set of fetched distfiles by
+// its exact path, with none of Extract's choosing. Extract is for a
+// file a project may keep anywhere — a go.mod, a lockfile — and when
+// the copy under preferDir is missing it takes the shallowest one by
+// name. A patch's target is not that kind of file: the patch phase
+// opens exactly patch.dir/<name> and nothing else, so a reader that
+// fell back to a nested copy of the same name would relocate a hunk
+// onto a file patch(1) will never open and mint a patch whose phase
+// fails. The candidates are tried in Extract's order and the first
+// that carries the member wins; a member in none is ErrMemberMissing.
+func ExtractMember(ctx context.Context, tools *tool.Finder, archives []string, member string) (data []byte, from string, err error) {
+	return extractWith(ctx, tools, archives, member, func(names []string) (string, error) {
+		if slices.Contains(names, member) {
+			return member, nil
+		}
+		return "", ErrMemberMissing
+	})
+}
+
+// extractWith is the walk both readers share: list each candidate,
+// let pick name the member sought among its entries, and read it out.
+func extractWith(ctx context.Context, tools *tool.Finder, archives []string, name string, pick func(names []string) (string, error)) (data []byte, from string, err error) {
 	tar, err := tools.Find(tool.Tar)
 	if err != nil {
 		return nil, "", err
@@ -60,7 +88,7 @@ func Extract(ctx context.Context, tools *tool.Finder, archives []string, preferD
 			why = append(why, base+": not an archive")
 			continue
 		}
-		member, err := pickMember(names, preferDir, name)
+		member, err := pick(names)
 		if err != nil {
 			why = append(why, base+": "+err.Error())
 			continue

@@ -41,6 +41,7 @@ proc snapshot {portdir {subport ""} {variations {}}} {
     # in this one evaluation rather than in a call per group.
     set worker [ditem_key $handle workername]
     foreach opt {checksums distfiles worksrcdir filespath patchfiles
+                 patch.pre_args
                  livecheck.type livecheck.url livecheck.regex livecheck.version
                  go.vendors cargo.crates cargo.crates_github} {
         if {![catch {$worker eval [list option $opt]} val] && $val ne ""} {

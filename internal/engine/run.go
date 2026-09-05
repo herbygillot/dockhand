@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -315,9 +316,29 @@ func (e *Engine) applyPlan(ctx context.Context, p *plan.Plan) error {
 	if _, err := p.Apply(ctx, ev); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(e.Out, "applied: %s %s (%d edits, delta as predicted)\n",
-		p.Intent, p.Portdir, len(p.Edits))
+	// The plan's whole files, after the Portfile and not before: Apply
+	// proves the predicted delta and restores the Portfile when the
+	// proof fails, and a patch written ahead of a restored Portfile
+	// would be the one edit the restore did not undo. A refreshed patch
+	// moves no evaluated field, so nothing here is part of that proof.
+	for _, f := range p.Files {
+		if err := os.WriteFile(filepath.Join(p.Portdir, filepath.FromSlash(f.Path)), []byte(f.Content), 0o644); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(e.Out, "applied: %s %s (%d edits%s, delta as predicted)\n",
+		p.Intent, p.Portdir, len(p.Edits), filesClause(p))
 	return err
+}
+
+// filesClause is the in-place report's word for the whole files it
+// wrote, and nothing when it wrote none — so the sentence every plan
+// without one prints is the sentence it always printed.
+func filesClause(p *plan.Plan) string {
+	if len(p.Files) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", %d file(s) rewritten", len(p.Files))
 }
 
 // diffFromPlan renders a plan as the patch its branch would carry,
@@ -326,15 +347,15 @@ func (e *Engine) applyPlan(ctx context.Context, p *plan.Plan) error {
 // diffed instead of committed. Repo-relative a/ and b/ paths come out
 // correct because the trees carry the full structure.
 func (e *Engine) diffFromPlan(ctx context.Context, p *plan.Plan) error {
-	if len(p.Edits) == 0 {
+	if !writes(p) {
 		fmt.Fprintln(e.Err, "no edits; nothing to diff")
 		return nil
 	}
-	repo, primary, path, edited, err := e.planOnBase(ctx, p)
+	repo, primary, files, err := e.planOnBase(ctx, p)
 	if err != nil {
 		return err
 	}
-	tree, err := repo.GraftTree(ctx, primary, []git.File{{Path: path, Content: edited}})
+	tree, err := repo.GraftTree(ctx, primary, files)
 	if err != nil {
 		return err
 	}
