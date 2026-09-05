@@ -308,27 +308,43 @@ git switch master
 ## C. The cohort that breaks
 
 This is the part the synthesized corpus is least able to stand in for: what
-one guest does when a member fails halfway through, and which environment
-survives.
+one guest does when a member fails partway through, which members it goes on
+to build, and which environment survives.
 
-**C1. Make the same branch with the FIRST member deliberately broken.** First
-in build order, so the second is never reached.
+**C1. Make a three-member branch with the FIRST member deliberately broken,
+and its revision moved.** First in build order, so that a dependent sorts
+behind it; and a third member that depends on neither, so that there is
+something the failure must *not* block.
 
 ```
 cd <macports-ports checkout>
 git switch -c dockhand/live-cohort-fail master
-$EDITOR devel/oniguruma6/Portfile   # add a line: build.cmd false
+$EDITOR devel/oniguruma6/Portfile   # revision 0 -> 1, and add a line: build.cmd false
 printf '\n' >> sysutils/jq/Portfile
-git commit -am 'oniguruma6, jq: live cohort failure check'
+printf '\n' >> sysutils/tree/Portfile
+git commit -am 'oniguruma6, jq, tree: live cohort failure check'
+git switch master
 ```
 
 `build.cmd false` fails in the build phase and produces MacPorts' own
 `Error: Failed to build oniguruma6: command execution failed`, which is the
 exact shape the judge reads.
 
+The revision has to move. With `_resources` carried in the overlay, MacPorts
+reaches packages.macports.org, and a port whose version and revision match
+an archive there is installed from that archive with no build phase at all:
+run against `oniguruma6 @6.9.10_0` as it stands, the sabotage never
+executes and all three members come back `passed` inside a minute (seen
+2026-09-05; the finding is in `docs/todo.md`). At `_1` no archive exists
+and the port builds from source. `jq` and `tree` are left at `_0` on
+purpose — `jq` is never built, and `tree` installing from its archive is
+still the runner going on past the failure.
+
 `oniguruma6` is sabotaged rather than `jq` because `devel` sorts before
-`sysutils`: the broken member has to be the one built first, or the second is
-reached and nothing is blocked.
+`sysutils`: the broken member has to be the one built first, or the
+dependent is reached before its prerequisite and nothing is skipped.
+`sysutils/tree` sorts after `sysutils/jq`, declares no dependencies, and
+is the member the failure has no claim on.
 
 **C2. Verify, and wait for it.**
 
@@ -337,49 +353,66 @@ reached and nothing is blocked.
 /tmp/dockhand status
 ```
 
+Both from inside the ports checkout: dockhand's records are the
+checkout's, and `status` run from anywhere else reports no dockhand
+branches there.
+
 - **Worked:** the note settles to
   - `oniguruma6: failed (<Release>) — environment kept: dockhand-worker-… —
     Failed to build oniguruma6: command execution failed`
   - `jq: blocked (<Release>) — oniguruma6 fails to build; this member is
     untested`
+  - `tree: passed (<Release>)`
 
-  The failing member owns the failure; the member the runner never reached is
-  blocked, blamed on a sibling, and says so in those words — "untested", not
-  "failed". Two verdicts, one sentence about each.
+  The failing member owns the failure; the member that depends on it was
+  skipped, is blocked, blamed on a sibling, and says so in those words —
+  "untested", not "failed"; the member that depends on nothing that failed
+  was built and passed. Three verdicts, one sentence about each.
 - **A finding, and the one worth the most:** `jq` reading `passed` (a member
   that was never built recorded as evidence); `jq` reading `failed` (a member
-  disproven by a sibling's breakage); either member blocked on a *dependency*
-  sentence — `dependency oniguruma6 fails to build; the change itself is
-  untested` — which means the roster match failed and this change's own
-  breakage was read as a stranger's.
+  disproven by a sibling's breakage); `tree` reading `blocked` (the runner
+  stopped at the failure, or a stranger's failure was laid on a member that
+  does not depend on it — the shape D25 retired); either member blocked on a
+  *dependency* sentence — `dependency oniguruma6 fails to build; the change
+  itself is untested` — which means the roster match failed and this change's
+  own breakage was read as a stranger's.
 
   Note that `jq` really does depend on `oniguruma6`, which does **not** soften
-  this check. `BlockedByMember` and `BlockedDetail` are chosen by roster
-  membership, not by the dependency graph (`internal/verdict/log.go`): a
-  blocker that is a member of this cohort must get the sibling sentence
-  whatever the ports tree says about it. The give-away half is the ending —
-  "this member is untested" against "the change itself is untested".
+  the sentence check. `BlockedByMember` and `BlockedDetail` are chosen by
+  roster membership, not by the dependency graph (`internal/verdict/log.go`):
+  a blocker that is a member of this cohort must get the sibling sentence
+  whatever the ports tree says about it. What the graph decides is only
+  *which* members are skipped (`verify.Request.Requires`, computed at submit
+  from the reverse index over the members being built). The give-away half
+  is the ending — "this member is untested" against "the change itself is
+  untested".
 
-  A related signal worth reading: if `jq` fails with MacPorts' own dependency
-  error rather than being blocked, the runner did not stop after a member
-  failed, which is C3's finding arriving by another route.
+  A related signal worth reading: if `jq` is *built* — its marker appears in
+  the log, and it fails with MacPorts' own dependency error rather than
+  being blocked — the graph did not reach the guest, and the runner attempted
+  a member whose prerequisite had already failed.
 
-**C3. Confirm the environment is kept exactly once.**
+**C3. Confirm the runner's record, and that the environment is kept exactly
+once.**
 
 ```
 tart list
 /tmp/dockhand shell dockhand/live-cohort-fail
-# inside: cat /tmp/dockhand-verify/state ; cat /tmp/dockhand-verify/state.0 ; ls -1 /tmp/dockhand-verify
+# inside: cd /tmp/dockhand-verify; cat state state.0 state.1 state.2 requires.1; ls -1
 exit
 ```
 
 - **Worked:** exactly **one** `dockhand-worker-*`, and the shell lands in it.
-  `state` says `failed`; `state.0` says `failed`; there is no `state.1` and no
-  `subject.1` output in the log, because the runner broke before the second
-  member.
+  `state` says `failed`; `state.0` says `failed`; `state.1` says `skipped`
+  and then `0` on its own line — the position of the member it was skipped
+  behind; `state.2` says `passed`. `requires.1` holds `0`, and `requires.0`
+  and `requires.2` are empty: that is the graph as submit spelled it.
 - **A finding:** no worker (the failure's debug environment was handed back);
-  two workers for one branch; a `state.1` file, which would mean the runner
-  kept going after a member failed.
+  two workers for one branch; no `state.1` (the runner stopped at the
+  failure); a `state.1` that says `failed` or `passed` (the runner built a
+  member whose prerequisite had failed); a `state.2` that is absent or says
+  `skipped` (the runner did not go on, or skipped a member with no failed
+  prerequisite).
 - **Also present, and not a finding:** the ABI staging — `baseline`,
   `manifest.ports`, and per-member `manifest.<i>`, `links.<i>` and
   `probe.<i>`. A failed cohort keeps more of these than a passing one does,
@@ -391,10 +424,12 @@ exit
 /tmp/dockhand log dockhand/live-cohort-fail | grep -n 'dockhand subject:\|^Error:'
 ```
 
-- **Worked:** one marker, `===> dockhand subject: oniguruma6`, and the `Error:
-  Failed to build oniguruma6` line after it. No marker for `jq`.
-- **A finding:** a marker for a member the runner never built, or a marker
-  printed after the failure.
+- **Worked:** two markers and one error, in this order: `===> dockhand
+  subject: oniguruma6`, the `Error: Failed to build oniguruma6` line, then
+  `===> dockhand subject: tree`. No marker for `jq`: a skipped member prints
+  nothing, and its state file is its only record.
+- **A finding:** a marker for `jq`; no marker for `tree` (the runner
+  stopped); a marker printed before the failure it should follow.
 
 **C5. Confirm the gate refuses to publish it.**
 

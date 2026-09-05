@@ -269,3 +269,65 @@ and never holds the machine gate, and `--plan` prints it. It does not
 yet reach the pull request body the way `abi-unavailable` does; a
 reviewer of a port whose patches went unchecked should read that where
 the verification is vouched for.
+
+## A changed member whose version and revision did not move is installed from the archive, not built
+
+**Found in the runner's live proof (2026-09-05), held for ruling.** Since
+the overlay carries `_resources`, MacPorts in the guest reaches
+packages.macports.org, and `port install` of a port whose name, version
+and revision match an archive there installs the archive and runs no
+build phase. A three-member branch with `build.cmd false` added to
+`devel/oniguruma6` at its standing `6.9.10_0` came back `passed`,
+`passed`, `passed` inside a minute; the same branch with the revision
+moved to `_1` built from source and failed as sabotaged, its build
+dependencies and `tree` still coming from archives. The 2026-09-03 live
+check saw the failure only because the overlay then lacked `_resources`
+and the archive fetch had no sites — a defect since fixed was doing the
+from-source work by accident.
+
+**Where it bites.** Only the hand-made branch road. A version bump's
+headline and a revision bump's members move to a `version_revision` no
+buildbot has built, so no archive exists for them; and `bump --recheck`
+and `refresh-checksums` are already marked from source
+(`engine.Policy.fromSource`), for exactly this reason. What has no
+from-source decision at all is `verify <branch>`:
+`submission.fromSourcePorts` names only the submission's own headline,
+and a branch has none. A maintainer who fixes a configure argument
+without a revbump — a change MacPorts policy says needs one — gets a
+green verification that built nothing of theirs.
+
+**The seams already exist.** `verify.Request.FromSource` is per port,
+and `build.InstallArgs` puts `-s` on that member's own install line, so
+that port builds from source while the archives for everything else
+still serve. What is missing is the decision on the branch road: at
+submit, a member whose version and revision equal the merge-base's —
+one `git show` of the merge-base Portfile, and `eval` already reads a
+Portfile's version and revision — is one the archive would satisfy.
+
+**Two shapes, for ruling.** (1) Mark such a member from source and say
+so on stderr — "oniguruma6 changed at 6.9.10_0; building it from source
+so the change is what is tested". The verification then tests the
+change, at the cost of building that member from source. (2) Say it and
+do nothing — a finding in the `patches-unchecked` shape, "oniguruma6
+changed but neither version nor revision moved; where a binary archive
+exists it is installed and the change goes unbuilt" — and let the
+maintainer move the revision, which policy asks of them anyway. (1) is
+the honest verification; (2) is the cheaper one and points at the real
+omission. Either is small; neither is made.
+
+## On the branch road, members are built in portdir order, not dependency order
+
+**Left by the review of the runner change (shipped 2026-09-05 as
+`8579bfd`).** `SubjectsOf` orders a branch's members by portdir, and
+`cohortRequires` spells the graph over that order, so a member's
+`requires.<i>` may name a *later* position. The runner then builds the
+dependent before its prerequisite: no state file exists yet, so it is
+not skipped, and it fails on its own with the prerequisite's failure in
+its log — the reading the judge has always made, at the price of a
+build that a topological order would have skipped. Never a wrong
+verdict; a slow one. The revbump road is unaffected: the headline is
+first and members follow by name, and members of one headline rarely
+depend on each other. A topological sort at submit, stable within ties,
+would close it. In the same place: `launch` writes a `requires.<i>` for
+every member, empty ones included, one `tart exec` each; the runner
+tolerates a missing file, so the empty ones need not be written.
