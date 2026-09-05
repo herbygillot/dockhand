@@ -69,6 +69,19 @@ type CohortMember struct {
 	// depends_* fields said — and that is worth saying rather than
 	// quietly dropping, because the revbump was still spent.
 	Links []string
+	// Unmeasured is why there is no proof, where Links is nil because
+	// the member's own run never reached the sweep: the build failed, or
+	// it was blocked before it was reached, or this build withheld it.
+	// It is printed in the proof's place, so a member the body claims a
+	// bump for is never listed with nothing beside it — the reviewer
+	// reading "Revision bumped in this change" is owed either the
+	// evidence or the reason there is none, on the same line.
+	//
+	// Empty where nobody looked for a reason that is not the member's:
+	// the commit message, written before any run exists; or a
+	// measurement that could not be made, which the body says once for
+	// the whole change rather than under every member.
+	Unmeasured string
 }
 
 // CohortDecline is a member the cohort could not plan: the shape its
@@ -180,7 +193,8 @@ func cohortSubject(port, target string, members int) string {
 }
 
 // memberLine is one revbumped port with its portdir and its reason, and
-// the link proof where the environment took one.
+// the link proof where the environment took one — or, where the
+// member's own run is why there is none, the reason in its place.
 func memberLine(m CohortMember) string {
 	line := m.Port
 	if m.Portdir != "" {
@@ -191,6 +205,16 @@ func memberLine(m CohortMember) string {
 	}
 	switch {
 	case m.Links == nil:
+		// Nobody looked. Where that is the member's own doing the line
+		// says which — a failed member listed under "Revision bumped"
+		// with nothing beside it reads as evidence that was forgotten,
+		// not as a build that never got there. Where it is not (a check
+		// that could not be made, a commit message written before any
+		// run) the silence stands, because the reason is stated once
+		// elsewhere and not per member.
+		if m.Unmeasured != "" {
+			line += "; " + m.Unmeasured
+		}
 	case len(m.Links) == 0:
 		// "That moved" and not "that this change publishes": the proof is
 		// taken against the install names the measurement says a
@@ -512,8 +536,10 @@ func statedCriterion(n record.Record, criterion string) bool {
 func cohortMembers(n record.Record, f record.Finding) []CohortMember {
 	links := map[string][]string{}
 	looked := map[string]bool{}
+	states := map[string][]record.RunState{}
 	for key, run := range n.Runs {
 		port := runPortOf(key)
+		states[port] = append(states[port], run.State)
 		if run.Links == nil {
 			continue
 		}
@@ -528,10 +554,58 @@ func cohortMembers(n record.Record, f record.Finding) []CohortMember {
 		m := CohortMember{Port: c.Port, Portdir: c.Portdir, Reason: c.Reason}
 		if looked[c.Port] {
 			m.Links = dedupe(links[c.Port])
+		} else {
+			m.Unmeasured = unmeasured(states[c.Port], c.Solo)
 		}
 		out = append(out, m)
 	}
 	return out
+}
+
+// unmeasured is the sentence a member carries in the proof's place,
+// where its own runs are why no proof was taken. Empty where they are
+// not: a member that passed and was still not swept had a measurement
+// that could not be made, and that is said once for the whole change.
+//
+// The three states named are exactly the outcomes best effort publishes
+// over without a pass — the population D24 made routine and D26 counts
+// on the audit row — so each has a sentence where the bump is claimed.
+// A failure outranks a block, which outranks a withholding, because a
+// member can carry one of each across platforms and the line says the
+// strongest fact about it; a non-outcome (still running, canceled, the
+// machine's silence) is not published over and is the verification
+// block's to name, so it earns nothing here.
+//
+// The withheld sentence is the one the proposal usually wrote already.
+// A candidate the proposal marked Solo carries "bumped here, and not
+// built" in its own reason, which is how the withheld member came to
+// explain itself inline before the others did, and the line does not
+// say it twice. Solo is what says so: the flag is the record's, and a
+// renderer sniffing the reason's prose for the sentence would be
+// coupled to its wording rather than its meaning.
+func unmeasured(states []record.RunState, solo bool) string {
+	failed, blocked, withheld := false, false, false
+	for _, s := range states {
+		switch s {
+		case record.Failed:
+			failed = true
+		case record.Blocked:
+			blocked = true
+		case record.Withheld:
+			withheld = true
+		case record.Passed, record.Unsupported, record.Queued, record.Submitting,
+			record.Running, record.Canceled, record.Superseded, record.Errored:
+		}
+	}
+	switch {
+	case failed:
+		return "the build failed, so nothing was measured"
+	case blocked:
+		return "blocked before it was reached, so nothing was measured"
+	case withheld && !solo:
+		return "not built here"
+	}
+	return ""
 }
 
 // runPortOf is the subject half of a run key. It restates record's own

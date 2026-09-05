@@ -246,3 +246,101 @@ func TestTheReportPrintsTheProposalUnderTheBranch(t *testing.T) {
 	assert.Contains(t, lines[len(lines)-2], "ABI changed:")
 	assert.Contains(t, lines[len(lines)-1], "`dockhand bump-revision --for dockhand/libwidget-3.0`")
 }
+
+// A member the body claims a bump for is never listed with nothing
+// beside it. Each member's line ends in what its own run said: the link
+// proof, "links nothing that moved" where the sweep ran and found none,
+// or — where the run never reached the sweep — which reason that was.
+// Found live on macports-ports#34500: gthumb had failed to build, was
+// promoted over as best effort, and stood under "Revision bumped in
+// this change" with no evidence and no reason for the absence, the
+// fact being three paragraphs up in the verification block.
+//
+// One member per state, in one body, so the shapes are read side by
+// side: the proof, the empty proof, the failure, the block, the
+// withholding the proposal already worded, the withholding it did not,
+// and the pass nobody swept — which stays silent, because a check that
+// could not be made is said once for the change and not per member.
+func TestEachMemberSaysWhyItCarriesNoProof(t *testing.T) {
+	const proof = "/opt/local/lib/libgdal.36.dylib links against /opt/local/lib/libwidget.3.dylib"
+	n := record.Record{
+		Schema: record.Schema, Sha: "0123456789abcdef0123",
+		Jobs: map[string]record.JobRecord{"Sequoia": {}, "Sonoma": {}},
+		Runs: map[string]record.Run{
+			record.RunKey("libwidget", "Sequoia"): {State: record.Passed, Platform: "Sequoia", Links: []string{}},
+			// Proven on one platform and failed on another: the proof is
+			// the answer, and the failure is the verification block's.
+			record.RunKey("gdal", "Sequoia"):   {State: record.Passed, Platform: "Sequoia", Links: []string{proof}},
+			record.RunKey("gdal", "Sonoma"):    {State: record.Failed, Platform: "Sonoma"},
+			record.RunKey("grass", "Sequoia"):  {State: record.Passed, Platform: "Sequoia", Links: []string{}},
+			record.RunKey("gthumb", "Sequoia"): {State: record.Failed, Platform: "Sequoia"},
+			record.RunKey("mapnik", "Sequoia"): {State: record.Blocked, Platform: "Sequoia", Blamed: "gthumb"},
+			record.RunKey("gegl-devel", "Sequoia"): {State: record.Withheld, Platform: "Sequoia",
+				Detail: "it conflicts with gegl, which this cohort builds"},
+			record.RunKey("qgis", "Sequoia"):      {State: record.Withheld, Platform: "Sequoia"},
+			record.RunKey("osm2pgsql", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
+		},
+		Findings: []record.Finding{
+			{Kind: KindABIChanged, Ports: []string{"libwidget"}, Criterion: theCriterion,
+				Disposition: record.Accepted},
+			{Kind: KindCohort, Criterion: theCriterion, Disposition: record.Accepted,
+				Candidates: []record.Candidate{
+					{Port: "gdal", Portdir: "gis/gdal", Proposed: true, Reason: "depends_lib"},
+					{Port: "grass", Portdir: "gis/grass", Proposed: true, Reason: "depends_lib; nomaintainer"},
+					{Port: "gthumb", Portdir: "gnome/gthumb", Proposed: true, Reason: "depends_lib; nomaintainer"},
+					{Port: "mapnik", Portdir: "gis/mapnik", Proposed: true, Reason: "depends_lib"},
+					// The proposal's own wording of a withholding, as
+					// verdict writes it for a member that conflicts with
+					// one already seated. Solo is what says the reason
+					// already carries the sentence.
+					{Port: "gegl-devel", Portdir: "graphics/gegl-devel", Proposed: true, Solo: true,
+						Reason: "depends_lib; conflicts with gegl, which this cohort builds — bumped here, and not built"},
+					{Port: "qgis", Portdir: "gis/qgis", Proposed: true, Reason: "depends_lib"},
+					{Port: "osm2pgsql", Portdir: "gis/osm2pgsql", Proposed: true, Reason: "depends_lib"},
+				}},
+		},
+	}
+
+	body := CohortBody(n)
+	_, after, found := strings.Cut(body, "Revision bumped in this change:\n")
+	require.True(t, found, "the accepted cohort lists its members:\n%s", body)
+	block, _, _ := strings.Cut(after, "\n\n")
+	assert.Equal(t, []string{
+		"  — gdal (gis/gdal): depends_lib; " + proof,
+		"  — grass (gis/grass): depends_lib; nomaintainer; links nothing that moved",
+		"  — gthumb (gnome/gthumb): depends_lib; nomaintainer; the build failed, so nothing was measured",
+		"  — mapnik (gis/mapnik): depends_lib; blocked before it was reached, so nothing was measured",
+		"  — gegl-devel (graphics/gegl-devel): depends_lib; conflicts with gegl, which this cohort builds — bumped here, and not built",
+		"  — qgis (gis/qgis): depends_lib; not built here",
+		"  — osm2pgsql (gis/osm2pgsql): depends_lib",
+	}, strings.Split(strings.TrimRight(block, "\n"), "\n"))
+}
+
+// The sentence in the proof's place is the strongest fact the member's
+// runs hold, across however many platforms it ran on, and nothing at
+// all for a state best effort does not publish over.
+func TestUnmeasuredNamesTheStrongestOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		states []record.RunState
+		solo   bool
+		want   string
+	}{
+		{"failed", []record.RunState{record.Failed}, false, "the build failed, so nothing was measured"},
+		{"blocked", []record.RunState{record.Blocked}, false, "blocked before it was reached, so nothing was measured"},
+		{"withheld, unworded by the proposal", []record.RunState{record.Withheld}, false, "not built here"},
+		{"withheld, worded by the proposal", []record.RunState{record.Withheld}, true, ""},
+		{"a failure outranks a block", []record.RunState{record.Blocked, record.Failed}, false,
+			"the build failed, so nothing was measured"},
+		{"a block outranks a withholding", []record.RunState{record.Withheld, record.Blocked}, false,
+			"blocked before it was reached, so nothing was measured"},
+		{"a pass nobody swept", []record.RunState{record.Passed}, false, ""},
+		{"a refusal is the port's own answer", []record.RunState{record.Unsupported}, false, ""},
+		{"a non-outcome is not published over", []record.RunState{record.Canceled, record.Errored, record.Running}, false, ""},
+		{"no run at all", nil, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, unmeasured(tc.states, tc.solo))
+		})
+	}
+}
