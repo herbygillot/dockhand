@@ -252,9 +252,14 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// files the plan writes beside the Portfile, and the names of the
 	// patchfiles that moved, for the summary. Both stay nil on every
 	// path that fetches nothing — a port recording no checksums has no
-	// distfile to look inside, so its patches are left as they are.
+	// distfile to look inside, so its patches are left as they are —
+	// and unchecked stays true there, for the sentence the plan then
+	// carries about them. Left as they are is not the answer "checked,
+	// and still where they were", and a plan that said nothing would
+	// be read as giving the second.
 	var files []plan.FileEdit
 	var refreshed []string
+	unchecked := len(vals.Patchfiles) > 0
 
 	// Shadow the version edits to learn the new distfiles and their
 	// URLs, then fetch them for checksums.
@@ -386,6 +391,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		if err != nil {
 			return nil, err
 		}
+		unchecked = false
 
 		// Each present family regenerates its block for the target — the
 		// crate set and the checksum recorded for the distfile describe
@@ -455,6 +461,18 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// relocated against is the witness, and every realization writes
 	// it as it arrives.
 	p.Files = files
+	// And the sentence about the patches it did not relocate, where it
+	// fetched nothing to relocate them onto. It is a finding — the note's
+	// vocabulary for what a change noticed beyond itself — and a
+	// statement rather than a question: an ABI check that could not be
+	// made says "unavailable" in the same shape, and nothing here is for
+	// a person to answer, so it must not hold the machine gate the way
+	// a proposal does. The count is the current evaluation's, since this
+	// path shadowed nothing before the tail and the list the sentence
+	// refers to is the one in the Portfile a reader has in front of them.
+	if unchecked {
+		p.Findings = append(p.Findings, patchesUnchecked(vals.Name, len(vals.Patchfiles)))
+	}
 	return p, nil
 }
 

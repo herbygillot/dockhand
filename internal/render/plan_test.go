@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // A cargo port's distfile delta runs to hundreds of entries; inlined,
@@ -74,4 +75,31 @@ func TestRenderPlanListsTheFilesItRewrites(t *testing.T) {
 		"  files/patch-foo.diff: 1 hunk moved\n"+
 		"predicted delta:\n", b.String())
 	assert.NotContains(t, b.String(), "@@", "a patch is a page; the summary names it")
+}
+
+// A plan that could not check the port's patches says so, in the
+// finding's own words and after everything it did: the sentence opens
+// with its verdict, so it stands as its own line rather than under a
+// label. Any other finding a plan carries — the instruction comment,
+// whose criterion is its quote — is status's to ask about, and not this
+// summary's to print.
+func TestRenderPlanSaysWhatItCouldNotCheck(t *testing.T) {
+	var b strings.Builder
+	RenderPlan(&b, &plan.Plan{
+		Intent:  "bump",
+		Portdir: "/tree/devel/jq",
+		Edits:   []edit.Edit{{Reason: "version", Old: "1.0", New: "2.0"}},
+		Riders:  []string{"modeline"},
+		Findings: []record.Finding{
+			{Kind: KindInstruction, Quote: "# revbump foo when updating", Disposition: record.Proposed},
+			{Kind: KindPatchesUnchecked, Ports: []string{"jq"}, Disposition: record.Accepted,
+				Criterion: "patch check unavailable: jq's 1 patchfile was not checked against the new source because no distfile was fetched"},
+		},
+	})
+	assert.Equal(t, "plan: bump /tree/devel/jq, 1 edits\n"+
+		"  version:         1.0 -> 2.0\n"+
+		"also: modeline\n"+
+		"patch check unavailable: jq's 1 patchfile was not checked against the new source because no distfile was fetched\n"+
+		"predicted delta:\n", b.String())
+	assert.NotContains(t, b.String(), "revbump", "a proposal is status's line, not the plan summary's")
 }

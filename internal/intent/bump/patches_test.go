@@ -18,6 +18,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/tool"
 )
@@ -140,6 +142,7 @@ func TestBumpLeavesAPatchThatStillApplies(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, p.Files)
 	assert.Equal(t, "bumpee: update to 2.0", p.Summary)
+	assert.Empty(t, p.Findings, "checked and still in place is not unchecked: the sentence is for a bump that fetched nothing")
 }
 
 // The line the patch removes is gone from 2.0, so the before-block
@@ -269,4 +272,60 @@ func TestRelocatePatchesDoesNothingWithoutPatchfiles(t *testing.T) {
 func TestHunksMoved(t *testing.T) {
 	assert.Equal(t, "1 hunk moved", hunksMoved(1))
 	assert.Equal(t, "2 hunks moved", hunksMoved(2))
+}
+
+// A bump that fetches nothing has no source to check the port's patches
+// against, and says so. The branch that fetches nothing and still
+// plans is the port recording no checksums — one fetched from a
+// repository, say. A port whose every distfile comes from a vendored
+// block is the other no-fetch shape and never gets this far: it records
+// checksums it cannot locate, and declines. The patches are left as
+// they are, nothing rides beside the Portfile, the subject names no
+// refreshed patch, and the plan carries the sentence — as a statement,
+// since nothing about it is for a person to answer, so it must not
+// hold the machine gate the way a proposal does.
+func TestBumpSaysWhenItCouldNotCheckThePatches(t *testing.T) {
+	ev := newEvaluator(t)
+	dir := t.TempDir()
+	portfile := `PortSystem 1.0
+name unfetched
+version 1.0
+categories devel
+maintainers nomaintainer
+license MIT
+description records no checksums
+long_description a port recording no checksums, with two patches to leave alone
+patchfiles patch-foo.diff patch-bar.diff
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, macports.PortfileName), []byte(portfile), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "files"), 0o755))
+	for _, name := range []string{"patch-foo.diff", "patch-bar.diff"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "files", name), []byte(patchBody), 0o644))
+	}
+
+	p, err := Bump{Version: "2.0"}.Plan(context.Background(), handle(dir, ev), newFetcher(t))
+	require.NoError(t, err)
+	assert.Empty(t, p.Files, "nothing was relocated, so nothing rides beside the Portfile")
+	assert.Equal(t, "unfetched: update to 2.0", p.Summary, "the subject names a refreshed patch, and there was none")
+	require.Len(t, p.Findings, 1)
+	f := p.Findings[0]
+	assert.Equal(t, FindingPatchesUnchecked, f.Kind)
+	assert.Equal(t, []string{"unfetched"}, f.Ports)
+	assert.Equal(t, "patch check unavailable: unfetched's 2 patchfiles were not checked against the new source because no distfile was fetched", f.Criterion)
+	assert.Equal(t, record.Accepted, f.Disposition, "a statement, not a question")
+	assert.True(t, f.At.IsZero(), "the stamp is the realizer's, at mint")
+}
+
+// The sentence counts, and agrees with itself about one.
+func TestPatchesUnchecked(t *testing.T) {
+	assert.Equal(t, "patch check unavailable: foo's 1 patchfile was not checked against the new source because no distfile was fetched",
+		patchesUnchecked("foo", 1).Criterion)
+	assert.Equal(t, "patch check unavailable: foo's 2 patchfiles were not checked against the new source because no distfile was fetched",
+		patchesUnchecked("foo", 2).Criterion)
+}
+
+// render prints the plan's line from its own spelling of the kind, so
+// the two spellings must be one word.
+func TestPatchesUncheckedKindIsRendersOwn(t *testing.T) {
+	assert.Equal(t, render.KindPatchesUnchecked, FindingPatchesUnchecked)
 }

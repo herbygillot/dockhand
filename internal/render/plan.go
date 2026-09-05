@@ -8,6 +8,14 @@ import (
 	"github.com/herbygillot/dockhand/internal/plan"
 )
 
+// KindPatchesUnchecked is the finding a bump carries when it fetched no
+// distfile and so had nothing to check the port's patches against.
+// Spelled here for the reason the revbump kinds are spelled in
+// cohort.go: RenderPlan reads a plan's findings, and record's Kind is a
+// plain string. The writer is intent/bump, and a test there ties the
+// two spellings.
+const KindPatchesUnchecked = "patches-unchecked"
+
 // RenderPlan writes the human-facing summary of a plan.
 //
 // The reason column is padded to sixteen so a run of edits reads down
@@ -37,6 +45,20 @@ func RenderPlan(w io.Writer, p *plan.Plan) {
 	// reader who meets it twice should meet it once.
 	if len(p.Riders) > 0 {
 		fmt.Fprintf(w, "also: %s\n", strings.Join(p.Riders, ", "))
+	}
+	// What the plan could not do, after what it did. A bump that fetched
+	// no distfile had no source to check the port's patches against, and
+	// the plan carries the sentence as a finding; it is a line here for
+	// the reason the ABI check's "unavailable" is a line in a body —
+	// "not checked" and "checked, and still where they were" are the two
+	// answers a reader would otherwise confuse, and the second is what an
+	// absent line reads as. The criterion opens with its own verdict, so
+	// it is printed as it stands rather than under a label that would say
+	// it twice.
+	for _, f := range p.Findings {
+		if f.Kind == KindPatchesUnchecked && f.Criterion != "" {
+			fmt.Fprintln(w, f.Criterion)
+		}
 	}
 	fmt.Fprintln(w, "predicted delta:")
 	for _, cd := range p.Predicted {
