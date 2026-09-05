@@ -649,6 +649,8 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"also run the port's test suite (`port test`) in the verification environment")
 	c.Flags().BoolVar(&f.opts.Trace, "trace", false,
 		"stay attached after submitting: stream the build log until it finishes")
+	c.Flags().BoolVar(&f.opts.KeepEnv, "keep-env", false,
+		"keep the verification environment after a pass, as a failure keeps its own")
 	c.Flags().StringVar(&f.on, "on", "", "macOS release to verify on")
 }
 
@@ -667,9 +669,18 @@ func (f *intentFlags) check() error {
 		return usagef("--trace follows a submitted verification; it needs the default branch realization")
 	case f.opts.Test && (f.noVerify || f.opts.PlanOnly || f.opts.Diff || f.opts.InPlace):
 		return usagef("--test rides a verification; it needs the default branch realization")
+	case f.opts.KeepEnv && (f.noVerify || f.opts.PlanOnly || f.opts.Diff || f.opts.InPlace):
+		return usagef("--keep-env keeps a submitted run's environment; it needs the default branch realization")
+	case f.opts.KeepEnv && f.verifyIt:
+		// The gate verifies synchronously and releases the environment
+		// with the verdict, before the branch is minted; there is no
+		// submitted run for the ask to ride and nothing to keep. Refused
+		// rather than dropped (ruled 2026-09-05 with D27's
+		// implementation, pending the maintainer).
+		return usagef("the gate releases its environment with the verdict; --keep-env keeps a submitted run's")
 	case f.riders && f.noRiders:
 		return usagef("--riders and --no-riders are mutually exclusive")
-	case f.riders && (f.verifyIt || f.opts.Trace || f.opts.Test):
+	case f.riders && (f.verifyIt || f.opts.Trace || f.opts.Test || f.opts.KeepEnv):
 		return usagef("riders never trigger a verification; there is nothing in a housekeeping change for a VM to disagree with")
 	case f.toPR && (f.opts.PlanOnly || f.opts.Diff || f.opts.InPlace):
 		return usagef("--to-pr carries a change to a pull request; it needs the default branch realization")

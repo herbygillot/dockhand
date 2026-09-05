@@ -10,26 +10,44 @@ import (
 	"github.com/herbygillot/dockhand/internal/runstate"
 )
 
-// statusAction reconciles the dockhand/* namespace: every branch, its
-// tip's verification record, and the drift between them. It is a
-// reconciler, not a daemon: running jobs are polled here, their
-// verdicts written back to the notes, workers released on pass, and —
-// the one deletion status performs — a branch whose PR merged is
-// cleaned, announced, because a merged PR is GitHub's own word that
-// the work landed. Every other cleanup is the user's explicit act.
+// statusAction is the report, and only the report (D27). It reads the
+// branches dockhand observes — the dockhand/* namespace and every
+// other local branch whose tip carries a verify note — polls their
+// workers, writes what the workers said into the ledger, releases the
+// guest of a run whose verdict says so, and renders. That is the whole
+// of it. It makes no change anybody else can see: no branch is deleted
+// here or on the fork, no queued run is started, nothing is published.
+// Where work is waiting the report says so and names `dockhand cycle`
+// beside the finding, because with the split nothing begins on its
+// own.
+//
+// Settling stays, and stays on purpose. It is the one write that makes
+// the report truthful — every other write in the pass changes the
+// world; settle changes the report to match a world that already
+// changed — and a status that showed "verifying" over a guest that
+// finished an hour ago would be a worse lie than the write it avoided.
+// Releasing that guest is the last step of the verdict being written
+// rather than an act of its own; a failure keeps its environment by
+// rule, and a pass whose run asked with --keep-env keeps it by request,
+// and the report names the kept environment either way.
+//
+// --no-update is the pure read: the ledger as written. It polls
+// nothing, writes nothing, takes no lock, and asks no forge and no
+// provider — so the pull request standings and the worker audit are
+// not shown, and the report says so once at the top rather than
+// letting a missing line read as an answer.
 //
 // The pass itself is the engine's and the wording is render's; what is
 // left here is the choice between the two renderings. --json changes
-// nothing about what the pass does — it polls, settles and cleans
-// either way — only where the words go.
+// nothing about what the pass does — it polls and settles either way —
+// only where the words go.
 //
 // The worker audit is asked for separately because only this verb
-// wants it: `clean` runs the same pass and has nothing to say about
-// workers, and a listing nobody renders is a provider composed for
-// nothing.
+// wants it rendered, and because it is a provider call the pure read
+// may not make.
 type statusAction struct {
-	json    bool
-	noClean bool
+	json     bool
+	noUpdate bool
 }
 
 var _ Action = statusAction{}
@@ -40,11 +58,13 @@ func (a statusAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return a.failed(rs, err)
 	}
 	e := rs.Deps()
-	rep, err := e.Reconcile(ctx, engine.ReconcileOpts{NoClean: a.noClean, Drain: true})
+	rep, err := e.Reconcile(ctx, engine.ReconcileOpts{NoUpdate: a.noUpdate})
 	if err != nil {
 		return a.failed(rs, err)
 	}
-	rep.Orphans = e.Orphans(ctx, repo)
+	if !a.noUpdate {
+		rep.Orphans = e.Orphans(ctx, repo)
+	}
 	if a.json {
 		// The document says success because reaching here is success:
 		// every way this pass can fail has already returned above, and a
@@ -76,16 +96,17 @@ func (a statusAction) failed(rs *runstate.Context, err error) error {
 
 // Status builds the status subcommand.
 func Status() *cobra.Command {
-	var asJSON, noClean bool
+	var asJSON, noUpdate bool
 	c := &cobra.Command{
 		Use:   "status",
 		Short: "Report every dockhand branch and its verification standing",
 		Args:  noArgs,
 		RunE: runE(func(*cobra.Command, []string) (Action, error) {
-			return statusAction{json: asJSON, noClean: noClean}, nil
+			return statusAction{json: asJSON, noUpdate: noUpdate}, nil
 		}),
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON on stdout")
-	c.Flags().BoolVar(&noClean, "no-clean", false, "report merged PRs without deleting their branches")
+	c.Flags().BoolVar(&noUpdate, "no-update", false,
+		"show the ledger as written: poll nothing, write nothing, take no locks, ask no forge or provider (PR standings and the worker audit are not shown)")
 	return c
 }

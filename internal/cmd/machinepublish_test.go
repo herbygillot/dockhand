@@ -93,8 +93,8 @@ func TestTheGhSeamRefusesAMachinesWrites(t *testing.T) {
 }
 
 // Reading spends nothing of ring 3, so the guard must not touch it. A
-// guard that refused reads would stop `status` and `clean` working
-// unattended, which is the sweep's whole job.
+// guard that refused reads would stop `status` and `cycle` working
+// unattended, which is the pass's whole job.
 func TestTheGhSeamLetsAMachineREAD(t *testing.T) {
 	ctx := context.Background()
 	inner := func(context.Context, ...string) (string, error) { return "ok", nil }

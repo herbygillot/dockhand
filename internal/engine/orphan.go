@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/render"
@@ -29,34 +30,19 @@ import (
 // most expensive.
 //
 // Best-effort throughout, and silent when it cannot answer. Every
-// refusal below — nothing to ask, a backend that cannot list, a listing
-// that failed — means the audit learned nothing about this machine's
-// workers, which is a different thing from learning there are none.
-// Saying nothing is the honest rendering of both, and it is what the
-// audit has always done; the alternative is a report that fails
-// because a worker could not be counted.
+// refusal in untracked — nothing to ask, a backend that cannot list, a
+// listing that failed — means the audit learned nothing about this
+// machine's workers, which is a different thing from learning there
+// are none. Saying nothing is the honest rendering of both, and it is
+// what the audit has always done; the alternative is a report that
+// fails because a worker could not be counted.
 func (e *Engine) Orphans(ctx context.Context, repo *git.Repo) []render.Orphan {
-	if e.Lister == nil {
-		return nil
-	}
-	prov, err := e.Lister(ctx)
+	live, _, err := e.untracked(ctx, repo)
 	if err != nil {
 		return nil
 	}
-	lister, ok := prov.(verify.WorkerLister)
-	if !ok {
-		return nil
-	}
-	live, err := lister.Workers(ctx)
-	if err != nil {
-		return nil
-	}
-	tracked := e.trackedEnvironments(ctx, repo)
 	var orphans []render.Orphan
 	for _, w := range live {
-		if tracked[w.Name] {
-			continue
-		}
 		o := render.Orphan{Name: w.Name}
 		// A worker this checkout started is named without an owner: the
 		// cross-repo sentence exists to point somewhere else, and
@@ -68,6 +54,94 @@ func (e *Engine) Orphans(ctx context.Context, repo *git.Repo) []render.Orphan {
 		orphans = append(orphans, o)
 	}
 	return orphans
+}
+
+// ReclaimOrphans is `cycle --reclaim-orphans` (D27): every untracked
+// worker this checkout may claim is handed back through the backend's
+// own Release, and what happened to each is reported as lines.
+//
+// Which it may claim is the ruling the flag rests on (ruled 2026-09-05
+// with D27's implementation, pending the maintainer): a worker nothing
+// attributes, or one this checkout started. A worker another checkout
+// started is THAT checkout's — its notes may claim it as a kept
+// failure, invisible from here — and is skipped with a line naming the
+// checkout whose own `cycle --reclaim-orphans` reclaims it. Destroying
+// a peer's kept environment on the strength of our notes not
+// mentioning it would be the audit's one misreading turned into an
+// act.
+//
+// The release goes through verify.Worker.Job and the Lister's Release,
+// never through a name: that a job's id is the environment's name is
+// one backend's fact, and the kernel does not learn it. A backend that
+// listed a worker but named no job for it is asked nothing and said
+// so.
+//
+// Unlike the audit, a refusal to answer is said out loud: a person
+// asked for something to happen, and silence would read as nothing
+// needing to.
+func (e *Engine) ReclaimOrphans(ctx context.Context, repo *git.Repo) []render.Line {
+	live, prov, err := e.untracked(ctx, repo)
+	if err != nil {
+		return []render.Line{{Stream: render.ToErr,
+			Text: "warning: no untracked worker reclaimed: " + err.Error()}}
+	}
+	var said []render.Line
+	line := func(stream render.Stream, format string, a ...any) {
+		said = append(said, render.Line{Stream: stream, Text: fmt.Sprintf(format, a...)})
+	}
+	reclaimed := 0
+	for _, w := range live {
+		switch {
+		case w.Owner != "" && w.Owner != repo.Root:
+			line(render.ToOut, "%s is a worker from %s — its own `dockhand cycle --reclaim-orphans` reclaims it", w.Name, w.Owner)
+		case w.Job.ID == "":
+			line(render.ToErr, "warning: %s cannot be reclaimed: the backend named no job for it", w.Name)
+		default:
+			if rerr := prov.Release(ctx, w.Job); rerr != nil {
+				line(render.ToErr, "warning: reclaiming %s: %v", w.Name, rerr)
+				continue
+			}
+			reclaimed++
+			line(render.ToOut, "reclaimed %s", w.Name)
+		}
+	}
+	if reclaimed == 0 {
+		line(render.ToOut, "no untracked workers reclaimed")
+	}
+	return said
+}
+
+// untracked is the audit's one reading: every worker the backend is
+// running that no note in this repository accounts for, with the
+// provider that listed them so a caller can hand one back through it.
+// The refusals are typed by the sentinel every backend uses for a
+// machine that will not answer, so the two callers can word them
+// apart — the audit stays silent, the reclaim says why.
+func (e *Engine) untracked(ctx context.Context, repo *git.Repo) ([]verify.Worker, verify.Verifier, error) {
+	if e.Lister == nil {
+		return nil, nil, fmt.Errorf("%w: no backend is wired to list workers", verify.ErrNoProvider)
+	}
+	prov, err := e.Lister(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	lister, ok := prov.(verify.WorkerLister)
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: the backend cannot list its workers", verify.ErrUnsupported)
+	}
+	live, err := lister.Workers(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	tracked := e.trackedEnvironments(ctx, repo)
+	var out []verify.Worker
+	for _, w := range live {
+		if tracked[w.Name] {
+			continue
+		}
+		out = append(out, w)
+	}
+	return out, prov, nil
 }
 
 // trackedEnvironments is every environment this repository's notes

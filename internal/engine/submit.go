@@ -31,13 +31,13 @@ type VerifyDeferredError struct {
 	Branch string
 	Reason string
 	// Cause is the underlying refusal when one exists — a typed
-	// CapacityError is how status's deferred pump knows a full machine
-	// from a missing capability.
+	// CapacityError is how the drain (`dockhand cycle`) knows a full
+	// machine from a missing capability.
 	Cause error
 }
 
 func (e *VerifyDeferredError) Error() string {
-	return fmt.Sprintf("verification not started: %s\nthe branch stands — `dockhand status` starts it when it can, or run `dockhand verify %s` yourself", e.Reason, e.Branch)
+	return fmt.Sprintf("verification not started: %s\nthe branch stands — `dockhand cycle` starts it when it can, or run `dockhand verify %s` yourself", e.Reason, e.Branch)
 }
 
 func (e *VerifyDeferredError) Unwrap() error { return e.Cause }
@@ -51,7 +51,7 @@ func (e *VerifyDeferredError) Unwrap() error { return e.Cause }
 //
 // The band is never the synchronous one here even when the cause could
 // carry it: a deferral is by definition nobody standing there, and the
-// run was recorded for status to start.
+// run was recorded for the drain to start.
 func (e *VerifyDeferredError) DockhandExit() int {
 	var full *verify.CapacityError
 	switch {
@@ -69,8 +69,9 @@ func (e *VerifyDeferredError) DockhandExit() int {
 		return exitcode.VerifyUnsupported
 	}
 	// The summary a multi-release verify returns carries no cause: each
-	// release it counts was recorded deferred and status retries them,
-	// which is what queued means. Everything else here is a submit that
+	// release it counts was recorded deferred and the drain retries
+	// them, which is what queued means. Everything else here is a submit
+	// that
 	// broke after the branch was minted.
 	if e.Cause == nil {
 		return exitcode.VerifyQueued
@@ -106,12 +107,13 @@ func (e *VerifyDeferredError) Code() string {
 }
 
 // submission is what a submit needs beyond the branch: which subject,
-// which release, and the two facts about the build that the record
-// keeps — whether the port's test suite runs after the install, and
-// whether the binary archive must be ignored.
+// which release, and the three facts about the build that the record
+// keeps — whether the port's test suite runs after the install,
+// whether the binary archive must be ignored, and whether a pass keeps
+// its environment.
 //
-// A struct rather than four more positional arguments, because two of
-// the four are bools that read identically at a call site and the
+// A struct rather than five more positional arguments, because three
+// of the five are bools that read identically at a call site and the
 // record is what they end up in: a caller that swapped them would
 // write a note claiming a test nobody ran.
 type submission struct {
@@ -119,7 +121,13 @@ type submission struct {
 	Release    platform.Release
 	Test       bool
 	FromSource bool
-	Trace      bool
+	// KeepEnv is the --keep-env ask (D27), stamped on every run this
+	// submission records — the started ones and the queued ones alike,
+	// because a deferral must carry it to the resubmission. The
+	// provider never learns it: whether a finished guest goes back is
+	// dockhand's decision, made at settle.
+	KeepEnv bool
+	Trace   bool
 	// Members is every subject this submission builds, in build order,
 	// for a change that has more than one. Empty is the single-subject
 	// submission — the shape every caller but a cohort verification
@@ -421,7 +429,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 			// one port, and a note that said it of the others would vouch
 			// for a build from source that never happened.
 			return record.Run{State: record.Running, Linted: true,
-				FromSource: slices.Contains(fromSource, port)}
+				FromSource: slices.Contains(fromSource, port), KeepEnv: s.KeepEnv}
 		},
 	); err != nil {
 		// Submit-and-record is a transaction: a job whose note cannot
@@ -432,7 +440,12 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 		// being overwritten — which is exactly when a worker must not
 		// be left running behind an error return.
 		if rerr := prov.Release(context.WithoutCancel(ctx), job); rerr != nil {
-			return fmt.Errorf("recording the run failed (%w) and releasing %s failed too: %w — `tart delete %s` frees the slot", err, job.ID, rerr, job.ID)
+			// The remedy names dockhand's own verb and not the backend's:
+			// a job no note records is exactly an untracked worker, which
+			// is what `cycle --reclaim-orphans` exists to free (R6), and a
+			// kernel error that spelled `tart delete` would be wrong the
+			// day the provider is not tart.
+			return fmt.Errorf("recording the run failed (%w) and releasing %s failed too: %w — `dockhand cycle --reclaim-orphans` frees the slot", err, job.ID, rerr)
 		}
 		return fmt.Errorf("recording the run failed; the worker was released: %w", err)
 	}
@@ -449,7 +462,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 // queue is the one way a submit gives up: the run nothing could start
 // is written onto the note, and the deferral goes back to the caller.
 //
-// The note is what makes a deferral recoverable — `dockhand status`
+// The note is what makes a deferral recoverable — `dockhand cycle`
 // retries what it finds recorded — so it is written before the error
 // travels, and a failure to write it is a warning rather than the
 // answer: the branch stands either way, and losing the reason to a
@@ -458,7 +471,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 // A run is keyed by release, so one that never resolved a release
 // cannot be recorded. That is only reachable on a machine whose
 // provider offers no platform at all, where there is nothing for
-// status to retry against until a base exists.
+// the drain to retry against until a base exists.
 //
 // A queued run has no job, and none is invented for it. Nothing was
 // submitted, so there is no guest to describe, and a job record
@@ -485,7 +498,7 @@ func (e *Engine) queue(ctx context.Context, m *Minted, s submission, cause error
 		for _, port := range ports {
 			if rerr := e.recordRun(ctx, m.Repo, m.Sha, port, s.Release.Name, record.Run{
 				State: record.Queued, Detail: cause.Error(),
-				FromSource: slices.Contains(fromSource, port),
+				FromSource: slices.Contains(fromSource, port), KeepEnv: s.KeepEnv,
 			}, ""); rerr != nil {
 				fmt.Fprintf(e.Err, "warning: recording the queued run: %v\n", rerr)
 			}
@@ -511,10 +524,25 @@ func (e *Engine) recordRun(ctx context.Context, repo *git.Repo, sha, portName, r
 	return nil
 }
 
+// SubmitOpts is what `dockhand verify` asks of the run beyond the
+// release: the two facts an invocation decides and the note keeps.
+// Neither is carried from the note's prior run — an earlier ask for
+// the test suite or a kept environment was that invocation's, and this
+// one says for itself.
+//
+// A struct rather than two positional bools, for the reason submission
+// is one: the two read identically at a call site, and a caller that
+// swapped them would keep an environment nobody asked to enter and
+// skip a test somebody asked for.
+type SubmitOpts struct {
+	Test    bool
+	KeepEnv bool
+}
+
 // SubmitRelease claims one release's run for the branch and submits it,
 // under the repository's submit lock from the re-read through the
 // record — the claim pumpRun makes, made the same way, so a verify and
-// a status over one queued run cannot both start it. The note is
+// a cycle over one queued run cannot both start it. The note is
 // read under the lock, because what it says outside is what a peer
 // may already have changed: a run already running is left alone, and
 // a deferral is re-recorded with its reason before the lock goes, so
@@ -537,7 +565,7 @@ func (e *Engine) recordRun(ctx context.Context, repo *git.Repo, sha, portName, r
 // submitted: a cohort goes into one environment as one build, so the
 // claim is made once for all of them and the note gains one job with
 // one run per member.
-func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip string, members []Member, r platform.Release, test bool) (started bool, err error) {
+func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip string, members []Member, r platform.Release, opts SubmitOpts) (started bool, err error) {
 	if len(members) == 0 {
 		return false, fmt.Errorf("verify: %s has no subject to verify", branch)
 	}
@@ -552,7 +580,7 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip 
 	}
 	defer unlock()
 	portName := members[0].Port
-	s := submission{Port: portName, Release: r, Test: test, Members: members}
+	s := submission{Port: portName, Release: r, Test: opts.Test, KeepEnv: opts.KeepEnv, Members: members}
 	if n, nerr := e.Ledger(repo).Read(ctx, tip); nerr == nil {
 		if run, ok := n.Runs[record.RunKey(portName, r.Name)]; ok {
 			if run.State == record.Running {
@@ -560,7 +588,18 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip 
 					r.Name, time.Since(n.Jobs[r.Name].Job.Started).Round(time.Second))
 				return false, nil
 			}
+			// Carried from the queued run the way FromSource is (R1,
+			// ruled 2026-09-05 with D27's implementation, pending the
+			// maintainer): a `bump --keep-env` that deferred must keep
+			// its environment whichever verb starts it — the drain
+			// carries the ask through pumpRun, and the deferral epilogue
+			// names `dockhand verify <branch>` as the other road, so a
+			// hand verify that dropped it would make one queued run keep
+			// or release depending on who happened to start it. The
+			// invocation's own ask is honoured too: --keep-env on the
+			// verify adds the request, it never withdraws one.
 			s.FromSource = run.FromSource
+			s.KeepEnv = s.KeepEnv || run.KeepEnv
 		}
 	}
 	e.askVerdict(ctx, repo, tip)
@@ -574,7 +613,18 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip 
 		// here would overwrite whatever the submit had already concluded
 		// about it, which for a headline that declined the platform at
 		// pre-flight means replacing its refusal with a promise.
-		fmt.Fprintf(e.Err, "deferred %s: %s\n", r.Name, vde.Reason)
+		line := fmt.Sprintf("deferred %s: %s", r.Name, vde.Reason)
+		if !strings.Contains(vde.Reason, "dockhand ") {
+			// The remedy beside the finding (D27), under the rule the
+			// report renders a queued run by: a reason that already
+			// names a dockhand verb (a base to provision) speaks for
+			// itself, and a bare fact — a full machine — is given the
+			// verb that starts the run once it can. The summary below
+			// promises that each line above names its remedy, and this
+			// is what makes that true of the commonest deferral.
+			line += " — `dockhand cycle` starts it"
+		}
+		fmt.Fprintln(e.Err, line)
 		return false, err
 	}
 	return err == nil, err

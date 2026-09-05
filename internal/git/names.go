@@ -1,11 +1,13 @@
 package git
 
 // BranchNamespace is the prefix under refs/heads/ that every branch
-// dockhand mints lives in — the one namespace status lists, clean
-// sweeps, and resolve matches a target against. Slash-terminated
-// because Branches matches ref namespaces, not substrings. It is a
-// branch namespace only: VerifyNotesRef is a notes ref that happens to
-// share the word, and the two are not one constant.
+// dockhand mints lives in — the one namespace `cycle` deletes inside,
+// and resolve matches a target against. `status` lists it plus any
+// other branch carrying a verify note (D27), but nothing removes a
+// branch outside it. Slash-terminated because Branches matches ref
+// namespaces, not substrings. It is a branch namespace only:
+// VerifyNotesRef is a notes ref that happens to share the word, and
+// the two are not one constant.
 const BranchNamespace = "dockhand/"
 
 // MintBranchName is the branch a plan's slug is minted under: the

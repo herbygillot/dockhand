@@ -23,6 +23,7 @@ package render
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -31,7 +32,7 @@ import (
 
 // BranchLine is how a branch and its standing share one line: the name
 // padded into a fixed column, then a single space, then the standing.
-// status and clean both list branches and a reader scans the two
+// status and cycle both list branches and a reader scans the two
 // listings as one, so the column is a single number rather than two
 // that happen to agree today.
 //
@@ -98,6 +99,17 @@ func RecordLines(n record.Record, now time.Time) []string {
 		}
 		if ref.Run.Detail != "" {
 			line += " — " + ref.Run.Detail
+		}
+		if ref.Run.State == record.Queued && !strings.Contains(ref.Run.Detail, "dockhand ") {
+			// The remedy beside the finding (D27): with the split nothing
+			// begins on its own, so a queued run names the verb that
+			// starts it. Said here, from the state, and not trusted to
+			// the recorded detail — the detail is whatever the provider
+			// said when it refused, and a note written before the verb
+			// existed still names the right one. A detail that already
+			// names a dockhand verb is left to speak for itself rather
+			// than doubled.
+			line += " — `dockhand cycle` starts it"
 		}
 		lines = append(lines, line)
 	}

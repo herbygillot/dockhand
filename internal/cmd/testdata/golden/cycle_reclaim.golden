@@ -1,0 +1,7 @@
+exit: 0
+--- stdout
+  dockhand/jq-1.8                  verifying (<elapsed>) (Testos)
+  dockhand-worker-elsewhere is a worker from /elsewhere/ports — its own `dockhand cycle --reclaim-orphans` reclaims it
+  reclaimed dockhand-worker-ours
+  reclaimed dockhand-worker-nameless
+--- stderr

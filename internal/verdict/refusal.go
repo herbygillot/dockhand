@@ -136,7 +136,7 @@ func (e *SupersededError) DockhandExit() int { return exitcode.Superseded }
 func (e *SupersededError) Code() string { return "verification-superseded" }
 
 // QueuedError reports a run that has not started: no slot when it was
-// asked for, and the note carries it for status to pick up. It is the
+// asked for, and the note carries it for the drain to pick up. It is the
 // pending band and never the verdict one — nothing failed, nothing
 // finished, and the remedy is to ask again rather than to fix anything.
 type QueuedError struct {
@@ -147,7 +147,7 @@ type QueuedError struct {
 
 func (e *QueuedError) Error() string {
 	return sayOutcome(e.Port, e.Platform, "has not started yet", e.Detail) +
-		" — `dockhand status` starts it when it can"
+		" — `dockhand cycle` starts it when it can"
 }
 
 // DockhandExit: the pending band, the same code a deferred submit answers.

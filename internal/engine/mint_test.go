@@ -240,7 +240,7 @@ func TestPumpNeverDrainsABranchDestination(t *testing.T) {
 	// verdict is wanted, and the drain agrees from then on.
 	_, err := eng.SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha,
 		[]Member{{Port: "jq", Portdir: "sysutils/jq"}},
-		fake.Capabilities().Platforms[0], false)
+		fake.Capabilities().Platforms[0], SubmitOpts{})
 	require.NoError(t, err)
 	again, err := ledger.Open(repo).Read(ctx, sha)
 	require.NoError(t, err)

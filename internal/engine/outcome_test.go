@@ -110,7 +110,7 @@ func TestReconcileClosesTheRowWhenThePullRequestMerged(t *testing.T) {
 		`"html_url":"https://x/9","merge_commit_sha":"cafe1234"}]`}
 	eng.Gh = forge.run
 
-	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{})
+	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{Retire: true})
 	require.NoError(t, err)
 	require.Len(t, rep.Branches, 1)
 	require.True(t, rep.Branches[0].Retire.Cleaned)
@@ -131,7 +131,7 @@ func TestTheAuditSurvivesTheDemolitionThatClosedItsRow(t *testing.T) {
 	forge := &forgeFake{prs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/9"}]`}
 	eng.Gh = forge.run
 
-	_, err := eng.Reconcile(context.Background(), ReconcileOpts{})
+	_, err := eng.Reconcile(context.Background(), ReconcileOpts{Retire: true})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -163,32 +163,13 @@ func TestReconcileClosesTheRowOnAnObservedRejection(t *testing.T) {
 	assert.Empty(t, got[1].MergeSha)
 }
 
-func TestReconcileClosesTheRowWithoutHavingObservedATip(t *testing.T) {
-	repo, sha := promotedRepo(t)
-	eng := testState(t, repo, &verifytest.Fake{})
-	published(t, eng, repo, sha)
-	forge := &forgeFake{prs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z",` +
-		`"html_url":"https://x/9","merge_commit_sha":"cafe1234"}]`}
-	eng.Gh = forge.run
-
-	// The sweep observes no standings, so it holds no tip: the sha the
-	// row is keyed by has to be asked for, and asked for before the
-	// demolition takes the branch away.
-	_, err := eng.Reconcile(context.Background(), ReconcileOpts{RetireOnly: true})
-	require.NoError(t, err)
-
-	got := rows(t, repo, sha)
-	require.Len(t, got, 2)
-	assert.Equal(t, record.Merged, got[1].Outcome)
-}
-
 func TestReconcileLeavesAnUnpublishedChangeOutOfTheAudit(t *testing.T) {
 	repo, sha := promotedRepo(t)
 	eng := testState(t, repo, &verifytest.Fake{})
 	forge := &forgeFake{prs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/9"}]`}
 	eng.Gh = forge.run
 
-	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{})
+	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{Retire: true})
 	require.NoError(t, err)
 
 	// A branch promoted by hand, or by an older dockhand, has no
@@ -252,7 +233,7 @@ func TestAnOutcomeRowThatCannotBeWrittenIsAWarningOnTheReport(t *testing.T) {
 	eng.Gh = forge.run
 	lockNotesRef(t, repo, git.OutcomeNotesRef)
 
-	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{})
+	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{Retire: true})
 	require.NoError(t, err, "bookkeeping never fails the pass")
 	require.Len(t, rep.Branches, 1)
 
@@ -296,4 +277,27 @@ func TestACleanPublicationCarriesNoUnprovenCount(t *testing.T) {
 	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errOut)
 	published(t, eng, repo, sha)
 	assert.Equal(t, 0, rows(t, repo, sha)[0].Unproven)
+}
+
+// D27: the audit row is bookkeeping of what the forge said, so `status`
+// closes it too — the ledger recording a world that already changed —
+// while the branch it describes is left standing for `cycle`.
+func TestStatusClosesTheRowAndLeavesTheBranch(t *testing.T) {
+	repo, sha := promotedRepo(t)
+	eng := testState(t, repo, &verifytest.Fake{})
+	published(t, eng, repo, sha)
+	forge := &forgeFake{prs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z",` +
+		`"html_url":"https://x/9","merge_commit_sha":"cafe1234"}]`}
+	eng.Gh = forge.run
+
+	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{})
+	require.NoError(t, err)
+	require.Len(t, rep.Branches, 1)
+	assert.False(t, rep.Branches[0].Retire.Cleaned)
+	assert.True(t, repo.HasBranch(context.Background(), "dockhand/jq-1.8"))
+
+	got := rows(t, repo, sha)
+	require.Len(t, got, 2)
+	assert.Equal(t, record.Merged, got[1].Outcome)
+	assert.Equal(t, "cafe1234", got[1].MergeSha)
 }

@@ -5,6 +5,7 @@ exit: 0
     "branches": [
       {
         "branch": "dockhand/jq-open",
+        "minted": true,
         "tip": "b91f385d6cdb57486b20568c4c538ee510410264",
         "note": {
           "schema": 3,
@@ -48,6 +49,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-local",
+        "minted": true,
         "tip": "73afafe06dd4db21a2aef0a6d95604ed47669ac3",
         "note": {
           "schema": 3,
@@ -84,6 +86,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-closed",
+        "minted": true,
         "tip": "d1acb61bdcd7967566ceef2d89c1522728af8e5e",
         "note": {
           "schema": 3,
@@ -127,6 +130,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-landed",
+        "minted": true,
         "tip": "8e8a39d9c9d770206fd0fb47050bc6f80e0d277b",
         "drift": "unverified",
         "pr": {
@@ -135,11 +139,11 @@ exit: 0
           "state": "closed",
           "merged_at": "2026-09-01T00:00:00Z",
           "html_url": "https://x/80"
-        },
-        "cleaned": true
+        }
       },
       {
         "branch": "dockhand/jq-merged",
+        "minted": true,
         "tip": "874f096ab5f10cedd4376b8a3318aa70bf2cbb4e",
         "note": {
           "schema": 3,
@@ -179,16 +183,17 @@ exit: 0
           "state": "closed",
           "merged_at": "2026-09-01T00:00:00Z",
           "html_url": "https://x/79"
-        },
-        "cleaned": true
+        }
       },
       {
         "branch": "dockhand/jq-nopr",
+        "minted": true,
         "tip": "d37cca89e08435d6910bd2a2ad7ba38dec2dde3f",
         "drift": "unverified"
       },
       {
         "branch": "dockhand/jq-outage",
+        "minted": true,
         "tip": "01d790b44c8b977335eb7a17543f24011b69245d",
         "drift": "unverified",
         "pr_error": "gh api: HTTP 502 from api.github.com (scripted outage)"
@@ -201,7 +206,3 @@ exit: 0
     }
   }
 --- stderr
-  removed dockhand/jq-landed from "herby"
-  discarded dockhand/jq-landed (8e8a39d9c9d7)
-  removed dockhand/jq-merged from "herby"
-  discarded dockhand/jq-merged (874f096ab5f1)

@@ -65,7 +65,7 @@ func (e *FailedVerificationError) Code() string { return "verification-failed" }
 // resurrect work the project has already taken.
 //
 // It exits in the refused band: the destination is a dead end rather
-// than a failure, and `dockhand clean` is the remedy.
+// than a failure, and `dockhand cycle` is the remedy.
 type PRMergedError struct {
 	Number int
 	Branch string
@@ -73,7 +73,7 @@ type PRMergedError struct {
 }
 
 func (e *PRMergedError) Error() string {
-	return fmt.Sprintf("PR #%d for %s already merged (%s) — `dockhand clean` retires the branch",
+	return fmt.Sprintf("PR #%d for %s already merged (%s) — `dockhand cycle` retires the branch",
 		e.Number, e.Branch, e.URL)
 }
 

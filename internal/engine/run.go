@@ -111,6 +111,15 @@ type Policy struct {
 	InPlace  bool
 	Trace    bool
 	Test     bool
+	// KeepEnv is --keep-env: the environment of a PASSING run stands
+	// after settle, the way a failure's does by rule (D27). It is
+	// recorded on the run rather than acted on here, and recorded the
+	// way FromSource is rather than the way Test is: Test lives on the
+	// per-guest JobRecord and a deferred run has no JobRecord, so an ask
+	// carried only there would be lost the moment a submit was queued
+	// and re-tried by a later cycle. Honoured wherever release is
+	// decided — verdict's JudgeRun answers KeepWorker for it.
+	KeepEnv bool
 	// OnInFlight is --replace: replace what is already in flight for this
 	// port, rather than refusing.
 	OnInFlight InFlight
@@ -151,8 +160,8 @@ type Policy struct {
 	// an input to a gate — a field that could widen what the unattended
 	// road is allowed to do would be an authorization wearing
 	// provenance's clothes — and neither is ever derived here: who is
-	// running is DECLARED by the caller (the `auto` verb, --auto,
-	// DOCKHAND_AUTO), and an engine that answered it for itself by
+	// running is DECLARED by the caller (--auto, DOCKHAND_AUTO), and an
+	// engine that answered it for itself by
 	// reading the environment or a terminal would be detecting what the
 	// ruling says must be declared.
 	Invoker record.Driver
@@ -265,7 +274,7 @@ func (e *Engine) Run(ctx context.Context, p *plan.Plan, o Policy) (Realized, err
 	// submitted against the tip and the guest drives its own build, so
 	// this process is free to exit; status collects the verdict.
 	return done, e.submit(ctx, m, submission{
-		Port: p.Port, Release: o.On, Test: o.Test,
+		Port: p.Port, Release: o.On, Test: o.Test, KeepEnv: o.KeepEnv,
 		FromSource: o.fromSource(p.Intent), Trace: o.Trace,
 	})
 }

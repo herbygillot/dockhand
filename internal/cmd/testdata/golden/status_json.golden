@@ -5,6 +5,7 @@ exit: 0
     "branches": [
       {
         "branch": "dockhand/jq-failed",
+        "minted": true,
         "tip": "eb27ddfb79c2359fca24e7db6d5ebb901d9cfb02",
         "note": {
           "schema": 3,
@@ -41,6 +42,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-queued",
+        "minted": true,
         "tip": "b91f385d6cdb57486b20568c4c538ee510410264",
         "note": {
           "schema": 3,
@@ -58,7 +60,7 @@ exit: 0
             "jq@Testos": {
               "state": "queued",
               "platform": "Testos",
-              "detail": "all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees",
+              "detail": "all 2 verification slots are busy (2 VMs running)",
               "links": null
             }
           }
@@ -66,6 +68,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-multi",
+        "minted": true,
         "tip": "5e61daa6b96bbc9fe23a914300ae5ae596c31a94",
         "note": {
           "schema": 3,
@@ -109,6 +112,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-passed",
+        "minted": true,
         "tip": "20f452db645f645adf4efa211c1abf87c03d02df",
         "note": {
           "schema": 3,
@@ -145,16 +149,19 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-amended",
+        "minted": true,
         "tip": "9c0016b64621f245dd68a37c88f35aa6f7933242",
         "drift": "unsupported (Oldos), passed (Testos) at 5e61daa6b96b — the tip differs only in commit metadata"
       },
       {
         "branch": "dockhand/jq-behind",
+        "minted": true,
         "tip": "bc66a6e8a0a46c2cb60ae5cf04058e1df7b6d292",
         "drift": "tip unverified; passed (Testos) at 73afafe06dd4, 1 commit(s) behind — `dockhand verify dockhand/jq-behind` tests the tip"
       },
       {
         "branch": "dockhand/jq-blocked",
+        "minted": true,
         "tip": "874f096ab5f10cedd4376b8a3318aa70bf2cbb4e",
         "note": {
           "schema": 3,
@@ -191,6 +198,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-canceled",
+        "minted": true,
         "tip": "d37cca89e08435d6910bd2a2ad7ba38dec2dde3f",
         "note": {
           "schema": 3,
@@ -226,6 +234,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-errored",
+        "minted": true,
         "tip": "01d790b44c8b977335eb7a17543f24011b69245d",
         "note": {
           "schema": 3,
@@ -262,6 +271,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-running",
+        "minted": true,
         "tip": "0f4794a2f0002fc66fa64ad43f5cc831beaddb59",
         "note": {
           "schema": 3,
@@ -296,6 +306,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-superseded",
+        "minted": true,
         "tip": "fbc27e2e65950edf2ceb567fece09cc615856fb7",
         "note": {
           "schema": 3,
@@ -331,6 +342,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-unasked",
+        "minted": true,
         "tip": "a4213aa063db39296bc17483350e58a9890039bf",
         "note": {
           "schema": 3,
@@ -349,16 +361,19 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-unasked-grown",
+        "minted": true,
         "tip": "b2f64aa44328e4274ce643d066fd6ac586c96afe",
         "drift": "unverified"
       },
       {
         "branch": "dockhand/jq-unnoted",
+        "minted": true,
         "tip": "1ef4c205d53db8fa512c4dcdc4e43630bcf9ed1b",
         "drift": "unverified"
       },
       {
         "branch": "dockhand/jq-unsupported",
+        "minted": true,
         "tip": "b2b5ebfa31af8b11eb9e89d9fdfbdbd8a6747c93",
         "note": {
           "schema": 3,
@@ -395,6 +410,7 @@ exit: 0
       },
       {
         "branch": "dockhand/jq-vanished",
+        "minted": true,
         "tip": "99d504441dfac5ac3c58b3275d0b6dec756e51a6",
         "note": {
           "schema": 3,

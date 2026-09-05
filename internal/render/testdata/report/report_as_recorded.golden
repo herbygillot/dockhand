@@ -1,21 +1,20 @@
 --- stdout
+as recorded — nothing polled (--no-update): running runs not settled, pull requests not checked, no worker audit
 dockhand/jq-queued               queued (Testos) — all 2 verification slots are busy (2 VMs running) — `dockhand cycle` starts it
 dockhand/jq-local                passed (Testos)
 dockhand/jq-landed
   unverified
-  PR #80 merged — `dockhand cycle` retires the branch
+  promoted; PR not checked (--no-update)
 dockhand/jq-open
   passed (Testos)
-  PR #77 open (https://x/77)
+  promoted; PR not checked (--no-update)
 dockhand/jq-running              verifying (1m30s) (Testos)
 dockhand/jq-unasked              unverified — minted with --no-verify; `dockhand verify` starts a run
 dockhand/jq-unreadable           error: reading the note: bad object
 dockhand/jq-outage
   unverified
-  PR state unavailable: gh api: HTTP 502 from api.github.com
+  promoted; PR not checked (--no-update)
 erasure-test
   passed (Testos)
-  PR #81 merged — not a dockhand branch, so nothing here removes it
-dockhand-worker-stray            untracked worker — `dockhand shell dockhand-worker-stray` reaches it; `dockhand cycle --reclaim-orphans` frees the slot
-dockhand-worker-elsewhere        worker from /other/ports — `dockhand status` there follows it
+  promoted; PR not checked (--no-update)
 --- stderr

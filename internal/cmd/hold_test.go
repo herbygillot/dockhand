@@ -76,18 +76,19 @@ func TestTheHoldVerbsExitInTheirBands(t *testing.T) {
 
 // The flag exists, defaults off, and takes no argument. A `--superseded`
 // that had drifted into taking a value would be a usage error at every
-// call site that spells it the documented way.
-func TestCleanDeclaresTheSupersededFlag(t *testing.T) {
-	f := Clean().Flags().Lookup("superseded")
+// call site that spells it the documented way. It came to `cycle` from
+// `clean` (D27) with its shape intact.
+func TestCycleDeclaresTheSupersededFlag(t *testing.T) {
+	f := Cycle().Flags().Lookup("superseded")
 	require.NotNil(t, f)
 	assert.Equal(t, "false", f.DefValue)
 	assert.Equal(t, "bool", f.Value.Type())
 }
 
-// Without the flag, `clean` leaves a superseded branch alone; with it,
+// Without the flag, `cycle` leaves a superseded branch alone; with it,
 // the branch goes. That pairing is the ruling: nothing else in the tool
 // removes a branch for having been superseded.
-func TestCleanRemovesSupersededOnlyWhenAsked(t *testing.T) {
+func TestCycleRemovesSupersededOnlyWhenAsked(t *testing.T) {
 	ctx := context.Background()
 	repo, sha, rs, out, _ := holdState(t)
 	gittest.BareFork(t, repo, "herbygillot", "herby")
@@ -101,12 +102,12 @@ func TestCleanRemovesSupersededOnlyWhenAsked(t *testing.T) {
 	n.SupersededBy = "dockhand/jq-1.9"
 	require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
-	require.NoError(t, cleanAction{}.Execute(ctx, rs))
+	require.NoError(t, cycleAction{}.Execute(ctx, rs))
 	_, err = repo.RevParse(ctx, "dockhand/jq-1.8")
-	require.NoError(t, err, "the plain sweep asks about merges and nothing else")
+	require.NoError(t, err, "the plain pass asks about merges and nothing else")
 
 	out.Reset()
-	require.NoError(t, cleanAction{superseded: true}.Execute(ctx, rs))
+	require.NoError(t, cycleAction{superseded: true}.Execute(ctx, rs))
 	assert.Contains(t, out.String(), "superseded by dockhand/jq-1.9",
 		"the sweep says what it removed and why")
 	_, err = repo.RevParse(ctx, "dockhand/jq-1.8")

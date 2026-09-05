@@ -15,6 +15,7 @@ package cmd
 // normalize.
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -210,10 +211,10 @@ func TestGoldenStatusJSON(t *testing.T) {
 	checkGolden(t, "status_json", tr, rewrite{repo.Root, "<repo>"})
 }
 
-// The deferred pump: status starts what was deferred once a slot is
-// free. tart is stubbed present so the gate opens; the pre-flight
-// evaluates through a prefix that holds nothing, so its degradation
-// line is the same on every machine.
+// A queued run under status: the line says it is queued and names the
+// verb that starts it, and nothing is started (D27). tart is stubbed
+// present so that, were the drain still status's, its gate would open
+// — the transcript shows it did not run.
 func TestGoldenStatusPump(t *testing.T) {
 	tartOnPath(t)
 	repo, sha := goldenLifecycleRepo(t)
@@ -222,6 +223,20 @@ func TestGoldenStatusPump(t *testing.T) {
 	rs.PrefixPath = goldenNoPrefix
 	tr := capture(t, rs, out, errb, statusAction{})
 	checkGolden(t, "status_pump", tr, rewrite{repo.Root, "<repo>"})
+}
+
+// The deferred pump: cycle starts what was deferred once a slot is
+// free. tart is stubbed present so the gate opens; the pre-flight
+// evaluates through a prefix that holds nothing, so its degradation
+// line is the same on every machine.
+func TestGoldenCyclePump(t *testing.T) {
+	tartOnPath(t)
+	repo, sha := goldenLifecycleRepo(t)
+	deferredNote(t, repo, sha, (&verify.CapacityError{Busy: 2, Cap: 2}).Error())
+	rs, out, errb := goldenState(repo, &verifytest.Fake{})
+	rs.PrefixPath = goldenNoPrefix
+	tr := capture(t, rs, out, errb, cycleAction{})
+	checkGolden(t, "cycle_pump", tr, rewrite{repo.Root, "<repo>"})
 }
 
 // The worker audit's two sentences, which no golden pinned while the
@@ -250,6 +265,33 @@ func TestGoldenStatusOrphans(t *testing.T) {
 	checkGolden(t, "status_orphans", tr, rewrite{repo.Root, "<repo>"})
 }
 
+// The same four workers under `cycle --reclaim-orphans` (D27): the
+// running job's is tracked and untouched; this checkout's own and the
+// unattributed one are reclaimed, through the job the backend named
+// for each; another checkout's is named and left to its own cycle.
+// The fake names a job per worker the way tart names its VM, which is
+// the handle the release goes through.
+func TestGoldenCycleReclaimOrphans(t *testing.T) {
+	tartAbsent(t)
+	repo, sha := goldenLifecycleRepo(t)
+	writeRuns(t, repo, sha, map[string]platRun{"Testos": runningOn("dockhand-worker-mine")})
+	worker := func(name, owner string) verify.Worker {
+		return verify.Worker{Name: name, Owner: owner, Job: verify.Job{Provider: "fake", ID: name}}
+	}
+	fake := &verifytest.Fake{Live: []verify.Worker{
+		worker("dockhand-worker-mine", ""),
+		worker("dockhand-worker-elsewhere", "/elsewhere/ports"),
+		worker("dockhand-worker-ours", repo.Root),
+		worker("dockhand-worker-nameless", ""),
+	}}
+	rs, out, errb := goldenState(repo, fake)
+	tr := capture(t, rs, out, errb, cycleAction{reclaimOrphans: true})
+	checkGolden(t, "cycle_reclaim", tr, rewrite{repo.Root, "<repo>"})
+}
+
+// One branch per pull request standing, under status: every standing
+// is reported, the merged ones name `dockhand cycle`, and nothing is
+// deleted (D27).
 func TestGoldenStatusPR(t *testing.T) {
 	tartAbsent(t)
 	repo, gh := goldenPromotedRepo(t)
@@ -259,13 +301,42 @@ func TestGoldenStatusPR(t *testing.T) {
 	checkGolden(t, "status_pr", tr, rewrite{repo.Root, "<repo>"})
 }
 
-func TestGoldenStatusPRNoClean(t *testing.T) {
+// The same branches under `status --no-update`: the ledger as written,
+// the pull requests unasked and said to be, and the forge seam fails
+// the test if it is so much as reached.
+func TestGoldenStatusPRNoUpdate(t *testing.T) {
+	tartAbsent(t)
+	repo, _ := goldenPromotedRepo(t)
+	rs, out, errb := goldenState(repo, &verifytest.Fake{})
+	rs.Gh = func(_ context.Context, args ...string) (string, error) {
+		t.Fatalf("--no-update asked the forge: %v", args)
+		return "", nil
+	}
+	tr := capture(t, rs, out, errb, statusAction{noUpdate: true})
+	checkGolden(t, "status_pr_no_update", tr, rewrite{repo.Root, "<repo>"})
+}
+
+// The same branches under cycle: the merged ones are retired, locally
+// and off the fork, with the demolition prose beside each; everything
+// else says why it stands.
+func TestGoldenCyclePR(t *testing.T) {
 	tartAbsent(t)
 	repo, gh := goldenPromotedRepo(t)
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
 	rs.Gh = gh.run
-	tr := capture(t, rs, out, errb, statusAction{noClean: true})
-	checkGolden(t, "status_pr_no_clean", tr, rewrite{repo.Root, "<repo>"})
+	tr := capture(t, rs, out, errb, cycleAction{})
+	checkGolden(t, "cycle_pr", tr, rewrite{repo.Root, "<repo>"})
+}
+
+// And under `cycle --keep-merged`: the same verdicts, the deletion
+// withheld, and each kept branch's line saying so.
+func TestGoldenCyclePRKeepMerged(t *testing.T) {
+	tartAbsent(t)
+	repo, gh := goldenPromotedRepo(t)
+	rs, out, errb := goldenState(repo, &verifytest.Fake{})
+	rs.Gh = gh.run
+	tr := capture(t, rs, out, errb, cycleAction{keepMerged: true})
+	checkGolden(t, "cycle_pr_keep_merged", tr, rewrite{repo.Root, "<repo>"})
 }
 
 func TestGoldenStatusPRJSON(t *testing.T) {
@@ -279,9 +350,9 @@ func TestGoldenStatusPRJSON(t *testing.T) {
 
 // A namespace with nothing in it: the sentence names the checkout,
 // because run from the wrong one "no branches" is true and useless.
-// tart reads as present so the two phases an empty pass could still
-// reach — the drain and the worker audit — are reached and say nothing;
-// with it absent the case would prove only that the gate is shut.
+// tart reads as present so the one phase an empty status could still
+// reach — the worker audit — is reached and says nothing; with it
+// absent the case would prove only that the gate is shut.
 func TestGoldenStatusEmpty(t *testing.T) {
 	tartOnPath(t)
 	repo := goldenRepo(t)
@@ -300,25 +371,18 @@ func TestGoldenStatusEmptyJSON(t *testing.T) {
 	checkGolden(t, "status_empty_json", tr, rewrite{repo.Root, "<repo>"})
 }
 
-// ---- clean -----------------------------------------------------------
+// ---- cycle -----------------------------------------------------------
 
-// The sweep's own empty pass: the same sentence status prints, and no
-// worker audit under it — clean asks one question of each branch and
-// has none to ask.
-func TestGoldenCleanEmpty(t *testing.T) {
+// cycle's own empty pass: the same sentence status prints, and no
+// worker audit under it — the audit is a rendering status wants, and
+// cycle touches the workers only when asked. tart reads as present so
+// the drain is reached and has nothing to start.
+func TestGoldenCycleEmpty(t *testing.T) {
 	tartOnPath(t)
 	repo := goldenRepo(t)
 	rs, out, errb := goldenState(repo, &verifytest.Fake{})
-	tr := capture(t, rs, out, errb, cleanAction{})
-	checkGolden(t, "clean_empty", tr, rewrite{repo.Root, "<repo>"})
-}
-
-func TestGoldenClean(t *testing.T) {
-	repo, gh := goldenPromotedRepo(t)
-	rs, out, errb := goldenState(repo, &verifytest.Fake{})
-	rs.Gh = gh.run
-	tr := capture(t, rs, out, errb, cleanAction{})
-	checkGolden(t, "clean", tr, rewrite{repo.Root, "<repo>"})
+	tr := capture(t, rs, out, errb, cycleAction{})
+	checkGolden(t, "cycle_empty", tr, rewrite{repo.Root, "<repo>"})
 }
 
 // ---- cancel ----------------------------------------------------------

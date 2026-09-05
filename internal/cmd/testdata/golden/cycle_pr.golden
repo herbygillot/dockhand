@@ -9,12 +9,10 @@ exit: 0
   dockhand/jq-closed
     passed (Testos)
     PR #78 closed without merging
-  dockhand/jq-landed
-    unverified
-    PR #80 merged — `dockhand clean` removes the branch
-  dockhand/jq-merged
-    passed (Testos)
-    PR #79 merged — `dockhand clean` removes the branch
+  discarded dockhand/jq-landed (8e8a39d9c9d7)
+  dockhand/jq-landed               PR #80 merged — branch cleaned
+  discarded dockhand/jq-merged (874f096ab5f1)
+  dockhand/jq-merged               PR #79 merged — branch cleaned
   dockhand/jq-nopr
     unverified
     promoted; no PR found
@@ -22,3 +20,5 @@ exit: 0
     unverified
     PR state unavailable: gh api: HTTP 502 from api.github.com (scripted outage)
 --- stderr
+  removed dockhand/jq-landed from "herby"
+  removed dockhand/jq-merged from "herby"

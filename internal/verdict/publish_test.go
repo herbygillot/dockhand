@@ -107,7 +107,7 @@ func TestMergedDeadEnd(t *testing.T) {
 	err := MergedDeadEnd(merged, "dockhand/jq")
 	require.Error(t, err)
 	assert.Equal(t,
-		"PR #42 for dockhand/jq already merged (https://example.invalid/pr/42) — `dockhand clean` retires the branch",
+		"PR #42 for dockhand/jq already merged (https://example.invalid/pr/42) — `dockhand cycle` retires the branch",
 		err.Error())
 	var dead *PRMergedError
 	require.ErrorAs(t, err, &dead)

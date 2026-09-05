@@ -96,7 +96,11 @@ dockhand/jq-1.8.2                passed (Tahoe)
 `status` polls running builds, records verdicts, and frees the VM on a
 pass. A failed build keeps its VM alive as the debugging environment —
 `dockhand log jq` prints its build log (`--trace` follows it live), and
-`dockhand shell jq` opens a shell inside it.
+`dockhand shell jq` opens a shell inside it. `--keep-env` on `verify` or
+`bump` keeps a passing build's VM too, for looking inside a green one.
+`status` changes nothing you or anybody else can see: where work is
+waiting — a run queued for a slot, a merged pull request whose branch
+is still here — it says so and names `dockhand cycle`, which does it.
 
 ### Add your own commits
 
@@ -133,15 +137,18 @@ the push.
 ### Sweep up
 
 ```bash
-dockhand clean       # remove branches whose PRs merged
+dockhand cycle       # retire branches whose PRs merged; start deferred runs
 dockhand discard jq  # remove one branch, verified or not
 ```
 
-A branch whose PR merged is done: `clean` (and `status`, when it
-notices) deletes it locally and on your fork, and everything kept says
-why — an open PR, a rejection, a branch never promoted. `discard`
-deletes one branch and releases everything it holds, including a failed
-build's kept VM.
+A branch whose PR merged is done: `status` reports it and names
+`cycle`, and `cycle` deletes it locally and on your fork (`--keep-merged`
+withholds that), and everything kept says why — an open PR, a
+rejection, a branch never promoted. `cycle` also starts the runs that
+were waiting for a slot; `--superseded` removes the branches a newer
+sibling replaced, and `--reclaim-orphans` frees the VMs no note claims.
+`discard` deletes one branch and releases everything it holds, including
+a failed build's kept VM.
 
 ### Look before you leap
 

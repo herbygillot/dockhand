@@ -12,13 +12,13 @@ import (
 )
 
 // Stream names which of a run's two streams a line belongs on. A
-// reconciliation acts as it reports — it settles runs, it deletes a
-// branch whose pull request merged — and what it says about acting is
-// carried here rather than written where it happened, because the same
-// pass has two renderings and they disagree about where that prose
-// goes. The human report says "discarded …" on stdout among the
-// branches; the machine one says it on stderr, where it cannot corrupt
-// the document.
+// `cycle` pass acts as it reports — it settles runs, it deletes a
+// branch whose pull request merged, it starts what was deferred — and
+// what it says about acting is carried here rather than written where
+// it happened, because a pass has two renderings and they disagree
+// about where that prose goes. The human report says "discarded …" on
+// stdout among the branches; the machine one says it on stderr, where
+// it cannot corrupt the document.
 type Stream int
 
 const (
@@ -70,16 +70,17 @@ type Orphan struct {
 	Owner string `json:"owner,omitempty"`
 }
 
-// Report is what one reconciliation pass found and did: every branch in
-// the namespace with its verification standing and its pull request's,
+// Report is what one reconciliation pass found and did: every branch
+// observed — the dockhand/* namespace and any other branch carrying a
+// verify note — with its verification standing and its pull request's,
 // the prose the pass produced while acting, and the workers nothing
 // accounts for.
 //
-// It is the whole of what the three renderings below draw on, and they
-// draw on nothing else. That is the point of collecting it: `status`,
-// `status --json` and `clean` used to be three traversals that polled,
-// judged and deleted on their own schedules, and the only way to know
-// they agreed was to run all three.
+// It is the whole of what the two renderings below draw on, and they
+// draw on nothing else. That is the point of collecting it: `status`
+// and `cycle` (D27) reach one report by one pass and differ only in
+// what the pass was allowed to do, so the renderings cannot disagree
+// about what a branch is doing — only about what was done to it.
 type Report struct {
 	// Repository is the checkout the pass ran in. Naming it is the
 	// point of the empty report: run from the wrong checkout, "no
@@ -92,19 +93,32 @@ type Report struct {
 	// one sentence a golden pins depend on when the test ran.
 	Now time.Time
 
+	// AsRecorded says the pass polled nothing (`status --no-update`,
+	// D27): the standings are the ledger as written, no pull request
+	// was checked and no worker audit ran. The report says so once at
+	// the top, so that a running run's stale line and a promoted
+	// branch's missing pull request are read as unasked rather than as
+	// answers.
+	AsRecorded bool
+
 	Branches []BranchReport
 
-	// Drain is what starting the deferred runs said. It is carried
-	// rather than printed for the same reason a branch's prose is: the
-	// machine rendering routes it to stderr, and both renderings need it
-	// to stay behind the branches it followed.
+	// Drain is what starting the deferred runs said — `cycle`'s alone.
+	// It is carried rather than printed for the same reason a branch's
+	// prose is: the machine rendering routes it to stderr, and both
+	// renderings need it to stay behind the branches it followed.
 	Drain []Line
+
+	// Reclaimed is what releasing the untracked workers said — `cycle
+	// --reclaim-orphans`'s alone, and printed before the drain because
+	// that is the order the pass did them in: a slot a reclaim freed is
+	// a slot the drain then spent.
+	Reclaimed []Line
 
 	// Orphans is the worker audit: the environments the provider is
 	// running that no note here accounts for. Supplied by the caller
-	// rather than taken by the pass, because only the report shows it —
-	// the sweep asks the same questions of the same branches and has
-	// nothing to say about workers.
+	// rather than taken by the pass, because the pure read must not ask
+	// a provider and the pass does not know which read it is.
 	Orphans []Orphan
 }
 
@@ -119,6 +133,14 @@ type Report struct {
 type BranchReport struct {
 	Branch string
 
+	// Minted says dockhand made this branch — it lives under the
+	// dockhand/* namespace. False is a hand-made branch that carries a
+	// verify note and is observed for it (D27's fold-in); nothing here
+	// ever deletes one of those, and the document says which is which
+	// so a consumer can tell dockhand's own work from work it was only
+	// asked to verify.
+	Minted bool
+
 	// Tip, Note and Drift are the observation: the branch's tip commit,
 	// the settled record covering it, and — when no record does — the
 	// drift finding that stands in for one. A nil Note is what makes
@@ -132,21 +154,10 @@ type BranchReport struct {
 	// unreadable note must not cost the pull request's answer.
 	ObserveErr string
 
-	// Retire is the pull request judgment and what acting on it did.
-	// The report states it with Line and the sweep with SweepLine, from
-	// the same fact — the two verbs word the same verdict differently
-	// and neither may reach a different one.
+	// Retire is the pull request judgment and what acting on it did —
+	// or, under `status`, was not asked to do. Both verbs state it with
+	// Line, from the same fact, and neither may reach a different one.
 	Retire verdict.Reconciliation
-
-	// Landed says the branch's own bytes are what is on the primary
-	// branch. It is read only under the merged verdict, where the sweep
-	// says so, and is meaningless elsewhere.
-	Landed bool
-
-	// SweepErr is a branch the sweep could not judge at all. Unlike
-	// ObserveErr it REPLACES the line: `clean` has nothing else to say
-	// about a branch whose pull request it could not ask about.
-	SweepErr string
 
 	// PR is the forge's object, published as the forge shapes it.
 	PR PullRequestDocument
@@ -169,11 +180,12 @@ type BranchReport struct {
 	// where the empty value is a real answer.
 	Tier Tier
 
-	// Prose is what retiring this branch said, in the order it said it.
-	// Ordered, and kept with the branch rather than pooled, because a
-	// reader scanning the listing reads "discarded X" as belonging to
-	// the X below it — batching every deletion at the end would still
-	// print the same lines and tell a different story.
+	// Prose is what retiring this branch said, in the order it said it
+	// — `cycle`'s alone, since `status` retires nothing. Ordered, and
+	// kept with the branch rather than pooled, because a reader scanning
+	// the listing reads "discarded X" as belonging to the X below it —
+	// batching every deletion at the end would still print the same
+	// lines and tell a different story.
 	Prose []Line
 }
 
@@ -213,16 +225,10 @@ func (b BranchReport) standing(now time.Time) []string {
 	return append(lines, WindowLines(b, now)...)
 }
 
-// sweepLine is the branch's line in the sweep.
-func (b BranchReport) sweepLine() string {
-	if b.SweepErr != "" {
-		return "error: " + b.SweepErr
-	}
-	return verdict.DecideRetire(b.Retire.Promoted, b.Retire.PR).SweepLine(b.Retire.PR, b.Landed)
-}
-
-// Text is `dockhand status`: every branch with its standing, the prose
-// each one's retirement produced, and the worker audit under them.
+// Text is the human rendering, and it serves both verbs: `dockhand
+// status` has no prose and no drain and renders every branch with its
+// standing and the worker audit under them; `dockhand cycle` has both
+// and renders the same listing with what the pass did among it.
 //
 // A branch with one line to say shares a line with its name; a branch
 // with several is named and its lines indented under it. The prose
@@ -233,6 +239,9 @@ func (b BranchReport) sweepLine() string {
 //
 // The order is attention's, not the namespace's. See Ordered.
 func (r Report) Text(out, errw io.Writer) {
+	if r.AsRecorded {
+		fmt.Fprintln(out, "as recorded — nothing polled (--no-update): running runs not settled, pull requests not checked, no worker audit")
+	}
 	if len(r.Branches) == 0 {
 		fmt.Fprintf(out, "no dockhand branches in %s\n", r.Repository)
 	}
@@ -248,6 +257,7 @@ func (r Report) Text(out, errw io.Writer) {
 			fmt.Fprintf(out, "  %s\n", l)
 		}
 	}
+	Prose(r.Reclaimed, out, errw)
 	Prose(r.Drain, out, errw)
 	r.orphans(out)
 }
@@ -268,35 +278,17 @@ func (r Report) orphans(out io.Writer) {
 			fmt.Fprintf(out, "%-32s worker from %s — `dockhand status` there follows it\n", o.Name, o.Owner)
 			continue
 		}
-		fmt.Fprintf(out, "%-32s untracked worker — `dockhand shell %s` reaches it; `tart delete %s` frees the slot\n", o.Name, o.Name, o.Name)
+		// The remedy names dockhand's own verb (D27) and not the
+		// backend's: a kernel renderer that spelled `tart delete` would
+		// be wrong the day a worker's provider is not tart.
+		fmt.Fprintf(out, "%-32s untracked worker — `dockhand shell %s` reaches it; `dockhand cycle --reclaim-orphans` frees the slot\n", o.Name, o.Name)
 	}
 }
 
-// Sweep is `dockhand clean`: one line per branch, every deletion
-// reported and everything kept saying why. No standings and no worker
-// audit — the sweep asks one question of each branch and answers it.
-//
-// And no attention order: it walks r.Branches as enumerated, which is
-// git's refname order. The sweep has nothing to order by — every line
-// answers the same question, so a listing sorted by which answer wants
-// a person would be sorting by a fact the sweep never read. This is
-// also the tripwire for the ordering landing in the wrong place: if
-// clean's golden ever moves, the sort reached Report.Branches instead
-// of the two renderings that asked for it.
-func (r Report) Sweep(out, errw io.Writer) {
-	if len(r.Branches) == 0 {
-		fmt.Fprintf(out, "no dockhand branches in %s\n", r.Repository)
-		return
-	}
-	for _, b := range r.Branches {
-		Prose(b.Prose, out, errw)
-		fmt.Fprintf(out, BranchLine, b.Branch, b.sweepLine())
-	}
-}
-
-// statusJSON is the machine rendering of the same reconciliation Text
-// performs — the polling, settling and merged-PR autoclean all still
-// happen; only the telling differs.
+// statusJSON is the machine rendering of the same observation Text
+// performs for `status` — the polling and settling still happen; only
+// the telling differs. `cycle` has no machine rendering (D27): it acts,
+// and what it did is prose.
 //
 // It is a type of its own rather than tags on Report because the two
 // are different promises: Report is this package's working value and
@@ -305,7 +297,12 @@ func (r Report) Sweep(out, errw io.Writer) {
 // script parses. Declaration order is key order, so moving two fields
 // here moves the bytes.
 type statusJSON struct {
-	Repository    string         `json:"repository"`
+	Repository string `json:"repository"`
+	// AsRecorded is `--no-update`'s mark on the document: absent when
+	// the pass polled, true when it did not, so a consumer reading a
+	// running run or a missing pull request knows whether anybody
+	// asked.
+	AsRecorded    bool           `json:"as_recorded,omitempty"`
 	Branches      []statusBranch `json:"branches"`
 	OrphanWorkers []Orphan       `json:"orphan_workers,omitempty"`
 	// Exit is the process's own status, said inside the document as
@@ -317,6 +314,9 @@ type statusJSON struct {
 
 type statusBranch struct {
 	Branch string `json:"branch"`
+	// Minted is never omitted: false is the fold-in's hand-made branch,
+	// and a consumer must be able to tell it from dockhand's own.
+	Minted bool   `json:"minted"`
 	Tip    string `json:"tip,omitempty"`
 	// Note is the tip's verdict set, absent when the tip has none, and
 	// emitted exactly as stored: its own JSON is the schema, so a
@@ -328,14 +328,14 @@ type statusBranch struct {
 	Drift   string              `json:"drift,omitempty"`
 	PR      PullRequestDocument `json:"pr,omitempty"`
 	PRError string              `json:"pr_error,omitempty"`
-	Cleaned bool                `json:"cleaned,omitempty"`
 	Error   string              `json:"error,omitempty"`
 }
 
 // JSON is `dockhand status --json`: the document on out, and every word
-// the pass said while acting on err, where it cannot corrupt it.
-// Field-measured: a merged-PR autoclean mid---json wrote "discarded …"
-// into the document and broke the consumer.
+// the pass said on err, where it cannot corrupt it. `status` acts on
+// nothing (D27), so the prose routed there is the bookkeeping's own
+// warnings; the routing stays because a document with a sentence in it
+// is a broken document whatever the sentence.
 //
 // An encoder rather than a marshal: the trailing newline and the
 // HTML escaping of a PR title carrying & or < are both part of what has
@@ -357,17 +357,18 @@ func (r Report) JSON(out, errw io.Writer, exit exitcode.Twin) error {
 	for _, b := range ordered {
 		Prose(b.Prose, errw, errw)
 	}
+	Prose(r.Reclaimed, errw, errw)
 	Prose(r.Drain, errw, errw)
-	doc := statusJSON{Repository: r.Repository, Branches: []statusBranch{}, OrphanWorkers: r.Orphans, Exit: exit}
+	doc := statusJSON{Repository: r.Repository, AsRecorded: r.AsRecorded, Branches: []statusBranch{}, OrphanWorkers: r.Orphans, Exit: exit}
 	for _, b := range ordered {
 		doc.Branches = append(doc.Branches, statusBranch{
 			Branch:  b.Branch,
+			Minted:  b.Minted,
 			Tip:     b.Tip,
 			Note:    b.Note,
 			Drift:   b.Drift,
 			PR:      b.PR,
 			PRError: b.Retire.Err,
-			Cleaned: b.Retire.Cleaned,
 			Error:   b.ObserveErr,
 		})
 	}

@@ -78,72 +78,67 @@ func DecideRetire(promoted bool, pr PRFact) Retirement {
 	}
 }
 
-// Cleans reports whether this verdict deletes the branch. --no-clean
-// withholds the deletion without changing the verdict, because what a
-// merged PR means does not depend on whether the user asked to act on
+// Cleans reports whether this verdict deletes the branch. keepMerged is
+// `cycle --keep-merged`: it withholds the deletion without changing the
+// verdict, because what a merged PR means does not depend on whether the
+// user asked to act on it. (`status` never asks this at all — it acts on
+// no verdict, D27 — so the only caller is the pass that retires.)
+func (d Retirement) Cleans(keepMerged bool) bool { return d == RetireMerged && !keepMerged }
+
+// Reconciliation is the report's view of the same judgment, plus what
+// happened when the pass acted on it. Two verbs render it (D27):
+// `status`, which acts on nothing and names `cycle` where the verdict
+// wants acting on, and `cycle`, which retires and says what it did —
+// or why it did not. Both are pure functions of this value, so the
+// wording of either can be pinned by a table test with no forge behind
 // it.
-func (d Retirement) Cleans(noClean bool) bool { return d == RetireMerged && !noClean }
-
-// SweepLine is `dockhand clean`'s report for one branch: what happened,
-// and for everything kept, why.
-//
-// contentLanded is read only on the merged verdict, and the caller
-// computes it only there — it is several git calls per branch, and on
-// any other verdict it would be work whose answer nobody reads and
-// whose failure would turn a clean report into an error. The merged line
-// is also written after the demolition succeeded, so it says "cleaned"
-// as a fact rather than an intention.
-func (d Retirement) SweepLine(pr PRFact, contentLanded bool) string {
-	switch d {
-	case RetireUnpromoted:
-		return "kept — never promoted"
-	case RetireNoPR:
-		return "kept — promoted, but no PR found"
-	case RetireMerged:
-		line := fmt.Sprintf("cleaned — PR #%d merged", pr.Number)
-		if !contentLanded {
-			// Merged is the authority; differing bytes mean a committer
-			// amended in flight or a later change superseded it — worth
-			// saying, never worth keeping the branch for.
-			line += " (upstream bytes differ: amended on merge, or since superseded)"
-		}
-		return line
-	case RetireOpen:
-		return fmt.Sprintf("kept — PR #%d open (%s)", pr.Number, pr.URL)
-	case RetireClosed:
-		return fmt.Sprintf("kept — PR #%d closed without merging; rejection is information", pr.Number)
-	}
-	return ""
-}
-
-// Reconciliation is status's view of the same judgment, plus what
-// happened when status acted on it. Status is a report that cleans as a
-// side effect, so it has two outcomes clean does not: a lookup that
-// could not answer at all, and a demolition that failed after the
-// verdict was reached.
 type Reconciliation struct {
 	Promoted bool
+	// Minted says the branch is one dockhand minted — it lives under
+	// git.BranchNamespace. Deletion stays inside that namespace whatever
+	// a pull request did (D27's fold-in): a hand-made branch that
+	// carries a verify note is shown and settled, and never removed by
+	// anything here. It is a fact about the name, handed in by the
+	// engine that knows the namespace, so that this judgment can word
+	// the merged case without learning where branches come from.
+	Minted bool
+	// Unasked says no forge question was asked of this branch: `status
+	// --no-update` reads the ledger and nothing else (D27), so the
+	// pull request's state is unknown rather than absent, and a line
+	// that read "no PR found" would be a lie.
+	Unasked bool
 	// Err is a lookup that could not answer — a broken remote table, a
 	// forge that would not respond. It is reported rather than returned,
-	// because one unreachable PR must not end a sweep over every branch.
+	// because one unreachable PR must not end a pass over every branch.
 	Err string
 	PR  PRFact
 	// Cleaned says the branch was actually demolished, and CleanErr why
 	// it was not when the verdict said it should have been.
 	Cleaned  bool
 	CleanErr string
+	// Withheld says why a deletion the verdict called for, and the pass
+	// was asked to perform, did not happen: `--keep-merged`, or a hold's
+	// own words. Set only by the pass that retires — under `status` the
+	// deletion is never asked for, so there is nothing to withhold and
+	// the line names the verb instead. No kept case may be silent (D27):
+	// a reader of `cycle`'s report must see why each merged branch is
+	// still there.
+	Withheld string
 }
 
-// Line is status's wording. It is deliberately not clean's: status
-// reports and cleans in passing, so its merged line says the deletion
-// happened to a branch the reader was asking about, while clean's says
-// the sweep did it. Both are golden-pinned in their own verb's output.
+// Line is the branch's pull request line, worded for whichever verb
+// produced it. The cases are ordered from "nothing to say" through the
+// answers only one verb can reach: Unasked is `status --no-update`'s
+// alone, Cleaned, CleanErr and Withheld are `cycle`'s alone, and the
+// bare merged case is `status` naming the verb that acts.
 //
 // An unpromoted branch has nothing to say here at all, and says nothing.
 func (r Reconciliation) Line() string {
 	switch {
 	case !r.Promoted:
 		return ""
+	case r.Unasked:
+		return "promoted; PR not checked (--no-update)"
 	case r.Err != "":
 		return "PR state unavailable: " + r.Err
 	case !r.PR.Found:
@@ -152,9 +147,19 @@ func (r Reconciliation) Line() string {
 		return fmt.Sprintf("PR #%d merged; cleaning failed: %s", r.PR.Number, r.CleanErr)
 	case r.Cleaned:
 		return fmt.Sprintf("PR #%d merged — branch cleaned", r.PR.Number)
+	case r.Withheld != "":
+		return fmt.Sprintf("PR #%d merged — kept: %s", r.PR.Number, r.Withheld)
+	case r.PR.Merged && !r.Minted:
+		// The fold-in's one new sentence: the work landed and the branch
+		// is somebody's own, so the pass that retires leaves it and says
+		// so rather than naming a verb that would not touch it either.
+		return fmt.Sprintf("PR #%d merged — not a dockhand branch, so nothing here removes it", r.PR.Number)
 	case r.PR.Merged:
-		// --no-clean: report the merge, withhold the deletion.
-		return fmt.Sprintf("PR #%d merged — `dockhand clean` removes the branch", r.PR.Number)
+		// `status`: report the merge and name the verb that acts on it.
+		// Load-bearing wording (D27): with the split nothing begins on
+		// its own, and a merged branch nobody is told about is a branch
+		// that stands forever.
+		return fmt.Sprintf("PR #%d merged — `dockhand cycle` retires the branch", r.PR.Number)
 	case r.PR.Open:
 		return fmt.Sprintf("PR #%d open (%s)", r.PR.Number, r.PR.URL)
 	default:

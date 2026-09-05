@@ -138,23 +138,21 @@ func TestAMachineNeverCancelsExceptBySupersede(t *testing.T) {
 // state with wording that says why it is kept.
 func TestRejectedIsNeverRetired(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		verdict  Retirement
-		deletes  bool
-		contains string
+		name    string
+		verdict Retirement
+		deletes bool
 	}{
-		{"never promoted", RetireUnpromoted, false, "kept"},
-		{"promoted with no PR", RetireNoPR, false, "kept"},
-		{"merged", RetireMerged, true, "cleaned"},
-		{"open", RetireOpen, false, "kept"},
-		{"closed without merging", RetireClosed, false, "rejection is information"},
+		{"never promoted", RetireUnpromoted, false},
+		{"promoted with no PR", RetireNoPR, false},
+		{"merged", RetireMerged, true},
+		{"open", RetireOpen, false},
+		{"closed without merging", RetireClosed, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.deletes, tc.verdict.Cleans(false),
 				"the merged verdict is the only one that deletes")
 			assert.False(t, tc.verdict.Cleans(true),
-				"--no-clean withholds every deletion without changing any verdict")
-			assert.Contains(t, tc.verdict.SweepLine(closed, true), tc.contains)
+				"--keep-merged (--no-clean before D27) withholds every deletion without changing any verdict")
 		})
 	}
 
@@ -389,8 +387,9 @@ func TestSupersedeOnlyOnANewerTargetOfTheSamePort(t *testing.T) {
 // THE RULING: auto mode is DECLARED and never detected.
 //
 // A person is the invoker of every verb unless the invocation says
-// otherwise, and there are exactly three ways to say otherwise: the
-// `auto` verb, the persistent --auto flag, and DOCKHAND_AUTO. Nothing
+// otherwise, and there are exactly two ways to say otherwise: the
+// persistent --auto flag, and DOCKHAND_AUTO (the `auto` verb was a third
+// until D27 retired it into `cycle --auto`). Nothing
 // asks whether a terminal is attached. tool.IsTerminal exists and is one
 // import away, and reaching for it would make the answer depend on how
 // the process was started rather than on what the operator said: a pipe,
@@ -463,14 +462,18 @@ func TestAutoModeIsDeclaredAndNeverDetected(t *testing.T) {
 	}, spelledIn(t, detection.String()),
 		"the terminal reads in the tree are about TTYs and pagers, not about an invoker")
 
-	// The three declarations, and nothing else, decide.
+	// The declarations, and nothing else, decide. There were three —
+	// the `auto` verb's annotation was the third — until D27 retired
+	// the verb into `cycle --auto`, which declares itself the way every
+	// other verb does: by the flag-and-environment pair (ruled
+	// 2026-09-05 with D27's implementation, pending the maintainer).
 	resolve := bodyOf(t, compiledFile(t, "cmd/auto.go"), "func resolveInvoker(")
-	assert.Equal(t, 1, matches(resolve, `c\.Annotations\[autoVerbAnnotation\]`),
-		"the auto verb declares itself by annotation, so a rename cannot unhook it")
+	assert.Equal(t, 0, matches(resolve, `Annotations`),
+		"no verb declares itself by annotation any more; the unattended pass is a flag on cycle")
 	assert.Equal(t, 1, matches(resolve, `c\.Flags\(\)\.GetBool\(autoFlag\)`))
 	assert.Equal(t, 1, matches(resolve, `autoFromEnv\(\)`))
-	assert.Equal(t, 2, matches(resolve, `return record\.Machine`),
-		"a machine is declared by the verb or by the flag-and-environment pair, and by nothing else")
+	assert.Equal(t, 1, matches(resolve, `return record\.Machine`),
+		"a machine is declared by the flag-and-environment pair, and by nothing else")
 	assert.Equal(t, 1, matches(resolve, `return record\.Human`),
 		"and everything that declared nothing is a person")
 
@@ -817,4 +820,84 @@ func TestTheAuditRowSaysWhatAPromotionCarried(t *testing.T) {
 	assert.Equal(t, map[string]int{"internal/engine/promote.go": 1}, spelledIn(t, `Unproven: len\(n\.UnprovenMembers\(\)\)`),
 		"one writer, from the one reading")
 	heldBy(t, "engine/outcome_test.go", "TestPublishRecordsHowManyMembersWereUnproven")
+}
+
+// D27 — `status` observes and settles; `cycle` acts (2026-09-04).
+//
+// EXERCISED where verdict owns the judgment. A passing run that asked
+// for its environment (--keep-env, recorded on the run) is answered
+// KeepWorker beside the failure that keeps by rule — keep by request is
+// decided here and not overridden in the engine — and a pass that did
+// not ask goes back as before. The merged line `status` renders names
+// `cycle` rather than acting; the same fact under `cycle --keep-merged`
+// or a hold says the branch was kept and why; a merged pull request on
+// a hand-made branch says nothing here removes it (the fold-in); and
+// under `status --no-update` a pushed branch says its pull request was
+// not checked rather than that it has none.
+//
+// SOURCE for the split the engine owns: the pass reaches Discard from
+// exactly one place, inside retire, behind the Retire bit that only
+// `cycle` sets; and the settle keeps a guest on the judgment's word
+// alone — the engine's settle never reads KeepEnv, so release is
+// decided in one place. HELD BY the engine tests that run the two
+// passes over a real repository and a fake provider: status settles,
+// releases the settled guest, and submits, deletes and pushes nothing;
+// --no-update composes no provider and asks no forge; a noted
+// hand-made branch is listed, settled, drained and never deleted; a
+// keep-env pass keeps its guest as a failure would; and reclaim frees
+// only what this checkout may claim. The cmd half — the verbs
+// themselves against their fakes — is held by internal/cmd's own D27
+// test.
+func TestStatusObservesAndSettlesAndCycleActs(t *testing.T) {
+	passed := verify.Status{State: verify.Passed, Handle: "w"}
+	asked := JudgeRun(RunInput{Run: keepEnv(running(false)), Port: "jq", Status: passed})
+	assert.Equal(t, record.Passed, asked.Run.State)
+	assert.Equal(t, KeepWorker, asked.Release, "keep by request, beside keep by rule")
+	assert.True(t, asked.Run.KeepEnv, "and the ask survives the judgment, so the report can say why the guest stands")
+	unasked := JudgeRun(RunInput{Run: running(false), Port: "jq", Status: passed})
+	assert.Equal(t, ReleaseAndReport, unasked.Release, "a pass that did not ask goes back")
+
+	merged := PRFact{Found: true, Number: 9, Merged: true}
+	assert.Equal(t, "PR #9 merged — `dockhand cycle` retires the branch",
+		Reconciliation{Promoted: true, Minted: true, PR: merged}.Line(),
+		"status names the verb: with the split nothing begins on its own")
+	assert.Equal(t, "PR #9 merged — kept: --keep-merged",
+		Reconciliation{Promoted: true, Minted: true, PR: merged, Withheld: "--keep-merged"}.Line())
+	assert.Equal(t, "PR #9 merged — not a dockhand branch, so nothing here removes it",
+		Reconciliation{Promoted: true, PR: merged}.Line(), "deletion stays in the namespace")
+	assert.Equal(t, "promoted; PR not checked (--no-update)",
+		Reconciliation{Promoted: true, Minted: true, Unasked: true}.Line())
+	assert.True(t, RetireMerged.Cleans(false))
+	assert.False(t, RetireMerged.Cleans(true), "--keep-merged withholds without changing the verdict")
+
+	reconcile := compiledFile(t, "engine/reconcile.go")
+	retire := bodyOf(t, reconcile, "func (e *Engine) retire(")
+	assert.Equal(t, 1, matches(reconcile, `e\.Discard\(`), "the pass demolishes in one place")
+	assert.Equal(t, 1, matches(retire, `e\.Discard\(`), "and that place is retire")
+	gate, demolition := -1, -1
+	for i, line := range retire {
+		if gate < 0 && matches([]string{line}, `if !o\.Retire \{`) == 1 {
+			gate = i
+		}
+		if demolition < 0 && matches([]string{line}, `e\.Discard\(`) == 1 {
+			demolition = i
+		}
+	}
+	require.NotEqual(t, -1, gate, "the Retire bit is asked")
+	require.NotEqual(t, -1, demolition)
+	assert.Less(t, gate, demolition, "and asked before the demolition: status never reaches it")
+	assert.Equal(t, 1, matches(retire, `if !b\.Minted \{`), "a hand-made branch turns back before the demolition too")
+
+	settle := compiledFile(t, "engine/settle.go")
+	assert.Equal(t, 0, matches(settle, `KeepEnv`),
+		"the engine's settle never reads the ask; release is the judgment's to decide")
+	judge := bodyOf(t, compiledFile(t, "verdict/settle.go"), "func JudgeRun(")
+	assert.Equal(t, 1, matches(judge, `if r\.KeepEnv \{`), "and the judgment decides it here")
+
+	heldBy(t, "engine/reconcile_test.go", "TestStatusObservesAndSettlesWhileCycleActs")
+	heldBy(t, "engine/reconcile_test.go", "TestStatusNoUpdateReadsTheLedgerAndAsksNobody")
+	heldBy(t, "engine/reconcile_test.go", "TestAHandMadeBranchWithANoteIsShownSettledAndNeverDeleted")
+	heldBy(t, "engine/settle_table_test.go", "TestAKeepEnvPassKeepsItsGuestAsAFailureWould")
+	heldBy(t, "engine/orphan_test.go", "TestReclaimOrphansFreesOnlyWhatThisCheckoutMayClaim")
+	heldBy(t, "cmd/cycle_test.go", "TestStatusObservesAndSettlesAndCycleActsAsTyped")
 }

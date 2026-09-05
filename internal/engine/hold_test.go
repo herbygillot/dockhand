@@ -205,8 +205,9 @@ func TestAHoldPlacedDuringThePassIsHonouredUnderTheLock(t *testing.T) {
 }
 
 // The hold withholds the DELETION and leaves the verdict alone — the
-// same shape --no-clean already has. The audit row still closes, because
-// a merge is the change's outcome whether or not the branch survived it.
+// same shape --keep-merged has. The audit row still closes, because a
+// merge is the change's outcome whether or not the branch survived it,
+// and the branch's own line says why it is still there.
 func TestAHoldWithholdsTheDeletionWithoutChangingTheVerdict(t *testing.T) {
 	ctx := context.Background()
 	repo, sha := heldRepo(t, "keeping the branch for a bisect")
@@ -221,7 +222,7 @@ func TestAHoldWithholdsTheDeletionWithoutChangingTheVerdict(t *testing.T) {
 	require.NoError(t, eng.Publish(ctx, repo, Publication{MintSha: sha, Branch: "dockhand/jq-1.8",
 		Port: "jq", Target: "1.8", PRNumber: 91, Invoker: record.Human}))
 
-	rep, err := eng.Reconcile(ctx, ReconcileOpts{})
+	rep, err := eng.Reconcile(ctx, ReconcileOpts{Retire: true})
 	require.NoError(t, err)
 
 	require.Len(t, rep.Branches, 1)
@@ -229,6 +230,8 @@ func TestAHoldWithholdsTheDeletionWithoutChangingTheVerdict(t *testing.T) {
 	assert.True(t, b.Retire.PR.Merged, "the verdict is unchanged: GitHub says it merged")
 	assert.False(t, b.Retire.Cleaned, "and the branch is still here")
 	assert.Contains(t, proseText(b.Prose), "the deletion is withheld")
+	assert.Contains(t, b.Retire.Line(), "PR #91 merged — kept: held (keeping the branch for a bisect",
+		"no kept case is silent (D27): the line says why")
 
 	_, err = repo.RevParse(ctx, "dockhand/jq-1.8")
 	require.NoError(t, err, "the branch survived the pass")
@@ -240,27 +243,6 @@ func TestAHoldWithholdsTheDeletionWithoutChangingTheVerdict(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, rows)
 	assert.Equal(t, record.Merged, rows[len(rows)-1].Outcome)
-}
-
-// The sweep obeys it too, and on the same terms. `clean` and the report
-// reach one verdict by one code path; a hold that only `status` honoured
-// would be the split the reconciler exists to have ended.
-func TestTheSweepObeysAHoldToo(t *testing.T) {
-	ctx := context.Background()
-	repo, _ := heldRepo(t, "keeping the branch for a bisect")
-	gittest.BareFork(t, repo, "herbygillot", "herby")
-	require.NoError(t, repo.Push(ctx, "herby", "dockhand/jq-1.8"))
-
-	eng := testState(t, repo, nil)
-	eng.Gh = mergedPRGh("herbygillot", 91)
-	rep, err := eng.Reconcile(ctx, ReconcileOpts{RetireOnly: true})
-	require.NoError(t, err)
-
-	require.Len(t, rep.Branches, 1)
-	assert.False(t, rep.Branches[0].Retire.Cleaned)
-	assert.Contains(t, proseText(rep.Branches[0].Prose), "the deletion is withheld")
-	_, err = repo.RevParse(ctx, "dockhand/jq-1.8")
-	require.NoError(t, err)
 }
 
 // A change minted against a prerelease is born held. The intents will

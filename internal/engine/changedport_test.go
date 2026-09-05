@@ -228,7 +228,7 @@ func TestACohortBranchSubmitsOneGuestForBothMembers(t *testing.T) {
 	members, err := eng.SubjectsOf(ctx, repo, "dockhand/jq-1.8", "dockhand/jq-1.8", sha, rels)
 	require.NoError(t, err)
 	started, err := eng.SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha, members,
-		fake.Capabilities().Platforms[0], false)
+		fake.Capabilities().Platforms[0], SubmitOpts{})
 	require.NoError(t, err)
 	assert.True(t, started)
 
@@ -257,7 +257,7 @@ func TestOneSubjectSubmitsExactlyTodaysRequest(t *testing.T) {
 	eng := testState(t, repo, fake)
 
 	started, err := eng.SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha,
-		[]Member{{Port: "jq", Portdir: "sysutils/jq"}}, fake.Capabilities().Platforms[0], false)
+		[]Member{{Port: "jq", Portdir: "sysutils/jq"}}, fake.Capabilities().Platforms[0], SubmitOpts{})
 	require.NoError(t, err)
 	assert.True(t, started)
 

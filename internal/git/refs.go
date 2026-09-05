@@ -25,6 +25,36 @@ func (r *Repo) Branches(ctx context.Context, prefix string) ([]string, error) {
 	return strings.Split(out, "\n"), nil
 }
 
+// BranchTip is one local branch with the commit it points at.
+type BranchTip struct {
+	Name string
+	Tip  string
+}
+
+// BranchTips is Branches with each branch's tip beside it, in the same
+// order and from the same one listing; an empty prefix lists every
+// local branch. It exists for the caller that wants to intersect the
+// branches with a set of commits — the noted ones — without a rev-parse
+// per branch: one for-each-ref answers for the whole checkout.
+func (r *Repo) BranchTips(ctx context.Context, prefix string) ([]BranchTip, error) {
+	out, err := r.git(ctx, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads/"+prefix)
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	var tips []BranchTip
+	for _, line := range strings.Split(out, "\n") {
+		name, sha, ok := strings.Cut(line, " ")
+		if !ok {
+			return nil, fmt.Errorf("git for-each-ref: unreadable line %q", line)
+		}
+		tips = append(tips, BranchTip{Name: name, Tip: sha})
+	}
+	return tips, nil
+}
+
 // Materialize writes one path's tree at a revision into dest on the
 // filesystem, via git archive — the object database is the source, so
 // the working tree's state is irrelevant. dest must exist. The archive

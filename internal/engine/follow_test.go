@@ -126,7 +126,7 @@ func TestFollowAnswersEachWayARunCanEndWithoutOne(t *testing.T) {
 		{record.Superseded, "", new(*verdict.SupersededError),
 			"verification of jq on Testos was superseded by a newer run"},
 		{record.Queued, "all 2 verification slots are busy", new(*verdict.QueuedError),
-			"verification of jq on Testos has not started yet: all 2 verification slots are busy — `dockhand status` starts it when it can"},
+			"verification of jq on Testos has not started yet: all 2 verification slots are busy — `dockhand cycle` starts it when it can"},
 		{record.Errored, "the guest agent timed out", new(*verdict.ErroredError),
 			"verification of jq on Testos could not answer: the guest agent timed out"},
 	} {

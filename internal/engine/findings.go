@@ -211,12 +211,12 @@ func (e *MachineDisabledError) Code() string { return "machine-publish-disabled"
 // complaint about its evidence.
 //
 // Deleting a fork branch is deliberately not gated by it. That is the
-// sweep's whole job, it runs unattended today under `status` and
-// `clean`, and it spends nothing of ring 3: the branch is the user's own
-// and the pull request is what reviewers see. The gate is written as
-// "a machine may not PUBLISH" and not "a machine may not push" for
-// exactly that reason — the other wording stops `clean` working on a
-// timer and buys nothing.
+// retirement's whole job, it runs unattended under `cycle --auto`, and
+// it spends nothing of ring 3: the branch is the user's own and the
+// pull request is what reviewers see. The gate is written as "a
+// machine may not PUBLISH" and not "a machine may not push" for exactly
+// that reason — the other wording stops `cycle` working on a timer and
+// buys nothing.
 func GateRing3(by record.Driver, permitted bool) error {
 	if by != record.Machine || permitted {
 		return nil

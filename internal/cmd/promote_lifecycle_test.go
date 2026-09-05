@@ -169,7 +169,7 @@ func TestPromoteMergedPRIsADeadEnd(t *testing.T) {
 	err := promoteAction{target: "jq"}.Execute(context.Background(), rs)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already merged")
-	assert.Contains(t, err.Error(), "dockhand clean")
+	assert.Contains(t, err.Error(), "dockhand cycle", "the remedy names the verb that retires it (D27)")
 }
 
 func TestPromoteMidVerificationCancelsAndProceeds(t *testing.T) {
@@ -354,19 +354,47 @@ func TestPromoteStillRefusesAFailedBuild(t *testing.T) {
 	assert.Empty(t, gh.called("create"))
 }
 
-func TestStatusNoCleanReportsWithoutDeleting(t *testing.T) {
+// mergedPRState is a promoted branch whose pull request GitHub says
+// merged: the one fact the two verbs answer differently (D27).
+func mergedPRState(t *testing.T) (*git.Repo, *runstate.Context, *bytes.Buffer) {
+	t.Helper()
 	repo, _ := promoteRepo(t)
-	ctx := context.Background()
-	require.NoError(t, repo.Push(ctx, "herby", "dockhand/jq-1.8"))
+	require.NoError(t, repo.Push(context.Background(), "herby", "dockhand/jq-1.8"))
 	gh := &ghFake{login: "herbygillot",
 		ownPRs: `[{"number":9,"state":"closed","merged_at":"2026-09-01T00:00:00Z","html_url":"https://x/9"}]`}
 	fake := &verifytest.Fake{}
 	rs, out, _ := promoteState(t, repo, gh)
 	rs.Verifier = func(context.Context) (verify.Verifier, error) { return fake, nil }
+	return repo, rs, out
+}
 
-	require.NoError(t, statusAction{noClean: true}.Execute(ctx, rs))
-	assert.Contains(t, out.String(), "PR #9 merged — `dockhand clean` removes the branch")
-	assert.True(t, repo.HasBranch(ctx, "dockhand/jq-1.8"), "--no-clean withholds the deletion")
+// status reports the merged pull request, names the verb that acts on
+// it, and leaves the branch where it is.
+func TestStatusReportsAMergedPullRequestAndLeavesTheBranch(t *testing.T) {
+	repo, rs, out := mergedPRState(t)
+	ctx := context.Background()
+
+	require.NoError(t, statusAction{}.Execute(ctx, rs))
+	assert.Contains(t, out.String(), "PR #9 merged — `dockhand cycle` retires the branch")
+	assert.NotContains(t, out.String(), "discarded")
+	assert.True(t, repo.HasBranch(ctx, "dockhand/jq-1.8"), "status deletes nothing")
+}
+
+// cycle --keep-merged reaches the same verdict, withholds the deletion,
+// and says the branch was kept and why; the plain cycle retires it.
+func TestCycleKeepMergedWithholdsTheDeletion(t *testing.T) {
+	repo, rs, out := mergedPRState(t)
+	ctx := context.Background()
+
+	require.NoError(t, cycleAction{keepMerged: true}.Execute(ctx, rs))
+	assert.Contains(t, out.String(), "PR #9 merged — kept: --keep-merged")
+	assert.True(t, repo.HasBranch(ctx, "dockhand/jq-1.8"), "--keep-merged withholds the deletion")
+
+	out.Reset()
+	require.NoError(t, cycleAction{}.Execute(ctx, rs))
+	assert.Contains(t, out.String(), "discarded dockhand/jq-1.8")
+	assert.Contains(t, out.String(), "PR #9 merged — branch cleaned")
+	assert.False(t, repo.HasBranch(ctx, "dockhand/jq-1.8"), "and without it the branch goes")
 }
 
 // Ruling 5's other half. A ticket named at promote time reaches the

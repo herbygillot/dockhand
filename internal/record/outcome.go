@@ -26,8 +26,8 @@ import (
 // arrives as a parameter at the call site that decides.
 //
 // Which one a value is is never inferred either. A run's invoker is
-// declared — the `auto` verb, --auto, DOCKHAND_AUTO — and dockhand
-// never asks whether a terminal is attached to work it out.
+// declared — --auto, DOCKHAND_AUTO — and dockhand never asks whether a
+// terminal is attached to work it out.
 //
 // One type serves both wires. The audit row's asked_by and the
 // verification record's are the same fact about the same act, and two

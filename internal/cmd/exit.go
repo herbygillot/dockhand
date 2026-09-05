@@ -154,7 +154,7 @@ func TwinOf(err error) exitcode.Twin {
 // and `verify <portdir>` (both through the engine, which stamps its
 // own), `exec`, and `provision`. Nothing is queued for any of them and
 // no run is recorded, so the refusal must not come back as "deferred;
-// `dockhand status` starts it when a slot frees" — status starts
+// `dockhand cycle` starts it when a slot frees" — the drain starts
 // nothing that was never written down. The provider counts slots and
 // cannot know who asked, which is why the caller says so.
 func waitingRefusal(err error) bool {

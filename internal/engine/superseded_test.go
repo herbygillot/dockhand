@@ -1,6 +1,6 @@
 package engine
 
-// `clean --superseded`, and the ruling underneath it: this is the ONLY
+// `cycle --superseded`, and the ruling underneath it: this is the ONLY
 // thing in the tool that removes a branch for having been superseded.
 //
 // The negative half matters more than the positive one. A supersede is
@@ -60,8 +60,9 @@ func TestCleanSupersededRemovesTheReplacedBranchAndKeepsTheNewer(t *testing.T) {
 	require.NoError(t, err, "the change now is untouched")
 }
 
-// The ruling's negative half. `clean` asks GitHub one question — did the
-// pull request merge — and being superseded is not an answer to it.
+// The ruling's negative half. `cycle` asks GitHub one question — did
+// the pull request merge — and being superseded is not an answer to it;
+// `status` asks the same question and acts on nothing at all.
 func TestTheOrdinarySweepNeverRemovesASupersededBranch(t *testing.T) {
 	ctx := context.Background()
 	repo, eng, _ := supersededPair(t)
@@ -71,7 +72,7 @@ func TestTheOrdinarySweepNeverRemovesASupersededBranch(t *testing.T) {
 	gittest.BareFork(t, repo, "herbygillot", "herby")
 	eng.Gh = func(context.Context, ...string) (string, error) { return "[]", nil }
 
-	for _, o := range []ReconcileOpts{{RetireOnly: true}, {}, {Drain: true}} {
+	for _, o := range []ReconcileOpts{{}, {Retire: true}, {Retire: true, Drain: true}} {
 		_, err := eng.Reconcile(ctx, o)
 		require.NoError(t, err)
 		_, err = repo.RevParse(ctx, "dockhand/jq-1.8")
@@ -130,7 +131,7 @@ func TestCleanSupersededSaysSoWhenThereIsNothingToRemove(t *testing.T) {
 }
 
 // Every line the sweep produces about a branch it kept or removed is on
-// stdout, so `clean --superseded | grep removed` is a thing a person can
+// stdout, so `cycle --superseded | grep removed` is a thing a person can
 // write. Only the demolition's own advisories go to stderr.
 func TestCleanSupersededPutsItsRowsOnStdout(t *testing.T) {
 	ctx := context.Background()

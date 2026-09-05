@@ -159,3 +159,53 @@ func TestOrphansAreSilentWhenNothingCanAnswer(t *testing.T) {
 		})
 	}
 }
+
+// `cycle --reclaim-orphans` (D27): the untracked workers this checkout
+// may claim go back through the backend's Release, keyed by the job the
+// backend named for each — never by a name the kernel guessed at.
+// Another checkout's worker is left standing and its checkout is named.
+func TestReclaimOrphansFreesOnlyWhatThisCheckoutMayClaim(t *testing.T) {
+	repo, sha := engineRepo(t)
+	ctx := context.Background()
+	runningNote(t, repo, sha, "dockhand-worker-running")
+	job := func(name string) verify.Job { return verify.Job{Provider: "fake", ID: name} }
+	fake := &verifytest.Fake{Live: []verify.Worker{
+		{Name: "dockhand-worker-running", Job: job("dockhand-worker-running")},
+		{Name: "dockhand-worker-loose", Job: job("dockhand-worker-loose")},
+		{Name: "dockhand-worker-ours", Owner: repo.Root, Job: job("dockhand-worker-ours")},
+		{Name: "dockhand-worker-elsewhere", Owner: "/elsewhere/ports", Job: job("dockhand-worker-elsewhere")},
+		{Name: "dockhand-worker-jobless"},
+	}}
+
+	said := testState(t, repo, fake).ReclaimOrphans(ctx, repo)
+
+	assert.Equal(t, []string{"dockhand-worker-loose", "dockhand-worker-ours"}, fake.Released,
+		"the unattributed worker and this checkout's own, through Release, by job")
+	text := proseText(said)
+	assert.Contains(t, text, "reclaimed dockhand-worker-loose")
+	assert.Contains(t, text, "reclaimed dockhand-worker-ours")
+	assert.Contains(t, text, "dockhand-worker-elsewhere is a worker from /elsewhere/ports — its own `dockhand cycle --reclaim-orphans` reclaims it")
+	assert.Contains(t, text, "warning: dockhand-worker-jobless cannot be reclaimed: the backend named no job for it")
+	assert.NotContains(t, text, "reclaimed dockhand-worker-running", "a tracked worker is not an orphan")
+}
+
+func TestReclaimOrphansSaysWhenItCannotAnswerOrHasNothingToDo(t *testing.T) {
+	repo, _ := engineRepo(t)
+	ctx := context.Background()
+
+	said := testState(t, repo, &verifytest.Fake{}).ReclaimOrphans(ctx, repo)
+	assert.Equal(t, "no untracked workers reclaimed\n", proseText(said))
+
+	refusing := &verifytest.Fake{WorkersErr: errors.New("tart list: exit status 1")}
+	said = testState(t, repo, refusing).ReclaimOrphans(ctx, repo)
+	assert.Contains(t, proseText(said), "warning: no untracked worker reclaimed: tart list: exit status 1",
+		"a person asked; silence would read as nothing needing doing")
+
+	failing := &verifytest.Fake{
+		Live:       []verify.Worker{{Name: "dockhand-worker-stuck", Job: verify.Job{Provider: "fake", ID: "dockhand-worker-stuck"}}},
+		ReleaseErr: map[string]error{"dockhand-worker-stuck": errors.New("vm is busy")},
+	}
+	said = testState(t, repo, failing).ReclaimOrphans(ctx, repo)
+	assert.Contains(t, proseText(said), "warning: reclaiming dockhand-worker-stuck: vm is busy")
+	assert.Contains(t, proseText(said), "no untracked workers reclaimed")
+}

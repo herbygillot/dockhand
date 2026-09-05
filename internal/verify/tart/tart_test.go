@@ -239,9 +239,9 @@ func TestWorkersReportEveryWorkerWithItsOwner(t *testing.T) {
 	got, err := Provider{Tools: tools}.Workers(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []verify.Worker{
-		{Name: "dockhand-worker-1", Owner: "/Users/someone/ports"},
-		{Name: "dockhand-worker-2"},
-	}, got, "an unattributed worker still holds a slot")
+		{Name: "dockhand-worker-1", Owner: "/Users/someone/ports", Job: verify.Job{Provider: "tart", ID: "dockhand-worker-1"}},
+		{Name: "dockhand-worker-2", Job: verify.Job{Provider: "tart", ID: "dockhand-worker-2"}},
+	}, got, "an unattributed worker still holds a slot, and each carries the job Release accepts")
 }
 
 // A machine that will not answer is a machine fact, never an empty

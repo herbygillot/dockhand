@@ -1015,7 +1015,11 @@ func (p Provider) Workers(ctx context.Context) ([]verify.Worker, error) {
 	names := workerNames(out)
 	workers := make([]verify.Worker, 0, len(names))
 	for _, vm := range names {
-		workers = append(workers, verify.Worker{Name: vm, Owner: OwnerOf(vm)})
+		// That a job's id IS the VM's name is this provider's own fact,
+		// stated here once so that Release can be handed a worker's Job
+		// without any caller having to know it.
+		workers = append(workers, verify.Worker{Name: vm, Owner: OwnerOf(vm),
+			Job: verify.Job{Provider: "tart", ID: vm}})
 	}
 	return workers, nil
 }

@@ -11,10 +11,10 @@ exit: 0
     PR #78 closed without merging
   dockhand/jq-landed
     unverified
-    PR #80 merged — `dockhand cycle` retires the branch
+    PR #80 merged — kept: --keep-merged
   dockhand/jq-merged
     passed (Testos)
-    PR #79 merged — `dockhand cycle` retires the branch
+    PR #79 merged — kept: --keep-merged
   dockhand/jq-nopr
     unverified
     promoted; no PR found

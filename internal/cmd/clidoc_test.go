@@ -153,7 +153,8 @@ func TestEveryVerbAndDeclarationIsMentioned(t *testing.T) {
 		assert.True(t, strings.Contains(doc, "`"+name+"`") || strings.Contains(doc, "dockhand "+name),
 			"`dockhand %s` ships and cli.md does not mention it", name)
 	}
-	for _, declaration := range []string{"--auto", "DOCKHAND_AUTO", "AI_AGENT", "--to-pr", "--superseded"} {
+	for _, declaration := range []string{"--auto", "DOCKHAND_AUTO", "AI_AGENT", "--to-pr", "--superseded",
+		"--keep-env", "--no-update", "--keep-merged", "--reclaim-orphans"} {
 		assert.Contains(t, doc, declaration,
 			"%s changes what an invocation means and must be documented", declaration)
 	}

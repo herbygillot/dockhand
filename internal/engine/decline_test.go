@@ -89,7 +89,7 @@ func TestAPreflightDeclineDoesNotRenameTheChange(t *testing.T) {
 	fake := &verifytest.Fake{}
 
 	_, err := testState(t, repo, fake).SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha,
-		cohortMembers, fake.Capabilities().Platforms[0], false)
+		cohortMembers, fake.Capabilities().Platforms[0], SubmitOpts{})
 	require.NoError(t, err)
 
 	require.Len(t, fake.Submitted, 1, "one guest for what is left of the cohort")
@@ -145,7 +145,7 @@ func TestADeferralDoesNotQueueADeclinedMember(t *testing.T) {
 	fake := &verifytest.Fake{SubmitErr: &verify.CapacityError{Busy: 2, Cap: 2}}
 
 	_, err := testState(t, repo, fake).SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha,
-		cohortMembers, fake.Capabilities().Platforms[0], false)
+		cohortMembers, fake.Capabilities().Platforms[0], SubmitOpts{})
 	require.Error(t, err, "a full machine defers what was left to build")
 
 	n, err := ledger.Open(repo).Read(ctx, sha)

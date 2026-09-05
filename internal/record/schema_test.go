@@ -22,7 +22,7 @@ var (
 )
 
 // populated sets every one of the record's eighteen fields and every
-// one of a run's thirteen, so that the wire pin below is a statement
+// one of a run's fourteen, so that the wire pin below is a statement
 // about the whole schema and not about the part of it anything writes
 // today.
 //
@@ -74,6 +74,7 @@ func populated() Record {
 				Linted:         true,
 				Lint:           "2 warnings",
 				FromSource:     true,
+				KeepEnv:        true,
 				Manifest:       &verify.Manifest{Port: "jq", Version: "1.9", Platform: "Testos", Files: []string{"/opt/local/bin/jq"}, Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", Arch: "arm64", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "1.0.0", CurrentVersion: "1.9.0"}}},
 				Baseline:       &verify.Manifest{Port: "jq", Version: "1.8", Platform: "Testos", Files: []string{}, Dylibs: []verify.Dylib{}},
 				BaselineSource: "archive",
@@ -205,6 +206,7 @@ const wirePopulated = `{
       "linted": true,
       "lint": "2 warnings",
       "from_source": true,
+      "keep_env": true,
       "manifest": {
         "port": "jq",
         "version": "1.9",

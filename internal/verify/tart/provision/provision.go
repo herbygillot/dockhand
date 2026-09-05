@@ -162,10 +162,9 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	if err != nil {
 		// Someone is standing here. Provisioning queues nothing and
 		// records no run, so a refusal for want of a slot must not answer
-		// "deferred; status starts it when one frees" — status provisions
-		// nothing, and there is no run for it to start. The provider
-		// counts slots and cannot know who asked, so the caller that is
-		// waiting says so.
+		// as a deferral — `cycle` provisions nothing, and there is no run
+		// for it to start. The provider counts slots and cannot know who
+		// asked, so the caller that is waiting says so.
 		var full *verify.CapacityError
 		if errors.As(err, &full) {
 			full.Synchronous = true

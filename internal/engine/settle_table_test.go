@@ -158,3 +158,99 @@ func TestLogCorpus(t *testing.T) {
 		})
 	}
 }
+
+// --keep-env (D27): a pass whose run asked keeps its guest exactly as a
+// failure does — the handle stamped on the job, nothing released — and
+// the note carries the ask so a reader knows why a green build is
+// still holding a slot. One member asking keeps the whole cohort's
+// environment, because there is one environment.
+func TestAKeepEnvPassKeepsItsGuestAsAFailureWould(t *testing.T) {
+	ctx := context.Background()
+	passed := map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "fake-1"}}
+
+	t.Run("one subject", func(t *testing.T) {
+		repo, sha := engineRepo(t)
+		n := mintedNote(t, repo, sha)
+		started(&n, "Testos", "fake-1", record.Run{State: record.Running, Linted: true, KeepEnv: true})
+		require.NoError(t, ledger.Open(repo).Write(ctx, n))
+		fake := &verifytest.Fake{States: passed}
+
+		require.NoError(t, testState(t, repo, fake).settle(ctx, repo, &n))
+
+		r := runOf(n, "Testos")
+		assert.Equal(t, record.Passed, r.State)
+		assert.True(t, r.KeepEnv, "the ask survives the judgment")
+		assert.Empty(t, fake.Released, "the guest stands")
+		assert.False(t, n.Jobs["Testos"].Released)
+		assert.Equal(t, "fake-1", n.Jobs["Testos"].Handle, "and the note names it, as a failure's does")
+	})
+
+	t.Run("one member of a cohort asking keeps the shared guest", func(t *testing.T) {
+		repo, sha := engineRepo(t)
+		n := mintedNote(t, repo, sha)
+		n.Subjects = append(n.Subjects, record.Subject{Port: "oniguruma", Names: []string{"oniguruma"}, Portdir: "textproc/oniguruma"})
+		startedFor(&n, "jq", "Testos", "fake-1", record.Run{State: record.Running, Linted: true})
+		startedFor(&n, "oniguruma", "Testos", "fake-1", record.Run{State: record.Running, Linted: true, KeepEnv: true})
+		require.NoError(t, ledger.Open(repo).Write(ctx, n))
+		fake := &verifytest.Fake{States: passed}
+
+		require.NoError(t, testState(t, repo, fake).settle(ctx, repo, &n))
+
+		assert.Equal(t, record.Passed, runFor(n, "jq", "Testos").State)
+		assert.Equal(t, record.Passed, runFor(n, "oniguruma", "Testos").State)
+		assert.Empty(t, fake.Released)
+		assert.Equal(t, "fake-1", n.Jobs["Testos"].Handle)
+	})
+
+	t.Run("a pass that did not ask goes back as before", func(t *testing.T) {
+		repo, sha := engineRepo(t)
+		n := seededNote(t, repo, sha, "jq", false)
+		fake := &verifytest.Fake{States: passed}
+
+		require.NoError(t, testState(t, repo, fake).settle(ctx, repo, &n))
+
+		assert.Equal(t, []string{"fake-1"}, fake.Released)
+		assert.True(t, n.Jobs["Testos"].Released)
+	})
+}
+
+// R1 (ruled 2026-09-05 with D27's implementation): a queued run's ask
+// survives whichever verb starts it. The drain carries KeepEnv through
+// pumpRun; the deferral epilogue names `dockhand verify <branch>` as
+// the other road, and a hand verify that dropped the ask would make
+// one queued run keep or release its environment depending on who
+// happened to start it. Carried the way FromSource is, and a verify
+// that adds --keep-env to a run that never asked is honoured too.
+func TestAHandVerifyCarriesAQueuedRunsKeepEnvAsItCarriesFromSource(t *testing.T) {
+	ctx := context.Background()
+	members := []Member{{Port: "jq", Portdir: "sysutils/jq"}}
+	for _, tc := range []struct {
+		name   string
+		queued record.Run
+		opts   SubmitOpts
+		want   bool
+	}{
+		{"the deferral asked", record.Run{State: record.Queued, FromSource: true, KeepEnv: true}, SubmitOpts{}, true},
+		{"the verify asks", record.Run{State: record.Queued, FromSource: true}, SubmitOpts{KeepEnv: true}, true},
+		{"nobody asked", record.Run{State: record.Queued, FromSource: true}, SubmitOpts{}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, sha := cohortBranch(t)
+			fake := &verifytest.Fake{}
+			eng := testState(t, repo, fake)
+			require.NoError(t, eng.recordRun(ctx, repo, sha, "jq", "Testos", tc.queued, ""))
+
+			started, err := eng.SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha, members,
+				fake.Capabilities().Platforms[0], tc.opts)
+			require.NoError(t, err)
+			require.True(t, started)
+
+			n, err := ledger.Open(repo).Read(ctx, sha)
+			require.NoError(t, err)
+			r := runFor(n, "jq", "Testos")
+			assert.Equal(t, record.Running, r.State)
+			assert.True(t, r.FromSource, "FromSource is carried from the queued run, as it always was")
+			assert.Equal(t, tc.want, r.KeepEnv, "and KeepEnv is carried the same way")
+		})
+	}
+}

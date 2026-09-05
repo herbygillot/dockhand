@@ -10,7 +10,7 @@ dockhand/jq-expired-new
   PR #77 open (https://x/77)
   PR #77 — open 3d, the 72-hour review window elapsed 8h ago (openmaintainer)
   follow-up draft — dockhand cannot send this; macports-dev or the PR: "PR #77 (jq) has been open 3d; the 72-hour review window elapsed 8h ago. The port is openmaintainer, so a minor update may proceed once the window has passed."
-dockhand/jq-queued               queued (Testos)
+dockhand/jq-queued               queued (Testos) — `dockhand cycle` starts it
 dockhand/jq-passed               passed (Testos)
 dockhand/jq-held
   passed (Testos)
@@ -20,7 +20,7 @@ dockhand/jq-ended-closed
   PR #78 closed without merging
 dockhand/jq-ended-superseded
   passed (Testos)
-  superseded by dockhand/jq-1.9 — `dockhand clean --superseded` removes it
+  superseded by dockhand/jq-1.9 — `dockhand cycle --superseded` removes it
 dockhand/jq-inwindow
   passed (Testos)
   PR #77 open (https://x/77)

@@ -32,11 +32,13 @@ package engine
 //     a re-read precisely so a peer's write between the walk and the
 //     submit is honoured, and a hold placed in that window is exactly
 //     such a write.
-//   - RETIRE (Engine.retire), where the hold withholds the DELETION
-//     without touching the verdict — the same shape --no-clean already
-//     has, for the same reason: what a merged pull request means does not
-//     depend on whether anybody is willing to act on it.
-//   - THE SUPERSEDED SWEEP (Engine.CleanSuperseded), on the same terms.
+//   - RETIRE (Engine.retire, under `cycle`), where the hold withholds
+//     the DELETION without touching the verdict — the same shape
+//     `--keep-merged` has, for the same reason: what a merged pull
+//     request means does not depend on whether anybody is willing to act
+//     on it. `status` reaches no deletion to withhold (D27).
+//   - THE SUPERSEDED SWEEP (Engine.CleanSuperseded, `cycle
+//     --superseded`), on the same terms.
 //
 // The machine's publish slot consults it a fifth time, in slotCandidate,
 // where a hold makes a branch not a candidate at all rather than a

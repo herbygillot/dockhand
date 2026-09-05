@@ -26,6 +26,13 @@ func running(linted bool) record.Run {
 	}
 }
 
+// keepEnv is a run whose submitter asked, with --keep-env, for the
+// environment to stand after a pass.
+func keepEnv(r record.Run) record.Run {
+	r.KeepEnv = true
+	return r
+}
+
 // A log is a round trip to the guest, so whether to fetch one is a
 // decision, not a habit: a failure always needs its log, a pass needs
 // one only to corroborate the lint box, and nothing else needs one at
@@ -77,6 +84,18 @@ func TestJudgeRunTable(t *testing.T) {
 			in: RunInput{Run: running(true), Port: "jq",
 				Status: verify.Status{State: verify.Passed, Handle: "fake-1"}, LogRead: false},
 			settled: true, state: record.Passed, release: ReleaseAndReport},
+		{name: "a pass whose run asked for its environment keeps it (D27)",
+			in: RunInput{Run: keepEnv(running(true)), Port: "jq",
+				Status: verify.Status{State: verify.Passed, Handle: "fake-1"},
+				Log:    lintLog, LogRead: true},
+			settled: true, state: record.Passed, lint: "2 warnings", release: KeepWorker},
+		{name: "a failure that asked for its environment keeps it as any failure does",
+			in: RunInput{Run: keepEnv(running(true)), Port: "jq",
+				Status: verify.Status{State: verify.Failed, Handle: "fake-1"},
+				Log:    failLog, LogRead: true},
+			settled: true, state: record.Failed,
+			detail:  "Failed to build jq: command execution failed",
+			release: KeepWorker},
 		{name: "a failure the port owns keeps its environment",
 			in: RunInput{Run: running(true), Port: "jq",
 				Status: verify.Status{State: verify.Failed, Handle: "fake-1"},

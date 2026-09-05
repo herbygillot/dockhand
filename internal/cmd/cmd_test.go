@@ -114,7 +114,7 @@ func TestExitCodeMapping(t *testing.T) {
 	assert.Equal(t, exitcode.RootRefused, ExitCode(eval.ErrRootRefused))
 	// A minted branch whose verification could not start: the branch
 	// stands, and with no cause to read the deferral is a queued run
-	// that `dockhand status` will come back for.
+	// that `dockhand cycle` will come back for.
 	assert.Equal(t, exitcode.VerifyQueued, ExitCode(&engine.VerifyDeferredError{Branch: "dockhand/jq-1.8.1", Reason: "slots full"}))
 	assert.Equal(t, exitcode.VerifyFailed, ExitCode(&engine.VerifyFailedError{Port: "jq"}))
 	// The two ways of having no verification are two codes in one

@@ -39,7 +39,7 @@ import (
 // version it already carries is bump's alone. One flag named --force
 // answered both.
 var sharedIntentFlags = []string{
-	"closes", "diff", "in-place", "no-riders", "no-verify", "on", "plan", "replace",
+	"closes", "diff", "in-place", "keep-env", "no-riders", "no-verify", "on", "plan", "replace",
 	"riders", "test", "to-pr", "trace", "verify",
 }
 

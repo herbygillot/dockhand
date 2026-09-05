@@ -2,6 +2,6 @@ exit: 0
 --- stdout
   dockhand/jq-1.8                  verifying (<elapsed>) (Testos)
   dockhand-worker-elsewhere        worker from /elsewhere/ports — `dockhand status` there follows it
-  dockhand-worker-ours             untracked worker — `dockhand shell dockhand-worker-ours` reaches it; `tart delete dockhand-worker-ours` frees the slot
-  dockhand-worker-nameless         untracked worker — `dockhand shell dockhand-worker-nameless` reaches it; `tart delete dockhand-worker-nameless` frees the slot
+  dockhand-worker-ours             untracked worker — `dockhand shell dockhand-worker-ours` reaches it; `dockhand cycle --reclaim-orphans` frees the slot
+  dockhand-worker-nameless         untracked worker — `dockhand shell dockhand-worker-nameless` reaches it; `dockhand cycle --reclaim-orphans` frees the slot
 --- stderr

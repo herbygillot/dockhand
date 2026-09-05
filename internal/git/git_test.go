@@ -689,6 +689,38 @@ func TestBranchesMatchesTheNamespaceNotSubstrings(t *testing.T) {
 	assert.Equal(t, []string{"dockhand/jq-1.8"}, got)
 }
 
+// BranchTips is the same listing with each tip beside its name — one
+// call for the whole checkout, which is what lets a pass intersect the
+// branches with the noted commits without a rev-parse per branch. An
+// empty prefix is every local branch, the primary included.
+func TestBranchTipsListsEveryBranchWithItsTip(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	minted, err := r.Mint(ctx, MintRequest{Branch: "dockhand/jq-1.8", Base: "HEAD",
+		Commits: oneFile("sysutils/jq/Portfile", "a\n", "a")})
+	require.NoError(t, err)
+	hand, err := r.Mint(ctx, MintRequest{Branch: "erasure-test", Base: "HEAD",
+		Commits: oneFile("sysutils/jq/Portfile", "b\n", "b")})
+	require.NoError(t, err)
+	head, err := r.RevParse(ctx, "HEAD")
+	require.NoError(t, err)
+	primary, err := r.PrimaryBranch(ctx)
+	require.NoError(t, err)
+
+	all, err := r.BranchTips(ctx, "")
+	require.NoError(t, err)
+	assert.Equal(t, []BranchTip{
+		{Name: "dockhand/jq-1.8", Tip: minted},
+		{Name: "erasure-test", Tip: hand},
+		{Name: primary, Tip: head},
+	}, all, "refname order, tips resolved, nothing left out")
+
+	namespaced, err := r.BranchTips(ctx, "dockhand/")
+	require.NoError(t, err)
+	assert.Equal(t, []BranchTip{{Name: "dockhand/jq-1.8", Tip: minted}}, namespaced,
+		"a prefix narrows it the way Branches narrows")
+}
+
 // Materialize reads the object database, so a dirty working tree — the
 // exact situation a background verification runs in — is irrelevant.
 func TestMaterializeIgnoresTheWorkingTree(t *testing.T) {

@@ -94,3 +94,29 @@ func TestSupersedeStaleLeavesOtherBranchesEnvironmentsAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, record.Failed, runOf(n, "Testos").State)
 }
+
+// --keep-env (D27): a kept pass on a commit the branch moved past loses
+// its environment as a kept failure does, and the run says so while its
+// verdict stands.
+func TestSupersedeStaleReleasesAKeptPassingEnvironmentAndSaysSo(t *testing.T) {
+	repo, sha := engineRepo(t)
+	ctx := context.Background()
+	n := mintedNote(t, repo, sha)
+	started(&n, "Testos", "fake-1", record.Run{State: record.Passed, KeepEnv: true})
+	n.Jobs["Testos"] = record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-1"}, Handle: "fake-1"}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+	newTip := gittest.Commit(t, repo, "dockhand/jq-fix", "dockhand/jq-1.8", "sysutils/jq/Portfile",
+		"version 1.8\nrevision 1\n", "jq: amend")
+	gittest.MoveBranch(t, repo, "dockhand/jq-1.8", newTip)
+
+	fake := &verifytest.Fake{}
+	require.NoError(t, testState(t, repo, fake).SupersedeStale(ctx, repo, "dockhand/jq-1.8", newTip))
+
+	assert.Equal(t, []string{"fake-1"}, fake.Released)
+	again, err := ledger.Open(repo).Read(ctx, sha)
+	require.NoError(t, err)
+	r := runOf(again, "Testos")
+	assert.Equal(t, record.Passed, r.State, "the verdict about the old commit stands")
+	assert.Contains(t, r.Detail, "kept environment released: the branch moved to")
+	assert.True(t, again.Jobs["Testos"].Released)
+}

@@ -1,7 +1,7 @@
 exit: 0
 --- stdout
   dockhand/jq-failed               failed (Testos) — environment kept: dockhand-worker-failed — Failed to build jq: command execution failed
-  dockhand/jq-queued               queued (Testos) — all 2 verification slots are busy (2 VMs running); `dockhand status` starts it when one frees
+  dockhand/jq-queued               queued (Testos) — all 2 verification slots are busy (2 VMs running) — `dockhand cycle` starts it
   dockhand/jq-multi
     unsupported (Oldos) — declares known_fail on Oldos
     passed (Testos)

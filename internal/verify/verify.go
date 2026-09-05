@@ -424,12 +424,20 @@ type CapacityError struct {
 	Synchronous bool
 }
 
+// Error states the fact and names no verb (D27, ruled 2026-09-05 with
+// its implementation, pending the maintainer): a provider package does
+// not know which CLI verb will act on a full machine, and the sentence
+// is recorded into a queued run's detail where it outlives any renaming
+// of that verb. The remedy — `dockhand cycle` starts what was deferred
+// — is the caller's to add, and the report adds it beside the queued
+// line. "deferred" is not said here either, because the same refusal
+// is met synchronously, where nothing is deferred at all.
 func (e *CapacityError) Error() string {
-	return fmt.Sprintf("all %d verification slots are busy (%d VMs running); `dockhand status` starts it when one frees", e.Cap, e.Busy)
+	return fmt.Sprintf("all %d verification slots are busy (%d VMs running)", e.Cap, e.Busy)
 }
 
 // DockhandExit: a full machine met by a submit is pending — the run is
-// deferred and status starts it when a slot frees, so nothing is
+// deferred and `cycle` starts it when a slot frees, so nothing is
 // wrong and the caller should ask again. Met by someone waiting, the
 // same fact is the machine refusing the ask, because there is no
 // deferred run to come back for.
@@ -472,9 +480,19 @@ type InteractiveShell interface {
 // provider names it. Owner is the checkout that started it, when
 // anything says: attribution is informational everywhere it is
 // written, so an unattributed worker is a worker rather than an error.
+//
+// Job is the handle Release accepts for this worker, filled in by the
+// provider that knows how its jobs and its environments correspond.
+// It exists so that a caller reclaiming an untracked worker (`cycle
+// --reclaim-orphans`, D27) can hand it back through the same Release
+// every settled job goes through, without learning that for one
+// backend the job's id happens to be the environment's name. A
+// provider that lists workers but cannot name a job for one leaves it
+// zero, and the caller says so rather than guessing.
 type Worker struct {
 	Name  string
 	Owner string
+	Job   Job
 }
 
 // WorkerLister is the optional capability of naming every environment

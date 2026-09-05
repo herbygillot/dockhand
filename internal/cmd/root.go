@@ -230,8 +230,11 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	add("test", "Test the port:", Verify(), Status(), Cancel(), Dismiss())
 	add("submit", "Submit the port:", Promote())
 	add("env", "Troubleshoot the port:", Log(), Shell())
-	// auto sits with the housekeeping verbs and after clean, because it
-	// is the pass those two verbs are halves of, run by nobody.
+	// cycle sits with the housekeeping verbs and after discard: it is
+	// the pass that acts on what `status` reports (D27) — retiring what
+	// merged, starting what was deferred, and, as the machine, walking
+	// the publish slot — and `dockhand cycle --auto` is the unattended
+	// entrypoint the `auto` verb used to be.
 	//
 	// hold and unhold sit at the front of the same group, ahead of the
 	// verbs that remove things. They are the brake on every road in the
@@ -239,7 +242,7 @@ func newRoot(version string) (*cobra.Command, *runstate.Context) {
 	// scanning this group for "how do I stop it" should meet them before
 	// they meet `discard`, which is how the question gets answered by
 	// deleting the work instead.
-	add("branch", "Housekeeping:", Hold(), Unhold(), Discard(), Clean(), Auto(), Provision())
+	add("branch", "Housekeeping:", Hold(), Unhold(), Discard(), Cycle(), Provision())
 	add("report", "Reports:", Outdated(), Classify(), Doctor())
 	root.AddCommand(Exec(), versionCmd())
 	return root, rc

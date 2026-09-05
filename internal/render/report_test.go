@@ -35,48 +35,59 @@ func passed(plat string) *record.Record {
 	return &n
 }
 
-// sampleReport is one pass over a namespace holding every shape the
-// renderings have to tell apart: a branch that only stands, one that
-// stands and has a pull request to report, one deleted mid-pass, one
-// whose note could not be read at all, and one whose forge would not
-// answer.
+// sampleReport is one `status` pass over a namespace holding every
+// shape the renderings have to tell apart: a branch that only stands,
+// one whose pull request merged and is left for `cycle` (D27), one
+// with an open pull request, a running one, one with a queued run the
+// remedy is named beside, one minted with --no-verify, one whose note
+// could not be read at all, one whose forge would not answer, and a
+// hand-made branch carrying a note whose pull request merged — shown,
+// and never anybody's to delete.
 func sampleReport() Report {
 	merged := gh.PullRequest{Number: 80, Title: "jq: update to 1.7", State: "closed",
 		MergedAt: "2026-09-01T00:00:00Z", HTMLURL: "https://x/80"}
 	open := gh.PullRequest{Number: 77, Title: "jq: update to 2.5", State: "open", HTMLURL: "https://x/77"}
+	landed := gh.PullRequest{Number: 81, Title: "jq: update to 1.8", State: "closed",
+		MergedAt: "2026-09-01T00:00:00Z", HTMLURL: "https://x/81"}
 	return Report{
 		Repository: "/checkout/ports",
 		Now:        reportClock,
 		Branches: []BranchReport{
 			{
 				Branch: "dockhand/jq-local",
+				Minted: true,
 				Tip:    "44cfc9eea250",
 				Note:   passed("Testos"),
 			},
 			{
 				Branch: "dockhand/jq-landed",
+				Minted: true,
 				Tip:    "8da38abbbd45",
 				Drift:  "unverified",
-				Retire: verdict.Reconciliation{Promoted: true, Cleaned: true,
+				Retire: verdict.Reconciliation{Promoted: true, Minted: true,
 					PR: verdict.PRFact{Found: true, Number: 80, Merged: true, URL: "https://x/80"}},
 				PR: merged,
-				Prose: []Line{
-					{Stream: ToErr, Text: `removed dockhand/jq-landed from "herby"`},
-					{Stream: ToOut, Text: "discarded dockhand/jq-landed (8da38abbbd45)"},
-				},
 			},
 			{
 				Branch: "dockhand/jq-open",
+				Minted: true,
 				Tip:    "5e687c527fc9",
 				Note:   passed("Testos"),
-				Retire: verdict.Reconciliation{Promoted: true,
+				Retire: verdict.Reconciliation{Promoted: true, Minted: true,
 					PR: verdict.PRFact{Found: true, Number: 77, Open: true, URL: "https://x/77"}},
 				PR: open,
 			},
 			{
 				Branch: "dockhand/jq-running",
+				Minted: true,
 				Tip:    "997767bd393f",
 				Note:   running("Testos", reportClock.Add(-90*time.Second)),
+			},
+			{
+				Branch: "dockhand/jq-queued",
+				Minted: true,
+				Tip:    "0a1b2c3d4e5f",
+				Note:   queued("Testos", "all 2 verification slots are busy (2 VMs running)"),
 			},
 			{
 				// A branch minted with --no-verify: the record exists from
@@ -84,38 +95,84 @@ func sampleReport() Report {
 				// because nobody asked for a verdict and the drain steps
 				// over it. Schema 2 had no note here at all.
 				Branch: "dockhand/jq-unasked",
+				Minted: true,
 				Tip:    "b21bd0e5a1c7",
 				Note:   unasked(),
 			},
 			{
 				Branch:     "dockhand/jq-unreadable",
+				Minted:     true,
 				ObserveErr: "reading the note: bad object",
 			},
 			{
 				Branch: "dockhand/jq-outage",
+				Minted: true,
 				Tip:    "ff6909944aa2",
 				Drift:  "unverified",
-				Retire: verdict.Reconciliation{Promoted: true,
+				Retire: verdict.Reconciliation{Promoted: true, Minted: true,
 					Err: "gh api: HTTP 502 from api.github.com"},
 			},
 			{
-				// The same outage as the sweep records it. One pass fills
-				// one slot or the other and never both; the fixture carries
-				// a branch for each so that both renderings of an
-				// unanswerable lookup are pinned from one report.
-				Branch:   "dockhand/jq-unswept",
-				Tip:      "ff6909944aa2",
-				Drift:    "unverified",
-				Retire:   verdict.Reconciliation{Promoted: true},
-				SweepErr: "gh api: HTTP 502 from api.github.com",
+				// The fold-in: a person's branch that `verify` was pointed
+				// at. Its note is shown and its pull request judged, and
+				// deletion stays inside dockhand/.
+				Branch: "erasure-test",
+				Tip:    "c0ffee0c0ffe",
+				Note:   passed("Testos"),
+				Retire: verdict.Reconciliation{Promoted: true,
+					PR: verdict.PRFact{Found: true, Number: 81, Merged: true, URL: "https://x/81"}},
+				PR: landed,
 			},
 		},
-		Drain: []Line{{Stream: ToErr, Text: "still deferred: dockhand/jq-local on Testos — all 2 verification slots are busy"}},
 		Orphans: []Orphan{
 			{Name: "dockhand-worker-stray"},
 			{Name: "dockhand-worker-elsewhere", Owner: "/other/ports"},
 		},
 	}
+}
+
+// cycleReport is the same namespace as `cycle` leaves it: the merged
+// dockhand branch demolished, with the prose the demolition produced
+// kept beside it; a merged branch a hold kept, saying why; the
+// hand-made branch left where it was, saying why; and the drain's own
+// lines behind the branches.
+func cycleReport() Report {
+	rep := sampleReport()
+	for i := range rep.Branches {
+		b := &rep.Branches[i]
+		if b.Branch == "dockhand/jq-landed" {
+			b.Retire.Cleaned = true
+			b.Prose = []Line{
+				{Stream: ToErr, Text: `removed dockhand/jq-landed from "herby"`},
+				{Stream: ToOut, Text: "discarded dockhand/jq-landed (8da38abbbd45)"},
+			}
+		}
+	}
+	rep.Branches = append(rep.Branches, BranchReport{
+		Branch: "dockhand/jq-held",
+		Minted: true,
+		Tip:    "1122334455aa",
+		Note:   passed("Testos"),
+		Retire: verdict.Reconciliation{Promoted: true, Minted: true,
+			PR:       verdict.PRFact{Found: true, Number: 82, Merged: true, URL: "https://x/82"},
+			Withheld: "held (keeping it for a bisect, 2026-09-01 02:00 UTC)"},
+		Prose: []Line{{Stream: ToErr,
+			Text: "dockhand/jq-held is held (keeping it for a bisect, 2026-09-01 02:00 UTC): the deletion is withheld — `dockhand unhold dockhand/jq-held` releases it"}},
+	})
+	rep.Drain = []Line{
+		{Stream: ToErr, Text: "verify: submitted jq on Testos (job fake-1); `dockhand status` follows it"},
+		{Stream: ToErr, Text: "still deferred: dockhand/jq-local on Testos — all 2 verification slots are busy (2 VMs running)"},
+	}
+	rep.Orphans = nil
+	return rep
+}
+
+// queued is a branch whose run was deferred: one queued run carrying
+// the provider's own words for why, and no job.
+func queued(plat, detail string) *record.Record {
+	n := templateNote(map[string]record.Run{plat: {State: record.Queued, Detail: detail}}, nil)
+	n.Sha = "0a1b2c3d4e5f"
+	return &n
 }
 
 // running is a branch mid-build: one run, in the guest that started at
@@ -165,7 +222,7 @@ func checkReport(t *testing.T, name string, out, errb *bytes.Buffer) {
 // reportGoldens is every rendering pinned here, which is also the list
 // the stale sweep below reads: a golden no rendering produces is a
 // shape that stopped existing and leaves with the code.
-var reportGoldens = []string{"report_text", "report_sweep", "report_json", "report_attention"}
+var reportGoldens = []string{"report_text", "report_cycle", "report_as_recorded", "report_json", "report_attention"}
 
 func TestReportRenderings(t *testing.T) {
 	t.Run("report_text", func(t *testing.T) {
@@ -173,10 +230,27 @@ func TestReportRenderings(t *testing.T) {
 		sampleReport().Text(&out, &errb)
 		checkReport(t, "report_text", &out, &errb)
 	})
-	t.Run("report_sweep", func(t *testing.T) {
+	t.Run("report_cycle", func(t *testing.T) {
 		var out, errb bytes.Buffer
-		sampleReport().Sweep(&out, &errb)
-		checkReport(t, "report_sweep", &out, &errb)
+		cycleReport().Text(&out, &errb)
+		checkReport(t, "report_cycle", &out, &errb)
+	})
+	t.Run("report_as_recorded", func(t *testing.T) {
+		// `status --no-update`: the same branches as the ledger holds
+		// them, no pull request asked about, the mark at the top.
+		rep := sampleReport()
+		rep.AsRecorded = true
+		rep.Orphans = nil
+		for i := range rep.Branches {
+			b := &rep.Branches[i]
+			if b.Retire.Promoted {
+				b.Retire = verdict.Reconciliation{Promoted: true, Minted: b.Minted, Unasked: true}
+				b.PR = nil
+			}
+		}
+		var out, errb bytes.Buffer
+		rep.Text(&out, &errb)
+		checkReport(t, "report_as_recorded", &out, &errb)
 	})
 	t.Run("report_json", func(t *testing.T) {
 		var out, errb bytes.Buffer
@@ -214,18 +288,23 @@ func TestReportTextNamesTheRepositoryWhenTheNamespaceIsEmpty(t *testing.T) {
 	assert.Empty(t, errb.String())
 }
 
-func TestReportCleanedBranchDropsItsStandingButKeepsItInTheDocument(t *testing.T) {
+func TestCycleCleanedBranchDropsItsStanding(t *testing.T) {
 	// The human report says the one thing left to say about a branch
-	// that is gone; the document still publishes what was deleted,
-	// because a consumer is entitled to know more than that something
-	// happened.
+	// that is gone.
 	var out, errb bytes.Buffer
-	sampleReport().Text(&out, &errb)
+	cycleReport().Text(&out, &errb)
 	assert.Contains(t, out.String(), "dockhand/jq-landed               PR #80 merged — branch cleaned")
 	assert.NotContains(t, out.String(), "dockhand/jq-landed\n  unverified")
+}
 
-	var jout, jerr bytes.Buffer
-	require.NoError(t, sampleReport().JSON(&jout, &jerr, exitcode.Of(exitcode.OK, "")))
-	assert.Contains(t, jout.String(), `"drift": "unverified"`)
-	assert.Contains(t, jout.String(), `"cleaned": true`)
+// D27: `status` deletes nothing, so its document has no `cleaned` key
+// to be true, and says which branches are dockhand's own so a consumer
+// can tell the fold-in's hand-made branch from a minted one.
+func TestStatusJSONSaysMintedAndNeverCleaned(t *testing.T) {
+	var out, errb bytes.Buffer
+	require.NoError(t, sampleReport().JSON(&out, &errb, exitcode.Of(exitcode.OK, "")))
+	assert.NotContains(t, out.String(), `"cleaned"`)
+	assert.Contains(t, out.String(), "\"branch\": \"erasure-test\",\n      \"minted\": false")
+	assert.Contains(t, out.String(), "\"branch\": \"dockhand/jq-local\",\n      \"minted\": true")
+	assert.Empty(t, errb.String(), "nothing was acted on, so nothing was said about acting")
 }

@@ -17,6 +17,15 @@ const (
 	// KeepWorker leaves the environment standing. A failure the log
 	// blames on the port under test is the branch's own breakage, and the
 	// worker is the thing to go and look at.
+	//
+	// It is also the answer for a pass whose run asked for it — the
+	// --keep-env request recorded on the run (D27). Keep-by-rule and
+	// keep-by-request are one action because they are one consequence:
+	// the guest stands, the note names it, and the slot is spent until
+	// `dockhand cancel` or a discard frees it. Ruled 2026-09-05 with
+	// D27's implementation, pending the maintainer, that the request is
+	// answered here in the judgment rather than overridden by the
+	// engine after it: release is decided in exactly one place.
 	KeepWorker ReleaseAction = iota
 	// ReleaseAndReport releases the worker and records a failure to do
 	// so in the run's detail. This is the passing run's release: the
@@ -158,6 +167,15 @@ func JudgeRun(in RunInput) Judgment {
 			r.Lint = LintSummary(in.Log)
 		}
 		release = ReleaseAndReport
+		if r.KeepEnv {
+			// Keep by request (D27): the person who started the run asked
+			// to look inside a green build, and said so when they
+			// submitted because by the time this judgment is reached the
+			// release is in the same pass and nothing could intervene.
+			// The lint line is still read above — the log is worth the
+			// same whether or not the guest stands.
+			release = KeepWorker
+		}
 	case verify.Failed:
 		r.State = record.Failed
 		if in.LogRead {

@@ -102,7 +102,7 @@ func TestARunEndingWithoutAFailure(t *testing.T) {
 			code:   exitcode.VerifyQueued,
 			family: "pending",
 			msg: "verification of jq on Sequoia has not started yet: all 2 verification slots are busy" +
-				" — `dockhand status` starts it when it can",
+				" — `dockhand cycle` starts it when it can",
 			why: "verify-queued",
 		},
 	} {

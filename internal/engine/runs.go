@@ -98,6 +98,15 @@ func releasesIn(n record.Record) []string {
 // that says the handing back happened.
 func keepsEnvironment(j record.JobRecord) bool { return j.Handle != "" && !j.Released }
 
+// keptEnvironment reports whether this run is one that kept its guest
+// standing: a failure, by rule, or a pass that asked with --keep-env
+// (D27). It is what a release of a kept guest annotates, so that the
+// note says where the environment went on the run that wanted it and
+// stays silent on a neighbour's pass that never did.
+func keptEnvironment(r record.Run) bool {
+	return r.State == record.Failed || (r.State == record.Passed && r.KeepEnv)
+}
+
 // holdsEnvironment reports whether a record still holds any kept debug
 // environment — the failure side's counterpart to a running run.
 func holdsEnvironment(n record.Record) bool {

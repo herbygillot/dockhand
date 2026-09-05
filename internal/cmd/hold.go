@@ -100,7 +100,7 @@ func Unhold() *cobra.Command {
 		Short: "Release a held change so it can proceed again",
 		Long: `Release a hold.
 
-Nothing is started by releasing it: the next ` + "`dockhand status`" + ` pass
+Nothing is started by releasing it: the next ` + "`dockhand cycle`" + ` pass
 starts what was deferred, and a promotion is still yours to ask for.
 Releasing a branch nothing is holding is refused, so a script cannot
 read "the hold is lifted" out of a hold that was never there.`,

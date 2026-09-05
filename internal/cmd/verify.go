@@ -23,6 +23,11 @@ type verifyAction struct {
 	on     []string
 	test   bool
 	trace  bool
+	// keepEnv is --keep-env: keep the environment after a pass, as a
+	// failure keeps its own (D27). It rides a SUBMITTED run — it is
+	// recorded on the run and honoured when the run settles — which is
+	// why the portdir road below refuses it rather than dropping it.
+	keepEnv bool
 }
 
 var _ Action = verifyAction{}
@@ -41,7 +46,8 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		var ambiguous *verdict.AmbiguousTargetError
 		switch {
 		case rerr == nil:
-			return verifyBranch(ctx, rs, eng, repo, a.target, branch, a.on, a.test, a.trace)
+			return verifyBranch(ctx, rs, eng, repo, a.target, branch, a.on,
+				engine.SubmitOpts{Test: a.test, KeepEnv: a.keepEnv}, a.trace)
 		case errors.As(rerr, &ambiguous):
 			// The fall-through below verifies the working tree, which is
 			// the right answer for a target with no branch and the wrong
@@ -50,6 +56,16 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 			// prevent.
 			return rerr
 		}
+	}
+	if a.keepEnv {
+		// The synchronous road has nothing to keep: the gate waits for
+		// its verdict and releases the environment in the same breath,
+		// and no run is recorded for an ask to land on. Refused rather
+		// than ignored (ruled 2026-09-05 with D27's implementation,
+		// pending the maintainer) — a flag a verb accepts and drops is
+		// worse than one it refuses, because the person who typed it
+		// would go looking for an environment that was never kept.
+		return usagef("the gate releases its environment with the verdict; --keep-env keeps a submitted run's")
 	}
 	var single string
 	if len(a.on) > 1 {
@@ -97,9 +113,9 @@ func (a verifyAction) Execute(ctx context.Context, rs *runstate.Context) error {
 // canceled first, its worker released and its note marked superseded,
 // because a verdict about an abandoned sha is a slot spent on nothing.
 // Each release's submit is a claim under the repository's submit lock,
-// the same claim status's pump makes: a verify racing a status over
-// one deferred run used to start it twice.
-func verifyBranch(ctx context.Context, rs *runstate.Context, eng *engine.Engine, repo *git.Repo, target, branch string, on []string, test, trace bool) error {
+// the same claim cycle's pump makes: a verify racing a pump over one
+// deferred run used to start it twice.
+func verifyBranch(ctx context.Context, rs *runstate.Context, eng *engine.Engine, repo *git.Repo, target, branch string, on []string, opts engine.SubmitOpts, trace bool) error {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return err
@@ -130,7 +146,7 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, eng *engine.Engine,
 
 	var deferred int
 	for _, r := range releases {
-		started, err := eng.SubmitRelease(ctx, repo, branch, tip, members, r, test)
+		started, err := eng.SubmitRelease(ctx, repo, branch, tip, members, r, opts)
 		var vde *engine.VerifyDeferredError
 		if errors.As(err, &vde) {
 			// No slot for this platform right now: recorded, reported,
@@ -156,7 +172,7 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, eng *engine.Engine,
 			// per-release lines above name each one. A field run caught
 			// this summary promising "when a slot frees" to a deferral
 			// no freed slot would ever help.
-			Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", deferred)}
+			Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand cycle` retries them as remedies are met", deferred)}
 	}
 	return nil
 }
@@ -164,13 +180,13 @@ func verifyBranch(ctx context.Context, rs *runstate.Context, eng *engine.Engine,
 // Verify builds the verify subcommand.
 func Verify() *cobra.Command {
 	var on []string
-	var test, trace bool
+	var test, trace, keepEnv bool
 	c := &cobra.Command{
 		Use:   "verify <branch|port|subport|portdir>",
 		Short: "Verify a branch's tip in a pristine VM — or a port as it sits",
 		Args:  exactArgs(1),
 		RunE: runE(func(_ *cobra.Command, args []string) (Action, error) {
-			return verifyAction{target: args[0], on: on, test: test, trace: trace}, nil
+			return verifyAction{target: args[0], on: on, test: test, trace: trace, keepEnv: keepEnv}, nil
 		}),
 	}
 	c.Flags().StringSliceVar(&on, "on", nil,
@@ -179,5 +195,7 @@ func Verify() *cobra.Command {
 		"also run the port's test suite (`port test`) after the install")
 	c.Flags().BoolVar(&trace, "trace", false,
 		"stay attached after submitting: stream the build log until it finishes")
+	c.Flags().BoolVar(&keepEnv, "keep-env", false,
+		"keep the environment after a pass, as a failure keeps its own (a branch's submitted run only)")
 	return c
 }

@@ -1,0 +1,23 @@
+exit: 0
+--- stdout
+  as recorded — nothing polled (--no-update): running runs not settled, pull requests not checked, no worker audit
+  dockhand/jq-local                passed (Testos)
+  dockhand/jq-closed
+    passed (Testos)
+    promoted; PR not checked (--no-update)
+  dockhand/jq-landed
+    unverified
+    promoted; PR not checked (--no-update)
+  dockhand/jq-merged
+    passed (Testos)
+    promoted; PR not checked (--no-update)
+  dockhand/jq-nopr
+    unverified
+    promoted; PR not checked (--no-update)
+  dockhand/jq-open
+    passed (Testos)
+    promoted; PR not checked (--no-update)
+  dockhand/jq-outage
+    unverified
+    promoted; PR not checked (--no-update)
+--- stderr

@@ -15,8 +15,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-// PumpDeferred starts what was queued, now that this status pass
-// has settled finished runs and freed their slots. Every queued run
+// PumpDeferred starts what was queued, now that this pass has settled
+// finished runs and freed their slots (D27: the drain is `cycle`'s;
+// `status` reports the queue and names the verb). Every queued run
 // gets one attempt, whatever its recorded reason — conditions change
 // (a base provisioned, a slot freed), and the attempt re-records the
 // truth either way. The one early exit is a typed capacity refusal:
@@ -31,9 +32,19 @@ func (e *Engine) PumpDeferred(ctx context.Context, repo *git.Repo, branches []st
 	// must not pay for, and a provider a test stood in is not evidence
 	// about the machine. Absent tart is also a different fact from
 	// present-but-unprovisioned, which the loop below reports per run.
-	if !e.Tools.Have(tool.Tart) {
-		return
-	}
+	//
+	// Without tart the walk still reads the notes — a note read is not
+	// a provider call — so that a queue nothing could start is said to
+	// be one, once, at the end. Silence here left `cycle`'s own report
+	// naming `dockhand cycle` beside a queued run that this very cycle
+	// had not started, with nothing beside it saying why.
+	tartHere := e.Tools.Have(tool.Tart)
+	waiting := 0
+	defer func() {
+		if waiting > 0 {
+			fmt.Fprintf(e.Err, "nothing started: tart is not on PATH; queued runs on %d branch(es) wait for it\n", waiting)
+		}
+	}()
 	for _, br := range branches {
 		tip, err := repo.RevParse(ctx, br)
 		if err != nil {
@@ -52,7 +63,7 @@ func (e *Engine) PumpDeferred(ctx context.Context, repo *git.Repo, branches []st
 		}
 		if n.SupersededBy != "" {
 			// A newer sibling is the change now, and the ruling is that
-			// nothing but `clean --superseded` touches this branch. The
+			// nothing but `cycle --superseded` touches this branch. The
 			// supersede marks the record and cancels no runs — it cannot,
 			// because it happens at another branch's mint — so a replaced
 			// branch keeps whatever runs it had queued, and a pump without
@@ -63,6 +74,15 @@ func (e *Engine) PumpDeferred(ctx context.Context, repo *git.Repo, branches []st
 			// hold is a person's act and the pass reports obeying one, while
 			// a supersede is a fact the branch's own status line already
 			// states, once, rather than every ten minutes.
+			continue
+		}
+		if !tartHere {
+			// Counted and not attempted: no platform is asked for and
+			// no provider composed. Before the hold, because a machine
+			// that cannot verify has nothing to obey a hold about.
+			if n.AnyState(record.Queued) {
+				waiting++
+			}
 			continue
 		}
 		if err := GateHold(n, br, "the verification"); err != nil {
@@ -154,7 +174,7 @@ func (e *Engine) deferredMembers(ctx context.Context, repo *git.Repo, branch, ti
 }
 
 // pumpRun retries one queued run and reports whether the pass should
-// stop here. The retry is a claim as much as a submit: two status
+// stop here. The retry is a claim as much as a submit: two cycle
 // passes sharing a checkout — two agents, which is how the tool is now
 // used — both read the run as queued, both submitted, and the second
 // write overwrote the first's job, leaving a worker no note accounted
@@ -178,18 +198,18 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip string, me
 	// taken under the other: the admission holders (Provider.Submit,
 	// RunOnBase, provision's boot) never touch notes, and the notes
 	// holders (settle, recordRun, SupersedeStale, CancelRunning,
-	// Discard, cancel) call only Provider.Release, which is `tart stop`
-	// and `tart delete` and takes no admission. submit → admission and
+	// Discard, cancel) call only Provider.Release, which is the
+	// provider's own stop-and-delete and takes no admission. submit → admission and
 	// submit → notes are the only edges; there is no cycle. Why it is a
 	// lock of its own and not the notes lock is on git.(*Repo).LockSubmit.
 	unlock, err := repo.LockSubmit(ctx, SubmitLockWait)
 	if errors.Is(err, lockfile.ErrHeld) {
 		// The expected contention: a peer mid-submit holds it past the
 		// wait, and would hold it for every run after this one too.
-		// The pass stops, and the peer's own status names what it
-		// started. Not the lock's own text, which sends the user
-		// hunting a hung process that is booting a guest on purpose.
-		fmt.Fprintf(e.Err, "%s: deferred %s not retried: another dockhand is starting deferred runs in this repository; its status names what it started\n", br, plat)
+		// The pass stops, and `dockhand status` shows what the peer
+		// started once it has. Not the lock's own text, which sends the
+		// user hunting a hung process that is booting a guest on purpose.
+		fmt.Fprintf(e.Err, "%s: deferred %s not retried: another dockhand is starting deferred runs in this repository; `dockhand status` shows what it started\n", br, plat)
 		return true
 	}
 	if err != nil {
@@ -213,7 +233,7 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip string, me
 	// Not belt and braces. The lock is held across the re-read precisely
 	// so that a peer's write between the walk and the submit is honoured,
 	// and a hold placed in that window is exactly such a write — a person
-	// running `dockhand hold` while a status pass is walking the namespace
+	// running `dockhand hold` while a cycle pass is walking the namespace
 	// is the ordinary way it happens. The walk's check saves the work; this
 	// one is the one that is authoritative.
 	if herr := GateHold(n, br, "the verification"); herr != nil {
@@ -238,22 +258,25 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip string, me
 	if !ok || run.State != record.Queued {
 		return false
 	}
-	// What the previous attempt was for is carried into this one. The
-	// test suite is not: it is asked of an environment, and a queued run
-	// has no environment to have been asked of — so an unattended retry
-	// submits the install this pass can honestly stand behind, and the
-	// note says so rather than claiming a test nobody ran.
+	// What the previous attempt was for is carried into this one: the
+	// archive to ignore, and the ask to keep a passing environment
+	// (D27), both of which the queued run recorded for exactly this
+	// retry. The test suite is not: it is asked of an environment, and a
+	// queued run has no environment to have been asked of — so an
+	// unattended retry submits the install this pass can honestly stand
+	// behind, and the note says so rather than claiming a test nobody
+	// ran.
 	//
 	// The headline is the cohort's and not this run's. Every member goes
 	// back into one environment, and the members the walk has not
 	// reached yet will find their runs no longer queued and step over
 	// them.
-	s := submission{Port: members[0].Port, Release: release, FromSource: run.FromSource, Members: members}
+	s := submission{Port: members[0].Port, Release: release, FromSource: run.FromSource, KeepEnv: run.KeepEnv, Members: members}
 	err = e.submit(ctx, &Minted{Repo: repo, Branch: br, Sha: tip, RelPort: members[0].Portdir}, s)
 	var vde *VerifyDeferredError
 	if errors.As(err, &vde) {
 		if rerr := e.recordRun(ctx, repo, tip, portName, plat, record.Run{
-			State: record.Queued, Detail: vde.Reason, FromSource: run.FromSource,
+			State: record.Queued, Detail: vde.Reason, FromSource: run.FromSource, KeepEnv: run.KeepEnv,
 		}, ""); rerr != nil {
 			fmt.Fprintf(e.Err, "warning: re-recording queued run: %v\n", rerr)
 		}

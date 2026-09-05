@@ -291,22 +291,15 @@ func TestOnlyAnOpenPullRequestHasAWindow(t *testing.T) {
 	}
 }
 
-// The sort is a projection and never a mutation: `clean` renders the
-// same Report through Sweep, and a listing it never asked to have
-// reordered must come back in the order it was enumerated in.
+// The sort is a projection and never a mutation: the caller may still
+// be holding the Report in the order the pass produced it, and a
+// listing it never asked to have reordered must come back as it was
+// enumerated.
 func TestOrderingLeavesTheReportAlone(t *testing.T) {
 	rep := attentionSample()
 	before := names(rep.Branches)
 	_ = rep.Ordered()
 	assert.Equal(t, before, names(rep.Branches))
-
-	var out, errb bytes.Buffer
-	rep.Sweep(&out, &errb)
-	var got []string
-	for _, line := range bytes.Split(bytes.TrimSuffix(out.Bytes(), []byte("\n")), []byte("\n")) {
-		got = append(got, string(bytes.Fields(line)[0]))
-	}
-	assert.Equal(t, before, got, "the sweep lists the namespace, not the attention order")
 }
 
 // A band whose members are indistinguishable from the branches around
@@ -326,7 +319,7 @@ func TestTheStillnessBandsAreLegibleOnTheLine(t *testing.T) {
 
 	replaced := noted(record.Passed)
 	replaced.SupersededBy = "dockhand/jq-1.9"
-	assert.Equal(t, []string{"superseded by dockhand/jq-1.9 — `dockhand clean --superseded` removes it"},
+	assert.Equal(t, []string{"superseded by dockhand/jq-1.9 — `dockhand cycle --superseded` removes it"},
 		StillnessLines(replaced, "dockhand/jq-1.8"))
 
 	assert.Nil(t, StillnessLines(noted(record.Passed), "dockhand/jq-1.8"))
@@ -334,7 +327,7 @@ func TestTheStillnessBandsAreLegibleOnTheLine(t *testing.T) {
 }
 
 // The superseded band names the branch-level fact — the field a newer
-// sibling wrote and `clean --superseded` retires — and not the run
+// sibling wrote and `cycle --superseded` retires — and not the run
 // state of the same name, which says something else entirely: that the
 // branch moved out from under a running job. A change is quiet because
 // something replaced it, not because a build lost its footing.

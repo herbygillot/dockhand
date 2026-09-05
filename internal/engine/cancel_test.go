@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
@@ -169,4 +170,30 @@ func TestCancelSaysWhatItFreedWhenTheNoteWriteFails(t *testing.T) {
 	assert.Equal(t, []string{"fake-1"}, fake.Released, "the worker went back either way")
 	assert.Equal(t, "canceled verification of dockhand/jq-1.8 on Testos (worker fake-1 released)\n",
 		out.String(), "and what it freed is said, not swallowed by the error")
+}
+
+// --keep-env (D27): a kept PASS is released by `cancel` the way a kept
+// failure is, and the note says on the run that asked that its
+// environment went — the verdict standing as it was.
+func TestCancelReleasesAKeptPassingEnvironmentAndSaysSo(t *testing.T) {
+	repo, sha := engineRepo(t)
+	ctx := context.Background()
+	n := mintedNote(t, repo, sha)
+	started(&n, "Testos", "fake-1", record.Run{State: record.Passed, KeepEnv: true})
+	n.Jobs["Testos"] = record.JobRecord{Job: verify.Job{Provider: "fake", ID: "fake-1"}, Handle: "fake-1"}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+
+	fake := &verifytest.Fake{}
+	var out, errb bytes.Buffer
+	require.NoError(t, testEngine(t, repo, fake, &out, &errb).Cancel(ctx, repo, "jq"))
+
+	assert.Equal(t, []string{"fake-1"}, fake.Released)
+	again, err := ledger.Open(repo).Read(ctx, sha)
+	require.NoError(t, err)
+	r := runOf(again, "Testos")
+	assert.Equal(t, record.Passed, r.State, "the verdict stands")
+	assert.True(t, again.Jobs["Testos"].Released)
+	assert.Equal(t, " — kept environment released", r.Detail)
+	assert.Equal(t, "released kept environment of dockhand/jq-1.8 on Testos (the passed verdict stands)\n", out.String(),
+		"the sentence a person reads names the verdict the note holds, not the failure it used to assume")
 }

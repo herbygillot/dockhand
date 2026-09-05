@@ -11,12 +11,11 @@ package render
 // exactly what they should. A fleet's report is scanned, not read, and
 // what it is scanned for is the handful of changes that want a person.
 //
-// So the enumeration order stays what it is — `clean` still renders it,
-// and every other caller of git.Branches still walks it — and the
-// attention order is imposed above it, in the two renderings `status`
-// performs. That placement is the whole design: a sort applied to
-// Report.Branches would reorder the sweep too, and the sweep asks one
-// question of each branch and has no attention to order by.
+// So the enumeration order stays what it is — every caller of
+// git.Branches still walks it — and the attention order is imposed
+// above it, in the renderings. That placement is the whole design: a
+// sort applied to Report.Branches would reorder the value every caller
+// holds, and a report is a value first and a listing second.
 
 import (
 	"fmt"
@@ -202,10 +201,10 @@ func (b BranchReport) windowElapsed(now time.Time) bool {
 // Ordered is the branch listing in attention order, as a new slice.
 //
 // A copy, and never a sort in place, because the same Report is what
-// `clean` renders through Sweep and what the caller may still be
-// holding: an ordering that mutated the value would reorder a sweep
-// that never asked for one, which is exactly the mistake this function
-// exists in this package to avoid.
+// the caller may still be holding and reading in the order the pass
+// produced it: an ordering that mutated the value would reorder a
+// listing that never asked for one, which is exactly the mistake this
+// function exists in this package to avoid.
 //
 // Within a band the enumeration order survives — that is what makes the
 // sort stable rather than merely deterministic, and it is why eleven of
@@ -266,7 +265,7 @@ func StillnessLines(n *record.Record, branch string) []string {
 		out = append(out, fmt.Sprintf("held: %s — `dockhand unhold %s` releases it", reason, branch))
 	}
 	if n.SupersededBy != "" {
-		out = append(out, fmt.Sprintf("superseded by %s — `dockhand clean --superseded` removes it",
+		out = append(out, fmt.Sprintf("superseded by %s — `dockhand cycle --superseded` removes it",
 			n.SupersededBy))
 	}
 	return out

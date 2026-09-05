@@ -513,7 +513,7 @@ func exitTable(t *testing.T) []exitRow {
 		// recorded deferred, which is what queued means.
 		exitRow{name: "*engine.VerifyDeferredError (verifyBranch summary, no cause)",
 			err: &engine.VerifyDeferredError{Branch: branch,
-				Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand status` retries them as remedies are met", 1)},
+				Reason: fmt.Sprintf("%d release(s) deferred — each line above names its remedy; `dockhand cycle` retries them as remedies are met", 1)},
 			as: new(*engine.VerifyDeferredError)},
 		// A followed run found deferred is queued work, not a verdict.
 		// Reachable only through a racing writer — what the follow
@@ -525,7 +525,7 @@ func exitTable(t *testing.T) []exitRow {
 			as:  new(*verdict.QueuedError)},
 	)
 	// A deferral over a missing environment is queued, not refused: the
-	// run is on the note and status starts it once a base exists. The
+	// run is on the note and `cycle` starts it once a base exists. The
 	// synchronous ask with the same obstacle is NoVerifyEnv above, and
 	// the pair reads exactly like VerifyQueued and VerifierBusy do.
 	// The publish slot's two ways of not being finished: a change whose
@@ -857,8 +857,8 @@ func exitTable(t *testing.T) []exitRow {
 			err: refuseNote(`{"schema": 3, "sha": "ffff"}`),
 			is:  []error{record.ErrShaMismatch}},
 		exitRow{name: "submit-and-record compensation: release failed too (submit)",
-			err: fmt.Errorf("recording the run failed (%w) and releasing %s failed too: %w — `tart delete %s` frees the slot",
-				noteErr, "fake-1", errors.New("tart delete: no such vm"), "fake-1")},
+			err: fmt.Errorf("recording the run failed (%w) and releasing %s failed too: %w — `dockhand cycle --reclaim-orphans` frees the slot",
+				noteErr, "fake-1", errors.New("tart delete: no such vm"))},
 		exitRow{name: "submit-and-record compensation: worker released (submit)",
 			err: fmt.Errorf("recording the run failed; the worker was released: %w", noteErr)},
 		// "one at a time for now" is gone: several portdirs are a cohort

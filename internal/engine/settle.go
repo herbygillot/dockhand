@@ -27,7 +27,12 @@ import (
 // and the clock a running run's elapsed time is measured against is
 // read by the pass rather than in here, so a golden can pin the
 // sentence.
-func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string) (string, *record.Record, string, error) {
+//
+// poll is whether a running run may be settled. `status --no-update`
+// passes false (D27): the note is read as written, and the reads that
+// stand in for one — the drift finding's note listing and rev-list —
+// take no lock and ask no provider, so they stay.
+func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string, poll bool) (string, *record.Record, string, error) {
 	tip, err := repo.RevParse(ctx, branch)
 	if err != nil {
 		return "", nil, "", err
@@ -43,7 +48,7 @@ func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string) (st
 	if err != nil {
 		return tip, nil, "", err
 	}
-	if n.AnyState(record.Running) {
+	if poll && n.AnyState(record.Running) {
 		if err := e.settle(ctx, repo, &n); err != nil {
 			return tip, nil, "", err
 		}
@@ -52,12 +57,20 @@ func (e *Engine) inspect(ctx context.Context, repo *git.Repo, branch string) (st
 }
 
 // settle polls every running run and writes what it learns back to the
-// note. Poll never mutates and the release is the caller's: status
+// note. Poll never mutates and the release is the caller's: the pass
 // hands a guest back once every run in it has passed — a kept green
 // environment is a wasted slot — and keeps it when one failed, where it
-// is the debug handle. A failure whose log shows the port refusing the
-// platform records as unsupported instead, and its guest goes back: a
-// correct refusal leaves nothing to debug.
+// is the debug handle, or when one of its runs asked for it with
+// --keep-env (D27: keep by request beside keep by rule; the judgment
+// answers KeepWorker for both). A failure whose log shows the port
+// refusing the platform records as unsupported instead, and its guest
+// goes back: a correct refusal leaves nothing to debug.
+//
+// Settling is the one write `status` keeps (D27). Every other write in
+// a pass changes the world; this one changes the report to match a
+// world that already changed, and releasing a finished guest is the
+// last step of its verdict being written rather than an act of its
+// own.
 //
 // The asking is done once per guest and not once per run. A change's
 // members build together inside one environment and write into one log,
@@ -214,9 +227,11 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 			switch j.Release {
 			case verdict.KeepWorker:
 				keep[rel] = true
-				// A failure keeps its environment, and the name of it belongs
-				// to the guest rather than to the verdict: one guest holds one
-				// environment however many subjects failed in it.
+				// A failure keeps its environment, and so does a pass whose
+				// run asked (D27); the name of it belongs to the guest rather
+				// than to the verdict: one guest holds one environment
+				// however many subjects failed or asked in it, and it stands
+				// when any of them did.
 				if st.Handle != "" {
 					handles[rel] = heldEnv{JobID: job.Job.ID, Handle: st.Handle}
 				}
@@ -313,8 +328,8 @@ type observed struct {
 	JobID string
 }
 
-// heldEnv is an environment a failure kept: the name of it, and the job
-// it was named for.
+// heldEnv is an environment a failure kept, or a pass was asked to
+// keep: the name of it, and the job it was named for.
 type heldEnv struct{ JobID, Handle string }
 
 // returnGuests hands back every environment this pass finished with.
@@ -323,8 +338,9 @@ type heldEnv struct{ JobID, Handle string }
 // record under the flock: it is refused while a run in that guest is
 // still live, and granted to exactly one caller. What this function
 // decides is only whether the guest SHOULD go back — a failure keeps
-// its environment as the debug handle — which is a judgment about what
-// a failure is worth and therefore not the ledger's to make.
+// its environment as the debug handle, and a run that asked keeps its
+// pass's — which is a judgment about what a failure or an ask is worth
+// and therefore not the ledger's to make.
 func (e *Engine) returnGuests(ctx context.Context, repo *git.Repo, n *record.Record, prov verify.Verifier, judged map[string]record.Run, keep, report map[string]bool) {
 	for _, rel := range releasesIn(*n) {
 		if keep[rel] || !judgedOn(judged, rel) {

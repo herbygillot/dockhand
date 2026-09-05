@@ -126,6 +126,20 @@ type Run struct {
 	// unchanged version does, because the archive that matches predates
 	// the change, and a pass earned against it verified nothing.
 	FromSource bool `json:"from_source,omitempty"`
+	// KeepEnv says the person who started this run asked for its
+	// environment to stand after a pass — `--keep-env` on `verify` and
+	// the bump family (D27). The failure path keeps by rule; this keeps
+	// by request, and it is honoured wherever release is decided.
+	//
+	// It is on the run and not on the JobRecord, though the environment
+	// is the guest's, for two reasons. A deferral has no JobRecord — a
+	// queued run was never submitted — and the ask must survive the
+	// deferral to reach the resubmission, the way FromSource does. And
+	// keeping is aggregated per guest at settle exactly as a failure's
+	// keep is: the guest stands when ANY run in it asks, so the fact is
+	// naturally per run and the decision per guest. Ruled 2026-09-05
+	// with D27's implementation, pending the maintainer.
+	KeepEnv bool `json:"keep_env,omitempty"`
 	// Manifest is what the install laid down, collected from inside the
 	// environment that built it.
 	Manifest *verify.Manifest `json:"manifest,omitempty"`

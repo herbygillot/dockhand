@@ -1,9 +1,8 @@
 --- stdout
 dockhand/jq-queued               queued (Testos) — all 2 verification slots are busy (2 VMs running) — `dockhand cycle` starts it
 dockhand/jq-local                passed (Testos)
-dockhand/jq-landed
-  unverified
-  PR #80 merged — `dockhand cycle` retires the branch
+discarded dockhand/jq-landed (8da38abbbd45)
+dockhand/jq-landed               PR #80 merged — branch cleaned
 dockhand/jq-open
   passed (Testos)
   PR #77 open (https://x/77)
@@ -16,6 +15,11 @@ dockhand/jq-outage
 erasure-test
   passed (Testos)
   PR #81 merged — not a dockhand branch, so nothing here removes it
-dockhand-worker-stray            untracked worker — `dockhand shell dockhand-worker-stray` reaches it; `dockhand cycle --reclaim-orphans` frees the slot
-dockhand-worker-elsewhere        worker from /other/ports — `dockhand status` there follows it
+dockhand/jq-held
+  passed (Testos)
+  PR #82 merged — kept: held (keeping it for a bisect, 2026-09-01 02:00 UTC)
 --- stderr
+removed dockhand/jq-landed from "herby"
+dockhand/jq-held is held (keeping it for a bisect, 2026-09-01 02:00 UTC): the deletion is withheld — `dockhand unhold dockhand/jq-held` releases it
+verify: submitted jq on Testos (job fake-1); `dockhand status` follows it
+still deferred: dockhand/jq-local on Testos — all 2 verification slots are busy (2 VMs running)

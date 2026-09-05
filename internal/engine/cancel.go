@@ -74,7 +74,16 @@ func (e *Engine) Cancel(ctx context.Context, repo *git.Repo, target string) erro
 	// is not told which of their slots are free.
 	for _, f := range freed {
 		if f.Kept {
-			fmt.Fprintf(e.Out, "released kept environment of %s on %s (the failed verdict stands)\n", branch, f.Platform)
+			// The verdict is named from the runs that kept the guest and
+			// not assumed: a failure keeps by rule, and since D27 a pass
+			// keeps by request (--keep-env), so "the failed verdict
+			// stands" over a green build would contradict the note the
+			// line was written beside.
+			verdict := "passed"
+			if f.Failed {
+				verdict = "failed"
+			}
+			fmt.Fprintf(e.Out, "released kept environment of %s on %s (the %s verdict stands)\n", branch, f.Platform, verdict)
 			continue
 		}
 		fmt.Fprintf(e.Out, "canceled verification of %s on %s (worker %s released)\n", branch, f.Platform, f.Worker)
@@ -104,6 +113,12 @@ type freed struct {
 	Platform string
 	Worker   string
 	Kept     bool
+	// Failed says the kept environment was a failure's, kept by rule;
+	// false with Kept set means a pass that asked for it (--keep-env,
+	// D27). A cohort with one failure among passes that asked is the
+	// failure's guest: that is the verdict the person will go looking
+	// for, and the one the release line should own up to.
+	Failed bool
 }
 
 // cancelRuns releases what one commit's note still holds and rewrites
@@ -167,10 +182,15 @@ func (e *Engine) cancelRuns(ctx context.Context, repo *git.Repo, sha, reason str
 			out = append(out, freed{Platform: rel, Worker: job.Job.ID})
 		case keepToo && keepsEnvironment(job):
 			e.freeWorker(ctx, prov, job.Job, "releasing kept environment "+job.Handle)
+			failed := false
 			for _, ref := range runsOn(n, rel) {
-				if ref.Run.State != record.Failed {
+				// The runs that kept it say it went: a failure, by rule,
+				// and a pass that asked (D27). A pass that did not ask
+				// kept nothing and has nothing to say.
+				if !keptEnvironment(ref.Run) {
 					continue
 				}
+				failed = failed || ref.Run.State == record.Failed
 				run := ref.Run
 				run.Detail = strings.TrimSuffix(run.Detail, "\n") + " — kept environment released"
 				n.Runs[ref.Key()] = run
@@ -180,7 +200,7 @@ func (e *Engine) cancelRuns(ctx context.Context, repo *git.Repo, sha, reason str
 			// the provider refused.
 			job.Released = true
 			n.Jobs[rel] = job
-			out = append(out, freed{Platform: rel, Worker: job.Job.ID, Kept: true})
+			out = append(out, freed{Platform: rel, Worker: job.Job.ID, Kept: true, Failed: failed})
 		default:
 			continue
 		}
@@ -265,7 +285,17 @@ func (e *Engine) SupersedeStale(ctx context.Context, repo *git.Repo, branch, tip
 				case record.Failed:
 					run.State = record.Superseded
 					run.Detail = "failed here, then the branch moved to " + git.Abbrev(tip) + " — kept environment released"
-				case record.Queued, record.Submitting, record.Passed, record.Unsupported,
+				case record.Passed:
+					// The verdict stands — it is still what was learned
+					// about the commit — but a pass that asked to keep its
+					// environment (D27) has just lost it, and the note says
+					// so where the ask was made. A pass that did not ask
+					// kept nothing and is left alone.
+					if !run.KeepEnv {
+						continue
+					}
+					run.Detail = strings.TrimSuffix(run.Detail, "\n") + " — kept environment released: the branch moved to " + git.Abbrev(tip)
+				case record.Queued, record.Submitting, record.Unsupported,
 					record.Blocked, record.Canceled, record.Superseded, record.Errored,
 					record.Withheld:
 					// Nothing this sweep supersedes. A run that never

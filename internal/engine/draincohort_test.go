@@ -65,7 +65,7 @@ func TestADeferredCohortRecordsEveryMemberQueued(t *testing.T) {
 	_, err := eng.SubmitRelease(ctx, repo, "dockhand/jq-1.8", sha, []Member{
 		{Port: "jq", Portdir: "sysutils/jq"},
 		{Port: "oniguruma", Portdir: "textproc/oniguruma"},
-	}, fake.Capabilities().Platforms[0], false)
+	}, fake.Capabilities().Platforms[0], SubmitOpts{})
 	require.Error(t, err)
 
 	n, err := ledger.Open(repo).Read(ctx, sha)

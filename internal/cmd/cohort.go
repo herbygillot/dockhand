@@ -35,6 +35,7 @@ type cohortAction struct {
 	noVerify bool
 	test     bool
 	trace    bool
+	keepEnv  bool
 	on       string
 	exclude  []string
 }
@@ -51,7 +52,7 @@ func (a cohortAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	return rs.Deps().BuildCohort(ctx, repo, a.branch, engine.CohortOpts{
-		NoVerify: a.noVerify, Test: a.test, Trace: a.trace, Platform: release, Exclude: a.exclude})
+		NoVerify: a.noVerify, Test: a.test, Trace: a.trace, KeepEnv: a.keepEnv, Platform: release, Exclude: a.exclude})
 }
 
 // dismissAction records that a person looked at a branch's proposals
@@ -104,11 +105,12 @@ func Dismiss() *cobra.Command {
 // tree to edit. --verify is the pre-mint gate, and nothing is minted
 // here: the branch already exists and its evidence is inherited.
 //
-// --test and --trace are carried rather than refused, because the
-// cohort's own verification is a verification: each member's rev+1
-// names an archive that does not exist, so it rebuilds from source
-// against the new library, and that rebuild is the evidence the whole
-// proposal was for.
+// --test, --trace and --keep-env are carried rather than refused,
+// because the cohort's own verification is a verification: each
+// member's rev+1 names an archive that does not exist, so it rebuilds
+// from source against the new library, and that rebuild is the
+// evidence the whole proposal was for — and the environment it built
+// in is one a person may want to look inside afterwards.
 func cohortMode(c *cobra.Command, f *intentFlags) func() (Action, error) {
 	var branch string
 	var exclude []string
@@ -134,6 +136,6 @@ func cohortMode(c *cobra.Command, f *intentFlags) func() (Action, error) {
 			return nil, usagef("--verify gates a mint, and --for mints nothing: the cohort's own verification is submitted after the commit unless --no-verify says otherwise")
 		}
 		return cohortAction{branch: branch, noVerify: f.noVerify,
-			test: f.opts.Test, trace: f.opts.Trace, on: f.on, exclude: exclude}, nil
+			test: f.opts.Test, trace: f.opts.Trace, keepEnv: f.opts.KeepEnv, on: f.on, exclude: exclude}, nil
 	}
 }

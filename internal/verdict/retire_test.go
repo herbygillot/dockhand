@@ -32,30 +32,16 @@ func TestDecideRetire(t *testing.T) {
 			assert.Equal(t, tc.want, d)
 			assert.Equal(t, tc.want == RetireMerged, d.Cleans(false),
 				"the merged verdict is the only one that deletes")
-			assert.False(t, d.Cleans(true), "--no-clean withholds every deletion")
+			assert.False(t, d.Cleans(true), "--keep-merged withholds every deletion")
 		})
 	}
 }
 
-func TestSweepLine(t *testing.T) {
-	assert.Equal(t, "kept — never promoted", RetireUnpromoted.SweepLine(PRFact{}, false))
-	assert.Equal(t, "kept — promoted, but no PR found", RetireNoPR.SweepLine(PRFact{}, false))
-	assert.Equal(t, "cleaned — PR #42 merged", RetireMerged.SweepLine(merged, true))
-	// Merged is the authority; differing bytes mean a committer amended
-	// in flight or a later change superseded it.
-	assert.Equal(t, "cleaned — PR #42 merged (upstream bytes differ: amended on merge, or since superseded)",
-		RetireMerged.SweepLine(merged, false))
-	assert.Equal(t, "kept — PR #43 open (https://example.invalid/pr/43)", RetireOpen.SweepLine(open, false))
-	assert.Equal(t, "kept — PR #44 closed without merging; rejection is information",
-		RetireClosed.SweepLine(closed, false))
-
-	// Everything but the merged line ignores the content comparison,
-	// which is why the caller need not compute it.
-	for _, d := range []Retirement{RetireUnpromoted, RetireNoPR, RetireOpen, RetireClosed} {
-		assert.Equal(t, d.SweepLine(open, false), d.SweepLine(open, true))
-	}
-}
-
+// One line per verb per fact (D27). `status` acts on nothing and names
+// `cycle` beside a merged pull request; `cycle` says what it did, or —
+// on every kept case — why the branch is still there. Under `status
+// --no-update` the forge was never asked, and the line says so rather
+// than reporting an absent pull request.
 func TestReconciliationLine(t *testing.T) {
 	cases := []struct {
 		name string
@@ -66,19 +52,31 @@ func TestReconciliationLine(t *testing.T) {
 		{"a lookup that could not answer",
 			Reconciliation{Promoted: true, Err: "no upstream remote"},
 			"PR state unavailable: no upstream remote"},
-		{"pushed, no PR", Reconciliation{Promoted: true}, "promoted; no PR found"},
-		{"merged and cleaned",
-			Reconciliation{Promoted: true, PR: merged, Cleaned: true},
+		{"pushed, no PR", Reconciliation{Promoted: true, Minted: true}, "promoted; no PR found"},
+		{"pushed, the forge not asked (--no-update)",
+			Reconciliation{Promoted: true, Minted: true, Unasked: true},
+			"promoted; PR not checked (--no-update)"},
+		{"merged, under status: the verb that acts is named",
+			Reconciliation{Promoted: true, Minted: true, PR: merged},
+			"PR #42 merged — `dockhand cycle` retires the branch"},
+		{"merged and cleaned, under cycle",
+			Reconciliation{Promoted: true, Minted: true, PR: merged, Cleaned: true},
 			"PR #42 merged — branch cleaned"},
 		{"merged, cleaning failed",
-			Reconciliation{Promoted: true, PR: merged, CleanErr: "worker still running"},
+			Reconciliation{Promoted: true, Minted: true, PR: merged, CleanErr: "worker still running"},
 			"PR #42 merged; cleaning failed: worker still running"},
-		{"merged under --no-clean",
+		{"merged, withheld by --keep-merged",
+			Reconciliation{Promoted: true, Minted: true, PR: merged, Withheld: "--keep-merged"},
+			"PR #42 merged — kept: --keep-merged"},
+		{"merged, withheld by a hold",
+			Reconciliation{Promoted: true, Minted: true, PR: merged, Withheld: "held (keeping it for a bisect)"},
+			"PR #42 merged — kept: held (keeping it for a bisect)"},
+		{"merged on a hand-made branch: nothing here removes it",
 			Reconciliation{Promoted: true, PR: merged},
-			"PR #42 merged — `dockhand clean` removes the branch"},
-		{"open", Reconciliation{Promoted: true, PR: open},
+			"PR #42 merged — not a dockhand branch, so nothing here removes it"},
+		{"open", Reconciliation{Promoted: true, Minted: true, PR: open},
 			"PR #43 open (https://example.invalid/pr/43)"},
-		{"closed without merging", Reconciliation{Promoted: true, PR: closed},
+		{"closed without merging", Reconciliation{Promoted: true, Minted: true, PR: closed},
 			"PR #44 closed without merging"},
 	}
 	for _, tc := range cases {
@@ -86,15 +84,4 @@ func TestReconciliationLine(t *testing.T) {
 			assert.Equal(t, tc.want, tc.r.Line())
 		})
 	}
-}
-
-// The two verbs word the same verdict differently on purpose: clean
-// says what the sweep did, status says what happened to the branch the
-// reader was asking about. Unifying them would move two verbs' goldens.
-func TestTheTwoMergedWordingsStayApart(t *testing.T) {
-	sweep := RetireMerged.SweepLine(merged, true)
-	report := Reconciliation{Promoted: true, PR: merged, Cleaned: true}.Line()
-	assert.Equal(t, "cleaned — PR #42 merged", sweep)
-	assert.Equal(t, "PR #42 merged — branch cleaned", report)
-	assert.NotEqual(t, sweep, report)
 }

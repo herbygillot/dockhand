@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/fs"
 	"os"
@@ -84,20 +85,38 @@ func TestAutoModeIsDeclaredAndNeverDetected(t *testing.T) {
 	}
 }
 
-// The `auto` verb IS the declaration: it is the unattended entrypoint,
-// and nothing else it could be told changes that. The invoker is
+// `dockhand cycle --auto` is the unattended entrypoint the `auto` verb
+// used to be (D27): the same pass under the same declaration every
+// other verb takes, and a plain `cycle` is a person's. The invoker is
 // resolved before the pass runs, which is why a run that cannot open a
-// repository still answers the question.
-func TestTheAutoVerbDeclaresItself(t *testing.T) {
+// repository still answers the question. The verb itself is gone — a
+// verb that was its own declaration was a third way to say what the
+// flag says, and one a rename could quietly unhook.
+func TestCycleAutoIsTheUnattendedEntrypoint(t *testing.T) {
 	t.Setenv(autoEnv, "")
-	root, rc := newRoot("test")
-	root.SetArgs([]string{"auto", "-t", t.TempDir()})
-	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
-	// The tempdir is not a checkout, so the pass fails; the declaration
-	// was made before it tried.
-	require.Error(t, root.Execute())
-	assert.Equal(t, record.Machine, rc.Invoker)
+	for _, tc := range []struct {
+		name string
+		args []string
+		want record.Driver
+	}{
+		{"cycle --auto is the machine's pass", []string{"cycle", "--auto"}, record.Machine},
+		{"a plain cycle is a person's", []string{"cycle"}, record.Human},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, rc := newRoot("test")
+			root.SetArgs(append(tc.args, "-t", t.TempDir()))
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			// The tempdir is not a checkout, so the pass fails; the
+			// declaration was made before it tried.
+			require.Error(t, root.Execute())
+			assert.Equal(t, tc.want, rc.Invoker)
+		})
+	}
+	root, _ := newRoot("test")
+	for _, c := range root.Commands() {
+		assert.NotEqual(t, "auto", c.Name(), "the verb retired with D27; the declaration is the flag")
+	}
 }
 
 // A value that is neither true nor false is the operator's typo, and
@@ -227,7 +246,7 @@ func TestPromoteRefusesInAutoMode(t *testing.T) {
 	require.ErrorAs(t, err, &refusal)
 	assert.Equal(t, exitcode.MachineGate, ExitCode(err))
 	assert.Equal(t, "promote-is-human", exitcode.TwinOf(err).Reason)
-	assert.Contains(t, err.Error(), "dockhand auto")
+	assert.Contains(t, err.Error(), "dockhand cycle --auto", "the refusal names the road that publishes unattended")
 }
 
 // The refusal comes before the repository: the run above has no Repo
@@ -242,28 +261,45 @@ func TestPromoteRefusesBeforeItOpensAnything(t *testing.T) {
 	})
 }
 
+// cycleState is a cycle run over the one-branch repository, as the
+// given invoker, with a forge seam that fails the test on any write —
+// a person's cycle publishes nothing, and a machine's is refused before
+// it reaches the forge, so no test here may ever see one.
+func cycleState(t *testing.T, invoker record.Driver) (*runstate.Context, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+	repo, _ := lifecycleRepo(t)
+	var out, errb bytes.Buffer
+	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(),
+		Invoker: invoker, MachinePublish: machinePublishEnabled,
+		Out: &out, Err: &errb,
+		Gh: func(_ context.Context, args ...string) (string, error) {
+			if len(args) > 0 && args[0] == "pr" {
+				t.Fatalf("a cycle reached the forge with a write: %v", args)
+			}
+			return "[]", nil
+		}}
+	t.Cleanup(rs.Close)
+	return rs, &out, &errb
+}
+
 // THE SANCTIONED MACHINE PUBLISH ROAD HAS AN ENTRANCE, and this is it.
 //
-// `auto` is the one verb that hands the reconciler a publish slot;
-// `status` and `clean` pass none and must not. Without this wiring the
-// slot, its per-pass cap, its pacing and its 62-while-pending exit were
-// reachable only from the engine's own tests, and flipping
+// `cycle` run as the machine — `dockhand cycle --auto` — is the one
+// pass that hands the reconciler a publish slot. Without this wiring
+// the slot, its per-pass cap, its pacing and its 62-while-pending exit
+// were reachable only from the engine's own tests, and flipping
 // machinePublishEnabled would have changed no binary behaviour at all —
 // which is the second change the constant was supposed not to need.
 //
 // What the pass says on this build is the refusal, once, on stderr:
 // asked for the whole pass rather than per branch, because on a build
 // with the road closed there is nothing branch-specific to say.
-func TestAutoHandsTheReconcilerAPublishSlotAndIsRefused(t *testing.T) {
-	repo, _ := lifecycleRepo(t)
-	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(),
-		Invoker: record.Machine, MachinePublish: machinePublishEnabled,
-		Out: &out, Err: &errb}
+func TestCycleAsTheMachineHandsInAPublishSlotAndIsRefused(t *testing.T) {
+	rs, out, errb := cycleState(t, record.Machine)
 
 	// A closed publish road is not a broken pass: the reconciliation
 	// succeeds and reports every branch.
-	require.NoError(t, autoAction{}.Execute(t.Context(), rs))
+	require.NoError(t, cycleAction{}.Execute(t.Context(), rs))
 	assert.Contains(t, out.String(), "dockhand/jq-1.8", "the pass still reports")
 	assert.Contains(t, errb.String(), "the machine publish road is disabled at build time",
 		"and says once that the road it was asked to walk is closed")
@@ -275,38 +311,53 @@ func TestAutoHandsTheReconcilerAPublishSlotAndIsRefused(t *testing.T) {
 // non-zero every ten minutes because a road it was never asked to walk
 // is closed would read as a broken machine in every log that watched it;
 // what DOES deserve the exit is unfinished work, which is 62.
-func TestAutoExitsZeroOverAClosedPublishRoad(t *testing.T) {
-	repo, _ := lifecycleRepo(t)
-	var out, errb bytes.Buffer
-	rs := &runstate.Context{TreeRoot: repo.Root, Tools: testFinder(),
-		Invoker: record.Machine, MachinePublish: machinePublishEnabled,
-		Out: &out, Err: &errb}
+func TestCycleAsTheMachineExitsZeroOverAClosedPublishRoad(t *testing.T) {
+	rs, _, _ := cycleState(t, record.Machine)
 
-	err := autoAction{}.Execute(t.Context(), rs)
+	err := cycleAction{}.Execute(t.Context(), rs)
 	require.NoError(t, err)
 	assert.Equal(t, exitcode.OK, ExitCode(err))
 }
 
-// And the slot is handed in by `auto` alone. status and clean run the
-// same pass and neither may open a pull request as a side effect of
-// being run, so a Publish literal appearing in either of their opts is
-// the ruling broken.
-func TestOnlyAutoHandsInAPublishSlot(t *testing.T) {
-	for _, f := range []struct{ file, verb string }{
-		{"status.go", "status"},
-		{"clean.go", "clean"},
-	} {
-		src, err := os.ReadFile(f.file)
-		require.NoError(t, err)
-		assert.NotContains(t, string(src), "Publish:",
-			"%s runs the same pass and must not publish as a side effect of being run", f.verb)
-	}
-	src, err := os.ReadFile("auto.go")
+// And the slot is handed in under the machine invoker alone (D27, ruled
+// 2026-09-05 with its implementation, pending the maintainer). The slot
+// is the machine road by construction, so a person's cycle handing one
+// in would be a machine publication typed by a person — the mirror of
+// promote-is-human. Pinned two ways: by behaviour, a person's cycle
+// never reaches the build gate whose refusal a machine's cycle prints;
+// and by source, status.go constructs no slot at all and the one
+// construction in the command tree lives in cycle.go behind the
+// invoker check.
+func TestOnlyTheMachinesCycleHandsInAPublishSlot(t *testing.T) {
+	rs, out, errb := cycleState(t, record.Human)
+	require.NoError(t, cycleAction{}.Execute(t.Context(), rs))
+	assert.Contains(t, out.String(), "dockhand/jq-1.8", "a person's cycle runs the pass")
+	assert.NotContains(t, errb.String(), "machine publish road",
+		"and never walks the publish road, so the road's gate is never asked")
+
+	src, err := os.ReadFile("status.go")
+	require.NoError(t, err)
+	assert.NotContains(t, string(src), "Publish", "status reports and must not publish as a side effect of being run")
+	src, err = os.ReadFile("cycle.go")
 	require.NoError(t, err)
 	assert.Contains(t, string(src), "Publish: slot",
-		"the unattended entrypoint is where the slot is handed in")
+		"cycle is where the slot is handed in")
+	assert.Contains(t, string(src), "if rs.Invoker == record.Machine {",
+		"behind the invoker check")
 	assert.Contains(t, string(src), "return slot.Outcome()",
-		"and where the pass's own exit comes from")
+		"and where the machine's pass gets its own exit")
+	tree, err := os.ReadDir(".")
+	require.NoError(t, err)
+	for _, e := range tree {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "cycle.go" {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		require.NoError(t, err)
+		assert.NotContains(t, string(src), "engine.PublishSlot{",
+			"%s: the one construction of a publish slot in the command tree is cycle.go's", name)
+	}
 }
 
 // A person's promote is untouched by any of this: the invoker is the

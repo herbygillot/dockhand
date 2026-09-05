@@ -1,6 +1,6 @@
 package engine
 
-// `clean --superseded`: the one thing in this tree that removes a
+// `cycle --superseded`: the one thing in this tree that removes a
 // branch for having been superseded.
 //
 // A supersede is recorded at mint and does nothing else. The newer
@@ -13,12 +13,12 @@ package engine
 // not earned yet, a fork copy backing an open pull request, or simply
 // the diff somebody wanted to look at again.
 //
-// So removal is a separate flag on a separate verb, and the flag is the
-// person saying they meant it. Nothing else touches a superseded branch:
-// not the merged-PR sweep, which retires on the forge's word rather than
-// on ours; not the reconciler, which reports; and not the machine's
-// publish slot, which steps over a superseded branch entirely rather
-// than acting on one.
+// So removal is a separate flag, and the flag is the person saying they
+// meant it. Nothing else touches a superseded branch: not `cycle`'s
+// merged-PR retirement, which retires on the forge's word rather than
+// on ours; not `status`, which reports; and not the machine's publish
+// slot, which steps over a superseded branch entirely rather than
+// acting on one.
 //
 // It asks the notes and never the forge. Being superseded is a local
 // fact about two branches in one namespace, so this sweep costs no gh
@@ -56,8 +56,8 @@ func (e *Engine) CleanSuperseded(ctx context.Context, repo *git.Repo) ([]render.
 	}
 	var said []render.Line
 	// One row per branch this sweep had something to say about, in the
-	// sweep's own column so `clean` and `clean --superseded` line up on a
-	// terminal. The newline BranchLine carries is the printer's, and a
+	// report's own column so `cycle` and `cycle --superseded` line up on
+	// a terminal. The newline BranchLine carries is the printer's, and a
 	// Line's text never holds one.
 	row := func(branch, standing string) {
 		said = append(said, render.Line{Stream: render.ToOut,

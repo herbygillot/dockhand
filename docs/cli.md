@@ -53,7 +53,8 @@ changes checks the branch out themselves; `status` warns when a tip has
 moved past the sha verification tested, `verify` cancels the stale run and
 resubmits the tip, and `promote` refuses an unverified tip. The stage
 verbs consume branches and shas rather than plan files — `verify` tests a
-commit, whoever made it; `status` reconciles the `dockhand/*` namespace;
+commit, whoever made it; `status` observes the `dockhand/*` namespace and
+any other branch carrying a verify note, and `cycle` acts on what it found;
 `promote` pushes the branch it finds, and first searches upstream's
 open PRs by the `<port>:` title convention: an identical title is
 refused as a duplicate (exit 20, `--no-pr-check` overrides), a
@@ -82,21 +83,20 @@ unmoved version predates the change. `promote --force` keeps its name
 and is a different act — force-push the fork copy (with lease) and
 refresh the open PR's title and body — because it moves a branch
 dockhand published rather than destroying one it minted. `status` reports each
-promoted branch's PR state and performs one deletion — a branch whose
-PR merged is cleaned, announced, its fork copy deleted with it — while
-`clean` remains the explicit sweep: PR state from
-GitHub decides merged (the project's merge styles rewrite shas as commits
-land, so ancestry proves nothing), confirmed by byte-comparing the touched
-paths against upstream; closed-unmerged branches are kept and flagged. The
+promoted branch's PR state and deletes nothing (D27): a branch whose PR
+merged is reported as merged, and its line names `dockhand cycle`, which
+retires it — locally, and its fork copy with it. PR state from GitHub
+decides merged (the project's merge styles rewrite shas as commits land, so
+ancestry proves nothing); closed-unmerged branches are kept and flagged. The
 pipe below, and every plan-file argument in this document, describe the
 superseded surface.
 
 **Auto mode is declared, never inferred (2026-09-02).** The invoker is a
 **person** for every verb unless the invocation says otherwise, and there
-are exactly three ways to say otherwise:
+are exactly two ways to say otherwise (the `auto` verb was a third until
+D27 retired it into `cycle --auto`):
 
 ```
-dockhand auto                  # the verb IS the declaration
 dockhand <verb> --auto         # the persistent flag, on any verb
 DOCKHAND_AUTO=1 dockhand ...   # the environment, for a launchd plist
 ```
@@ -121,11 +121,50 @@ gate that turns on an invoker takes one as a parameter at its own call site;
 reading a driver back off a record to decide what the unattended road may do
 would let a change authorize itself by claiming its own history.
 
-**`dockhand auto`** is one unattended reconciler pass — the cron and launchd
-entrypoint. It runs the same pass `status` runs (observe, judge, retire,
-drain) and adds the one thing `status` and `clean` must never do: it hands
-the reconciler a **publish slot**. Publication through that slot is refused
-on this build; see `24` below.
+**`dockhand status`** observes and settles (D27). It reads every branch
+dockhand has something to say about — the `dockhand/*` namespace and any
+other local branch whose tip carries a verify note — polls their workers,
+writes what they said into the ledger, releases the guest of a run whose
+verdict says so, and renders. It makes no change anybody else can see: no
+branch is deleted here or on the fork, no queued run is started, nothing is
+published. Where work is waiting the report says so and names `dockhand
+cycle` beside the finding — a queued run reads "`dockhand cycle` starts
+it", a merged pull request "`dockhand cycle` retires the branch" — because
+with the split nothing begins on its own. **`--no-update`** is the pure
+read: the ledger as written, polling nothing, writing nothing, taking no
+locks and asking no forge or provider, so the pull request standings and
+the worker audit are not shown and the report says so on its first line.
+`--no-clean` is gone: it withheld a deletion `status` no longer performs.
+
+**`dockhand cycle`** does what `status` reports. It runs the same pass and
+then retires the branch of a merged pull request, locally and on the fork
+(**`--keep-merged`** withholds it, and each kept branch's line says why it
+stands); removes the branches a newer sibling replaced when asked
+(`--superseded`, as `clean` had it); reclaims the untracked workers this
+checkout may claim when asked (**`--reclaim-orphans`** — a worker another
+checkout started is named and left to that checkout's own `cycle`); and
+starts what was deferred. Only a branch dockhand minted is ever deleted: a
+hand-made branch carrying a verify note is shown, settled and left alone,
+whatever its pull request did. `clean` is retired; `cycle` is `clean` plus
+the rest.
+
+**`dockhand cycle --auto`** is one unattended reconciler pass — the cron and
+launchd entrypoint, and what the `auto` verb used to be. It is `cycle` run
+as the machine, and the declaration is what hands the reconciler the one
+thing a person's `cycle` must never carry: a **publish slot**. Publication
+through that slot is refused on this build; see `24` below. A person's
+`cycle` publishes nothing.
+
+**`--keep-env`** on `verify` and on the `bump` family (`bump`,
+`bump-revision` including `--for`, `refresh-checksums`) keeps a passing
+run's environment the way a failure's is kept by rule (D27): recorded on
+the run when it is submitted, carried through a deferral, and honoured
+when the run settles — `status` then says "environment kept" beside the
+pass, and `dockhand shell` reaches it until `cancel` or `discard` gives it
+back. It rides a submitted run, so `verify <portdir>` and the `--verify`
+gate — which wait for their verdict and release in the same breath —
+refuse it rather than drop it. Not a flag on `status` or `cycle`: by the
+time either settles, the release is in the same pass.
 
 **`dockhand hold <branch> [--reason ...]`** stops a change: nothing will
 publish, verify or retire it until `dockhand unhold <branch>` releases it.
@@ -142,9 +181,9 @@ unattended pass may cause is a supersede, which happens at another branch's
 mint and is about the commit having been replaced rather than about
 anybody's patience.
 
-**`dockhand clean --superseded`** is the intentional removal of branches a
+**`dockhand cycle --superseded`** is the intentional removal of branches a
 newer sibling replaced. It is the only thing in the tool that removes a
-branch for having been superseded: the ordinary sweep, the report, the drain
+branch for having been superseded: the ordinary pass, the report, the drain
 and the machine's publish slot all leave one exactly where it is.
 
 **`--to-pr`** asks a write intent to carry the change through to a pull
@@ -560,10 +599,10 @@ of everything downstream:
   queued runs; passed-but-unpromoted; held; the two quiet end states (a PR
   closed without merging, a branch a newer sibling replaced); everything
   else in the order it arrived. Within a band the enumeration order
-  survives. The ordering is imposed in the two renderings `status` performs
-  and nowhere lower: a sort applied to the pass itself would reorder
-  `clean`, which asks one question of each branch and has no attention to
-  order by. The window is the same 72 hours for every tier — a literal
+  survives. The ordering is imposed in the renderings — `status`'s two and
+  `cycle`'s — and nowhere lower: a sort applied to the pass itself would
+  reorder what the pass did before it was said, and what `cycle` did to a
+  branch travels with the branch. The window is the same 72 hours for every tier — a literal
   reading would give nomaintainer ports, 63.5% of the tree, no window at all
   — and what the tier decides is what the elapsed window *means*, which is
   what the follow-up draft can honestly say.
@@ -722,7 +761,7 @@ ever going to ride, which puts the decline back at `10`.
 | Code | Name | What happened |
 |---|---|---|
 | `20` | `DuplicatePR` | an open upstream PR already proposes this change; join it, `--title`, or `--no-pr-check` |
-| `21` | `PRMerged` | the branch's own PR already merged — a dead end, not a conflict; `dockhand clean` retires it |
+| `21` | `PRMerged` | the branch's own PR already merged — a dead end, not a conflict; `dockhand cycle` retires it |
 | `22` | `Superseded` | work a newer sibling has already replaced: a followed run whose branch moved out from under it |
 | `23` | `Held` | a branch deliberately held back: `dockhand hold` placed it, a prerelease target was born under it, or a publication-time re-witness found upstream serving other bytes |
 | `24` | `MachineGate` | a road refused this invoker where a person asking for the same thing would be allowed it — see the four reasons below |
@@ -786,7 +825,7 @@ exits `0`: the contract narrowing rather than failing.
 `34` and `36` are the synchronous halves of a pair. Met by a submit that
 defers instead, the same two facts are `61` and `60` — the difference is
 whether anyone is still standing there, and whether a run was recorded for
-`status` to start.
+`cycle` to start.
 
 Four asks wait for their answer and then leave, so four stamp `36`: the
 `--verify` gate, `verify <portdir>`, `exec`, and `provision`. The provider
@@ -844,15 +883,16 @@ band by default.
 
 | Code | Name | What happened |
 |---|---|---|
-| `60` | `VerifyQueued` | a run deferred for want of a slot, or a followed run the settle found still queued; `dockhand status` starts it when one frees |
+| `60` | `VerifyQueued` | a run deferred for want of a slot, or a followed run the settle found still queued; `dockhand cycle` starts it when one frees, and `dockhand status` names it |
 | `61` | `VerifyAwaitingSlot` | a run queued for an environment this machine has not provisioned yet |
 | `62` | `PromotionPending` | an unattended pass left publication work unfinished: a verification still running (`promotion-pending`), a forge that would not answer (`forge-lookup-failed`, which exits `52`), or the pass's own per-pass cap and pacing (`pass-limit`) |
 
 Nothing here failed. These must never share a band with a refusal, because
 the remedy is to ask again rather than to fix anything.
 
-`62` is what `dockhand auto` exits with when its publish slot has work left
-over, and it deliberately reports only the **waiting**. A refusal is stated
+`62` is what `dockhand cycle --auto` exits with when its publish slot has
+work left over — a person's `cycle` hands in no slot and cannot reach it —
+and it deliberately reports only the **waiting**. A refusal is stated
 on the branch it is about and does not become the pass's status: on this
 build every candidate is refused with `machine-publish-disabled`, and a cron
 entry that exited non-zero every ten minutes because a road it was never
@@ -992,6 +1032,14 @@ or one blind spot. `--diff` gets no such document: its stdout is a patch
 somebody pipes into `git apply`, and one flag with two output languages
 breaks the consumer that trusts it.
 
+`status --json` carries no `cleaned` key (D27): `status` cleans nothing, so
+the key could never have been true, and a key that is always false is a
+promise the document cannot keep. Each branch says `minted` instead —
+`false` is a hand-made branch observed for the verify note it carries — and
+a `--no-update` read marks the whole document `as_recorded: true`, so a
+running run's stale state and a promoted branch's missing pull request are
+read as unasked rather than as answers.
+
 `status --json` publishes the twin on its failure paths for the same
 reason. A pass that never reached a report has nothing to report, so the
 document is the twin and nothing else:
@@ -1012,7 +1060,7 @@ document.
 verification could not start leaves the branch standing — the git
 commit/push shape, where a failed push never deletes the commit — and the
 exit says which of four things happened, because they do not share a remedy:
-every slot busy, `60`, and `dockhand status` starts it when one frees; the
+every slot busy, `60`, and `dockhand cycle` starts it when one frees; the
 release not provisioned, `61`, and it starts when someone provisions it; the
 provider unable to run the request at all, `72`, which nothing will free;
 the submit broken after the mint, `80`. The message names the follow-up

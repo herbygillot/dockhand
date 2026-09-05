@@ -87,6 +87,11 @@ type CohortOpts struct {
 	// refuses.
 	Test  bool
 	Trace bool
+	// KeepEnv keeps the cohort's environment after a pass, as --keep-env
+	// does on the single-port road (D27). One flag for one guest: the
+	// cohort builds in one environment, so the ask is stamped on every
+	// member's run and the guest stands when any of them asked.
+	KeepEnv bool
 	// Platform is the release to verify the cohort on; the zero value
 	// takes the provider's default. Already parsed by the caller, as
 	// everywhere else in the engine: flag parsing is the CLI's business.
@@ -197,7 +202,7 @@ func (e *Engine) BuildCohort(ctx context.Context, repo *git.Repo, target string,
 		}
 	}
 	return e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: newTip, RelPort: head.Portdir},
-		submission{Port: head.Port, Release: o.Platform, Test: o.Test, Trace: o.Trace,
+		submission{Port: head.Port, Release: o.Platform, Test: o.Test, KeepEnv: o.KeepEnv, Trace: o.Trace,
 			Members: cohortRoster(head, built, apart), Withheld: held})
 }
 

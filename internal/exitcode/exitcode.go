@@ -146,7 +146,8 @@ const (
 // never share a band with a refusal.
 const (
 	// VerifyQueued is a run deferred for want of a slot; `dockhand
-	// status` starts it when one frees.
+	// cycle` starts it when one frees, and `dockhand status` names it
+	// (D27).
 	VerifyQueued = 60
 	// VerifyAwaitingSlot is a run queued for an environment this
 	// machine does not have provisioned yet.
