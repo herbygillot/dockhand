@@ -38,7 +38,7 @@ tart list
   `tart list` shows the base and golden images and **no** `dockhand-worker-*`.
 - **A finding:** `doctor` reporting a base it cannot clone. Not a finding, but
   stop anyway: a `dockhand-worker-*` already listed means both licence slots
-  may not be free — delete it (`tart delete <name>`) or wait.
+  may not be free — reclaim it (`dockhand cycle --reclaim-orphans`) or wait.
 
 Everything below runs in a `macports-ports` checkout with your fork as a
 remote. Use `/tmp/dockhand` explicitly so an older installed binary cannot be
@@ -90,8 +90,9 @@ cleanup step below switches away first. Without that, `discard` fails with
 computes what a branch changes as the diff from its merge base with the
 *local* primary branch — `PrimaryBranch` is documented to never fetch, so
 the local position is the answer, staleness included (D21). Meanwhile
-`status` runs a retire sweep that can advance `origin/master` underneath
-you when one of your own PRs merges. Cut a branch from `origin/master`
+`cycle` runs a retire sweep that can advance `origin/master` underneath
+you when one of your own PRs merges (`status` only reports the merge,
+since D27). Cut a branch from `origin/master`
 after that, and every upstream commit your local `master` has not caught
 up to becomes part of what dockhand thinks your branch changes — it will
 add those ports to the cohort and build them. Observed live: a branch
@@ -113,11 +114,13 @@ a run on a current binary must not.
 **A1. Make a one-portdir branch by hand.** Any small, quick port you can
 build; `devel/oniguruma6` is used below because part B needs it anyway.
 
-**The branch has to be named inside the `dockhand/` namespace.** `verify`,
-`shell` and `discard` take any branch name — `Engine.Resolve` accepts one
-outright — but `status` enumerates `refs/heads/dockhand/*` and nothing else,
-so a branch named anything else is verifiable and invisible. A4 below reads
-the result off `status`, and would have nothing to read.
+**The branch may be named anything, since D27.** `verify`, `shell` and
+`discard` take any branch name — `Engine.Resolve` accepts one outright —
+and `status` now lists, beside `refs/heads/dockhand/*`, every local branch
+whose tip carries a verify note, so a hand-made branch is verifiable and
+visible (and never deleted by `cycle`, whatever its pull request did).
+The recipe keeps the `dockhand/` name anyway, so that A4 reads the same off
+a binary from before the fold-in, where such a branch was invisible.
 
 ```
 cd <macports-ports checkout>
@@ -493,7 +496,7 @@ tart list                                 # expect: no dockhand-worker-*
 
 4. **Recover the machine.** In order: `dockhand cancel <branch>` (releases the
    worker), `dockhand discard <branch>` (drops the branch and its note),
-   `tart list` and `tart delete <name>` for anything left behind, and
+   `tart list`, and `dockhand cycle --reclaim-orphans` for anything left behind, and
    `dockhand status` once more — its orphan audit names workers no note
    accounts for.
 

@@ -18,39 +18,6 @@ the Portfile in the PR's head tree, read the way dockhand reads any
 Portfile — is deferred: it answers for every PR rather than only
 dockhand's own, at the cost of a fetch per candidate.
 
-## `verify` promises a view that cannot show the branch
-
-**Found in the live check (2026-09-03).** `verify` on a branch outside the
-`dockhand/` namespace succeeds, mints a schema-3 note, and closes with
-*"`dockhand status` follows it"* — but `status` never shows it.
-`Engine.Resolve` accepts any branch outright
-(`internal/engine/resolve.go`), while `Engine.Reconcile` enumerates
-`repo.Branches(ctx, git.BranchNamespace)` and nothing else. So the note
-exists, the worker runs, and the view our own epilogue points at is
-structurally incapable of mentioning either.
-
-Observed on a hand-made `erasure-test` branch: verification submitted and
-ran correctly, note written at the branch tip, and `status` listed the
-sixteen `dockhand/*` branches without it.
-
-**Three ways out, in ascending order of how much they change.**
-
-1. Say less: drop the `status` clause from the verify epilogue when the
-   resolved branch is outside the namespace. Honest, one render change,
-   and it leaves the user with no way to follow the job they just started.
-2. Refuse: `verify` only accepts namespaced branches. Simple, and it
-   removes an escape hatch that costs nothing and is genuinely handy.
-3. Show it: `Reconcile` also lists non-namespaced branches that carry a
-   verify note. The ledger is keyed by commit, not by branch name, so the
-   note is already findable; the namespace walk is the only thing hiding
-   it. This is the one that matches how custody actually works — a note
-   that no view surfaces is a gap in the board, not a branch that deserves
-   silence.
-
-Leaning (3), which is why this is a TODO and not a one-line fix: it widens
-what `status` walks, and that touches the retire sweep, the forge lookups
-per branch, and every status golden. Worth doing deliberately.
-
 ## `discard` calls the tracked remote "the fork"
 
 **What remains of "a tracked upstream is not a push" (shipped 2026-09-05
@@ -75,162 +42,6 @@ under a checkout whose local primary stands still, and the sweep says
 nothing when it does. A line there — "origin/master moved past your
 master by N commit(s); a branch cut from it will carry them" — would
 put the warning at the cause rather than only at the symptom.
-
-## `status` should only report; a `cycle` verb should do the work
-
-**The ask (maintainer, 2026-09-04).** Reverse `status`'s mandate so it
-is purely read-only, and introduce `dockhand cycle` to carry the pump
-and the flush.
-
-**What `status` does today, beyond reporting.** `statusAction` calls
-`Reconcile` with `Drain: true`, and that pass has four phases, three of
-which write:
-
-1. **Settle.** `inspect` polls each branch's job and, when one has
-   finished, writes its verdict into the note and releases the worker.
-2. **Retire.** A branch whose pull request merged is deleted — locally
-   and on the fork. The report says so as it happens: `removed
-   dockhand/edit-2.0.0 from "herby"`, `discarded dockhand/edit-2.0.0`.
-3. **The publish slot.** `publishPass` runs the machine's publication
-   road, gated by `GateRing3`.
-4. **Drain.** `PumpDeferred` submits what was queued, which boots VMs.
-
-So a command named `status` can delete a local branch, delete a remote
-branch, write notes, release and boot virtual machines, and — on a build
-where the road is enabled — publish. Observed during the live check:
-`status` deleted two merged branches mid-run, and separately advanced
-`origin/master` underneath a checkout, which is what caused the stale
-primary finding above.
-
-**Why this is worth doing.** The name is a promise and it is not being
-kept: `status` is the one verb a person types to find out where things
-stand, including when they are unsure what state the tree is in — which
-is exactly when they least want it acting. It is also the verb a script
-or a watch loop reaches for, and there is currently no way to ask "what
-is the state" without also asking "and change it".
-
-**Shape.** `Reconcile` already separates the phases behind `ReconcileOpts`
-(`RetireOnly` is `clean`'s shape, `NoClean` withholds the deletion,
-`Drain` gates the pump), so the split is mostly a matter of which verb
-sets which flag rather than new machinery. `cycle` would be
-settle + retire + publish slot + drain; `status` would be the observation
-and the rendering alone.
-
-**Where the line falls (maintainer, 2026-09-04).** `status` **keeps
-settling**. Reconciling what the workers did into the ledger is reading
-the world and writing down what it said, and a report that left a
-finished job reading `verifying` would be a worse lie than the write it
-avoided. What moves to `cycle` is anything that acts on the world:
-
-- deleting branches and pull requests (retire, and `clean`'s sweep)
-- submitting work and starting workers (the drain)
-- publishing a pull request (the publish slot)
-
-So "read-only" here means **makes no change anybody else can see** — not
-"writes no bytes". The ledger is dockhand's own account of what it
-observed; a branch, a PR and a VM are the world.
-
-**A boundary this ruling settles by implication, worth stating.**
-Settling *releases* the worker of a finished run, and releasing destroys
-a VM. That stays with `status`: the line drawn is at *starting* work,
-and a released environment is the last step of the verdict being written
-rather than an action of its own. The failure path already keeps its
-environment deliberately, so nothing a person still needs is taken away.
-
-**`status` names the remedy (maintainer, 2026-09-04).** Where work is
-waiting, the report says so and names `dockhand cycle`. With the split
-nothing begins on its own, and a queued run that nobody is told about is
-a run that never starts. This is the same remedy-beside-the-finding
-shape the rest of the output already uses, so it is wording rather than
-machinery — but it is load-bearing wording, and its absence would be the
-whole feature's failure mode.
-
-**`clean` folds into `cycle` (maintainer, 2026-09-04, confirmed).**
-`cycle` cleans a branch locally and off the fork when its upstream PR
-merged, and `--keep-<x>` flags withhold each specific thing it would
-otherwise remove.
-
-**What `--keep` should cover.** Today's deletions and releases, so that
-one flag means "act on the world, but take nothing away":
-
-1. **Merged-PR branches** — retire's deletion, local and the fork copy.
-   The named case, and today's `status --no-clean`.
-2. **Superseded branches** — `clean --superseded`. Already conservative
-   by ruling: a supersede is dockhand's own inference, so nothing removes
-   one without being asked. `--keep` should keep it that way rather than
-   quietly inheriting a sweep.
-3. **The environment of a passing run.** Settle releases it; a failure
-   keeps it deliberately. Under `--keep` a green run could hold its guest
-   too, which is what a person wants when the question is "it passed, but
-   what did it actually install?" Weigh against capacity: a kept
-   environment is a spent slot, and two of those is the whole licence.
-4. **Untracked workers.** `status` reports orphans and removes nothing.
-   If `cycle` ever reclaims them, that is a deletion and belongs behind
-   the same flag.
-
-**One flag per concept, not a universal `--keep` (maintainer,
-2026-09-04).** A single flag over all of these would be hard to aim: a
-person withholding one deletion would withhold three, and would have to
-know which three.
-
-There is a second reason the universal flag cannot work, which the list
-above makes visible only once it is written out — **these do not share a
-default.** Removing a merged PR's branch happens today unless asked
-otherwise; removing a superseded branch happens only when asked, by
-ruling, because a supersede is dockhand's own inference. So a uniform
-`--keep-x` family would be withholding for one and meaningless for the
-other. The vocabulary has to follow the default:
-
-- **on by default, `--keep-…` withholds it** — merged-PR branches
-  (`--keep-merged`), which is today's `status --no-clean` under a name
-  that says what it keeps.
-- **off by default, a plain `--…` asks for it** — superseded branches
-  (`--superseded`, the flag `clean` already carries), and reclaiming
-  untracked workers if `cycle` ever does that at all.
-
-**The passing run's environment: decided at submit, not at settle
-(maintainer, 2026-09-04).** All three options above were the wrong
-frame. By the moment `status` settles a green run the release happens in
-the same pass, so no flag on `status` or `cycle` could intervene, and
-the person who wants to look inside a green build knows it when they
-start the run. So: `--keep-env` on `verify` and on the `bump` family,
-recorded on the run the way `Test` and `Trace` are, honoured wherever
-release happens. The failure path's keep-by-rule gets a sibling,
-keep-by-request. `cycle` never touches passing environments.
-
-**Settle stays in `status` (maintainer, 2026-09-04, reconsidered and
-confirmed).** Settle is the one write that makes `status` truthful:
-every other write in `Reconcile` changes the world, settle changes the
-report to match a world that already changed. Moving it out would make
-`status` show "verifying" over a guest that finished an hour ago until
-somebody ran `cycle`, in the commonest loop the tool has, and would
-hold green guests' slots on a two-slot licence. The pure read exists
-for the cases that want it — a watch loop that must not take locks, a
-script that wants the notes and only the notes — as **`status
---no-update`**: show the ledger as written, poll nothing, write
-nothing.
-
-**`cycle --reclaim-orphans` (maintainer, 2026-09-04).** Untracked
-workers — VMs no note claims — are reported by `status` and removed by
-nobody. `cycle` may remove them, opt-in, following the vocabulary rule:
-this is new, it destroys environments nobody has characterised, so it
-is a plain flag that asks for it and not a default with a keep.
-
-**Design complete (2026-09-04); what remains is the work.**
-
-- `status`: observe, settle, render. Names `cycle` where work is waiting.
-  `--no-update` is the pure read. `--no-clean` is dropped — it withheld a
-  deletion `status` no longer does; pre-release, no shim.
-- `cycle`: retire merged-PR branches locally and off the fork
-  (`--keep-merged` withholds), `--superseded` as `clean` had it,
-  `--reclaim-orphans`, the drain, the publish slot. `clean` is retired.
-- `verify` / `bump` family: `--keep-env`, on the run.
-- Exit codes: `status` keeps the observation bands; a band a write
-  caused belongs to `cycle` now.
-- Goldens: every `status` golden showing a retirement or a drain line
-  moves to `cycle`.
-
-Discussed as asked; recorded as D27.
 
 ## Let a person force a withheld member to build
 
@@ -331,3 +142,40 @@ depend on each other. A topological sort at submit, stable within ties,
 would close it. In the same place: `launch` writes a `requires.<i>` for
 every member, empty ones included, one `tart exec` each; the runner
 tolerates a missing file, so the empty ones need not be written.
+
+## What remains of `status`/`cycle`
+
+**What remains of "`status` should only report; a `cycle` verb should do
+the work" and of "`verify` promises a view that cannot show the branch"
+(both shipped 2026-09-05 as `8daff2f`).** The split landed whole, with
+twelve points the design left open ruled by the implementation and
+stated as pending where each lands in the code (the run log has the
+list). Five facets the review left behind, none a defect:
+
+1. **`cycle`'s own report names `cycle`.** The report is taken before
+   the drain by design, so a queued run this pass starts reads
+   "`dockhand cycle` starts it" on stdout above the "verify: submitted"
+   line on stderr. A reader of stdout alone is told to run the verb they
+   just ran. `Report.Text` could drop the remedy when it carries drain
+   lines.
+2. **Four spellings of one remedy**, each a one-for-one carry of the old
+   `status` spelling: "starts it" (render), "starts it when it can"
+   (`verdict.QueuedError`, `engine.VerifyDeferredError`), "starts it when
+   one frees" (`cli.md`, `exitcode`), "retries them as remedies are met"
+   (the verify summary). Consistent relative to before; one spelling
+   would be better.
+3. **`internal/verify/verify.go`'s doc comments still name `cycle`.**
+   The ruling that a provider package names no CLI verb is met by the
+   recorded sentence (`CapacityError.Error()`); the prose reintroduces
+   the coupling in comments only.
+4. **The reclaim-before-drain order is pinned by code and comment only.**
+   `verifytest.Fake` keeps Released and Submitted in separate slices
+   with no shared timeline, so no test can assert that the slot reclaim
+   freed was the one the drain used. A timeline on the fake would pin
+   it.
+5. **A noted hand-made branch is shown, settled and drained, and nothing
+   else.** `inFlight` (revbump-proposal exclusion), the sweep's standing
+   branches, `supersedeSiblings` and `Resolve` stay on the namespace, as
+   the readers recommended: each is a fact about what dockhand minted.
+   Whether a hand-made branch verifying a port should keep a proposal
+   from naming that port again is a question, not an omission.
