@@ -131,8 +131,17 @@ type OutcomeRow struct {
 	AskedBy     Driver   `json:"asked_by"`
 	PublishedBy Driver   `json:"published_by"`
 	Evidence    Evidence `json:"evidence"`
-	PRNumber    int      `json:"pr_number,omitempty"`
-	PublishedAt string   `json:"published_at"`
+	// Unproven is how many members the change published without a pass
+	// — dependents that failed, were blocked, or were withheld. Zero, and
+	// omitted, for a change where everything built. The dependents are
+	// best effort (D24), so a verified row can carry unproven members,
+	// and the trust ladder's audit needs to tell that population from
+	// the one where everything built: their complaint rates may differ,
+	// and the evidence for a rung must be able to say which population
+	// it was drawn from (D26).
+	Unproven    int    `json:"unproven,omitempty"`
+	PRNumber    int    `json:"pr_number,omitempty"`
+	PublishedAt string `json:"published_at"`
 
 	// Outcome, MergeSha and SettledAt are the closing row's own. They
 	// are empty on an opening row, and an empty Outcome is what makes a

@@ -1150,3 +1150,49 @@ member that stopped the run. After the fix there may be several
 failures and several skips, each blamed on its own prerequisite, and
 the seven cohort corpus fixtures, all two-member pairs with a real
 edge, will need siblings with independent members.
+
+## D26 — The human workflow first; the audit row says what a promotion carried
+
+**Decision.** Two rulings, one about priority and one about evidence,
+made together because the second is what keeps the first honest later.
+
+**Machine publication is deprioritized.** The overhaul's last step was
+written to end at the R3 flip — the machine publishing unattended once
+the trust ladder's numbers arrived. That is not where the work goes
+now. What comes first is the human workflow, fully fleshed out: bump,
+verify, the cohort, promote, and the report a person reads between
+them, each complete and each honest about what it did. The machine
+road stays as built and stays off at build time; its gate follows the
+human gate by D24, and nothing about it is wrong. It is simply not the
+thing to finish next. The ladder's bookkeeping — the queries that
+compute each rung's numbers, the R3 flip itself — joins the providers
+and the upstream sources in a roadmap dated after the overhaul is
+declared done.
+
+Concretely, the last step is what the live check of 2026-09-03/04
+found wanting on the human road, most of it already recorded in
+`docs/todo.md`: `status` reporting and a `cycle` verb acting; the
+runner continuing past a failure that other members do not depend on;
+a failed member saying for itself, in the body's member list, why it
+carries no proof; a way to read the body without publishing it; the
+stale primary and the tracked-upstream inference; the stranger named
+as a later member's dependency; the option to force a withheld member
+to build; `verdict.Weigh`, which nothing calls; and a bound on the body
+now that the cap is off.
+
+**The audit row records what a promotion carried.** Every promotion
+appends a row to `refs/notes/dockhand/outcome`, and until now the row
+said only whether the change was verified. With the dependents best
+effort, a verified change can carry members that failed, were blocked,
+or were withheld — and the trust ladder's entry evidence, when it is
+eventually computed, must be able to tell that population from the one
+where everything built, because their complaint rates may differ and a
+number reaching fifty across a population that changed midway would
+tell an auditor of the flip nothing. So the row carries `unproven`: how
+many members were published without a pass, zero and omitted where
+everything built. It is one field written at promote time from the
+same reading the author is shown on stderr, so the two cannot
+disagree. The promotions already recorded count toward the ladder —
+the ladder measures what reviewers decided about real pull requests,
+and the gate that admitted each does not change what the reviewer
+did — and from this row on, which gate that was is on the record.

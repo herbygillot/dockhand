@@ -58,6 +58,8 @@ type Publication struct {
 	// before the field existed and the only answer available for one
 	// dockhand did not mint.
 	AskedBy record.Driver
+	// Unproven is how many members were published without a pass.
+	Unproven int
 }
 
 // Publish records a publication in the audit log — the opening row of
@@ -87,10 +89,11 @@ func (e *Engine) Publish(ctx context.Context, repo *git.Repo, p Publication) err
 		evidence = record.Verified
 	}
 	return e.Ledger(repo).Outcome(ctx, record.OutcomeRow{
-		MintSha: p.MintSha,
-		Branch:  p.Branch,
-		Port:    p.Port,
-		Target:  targetOr(p.Target, p.Branch, p.Port),
+		MintSha:  p.MintSha,
+		Branch:   p.Branch,
+		Port:     p.Port,
+		Unproven: p.Unproven,
+		Target:   targetOr(p.Target, p.Branch, p.Port),
 		// Every mint today has exactly one named target — the intent road
 		// refuses a second — so there is nothing that could make this
 		// anything else, and writing it as a constant is the honest way to

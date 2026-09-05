@@ -125,8 +125,16 @@ func Names(r record.Record) bool { return len(r.Subjects) > 1 }
 func DependentsNotProven(r record.Record) []string {
 	head := r.Headline().Port
 	var out []string
+	unproven := map[string]bool{}
+	for _, p := range r.UnprovenMembers() {
+		unproven[p] = true
+	}
 	for _, ref := range Runs(r) {
-		if ref.Port == head || ref.Run.State == record.Passed {
+		// One reading with the audit row: the members named here are
+		// exactly the ones the row counts. A member with a pass elsewhere
+		// is not listed for its other platforms, and a port declining a
+		// platform is not "unproven" on it.
+		if ref.Port == head || !unproven[ref.Port] || ref.Run.State == record.Passed {
 			continue
 		}
 		line := "promoting with " + ref.Port + " not proven on " + ref.Platform +

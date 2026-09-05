@@ -323,6 +323,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	pub := Publication{MintSha: tip, Branch: branch,
 		Port: n.Headline().Port, Target: n.Headline().Target,
 		Verified: verified, Invoker: o.invoker(),
+		Unproven: len(n.UnprovenMembers()),
 		// Who ASKED, as the record remembers, beside who is publishing.
 		// The two part company on exactly the shape the slot exists to
 		// produce — a person queues a change and an unattended pass puts it

@@ -269,3 +269,31 @@ func TestAnOutcomeRowThatCannotBeWrittenIsAWarningOnTheReport(t *testing.T) {
 		"prose about the audit is never document content: --json routes it to stderr")
 	assert.True(t, rep.Branches[0].Retire.Cleaned, "and the merge is still acted on")
 }
+
+// A verified row can carry members published without a pass, since the
+// dependents are best effort (D24). The audit must be able to tell that
+// population from the one where everything built (D26), so the row says
+// how many — and says nothing when there were none, so the rows written
+// before the field existed and the clean rows written after read alike.
+func TestPublishRecordsHowManyMembersWereUnproven(t *testing.T) {
+	repo, sha := engineRepo(t)
+	var out, errOut bytes.Buffer
+	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errOut)
+
+	require.NoError(t, eng.Publish(context.Background(), repo, Publication{
+		MintSha: sha, Branch: "dockhand/libraw-0.22.2", Port: "libraw",
+		PRNumber: 9, Verified: true, Invoker: record.Human, Unproven: 2,
+	}))
+	got := rows(t, repo, sha)
+	require.Len(t, got, 1)
+	assert.Equal(t, record.Verified, got[0].Evidence, "best effort publishes as verified")
+	assert.Equal(t, 2, got[0].Unproven, "and the row says what that verification did not cover")
+}
+
+func TestACleanPublicationCarriesNoUnprovenCount(t *testing.T) {
+	repo, sha := engineRepo(t)
+	var out, errOut bytes.Buffer
+	eng := testEngine(t, repo, &verifytest.Fake{}, &out, &errOut)
+	published(t, eng, repo, sha)
+	assert.Equal(t, 0, rows(t, repo, sha)[0].Unproven)
+}

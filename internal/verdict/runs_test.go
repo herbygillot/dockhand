@@ -1,6 +1,7 @@
 package verdict
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -111,4 +112,32 @@ func TestRunsSkipARunNoSubjectClaims(t *testing.T) {
 	refs := Runs(r)
 	require.Len(t, refs, 1)
 	assert.Equal(t, "jq", refs[0].Port)
+}
+
+// The lines the author reads and the count the audit row carries are
+// one reading. If they ever named different members, one of them would
+// be lying to somebody.
+func TestDependentsNotProvenNamesExactlyTheUnprovenMembers(t *testing.T) {
+	r := record.Record{
+		Subjects: []record.Subject{{Port: "libraw"}, {Port: "gegl"}, {Port: "gegl-devel"}, {Port: "gthumb"}, {Port: "geeqie"}},
+		Runs: map[string]record.Run{
+			record.RunKey("libraw", "Testos"):     {State: record.Passed, Platform: "Testos"},
+			record.RunKey("gegl", "Testos"):       {State: record.Passed, Platform: "Testos"},
+			record.RunKey("gegl", "Oldos"):        {State: record.Canceled, Platform: "Oldos"},
+			record.RunKey("gegl-devel", "Testos"): {State: record.Withheld, Platform: "Testos"},
+			record.RunKey("gthumb", "Testos"):     {State: record.Failed, Platform: "Testos"},
+			record.RunKey("geeqie", "Testos"):     {State: record.Unsupported, Platform: "Testos"},
+		},
+	}
+	named := map[string]bool{}
+	for _, line := range DependentsNotProven(r) {
+		for _, p := range r.UnprovenMembers() {
+			if strings.Contains(line, "promoting with "+p+" ") {
+				named[p] = true
+			}
+		}
+		assert.NotContains(t, line, "gegl ", "a member with a pass elsewhere is not listed for its canceled platform")
+		assert.NotContains(t, line, "geeqie", "a port declining the platform is not unproven on it")
+	}
+	assert.Equal(t, map[string]bool{"gegl-devel": true, "gthumb": true}, named)
 }

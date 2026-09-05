@@ -256,3 +256,23 @@ func TestADependentStillBuildingBlocks(t *testing.T) {
 	}
 	assert.False(t, r.Promotable(), "no outcome is not a best-effort outcome")
 }
+
+// UnprovenMembers is the one reading behind two outputs — the lines the
+// author is shown at promote time, and the count the audit row carries
+// — so they cannot disagree. The headline is never listed: it gates, so
+// a promotion that got this far has a pass for it.
+func TestUnprovenMembersNamesTheDependentsWithoutAPass(t *testing.T) {
+	r := Record{
+		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl"}, {Port: "gegl-devel"}, {Port: "gthumb"}, {Port: "geeqie"}},
+		Runs: map[string]Run{
+			RunKey("libraw", "Testos"):     {State: Passed},
+			RunKey("gegl", "Testos"):       {State: Passed},
+			RunKey("gegl-devel", "Testos"): {State: Withheld},
+			RunKey("gthumb", "Testos"):     {State: Failed},
+			RunKey("geeqie", "Testos"):     {State: Unsupported},
+		},
+	}
+	assert.Equal(t, []string{"gegl-devel", "gthumb"}, r.UnprovenMembers(),
+		"withheld and failed were published without a pass; unsupported is the port's own answer; the headline is never listed")
+	assert.True(t, r.Promotable(), "and the change still publishes — which is the whole reason the count exists")
+}

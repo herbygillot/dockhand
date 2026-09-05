@@ -371,3 +371,46 @@ func (r Record) proven(port string) bool {
 	}
 	return seen && allRefused
 }
+
+// UnprovenMembers names the dependents a promotion would publish
+// without a pass. It is the list the author is told at promote time and
+// the count the audit row carries; the two are one reading so they
+// cannot disagree.
+//
+// It is deliberately not proven's complement. proven answers the GATE
+// — may this change publish — and admits a withheld member as a
+// refusal so the ordinary cohort can. This answers the AUDIT — what did
+// the publication carry — and a withheld member is a bumped port nobody
+// built, the same exposure as a failed or blocked one. What it leaves
+// out is a member whose every run is unsupported: that is the port's
+// own answer about the platform, not evidence that went missing.
+func (r Record) UnprovenMembers() []string {
+	head := r.Headline().Port
+	var out []string
+	for _, s := range r.Subjects {
+		if s.Port == head || r.hasEvidence(s.Port) {
+			continue
+		}
+		out = append(out, s.Port)
+	}
+	return out
+}
+
+// hasEvidence reports a pass on some platform, or a port that declined
+// every platform it was asked about.
+func (r Record) hasEvidence(port string) bool {
+	seen, allDeclined := false, true
+	for key, run := range r.Runs {
+		if runPort(key) != port {
+			continue
+		}
+		if run.State == Passed {
+			return true
+		}
+		seen = true
+		if run.State != Unsupported {
+			allDeclined = false
+		}
+	}
+	return seen && allDeclined
+}
