@@ -43,6 +43,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // THE RULING: a person promoting mid-verification cancels the running
@@ -682,4 +683,128 @@ func heldBy(t *testing.T, rel, name string) {
 	src := readFile(t, filepath.Join(internalDir, filepath.FromSlash(rel)))
 	assert.Contains(t, src, "func "+name+"(t *testing.T)",
 		"%s is where this ruling is exercised; the index pins the guard, that test proves it", rel)
+}
+
+// D24 — the dependents are best effort, on both roads; an outcome is
+// about the port, not the machine; the evidence is read before the
+// cancel (2026-09-04).
+//
+// EXERCISED where verdict and record own the judgment: a cohort whose
+// dependent failed publishes, on the human road and the machine road
+// alike; one whose dependent errored or was canceled does not, because
+// neither is an outcome about the port; a failed headline never
+// publishes. SOURCE for the ordering the engine owns: promote reads the
+// evidence before it cancels anything, so the gate never judges canceled
+// runs the promotion itself just wrote. HELD BY the engine and render
+// tests that run those roads.
+func TestDependentsAreBestEffortAndAnOutcomeIsAboutThePort(t *testing.T) {
+	cohort := func(dep record.RunState) record.Record {
+		return record.Record{
+			Subjects: []record.Subject{{Port: "libraw"}, {Port: "gthumb"}},
+			Runs: map[string]record.Run{
+				record.RunKey("libraw", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
+				record.RunKey("gthumb", "Sequoia"): {State: dep, Platform: "Sequoia"},
+			},
+		}
+	}
+	for _, by := range []record.Driver{record.Human, record.Machine} {
+		n := cohort(record.Failed)
+		d := DecidePublish(PublishAsk{Record: n, Promotable: n.Promotable(),
+			Branch: "b", Tip: "t", By: by, Phase: PhaseInFlight})
+		require.NoError(t, d.Refusal, "%s: a dependent that failed is published over and named", by)
+	}
+	for _, st := range []record.RunState{record.Errored, record.Canceled, record.Superseded} {
+		assert.False(t, cohort(st).Promotable(), "%s is not an outcome about the port", st)
+	}
+	assert.False(t, record.Record{
+		Subjects: []record.Subject{{Port: "libraw"}, {Port: "gthumb"}},
+		Runs: map[string]record.Run{
+			record.RunKey("libraw", "Sequoia"): {State: record.Failed, Platform: "Sequoia"},
+			record.RunKey("gthumb", "Sequoia"): {State: record.Passed, Platform: "Sequoia"},
+		},
+	}.Promotable(), "the headline is not best effort")
+
+	// The evidence is read before the cancel: EvidenceFor precedes
+	// cancelRuns in the body of Promote.
+	body := bodyOf(t, compiledFile(t, "engine/promote.go"), "func (e *Engine) Promote(")
+	evidence, cancel := -1, -1
+	for i, line := range body {
+		if evidence < 0 && matches([]string{line}, `EvidenceFor\(ctx, tip\)`) == 1 {
+			evidence = i
+		}
+		if cancel < 0 && matches([]string{line}, `cancelRuns\(ctx, repo, tip`) == 1 {
+			cancel = i
+		}
+	}
+	require.NotEqual(t, -1, evidence)
+	require.NotEqual(t, -1, cancel)
+	assert.Less(t, evidence, cancel, "the record is read, then judged, and only then are builds stopped")
+
+	heldBy(t, "cmd/promote_lifecycle_test.go", "TestPromoteMidVerificationCancelsAndProceeds")
+	heldBy(t, "render/body_test.go", "TestPRBodyKeepsADependentsFailureBesideItsPass")
+	heldBy(t, "verdict/machineroad_test.go", "TestAMachinePublishesACohortWhoseDependentFailed")
+}
+
+// D25 — a member behind a failed prerequisite is blocked, and the judge
+// trusts the guest's per-member state files (2026-09-04).
+//
+// EXERCISED for the half that exists: a member the runner did not reach
+// because a member ahead of it failed is blocked, blamed on that member,
+// in the sibling's words. SOURCE for the half ruled ahead of the runner
+// change it unblocks: the comment that parked the state-file question
+// for the maintainer now records the answer. The runner's own
+// behavioural test is owed by that change — docs/todo.md, "A cohort
+// stops at the first failure" — and is not pretended here.
+func TestAMemberBehindAFailedPrerequisiteIsBlockedAndStateFilesAreTrusted(t *testing.T) {
+	in := CohortInput{
+		Subjects: []record.Subject{{Port: "oniguruma6"}, {Port: "jq"}},
+		Runs: map[string]record.Run{
+			"oniguruma6": {State: record.Running, Platform: "Tahoe"},
+			"jq":         {State: record.Running, Platform: "Tahoe"},
+		},
+		Status:  verify.Status{State: verify.Failed, Handle: "w"},
+		Log:     "===> dockhand subject: oniguruma6\nError: Failed to build oniguruma6: command execution failed\n",
+		LogRead: true,
+	}
+	out := JudgeCohort(in)
+	assert.Equal(t, record.Failed, out["oniguruma6"].Run.State)
+	assert.Equal(t, record.Blocked, out["jq"].Run.State, "blocked, not withheld: something the change is responsible for failed")
+	assert.Equal(t, "oniguruma6", out["jq"].Run.Blamed)
+	assert.Contains(t, out["jq"].Run.Detail, "this member is untested")
+
+	// The trust half has no compiled fact to pin: it was ruled ahead of
+	// the runner change that will read the state files, and there is
+	// nothing yet that does. What can be checked is that the ruling is
+	// recorded where the question was parked, in prose — so this reads
+	// the file with its comments, deliberately, and the runner change
+	// owes the real test.
+	tart := strings.Split(readFile(t, filepath.Join(internalDir, "verify/tart/tart.go")), "\n")
+	assert.Equal(t, 1, matches(tart, `may trust them \(maintainer's ruling, 2026-09-04\)`),
+		"the parked question carries its answer where it was parked")
+}
+
+// D26 — the audit row says what a promotion carried (2026-09-04).
+//
+// EXERCISED: the members a promotion publishes without a pass are one
+// reading — the lines the author sees and the count the row carries —
+// and it is not proven's complement: withheld counts, unsupported does
+// not. SOURCE: promote spells the count once, from that reading. HELD
+// BY the engine test that reads the row back.
+func TestTheAuditRowSaysWhatAPromotionCarried(t *testing.T) {
+	r := record.Record{
+		Subjects: []record.Subject{{Port: "libraw"}, {Port: "gegl-devel"}, {Port: "gthumb"}, {Port: "geeqie"}},
+		Runs: map[string]record.Run{
+			record.RunKey("libraw", "Tahoe"):     {State: record.Passed, Platform: "Tahoe"},
+			record.RunKey("gegl-devel", "Tahoe"): {State: record.Withheld, Platform: "Tahoe"},
+			record.RunKey("gthumb", "Tahoe"):     {State: record.Failed, Platform: "Tahoe"},
+			record.RunKey("geeqie", "Tahoe"):     {State: record.Unsupported, Platform: "Tahoe"},
+		},
+	}
+	assert.Equal(t, []string{"gegl-devel", "gthumb"}, r.UnprovenMembers())
+	assert.True(t, r.Promotable(), "and the change publishes, which is why the count exists")
+	assert.Len(t, DependentsNotProven(r), 2, "the author is told the same two")
+
+	assert.Equal(t, map[string]int{"internal/engine/promote.go": 1}, spelledIn(t, `Unproven: len\(n\.UnprovenMembers\(\)\)`),
+		"one writer, from the one reading")
+	heldBy(t, "engine/outcome_test.go", "TestPublishRecordsHowManyMembersWereUnproven")
 }

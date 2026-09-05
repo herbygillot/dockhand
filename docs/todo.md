@@ -550,3 +550,21 @@ were not checked. That is correct as far as it goes: no target, no
 check. What is missing is the sentence. A plan that could not check a
 port's patches should say so, the way the ABI finding says "unavailable"
 rather than nothing.
+
+## Nothing bounds the pull request body
+
+**From the reassessment (2026-09-04).** No length check exists in
+`internal/render` or `internal/gh`, and the push happens before
+`gh pr create --body`. With the cap off, a cohort contributes one
+verification line, one member line and its link-proof lines per member;
+`libffi` has 132 dependents. Nobody has measured a body reaching
+GitHub's limit, but "nothing bounds it" is a fact, and the failure mode
+is the worst available: a branch pushed to the fork and no pull request
+opened, with the author told nothing until `gh` refuses.
+
+**Shape.** Measure the rendered body before the push. Over the limit,
+refuse before anything leaves the machine, naming the size and the
+limit — the same road as any other decline. Truncating the member list
+with a count is the alternative, and it is the wrong one here: the
+member lines are the evidence a reviewer is being asked to accept, and
+a body that elides them is vouching for what it does not show.

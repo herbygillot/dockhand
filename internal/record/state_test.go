@@ -12,6 +12,7 @@ import (
 var all = []RunState{
 	Queued, Submitting, Running, Passed, Failed,
 	Unsupported, Blocked, Canceled, Superseded, Errored,
+	Withheld,
 }
 
 func TestRunStateIsTheBareWireWord(t *testing.T) {
@@ -20,8 +21,7 @@ func TestRunStateIsTheBareWireWord(t *testing.T) {
 	// which is the one word this schema respells.
 	assert.Equal(t, []string{
 		"queued", "submitting", "running", "passed", "failed",
-		"unsupported", "blocked", "canceled", "superseded", "errored",
-	}, func() []string {
+		"unsupported", "blocked", "canceled", "superseded", "errored", "withheld"}, func() []string {
 		out := make([]string, 0, len(all))
 		for _, s := range all {
 			out = append(out, s.String())
