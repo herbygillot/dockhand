@@ -110,8 +110,11 @@ type blame struct {
 // Blocked and says who stopped it — untested, not disproven. A member
 // the runner finished before the stop passed, and its own section is
 // where its lint line is read from. And a failure naming a port outside
-// the change blocks the whole cohort on that stranger, which is exactly
-// what one subject has always done.
+// the change blocks the member it broke under on that stranger, which
+// is exactly what one subject has always done — and blocks the members
+// behind it on THAT member, not on the stranger, because nothing in the
+// log says whether they depend on it. Measured live: py311-rawpy told
+// that py310-scikit-image fails to build, a port it never depended on.
 //
 // The map is keyed by port and not by run key, because the release is
 // one value the caller already holds and joining them is its business.
@@ -183,9 +186,21 @@ func JudgeCohort(in CohortInput) map[string]Judgment {
 			// pointed forward would be a sentence that cannot be true.
 			out[s.Port] = unbuilt(run)
 		case b.Culprit >= 0:
-			out[s.Port] = memberBlocked(run, in.Subjects[b.Culprit].Port, b.Declined)
+			culprit := in.Subjects[b.Culprit].Port
+			out[s.Port] = memberBlocked(run, culprit, BlockedByMember(culprit, b.Declined))
 		default:
-			out[s.Port] = strangerBlocked(run, b.Dep, in.Nomaintainer)
+			// A stranger broke under the stopper, and this member is not
+			// the stopper: the runner stopped before it. What stopped it
+			// is the sibling, and the sibling is who it is blamed on. The
+			// stranger is NOT named here, because this member has no
+			// section and the log therefore says nothing about what it
+			// depends on — the stranger's name would ride a sentence
+			// asserting an edge the tree may not carry (measured live on
+			// py311-rawpy, blamed on py310-scikit-image). The stopper's
+			// own verdict, above, is where the stranger is named, and
+			// Blamed points a reader there.
+			stopper := in.Subjects[b.Stopper].Port
+			out[s.Port] = memberBlocked(run, stopper, BlockedBehindMember(stopper))
 		}
 	}
 	return out
@@ -386,33 +401,27 @@ func sectionInput(in CohortInput, marked map[string]bool, port string, st verify
 	return sub
 }
 
-// memberBlocked is a member the cohort never reached, and the sibling
-// that stopped it.
+// memberBlocked is a member the cohort never reached, the sibling that
+// stopped it, and the sentence that says how — BlockedByMember where
+// the sibling failed or declined, BlockedBehindMember where the sibling
+// was itself blocked by a stranger. The two are told apart by the
+// caller because the caller is the one holding the blame; what is
+// common is that Blamed always names a SIBLING, never a port outside
+// the change, so a reader of the body is pointed at a member whose own
+// verdict says the rest.
+//
+// Blamed is WRITTEN and not merely set where empty. The run arrives as
+// the note holds it, so a blame an earlier settlement wrote would
+// otherwise survive a re-reading that reached a different stopper.
 //
 // The environment goes back quietly. Whether the guest survives is the
 // culprit's call — it keeps it, because it is this change's own
 // breakage — and a member that was never built has nothing to add to
 // that either way.
-func memberBlocked(r record.Run, member string, declined bool) Judgment {
+func memberBlocked(r record.Run, member, detail string) Judgment {
 	r.State = record.Blocked
 	r.Blamed = member
-	r.Detail = BlockedByMember(member, declined)
-	return Judgment{Settled: true, Run: r, Release: ReleaseQuietly}
-}
-
-// strangerBlocked is a member untested because a port outside the
-// change broke. Nothing here is blamed on a subject: Blamed names a
-// member, and a stranger is not one, so the port's name rides the
-// detail exactly as it does for a single subject.
-//
-// The field is CLEARED and not merely left unset. The run arrives as
-// the note holds it, so a blame written by an earlier settlement would
-// otherwise survive beside a detail naming a stranger — a note saying
-// both that a sibling stopped this member and that nobody of ours did.
-func strangerBlocked(r record.Run, dep string, nomaintainer bool) Judgment {
-	r.State = record.Blocked
-	r.Blamed = ""
-	r.Detail = BlockedDetail(dep, nomaintainer)
+	r.Detail = detail
 	return Judgment{Settled: true, Run: r, Release: ReleaseQuietly}
 }
 

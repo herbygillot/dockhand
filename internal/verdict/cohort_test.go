@@ -402,6 +402,10 @@ func TestOneSubjectIsUnmovedByAStrayMarker(t *testing.T) {
 // A blame an earlier settlement wrote does not outlive the reading that
 // put it there. Blamed names a member of the change; a stranger is not
 // one, and a note carrying both sentences at once contradicts itself.
+// The member the stranger broke under is blamed on nobody, and the
+// member behind it is blamed on THAT member — so a stale name is
+// cleared on the one and overwritten on the other, and neither reading
+// lets "leftover" stand.
 func TestAStrangerBlockClearsAStaleBlame(t *testing.T) {
 	stale := running(true)
 	stale.Blamed = "leftover"
@@ -412,11 +416,74 @@ func TestAStrangerBlockClearsAStaleBlame(t *testing.T) {
 		Status:   verify.Status{State: verify.Failed, Handle: "fake-1"},
 		Log:      log, LogRead: true,
 	}
-	for _, m := range []string{"jq", "oniguruma"} {
-		j := JudgeCohort(in)[m]
-		assert.Equal(t, record.Blocked, j.Run.State, m)
-		assert.Empty(t, j.Run.Blamed, "%s: the detail names a stranger, so nothing of ours is blamed", m)
+	js := JudgeCohort(in)
+
+	assert.Equal(t, record.Blocked, js["jq"].Run.State)
+	assert.Empty(t, js["jq"].Run.Blamed, "jq's detail names a stranger, so nothing of ours is blamed")
+
+	assert.Equal(t, record.Blocked, js["oniguruma"].Run.State)
+	assert.Equal(t, "jq", js["oniguruma"].Run.Blamed,
+		"oniguruma is behind jq, and the sibling it stopped behind is what it is blamed on")
+}
+
+// A member behind a stopper that was itself BLOCKED — a stranger broke
+// under it — is blocked by the sibling, not by the stranger. Nothing
+// in the log says what an unreached member depends on, so a sentence
+// naming the stranger asserts a dependency edge the tree may not
+// carry. Measured live: py311-rawpy, which depends on py311-scikit-
+// image, was told that py310-scikit-image fails to build.
+func TestAMemberBehindAStrangerBlockedStopperIsBlockedByTheSibling(t *testing.T) {
+	log := verify.SubjectMarker("libraw") + "\n" +
+		"--->  Verifying Portfile for libraw\n" +
+		"--->  0 errors and 0 warnings found.\n" +
+		"--->  Building libraw\n" +
+		"--->  Installing libraw @0.21.4_0\n" +
+		verify.SubjectMarker("py310-rawpy") + "\n" +
+		"--->  Computing dependencies for py310-rawpy\n" +
+		"--->  Dependencies to be installed: py310-scikit-image\n" +
+		"--->  Building py310-scikit-image\n" +
+		"Error: Failed to build py310-scikit-image: command execution failed\n" +
+		"Error: Processing of port py310-rawpy failed\n"
+	in := CohortInput{
+		Subjects: []record.Subject{
+			{Port: "libraw", Names: []string{"libraw"}},
+			{Port: "py310-rawpy", Names: []string{"py310-rawpy"}},
+			{Port: "py311-rawpy", Names: []string{"py311-rawpy"}},
+		},
+		Runs: map[string]record.Run{
+			"libraw": running(true), "py310-rawpy": running(true), "py311-rawpy": running(true),
+		},
+		Status: verify.Status{State: verify.Failed, Handle: "fake-1"},
+		Log:    log, LogRead: true,
 	}
+	js := JudgeCohort(in)
+
+	assert.Equal(t, record.Passed, js["libraw"].Run.State, "announced, finished, and its section is clean")
+
+	// The stopper: the member the stranger broke under, blocked on the
+	// stranger exactly as one subject would be, blaming no sibling.
+	stopper := js["py310-rawpy"]
+	assert.Equal(t, record.Blocked, stopper.Run.State)
+	assert.Equal(t, "dependency py310-scikit-image fails to build; the change itself is untested",
+		stopper.Run.Detail)
+	assert.Empty(t, stopper.Run.Blamed, "a stranger is not a member, so nothing of ours is blamed")
+
+	// The member behind it: blocked by the SIBLING, with the stranger
+	// nowhere in the sentence.
+	behind := js["py311-rawpy"]
+	assert.Equal(t, record.Blocked, behind.Run.State)
+	assert.Equal(t, "py310-rawpy", behind.Run.Blamed, "the sibling the cohort stopped inside")
+	assert.Equal(t, "py310-rawpy could not be built, so this member was not reached; it is untested",
+		behind.Run.Detail)
+	assert.NotContains(t, behind.Run.Detail, "py310-scikit-image",
+		"py311-rawpy does not depend on py310-scikit-image, and the log cannot say it does")
+	assert.Equal(t, ReleaseQuietly, behind.Release, "nothing of this member's to debug")
+
+	// And the tree lookup is still sent after the stranger, once, for
+	// the stopper's own sentence.
+	dep, blamed := CohortBlame(in)
+	assert.True(t, blamed)
+	assert.Equal(t, "py310-scikit-image", dep)
 }
 
 // A withheld member is one the guest was never asked about, so the
