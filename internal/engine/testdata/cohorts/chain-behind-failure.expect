@@ -1,0 +1,28 @@
+# A chain: gizmo requires libgadget, libgadget requires libwidget, and
+# libwidget — the headline — breaks. The runner skips libgadget for
+# libwidget, and then skips gizmo for libgadget: each member's
+# requires.<i> names the member it actually declares, so each skip
+# names its own prerequisite and not the root of the chain. The log
+# holds one section, libwidget's, and the record holds three words.
+#
+# The sentences differ down the chain, and deliberately. libgadget is
+# told libwidget fails to build, which is what happened to libwidget.
+# gizmo is told libgadget could not be built — not that it fails to
+# build, because libgadget failed at nothing; it was skipped — and a
+# reader who follows the blame from gizmo to libgadget to libwidget
+# finds a true sentence at every step.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: libwidget libgadget gizmo
+outcome: failed
+libwidget.state: failed
+libwidget.detail: Failed to build libwidget: command execution failed
+libwidget.reported: failed
+libgadget.state: blocked
+libgadget.blamed: libwidget
+libgadget.detail: libwidget fails to build; this member is untested
+libgadget.reported: skipped libwidget
+gizmo.state: blocked
+gizmo.blamed: libgadget
+gizmo.detail: libgadget could not be built, so this member was not built; it is untested
+gizmo.reported: skipped libgadget

@@ -1,19 +1,24 @@
 # The headline is the dependent this time, so the runner announces jq
 # first and jq's install pulls its sibling out of the staged overlay
 # and builds it as an ordinary dependency. oniguruma breaks there,
-# under jq's marker, having never been announced as a subject at all.
+# under jq's marker, before it has been announced as a subject at all.
+# Then the runner goes on: oniguruma's requires.1 is empty — it needs
+# nothing in the cohort — so it is announced and built in its own turn,
+# and breaks again, in its own section.
 #
 # This is the case that decides whether the blame reader is looking at
 # the change's roster or only at the port whose section it is reading.
 # A reader asking "is the port named here the one this section belongs
 # to" gets no for jq, calls oniguruma a dependency, and blocks jq on a
 # stranger — handing back the environment the failure was supposed to
-# keep, and recording nothing at all against the member that actually
-# broke. The roster answers instead: oniguruma is one of us, so this is
-# our failure, and the guest stays.
+# keep. The roster answers instead: oniguruma is one of us, so jq is
+# blocked on a sibling, in the sibling's words, and oniguruma's own
+# section is where oniguruma's failure is read from. The guest stays.
 #
 # It is the marked twin of TestABlockedSubjectBlamesItsSibling, which
-# drives the same shape through a log with no markers in it.
+# drives the same shape through a log with no markers in it, and of
+# TestASiblingNamedUnderAnotherMemberTakesTheFailure, where the sibling
+# has no section of its own and takes the failure printed under jq.
 # SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
 # not captured: see README.md.
 members: jq oniguruma
@@ -21,5 +26,7 @@ outcome: failed
 jq.state: blocked
 jq.blamed: oniguruma
 jq.detail: oniguruma fails to build; this member is untested
+jq.reported: failed
 oniguruma.state: failed
 oniguruma.detail: Failed to build oniguruma: command execution failed
+oniguruma.reported: failed

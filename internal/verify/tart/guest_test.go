@@ -120,9 +120,11 @@ func TestOnlyASecondPortReachesTheCohortRunner(t *testing.T) {
 }
 
 // A cohort writes the same three files per member under position-derived
-// names, each preceded by the marker that says whose output follows.
-// The install of the headline comes first, then each subject in the
-// order it is to be built.
+// names, each preceded by the marker that says whose output follows and
+// followed by the prerequisites the runner consults before attempting
+// it — empty here, because the request declares no edges. The install
+// of the headline comes first, then each subject in the order it is to
+// be built.
 func TestArgvFilesAtACohort(t *testing.T) {
 	files := argvFiles(verify.Request{Ports: []string{"jq", "oniguruma"}})
 
@@ -134,10 +136,69 @@ func TestArgvFilesAtACohort(t *testing.T) {
 		"/tmp/dockhand-verify/subject.0 => ===> dockhand subject: jq|",
 		"/tmp/dockhand-verify/argv.0 => -d|-N|install|jq|",
 		"/tmp/dockhand-verify/argv.0.lint => lint|jq|",
+		"/tmp/dockhand-verify/requires.0 => ",
 		"/tmp/dockhand-verify/subject.1 => ===> dockhand subject: oniguruma|",
 		"/tmp/dockhand-verify/argv.1 => -d|-N|install|oniguruma|",
 		"/tmp/dockhand-verify/argv.1.lint => lint|oniguruma|",
+		"/tmp/dockhand-verify/requires.1 => ",
 	}, got)
+}
+
+// fileNamed picks one instruction file out of the set by its name in
+// the guest, so a test about one member's body does not depend on how
+// many files the members before it were given.
+func fileNamed(t *testing.T, files []argvFile, name string) argvFile {
+	t.Helper()
+	for _, f := range files {
+		if f.Name == name {
+			return f
+		}
+	}
+	require.Failf(t, "no such instruction file", "%s is not among the files launch writes", name)
+	return argvFile{}
+}
+
+// The prerequisite file carries positions and not names: the request
+// speaks in port names, as the kernel does, and this is where they
+// become the numbers the runner compares against its own state files.
+// A name outside the request is not a member and is dropped, and so is
+// a member naming itself; a member with nothing to wait for gets an
+// empty file, not a missing one.
+func TestRequiresFilesCarryCohortPositions(t *testing.T) {
+	req := verify.Request{
+		Ports: []string{"libfoo", "bar", "baz", "qux"},
+		Requires: [][]string{
+			nil,
+			{"libfoo"},
+			{"libfoo", "pkgconfig"},
+			{"bar", "libfoo", "qux"},
+		},
+	}
+	files := argvFiles(req)
+
+	assert.Empty(t, fileNamed(t, files, "requires.0").Body, "the headline waits for nobody")
+	assert.Equal(t, "0\n", fileNamed(t, files, "requires.1").Body)
+	assert.Equal(t, "0\n", fileNamed(t, files, "requires.2").Body, "pkgconfig is not in the request, so it is not a prerequisite here")
+	assert.Equal(t, "1\n0\n", fileNamed(t, files, "requires.3").Body,
+		"in the request's own order, and never naming itself")
+
+	// A request that carries no graph at all, or a shorter one than its
+	// ports, declares no edges and still writes a file per member.
+	short := argvFiles(verify.Request{Ports: []string{"jq", "oniguruma", "mise"}, Requires: [][]string{nil, {"jq"}}})
+	assert.Equal(t, "0\n", fileNamed(t, short, "requires.1").Body)
+	assert.Empty(t, fileNamed(t, short, "requires.2").Body, "a member past the end of the graph waits for nobody")
+}
+
+// One subject has no cohort to be ordered within, so a graph on a
+// one-port request changes nothing about what the guest is told: the
+// same two files, under the same names, with the same bodies.
+func TestOneSubjectIgnoresTheGraph(t *testing.T) {
+	plain := argvFiles(verify.Request{Ports: []string{"jq"}})
+	graphed := argvFiles(verify.Request{Ports: []string{"jq"}, Requires: [][]string{{"oniguruma"}}})
+	assert.Equal(t, plain, graphed)
+	for _, f := range graphed {
+		assert.NotContains(t, f.Name, "requires", "the single-subject runner never reads one")
+	}
 }
 
 // The marker the runner prints and the marker the splitter reads are
@@ -181,8 +242,8 @@ func TestTheVariantFrameStopsAtTheHeadline(t *testing.T) {
 		assert.NotContains(t, f.Body, "+ssl", "%s carries a frame that is not its own", f.Name)
 	}
 	files := argvFiles(verify.Request{Ports: []string{"jq", "oniguruma"}, Variants: v})
-	assert.Equal(t, "-d\n-N\ninstall\njq\n-doc\n+ssl\n", files[1].Body)
-	assert.Equal(t, "-d\n-N\ninstall\noniguruma\n", files[4].Body)
+	assert.Equal(t, "-d\n-N\ninstall\njq\n-doc\n+ssl\n", fileNamed(t, files, "argv.0").Body)
+	assert.Equal(t, "-d\n-N\ninstall\noniguruma\n", fileNamed(t, files, "argv.1").Body)
 }
 
 // -s asks about the member and not about the list. A cohort whose
@@ -195,8 +256,8 @@ func TestFromSourceIsPerMember(t *testing.T) {
 		FromSource: []string{"oniguruma"},
 	})
 
-	assert.Equal(t, "-d\n-N\ninstall\njq\n", files[1].Body, "the headline was not named")
-	assert.Equal(t, "-d\n-N\n-s\ninstall\noniguruma\n", files[4].Body, "the member that was named builds from source")
+	assert.Equal(t, "-d\n-N\ninstall\njq\n", fileNamed(t, files, "argv.0").Body, "the headline was not named")
+	assert.Equal(t, "-d\n-N\n-s\ninstall\noniguruma\n", fileNamed(t, files, "argv.1").Body, "the member that was named builds from source")
 }
 
 // The link proof is asked for, never assumed, and it asks the
@@ -404,14 +465,132 @@ func TestTheCohortRunnerBuildsEveryMemberInOrder(t *testing.T) {
 	assert.NotContains(t, subjects, "", "a cohort log opens with a marker and has no prologue")
 }
 
-// A co-member's failure stops the cohort where it stood. The members
-// after it leave no marker and no state file, and that silence is the
-// difference between a port that was disproven and one that was never
-// reached — which is the whole of what the judge has to go on.
-func TestACohortStopsAtTheMemberThatFailed(t *testing.T) {
-	g := newStubGuest(t, "oniguruma")
-	req := verify.Request{Ports: []string{"jq", "oniguruma", "libfoo"}}
+// A member's failure does not stop the cohort. A member behind it that
+// does not depend on it is built and passes on its own, the failure is
+// the aggregate's answer, and each member's state file says what
+// happened to that member and nothing else.
+//
+// Run against the real script, because the control flow is the claim:
+// which members are attempted, which are skipped, and what each leaves
+// behind is a property of /bin/sh reading these files, and only a shell
+// that ran it can say.
+func TestACohortGoesOnPastAMemberThatFailedWhenNothingDependsOnIt(t *testing.T) {
+	g := newStubGuest(t, "jq")
+	req := verify.Request{Ports: []string{"jq", "mise"}}
 	g.write(argvFiles(req))
+
+	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+
+	assert.Equal(t, []string{
+		"port lint jq",
+		"port lint mise",
+		"port -d -N install mise",
+	}, g.calls(), "the independent member behind the failure is built in full")
+	assert.Equal(t, "failed\n", g.read("state"), "one failure fails the job")
+	assert.Equal(t, "failed\n", g.read("state.0"))
+	assert.Equal(t, "passed\n", g.read("state.1"))
+
+	subjects := verify.SplitSubjects(g.read("log"))
+	assert.Contains(t, subjects["jq"], "Error: stub refused")
+	assert.Contains(t, subjects["mise"], "port -d -N install mise", "announced and built, after the failure")
+	assert.Equal(t, []string{"jq", "mise"}, verify.SubjectOrder(g.read("log")))
+}
+
+// A member that depends on the one that failed is skipped: its state
+// file says so and names the prerequisite's position, and it prints
+// nothing into the log, because nothing was run for it. That silence
+// is expected rather than a fault, and the state file is what makes it
+// readable as such.
+func TestACohortSkipsAMemberWhosePrerequisiteFailed(t *testing.T) {
+	g := newStubGuest(t, "oniguruma")
+	req := verify.Request{Ports: []string{"oniguruma", "jq"}, Requires: [][]string{nil, {"oniguruma"}}}
+	g.write(argvFiles(req))
+
+	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+
+	assert.Equal(t, []string{"port lint oniguruma"}, g.calls(), "nothing ran for the skipped member")
+	assert.Equal(t, "failed\n", g.read("state"))
+	assert.Equal(t, "failed\n", g.read("state.0"))
+	assert.Equal(t, "skipped\n0\n", g.read("state.1"), "skipped, and for whom")
+	assert.NotContains(t, verify.SplitSubjects(g.read("log")), "jq", "a skipped member announces nothing")
+}
+
+// A skip propagates down a chain. C depends on B, B on A, and A fails:
+// B is skipped for A, and C is skipped for B — each names its own
+// prerequisite, the one it actually declares, so the judge can say of
+// each member exactly what stood in its way.
+func TestASkipPropagatesDownAChainOfPrerequisites(t *testing.T) {
+	g := newStubGuest(t, "liba")
+	req := verify.Request{
+		Ports:    []string{"liba", "libb", "libc"},
+		Requires: [][]string{nil, {"liba"}, {"libb"}},
+	}
+	g.write(argvFiles(req))
+
+	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+
+	assert.Equal(t, []string{"port lint liba"}, g.calls())
+	assert.Equal(t, "failed\n", g.read("state"))
+	assert.Equal(t, "failed\n", g.read("state.0"))
+	assert.Equal(t, "skipped\n0\n", g.read("state.1"), "skipped for the member that failed")
+	assert.Equal(t, "skipped\n1\n", g.read("state.2"), "skipped for the member that was skipped")
+	assert.Equal(t, []string{"liba"}, verify.SubjectOrder(g.read("log")), "only the member that ran is announced")
+}
+
+// A failure in the middle of the cohort takes down exactly what depends
+// on it. The headline passed before it, a sibling that needs only the
+// headline is built after it and passes, and the member that needs the
+// one that broke is skipped for it — four members, four different
+// answers, from one loop that never stopped.
+func TestAMiddleFailureTakesDownOnlyItsDependents(t *testing.T) {
+	g := newStubGuest(t, "bar")
+	req := verify.Request{
+		Ports:    []string{"libfoo", "bar", "baz", "qux"},
+		Requires: [][]string{nil, {"libfoo"}, {"libfoo"}, {"libfoo", "bar"}},
+	}
+	g.write(argvFiles(req))
+
+	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+
+	assert.Equal(t, []string{
+		"port lint libfoo",
+		"port -d -N install libfoo",
+		"port lint bar",
+		"port lint baz",
+		"port -d -N install baz",
+	}, g.calls(), "libfoo and baz in full, bar until it broke, qux not at all")
+	assert.Equal(t, "failed\n", g.read("state"))
+	assert.Equal(t, "passed\n", g.read("state.0"))
+	assert.Equal(t, "failed\n", g.read("state.1"))
+	assert.Equal(t, "passed\n", g.read("state.2"))
+	assert.Equal(t, "skipped\n1\n", g.read("state.3"), "skipped for bar, not for libfoo, which passed")
+	assert.Equal(t, []string{"libfoo", "bar", "baz"}, verify.SubjectOrder(g.read("log")))
+
+	// And the record reads back as the provider will read it: one
+	// entry per member, in build order, the skip's position translated
+	// into the port it names.
+	out, err := exec.Command("/bin/sh", "-c", memberStatesScript(g.dir)).CombinedOutput()
+	require.NoError(t, err, string(out))
+	assert.Equal(t, []verify.MemberState{
+		{Port: "libfoo", Outcome: verify.MemberPassed},
+		{Port: "bar", Outcome: verify.MemberFailed},
+		{Port: "baz", Outcome: verify.MemberPassed},
+		{Port: "qux", Outcome: verify.MemberSkipped, Prerequisite: "bar"},
+	}, memberStatesOf(string(out)))
+}
+
+// Only a prerequisite that has already failed or been skipped blocks a
+// member. One that passed does not; one the runner has not reached yet
+// — a graph whose order is not the build's — has no state file and does
+// not either; and a line that is not a position is not a file name the
+// runner will open.
+func TestOnlyAFailedOrSkippedPrerequisiteBlocksAMember(t *testing.T) {
+	g := newStubGuest(t, "")
+	req := verify.Request{Ports: []string{"jq", "oniguruma"}, Requires: [][]string{{"oniguruma"}, {"jq"}}}
+	g.write(argvFiles(req))
+	// A line the runner must refuse rather than read as a path: it
+	// names no position, and the file it would name is not the runner's.
+	g.write([]argvFile{{Name: "requires.1", Body: "0\n../state\n\nx\n"}})
 
 	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
 
@@ -419,15 +598,11 @@ func TestACohortStopsAtTheMemberThatFailed(t *testing.T) {
 		"port lint jq",
 		"port -d -N install jq",
 		"port lint oniguruma",
-	}, g.calls(), "nothing ran after the member that failed")
-	assert.Equal(t, "failed\n", g.read("state"))
+		"port -d -N install oniguruma",
+	}, g.calls(), "a prerequisite that passed, or is still ahead, blocks nobody")
+	assert.Equal(t, "passed\n", g.read("state"))
 	assert.Equal(t, "passed\n", g.read("state.0"))
-	assert.Equal(t, "failed\n", g.read("state.1"))
-	assert.Empty(t, g.read("state.2"), "the member that was never reached recorded nothing")
-
-	subjects := verify.SplitSubjects(g.read("log"))
-	assert.Contains(t, subjects["oniguruma"], "Error: stub refused")
-	assert.NotContains(t, subjects, "libfoo", "a member the runner never reached announced nothing")
+	assert.Equal(t, "passed\n", g.read("state.1"))
 }
 
 // The link proof runs against the dependents once they have installed,
@@ -456,16 +631,34 @@ func TestTheCohortRunnerProvesTheDependentsLinks(t *testing.T) {
 // runner never started". The temp names must not survive, or a later
 // reader would find two answers.
 func TestCohortStateFilesLeaveNoTornWrites(t *testing.T) {
-	g := newStubGuest(t, "")
-	req := verify.Request{Ports: []string{"jq", "oniguruma"}}
-	g.write(argvFiles(req))
+	for _, tc := range []struct {
+		name   string
+		failOn string
+		req    verify.Request
+	}{
+		{"every member passes", "", verify.Request{Ports: []string{"jq", "oniguruma"}}},
+		// A skipped member's file is written by the same rename: the
+		// window between truncation and write would otherwise read as a
+		// runner that never started, for the one member that was never
+		// started on purpose.
+		{"a member is skipped", "oniguruma",
+			verify.Request{Ports: []string{"oniguruma", "jq"}, Requires: [][]string{nil, {"oniguruma"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newStubGuest(t, tc.failOn)
+			g.write(argvFiles(tc.req))
 
-	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+			g.run(cohortRunnerAt(g.dir, g.portCmd, len(tc.req.Ports)))
 
-	entries, err := os.ReadDir(g.dir)
-	require.NoError(t, err)
-	for _, e := range entries {
-		assert.NotContains(t, e.Name(), ".state", "%s is a rename that did not complete", e.Name())
+			entries, err := os.ReadDir(g.dir)
+			require.NoError(t, err)
+			for _, e := range entries {
+				assert.NotContains(t, e.Name(), ".state", "%s is a rename that did not complete", e.Name())
+			}
+			for i := range tc.req.Ports {
+				assert.NotEmpty(t, g.read(fmt.Sprintf("state.%d", i)), "every member has a state file once the job is over")
+			}
+		})
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // The cohort corpus's sidecars. A cohort log is one file holding
@@ -39,6 +41,13 @@ type Member struct {
 	// this corpus exists: a reader that took the whole file would give
 	// every member the first lint line in it.
 	Lint string
+	// Reported is what the guest's own runner recorded about this
+	// member, apart from the log: "passed", "failed", "skipped <member>"
+	// naming the prerequisite it was skipped for, or "" for a member the
+	// runner wrote no state file for. It is the second record the judge
+	// reads, and the one that tells a member skipped on purpose from one
+	// the guest never reached — both are silent in the log.
+	Reported string
 }
 
 // CohortExpect is a cohort log's .expect sidecar.
@@ -106,8 +115,10 @@ func ReadCohort(t *testing.T, path string) CohortExpect {
 			v.Blamed = value
 		case "lint":
 			v.Lint = value
+		case "reported":
+			v.Reported = value
 		default:
-			require.Failf(t, "unknown sidecar field", "%s: %q; the fields are state, detail, blamed, lint", path, key)
+			require.Failf(t, "unknown sidecar field", "%s: %q; the fields are state, detail, blamed, lint, reported", path, key)
 		}
 		e.Verdict[port] = v
 	}
@@ -123,12 +134,48 @@ func ReadCohort(t *testing.T, path string) CohortExpect {
 			require.Equal(t, "blocked", v.State, "%s: only a blocked member inherits a blame", path, m)
 			require.Contains(t, e.Members, v.Blamed, "%s: %s.blamed names a sibling, never a stranger", path, m)
 		}
+		if word, prereq, _ := strings.Cut(v.Reported, " "); v.Reported != "" {
+			require.Contains(t, []string{"passed", "failed", "skipped"}, word,
+				"%s: %s.reported is the runner's word: passed, failed, or skipped <member>", path, m)
+			if word == "skipped" {
+				require.Contains(t, e.Members, prereq, "%s: %s.reported names the member it was skipped for", path, m)
+			} else {
+				require.Empty(t, prereq, "%s: only a skip names a member", path, m)
+			}
+		}
 	}
 	if e.Outcome == "passed" {
 		for _, m := range e.Members {
 			require.NotEqual(t, "failed", e.Verdict[m].State,
 				"%s: a passing guest disproves nobody", path, m)
+			require.NotContains(t, []string{"failed", "skipped"}, e.Verdict[m].Reported,
+				"%s: a passing guest recorded no failure and skipped nobody", path, m)
 		}
 	}
 	return e
+}
+
+// MemberStates is the runner's record as the provider hands it to the
+// settle: one entry per member that has a reported word, in build
+// order, a skip carrying the prerequisite it named. Members the sidecar
+// gives no word for are left out, which is what a guest that wrote no
+// state file for them looks like.
+func (e CohortExpect) MemberStates() []verify.MemberState {
+	var out []verify.MemberState
+	for _, m := range e.Members {
+		word, prereq, _ := strings.Cut(e.Verdict[m].Reported, " ")
+		ms := verify.MemberState{Port: m}
+		switch word {
+		case "":
+			continue
+		case "passed":
+			ms.Outcome = verify.MemberPassed
+		case "failed":
+			ms.Outcome = verify.MemberFailed
+		case "skipped":
+			ms.Outcome, ms.Prerequisite = verify.MemberSkipped, prereq
+		}
+		out = append(out, ms)
+	}
+	return out
 }

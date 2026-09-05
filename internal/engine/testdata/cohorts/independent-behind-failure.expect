@@ -1,0 +1,23 @@
+# The first member breaks and the member behind it does not depend on
+# it: a branch verification over two changed portdirs with no edge
+# between them, which is the road that produced the live observation
+# this corpus was extended for — mise, unrelated to oniguruma6, came
+# back "oniguruma6 fails to build; this member is untested" under the
+# runner that stopped.
+#
+# The runner goes on now. mise's requires.1 is empty, so nothing blocks
+# it; it is announced, linted and installed after jq's failure, and its
+# own section is where its own lint line is read from. jq's failure is
+# jq's and keeps the environment; mise's pass is mise's and would be
+# published on. The aggregate is failed because one member failed, and
+# that is the only thing the two members share.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: jq mise
+outcome: failed
+jq.state: failed
+jq.detail: Failed to build jq: command execution failed
+jq.reported: failed
+mise.state: passed
+mise.lint: 1 warning
+mise.reported: passed

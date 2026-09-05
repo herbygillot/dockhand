@@ -748,13 +748,16 @@ func TestDependentsAreBestEffortAndAnOutcomeIsAboutThePort(t *testing.T) {
 // D25 — a member behind a failed prerequisite is blocked, and the judge
 // trusts the guest's per-member state files (2026-09-04).
 //
-// EXERCISED for the half that exists: a member the runner did not reach
-// because a member ahead of it failed is blocked, blamed on that member,
-// in the sibling's words. SOURCE for the half ruled ahead of the runner
-// change it unblocks: the comment that parked the state-file question
-// for the maintainer now records the answer. The runner's own
-// behavioural test is owed by that change — docs/todo.md, "A cohort
-// stops at the first failure" — and is not pretended here.
+// EXERCISED, both halves. A member the runner skipped because a member
+// it requires failed is blocked, blamed on that member, in the
+// sibling's words — and it is the runner's own record that says so:
+// the log is silent about a skipped member and silent about one the
+// runner never reached, and the same log with and without the record
+// settles the silent member two different ways. SOURCE for the trust:
+// the comment that parked the state-file question records the answer
+// where it was parked, and the runner reads the record back through
+// verify.MemberStater. HELD BY the runner's behavioural tests in
+// verify/tart.
 func TestAMemberBehindAFailedPrerequisiteIsBlockedAndStateFilesAreTrusted(t *testing.T) {
 	in := CohortInput{
 		Subjects: []record.Subject{{Port: "oniguruma6"}, {Port: "jq"}},
@@ -765,6 +768,10 @@ func TestAMemberBehindAFailedPrerequisiteIsBlockedAndStateFilesAreTrusted(t *tes
 		Status:  verify.Status{State: verify.Failed, Handle: "w"},
 		Log:     "===> dockhand subject: oniguruma6\nError: Failed to build oniguruma6: command execution failed\n",
 		LogRead: true,
+		Reported: []verify.MemberState{
+			{Port: "oniguruma6", Outcome: verify.MemberFailed},
+			{Port: "jq", Outcome: verify.MemberSkipped, Prerequisite: "oniguruma6"},
+		},
 	}
 	out := JudgeCohort(in)
 	assert.Equal(t, record.Failed, out["oniguruma6"].Run.State)
@@ -772,15 +779,18 @@ func TestAMemberBehindAFailedPrerequisiteIsBlockedAndStateFilesAreTrusted(t *tes
 	assert.Equal(t, "oniguruma6", out["jq"].Run.Blamed)
 	assert.Contains(t, out["jq"].Run.Detail, "this member is untested")
 
-	// The trust half has no compiled fact to pin: it was ruled ahead of
-	// the runner change that will read the state files, and there is
-	// nothing yet that does. What can be checked is that the ruling is
-	// recorded where the question was parked, in prose — so this reads
-	// the file with its comments, deliberately, and the runner change
-	// owes the real test.
+	// The trust half: the same log without the record cannot tell a
+	// member skipped on purpose from one a dying runner never reached,
+	// and says so rather than guessing.
+	in.Reported = nil
+	assert.Equal(t, record.Errored, JudgeCohort(in)["jq"].Run.State,
+		"the log alone reads jq's silence as a runner that did not finish")
+
 	tart := strings.Split(readFile(t, filepath.Join(internalDir, "verify/tart/tart.go")), "\n")
 	assert.Equal(t, 1, matches(tart, `may trust them \(maintainer's ruling, 2026-09-04\)`),
 		"the parked question carries its answer where it was parked")
+	heldBy(t, "verify/tart/guest_test.go", "TestACohortSkipsAMemberWhosePrerequisiteFailed")
+	heldBy(t, "verify/tart/guest_test.go", "TestACohortGoesOnPastAMemberThatFailedWhenNothingDependsOnIt")
 }
 
 // D26 — the audit row says what a promotion carried (2026-09-04).

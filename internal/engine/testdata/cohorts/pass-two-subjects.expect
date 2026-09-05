@@ -15,5 +15,7 @@ members: oniguruma jq
 outcome: passed
 oniguruma.state: passed
 oniguruma.lint: clean
+oniguruma.reported: passed
 jq.state: passed
 jq.lint: 1 warning
+jq.reported: passed

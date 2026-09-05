@@ -167,6 +167,57 @@ func (s submission) fromSourcePorts(ports []string) []string {
 	return []string{s.Port}
 }
 
+// cohortRequires is the dependency graph inside one request: for each
+// port being built, the OTHER ports in the same request it declares a
+// dependency on, spelled as the request spells them and listed in
+// build order.
+//
+// It is read off the reverse index and not the members' Portfiles,
+// because the index is what proposed the cohort: a member is in it for
+// declaring a dependency on the headline, and the same row says what
+// else it declares. Every member is asked about and not the headline
+// alone — a branch verification builds whatever portdirs changed, and
+// an edge between two of those is as real as an edge to the headline.
+//
+// Only edges inside the request are kept. A dependency outside it is
+// not a prerequisite here: MacPorts builds it as an ordinary dependency
+// of whichever member needs it, and a failure there is read out of that
+// member's own log. Names are matched case-folded, as the index keys
+// them, and written back in the request's own spelling so the provider
+// can find each one in Ports by equality.
+//
+// No tree, an index that will not open, and one that will not walk all
+// answer with no graph. The graph is what lets the runner skip a member
+// whose prerequisite failed; without it every member is attempted, and
+// one built ahead of a failed prerequisite fails on its own with the
+// prerequisite's name in its log, which is the reading the judge has
+// always made. That is the slow answer and never a wrong one, and the
+// settle already reports an index that could not be walked.
+func (e *Engine) cohortRequires(ports []string) [][]string {
+	if len(ports) < 2 {
+		return nil
+	}
+	rev, err := e.dependencyIndex()
+	if err != nil {
+		return nil
+	}
+	at := make(map[string]int, len(ports))
+	for i, p := range ports {
+		at[strings.ToLower(p)] = i
+	}
+	out := make([][]string, len(ports))
+	for j, p := range ports {
+		for _, row := range rev.ByPort[strings.ToLower(p)] {
+			i, member := at[strings.ToLower(row.Name)]
+			if !member || i == j || slices.Contains(out[i], p) {
+				continue
+			}
+			out[i] = append(out[i], p)
+		}
+	}
+	return out
+}
+
 // memberPorts is the roster as the record spells it: one port per
 // member, in build order, headline first.
 func memberPorts(members []Member) []string {
@@ -317,6 +368,10 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 	// thing about the same member.
 	fromSource := s.fromSourcePorts(ports)
 	manifest, baseline := e.manifestAsk(ctx, m, prov, portName, members, root)
+	// The edges are computed over the ports actually being built, after
+	// the pre-flight, and never over the roster: a member that declined
+	// the platform is not in the request, and a graph drawn over the
+	// roster would name positions the guest does not have.
 	job, err := prov.Submit(ctx, verify.Request{
 		Ports:      ports,
 		Portdirs:   portdirs,
@@ -327,6 +382,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 		NeedsXcode: needsXcode,
 		Manifest:   manifest,
 		FromSource: fromSource,
+		Requires:   e.cohortRequires(ports),
 	})
 	if err != nil {
 		// A full provider (two-slot cap), a capability refusal, or a

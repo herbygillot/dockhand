@@ -232,64 +232,6 @@ is a plain flag that asks for it and not a default with a keep.
 
 Discussed as asked; recorded as D27.
 
-## A cohort stops at the first failure, including for members that do not depend on it
-
-**Observed live (2026-09-03), raised by the maintainer (2026-09-04).**
-The cohort runner breaks out of its loop the moment a member fails:
-
-```sh
-else echo failed > "$d/.state.$i" && mv -f "$d/.state.$i" "$d/state.$i"
-     ok=no
-     break
-```
-
-Everything behind that member is never attempted, and settle records it
-`blocked` on the sibling. In part C of the live check, `mise` — which
-has no relationship to `oniguruma6` at all, and was in the cohort only
-because of the stale-primary bug — came back "oniguruma6 fails to build;
-this member is untested".
-
-**The information to do better is already in hand.** `Dependent.Requires`
-carries each member's own dependency targets, and `dependencyOrder`
-topologically sorts the members with it. What is missing is that the
-guest is never told: the runner is a shell loop over indices with no
-notion of which member needs which.
-
-**Shape.** Stage a `requires.<i>` beside each member's `argv.<i>`,
-holding the indices that member depends on. The runner attempts every
-member, skipping one whose prerequisite has `state.<j>` of `failed`, and
-records why. A member skipped for a failed prerequisite is `blocked` and
-blamed on it, exactly as now; a member with no failed prerequisite is
-built, where today it is abandoned.
-
-**Why it matters more since the cap came off.** With the cap at eight, a
-first-member failure wasted at most seven builds. With the cap off, a
-cohort can hold every dependent a library has — `libffi` has 132 — and
-one early failure abandons all of them. Combined with the dependents
-being best effort, those abandoned members settle terminal and do not
-block the promotion, so the change publishes with many revision bumps
-resting on builds nobody ran. That is honest, because each is named, but
-it is a great deal of honesty about a great deal of nothing.
-
-**Cost, stated plainly.** This is not a small change. It moves the
-frozen runner bytes (`guest_test.go` pins them), the staging that writes
-the argv files, and the blame logic in `verdict/cohort.go`, whose
-`Stopper` and `Culprit` are built on there being exactly one member that
-stopped the run. The cohort corpus's `.expect` files encode the current
-shape and would move with it.
-
-**Ruled (maintainer, 2026-09-04), so this can now be designed.** A
-member whose prerequisite failed is `blocked`: something the change is
-responsible for did fail, and this member is untested because of it —
-and the sibling sentence, "X fails to build; this member is untested",
-becomes true rather than borrowed, because X really is its
-prerequisite. `withheld` stays narrow, for a member nothing was wrong
-with. And the judge may trust the guest's per-member `state.<i>` files,
-which is the carrier that tells "skipped for a failed prerequisite" from
-"never reached": a Portfile forging its own cohort's state would be a
-maintainer deceiving their own tool about their own bump, which is not
-worth engineering against. Recorded as D25.
-
 ## Let a person force a withheld member to build
 
 **The ask (maintainer, 2026-09-04), tentative.** A withheld member is

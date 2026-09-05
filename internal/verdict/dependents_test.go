@@ -45,10 +45,10 @@ func reasonFor(t *testing.T, all []record.Candidate, port string) record.Candida
 }
 
 func TestMembersComeBackInDependencyOrder(t *testing.T) {
-	// The guest's cohort runner stops at its first failure, so a member
-	// built before the thing it needs fails for a reason that has
-	// nothing to do with the change and leaves every member after it
-	// unbuilt with no marker.
+	// The guest's runner skips a member whose prerequisite failed and
+	// builds the rest, and it can only do that where prerequisites come
+	// first: a member built before the thing it needs fails for a
+	// reason that has nothing to do with the change.
 	c := DependentCohort(abiChanged(), nil, []Dependent{
 		lib("qgis", "gis/qgis", "gdal", "proj", "libwidget"),
 		lib("gdal", "gis/gdal", "proj", "libwidget"),

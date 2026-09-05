@@ -143,14 +143,33 @@ func (e *Engine) settle(ctx context.Context, repo *git.Repo, n *record.Record) e
 					in.Log, in.LogRead = log, true
 				}
 			}
+			// The guest's own record of each member, beside the log: it
+			// is what tells a member skipped for a failed prerequisite
+			// from one the runner never reached, and the judge trusts it
+			// (D25). Asked only of a failed cohort, because that is the
+			// one shape in which the members' verdicts part — a passing
+			// guest passed every member it announced, and one subject
+			// has no record. A provider that cannot answer, or a guest
+			// whose record cannot be read, leaves the log to speak alone.
+			if st.State == verify.Failed && len(in.Subjects) > 1 {
+				if ms, ok := prov.(verify.MemberStater); ok {
+					if states, serr := ms.MemberStates(ctx, job.Job); serr == nil {
+						in.Reported = states
+					}
+				}
+			}
 			// Whether a blamed port has a maintainer is a fact about the
 			// tree, which a judgment cannot go and read. The guarded
 			// reader answers whether it is even worth looking, so a port
 			// that merely declined the platform sends nobody globbing —
-			// and it is asked once, because a cohort stops at its first
-			// failure and therefore has one thing to blame.
-			if d, blamed := verdict.CohortBlame(in); blamed {
-				in.Nomaintainer = nomaintainerDep(repo.Root, d)
+			// and it names every stranger the cohort blamed, because the
+			// runner goes on past a member whose dependency broke and the
+			// next member's dependency can break too.
+			for _, d := range verdict.CohortBlame(in) {
+				if in.Nomaintainer == nil {
+					in.Nomaintainer = map[string]bool{}
+				}
+				in.Nomaintainer[d] = nomaintainerDep(repo.Root, d)
 			}
 		}
 		// The evidence slot, between the log fetch and the release. The

@@ -605,27 +605,36 @@ nohup /bin/sh -c '
 // spells "the runner never started". One such window per job was
 // already a hazard; n of them is n times the same wrong answer.
 //
-// Nothing reads them yet, and that is worth stating plainly rather than
-// leaving a reader to infer a durability guarantee that is only half
-// built. Poll reads the aggregate state and the judge attributes from
-// the log's markers, so today a guest that died mid-cohort still polls
-// as running forever. Two readers are waiting on these files: a
-// reconciler that could tell "died after member 1" from "still
-// building", and the judge, for which a state file is the one piece of
-// corroboration a build under test cannot write into the log. The judge
-// may trust them (maintainer's ruling, 2026-09-04): the guest log is
-// written by the change under test, but a Portfile that forged its own
-// cohort's state files would be a maintainer deceiving their own tool
-// about their own bump, and that is not a threat worth engineering
-// against. The state files are the carrier a runner that continues past
-// a failure will need, to tell a member skipped for a failed prerequisite
-// from one it never reached.
+// The judge reads them back (MemberStates). It may trust them (maintainer's ruling, 2026-09-04):
+// the guest log is written by the change under test, but a Portfile
+// that forged its own cohort's state files would be a maintainer
+// deceiving their own tool about their own bump, and that is not a
+// threat worth engineering against. What they
+// carry that the log cannot is the difference between a member skipped
+// on purpose and one never reached: neither prints a marker, and only
+// the state file says which. Poll still reads the aggregate alone, so a
+// guest that died mid-cohort still polls as running forever; a
+// reconciler that read these could tell "died after member 1" from
+// "still building", and none does yet.
 //
-// The break is kept, and it is what makes a later member's silence
-// meaningful. A cohort stops at its first failure: the members after it
-// leave no marker in the log and no state file, which is exactly the
-// difference between a port that was disproven and one that was never
-// reached.
+// The loop does not stop. A member that fails is recorded failed and
+// the runner goes on to the next. Before each member it reads
+// requires.<i> — the positions of the members this one depends on,
+// written by launch from the request's own graph — and a prerequisite
+// whose state file says failed or skipped means this member is skipped:
+// its state file says so and names the prerequisite's position on the
+// second line, and it prints nothing into the log, because nothing was
+// run. A member whose prerequisites all passed, or that has none, is
+// built whatever happened around it. The aggregate state is failed when
+// any member failed; a skip is always downstream of a failure inside
+// the cohort and adds nothing to that answer. A member with no state
+// file once the aggregate says the job finished is therefore a runner
+// fault and not a shape this script produces.
+//
+// The prerequisite check keeps the discipline of the rest of the
+// script. A line of requires.<i> is refused unless it is all digits, so
+// the only path it can ever open is one the runner itself named, and the
+// only variables in the script are the script's own.
 //
 // The link proof runs only where a caller asked for a manifest, and only
 // for a dependent — the members after the headline. What it proves is
@@ -647,6 +656,20 @@ nohup /bin/sh -c '
   ok=yes
   i=0
   while [ "$i" -lt "$n" ]; do
+    blocker=
+    if [ -f "$d/requires.$i" ]; then
+      while IFS= read -r j; do
+        case $j in "" | *[!0-9]*) continue;; esac
+        [ -f "$d/state.$j" ] || continue
+        IFS= read -r verdict < "$d/state.$j"
+        case $verdict in failed | skipped) blocker=$j; break;; esac
+      done < "$d/requires.$i"
+    fi
+    if [ -n "$blocker" ]; then
+      { echo skipped; echo "$blocker"; } > "$d/.state.$i" && mv -f "$d/.state.$i" "$d/state.$i"
+      i=$((i+1))
+      continue
+    fi
     [ -f "$d/subject.$i" ] && cat "$d/subject.$i" >> "$d/log"
     member=yes
     for f in "$d/argv.$i.lint" "$d/argv.$i.test" "$d/argv.$i"; do
@@ -667,7 +690,6 @@ nohup /bin/sh -c '
     then echo passed > "$d/.state.$i" && mv -f "$d/.state.$i" "$d/state.$i"
     else echo failed > "$d/.state.$i" && mv -f "$d/.state.$i" "$d/state.$i"
          ok=no
-         break
     fi
     i=$((i+1))
   done
@@ -806,8 +828,50 @@ func cohortArgvFiles(req verify.Request) []argvFile {
 				Body: argvBody(contentsArgs(port)),
 			})
 		}
+		// The prerequisites, written for every member and empty for one
+		// that has none. The file is what the runner consults before it
+		// attempts a member, and writing it unconditionally means the
+		// instruction set has one shape per member rather than two.
+		files = append(files, argvFile{
+			Name: fmt.Sprintf("requires.%d", i),
+			What: "the prerequisites of " + port,
+			Body: requiresBody(req, i),
+		})
 	}
 	return files
+}
+
+// requiresBody is the prerequisite file's format: the position of each
+// member this one must be built after, one per line, and an empty file
+// for a member with none.
+//
+// Positions and not names, for the same reason every other file here
+// is named by position: the runner compares each line against the
+// name of a state file, and a port name that reached that comparison
+// as a path component would be a string the change under test
+// controls, inside a path. The request speaks in names, because the
+// kernel does; this is where they become the numbers the guest can
+// safely read.
+//
+// A name that is not in the request names no member and is dropped —
+// a dependency outside the cohort is MacPorts' to build — and so is a
+// member naming itself.
+func requiresBody(req verify.Request, i int) string {
+	if i >= len(req.Requires) {
+		return ""
+	}
+	var lines []string
+	for _, name := range req.Requires[i] {
+		j := slices.Index(req.Ports, name)
+		if j < 0 || j == i {
+			continue
+		}
+		lines = append(lines, strconv.Itoa(j))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return argvBody(lines)
 }
 
 // contentsArgs asks port(1) what an installed port laid down, one path

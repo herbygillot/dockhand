@@ -46,9 +46,12 @@ func TestCohortCorpusSettles(t *testing.T) {
 				st = verify.Status{State: verify.Passed, Handle: "fake-1"}
 			}
 			repo, sha := engineRepo(t)
+			// Both of the guest's records, as the provider hands them
+			// over: the log, and the runner's own word about each member.
 			fake := &verifytest.Fake{
-				States: map[string]verify.Status{"fake-1": st},
-				Logs:   map[string]string{"fake-1": string(raw)},
+				States:   map[string]verify.Status{"fake-1": st},
+				Logs:     map[string]string{"fake-1": string(raw)},
+				Outcomes: map[string][]verify.MemberState{"fake-1": exp.MemberStates()},
 			}
 			n := cohortNote(t, repo, sha, exp.Members...)
 

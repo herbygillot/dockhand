@@ -242,6 +242,25 @@ type Request struct {
 	// because the archive that matches predates the change and
 	// verifying against it would verify nothing.
 	FromSource []string
+	// Requires is the dependency graph inside this request: Requires[i]
+	// names the members of Ports that Ports[i] declares a dependency on,
+	// spelled exactly as Ports spells them. It is parallel to Ports, and
+	// a request that carries none — nil, or shorter than Ports — has
+	// declared no edges, which is a request whose members are all
+	// independent of one another.
+	//
+	// Only edges inside Ports belong here. A dependency outside the
+	// request is not a prerequisite in this sense: MacPorts builds it as
+	// an ordinary dependency of whichever member needs it, and a
+	// failure there is read out of that member's own log. A provider
+	// meeting a name that is not in Ports skips it.
+	//
+	// What a provider does with the graph is decide what to attempt. A
+	// member whose prerequisite failed, or was itself skipped, is not
+	// built — its build would fail for that reason and no other — and
+	// the environment records that it was skipped and for whom. Every
+	// other member is built whatever happened to the members around it.
+	Requires [][]string
 }
 
 // Job identifies submitted work. It is a value, not a handle: writing
@@ -300,17 +319,17 @@ type Status struct {
 	// The environment is held until the job is released.
 	Handle string
 	// Subject names the port a terminal state is about, when the
-	// provider knows which. A cohort stops at its first failure, and
-	// that failure is a finding about one member: a status that only
-	// said "failed" would leave the caller to attribute it, which is
-	// the guess that lands a working port's name on a broken one's
-	// verdict.
+	// provider knows which. A cohort's failure is a finding about one
+	// member — or about several — and a status that only said "failed"
+	// would leave the caller to attribute it, which is the guess that
+	// lands a working port's name on a broken one's verdict.
 	//
 	// It is empty when the provider cannot say, which is every provider
 	// today — one environment builds the request's headline, so naming
-	// it again in the answer would add nothing. A caller reads the
-	// request when this is empty, and SubjectLog splits the log the
-	// same way for the same reason.
+	// it again in the answer would add nothing. A cohort's members are
+	// told apart by what the environment recorded about each of them
+	// (MemberStater) and by the log's own markers, so this is read only
+	// when neither says anything.
 	Subject string
 }
 
@@ -513,6 +532,80 @@ type Manifester interface {
 // learning they are broken.
 type Prober interface {
 	Probe(ctx context.Context, job Job, port string) ([]ProbeLine, error)
+}
+
+// MemberOutcome is the word a provider's own runner wrote about one
+// member of a cohort: its record of what it did, kept apart from
+// anything the build printed.
+type MemberOutcome int
+
+const (
+	// MemberUnreported means the runner wrote nothing about this member.
+	// A runner that finishes writes a word for every member, so this is
+	// a runner that died or a record that was lost — a fact about the
+	// environment, never an outcome about the port.
+	MemberUnreported MemberOutcome = iota
+	// MemberPassed means every command the member was given exited zero.
+	MemberPassed
+	// MemberFailed means one of them did not.
+	MemberFailed
+	// MemberSkipped means the runner never attempted the member, because
+	// a member it requires had already failed or been skipped itself.
+	// The member it was skipped for is named beside it.
+	MemberSkipped
+)
+
+func (o MemberOutcome) String() string {
+	switch o {
+	case MemberUnreported:
+		return "unreported"
+	case MemberPassed:
+		return "passed"
+	case MemberFailed:
+		return "failed"
+	case MemberSkipped:
+		return "skipped"
+	}
+	return "unknown"
+}
+
+// MemberState is one member's entry in the runner's own record.
+type MemberState struct {
+	// Port is the member, as the request named it.
+	Port string
+	// Outcome is what the runner wrote about it.
+	Outcome MemberOutcome
+	// Prerequisite is the member whose failure this one was skipped
+	// for, as the request named it. It is set only with MemberSkipped,
+	// and it names a member of the same request: a skip is always
+	// downstream of a failure inside the cohort, never of a port outside
+	// it.
+	Prerequisite string
+}
+
+// MemberStater is the optional capability of reporting what the
+// provider's own runner recorded about each member of a cohort — which
+// were built and passed, which failed, and which were skipped because
+// a member they depend on had failed first.
+//
+// It exists because the log cannot say. A member skipped for a failed
+// prerequisite prints nothing, and neither does a member the runner
+// never reached because it died; the runner's own record is what tells
+// the two apart, and a judge reading it may trust it (maintainer's
+// ruling, 2026-09-04: a Portfile forging its own cohort's record would
+// be a maintainer deceiving their own tool about their own bump). It
+// is a capability of its own rather than a use of Executor for the
+// reason Manifester is: what comes back is a value, and asking through
+// Exec would put one provider's file layout into every caller.
+//
+// The answer is in build order, one entry per member the environment
+// was asked to build, a member the runner wrote nothing about included
+// as MemberUnreported. A job that built one subject has no such record
+// and answers with none. A caller that needs this type-asserts, and
+// one that meets a provider without it has learned nothing about the
+// members beyond what the log says, which is what it always knew.
+type MemberStater interface {
+	MemberStates(ctx context.Context, job Job) ([]MemberState, error)
 }
 
 // Await polls until the job is terminal or the context ends. It is a

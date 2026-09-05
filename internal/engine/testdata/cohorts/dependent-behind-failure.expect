@@ -1,0 +1,24 @@
+# The headline breaks, and the member behind it depends on it. jq's
+# marker is never printed because the runner never ran jq: its
+# requires.1 names oniguruma, oniguruma's state file says failed, and
+# so jq's state file says skipped, for oniguruma. The log is silent
+# about jq and the record is not — and that is the whole difference
+# between this file and passed-unannounced: the same silence in the
+# log, read as a member the runner chose not to build because the
+# record says so, rather than as a runner that did not finish.
+#
+# oniguruma is failed, which is a finding about the change, and its
+# environment is kept for somebody to enter. jq is blocked and says
+# whose fault that is, in a sentence that is now literally true: jq
+# requires oniguruma, and oniguruma fails to build.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: oniguruma jq
+outcome: failed
+oniguruma.state: failed
+oniguruma.detail: Failed to build oniguruma: command execution failed
+oniguruma.reported: failed
+jq.state: blocked
+jq.blamed: oniguruma
+jq.detail: oniguruma fails to build; this member is untested
+jq.reported: skipped oniguruma

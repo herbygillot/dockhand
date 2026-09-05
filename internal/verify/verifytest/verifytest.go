@@ -62,6 +62,18 @@ type Fake struct {
 	// ProbeErr makes Probe fail per job ID — the guest that will not
 	// run the port's own binaries.
 	ProbeErr map[string]error
+	// Outcomes scripts MemberStates per job ID: what the guest's own
+	// runner recorded about each member of a cohort, in build order.
+	// Named for what it holds rather than for the method, on Live and
+	// Inventory's precedent. A job nothing was scripted for answers
+	// with no record, which is what a provider reports for a job that
+	// built one subject — and what the judge then reads as a log with
+	// nothing beside it.
+	Outcomes map[string][]verify.MemberState
+	// MemberStatesErr makes MemberStates fail per job ID — the guest
+	// whose record cannot be read, for the settle paths that must still
+	// judge from the log alone.
+	MemberStatesErr map[string]error
 	// CanManifest is what Capabilities reports for InstalledManifest: a
 	// provider that can describe an installation from inside the
 	// environment that made it.
@@ -165,9 +177,21 @@ func (f *Fake) Workers(context.Context) ([]verify.Worker, error) {
 }
 
 var (
-	_ verify.Manifester = (*Fake)(nil)
-	_ verify.Prober     = (*Fake)(nil)
+	_ verify.Manifester   = (*Fake)(nil)
+	_ verify.Prober       = (*Fake)(nil)
+	_ verify.MemberStater = (*Fake)(nil)
 )
+
+// MemberStates answers what a test scripted, and no record for a job it
+// said nothing about. No record is what a real provider reports for a
+// job that built one subject, so an unscripted job must not look like a
+// broken one.
+func (f *Fake) MemberStates(_ context.Context, job verify.Job) ([]verify.MemberState, error) {
+	if err := f.MemberStatesErr[job.ID]; err != nil {
+		return nil, err
+	}
+	return f.Outcomes[job.ID], nil
+}
 
 // Manifests answers what a test scripted, and the zero Manifests for a
 // job it said nothing about. Nothing to compare is a state a real
@@ -193,10 +217,11 @@ func (f *Fake) Probe(_ context.Context, job verify.Job, port string) ([]verify.P
 }
 
 // Incapable is a Verifier and nothing else: no Executor, no
-// WorkerLister, no Manifester, no Prober. It exists because a caller's
-// graceful refusal for a provider that cannot answer is otherwise
-// untestable — with only Fake to stand in, every optional capability is
-// always present, and the branch that says so honestly never runs.
+// WorkerLister, no Manifester, no Prober, no MemberStater. It exists
+// because a caller's graceful refusal for a provider that cannot answer
+// is otherwise untestable — with only Fake to stand in, every optional
+// capability is always present, and the branch that says so honestly
+// never runs.
 //
 // It wraps a Fake rather than embedding one so the capabilities cannot
 // creep back in by promotion: adding a method to Fake must not quietly

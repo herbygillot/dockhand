@@ -18,11 +18,18 @@
 # the author on stderr and to the reviewer in the body. The corpus
 # states what the settle wrote either way; what changed is what the gate
 # then does with it.
+#
+# The runner's record says jq failed, because port(1) exited non-zero
+# under it, and the log says why: what failed was pkgconfig. The record
+# does not override the log's reading — it says the member was
+# attempted and did not succeed, and the section says what that means.
 # SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
 # not captured: see README.md.
 members: oniguruma jq
 outcome: failed
 oniguruma.state: passed
 oniguruma.lint: clean
+oniguruma.reported: passed
 jq.state: blocked
 jq.detail: dependency pkgconfig fails to build; the change itself is untested
+jq.reported: failed

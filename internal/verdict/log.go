@@ -169,24 +169,29 @@ func BlockedByMember(member string, declined bool) string {
 	return fmt.Sprintf("%s %s; this member is untested", member, what)
 }
 
-// BlockedBehindMember names the sibling the cohort stopped inside when
-// that sibling was itself BLOCKED — a port outside the change broke
-// under it — rather than failed.
+// BlockedBehindMember names the sibling this member was skipped for
+// when that sibling was itself BLOCKED — a port outside the change
+// broke under it, or it was skipped in its turn for a prerequisite of
+// its own — rather than failed.
 //
 // It is a third sentence and not BlockedByMember with the stranger's
 // name in it, because the stranger is not this member's to blame. A
-// member the runner never reached has no section, so nothing in the
-// log says what it depends on; the one fact the log carries about it
-// is that the cohort stopped before it, and the member it stopped
-// inside is the thing a reader can go and check. Naming the stranger
-// instead was measured live (py311-rawpy told that py310-scikit-image
-// fails to build — a port it does not depend on): a sentence asserting
-// a dependency edge the tree does not carry, in a body a reviewer
-// reads.
+// member the runner skipped has no section, so nothing in the log says
+// what it depends on; the one fact the record carries about it is the
+// member it was skipped for, and that member is the thing a reader can
+// go and check. Naming the stranger instead was measured live
+// (py311-rawpy told that py310-scikit-image fails to build — a port it
+// does not depend on): a sentence asserting a dependency edge the tree
+// does not carry, in a body a reviewer reads.
 //
 // "Could not be built" and not "fails to build", because the sibling
-// did not fail at anything: its dependency did, and a reader sent
-// looking for the sibling's breakage would find none.
+// did not fail at anything: its dependency did, or its own
+// prerequisite's, and a reader sent looking for the sibling's breakage
+// would find none. "Not built" and not "not reached", because the
+// runner did reach this member and chose not to build it — and a
+// member behind a failure in a log nothing framed, the one case where
+// "not reached" might be true, is not a case the record can tell from
+// this one.
 func BlockedBehindMember(member string) string {
-	return fmt.Sprintf("%s could not be built, so this member was not reached; it is untested", member)
+	return fmt.Sprintf("%s could not be built, so this member was not built; it is untested", member)
 }

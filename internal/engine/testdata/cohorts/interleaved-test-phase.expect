@@ -11,13 +11,14 @@
 # accumulate: jq's lint line is in its first piece and its failure is
 # in its second, and both must land on jq.
 #
-# It also pins how far the runner is taken to have got. The stopper is
-# the last member the FILE announces, so it is jq here — the guest was
-# writing jq's section when it gave up, which is what a marker means.
-# Reading the roster's order instead would agree in this file only
-# because jq happens to sort last; interleaved-return-failure is the
-# same shape with the failure on the return visit, where the two orders
-# disagree and only one of them names the port that broke.
+# It carries no reported keys, deliberately: this is the log read
+# ALONE, the reading a guest that wrote no record gets. With nothing
+# recorded, how far the runner got is what the markers say — the last
+# member the FILE announces is the one the guest was inside when it
+# gave up, jq here, and a member announced before it whose accumulated
+# section is clean finished. TestTheLogAloneTakesTheLastMarkerInFileOrder
+# holds the mirror shape, where the file's order and the roster's
+# disagree and only the file's names the member that broke.
 # SYNTHESIZED from verify.SplitSubjects's repeat-marker contract, not
 # captured: see README.md.
 members: oniguruma jq

@@ -85,8 +85,9 @@ func TestAGuestStaysWhileASubjectIsStillBuilding(t *testing.T) {
 	assert.False(t, took, "the ledger refuses the release while a run is live")
 }
 
-// A cohort stops at its first failure, and the members after it are
-// blocked rather than disproven. Naming who stopped it is the
+// A log nothing framed — no marker, no record — that names a sibling
+// as what broke: the sibling takes the failure and the headline is
+// blocked on it rather than disproven. Naming the sibling is the
 // difference between "untested" and "untested because of oniguruma".
 func TestABlockedSubjectBlamesItsSibling(t *testing.T) {
 	repo, sha := engineRepo(t)
@@ -618,6 +619,8 @@ func TestAcceptingTheProposalVerifiesTheWholeCohortAtOnce(t *testing.T) {
 	assert.True(t, strings.HasSuffix(req.Portdirs[1], filepath.FromSlash("sysutils/netdata")), req.Portdirs[1])
 	assert.True(t, req.Manifest,
 		"judy has dependents and the provider can describe an installation, which is the whole of the condition")
+	assert.Equal(t, [][]string{nil, {"judy"}}, req.Requires,
+		"the guest is told which member waits for which: netdata declares judy, and judy waits for nobody")
 
 	tip := strings.TrimSpace(out.String())
 	fresh, err := ledger.Open(repo).Read(ctx, tip)
@@ -835,4 +838,64 @@ func TestCohortFilesCarryEachMembersWholeFiles(t *testing.T) {
 		{Path: "graphics/gthumb/Portfile", Content: []byte("revision 2\n")},
 		{Path: "graphics/gthumb/files/patch-foo.diff", Content: []byte("@@ -9 +9 @@\n")},
 	}, cohortFiles(built))
+}
+
+// The request's graph is the edges among the ports being built, and
+// nothing wider. It is read off the reverse index for every member and
+// not the headline alone, matched as the index keys names, and spelled
+// back the way the request spells them, so the provider finds each
+// prerequisite in Ports by equality.
+func TestTheCohortsGraphIsTheEdgesAmongItsOwnMembers(t *testing.T) {
+	repo, _ := indexedRepo(t, "judy")
+	e := indexed(t, repo, &verifytest.Fake{})
+
+	assert.Equal(t, [][]string{nil, {"judy"}, nil}, e.cohortRequires([]string{"judy", "netdata", "other"}),
+		"netdata declares judy; judy and other declare nothing in the request")
+	assert.Equal(t, [][]string{nil, {"Judy"}}, e.cohortRequires([]string{"Judy", "Netdata"}),
+		"matched as the index keys names, written as the request spells them")
+	assert.Equal(t, [][]string{{"judy"}, nil}, e.cohortRequires([]string{"netdata", "judy"}),
+		"an edge is an edge whichever member is the headline")
+	assert.Nil(t, e.cohortRequires([]string{"netdata"}), "one port has no cohort to be ordered within")
+
+	// No tree, no graph: every member is attempted, and one built
+	// ahead of a failed prerequisite fails on its own with the
+	// prerequisite's name in its log — the slow answer, never a wrong
+	// one.
+	bare, sha := engineRepo(t)
+	assert.Nil(t, testState(t, bare, &verifytest.Fake{}).cohortRequires([]string{"jq", "oniguruma"}))
+	_ = sha
+}
+
+// A provider that cannot read the guest's record leaves the log to
+// speak alone, and the log alone reads a member it never announced as
+// a runner that did not finish — errored, blamed on nobody — rather
+// than guessing that it was skipped for the member ahead of it.
+func TestAProviderWithoutARecordSettlesFromTheLogAlone(t *testing.T) {
+	ctx := context.Background()
+	repo, sha := engineRepo(t)
+	fake := &verifytest.Fake{
+		States: map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "fake-1"}},
+		Logs: map[string]string{"fake-1": verify.SubjectMarker("oniguruma") + "\n" +
+			"Error: Failed to build oniguruma: command execution failed\n"},
+		Outcomes: map[string][]verify.MemberState{"fake-1": {
+			{Port: "oniguruma", Outcome: verify.MemberFailed},
+			{Port: "jq", Outcome: verify.MemberSkipped, Prerequisite: "oniguruma"},
+		}},
+	}
+	n := cohortNote(t, repo, sha, "oniguruma", "jq")
+
+	require.NoError(t, countingEngine(repo, verifytest.Incapable{Fake: fake}).settle(ctx, repo, &n))
+
+	assert.Equal(t, record.Failed, runFor(n, "oniguruma", "Testos").State)
+	jq := runFor(n, "jq", "Testos")
+	assert.Equal(t, record.Errored, jq.State, "the record was there to read and this provider cannot read it")
+	assert.Empty(t, jq.Blamed)
+
+	// The same guest through a provider that can: the record says jq
+	// was skipped for oniguruma, and the settle writes that.
+	repo, sha = engineRepo(t)
+	again := cohortNote(t, repo, sha, "oniguruma", "jq")
+	require.NoError(t, testState(t, repo, fake).settle(ctx, repo, &again))
+	assert.Equal(t, record.Blocked, runFor(again, "jq", "Testos").State)
+	assert.Equal(t, "oniguruma", runFor(again, "jq", "Testos").Blamed)
 }

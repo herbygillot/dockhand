@@ -98,9 +98,10 @@ type Run struct {
 	// environment could not answer, which slot limit was hit.
 	Detail string `json:"detail,omitempty"`
 	// Blamed names the subject whose failure this one inherited. A
-	// cohort stops at its first failure, and the members after it are
-	// blocked rather than disproven; naming who stopped it is the
-	// difference between "untested" and "untested because of libwidget".
+	// member whose prerequisite failed is skipped rather than built,
+	// and it is blocked rather than disproven; naming the prerequisite
+	// is the difference between "untested" and "untested because of
+	// libwidget".
 	Blamed string `json:"blamed,omitempty"`
 	// Evidence is what a pass proves, in the provider's own words —
 	// "built in a pristine VM", or something weaker from a backend whose

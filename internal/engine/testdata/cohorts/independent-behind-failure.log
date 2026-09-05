@@ -1,0 +1,53 @@
+===> dockhand subject: jq
+--->  Verifying Portfile for jq
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/sysutils/jq
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: adding the default universal variant
+--->  Computing dependencies for jq
+DEBUG: jq has no conflicts
+DEBUG: Searching for dependency: oniguruma
+DEBUG: Found Dependency: receipt exists for oniguruma
+DEBUG: Executing org.macports.main (jq)
+--->  Fetching distfiles for jq
+--->  Verifying checksums for jq
+DEBUG: Correct (sha256) checksum for jq-1.8.0.tar.gz
+--->  Extracting jq
+--->  Configuring jq
+DEBUG: Executing org.macports.configure (jq)
+--->  Building jq
+DEBUG: Executing org.macports.build (jq)
+DEBUG: Assembled command: 'cd "/opt/local/var/macports/build/_tmp_dockhand-overlay_sysutils_jq/jq/work/jq-1.8.0" && /usr/bin/make -j8 -w all'
+Error: Failed to build jq: command execution failed
+DEBUG: Error code: CHILDSTATUS 5210 2
+Warning: targets not executed for jq: org.macports.activate org.macports.destroot org.macports.install
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_sysutils_jq/jq/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port jq failed
+===> dockhand subject: mise
+--->  Verifying Portfile for mise
+--->  0 errors and 1 warnings found.
+Warning: Line 22 has trailing whitespace before newline
+DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/mise
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/sysutils/mise
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: adding the default universal variant
+--->  Computing dependencies for mise
+DEBUG: mise has no conflicts
+DEBUG: Searching for dependency: rust
+DEBUG: Found Dependency: receipt exists for rust
+DEBUG: Executing org.macports.main (mise)
+--->  Fetching distfiles for mise
+--->  Verifying checksums for mise
+DEBUG: Correct (sha256) checksum for mise-2025.9.1.tar.gz
+--->  Extracting mise
+--->  Configuring mise
+DEBUG: Executing org.macports.configure (mise)
+--->  Building mise
+DEBUG: Executing org.macports.build (mise)
+--->  Staging mise into destroot
+--->  Installing mise @2025.9.1_1
+--->  Activating mise @2025.9.1_1
+DEBUG: Executing org.macports.activate (mise)
+--->  Cleaning mise

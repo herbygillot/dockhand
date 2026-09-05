@@ -205,10 +205,12 @@ func (e *Engine) stream(ctx context.Context, prov verify.Verifier, job verify.Jo
 // failedMember names the subject whose build failed on one release, in
 // the record's own build order.
 //
-// Build order and not map order: a cohort stops at its first failure,
-// so there is one failure to find, and a walk that reported whichever
-// the map handed it first would answer differently on different runs
-// for a record that somehow carried two.
+// Build order and not map order: a cohort can carry several failures,
+// since the runner goes on past one to every member that does not
+// depend on it, and the one named is the first in build order — the
+// headline when it is among them — so the same record answers the
+// same way on every run. A walk that reported whichever the map
+// handed it first would not.
 func failedMember(n record.Record, release string) (string, bool) {
 	for _, s := range n.Subjects {
 		if n.Runs[record.RunKey(s.Port, release)].State == record.Failed {

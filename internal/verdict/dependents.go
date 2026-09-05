@@ -40,10 +40,11 @@ const DependsBuild = "depends_build"
 // dependency ordering arithmetic over values rather than a second walk
 // of the index from inside a function that is not allowed one. Without
 // it there is no pure way to build a library before the things that
-// link it, and the order is load-bearing: the guest's cohort runner
-// stops at its first failure, so a member built ahead of what it needs
-// fails for a reason that has nothing to do with the change and leaves
-// every member after it unbuilt.
+// link it, and the order is load-bearing: the guest's runner skips a
+// member whose prerequisite failed and builds every other one, and it
+// can only do that where prerequisites come first — a member built
+// ahead of what it needs fails for a reason that has nothing to do
+// with the change.
 type Dependent struct {
 	// Port is the dependent as the index names it, which for a subport
 	// is the subport's own name.
@@ -553,8 +554,8 @@ func sortCandidates(all []record.Candidate) {
 //
 // MacPorts refuses to activate two ports that declare a conflict, so a
 // cohort holding both would spend a guest discovering that the second
-// will not install — and, because a failed member stops the ones behind
-// it, take uninvolved members down with it. Measured live: gegl and
+// will not install — and skip every member that depends on it, for a
+// failure that was never the change's. Measured live: gegl and
 // gegl-devel, then libheif and libheif-devel one candidate later. Two of
 // the two cohorts examined carried such a pair, so this is the ordinary
 // case and not a corner.

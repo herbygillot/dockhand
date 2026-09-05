@@ -40,29 +40,26 @@ import (
 // that needs a revision bump, and the size of it is the user's to weigh.
 //
 // It used to be eight, and it capped BUILDS rather than edits — a
-// cohort's members install one after another in one guest, and the
-// guest stops at its first failure, so gdal's 82 dependents collapsing
-// into 39 portdirs would be a day inside one environment in which any
-// member could leave the rest unbuilt. What replaced it is consent
-// rather than arithmetic: the proposal states how many there are,
-// `bump-revision --for` is the deliberate act of accepting them, and
-// `--exclude` is how a person takes some and not the rest. A number
-// this file chose could not have known which eight the maintainer
-// wanted, and named the other seventy-four as a second cohort nobody
-// scheduled.
+// cohort's members install one after another in one guest, so gdal's
+// 82 dependents collapsing into 39 portdirs would be a day inside one
+// environment. What replaced it is consent rather than arithmetic: the
+// proposal states how many there are, `bump-revision --for` is the
+// deliberate act of accepting them, and `--exclude` is how a person
+// takes some and not the rest. A number this file chose could not have
+// known which eight the maintainer wanted, and named the other
+// seventy-four as a second cohort nobody scheduled.
 //
 // The exposure the cap was also limiting has not gone away and is worth
 // keeping in view: with the dependents best effort, members left
 // unbuilt behind a failure settle terminal and do not block the
-// promotion, so a large cohort that breaks early publishes many
-// revision bumps on little evidence. That is what the count at proposal
-// time and the per-member lines at promotion time are for.
-//
-// Most of that exposure is the runner's doing rather than the cap's,
-// and is fixable: it breaks its loop at the first failure, so a member
-// that does not depend on the one that broke is abandoned along with
-// the ones that do. See docs/todo.md — with the cap off, that is the
-// difference between abandoning seven builds and abandoning a hundred.
+// promotion, so a large cohort that breaks early publishes revision
+// bumps on little evidence. That is what the count at proposal time
+// and the per-member lines at promotion time are for. The runner
+// bounds it to the members that really depend on what broke — it
+// skips a member whose prerequisite failed and builds every other one
+// (the request carries the graph, verify.Request.Requires) — so the
+// members published without a pass are the ones nothing could have
+// proven, and not everything that happened to sort after the failure.
 const CohortCap = 0
 
 // stampFindings dates a finding set as it is appended.
@@ -608,18 +605,37 @@ func fromSourceOn(n record.Record, port string) bool {
 // one: the question was asked and could not be answered, and that is
 // what travels as an error.
 func (e *Engine) dependentsOf(port string) ([]portindex.Dependent, []portindex.Unread, error) {
-	if e.Tree == nil {
+	rev, err := e.dependencyIndex()
+	if errors.Is(err, errNoTree) {
 		return nil, nil, nil
 	}
-	t, err := e.Tree()
-	if err != nil {
-		return nil, nil, nil
-	}
-	rev, err := t.Dependents()
 	if err != nil {
 		return nil, nil, err
 	}
 	return rev.ByPort[strings.ToLower(port)], rev.Unread, nil
+}
+
+// errNoTree reports that nobody was in a position to read the tree: no
+// tree is wired, or the directory is not a ports tree. It is the
+// absence dependentsOf answers silently, kept apart from an index that
+// opened and would not walk so that the two callers can keep saying
+// different things about them.
+var errNoTree = errors.New("engine: no ports tree to read")
+
+// dependencyIndex is the tree's reverse dependency index, read once per
+// tree and cached by it. Both readers of dependency edges go through
+// here — the proposal that names a headline's dependents, and the
+// submission that tells the guest which members depend on which — so
+// that they read the same rows.
+func (e *Engine) dependencyIndex() (portindex.Reverse, error) {
+	if e.Tree == nil {
+		return portindex.Reverse{}, errNoTree
+	}
+	t, err := e.Tree()
+	if err != nil {
+		return portindex.Reverse{}, fmt.Errorf("%w: %w", errNoTree, err)
+	}
+	return t.Dependents()
 }
 
 // inFlight maps every port another dockhand branch is already changing

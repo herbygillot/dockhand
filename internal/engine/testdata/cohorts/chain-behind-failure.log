@@ -1,0 +1,25 @@
+===> dockhand subject: libwidget
+--->  Verifying Portfile for libwidget
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/devel/libwidget
+DEBUG: Changing to port directory: /tmp/dockhand-overlay/devel/libwidget
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+DEBUG: adding the default universal variant
+--->  Computing dependencies for libwidget
+DEBUG: libwidget has no conflicts
+DEBUG: Executing org.macports.main (libwidget)
+--->  Fetching distfiles for libwidget
+--->  Verifying checksums for libwidget
+DEBUG: Correct (sha256) checksum for libwidget-3.0.tar.gz
+--->  Extracting libwidget
+--->  Configuring libwidget
+DEBUG: Executing org.macports.configure (libwidget)
+--->  Building libwidget
+DEBUG: Executing org.macports.build (libwidget)
+DEBUG: Assembled command: 'cd "/opt/local/var/macports/build/_tmp_dockhand-overlay_devel_libwidget/libwidget/work/libwidget-3.0" && /usr/bin/make -j8 -w all'
+Error: Failed to build libwidget: command execution failed
+DEBUG: Error code: CHILDSTATUS 5019 2
+Warning: targets not executed for libwidget: org.macports.activate org.macports.destroot org.macports.install
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_devel_libwidget/libwidget/main.log for details.
+Error: Follow https://guide.macports.org/#project.tickets if you believe there is a bug.
+Error: Processing of port libwidget failed

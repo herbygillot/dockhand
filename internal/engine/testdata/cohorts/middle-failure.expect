@@ -1,0 +1,30 @@
+# A failure in the middle of the cohort, with one member behind it that
+# depends on it and one that does not. The headline passed before the
+# failure; gadget broke; gizmo needs only libwidget, so it is built
+# after gadget and passes on its own section; gadget-tools needs gadget
+# and is skipped for it. Four members, four answers, from a loop that
+# never stopped.
+#
+# Two things this file pins that the two-member shapes cannot. A pass
+# recorded AFTER a failure is a pass — gizmo's lint line is read from
+# its own section, exactly as it would be in a cohort where nothing
+# broke. And a skip names the prerequisite that failed and not the one
+# that passed: gadget-tools requires libwidget too, and libwidget is
+# nowhere in its sentence.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: libwidget gadget gizmo gadget-tools
+outcome: failed
+libwidget.state: passed
+libwidget.lint: clean
+libwidget.reported: passed
+gadget.state: failed
+gadget.detail: Failed to build gadget: command execution failed
+gadget.reported: failed
+gizmo.state: passed
+gizmo.lint: 2 warnings
+gizmo.reported: passed
+gadget-tools.state: blocked
+gadget-tools.blamed: gadget
+gadget-tools.detail: gadget fails to build; this member is untested
+gadget-tools.reported: skipped gadget
