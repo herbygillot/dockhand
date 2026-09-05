@@ -923,3 +923,35 @@ func TestMintBranchNameRoundTripsThroughBranches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"dockhand/jq-1.8"}, got)
 }
+
+// One log, not a diff per commit: each commit in the range comes back
+// with its own subject and its own paths, newest first, and the base
+// itself is outside the range the way it is for OwnCommits.
+func TestCommitsWithPathsNamesEachCommitsOwnPaths(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+	tip, err := r.Mint(ctx, MintRequest{
+		Branch: "dockhand/jq-1.8", Base: "HEAD",
+		Commits: []Commit{
+			{Files: []File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n")}}, Message: "jq: update to 1.8"},
+			{Files: []File{
+				{Path: "README", Content: []byte("a tree, twice\n")},
+				{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\nrevision 1\n")},
+			}, Message: "jq: rebuild, and a word in the README"},
+		},
+	})
+	require.NoError(t, err)
+
+	got, err := r.CommitsWithPaths(ctx, tip, "HEAD")
+	require.NoError(t, err)
+	require.Len(t, got, 2, "the range excludes the base")
+	assert.Equal(t, tip, got[0].Sha, "newest first")
+	assert.Equal(t, "jq: rebuild, and a word in the README", got[0].Subject)
+	assert.Equal(t, []string{"README", "sysutils/jq/Portfile"}, got[0].Paths, "the commit's own paths, not the chain's")
+	assert.Equal(t, "jq: update to 1.8", got[1].Subject)
+	assert.Equal(t, []string{"sysutils/jq/Portfile"}, got[1].Paths)
+
+	none, err := r.CommitsWithPaths(ctx, "HEAD", tip)
+	require.NoError(t, err)
+	assert.Empty(t, none, "nothing is reachable from the base that the tip cannot reach")
+}

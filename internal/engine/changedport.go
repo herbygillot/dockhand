@@ -127,6 +127,10 @@ func (e *Engine) ChangedPortdirs(ctx context.Context, repo *git.Repo, branch, ti
 		}
 		return nil, fmt.Errorf("verify: %s changes no portdir against %s; there is nothing to verify", branch, git.Abbrev(base))
 	}
+	// Said where the roster is derived and nowhere else, and about the
+	// roster rather than the diff: a foreign commit under _resources
+	// enlarges nothing that gets built.
+	e.adviseForeignMembers(ctx, repo, branch, primary, base, tip, derived)
 	n, err := e.Ledger(repo).Read(ctx, tip)
 	if err != nil {
 		// No record, or one this build cannot read. The second is a
@@ -148,6 +152,107 @@ func (e *Engine) ChangedPortdirs(ctx context.Context, repo *git.Repo, branch, ti
 	// something git does not: which subject is the headline, and the
 	// order the members must be built in.
 	return recorded, nil
+}
+
+// adviseForeignMembers says, on stderr, which of a roster's portdirs
+// came from commits the branch does not own — and changes nothing.
+//
+// The condition is a stale primary. The diff's base is the LOCAL
+// primary, which never fetches (D21: the local position is the answer,
+// staleness included), while a hand-made branch is ordinarily cut from
+// origin/<primary>, which dockhand's own retire sweep advances when a
+// PR merges. Everything upstream landed between the two positions is
+// then in the branch's diff, and its portdirs are counted, built, and
+// claimed as the branch's — a cohort submitted as `oniguruma6, jq,
+// mise` when the branch touched two, the third being dockhand's own
+// merged PR (field, 2026-09-03). A branch dockhand minted is immune:
+// it forks from the local primary, so its merge base is its fork
+// point.
+//
+// Ruled an advisory (2026-09-04): D21 stands, the roster stands, and
+// one line says which members are somebody else's and where they came
+// from. The remedy is the user's, and the line names it — a
+// fast-forward of the local primary moves the merge base, and the
+// foreign commits fall out of the diff on the next derivation with no
+// re-cut of the branch.
+//
+// From refs alone. The remote-tracking ref is whatever the last fetch
+// left, and the commits the branch carries that the primary lacks are
+// the range from the diff's base to the branch's fork point on that
+// ref: reachable from the tip and from origin/<primary>, and not from
+// <primary>. A member is named only when no commit of the branch's
+// own touches it — the branch editing a port upstream also moved is a
+// roster the branch earned, not an enlargement. No ref means nothing
+// to compare against, and a git error on the way says nothing at all:
+// best effort, on the reflog's model, because this is corroboration
+// beside the roster and a verification must not fail over the words
+// beside it.
+func (e *Engine) adviseForeignMembers(ctx context.Context, repo *git.Repo, branch, primary, base, tip string, derived []string) {
+	remote := "refs/remotes/origin/" + primary
+	if _, err := repo.RevParse(ctx, remote); err != nil {
+		return
+	}
+	fork, err := repo.MergeBase(ctx, remote, tip)
+	if err != nil || fork == base {
+		return
+	}
+	foreign, err := repo.CommitsWithPaths(ctx, fork, base)
+	if err != nil {
+		return
+	}
+	ownPaths, err := repo.DiffNames(ctx, fork, tip)
+	if err != nil {
+		return
+	}
+	own := map[string]bool{}
+	for _, p := range ownPaths {
+		if d, ok := portdirOf(p); ok {
+			own[d] = true
+		}
+	}
+	inRoster := make(map[string]bool, len(derived))
+	for _, d := range derived {
+		inRoster[d] = true
+	}
+	// By portdir, each with the commits that touched it oldest first —
+	// the order they landed upstream, which is how a person reading a
+	// log expects to find them.
+	from := map[string][]string{}
+	for i := len(foreign) - 1; i >= 0; i-- {
+		c := foreign[i]
+		named := map[string]bool{}
+		for _, p := range c.Paths {
+			d, ok := portdirOf(p)
+			if !ok || !inRoster[d] || own[d] || named[d] {
+				continue
+			}
+			named[d] = true
+			from[d] = append(from[d], git.Abbrev(c.Sha)+" "+c.Subject)
+		}
+	}
+	if len(from) == 0 {
+		return
+	}
+	var members []string
+	for _, d := range derived {
+		if commits, ok := from[d]; ok {
+			members = append(members, fmt.Sprintf("%s (from %s)", d, strings.Join(commits, ", ")))
+		}
+	}
+	fmt.Fprintf(e.Err, "%s: %s is behind origin/%s, so the change counts portdirs the branch does not own: %s; fast-forward %s and the roster is the branch's own again\n",
+		branch, primary, primary, strings.Join(members, ", "), primary)
+}
+
+// portdirOf is the portdir a path lies under — its first two segments —
+// and false for a path with no third segment to lie under them, or one
+// under the tree's own resources, which ChangedPortdirs explains is not
+// a port.
+func portdirOf(path string) (string, bool) {
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 3 || parts[0] == build.ResourcesDir {
+		return "", false
+	}
+	return parts[0] + "/" + parts[1], true
 }
 
 // sameSet reports whether two portdir lists name the same directories,

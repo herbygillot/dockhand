@@ -135,6 +135,17 @@ func MoveBranch(t *testing.T, repo *git.Repo, branch, sha string) {
 	run(t, repo.Root, "update-ref", "refs/heads/"+branch, sha)
 }
 
+// Fetched records sha as where remote's branch was last seen — the
+// remote-tracking ref refs/remotes/<remote>/<branch>, which is all a
+// fetch leaves behind and all the git package reads when it asks where
+// a remote stands. No remote is contacted and none need be configured:
+// the ref is the observation, and a fixture that made a real fetch
+// would have to build the remote the observation is of.
+func Fetched(t *testing.T, repo *git.Repo, remote, branch, sha string) {
+	t.Helper()
+	run(t, repo.Root, "update-ref", "refs/remotes/"+remote+"/"+branch, sha)
+}
+
 // BareFork gives the repository the two remotes a promoted branch has:
 // origin at UpstreamURL, and remote at a bare repository under
 // <login>/ports, a path whose owner segment is what a fork lookup reads

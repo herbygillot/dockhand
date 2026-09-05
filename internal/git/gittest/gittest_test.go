@@ -111,6 +111,28 @@ func TestBareForkNamesBothRemotes(t *testing.T) {
 	assert.Equal(t, "herby", repo.TrackedRemote(ctx, "dockhand/jq-1.8"))
 }
 
+func TestFetchedLeavesOnlyTheRemoteTrackingRef(t *testing.T) {
+	ctx := context.Background()
+	repo := PortsTree(t, realTools)
+	// Upstream's commit, minted on a scratch branch that is then
+	// removed: the object stays, and only the remote-tracking ref
+	// names it, which is what a fetch of a moved remote leaves.
+	ahead := Commit(t, repo, "scratch", "main", "sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8")
+	Fetched(t, repo, "origin", "main", ahead)
+	require.NoError(t, repo.DeleteBranch(ctx, "scratch"))
+
+	got, err := repo.RevParse(ctx, "refs/remotes/origin/main")
+	require.NoError(t, err)
+	assert.Equal(t, ahead, got)
+	branches, err := repo.Branches(ctx, "")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"main"}, branches, "a remote-tracking ref is not a local branch")
+	primary, err := repo.PrimaryBranch(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "main", primary, "and does not change which branch is primary")
+	assert.True(t, repo.IsAncestor(ctx, primary, ahead), "the local primary is behind what was fetched")
+}
+
 // TestFixturesReproduceTheGoldenShas pins the property the goldens
 // depend on: under the golden date, the two-port tree cmd's golden
 // fixtures build, and the branches minted on it, land on the shas the

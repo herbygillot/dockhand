@@ -153,6 +153,70 @@ func (r *Repo) OwnCommits(ctx context.Context, rev, base string) ([]string, erro
 	return strings.Split(out, "\n"), nil
 }
 
+// CommitPaths is one commit as its log entry records it: the sha, the
+// subject line, and the paths the commit changed.
+type CommitPaths struct {
+	Sha     string
+	Subject string
+	Paths   []string
+}
+
+// CommitsWithPaths lists the commits reachable from rev but not from
+// base — OwnCommits' range — each with its subject and the paths it
+// changed, newest first, from one git invocation rather than a diff
+// per commit: the range is unbounded in principle (a primary branch a
+// month stale is thousands of commits) and a process per commit would
+// turn a look at the log into a wait.
+//
+// A merge commit comes back with no paths. git shows a merge against
+// no parent unless asked, and the commits it merged are in the same
+// range carrying their own paths, so the merge's combined diff would
+// name every one of them a second time.
+func (r *Repo) CommitsWithPaths(ctx context.Context, rev, base string) ([]CommitPaths, error) {
+	// One header line per commit, sha and subject tab-separated, then
+	// the paths one per line under it. A path line cannot be mistaken
+	// for a header: a header is forty hex characters and a tab before
+	// anything else, and no path in a tree is shaped like that. The
+	// signature flag pins the shape against a log.showSignature in the
+	// user's config, which would put GPG's lines between the two.
+	out, err := r.git(ctx, "log", "--format=%H%x09%s", "--name-only", "--no-show-signature", rev, "--not", base)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	var commits []CommitPaths
+	for line := range strings.Lines(out) {
+		line = strings.TrimRight(line, "\n")
+		if line == "" {
+			continue
+		}
+		if sha, subject, ok := logHeader(line); ok {
+			commits = append(commits, CommitPaths{Sha: sha, Subject: subject})
+			continue
+		}
+		if len(commits) == 0 {
+			return nil, fmt.Errorf("git: log of %s --not %s: a path before any commit: %q", rev, base, line)
+		}
+		last := &commits[len(commits)-1]
+		last.Paths = append(last.Paths, line)
+	}
+	return commits, nil
+}
+
+// logHeader splits one line of CommitsWithPaths' log format into sha
+// and subject, reporting false for a line that is not one.
+func logHeader(line string) (sha, subject string, ok bool) {
+	const shaLen = 40
+	if len(line) <= shaLen || line[shaLen] != '\t' {
+		return "", "", false
+	}
+	for _, c := range line[:shaLen] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return "", "", false
+		}
+	}
+	return line[:shaLen], line[shaLen+1:], true
+}
+
 // DeleteBranch removes a local branch regardless of merge state —
 // deliberately the one porcelain call here: branch -D owns the
 // configuration-section and reflog cleanup that a raw update-ref -d

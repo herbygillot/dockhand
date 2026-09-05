@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -320,4 +321,96 @@ func TestChangedPortdirsKeepsThePortWhenAResourceRidesAlong(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"sysutils/jq"}, got,
 		"the port is the subject; the resource is carried, not built")
+}
+
+// ---- a stale primary ------------------------------------------------
+//
+// The diff's base is the LOCAL primary, which never fetches (D21). A
+// hand-made branch cut from origin/main while main is behind it
+// carries upstream's commits, and the diff counts their portdirs as
+// the branch's: a cohort was submitted as oniguruma6, jq, and mise
+// when the branch touched two, the third being dockhand's own merged
+// PR (field, 2026-09-03). Ruled an advisory: the roster stands, D21
+// stands, and one line on stderr says which members the branch does
+// not own and where they came from.
+
+// stalePrimary is that shape: origin/main one commit ahead of main,
+// touching devel/mise, and a hand-made branch cut from origin/main
+// touching sysutils/jq alone. Returns the branch tip and upstream's
+// commit.
+func stalePrimary(t *testing.T) (*git.Repo, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	repo := gittest.Init(t, realTools, "", map[string]string{
+		"sysutils/jq/Portfile": "version 1.7\n",
+		"devel/mise/Portfile":  "version 2026.8.1\n",
+	})
+	// Upstream moved mise and a fetch brought it in: the commit is on
+	// the remote-tracking ref and on no local branch, which is exactly
+	// what leaves main behind.
+	upstream := gittest.Commit(t, repo, "scratch/upstream", "main", "devel/mise/Portfile",
+		"version 2026.9.1\n", "mise: update to 2026.9.1")
+	gittest.Fetched(t, repo, "origin", "main", upstream)
+	require.NoError(t, repo.DeleteBranch(ctx, "scratch/upstream"))
+	tip := gittest.Commit(t, repo, "hand/jq", "refs/remotes/origin/main", "sysutils/jq/Portfile",
+		"version 1.8\n", "jq: update to 1.8")
+	return repo, tip, upstream
+}
+
+func TestChangedPortdirsNamesTheMembersAStalePrimaryAdded(t *testing.T) {
+	ctx := context.Background()
+	repo, tip, upstream := stalePrimary(t)
+	var out, errOut bytes.Buffer
+	got, err := testEngine(t, repo, nil, &out, &errOut).ChangedPortdirs(ctx, repo, "hand/jq", tip)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"devel/mise", "sysutils/jq"}, got,
+		"the roster is what the diff against the local primary says; the advisory changes nothing")
+	assert.Contains(t, errOut.String(), "hand/jq: main is behind origin/main")
+	assert.Contains(t, errOut.String(), "devel/mise (from "+git.Abbrev(upstream)+" mise: update to 2026.9.1)",
+		"the member, and the commit it came from")
+	assert.NotContains(t, errOut.String(), "sysutils/jq", "the branch's own member is not accused")
+	assert.Empty(t, out.String(), "prose, so on stderr")
+}
+
+// A fast-forward is the remedy the line names, and it is one: once
+// main stands where origin/main does, the merge base is the fork point
+// and upstream's commit is on both sides of the diff.
+func TestChangedPortdirsIsQuietOnceThePrimaryCatchesUp(t *testing.T) {
+	ctx := context.Background()
+	repo, tip, upstream := stalePrimary(t)
+	gittest.MoveBranch(t, repo, "main", upstream)
+	var out, errOut bytes.Buffer
+	got, err := testEngine(t, repo, nil, &out, &errOut).ChangedPortdirs(ctx, repo, "hand/jq", tip)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"sysutils/jq"}, got)
+	assert.Empty(t, errOut.String())
+}
+
+// A branch dockhand minted forks from the local primary, so its merge
+// base is its fork point whatever origin/main has moved on to: nothing
+// foreign is in its diff, and nothing is said.
+func TestChangedPortdirsSaysNothingAboutABranchCutFromTheLocalPrimary(t *testing.T) {
+	ctx := context.Background()
+	repo, _, _ := stalePrimary(t)
+	tip := gittest.Commit(t, repo, "dockhand/jq-1.9", "main", "sysutils/jq/Portfile", "version 1.9\n", "jq: update to 1.9")
+	var out, errOut bytes.Buffer
+	got, err := testEngine(t, repo, nil, &out, &errOut).ChangedPortdirs(ctx, repo, "dockhand/jq-1.9", tip)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"sysutils/jq"}, got)
+	assert.Empty(t, errOut.String())
+}
+
+// Upstream moved mise and the branch, cut past that, edits mise too.
+// The commit the branch carries is not its own, but the member is: the
+// roster was earned, not enlarged, and there is nothing to say.
+func TestChangedPortdirsDoesNotAccuseAMemberTheBranchAlsoTouched(t *testing.T) {
+	ctx := context.Background()
+	repo, _, _ := stalePrimary(t)
+	tip := gittest.Commit(t, repo, "hand/mise", "refs/remotes/origin/main", "devel/mise/Portfile",
+		"version 2026.9.1\nrevision 1\n", "mise: rebuild")
+	var out, errOut bytes.Buffer
+	got, err := testEngine(t, repo, nil, &out, &errOut).ChangedPortdirs(ctx, repo, "hand/mise", tip)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"devel/mise"}, got)
+	assert.Empty(t, errOut.String())
 }
