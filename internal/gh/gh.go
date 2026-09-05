@@ -178,6 +178,25 @@ type PullRequest struct {
 	MergeSha  string `json:"merge_commit_sha"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+
+	// Head is the branch the pull request proposes from. It is read for
+	// one thing: a branch dockhand minted carries, in its name, the
+	// version the change takes its port to, and promote's same-port
+	// advisory reads that back so it can say whether somebody's open
+	// pull request already goes as far as this one. What the name means
+	// is decided at the engine boundary, where the mint's construction
+	// is known — this package hands the ref over and holds no opinion
+	// about it, on the same terms as every other field here.
+	Head PRHead `json:"head"`
+}
+
+// PRHead is the part of a pull request's head that dockhand reads —
+// the branch name. GitHub sends the sha and the repository beside it,
+// and neither is read: a ref is enough to invert a branch name dockhand
+// minted, and the tree behind it is the dearer source docs/todo.md
+// leaves for later.
+type PRHead struct {
+	Ref string `json:"ref"`
 }
 
 // published is the document `status --json` has always emitted for a

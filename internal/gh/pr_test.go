@@ -61,7 +61,7 @@ func TestOpenPortPRsWalksTheRestListAndFiltersByTitle(t *testing.T) {
 		argv = args
 		return `[{"number":3,"title":"jq: update to 2.5","state":"open",
 		  "html_url":"https://x/3","created_at":"2026-08-30T10:00:00Z",
-		  "updated_at":"2026-08-31T10:00:00Z"},
+		  "updated_at":"2026-08-31T10:00:00Z","head":{"ref":"dockhand/jq-2.5","sha":"abc"}},
 		 {"number":4,"title":"jqdata: update to 1.0","state":"open","html_url":"https://x/4"},
 		 {"number":5,"title":"gnutls: mention jq: in passing","state":"open","html_url":"https://x/5"}]`, nil
 	}
@@ -74,6 +74,9 @@ func TestOpenPortPRsWalksTheRestListAndFiltersByTitle(t *testing.T) {
 	require.Len(t, prs, 1, "jqdata: is another port and a mention is not a claim")
 	assert.Equal(t, 3, prs[0].Number)
 	assert.Equal(t, "2026-08-30T10:00:00Z", prs[0].CreatedAt)
+	// The head ref is read off GitHub's nested object; what the name
+	// means is the engine's reading, not this package's.
+	assert.Equal(t, "dockhand/jq-2.5", prs[0].Head.Ref)
 }
 
 func TestOpenPortPRsPagesUntilAShortPage(t *testing.T) {
@@ -186,7 +189,7 @@ func TestPullRequestPublishesFiveKeys(t *testing.T) {
 	// makes that decision the compiler's business: widening PullRequest
 	// fails here until someone edits this number, which is the moment to
 	// ask whether the new key belongs in published too.
-	assert.Equal(t, 8, reflect.TypeOf(PullRequest{}).NumField(),
+	assert.Equal(t, 9, reflect.TypeOf(PullRequest{}).NumField(),
 		"PullRequest gained or lost a field; decide whether published gains it too")
 	assert.Equal(t, 5, reflect.TypeOf(published{}).NumField(),
 		"published is the document status --json emits; widening it is a change to what scripts parse")

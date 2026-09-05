@@ -1,6 +1,7 @@
 package verdict
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -132,13 +133,13 @@ func TestCheckDuplicates(t *testing.T) {
 	other := PRFact{Found: true, Number: 11, Title: "jq: fix the manpage", URL: "https://example.invalid/pr/11"}
 
 	t.Run("no open PRs", func(t *testing.T) {
-		d := CheckDuplicates(nil, PRFact{}, "jq: update to 1.8.1")
+		d := CheckDuplicates(nil, PRFact{}, "jq: update to 1.8.1", "1.8.1")
 		require.NoError(t, d.Refusal)
 		assert.Empty(t, d.Notes)
 	})
 
 	t.Run("a duplicate is refused with a remedy", func(t *testing.T) {
-		d := CheckDuplicates([]PRFact{theirs}, PRFact{}, "jq: update to 1.8.1")
+		d := CheckDuplicates([]PRFact{theirs}, PRFact{}, "jq: update to 1.8.1", "1.8.1")
 		require.Error(t, d.Refusal)
 		var dup *DuplicatePRError
 		require.ErrorAs(t, d.Refusal, &dup)
@@ -150,20 +151,20 @@ func TestCheckDuplicates(t *testing.T) {
 	})
 
 	t.Run("the comparison ignores case and surrounding space", func(t *testing.T) {
-		d := CheckDuplicates([]PRFact{theirs}, PRFact{}, "  JQ: Update To 1.8.1  ")
+		d := CheckDuplicates([]PRFact{theirs}, PRFact{}, "  JQ: Update To 1.8.1  ", "1.8.1")
 		require.Error(t, d.Refusal)
 	})
 
 	// Re-promoting updates this branch's own PR in place; matching
 	// against it would refuse the branch for duplicating itself.
 	t.Run("this branch's own PR is skipped by number", func(t *testing.T) {
-		d := CheckDuplicates([]PRFact{mine}, mine, "jq: update to 1.8.1")
+		d := CheckDuplicates([]PRFact{mine}, mine, "jq: update to 1.8.1", "1.8.1")
 		require.NoError(t, d.Refusal)
 		assert.Empty(t, d.Notes)
 	})
 
 	t.Run("same port, different change is an advisory", func(t *testing.T) {
-		d := CheckDuplicates([]PRFact{other}, PRFact{}, "jq: update to 1.8.1")
+		d := CheckDuplicates([]PRFact{other}, PRFact{}, "jq: update to 1.8.1", "1.8.1")
 		require.NoError(t, d.Refusal)
 		assert.Equal(t, []string{
 			`note: an open PR already touches this port: #11 "jq: fix the manpage" (https://example.invalid/pr/11)`,
@@ -174,9 +175,97 @@ func TestCheckDuplicates(t *testing.T) {
 	// everything ahead of a duplicate are already said by the time it is
 	// found. They come back with the refusal so the caller can say them.
 	t.Run("advisories ahead of a duplicate survive it", func(t *testing.T) {
-		d := CheckDuplicates([]PRFact{other, theirs}, PRFact{}, "jq: update to 1.8.1")
+		d := CheckDuplicates([]PRFact{other, theirs}, PRFact{}, "jq: update to 1.8.1", "1.8.1")
 		require.Error(t, d.Refusal)
 		assert.Len(t, d.Notes, 1)
 		assert.Contains(t, d.Notes[0], "#11")
+	})
+}
+
+// The same-port advisory says how the other pull request's work stands
+// against this promotion's when a version was established for it, and
+// says where the version came from. The facts arrive on the PRFact,
+// mapped by the caller — here written out by hand the way the engine
+// writes them off a branch dockhand minted — so the judgment neither
+// knows nor cares what a branch name looks like. Where no version was
+// established, the note is the bare fact it always was: the check
+// declines to guess about somebody else's work.
+func TestCheckDuplicatesSaysHowFarTheOtherPRGoes(t *testing.T) {
+	// Every case is an advisory and never a refusal: the titles differ
+	// from the promotion's, which is exactly the case the title match
+	// cannot see and the version can.
+	const title = "jq: update to 1.9"
+	pr := func(n int, prTitle, version, source string) PRFact {
+		return PRFact{Found: true, Number: n, Title: prTitle,
+			URL:     fmt.Sprintf("https://example.invalid/pr/%d", n),
+			Version: version, VersionSource: source}
+	}
+	cases := []struct {
+		name string
+		// version is this promotion's; "" is a change with none to
+		// weigh against — a revision bump, or a branch with no record.
+		version string
+		open    PRFact
+		want    string
+	}{
+		{
+			name:    "the same version, worded differently",
+			version: "1.9",
+			open:    pr(12, "jq: bump to 1.9", "1.9", "its branch name dockhand/jq-1.9"),
+			want: `note: an open PR already takes this port to 1.9 — the same version as this promotion: ` +
+				`#12 "jq: bump to 1.9" (https://example.invalid/pr/12); version read from its branch name dockhand/jq-1.9`,
+		},
+		{
+			name:    "newer: the promotion is probably wasted, and is told so",
+			version: "1.9",
+			open:    pr(13, "jq: update to 2.0", "2.0", "its branch name dockhand/jq-2.0"),
+			want: `note: an open PR already takes this port to 2.0 — newer than this promotion's 1.9: ` +
+				`#13 "jq: update to 2.0" (https://example.invalid/pr/13); version read from its branch name dockhand/jq-2.0`,
+		},
+		{
+			name:    "older: theirs is behind, which a maintainer coordinating both wants to know",
+			version: "1.9",
+			open:    pr(14, "jq: update to 1.8", "1.8", "its branch name dockhand/jq-1.8"),
+			want: `note: an open PR already takes this port to 1.8 — older than this promotion's 1.9: ` +
+				`#14 "jq: update to 1.8" (https://example.invalid/pr/14); version read from its branch name dockhand/jq-1.8`,
+		},
+		{
+			// MacPorts' ordering, never the string's: as text "1.10" sorts
+			// before "1.9", and a note that called it older would send
+			// the author to a reviewer with a downgrade.
+			name:    "the comparison is base's ordering, not string order",
+			version: "1.9",
+			open:    pr(15, "jq: update to 1.10", "1.10", "its branch name dockhand/jq-1.10"),
+			want: `note: an open PR already takes this port to 1.10 — newer than this promotion's 1.9: ` +
+				`#15 "jq: update to 1.10" (https://example.invalid/pr/15); version read from its branch name dockhand/jq-1.10`,
+		},
+		{
+			name:    "a hand-made head branch establishes nothing, and the old note stands",
+			version: "1.9",
+			open:    pr(16, "jq: update to 2.0", "", ""),
+			want:    `note: an open PR already touches this port: #16 "jq: update to 2.0" (https://example.invalid/pr/16)`,
+		},
+		{
+			name:    "this promotion has no version to weigh against, and theirs is stated alone",
+			version: "",
+			open:    pr(17, "jq: update to 2.0", "2.0", "its branch name dockhand/jq-2.0"),
+			want: `note: an open PR already takes this port to 2.0: ` +
+				`#17 "jq: update to 2.0" (https://example.invalid/pr/17); version read from its branch name dockhand/jq-2.0`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := CheckDuplicates([]PRFact{tc.open}, PRFact{}, title, tc.version)
+			require.NoError(t, d.Refusal, "a flag, not a gate")
+			assert.Equal(t, []string{tc.want}, d.Notes)
+		})
+	}
+
+	// An exact title is still the duplicate, whatever the versions say:
+	// the version enriches the advisory and does not soften the refusal.
+	t.Run("an exact title still refuses", func(t *testing.T) {
+		d := CheckDuplicates([]PRFact{pr(18, title, "2.0", "its branch name dockhand/jq-2.0")}, PRFact{}, title, "1.9")
+		require.Error(t, d.Refusal)
+		assert.Empty(t, d.Notes)
 	})
 }

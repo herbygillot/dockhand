@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -399,7 +400,18 @@ type DuplicateCheck struct {
 // own is this branch's own pull request, skipped by number: re-promoting
 // updates that PR in place, and matching against it would refuse the
 // branch for duplicating itself.
-func CheckDuplicates(open []PRFact, own PRFact, title string) DuplicateCheck {
+//
+// version is what THIS promotion takes the port to — empty when the
+// change is not a version bump, or when nothing recorded says. It is
+// what turns the advisory from a bare fact of coexistence into one
+// about the work: where the other pull request's version is known too,
+// the note says how the two stand. It is still a flag and never a gate.
+// An open PR at the same version under a differently worded title is
+// exactly the case the title match cannot see, and one that goes
+// further is not a duplicate and not wrong, only probably wasted; in
+// both the author is told, before a reviewer's attention is spent, and
+// promotes anyway if they mean to.
+func CheckDuplicates(open []PRFact, own PRFact, title, version string) DuplicateCheck {
 	var d DuplicateCheck
 	for _, pr := range open {
 		if own.Found && pr.Number == own.Number {
@@ -409,8 +421,39 @@ func CheckDuplicates(open []PRFact, own PRFact, title string) DuplicateCheck {
 			d.Refusal = &DuplicatePRError{Title: pr.Title, URL: pr.URL}
 			return d
 		}
-		d.Notes = append(d.Notes, fmt.Sprintf("note: an open PR already touches this port: #%d %q (%s)",
-			pr.Number, pr.Title, pr.URL))
+		d.Notes = append(d.Notes, samePortNote(pr, version))
 	}
 	return d
+}
+
+// samePortNote is the advisory for one open pull request on the same
+// port, as rich as the facts allow and no richer.
+//
+// Where the other PR's version is unknown the note is the fact that it
+// exists, unchanged from before versions were read at all: declining to
+// guess is the whole point, since the sentence is about somebody else's
+// work and a wrong version in it is worse than none. Where it is known
+// the note says so and says where it was read from, so a reader can
+// weigh the source; and where this promotion's version is known too,
+// how the two stand — the same, theirs newer, theirs older — under
+// MacPorts' own ordering and never string order, which would call 1.10
+// older than 1.9.
+func samePortNote(pr PRFact, version string) string {
+	where := fmt.Sprintf("#%d %q (%s)", pr.Number, pr.Title, pr.URL)
+	if pr.Version == "" {
+		return "note: an open PR already touches this port: " + where
+	}
+	var stands string
+	if version != "" {
+		switch cmp := macports.VerCmp(pr.Version, version); {
+		case cmp == 0:
+			stands = " — the same version as this promotion"
+		case cmp > 0:
+			stands = " — newer than this promotion's " + version
+		default:
+			stands = " — older than this promotion's " + version
+		}
+	}
+	return fmt.Sprintf("note: an open PR already takes this port to %s%s: %s; version read from %s",
+		pr.Version, stands, where, pr.VersionSource)
 }

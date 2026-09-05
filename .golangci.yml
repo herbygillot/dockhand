@@ -98,10 +98,23 @@ linters:
             - strconv
             - strings
             - github.com/herbygillot/dockhand/internal/exitcode
+            # macports, the root package only, for VerCmp: version
+            # ordering is base's semantics or it is wrong, and a
+            # judgment that says one pull request goes further than
+            # another must order the way base does. The package is a
+            # port of vercomp.c with no imports at all; its
+            # subpackages are where the tree is read and Tcl is run,
+            # and the trailing-slash denial below fences every one of
+            # them off — depguard gives the longer prefix the last
+            # word — so this admits the arithmetic and nothing that
+            # reads the world.
+            - github.com/herbygillot/dockhand/internal/macports
             - github.com/herbygillot/dockhand/internal/platform
             - github.com/herbygillot/dockhand/internal/record
             - github.com/herbygillot/dockhand/internal/verify
           deny:
+            - pkg: github.com/herbygillot/dockhand/internal/macports/
+              desc: verdict may order versions the way base does, never evaluate a Portfile or read a tree to learn one — the version is a fact the caller passes in
             - pkg: github.com/herbygillot/dockhand/internal/git
               desc: the caller reads the repo and passes the facts in; a judgment that opens git needs one to be tested
             - pkg: github.com/herbygillot/dockhand/internal/gh
@@ -149,12 +162,15 @@ linters:
             - github.com/stretchr/testify
             - github.com/herbygillot/dockhand/internal/corpustest
             - github.com/herbygillot/dockhand/internal/exitcode
+            - github.com/herbygillot/dockhand/internal/macports
             - github.com/herbygillot/dockhand/internal/platform
             - github.com/herbygillot/dockhand/internal/record
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: os/exec
               desc: a table test that shells out is testing the machine, not the judgment
+            - pkg: github.com/herbygillot/dockhand/internal/macports/
+              desc: the judgment orders versions; a test that evaluates a Portfile to get one proves something else
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
               desc: the corpus is files; a test that boots a worker proves something else
         # record is the wire and nothing else — the note's field order,

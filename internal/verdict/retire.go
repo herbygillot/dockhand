@@ -21,6 +21,17 @@ type PRFact struct {
 	// the forge's JSON is already being read.
 	Merged bool
 	Open   bool
+	// Version is what the pull request takes its port to, and
+	// VersionSource is where that was read from, in words that follow
+	// "read from" — "its branch name dockhand/jq-1.9". The mapper sets
+	// both or neither: a version is only as good as its source, and the
+	// note that weighs one names the other so a reader can weigh it
+	// too. Empty is the honest reading for most pull requests — a branch
+	// somebody named by hand says nothing dockhand can vouch for, and a
+	// title is prose — and the same-port advisory then says only that
+	// the PR exists rather than guessing.
+	Version       string
+	VersionSource string
 }
 
 // Retirement is what a dockhand branch's pull request says should

@@ -408,6 +408,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 	checkedPRs := false
 	if !o.noPRCheck() {
 		port := verdict.PortName(n.Headline().Port, title)
+		version := bumpVersion(n.Headline().Intent, n.Headline().Target)
 		machine := o.invoker() == record.Machine
 		switch prs, serr := gh.OpenPortPRs(ctx, e.Gh, upstream, port); {
 		case port == "" && machine:
@@ -429,7 +430,7 @@ func (e *Engine) Promote(ctx context.Context, repo *git.Repo, target string, o P
 			// The advisories are for the PRs the search walked past
 			// before the duplicate, so they are said before the refusal
 			// is returned — the same order the walk itself produced.
-			dup := verdict.CheckDuplicates(prFacts(prs), own, title)
+			dup := verdict.CheckDuplicates(prFacts(prs, port), own, title, version)
 			for _, note := range dup.Notes {
 				fmt.Fprintln(e.Err, note)
 			}
@@ -616,7 +617,11 @@ func (e *Engine) PrecheckPublish(ctx context.Context, repo *git.Repo, p *plan.Pl
 		fmt.Fprintf(e.Err, "warning: could not search for open PRs: %v\n", serr)
 		return nil
 	}
-	dup := verdict.CheckDuplicates(prFacts(prs), own, title)
+	// The version this plan takes the port to, read the way the mint
+	// will record it — from the slug and the port that built it — so the
+	// precheck weighs the same fact the promotion will.
+	version := bumpVersion(p.Intent, targetIn(p.Slug, p.Port))
+	dup := verdict.CheckDuplicates(prFacts(prs, name), own, title, version)
 	for _, note := range dup.Notes {
 		fmt.Fprintln(e.Err, note)
 	}
@@ -624,11 +629,87 @@ func (e *Engine) PrecheckPublish(ctx context.Context, repo *git.Repo, p *plan.Pl
 }
 
 // prFacts maps a list gh returned. Every entry exists, so every one of
-// them is Found.
-func prFacts(prs []gh.PullRequest) []verdict.PRFact {
+// them is Found; and every one is read for the version its head branch
+// carries, against the port the list was searched by.
+func prFacts(prs []gh.PullRequest, port string) []verdict.PRFact {
 	out := make([]verdict.PRFact, 0, len(prs))
 	for _, pr := range prs {
-		out = append(out, PRFact(pr, true))
+		f := PRFact(pr, true)
+		f.Version, f.VersionSource = headVersion(pr.Head.Ref, port)
+		out = append(out, f)
 	}
 	return out
+}
+
+// intentBump is the plan intent a version bump records — the value
+// intent/bump writes into Plan.Intent and the mint copies onto the
+// record's headline. Spelled here because this is the first reader of
+// it: nothing else asks a record what kind of change it holds, and a
+// constant in the wire package for one reader would be a promise the
+// wire does not otherwise make.
+const intentBump = "bump"
+
+// bumpVersion is the version a change takes its port to, read from the
+// intent and target the planner recorded — or nothing, when the change
+// is not a bump. A revision bump's target is a revision and a refresh's
+// is the word "checksums"; a version comparison against either would
+// be arithmetic on the wrong kind of thing, so a promotion of one has
+// no version to weigh the other pull requests against, and the advisory
+// states theirs without a comparison.
+func bumpVersion(intent, target string) string {
+	if intent != intentBump {
+		return ""
+	}
+	return target
+}
+
+// headVersion is the version a pull request takes its port to, read
+// off its head branch, with the words that say where it was read from;
+// both empty when the branch says nothing dockhand can vouch for.
+//
+// The one branch name dockhand can read is one it minted. A bump's
+// branch is dockhand/<port>-<version> by construction — intent/bump
+// composes the slug, git.MintBranchName the namespace — so cutting
+// the namespace and then the port off the front is inverting that
+// construction, not parsing prose: the reading targetIn makes at
+// mint, one prefix further out. The other constructions are named and
+// declined by versionTarget, because a revision compared to a version
+// under VerCmp would read as an older release, which is the wrong
+// answer this exists not to give.
+//
+// A branch outside the namespace is somebody's own naming and is not
+// read; a title is prose and is never read. What this does trust is
+// the namespace itself: a branch somebody named by hand in dockhand's
+// form is read as dockhand's own, and the note names the branch so a
+// reader can see what was read. The dearer source — the Portfile in
+// the PR's head tree — is the one docs/todo.md leaves for later.
+func headVersion(head, port string) (version, source string) {
+	slug, minted := strings.CutPrefix(head, git.BranchNamespace)
+	if !minted {
+		return "", ""
+	}
+	target := targetIn(slug, port)
+	if !versionTarget(target) {
+		return "", ""
+	}
+	return target, "its branch name " + head
+}
+
+// versionTarget tells a bump's target from the other intents'. It knows
+// their three constructions by name — <port>-rev<N> from
+// intent/bumprevision, <port>-checksums from intent/refresh,
+// <port>-housekeeping from intent/housekeeping — because they are
+// dockhand's own and there are three; anything else a minted slug
+// carries after the port is what a bump put there. An empty target is
+// a slug that did not carry the port at all, and is nothing.
+func versionTarget(target string) bool {
+	switch target {
+	case "", "checksums", "housekeeping":
+		return false
+	}
+	if n, isRev := strings.CutPrefix(target, "rev"); isRev && n != "" &&
+		strings.TrimLeft(n, "0123456789") == "" {
+		return false
+	}
+	return true
 }
