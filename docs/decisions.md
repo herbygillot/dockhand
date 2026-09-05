@@ -1241,3 +1241,47 @@ disagree. The promotions already recorded count toward the ladder —
 the ladder measures what reviewers decided about real pull requests,
 and the gate that admitted each does not change what the reviewer
 did — and from this row on, which gate that was is on the record.
+
+## D27 — `status` observes and settles; `cycle` acts
+
+**Decision.** The mandate of `status` is reversed, and a new verb takes
+what it gives up. Ruled across a conversation on 2026-09-04, point by
+point, and recorded here whole.
+
+**`status` makes no change anybody else can see.** It reads the
+branches, polls the workers, writes what they said into the ledger,
+releases a guest whose verdict says so, and renders. That is the whole
+of it. Settling stays, and stays on purpose: it is the one write that
+makes the report truthful — every other write changes the world, settle
+changes the report to match a world that already changed — and a
+`status` that showed "verifying" over a guest that finished an hour ago
+would be a worse lie than the write it avoided. The ledger is
+dockhand's own account; a branch, a pull request and a VM are the
+world. For the cases that want the ledger and nothing else — a watch
+loop that must not take locks, a script — `status --no-update` polls
+nothing and writes nothing. Where work is waiting, `status` says so and
+names `cycle`, because with the split nothing begins on its own.
+
+**`cycle` does what acts on the world.** It retires the branches of
+merged pull requests, locally and off the fork; drains queued work,
+which boots guests; runs the publish slot; and, asked to, reclaims
+untracked workers. `clean` folds into it — `cycle` is `clean` plus the
+rest — and `clean`'s `--superseded` comes with it. Each thing `cycle`
+removes has its own flag, and the flag's shape follows the default:
+what happens unless withheld gets `--keep-<x>` (`--keep-merged`); what
+happens only when asked gets a plain flag (`--superseded`,
+`--reclaim-orphans`). A universal `--keep` would have been withholding
+for one and meaningless for the other, and hard to aim.
+
+**A passing run's environment is kept by the person who started it.**
+`--keep-env` on `verify` and the `bump` family, recorded on the run and
+honoured wherever release happens. Not a flag on `status` or `cycle`:
+by the time either settles, the release is in the same pass and nothing
+could intervene, and the person who wants to look inside a green build
+knows it when they submit. The failure path keeps by rule; this keeps
+by request.
+
+**What it costs.** `status --no-clean` is dropped, having withheld a
+deletion `status` no longer performs. Every `status` golden that shows
+a retirement or a drain line belongs to `cycle`. A band `status` could
+exit on because a write failed is `cycle`'s now.

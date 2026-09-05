@@ -215,8 +215,11 @@ would measure a stranger's port as though it were part of the change.
    this branch changes" means for a branch that legitimately carries a
    merge.
 
-(1) is the smallest honest step and does not disturb D21. Worth pairing
-with the `status` sweep, since that is what moves the ref.
+**Ruled (maintainer, 2026-09-04): option 1.** An advisory line naming
+the portdirs the branch does not own, emitted where the roster is
+derived. No refusal, no change to what the branch is taken to change,
+and D21 stands. Worth pairing with the sweep that moves the ref, since
+that is where the condition is created.
 
 **A related facet, same root.** `discard`'s advisory calls whatever
 `TrackedRemote` returns "the fork". In a checkout where `origin` is the
@@ -296,8 +299,10 @@ shape the rest of the output already uses, so it is wording rather than
 machinery — but it is load-bearing wording, and its absence would be the
 whole feature's failure mode.
 
-**`clean` folds into `cycle` (maintainer, 2026-09-04)**, with a `--keep`
-flag: cycle inbound and outbound, and remove nothing.
+**`clean` folds into `cycle` (maintainer, 2026-09-04, confirmed).**
+`cycle` cleans a branch locally and off the fork when its upstream PR
+merged, and `--keep-<x>` flags withhold each specific thing it would
+otherwise remove.
 
 **What `--keep` should cover.** Today's deletions and releases, so that
 one flag means "act on the world, but take nothing away":
@@ -337,36 +342,49 @@ other. The vocabulary has to follow the default:
   (`--superseded`, the flag `clean` already carries), and reclaiming
   untracked workers if `cycle` ever does that at all.
 
-**A case that does not fit either, and needs its own answer.** Keeping
-the environment of a *passing* run cannot be a `cycle` flag, because
-releasing it is part of settling and settling stays with `status`. Three
-ways out, none ruled:
+**The passing run's environment: decided at submit, not at settle
+(maintainer, 2026-09-04).** All three options above were the wrong
+frame. By the moment `status` settles a green run the release happens in
+the same pass, so no flag on `status` or `cycle` could intervene, and
+the person who wants to look inside a green build knows it when they
+start the run. So: `--keep-env` on `verify` and on the `bump` family,
+recorded on the run the way `Test` and `Trace` are, honoured wherever
+release happens. The failure path's keep-by-rule gets a sibling,
+keep-by-request. `cycle` never touches passing environments.
 
-1. `status --keep-environments`, a withholding flag on the verb that is
-   otherwise pure observation. Honest, and slightly against the grain of
-   what `status` is becoming.
-2. Split settling: `status` writes the verdict, `cycle` releases the
-   guest. Clean on paper; it means a green run holds a slot until
-   somebody cycles, and two held slots is the whole licence.
-3. Leave it out. A person who needs to look inside a green build has
-   `verify --trace`, and the failure path already keeps its environment.
+**Settle stays in `status` (maintainer, 2026-09-04, reconsidered and
+confirmed).** Settle is the one write that makes `status` truthful:
+every other write in `Reconcile` changes the world, settle changes the
+report to match a world that already changed. Moving it out would make
+`status` show "verifying" over a guest that finished an hour ago until
+somebody ran `cycle`, in the commonest loop the tool has, and would
+hold green guests' slots on a two-slot licence. The pure read exists
+for the cases that want it — a watch loop that must not take locks, a
+script that wants the notes and only the notes — as **`status
+--no-update`**: show the ledger as written, poll nothing, write
+nothing.
 
-(3) is the cheapest and may be right — the want is real but rare, and
-the other two both cost something structural.
+**`cycle --reclaim-orphans` (maintainer, 2026-09-04).** Untracked
+workers — VMs no note claims — are reported by `status` and removed by
+nobody. `cycle` may remove them, opt-in, following the vocabulary rule:
+this is new, it destroys environments nobody has characterised, so it
+is a plain flag that asks for it and not a default with a keep.
 
-**Still open.**
+**Design complete (2026-09-04); what remains is the work.**
 
-- Exit codes: `status` today can exit on a band a write caused. A
-  read-only verb's bands are its own question.
-- The goldens move: every `status` golden that shows a retirement line
-  belongs to `cycle` afterwards.
-- `status --no-clean` disappears with the split — the flag exists to
-  withhold a deletion `status` will no longer do. Whether it is dropped
-  or kept as an accepted no-op is a compatibility question, and this is
-  pre-release, so probably dropped.
+- `status`: observe, settle, render. Names `cycle` where work is waiting.
+  `--no-update` is the pure read. `--no-clean` is dropped — it withheld a
+  deletion `status` no longer does; pre-release, no shim.
+- `cycle`: retire merged-PR branches locally and off the fork
+  (`--keep-merged` withholds), `--superseded` as `clean` had it,
+  `--reclaim-orphans`, the drain, the publish slot. `clean` is retired.
+- `verify` / `bump` family: `--keep-env`, on the run.
+- Exit codes: `status` keeps the observation bands; a band a write
+  caused belongs to `cycle` now.
+- Goldens: every `status` golden showing a retirement or a drain line
+  moves to `cycle`.
 
-**To discuss before implementing.** The maintainer has asked to take
-this one up as a conversation rather than a ticket.
+Discussed as asked; recorded as D27.
 
 ## A cohort stops at the first failure, including for members that do not depend on it
 
@@ -538,6 +556,11 @@ that might need the sibling active.
 **What it is not.** Not the default, and not a scheduled follow-up.
 The ruling is that the tool informs and stops; this is the person
 overriding, and the flag should read that way.
+
+**In scope for the last phase (maintainer, 2026-09-04), built last:**
+it depends on the runner change (the forced member must build after
+every member that might need the sibling active), and on nothing else
+depending on it.
 
 ## A bump that fetches nothing leaves its patches unchecked, and says nothing
 
