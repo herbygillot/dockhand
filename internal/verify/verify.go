@@ -261,6 +261,49 @@ type Request struct {
 	// the environment records that it was skipped and for whom. Every
 	// other member is built whatever happened to the members around it.
 	Requires [][]string
+	// Deactivate names, for each member, a port the environment must
+	// take out of its active set — forcibly, whatever else is installed
+	// against it — immediately before that member is linted, tested and
+	// installed. It is parallel to Ports, like Requires: Deactivate[i]
+	// is for Ports[i], an empty entry is an ordinary member, and a
+	// request that carries none — nil, or shorter than Ports — asks for
+	// no deactivation at all, which is every request there was before
+	// this field existed.
+	//
+	// It exists for one shape of request. D24 rules that two members
+	// MacPorts will not activate together are not built together: the
+	// one that loses the seat is bumped and left out, withheld, and the
+	// caller says so. A person may override that (ruled 2026-09-05 by
+	// the orchestrator, pending the maintainer) and have the withheld
+	// member built anyway; the caller then seats it here with the
+	// sibling it conflicts with named in its entry, and the environment
+	// deactivates the sibling in the moment before the member's own
+	// build begins, so the conflict check finds nothing active. The
+	// sibling itself is not touched otherwise: it was built and judged
+	// as an ordinary member, and that judgment stands.
+	//
+	// Position in Ports is the caller's to choose, and the caller
+	// places such a member last. A deactivation is a change to the
+	// environment every member after it is built in — a dependent
+	// built afterwards binds whatever is active then, not what the
+	// cohort built — and the provider does not reorder a request to
+	// limit that; it runs the request as given, and a caller that puts
+	// a deactivation in the middle has asked for exactly the build it
+	// gets.
+	//
+	// A deactivation that fails is that member's failure and nobody
+	// else's: it stops the member there, before its lint, the member is
+	// recorded failed, and its own section of the log carries the
+	// environment's account of what could not be deactivated. The
+	// members around it are built or skipped on their own terms, as
+	// Requires has it. A name here that is not in Ports is still
+	// deactivated if the environment has it active — the entry is a
+	// fact about the environment the member needs, not a reference to
+	// another member — and a provider whose single-subject build cannot
+	// take the step refuses a request that asks for one at one port,
+	// rather than building the member in an environment it did not ask
+	// for.
+	Deactivate []string
 }
 
 // Job identifies submitted work. It is a value, not a handle: writing

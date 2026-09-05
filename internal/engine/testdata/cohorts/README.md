@@ -22,8 +22,19 @@ this one depends on, written from the request's own graph), and a
 prerequisite whose state file says `failed` or `skipped` means this
 member is skipped: it prints nothing, and its own state file says
 `skipped` and names the prerequisite. Every other member is built
-whatever happened around it. The guest therefore leaves two records,
-and the judge reads both:
+whatever happened around it.
+
+One member may take a step ahead of its own build: a member the caller
+forced into the cohort (the D24 override) carries a `before.<i>` file,
+run first through the same line as its lint and install and after its
+prerequisite check, that deactivates the sibling it conflicts with. Its
+output lands in that member's own section, because the marker was
+already printed; a deactivate that fails is that member's failure, taken
+down the same `failed` path as any other step, and the loop goes on —
+D25's runner, with one more step for the judge to trust the state file
+about.
+
+The guest therefore leaves two records, and the judge reads both:
 
 * the log, cut on the markers — a member's own section is what its
   verdict is read from: its lint line on a pass, its diagnosis on a
@@ -91,6 +102,7 @@ key, and keys other than these fail the sweep.
 | `<port>.blamed` | The SIBLING whose failure this member inherited. Set only on a blocked member, and only ever another member — a port outside the change rides the detail instead. |
 | `<port>.lint` | What that member's own section said: `clean`, `1 warning`, `N warnings`, or empty. The note records it only on a pass, and stating it per member is what proves the log was cut. |
 | `<port>.reported` | What the runner's own record said about that member: `passed`, `failed`, or `skipped <member>` naming the prerequisite it was skipped for. Absent for a member the runner wrote no state file for, which is the shape of a runner fault — or of a whole guest that wrote no record, which is the log read alone. |
+| `<port>.forced` | The sibling this member's build deactivated first — the D24 override, recorded on the run at submit and carried through settle. Set only on a forced member, and it names another member of the cohort (the seated sibling), never the headline. |
 
 No `nomaintainer` annotation appears here, for the same reason it does
 not next door: both sweeps settle against a tree holding no
@@ -109,6 +121,8 @@ dependency's Portfile, so the lookup always answers no.
 | `sibling-dependency` | The headline's install pulls a sibling out of the overlay and the sibling breaks, under the headline's marker; then the runner builds the sibling in its own turn, and it breaks again in its own section. The roster is what tells a sibling from a stranger. |
 | `interleaved-test-phase` | Both members announced twice, build then test, with a failure in the second visit — not what the runner writes, but the shape `verify.SplitSubjects` permits, and the log read ALONE (no `reported` keys): sections must accumulate, and the last marker in the file is where the guest gave up. |
 | `passed-unannounced` | A passing job that announced only one of two members. The unannounced one is errored, never passed: a promotion sums the passes, and one invented here would publish a port nobody built. |
+| `forced-member` | A forced member (the D24 override): the headline and the seated sibling build in the cohort's environment, then gegl-devel builds last in one gegl was deactivated in first. Its section opens with the deactivate — its own words, under its own marker — and it passes; its run carries the sibling it was built without. The deactivate names gegl inside a section that passed, so the blame reader never runs. |
+| `forced-deactivate-fails` | The one step ahead of a forced member's build failing: gegl's own build broke, so it was never installed and `port -f deactivate gegl` throws before gegl-devel is linted. The forced member does not require gegl, so the runner reaches it (D25: the loop goes on past a failure and skips only what depended on it) and it fails on its own section in MacPorts' own words, blaming nobody — "port deactivate failed: …" is not the "Failed to <phase> gegl:" shape a dependency failure wears — and its run still carries the sibling it was told to deactivate. |
 
 Two files left with the runner that stopped. `member-failure` was the
 old runner's dependent-behind-the-headline shape, its second member

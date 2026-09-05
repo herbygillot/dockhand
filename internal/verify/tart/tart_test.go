@@ -85,6 +85,55 @@ func TestSubmitAcceptsOrdinaryPortNames(t *testing.T) {
 	}
 }
 
+// A name to deactivate is one line of an instruction file and one word
+// of port(1)'s argv, exactly as a port to build is, and it came from
+// further away — the caller read it out of the tree's index, not out
+// of its own list. The same guard applies to it, and an empty entry,
+// which is how an ordinary member is spelled, is not a name at all and
+// is not judged as one.
+func TestSubmitRefusesADeactivateNameThatWouldCarryALine(t *testing.T) {
+	for _, deactivate := range [][]string{
+		{"", "gegl\nrm -rf /"},
+		{"", "gegl\n===> dockhand subject: gegl"},
+		{"", "ge gl"},
+		{"", "gegl\t"},
+	} {
+		_, err := Provider{}.Submit(t.Context(), verify.Request{
+			Ports: []string{"jq", "gegl-devel"}, Deactivate: deactivate,
+		})
+		require.ErrorIs(t, err, verify.ErrUnsupported, "%q", deactivate)
+		assert.Contains(t, err.Error(), "is not a port name")
+	}
+
+	// The names that are names, and the empty entries beside them, get
+	// through: the request fails further in, at the base lookup, which
+	// is the next thing Submit does and a different sentinel.
+	_, err := Provider{}.Submit(t.Context(), verify.Request{
+		Ports: []string{"jq", "gegl", "gegl-devel"}, Deactivate: []string{"", "", "gegl"},
+	})
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.NotErrorIs(t, err, verify.ErrUnsupported)
+}
+
+// The single-subject runner is frozen, and a deactivation is a step it
+// does not take. A one-port request that asks for one is refused at
+// the door rather than built with the ask dropped: an answer filed for
+// an environment the caller did not ask for would be worse than none.
+// No caller in the tree asks for this — a forced member is a dependent,
+// and a dependent means a cohort — so this is the contract stated, not
+// a road anyone walks.
+func TestSubmitRefusesADeactivationAtOneSubject(t *testing.T) {
+	for _, deactivate := range [][]string{{"gegl"}, {"", "gegl"}} {
+		_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: []string{"gegl-devel"}, Deactivate: deactivate})
+		require.ErrorIs(t, err, verify.ErrUnsupported, "%q", deactivate)
+		assert.Contains(t, err.Error(), `a one-port build cannot deactivate "gegl" first`)
+	}
+
+	// Empty entries ask for nothing, at one subject as at several.
+	_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: []string{"jq"}, Deactivate: []string{""}})
+	require.ErrorIs(t, err, verify.ErrNoEnvironment, "the door let it through")
+}
+
 // A job from another provider is not this provider's to poll.
 func TestPollRejectsAForeignJob(t *testing.T) {
 	_, err := Provider{}.Poll(t.Context(), verify.Job{Provider: "github", ID: "123"})

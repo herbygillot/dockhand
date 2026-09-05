@@ -140,6 +140,24 @@ type Run struct {
 	// naturally per run and the decision per guest. Ruled 2026-09-05
 	// with D27's implementation, pending the maintainer.
 	KeepEnv bool `json:"keep_env,omitempty"`
+	// Forced names the member the environment deactivated immediately
+	// before this subject was built, and is empty for every ordinary
+	// run. It is set on exactly one shape: a cohort member D24 would
+	// have withheld — MacPorts will not activate it beside a sibling the
+	// cohort seats — that a person overrode and had built anyway, last,
+	// with the sibling taken out of the active set first (ruled
+	// 2026-09-05 by the orchestrator, pending the maintainer). The
+	// sibling's own run is untouched by it: the sibling was built and
+	// judged before the deactivation, and that verdict stands.
+	//
+	// It is on the run and not on the job for KeepEnv's two reasons. A
+	// deferral has no JobRecord and the ask must reach the resubmission
+	// — the drain and a hand `verify` both read it off the queued run,
+	// exactly as they read FromSource and KeepEnv. And it is a fact
+	// about one subject's build: the environment the forced member was
+	// proven in is not the cohort's, and the pull request body has to
+	// say so on that member's line and on no other.
+	Forced string `json:"forced,omitempty"`
 	// Manifest is what the install laid down, collected from inside the
 	// environment that built it.
 	Manifest *verify.Manifest `json:"manifest,omitempty"`

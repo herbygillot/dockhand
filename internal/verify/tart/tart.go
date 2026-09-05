@@ -276,6 +276,27 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 			return verify.Job{}, fmt.Errorf("%w: %q is not a port name", verify.ErrUnsupported, port)
 		}
 	}
+	// A name to deactivate travels the same road as a port to build —
+	// one line of an instruction file, one word of port(1)'s argv — and
+	// it came from further away: the caller read it out of the tree's
+	// own index rather than out of the request's own list. The same
+	// guard, for the same reason. An empty entry is an ordinary member
+	// and says nothing.
+	for _, sibling := range req.Deactivate {
+		if sibling != "" && !portName(sibling) {
+			return verify.Job{}, fmt.Errorf("%w: %q is not a port name", verify.ErrUnsupported, sibling)
+		}
+	}
+	// The single-subject build is frozen (runner), and a deactivation is
+	// a step it does not take. Dropping the ask would build the port in
+	// an environment the caller did not ask for and file the answer as
+	// if it had; the request is refused instead, and names why. The
+	// engine never asks for this — a forced member is a dependent, and
+	// a dependent means a cohort — so this is the door saying what the
+	// contract says rather than a road anyone walks.
+	if i := slices.IndexFunc(req.Deactivate, func(s string) bool { return s != "" }); len(req.Ports) < 2 && i >= 0 {
+		return verify.Job{}, fmt.Errorf("%w: a one-port build cannot deactivate %q first", verify.ErrUnsupported, req.Deactivate[i])
+	}
 	base, err := p.baseFor(req.Platform)
 	if err != nil {
 		return verify.Job{}, err
@@ -643,6 +664,29 @@ nohup /bin/sh -c '
 // port(1)'s output drops the IFS= that every other read here keeps,
 // deliberately: `port contents` indents its paths, and a path read with
 // its indent intact is a file that does not exist.
+//
+// before.<i> is the one step a member may take ahead of its lint, and
+// it exists only for a member the caller marked forced (Request.
+// Deactivate): a withheld member a person has overridden D24 for,
+// seated anyway with the sibling it conflicts with named, to be taken
+// out of the active set first so that MacPorts will activate this one
+// (ruled 2026-09-05 by the orchestrator, pending the maintainer). It
+// is the first entry of the same list the lint, test and install are
+// read from, and so it goes through the same line: read as argv words
+// from a file, run under the same privilege drop, appended to the same
+// log, and a non-zero exit is `member=no` like any other — the member
+// is recorded failed, nothing after the deactivate is run for it, and
+// the runner goes on to the next member (D25: a failure stops only what
+// depended on it, and the judge trusts the state file). That makes the
+// failure the forced member's own, which is what it is: what could not
+// be deactivated is written in that member's section by port(1) itself,
+// because the marker was already printed when the step ran. It sits
+// behind the prerequisite check for the same reason: a forced member
+// skipped for a prerequisite that failed deactivates nothing, since
+// nothing of its own is about to be built. An ordinary member has no
+// before file, and `[ -f ] || continue` is the whole of how it is told
+// apart; a request that forces nobody runs exactly the loop it ran
+// before the entry was added.
 func cohortRunner(portCmd string, n int) string { return cohortRunnerAt(stateDir, portCmd, n) }
 
 func cohortRunnerAt(dir, portCmd string, n int) string {
@@ -672,7 +716,7 @@ nohup /bin/sh -c '
     fi
     [ -f "$d/subject.$i" ] && cat "$d/subject.$i" >> "$d/log"
     member=yes
-    for f in "$d/argv.$i.lint" "$d/argv.$i.test" "$d/argv.$i"; do
+    for f in "$d/before.$i" "$d/argv.$i.lint" "$d/argv.$i.test" "$d/argv.$i"; do
       [ -f "$f" ] || continue
       set --
       while IFS= read -r a; do set -- "$@" "$a"; done < "$f"
@@ -766,7 +810,8 @@ func soloArgvFiles(req verify.Request) []argvFile {
 // cohortArgvFiles is the instruction set for several subjects in one
 // environment: the same three files per member, plus the marker that
 // says whose output follows, plus the link proof where one was asked
-// for.
+// for, plus — for a member the caller marked forced, and for no other —
+// the deactivation that runs ahead of its lint.
 //
 // Every name is built from the member's position and never from its
 // name. A file's name is the one part of this protocol that does reach
@@ -778,8 +823,17 @@ func soloArgvFiles(req verify.Request) []argvFile {
 //
 // The subjects are written in the request's order, which is the order
 // they are to be built, headline first.
+//
+// before.<i> is absent rather than empty for an ordinary member, the
+// way argv.test is absent when no test was asked for: the runner's
+// `[ -f ] || continue` is the control flow, and an empty file would run
+// port(1) with no arguments. Its presence is decided by the member's
+// own entry in Deactivate and by nothing else — not by whether the name
+// is in Ports, which it is expected to be but need not be, and not by
+// the member's position, which is the caller's — so a request that
+// forces nobody writes exactly the files it always wrote.
 func cohortArgvFiles(req verify.Request) []argvFile {
-	files := make([]argvFile, 0, 5*len(req.Ports))
+	files := make([]argvFile, 0, 6*len(req.Ports))
 	for i, port := range req.Ports {
 		// The variant frame is the request's, and a request is about its
 		// headline: a cohort's other members are the dependents that ride
@@ -799,6 +853,19 @@ func cohortArgvFiles(req verify.Request) []argvFile {
 				// runner's to deliver and SubjectMarker does not carry one.
 				Body: verify.SubjectMarker(port) + "\n",
 			},
+		)
+		// The deactivation, written right after the marker because that
+		// is when the runner takes it: the marker is already in the log,
+		// so what port(1) says about the sibling lands in this member's
+		// own section, where the judge reads this member's failure from.
+		if sibling := deactivateOf(req, i); sibling != "" {
+			files = append(files, argvFile{
+				Name: fmt.Sprintf("before.%d", i),
+				What: "the deactivate argv for " + port,
+				Body: argvBody(build.DeactivateArgs(sibling)),
+			})
+		}
+		files = append(files,
 			argvFile{
 				Name: fmt.Sprintf("argv.%d", i),
 				What: "the argv for " + port,
@@ -897,6 +964,28 @@ func contentsArgs(port string) []string { return []string{"-q", "contents", port
 // was.
 func fromSource(req verify.Request, port string) bool {
 	return slices.Contains(req.FromSource, port)
+}
+
+// deactivateOf is the port the member at position i must have taken
+// out of the active set before it is built, or "" for a member that
+// needs nothing of the kind — which is every member of a request that
+// carries no Deactivate, or one shorter than Ports, the same reading
+// requiresBody gives a short graph.
+//
+// It asks by position and not by name, because Deactivate is parallel
+// to Ports: the entry is the member's own, and two members forced past
+// the same sibling each carry it and each ask. That is safe to ask
+// twice — the registry answers "already inactive" and returns clean for
+// a port that is installed and not active — and it is not the same as
+// asking about a port the guest never installed, which is an error
+// ("is not active") and so the forced member's failure: a sibling that
+// declined the platform or failed its own build has left nothing to
+// deactivate, and the member's log says so in port(1)'s words.
+func deactivateOf(req verify.Request, i int) string {
+	if i >= len(req.Deactivate) {
+		return ""
+	}
+	return req.Deactivate[i]
 }
 
 // argvBody is the file format the runner reads back: one argv word per

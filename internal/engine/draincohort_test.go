@@ -74,3 +74,38 @@ func TestADeferredCohortRecordsEveryMemberQueued(t *testing.T) {
 	assert.Equal(t, record.Queued, runFor(n, "oniguruma", "Testos").State)
 	assert.Empty(t, n.Jobs, "nothing was submitted, so no environment is described")
 }
+
+// A deferred cohort carries a forced member's sibling through the pump,
+// the way it carries FromSource: the queued run recorded it, and the
+// retry deactivates it. Read back per member, because the sibling is one
+// forced member's own fact and not the headline's.
+func TestTheDrainCarriesAForcedMembersDeactivation(t *testing.T) {
+	ctx := context.Background()
+	repo, sha := cohortBranch(t)
+	n, err := ledger.Open(repo).LoadOrStart(ctx, sha)
+	require.NoError(t, err)
+	n.Destination = record.ToVerdict
+	n.Subjects = []record.Subject{
+		{Port: "jq", Portdir: "sysutils/jq"},
+		{Port: "oniguruma", Portdir: "textproc/oniguruma"},
+	}
+	n.Runs[record.RunKey("jq", "Testos")] = record.Run{State: record.Queued, Platform: "Testos", Detail: "all slots busy"}
+	n.Runs[record.RunKey("oniguruma", "Testos")] = record.Run{
+		State: record.Queued, Platform: "Testos", Detail: "all slots busy", Forced: "oniguruma-devel"}
+	require.NoError(t, ledger.Open(repo).Write(ctx, n))
+
+	fake := &verifytest.Fake{}
+	eng := testState(t, repo, fake)
+	eng.Tools = pumpTools(t)
+	eng.PumpDeferred(ctx, repo, []string{"dockhand/jq-1.8"})
+
+	require.Len(t, fake.Submitted, 1)
+	assert.Equal(t, []string{"jq", "oniguruma"}, fake.Submitted[0].Ports)
+	assert.Equal(t, []string{"", "oniguruma-devel"}, fake.Submitted[0].Deactivate,
+		"the forced member's sibling survived the deferral")
+
+	again, err := ledger.Open(repo).Read(ctx, sha)
+	require.NoError(t, err)
+	assert.Equal(t, "oniguruma-devel", runFor(again, "oniguruma", "Testos").Forced)
+	assert.Equal(t, record.Running, runFor(again, "oniguruma", "Testos").State)
+}

@@ -1,0 +1,30 @@
+# The deactivate is the one step ahead of a forced member's own build,
+# and it can fail: here gegl's own build broke, so it was never
+# installed in the guest, and `port -f deactivate gegl` throws before
+# gegl-devel is even linted. gegl-devel does not require gegl — it
+# conflicts with it — so the runner reaches it (D25: the loop goes on
+# past a failure and skips only what depended on it) and takes the same
+# failed path it takes for any step — member=no, the state file says
+# failed, and the loop goes on — so the failure is gegl-devel's own,
+# read from its own section in MacPorts' own words, and the judge trusts
+# the state file (D25) rather than re-deriving it.
+#
+# The blame reader does not blame gegl: "port deactivate failed: …" is
+# not the "Failed to <phase> gegl:" shape a dependency failure wears, so
+# nobody is named and the member owns its failure. Its run still carries
+# the sibling it was told to deactivate, because that was recorded at
+# submit whatever the guest then did with it.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: libwidget gegl gegl-devel
+outcome: failed
+libwidget.state: passed
+libwidget.lint: clean
+libwidget.reported: passed
+gegl.state: failed
+gegl.detail: Failed to build gegl: command execution failed
+gegl.reported: failed
+gegl-devel.state: failed
+gegl-devel.detail: port deactivate failed: Image error: port gegl is not active.
+gegl-devel.reported: failed
+gegl-devel.forced: gegl

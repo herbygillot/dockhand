@@ -22,7 +22,7 @@ var (
 )
 
 // populated sets every one of the record's eighteen fields and every
-// one of a run's fourteen, so that the wire pin below is a statement
+// one of a run's fifteen, so that the wire pin below is a statement
 // about the whole schema and not about the part of it anything writes
 // today.
 //
@@ -75,6 +75,7 @@ func populated() Record {
 				Lint:           "2 warnings",
 				FromSource:     true,
 				KeepEnv:        true,
+				Forced:         "jq-devel",
 				Manifest:       &verify.Manifest{Port: "jq", Version: "1.9", Platform: "Testos", Files: []string{"/opt/local/bin/jq"}, Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", Arch: "arm64", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "1.0.0", CurrentVersion: "1.9.0"}}},
 				Baseline:       &verify.Manifest{Port: "jq", Version: "1.8", Platform: "Testos", Files: []string{}, Dylibs: []verify.Dylib{}},
 				BaselineSource: "archive",
@@ -104,6 +105,12 @@ func populated() Record {
 			Candidates: []Candidate{
 				{Port: "oniguruma", Portdir: "devel/oniguruma", Proposed: true, Reason: "depends_lib"},
 				{Port: "jq-devel", Reason: "already in flight"},
+				// Withheld, then forced: seated beside oniguruma is what it
+				// cannot be, the sibling is named on its own key beside the
+				// sentence, and the override is a key too.
+				{Port: "oniguruma-devel", Portdir: "devel/oniguruma-devel", Proposed: true,
+					Reason: "depends_lib; conflicts with oniguruma, which this cohort builds — bumped here, and not built",
+					Solo:   true, Over: "oniguruma", Forced: true},
 			},
 			Criterion:   "compatibility_version 1.0.0 to 2.0.0, measured on Testos",
 			Source:      "https://example.invalid/jq/NEWS",
@@ -207,6 +214,7 @@ const wirePopulated = `{
       "lint": "2 warnings",
       "from_source": true,
       "keep_env": true,
+      "forced": "jq-devel",
       "manifest": {
         "port": "jq",
         "version": "1.9",
@@ -274,6 +282,15 @@ const wirePopulated = `{
         {
           "port": "jq-devel",
           "reason": "already in flight"
+        },
+        {
+          "port": "oniguruma-devel",
+          "portdir": "devel/oniguruma-devel",
+          "proposed": true,
+          "reason": "depends_lib; conflicts with oniguruma, which this cohort builds — bumped here, and not built",
+          "solo": true,
+          "over": "oniguruma",
+          "forced": true
         }
       ],
       "criterion": "compatibility_version 1.0.0 to 2.0.0, measured on Testos",

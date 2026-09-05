@@ -160,6 +160,8 @@ func TestCohortCorpus(t *testing.T) {
 				assert.Equal(t, want.Detail, j.Run.Detail, "%s: detail", m)
 				assert.Equal(t, want.Blamed, j.Run.Blamed, "%s: blamed", m)
 				assert.Equal(t, want.Lint, j.Run.Lint, "%s: lint evidence", m)
+				assert.Equal(t, want.Forced, j.Run.Forced,
+					"%s: the sibling deactivated for it rides the run unchanged through the judgment", m)
 				if want.State == "failed" {
 					assert.Equal(t, KeepWorker, j.Release,
 						"%s: this change's own breakage keeps the environment", m)
@@ -195,7 +197,11 @@ func cohortOf(exp corpustest.CohortExpect, log string) CohortInput {
 	}
 	for _, m := range exp.Members {
 		in.Subjects = append(in.Subjects, record.Subject{Port: m, Names: []string{m}})
-		in.Runs[m] = running(true)
+		r := running(true)
+		// The sibling a forced member deactivated is on its run at submit,
+		// the way FromSource is; the judge carries it through untouched.
+		r.Forced = exp.Verdict[m].Forced
+		in.Runs[m] = r
 	}
 	return in
 }

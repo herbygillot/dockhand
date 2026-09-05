@@ -67,10 +67,12 @@ var intentSurface = []struct {
 		// revision's own because the edit is bump-revision's edit — what
 		// changes is who chose the ports and who wrote the reason.
 		//
-		// --exclude belongs to --for and to nothing else: it names
-		// members of the proposal being accepted, so there is no reading
-		// of it on the single-port road.
-		own: []string{"exclude", "for", "reason"},
+		// --exclude and --force-withheld belong to --for and to nothing
+		// else: each names members of the proposal being accepted —
+		// --exclude to leave them out, --force-withheld to seat a
+		// withholding anyway — so neither has a reading on the single-port
+		// road.
+		own: []string{"exclude", "for", "force-withheld", "reason"},
 	},
 	{
 		name:    "refresh-checksums",

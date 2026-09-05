@@ -5,15 +5,93 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lockfile"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
+
+// rosterAsRecorded shapes a cohort's roster for a resubmission from what
+// the note already recorded about each member, rather than from the tree
+// the members were derived off.
+//
+// The deferral roads — the drain's pump and a hand `dockhand verify
+// <branch>` — resolve a cohort's members by walking every changed
+// portdir, which is right for what to build and wrong for two members
+// the cohort's acceptance already decided about. A withheld member's
+// Portfile was bumped by the cohort commit, so it is a changed portdir
+// and comes back in the walk, but D24 keeps it out of the guest — this
+// drops it, and hands it back to be recorded withheld under the release
+// this attempt resolves, so its line is on the body whichever road
+// started the build. A forced member (the D24 override) must go back
+// last, after every member that might need the sibling it deactivates,
+// and carry that sibling — this moves it to the end in name order and
+// returns the map the submission deactivates by.
+//
+// Both facts are read from the record twice over, and the run comes
+// first. A run is written when a submission resolves a release — a
+// withheld run for the member kept out, a run carrying Forced for the
+// one seated last — and where one exists it is what the last attempt
+// actually did. The accepted proposal's candidates on the note say the
+// same thing from the other side (Solo, Over, Forced), and they are
+// what remains when no submission ever happened: a cohort accepted with
+// --no-verify, or one queued before any release resolved, has no runs
+// to read, and a road that read only runs would seat the withheld member
+// beside its sibling and drop the person's override on the floor.
+//
+// On a note with no withheld and no forced member — every deferral there
+// was before this feature, and every single-subject one — it returns the
+// members unchanged and nil for the rest, so the ordinary retry is
+// untouched.
+func rosterAsRecorded(n record.Record, release string, members []Member) ([]Member, map[string]string, []WithheldMember) {
+	var kept, tail []Member
+	var held []WithheldMember
+	forced := map[string]string{}
+	cands := map[string]record.Candidate{}
+	for _, f := range n.Findings {
+		if f.Kind != render.KindCohort {
+			continue
+		}
+		for _, c := range f.Candidates {
+			cands[strings.ToLower(c.Port)] = c
+		}
+	}
+	for _, m := range members {
+		lp := strings.ToLower(m.Port)
+		run, ran := n.Runs[record.RunKey(m.Port, release)]
+		c, proposed := cands[lp]
+		switch {
+		case ran && run.State == record.Withheld:
+			// Bumped, never built: the guest must not hold it beside its
+			// sibling, whatever the walk turned up. Recorded again under
+			// this attempt's release, which is the same key it already
+			// has.
+			held = append(held, WithheldMember{Port: m.Port, Why: run.Detail})
+		case ran && run.Forced != "":
+			forced[lp] = run.Forced
+			tail = append(tail, m)
+		case !ran && proposed && c.Proposed && c.Solo && c.Forced && c.Over != "":
+			forced[lp] = c.Over
+			tail = append(tail, m)
+		case !ran && proposed && c.Proposed && c.Solo:
+			held = append(held, WithheldMember{Port: m.Port, Why: withheldWhy(c)})
+		default:
+			kept = append(kept, m)
+		}
+	}
+	sort.Slice(tail, func(i, j int) bool { return tail[i].Port < tail[j].Port })
+	if len(forced) == 0 {
+		forced = nil
+	}
+	return append(kept, tail...), forced, held
+}
 
 // PumpDeferred starts what was queued, now that this pass has settled
 // finished runs and freed their slots (D27: the drain is `cycle`'s;
@@ -271,12 +349,30 @@ func (e *Engine) pumpRun(ctx context.Context, repo *git.Repo, br, tip string, me
 	// back into one environment, and the members the walk has not
 	// reached yet will find their runs no longer queued and step over
 	// them.
-	s := submission{Port: members[0].Port, Release: release, FromSource: run.FromSource, KeepEnv: run.KeepEnv, Members: members}
+	//
+	// The roster is shaped from the record and not from the tree. The
+	// members came from deferredMembers, which resolves every changed
+	// portdir — including a withheld member's, whose Portfile the cohort
+	// commit bumped, and which the guest must never build beside the
+	// sibling it conflicts with. What the note said the first time is
+	// what the retry must honour: a member whose run is withheld stays
+	// out, a member whose run carries a forced sibling goes back last
+	// with that sibling to deactivate, and everything else keeps its
+	// place. On a note with neither — every deferral there was before
+	// this — it is the members unchanged.
+	members, forced, held := rosterAsRecorded(n, plat, members)
+	s := submission{Port: members[0].Port, Release: release, FromSource: run.FromSource, KeepEnv: run.KeepEnv,
+		Members: members, Forced: forced, Withheld: held}
 	err = e.submit(ctx, &Minted{Repo: repo, Branch: br, Sha: tip, RelPort: members[0].Portdir}, s)
 	var vde *VerifyDeferredError
 	if errors.As(err, &vde) {
+		// Forced rides with FromSource and KeepEnv: the run re-recorded
+		// here is the one the walk claimed, and if that is a forced
+		// member's, a re-queue that dropped its sibling would seat it in
+		// portdir order with nothing deactivated on the attempt after.
 		if rerr := e.recordRun(ctx, repo, tip, portName, plat, record.Run{
 			State: record.Queued, Detail: vde.Reason, FromSource: run.FromSource, KeepEnv: run.KeepEnv,
+			Forced: run.Forced,
 		}, ""); rerr != nil {
 			fmt.Fprintf(e.Err, "warning: re-recording queued run: %v\n", rerr)
 		}

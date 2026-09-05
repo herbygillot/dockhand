@@ -194,3 +194,36 @@ func TestAWithheldMemberIsKeyedByTheResolvedRelease(t *testing.T) {
 	assert.NotContains(t, fake.Submitted[0].Ports, "oniguruma-devel",
 		"withheld means withheld: the guest is never asked to build it")
 }
+
+// A forced member (the D24 override) rides the request the way
+// FromSource does, but per member: the guest is told to deactivate the
+// sibling immediately before that member's build, the Deactivate slice
+// is aligned to Ports, and the member's own run records the sibling so a
+// deferral and the pull request body can read it back. The sibling is
+// not a member and appears in no Ports entry.
+func TestForcedIsRecordedPerMemberAndAlignedToPorts(t *testing.T) {
+	ctx := context.Background()
+	repo, sha := cohortBranch(t)
+	fake := &verifytest.Fake{}
+	m := &Minted{Repo: repo, Branch: "dockhand/jq-1.8", Sha: sha, RelPort: "sysutils/jq"}
+
+	require.NoError(t, testState(t, repo, fake).submit(ctx, m, submission{
+		Port:    "jq",
+		Release: fake.Capabilities().Platforms[0],
+		Members: cohortMembers,
+		Forced:  map[string]string{"oniguruma": "oniguruma-devel"},
+	}))
+
+	require.Len(t, fake.Submitted, 1)
+	assert.Equal(t, []string{"jq", "oniguruma"}, fake.Submitted[0].Ports)
+	assert.Equal(t, []string{"", "oniguruma-devel"}, fake.Submitted[0].Deactivate,
+		"parallel to Ports: nothing for the headline, the sibling for the forced member")
+
+	n, err := ledger.Open(repo).Read(ctx, sha)
+	require.NoError(t, err)
+	assert.Equal(t, "oniguruma-devel", runFor(n, "oniguruma", "Testos").Forced,
+		"the forced member's run names the sibling it deactivated")
+	assert.Empty(t, runFor(n, "jq", "Testos").Forced, "and the ordinary member's does not")
+	assert.Equal(t, record.Running, runFor(n, "oniguruma", "Testos").State,
+		"a forced member is built, not withheld")
+}

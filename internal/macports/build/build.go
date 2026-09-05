@@ -201,6 +201,42 @@ func TestArgs(port string, variants info.VariantSet) []string {
 	return append([]string{"-d", "-N", "-k", "test", port}, variants.List()...)
 }
 
+// DeactivateArgs asks port(1) to take an installed port out of the
+// active set, dependents and all, so that a port declaring a conflict
+// with it can be activated in its place.
+//
+// It exists for one caller's one case. D24 rules that two members
+// MacPorts will not activate together are not built together: the one
+// that loses the seat is bumped and left out of the guest, withheld.
+// A person may override that (ruled 2026-09-05 by the orchestrator,
+// pending the maintainer) and have the withheld member built anyway,
+// and this is the step that makes that possible — the seated sibling
+// is deactivated immediately before the forced member is built, in
+// the environment that built the sibling, so MacPorts' own conflict
+// check finds nothing active to object to.
+//
+// -f is the whole of it. Under -N nothing is ever asked, and without
+// force a deactivate of a port that other installed ports depend on
+// stops at the registry's dependents check — "Please uninstall the
+// ports that depend on X first" — which is exactly the situation a
+// seated sibling is in once the members that needed it have been
+// built. Forced, the registry warns that it is proceeding despite the
+// dependencies and proceeds. Those dependents keep their files and
+// their records; what they lose is a guarantee that the library they
+// linked is the one now active, which is why the caller builds a
+// forced member last, after every member that might need the sibling.
+//
+// Force goes on the deactivate and never on the install. `port -f
+// install` past a conflict only warns and then collides at activation
+// on the files both ports lay down; taking the sibling out first is
+// the lever that leaves nothing to collide with. Options precede the
+// action word as port(1)'s synopsis and InstallArgs's convention have
+// it, and -d for the same reason as everywhere else here: the log is
+// the artifact.
+func DeactivateArgs(port string) []string {
+	return []string{"-d", "-N", "-f", "deactivate", port}
+}
+
 // CleanScript is a shell script that reports everything wrong with a
 // MacPorts environment, one finding per line, and prints nothing when
 // there is nothing wrong. Empty output is the pass.

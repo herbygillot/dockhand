@@ -97,6 +97,14 @@ func TestTestArgsRunFirstAndKeepTheBuild(t *testing.T) {
 	assert.Equal(t, []string{"-d", "-N", "-k", "test", "jq"}, TestArgs("jq", ""))
 }
 
+// The seated sibling is taken out by force: under -N nothing is asked,
+// and without -f the registry's dependents check would stop the
+// deactivate of a port the members before it were built against. Force
+// is on the deactivate and never on the install.
+func TestDeactivateArgsForceTheSiblingOut(t *testing.T) {
+	assert.Equal(t, []string{"-d", "-N", "-f", "deactivate", "gegl"}, DeactivateArgs("gegl"))
+}
+
 // The installer name pairs the product version with the marketing name,
 // spaces removed. Every case here is a file MacPorts actually publishes.
 func TestInstallerName(t *testing.T) {

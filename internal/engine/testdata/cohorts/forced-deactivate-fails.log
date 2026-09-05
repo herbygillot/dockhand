@@ -1,0 +1,32 @@
+===> dockhand subject: libwidget
+--->  Verifying Portfile for libwidget
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/devel/libwidget
+DEBUG: libwidget has no conflicts
+--->  Fetching distfiles for libwidget
+--->  Verifying checksums for libwidget
+--->  Extracting libwidget
+--->  Configuring libwidget
+--->  Building libwidget
+--->  Staging libwidget into destroot
+--->  Installing libwidget @3.0_0
+--->  Activating libwidget @3.0_0
+--->  Cleaning libwidget
+===> dockhand subject: gegl
+--->  Verifying Portfile for gegl
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/graphics/gegl
+--->  Fetching distfiles for gegl
+--->  Verifying checksums for gegl
+--->  Extracting gegl
+--->  Configuring gegl
+--->  Building gegl
+DEBUG: Executing org.macports.build (gegl)
+Error: Failed to build gegl: command execution failed
+DEBUG: Error code: CHILDSTATUS 4120 2
+Warning: targets not executed for gegl: org.macports.activate org.macports.destroot org.macports.install
+Error: See /opt/local/var/macports/logs/_tmp_dockhand-overlay_graphics_gegl/gegl/main.log for details.
+Error: Processing of port gegl failed
+===> dockhand subject: gegl-devel
+--->  Deactivating gegl @1.4_1
+Error: port deactivate failed: Image error: port gegl is not active.

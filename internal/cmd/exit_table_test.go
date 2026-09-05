@@ -625,6 +625,28 @@ func exitTable(t *testing.T) []exitRow {
 		exitRow{name: "precedence: tree.ErrNotPortsTree wrapping *plan.Decline",
 			err: fmt.Errorf("%w: %w", tree.ErrNotPortsTree, &plan.Decline{Type: plan.AlreadyCurrent}),
 			is:  []error{tree.ErrNotPortsTree}, as: new(*plan.Decline)},
+		// The cohort verb's declines, each its own Coder in this band. The
+		// three that answer `bump-revision --for` were unpinned here until
+		// --force-withheld added three more; pinning them together keeps
+		// TestEveryTwinReasonNamesOneCode holding every one of their Codes.
+		exitRow{name: "*engine.NoProposalError (bump-revision --for: nothing proposed)",
+			err: &engine.NoProposalError{Branch: branch, Why: "no revbump proposal on this branch",
+				Remedy: "`dockhand status` shows what it carries"}, as: new(*engine.NoProposalError)},
+		exitRow{name: "*engine.UnknownMemberError (--exclude names a non-member)",
+			err: &engine.UnknownMemberError{Names: []string{"gthumb"}, Members: []string{"gegl"}},
+			as:  new(*engine.UnknownMemberError)},
+		exitRow{name: "*engine.EmptyCohortError (--exclude leaves nothing to bump)",
+			err: &engine.EmptyCohortError{}, as: new(*engine.EmptyCohortError)},
+		exitRow{name: "*engine.UnknownWithheldError (--force-withheld names a non-withheld member)",
+			err: &engine.UnknownWithheldError{Names: []string{"gthumb"}, Withheld: []string{"gegl-devel"}},
+			as:  new(*engine.UnknownWithheldError)},
+		exitRow{name: "*engine.NotWithheldError (--force-withheld names a member that is not withheld)",
+			err: &engine.NotWithheldError{Port: "gegl"}, as: new(*engine.NotWithheldError)},
+		exitRow{name: "*engine.CannotForceError (--force-withheld names a member with nothing to deactivate)",
+			err: &engine.CannotForceError{Port: "gegl-devel", Why: "it conflicts with gegl, which --exclude leaves out of this change, so there is nothing to deactivate; drop one of the two flags"},
+			as:  new(*engine.CannotForceError)},
+		exitRow{name: "*engine.ForcedConflictError (two forced members conflict with each other)",
+			err: &engine.ForcedConflictError{A: "gegl-devel", B: "gimp-devel"}, as: new(*engine.ForcedConflictError)},
 	)
 
 	// The decline that withheld something on the way past. Nothing

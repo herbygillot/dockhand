@@ -276,3 +276,30 @@ func TestUnprovenMembersNamesTheDependentsWithoutAPass(t *testing.T) {
 		"withheld and failed were published without a pass; unsupported is the port's own answer; the headline is never listed")
 	assert.True(t, r.Promotable(), "and the change still publishes — which is the whole reason the count exists")
 }
+
+// A member a person forced into the build — seated last, with the
+// sibling it conflicts with deactivated first (the D24 override, ruled
+// 2026-09-05 pending the maintainer) — is judged like any built
+// dependent, and the gate reads it that way: its pass proves it, and
+// its failure is published over as best effort and named by the audit.
+// Forced changes nothing about the gate; it says what environment the
+// answer was earned in, and that is the body's to state.
+func TestAForcedMemberIsGatedLikeAnyBuiltDependent(t *testing.T) {
+	r := Record{
+		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl"}, {Port: "gegl-devel"}},
+		Runs: map[string]Run{
+			RunKey("libraw", "Testos"):     {State: Passed, Platform: "Testos"},
+			RunKey("gegl", "Testos"):       {State: Passed, Platform: "Testos"},
+			RunKey("gegl-devel", "Testos"): {State: Passed, Platform: "Testos", Forced: "gegl"},
+		},
+	}
+	assert.True(t, r.Promotable())
+	assert.Empty(t, r.UnprovenMembers(), "a forced member that passed has a pass; nothing was published without one")
+
+	failed := r.Runs[RunKey("gegl-devel", "Testos")]
+	failed.State = Failed
+	r.Runs[RunKey("gegl-devel", "Testos")] = failed
+	assert.True(t, r.Promotable(), "a dependent that failed does not block, forced or not")
+	assert.Equal(t, []string{"gegl-devel"}, r.UnprovenMembers(),
+		"and the audit names it, because the bump was published without a pass")
+}

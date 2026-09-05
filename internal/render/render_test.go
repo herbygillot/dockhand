@@ -206,3 +206,52 @@ func TestRecordLinesLeaveOneSubjectUnnamed(t *testing.T) {
 	}
 	assert.Equal(t, []string{"passed (Sonoma)"}, RecordLines(n, time.Now()))
 }
+
+// A forced member's report line says the environment it was proven in
+// is not the cohort's: the sibling it conflicts with was deactivated for
+// it (the D24 override), stated between the platform and any kept
+// environment.
+func TestRecordLinesSaysAForcedMemberWasBuiltWithItsSiblingDeactivated(t *testing.T) {
+	n := record.Record{
+		Subjects: []record.Subject{{Port: "gegl"}, {Port: "gegl-devel"}},
+		Jobs: map[string]record.JobRecord{
+			"Tahoe": {Job: verify.Job{ID: "fake-1"}},
+		},
+		Runs: map[string]record.Run{
+			record.RunKey("gegl", "Tahoe"):       {State: record.Passed, Platform: "Tahoe"},
+			record.RunKey("gegl-devel", "Tahoe"): {State: record.Passed, Platform: "Tahoe", Forced: "gegl"},
+		},
+	}
+	assert.Equal(t, []string{
+		"gegl: passed (Tahoe)",
+		"gegl-devel: passed (Tahoe) — built with gegl deactivated, at the maintainer's request",
+	}, RecordLines(n, time.Now()))
+}
+
+// Only a pass says "built with": a forced member that failed may have
+// failed on the deactivate itself, a blocked one was never reached and
+// deactivated nothing, and a queued one has not built. Each of those
+// states the ask, which is what the record holds.
+func TestRecordLinesStatesTheAskForAForcedMemberThatDidNotPass(t *testing.T) {
+	n := record.Record{
+		Subjects: []record.Subject{{Port: "gegl"}, {Port: "gegl-devel"}, {Port: "gimp-devel"}, {Port: "krita-devel"}},
+		Jobs: map[string]record.JobRecord{
+			"Tahoe": {Job: verify.Job{ID: "fake-1"}},
+		},
+		Runs: map[string]record.Run{
+			record.RunKey("gegl", "Tahoe"): {State: record.Failed, Platform: "Tahoe", Detail: "Failed to build gegl: command execution failed"},
+			record.RunKey("gegl-devel", "Tahoe"): {State: record.Failed, Platform: "Tahoe", Forced: "gegl",
+				Detail: "port deactivate failed: Image error: port gegl is not active."},
+			record.RunKey("gimp-devel", "Tahoe"): {State: record.Blocked, Platform: "Tahoe", Forced: "gimp",
+				Blamed: "gegl", Detail: "skipped: gegl failed"},
+			record.RunKey("krita-devel", "Tahoe"): {State: record.Queued, Platform: "Tahoe", Forced: "krita",
+				Detail: "all slots busy"},
+		},
+	}
+	assert.Equal(t, []string{
+		"gegl: failed (Tahoe) — Failed to build gegl: command execution failed",
+		"gegl-devel: failed (Tahoe) — to be built with gegl deactivated, at the maintainer's request — port deactivate failed: Image error: port gegl is not active.",
+		"gimp-devel: blocked (Tahoe) — to be built with gimp deactivated, at the maintainer's request — skipped: gegl failed",
+		"krita-devel: queued (Tahoe) — to be built with krita deactivated, at the maintainer's request — all slots busy — `dockhand cycle` starts it",
+	}, RecordLines(n, time.Now()))
+}

@@ -1,0 +1,29 @@
+# A forced member: the person overrode D24 and had gegl-devel built
+# anyway, last, with gegl deactivated first. The headline libwidget and
+# the seated sibling gegl build in the cohort's own environment; then
+# gegl-devel's section opens with the deactivate — its own words, under
+# its own marker, because the marker was printed before the step ran —
+# and it builds and passes in an environment gegl is no longer active
+# in. Every member passes; gegl-devel's run carries the sibling it was
+# built without, which is what the report and the pull request body say
+# it was proven without.
+#
+# The deactivate line sits inside gegl-devel's section and names gegl,
+# but the section passed, so the blame reader never runs and nobody is
+# blamed for a member that built cleanly. gegl's own line above is an
+# ordinary pass: its verdict was measured before the deactivation and
+# stands.
+# SYNTHESIZED from the cohort runner in internal/verify/tart/tart.go,
+# not captured: see README.md.
+members: libwidget gegl gegl-devel
+outcome: passed
+libwidget.state: passed
+libwidget.lint: clean
+libwidget.reported: passed
+gegl.state: passed
+gegl.lint: clean
+gegl.reported: passed
+gegl-devel.state: passed
+gegl-devel.lint: clean
+gegl-devel.reported: passed
+gegl-devel.forced: gegl

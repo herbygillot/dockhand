@@ -48,6 +48,11 @@ type Member struct {
 	// reads, and the one that tells a member skipped on purpose from one
 	// the guest never reached — both are silent in the log.
 	Reported string
+	// Forced names the sibling this member's build deactivated before it
+	// ran — the D24 override, recorded on the run at submit and carried
+	// through settle. Empty for every ordinary member. It is a member of
+	// the cohort (the seated sibling is built), and never the headline.
+	Forced string
 }
 
 // CohortExpect is a cohort log's .expect sidecar.
@@ -117,8 +122,10 @@ func ReadCohort(t *testing.T, path string) CohortExpect {
 			v.Lint = value
 		case "reported":
 			v.Reported = value
+		case "forced":
+			v.Forced = value
 		default:
-			require.Failf(t, "unknown sidecar field", "%s: %q; the fields are state, detail, blamed, lint, reported", path, key)
+			require.Failf(t, "unknown sidecar field", "%s: %q; the fields are state, detail, blamed, lint, reported, forced", path, key)
 		}
 		e.Verdict[port] = v
 	}
@@ -142,6 +149,11 @@ func ReadCohort(t *testing.T, path string) CohortExpect {
 			} else {
 				require.Empty(t, prereq, "%s: only a skip names a member", path, m)
 			}
+		}
+		if v.Forced != "" {
+			require.Contains(t, e.Members, v.Forced,
+				"%s: %s.forced names the seated sibling it was built without, which is a member of the cohort", path, m)
+			require.NotEqual(t, e.Members[0], m, "%s: the headline is never a forced member", path, m)
 		}
 	}
 	if e.Outcome == "passed" {

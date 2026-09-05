@@ -281,8 +281,12 @@ func DependentCohort(abi ABI, quotes []Instruction, deps []Dependent, unread []U
 		if with, cannot := solo[strings.ToLower(d.Port)]; cannot {
 			// Bumped, and not built beside the member it conflicts with.
 			// It stays proposed because its revision is owed either way:
-			// it links a library that moved.
-			cand.Solo = true
+			// it links a library that moved. The sibling is recorded on
+			// its own key as well as in the sentence: the sentence is for
+			// the person, and the name is what the engine deactivates if
+			// the person overrides the withholding — read from Over, never
+			// parsed back out of the prose.
+			cand.Solo, cand.Over = true, with
 			cand.Reason += "; conflicts with " + with + ", which this cohort builds — bumped here, and not built"
 		}
 		if limit > 0 && i >= limit {

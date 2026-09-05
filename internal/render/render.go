@@ -94,6 +94,23 @@ func RecordLines(n record.Record, now time.Time) []string {
 		if named {
 			line = ref.Port + ": " + line
 		}
+		if ref.Run.Forced != "" {
+			// The environment this member was proven in is not the
+			// cohort's: the sibling it conflicts with was deactivated for
+			// it (the D24 override). Said between the platform and the kept
+			// environment, so a reader sees which member's answer was
+			// earned somewhere different. Only a pass says "built with":
+			// a failed run may have failed on the deactivate itself, a
+			// blocked one was never reached and deactivated nothing, and
+			// a queued or running one has not built yet — for all of
+			// those the line states the ask, which is the fact the record
+			// holds.
+			built := "to be built with"
+			if ref.Run.State == record.Passed {
+				built = "built with"
+			}
+			line += " — " + built + " " + ref.Run.Forced + " deactivated, at the maintainer's request"
+		}
 		if names[i] {
 			line += " — environment kept: " + ref.Job.Handle
 		}

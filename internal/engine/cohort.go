@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -107,6 +108,17 @@ type CohortOpts struct {
 	// among the ports examined and not bumped, where a reviewer can
 	// disagree.
 	Exclude []string
+	// Force names withheld members to build anyway. D24 withholds a
+	// member MacPorts will not activate beside a sibling the cohort
+	// seats: it is bumped and left out of the guest. A person may
+	// override that (ruled 2026-09-05 by the orchestrator, pending the
+	// maintainer) and have it built — last, after every member that
+	// might need the sibling active, with the sibling deactivated in the
+	// guest immediately before its own build. The override names what it
+	// overrides: a name here that is not withheld is refused, because a
+	// flag that quietly did nothing to a name a person typed would be
+	// the exclude bug in the other direction.
+	Force []string
 }
 
 // BuildCohort accepts a branch's revbump proposal: plan every member
@@ -157,9 +169,40 @@ func (e *Engine) BuildCohort(ctx context.Context, repo *git.Repo, target string,
 		}
 	}
 	head := n.Headline()
+	proposal, forced, err := forceMembers(proposal, o.Force)
+	if err != nil {
+		return err
+	}
+	// Two forced members that conflict with each other cannot both be
+	// seated: deactivating one sibling does not make room for the other
+	// (ruled 2026-09-05 by the orchestrator, pending the maintainer). It
+	// cannot be told from Over, which names only the seated member each
+	// one lost to, so the conflict relation is read from the tree's own
+	// index. Where the index cannot be read — no tree, one that will not
+	// walk — the check cannot be made, and forcing proceeds rather than
+	// declining a person's explicit override for want of a fact dockhand
+	// could not look up: the guest itself refuses to activate the second
+	// of a conflicting pair, and that member fails in its own section
+	// with MacPorts' own words, which is a true answer and not a wrong
+	// verdict. The warning says so.
+	if a, b, conflict, known := e.forcedConflict(head.Port, forced); conflict {
+		return &ForcedConflictError{A: a, B: b}
+	} else if len(forced) > 1 && !known {
+		fmt.Fprintln(e.Err, "warning: forcing several members without a readable dependency index; "+
+			"if two of them conflict with each other, the guest will refuse to activate the second")
+	}
 	built, declined, err := e.planCohort(ctx, repo, tip, cohortPlanner(head, proposal), proposal)
 	if err != nil {
 		return err
+	}
+	// Said after the plan and not before it: a forced member the planner
+	// then declines is reported declined, and a line announcing its seat
+	// a moment earlier would have been the tool contradicting itself.
+	for _, c := range proposal.Candidates {
+		if s, ok := forced[strings.ToLower(c.Port)]; ok && !slices.ContainsFunc(declined,
+			func(d declinedMember) bool { return d.Port == c.Port }) {
+			fmt.Fprintf(e.Err, "%s: forced into the build, last; %s will be deactivated first\n", c.Port, s)
+		}
 	}
 	if len(built) == 0 {
 		return &NoProposalError{Branch: branch,
@@ -186,24 +229,31 @@ func (e *Engine) BuildCohort(ctx context.Context, repo *git.Repo, target string,
 	// by a commit that then failed to land; written here, a failure
 	// leaves the finding proposed on a tip that carries the cohort,
 	// which the machine gate holds and a person can see.
-	e.acceptProposal(ctx, repo, newTip, branch, declined)
+	e.acceptProposal(ctx, repo, newTip, branch, proposal, declined)
 	fmt.Fprintln(e.Out, newTip)
 	if o.NoVerify {
 		return nil
 	}
 	apart := solo(proposal)
+	for name := range forced {
+		// A forced member is not held apart: it is seated, last, and
+		// cohortRoster puts it there. Only the members still withheld
+		// stay out of the guest.
+		delete(apart, name)
+	}
 	// Handed to the submission rather than recorded here: the release is
 	// resolved inside it, and a run keyed before that is keyed under no
 	// release at all.
 	var held []WithheldMember
 	for _, c := range proposal.Candidates {
-		if c.Solo && c.Proposed {
-			held = append(held, WithheldMember{Port: c.Port, Why: withheldDetail(c, head.Port)})
+		if _, isForced := forced[strings.ToLower(c.Port)]; !c.Solo || !c.Proposed || isForced {
+			continue
 		}
+		held = append(held, WithheldMember{Port: c.Port, Why: withheldWhy(c)})
 	}
 	return e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: newTip, RelPort: head.Portdir},
 		submission{Port: head.Port, Release: o.Platform, Test: o.Test, KeepEnv: o.KeepEnv, Trace: o.Trace,
-			Members: cohortRoster(head, built, apart), Withheld: held})
+			Members: cohortRoster(head, built, apart, forced), Withheld: held, Forced: forced})
 }
 
 // cohortProposal is the finding the verb answers: the one proposal a
@@ -510,21 +560,36 @@ func solo(f record.Finding) map[string]bool {
 // staging the pair spends a guest proving the second cannot install and
 // stops every member behind it. It is owed nothing further (maintainer's
 // ruling, 2026-09-04): the person is told it was withheld, on stderr
-// and in the body, and that is the whole of what the tool does about
-// it. Building it anyway — deactivating the sibling first — is an
-// option a person may be given, recorded in docs/todo.md, not a debt
-// the tool carries.
-func cohortRoster(head record.Subject, built []planned, apart map[string]bool) []Member {
+// and in the body, and that is the whole of what the tool does about it
+// by default.
+//
+// A person may override that and force a withheld member into the build
+// (ruled 2026-09-05 by the orchestrator, pending the maintainer). A
+// forced member is not held apart; it is seated LAST — after every
+// member built in portdir order, in name order among themselves —
+// because deactivating the sibling it conflicts with changes the
+// environment every member built afterwards would bind, so it must come
+// after everything that might need the sibling active. The deactivation
+// itself is the submission's to carry (Request.Deactivate); the roster's
+// job is only the order.
+func cohortRoster(head record.Subject, built []planned, apart map[string]bool, forced map[string]string) []Member {
 	out := []Member{{Port: head.Port, Portdir: head.Portdir}}
+	var tail []Member
 	for _, b := range built {
 		for _, p := range b.Ports {
-			if apart[strings.ToLower(p)] {
+			lp := strings.ToLower(p)
+			if _, isForced := forced[lp]; isForced {
+				tail = append(tail, Member{Port: p, Portdir: b.Portdir})
+				continue
+			}
+			if apart[lp] {
 				continue
 			}
 			out = append(out, Member{Port: p, Portdir: b.Portdir})
 		}
 	}
-	return out
+	sort.Slice(tail, func(i, j int) bool { return tail[i].Port < tail[j].Port })
+	return append(out, tail...)
 }
 
 // cohortCommit gathers what the commit message says from the note and
@@ -577,7 +642,18 @@ func reasonFor(f record.Finding, port string) string {
 // because a disposition could not be updated would be the more
 // misleading of the two, and what it costs is that the machine gate
 // keeps holding — which is the safe direction.
-func (e *Engine) acceptProposal(ctx context.Context, repo *git.Repo, tip, branch string, declined []declinedMember) {
+//
+// The amended proposal is written over the finding's candidates and not
+// merged into them. Extend copied the OLD tip's findings onto this one
+// (extend.go), which are the candidates as the measurement first wrote
+// them — before --exclude took a member out or --force-withheld turned a
+// withholding into a seat. The pull request body reads its member list
+// off this note, so a rewrite that reached only the commit message
+// would list an excluded member as bumped and word a forced member as
+// withheld in the one place a reviewer looks. Writing proposal's
+// candidates here is the one fix that carries both, and the declined
+// amendments below go on top of it.
+func (e *Engine) acceptProposal(ctx context.Context, repo *git.Repo, tip, branch string, proposal record.Finding, declined []declinedMember) {
 	why := map[string]string{}
 	for _, d := range declined {
 		why[d.Port] = d.Reason
@@ -591,6 +667,7 @@ func (e *Engine) acceptProposal(ctx context.Context, repo *git.Repo, tip, branch
 			}
 			switch f.Kind {
 			case render.KindCohort:
+				f.Candidates = append([]record.Candidate(nil), proposal.Candidates...)
 				for j := range f.Candidates {
 					c := &f.Candidates[j]
 					reason, was := why[c.Port]
@@ -696,33 +773,266 @@ func abiLimits(n record.Record) string {
 	return ""
 }
 
-// withheldDetail words why a member was bumped and not built.
-//
-// It names the sibling rather than the rule, because the sibling is
-// what a reader can check: `port info --conflicts` answers it, and "the
-// cohort's co-residency rule" answers nothing.
-func withheldDetail(c record.Candidate, head string) string {
-	with := conflictNamedIn(c.Reason)
-	if with == "" {
+// withheldWhy words a withheld member's run detail: why it was bumped
+// and not built. The sibling is read from Over, never parsed back out
+// of the reason's prose — the fact is the record's, the sentence is the
+// person's. The fallback covers a note written before Over existed,
+// which the reason still explains inline. It names the sibling rather
+// than the rule, because the sibling is what a reader can check:
+// `port info --conflicts` answers it, and "the cohort's co-residency
+// rule" answers nothing.
+func withheldWhy(c record.Candidate) string {
+	if c.Over == "" {
 		return "it cannot share a guest with another member of this cohort"
 	}
-	return "it conflicts with " + with + ", which this cohort builds"
+	return "it conflicts with " + c.Over + ", which this cohort builds"
 }
 
-// conflictNamedIn lifts the sibling's name out of the candidate reason
-// the proposal wrote, so the two sentences cannot drift apart.
-func conflictNamedIn(reason string) string {
-	const marker = "conflicts with "
-	i := strings.Index(reason, marker)
-	if i < 0 {
-		return ""
+// forceMembers turns the named withheld members into forced ones,
+// returning the amended proposal, a map of each forced member's folded
+// name to the sibling it must have deactivated first, and any refusal.
+//
+// The override names what it overrides, so every name is checked. A
+// name the proposal withholds becomes a seat and its reason is reworded
+// from "bumped here, and not built" to the forced sentence, so the
+// commit body and the pull request read the seat rather than the
+// withholding. A name the proposal knows but does not withhold — a
+// member it proposes to build outright, or one it examined and left out
+// — is refused as not withheld: there is nothing to force, and forcing
+// it would be a flag doing nothing to a name a person typed. A name the
+// proposal does not put forward at all is refused as unknown, and the
+// refusal lists the members it could have named — the withheld ones.
+//
+// Two withheld members cannot be forced, and both are refused rather
+// than half-seated. One whose note does not say which sibling it lost
+// its seat to (a note from before Over was recorded) would be seated
+// with nothing to deactivate — built beside the active sibling, and
+// recorded as forced. One whose sibling --exclude has taken out of the
+// change would be told to deactivate a port the guest never installs,
+// and fail by construction on a build that had nothing to make room
+// for; whether such a member should simply be seated is not decided
+// here, so the two flags together are declined and the person picks one
+// (ruled 2026-09-05 by the orchestrator, pending the maintainer).
+//
+// Matching is case-folded, as --exclude's is, and for the same reason:
+// a person naming "GEGL-devel" means the port, and a verb that seated
+// nothing because the case differed would have taken the instruction
+// and ignored it. The candidate's own spelling is what is recorded.
+func forceMembers(f record.Finding, force []string) (record.Finding, map[string]string, error) {
+	if len(force) == 0 {
+		return f, nil, nil
 	}
-	rest := reason[i+len(marker):]
-	if j := strings.Index(rest, ","); j >= 0 {
-		return rest[:j]
+	want := make(map[string]bool, len(force))
+	for _, name := range force {
+		if name = strings.TrimSpace(name); name != "" {
+			want[strings.ToLower(name)] = true
+		}
 	}
-	return rest
+	excluded := map[string]bool{}
+	for _, c := range f.Candidates {
+		if c.Reason == excludedReason {
+			excluded[strings.ToLower(c.Port)] = true
+		}
+	}
+	out := append([]record.Candidate(nil), f.Candidates...)
+	forced := map[string]string{}
+	hit := map[string]bool{}
+	for i := range out {
+		c := &out[i]
+		lp := strings.ToLower(c.Port)
+		if !want[lp] {
+			continue
+		}
+		hit[lp] = true
+		switch {
+		case c.Solo && c.Proposed && c.Over == "":
+			return f, nil, &CannotForceError{Port: c.Port,
+				Why: "the record does not say which member it conflicts with, so nothing can be deactivated for it; `dockhand verify` measures the branch again"}
+		case c.Solo && c.Proposed && excluded[strings.ToLower(c.Over)]:
+			return f, nil, &CannotForceError{Port: c.Port,
+				Why: "it conflicts with " + c.Over + ", which --exclude leaves out of this change, so there is nothing to deactivate; drop one of the two flags"}
+		case c.Solo && c.Proposed:
+			forced[lp] = c.Over
+			c.Forced = true
+			c.Reason = forcedReason(*c)
+		default:
+			// Known to the proposal — proposed outright, or examined and
+			// left out — but not a withheld member. There is nothing to
+			// force.
+			return f, nil, &NotWithheldError{Port: c.Port}
+		}
+	}
+	var unknown []string
+	for name := range want {
+		if !hit[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return f, nil, &UnknownWithheldError{Names: unknown, Withheld: withheldNames(f)}
+	}
+	f.Candidates = out
+	return f, forced, nil
 }
+
+// forcedReason rewords a withheld candidate's reason for the seat it is
+// being given. The measurement wrote "… — bumped here, and not built";
+// the seat is "… — forced into the build at the maintainer's request,
+// with <sibling> deactivated first", which the commit body and the pull
+// request both read. The base of the sentence — the depends_* fields,
+// the conflict it names — is kept, because it is still true.
+func forcedReason(c record.Candidate) string {
+	const withheldTail = " — bumped here, and not built"
+	forced := " — forced into the build at the maintainer's request, with " + c.Over + " deactivated first"
+	if strings.HasSuffix(c.Reason, withheldTail) {
+		return strings.TrimSuffix(c.Reason, withheldTail) + forced
+	}
+	return c.Reason + forced
+}
+
+// withheldNames lists the members a proposal withholds, for the refusal
+// that must say which names --force-withheld could have taken.
+func withheldNames(f record.Finding) []string {
+	var out []string
+	for _, c := range f.Candidates {
+		if c.Solo && c.Proposed {
+			out = append(out, c.Port)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// forcedConflict asks the tree's reverse index whether any two of the
+// forced members conflict with each other, which Over cannot answer:
+// Over names the seated member each withheld one lost to, never another
+// withheld one, so two members that both lost their seat to the same
+// sibling — or to different siblings — carry no record of conflicting
+// with each other. Deactivating one sibling makes room for one seat, so
+// a pair that conflicts between themselves cannot both be forced.
+//
+// It returns the offending pair when it finds one, and whether the
+// index could be read at all: no tree, or one that will not walk, is
+// "not known", and the caller proceeds rather than declining for want
+// of a fact it could not look up.
+func (e *Engine) forcedConflict(headPort string, forced map[string]string) (a, b string, conflict, known bool) {
+	if len(forced) < 2 {
+		return "", "", false, true
+	}
+	rows, _, err := e.dependentsOf(headPort)
+	if err != nil || len(rows) == 0 {
+		return "", "", false, false
+	}
+	conf := map[string]map[string]bool{}
+	spell := map[string]string{}
+	for _, r := range rows {
+		lr := strings.ToLower(r.Name)
+		if _, ok := forced[lr]; !ok {
+			continue
+		}
+		spell[lr] = r.Name
+		set := make(map[string]bool, len(r.Conflicts))
+		for _, c := range r.Conflicts {
+			set[c] = true
+		}
+		conf[lr] = set
+	}
+	names := make([]string, 0, len(forced))
+	for name := range forced {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for i := range names {
+		for j := i + 1; j < len(names); j++ {
+			x, y := names[i], names[j]
+			if conf[x][y] || conf[y][x] {
+				return nameOr(spell, x), nameOr(spell, y), true, true
+			}
+		}
+	}
+	return "", "", false, true
+}
+
+// nameOr is the port's own spelling from the index, or the folded name
+// when the index did not carry a row for it.
+func nameOr(spell map[string]string, folded string) string {
+	if s, ok := spell[folded]; ok {
+		return s
+	}
+	return folded
+}
+
+// UnknownWithheldError reports --force-withheld naming a port the
+// proposal does not withhold. It is the shape UnknownMemberError has,
+// but its own type: the message is different (the forceable names are
+// the withheld ones, not every member) and a machine tells the two
+// declines apart by their Code.
+type UnknownWithheldError struct {
+	Names    []string
+	Withheld []string
+}
+
+func (e *UnknownWithheldError) Error() string {
+	if len(e.Withheld) == 0 {
+		return fmt.Sprintf("--force-withheld names %s, which this proposal does not withhold; it withholds nothing",
+			strings.Join(e.Names, ", "))
+	}
+	return fmt.Sprintf("--force-withheld names %s, which this proposal does not withhold; the withheld members are %s",
+		strings.Join(e.Names, ", "), strings.Join(e.Withheld, ", "))
+}
+
+// DockhandExit: the declined band. The request was understood and
+// nothing was written.
+func (e *UnknownWithheldError) DockhandExit() int { return exitcode.PlanDeclined }
+
+// Code names the refusal for a machine.
+func (e *UnknownWithheldError) Code() string { return "unknown-withheld" }
+
+// NotWithheldError reports --force-withheld naming a member the proposal
+// knows but does not withhold: there is nothing to force.
+type NotWithheldError struct{ Port string }
+
+func (e *NotWithheldError) Error() string {
+	return fmt.Sprintf("%s is not withheld; nothing to force", e.Port)
+}
+
+// DockhandExit: the declined band.
+func (e *NotWithheldError) DockhandExit() int { return exitcode.PlanDeclined }
+
+// Code names the refusal for a machine.
+func (e *NotWithheldError) Code() string { return "not-withheld" }
+
+// CannotForceError reports a withheld member --force-withheld named
+// that cannot be seated: the record does not say which sibling to
+// deactivate, or --exclude has taken that sibling out of the change.
+// Why says which, in the person's terms.
+type CannotForceError struct{ Port, Why string }
+
+func (e *CannotForceError) Error() string {
+	return fmt.Sprintf("%s cannot be forced: %s", e.Port, e.Why)
+}
+
+// DockhandExit: the declined band.
+func (e *CannotForceError) DockhandExit() int { return exitcode.PlanDeclined }
+
+// Code names the refusal for a machine.
+func (e *CannotForceError) Code() string { return "cannot-force" }
+
+// ForcedConflictError reports two forced members that conflict with each
+// other: deactivating one sibling seats one of them, and nothing seats
+// both.
+type ForcedConflictError struct{ A, B string }
+
+func (e *ForcedConflictError) Error() string {
+	return fmt.Sprintf("%s and %s conflict with each other; nothing can seat both, so neither can be forced", e.A, e.B)
+}
+
+// DockhandExit: the declined band.
+func (e *ForcedConflictError) DockhandExit() int { return exitcode.PlanDeclined }
+
+// Code names the refusal for a machine.
+func (e *ForcedConflictError) Code() string { return "forced-conflict" }
 
 // excludedReason is the candidate reason an excluded member carries. It
 // is matched as well as written, so it is one constant.

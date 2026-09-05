@@ -108,6 +108,9 @@ func TestOnlyASecondPortReachesTheCohortRunner(t *testing.T) {
 		{"with a variant frame", verify.Request{Ports: []string{"jq"}, Variants: v}},
 		{"from source", verify.Request{Ports: []string{"jq"}, FromSource: []string{"jq"}}},
 		{"needing xcode", verify.Request{Ports: []string{"jq"}, NeedsXcode: true}},
+		// Submit refuses this shape at the door; the script chooser,
+		// asked anyway, still answers with the frozen bytes.
+		{"with a sibling to deactivate", verify.Request{Ports: []string{"jq"}, Deactivate: []string{"onig6"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, frozenRunner, launchScript("/opt/local/bin/port", tc.req))
@@ -142,6 +145,61 @@ func TestArgvFilesAtACohort(t *testing.T) {
 		"/tmp/dockhand-verify/argv.1.lint => lint|oniguruma|",
 		"/tmp/dockhand-verify/requires.1 => ",
 	}, got)
+}
+
+// A forced member — one the caller seated past D24's withholding, with
+// the sibling it conflicts with named in Deactivate — gets one file the
+// others do not: before.<i>, the deactivation the runner takes ahead of
+// its lint. It is staged right after the marker, so that what port(1)
+// says about the sibling lands in this member's own section, and for
+// no other member: a request that forces nobody writes exactly the
+// files TestArgvFilesAtACohort pins, and a request that names nobody
+// to deactivate — nil, or shorter than Ports — is such a request.
+func TestBeforeFilesAreStagedOnlyForAForcedMember(t *testing.T) {
+	files := argvFiles(verify.Request{
+		Ports:      []string{"libfoo", "gegl", "gegl-devel"},
+		Deactivate: []string{"", "", "gegl"},
+	})
+
+	var got []string
+	for _, f := range files {
+		got = append(got, f.Dest()+" => "+strings.ReplaceAll(f.Body, "\n", "|"))
+	}
+	assert.Equal(t, []string{
+		"/tmp/dockhand-verify/subject.0 => ===> dockhand subject: libfoo|",
+		"/tmp/dockhand-verify/argv.0 => -d|-N|install|libfoo|",
+		"/tmp/dockhand-verify/argv.0.lint => lint|libfoo|",
+		"/tmp/dockhand-verify/requires.0 => ",
+		"/tmp/dockhand-verify/subject.1 => ===> dockhand subject: gegl|",
+		"/tmp/dockhand-verify/argv.1 => -d|-N|install|gegl|",
+		"/tmp/dockhand-verify/argv.1.lint => lint|gegl|",
+		"/tmp/dockhand-verify/requires.1 => ",
+		"/tmp/dockhand-verify/subject.2 => ===> dockhand subject: gegl-devel|",
+		"/tmp/dockhand-verify/before.2 => -d|-N|-f|deactivate|gegl|",
+		"/tmp/dockhand-verify/argv.2 => -d|-N|install|gegl-devel|",
+		"/tmp/dockhand-verify/argv.2.lint => lint|gegl-devel|",
+		"/tmp/dockhand-verify/requires.2 => ",
+	}, got, "one before file, for the forced member, and the sibling's name inside it")
+
+	for _, req := range []verify.Request{
+		{Ports: []string{"libfoo", "gegl", "gegl-devel"}},
+		{Ports: []string{"libfoo", "gegl", "gegl-devel"}, Deactivate: []string{"", ""}},
+		{Ports: []string{"libfoo", "gegl", "gegl-devel"}, Deactivate: []string{"", "", ""}},
+	} {
+		for _, f := range argvFiles(req) {
+			assert.NotContains(t, f.Name, "before", "%v forces nobody", req.Deactivate)
+		}
+	}
+
+	// The entry is the member's own. A sibling that is not itself in the
+	// request is still deactivated — the entry is a fact about the
+	// environment the member needs, not a reference to another member —
+	// and the frame the file carries is the deactivate's, not the
+	// install's, so a variant frame on the request does not reach it.
+	v, err := info.Variants("+ssl")
+	require.NoError(t, err)
+	outside := argvFiles(verify.Request{Ports: []string{"jq", "oniguruma"}, Deactivate: []string{"", "onig6"}, Variants: v})
+	assert.Equal(t, "-d\n-N\n-f\ndeactivate\nonig6\n", fileNamed(t, outside, "before.1").Body)
 }
 
 // fileNamed picks one instruction file out of the set by its name in
@@ -198,6 +256,19 @@ func TestOneSubjectIgnoresTheGraph(t *testing.T) {
 	assert.Equal(t, plain, graphed)
 	for _, f := range graphed {
 		assert.NotContains(t, f.Name, "requires", "the single-subject runner never reads one")
+	}
+}
+
+// Nor does a one-port request ever write a before file: the frozen
+// runner would not read it, and Submit refuses the request that asks
+// for one before the files are written. The instruction set, asked
+// directly, is the frozen one.
+func TestOneSubjectWritesNoBeforeFile(t *testing.T) {
+	plain := argvFiles(verify.Request{Ports: []string{"gegl-devel"}})
+	forced := argvFiles(verify.Request{Ports: []string{"gegl-devel"}, Deactivate: []string{"gegl"}})
+	assert.Equal(t, plain, forced)
+	for _, f := range forced {
+		assert.NotContains(t, f.Name, "before", "the single-subject runner never reads one")
 	}
 }
 
@@ -289,9 +360,10 @@ func TestTheLinkProofIsPerDependentAndOnlyWhenAsked(t *testing.T) {
 // word.
 func TestGuestPathsNeverCarryAPortName(t *testing.T) {
 	req := verify.Request{
-		Ports:    []string{"jq", "; rm -rf /", "$(whoami)", "a b*c"},
-		Test:     true,
-		Manifest: true,
+		Ports:      []string{"jq", "; rm -rf /", "$(whoami)", "a b*c"},
+		Deactivate: []string{"", "$(whoami)", "a b*c", "; rm -rf /"},
+		Test:       true,
+		Manifest:   true,
 	}
 	for _, f := range argvFiles(req) {
 		assert.Equal(t, stateDir+"/"+f.Name, f.Dest())
@@ -625,6 +697,117 @@ func TestTheCohortRunnerProvesTheDependentsLinks(t *testing.T) {
 	assert.Equal(t, "passed\n", g.read("state"))
 }
 
+// A forced member has its sibling deactivated in the moment before its
+// own lint, through the same line every other step goes through, and
+// after every member ahead of it has been built in full — the caller
+// put it last, and the runner takes the request in its order. The
+// deactivate's output is in the forced member's own section, because
+// the marker was printed first; the sibling's section holds only the
+// sibling's build. Run for real, because where in the loop the step
+// falls is a property of /bin/sh reading these files.
+func TestTheCohortRunnerDeactivatesTheSiblingBeforeAForcedMember(t *testing.T) {
+	g := newStubGuest(t, "")
+	req := verify.Request{
+		Ports:      []string{"libfoo", "gegl", "gegl-devel"},
+		Requires:   [][]string{nil, {"libfoo"}, {"libfoo"}},
+		Deactivate: []string{"", "", "gegl"},
+	}
+	g.write(argvFiles(req))
+
+	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+
+	assert.Equal(t, []string{
+		"port lint libfoo",
+		"port -d -N install libfoo",
+		"port lint gegl",
+		"port -d -N install gegl",
+		"port -d -N -f deactivate gegl",
+		"port lint gegl-devel",
+		"port -d -N install gegl-devel",
+	}, g.calls(), "the deactivate is the forced member's first step, and nobody else's")
+	assert.Equal(t, "passed\n", g.read("state"))
+	assert.Equal(t, "passed\n", g.read("state.0"))
+	assert.Equal(t, "passed\n", g.read("state.1"), "the sibling's own verdict is what it was")
+	assert.Equal(t, "passed\n", g.read("state.2"))
+
+	subjects := verify.SplitSubjects(g.read("log"))
+	assert.Contains(t, subjects["gegl-devel"], "port -d -N -f deactivate gegl", "the step is in the forced member's section")
+	assert.NotContains(t, subjects["gegl"], "deactivate", "and not in the sibling's")
+	assert.NotContains(t, subjects["libfoo"], "deactivate")
+	assert.Equal(t, []string{"libfoo", "gegl", "gegl-devel"}, verify.SubjectOrder(g.read("log")))
+}
+
+// A deactivation that fails is the forced member's failure. The member
+// stops there — no lint, no install — and is recorded failed; what
+// could not be deactivated is in its own section in port(1)'s words,
+// where the judge reads this member's failure from and nobody else's.
+// The sibling passed before it and stays passed. The record then reads
+// back as a plain failure of that member, with nothing blamed on a
+// prerequisite: the state file's word is failed, not skipped.
+func TestAFailedDeactivateIsTheForcedMembersFailure(t *testing.T) {
+	g := newStubGuest(t, "deactivate")
+	req := verify.Request{
+		Ports:      []string{"libfoo", "gegl", "gegl-devel"},
+		Requires:   [][]string{nil, {"libfoo"}, {"libfoo"}},
+		Deactivate: []string{"", "", "gegl"},
+	}
+	g.write(argvFiles(req))
+
+	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+
+	assert.Equal(t, []string{
+		"port lint libfoo",
+		"port -d -N install libfoo",
+		"port lint gegl",
+		"port -d -N install gegl",
+		"port -d -N -f deactivate gegl",
+	}, g.calls(), "nothing of the forced member's own ran after the deactivate refused")
+	assert.Equal(t, "failed\n", g.read("state"), "one failure fails the job")
+	assert.Equal(t, "passed\n", g.read("state.0"))
+	assert.Equal(t, "passed\n", g.read("state.1"), "the sibling's verdict stands")
+	assert.Equal(t, "failed\n", g.read("state.2"), "failed, not skipped: the reason is about this member")
+
+	subjects := verify.SplitSubjects(g.read("log"))
+	assert.Contains(t, subjects["gegl-devel"], "Error: stub refused", "the refusal is in the forced member's section")
+	assert.NotContains(t, subjects["gegl"], "Error", "and the sibling's section is clean")
+
+	out, err := exec.Command("/bin/sh", "-c", memberStatesScript(g.dir)).CombinedOutput()
+	require.NoError(t, err, string(out))
+	assert.Equal(t, []verify.MemberState{
+		{Port: "libfoo", Outcome: verify.MemberPassed},
+		{Port: "gegl", Outcome: verify.MemberPassed},
+		{Port: "gegl-devel", Outcome: verify.MemberFailed},
+	}, memberStatesOf(string(out)), "a forced member's record is read like any member's")
+}
+
+// The deactivation sits behind the prerequisite check. A forced member
+// whose prerequisite failed is skipped like any member, and skipped
+// means nothing of its own is about to be built — so the sibling is
+// left as it is, active, rather than taken out for a build that will
+// not happen.
+func TestAForcedMemberSkippedForItsPrerequisiteDeactivatesNothing(t *testing.T) {
+	g := newStubGuest(t, "libfoo")
+	req := verify.Request{
+		Ports:      []string{"libfoo", "gegl", "gegl-devel"},
+		Requires:   [][]string{nil, nil, {"libfoo"}},
+		Deactivate: []string{"", "", "gegl"},
+	}
+	g.write(argvFiles(req))
+
+	g.run(cohortRunnerAt(g.dir, g.portCmd, len(req.Ports)))
+
+	assert.Equal(t, []string{
+		"port lint libfoo",
+		"port lint gegl",
+		"port -d -N install gegl",
+	}, g.calls(), "the sibling, independent of libfoo, is built; the forced member never reaches its deactivate")
+	assert.Equal(t, "failed\n", g.read("state"))
+	assert.Equal(t, "failed\n", g.read("state.0"))
+	assert.Equal(t, "passed\n", g.read("state.1"))
+	assert.Equal(t, "skipped\n0\n", g.read("state.2"), "skipped for libfoo, with the sibling still active")
+	assert.NotContains(t, g.read("log"), "deactivate")
+}
+
 // A cohort's state files are written by rename, not by truncation.
 // `echo x > f` is truncate-then-write, and a reader landing in that
 // window sees an empty file — which is how this protocol spells "the
@@ -643,6 +826,11 @@ func TestCohortStateFilesLeaveNoTornWrites(t *testing.T) {
 		// started on purpose.
 		{"a member is skipped", "oniguruma",
 			verify.Request{Ports: []string{"oniguruma", "jq"}, Requires: [][]string{nil, {"oniguruma"}}}},
+		// A forced member whose deactivate refused fails through the
+		// same `member=no` as a lint that refused, and its state file is
+		// written by the same rename.
+		{"a forced member's deactivate fails", "deactivate",
+			verify.Request{Ports: []string{"gegl", "gegl-devel"}, Deactivate: []string{"", "gegl"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := newStubGuest(t, tc.failOn)

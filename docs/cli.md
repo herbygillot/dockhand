@@ -265,7 +265,44 @@ Notes on naming and shape:
   and with `--for` the proposal a verification measured holds both — which is
   why it needs no `--reason` and takes no port. It never mints: the members
   land as one more commit on the branch that already carries the change,
-  because they move for one reason and it is the same reason.
+  because they move for one reason and it is the same reason. A branch
+  with no proposal to accept — no verification record on its tip, or a
+  proposal already answered — exits `10` (`no-proposal`); the message
+  names the verb that measures or shows it.
+
+- **`--exclude` and `--force-withheld` shape which members the cohort
+  carries, and both belong to `--for` alone.** `--exclude=<member,...>`
+  takes members out of the change entirely — not bumped, not built, and
+  listed among the ports examined and not bumped so a reviewer can
+  disagree; a name it does not put forward exits `10` (`unknown-member`),
+  and excluding everything exits `10` (`empty-cohort`, where `dismiss` is
+  the verb for turning a proposal down outright). `--force-withheld=<member,...>`
+  is the person overriding D24: a withheld member is one MacPorts will
+  not activate beside a sibling the cohort seats, so it is bumped and not
+  built — this seats it anyway, **last**, after every member that might
+  need the sibling active, with `port -f deactivate <sibling>` run in the
+  guest immediately before its own lint, test and install. The sibling's
+  own verdict stands as already measured; the forced member's outcome is
+  judged like any built member's; and a reviewer is told, wherever the
+  member is reported, that the environment it was proven in is not the
+  cohort's — the report line and the pull request body say it was *built
+  with `<sibling>` deactivated, at the maintainer's request* (or, short
+  of a pass, that it was *to be built* so), and the cohort commit's
+  candidate line says it was *forced into the build at the maintainer's
+  request, with `<sibling>` deactivated first*. The override is recorded
+  on the note as well as on the run, so a cohort accepted with
+  `--no-verify` and verified by hand later is built the same way. A
+  member the proposal knows but does not withhold exits `10`
+  (`not-withheld` — there is nothing to force); a name the proposal does
+  not put forward at all exits `10` (`unknown-withheld`, listing the
+  members it does withhold); a withheld member with nothing to
+  deactivate — its sibling taken out of the change by `--exclude`, or a
+  record that does not say which member it conflicts with — exits `10`
+  (`cannot-force`); two forced members that conflict with each other
+  exit `10` (`forced-conflict` — nothing can seat both); and a member
+  named by both `--exclude` and `--force-withheld` is a usage error.
+  Neither flag is the default: the tool informs and stops, and these are
+  the person answering.
 
 - **`bump-revision` and `revbump` are the same verb.** The canonical name
   follows the family's shape (`bump`, `bump-revision`, `bump-epoch`); the

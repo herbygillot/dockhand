@@ -60,6 +60,34 @@ func TestTheCohortVerbRefusesTheRealizationsItHasNoAnswerFor(t *testing.T) {
 	}
 }
 
+// --force-withheld belongs to --for, like --exclude: it names withheld
+// members of the proposal being accepted, so without --for it is the
+// invocation being wrong. With --for it reaches the action and fails on
+// the tree, which is the next thing that could go wrong. A name given to
+// both --exclude and --force-withheld — case-folded, the way the engine
+// matches — is the invocation contradicting itself.
+func TestForceWithheldBelongsToFor(t *testing.T) {
+	// --force-withheld without --for: usage.
+	assert.Equal(t, exitcode.Usage,
+		code(t, "bump-revision", "--force-withheld", "gegl-devel", "--reason", "r", "-t", t.TempDir()))
+
+	// --exclude without --for: usage. Pinned here beside its twin, having
+	// gone unpinned until this change.
+	assert.Equal(t, exitcode.Usage,
+		code(t, "bump-revision", "--exclude", "gegl", "--reason", "r", "-t", t.TempDir()))
+
+	// A member named by both flags, case-folded, is usage.
+	assert.Equal(t, exitcode.Usage,
+		code(t, "bump-revision", "--for", "dockhand/jq-1.8", "--exclude", "gegl-devel",
+			"--force-withheld", "GEGL-devel", "-t", t.TempDir()))
+
+	// With --for it reaches the action and fails on the tree, not the
+	// invocation.
+	assert.NotEqual(t, exitcode.Usage,
+		code(t, "bump-revision", "--for", "dockhand/jq-1.8", "--force-withheld", "gegl-devel", "-t", t.TempDir()),
+		"--force-withheld rides the proposal --for accepts")
+}
+
 // dismiss is a verb the tree registers, taking a branch or a port.
 func TestDismissIsRegisteredAndTakesOneTarget(t *testing.T) {
 	root := Root("test")

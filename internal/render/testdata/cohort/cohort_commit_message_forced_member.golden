@@ -1,0 +1,9 @@
+libwidget: revbump 2 dependents of libwidget 3.0
+
+install name /opt/local/lib/libwidget.2.dylib → /opt/local/lib/libwidget.3.dylib; libwidget compatibility_version 2.0.0 → 3.0.0 (narrowed), measured between libwidget@2.4.1 (binary archive) and @3.0 (built from source) on Testos
+
+this criterion is necessary and not sufficient: an install name and a compatibility version can sit still while symbols are removed, and a break confined to a header or to a plugin's own contract is invisible to otool.
+
+Revision bumped:
+  gegl (graphics/gegl): depends_lib
+  gegl-devel (graphics/gegl-devel): depends_lib; conflicts with gegl, which this cohort builds — forced into the build at the maintainer's request, with gegl deactivated first

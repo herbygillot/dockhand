@@ -45,6 +45,39 @@ type Candidate struct {
 	// not owed is a build of its own — the person is told it was
 	// withheld, and that is the answer.
 	Solo bool `json:"solo,omitempty"`
+	// Over names the seated member this candidate lost its seat to —
+	// the sibling it declares a conflict with, or that declares one
+	// with it, spelled as the proposal spells that member. It is set
+	// wherever Solo is set and is empty otherwise.
+	//
+	// It is a field and not a reading of Reason, because Reason is prose
+	// for the person and this is a fact the tool acts on. The withheld
+	// run's detail names the sibling, and so does the deactivation a
+	// person may ask for when they override the withholding (ruled
+	// 2026-09-05 by the orchestrator, pending the maintainer; D24 is the
+	// seat rule being overridden) — and both used to lift the name back
+	// out of Reason's sentence by finding "conflicts with " and reading
+	// to the next comma. A renderer that rewords the sentence must not
+	// be able to change which port gets deactivated, and it cannot once
+	// the name travels on its own.
+	Over string `json:"over,omitempty"`
+	// Forced says a person overrode the withholding: this candidate is
+	// Solo — it would have been bumped and left out of the guest — and
+	// was seated anyway, last, with the member Over names deactivated
+	// before its own build (ruled 2026-09-05 by the orchestrator, pending
+	// the maintainer; D24 is the rule being overridden). Set only where
+	// Solo and Over are set.
+	//
+	// It is on the candidate and not only on the run because the run is
+	// written when the cohort is submitted, and a cohort accepted with
+	// --no-verify is never submitted at that moment: the person's
+	// override would live nowhere but in the reason's prose, and a hand
+	// `dockhand verify` of the branch afterwards would have to parse the
+	// sentence or drop the ask. The resubmission roads read this and
+	// Solo instead — a withheld member stays out of the guest and a
+	// forced one goes in last — with the run, where there is one, saying
+	// the same thing.
+	Forced bool `json:"forced,omitempty"`
 }
 
 // Finding is something verification noticed that nobody asked about:

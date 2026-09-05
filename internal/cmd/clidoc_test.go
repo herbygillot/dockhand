@@ -130,6 +130,13 @@ func TestEveryRefusalReasonIsNamedInTheDoc(t *testing.T) {
 		"stealth-suspected",
 		"pass-limit",
 		"promotion-pending",
+		"no-proposal",
+		"unknown-member",
+		"empty-cohort",
+		"unknown-withheld",
+		"not-withheld",
+		"cannot-force",
+		"forced-conflict",
 	} {
 		assert.Contains(t, doc, "`"+reason+"`",
 			"a reason a script can branch on must be documented where the reasons are")
@@ -154,7 +161,7 @@ func TestEveryVerbAndDeclarationIsMentioned(t *testing.T) {
 			"`dockhand %s` ships and cli.md does not mention it", name)
 	}
 	for _, declaration := range []string{"--auto", "DOCKHAND_AUTO", "AI_AGENT", "--to-pr", "--superseded",
-		"--keep-env", "--no-update", "--keep-merged", "--reclaim-orphans"} {
+		"--keep-env", "--no-update", "--keep-merged", "--reclaim-orphans", "--exclude", "--force-withheld"} {
 		assert.Contains(t, doc, declaration,
 			"%s changes what an invocation means and must be documented", declaration)
 	}

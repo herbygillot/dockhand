@@ -1,0 +1,51 @@
+===> dockhand subject: libwidget
+--->  Verifying Portfile for libwidget
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/devel/libwidget
+DEBUG: OS darwin/24.6.0 (Mac OS X 15.6) arch arm64
+--->  Computing dependencies for libwidget
+DEBUG: libwidget has no conflicts
+--->  Fetching distfiles for libwidget
+--->  Verifying checksums for libwidget
+--->  Extracting libwidget
+--->  Configuring libwidget
+--->  Building libwidget
+--->  Staging libwidget into destroot
+--->  Installing libwidget @3.0_0
+--->  Activating libwidget @3.0_0
+--->  Cleaning libwidget
+===> dockhand subject: gegl
+--->  Verifying Portfile for gegl
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/graphics/gegl
+DEBUG: Computing dependencies for gegl
+DEBUG: Searching for dependency: libwidget
+DEBUG: Found Dependency: receipt exists for libwidget
+--->  Fetching distfiles for gegl
+--->  Verifying checksums for gegl
+--->  Extracting gegl
+--->  Configuring gegl
+--->  Building gegl
+--->  Staging gegl into destroot
+--->  Installing gegl @1.4_1
+--->  Activating gegl @1.4_1
+--->  Cleaning gegl
+===> dockhand subject: gegl-devel
+--->  Deactivating gegl @1.4_1
+Warning: Deactivate forced.  Proceeding despite dependencies.
+--->  Cleaning gegl
+--->  Verifying Portfile for gegl-devel
+--->  0 errors and 0 warnings found.
+DEBUG: Found port in file:///tmp/dockhand-overlay/graphics/gegl-devel
+DEBUG: Computing dependencies for gegl-devel
+DEBUG: Searching for dependency: libwidget
+DEBUG: Found Dependency: receipt exists for libwidget
+--->  Fetching distfiles for gegl-devel
+--->  Verifying checksums for gegl-devel
+--->  Extracting gegl-devel
+--->  Configuring gegl-devel
+--->  Building gegl-devel
+--->  Staging gegl-devel into destroot
+--->  Installing gegl-devel @1.5_1
+--->  Activating gegl-devel @1.5_1
+--->  Cleaning gegl-devel

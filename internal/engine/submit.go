@@ -144,6 +144,13 @@ type submission struct {
 	// recording one first keys it under the empty string, where every
 	// later lookup by release misses it and the subject goes silent.
 	Withheld []WithheldMember
+	// Forced maps a forced member's folded port name to the sibling the
+	// guest must deactivate before building it (the D24 override). It is
+	// per member and not a headline bool the way FromSource and KeepEnv
+	// are, because each forced member names its own sibling — so it
+	// cannot ride the queued run as one flag, and the drain reads it back
+	// per member. Empty for every ordinary submission.
+	Forced map[string]string
 }
 
 // members is what this submission builds, headline first: the cohort
@@ -173,6 +180,32 @@ func (s submission) fromSourcePorts(ports []string) []string {
 		return nil
 	}
 	return []string{s.Port}
+}
+
+// deactivateFor is the request's Deactivate slice: parallel to the
+// ports actually being built, the sibling for a forced member and "" for
+// every ordinary one. Built over the post-pre-flight ports and not the
+// roster, so a member that declined the platform cannot shift the
+// indices — the same reason fromSourcePorts and the request itself are
+// built here. Nil where nothing was forced, which is every submission
+// but a person's D24 override, so the provider sees exactly the request
+// it always saw.
+func (s submission) deactivateFor(ports []string) []string {
+	if len(s.Forced) == 0 {
+		return nil
+	}
+	out := make([]string, len(ports))
+	any := false
+	for i, p := range ports {
+		if sibling, ok := s.Forced[strings.ToLower(p)]; ok && sibling != "" {
+			out[i] = sibling
+			any = true
+		}
+	}
+	if !any {
+		return nil
+	}
+	return out
 }
 
 // cohortRequires is the dependency graph inside one request: for each
@@ -391,6 +424,7 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 		Manifest:   manifest,
 		FromSource: fromSource,
 		Requires:   e.cohortRequires(ports),
+		Deactivate: s.deactivateFor(ports),
 	})
 	if err != nil {
 		// A full provider (two-slot cap), a capability refusal, or a
@@ -427,9 +461,12 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 			// because that is what one guest was told to do. Whether the
 			// archive was ignored is the member's own: the argv says it of
 			// one port, and a note that said it of the others would vouch
-			// for a build from source that never happened.
+			// for a build from source that never happened. Forced is the
+			// member's own for the same reason: the sibling this one
+			// deactivated is not a fact about any other member's build.
 			return record.Run{State: record.Running, Linted: true,
-				FromSource: slices.Contains(fromSource, port), KeepEnv: s.KeepEnv}
+				FromSource: slices.Contains(fromSource, port), KeepEnv: s.KeepEnv,
+				Forced: s.Forced[strings.ToLower(port)]}
 		},
 	); err != nil {
 		// Submit-and-record is a transaction: a job whose note cannot
@@ -494,11 +531,24 @@ func (e *Engine) submit(ctx context.Context, m *Minted, s submission) error {
 // re-evaluated it.
 func (e *Engine) queue(ctx context.Context, m *Minted, s submission, cause error, ports []string) error {
 	if !s.Release.IsZero() {
+		// The withheld members are recorded here as they would have been
+		// had the submission gone ahead: a deferral is about the roster,
+		// and the members kept out of it are decided already. Left
+		// unrecorded, the drain's walk would find no run saying so and
+		// seat them beside the siblings they conflict with (D24).
+		for _, w := range s.Withheld {
+			if rerr := e.recordRun(ctx, m.Repo, m.Sha, w.Port, s.Release.Name, record.Run{
+				State: record.Withheld, Platform: s.Release.Name, Detail: w.Why,
+			}, ""); rerr != nil {
+				fmt.Fprintf(e.Err, "warning: recording the withheld run: %v\n", rerr)
+			}
+		}
 		fromSource := s.fromSourcePorts(ports)
 		for _, port := range ports {
 			if rerr := e.recordRun(ctx, m.Repo, m.Sha, port, s.Release.Name, record.Run{
 				State: record.Queued, Detail: cause.Error(),
 				FromSource: slices.Contains(fromSource, port), KeepEnv: s.KeepEnv,
+				Forced: s.Forced[strings.ToLower(port)],
 			}, ""); rerr != nil {
 				fmt.Fprintf(e.Err, "warning: recording the queued run: %v\n", rerr)
 			}
@@ -582,6 +632,14 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip 
 	portName := members[0].Port
 	s := submission{Port: portName, Release: r, Test: opts.Test, KeepEnv: opts.KeepEnv, Members: members}
 	if n, nerr := e.Ledger(repo).Read(ctx, tip); nerr == nil {
+		// The roster is shaped from the record, the same as the pump does
+		// (rosterAsRecorded): the members came from walking the branch's
+		// changed portdirs, which reintroduces a member the first
+		// verification withheld and knows nothing of one it forced. A
+		// note carrying neither leaves the members and the headline
+		// unchanged.
+		s.Members, s.Forced, s.Withheld = rosterAsRecorded(n, r.Name, members)
+		s.Port, portName = s.Members[0].Port, s.Members[0].Port
 		if run, ok := n.Runs[record.RunKey(portName, r.Name)]; ok {
 			if run.State == record.Running {
 				fmt.Fprintf(e.Err, "already verifying on %s (%s); `dockhand status` follows it\n",
@@ -603,7 +661,7 @@ func (e *Engine) SubmitRelease(ctx context.Context, repo *git.Repo, branch, tip 
 		}
 	}
 	e.askVerdict(ctx, repo, tip)
-	err = e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: tip, RelPort: members[0].Portdir}, s)
+	err = e.submit(ctx, &Minted{Repo: repo, Branch: branch, Sha: tip, RelPort: s.Members[0].Portdir}, s)
 	var vde *VerifyDeferredError
 	if errors.As(err, &vde) {
 		// One line and no second write. The deferral is one event, so a

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +39,7 @@ type cohortAction struct {
 	keepEnv  bool
 	on       string
 	exclude  []string
+	force    []string
 }
 
 var _ Action = cohortAction{}
@@ -52,7 +54,8 @@ func (a cohortAction) Execute(ctx context.Context, rs *runstate.Context) error {
 		return err
 	}
 	return rs.Deps().BuildCohort(ctx, repo, a.branch, engine.CohortOpts{
-		NoVerify: a.noVerify, Test: a.test, Trace: a.trace, KeepEnv: a.keepEnv, Platform: release, Exclude: a.exclude})
+		NoVerify: a.noVerify, Test: a.test, Trace: a.trace, KeepEnv: a.keepEnv, Platform: release,
+		Exclude: a.exclude, Force: a.force})
 }
 
 // dismissAction records that a person looked at a branch's proposals
@@ -111,17 +114,30 @@ func Dismiss() *cobra.Command {
 // from source against the new library, and that rebuild is the
 // evidence the whole proposal was for — and the environment it built
 // in is one a person may want to look inside afterwards.
+// --force-withheld belongs to --for and to nothing else, the way
+// --exclude does: it names withheld members of the proposal being
+// accepted, and there is no reading of it on the single-port road. The
+// override names what it overrides explicitly (a member, not a flag that
+// forces "whatever was withheld"), because a person who types a name
+// means that name — the engine refuses one that is not withheld, and
+// the same name in both --exclude and --force-withheld is the invocation
+// contradicting itself: a member is left out or forced, not both.
 func cohortMode(c *cobra.Command, f *intentFlags) func() (Action, error) {
 	var branch string
-	var exclude []string
+	var exclude, force []string
 	c.Flags().StringVar(&branch, "for", "",
 		"accept the revbump proposal on this branch: revbump its dependents as one more commit (takes no port argument)")
 	c.Flags().StringSliceVar(&exclude, "exclude", nil,
 		"leave these members out of the change entirely: not bumped, not built (comma-separated)")
+	c.Flags().StringSliceVar(&force, "force-withheld", nil,
+		"build these withheld members anyway, last, with the member each conflicts with deactivated first (comma-separated; the person overriding the withholding)")
 	return func() (Action, error) {
 		if branch == "" {
 			if len(exclude) > 0 {
 				return nil, usagef("--exclude names members of a proposal; it needs the --for that accepts one")
+			}
+			if len(force) > 0 {
+				return nil, usagef("--force-withheld names withheld members of a proposal; it needs the --for that accepts one")
 			}
 			return nil, nil
 		}
@@ -135,7 +151,25 @@ func cohortMode(c *cobra.Command, f *intentFlags) func() (Action, error) {
 		case f.verifyIt:
 			return nil, usagef("--verify gates a mint, and --for mints nothing: the cohort's own verification is submitted after the commit unless --no-verify says otherwise")
 		}
+		if both := namedByBoth(exclude, force); both != "" {
+			return nil, usagef("%s is named by both --exclude and --force-withheld; a member is left out or forced, not both", both)
+		}
 		return cohortAction{branch: branch, noVerify: f.noVerify,
-			test: f.opts.Test, trace: f.opts.Trace, keepEnv: f.opts.KeepEnv, on: f.on, exclude: exclude}, nil
+			test: f.opts.Test, trace: f.opts.Trace, keepEnv: f.opts.KeepEnv, on: f.on, exclude: exclude, force: force}, nil
 	}
+}
+
+// namedByBoth is the first member named by both flags, case-folded the
+// way the engine matches names, or "" when the two lists are disjoint.
+func namedByBoth(exclude, force []string) string {
+	excluded := make(map[string]bool, len(exclude))
+	for _, name := range exclude {
+		excluded[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	for _, name := range force {
+		if excluded[strings.ToLower(strings.TrimSpace(name))] {
+			return strings.TrimSpace(name)
+		}
+	}
+	return ""
 }

@@ -77,6 +77,22 @@ func TestCohortMessageIsOneCommitStatingOneCriterion(t *testing.T) {
 	checkGoldenIn(t, cohortGoldenDir, "cohort_commit_message", CohortMessage(theCohort()))
 }
 
+// A forced member's commit-message line reads the reason the engine
+// reworded for the seat: forced into the build with its sibling
+// deactivated first, not withheld. The seated sibling above it is an
+// ordinary revbump line.
+func TestCohortMessageSaysAForcedMemberWasForced(t *testing.T) {
+	c := theCohort()
+	c.Members = []CohortMember{
+		{Port: "gegl", Portdir: "graphics/gegl", Reason: "depends_lib"},
+		{Port: "gegl-devel", Portdir: "graphics/gegl-devel",
+			Reason: "depends_lib; conflicts with gegl, which this cohort builds — " +
+				"forced into the build at the maintainer's request, with gegl deactivated first"},
+	}
+	c.Declined, c.Listed, c.Quotes = nil, nil, nil
+	checkGoldenIn(t, cohortGoldenDir, "cohort_commit_message_forced_member", CohortMessage(c))
+}
+
 // A cohort of one is a cohort, and its subject says so in the singular.
 // The plural form said over one dependent is the kind of small wrongness
 // a reviewer reads as carelessness about the rest.

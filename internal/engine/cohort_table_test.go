@@ -54,6 +54,17 @@ func TestCohortCorpusSettles(t *testing.T) {
 				Outcomes: map[string][]verify.MemberState{"fake-1": exp.MemberStates()},
 			}
 			n := cohortNote(t, repo, sha, exp.Members...)
+			// The sibling a forced member deactivated is stamped on its
+			// running run at submit; the settle must carry it through, so
+			// the corpus seeds it here and asserts it below.
+			for _, m := range exp.Members {
+				if f := exp.Verdict[m].Forced; f != "" {
+					r := n.Runs[record.RunKey(m, "Testos")]
+					r.Forced = f
+					n.Runs[record.RunKey(m, "Testos")] = r
+				}
+			}
+			require.NoError(t, ledger.Open(repo).Write(ctx, n))
 
 			require.NoError(t, testState(t, repo, fake).settle(ctx, repo, &n))
 
@@ -63,6 +74,7 @@ func TestCohortCorpusSettles(t *testing.T) {
 				assert.Equal(t, want.State, string(r.State), "%s: state", m)
 				assert.Equal(t, want.Detail, r.Detail, "%s: detail", m)
 				assert.Equal(t, want.Blamed, r.Blamed, "%s: blamed", m)
+				assert.Equal(t, want.Forced, r.Forced, "%s: the deactivated sibling survives the settle", m)
 				if want.State == "passed" {
 					assert.Equal(t, want.Lint, r.Lint, "%s: lint evidence is read before the release", m)
 				} else {

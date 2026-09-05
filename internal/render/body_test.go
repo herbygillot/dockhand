@@ -657,6 +657,58 @@ var bodyVariants = []bodyVariant{
 	{name: "verified_cohort_dismissed",
 		note:     func(n *record.Record) { *n = cohortNoteFor(record.Dismissed, nil) },
 		verified: true, opts: vouchedOpts},
+	// A forced member (the D24 override): the headline and the seated
+	// sibling pass in the cohort's environment, and the forced member
+	// last, in one where the sibling was deactivated first. Its verdict
+	// line and its cohort member line both say so — the reviewer must be
+	// able to see that the environment it was proven in is not the
+	// cohort's — while the sibling's own line is an ordinary pass.
+	{name: "verified_forced_member",
+		note:     func(n *record.Record) { *n = forcedCohortNote(record.Passed) },
+		verified: true, opts: withCommits(2)},
+	// And when the forced member's own build fails: best effort publishes
+	// over it, so the failure is on the body, and it names the sibling
+	// that was deactivated for the build that failed.
+	{name: "verified_forced_member_failed",
+		note:     func(n *record.Record) { *n = forcedCohortNote(record.Failed) },
+		verified: true, opts: withCommits(2)},
+}
+
+// forcedCohortNote is an accepted cohort with a forced member: the
+// headline libwidget, the seated sibling gegl, and gegl-devel forced in
+// last with gegl deactivated first. The forced member's run carries the
+// sibling in Forced, which is the record F5's sentences are read off.
+func forcedCohortNote(forced record.RunState) record.Record {
+	geglDevel := record.Run{State: forced, Platform: "Tahoe", Linted: true, Lint: "clean",
+		Evidence: "built in a pristine VM", Forced: "gegl"}
+	if forced == record.Passed {
+		geglDevel.Links = []string{"/opt/local/bin/gegl links against /opt/local/lib/libwidget.3.dylib"}
+	}
+	return record.Record{
+		Schema: record.Schema, Sha: "0123456789abcdef0123",
+		Subjects: []record.Subject{
+			{Port: "libwidget", Names: []string{"libwidget"}, Portdir: "devel/libwidget", Target: "3.0"},
+			{Port: "gegl", Names: []string{"gegl"}, Portdir: "graphics/gegl", Intent: "bump-revision", Target: "rev2"},
+			{Port: "gegl-devel", Names: []string{"gegl-devel"}, Portdir: "graphics/gegl-devel", Intent: "bump-revision", Target: "rev2"},
+		},
+		Jobs: map[string]record.JobRecord{"Tahoe": {}},
+		Runs: map[string]record.Run{
+			record.RunKey("libwidget", "Tahoe"): {State: record.Passed, Platform: "Tahoe", Linted: true, Lint: "clean",
+				Evidence: "built in a pristine VM", Links: []string{}},
+			record.RunKey("gegl", "Tahoe"): {State: record.Passed, Platform: "Tahoe", Linted: true, Lint: "clean",
+				Evidence: "built in a pristine VM", Links: []string{"/opt/local/bin/gegl links against /opt/local/lib/libwidget.3.dylib"}},
+			record.RunKey("gegl-devel", "Tahoe"): geglDevel,
+		},
+		Findings: []record.Finding{
+			{Kind: KindABIChanged, Ports: []string{"libwidget"}, Criterion: theCriterion, Disposition: record.Accepted},
+			{Kind: KindCohort, Criterion: theCriterion, Disposition: record.Accepted,
+				Candidates: []record.Candidate{
+					{Port: "gegl", Portdir: "graphics/gegl", Proposed: true, Reason: "depends_lib"},
+					{Port: "gegl-devel", Portdir: "graphics/gegl-devel", Proposed: true, Solo: true, Over: "gegl",
+						Reason: "depends_lib; conflicts with gegl, which this cohort builds — forced into the build at the maintainer's request, with gegl deactivated first"},
+				}},
+		},
+	}
 }
 
 // Each variant's whole body is pinned: a checklist box flipping, a

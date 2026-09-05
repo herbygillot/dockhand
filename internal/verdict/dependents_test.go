@@ -446,6 +446,19 @@ func solos(all []record.Candidate) []string {
 	return out
 }
 
+// over reads back, for each withheld member, the seated sibling it
+// lost to — the name the engine deactivates if a person forces the
+// member in. A member that keeps its seat names nobody.
+func over(all []record.Candidate) map[string]string {
+	out := map[string]string{}
+	for _, c := range all {
+		if c.Solo || c.Over != "" {
+			out[c.Port] = c.Over
+		}
+	}
+	return out
+}
+
 // Two members that MacPorts will not activate together cannot share a
 // guest. Both are still bumped — each links the library that moved —
 // and the development twin is the one that gives up its seat.
@@ -460,6 +473,8 @@ func TestACohortDoesNotStageTwoMembersThatConflict(t *testing.T) {
 		"every member is bumped: a conflict constrains one guest, not what the tree is owed")
 	assert.Equal(t, []string{"gegl-devel"}, solos(c.Members),
 		"the -devel twin gives up the seat")
+	assert.Equal(t, map[string]string{"gegl-devel": "gegl"}, over(c.Members),
+		"and it names the sibling it lost to, on its own key and not only in the sentence")
 	for _, m := range c.Members {
 		assert.True(t, m.Proposed, "%s must stay proposed — its revision is owed either way", m.Port)
 	}
@@ -474,6 +489,7 @@ func TestTheDevelTwinLosesTheSeatFromEitherOrder(t *testing.T) {
 		conflicting("gegl", "graphics/gegl", "gegl-devel"),
 	}, nil, 0)
 	assert.Equal(t, []string{"gegl-devel"}, solos(c.Members))
+	assert.Equal(t, map[string]string{"gegl-devel": "gegl"}, over(c.Members))
 }
 
 // A conflict is symmetric in MacPorts and both halves are usually
@@ -484,6 +500,8 @@ func TestOneSidedConflictDeclarationIsStillHonoured(t *testing.T) {
 		conflicting("libheif-devel", "multimedia/libheif-devel", "libheif"),
 	}, nil, 0)
 	assert.Equal(t, []string{"libheif-devel"}, solos(c.Members))
+	assert.Equal(t, map[string]string{"libheif-devel": "libheif"}, over(c.Members),
+		"the sibling is named whichever side wrote the declaration")
 }
 
 // Where the suffix does not tell them apart, build order decides and
@@ -495,6 +513,7 @@ func TestWithoutADevelSuffixTheSeatGoesByBuildOrder(t *testing.T) {
 	}, nil, 0)
 	assert.Equal(t, []string{"mbedtls3"}, solos(c.Members),
 		"the one already in the build keeps the seat")
+	assert.Equal(t, map[string]string{"mbedtls3": "mbedtls"}, over(c.Members))
 }
 
 // Ports that conflict with something outside the cohort constrain
@@ -505,4 +524,5 @@ func TestAConflictWithAStrangerDoesNotCostASeat(t *testing.T) {
 		lib("gthumb", "gnome/gthumb", "libwidget"),
 	}, nil, 0)
 	assert.Empty(t, solos(c.Members), "no member of this cohort declares that conflict")
+	assert.Empty(t, over(c.Members), "and nobody lost a seat to anybody")
 }

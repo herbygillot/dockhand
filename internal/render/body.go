@@ -255,6 +255,14 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 			case r.Linted:
 				what, linted = "linted, "+what, true
 			}
+			if r.Forced != "" {
+				// Appended after the environment's own claim, never spliced
+				// into it: the provider worded what a pass proves, and the
+				// forced clause is render's own — the sibling this member's
+				// build deactivated (the D24 override), so a reviewer sees
+				// that the environment it was proven in is not the cohort's.
+				what += ", with " + r.Forced + " deactivated at the maintainer's request"
+			}
 			// The "Tested on" section names environments, so a
 			// platform appears once however many members passed in
 			// it: listing one guest nine times would overstate the
@@ -279,6 +287,15 @@ func PRBody(n record.Record, verified bool, o PRBodyOpts) string {
 			// this failed run reached a published pull request is visible
 			// in the artifact itself.
 			what = "the build failed, and this was promoted anyway"
+			if r.Forced != "" {
+				// A forced member that failed: the environment it failed in
+				// is not the cohort's, and the reviewer is owed that on the
+				// line the failure is on. Worded as the ask and not the
+				// outcome, because the deactivate is a step of the build
+				// and may be the step that failed.
+				what = "the build failed — it was to be built with " + r.Forced +
+					" deactivated, at the maintainer's request — and this was promoted anyway"
+			}
 		case record.Blocked:
 			// Blamed names the neighbour whose failure this run
 			// inherited. It is empty for every change with one subject —

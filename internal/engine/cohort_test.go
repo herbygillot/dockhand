@@ -899,3 +899,166 @@ func TestAProviderWithoutARecordSettlesFromTheLogAlone(t *testing.T) {
 	assert.Equal(t, record.Blocked, runFor(again, "jq", "Testos").State)
 	assert.Equal(t, "oniguruma", runFor(again, "jq", "Testos").Blamed)
 }
+
+// forceMembers turns a withheld member into a seat, and refuses a name
+// that is not one. The override names what it overrides — anything else
+// is a flag doing nothing to a name a person typed.
+func TestForceSeatsAWithheldMember(t *testing.T) {
+	f := record.Finding{Candidates: []record.Candidate{
+		{Port: "gegl", Portdir: "graphics/gegl", Proposed: true, Reason: "depends_lib"},
+		{Port: "gegl-devel", Portdir: "graphics/gegl-devel", Proposed: true, Solo: true, Over: "gegl",
+			Reason: "depends_lib; conflicts with gegl, which this cohort builds — bumped here, and not built"},
+	}}
+
+	got, forced, err := forceMembers(f, []string{"GEGL-devel"})
+	require.NoError(t, err, "the case a person types is not consent to spell it differently")
+	assert.Equal(t, map[string]string{"gegl-devel": "gegl"}, forced,
+		"the sibling to deactivate is read from Over, keyed by the member's folded name")
+
+	var reason string
+	for _, c := range got.Candidates {
+		if c.Port == "gegl-devel" {
+			assert.True(t, c.Proposed, "still bumped: its revision is owed either way")
+			reason = c.Reason
+		}
+	}
+	assert.Contains(t, reason, "forced into the build at the maintainer's request, with gegl deactivated first")
+	assert.NotContains(t, reason, "bumped here, and not built", "the withholding sentence is replaced, not kept beside it")
+	assert.Contains(t, reason, "depends_lib", "and the reason it is a member at all is kept")
+}
+
+// A name the proposal proposes to build outright is not withheld: there
+// is nothing to force.
+func TestForceRefusesAMemberThatIsNotWithheld(t *testing.T) {
+	f := record.Finding{Candidates: []record.Candidate{
+		{Port: "gegl", Proposed: true, Reason: "depends_lib"},
+	}}
+	_, _, err := forceMembers(f, []string{"gegl"})
+	var not *NotWithheldError
+	require.ErrorAs(t, err, &not)
+	assert.Equal(t, "gegl", not.Port)
+	assert.Contains(t, err.Error(), "not withheld")
+	assert.Equal(t, exitcode.PlanDeclined, not.DockhandExit())
+}
+
+// A name the proposal does not put forward is unknown, and the refusal
+// lists the members it could have named — the withheld ones.
+func TestForceRefusesAnUnknownName(t *testing.T) {
+	f := record.Finding{Candidates: []record.Candidate{
+		{Port: "gegl", Proposed: true, Reason: "depends_lib"},
+		{Port: "gegl-devel", Proposed: true, Solo: true, Over: "gegl", Reason: "x"},
+		{Port: "qgis-devel", Proposed: true, Solo: true, Over: "qgis", Reason: "y"},
+	}}
+	_, _, err := forceMembers(f, []string{"nothere"})
+	var unknown *UnknownWithheldError
+	require.ErrorAs(t, err, &unknown)
+	assert.Equal(t, []string{"nothere"}, unknown.Names)
+	assert.Equal(t, []string{"gegl-devel", "qgis-devel"}, unknown.Withheld, "the withheld members, sorted")
+	assert.Equal(t, exitcode.PlanDeclined, unknown.DockhandExit())
+	assert.Equal(t, "unknown-withheld", unknown.Code())
+}
+
+// The roster seats forced members last, after every ordinary member in
+// portdir order, and in name order among themselves; a still-withheld
+// member stays out.
+func TestCohortRosterSeatsForcedMembersLast(t *testing.T) {
+	head := record.Subject{Port: "libwidget", Portdir: "devel/libwidget"}
+	built := []planned{
+		{Portdir: "graphics/gegl-devel", Ports: []string{"gegl-devel"}},
+		{Portdir: "gis/gdal", Ports: []string{"gdal"}},
+		{Portdir: "graphics/qgis-devel", Ports: []string{"qgis-devel"}},
+		{Portdir: "gis/grass", Ports: []string{"grass"}},
+	}
+	apart := map[string]bool{"gegl-devel": true, "qgis-devel": true}
+	forced := map[string]string{"qgis-devel": "qgis"}
+	delete(apart, "qgis-devel")
+
+	roster := cohortRoster(head, built, apart, forced)
+	var got []string
+	for _, m := range roster {
+		got = append(got, m.Port)
+	}
+	assert.Equal(t, []string{"libwidget", "gdal", "grass", "qgis-devel"}, got,
+		"headline, the built members in order, then the forced one last; the still-withheld gegl-devel is out")
+}
+
+// rosterAsRecorded shapes a resubmission from the note: a withheld
+// member is dropped whatever the walk turned up, a forced member goes
+// back last with its sibling, and a note with neither is unchanged.
+func TestRosterAsRecordedHonoursWhatTheNoteSaid(t *testing.T) {
+	n := record.Record{Runs: map[string]record.Run{
+		record.RunKey("libwidget", "Testos"): {State: record.Queued, Platform: "Testos"},
+		record.RunKey("gdal", "Testos"):      {State: record.Queued, Platform: "Testos"},
+		record.RunKey("gegl-devel", "Testos"): {State: record.Withheld, Platform: "Testos",
+			Detail: "it conflicts with gegl, which this cohort builds"},
+		record.RunKey("qgis-devel", "Testos"): {State: record.Queued, Platform: "Testos", Forced: "qgis"},
+	}}
+	members := []Member{
+		{Port: "libwidget"}, {Port: "gdal"}, {Port: "gegl-devel"}, {Port: "qgis-devel"},
+	}
+	got, forced, held := rosterAsRecorded(n, "Testos", members)
+	var names []string
+	for _, m := range got {
+		names = append(names, m.Port)
+	}
+	assert.Equal(t, []string{"libwidget", "gdal", "qgis-devel"}, names,
+		"the withheld member is out, and the forced one is last")
+	assert.Equal(t, map[string]string{"qgis-devel": "qgis"}, forced)
+	assert.Equal(t, []WithheldMember{{Port: "gegl-devel", Why: "it conflicts with gegl, which this cohort builds"}}, held,
+		"the withheld member is handed back to be recorded under this attempt's release")
+
+	// A note with neither is the members unchanged and nil for the rest —
+	// every deferral there was before this feature.
+	plain := record.Record{Runs: map[string]record.Run{
+		record.RunKey("jq", "Testos"):        {State: record.Queued, Platform: "Testos"},
+		record.RunKey("oniguruma", "Testos"): {State: record.Queued, Platform: "Testos"},
+	}}
+	same, none, nobody := rosterAsRecorded(plain, "Testos", cohortMembers)
+	assert.Equal(t, cohortMembers, same)
+	assert.Nil(t, none)
+	assert.Nil(t, nobody)
+}
+
+// With no run to read — a cohort accepted with --no-verify, or queued
+// before any release resolved — the accepted proposal's candidates say
+// the same thing: a Solo candidate is withheld, and a Solo candidate the
+// person forced goes last with the sibling Over names. A road that read
+// only runs would seat the withheld member beside its sibling and drop
+// the override.
+func TestRosterAsRecordedReadsTheCandidatesWhenNoRunWasWritten(t *testing.T) {
+	n := record.Record{Findings: []record.Finding{{
+		Kind: render.KindCohort, Disposition: record.Accepted,
+		Candidates: []record.Candidate{
+			{Port: "libwidget", Proposed: true},
+			{Port: "gdal", Proposed: true},
+			{Port: "gegl-devel", Proposed: true, Solo: true, Over: "gegl"},
+			{Port: "qgis-devel", Proposed: true, Solo: true, Over: "qgis", Forced: true},
+		},
+	}}}
+	members := []Member{
+		{Port: "libwidget"}, {Port: "gdal"}, {Port: "gegl-devel"}, {Port: "qgis-devel"},
+	}
+	got, forced, held := rosterAsRecorded(n, "Testos", members)
+	var names []string
+	for _, m := range got {
+		names = append(names, m.Port)
+	}
+	assert.Equal(t, []string{"libwidget", "gdal", "qgis-devel"}, names)
+	assert.Equal(t, map[string]string{"qgis-devel": "qgis"}, forced)
+	assert.Equal(t, []WithheldMember{{Port: "gegl-devel", Why: "it conflicts with gegl, which this cohort builds"}}, held)
+}
+
+// forcedConflict proceeds rather than declining when it cannot read the
+// tree, so a person's override is not refused for want of a fact
+// dockhand could not look up.
+func TestForcedConflictProceedsWhenTheIndexIsUnreadable(t *testing.T) {
+	bare, _ := engineRepo(t)
+	e := testState(t, bare, &verifytest.Fake{})
+	_, _, conflict, known := e.forcedConflict("libwidget", map[string]string{"a": "x", "b": "y"})
+	assert.False(t, conflict)
+	assert.False(t, known, "no tree, so the pair could not be checked")
+
+	_, _, conflict, known = e.forcedConflict("libwidget", map[string]string{"a": "x"})
+	assert.False(t, conflict)
+	assert.True(t, known, "one forced member cannot conflict with another")
+}
