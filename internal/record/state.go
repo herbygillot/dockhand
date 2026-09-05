@@ -94,39 +94,6 @@ func ParseRunState(s string) (RunState, error) {
 // sequence the notes and the goldens carry.
 func (s RunState) String() string { return string(s) }
 
-// Weight is what a run contributes to a verdict set. The set is a
-// tally, not a vote: one Positive is enough to say the change works
-// somewhere, and one Negative is enough to stop it.
-type Weight int
-
-const (
-	// Neutral is a run that says nothing about the change — it has not
-	// finished, or it never tested the change at all.
-	Neutral Weight = iota
-	// Positive is a run that says the change works.
-	Positive
-	// Negative is a run that says it does not.
-	Negative
-)
-
-// Weight reports what the state contributes to a verdict set. Only a
-// pass argues for the change and only a failure argues against it:
-// unsupported and blocked are refusals to test, and the rest are
-// states of the run rather than findings about the port. An unknown
-// state weighs Neutral, because a word this build cannot read is not
-// evidence.
-func (s RunState) Weight() Weight {
-	switch s {
-	case Passed:
-		return Positive
-	case Failed:
-		return Negative
-	case Queued, Submitting, Running, Unsupported, Blocked, Canceled, Superseded, Errored, Withheld:
-		return Neutral
-	}
-	return Neutral
-}
-
 // Terminal reports whether the state will not change on its own.
 //
 // Submitting is not terminal, and that is the whole reason the state

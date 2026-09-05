@@ -8,7 +8,7 @@ import (
 )
 
 // all is every state schema 3 writes. A state added without a line
-// here is a state the tables below never weigh.
+// here is a state the tables below never test.
 var all = []RunState{
 	Queued, Submitting, Running, Passed, Failed,
 	Unsupported, Blocked, Canceled, Superseded, Errored,
@@ -49,31 +49,37 @@ func TestParseRunStateRefusesAWordThisBuildDoesNotKnow(t *testing.T) {
 	}
 }
 
-func TestWeight(t *testing.T) {
+func TestOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		state RunState
-		want  Weight
+		want  bool
 	}{
-		{Passed, Positive},
-		{Failed, Negative},
-		// Neither of these tested the change: one is the port declining
-		// the platform, the other something failing before the change was
-		// reached. A refusal to test is not evidence either way.
-		{Unsupported, Neutral},
-		{Blocked, Neutral},
-		// States of the run rather than findings about the port.
-		{Queued, Neutral},
-		{Submitting, Neutral},
-		{Running, Neutral},
-		{Canceled, Neutral},
-		{Superseded, Neutral},
-		{Errored, Neutral},
-		// A word this build cannot read is not evidence.
-		{RunState("quantum"), Neutral},
-		{RunState(""), Neutral},
+		// Answers to "what happened to this port here" — including the
+		// three where what happened is that it was not tried: a port
+		// declining the platform, a member behind a failed prerequisite,
+		// and a member this build held back have each been answered for.
+		{Passed, true},
+		{Failed, true},
+		{Unsupported, true},
+		{Blocked, true},
+		{Withheld, true},
+		// The machine's silence, a person's "no", and the branch moving
+		// out from under the run: terminal, and about something other
+		// than the port. A best-effort dependent in one of these is
+		// unanswered, and the change waits.
+		{Errored, false},
+		{Canceled, false},
+		{Superseded, false},
+		// Not finished, so not yet an answer.
+		{Queued, false},
+		{Submitting, false},
+		{Running, false},
+		// A word this build cannot read says nothing about the port.
+		{RunState("quantum"), false},
+		{RunState(""), false},
 	} {
 		t.Run(string(tc.state), func(t *testing.T) {
-			assert.Equal(t, tc.want, tc.state.Weight())
+			assert.Equal(t, tc.want, tc.state.Outcome())
 		})
 	}
 }
@@ -113,24 +119,37 @@ func TestAClaimedRunIsNeverTerminal(t *testing.T) {
 	// table row: everything a peer could read as "nobody is on this"
 	// must be false while a claim is down.
 	require.False(t, Submitting.Terminal())
-	assert.Equal(t, Neutral, Submitting.Weight())
+	assert.False(t, Submitting.Outcome())
 }
 
-func TestOnlyAPassAndAFailureCarryWeight(t *testing.T) {
-	// The property behind Promotable: exactly one state argues for the
-	// change and exactly one argues against it.
-	var positive, negative int
-	for _, s := range all {
-		switch s.Weight() {
-		case Positive:
-			positive++
-		case Negative:
-			negative++
-		case Neutral:
-		}
+// The property behind the gate, read over every state: exactly one
+// state argues for a change and exactly one argues against it. A
+// subject whose only run is s is promotable when and only when s is a
+// pass, and a pass beside a run in s is promotable unless s is a
+// failure. Everything else — a refusal to test, a run still going, the
+// machine's silence, a word this build cannot read — is evidence
+// neither for the change nor against it.
+//
+// This was stated through a per-state weight that the gate did not
+// read, and the tally built on it could disagree with the gate at a
+// cohort without either noticing. It is stated against the gate now,
+// so a state that starts arguing either way fails here rather than
+// somewhere a tally would have hidden it.
+func TestOnlyAPassArguesForAndOnlyAFailureAgainst(t *testing.T) {
+	jq := []Subject{{Port: "jq"}}
+	states := append(append([]RunState{}, all...), RunState("quantum"), RunState(""))
+	for _, s := range states {
+		t.Run(string(s), func(t *testing.T) {
+			alone := Record{Subjects: jq, Runs: map[string]Run{
+				RunKey("jq", "Testos"): {State: s}}}
+			assert.Equal(t, s == Passed, alone.Promotable(), "alone")
+
+			beside := Record{Subjects: jq, Runs: map[string]Run{
+				RunKey("jq", "Testos"): {State: Passed},
+				RunKey("jq", "Oldos"):  {State: s}}}
+			assert.Equal(t, s != Failed, beside.Promotable(), "beside a pass")
+		})
 	}
-	assert.Equal(t, 1, positive)
-	assert.Equal(t, 1, negative)
 }
 
 func TestDestinationIsAWordAndNotANumber(t *testing.T) {
@@ -149,22 +168,26 @@ func TestDispositionIsTheAnswerToAFinding(t *testing.T) {
 }
 
 // Withheld is a state this build gives a subject it chose not to run.
-// It is terminal — nothing will come back to change it — and it weighs
-// nothing, because holding a member back is not evidence for or against
-// the change.
-func TestWithheldIsTerminalAndWeighsNothing(t *testing.T) {
-	assert.True(t, Withheld.Terminal(), "no later reading turns a withheld run into an outcome")
-	assert.Equal(t, Neutral, Withheld.Weight(),
-		"a member nobody built argues neither for the change nor against it")
+// It is terminal — nothing will come back to change it — and it is an
+// outcome, because the gate asks each dependent for an answer and a
+// member held back on purpose has one: this build did not run it, and
+// nothing about it is the reason.
+func TestWithheldIsTerminalAndAnOutcome(t *testing.T) {
+	assert.True(t, Withheld.Terminal(), "no later reading turns a withheld run into something else")
+	assert.True(t, Withheld.Outcome(), "a member nobody built is answered for, not unanswered")
 
 	got, err := ParseRunState("withheld")
 	require.NoError(t, err, "the word must survive a round trip through the wire")
 	assert.Equal(t, Withheld, got)
 }
 
-// And it must never be mistaken for a pass. A promotion sums the passes
-// over every member, so a withheld member counting as one would
-// authorize publishing on evidence nobody produced.
+// And it must never be mistaken for a pass. A promotion needs some run
+// to have proven the change, and a withheld member counting as proof
+// would authorize publishing on evidence nobody produced.
 func TestWithheldIsNotAPass(t *testing.T) {
-	assert.NotEqual(t, Passed.Weight(), Withheld.Weight())
+	r := Record{
+		Subjects: []Subject{{Port: "gegl-devel"}},
+		Runs:     map[string]Run{RunKey("gegl-devel", "Testos"): {State: Withheld, Platform: "Testos"}},
+	}
+	assert.False(t, r.Promotable(), "answered for, and not proven")
 }

@@ -28,46 +28,29 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// Promotable is promote's gate: at least one platform passed, none
-// failed, and every subject of the change answered for. The rule is
-// stated on the record, where the wire format that carries it lives;
-// this presents it as the judgment it is, so a caller asking "may this
-// be published" reads that question rather than a field query that
-// happens to answer it.
+// Promotable is promote's gate: some run proved the change, the
+// headline passed somewhere and failed nowhere, and every dependent
+// reached an outcome. The rule is stated on the record, where the wire
+// format that carries it lives; this presents it as the judgment it is,
+// so a caller asking "may this be published" reads that question rather
+// than a field query that happens to answer it.
+//
+// Nothing tallies beside it. A Weigh used to stand here, summing a
+// verdict set's runs to one of positive, negative or neutral, held in
+// agreement with the gate by a test rather than by one calling the
+// other. A weight was about the RUNS and a promotion is about the
+// CHANGE, and the two were equal only while a change had one subject —
+// and since the dependents became best effort (D24) they are not merely
+// unequal at a cohort but opposed: a dependent that failed weighs
+// negative and is promotable. Nothing read the tally — the ledger, the
+// machine gate and the attention rows all ask the record — and the test
+// that pinned the agreement ran over single-subject fixtures, which is
+// exactly where the disagreement could not be seen. A gate-adjacent
+// function nothing calls is a comment with a compiler, and one that
+// contradicts the gate is a wrong comment; so the tally is gone, the
+// rule has one home, and what its test pinned about a single subject
+// is pinned against this instead.
 func Promotable(r record.Record) bool { return r.Promotable() }
-
-// Weigh tallies a verdict set to a single weight: Positive when some
-// platform says the change works and none says it does not, Negative
-// the moment one does, and Neutral when nothing in the set is evidence
-// either way — every run still queued, or every one a refusal to test.
-//
-// A set is a tally and not a vote, which is why one Negative ends it:
-// a platform that failed is the question review will ask, and no number
-// of passes elsewhere answers it.
-//
-// A weight is about the RUNS and a promotion is about the CHANGE, so
-// the two agree exactly while a change has one subject and no further:
-// a cohort whose headline passed and whose dependent nothing built
-// weighs positive and is not promotable, because the gate also asks
-// whether every member was answered for and the tally has no idea how
-// many members there are. Where they do overlap they are held together
-// by a test rather than by one calling the other, since they are read
-// in different places and a divergence should fail rather than
-// propagate.
-func Weigh(r record.Record) record.Weight {
-	w := record.Neutral
-	for _, run := range r.Runs {
-		switch run.State.Weight() {
-		case record.Negative:
-			// One disproof settles the set; nothing later can lift it.
-			return record.Negative
-		case record.Positive:
-			w = record.Positive
-		case record.Neutral:
-		}
-	}
-	return w
-}
 
 // Summarize compresses a verdict set to one clause — "passed (Sequoia),
 // failed (Sonoma)" — in the record's own stable order. It is the drift

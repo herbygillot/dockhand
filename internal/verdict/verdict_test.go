@@ -12,7 +12,7 @@ import (
 const subject = "jq"
 
 // set builds a one-subject verdict set from platform-to-state pairs,
-// which is all the tally judgments read.
+// which is all the judgments here read.
 //
 // The runs are keyed and stamped the way the ledger writes them —
 // RunKey(port, release), with the platform on the run as well as in the
@@ -38,55 +38,60 @@ func runOn(r record.Record, plat string, run record.Run) {
 	r.Runs[record.RunKey(subject, plat)] = run
 }
 
-// Promotable and Weigh answer the same question in two shapes, and they
-// are held together here rather than by one calling the other: they are
-// read in different places, and a divergence should fail rather than
-// propagate.
+// The gate read over a change with one subject: the shapes a single
+// port's verdict set takes, and what each is worth. The record's own
+// tests state the rule member by member; this is the judgment as the
+// verbs read it.
 //
-// Every record here has one subject, which is where the two are equal.
-// A weight is a tally over the runs and a promotion also asks whether
-// every member was answered for, so at a cohort the gate is the
-// stricter of the two — TestPromotableSumsOverEveryMember is where that
-// difference is stated.
-func TestPromotableAndWeighAgree(t *testing.T) {
+// Until 2026-09-04 a second reading stood beside this one — Weigh, a
+// tally of the runs to positive, negative or neutral — and this table
+// held the two in agreement. It could only do so over single-subject
+// records, and a single subject is exactly where the two could not
+// disagree: at a cohort a failed dependent weighs negative and is
+// promotable, the dependents being best effort (D24). Nothing read the
+// tally, so it is gone, and what the table pinned about a single
+// subject is pinned here against the gate itself. The cohort shapes are
+// TestPromotableSumsOverEveryMember's.
+func TestPromotableOfASingleSubject(t *testing.T) {
 	cases := []struct {
-		name   string
-		states map[string]record.RunState
-		weight record.Weight
+		name       string
+		states     map[string]record.RunState
+		promotable bool
 	}{
-		{"nothing recorded", nil, record.Neutral},
-		{"one pass", map[string]record.RunState{"Sequoia": record.Passed}, record.Positive},
-		{"one failure", map[string]record.RunState{"Sequoia": record.Failed}, record.Negative},
+		{"nothing recorded", nil, false},
+		{"one pass", map[string]record.RunState{"Sequoia": record.Passed}, true},
+		{"one failure", map[string]record.RunState{"Sequoia": record.Failed}, false},
+		// A platform that failed is the question review will ask, and no
+		// number of passes elsewhere answers it.
 		{"a pass and a failure: the failure settles it",
-			map[string]record.RunState{"Sequoia": record.Passed, "Sonoma": record.Failed}, record.Negative},
+			map[string]record.RunState{"Sequoia": record.Passed, "Sonoma": record.Failed}, false},
 		// A port declining a platform is often the change working, and a
 		// dependency breaking left the change untested rather than
 		// disproven. Neither argues against publication.
 		{"a pass beside a refusal",
-			map[string]record.RunState{"Sequoia": record.Passed, "Sonoma": record.Unsupported}, record.Positive},
+			map[string]record.RunState{"Sequoia": record.Passed, "Sonoma": record.Unsupported}, true},
 		{"a pass beside a blocked run",
-			map[string]record.RunState{"Sequoia": record.Passed, "Sonoma": record.Blocked}, record.Positive},
+			map[string]record.RunState{"Sequoia": record.Passed, "Sonoma": record.Blocked}, true},
+		// And neither argues for it: a set with no pass in it is a change
+		// nothing ever built, whatever each run's reason was.
 		{"a refusal alone proves nothing",
-			map[string]record.RunState{"Sequoia": record.Unsupported}, record.Neutral},
-		{"still running", map[string]record.RunState{"Sequoia": record.Running}, record.Neutral},
-		{"queued", map[string]record.RunState{"Sequoia": record.Queued}, record.Neutral},
+			map[string]record.RunState{"Sequoia": record.Unsupported}, false},
+		{"still running", map[string]record.RunState{"Sequoia": record.Running}, false},
+		{"queued", map[string]record.RunState{"Sequoia": record.Queued}, false},
 		{"claimed but not yet started",
-			map[string]record.RunState{"Sequoia": record.Submitting}, record.Neutral},
+			map[string]record.RunState{"Sequoia": record.Submitting}, false},
 		{"canceled and superseded say nothing either",
-			map[string]record.RunState{"Sequoia": record.Canceled, "Sonoma": record.Superseded}, record.Neutral},
+			map[string]record.RunState{"Sequoia": record.Canceled, "Sonoma": record.Superseded}, false},
 		{"an errored environment is a fact about the machine",
-			map[string]record.RunState{"Sequoia": record.Errored}, record.Neutral},
+			map[string]record.RunState{"Sequoia": record.Errored}, false},
 		{"a failure among refusals still stops it",
-			map[string]record.RunState{"Sequoia": record.Unsupported, "Sonoma": record.Failed}, record.Negative},
+			map[string]record.RunState{"Sequoia": record.Unsupported, "Sonoma": record.Failed}, false},
 		{"a word this build cannot read is not evidence",
-			map[string]record.RunState{"Sequoia": "invented"}, record.Neutral},
+			map[string]record.RunState{"Sequoia": "invented"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := set(tc.states)
-			assert.Equal(t, tc.weight, Weigh(r), "weight")
-			assert.Equal(t, tc.weight == record.Positive, Promotable(r),
-				"promotable is exactly a positive tally")
+			assert.Equal(t, tc.promotable, Promotable(set(tc.states)))
 		})
 	}
 }
