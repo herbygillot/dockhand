@@ -6,63 +6,17 @@ here is ruled; unlike `notes.md`, this is maintained. An entry leaves
 when it ships or when it is decided against — and if it is decided
 against, it moves to the decision log rather than simply vanishing.
 
-## Promote: say when an open PR already takes this port as far or further
+## Promote: read the other PR's version from its Portfile, not only its slug
 
-**The ask (maintainer, 2026-09-03).** When promoting, look for an open
-pull request on the same port that updates it to the same version or a
-newer one, and tell the user. Explicitly **not a hard gate** — a flag,
-not a refusal.
-
-**What exists today.** `promote` already searches the open pull
-requests on the port (`gh.OpenPortPRs`, now off the search quota and on
-paged REST). `verdict.CheckDuplicates` then does two things with the
-result:
-
-- An **exact title match**, case- and whitespace-insensitive, is a
-  refusal: `DuplicatePRError`, exit 20, overridable with
-  `--no-pr-check`.
-- Every **other** open PR on the port produces one advisory note:
-  *"an open PR already touches this port: #N …"*.
-
-**The gap.** That note is a bare fact about coexistence. It does not
-say whether the other PR is doing the same work, less work, or more.
-The cases it currently under-serves:
-
-- Someone else has an open PR taking the port to a *newer* version
-  than the one being promoted. The promotion is not a duplicate and is
-  not wrong, but it is probably wasted, and the user would want to know
-  before spending a reviewer's attention.
-- Someone else has an open PR at the *same* version whose title is
-  worded differently — "bump to 1.9" against "update to 1.9". The exact
-  title match does not catch it, so it reads as an unrelated PR.
-
-**The hard part, and why this is not a two-line change.** Getting a
-version out of another PR honestly. A title is freeform prose and
-parsing one is a guess; a wrong guess here is worse than silence,
-because the whole point is to tell the user something true about
-someone else's work. Two sounder sources, in order of cost:
-
-1. The PR's changed files — the port's Portfile in its head tree — read
-   the way dockhand reads any Portfile. Correct, and expensive.
-2. The PR's head branch name, when it was minted by dockhand, since the
-   slug carries the version. Free and reliable for dockhand-minted
-   branches, useless for hand-made ones.
-
-Whatever the source, the comparison is `macports.VerCmp` and never
-string ordering, and the sentence must say where the version came from
-so a reader can weigh it. If no version can be established, the honest
-output is today's generic note — the feature declines to guess, like
-everything else here.
-
-**Where it goes.** `verdict.CheckDuplicates` is the pure judgment and
-already returns notes plus an optional refusal; this is a richer note,
-not a new gate, so its shape does not change. The version facts would
-have to arrive on `PRFact`, gathered at the engine boundary where the
-rest of the GitHub mapping happens, so `verdict` stays pure.
-
-**Not to be confused with** the same-port supersede rule, which is
-about *this* checkout's own sibling branches and is already ruled and
-built. This one is about other people's work.
+**What remains of the open-PR version check (shipped 2026-09-05 as
+`b8cb4e8`).** Where another open PR's head branch is one dockhand
+minted, the same-port note now says whether it takes the port to the
+same version, newer or older, under `macports.VerCmp`, and names the
+slug as its source. A hand-made head branch establishes nothing and
+the generic note stands. The dearer source the original entry named —
+the Portfile in the PR's head tree, read the way dockhand reads any
+Portfile — is deferred: it answers for every PR rather than only
+dockhand's own, at the cost of a fetch per candidate.
 
 ## `verify` promises a view that cannot show the branch
 
@@ -97,138 +51,30 @@ Leaning (3), which is why this is a TODO and not a one-line fix: it widens
 what `status` walks, and that touches the retire sweep, the forge lookups
 per branch, and every status golden. Worth doing deliberately.
 
-## A tracked upstream is not a push
+## `discard` calls the tracked remote "the fork"
 
-**Found in the live check (2026-09-03), pre-existing — not an overhaul
-regression.** `Engine.retire` decides a branch was promoted by asking
-whether it has a tracked remote at all:
+**What remains of "a tracked upstream is not a push" (shipped 2026-09-05
+as `0647471`).** Retire and discard now read the remote-tracking ref,
+so a branch that was never pushed is never called promoted and no `gh`
+call is spent learning it. One facet is still open: the discard
+advisory names the remote it found as "the fork". In a checkout where
+`origin` is the canonical repository and the fork is another remote,
+that word is wrong whenever the copy lives on `origin`. `promote`
+resolves the fork properly, by matching the `gh` login against each
+remote's owner (`gh.ForkRemote`); the advisory should say "the copy on
+<remote>" and leave "fork" to the verb that knows.
 
-```go
-if repo.TrackedRemote(ctx, b.Branch) == "" {
-    return          // never pushed
-}
-b.Retire.Promoted = true
-```
+## The stale-primary advisory is not yet paired with the sweep that moves the ref
 
-`TrackedRemote` reads `branch.<name>.remote` (`internal/git/remote.go`).
-That key answers "where does this branch's upstream live", not "has this
-branch been pushed under its own name" — and `git switch -c foo
-origin/master`, the ordinary way to start a branch, sets it to `origin`
-for a branch that exists nowhere but locally.
-
-Observed on `dockhand/live-solo-control`: upstream
-`refs/remotes/origin/master`, zero matching heads on `origin`, and
-`status` reporting `promoted; no PR found`.
-
-**Three symptoms, one cause.**
-
-1. `status` calls a never-pushed branch promoted.
-2. It spends a `gh` lookup per such branch — exactly the cost the gate's
-   own comment says it exists to avoid.
-3. `discard` (`internal/engine/discard.go:73`, same test) advises
-   `git push origin --delete <branch>` for a fork copy that does not
-   exist. Following that advice fails.
-
-**Note that `TrackedRemote` is not the defect.** Its doc comment —
-"names the remote a branch tracks" — is exactly what it does. Both call
-sites ask it a question it does not answer. The fix is a new predicate,
-not a change to what `TrackedRemote` means.
-
-**Ruled (maintainer, 2026-09-03): use the remote-tracking ref.** A branch
-counts as pushed when `refs/remotes/<remote>/<branch>` exists locally.
-Three candidates were weighed:
-
-- `branch.<name>.merge == refs/heads/<name>`. Free and local, but a
-  branch pushed with a bare `git push origin X` sets no `merge` key at
-  all and would read as never pushed.
-- **The remote-tracking ref — chosen.** Also free and local, and it
-  catches both `push -u` and bare `push`, since git writes the ref on any
-  successful push. It is already how dockhand reasons about pushes
-  elsewhere: `PushForce` uses `--force-with-lease` because, in its own
-  words, the lease is the remote-tracking ref the last push recorded.
-  Same source of truth, applied consistently. Its weakness is staleness —
-  a remote copy deleted elsewhere leaves the ref until `fetch --prune` —
-  which for status's purpose is the right answer anyway, because the PR
-  did exist.
-- `git ls-remote --heads`. Ground truth, and wrong here: a network call
-  per branch to avoid a `gh` call per branch is strictly worse than what
-  it replaces.
-
-**Implementation note.** `Reconcile` already enumerates branches, so it
-can resolve the whole set with one `for-each-ref refs/remotes/<remote>/`
-rather than a call per branch — cheaper than today's code, not merely
-more correct. Both `retire` and `discard` move to the new predicate.
-
-**Deferred until the cohort live check completes** (maintainer's call,
-same ruling). It moves goldens in `status` and `discard`, and changing
-rendering midway through a check that compares real output against
-stated expectations would muddy every remaining part. Nothing downstream
-depends on fixing it first; part F is unaffected, since that branch is
-genuinely pushed. `docs/cohort-live-check.md` annotates the false line as
-expected wherever it appears.
-
-## A stale primary silently enlarges a hand-made cohort
-
-**Found in the live check (2026-09-03).** A branch cut from
-`origin/master` picks up every upstream commit the local primary branch
-has not caught up to, and dockhand counts those commits' portdirs as
-part of what the branch changes. It then builds them.
-
-Observed: a branch holding one no-op edit to `devel/oniguruma6` and one
-to `sysutils/jq` was submitted as
-`verify: submitted oniguruma6, jq, mise on Tahoe`. The third member came
-from `9515815e0ba mise: update to 2026.9.1` — dockhand's own pull request
-#34485, which merged two steps earlier in the same session.
-
-**Why it happens, and why neither half is wrong on its own.**
-`ChangedPortdirs` diffs from `MergeBase(PrimaryBranch, tip)`, and
-`PrimaryBranch` is documented to never fetch: "the local position is the
-answer, staleness included" (D21, `internal/git/git.go`). That is a
-deliberate and defensible choice — it is what `git diff master...HEAD`
-would say too. Separately, `status` runs a retire sweep that advances
-`origin/master` when one of your PRs merges. Each is reasonable; together
-they mean dockhand can move the remote ref underneath you and then
-attribute the commits it fetched to the next branch you cut from it.
-
-**Branches dockhand mints itself are immune.** `planOnBase` forks from
-`primary`, so the merge base is exactly the fork point. Only hand-made
-branches taken from a remote-tracking ref are affected — which is an
-entirely ordinary thing to do, and what this document used to instruct.
-
-**Consequences, worst first.** A promoted branch's PR body would claim to
-change a port the author never touched. A cohort builds ports nobody
-asked for, spending guest time and a licence slot. And the ABI cohort
-would measure a stranger's port as though it were part of the change.
-
-**Possible answers, none ruled.**
-
-1. Say something. dockhand knows `primary` and can see whether
-   `origin/<primary>` is ahead of it without a fetch. When it is, and the
-   branch's roster includes portdirs from commits the branch does not
-   own, one advisory line naming them. Cheap, no refusal, no behaviour
-   change.
-2. Base on the remote-tracking ref instead. Matches what GitHub will diff
-   the PR against, and contradicts D21's "never fetches" premise.
-3. Count only commits the branch itself introduces — the roster is the
-   union of portdirs touched by `primary..tip` rather than the diff of
-   the endpoints. Narrower and more literal, but it changes what "what
-   this branch changes" means for a branch that legitimately carries a
-   merge.
-
-**Ruled (maintainer, 2026-09-04): option 1.** An advisory line naming
-the portdirs the branch does not own, emitted where the roster is
-derived. No refusal, no change to what the branch is taken to change,
-and D21 stands. Worth pairing with the sweep that moves the ref, since
-that is where the condition is created.
-
-**A related facet, same root.** `discard`'s advisory calls whatever
-`TrackedRemote` returns "the fork". In a checkout where `origin` is the
-canonical repository and the fork is another remote, a hand-made branch
-tracking `origin` produces `the fork copy on "origin" is untouched` —
-naming the upstream as the fork. `promote` resolves the fork properly,
-by matching the authenticated `gh` login against each remote's owner
-(`gh.ForkRemote`); the advisory should use the same answer rather than
-assuming the tracked remote is the fork.
+**What remains of "a stale primary silently enlarges a hand-made
+cohort" (shipped 2026-09-05 as `2232b9a`).** `ChangedPortdirs` now
+names, on stderr, each roster member that came from a commit the
+branch does not own, with the commit and the remedy. Still open: the
+condition is created by the retire sweep advancing `origin/<primary>`
+under a checkout whose local primary stands still, and the sweep says
+nothing when it does. A line there — "origin/master moved past your
+master by N commit(s); a branch cut from it will carry them" — would
+put the warning at the cause rather than only at the symptom.
 
 ## `status` should only report; a `cycle` verb should do the work
 
@@ -444,97 +290,6 @@ which is the carrier that tells "skipped for a failed prerequisite" from
 maintainer deceiving their own tool about their own bump, which is not
 worth engineering against. Recorded as D25.
 
-## A failed member says nothing for itself in the body's member list
-
-**Found in part F9 of the live check (2026-09-04), on the real body of
-macports/macports-ports#34500.** Each member of a cohort is supposed to
-carry its own link proof, or `links nothing that moved` where the sweep
-found none. A member that failed to build carries neither:
-
-```
-— gegl-devel (graphics/gegl-devel): depends_lib; conflicts with gegl,
-  which this cohort builds — bumped here, and needing a verification of
-  its own
-— gthumb (gnome/gthumb): depends_lib; nomaintainer
-```
-
-The withheld member explains itself where it is listed. The failed one
-does not, and a reviewer reading "Revision bumped in this change" sees a
-port with no evidence beside it and no reason for the absence. The fact
-is in the body — "gthumb on Tahoe: the build failed, and this was
-promoted anyway" — but it is in the verification block above, and
-joining the two is left to the reader.
-
-**Why it matters more now than it would have.** Since the dependents
-became best effort, a failed member no longer blocks the promotion, so
-this list will routinely carry ports that did not build. The line that
-says why should be where the bump is claimed.
-
-**Shape.** The member line already composes a reason from the candidate
-and appends the link proof. Where a member has no proof because its run
-did not reach one, it should say which: "the build failed, so nothing
-was measured", "never built", "links nothing that moved" — the last
-being a real answer and the others being absences with names.
-
-## The body cannot be read without publishing it
-
-**Anticipated by the live check and confirmed at F9 (2026-09-04).** No
-verb renders the pull request body to a terminal. `--no-pr` pushes the
-branch and prints nothing; the only way to see what a reviewer will read
-is to open a pull request, which for this check meant opening one
-against macports/macports-ports and closing it two minutes later.
-
-Reading it here took a throwaway test in `internal/render` that opened
-the repository, read the note off the branch tip and called `PRBody` —
-the same call `promote` makes. That it worked is the point: the body is
-a pure function of the record and could be printed by a verb.
-
-**Shape.** `promote --body` (or `--dry-run`) writing the body to stdout
-and doing nothing else. It needs the same inputs promote gathers — the
-tip, the note, the fork owner, the duplicate-PR check — and the
-duplicate check is a network call, so either the flag skips it and says
-so in the output, or it runs and the flag is not quite free.
-
-**Why it is worth a verb.** The one artifact a reviewer sees is the one
-a maintainer cannot preview, and every change to how bodies are worded
-is currently checked against goldens rather than against a real record.
-The live check's own F9 says to record this as a gap rather than work
-around it silently; the workaround above is the record of it.
-
-## A stranger that stops the run is named as every later member's dependency
-
-**Found in the confirmation cohort (2026-09-04).** `py310-rawpy` was
-blocked because its dependency `py310-scikit-image` failed to build —
-a stranger, outside the cohort, correctly named. The runner stopped
-there. `py311-rawpy`, next in build order and never reached, settled
-as:
-
-```
-py311-rawpy: blocked (Tahoe) — dependency py310-scikit-image fails to build; the change itself is untested
-```
-
-`py311-rawpy` depends on `py311-scikit-image`, not `py310-`. The
-sentence asserts a dependency edge that does not exist.
-
-**Why.** When the member the runner stopped inside is itself *blocked*
-rather than failed, there is no failed sibling to name as culprit, so
-every member behind it falls through to the stranger sentence — with
-the stranger that stopped the run, not one of their own. The verdict
-(blocked, untested) is right; the attribution is borrowed from a
-sibling.
-
-**Shape.** A member behind a stopper that was blocked by a stranger is
-blocked by the *sibling*, not the stranger: "py310-rawpy could not be
-built, so this member was not reached; it is untested." That is true
-of it and names something a reader can check. Alternatively, keep the
-stranger sentence but only where the stranger is in this member's own
-`Requires`. Either way the sentence must not claim an edge the index
-does not carry.
-
-Low severity — the verdict and the gate are unaffected — but it is a
-false statement in a body a reviewer reads, and it will become the
-ordinary case once the runner no longer stops at the first failure.
-
 ## Let a person force a withheld member to build
 
 **The ask (maintainer, 2026-09-04), tentative.** A withheld member is
@@ -562,32 +317,13 @@ it depends on the runner change (the forced member must build after
 every member that might need the sibling active), and on nothing else
 depending on it.
 
-## A bump that fetches nothing leaves its patches unchecked, and says nothing
+## The patches-unchecked finding reaches the plan, not yet the pull request body
 
-**Found building D12 (2026-09-04).** Patch relocation runs only where
-the plan fetched the target version's distfiles, because the new source
-is the thing a hunk is relocated against. A bump that takes a branch
-with no fetch — every distfile from a vendored block, say — proceeds
-with its patches untouched, and the plan does not mention that they
-were not checked. That is correct as far as it goes: no target, no
-check. What is missing is the sentence. A plan that could not check a
-port's patches should say so, the way the ABI finding says "unavailable"
-rather than nothing.
-
-## Nothing bounds the pull request body
-
-**From the reassessment (2026-09-04).** No length check exists in
-`internal/render` or `internal/gh`, and the push happens before
-`gh pr create --body`. With the cap off, a cohort contributes one
-verification line, one member line and its link-proof lines per member;
-`libffi` has 132 dependents. Nobody has measured a body reaching
-GitHub's limit, but "nothing bounds it" is a fact, and the failure mode
-is the worst available: a branch pushed to the fork and no pull request
-opened, with the author told nothing until `gh` refuses.
-
-**Shape.** Measure the rendered body before the push. Over the limit,
-refuse before anything leaves the machine, naming the size and the
-limit — the same road as any other decline. Truncating the member list
-with a count is the alternative, and it is the wrong one here: the
-member lines are the evidence a reviewer is being asked to accept, and
-a body that elides them is vouching for what it does not show.
+**What remains of "a bump that fetches nothing leaves its patches
+unchecked, and says nothing" (shipped 2026-09-05 as `19f90cc`).** The
+plan now carries a `patches-unchecked` finding, Accepted rather than
+Proposed so it is a statement in the ABI check's "unavailable" shape
+and never holds the machine gate, and `--plan` prints it. It does not
+yet reach the pull request body the way `abi-unavailable` does; a
+reviewer of a port whose patches went unchecked should read that where
+the verification is vouched for.

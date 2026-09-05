@@ -291,8 +291,11 @@ that reverse-applies, meaning upstream merged it) — that is a second
 verdict and the ruling asked for one. Model `patch.dir` — such a port's
 targets miss and decline, the safe direction. Check anything when the
 plan takes a branch that fetches no distfile — there is no target to
-check against, and the plan proceeds with the patches untouched and
-unmentioned; recorded in `docs/todo.md` as the one gap worth closing.
+check against, and the plan proceeds with the patches untouched. It
+says so since the same day (`19f90cc`): a `patches-unchecked` finding
+on the plan, in the ABI check's "unavailable" shape, printed by
+`--plan`; carrying it into the pull request body is the remaining
+facet, in `docs/todo.md`.
 
 **Why it was held, and still governs the edges.** The failure mode is
 uniquely bad. A patch applied with fuzz in the wrong place yields a port

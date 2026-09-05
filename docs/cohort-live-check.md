@@ -99,14 +99,12 @@ meant to hold `oniguruma6` and `jq` was submitted as `oniguruma6, jq,
 mise`, because dockhand's own `mise` PR had merged two steps earlier.
 Recorded in `docs/todo.md`.
 
-**If you see `promoted; no PR found`, it is a known false line, not a
-finding.** `Engine.retire` reads `branch.<name>.remote` as proof a branch
-was pushed, and branching from a remote-tracking ref sets that key for a
-branch that exists nowhere but locally; `discard` then offers a
-`git push origin --delete` line for a fork copy that is not there.
-Branching from local `master` as above sets no upstream at all, so neither
-should appear — but transcripts from earlier runs of this document show
-both. Recorded in `docs/todo.md`; ignore them wherever they appear.
+**`promoted; no PR found` on a branch you never pushed is a finding
+again.** It was a known false line through 2026-09-04 — retire read the
+tracking config as proof of a push — and is fixed as of `0647471`: a
+branch counts as pushed only where a remote-tracking ref says so.
+Transcripts from earlier runs of this document show the false line;
+a run on a current binary must not.
 
 ---
 
