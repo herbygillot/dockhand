@@ -262,6 +262,24 @@ func TestDiscardBranchReleasesEverythingItHolds(t *testing.T) {
 	assert.ErrorIs(t, err, git.ErrNoNote, "no note debris survives the branch")
 }
 
+// A branch that tracks the fork without ever having been pushed there
+// has no copy for the advisory to name, and discard must not tell the
+// reader to delete one: `git push herby --delete` for a copy that does
+// not exist is advice that fails when taken. The advisory reads the
+// remote-tracking ref, as status's promotion gate does, and for the
+// same reason — cutRepo is the field shape that used to trip both.
+func TestDiscardNamesNoForkCopyForATrackedButUnpushedBranch(t *testing.T) {
+	repo := cutRepo(t)
+	ctx := context.Background()
+
+	said, err := testState(t, repo, &verifytest.Fake{}).Discard(ctx, repo, "dockhand/jq-1.8", false)
+	require.NoError(t, err)
+	for _, l := range said {
+		assert.NotContains(t, l.Text, "fork copy", "a remote the branch merely tracks holds nothing to remove")
+	}
+	assert.False(t, repo.HasBranch(ctx, "dockhand/jq-1.8"), "the local demolition still happens")
+}
+
 func TestFollowRunSettlesAndSpeaksTheVerdict(t *testing.T) {
 	repo, sha := engineRepo(t)
 	fake := &verifytest.Fake{

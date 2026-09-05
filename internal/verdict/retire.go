@@ -48,9 +48,10 @@ const (
 	RetireClosed
 )
 
-// DecideRetire judges one branch's standing. promoted is whether the
-// branch tracks a remote at all, which is the only sense in which
-// dockhand ever "knows" a branch was published.
+// DecideRetire judges one branch's standing. promoted is whether some
+// remote holds a copy of the branch — its remote-tracking ref exists —
+// which is the only sense in which dockhand ever "knows" a branch was
+// published.
 func DecideRetire(promoted bool, pr PRFact) Retirement {
 	switch {
 	case !promoted:

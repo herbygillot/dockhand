@@ -83,7 +83,14 @@ func (e *Engine) Reconcile(ctx context.Context, o ReconcileOpts) (render.Report,
 	if len(branches) == 0 {
 		return rep, nil
 	}
-	f := &forge{repo: repo}
+	// Which of them were ever pushed, resolved once for the pass: one ref
+	// listing over the namespace, where asking each branch in turn was a
+	// git call per branch. It is the gate on the forge question below.
+	pushed, err := repo.Pushed(ctx, git.BranchNamespace)
+	if err != nil {
+		return render.Report{}, err
+	}
+	f := &forge{repo: repo, pushed: pushed}
 	if o.RetireOnly {
 		// The sweep resolves the forge's coordinates up front and fails
 		// on them: it has nothing to sweep by without them, and saying so
@@ -141,9 +148,13 @@ func (e *Engine) Reconcile(ctx context.Context, o ReconcileOpts) (render.Report,
 // its verification standing above it; the sweep has nothing else to say
 // about that branch, so the failure is the line.
 func (e *Engine) retire(ctx context.Context, repo *git.Repo, f *forge, b *render.BranchReport, o ReconcileOpts, now time.Time) {
-	if repo.TrackedRemote(ctx, b.Branch) == "" {
-		// Never pushed: there is no pull request to ask about, and no
-		// reason to spend a gh call finding that out.
+	remote, pushed := f.pushed[b.Branch]
+	if !pushed {
+		// Never pushed: no remote holds a copy, so there is no pull request
+		// to ask about, and no reason to spend a gh call finding that out.
+		// Pushed reads the remote-tracking ref and not the tracking config,
+		// which a branch cut from origin/master carries before it has ever
+		// left the machine — git.PushedTo says why.
 		return
 	}
 	b.Retire.Promoted = true
@@ -158,7 +169,7 @@ func (e *Engine) retire(ctx context.Context, repo *git.Repo, f *forge, b *render
 		fail(err)
 		return
 	}
-	pr, found, err := gh.LookupPR(ctx, e.Gh, repo, f.remotes, f.upstream, b.Branch)
+	pr, found, err := gh.LookupPR(ctx, e.Gh, f.remotes, remote, f.upstream, b.Branch)
 	if err != nil {
 		fail(err)
 		return
@@ -357,16 +368,25 @@ func prCreatedAt(pr gh.PullRequest) time.Time {
 	return t
 }
 
-// forge is what looking a pull request up needs besides the branch: the
-// upstream repository and the remote table, resolved once for the pass.
+// forge is what looking a pull request up needs besides the branch:
+// which branches have a copy on a remote at all, and the upstream
+// repository and remote table, resolved once for the pass.
 //
-// Lazily, because a namespace where nothing was ever promoted must cost
-// no gh call at all — that is the common shape on a machine with no
-// network and a pocket of local work, and paying for a lookup nobody
-// will use is how a report becomes something to avoid running. The
-// sweep loads it eagerly for the opposite reason, in Reconcile.
+// The coordinates load lazily, because a namespace where nothing was
+// ever pushed must cost no gh call at all — that is the common shape on
+// a machine with no network and a pocket of local work, and paying for
+// a lookup nobody will use is how a report becomes something to avoid
+// running. The sweep loads them eagerly for the opposite reason, in
+// Reconcile. The pushed set is not lazy: it is a single local ref
+// listing, and it is what decides whether the coordinates are needed.
 type forge struct {
-	repo     *git.Repo
+	repo *git.Repo
+	// pushed maps each branch in the namespace that some remote holds a
+	// copy of to that remote — git.Pushed's answer. It gates everything
+	// a lookup does: a branch with no copy anywhere has no pull request
+	// to ask about, and the remote holding the copy is the fork the
+	// lookup reads its owner from.
+	pushed   map[string]string
 	upstream string
 	remotes  map[string]string
 	err      error

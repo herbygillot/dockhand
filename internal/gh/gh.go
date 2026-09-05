@@ -216,18 +216,20 @@ func (p PullRequest) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// LookupPR finds a promoted branch's pull request by head ref — the
-// derived linkage: the tracking remote names the fork owner, and the
-// query is the one gh itself uses. found is false for a branch never
-// promoted or with no PR yet.
-func LookupPR(ctx context.Context, gh Runner, repo *git.Repo, remotes map[string]string, upstream, branch string) (pr PullRequest, found bool, err error) {
-	tracked := repo.TrackedRemote(ctx, branch)
-	if tracked == "" {
-		return PullRequest{}, false, nil
-	}
-	owner, _, ok := OwnerRepoFromURL(remotes[tracked])
+// LookupPR finds a pushed branch's pull request by head ref — the
+// derived linkage: remote is the one holding the branch's copy (what
+// git.PushedTo names), its URL's owner is the fork owner, and the query
+// is the one gh itself uses. found is false for a branch with no PR
+// yet.
+//
+// The remote is the caller's to name rather than read from the
+// branch's tracking config here, because the config is not where the
+// copy is: a branch pushed bare tracks nothing, and one cut from a
+// remote-tracking base tracks a remote it was never sent to.
+func LookupPR(ctx context.Context, gh Runner, remotes map[string]string, remote, upstream, branch string) (pr PullRequest, found bool, err error) {
+	owner, _, ok := OwnerRepoFromURL(remotes[remote])
 	if !ok {
-		return PullRequest{}, false, fmt.Errorf("cannot read an owner from remote %q", tracked)
+		return PullRequest{}, false, fmt.Errorf("cannot read an owner from remote %q", remote)
 	}
 	return QueryPR(ctx, gh, upstream, owner, branch)
 }

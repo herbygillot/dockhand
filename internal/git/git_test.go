@@ -771,6 +771,64 @@ func TestPushDeleteRemovesTheForkCopy(t *testing.T) {
 	assert.Error(t, r.PushDelete(ctx, "fork", "dockhand/jq-1.8"))
 }
 
+// A tracked upstream is not a push. The three branches here are the
+// three shapes the field produces: one cut from a remote-tracking base
+// the way `git switch -c foo origin/master` does, which git configures
+// to track the remote before the branch has ever left the machine; one
+// pushed with -u, which is Push; and one pushed bare, which sets no
+// tracking config at all. Only the remote-tracking ref tells the last
+// two from the first, and that is what PushedTo reads. TrackedRemote
+// is asserted alongside to show the trap, not to test it.
+//
+// The cut branch is deliberately named as a prefix of the pushed ones:
+// a copy of dockhand/jq-1.8 is not a copy of dockhand/jq.
+func TestPushedToReadsTheRemoteTrackingRefNotTheTrackingConfig(t *testing.T) {
+	r := newRepo(t)
+	ctx := context.Background()
+
+	fork := t.TempDir()
+	out, err := exec.Command("git", "init", "--bare", "--quiet", fork).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	git := func(args ...string) {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", r.Root}, args...)...).CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, out)
+	}
+	git("remote", "add", "fork", fork)
+	// The remote-tracking base every hand-made branch starts from: the
+	// first commit, pushed under a name of its own so the test does not
+	// depend on what this machine calls its default branch.
+	git("push", "--quiet", "fork", "HEAD:refs/heads/base")
+
+	git("branch", "--track", "dockhand/jq", "fork/base")
+	git("branch", "dockhand/jq-1.8", "HEAD")
+	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-1.8"))
+	git("branch", "dockhand/jq-1.9", "HEAD")
+	git("push", "--quiet", "fork", "dockhand/jq-1.9")
+
+	// The trap: the cut branch tracks the fork and was never pushed; the
+	// bare push went to the fork and tracks nothing.
+	assert.Equal(t, "fork", r.TrackedRemote(ctx, "dockhand/jq"))
+	assert.Empty(t, r.TrackedRemote(ctx, "dockhand/jq-1.9"))
+
+	for _, c := range []struct {
+		branch, remote string
+	}{
+		{"dockhand/jq", ""},
+		{"dockhand/jq-1.8", "fork"},
+		{"dockhand/jq-1.9", "fork"},
+	} {
+		got, err := r.PushedTo(ctx, c.branch)
+		require.NoError(t, err, c.branch)
+		assert.Equal(t, c.remote, got, c.branch)
+	}
+
+	pushed, err := r.Pushed(ctx, "dockhand/")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"dockhand/jq-1.8": "fork", "dockhand/jq-1.9": "fork"}, pushed,
+		"the namespace's copies at once, the base outside it and the cut branch not among them")
+}
+
 // A re-minted branch cannot reach its fork copy by ordinary push; the
 // with-lease force replaces it, and the lease still refuses a copy
 // moved by someone else.

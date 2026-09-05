@@ -70,16 +70,26 @@ func (e *Engine) Discard(ctx context.Context, repo *git.Repo, branch string, dro
 	// `clean`, and a gate worded as "a machine may not push" rather than
 	// "a machine may not publish" would stop it working on a timer and
 	// buy nobody anything.
-	if tracked := repo.TrackedRemote(ctx, branch); tracked != "" {
+	//
+	// The remote named is the one actually holding a copy — the
+	// remote-tracking ref, which every push writes — and not the one
+	// the branch tracks, which a branch cut from origin/master has
+	// before it was ever pushed. Advising `git push origin --delete`
+	// for a copy that does not exist is advice that fails when taken.
+	remote, err := repo.PushedTo(ctx, branch)
+	if err != nil {
+		return said, err
+	}
+	if remote != "" {
 		if !dropFork {
-			warn("the fork copy on %q is untouched — `git push %s --delete %s` removes it", tracked, tracked, branch)
-		} else if derr := repo.PushDelete(ctx, tracked, branch); derr != nil {
+			warn("the fork copy on %q is untouched — `git push %s --delete %s` removes it", remote, remote, branch)
+		} else if derr := repo.PushDelete(ctx, remote, branch); derr != nil {
 			// Advisory: the ref may already be gone (GitHub's own
 			// delete-branch button, an earlier sweep), and a network
 			// refusal must not leave the local demolition half-done.
-			warn("warning: the fork copy on %q was not removed: %v", tracked, derr)
+			warn("warning: the fork copy on %q was not removed: %v", remote, derr)
 		} else {
-			warn("removed %s from %q", branch, tracked)
+			warn("removed %s from %q", branch, remote)
 		}
 	}
 	if err := repo.DeleteBranch(ctx, branch); err != nil {

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -51,6 +52,77 @@ func promotedRepo(t *testing.T) (*git.Repo, string) {
 	gittest.BareFork(t, repo, "herbygillot", "herby")
 	require.NoError(t, repo.Push(context.Background(), "herby", "dockhand/jq-1.8"))
 	return repo, sha
+}
+
+// cutRepo is engineRepo with the branch tracking the fork the way a
+// branch cut from a remote-tracking base does — `git switch -c foo
+// herby/main` — and never pushed: branch.<name>.remote names the fork,
+// and no copy of the branch exists anywhere but here. This is the
+// field shape that read as promoted for as long as the gate asked
+// TrackedRemote. The primary branch goes to the fork first so there is
+// a remote-tracking base to cut against, as the field's origin/master
+// is; --set-upstream-to then writes the two config keys switch -c
+// would have.
+func cutRepo(t *testing.T) *git.Repo {
+	t.Helper()
+	repo, _ := engineRepo(t)
+	ctx := context.Background()
+	gittest.BareFork(t, repo, "herbygillot", "herby")
+	primary, err := repo.PrimaryBranch(ctx)
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(ctx, "herby", primary))
+	out, err := exec.Command("git", "-C", repo.Root, "branch", "--set-upstream-to=herby/"+primary, "dockhand/jq-1.8").CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	require.Equal(t, "herby", repo.TrackedRemote(ctx, "dockhand/jq-1.8"), "the trap this fixture models")
+	return repo
+}
+
+// A tracked upstream is not a push. The branch tracks the fork the way
+// `git switch -c` leaves one cut from a remote-tracking base, and was
+// never pushed: the pass must not call it promoted, and must not spend
+// a forge call finding out that it has no pull request — the cost the
+// gate exists to avoid.
+func TestReconcileDoesNotCallATrackedButUnpushedBranchPromoted(t *testing.T) {
+	repo := cutRepo(t)
+	forge := &forgeFake{}
+	eng := testState(t, repo, &verifytest.Fake{})
+	eng.Gh = forge.run
+
+	rep, err := eng.Reconcile(context.Background(), ReconcileOpts{})
+	require.NoError(t, err)
+
+	require.Len(t, rep.Branches, 1)
+	assert.False(t, rep.Branches[0].Retire.Promoted)
+	assert.Empty(t, rep.Branches[0].Retire.Line(), "nothing to say about a pull request that cannot exist")
+	assert.Zero(t, forge.calls)
+}
+
+// The converse: a branch pushed bare — `git push herby dockhand/jq-1.8`,
+// no -u — tracks nothing and is promoted all the same. The pass finds
+// the copy by its remote-tracking ref and reads the fork owner from the
+// remote holding it, so the lookup reaches the forge and its answer is
+// judged rather than the branch reading as one with no pull request.
+func TestReconcileJudgesABranchPushedBare(t *testing.T) {
+	repo, _ := engineRepo(t)
+	ctx := context.Background()
+	gittest.BareFork(t, repo, "herbygillot", "herby")
+	out, err := exec.Command("git", "-C", repo.Root, "push", "--quiet", "herby", "dockhand/jq-1.8").CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	require.Empty(t, repo.TrackedRemote(ctx, "dockhand/jq-1.8"), "a bare push writes no tracking config")
+
+	forge := &forgeFake{prs: `[{"number":9,"state":"open","html_url":"https://x/9"}]`}
+	eng := testState(t, repo, &verifytest.Fake{})
+	eng.Gh = forge.run
+
+	rep, err := eng.Reconcile(ctx, ReconcileOpts{})
+	require.NoError(t, err)
+
+	require.Len(t, rep.Branches, 1)
+	b := rep.Branches[0]
+	assert.True(t, b.Retire.Promoted)
+	assert.Equal(t, 1, forge.calls, "one lookup, with the owner read from the remote that holds the copy")
+	assert.True(t, b.Retire.PR.Open)
+	assert.Equal(t, 9, b.Retire.PR.Number)
 }
 
 func TestReconcileAsksNoForgeQuestionOfAnUnpromotedNamespace(t *testing.T) {
