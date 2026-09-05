@@ -43,33 +43,6 @@ nothing when it does. A line there — "origin/master moved past your
 master by N commit(s); a branch cut from it will carry them" — would
 put the warning at the cause rather than only at the symptom.
 
-## Let a person force a withheld member to build
-
-**The ask (maintainer, 2026-09-04), tentative.** A withheld member is
-owed nothing — it is bumped, the person is told it was not built, and
-that is the whole of the tool's obligation. But a person who wants it
-built anyway should be able to say so: force the withheld member into
-the guest, deactivating whatever it conflicts with first.
-
-**Shape.** A flag on `bump-revision --for` — `--force-withheld`, or
-`--build=gegl-devel` naming the member — that seats the member instead
-of holding it back. The runner then needs one new step before that
-member's install: `port -f deactivate <the conflicting sibling>`, so
-MacPorts will activate it. The sibling's own verdict stands as already
-measured; what its deactivation costs is that any member built *after*
-it, which depends on it, now binds the archive's copy rather than the
-cohort's — so a forced member should be built last, after every member
-that might need the sibling active.
-
-**What it is not.** Not the default, and not a scheduled follow-up.
-The ruling is that the tool informs and stops; this is the person
-overriding, and the flag should read that way.
-
-**In scope for the last phase (maintainer, 2026-09-04), built last:**
-it depends on the runner change (the forced member must build after
-every member that might need the sibling active), and on nothing else
-depending on it.
-
 ## The patches-unchecked finding reaches the plan, not yet the pull request body
 
 **What remains of "a bump that fetches nothing leaves its patches
@@ -179,3 +152,54 @@ list). Five facets the review left behind, none a defect:
    the readers recommended: each is a fact about what dockhand minted.
    Whether a hand-made branch verifying a port should keep a proposal
    from naming that port again is a question, not an omission.
+
+## What remains of force-withheld
+
+**What remains of "Let a person force a withheld member to build"
+(shipped 2026-09-05 as `1e5dde9`).** The override landed whole:
+`bump-revision --for --force-withheld=<member,...>`, the sibling
+recorded on the candidate rather than read back out of prose, the
+forced member seated last with `port -f deactivate <sibling>` run ahead
+of it, the fact on its run and in every sentence about it, and the
+resubmission roads reading the record — which also fixed two defects
+already in approved work (a deferred or hand-verified cohort seated its
+withheld member beside its sibling; an excluded member was still listed
+as bumped in the PR body). Three rulings the implementation made are
+stated as pending in the code where each lands: `cannot-force` for a
+member whose sibling `--exclude` took out, rather than seating it
+outright; proceed-and-warn when the reverse index cannot be read for the
+mutual-conflict check; tart refusing a one-port request that carries a
+deactivation rather than dropping the ask. Open beyond those:
+
+1. **A forced member that is itself a prerequisite of an earlier
+   member.** It is built last, so `requires.<i>` for the earlier member
+   names a later position; the runner tolerates it and MacPorts pulls
+   the forced member as an ordinary dependency with the sibling still
+   active, and the earlier member fails on the activation conflict in
+   its own words. Nobody warns. A decline or a stderr line needs a
+   ruling; it is the portdir-order entry above made one step worse.
+2. **A sibling never installed in the guest.** If the sibling declined
+   the platform at pre-flight or failed its own build, `port -f
+   deactivate` throws "is not active" and the forced member fails with
+   that line in its own section — a true sentence about a build that
+   would have succeeded with nothing to deactivate. Pinned as the
+   current behaviour by the `forced-deactivate-fails` fixture; whether
+   the engine should skip the deactivation when the sibling's run says
+   it is not there is a ruling.
+3. **`forced-conflict`'s found path has no automated test.** The
+   captured index has no mutually conflicting pair among one headline's
+   dependents; gdal's OpenSceneGraph and OpenSceneGraph-devel carry a
+   real one and would pin it cheaply.
+4. **The rulings index has no entry for the 2026-09-05 rulings** (D27's
+   twelve, force-withheld's eight and the three above); `rulings_test.go`
+   indexes decisions by number, and these have none yet.
+5. **A live proof is owed.** The one small real pair is kvazaar's two
+   dependents, libheif and libheif-devel: separate portdirs, mutual
+   `conflicts`, both pulling kvazaar through a default variant, libheif
+   a few minutes of cmake. The proposal exists only when settle measures
+   an ABI move on kvazaar, so the proof waits for a kvazaar release that
+   moves its install name or compatibility version (2.3.2 is current
+   upstream on 2026-09-05); then `bump kvazaar`, verify, settle,
+   `bump-revision --for <branch> --force-withheld=libheif-devel`, and
+   read libheif-devel's section for the deactivate line before its
+   build.

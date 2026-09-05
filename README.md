@@ -77,6 +77,13 @@ recorded checksums at an unchanged version, and `bump-revision`
 (`revbump`) increments the revision, with `--reason` required — the
 reason becomes the commit message.
 
+`bump-revision --for <branch>` is the same verb asked a different
+question: it accepts a revision-bump proposal a verification measured,
+revbumping the dependents the change put forward as one more commit.
+`--exclude` leaves some of them out, and `--force-withheld` seats a
+member the cohort had withheld — built last, with the sibling it
+conflicts with deactivated first.
+
 ### Follow the verification
 
 ```bash
