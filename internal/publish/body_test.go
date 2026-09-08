@@ -183,9 +183,18 @@ func TestAMemberWithNoProofSaysWhy(t *testing.T) {
 	assert.Contains(t, body(f, ""), "links nothing that moved")
 }
 
-// THE MAINTAINER'S OWN WORDS ARE QUOTED VERBATIM AND INDENTED, because a
-// quote that was reflowed is not verbatim.
-func TestAnInstructionCommentIsQuotedWhole(t *testing.T) {
+// THE MAINTAINER'S OWN WORDS ARE QUOTED VERBATIM AND FENCED, because a
+// quote that was reflowed is not verbatim — and because a PORTFILE
+// COMMENT STARTS WITH "#".
+//
+// It used to indent by two spaces, which Markdown reads as ordinary
+// prose rather than as a code block (that needs four). So every line of
+// a quoted instruction rendered as an H1 HEADING: the whole maintainer's
+// comment, on live pull request #34567, in title-sized type. Four spaces
+// would fix the size and still let the renderer re-wrap bytes this is
+// promising not to touch; a fence says "these are bytes from a file" to
+// the renderer as well as to the reader.
+func TestAnInstructionCommentIsQuotedInAFenceAndNeverAsAHeading(t *testing.T) {
 	f := facts(func(f *Facts) {
 		f.Change.Findings = []record.Finding{{
 			Kind: record.KindInstruction, Disposition: record.Accepted,
@@ -194,7 +203,25 @@ func TestAnInstructionCommentIsQuotedWhole(t *testing.T) {
 		}}
 	})
 	out := body(f, "")
-	assert.Contains(t, out, "The comment in sysutils/jq/Portfile:12 says:\n\n  # when updating this port, rev-bump\n  # every dependent\n")
+	assert.Contains(t, out, "The comment in sysutils/jq/Portfile:12 says:\n\n```\n# when updating this port, rev-bump\n# every dependent\n```\n")
+
+	// The bytes are untouched inside the fence: a quote that was reflowed
+	// is not verbatim.
+	assert.Contains(t, out, "# when updating this port, rev-bump\n# every dependent")
+	// And no line of the quote sits at a Markdown heading position —
+	// which is the whole point of the fence, so the check has to know
+	// where the fence is. Inside one, a leading "#" is bytes; outside, it
+	// is an H1.
+	fenced := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "```") {
+			fenced = !fenced
+			continue
+		}
+		if !fenced && strings.HasPrefix(line, "#") && strings.Contains(line, "rev-bump") {
+			t.Fatalf("a Portfile comment line renders as a heading: %q", line)
+		}
+	}
 }
 
 // A RECONSTRUCTION THAT DID NOT REPRODUCE THE TIP NAMES THE FILES. The

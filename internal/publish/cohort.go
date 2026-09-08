@@ -53,7 +53,7 @@ func cohortBody(c record.Change, vs []Verdict) string {
 	for _, f := range c.Findings {
 		switch f.Kind {
 		case record.KindInstruction:
-			fmt.Fprintf(&b, "\nThe comment in %s says:\n\n%s\n", f.Source, indent(f.Quote))
+			fmt.Fprintf(&b, "\nThe comment in %s says:\n\n%s\n", f.Source, fence(f.Quote))
 			if f.Disposition == record.Dismissed {
 				b.WriteString("\nDismissed by hand: no revision bumps were made on it.\n")
 			}
@@ -345,16 +345,27 @@ func proposedPorts(f record.Finding) string {
 	return fmt.Sprintf("%d %s (%s)", len(ports), what, strings.Join(ports, ", "))
 }
 
-// indent puts a quoted comment two spaces in, so a verbatim Portfile
-// comment inside a pull request body reads as a quotation rather than as
-// the body's own prose. The bytes are otherwise untouched: a quote that
-// was reflowed is not verbatim.
-func indent(quote string) string {
-	lines := strings.Split(strings.TrimRight(quote, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = "  " + l
-	}
-	return strings.Join(lines, "\n")
+// fence puts a quoted comment in a fenced code block, so a verbatim
+// Portfile comment inside a pull request body reads as a quotation
+// rather than as the body's own prose. The bytes are otherwise
+// untouched: a quote that was reflowed is not verbatim.
+//
+// IT USED TO INDENT BY TWO SPACES, AND A PORTFILE COMMENT STARTS WITH
+// "#". Markdown needs four spaces for a code block and reads two as
+// ordinary prose, so every line of a quoted instruction rendered as an
+// H1 HEADING — the whole maintainer's comment, on a live pull request,
+// in title-sized type. Measured on #34567.
+//
+// Four spaces would fix the size and still be wrong: the quote would be
+// re-wrapped by the renderer and a line beginning "#" inside a Portfile
+// is not a heading in any reading. A fence says "these are bytes from a
+// file" and says it to the renderer as well as to the reader.
+//
+// The fence is a plain one with no language: what is inside is a comment
+// block from a Portfile, and claiming a lexer for it would be claiming
+// something about bytes this function promises not to touch.
+func fence(quote string) string {
+	return "```\n" + strings.TrimRight(quote, "\n") + "\n```"
 }
 
 // dedupe is a line set said once each, sorted, so two platforms

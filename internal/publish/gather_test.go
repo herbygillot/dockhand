@@ -225,3 +225,80 @@ func plantAttempt(t *testing.T, st *statestore.Store, a record.Attempt) {
 		return nil
 	}))
 }
+
+// A BRANCH'S OWN COMMITS ARE MEASURED AGAINST WHAT IT WAS BASED ON, and
+// for the whole of the overhaul they were measured against the
+// checkout's local primary branch instead. While every change was cut
+// from that branch the two were the same commit and the error could not
+// show; D29 bases a change on upstream's freshly fetched tip, so a
+// checkout ten commits behind made Own eleven commits.
+//
+// MEASURED ON TWO LIVE PULL REQUESTS. Both came out titled "debianutils:
+// Update to 5.24" — an upstream commit neither change touched — because
+// title() takes Own's last entry, which rev-list order makes the OLDEST
+// once the range is wrong. The same count drives body.go's `single`, so
+// both commit-guideline boxes went unchecked on changes carrying exactly
+// one commit each. One wrong range, three wrong statements to a reviewer.
+func TestGatherMeasuresOwnCommitsAgainstTheRecordedBaseNotTheLocalPrimary(t *testing.T) {
+	repo := gittest.PortsTree(t, tools)
+	primary, err := repo.RevParse(t.Context(), "HEAD")
+	require.NoError(t, err)
+
+	// Upstream moves on under a checkout that stands still — the shape a
+	// fetch produces, and the shape that made this visible.
+	// The fixture tree holds one portdir, so the upstream commits touch
+	// files inside it. What they touch is immaterial: the point is that
+	// they are commits the change did not make.
+	// Each fixture commit lands its own branch name: gittest.Commit uses a
+	// `create` line, which refuses a name already in flight.
+	up1 := gittest.Commit(t, repo, "upstream-a", primary,
+		"sysutils/jq/UPSTREAM-A", "a\n", "other: update to 1")
+	up2 := gittest.Commit(t, repo, "upstream-b", up1,
+		"sysutils/jq/UPSTREAM-B", "b\n", "debianutils: Update to 5.24")
+
+	// The change is cut from upstream's tip, not from the local primary.
+	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", up2,
+		"sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8")
+	st := statestore.Open(repo)
+	plantChange(t, st, record.Change{
+		ID: "chg-1", State: record.ChangeMinted, Branch: "dockhand/jq-1.8", Tip: sha,
+		Content: "tree-1", Destination: record.ToPublished,
+		Subjects: []record.Subject{{Port: "jq", Portdir: "sysutils/jq", Intent: "bump", Target: "1.8"}},
+		Base:     record.Base{Sha: up2, CommittedAt: clock.Add(-time.Hour)},
+	})
+	ref, err := change.Resolve(t.Context(), repo, st, "dockhand/jq-1.8")
+	require.NoError(t, err)
+
+	f, err := Gather(t.Context(), Env{Repo: repo, State: st}, ref, ForgeAsCached, Asks{}, record.Human, clock)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{sha}, f.Own,
+		"the branch adds one commit to what it was based on; the fetch's commits are not its work")
+	assert.Equal(t, "jq: update to 1.8", f.Title,
+		"the title is the change's own commit, never an upstream commit the fetch brought in")
+}
+
+// AND A CHANGE WITH NO RECORDED BASE FALLS BACK TO THE PRIMARY, which is
+// an adopted branch dockhand did not mint: "what it was based on" is
+// genuinely not recorded, and the checkout's own branch is the best
+// available answer.
+func TestGatherFallsBackToThePrimaryForAChangeWithNoBase(t *testing.T) {
+	repo := gittest.PortsTree(t, tools)
+	primary, err := repo.RevParse(t.Context(), "HEAD")
+	require.NoError(t, err)
+	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", primary,
+		"sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8")
+	st := statestore.Open(repo)
+	plantChange(t, st, record.Change{
+		ID: "chg-1", State: record.ChangeMinted, Branch: "dockhand/jq-1.8", Tip: sha,
+		Content: "tree-1", Destination: record.ToPublished,
+		Subjects: []record.Subject{{Port: "jq", Portdir: "sysutils/jq", Intent: "bump", Target: "1.8"}},
+	})
+	ref, err := change.Resolve(t.Context(), repo, st, "dockhand/jq-1.8")
+	require.NoError(t, err)
+
+	f, err := Gather(t.Context(), Env{Repo: repo, State: st}, ref, ForgeAsCached, Asks{}, record.Human, clock)
+	require.NoError(t, err)
+	assert.Equal(t, []string{sha}, f.Own)
+	assert.Equal(t, "jq: update to 1.8", f.Title)
+}

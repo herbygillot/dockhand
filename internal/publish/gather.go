@@ -75,16 +75,43 @@ func Gather(ctx context.Context, e Env, ref change.Ref, policy ForgePolicy, asks
 		Spent:     Spent(st, now),
 	}
 	// The primary branch at its LOCAL position, resolved once and used
-	// three times: the range the branch's own commits are measured over,
-	// the base change.Behind measures drift against, and the FROM side of
-	// the version movement. One read, because a gather that resolved it
-	// per question could answer two of them about different commits (rule
-	// 2: two moments for one value is the shape this design forbids).
+	// TWICE: the base change.Behind measures drift against, and the FROM
+	// side of the version movement. One read, because a gather that
+	// resolved it per question could answer two of them about different
+	// commits (rule 2: two moments for one value is the shape this design
+	// forbids).
 	primary, err := e.Repo.PrimaryBranch(ctx)
 	if err != nil {
 		return Facts{}, err
 	}
-	if f.Own, err = e.Repo.OwnCommits(ctx, f.Tip, primary); err != nil {
+	// IT USED TO BE USED A THIRD TIME, as the base the branch's own
+	// commits are measured against, and that was wrong the moment those
+	// two commits could differ.
+	//
+	// A branch's own commits are what it adds ON TOP OF WHAT IT WAS BASED
+	// ON, which is record.Change.Base.Sha and nothing else. While every
+	// change was cut from the checkout's local primary the two were the
+	// same commit and the error was invisible; D29 bases a change on
+	// upstream's freshly fetched tip, so a checkout ten commits behind
+	// made Own eleven commits — the mint plus every commit the fetch had
+	// brought in.
+	//
+	// MEASURED, ON TWO LIVE PULL REQUESTS. Both came out titled
+	// "debianutils: Update to 5.24" — an upstream commit neither change
+	// touched — because title() takes Own's last entry, which rev-list
+	// order makes the OLDEST once the range is wrong. The same count
+	// drives body.go's `single`, so both commit-guideline boxes went
+	// unchecked on changes that carry exactly one commit each. One wrong
+	// range, three wrong statements to a reviewer.
+	//
+	// The fallback is primary, for a change whose record carries no base
+	// — an adopted branch dockhand did not mint — where "what it was based
+	// on" genuinely is not recorded.
+	own := c.Base.Sha
+	if own == "" {
+		own = primary
+	}
+	if f.Own, err = e.Repo.OwnCommits(ctx, f.Tip, own); err != nil {
 		return Facts{}, err
 	}
 	if f.Title, err = title(ctx, e, asks, f); err != nil {
