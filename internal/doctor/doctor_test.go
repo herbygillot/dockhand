@@ -48,8 +48,8 @@ func TestReportRendering(t *testing.T) {
 // starts stands in for one cancelled during it: what is asserted is
 // which context arrived, not what the exec did with it.
 func TestProbesRunUnderTheCallersContext(t *testing.T) {
-	origVer, origProv := runVersion, provisioned
-	t.Cleanup(func() { runVersion, provisioned = origVer, origProv })
+	origVer, origProv, origRest := runVersion, provisioned, restorable
+	t.Cleanup(func() { runVersion, provisioned, restorable = origVer, origProv, origRest })
 
 	// port-tclsh is deliberately absent: its version probe runs a real
 	// port client through prefix.Version, and this test states a
@@ -71,12 +71,17 @@ func TestProbesRunUnderTheCallersContext(t *testing.T) {
 		seen = append(seen, ctx.Err())
 		return nil, ctx.Err()
 	}
+	restorable = func(ctx context.Context, _ *tool.Finder) ([]string, error) {
+		seen = append(seen, ctx.Err())
+		return nil, ctx.Err()
+	}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	Probe(ctx, tools)
 
-	require.Len(t, seen, 3, "git's version, gh's version, and the base listing each exec")
+	require.Len(t, seen, 4,
+		"git's version, gh's version, and the two image listings — bases and goldens — each exec")
 	for _, err := range seen {
 		assert.ErrorIs(t, err, context.Canceled)
 	}
@@ -124,4 +129,57 @@ func TestVMVerificationRequiresABase(t *testing.T) {
 
 	none := Report{Tools: []Tool{{Name: "tart", Found: false}}}
 	assert.Contains(t, none.String(), "no tart")
+}
+
+// A GOLDEN WITH NO BASE IS A CAPABILITY ONE COMMAND AWAY, and doctor
+// used to report only "no base images: run `dockhand provision tart`" —
+// the full road, a fetch and a MacPorts install and a toolchain, beside
+// a copy that would have taken seconds to clone.
+func TestDoctorNamesTheCloneWhenAGoldenStandsAndNoBaseDoes(t *testing.T) {
+	origProv, origRest := provisioned, restorable
+	t.Cleanup(func() { provisioned, restorable = origProv, origRest })
+	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
+	restorable = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Sequoia"}, nil }
+
+	out := Probe(t.Context(), hasTart(t)).String()
+	assert.Contains(t, out, "--restore", "the cheap remedy is named")
+	assert.Contains(t, out, "Sequoia", "and so is what it can be restored for")
+}
+
+// Neither is the honest full-road case, and it must not offer a clone
+// there is nothing to clone from.
+func TestDoctorNamesTheFullRoadWhenThereIsNoGoldenEither(t *testing.T) {
+	origProv, origRest := provisioned, restorable
+	t.Cleanup(func() { provisioned, restorable = origProv, origRest })
+	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
+	restorable = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
+
+	out := Probe(t.Context(), hasTart(t)).String()
+	assert.Contains(t, out, "no base images and no goldens")
+	assert.NotContains(t, out, "--restore", "nothing to clone from, so nothing to offer")
+}
+
+// A release this machine could verify on after one clone is worth
+// saying even when other releases are already available.
+func TestDoctorReportsARestorableReleaseBesideTheAvailableOnes(t *testing.T) {
+	origProv, origRest := provisioned, restorable
+	t.Cleanup(func() { provisioned, restorable = origProv, origRest })
+	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Sequoia"}, nil }
+	restorable = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Sequoia", "Sonoma"}, nil }
+
+	out := Probe(t.Context(), hasTart(t)).String()
+	assert.Contains(t, out, "available (Sequoia; restorable: Sonoma)",
+		"the golden whose base is gone is named; the one that has a base is not repeated")
+}
+
+// hasTart is a finder that says tart is installed and nothing else is,
+// so the VM line is what the report is about.
+func hasTart(t *testing.T) *tool.Finder {
+	t.Helper()
+	return tool.NewFinder(func(name string) (string, error) {
+		if name == "tart" {
+			return "/opt/local/bin/tart", nil
+		}
+		return "", errors.New("not found")
+	})
 }

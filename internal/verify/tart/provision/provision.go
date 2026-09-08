@@ -407,14 +407,48 @@ func (t Tart) AssertPristineFor(ctx context.Context, vm string) error {
 // Provisioned lists the base images already built, which is what doctor
 // reports as available platforms — the tool being installed says
 // nothing about whether any environment exists.
+// Restorable is every release whose GOLDEN copy is present: the ones a
+// base can be cloned back from without leaving the machine.
+//
+// IT IS Provisioned's TWIN AND IT EXISTS BECAUSE THE ANSWER WAS
+// UNASKABLE. Restore has always been the cheap remedy for a base that
+// is missing or has drifted — a copy-on-write clone, seconds, no
+// download — and nothing could tell a person it was available, because
+// nothing enumerated goldens. So every road that met "no base images"
+// pointed at the full provisioning road: a fetch, a MacPorts install
+// and a toolchain, to rebuild something whose golden was on the disk.
+//
+// The two are separate walks rather than one returning pairs, because
+// the callers want different things: a verifier wants bases and only
+// bases, and this is asked ONLY on the road where there are none.
+func (t Tart) Restorable(ctx context.Context) ([]platform.Release, error) {
+	return t.releasesHolding(ctx, tart.GoldenName)
+}
+
 func (t Tart) Provisioned(ctx context.Context) ([]platform.Release, error) {
+	return t.releasesHolding(ctx, tart.BaseName)
+}
+
+// releasesHolding is both walks: the releases whose image of a given
+// kind is on this machine, in platform.Releases' own order.
+//
+// ONE LISTING, not one per release. Each of these used to ask HasVM per
+// release — ten `tart list` invocations apiece — and adding the second
+// walk beside the first would have made it twenty on the two roads that
+// want both. Sharing the listing also means the two answers describe
+// one moment rather than two.
+func (t Tart) releasesHolding(ctx context.Context, name func(platform.Release) string) ([]platform.Release, error) {
+	want := make([]string, 0, len(platform.Releases))
+	for _, r := range platform.Releases {
+		want = append(want, name(r))
+	}
+	present, err := tart.HasVMs(ctx, t.Tools, want)
+	if err != nil {
+		return nil, err
+	}
 	var found []platform.Release
 	for _, r := range platform.Releases {
-		ok, err := tart.HasVM(ctx, t.Tools, tart.BaseName(r))
-		if err != nil {
-			return nil, err
-		}
-		if ok {
+		if present[name(r)] {
 			found = append(found, r)
 		}
 	}

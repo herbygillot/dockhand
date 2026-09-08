@@ -246,7 +246,14 @@ func releaseFlag(on string) (platform.Release, error) {
 // exec's contract.
 func resolveReleaseSet(on []string, provisioned []platform.Release, requireBase bool) ([]platform.Release, error) {
 	if len(provisioned) == 0 && (requireBase || len(on) == 0) {
-		return nil, fmt.Errorf("%w: no base images", verify.ErrNoEnvironment)
+		// A BACKSTOP, and pointed at the verb that can actually answer.
+		// The ordinary road reaches realVerifier's own refusal first,
+		// which lists the goldens and names --restore when one stands;
+		// this function is pure and holds no finder, so rather than
+		// guessing at a remedy it sends the reader to doctor, which
+		// reports both populations.
+		return nil, fmt.Errorf("%w: no base images; `dockhand doctor` reports what this machine holds",
+			verify.ErrNoEnvironment)
 	}
 	if len(on) == 0 {
 		return provisioned[:1], nil

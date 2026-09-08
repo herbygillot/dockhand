@@ -257,6 +257,35 @@ func HasVM(ctx context.Context, tools *tool.Finder, name string) (bool, error) {
 	return false, nil
 }
 
+// HasVMs answers HasVM for several names in ONE listing.
+//
+// It exists because the per-release walks were N listings: Provisioned
+// asked HasVM once per macOS release, and Restorable beside it would
+// have doubled that — twenty `tart list` invocations to answer two
+// questions on a road (doctor, and the no-base-images refusal) that is
+// already the slow one. One listing, matched exactly, and both walks
+// read the same answer so they cannot disagree about what is here.
+//
+// Exact, not substring, for HasVM's own reason: dockhand-base-sonoma
+// must not be found inside dockhand-base-sonoma-anything.
+func HasVMs(ctx context.Context, tools *tool.Finder, names []string) (map[string]bool, error) {
+	out, err := CLI(ctx, tools, nil, "list", "--source", "local")
+	if err != nil {
+		return nil, fmt.Errorf("%w: listing local VMs: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+	}
+	present := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		if fields := strings.Fields(line); len(fields) >= 2 {
+			present[fields[1]] = true
+		}
+	}
+	found := make(map[string]bool, len(names))
+	for _, n := range names {
+		found[n] = present[n]
+	}
+	return found, nil
+}
+
 // Exec runs a command in the guest. Arguments are argv, not a command
 // line: nothing here is quoted because nothing here reaches a shell.
 func Exec(ctx context.Context, tools *tool.Finder, vm string, argv ...string) (string, error) {

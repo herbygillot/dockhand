@@ -32,6 +32,36 @@ var provisioned = func(ctx context.Context, tools *tool.Finder) ([]string, error
 	return names, nil
 }
 
+// restorable is indirected for hermetic tests, on provisioned's
+// precedent; the default asks the provisioner which goldens exist.
+var restorable = func(ctx context.Context, tools *tool.Finder) ([]string, error) {
+	rels, err := (provision.Tart{Tools: tools}).Restorable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(rels))
+	for _, r := range rels {
+		names = append(names, r.Name)
+	}
+	return names, nil
+}
+
+// without is the goldens that have no base of their own: a release this
+// machine could verify on after one clone, and is not verifying on now.
+func without(goldens, bases []string) []string {
+	has := make(map[string]bool, len(bases))
+	for _, b := range bases {
+		has[b] = true
+	}
+	out := make([]string, 0, len(goldens))
+	for _, g := range goldens {
+		if !has[g] {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // runVersion is indirected for hermetic tests; binary discovery goes
 // through the run's tool.Finder — the SAME finder every component
 // execs through, which is what keeps this report honest: doctor cannot
@@ -77,6 +107,16 @@ type Report struct {
 	// The tart binary being present says nothing about whether any
 	// environment exists; the bases are the capability.
 	VMBases []string
+	// VMGoldens are the releases whose GOLDEN copy is present: the ones
+	// a base can be cloned back from without leaving the machine.
+	//
+	// It is reported beside the bases because the two make a diagnosis
+	// that neither makes alone. A host with no base and no golden has to
+	// fetch and provision; a host with no base and a golden is one
+	// `provision tart --macos <release> --restore` away — seconds,
+	// copy-on-write — and this line is the difference between a person
+	// knowing that and rebuilding from scratch.
+	VMGoldens []string
 }
 
 // Probe examines the machine through the run's finder.
@@ -143,17 +183,20 @@ func Probe(ctx context.Context, tools *tool.Finder) Report {
 	}
 	curl := find(tool.Curl, "")
 	tart := find(tool.Tart, "")
-	var bases []string
+	var bases, goldens []string
 	if tart.Found {
 		if rels, err := provisioned(ctx, tools); err == nil {
 			bases = rels
+		}
+		if rels, err := restorable(ctx, tools); err == nil {
+			goldens = rels
 		}
 	}
 	go2port := find(tool.Go2Port, "")
 	cargo2port := find(tool.Cargo2Port, "")
 
 	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port},
-		VMBases: bases}
+		VMBases: bases, VMGoldens: goldens}
 }
 
 // String renders the report: each tool, then the capabilities the
@@ -191,10 +234,25 @@ func (r Report) String() string {
 	switch {
 	case !byName[tool.Tart].Found:
 		cap(false, "VM verification", "no tart")
+	case len(r.VMBases) == 0 && len(r.VMGoldens) > 0:
+		// The cheap remedy, named because it is available. A golden is a
+		// base's reference copy and restoring from it is a clone: seconds,
+		// no download. Reporting only "no base images" here sent a person
+		// to rebuild from scratch beside a copy that would have taken
+		// seconds.
+		cap(false, "VM verification", "no base images, but goldens for "+strings.Join(r.VMGoldens, ", ")+
+			": `dockhand provision tart --macos <release> --restore` clones one back")
 	case len(r.VMBases) == 0:
-		cap(false, "VM verification", "no base images: run `dockhand provision tart`")
+		cap(false, "VM verification", "no base images and no goldens: run `dockhand provision tart --macos <release>`")
 	default:
-		fmt.Fprintf(&b, "  %-24s available (%s)\n", "VM verification", strings.Join(r.VMBases, ", "))
+		line := strings.Join(r.VMBases, ", ")
+		if kept := without(r.VMGoldens, r.VMBases); len(kept) > 0 {
+			// A golden with no base of its own is a release this machine can
+			// restore but is not currently verifying on, which is worth
+			// saying: it is a capability one command away.
+			line += "; restorable: " + strings.Join(kept, ", ")
+		}
+		fmt.Fprintf(&b, "  %-24s available (%s)\n", "VM verification", line)
 	}
 	cap(byName[tool.Go2Port].Found, "Go vendored blocks", "no go2port")
 	cap(byName[tool.Cargo2Port].Found, "Rust vendored blocks", "no cargo2port")

@@ -229,3 +229,32 @@ func TestPurgeRefusesAnUnnamedRelease(t *testing.T) {
 	_, err := tt.Purge(t.Context(), platform.Release{})
 	require.ErrorIs(t, err, verify.ErrUnsupported)
 }
+
+// Restorable is Provisioned's twin, and the answer that was unaskable:
+// nothing enumerated goldens, so every road that met "no base images"
+// pointed at the full provisioning road even when a copy that clones
+// back in seconds was on the disk.
+func TestRestorableNamesTheReleasesAGoldenStandsFor(t *testing.T) {
+	seq, ok := platform.ByName("Sequoia")
+	require.True(t, ok)
+	son, ok := platform.ByName("Sonoma")
+	require.True(t, ok)
+
+	tt, calls := fakeTart(t, []string{
+		tart.BaseName(seq), tart.GoldenName(seq), tart.GoldenName(son), "somebody-elses-vm",
+	})
+
+	goldens, err := tt.Restorable(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []platform.Release{son, seq}, goldens,
+		"both goldens, in platform.Releases' own order, and never the base or a stranger's VM")
+
+	bases, err := tt.Provisioned(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []platform.Release{seq}, bases, "the base alone")
+
+	// ONE LISTING PER WALK, not one per release: these used to ask
+	// HasVM once per macOS release, and two walks would have been twenty
+	// `tart list` invocations on the roads that want both.
+	assert.Equal(t, 2, strings.Count(readCalls(t, *calls), "list --source local"))
+}

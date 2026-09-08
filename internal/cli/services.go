@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -507,6 +508,39 @@ func canonical(path string) string {
 // It lives at the composition root because it NAMES THE PROVIDER: an
 // operation may speak verify's vocabulary and never the tart that
 // implements it.
+// noBases is the refusal a machine with no base images gets, and it
+// NAMES THE CHEAP REMEDY WHEN THERE IS ONE.
+//
+// A golden is a base's reference copy, and restoring from it is a
+// copy-on-write clone: seconds, no download. That has always been true
+// and this message used to send every caller down the full provisioning
+// road anyway — a fetch, a MacPorts install and a toolchain — because
+// nothing enumerated goldens and so nothing could tell the two
+// situations apart. A person who had just removed their bases was told
+// to rebuild from scratch while the copy that would have taken seconds
+// sat on the disk beside them.
+//
+// The listing is asked ONLY HERE, on the road that has already
+// established there are no bases, so the ordinary path pays nothing for
+// it. A listing that fails answers the plain refusal rather than
+// inventing a remedy: rule 7, on a message rather than on an act.
+func noBases(ctx context.Context, tools *tool.Finder) error {
+	const plain = "%w: no base images; run `dockhand provision tart --macos <release>` first"
+	goldens, err := (provision.Tart{Tools: tools}).Restorable(ctx)
+	if err != nil || len(goldens) == 0 {
+		return fmt.Errorf(plain, verify.ErrNoEnvironment)
+	}
+	names := make([]string, 0, len(goldens))
+	for _, r := range goldens {
+		names = append(names, strings.ToLower(r.Name))
+	}
+	return fmt.Errorf(
+		"%w: no base images, but a golden copy stands for %s; "+
+			"`dockhand provision tart --macos <release> --restore` clones one back in seconds, "+
+			"or `--macos <release>` builds a new one from scratch",
+		verify.ErrNoEnvironment, strings.Join(names, ", "))
+}
+
 func realVerifier(tools *tool.Finder) func(ctx context.Context) (verify.Verifier, error) {
 	return func(ctx context.Context) (verify.Verifier, error) {
 		if _, err := tools.Find(tool.Tart); err != nil {
@@ -518,9 +552,7 @@ func realVerifier(tools *tool.Finder) func(ctx context.Context) (verify.Verifier
 			return nil, err
 		}
 		if len(releases) == 0 {
-			return nil, fmt.Errorf(
-				"%w: no base images; run `dockhand provision tart --macos <release>` first",
-				verify.ErrNoEnvironment)
+			return nil, noBases(ctx, tools)
 		}
 		// Newest first: the provider's default is its first base, and the
 		// default a quick bump wants is the current OS — the mundane-build
