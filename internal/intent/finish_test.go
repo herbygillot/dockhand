@@ -214,7 +214,7 @@ func TestFinishWithholdsARiderThatMovesThePrediction(t *testing.T) {
 	// With nothing but the rider to plan there is nothing left to fall
 	// back to, and the rule's bug is said out loud.
 	opts.Riders = RidersOnly
-	opts.Witness = "the rider edits were proved inert"
+	opts.Witness = WitnessRidersInert
 	opts.MayChange = nil
 	_, err = Finish(context.Background(), h, src, nil, id, opts)
 	require.ErrorIs(t, err, ErrRiderMoved)
@@ -291,7 +291,11 @@ func TestFinishRefusesAnEmptyDeltaWithoutAWitness(t *testing.T) {
 	_, err := Finish(context.Background(), h, src, inert, id, opts)
 	require.ErrorIs(t, err, ErrNoWitness)
 
-	opts.Witness = "the distfiles were fetched and hashed; upstream re-rolled nothing"
+	// A witness is a declaration and not a sentence, and it must be
+	// coherent with what the intent said it may change: this bump
+	// fetched, so the field its silence is excused in is the checksums.
+	opts.Witness = WitnessFetched
+	opts.MayChange = map[info.Field]bool{info.FieldChecksums: true}
 	p, err := Finish(context.Background(), h, src, inert, id, opts)
 	require.NoError(t, err)
 	assert.Empty(t, p.Predicted)

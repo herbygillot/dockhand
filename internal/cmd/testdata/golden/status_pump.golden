@@ -1,4 +1,0 @@
-exit: 0
---- stdout
-  dockhand/jq-1.8                  queued (Testos) — all 2 verification slots are busy (2 VMs running) — `dockhand cycle` starts it
---- stderr

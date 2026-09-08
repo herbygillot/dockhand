@@ -121,7 +121,11 @@ func (c Cohort) PlanMember(ctx context.Context, h port.Handle, src []byte, portd
 			// copy of it this was computed over.
 			Portdir: portdir,
 			Riders:  intent.RidersNone,
-			Witness: "the revision line was written and the Portfile re-evaluated",
+			// The same witness a headline revbump declares, for the same
+			// reason: no network is spent, so the edit and the evaluation
+			// that followed it are the whole of the evidence, and the
+			// field it excuses is the revision.
+			Witness: intent.WitnessRevisionWritten,
 		})
 }
 

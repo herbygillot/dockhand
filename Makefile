@@ -8,7 +8,7 @@ VERSION ?= 0.0.0-dev
 # cannot contain spaces.
 export GOFLAGS := $(GOFLAGS) -mod=vendor -ldflags=-X=main.Version=$(VERSION)
 
-.PHONY: build clean test vet fmt lint check
+.PHONY: build clean generate test vet fmt lint check
 
 build:
 	go build -o $(BINARY) ./cmd/dockhand
@@ -37,8 +37,36 @@ lint:
 		echo "golangci-lint not installed; skipping (CI runs it regardless)"; \
 	fi
 
-check: lint
+# generate re-derives the code the tree derives from its own
+# declarations. There is one such file today — info's comparison table,
+# written from info.Semantic — and it is regenerated rather than trusted
+# because the thing it enforces is that nobody edited it by hand: the
+# unkeyed pins inside it catch a field ADDED to the struct, and this
+# catches the generated file drifting from the struct in any other way.
+generate:
+	go generate ./...
+
+# check runs generate and requires the tree's generated files to be
+# clean afterwards — UNCHANGED and TRACKED, which is why it asks git
+# status rather than git diff: a generated file nobody committed would
+# pass a diff while being absent from every other checkout. A dirty one
+# means the committed table is not what the struct says, which is
+# exactly the omission the generation exists to make impossible, so it
+# fails the check rather than waiting for a reviewer.
+#
+# Guarded on git the way lint is guarded on golangci-lint: outside a
+# checkout the answer is "cannot tell", and saying so beats failing a
+# check that passes everywhere else.
+check: lint generate
 	test -z "$$(gofmt -l cmd internal)"
+	@if git rev-parse --git-dir >/dev/null 2>&1; then \
+		test -z "$$(git status --porcelain -- '*_gen.go')" || \
+			{ git status --short -- '*_gen.go'; \
+			  echo "a generated file is not what the generator writes; commit the regenerated result"; \
+			  exit 1; }; \
+	else \
+		echo "not a git checkout; skipping the generated-file check"; \
+	fi
 	go vet ./...
 
 clean:

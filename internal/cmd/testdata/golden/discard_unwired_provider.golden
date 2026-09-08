@@ -1,5 +1,0 @@
-exit: 0
---- stdout
-  discarded dockhand/jq-1.8 (2eab82dfb158)
---- stderr
-  warning: 2eab82dfb158 holds worker fake-1, and no provider is available to release it

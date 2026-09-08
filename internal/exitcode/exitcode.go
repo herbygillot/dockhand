@@ -120,6 +120,22 @@ const (
 	Drift = 43
 	// BranchNotFound is a target naming no in-flight branch.
 	BranchNotFound = 44
+	// BranchMoved is the record's tip and the ref disagreeing, or a
+	// dockhand ref moving between a road's resolve and its commit: a
+	// person's own git on a dockhand branch. It is in the TREE band and
+	// not the declined one because nothing about the plan is wrong —
+	// where dockhand was pointed has changed under it — and time does not
+	// fix a drifted branch. `dockhand verify <branch>` follows the
+	// person's commit and `dockhand discard <branch>` ends one whose ref
+	// is gone.
+	BranchMoved = 45
+	// BranchCheckedOut is a batch that would move or delete a branch some
+	// worktree has checked out — an accept, a discard, a replace, a
+	// retirement. Measured rather than assumed: git refuses `branch -f`
+	// on such a branch and the update-ref batch does NOT, so it would
+	// move the branch under that worktree's index. The remedy is to
+	// switch away first.
+	BranchCheckedOut = 46
 )
 
 // 50-53, upstream: SOMEONE ELSE'S problem. A fetch, a witness or a
@@ -198,6 +214,22 @@ const (
 	// not declines.
 	SweepHardErrors = 83
 )
+
+// 84, the pass's own summary. A partial-completion code because a pass
+// is N outcomes rather than one refusal: it means "something in here is
+// addressed to a person", not "the pass failed".
+//
+// IT REACHES A PROCESS STATUS IN EXACTLY TWO PLACES — `dockhand
+// dispatch --once` and a person's `dockhand cycle` — and a RESIDENT
+// dispatcher can never deliver it. A process that lives a month does
+// not exit, and one that exited non-zero because one branch needs a
+// person would, under launchd KeepAlive, turn the attention channel
+// into a restart loop; `status` is the attention channel there instead.
+//
+// Family(84) already answers "partial" with no change to Family,
+// because the decade IS the family — a code added to a band later is
+// already classified.
+const PassNeedsAttention = 84
 
 // Coder is implemented by errors that own their exit band.
 //

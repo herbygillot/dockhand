@@ -458,13 +458,22 @@ func predictOf(p *plan.Plan) info.Delta {
 	return d
 }
 
-// fieldNamed inverts info.Field.String over the closed set. The bounds
-// are the set's own first and last constants rather than a copy of the
-// list, so a field added to info is inverted here without an edit and a
-// field RENAMED there stops matching here loudly rather than quietly:
-// the name comes from one place either way.
+// fieldNamed inverts info.Field.String over the closed set. The set
+// itself is walked — info.Fields(), which info generates from
+// info.Semantic — rather than a copy of the list or a pair of bounds,
+// so a field added there is inverted here without an edit and a field
+// RENAMED there stops matching here loudly rather than quietly: the
+// name comes from one place either way.
+//
+// It walked the constants FieldName..FieldDependsTest until the
+// comparison table became generated. That was a hole of exactly the
+// kind the generation closed: a field appended AFTER the last constant
+// named here would have been compared by info, recorded in a plan, and
+// then silently dropped on the way back in — the loop would never have
+// reached it. Asking the set for its members has no last constant to
+// go stale.
 func fieldNamed(name string) (info.Field, bool) {
-	for f := info.FieldName; f <= info.FieldDependsTest; f++ {
+	for _, f := range info.Fields() {
 		if f.String() == name {
 			return f, true
 		}

@@ -109,16 +109,13 @@ func TestFieldStringsSpeakMacPorts(t *testing.T) {
 	require.Equal(t, "revision", FieldRevision.String())
 }
 
-func TestFieldTableCoversAllFields(t *testing.T) {
-	// A field added to Values but not to the table would be invisible to
-	// every diff. The enum and table must move together.
-	require.Len(t, fieldTable, int(FieldDependsTest)+1)
-	seen := map[Field]bool{}
-	for _, f := range fieldTable {
-		seen[f.field] = true
-	}
-	require.Len(t, seen, len(fieldTable), "duplicate field in table")
-}
+// The table's coverage of the field set is no longer asserted here: the
+// table and the field set are now generated from Semantic by one pass,
+// so a test that they agree is a test that the generator ran, and it
+// lives beside the generator in semantic_gen_test.go along with the two
+// proofs that matter more — that the committed file is what the
+// generator writes, and that a field added without regenerating is
+// caught.
 
 // OtherContext is the sibling proof's consumer: an edit corroborated
 // by one subport's evaluation must not move any other context.

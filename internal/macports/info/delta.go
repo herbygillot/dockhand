@@ -2,110 +2,6 @@ package info
 
 import "slices"
 
-// Field identifies one field of Values. The set is closed, and String
-// speaks MacPorts' own option names — these are the canonical field
-// identifiers shared by everything that names port metadata.
-type Field int
-
-const (
-	FieldName Field = iota
-	FieldVersion
-	FieldRevision
-	FieldEpoch
-	FieldCategories
-	FieldLicense
-	FieldMaintainers
-	FieldPlatforms
-	FieldDescription
-	FieldHomepage
-	FieldLongDescription
-	FieldDistfiles
-	FieldChecksums
-	FieldDependsFetch
-	FieldDependsExtract
-	FieldDependsPatch
-	FieldDependsBuild
-	FieldDependsLib
-	FieldDependsRun
-	FieldDependsTest
-)
-
-func (f Field) String() string {
-	switch f {
-	case FieldName:
-		return "name"
-	case FieldVersion:
-		return "version"
-	case FieldRevision:
-		return "revision"
-	case FieldEpoch:
-		return "epoch"
-	case FieldCategories:
-		return "categories"
-	case FieldLicense:
-		return "license"
-	case FieldMaintainers:
-		return "maintainers"
-	case FieldPlatforms:
-		return "platforms"
-	case FieldDescription:
-		return "description"
-	case FieldHomepage:
-		return "homepage"
-	case FieldLongDescription:
-		return "long_description"
-	case FieldDistfiles:
-		return "distfiles"
-	case FieldChecksums:
-		return "checksums"
-	case FieldDependsFetch:
-		return "depends_fetch"
-	case FieldDependsExtract:
-		return "depends_extract"
-	case FieldDependsPatch:
-		return "depends_patch"
-	case FieldDependsBuild:
-		return "depends_build"
-	case FieldDependsLib:
-		return "depends_lib"
-	case FieldDependsRun:
-		return "depends_run"
-	case FieldDependsTest:
-		return "depends_test"
-	}
-	return "unknown field"
-}
-
-// fieldTable is the single source of field extraction: Diff, Values
-// equality, and any future field-addressed access all read Values through
-// it. A field added to Values but not taught here would be invisible to
-// every diff, which is why the table and the Field enum must move together.
-var fieldTable = []struct {
-	field Field
-	get   func(Values) []string
-}{
-	{FieldName, func(v Values) []string { return scalar(v.Name) }},
-	{FieldVersion, func(v Values) []string { return scalar(v.Version) }},
-	{FieldRevision, func(v Values) []string { return scalar(v.Revision) }},
-	{FieldEpoch, func(v Values) []string { return scalar(v.Epoch) }},
-	{FieldCategories, func(v Values) []string { return v.Categories }},
-	{FieldLicense, func(v Values) []string { return v.License }},
-	{FieldMaintainers, func(v Values) []string { return v.Maintainers }},
-	{FieldPlatforms, func(v Values) []string { return v.Platforms }},
-	{FieldDescription, func(v Values) []string { return scalar(v.Description) }},
-	{FieldHomepage, func(v Values) []string { return scalar(v.Homepage) }},
-	{FieldLongDescription, func(v Values) []string { return scalar(v.LongDescription) }},
-	{FieldDistfiles, func(v Values) []string { return v.Distfiles }},
-	{FieldChecksums, func(v Values) []string { return v.Checksums }},
-	{FieldDependsFetch, func(v Values) []string { return v.Depends.Fetch }},
-	{FieldDependsExtract, func(v Values) []string { return v.Depends.Extract }},
-	{FieldDependsPatch, func(v Values) []string { return v.Depends.Patch }},
-	{FieldDependsBuild, func(v Values) []string { return v.Depends.Build }},
-	{FieldDependsLib, func(v Values) []string { return v.Depends.Lib }},
-	{FieldDependsRun, func(v Values) []string { return v.Depends.Run }},
-	{FieldDependsTest, func(v Values) []string { return v.Depends.Test }},
-}
-
 // scalar lifts a scalar field into the uniform []string representation:
 // one element, or nil when the field is absent.
 func scalar(s string) []string {
@@ -203,12 +99,20 @@ func (s Snapshot) Diff(after Snapshot) Delta {
 }
 
 // ChangesBetween compares two Values field by field, in canonical
-// (fieldTable) order. It is Diff's per-context comparison, exported for
-// callers rendering one-sided context changes.
+// (semanticTable) order. It is Diff's per-context comparison, exported
+// for callers rendering one-sided context changes.
+//
+// IT READS ONLY THE SEMANTIC PART, and that is the whole of what a
+// prediction is about. Context differs between a portdir and the shadow
+// of it every prediction is made from, and Observed moves for reasons no
+// intent declares — Values' doc comment states the rule and why each
+// exclusion would refuse correct plans. The exclusion is a type here and
+// not a memory: semanticTable is generated from Semantic, so a field
+// this comparison does not see is a field that is not in Semantic.
 func ChangesBetween(before, after Values) []FieldChange {
 	var out []FieldChange
-	for _, f := range fieldTable {
-		old, now := f.get(before), f.get(after)
+	for _, f := range semanticTable {
+		old, now := f.get(before.Semantic), f.get(after.Semantic)
 		if !slices.Equal(old, now) {
 			out = append(out, FieldChange{Field: f.field, Old: old, New: now})
 		}

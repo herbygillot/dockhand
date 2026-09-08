@@ -1,5 +1,0 @@
-exit: 0
---- stdout
-  discarded dockhand/jq-1.8 (2eab82dfb158)
---- stderr
-  the fork copy on "herby" is untouched — `git push herby --delete dockhand/jq-1.8` removes it

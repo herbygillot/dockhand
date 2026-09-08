@@ -1,4 +1,0 @@
-exit: 0
---- stdout
---- stderr
-  dockhand/jq-1.8 has no running verification or kept environment

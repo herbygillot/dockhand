@@ -120,8 +120,9 @@ func (b BumpRevision) Plan(ctx context.Context, h port.Handle, _ distfile.Fetche
 			// the result evaluated. That is enough to be falsifiable — when
 			// the shadow shows nothing moved, accept below says so — and it
 			// is why an empty prediction here is a decline about the port
-			// rather than a refusal to have planned.
-			Witness: "the revision line was written and the Portfile re-evaluated",
+			// rather than a refusal to have planned. The field it excuses
+			// is the revision, which is the whole of revisionMayChange.
+			Witness: intent.WitnessRevisionWritten,
 		})
 }
 

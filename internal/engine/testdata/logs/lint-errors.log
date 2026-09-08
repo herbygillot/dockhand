@@ -1,4 +1,0 @@
---->  Verifying Portfile for jq
-Error: Missing required field: description
-Warning: Line 14 has trailing whitespace
---->  1 errors and 1 warnings found.

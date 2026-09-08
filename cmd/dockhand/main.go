@@ -5,7 +5,7 @@ package main
 import (
 	"os"
 
-	"github.com/herbygillot/dockhand/internal/cmd"
+	"github.com/herbygillot/dockhand/internal/cli"
 )
 
 // Version is a var, not a const: the linker's -X can only overwrite a
@@ -13,5 +13,5 @@ import (
 var Version = "0.0.0-dev"
 
 func main() {
-	os.Exit(cmd.Execute(Version))
+	os.Exit(cli.Execute(Version))
 }

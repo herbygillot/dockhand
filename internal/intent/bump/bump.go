@@ -206,9 +206,9 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// contradict, which accept below then says in the intent's own
 	// words. The third case, a forced run that would spend neither, is
 	// the decline above and never reaches the tail.
-	witness := ""
+	witness := intent.NoWitness
 	if moving {
-		witness = "the version carrier was rewritten and the Portfile re-evaluated"
+		witness = intent.WitnessVersionWritten
 	}
 
 	// The version edit.
@@ -357,7 +357,12 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			sums[file] = s
 			fetched = append(fetched, dest)
 		}
-		witness = "the target version's distfiles were fetched and hashed"
+		// The fetch supersedes the carrier: bytes off the network are the
+		// stronger evidence, and both fields it could name are in
+		// bumpMayChange either way. One kind is declared and not a set,
+		// because what the empty-delta rule needs is a reason the
+		// prediction is silent, and the strongest one is the honest one.
+		witness = intent.WitnessFetched
 		recorded, err := checksums.Parse(checksumOldTokens)
 		if err != nil {
 			return nil, fmt.Errorf("bump: %w", err)

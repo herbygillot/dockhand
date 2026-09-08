@@ -80,10 +80,12 @@ func (Housekeeping) Plan(ctx context.Context, h port.Handle, _ distfile.Fetcher)
 			// enforced — after the token spans and after the rider shadow —
 			// in the vocabulary every intent shares.
 			//
-			// The witness is the double proof itself. A housekeeping change
-			// predicts nothing by construction, which is exactly the shape
-			// the witness rule exists for: the evidence is real, the
-			// evaluation just cannot show it.
-			Witness: "the rider edits were proved inert: comment and whitespace spans only, and a shadow that predicted nothing",
+			// The witness is the double proof itself, and it is the one
+			// kind that excuses no field: a housekeeping change is not
+			// claiming that something moved where the evaluation cannot
+			// see it, it is claiming that nothing was ever supposed to
+			// move. That claim and the nil MayChange above are the same
+			// statement made twice, and Finish requires them to agree.
+			Witness: WitnessRidersInert,
 		})
 }

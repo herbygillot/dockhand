@@ -43,6 +43,32 @@ var ErrNoBefore = errors.New("intent: finish needs the snapshot taken before the
 // names dockhand's own rule is not a judgment about anybody's port.
 var ErrNoWitness = errors.New("intent: the predicted delta is empty and no witness was declared")
 
+// ErrWitnessOverreaches reports a witness that excuses a field its
+// intent never declared it may change.
+//
+// It is the check that makes a witness more than a claim. A witness
+// says "the reason the prediction shows nothing in this field is that
+// the evidence is somewhere an evaluation cannot look" — and a field
+// the intent may not touch is a field this change was not about, so
+// excusing it explains nothing. The two declarations are made in the
+// same FinishOpts by the same planner, so a disagreement between them
+// is a bug in that planner and never a fact about the port: a bare
+// error in the failure band, like ErrNoWitness and for the same reason.
+var ErrWitnessOverreaches = errors.New("intent: the witness excuses a field the intent may not change")
+
+// ErrWitnessExcusesNothing reports an empty prediction offered with a
+// witness that accounts for no field, by an intent that declared fields
+// it may change.
+//
+// The pairing is the point. WitnessRidersInert legitimately excuses
+// nothing, because a housekeeping change is claiming that nothing was
+// ever supposed to move — and housekeeping declares no MayChange to
+// match. An intent that says it may move the version and then offers
+// "the riders were proved inert" for an empty delta has not explained
+// its own emptiness; it has changed the subject. That is a wiring
+// mistake in the intent, so it lands beside the other two.
+var ErrWitnessExcusesNothing = errors.New("intent: the prediction is empty and the witness declared excuses no field the intent may change")
+
 // ErrRiderMoved reports a rider that failed the second half of the
 // double proof: the shadow with it predicted something the shadow
 // without it did not.
@@ -99,11 +125,19 @@ type FinishOpts struct {
 	// headline intent is examined, so this is the only thing that decides
 	// whether one rides.
 	Riders RiderPolicy
-	// Witness names the evidence a change rests on when the evaluated
-	// delta cannot show it: "the distfiles were fetched and hashed",
-	// say. It satisfies the empty-delta refusal and goes no further —
-	// nothing about it reaches the plan, whose bytes are a hash gate.
-	Witness string
+	// Witness declares the evidence a change rests on when the
+	// evaluated delta cannot show it. It is a kind from a closed set
+	// and not a sentence: the kind names the fields it excuses, and
+	// Finish checks those against MayChange, so the empty-delta rule is
+	// satisfied by a fact the planner asserted rather than by any text
+	// being non-empty. Nothing about it reaches the plan, whose bytes
+	// are a hash gate.
+	//
+	// The zero value, NoWitness, is a declaration that this change has
+	// no evidence beyond its own delta. It is legal — most runs move
+	// something and never need one — and it is refused exactly when the
+	// delta turns out to be empty.
+	Witness WitnessKind
 	// Dependents are the ports that depend on this one, passed to
 	// Examine for the finding rules.
 	Dependents []string
@@ -127,7 +161,10 @@ type FinishOpts struct {
 // The order of the refusals is deliberate. The witness rule goes first,
 // because an empty delta satisfies every other guard vacuously and
 // "nothing moved" is a better answer than whichever guard happens to
-// notice second. SubportsUnchanged is next, because a Portfile whose
+// notice second — and because the half of that rule which checks the
+// intent's own wiring, that a declared witness only excuses fields the
+// intent said it may change, is about whether the run was set up
+// coherently at all and belongs before any question about what it did. SubportsUnchanged is next, because a Portfile whose
 // structure moved makes every later question meaningless. The isolation
 // proof precedes the intent's own judgment because it is about whether
 // the edits can be trusted at all, not about whether they worked. And
@@ -176,8 +213,8 @@ func Finish(ctx context.Context, h port.Handle, src []byte, edits []edit.Edit, i
 	slog.Debug("shadow prediction", "intent", id.Intent,
 		"changed", len(predicted.Changed), "added", len(predicted.Added), "removed", len(predicted.Removed))
 
-	if predicted.Empty() && opts.Witness == "" {
-		return nil, ErrNoWitness
+	if err := witnessHolds(predicted, opts); err != nil {
+		return nil, err
 	}
 	if err := SubportsUnchanged(predicted); err != nil {
 		return nil, err
@@ -258,6 +295,45 @@ func Finish(ctx context.Context, h port.Handle, src []byte, edits []edit.Edit, i
 		Findings:       ex.Findings,
 		Predicted:      plan.FromDelta(predicted),
 	}, nil
+}
+
+// witnessHolds is the falsifiability rule, asked of a declaration
+// instead of a sentence.
+//
+// It is two questions, and they are asked in this order because the
+// first is about the intent's WIRING and the second about this run.
+//
+// COHERENCE, asked whether or not this run needed a witness: every
+// field the declared witness excuses must be a field the intent said it
+// may change. A witness for a field the change was never about explains
+// nothing, and the mistake is in the planner rather than in the port,
+// so it is worth catching on the runs that did not need the witness as
+// much as on the ones that did — those are the runs a test suite is
+// most likely to have.
+//
+// SUFFICIENCY, asked only when the prediction is empty: something must
+// account for the emptiness. A missing witness is ErrNoWitness, the
+// rule as it always was. A witness that excuses no field is enough only
+// when the intent declared nothing it may change — that is
+// housekeeping, whose claim IS that nothing moves — and anything else
+// has offered evidence about a subject it did not raise.
+func witnessHolds(predicted info.Delta, opts FinishOpts) error {
+	for _, f := range opts.Witness.Excuses() {
+		if !opts.MayChange[f] {
+			return fmt.Errorf("%w: %q excuses %s", ErrWitnessOverreaches, opts.Witness, f)
+		}
+	}
+	if !predicted.Empty() {
+		return nil
+	}
+	if opts.Witness == NoWitness {
+		return ErrNoWitness
+	}
+	if len(opts.Witness.Excuses()) == 0 && len(opts.MayChange) > 0 {
+		return fmt.Errorf("%w: %q, against %d field(s) the intent may change",
+			ErrWitnessExcusesNothing, opts.Witness, len(opts.MayChange))
+	}
+	return nil
 }
 
 // portdirOf is the directory a plan records: the handle's own, unless

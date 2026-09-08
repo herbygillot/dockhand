@@ -79,3 +79,82 @@ func TestAcquireStopsWaitingWhenTheContextEnds(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	assert.NotErrorIs(t, err, ErrHeld, "an interrupted wait is not a held lock")
 }
+
+// A stamped lock names its holder to a prober that never takes it.
+func TestProbeReadsTheStampOfAnExclusiveHolder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dispatch.lock")
+	want := Holder{Root: "/Users/herby/ports", Host: "kestrel", PID: 4821, Since: time.Now().UTC().Truncate(time.Second), Verb: "dispatch"}
+	unlock, err := Hold(context.Background(), path, want, 0)
+	require.NoError(t, err)
+	t.Cleanup(unlock)
+
+	got, resident, err := Probe(context.Background(), path)
+	require.NoError(t, err)
+	require.True(t, resident, "an exclusive holder is resident")
+	assert.Equal(t, want, got)
+}
+
+// THE PROBE MUST NOT TAKE THE LOCK. Two probes at once each read the
+// other as the resident under a try-lock; under a shared lock neither
+// sees anybody.
+func TestProbeTakesNothingSoTwoProbersDoNotSeeEachOther(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dispatch.lock")
+	unlock, err := Hold(context.Background(), path, Holder{PID: 1}, 0)
+	require.NoError(t, err)
+	unlock()
+
+	for i := 0; i < 2; i++ {
+		_, resident, err := Probe(context.Background(), path)
+		require.NoError(t, err)
+		assert.False(t, resident, "a released lock has no holder, probe %d", i)
+	}
+	// And the lock is still takeable, which a probe that took it would
+	// have made false for the duration of its own life.
+	again, err := Acquire(context.Background(), path, 0)
+	require.NoError(t, err)
+	again()
+}
+
+// A lock nobody has ever taken is "no dispatcher", not an error — and
+// the probe leaves no file behind.
+func TestProbeOfAnAbsentLockIsNotResidentAndCreatesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "never.lock")
+	h, resident, err := Probe(context.Background(), path)
+	require.NoError(t, err)
+	assert.False(t, resident)
+	assert.True(t, h.Empty())
+	assert.NoFileExists(t, path, "a probe that created files would leave one in every checkout")
+}
+
+// An unstamped exclusive holder is resident with an empty stamp: rule 7
+// on the pair, since "somebody is here" and "who" are two facts.
+func TestProbeReportsAnUnstampedHolderAsResidentWithNoIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pass.lock")
+	unlock, err := Acquire(context.Background(), path, 0)
+	require.NoError(t, err)
+	t.Cleanup(unlock)
+
+	h, resident, err := Probe(context.Background(), path)
+	require.NoError(t, err)
+	assert.True(t, resident)
+	assert.True(t, h.Empty(), "an unstamped lock says nothing about who holds it")
+}
+
+// A restamp never shortens the file into a window where it reads as
+// valid-but-empty: the new bytes go over the old before the truncate.
+func TestHoldRestampsWithoutLeavingAnEmptyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dispatch.lock")
+	first, err := Hold(context.Background(), path, Holder{PID: 111, Verb: "dispatch", Root: "/a/very/long/checkout/path/indeed"}, 0)
+	require.NoError(t, err)
+	first()
+	second, err := Hold(context.Background(), path, Holder{PID: 2, Verb: "cycle"}, 0)
+	require.NoError(t, err)
+	t.Cleanup(second)
+
+	h, resident, err := Probe(context.Background(), path)
+	require.NoError(t, err)
+	require.True(t, resident)
+	assert.Equal(t, 2, h.PID)
+	assert.Equal(t, "cycle", h.Verb)
+	assert.Empty(t, h.Root, "the shorter stamp replaced the longer one whole")
+}

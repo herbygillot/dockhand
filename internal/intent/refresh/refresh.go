@@ -207,8 +207,9 @@ func (r Refresh) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher
 			// a fetch that deliberately refused the mirrors, so what was
 			// hashed is what upstream serves right now. A prediction that
 			// shows nothing then means the edits missed their target, which
-			// accept says below in its own words.
-			Witness: "the port's distfiles were fetched from upstream and hashed",
+			// accept says below in its own words. The field it excuses is
+			// the checksums, which is the whole of refreshMayChange.
+			Witness: intent.WitnessFetched,
 		})
 }
 

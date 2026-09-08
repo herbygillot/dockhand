@@ -1,0 +1,893 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/change"
+	"github.com/herbygillot/dockhand/internal/exitcode"
+	"github.com/herbygillot/dockhand/internal/intent"
+	"github.com/herbygillot/dockhand/internal/intent/bump"
+	"github.com/herbygillot/dockhand/internal/intent/bumprevision"
+	"github.com/herbygillot/dockhand/internal/intent/refresh"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portstyle"
+	"github.com/herbygillot/dockhand/internal/macports/tree"
+	"github.com/herbygillot/dockhand/internal/plan"
+	"github.com/herbygillot/dockhand/internal/planning"
+	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/publish"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/report"
+	"github.com/herbygillot/dockhand/internal/run"
+	"github.com/herbygillot/dockhand/internal/sweep"
+	"github.com/herbygillot/dockhand/internal/upstream"
+)
+
+// The three write intents, built from a catalogue so the shared flags
+// are declared once and each verb contributes only its own. A fourth
+// intent is a fourth entry in intentCatalogue and a package under
+// internal/intent — not a fourth hand-written cobra constructor, whose
+// flag validation, caution and fetch behaviour would be three more
+// places to get subtly wrong.
+//
+// EVERY INTENT TAKES EXACTLY ONE SELECTOR. `all` is a grammar token and
+// not a flag, and a caller wanting two categories runs the verb twice —
+// which is also the only way the two get their own exit statuses. Arity
+// is not known until the selector resolves, so two OPERATIONS live
+// behind one command line: one port is app.Change and more than one is
+// app.Survey, with its own exit partition.
+
+// intentVerb is one row of the catalogue: the kit's own Definition, and
+// the three things a cobra command needs that a Definition has no
+// business carrying — the one-line help, the verb's own flags, and the
+// resolution only a live run can perform.
+type intentVerb struct {
+	intent.Definition
+	Short string
+	// Flags declares the verb's own flags, binding them straight to the
+	// parameters they become, and returns the check for the combinations
+	// only this verb can judge.
+	Flags func(c *cobra.Command, p *intent.Params) func() error
+	// Resolve fills in what the command line could not, with a planner
+	// in hand. Only bump has one: --latest is a question for the forge,
+	// and it is settled here so that no intent ever sees the word.
+	Resolve func(ctx context.Context, s *Services, w io.Writer, target tree.Target, p *intent.Params, m upstream.Manners) error
+	// Plural declares the verb's cohort mode: `bump-revision --for
+	// <branch>`, which takes no port argument at all. Only
+	// bump-revision has one, and that is a property of the intents
+	// rather than of this shape — a cohort is a set of revision bumps
+	// answering one measurement, and a plural bump would be several
+	// unrelated changes sharing a branch.
+	Plural func(c *cobra.Command, f *intentFlags) func() (bool, error)
+}
+
+// intentCatalogue is every write intent dockhand offers, in the order
+// they are registered and therefore the order they are shown.
+//
+// A function and not a variable: each command owns the flag storage its
+// Params are parsed into, so two command trees in one process — which is
+// what the test suite is — must not share a --to.
+func intentCatalogue() []intentVerb {
+	return []intentVerb{bumpVerb(), bumpRevisionVerb(), refreshVerb()}
+}
+
+// bumpVerb moves a port to a new version. It carries the full shared set
+// plus its own TWO — --to and --latest.
+//
+// --recalc IS GONE, and the argument for the deletion is worth keeping
+// where a reader will meet it: `refresh-checksums` was already the verb
+// for a re-derivation and is strictly better at it. REACH — it needs no
+// version-literal location, so it works on the computed-version ports
+// the bump planner declines as NotLiteral, which a flag on that planner
+// could never touch. VOICE — every refresh summary prints that the
+// checksums changed at an UNCHANGED version and that somebody must
+// establish why before the change goes anywhere public, where the flag
+// road performed the same edit silently, in the one moment this tool
+// should be loudest. COVERAGE — it regenerates vendored blocks too, so
+// nothing was lost in the move. --trace is gone with it, to `dockhand
+// log`: an intent makes a change and may stay until it knows, and
+// watching one happen is log's job.
+func bumpVerb() intentVerb {
+	return intentVerb{
+		Definition: intent.Definition{
+			Name:    "bump",
+			Fetches: true,
+			New: func(p intent.Params) (intent.Planner, error) {
+				return bump.Bump{Version: p.Version, Tools: p.Tools,
+					ClosesTicket: p.ClosesTicket, Riders: p.Riders, Dependents: p.Dependents}, nil
+			},
+		},
+		Short: "Bump a port to a new version, as a branch",
+		Flags: func(c *cobra.Command, p *intent.Params) func() error {
+			c.Flags().StringVar(&p.Version, "to", "", "the version to bump to")
+			c.Flags().BoolVar(&p.Latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
+			return func() error {
+				switch {
+				case p.Version != "" && p.Latest:
+					return usagef("--to and --latest are mutually exclusive")
+				case p.Version == "latest":
+					// The literal string would be planned as a version;
+					// resolving the newest release is a different workflow.
+					return usagef("use --latest to resolve the newest release")
+				}
+				return nil
+			}
+		},
+		Resolve: resolveLatest,
+	}
+}
+
+// bumpRevisionVerb increments a port's revision for a stated reason. The
+// edit is trivial; the reason is the part only a human has, so the flag
+// is required — and it becomes the commit message, because why users
+// must rebuild is exactly what the log should say.
+func bumpRevisionVerb() intentVerb {
+	return intentVerb{
+		Definition: intent.Definition{
+			Name:    "bump-revision",
+			Aliases: []string{"revbump"},
+			New: func(p intent.Params) (intent.Planner, error) {
+				return bumprevision.BumpRevision{Reason: p.Reason, ClosesTicket: p.ClosesTicket,
+					Riders: p.Riders, Dependents: p.Dependents}, nil
+			},
+		},
+		Short: "Increment a port's revision (requires --reason)",
+		Flags: func(c *cobra.Command, p *intent.Params) func() error {
+			c.Flags().StringVar(&p.Reason, "reason", "", "why users must rebuild (required; becomes the commit message)")
+			return func() error {
+				if p.Reason == "" {
+					return usagef("a revision bump needs --reason: it says why users must rebuild")
+				}
+				return nil
+			}
+		},
+		Plural: cohortMode,
+	}
+}
+
+// refreshCaution is printed with every refresh summary. The intent
+// applies like any other — the user asking is the human in the loop —
+// but a checksum that moves at an unchanged version means upstream
+// re-rolled the artifact: possibly a benign re-tar, possibly a
+// supply-chain event, and the edit cannot tell you which.
+const refreshCaution = "note: these checksums changed at an UNCHANGED version — upstream re-rolled\n" +
+	"the artifact. Establish why before this change goes anywhere public: it may\n" +
+	"be a benign re-tar, or it may be a supply-chain event.\n"
+
+// refreshVerb makes a port's recorded checksums true again at its
+// unchanged version. IT IS THE ONLY ROAD TO A RE-DERIVATION now that
+// `bump --recalc` was dropped into it — see bumpVerb for the three
+// counts it won on.
+func refreshVerb() intentVerb {
+	return intentVerb{
+		Definition: intent.Definition{
+			Name:    "refresh-checksums",
+			Aliases: []string{"refresh"},
+			Fetches: true,
+			Caution: refreshCaution,
+			New: func(p intent.Params) (intent.Planner, error) {
+				return refresh.Refresh{ClosesTicket: p.ClosesTicket, Riders: p.Riders,
+					Dependents: p.Dependents}, nil
+			},
+		},
+		Short: "Re-fetch a port's distfiles and repair its recorded checksums",
+	}
+}
+
+// resolveLatest answers --latest: what the newest upstream release is,
+// asked once, before any planner sees the word.
+//
+// It says what it resolved on the writer it is HANDED rather than on
+// stderr, because where that sentence goes depends on how many ports are
+// being asked about: one port says it to the user, and a sweep of four
+// hundred would say it four hundred times from four hundred goroutines.
+// The Manners it is handed decide how hard the forge is asked, for the
+// same reason.
+func resolveLatest(ctx context.Context, s *Services, w io.Writer, target tree.Target, p *intent.Params, m upstream.Manners) error {
+	if p.Version != "" {
+		return nil
+	}
+	ev, err := s.Eval()
+	if err != nil {
+		return err
+	}
+	h := portHandle(target, ev, s)
+	resolved, rep, err := bump.ResolveLatest(ctx, s.Tools, h, s.fetch, upstream.GhRunner(s.Forge), m)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "latest: %s (%s)\n", resolved, rep.Verdict)
+	p.Version = resolved
+	return nil
+}
+
+// intentArgSketch is the one argument every write intent takes, with the
+// grammar's own forms spelled out because a user who only ever sees
+// `<port>` never learns that the verb sweeps.
+const intentArgSketch = "<port|subport|portdir|category:x|maintainer:handle|all>"
+
+// intentCommands builds the catalogue's cobra commands.
+func intentCommands(s *Services) []*cobra.Command {
+	verbs := intentCatalogue()
+	cmds := make([]*cobra.Command, 0, len(verbs))
+	for _, v := range verbs {
+		cmds = append(cmds, intentCommand(s, v))
+	}
+	return cmds
+}
+
+// intentCommand builds one verb's command.
+func intentCommand(s *Services, v intentVerb) *cobra.Command {
+	var (
+		f      intentFlags
+		params intent.Params
+		check  func() error
+		plural func() (bool, error)
+	)
+	// The plural invocation names a branch and every member on it, so it
+	// takes no port. The arity check asks the FLAGS before it counts
+	// arguments, which is the one thing cobra's own ExactArgs cannot do.
+	arity := func(cmd *cobra.Command, args []string) error {
+		if plural != nil {
+			if on, err := plural(); on || err != nil {
+				return noArgs(cmd, args)
+			}
+		}
+		return exactArgs(1)(cmd, args)
+	}
+	c := &cobra.Command{
+		Use:     v.Name + " " + intentArgSketch,
+		Aliases: v.Aliases,
+		Short:   v.Short,
+		Args:    arity,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// The cohort mode first, because it answers a different question
+			// with different parameters: the ports it changes come from a
+			// proposal and the reason from the measurement, so the verb's own
+			// --reason check below would be asking for a justification the
+			// branch already carries.
+			if plural != nil {
+				on, err := plural()
+				if err != nil {
+					return err
+				}
+				if on {
+					return runAccept(cmd.Context(), s, &f)
+				}
+			}
+			// The verb's own contradictions first: a --to that fights
+			// --latest is a plainer thing to be told than a --wait that
+			// fights --plan, and the caller who typed both is owed the
+			// nearer answer. Under --riders they are moot and skipped rather
+			// than answered — the verb's parameters are not read by a
+			// housekeeping change, so a revbump's required --reason would be
+			// a demand for a justification of an edit nobody is making.
+			if check != nil && !f.riders {
+				if err := check(); err != nil {
+					return err
+				}
+			}
+			ticket, err := checkTicket(params.ClosesTicket)
+			if err != nil {
+				return err
+			}
+			if err := f.check(); err != nil {
+				return err
+			}
+			params.Target, params.ClosesTicket = args[0], ticket
+			params.Riders = f.riderPolicy()
+			params.Tools = s.Tools
+			return runIntent(cmd.Context(), s, v, params, &f)
+		},
+	}
+	if v.Flags != nil {
+		check = v.Flags(c, &params)
+	}
+	// After the verb's own flags, because the cohort mode reads the
+	// shared set: --no-verify and --on mean the same thing on both roads,
+	// and a plural mode with its own spellings would be two vocabularies
+	// for one question.
+	f.register(c)
+	if v.Plural != nil {
+		plural = v.Plural(c, &f)
+	}
+	// Shared by every intent, because every change may close a ticket and
+	// the trailer is written at mint whatever the verb was.
+	c.Flags().StringVar(&params.ClosesTicket, "closes", "",
+		"Trac ticket number this change closes; becomes a Closes: trailer in the commit")
+	return c
+}
+
+// checkTicket holds --closes to a Trac ticket number and hands back the
+// bare number, with the leading hash a hand types accepted and dropped.
+//
+// It is checked at the boundary rather than rendered leniently later
+// because the value becomes a URL in a commit message, and a commit is
+// the one thing dockhand writes that nothing rewrites: a trailer
+// pointing at https://trac.macports.org/ticket/see-the-PR is worse than
+// a refusal one second before it.
+func checkTicket(ticket string) (string, error) {
+	if ticket == "" {
+		return "", nil
+	}
+	n := strings.TrimPrefix(ticket, "#")
+	if n == "" || strings.TrimLeft(n, "0123456789") != "" {
+		return "", usagef("--closes takes a Trac ticket number: %q", ticket)
+	}
+	return n, nil
+}
+
+// intentFlags declares the realization flags every write intent shares.
+//
+// THE DEPTH QUESTION IS ONE FLAG, --no-verify, and the road behind it is
+// always enqueue, opportunistically start, detach always. The shipped
+// bare --verify went with the Gated delivery; --trace went to `log`;
+// --wait arrived as the only way for a caller to stay.
+type intentFlags struct {
+	planOnly bool
+	diff     bool
+	inPlace  bool
+	noVerify bool
+	toPR     bool
+	replace  bool
+	test     bool
+	keepEnv  bool
+	riders   bool
+	noRiders bool
+	on       string
+	wait     time.Duration
+	waitSet  bool
+
+	// The cohort mode's three, declared here rather than in a struct of
+	// their own because the arity check reads them beside the shared set:
+	// `--for` decides whether this invocation takes a port argument at
+	// all, and that question is asked of ONE value.
+	forBranch     string
+	exclude       []string
+	forceWithheld []string
+
+	release platform.Release
+}
+
+// register declares the shared realization flags on a command.
+func (f *intentFlags) register(c *cobra.Command) {
+	c.Flags().BoolVar(&f.planOnly, "plan", false, "emit the plan on stdout as JSON and change nothing")
+	c.Flags().BoolVar(&f.diff, "diff", false,
+		"print the patch the branch would carry, as a git diff; write nothing")
+	c.Flags().BoolVar(&f.inPlace, "in-place", false,
+		"edit the Portfile where it stands, uncommitted — no branch, no commit")
+	c.Flags().BoolVar(&f.noVerify, "no-verify", false,
+		"mint the branch and ask for no build at all")
+	c.Flags().DurationVar(&f.wait, "wait", 0,
+		"stay through the build without showing the log; watching one happen is dockhand log --trace")
+	c.Flags().BoolVar(&f.toPR, "to-pr", false,
+		"carry the change through to a pull request")
+	c.Flags().BoolVar(&f.replace, "replace", false,
+		"replace this port's in-flight branch, canceling its verification")
+	c.Flags().BoolVar(&f.riders, "riders", false,
+		"make housekeeping the whole change: plan the riders alone and drop what the verb would have done")
+	c.Flags().BoolVar(&f.noRiders, "no-riders", false,
+		"carry no housekeeping riders, and withhold none when there is nothing else to do")
+	c.Flags().BoolVar(&f.test, "test", false,
+		"also run the port's test suite (port test) in the verification environment")
+	c.Flags().BoolVar(&f.keepEnv, "keep-env", false,
+		"keep the verification environment after a pass, as a failure keeps its own")
+	c.Flags().StringVar(&f.on, "on", "", "macOS release to verify on (one release)")
+	// Read in a PreRun so the road below can tell "--wait 0" from "no
+	// --wait": ChangeRequest.Wait is a POINTER precisely so that those are
+	// two values — an expiry DETACHES and never fails, so a timeout is the
+	// caller giving up on watching and never a verdict — and a duration
+	// flag alone cannot say which of the two was typed.
+	c.PreRun = func(cmd *cobra.Command, _ []string) { f.waitSet = cmd.Flags().Changed("wait") }
+}
+
+// riderPolicy is the pair of switches read as the one choice they are.
+func (f *intentFlags) riderPolicy() intent.RiderPolicy {
+	switch {
+	case f.riders:
+		return intent.RidersOnly
+	case f.noRiders:
+		return intent.RidersNone
+	}
+	return intent.RidersAlong
+}
+
+// check validates the shared combinations at the cobra boundary, and
+// resolves what only the command line knows into what an operation
+// takes. Flag parsing is this layer's business, not an operation's.
+func (f *intentFlags) check() error {
+	rides := f.test || f.keepEnv || f.waitSet
+	writesNothing := f.noVerify || f.planOnly || f.diff || f.inPlace || f.riders
+	switch {
+	case f.diff && (f.inPlace || f.planOnly):
+		return usagef("--diff is an output mode of its own; combine it with neither --plan nor --in-place")
+	case rides && writesNothing:
+		// All three ride a build and none of those five produces one:
+		// riders never trigger a verification — there is nothing in a
+		// housekeeping change for a VM to disagree with — and a mint-only
+		// or write-nothing delivery leaves no run to test, no environment
+		// to keep and no verdict to stay for.
+		return usagef("--test, --keep-env and --wait ride a verification; --no-verify, --plan, --diff, --in-place and --riders each produce none")
+	case f.riders && f.noRiders:
+		return usagef("--riders and --no-riders are mutually exclusive")
+	case f.toPR && (f.planOnly || f.diff || f.inPlace):
+		return usagef("--to-pr carries a change to a pull request; it needs the default branch realization")
+	case f.toPR && f.noVerify:
+		// Not a contradiction of spelling but of meaning, which is why it
+		// is said rather than resolved: both write Destination, and they
+		// write opposite answers. Silently letting one win would make the
+		// destination depend on the order two lines happen to be in.
+		return usagef("--no-verify stops the change at the branch and --to-pr carries it to a pull request; ask for one")
+	case f.toPR && f.riders:
+		return usagef("--riders makes housekeeping the whole change, which is not a change to put in front of reviewers")
+	case f.replace && (f.planOnly || f.diff || f.inPlace):
+		return usagef("--replace acts on a minted branch; it needs the default branch realization")
+	}
+	release, err := releaseFlag(f.on)
+	if err != nil {
+		return err
+	}
+	f.release = release
+	return nil
+}
+
+// delivery is the flags read as the ONE choice app.Delivery is. Five
+// values, since Gated was deleted with the depth flag that spelled it:
+// a change that starts its build immediately and one that queues differ
+// in LATENCY and not in ownership, because the branch is minted either
+// way.
+func (f *intentFlags) delivery() app.Delivery {
+	switch {
+	case f.planOnly, f.diff:
+		return app.Document
+	case f.inPlace:
+		return app.InPlace
+	case f.noVerify, f.riders:
+		// A rider changes nothing a build could notice, so a housekeeping
+		// branch is minted and left alone rather than costing a guest.
+		return app.Branch
+	case f.toPR:
+		return app.PullRequest
+	}
+	return app.Enqueue
+}
+
+// waitFor is --wait as the request takes it: nil to detach at once, or
+// the longest this caller stays. A pointer so that "no wait" and "wait
+// zero" are two values — expiry DETACHES and never fails, so a timeout
+// is the caller giving up on watching and never a verdict.
+func (f *intentFlags) waitFor() *time.Duration {
+	if !f.waitSet {
+		return nil
+	}
+	d := f.wait
+	return &d
+}
+
+// runIntent is the whole of an intent verb's road: resolve the selector,
+// acquire what the request declares, plan, prepare, and hand ONE
+// operation the result.
+//
+// ARITY DECIDES WHICH OPERATION, and only arity. One target is
+// app.Change and more than one is app.Survey, which are two operations
+// with two exit partitions — a sweep puts declines on the quiet side,
+// because a sweep over four hundred ports that exited non-zero on forty
+// ordinary declines would have every CI wrapper around it wrong.
+func runIntent(ctx context.Context, s *Services, v intentVerb, params intent.Params, f *intentFlags) error {
+	needs := app.ChangeRequest{Delivery: f.delivery(), Fetches: v.Fetches && params.Riders != intent.RidersOnly}.Needs()
+	if err := s.Acquire(ctx, needs); err != nil {
+		return err
+	}
+	res, err := resolveSelector(ctx, s, params.Target)
+	if err != nil {
+		return err
+	}
+	if len(res.Targets) == 0 {
+		return usagef("%q named no port", params.Target)
+	}
+	if len(res.Targets) > 1 && f.toPR {
+		// A USAGE error and not a machine gate: a flag that turned a
+		// maintainer:me sweep into four hundred pull requests would be the
+		// single most expensive typo dockhand could offer.
+		return usagef("--to-pr under a selector naming %d ports; name one port, or promote the branches you mean",
+			len(res.Targets))
+	}
+	planner := planning.Planner{
+		Eval: mustEval(s), Fetch: s.Fetch(), Temp: s.Temp(), Catalog: definitions(),
+	}
+	if len(res.Targets) == 1 {
+		return oneTarget(ctx, s, v, planner, params, f, res.Targets[0])
+	}
+	return manyTargets(ctx, s, v, planner, params, f, res.Targets)
+}
+
+// oneTarget is the single-port road: plan, show, prepare, and app.Change.
+func oneTarget(ctx context.Context, s *Services, v intentVerb, planner planning.Planner, params intent.Params, f *intentFlags, target tree.Target) error {
+	if v.Resolve != nil && params.Riders != intent.RidersOnly {
+		// The zero Manners, which is the single port's: unpaced, uncached,
+		// and asking with git's own user agent.
+		if err := v.Resolve(ctx, s, s.Err, target, &params, upstream.Manners{}); err != nil {
+			return err
+		}
+	}
+	params.Target = target.Portdir
+	pl, err := planner.Plan(ctx, v.Name, target, params)
+	if err != nil {
+		return sayDecline(s, f, err)
+	}
+	// The summary comes first whatever happens next: when the plan is
+	// about to be realized, this is the only chance to see what is being
+	// done before it is done.
+	report.Plan(s.Err, pl)
+	// The caution is a fact about the HEADLINE edit, so it is printed
+	// only where the headline was planned: under --riders the verb chose
+	// the port and nothing else of it ran, and refresh's caution over a
+	// modeline insertion would name a supply-chain event that had not
+	// happened, over a change that had not happened.
+	if v.Caution != "" && params.Riders != intent.RidersOnly {
+		fmt.Fprint(s.Err, v.Caution)
+	}
+	if f.planOnly {
+		return emitPlan(s.Out, pl)
+	}
+	prepared, err := prepare(ctx, s, pl)
+	if err != nil {
+		return err
+	}
+	if f.diff {
+		return emitDiff(ctx, s, prepared)
+	}
+	if f.inPlace {
+		return writeInPlace(s, pl, prepared)
+	}
+	return changeOne(ctx, s, pl, prepared, f)
+}
+
+// changeOne builds and runs app.Change, then renders its typed result
+// and returns the band the result computed.
+//
+// THE ONE LINE OF SEQUENCING THIS PACKAGE IS PERMITTED IS AT THE END OF
+// IT, and it is written out rather than hidden: under --to-pr on a host
+// with no verifier, app.Promote follows app.Change. It is a DELEGATION
+// between two operations and not a road assembled from stages — Change
+// never publishes, and Promote is the same operation the `promote` verb
+// runs, so what a pull request says, how a fork remote is found and how
+// a re-publication converges are all decided in one place. If a second
+// line of sequencing ever appears in this package, the operation it
+// belongs to is missing.
+func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.Prepared, f *intentFlags) error {
+	repo, err := s.Repo()
+	if err != nil {
+		return err
+	}
+	st, err := s.State()
+	if err != nil {
+		return err
+	}
+	led, err := s.Ledger()
+	if err != nil {
+		return err
+	}
+	me := s.Me(s.Now())
+	residency := probeResidency(ctx, repo)
+	op := app.Change{
+		Plan:      planningFor(s),
+		Repo:      repo,
+		Ledger:    led,
+		State:     st,
+		Temp:      s.Temp(),
+		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session, release: f.release},
+		Local:     s.ProposeTree(),
+		Verifier:  s.VerifyProvider(),
+		Me:        me,
+		Residency: residencyFunc(repo),
+		Now:       s.Now,
+		Progress:  sink{w: s.Err},
+	}
+	req := app.ChangeRequest{
+		Prepared:  prepared,
+		Delivery:  f.delivery(),
+		Platform:  f.release,
+		Test:      f.test,
+		KeepEnv:   f.keepEnv,
+		Replace:   inFlight(f.replace),
+		Prov:      change.Provenance{AskedBy: record.Human, Via: record.MintedSingle, Agent: s.Agent},
+		Slug:      pl.Slug,
+		Riders:    pl.Riders,
+		Wait:      f.waitFor(),
+		Residency: residency,
+	}
+	res, runErr := op.Run(ctx, req)
+	report.Change(s.Out, res, residency)
+	if runErr != nil {
+		return runErr
+	}
+	if f.toPR && res.Did == app.Minted && res.Deferred != nil && res.Deferred.Reason == app.NoProvider {
+		// THE ONE LINE. On a host that cannot verify there will never be a
+		// pass, so nothing will ever publish this change through the
+		// machine's slot; the only remaining reading of --to-pr is "publish
+		// it now, on the person's authority", which is exactly what
+		// app.Promote is.
+		if err := promoteAfterChange(ctx, s, res.Ref.Branch()); err != nil {
+			return err
+		}
+	}
+	return exitWith(res.Exit())
+}
+
+// promoteAfterChange is the delegation's body, kept short on purpose:
+// everything about a publication belongs to app.Promote, and this hands
+// it a branch.
+func promoteAfterChange(ctx context.Context, s *Services, branch string) error {
+	if branch == "" {
+		return nil
+	}
+	op, err := promoteOp(s)
+	if err != nil {
+		return err
+	}
+	res, err := op.Run(ctx, branch, publish.Asks{})
+	report.Promotion(s.Out, res)
+	return err
+}
+
+// inFlight maps --replace onto app.InFlight. It is the only flag that
+// writes one: Advance and Supersede are chosen by the sweep road and
+// never typed.
+func inFlight(replace bool) app.InFlight {
+	if replace {
+		return app.Replace
+	}
+	return app.Refuse
+}
+
+// manyTargets is the sweep road: app.Survey, fed one target at a time by
+// a pool that plans and prepares as it goes.
+//
+// THE POOL IS THE PRODUCER AND THE OPERATION IS THE CONSUMER, which is
+// what makes a 400-port sweep resumable. A draft admitted the whole
+// selector at once after every target had prepared, and an adversarial
+// pass priced it: a bump sweep fetches one target at a time, up to
+// twenty minutes each, so nothing was committed for hours and a Ctrl-C
+// lost all of it. Here each target is admitted, committed, recorded and
+// opportunistically started before the next is looked at, and a rerun
+// resumes by meeting its own standing branches (InFlight Advance).
+func manyTargets(ctx context.Context, s *Services, v intentVerb, planner planning.Planner, params intent.Params, f *intentFlags, targets []tree.Target) error {
+	repo, err := s.Repo()
+	if err != nil {
+		return err
+	}
+	st, err := s.State()
+	if err != nil {
+		return err
+	}
+	led, err := s.Ledger()
+	if err != nil {
+		return err
+	}
+	// The sweep's politeness, assembled once for the whole selector: the
+	// pacer, the observation cache and the user agent. One port needs
+	// none of it — the zero Manners is the single-target road — and four
+	// hundred arriving at one forge in one minute need all of it.
+	m, _ := sweepManners(s)
+	i := 0
+	next := func(ctx context.Context) (app.Planned, bool) {
+		if i >= len(targets) {
+			return app.Planned{}, false
+		}
+		t := targets[i]
+		i++
+		p := params
+		p.Target = t.Portdir
+		if v.Resolve != nil && p.Riders != intent.RidersOnly {
+			// The sweep's Manners: paced and cached, because four hundred
+			// ports arriving at one forge in one minute need all of it.
+			if err := v.Resolve(ctx, s, io.Discard, t, &p, m); err != nil {
+				return app.Planned{Target: t.Portdir, Decline: err}, true
+			}
+		}
+		pl, err := planner.Plan(ctx, v.Name, t, p)
+		if err != nil {
+			return app.Planned{Target: t.Portdir, Decline: err}, true
+		}
+		prepared, err := prepare(ctx, s, pl)
+		if err != nil {
+			return app.Planned{Target: t.Portdir, Decline: err}, true
+		}
+		return app.Planned{Target: t.Portdir, Prepared: prepared, Slug: pl.Slug, Riders: pl.Riders}, true
+	}
+	op := app.Survey{
+		Plan:     planningFor(s),
+		Repo:     repo,
+		Ledger:   led,
+		State:    st,
+		Temp:     s.Temp(),
+		Stage:    &stager{repo: repo, temp: s.Temp(), session: s.session, release: f.release},
+		Local:    s.ProposeTree(),
+		Verifier: s.VerifyProvider(),
+		Me:       s.Me(s.Now()),
+		Now:      s.Now,
+		Progress: sink{w: s.Err},
+	}
+	sw, err := op.Run(ctx, app.SurveyRequest{
+		Next:      next,
+		Delivery:  f.delivery(),
+		Platform:  f.release,
+		Test:      f.test,
+		KeepEnv:   f.keepEnv,
+		Admission: sweepAdmission(),
+		InFlight:  app.Advance,
+		Prov:      change.Provenance{AskedBy: record.Human, Via: record.MintedSweep, Agent: s.Agent},
+	})
+	report.Sweep(s.Out, sw, probeResidency(ctx, repo))
+	if err != nil {
+		return err
+	}
+	return exitWith(sw.Exit())
+}
+
+// sweepAdmission is run.Admission's two integers, which a sweep cannot
+// legally run without: Admission REFUSES its own unset zero, on rule 7,
+// so there is no such thing as "no cap" and a value has to come from
+// somewhere.
+//
+// THEY ARE CONSTANTS AND NOT FLAGS, and the surface leaves the spelling
+// open. What the numbers bound is the store: MaxQueued is how many
+// unsettled attempts the state ref may carry at once, and MaxPerPass is
+// how many one invocation may add. A person who wants them typeable gets
+// a flag when somebody has tuned them; everyone else gets a bound that
+// exists.
+func sweepAdmission() run.Admission {
+	return run.Admission{Set: true, MaxQueued: 200, MaxPerPass: 50}
+}
+
+// prepare turns a plan into the complete file set a change commits,
+// against THE BASE COMMIT'S BYTES and never the working file.
+//
+// The Portfile it holds the plan against is read out of git at the
+// merge base, because a plan is made against the bytes a commit would
+// land on: a Portfile a person edited on the primary branch since the
+// plan was made is ErrDrift here rather than a commit nobody predicted.
+func prepare(ctx context.Context, s *Services, pl *plan.Plan) (change.Prepared, error) {
+	repo, err := s.Repo()
+	if err != nil {
+		return change.Prepared{}, err
+	}
+	base, err := baseOf(ctx, repo)
+	if err != nil {
+		return change.Prepared{}, err
+	}
+	rel, err := repo.RelPath(pl.Portdir)
+	if err != nil {
+		return change.Prepared{}, err
+	}
+	blob, err := repo.BlobAt(ctx, base.Sha, rel+"/"+macports.PortfileName)
+	if err != nil {
+		return change.Prepared{}, err
+	}
+	var ev change.Evaluator
+	if s.ev != nil {
+		ev = blobEvaluator{ev: s.ev}
+	}
+	return change.Prepare(ctx, pl, change.Source{
+		Base: base, Portdir: change.TreePath(rel), Portfile: blob,
+	}, ev)
+}
+
+// baseOf is the commit a change is measured from: this checkout's
+// primary branch, with the moment it landed.
+func baseOf(ctx context.Context, repo *gitRepo) (record.Base, error) {
+	primary, err := repo.PrimaryBranch(ctx)
+	if err != nil {
+		return record.Base{}, err
+	}
+	sha, err := repo.RevParse(ctx, primary)
+	if err != nil {
+		return record.Base{}, err
+	}
+	at, err := repo.CommittedAt(ctx, sha)
+	if err != nil {
+		return record.Base{}, err
+	}
+	return record.Base{Sha: sha, CommittedAt: at}, nil
+}
+
+// emitPlan writes the plan document --plan asked for.
+func emitPlan(w io.Writer, pl *plan.Plan) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(pl)
+}
+
+// declineDocument is what --plan emits when there is no plan: the
+// decline, machine-readable, on the stream the plan would have used.
+//
+// A caller asking for JSON gets JSON however the run ends. Without it a
+// declined --plan writes nothing at all to stdout and leaves the reason
+// in an English sentence on stderr, so every consumer of --plan has two
+// parsers or one blind spot.
+type declineDocument struct {
+	Exit declineExit `json:"exit"`
+}
+
+// declineExit is the twin with the two things a decline knows that a
+// bare exit status does not: what specifically was found, and what to do
+// about it. They ride INSIDE the exit object rather than beside it
+// because they are the same fact at a finer grain — the reason names the
+// kind, the detail names the instance.
+type declineExit struct {
+	exitcode.Twin
+	Detail string `json:"detail,omitempty"`
+	Remedy string `json:"remedy,omitempty"`
+	// Withheld names the riders this decline held back with it, by rule.
+	Withheld []string `json:"withheld,omitempty"`
+}
+
+// sayDecline writes the decline document when the caller asked for one
+// and returns the error either way. The error still travels: the
+// document says what happened and the exit status is what a shell reads,
+// and the two are built from the same error so they cannot disagree.
+//
+// Only --plan gets a document. --diff's stdout is a patch — a stream
+// somebody pipes into `git apply` — and giving one flag two output
+// languages would break the consumer that trusts it.
+func sayDecline(s *Services, f *intentFlags, err error) error {
+	detail, remedy, withheld, ok := declineFacts(err)
+	if !f.planOnly || !ok {
+		return err
+	}
+	doc := declineDocument{Exit: declineExit{
+		Twin: TwinOf(err), Detail: detail, Remedy: remedy, Withheld: withheld,
+	}}
+	enc := json.NewEncoder(s.Out)
+	enc.SetIndent("", "  ")
+	if werr := enc.Encode(doc); werr != nil {
+		fmt.Fprintf(s.Err, "warning: writing the decline document: %v\n", werr)
+	}
+	return err
+}
+
+// declineFacts reads the two things a decline knows that a bare exit
+// status does not, from either of the two decline types, and reports
+// whether the error is a decline at all.
+//
+// Both are named here rather than reached for through an interface,
+// because they say the same two things in different shapes: a planner's
+// decline carries its detail as prose the planner wrote, while a
+// location decline's detail IS the field it could not find.
+func declineFacts(err error) (detail, remedy string, withheld []string, ok bool) {
+	var p *plan.Decline
+	if errors.As(err, &p) {
+		return p.Detail, p.Type.Remedy(), p.Withheld, true
+	}
+	var st *portstyle.Decline
+	if errors.As(err, &st) {
+		// A location decline withholds nothing: it is raised before any
+		// rule has been asked, by the layer that could not find a field.
+		return st.Field.String(), st.Remedy(), nil, true
+	}
+	return "", "", nil, false
+}
+
+// resolveSelector expands one selector, saying on stderr what the
+// grammar decided.
+func resolveSelector(ctx context.Context, s *Services, arg string) (sweep.Resolution, error) {
+	res, err := sweep.Resolve(ctx, sweep.Sources{
+		Tree:  s.Tree,
+		Login: forgeLogin(s),
+		Email: gitIdentity(s),
+	}, []string{arg})
+	for _, n := range res.Notes {
+		fmt.Fprintln(s.Err, "selector: "+n)
+	}
+	return res, err
+}

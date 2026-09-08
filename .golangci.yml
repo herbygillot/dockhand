@@ -118,14 +118,10 @@ linters:
               desc: the caller reads the repo and passes the facts in; a judgment that opens git needs one to be tested
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: custody of the notes is the ledger's; this compares what it is handed
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into the lifecycles; an analysis that imported it would be importing its own caller
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: the criterion's words are produced here because they ride a commit body; everything else about presentation is the projection layer's, with its own goldens
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd sits at the top; nothing this low may call back
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: runstate carries streams, a clock and process state, which are the three things a comparison must not have
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli sits at the top; nothing this low may call back
             - pkg: os/exec
               desc: what otool printed is parsed where the capture happens; a comparison that ran a command would be measuring this machine
             - pkg: net
@@ -208,14 +204,10 @@ linters:
               desc: custody of the notes is the ledger's; the proposal is handed the findings a record already carries
             - pkg: github.com/herbygillot/dockhand/internal/verify
               desc: whether a member built is run's judgment; this one is about what the index declares and what the measurement said
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into the lifecycles; a decision that imported it would be importing its own caller
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: the decision states the reason on every candidate; choosing sentences for a reader is the projection layer's job, with its own goldens
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd sits at the top; nothing this low may call back
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: streams, a clock and process state are the three things a pure decision must not have
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli sits at the top; nothing this low may call back
             - pkg: os/exec
               desc: a proposal that shells out is not a proposal, it is a second opinion from the machine
             - pkg: net
@@ -317,8 +309,6 @@ linters:
               desc: record makes the bytes; putting them somewhere is the ledger's job
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: the ledger imports record, not the other way about
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the wire format must not depend on the verbs that happen to write it
         # record's own tests: the wire, the harness, and the clock a job
         # timestamp needs. The bytes are pinned as string constants, so
         # nothing here reads a file or a repository.
@@ -351,88 +341,55 @@ linters:
               desc: the ledger imports record, not the other way about
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
               desc: the tests pin bytes; a provider under them would prove something else
-        # render is the other half of the split verdict began: a
-        # judgment states what happened, and this package chooses the
-        # sentence. Its promise is that every published byte is a
-        # function of the arguments — a PR body, a branch standing, a
-        # plan summary — so a phrase is pinned by a golden instead of
-        # reproduced by a run. The clock is the plainest case:
-        # RecordLines is handed the caller's clock read, and the moment
-        # it could take its own, the golden pinning a running run's line
-        # would depend on when the test ran.
+        # report is what remained of render once the two PUBLISHED
+        # renderings moved to the lifecycles that publish them — the pull
+        # request body to publish, the cohort commit message to change —
+        # so that the words upstream reads are written by the package
+        # that sends them and this package holds only the words an
+        # OPERATOR reads.
         #
-        # A deny list rather than verdict's allow list. It used to be one
-        # because it had to be: render imports plan in order to print
-        # one, and plan named a port handle, a fetcher and an evaluator,
-        # so the Tcl shell was already inside render's closure and an
-        # allow list would have claimed a property the import graph did
-        # not have. The plan rule below ended that — plan is a leaf now,
-        # and `go list -deps ./internal/render | grep os/exec` is empty —
-        # so the closure is real and an allow list here has become
-        # affordable. It stays a deny list for a different reason: what
-        # render promises is narrower than verdict's purity, these are
-        # the edges that would end it, and the reason each one is
-        # forbidden is worth saying at the import line where someone
-        # would add it. The os/exec entry is what the property is checked
-        # against.
-        render:
+        # Its promise is that every byte is a function of the arguments:
+        # a branch standing, a pass summary, a plan summary, the one
+        # remedy line. The clock is the plainest case — Standings is
+        # handed the caller's clock read, and the moment it could take
+        # its own, a golden pinning a running attempt's line would depend
+        # on when the test ran. The residency is the second: it arrives
+        # already probed, on the operation's own result, because a report
+        # that read the lock a second time could disagree with the
+        # judgment that was already made from the first read.
+        #
+        # A deny list rather than an allow list, for the reason render's
+        # was one: what this package promises is narrower than purity —
+        # it imports app in order to render an operation's result, and
+        # plan in order to print one — these are the edges that would end
+        # it, and the reason each is forbidden is worth saying at the
+        # import line where somebody would add it. The os/exec entry is
+        # what the property is checked against.
+        report:
           files:
-            - "**/internal/render/**"
-            # Tests reach across on purpose: the body restates git's
-            # abbreviation rule rather than importing it, and the only
-            # way to hold the two to the same twelve is a test that can
-            # see both. What the rule protects is the rendering itself.
-            - "!**/internal/render/*_test.go"
+            - "**/internal/report/**"
+            - "!**/internal/report/*_test.go"
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/git
-              desc: the body abbreviates a sha itself rather than importing the package that shells out; a renderer that can open a repository needs one to be checked
+              desc: a sha arrives already read; a projection that can open a repository needs one to be checked
             - pkg: github.com/herbygillot/dockhand/internal/gh
-              desc: a pull request's facts come from the caller that fetched them; wording that queries its own needs a network to pin
+              desc: a pull request's facts come from the gather that fetched them; wording that queried its own would need a network to pin
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: the record arrives already read; custody of the notes is the ledger's
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine calls render, so render must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/statestore
+              desc: the state arrives on app.StatusResult, already read under the flock; a report that opened a transaction would be an operation
             - pkg: github.com/herbygillot/dockhand/internal/intent
               desc: what the user asked for is resolved before the words are chosen, never while choosing them
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd calls render, so render must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: streams, a clock and process state stay with the verb; the clock read is passed in for exactly that reason
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli calls report, so report must not call back — and "nothing outside report imports report" is the other half of the same criterion
+            - pkg: github.com/herbygillot/dockhand/internal/lockfile
+              desc: the residency arrives already probed, on the result; a projection that took a lock would be deciding rather than describing
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
-              desc: render may speak verify's vocabulary but never the provider that boots and polls workers
+              desc: report may speak verify's vocabulary but never the provider that boots and polls workers
             - pkg: os/exec
               desc: a sentence that shells out is not a function of its arguments, and no golden can pin one
             - pkg: net
               desc: the same values have to render the same bytes offline
-        # engine is the effectful layer: it mints, submits, settles,
-        # cancels and discards, so it may touch git, the ledger, the
-        # provider vocabulary and the renderers. What it must not
-        # acquire is a way back up to the run or the command line, or a
-        # way down into one particular provider. runstate builds the
-        # engine's Deps, so an import the other way is a cycle; cmd
-        # calls the engine; and naming tart here would make the layer
-        # that decides WHAT to verify depend on the one thing that
-        # knows HOW. The orphan audit is what that costs and what it
-        # buys: it used to run tart itself and now asks a
-        # verify.WorkerLister the composition root wired, so denying the
-        # backend here costs the audit nothing and gains it a backend a
-        # test can stand in for.
-        engine:
-          files:
-            - "**/internal/engine/**"
-          deny:
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: runstate constructs the engine's Deps; an import back is a cycle, and a Context here would put the command line inside the engine
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd calls the engine, so the engine must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
-              desc: the engine says what to verify; which hypervisor does it is the composition root's choice, wired in as a verify.Verifier
-            - pkg: github.com/herbygillot/dockhand/internal/verify/tart/provision
-              desc: provisioning is a machine-shaped verb of its own; the engine consumes the provider it produces
-            - pkg: github.com/herbygillot/dockhand/internal/upstream
-              desc: where a release comes from is the planners' business; the engine realizes plans already made
-            - pkg: github.com/herbygillot/dockhand/internal/vendored
-              desc: the vendored families are a planner's concern; an engine that regenerated one would be planning
         # ledger holds custody of the notes — the read, the flock, the
         # re-read inside it, the write, the scans. It touches git and the
         # lockfile because that is the entire job. What it must not
@@ -442,14 +399,10 @@ linters:
           files:
             - "**/internal/ledger/**"
           deny:
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine calls the ledger, so the ledger must not call back
             - pkg: github.com/herbygillot/dockhand/internal/intent
               desc: custody of the notes does not vary with what the user asked for
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd calls the ledger, so the ledger must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: what is said under the lock belongs to the verb that took it; a ledger that prints owns output ordering it cannot see
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli calls the ledger, so the ledger must not call back
         # gh is the client and nothing above it: the seam that runs the
         # binary, the pull request lookups, and fork and upstream
         # resolution. It answers with facts and holds no opinion about
@@ -472,14 +425,10 @@ linters:
               desc: a pull request is not a note; a client that knew the wire format would start deciding what goes on one
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: gh answers about pull requests and keeps nothing; custody of the notes is the ledger's
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: the words left this package deliberately; a client that phrases its answers takes their goldens back with it
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine calls gh, so gh must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd calls gh, so gh must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: a client returns values and errors; what is printed of them, and when, belongs to the verb that asked
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli calls gh, so gh must not call back
         # lease owns one of the four durable lifecycles: what this
         # checkout has been handed by a provider and what it owes back.
         # Its promise is narrower than purity and worth naming — it is
@@ -501,14 +450,10 @@ linters:
             - "**/internal/lease/**"
             - "!**/internal/lease/*_test.go"
           deny:
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into the lifecycles; a lifecycle that imported it would be importing its own caller
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd composes the operations that call lease, so lease must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli composes the operations that call lease, so lease must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: an obligation carries a typed Kind and Standing precisely so nothing here has to choose a sentence; a lease that could phrase its own report would start deciding from words (rule 6)
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: what is printed of an obligation, and when, belongs to the verb that asked
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: the note is a derived export; this lifecycle writes the state ref and nothing else
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
@@ -529,14 +474,10 @@ linters:
           files:
             - "**/internal/lease/*_test.go"
           deny:
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into the lifecycles; a test that imported it would be testing its own caller
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd composes the operations that call lease, so lease must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli composes the operations that call lease, so lease must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: an obligation carries a typed Kind and Standing precisely so nothing here has to choose a sentence
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: what is printed of an obligation, and when, belongs to the verb that asked
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: the note is a derived export; this lifecycle writes the state ref and nothing else
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
@@ -568,14 +509,10 @@ linters:
             - "**/internal/run/**"
             - "!**/internal/run/*_test.go"
           deny:
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into the lifecycles; a lifecycle that imported it would be importing its own caller
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
+            - pkg: github.com/herbygillot/dockhand/internal/cli
               desc: cli composes app and app calls run, so run must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: the one interpreter states verdicts, not sentences a reader meets; the strings it does produce ride the record (Run.Detail) and a judge that could phrase a report would start deciding from words (rule 6)
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: streams, a clock and process state stay with the verb; every clock read in this package is passed in for exactly that reason
             - pkg: github.com/herbygillot/dockhand/internal/git
               desc: the one ref-mover is statestore, and run reaches git only through it (R23); staging a commit is the Stager's, which is why that is an interface
             - pkg: github.com/herbygillot/dockhand/internal/macports/eval
@@ -612,14 +549,10 @@ linters:
           files:
             - "**/internal/run/*_test.go"
           deny:
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into the lifecycles; a test that imported it would be testing its own caller
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
+            - pkg: github.com/herbygillot/dockhand/internal/cli
               desc: cli composes app and app calls run, so run must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/render
-              desc: what a verdict looks like to a reader is render's and is pinned by render's own goldens
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: streams, a clock and process state stay with the verb
+            - pkg: github.com/herbygillot/dockhand/internal/report
+              desc: what a verdict looks like to a reader is report's and is pinned by report's own goldens
             - pkg: github.com/herbygillot/dockhand/internal/macports/eval
               desc: the judge and the queue are testable with no ports tree behind them, and a test that opened an evaluator would end that
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
@@ -679,14 +612,10 @@ linters:
               desc: an environment is run's and lease's; a publication holds none and releases none
             - pkg: github.com/herbygillot/dockhand/internal/verify
               desc: what a change is worth building is run's question; naming a job here would put a provider vocabulary under every pull request
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: a refusal here is a sentinel and an advisory is a typed value, so nothing has to choose a sentence; the pull request body is BYTES THE FORGE STORES and not a rendering for a terminal, which is why it lives here and is pinned by this package's own tests
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: streams, a clock and process state stay with the verb; every clock read in this package is passed in for exactly that reason
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
+            - pkg: github.com/herbygillot/dockhand/internal/cli
               desc: cli composes app and app calls publish, so publish must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into this package and its siblings; an import into it would put the husk underneath the lifecycle that replaces it
             - pkg: github.com/herbygillot/dockhand/internal/macports/eval
               desc: the evaluation Direction needs arrives through publish.Evaluator, which app implements; a publication that could open a Tcl shell could not be argued about without a MacPorts installation
             - pkg: github.com/herbygillot/dockhand/internal/upstream
@@ -719,13 +648,9 @@ linters:
               desc: a test that opened a note would be testing the projection this package is forbidden to read
             - pkg: github.com/herbygillot/dockhand/internal/run
               desc: a test that settled a run would be proving something about the verification lifecycle
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: what a refusal looks like to a reader is the report layer's and is pinned by its own goldens
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: streams, a clock and process state stay with the verb
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into the lifecycles; a test that imported it would be testing its own caller
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
+            - pkg: github.com/herbygillot/dockhand/internal/cli
               desc: cli composes app and app calls publish, so publish must not call back
             - pkg: github.com/herbygillot/dockhand/internal/macports/eval
               desc: the evaluation seam is scripted in these tests, which is the whole reason it is a seam — a publication's direction is arguable with no MacPorts installation behind it
@@ -758,15 +683,15 @@ linters:
               desc: what a build needs is the provider's concern; verify only names the job and reports its outcome
         # A plan is an inert value: the edits, their provenance, the
         # precondition hash, the predicted delta. Everything that reads
-        # one imports this package, render included, so what plan can
-        # reach every renderer can reach — and for three symbols on two
+        # one imports this package, report included, so what plan can
+        # reach every projection can reach — and for three symbols on two
         # lines it reached the Tcl shell. The Planner interface named a
         # port handle and a fetcher as parameter types in a declaration
         # plan does not implement, and Apply took the evaluator itself
         # to ask it one question, twice. Nothing was called through any
         # of them; the types alone put os/exec in the dependency set of
         # every package that prints a plan, which is exactly the closure
-        # the render rule above could not previously claim.
+        # the report rule above could not previously claim.
         #
         # The three edges are named separately because plan had three
         # independent routes down to os/exec and closing two would have
@@ -785,7 +710,7 @@ linters:
             - pkg: github.com/herbygillot/dockhand/internal/distfile
               desc: fetching is spent at plan time by the planner, never by the plan
             - pkg: github.com/herbygillot/dockhand/internal/macports/eval
-              desc: Apply takes a Snapshotter, which is the two questions it actually asks; naming the evaluator here puts the Tcl shell back in render's dependency set
+              desc: Apply takes a Snapshotter, which is the two questions it actually asks; naming the evaluator here puts the Tcl shell back in report's dependency set
             - pkg: os/exec
               desc: the three edges above are the routes that existed, and this is the property they were denied for
         # change owns the change lifecycle: it prepares content, writes
@@ -825,14 +750,10 @@ linters:
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: a decision reads record.Change from the state ref, never the note's derived export; custody of the notes is the ledger's
-            - pkg: github.com/herbygillot/dockhand/internal/render
+            - pkg: github.com/herbygillot/dockhand/internal/report
               desc: a refusal here is a sentinel and the words for it are the road's; a mutator that phrased its own would phrase it inside a retried closure
-            - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: streams, a clock and process state stay with the verb; every clock read in this package is passed in for exactly that reason
-            - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd calls app and app calls change, so change must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine is being dissolved into this package and its siblings; an import into it would put the husk underneath the lifecycle that replaces it
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli composes app and app calls change, so change must not call back
             - pkg: github.com/herbygillot/dockhand/internal/verify
               desc: what a change is worth building is run's question; a lifecycle that named a job would put a provider vocabulary under every mint
             - pkg: github.com/herbygillot/dockhand/internal/gh
@@ -843,6 +764,194 @@ linters:
               desc: the vendored families are a planner's concern; a change that regenerated one would be planning
             - pkg: net
               desc: provider and network I/O never goes inside an Amend closure or inside a lock, and the surest way to hold that is a package that cannot reach either
+        # app holds the OPERATIONS: one type per verb-shaped act, each
+        # sequencing lifecycles it does not own. It is the widest import
+        # list in the tree by design — change, run, lease, publish,
+        # statestore, git, ledger, planning, progress — because
+        # sequencing is exactly the job of holding several lifecycles at
+        # once, and the engine facade this replaced held them all behind
+        # one type instead of nine.
+        #
+        # So what this rule guards is not width but DIRECTION and DEPTH.
+        # The three denials are the three ways an operation stops being
+        # one:
+        #
+        #   - THE LAYER ABOVE. cli composes app; an import back is a
+        #     cycle, and one that compiled would put flag parsing inside
+        #     an operation. The lazy service memo that used to sit
+        #     between them is gone with internal/runstate, and
+        #     ChangeRequest.Needs() is what replaces the laziness.
+        #   - THE WORDS. report chooses the
+        #     sentences a reader meets. An operation states what happened
+        #     in a typed result and narrates through progress.Sink;
+        #     "nothing outside report imports report" is build step 10's
+        #     own done-criterion and this line is where it is held.
+        #   - THE DETAILS UNDER A SEAM. A provider backend, a Tcl
+        #     evaluator, a distfile fetcher and a forge client are all
+        #     reached through values the composition root hands in —
+        #     verify.Verifier, run.Stager, run.Local, publish.Env — and an
+        #     operation that could name one would have acquired it, which
+        #     is exactly what "no operation opens a file" forbids.
+        #
+        # net is denied for the reason every lifecycle denies it: an
+        # operation's foreign effects go through publish and verify,
+        # which are the packages that own an effect that can outlive the
+        # process, and an operation that could open a socket could open
+        # one inside an Amend closure.
+        #
+        # macports/tree is NOT denied and macports/eval is, which looks
+        # inconsistent and is not: tree.Target is two strings, named by
+        # Cycle's publish slot so a re-plan says which port it is about,
+        # and naming a value type is not opening a tree. It is run naming
+        # portindex.Dependent, one layer up, for the same reason.
+        #
+        # WHAT THAT DOES NOT BUY IS A CLEAN CLOSURE, and the difference is
+        # worth stating rather than assumed: `go list -deps ./internal/app`
+        # DOES contain macports/eval and the Tcl shell, because
+        # macports/port asserts *eval.Evaluator against port.Oracle so the
+        # two method sets cannot drift, and planning names port.Handle. So
+        # this rule holds a DIRECT-IMPORT property — no operation reaches
+        # for an evaluator, a backend or a forge client itself — and the
+        # transitive one belongs to the packages that own those assertions.
+        app:
+          files:
+            - "**/internal/app/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli composes app; an import back is a cycle, and one that compiled would put flag parsing inside an operation
+            - pkg: github.com/herbygillot/dockhand/internal/report
+              desc: an operation states what happened in a typed result and narrates through progress.Sink; nothing outside report renders, which is step 10's done-criterion
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: a provider's details arrive as a verify.Verifier the composition root acquired; an operation that named a backend would have chosen one
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: an evaluation reaches an operation through run.Stager, change.Evaluator or planning.Planner; an app that could evaluate could not be tested without a ports tree
+            - pkg: github.com/herbygillot/dockhand/internal/macports/portfetch
+              desc: the network is the planners' and the fetcher is planning's; an operation realizes plans already made
+            - pkg: github.com/herbygillot/dockhand/internal/gh
+              desc: a publication is a foreign effect and publish's; publish.Env is the whole of the forge an operation may hold
+            - pkg: github.com/herbygillot/dockhand/internal/upstream
+              desc: where a release comes from is the planners' business; an operation carries a change that already knows what it moves to
+            - pkg: net
+              desc: an operation's foreign effects go through publish and verify, which own effects that outlive the process; a package that can open a socket can open one inside an Amend
+        # planning is the PRODUCER of plans and nothing else: resolve,
+        # evaluate, fetch if the intent fetches, fill the parameters,
+        # choose from the catalogue, run it. Its denials say the two
+        # halves of that sentence.
+        #
+        # THE FIRST HALF IS "producer": it may not reach a lifecycle. A
+        # planner that could mint, enqueue, publish or open a transaction
+        # would be the second orchestrator this package exists to stop
+        # being one — the six steps live here precisely so that app does
+        # not hold an evaluator, a fetcher, a port handle and a tree on
+        # behalf of one step, and a planning that wrote records would have
+        # taken the whole layer instead.
+        #
+        # THE SECOND HALF IS "and nothing else": the evaluator and the
+        # fetcher arrive as port.Oracle and distfile.Fetcher, which are
+        # the tree's own consumer-owned seams, so this package cannot
+        # acquire either. That is what lets a plan be produced in a test
+        # with no MacPorts installation and no network, which is the
+        # property the sketch's two one-method interfaces were describing.
+        planning:
+          files:
+            - "**/internal/planning/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/app
+              desc: app consumes a plan; planning produces one, and an import back is a cycle
+            - pkg: github.com/herbygillot/dockhand/internal/cli
+              desc: cli composes this and hands it to an operation; an import back would put flag parsing inside a planner
+            - pkg: github.com/herbygillot/dockhand/internal/statestore
+              desc: a plan is made against a Portfile and a catalogue, not against the operational record; a producer that opened a transaction would be an operation
+            - pkg: github.com/herbygillot/dockhand/internal/change
+              desc: planning makes a *plan.Plan and change turns it into Prepared content; the boundary between producer and consumer is this line
+            - pkg: github.com/herbygillot/dockhand/internal/run
+              desc: whether a plan is verified is not the planner's question; nothing here decides how far a change goes
+            - pkg: github.com/herbygillot/dockhand/internal/publish
+              desc: where a change ends up is decided two layers up; a planner that named a publication would be deciding it
+            - pkg: github.com/herbygillot/dockhand/internal/lease
+              desc: an environment is a verification's concern; planning holds none and asks for none
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: a plan is made over a portdir's bytes; the repository belongs to the roads that commit, and a producer that read one could plan against a commit nobody asked for
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: the evaluator arrives as port.Oracle so a plan can be made in a test with no MacPorts installation; acquiring one here would end that
+            - pkg: github.com/herbygillot/dockhand/internal/macports/portfetch
+              desc: the fetcher arrives as distfile.Fetcher for the same reason; a planner that opened its own would need the network to be tested
+            - pkg: github.com/herbygillot/dockhand/internal/report
+              desc: a decline here is the planner's own value and the words for it are the road's
+        # cli is the cobra adapter and the COMPOSITION ROOT, so it is the
+        # one package with no upward denial to make: nothing is above it.
+        # What its rule guards is the thing this whole restructure exists
+        # to remove — the shipped internal/cmd imported TWELVE domain
+        # packages and ran multi-step verbs out of its own Actions — so
+        # the line here is drawn at REACHING PAST app.
+        #
+        # WHAT IT MAY NAME, and why the list is not shorter. A
+        # composition root builds the values an operation declares, and
+        # app declares them by TYPE: app.Change carries a *git.Repo, a
+        # *statestore.Store, a *ledger.Ledger, a run.Stager, a run.Local
+        # and a change.Prepared, and app.Cycle carries a publish.Env, a
+        # publish.Pace and a change.Evaluator. So cli names git,
+        # statestore, ledger, run, change and publish because it CANNOT
+        # construct an operation without naming them — that is measured
+        # from app's own field declarations, not preferred — and the
+        # done-criterion "cli imports app and report and nothing else of
+        # the domain" is held in the only place it can be: cli calls no
+        # lifecycle MUTATOR and opens no Amend. app's hold, unhold and
+        # dismiss ENTRY POINTS exist for exactly that reason, three or
+        # four lines apiece, so that this package never opens a
+        # transaction of its own.
+        #
+        # WHAT IT MAY NOT REACH is what would put a JUDGMENT back where
+        # flags live. internal/dependents is NOT on that list, and the
+        # attempt to put it there is worth recording: run.Local returns
+        # []dependents.Instruction, and this package implements run.Local,
+        # so denying it denies the seam — measured, by the linter, on the
+        # first run of this rule. The two below are the ones that survive:
+        # evidence a judge reads, which a verb has no business reading
+        # because it would be judging where it should be rendering a
+        # typed result.
+        #
+        # The bypass this package must not perform — reaching a
+        # lifecycle's sequencer directly instead of through an operation
+        # — is not visible to a linter, because the packages it would
+        # reach are the same ones it legitimately names. It is held by
+        # app's own rule (an import back is a cycle), by app's three
+        # ENTRY POINTS existing at all, and by the one line of sequencing
+        # this package documents at its call site.
+        cli:
+          files:
+            - "**/internal/cli/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/darwin/abi
+              desc: an ABI measurement is a verification's evidence; a verb that read one would be judging where it should be rendering a typed result
+            - pkg: github.com/herbygillot/dockhand/internal/artifact
+              desc: what a guest reported is the provider's and the judge's; nothing at the command line reads a manifest
+        # progress is narration and a LEAF, held by an allow list for the
+        # reason record and darwin/abi are: every lifecycle needs to
+        # narrate, so this package sits underneath all of them, and one
+        # convenient import would put whatever it named underneath them
+        # too. The allow list is one entry wide — io, for the raw build
+        # log Stream passes through — and a second entry is an argument
+        # rather than an edit.
+        progress:
+          files:
+            - "**/internal/progress/**"
+            - "!**/internal/progress/*_test.go"
+          allow:
+            - $gostd
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal
+              desc: a sink that could name a domain type would let a fact travel through narration, which is the one thing its return-nothing methods exist to prevent
+        # progress's own tests: the leaf, the harness, and nothing else.
+        progress-tests:
+          files:
+            - "**/internal/progress/*_test.go"
+          allow:
+            - $gostd
+            - github.com/stretchr/testify
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal
+              desc: a test that reached for a domain type would be proving something about that type, not about narration
         # A vendored family holds one block's format and the tool that
         # writes it, and nothing above that. It says why a block cannot
         # be honest — the family is the only thing that knows — but what

@@ -8,4 +8,12 @@
 // macports/eval, the one producer in the tree; the types themselves are
 // plain data, which is what lets plan render an added context against an
 // empty Values and a test build one by hand.
+//
+// State is the part with a contract. An evaluation's Values splits into
+// Semantic, Context and Observed by what kind of fact each field is, and
+// only Semantic is compared — by a table this package GENERATES from the
+// struct, so that a field added without a comparison stops the build
+// instead of quietly escaping every diff. Values' own doc comment states
+// the question that decides where a new field goes; semantic.go's states
+// what the generation buys and what it costs.
 package info
