@@ -1340,14 +1340,18 @@ func pathBase(p string) string {
 // MacPorts installation and no provider can still be cleaned up — which
 // is very often exactly the checkout that needs it.
 func purgeCmd(s *Services) *cobra.Command {
-	var dry, force bool
+	var dry, force, envs bool
 	c := &cobra.Command{
 		Use:   "purge",
 		Short: "Remove this checkout's dockhand branches, pins and records",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := s.Acquire(ctx, app.Needs{Repo: true}); err != nil {
+			// Needs is decided by the flags, which is the composition
+			// root's whole job: a purge without --environments resolves
+			// no verifier at all, and on a host with no provider that is
+			// the difference between working and refusing.
+			if err := s.Acquire(ctx, app.Needs{Repo: true, Verifier: envs}); err != nil {
 				return err
 			}
 			repo, err := s.Repo()
@@ -1362,11 +1366,15 @@ func purgeCmd(s *Services) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := app.Purge{
+			op := app.Purge{
 				Repo: repo, State: st, Ledger: led,
 				Progress: sink{w: s.Err},
-				DryRun:   dry, Force: force,
-			}.Run(ctx)
+				DryRun:   dry, Force: force, Environments: envs,
+			}
+			if envs {
+				op.Verifier = s.VerifyProvider()
+			}
+			res, err := op.Run(ctx)
 			if err != nil {
 				return err
 			}
@@ -1376,5 +1384,6 @@ func purgeCmd(s *Services) *cobra.Command {
 	}
 	c.Flags().BoolVar(&dry, "dry-run", false, "list what would be removed and remove nothing")
 	c.Flags().BoolVar(&force, "force", false, "proceed even while an environment is held — the running build's branch goes with it")
+	c.Flags().BoolVar(&envs, "environments", false, "also release every environment the provider is running; base and golden images are untouched")
 	return c
 }

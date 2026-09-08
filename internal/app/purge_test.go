@@ -2,14 +2,18 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
+	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/statestore"
+	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -148,4 +152,106 @@ func TestAPurgeWithNothingToRemoveWritesNoStateRef(t *testing.T) {
 	_, err = st.Read(context.Background())
 	require.ErrorIs(t, err, statestore.ErrNoState,
 		"an empty purge leaves the checkout exactly as it found it")
+}
+
+// fakeProv hands the same Fake back as a resolver, which is the shape
+// cli supplies.
+func fakeProv(f *verifytest.Fake) func(context.Context) (verify.Verifier, error) {
+	return func(context.Context) (verify.Verifier, error) { return f, nil }
+}
+
+func worker(name, id string) verify.Worker {
+	return verify.Worker{Name: name, Job: verify.Job{ID: id, Provider: "tart"}}
+}
+
+func TestPurgeLeavesEnvironmentsAloneUnlessAsked(t *testing.T) {
+	// The default is the conservative one: purge clears this checkout's
+	// git artifacts and does not reach the provider at all.
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{Live: []verify.Worker{worker("dockhand-worker-a", "a")}}
+	op := purgeOp(repo, st, led)
+	op.Verifier = fakeProv(f)
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, res.Environments, "nil, not empty: the provider was never asked")
+	assert.Empty(t, f.Released, "and nothing was released")
+}
+
+func TestPurgeEnvironmentsReleasesEveryWorker(t *testing.T) {
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{Live: []verify.Worker{
+		worker("dockhand-worker-b", "b"),
+		worker("dockhand-worker-a", "a"),
+	}}
+	op := purgeOp(repo, st, led)
+	op.Verifier, op.Environments = fakeProv(f), true
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dockhand-worker-a", "dockhand-worker-b"}, res.Environments,
+		"named and sorted, so a report reads the same twice")
+	assert.ElementsMatch(t, []string{"a", "b"}, f.Released)
+}
+
+func TestPurgeEnvironmentsDryRunReleasesNothing(t *testing.T) {
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{Live: []verify.Worker{worker("dockhand-worker-a", "a")}}
+	op := purgeOp(repo, st, led)
+	op.Verifier, op.Environments, op.DryRun = fakeProv(f), true, true
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dockhand-worker-a"}, res.Environments, "it still says what would go")
+	assert.Empty(t, f.Released, "and nothing went")
+	assert.Len(t, refsUnder(t, repo, "refs/heads/dockhand/"), 2)
+}
+
+func TestPurgeSaysWhenItCouldNotAskTheProvider(t *testing.T) {
+	// Rule 7. A listing that failed is not an empty machine, and a purge
+	// that reported "0 environments" here would be claiming a clean host
+	// on the strength of a question that was never answered.
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{WorkersErr: errors.New("tart: command not found")}
+	op := purgeOp(repo, st, led)
+	op.Verifier, op.Environments = fakeProv(f), true
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err, "the refs and notes still go")
+	require.ErrorIs(t, res.InventoryRefused, lease.ErrNoInventory)
+	assert.Empty(t, refsUnder(t, repo, "refs/heads/dockhand/"), "the branches went regardless")
+}
+
+func TestPurgeSaysWhenTheHostHasNoProvider(t *testing.T) {
+	repo, st, led := purgeFixture(t)
+	op := purgeOp(repo, st, led)
+	op.Environments = true // and Verifier stays nil
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err)
+	require.ErrorIs(t, res.InventoryRefused, lease.ErrNoInventory)
+}
+
+func TestAProviderThatCannotListIsNotAProviderWithNoWorkers(t *testing.T) {
+	// The same distinction one level down, where it is made.
+	f := &verifytest.Fake{}
+	_, err := lease.Inventory(context.Background(), &noLister{f})
+	require.ErrorIs(t, err, lease.ErrNoInventory)
+
+	got, err := lease.Inventory(context.Background(), f)
+	require.NoError(t, err)
+	assert.Empty(t, got, "a provider that CAN list and lists nothing is a different answer")
+}
+
+// noLister is a Verifier that is not a WorkerLister.
+type noLister struct{ verify.Verifier }
+
+func TestDestroyTreatsAnAlreadyGoneWorkerAsGone(t *testing.T) {
+	// A listing that straddled somebody else's release is the ordinary
+	// case, not a fault: Destroy's job is that the named environments
+	// are gone when it returns, not that this call removed them.
+	f := &verifytest.Fake{ReleaseErr: map[string]error{"a": verify.ErrUnknownJob}}
+	gone, err := lease.Destroy(context.Background(), f, []verify.Worker{worker("dockhand-worker-a", "a")})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dockhand-worker-a"}, gone)
 }

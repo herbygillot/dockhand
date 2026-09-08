@@ -876,6 +876,24 @@ func Purged(w io.Writer, p app.PurgeResult) {
 	for _, ref := range p.Branches {
 		fmt.Fprintf(w, "  %s\n", strings.TrimPrefix(ref, "refs/heads/"))
 	}
+	// THE ENVIRONMENTS ARE REPORTED SEPARATELY FROM THE REFS, and their
+	// absence is reported differently from their emptiness: nil means
+	// --environments was not asked for and the provider was never
+	// consulted, where an empty non-nil slice means it was asked and
+	// answered none. Collapsing those two into one line would tell a
+	// person the machine is clean on the strength of a question nobody
+	// put.
+	if p.Environments != nil {
+		fmt.Fprintf(w, "%s %d environment(s)\n", verb, len(p.Environments))
+		for _, name := range p.Environments {
+			fmt.Fprintf(w, "  %s\n", name)
+		}
+		fmt.Fprintln(w, "base and golden images are untouched; `provision tart` owns those")
+	}
+	if p.InventoryRefused != nil {
+		// Rule 7 at the surface: not "there are none".
+		fmt.Fprintf(w, "environments were NOT removed: %v\n", p.InventoryRefused)
+	}
 	if p.Kept > 0 {
 		fmt.Fprintf(w, "the state ref is untouched: %d change record(s) remain, and `status` will still list them\n", p.Kept)
 	}

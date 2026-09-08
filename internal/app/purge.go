@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/statestore"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // ErrLeasesLive is Purge refusing while an environment is still held.
@@ -24,7 +27,14 @@ import (
 // gone. That is worth a refusal rather than a warning, because the
 // remedy is cheap and stated (drain first) and the damage is not
 // something a person can put back.
-var ErrLeasesLive = errors.New("app: an environment is still held; drain it before purging")
+//
+// --environments LIFTS THIS REFUSAL RATHER THAN OVERRIDING IT, and that
+// is the difference between it and --force. The refusal exists because
+// the guest would outlive the branch it was building; a purge that takes
+// the guest too has removed the reason rather than ignored it. --force
+// is the blunt instrument for a person who wants the branches gone and
+// the guests left running anyway.
+var ErrLeasesLive = errors.New("app: an environment is still held; drain it, or purge them too with --environments")
 
 // PurgeResult is what a purge removed, or would have.
 //
@@ -39,6 +49,17 @@ type PurgeResult struct {
 	Pins     []string
 	// Notes is how many annotated commits the ledger held.
 	Notes int
+	// Environments is the provider environments released, by name, and
+	// it is nil rather than empty when --environments was not asked for:
+	// "none were removed" and "removal was not requested" are different
+	// answers and a report renders them differently.
+	Environments []string
+	// InventoryRefused carries lease.ErrNoInventory when --environments
+	// was asked for and the provider could not be enumerated. Rule 7: a
+	// purge that could not look must not report a clean machine, and the
+	// refusal is a field rather than a returned error because the refs
+	// and notes still went and the result must be able to say both.
+	InventoryRefused error
 	// DryRun says nothing was removed and the three fields are a
 	// prediction. It is a field rather than the caller's memory because a
 	// report renders this value alone.
@@ -103,8 +124,23 @@ type Purge struct {
 	State    *statestore.Store
 	Ledger   *ledger.Ledger
 	Progress progress.Sink
+	// Verifier resolves the provider, and is nil on a host that has none.
+	// It is a func rather than a value because resolving one can fail and
+	// most purges never need it — only --environments does.
+	Verifier func(context.Context) (verify.Verifier, error)
 	// DryRun lists what would go and removes nothing.
 	DryRun bool
+	// Environments widens the purge to the provider: every environment it
+	// is running is released, whether or not any record here names it —
+	// the untracked worker no lease joins is exactly the one most worth
+	// clearing.
+	//
+	// BASES AND GOLDENS ARE NEVER TOUCHED, and purge does not filter for
+	// that. They are structurally not environments: the provider's own
+	// listing matches its worker prefix and its comment says a base or a
+	// golden must never read as a worker. Clearing those is provision's,
+	// which is where the thing that made them lives.
+	Environments bool
 	// Force proceeds past a live lease. It does NOT proceed past a
 	// checked-out branch: that refusal is about losing a person's working
 	// tree, and no flag on a housekeeping verb is worth that.
@@ -140,6 +176,27 @@ func (p Purge) Run(ctx context.Context) (PurgeResult, error) {
 		}
 	}
 
+	// The provider's inventory is observed here, with the refs, so that
+	// --dry-run can name what would go and the refusals below can be
+	// decided over a complete picture.
+	var workers []verify.Worker
+	if p.Environments {
+		prov, perr := p.provider(ctx)
+		if perr != nil {
+			res.InventoryRefused = perr
+		} else {
+			workers, perr = lease.Inventory(ctx, prov)
+			if perr != nil {
+				res.InventoryRefused = perr
+			}
+		}
+		res.Environments = []string{}
+		for _, w := range workers {
+			res.Environments = append(res.Environments, w.Name)
+		}
+		sort.Strings(res.Environments)
+	}
+
 	st, err := p.State.Read(ctx)
 	switch {
 	case errors.Is(err, statestore.ErrNoState):
@@ -150,50 +207,79 @@ func (p Purge) Run(ctx context.Context) (PurgeResult, error) {
 		return res, fmt.Errorf("reading the state: %w", err)
 	default:
 		res.Kept = len(st.Changes)
-		if live := st.Live(); len(live) > 0 && !p.Force {
+		// --environments lifts this rather than overriding it: the guest
+		// goes with the branch, so the orphan the refusal guards against
+		// cannot happen.
+		if live := st.Live(); len(live) > 0 && !p.Force && !p.Environments {
 			return res, fmt.Errorf("%w: %s", ErrLeasesLive, leaseWord(live))
 		}
 	}
 
-	if len(res.Branches) == 0 && len(res.Pins) == 0 {
-		// Nothing in git. The notes are still asked for: a checkout can
-		// carry an export whose refs are already gone.
-		if p.DryRun {
-			res.Notes, err = countNotes(ctx, p.Ledger)
-			return res, err
-		}
-		res.Notes, err = p.Ledger.Purge(ctx)
-		return res, err
-	}
-
+	// A DRY RUN STOPS HERE, having observed everything and changed
+	// nothing. It still counts the records, because "what would go" is
+	// the whole question it was asked.
 	if p.DryRun {
 		res.Notes, err = countNotes(ctx, p.Ledger)
 		return res, err
 	}
 
-	// EFFECT. One Amend, one batch, all-or-nothing: either every ref
-	// goes or none does, and a ref a hand moved between the listing and
-	// the batch refuses the whole thing rather than being deleted
-	// unchecked.
-	lines := make(map[string]string, len(branches)+len(pins))
-	for k, v := range branches {
-		lines[k] = v
+	// EFFECT, and the three are in this order deliberately.
+	//
+	// The refs first: one Amend, one batch, all-or-nothing, so either
+	// every ref goes or none does and a ref a hand moved between the
+	// listing and the batch refuses the whole thing rather than being
+	// deleted unchecked. Putting it first also means that refusal
+	// happens BEFORE anything irreversible has been done at the
+	// provider — the other order would destroy a machine's worth of
+	// guests and then decline to delete the branches they were building.
+	//
+	// The environments second, outside the Amend, because a provider
+	// call is a foreign effect and an Amend closure may run twice.
+	//
+	// The notes last, and they are asked for even when git held no refs
+	// at all: a checkout can carry an export whose refs are already gone.
+	if len(branches) > 0 || len(pins) > 0 {
+		lines := make(map[string]string, len(branches)+len(pins))
+		maps.Copy(lines, branches)
+		maps.Copy(lines, pins)
+		err = p.State.Amend(ctx, func(tx *statestore.Txn) error {
+			_, err := change.PurgeIn(tx, lines)
+			return err
+		})
+		if err != nil {
+			return res, fmt.Errorf("removing the refs: %w", err)
+		}
 	}
-	for k, v := range pins {
-		lines[k] = v
+
+	if p.Environments && len(workers) > 0 {
+		prov, perr := p.provider(ctx)
+		if perr != nil {
+			return res, fmt.Errorf("reaching the provider: %w", perr)
+		}
+		gone, derr := lease.Destroy(ctx, prov, workers)
+		res.Environments = gone
+		if derr != nil {
+			return res, fmt.Errorf("releasing environments: %w", derr)
+		}
 	}
-	err = p.State.Amend(ctx, func(tx *statestore.Txn) error {
-		_, err := change.PurgeIn(tx, lines)
-		return err
-	})
-	if err != nil {
-		return res, fmt.Errorf("removing the refs: %w", err)
-	}
+
 	res.Notes, err = p.Ledger.Purge(ctx)
 	if err != nil {
 		return res, fmt.Errorf("removing the records: %w", err)
 	}
 	return res, nil
+}
+
+// provider resolves the verifier, and says plainly when the host has
+// none. A purge on a machine with no provider is an ordinary thing to
+// want — very often it is exactly the machine that needs cleaning — so
+// this is a stated refusal the caller records rather than a failure that
+// stops the refs going.
+func (p Purge) provider(ctx context.Context) (verify.Verifier, error) {
+	if p.Verifier == nil {
+		return nil, fmt.Errorf("%w: no provider is configured on this host", lease.ErrNoInventory)
+	}
+	return p.Verifier(ctx)
 }
 
 func countNotes(ctx context.Context, l *ledger.Ledger) (int, error) {
