@@ -52,13 +52,19 @@ func (p Provider) Holdings(ctx context.Context) ([]verify.Holding, error) {
 			continue
 		}
 		h := verify.Holding{Name: vm, Kind: kind}
-		if kind == verify.HeldWorker {
+		if kind.Attributable() {
 			// That a job's id IS the VM's name is this provider's own fact,
 			// stated in Workers and repeated here for the one kind a caller
 			// may also poll, log or release. The other three are not jobs
 			// and carry the zero Job rather than a job id that would name a
 			// verification nobody asked for.
 			h.Job = verify.Job{Provider: "tart", ID: vm, Request: RequestOf(vm)}
+			// The attribution sidecar, which is the same answer Workers
+			// gives and read the same way. A guest it says nothing about
+			// comes back unattributed rather than omitted: an unattributed
+			// guest still holds a slot, and it is the CALLER that decides
+			// what an unknown owner permits.
+			h.Owner = OwnerOf(vm)
 		}
 		held = append(held, h)
 	}

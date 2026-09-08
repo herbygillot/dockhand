@@ -38,6 +38,25 @@ func TestHoldingsClassifyEveryRoleDockhandNames(t *testing.T) {
 	}, got, "each role classified, and only a worker carries a job")
 }
 
+// The attribution is read for the one kind that can have one, so a
+// caller can confine itself to its own guests. An image is not asked
+// whose it is, because it belongs to the machine and an owner on one
+// would be a fact about nothing.
+func TestHoldingsCarryTheAttributionForWorkersOnly(t *testing.T) {
+	seq, _ := platform.ByName("Sequoia")
+	stubWorkers(t, strings.Join([]string{
+		"dockhand-worker-1", "dockhand-worker-2", BaseName(seq),
+	}, "\n"), nil)
+	writeAttribution("dockhand-worker-1", "/Users/someone/ports")
+	writeAttribution(BaseName(seq), "/Users/someone/ports")
+
+	got, err := Provider{Tools: tools}.Holdings(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "/Users/someone/ports", got[0].Owner)
+	assert.Empty(t, got[1].Owner, "an unattributed worker still holds a slot and is still reported")
+	assert.Empty(t, got[2].Owner, "and an image is never asked whose it is, whatever a sidecar says")
+}
+
 // A VM this provider did not name is not a holding. The listing is the
 // whole machine's, and reporting a person's own guest here would put it
 // in front of a sweep whose policy is "remove what is removable".

@@ -501,6 +501,26 @@ func Acquire(ctx context.Context, st *statestore.Store, prov verify.Verifier, ch
 	// verify.Request documents unusable.
 	platform := req.Platform.Name
 	req.ID = mint()
+	// THE OWNER IS STAMPED HERE, beside the id, and for the same reason
+	// the id is: this is the one place a request is completed before a
+	// provider ever sees it, and both fields are facts about WHOSE work
+	// this is that no layer below can supply.
+	//
+	// verify.Request.Owner had no producer at all until now — the field
+	// was documented, tart carried it into its attribution sidecar, and
+	// every submission left it empty, so writeAttribution returned
+	// immediately and no guest on any machine was attributable to
+	// anything. That made verify.Worker.Owner permanently "" and left
+	// every ownership question about a guest unanswerable, which is a
+	// contract with no producer rather than a policy anybody chose.
+	//
+	// The root and not the whole OwnerID: a guest outlives the process
+	// and the pass that made it, so the durable question a reader asks
+	// of it is WHICH CHECKOUT, which is exactly Root and exactly what
+	// lease.standingOf compares for ForeignRoot. It is already canonical
+	// — record.OwnerID.Root is spelled once, by the composition root —
+	// so two dockhands on one machine compare the same string.
+	req.Owner = by.Owner.Root
 	at := now()
 	var l record.Lease
 	err := st.Amend(ctx, func(tx *statestore.Txn) error {

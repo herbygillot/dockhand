@@ -27,7 +27,26 @@ import (
 type Holding struct {
 	Name string
 	Kind HoldingKind
-	Job  Job
+	// Owner names the checkout this holding was created for, "" when the
+	// provider cannot say. It is verify.Worker.Owner's field and its
+	// meaning — a canonical repository root, matched against
+	// record.OwnerID.Root — carried here because a destructive caller
+	// needs it and the audit's listing is not the one it holds.
+	//
+	// EMPTY IS NOT "NOBODY'S". It is "nothing here attributes it", which
+	// is a different answer and a much weaker one: a sidecar cleared by
+	// hand, a cache directory moved, a guest from a build that predates
+	// attribution. lease.Standing already draws that distinction —
+	// Unattributed is reported and seized only under an explicit flag,
+	// never treated as this checkout's — and estate.Split draws it
+	// again, because the act on the other side destroys a virtual
+	// machine somebody may be forty minutes into.
+	//
+	// It is meaningless for a kind that is not Attributable: a base
+	// image belongs to the machine, and an owner on one would be a fact
+	// about nothing.
+	Owner string
+	Job   Job
 }
 
 // HoldingKind is what a resource IS to the provider that made it, and
@@ -85,6 +104,22 @@ const (
 func (k HoldingKind) Removable() bool {
 	return k == HeldWorker || k == HeldScratch || k == HeldDerived
 }
+
+// Attributable reports a kind that is created FOR a checkout and can
+// therefore name one. It is the question "may I ask whose this is?",
+// and only a worker answers yes.
+//
+// A SCRATCH GUEST AND AN IMAGE BELONG TO THE MACHINE, not to a
+// checkout, and that is a fact about what they are rather than a gap in
+// the record. A base image is one copy shared by every checkout on the
+// host and is restored by cloning a reference copy; a scratch guest is
+// a throwaway that holds no verdict and owes no note, which is the
+// provider's own standing claim about the population (tart's
+// ProbePrefix: "anything under this prefix is always safe to delete").
+// Asking either of them whose it is has no answer, so a caller
+// confining itself to its own guests must not read their empty Owner as
+// a refusal — Attributable is how it tells the two silences apart.
+func (k HoldingKind) Attributable() bool { return k == HeldWorker }
 
 // String is what a report prints. A kind nobody set says so rather than
 // printing a number, because the line a person reads after a purge is

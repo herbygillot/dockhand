@@ -31,9 +31,20 @@
 //
 // The taxonomy itself is the PROVIDER's (verify.HoldingKind), because
 // only a backend can say which of its resources it is able to remake.
-// What this package adds is the two things a destructive caller needs
+// What this package adds is the three things a destructive caller needs
 // and a bare capability cannot give it: a listing that says when it
-// could not look, and a sweep that keeps what must be kept.
+// could not look, a division by whose the guests are, and a sweep that
+// keeps what must be kept.
+//
+// THE DIVISION IS lease.Standing's RULE ON THIS POPULATION. A machine
+// may host several dockhand checkouts, and each one's guests are its
+// own: a repository copied to another directory must not be able to
+// stop a build it does not own, which is the reason ForeignRoot is
+// reported and never seized. Divide says the same thing for a purge —
+// this checkout's guests go, another's stay, and a guest nothing
+// attributes stays too, because "no record says whose this is" is a
+// much weaker answer than "this is nobody's" and the act on the other
+// side destroys a virtual machine somebody may be forty minutes into.
 package estate
 
 import (
@@ -103,12 +114,16 @@ type Swept struct {
 	Kept    []string
 }
 
-// Sweep removes every removable holding and keeps the rest.
+// Sweep removes the holdings it is given, and refuses any that are not
+// removable.
 //
-// The decision is verify.HoldingKind.Removable's and this function does
-// not second-guess it: a kind nobody classified is kept, which is the
-// refusing zero doing its job at the one boundary where the act is
-// irreversible.
+// IT IS HANDED Divide's Remove BUCKET and does not sort for itself: the
+// ownership policy is stated once, purely, where it can be read and
+// tested without a provider. The Removable guard here is belt to that
+// braces — a caller that assembled its own list, or a kind nobody
+// classified, must not reach a provider's delete through this function
+// — and anything it catches lands in Kept rather than in the failures,
+// because withholding is what was wanted.
 //
 // IT TAKES THE LISTING RATHER THAN READING ONE. The caller has already
 // surveyed — a dry run reports exactly this population without touching
@@ -157,16 +172,65 @@ func Sweep(ctx context.Context, prov verify.Verifier, held []verify.Holding) (Sw
 	return out, errors.Join(failed...)
 }
 
-// Removable is the population a Sweep would take, without taking it:
-// what a dry run reports, and the count a refusal is phrased over.
-func Removable(held []verify.Holding) []verify.Holding {
-	out := make([]verify.Holding, 0, len(held))
+// Split is a listing sorted into what this checkout may remove and the
+// three reasons a holding stays. Each bucket is separate because each
+// is a different sentence to the person reading the report, and one
+// "kept" list would collapse "not mine", "nobody's" and "never" into a
+// number that answers none of them.
+type Split struct {
+	// Remove is this checkout's own guests, plus the machine's shared
+	// resources that no checkout owns.
+	Remove []verify.Holding
+	// Theirs is another checkout's guests, named with the root that
+	// claims them. Never removed, and never removable by any flag: a
+	// repository copied to another directory on this machine must not
+	// be able to stop a build it does not own.
+	Theirs []verify.Holding
+	// Unowned is guests nothing on this machine attributes. Reported,
+	// never removed here — `cycle --reclaim-unattributed` is the
+	// verb for them, which is where the design already put this
+	// population and the flag that takes it.
+	Unowned []verify.Holding
+	// Reference is the copies that always stay, whoever asks.
+	Reference []verify.Holding
+}
+
+// Divide sorts a listing by what root may take it. It is PURE and it is
+// the whole of the ownership policy, stated once.
+//
+// THE ORDER OF THE TESTS IS THE POLICY. A reference copy is refused
+// before anyone asks whose it is, because it stays for a reason that
+// has nothing to do with ownership. A kind that cannot name a checkout
+// goes to Remove without an owner test, because its empty Owner is a
+// fact about what it is (verify.HoldingKind.Attributable) rather than a
+// missing record — reading it as "unattributed" would make purge
+// unable to clear a stranded scratch guest or a base image forever.
+// Only then is an attributable holding compared, and an EMPTY owner
+// there is the weak answer lease.Standing calls Unattributed: reported,
+// not taken.
+//
+// An empty root is nobody: every attributable holding lands in Unowned
+// rather than matching. A caller that could not determine its own
+// checkout must not sweep on the strength of two empty strings being
+// equal, which is the shape of a comparison that destroys a virtual
+// machine by accident.
+func Divide(held []verify.Holding, root string) Split {
+	var s Split
 	for _, h := range held {
-		if h.Kind.Removable() {
-			out = append(out, h)
+		switch {
+		case !h.Kind.Removable():
+			s.Reference = append(s.Reference, h)
+		case !h.Kind.Attributable():
+			s.Remove = append(s.Remove, h)
+		case h.Owner == "" || root == "":
+			s.Unowned = append(s.Unowned, h)
+		case h.Owner != root:
+			s.Theirs = append(s.Theirs, h)
+		default:
+			s.Remove = append(s.Remove, h)
 		}
 	}
-	return out
+	return s
 }
 
 // Names is a holding list as a report reads it.

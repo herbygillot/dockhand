@@ -1326,7 +1326,7 @@ func pathBase(p string) string {
 }
 
 // purgeCmd removes everything dockhand made here, except the provider's
-// reference images.
+// reference images and any guest that is not this checkout's.
 //
 // It is a housekeeping verb and it sits beside discard, which is the
 // same act over one change. THERE IS NO FLAG DECIDING HOW MUCH IT
@@ -1334,8 +1334,15 @@ func pathBase(p string) string {
 // provider behind --environments and left the state ref alone
 // unconditionally, so the default swept a third of what a person asking
 // for a purge means and the two halves could be left disagreeing about
-// what this machine holds. What stays is one rule, stated at the
-// provider (verify.HoldingKind) rather than at the command line.
+// what this machine holds. What stays is two rules, both stated where
+// the facts are rather than at the command line — the provider says
+// which of its resources it can remake (verify.HoldingKind), and the
+// attribution says whose each guest is (estate.Divide against Me.Root).
+//
+// Me IS PASSED FOR THAT SECOND RULE and for nothing else. It is
+// s.Me(s.Now()) like every other operation's, and only its Root is
+// read: a guest outlives the process that made it, so the durable
+// question asked of one is which CHECKOUT, never which PID.
 //
 // Needs is Repo and Verifier. The verifier is asked for on every purge
 // now, but asking is not the same as requiring: Acquire only opens a
@@ -1371,6 +1378,7 @@ func purgeCmd(s *Services) *cobra.Command {
 				Repo: repo, State: st, Ledger: led,
 				Progress: sink{w: s.Err},
 				Verifier: s.VerifyProvider(),
+				Me:       s.Me(s.Now()),
 				DryRun:   dry, Force: force,
 			}
 			res, err := op.Run(ctx)

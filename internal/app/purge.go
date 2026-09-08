@@ -56,13 +56,24 @@ type PurgeResult struct {
 	// just removed.
 	Records  int
 	StateRef bool
-	// Removed and Kept are the provider's holdings this purge took and
-	// deliberately left. They are nil when the provider was never
-	// reached and non-nil-but-possibly-empty when it was: "none were
-	// held" and "nobody asked" are different answers and a report
-	// renders them differently.
+	// Removed is the provider's holdings this purge took. It is nil when
+	// the provider was never reached and non-nil-but-possibly-empty when
+	// it was: "none were held" and "nobody asked" are different answers
+	// and a report renders them differently.
 	Removed []string
+	// Kept, Theirs and Unowned are the three reasons a holding stayed,
+	// and they are three fields because they are three sentences. Kept
+	// is the reference copies, which stay whoever asks. Theirs is
+	// another checkout's guests, named with the root that claims them.
+	// Unowned is guests nothing on this machine attributes — reported
+	// here, and cleared by `cycle --reclaim-unattributed`, which
+	// is where the design already put that population.
+	//
+	// A purge that removed four and said nothing about the six it left
+	// would report a clean machine that is not one.
 	Kept    []string
+	Theirs  []string
+	Unowned []string
 	// EstateRefused carries estate.ErrNoEstate when the provider could
 	// not be enumerated. Rule 7: a purge that could not look must not
 	// report a clean machine, and it is a field rather than a returned
@@ -84,14 +95,45 @@ type PurgeResult struct {
 // VM this provider named — workers, scratch clones and prepared base
 // images alike.
 //
-// WHAT STAYS: the provider's reference copies. On tart those are the
-// goldens, and they stay because they are the only thing here that
-// cannot be reconstructed on this machine: a base is restored by
-// cloning a golden, which under copy-on-write costs neither time nor
-// disk, and a golden is restored by fetching and provisioning from
-// scratch. The rule is stated once as verify.HoldingKind.Removable and
-// the provider names its own kinds; nothing in this package knows what
-// a golden is called.
+// WHAT STAYS: the provider's reference copies, and every guest that is
+// not this checkout's. On tart the reference copies are the goldens,
+// and they stay because they are the only thing here that cannot be
+// reconstructed on this machine: a base is restored by cloning a
+// golden, which under copy-on-write costs neither time nor disk, and a
+// golden is restored by fetching and provisioning from scratch. The
+// rule is stated once as verify.HoldingKind.Removable and the provider
+// names its own kinds; nothing in this package knows what a golden is
+// called.
+//
+// A PURGE IS CONFINED TO ITS OWN GUESTS. A machine may host several
+// dockhand checkouts, and this verb removes the ones attributed to
+// Me.Root and no others: another checkout's guest is reported with the
+// root that claims it and is never taken, by any flag, because a
+// repository copied to another directory must not be able to stop a
+// build it does not own — lease.Standing's ForeignRoot rule, on the
+// population a purge acts over. A guest nothing attributes is left too
+// and named, because "no record says whose this is" is a far weaker
+// answer than "this is nobody's"; `cycle --reclaim-unattributed`
+// is the verb for those, and it is a person's explicit act there for
+// the same reason it is not this verb's default here.
+//
+// THE ATTRIBUTION IS A PER-USER CACHE, AND THIS FAILS TOWARD LEAVING
+// THINGS. cli/pass.go already states the hazard for the reclaim flag: a
+// process whose HOME is not the interactive shell's — a launchd
+// dispatcher — or one running after that cache was cleared reads every
+// live guest on the machine as unattributed. Here that reads as
+// Unowned, so such a purge removes no guests at all and says which ones
+// it left, rather than removing a peer's build. The wrong answer is a
+// purge that did less than asked and named what it skipped, which is
+// the direction rule 7 points at a boundary that destroys VMs.
+//
+// THE IMAGES ARE NOT CONFINED, AND CANNOT BE. A base image is one copy
+// shared by every checkout on the host — no checkout owns it, there is
+// no owner to compare, and verify.HoldingKind.Attributable says so — so
+// it goes with the rest. That is safe for a peer in a way removing its
+// guest would not be: a running build was cloned from the base and does
+// not need it any more, and the next `provision` restores it from a
+// reference copy for nothing.
 //
 // THE STATE REF GOES WITH THE GUESTS, and that is one decision rather
 // than two. An earlier purge kept the state ref on the argument that
@@ -143,6 +185,12 @@ type Purge struct {
 	// thing to want — very often it is exactly the machine that needs
 	// cleaning.
 	Verifier func(context.Context) (verify.Verifier, error)
+	// Me is this checkout, and Me.Root is what a guest's attribution is
+	// compared against. A zero Me matches nothing: every attributable
+	// holding then reads as Unowned and is left, which is the safe
+	// direction for an operation that could otherwise sweep on the
+	// strength of two empty strings being equal.
+	Me record.OwnerID
 	// DryRun lists what would go and removes nothing.
 	DryRun bool
 	// Force proceeds past ErrEstateUnknown: the records go even though
@@ -180,11 +228,15 @@ func (p Purge) Run(ctx context.Context) (PurgeResult, error) {
 	if esterr == nil {
 		held, esterr = estate.Survey(ctx, prov)
 	}
+	var split estate.Split
 	if esterr != nil {
 		res.EstateRefused = esterr
 	} else {
-		res.Removed = estate.Names(estate.Removable(held))
-		res.Kept = estate.Names(kept(held))
+		split = estate.Divide(held, p.Me.Root)
+		res.Removed = estate.Names(split.Remove)
+		res.Kept = estate.Names(split.Reference)
+		res.Theirs = estate.Names(split.Theirs)
+		res.Unowned = estate.Names(split.Unowned)
 	}
 
 	var live []record.Lease
@@ -214,7 +266,7 @@ func (p Purge) Run(ctx context.Context) (PurgeResult, error) {
 		}
 	}
 	if esterr != nil && len(live) > 0 && !p.Force {
-		return res, fmt.Errorf("%w: %s (%w); drain them with `dockhand cycle --once`, or purge anyway with --force",
+		return res, fmt.Errorf("%w: %s (%w); drain them with `dockhand cycle`, or purge anyway with --force",
 			ErrEstateUnknown, leaseWord(live), esterr)
 	}
 
@@ -238,9 +290,14 @@ func (p Purge) Run(ctx context.Context) (PurgeResult, error) {
 		}
 	}
 
-	if esterr == nil && len(held) > 0 {
-		swept, serr := estate.Sweep(ctx, prov, held)
-		res.Removed, res.Kept = swept.Removed, swept.Kept
+	if esterr == nil && len(split.Remove) > 0 {
+		swept, serr := estate.Sweep(ctx, prov, split.Remove)
+		// Sweep's own Kept is a holding it refused to take, which Divide
+		// should already have withheld — so it JOINS the reference copies
+		// rather than replacing them, and a purge whose provider refused
+		// something the policy had allowed still reports both.
+		res.Removed = swept.Removed
+		res.Kept = append(res.Kept, swept.Kept...)
 		if serr != nil {
 			return res, fmt.Errorf("removing this machine's environments: %w", serr)
 		}
@@ -274,19 +331,6 @@ func (p Purge) provider(ctx context.Context) (verify.Verifier, error) {
 		return nil, fmt.Errorf("%w: %w", estate.ErrNoEstate, err)
 	}
 	return prov, nil
-}
-
-// kept is the holdings a sweep would leave: the complement of
-// estate.Removable, computed here so the observation stage reports the
-// same two populations the sweep will produce.
-func kept(held []verify.Holding) []verify.Holding {
-	out := make([]verify.Holding, 0, len(held))
-	for _, h := range held {
-		if !h.Kind.Removable() {
-			out = append(out, h)
-		}
-	}
-	return out
 }
 
 func countNotes(ctx context.Context, l *ledger.Ledger) (int, error) {

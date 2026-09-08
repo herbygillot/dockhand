@@ -157,6 +157,24 @@ func TestAcquireMintsTheRequestTokenItself(t *testing.T) {
 		"one token: the document's name and the provider's id are the same string")
 }
 
+// verify.Request.Owner had NO PRODUCER at all until Acquire stamped it:
+// the field was documented, tart carried it into its attribution
+// sidecar, and every submission left it empty — so no guest on any
+// machine was attributable to anything, verify.Worker.Owner was
+// permanently "", and every ownership question about a guest was
+// unanswerable. A contract with no producer is not a policy anybody
+// chose.
+func TestAcquireStampsTheOwningCheckoutOnTheRequest(t *testing.T) {
+	st := newStore(t)
+	fake := &verifytest.Fake{}
+	_, err := Acquire(t.Context(), st, fake, "chg-1", request("r"), claimant(me()), at(0))
+	require.NoError(t, err)
+
+	require.Len(t, fake.Submitted, 1)
+	assert.Equal(t, me().Root, fake.Submitted[0].Owner,
+		"the ROOT and not the whole OwnerID: a guest outlives the process that made it, so the durable question is which checkout")
+}
+
 // TWO ACQUIRERS, ONE SLOT. The refusal is inside the Amend, so it is
 // under the store's flock and compare-and-set and it lands BEFORE the
 // provider call — which is the property Slot's name promises and the

@@ -894,13 +894,26 @@ func Purged(w io.Writer, p app.PurgeResult) {
 			fmt.Fprintf(w, "  %s\n", name)
 		}
 	}
-	// WHAT WAS KEPT IS SAID OUT LOUD. A person who has just removed
-	// everything else needs to know these are still here — both so the
-	// next `provision` is understood to be cheap, and so a machine that
-	// is not actually empty is not reported as one.
+	// WHAT WAS LEFT IS SAID OUT LOUD, AND EACH REASON SEPARATELY. A
+	// purge that removed four and said nothing about the six still
+	// standing would report a clean machine that is not one, and the
+	// three reasons need three different next steps from the reader:
+	// nothing, nothing, and one named command.
 	if len(p.Kept) > 0 {
 		fmt.Fprintf(w, "kept %d reference image(s); `provision tart` restores a base by cloning one\n", len(p.Kept))
 		for _, name := range p.Kept {
+			fmt.Fprintf(w, "  %s\n", name)
+		}
+	}
+	if len(p.Theirs) > 0 {
+		fmt.Fprintf(w, "left %d environment(s) belonging to another checkout\n", len(p.Theirs))
+		for _, name := range p.Theirs {
+			fmt.Fprintf(w, "  %s\n", name)
+		}
+	}
+	if len(p.Unowned) > 0 {
+		fmt.Fprintf(w, "left %d environment(s) nothing on this machine accounts for; `dockhand cycle --reclaim-unattributed` clears those\n", len(p.Unowned))
+		for _, name := range p.Unowned {
 			fmt.Fprintf(w, "  %s\n", name)
 		}
 	}

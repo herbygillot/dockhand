@@ -41,7 +41,8 @@ func purgeFixture(t *testing.T) (*git.Repo, *statestore.Store, *ledger.Ledger) {
 }
 
 func purgeOp(repo *git.Repo, st *statestore.Store, led *ledger.Ledger) Purge {
-	return Purge{Repo: repo, State: st, Ledger: led, Progress: progress.Discard{}}
+	return Purge{Repo: repo, State: st, Ledger: led, Progress: progress.Discard{},
+		Me: record.OwnerID{Root: mine}}
 }
 
 func refsUnder(t *testing.T, repo *git.Repo, prefix string) []string {
@@ -57,8 +58,29 @@ func fakeProv(f *verifytest.Fake) func(context.Context) (verify.Verifier, error)
 	return func(context.Context) (verify.Verifier, error) { return f, nil }
 }
 
+// mine is this checkout's root, as record.OwnerID.Root spells it. The
+// tests pass it both as the purge's identity and as a holding's
+// attribution, which is exactly the pair estate.Divide compares.
+const mine = "/Users/me/ports"
+
 func holding(name string, kind verify.HoldingKind) verify.Holding {
-	return verify.Holding{Name: name, Kind: kind, Job: verify.Job{ID: name, Provider: "tart"}}
+	h := verify.Holding{Name: name, Kind: kind, Job: verify.Job{ID: name, Provider: "tart"}}
+	if kind.Attributable() {
+		h.Owner = mine
+	}
+	return h
+}
+
+func theirs(name string) verify.Holding {
+	h := holding(name, verify.HeldWorker)
+	h.Owner = "/Users/me/some-other-ports"
+	return h
+}
+
+func unowned(name string) verify.Holding {
+	h := holding(name, verify.HeldWorker)
+	h.Owner = ""
+	return h
 }
 
 // liveLease plants an unreturned lease, which is what makes a machine
@@ -197,6 +219,61 @@ func TestPurgeTakesEveryHoldingButTheReferenceCopies(t *testing.T) {
 		"named and sorted, so a report reads the same twice")
 	assert.Equal(t, []string{"dockhand-golden-sequoia"}, res.Kept)
 	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-probe-1", "dockhand-worker-b"}, f.Discarded)
+}
+
+func TestPurgeLeavesAnotherCheckoutsGuestsAlone(t *testing.T) {
+	// The confinement, end to end. A machine may host several dockhand
+	// checkouts; a repository copied to another directory must not be
+	// able to stop a build it does not own.
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{Held: []verify.Holding{
+		holding("dockhand-worker-mine", verify.HeldWorker),
+		theirs("dockhand-worker-theirs"),
+		unowned("dockhand-worker-nobodys"),
+		holding("dockhand-base-sequoia", verify.HeldDerived),
+		holding("dockhand-golden-sequoia", verify.HeldReference),
+	}}
+	op := purgeOp(repo, st, led)
+	op.Verifier = fakeProv(f)
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-worker-mine"}, res.Removed,
+		"this checkout's guest, and the image no checkout owns; sorted, as Survey leaves them")
+	assert.Equal(t, []string{"dockhand-worker-theirs"}, res.Theirs)
+	assert.Equal(t, []string{"dockhand-worker-nobodys"}, res.Unowned)
+	assert.Equal(t, []string{"dockhand-golden-sequoia"}, res.Kept)
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-worker-mine"}, f.Discarded,
+		"and the provider was never even asked about the other three")
+}
+
+func TestForceDoesNotReachAnotherCheckoutsGuests(t *testing.T) {
+	// --force lifts the estate refusal and nothing else. There is no flag
+	// anywhere that promotes a peer's guest into the remove bucket.
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{Held: []verify.Holding{theirs("dockhand-worker-theirs")}}
+	op := purgeOp(repo, st, led)
+	op.Verifier, op.Force = fakeProv(f), true
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, f.Discarded)
+	assert.Equal(t, []string{"dockhand-worker-theirs"}, res.Theirs)
+}
+
+func TestAPurgeThatDoesNotKnowItsOwnRootClaimsNoGuests(t *testing.T) {
+	// Two empty strings being equal must never be what authorises
+	// destroying a virtual machine.
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{Held: []verify.Holding{holding("dockhand-worker-a", verify.HeldWorker)}}
+	op := purgeOp(repo, st, led)
+	op.Verifier, op.Me = fakeProv(f), record.OwnerID{}
+
+	res, err := op.Run(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, res.Removed)
+	assert.Equal(t, []string{"dockhand-worker-a"}, res.Unowned)
+	assert.Empty(t, f.Discarded)
 }
 
 func TestPurgeNeedsNoFlagToReachTheProvider(t *testing.T) {

@@ -118,10 +118,65 @@ func TestSweepRefusesAProviderItCannotAsk(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoEstate)
 }
 
-func TestRemovableIsTheSweepsPopulationWithoutSweeping(t *testing.T) {
-	all := []verify.Holding{
-		held("dockhand-worker-a", verify.HeldWorker),
+func owned(name string, kind verify.HoldingKind, owner string) verify.Holding {
+	h := held(name, kind)
+	h.Owner = owner
+	return h
+}
+
+// The confinement rule, whole. A machine may host several dockhand
+// checkouts and each one's guests are its own: this is lease.Standing's
+// ForeignRoot on the population a purge acts over.
+func TestDivideConfinesAPurgeToItsOwnGuests(t *testing.T) {
+	got := Divide([]verify.Holding{
+		owned("dockhand-worker-mine", verify.HeldWorker, "/Users/me/ports"),
+		owned("dockhand-worker-theirs", verify.HeldWorker, "/Users/me/other-ports"),
+		owned("dockhand-worker-nobodys", verify.HeldWorker, ""),
+		held("dockhand-probe-1", verify.HeldScratch),
+		held("dockhand-base-sequoia", verify.HeldDerived),
 		held("dockhand-golden-sequoia", verify.HeldReference),
-	}
-	assert.Equal(t, []string{"dockhand-worker-a"}, Names(Removable(all)))
+	}, "/Users/me/ports")
+
+	assert.Equal(t, []string{"dockhand-worker-mine", "dockhand-probe-1", "dockhand-base-sequoia"},
+		Names(got.Remove), "this checkout's guest, and the machine's own ownerless resources")
+	assert.Equal(t, []string{"dockhand-worker-theirs"}, Names(got.Theirs))
+	assert.Equal(t, []string{"dockhand-worker-nobodys"}, Names(got.Unowned))
+	assert.Equal(t, []string{"dockhand-golden-sequoia"}, Names(got.Reference))
+}
+
+// An empty Owner means two different things depending on the KIND, and
+// conflating them would either strand every base image forever or
+// destroy a peer's guest. Attributable is what tells the silences
+// apart.
+func TestAnEmptyOwnerIsAGapOnlyWhereAnOwnerCouldExist(t *testing.T) {
+	got := Divide([]verify.Holding{
+		held("dockhand-worker-a", verify.HeldWorker),      // a gap in the record
+		held("dockhand-base-sequoia", verify.HeldDerived), // nothing to record
+	}, "/Users/me/ports")
+
+	assert.Equal(t, []string{"dockhand-worker-a"}, Names(got.Unowned),
+		"a guest with no attribution is a missing fact and is left")
+	assert.Equal(t, []string{"dockhand-base-sequoia"}, Names(got.Remove),
+		"an image has no owner to miss and belongs to the machine")
+}
+
+// A caller that could not determine its own checkout must not sweep on
+// the strength of two empty strings being equal.
+func TestDivideMatchesNothingForAnEmptyRoot(t *testing.T) {
+	got := Divide([]verify.Holding{
+		owned("dockhand-worker-a", verify.HeldWorker, ""),
+		owned("dockhand-worker-b", verify.HeldWorker, "/Users/me/ports"),
+	}, "")
+	assert.Empty(t, got.Remove)
+	assert.Len(t, got.Unowned, 2, "an unknown self claims nothing")
+}
+
+// Not by any flag: Purge.Force lifts the estate refusal, and there is
+// nothing anywhere that promotes another checkout's guest into Remove.
+func TestAnotherCheckoutsGuestIsNeverInTheRemoveBucket(t *testing.T) {
+	got := Divide([]verify.Holding{
+		owned("dockhand-worker-theirs", verify.HeldWorker, "/elsewhere"),
+	}, "/Users/me/ports")
+	assert.Empty(t, got.Remove)
+	assert.Equal(t, []string{"dockhand-worker-theirs"}, Names(got.Theirs))
 }
