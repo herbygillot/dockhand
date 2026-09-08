@@ -90,6 +90,24 @@ func (g *fakeGuest) provider() Provider {
 // newFakeGuest builds the guest. portCases is the body of a `case "$*"`
 // over port(1)'s own argv, so each test scripts exactly the environment
 // it is about.
+// THE REWRITE IS SCOPED TO DOCKHAND'S OWN GUEST PATHS, and that is not
+// a tidiness: it used to rewrite every "/tmp/" in every argument into
+// "$root/tmp/", which is right for the paths the guest is asked about
+// (overlayDir and stateDir, both "/tmp/dockhand-…") and catastrophic
+// for the ones it is not.
+//
+// t.TempDir() lives under /tmp on Linux and under /var/folders on
+// macOS. So on Linux $root ITSELF began with /tmp/, and every absolute
+// host path this fixture built — the guest prefix above all — was
+// rewritten into $root twice: `port` and `portindex` were exec'd at
+// /tmp/TestX/001/tmp/TestX/001/opt/local/bin/… and were not found.
+// Eleven tests here failed on every Linux job and passed on every macOS
+// one, which is a fixture that measures the runner's TMPDIR rather than
+// the code.
+//
+// "/tmp/dockhand-" is the prefix of both guest directories and cannot
+// match a Go test's temp directory, which is /tmp/<TestName><digits>.
+// Reproduce the Linux shape here with `TMPDIR=/tmp go test ./…/tart`.
 func newFakeGuest(t *testing.T, portCases string) *fakeGuest {
 	t.Helper()
 	root := t.TempDir()
@@ -160,7 +178,7 @@ n=$#
 i=0
 while [ "$i" -lt "$n" ]; do
   a=$1; shift
-  set -- "$@" "$(printf '%%s' "$a" | sed -e "s|/tmp/|$root/tmp/|g" -e "s|/usr/bin/otool|$root/gbin/otool|g")"
+  set -- "$@" "$(printf '%%s' "$a" | sed -e "s|/tmp/dockhand-|$root/tmp/dockhand-|g" -e "s|/usr/bin/otool|$root/gbin/otool|g")"
   i=$((i+1))
 done
 exec "$@"
