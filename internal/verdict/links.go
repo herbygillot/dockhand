@@ -3,7 +3,7 @@ package verdict
 import (
 	"sort"
 
-	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/artifact"
 )
 
 // The link proof: whether a dependent this change proposed to revbump
@@ -43,7 +43,7 @@ import (
 // asking a dependent about everything a headline publishes is the
 // question that made a link proof unearned. ABI.Broke is what a caller
 // wants; this stays as the reader those tests are written against.
-func installNames(m *verify.Manifest) []string {
+func installNames(m *artifact.Manifest) []string {
 	if m == nil {
 		return nil
 	}

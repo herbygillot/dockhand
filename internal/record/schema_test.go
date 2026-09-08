@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,11 +77,11 @@ func populated() Record {
 				FromSource:     true,
 				KeepEnv:        true,
 				Forced:         "jq-devel",
-				Manifest:       &verify.Manifest{Port: "jq", Version: "1.9", Platform: "Testos", Files: []string{"/opt/local/bin/jq"}, Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", Arch: "arm64", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "1.0.0", CurrentVersion: "1.9.0"}}},
-				Baseline:       &verify.Manifest{Port: "jq", Version: "1.8", Platform: "Testos", Files: []string{}, Dylibs: []verify.Dylib{}},
+				Manifest:       &artifact.Manifest{Port: "jq", Version: "1.9", Platform: "Testos", Files: []string{"/opt/local/bin/jq"}, Dylibs: []artifact.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", Arch: "arm64", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "1.0.0", CurrentVersion: "1.9.0"}}},
+				Baseline:       &artifact.Manifest{Port: "jq", Version: "1.8", Platform: "Testos", Files: []string{}, Dylibs: []artifact.Dylib{}},
 				BaselineSource: "archive",
 				Links:          []string{"/opt/local/bin/jq links against /opt/local/lib/libjq.1.dylib"},
-				Probes:         []verify.ProbeLine{{Binary: "/opt/local/bin/jq", Argv: "jq --version", Output: "jq-1.9"}},
+				Probes:         []artifact.Probe{{Binary: "/opt/local/bin/jq", Argv: "jq --version", Output: "jq-1.9"}},
 			},
 			// The cohort stopped before this member was reached. The
 			// detail carries the three bytes encoding/json escapes, and

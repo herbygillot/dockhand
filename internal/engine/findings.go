@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/render"
@@ -252,8 +252,8 @@ func GateMachinePublish(r record.Record, branch string, by record.Driver) error 
 // installed, what the change is measured against, and the bindings and
 // probes taken while the guest was still holding it.
 type installEvidence struct {
-	Installed *verify.Manifest
-	Baseline  *verify.Manifest
+	Installed *artifact.Manifest
+	Baseline  *artifact.Manifest
 	Source    string
 	Reason    string
 	// Links are this subject's OWN link-proof lines, drawn once the
@@ -266,7 +266,7 @@ type installEvidence struct {
 	// moved, which is the build-only-in-fact claim a reviewer is
 	// entitled to see beside a revbump that was spent anyway.
 	Links  []string
-	Probes []verify.ProbeLine
+	Probes []artifact.Probe
 }
 
 // guestEvidence is one guest's whole answer: whether it was asked at
@@ -550,10 +550,15 @@ func proveLinks(ev *guestEvidence, abi verdict.ABI) {
 // re-reading the Portfile is what makes the quote the same quote — a
 // second read would meet whatever the working tree says today, which is
 // not what the change was planned against.
+//
+// The kind is matched as the wire label, the way answered() below
+// matches the cohort's. A settlement reads a note some other process
+// wrote and has no business importing the planner that wrote it to
+// learn what a string on the wire is called.
 func Instructions(n record.Record) []verdict.Instruction {
 	var out []verdict.Instruction
 	for _, f := range n.Findings {
-		if f.Kind != intent.FindingInstruction || f.Disposition == record.Dismissed {
+		if f.Kind != render.KindInstruction || f.Disposition == record.Dismissed {
 			// A dismissed comment is one a person has answered. Weighing
 			// it again would ask them twice.
 			continue

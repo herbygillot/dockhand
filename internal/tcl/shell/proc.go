@@ -15,6 +15,36 @@ import (
 // recent bytes are kept, as diagnostic context for failures.
 const stderrLimit = 64 << 10
 
+// DefaultOutputLimit bounds the child-output queue: bytes the child has
+// written to stdout that its owner has not read yet.
+//
+// A bound is needed because a Proc outlives any one exchange. The long
+// road holds a single evaluator open for the life of a dispatch loop —
+// weeks — and the queue is drained only while its owner is mid-exchange.
+// Everything a child prints between exchanges (a Portfile's own puts, a
+// ui callback, a package's load-time chatter) therefore lands in a queue
+// nobody is reading, and an unbounded queue turns a chatty or wedged
+// child into a leak with no ceiling and no diagnosis: the process grows
+// until the machine notices, and the failure names neither the child nor
+// the reason.
+//
+// The number is measured rather than asserted. The largest payload the
+// protocol above ever carries is a port's evaluated metadata, whose bulk
+// is the crate and vendor lists of the fattest Portfiles: across the
+// 20,076 Portfiles in macports-ports the median is 1.2 KiB, the 99th
+// percentile 31 KiB, and the largest 139 KiB. The rpc layer above accepts
+// frames up to its own 16 MiB bound, so 32 MiB holds any legitimate reply
+// whole — twice over — while still costing a runaway child a definite
+// ceiling instead of the machine's memory.
+const DefaultOutputLimit = 32 << 20
+
+// ErrOutputOverflow reports that a child wrote more to stdout than its
+// output queue may hold, so the stream has lost bytes and cannot be
+// parsed any further. It is permanent for the Proc: every read after the
+// queued prefix is drained returns it. A protocol layer above translates
+// it into whatever "this conversation is over" means there.
+var ErrOutputOverflow = errors.New("shell: child output queue overflowed")
+
 // Proc is a running tclsh child process. It provides pipes and lifecycle
 // and nothing else.
 //
@@ -49,6 +79,7 @@ type config struct {
 	dir          string
 	env          []string
 	closeTimeout time.Duration
+	outputLimit  int
 }
 
 // Option configures Start.
@@ -68,6 +99,13 @@ func WithEnv(env ...string) Option { return func(c *config) { c.env = env } }
 // closing stdin before killing the process. Default two seconds.
 func WithCloseTimeout(d time.Duration) Option { return func(c *config) { c.closeTimeout = d } }
 
+// WithOutputLimit bounds the child-output queue at n bytes, overriding
+// DefaultOutputLimit. Raise it for a conversation whose replies are
+// genuinely larger; lower it to hold a suspect child on a short leash. A
+// non-positive n is not a way to ask for no bound — there is no such
+// setting — and leaves the default in place.
+func WithOutputLimit(n int) Option { return func(c *config) { c.outputLimit = n } }
+
 // Start launches a tclsh at the given binary path, reading Tcl commands
 // from stdin. The process is killed when ctx is cancelled.
 //
@@ -75,9 +113,12 @@ func WithCloseTimeout(d time.Duration) Option { return func(c *config) { c.close
 // is a different capability from a command-stream one, and will arrive as a
 // distinct type when a consumer exists.
 func Start(ctx context.Context, path string, opts ...Option) (*Proc, error) {
-	cfg := config{closeTimeout: 2 * time.Second}
+	cfg := config{closeTimeout: 2 * time.Second, outputLimit: DefaultOutputLimit}
 	for _, o := range opts {
 		o(&cfg)
+	}
+	if cfg.outputLimit <= 0 {
+		cfg.outputLimit = DefaultOutputLimit
 	}
 
 	cmd := exec.CommandContext(ctx, path, cfg.args...)
@@ -88,7 +129,7 @@ func Start(ctx context.Context, path string, opts ...Option) (*Proc, error) {
 
 	p := &Proc{
 		cmd:          cmd,
-		stdout:       newPipeBuffer(),
+		stdout:       newPipeBuffer(cfg.outputLimit),
 		stderr:       &tailWriter{limit: stderrLimit},
 		done:         make(chan struct{}),
 		closeTimeout: cfg.closeTimeout,
@@ -136,6 +177,13 @@ func (p *Proc) Stdin() io.WriteCloser { return p.stdin }
 // Stdout is the process's standard output. Reads block until output
 // arrives, and see io.EOF only after the process has exited with all output
 // delivered.
+//
+// Output the reader has not taken yet is queued in process, bounded by the
+// proc's output limit. A child that outruns that bound poisons the queue:
+// the bytes already queued are still delivered, and every read after them
+// returns ErrOutputOverflow, permanently. A reader parked on an empty
+// queue is woken by the overflow itself rather than left to wait for a
+// write that will never come.
 func (p *Proc) Stdout() io.Reader { return p.stdout }
 
 // StderrTail returns a copy of the most recent stderr output.
@@ -176,18 +224,34 @@ func (p *Proc) Close() error {
 	return p.waitErr
 }
 
-// pipeBuffer is an unbounded write-never-blocks buffer with blocking reads:
-// the child's output lands here at whatever rate it is produced, bounded by
-// the process's lifetime, and readers drain at their own pace.
+// pipeBuffer is the child-output queue: a write-never-blocks buffer with
+// blocking reads, so the child's output lands here at whatever rate it is
+// produced and readers drain at their own pace. It holds at most limit
+// unread bytes (see DefaultOutputLimit).
+//
+// Past the bound the queue is poisoned rather than the writer failed. A
+// failing Write would stop exec's output copier, which leaves the child
+// blocked on a full OS pipe waiting for a reader that is never coming —
+// a stall nothing observes and nothing times out, which is exactly the
+// failure a limit is here to prevent. So writes always succeed: what
+// overflows is dropped, the queue records that it happened, and the fact
+// surfaces on the read side where a caller is already checking errors.
+//
+// Overflow is sticky and broadcasts, so a reader parked on an empty queue
+// learns of it at once instead of at the next write. That also means no
+// reader can be parked while the queue is poisoned, which is why the
+// discard path has nobody left to wake.
 type pipeBuffer struct {
-	mu     sync.Mutex
-	cond   *sync.Cond
-	buf    bytes.Buffer
-	closed bool
+	mu         sync.Mutex
+	cond       *sync.Cond
+	buf        bytes.Buffer
+	limit      int
+	closed     bool
+	overflowed bool
 }
 
-func newPipeBuffer() *pipeBuffer {
-	b := &pipeBuffer{}
+func newPipeBuffer(limit int) *pipeBuffer {
+	b := &pipeBuffer{limit: limit}
 	b.cond = sync.NewCond(&b.mu)
 	return b
 }
@@ -195,6 +259,23 @@ func newPipeBuffer() *pipeBuffer {
 func (b *pipeBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.overflowed {
+		// Keep draining the child's pipe so it runs to its own end (or
+		// to the kill its owner is about to issue) rather than wedging
+		// on a pipe nobody empties. The bytes go nowhere.
+		return len(p), nil
+	}
+	if room := b.limit - b.buf.Len(); len(p) > room {
+		// The prefix that fits is still delivered: it is the last honest
+		// output of the child, and the most useful thing a diagnostic
+		// has to work with.
+		if room > 0 {
+			b.buf.Write(p[:room])
+		}
+		b.overflowed = true
+		b.cond.Broadcast()
+		return len(p), nil
+	}
 	n, err := b.buf.Write(p)
 	b.cond.Broadcast()
 	return n, err
@@ -203,11 +284,17 @@ func (b *pipeBuffer) Write(p []byte) (int, error) {
 func (b *pipeBuffer) Read(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for b.buf.Len() == 0 && !b.closed {
+	for b.buf.Len() == 0 && !b.closed && !b.overflowed {
 		b.cond.Wait()
 	}
 	if b.buf.Len() > 0 {
 		return b.buf.Read(p)
+	}
+	// Overflow outranks EOF: a stream that lost bytes did not end, and a
+	// reader told otherwise would take a truncated frame for a complete
+	// one.
+	if b.overflowed {
+		return 0, ErrOutputOverflow
 	}
 	return 0, io.EOF
 }

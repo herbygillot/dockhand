@@ -123,8 +123,8 @@ func (r *Repo) Pager(ctx context.Context) string {
 	if err != nil {
 		return "cat"
 	}
-	out, _, err := tool.Output(ctx, bin, tool.Opts{Args: []string{"-C", r.Root, "var", "GIT_PAGER"}, Env: scrubbedEnv()})
-	pager := strings.TrimSpace(string(out))
+	res, err := tool.Output(ctx, bin, tool.Opts{Args: []string{"-C", r.Root, "var", "GIT_PAGER"}, Env: scrubbedEnv()})
+	pager := strings.TrimSpace(string(res.Stdout))
 	if err != nil || pager == "" {
 		return "cat"
 	}
@@ -171,15 +171,15 @@ func execGit(ctx context.Context, tools *tool.Finder, dir string, stdin []byte, 
 	if stdin != nil {
 		in = bytes.NewReader(stdin)
 	}
-	out, code, err := tool.Output(ctx, bin, tool.Opts{
+	res, err := tool.Output(ctx, bin, tool.Opts{
 		Args:  append([]string{"-C", dir}, args...),
 		Env:   append(scrubbedEnv(), "GIT_PAGER=cat"),
 		Stdin: in,
 	})
 	if err != nil {
-		return nil, code, fmt.Errorf("git %s: %s", args[0], err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
+		return nil, res.Code, fmt.Errorf("git %s: %s", args[0], err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
 	}
-	return out, 0, nil
+	return res.Stdout, 0, nil
 }
 
 // RevParse resolves a revision to its object name.

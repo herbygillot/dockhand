@@ -53,7 +53,7 @@ type Oracle interface {
 	// Options reads named port options, omitting those the port lacks.
 	Options(ctx context.Context, portdir, subport string, variants info.VariantSet, names ...string) (map[string]string, error)
 	// FetchInfo reports a context's fetch surface.
-	FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (eval.FetchInfo, error)
+	FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (info.FetchInfo, error)
 }
 
 // The evaluator is the oracle, unchanged. A signature that drifts on
@@ -142,7 +142,7 @@ func (h Handle) Options(ctx context.Context, names ...string) (map[string]string
 // FetchInfo reports this context's fetch surface. noMirrors skips the
 // MacPorts fallback mirrors — the right mode when the distfiles sought
 // are for a version the mirrors cannot have yet.
-func (h Handle) FetchInfo(ctx context.Context, noMirrors bool) (eval.FetchInfo, error) {
+func (h Handle) FetchInfo(ctx context.Context, noMirrors bool) (info.FetchInfo, error) {
 	return h.Ev.FetchInfo(ctx, h.Target.Portdir, h.Target.Subport, h.Variants, noMirrors)
 }
 

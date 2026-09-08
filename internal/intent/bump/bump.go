@@ -142,11 +142,9 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	moving := carrier.Text(src) != b.Version
 	if !moving && !b.Force {
 		// The carrier's own literal, read off the Portfile before
-		// anything is fetched. Nothing but the bytes and the evaluation
-		// decided it, which is exactly what the memo's key holds.
+		// anything is fetched.
 		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: carrier.Text(src),
-			Withheld:   intent.Withheld(src, cst, b.Riders),
-			Determined: plan.ByPortfile}
+			Withheld: intent.Withheld(src, cst, b.Riders)}
 	}
 
 	// A vendored dependency block pins the OLD version's dependency
@@ -196,12 +194,9 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// refusal about dockhand's falsifiability rule reach the user in the
 	// failure band.
 	if !moving && len(vals.Checksums) == 0 {
-		// The evaluation, and nothing else: a port that records no
-		// checksums records none whatever upstream is serving today.
 		return nil, &plan.Decline{Type: plan.AlreadyCurrent,
-			Detail:     fmt.Sprintf("%s records no checksums, so a re-derivation at %s has nothing to fetch and nothing to compare", vals.Name, b.Version),
-			Withheld:   intent.Withheld(src, cst, b.Riders),
-			Determined: plan.ByPortfile}
+			Detail:   fmt.Sprintf("%s records no checksums, so a re-derivation at %s has nothing to fetch and nothing to compare", vals.Name, b.Version),
+			Withheld: intent.Withheld(src, cst, b.Riders)}
 	}
 
 	// What this run spent, named for the case where the shadow ends up
@@ -326,12 +321,8 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			return nil, err
 		}
 		if len(ownNew) == 0 {
-			// What a family says it supplies can come out of an archive
-			// it fetched and extracted, so this answer is not the
-			// Portfile's alone even though its kind usually is.
 			return nil, &plan.Decline{Type: plan.ChecksumsNotLocated,
-				Detail:     "every distfile comes from a vendored block",
-				Determined: plan.ByNetwork}
+				Detail: "every distfile comes from a vendored block"}
 		}
 
 		fetchDir, removeFetched, err := h.TempDir.MakeDir("distfiles")
@@ -518,30 +509,25 @@ func (b Bump) accept(vals info.Values, predicted info.Delta, moving, exact bool)
 	// and whether anything downstream moved is the finding rather than
 	// the requirement, since an upstream that re-rolled nothing is the
 	// ordinary case.
+	//
 	// Every refusal below reads a shadow prediction: the Portfile with
 	// the version edit applied, evaluated. What a fetch returned is not
-	// in it — this judgment is made before any distfile is looked at —
-	// so all four follow from the bytes and the environment the memo's
-	// key already holds.
+	// in it — this judgment is made before any distfile is looked at.
 	if moving {
 		if !versionReached {
 			return &plan.Decline{Type: plan.TargetNotReached,
-				Detail:     fmt.Sprintf("%s would not become %s", vals.Version, b.Version),
-				Determined: plan.ByPortfile}
+				Detail: fmt.Sprintf("%s would not become %s", vals.Version, b.Version)}
 		}
 		if len(vals.Distfiles) > 0 && !distfilesMoved {
 			return &plan.Decline{Type: plan.FetchNotDriven,
-				Detail:     "distfiles unchanged by the version edit",
-				Determined: plan.ByPortfile}
+				Detail: "distfiles unchanged by the version edit"}
 		}
 		if len(vals.Checksums) > 0 && !checksumsMoved {
-			return &plan.Decline{Type: plan.FetchNotDriven, Detail: "checksums unchanged",
-				Determined: plan.ByPortfile}
+			return &plan.Decline{Type: plan.FetchNotDriven, Detail: "checksums unchanged"}
 		}
 	} else if versionChanged {
 		return &plan.Decline{Type: plan.UnexpectedChange,
-			Detail:     fmt.Sprintf("version moved from %s during a re-derivation at the same version", vals.Version),
-			Determined: plan.ByPortfile}
+			Detail: fmt.Sprintf("version moved from %s during a re-derivation at the same version", vals.Version)}
 	}
 	return nil
 }

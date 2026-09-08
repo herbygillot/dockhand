@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/platform"
@@ -592,7 +593,7 @@ type Manifester interface {
 // without it has learned nothing about the port's binaries rather than
 // learning they are broken.
 type Prober interface {
-	Probe(ctx context.Context, job Job, port string) ([]ProbeLine, error)
+	Probe(ctx context.Context, job Job, port string) ([]artifact.Probe, error)
 }
 
 // MemberOutcome is the word a provider's own runner wrote about one

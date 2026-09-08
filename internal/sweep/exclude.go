@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/portnote"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 )
 
@@ -116,8 +116,8 @@ type Subject struct {
 //
 // A do-not-upgrade comment abutting the version.
 //
-// A revbump-instruction comment, through intent's own reader, so the
-// rule that decides it is the one the planner already uses.
+// A revbump-instruction comment, through portnote's reader, so the
+// rule that decides it is the one the planner already reads with.
 //
 // The first two key off the target's own index entry and never off a
 // text scan for `PortGroup obsolete`. 2041 portdirs hold both an
@@ -156,13 +156,13 @@ func exclude(s Subject) (Excluded, bool) {
 			Detail: "a comment against the version line asks that this port not be moved",
 			Quote:  b}, true
 	}
-	// No Quote for a hub. intent owns the two patterns that decide this
-	// and exports only the yes/no, and a quote reproduced from a second
-	// copy of those patterns would be a verbatim contract with two
-	// places to drift. The reason plus the portdir is enough to find
-	// the comment; the planner quotes it properly when it plans the
-	// port.
-	if intent.MentionsRevbump(s.Src) {
+	// No Quote for a hub, though portnote could give one. The cheap
+	// question is the one an exclusion needs — this port obliges a
+	// cascade, route it to a human — and a quote here would be the same
+	// block the planner quotes into a finding a person answers, written
+	// into a second place with a second lifetime. The reason plus the
+	// portdir is enough to find the comment.
+	if portnote.MentionsRevbump(s.Src) {
 		return Excluded{Target: s.Target, Reason: RevbumpHub,
 			Detail: "a comment instructs that dependents be revbumped when this port moves"}, true
 	}
@@ -246,13 +246,17 @@ const adjacencyWindow = 3
 // design: this routes to a human lane, so a false positive costs a
 // review and a false negative bumps a port somebody pinned.
 func doNotUpgrade(src []byte) (string, bool) {
+	// The same split portnote made, because Start and End index it. That
+	// is the one thing this rule needs from the reader beyond the prose:
+	// a rule that asks what a comment SITS AGAINST cannot be written
+	// against a block that forgot where it was.
 	lines := strings.Split(string(src), "\n")
-	for _, b := range commentBlocks(lines) {
-		if !doNotUpgradePhrase.MatchString(b.prose) {
+	for _, b := range portnote.Blocks(src) {
+		if !doNotUpgradePhrase.MatchString(b.Prose) {
 			continue
 		}
-		if nearVersion(lines, b.end+1, 1) || nearVersion(lines, b.start-1, -1) {
-			return b.text, true
+		if nearVersion(lines, b.End+1, 1) || nearVersion(lines, b.Start-1, -1) {
+			return b.Text, true
 		}
 	}
 	return "", false
@@ -278,54 +282,6 @@ func nearVersion(lines []string, from, step int) bool {
 		crossed++
 	}
 	return false
-}
-
-// block is one run of adjacent comment lines: verbatim, as prose for
-// the patterns to read, and where it sits.
-//
-// This is a second comment splitter — intent has one for the
-// revbump-instruction rule and does not export it — and the duplication
-// is the cost of Exclusions being pure and self-contained. The contract
-// they share is that text is verbatim; if intent ever exports its
-// reader, this should go.
-type block struct {
-	text  string
-	prose string
-	start int
-	end   int
-}
-
-// commentBlocks splits lines into runs of adjacent comment lines. Every
-// comment counts wherever it sits: the note that matters is as likely
-// to be inside a variant or a platform block as at the top of the file.
-func commentBlocks(lines []string) []block {
-	var out []block
-	var cur block
-	open := false
-	flush := func(end int) {
-		if open {
-			cur.end = end
-			out = append(out, cur)
-		}
-		cur, open = block{}, false
-	}
-	for i, raw := range lines {
-		trimmed := strings.TrimSpace(raw)
-		if !strings.HasPrefix(trimmed, "#") {
-			flush(i - 1)
-			continue
-		}
-		line := strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
-		line = strings.TrimSpace(strings.TrimPrefix(line, "NOTE:"))
-		if !open {
-			open, cur.start, cur.text = true, i, raw
-		} else {
-			cur.text += "\n" + raw
-		}
-		cur.prose = strings.TrimSpace(cur.prose + " " + line)
-	}
-	flush(len(lines) - 1)
-	return out
 }
 
 // Selection is what Select decided about a set of targets.

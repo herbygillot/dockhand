@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // abiChanged is the acceptance test's own measurement: libwidget's
@@ -409,9 +409,9 @@ func TestAMixedReadingSaysHowMuchItCouldCompare(t *testing.T) {
 	// binary whose slices announce different install names.
 	before := brotli()
 	before.Dylibs = append(before.Dylibs,
-		verify.Dylib{Path: "/opt/local/lib/libfat.dylib", Arch: "x86_64",
+		artifact.Dylib{Path: "/opt/local/lib/libfat.dylib", Arch: "x86_64",
 			InstallName: "/opt/local/lib/libfat.2.dylib", CompatVersion: "2.0.0"},
-		verify.Dylib{Path: "/opt/local/lib/libfat.dylib", Arch: "arm64",
+		artifact.Dylib{Path: "/opt/local/lib/libfat.dylib", Arch: "arm64",
 			InstallName: "/opt/local/lib/libfat.3.dylib", CompatVersion: "3.0.0"})
 	a := ABIDelta(measured(before, before))
 	require.Equal(t, ABIUnchanged, a.Verdict, "something was compared, so this is still a reading")

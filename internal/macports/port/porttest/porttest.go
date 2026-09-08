@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -44,7 +43,7 @@ type Oracle struct {
 	OnSnapshot  func(ctx context.Context, portdir string, variants info.VariantSet) (info.Snapshot, error)
 	OnSubports  func(ctx context.Context, portdir string) ([]string, error)
 	OnOptions   func(ctx context.Context, portdir, subport string, variants info.VariantSet, names ...string) (map[string]string, error)
-	OnFetchInfo func(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (eval.FetchInfo, error)
+	OnFetchInfo func(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (info.FetchInfo, error)
 }
 
 // The fake is held to the same interface as the evaluator, so a
@@ -84,9 +83,9 @@ func (o *Oracle) Options(ctx context.Context, portdir, subport string, variants 
 }
 
 // FetchInfo reports a context's fetch surface.
-func (o *Oracle) FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (eval.FetchInfo, error) {
+func (o *Oracle) FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (info.FetchInfo, error) {
 	if o.OnFetchInfo == nil {
-		return eval.FetchInfo{}, unscripted("FetchInfo", portdir, subport)
+		return info.FetchInfo{}, unscripted("FetchInfo", portdir, subport)
 	}
 	return o.OnFetchInfo(ctx, portdir, subport, variants, noMirrors)
 }

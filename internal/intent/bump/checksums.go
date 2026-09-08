@@ -50,10 +50,7 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 
 	reps, err := checksums.Replacements(old, byRecordedName)
 	if err != nil {
-		// Over the sums a fetch just produced, so the answer is not the
-		// Portfile's and must not be remembered under its bytes.
-		return nil, false, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error(),
-			Determined: plan.ByNetwork}
+		return nil, false, &plan.Decline{Type: plan.ChecksumsNotLocated, Detail: err.Error()}
 	}
 	seen := make(map[string]bool)
 	for _, r := range old {
@@ -76,15 +73,8 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		// A checksum value that is not written literally cannot be
 		// rewritten, and a bump that left an old hash in place would ship
 		// a Portfile that fails to fetch.
-		// Reached only for a value the fetch actually moved — an
-		// unchanged replacement is never located — so whether this
-		// refusal happens at all depends on what a server served. Under
-		// --recheck that is the whole question, and a memo of it would
-		// answer the next re-derivation of the same bytes without
-		// fetching anything.
 		return nil, false, &plan.Decline{Type: plan.ChecksumsNotLocated,
-			Detail:     fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason),
-			Determined: plan.ByNetwork}
+			Detail: fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason)}
 	}
 	return edits, viaSet, nil
 }

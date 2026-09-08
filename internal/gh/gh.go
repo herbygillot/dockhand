@@ -155,23 +155,35 @@ func OwnerRepoFromURL(url string) (owner, repo string, ok bool) {
 // every function here takes a Runner rather than reaching for a
 // package variable, which is what lets a test hand in a scripted
 // GitHub without mutating globals.
+//
+// Stdout comes back whether or not the call succeeded, and a caller
+// that reads it after a non-nil error is not doing anything sly. gh
+// calls every status outside 2xx a failure, and prints the response —
+// with --include, the status line and headers — before it decides
+// that. So the answer to a conditional request, which is a 304 and
+// therefore a "failure", is on stdout and nowhere else; a runner that
+// dropped it would leave the status recoverable only from the error's
+// prose, which is the defect upstream's revalidation path was rebuilt
+// to close. Every caller that has no use for a failed call's output
+// still ignores it, and loses nothing.
 type Runner func(ctx context.Context, args ...string) (string, error)
 
 // RealGhOut is the runner over the actual gh CLI, resolved through the
 // run's finder. A miss names the remedy; a failed call reads
 // "gh <subcommand>: <stderr>", with the exec error standing in for a
-// stderr gh left empty.
+// stderr gh left empty, and hands back whatever gh had already written
+// to stdout — see Runner.
 func RealGhOut(tools *tool.Finder) Runner {
 	return func(ctx context.Context, args ...string) (string, error) {
 		bin, err := tools.Find(tool.Gh)
 		if err != nil {
 			return "", fmt.Errorf("%w (`port install gh`)", err)
 		}
-		out, _, err := tool.Output(ctx, bin, tool.Opts{Args: args})
+		res, err := tool.Output(ctx, bin, tool.Opts{Args: args})
 		if err != nil {
-			return "", fmt.Errorf("gh %s: %s", args[0], err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
+			return string(res.Stdout), fmt.Errorf("gh %s: %s", args[0], err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
 		}
-		return string(out), nil
+		return string(res.Stdout), nil
 	}
 }
 

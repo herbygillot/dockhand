@@ -37,12 +37,23 @@ var provisioned = func(ctx context.Context, tools *tool.Finder) ([]string, error
 // execs through, which is what keeps this report honest: doctor cannot
 // say "available" about a tool the working code would fail to find,
 // nor the reverse, because there is exactly one finder.
+//
+// The context is the run's, so a probe dies with the run: asking a
+// binary its version is the cheapest question there is, but it is
+// still an exec, and one that never answers must not outlive the
+// interrupt that was meant to stop it.
+//
+// A version that could not be read is empty rather than an error. The
+// tool was found; what it calls itself is decoration on that fact, and
+// the one place a version is load-bearing — git's floor — declines to
+// claim anything about a version it cannot parse.
 var (
-	runVersion = func(path string, args ...string) string {
-		out, _, err := tool.Output(context.Background(), path, tool.Opts{Args: args})
+	runVersion = func(ctx context.Context, path string, args ...string) string {
+		res, err := tool.Output(ctx, path, tool.Opts{Args: args})
 		if err != nil {
 			return ""
 		}
+		out := res.Stdout
 		if i := strings.IndexByte(string(out), '\n'); i >= 0 {
 			out = out[:i]
 		}
@@ -69,7 +80,17 @@ type Report struct {
 }
 
 // Probe examines the machine through the run's finder.
-func Probe(tools *tool.Finder) Report {
+//
+// The context is the caller's and bounds every probe that execs. Only
+// three of them do: the MacPorts version, the version strings git and
+// gh state, and the base-image listing tart answers — finding a binary
+// is a PATH stat and cannot block. Those that do exec are one-shot
+// questions that should answer in milliseconds, but a binary on a
+// wedged network mount or a port client waiting on something answers
+// never, and a report is exactly what someone asks for when the
+// machine is already misbehaving. With the context threaded, an
+// interrupt reaches the probe rather than being noticed after it.
+func Probe(ctx context.Context, tools *tool.Finder) Report {
 	find := func(which tool.Tool, fallback string) Tool {
 		t := Tool{Name: string(which)}
 		path, err := tools.FindWith(which, fallback)
@@ -85,7 +106,7 @@ func Probe(tools *tool.Finder) Report {
 		// The MacPorts version is not trivia: it selects the Tcl shims
 		// dockhand speaks to this installation with.
 		pfx := prefix.Prefix(filepath.Dir(filepath.Dir(portTclsh.Path)))
-		if v, err := pfx.Version(context.Background()); err == nil {
+		if v, err := pfx.Version(ctx); err == nil {
 			portTclsh.Version = v
 			// An installation newer than any shim still works — selection
 			// falls back rather than failing — but it is being driven by a
@@ -103,7 +124,7 @@ func Probe(tools *tool.Finder) Report {
 	tclsh := find(tool.Tclsh, "")
 	git := find(tool.Git, "")
 	if git.Found {
-		git.Version = strings.TrimPrefix(runVersion(git.Path, "--version"), "git version ")
+		git.Version = strings.TrimPrefix(runVersion(ctx, git.Path, "--version"), "git version ")
 		// The write path (D21) needs notes (ancient: full subcommand
 		// set by 1.7.1) and worktree-aware plumbing — the notes lock
 		// resolves --git-common-dir, introduced with worktrees in 2.5,
@@ -118,13 +139,13 @@ func Probe(tools *tool.Finder) Report {
 	}
 	gh := find(tool.Gh, "")
 	if gh.Found {
-		gh.Version = runVersion(gh.Path, "--version")
+		gh.Version = runVersion(ctx, gh.Path, "--version")
 	}
 	curl := find(tool.Curl, "")
 	tart := find(tool.Tart, "")
 	var bases []string
 	if tart.Found {
-		if rels, err := provisioned(context.Background(), tools); err == nil {
+		if rels, err := provisioned(ctx, tools); err == nil {
 			bases = rels
 		}
 	}

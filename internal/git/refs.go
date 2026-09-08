@@ -70,14 +70,14 @@ func (r *Repo) Materialize(ctx context.Context, rev, path, dest string) error {
 	if err != nil {
 		return err
 	}
-	archive, _, err := tool.Output(ctx, bin, tool.Opts{
+	archive, err := tool.Output(ctx, bin, tool.Opts{
 		Args: []string{"-C", r.Root, "archive", rev, "--", path},
 		Env:  append(scrubbedEnv(), "GIT_PAGER=cat"),
 	})
 	if err != nil {
 		return fmt.Errorf("git archive %s -- %s: %s", rev, path, stderrOf(err))
 	}
-	if _, _, err := tool.Output(ctx, tarBin, tool.Opts{Args: []string{"-x", "-C", dest}, Stdin: bytes.NewReader(archive)}); err != nil {
+	if _, err := tool.Output(ctx, tarBin, tool.Opts{Args: []string{"-x", "-C", dest}, Stdin: bytes.NewReader(archive.Stdout)}); err != nil {
 		return fmt.Errorf("extracting archive of %s: %s", path, stderrOf(err))
 	}
 	return nil

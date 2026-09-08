@@ -156,10 +156,6 @@ func TestBumpDeclinesAPatchWhoseHunkIsGone(t *testing.T) {
 	assert.Equal(t, plan.PatchWontRelocate, d.Type)
 	assert.Equal(t, "files/patch-foo.diff: Makefile hunk #1: its before-block occurs nowhere in the file", d.Detail)
 	assert.Contains(t, err.Error(), "refresh the patch by hand")
-	// A server's answer and a file under files/ decided this, neither
-	// of which the memo's key holds.
-	assert.Equal(t, plan.ByNetwork, d.Determined)
-	assert.False(t, d.Memoizable())
 }
 
 // The give-ups that need no evaluator: what the helper says when the
@@ -224,7 +220,6 @@ func TestRelocatePatchesGivesUpOnThePatchItself(t *testing.T) {
 			require.ErrorAs(t, err, &d)
 			assert.Equal(t, plan.PatchWontRelocate, d.Type)
 			assert.Equal(t, tc.want, d.Detail)
-			assert.Equal(t, plan.ByNetwork, d.Determined)
 			assert.Nil(t, files)
 		})
 	}

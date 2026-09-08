@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -42,20 +43,58 @@ type Manners struct {
 	Agent string
 }
 
-// ask runs one request under the host's budget, and raises the wall
-// when the host says it has had enough — or, failing words, when it has
-// simply stopped answering.
+// ask runs one request under the host's budget and tells the pacer
+// what it amounted to.
 //
-// Reading the refusal is the caller's because only the caller can:
-// there is no status code to test, just a forge's own words on the
-// error of whichever tool asked it. Getting it wrong in the cautious
-// direction — walling a host over an error that was not a refusal —
-// costs a sweep some ports it will pick up on the next run. Getting it
-// wrong the other way is the abuse-detection trip the whole design is
-// about.
+// f says what happened; ask does not work it out. That is the whole of
+// the arrangement, and it is the fix to a real defect: this function
+// used to read the classification off the error it was handed, which
+// meant a substring match over prose, which meant `gh api`'s non-zero
+// exit on a 304 — the cheapest and most successful answer a conditional
+// request can get — was struck against the host that gave it, three in
+// a row from a warm cache walling the forge for a quarter of an hour.
+// Only the seam that ran the child can see the status line, so only
+// the seam that ran the child may classify. See courtesy.Outcome.
 //
-// The strike is the answer to the failure that has no words. A forge
-// that is simply unreachable — DNS, a captive network, an outage —
+// The outcome starts as Ours because f may never run. The pacer
+// refuses a walled host, and abandons a request whose context ended
+// while it queued; in both cases nothing was asked of anybody, so the
+// streak must be left exactly as it was found — which is what
+// courtesy.Ours means, and why it rather than the zero value is where
+// this starts.
+func (m Manners) ask(ctx context.Context, host string, f func(context.Context) (courtesy.Outcome, error)) error {
+	if m.Pacer == nil {
+		_, err := f(ctx)
+		return err
+	}
+	out := courtesy.Ours
+	err := m.Pacer.Ask(ctx, host, func(ctx context.Context) error {
+		var e error
+		out, e = f(ctx)
+		return e
+	})
+	m.Pacer.Note(host, out, err)
+	return err
+}
+
+// spokenOutcome classifies a witness that has no status code to show.
+//
+// git's ls-remote and a port's livecheck phase both fail in somebody
+// else's words — a forge's, a web server's, a resolver's — relayed
+// through a tool that formats them however it likes, and there is no
+// second channel to read instead. So this is a substring match, and it
+// stays one. What matters is that it is now confined to the witnesses
+// that genuinely have nothing better: the witness that does have a
+// status line reads the status line (readGhResponse), and no path in
+// this package recovers an HTTP fact from prose any more.
+//
+// Getting it wrong in the cautious direction — walling a host over an
+// error that was not a refusal — costs a sweep some ports it will pick
+// up on the next run. Getting it wrong the other way is the
+// abuse-detection trip the whole design is about.
+//
+// The strike is the answer to the failure that has no words at all. A
+// forge that is simply unreachable — DNS, a captive network, an outage —
 // matches no refusal phrase, so nothing would wall it; and for the
 // staged observer an unanswered cheap witness promotes every port
 // behind it to a full-cost candidate, so an outage silently converts a
@@ -66,24 +105,16 @@ type Manners struct {
 // An interrupted request is neither a strike nor a success. A context
 // that ended is this run's clock, and holding a host responsible for it
 // would let a Ctrl-C wall the tree.
-func (m Manners) ask(ctx context.Context, host string, f func(context.Context) error) error {
-	if m.Pacer == nil {
-		return f(ctx)
-	}
-	err := m.Pacer.Ask(ctx, host, f)
+func spokenOutcome(err error) courtesy.Outcome {
 	switch {
 	case err == nil:
-		m.Pacer.Cleared(host)
-	case errors.Is(err, courtesy.ErrWalled):
-		// The wall is already up; this request never happened.
+		return courtesy.Answered
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		// Ours, not the host's.
+		return courtesy.Ours
 	case refused(err):
-		m.Pacer.Wall(host, err)
-	default:
-		m.Pacer.Struck(host, err)
+		return courtesy.Refused
 	}
-	return err
+	return courtesy.Unanswered
 }
 
 // refs is the ls-remote witness, paced and cached.
@@ -99,10 +130,10 @@ func (m Manners) refs(ctx context.Context, tools *tool.Finder, repo Repo) ([]Ref
 	host := courtesy.Host(repo.URL)
 	answer, src, err := m.Cache.Do(ctx, key, func(ctx context.Context, validator string) (courtesy.Answer, error) {
 		var raw []RawRef
-		if err := m.ask(ctx, host, func(ctx context.Context) error {
+		if err := m.ask(ctx, host, func(ctx context.Context) (courtesy.Outcome, error) {
 			var e error
 			raw, e = LsRemote(ctx, tools, m.Agent, repo.URL)
-			return e
+			return spokenOutcome(e), e
 		}); err != nil {
 			return courtesy.Answer{}, err
 		}
@@ -150,6 +181,15 @@ func (m Manners) refs(ctx context.Context, tools *tool.Finder, repo Repo) ([]Ref
 // invalidator and never a substitute for the TTL: a release published
 // against a tag that already existed moves no sha, and only the clock
 // catches that.
+//
+// The response is read whether or not gh exited zero, which is what
+// makes the conditional request worth making at all: a 304 is a
+// non-2xx, gh reports every non-2xx as a failure, and the answer is on
+// stdout regardless. readGhResponse turns those bytes into the
+// observation and the outcome together, so the cache is told "not
+// modified" and the pacer is told the host answered — the two facts
+// that used to be reconstructed, wrongly and separately, from the same
+// sentence.
 func (m Manners) releases(ctx context.Context, gh GhRunner, repo Repo, digest string) ([]string, courtesy.Source, error) {
 	if gh == nil {
 		return nil, courtesy.Fresh, nil
@@ -161,22 +201,16 @@ func (m Manners) releases(ctx context.Context, gh GhRunner, repo Repo, digest st
 	key := WitnessReleases + "\x00" + repo.URL + "\x00" + digest
 	const host = "api.github.com"
 	answer, src, err := m.Cache.Do(ctx, key, func(ctx context.Context, validator string) (courtesy.Answer, error) {
-		var out string
-		if err := m.ask(ctx, host, func(ctx context.Context) error {
-			var e error
-			out, e = gh(ctx, releasesArgs(owner, name, validator, m.Agent)...)
-			return e
+		var ans courtesy.Answer
+		if err := m.ask(ctx, host, func(ctx context.Context) (courtesy.Outcome, error) {
+			out, callErr := gh(ctx, releasesArgs(owner, name, validator, m.Agent)...)
+			var outcome courtesy.Outcome
+			ans, outcome, callErr = readGhResponse(out, validator, callErr)
+			return outcome, callErr
 		}); err != nil {
-			if validator != "" && notModified(err) {
-				// gh returns an HTTP error for any status outside 2xx and
-				// 304 is one, so the whole point of asking conditionally
-				// arrives as a failure. The stored body stands; see
-				// notModified.
-				return courtesy.Answer{NotModified: true, Validator: validator}, nil
-			}
 			return courtesy.Answer{}, err
 		}
-		return parseGhResponse(out, validator)
+		return ans, nil
 	})
 	if err != nil {
 		return nil, src, err
@@ -185,19 +219,103 @@ func (m Manners) releases(ctx context.Context, gh GhRunner, repo Repo, digest st
 	return versions, src, nil
 }
 
-// notModified reads a 304 out of gh's own failure.
+// readGhResponse turns one `gh api --include` call into the three
+// things that must come out of it: the observation, what the request
+// amounted to for the host's budget, and whether it failed.
 //
-// It exists because of a seam. gh's api command answers any status
-// outside 2xx with an error, 304 included, and tool.Output discards a
-// failed command's stdout — so the conditional request's whole payoff
-// arrives as an error with the status in its text and nothing else. The
-// alternative reading, "an error means ask again with no validator",
-// would make every unchanged releases feed lose its authoritative
-// witness the moment the TTL expired, which is the opposite of what
-// asking conditionally is for.
-func notModified(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "http 304") || strings.Contains(msg, "not modified")
+// One function, because one fact decides all three. The status line is
+// on stdout whether gh exited zero or not — gh prints the response
+// head before it decides the status is an error — so a 304 is a status
+// check, a 403 is a status check, and neither is a sentence to be
+// pattern-matched. That is the point of D5 and D23 together: the whole
+// defect was that the status line existed and was thrown away, leaving
+// "http 304" in an error message as the only surviving trace of the
+// most successful answer a revalidation can get.
+//
+// A 304 is honoured only against a validator we actually sent. Without
+// one there is nothing in the cache for the stored body to be, and
+// courtesy would rightly refuse it as a transport revalidating against
+// nothing; a forge that answered 304 to an unconditional request has
+// malfunctioned, and it is banded as an ordinary failure.
+//
+// A response with no status line at all falls back to the words, which
+// is the defensive reading and the one that survives a gh that stops
+// honouring --include: the observation stays correct, it simply stops
+// being conditional and costs a body every time. Only refusal survives
+// that fallback, deliberately — a 304 read out of prose is the defect
+// this function exists to close, and it is better to lose one
+// revalidation to a full fetch than to reintroduce it.
+func readGhResponse(out, validator string, err error) (courtesy.Answer, courtesy.Outcome, error) {
+	head, body, headed := splitHead(out)
+	status := statusCode(head)
+	switch {
+	case headed && status == httpNotModified && validator != "":
+		// The conditional request's payoff, and it arrives with a
+		// non-nil err because gh calls every non-2xx a failure. The
+		// stored body stands, its clock is refreshed, and the host is
+		// credited with an answer rather than charged for one.
+		return courtesy.Answer{NotModified: true, Validator: validator}, courtesy.NotModified, nil
+	case err == nil && !headed:
+		// No status line: a gh that stopped honouring --include, or an
+		// endpoint that answered with a bare document. The whole of
+		// stdout is the body, so the observation is still right; it is
+		// simply no longer conditional, and costs a body every time.
+		return courtesy.Answer{Body: json.RawMessage(out)}, courtesy.Answered, nil
+	case err == nil:
+		return courtesy.Answer{Validator: etagOf(head), Body: json.RawMessage(body)}, courtesy.Answered, nil
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return courtesy.Answer{}, courtesy.Ours, err
+	case headed && refusalStatus(status):
+		return courtesy.Answer{}, courtesy.Refused, err
+	case headed:
+		return courtesy.Answer{}, courtesy.Unanswered, err
+	}
+	return courtesy.Answer{}, spokenOutcome(err), err
+}
+
+// The statuses this witness reads by number: one that means the
+// observation stands, and three that mean stop asking. Every other
+// status is a failure of the ordinary kind, which is the right answer
+// for a status with no special meaning to a conditional GET — a 404 or
+// a 500 is worth a strike and is not worth walling a forge over.
+const (
+	// httpNotModified is the conditional request's payoff: the feed is
+	// unchanged, no body was sent, and the stored observation stands.
+	httpNotModified = 304
+	// httpForbidden is how GitHub says both "rate limit" and "secondary
+	// rate limit", which is the refusal the pacer exists for.
+	httpForbidden = 403
+	// httpTooManyRequests is the primary-limit spelling.
+	httpTooManyRequests = 429
+	// httpUnavailable is a forge that has stopped serving; asking
+	// harder is the wrong response to it whether or not it is about us.
+	httpUnavailable = 503
+)
+
+// refusalStatus reports a status that means "stop asking".
+func refusalStatus(code int) bool {
+	switch code {
+	case httpForbidden, httpTooManyRequests, httpUnavailable:
+		return true
+	}
+	return false
+}
+
+// statusCode reads the numeric status out of an HTTP head's first
+// line — "HTTP/2.0 304 Not Modified" — and returns 0 when there is
+// none to read, which is what makes "did the child show us a status at
+// all" a question with an answer rather than a guess.
+func statusCode(head string) int {
+	line, _, _ := strings.Cut(head, "\n")
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return 0
+	}
+	code, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return 0
+	}
+	return code
 }
 
 // livecheckHost is the pacer budget every livecheck phase shares. It
@@ -227,10 +345,10 @@ func (m Manners) livecheck(ctx context.Context, lc Livechecker, portdir, subport
 	key := strings.Join([]string{WitnessLivecheck, portdir, subport, version}, "\x00")
 	answer, src, err := m.Cache.Do(ctx, key, func(ctx context.Context, _ string) (courtesy.Answer, error) {
 		var res portfetch.LivecheckResult
-		if err := m.ask(ctx, livecheckHost, func(ctx context.Context) error {
+		if err := m.ask(ctx, livecheckHost, func(ctx context.Context) (courtesy.Outcome, error) {
 			var e error
 			res, e = lc.Livecheck(ctx, portdir, subport)
-			return e
+			return spokenOutcome(e), e
 		}); err != nil {
 			return courtesy.Answer{}, err
 		}
@@ -269,38 +387,23 @@ func releasesArgs(owner, name, etag, agent string) []string {
 	return args
 }
 
-// parseGhResponse splits an --include response into its validator and
-// its body.
+// etagOf reads the validator to send back next time out of a response
+// head; empty when the endpoint issued none, which simply makes the
+// next request unconditional.
 //
-// A 304 is the whole point of asking conditionally, and it is read
-// from the status line rather than inferred from an empty body: an
-// endpoint that legitimately returns an empty array must not be
-// mistaken for one that returned nothing. It is read from gh's error
-// text as well, in notModified, because gh answers a 304 with a
-// non-zero exit and the stdout does not survive that.
-//
-// A response with no status line at all is treated as a plain body.
-// That is the defensive reading, and it is what makes this survive a
-// gh that stops honouring --include: the observation is still correct,
-// it simply stops being conditional and costs a body every time.
-func parseGhResponse(out, validator string) (courtesy.Answer, error) {
-	head, body, ok := splitHead(out)
-	if !ok {
-		return courtesy.Answer{Body: json.RawMessage(out)}, nil
-	}
-	lines := strings.Split(head, "\n")
-	status := strings.TrimSpace(lines[0])
+// The header name is matched case-insensitively because HTTP/2 sends
+// it lowercased and HTTP/1.1 does not, and gh prints whichever it was
+// given.
+func etagOf(head string) string {
 	etag := ""
+	lines := strings.Split(head, "\n")
 	for _, l := range lines[1:] {
 		k, v, ok := strings.Cut(l, ":")
 		if ok && strings.EqualFold(strings.TrimSpace(k), "etag") {
 			etag = strings.TrimSpace(v)
 		}
 	}
-	if strings.Contains(status, " 304") {
-		return courtesy.Answer{NotModified: true, Validator: validator}, nil
-	}
-	return courtesy.Answer{Validator: etag, Body: json.RawMessage(body)}, nil
+	return etag
 }
 
 // splitHead separates an HTTP head from its body at the blank line,
@@ -321,8 +424,17 @@ func splitHead(out string) (head, body string, ok bool) {
 
 // refusedPhrases are what a host says when it wants to be left alone.
 // Matched against the whole error text, lowercased, because the words
-// arrive through three different tools' error formatting and none of
-// them hands us a status code.
+// arrive through a tool's error formatting and there is no status code
+// to test instead.
+//
+// "No status code" is now a claim about particular witnesses rather
+// than about all of them. ls-remote and livecheck have none: git and a
+// port's fetch phase relay a forge's or a web server's words and
+// nothing else. The releases witness DOES have one — it asks with
+// --include and reads the status line off stdout — and it uses it;
+// these phrases are its fallback for a response that arrived with no
+// head at all, and nothing here is consulted about a 304 by any
+// witness, which is the point of the whole exercise.
 var refusedPhrases = []string{
 	"rate limit", "rate-limit", "ratelimit",
 	"429", "too many requests",

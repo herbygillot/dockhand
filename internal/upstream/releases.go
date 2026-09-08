@@ -10,6 +10,16 @@ import (
 // releases refinement needs. Declared here as a bare func type so the
 // domain layer names the shape without importing the seam's owner;
 // nil means "tags only", which is every caller without gh.
+//
+// The string is gh's stdout AS THE CHILD PRODUCED IT, whether or not
+// the call succeeded, and that is load-bearing rather than incidental.
+// `gh api --include` prints the response head before it decides that a
+// non-2xx status is an error, so a 304 — the answer a conditional
+// request is asking for — arrives as a non-zero exit with the status
+// line sitting on stdout. A runner that returned "" alongside its
+// error would leave the status recoverable only from the error's
+// prose, which is exactly the defect this seam was changed to close;
+// see Manners.releases and readGhResponse.
 type GhRunner func(ctx context.Context, args ...string) (string, error)
 
 // A GitHub repository's release versions are upstream's own

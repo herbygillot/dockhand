@@ -93,7 +93,7 @@ func LsRemote(ctx context.Context, tools *tool.Finder, agent, url string) ([]Raw
 	if agent != "" {
 		env = append(env, "GIT_HTTP_USER_AGENT="+agent)
 	}
-	out, _, err := tool.Output(ctx, git, tool.Opts{
+	res, err := tool.Output(ctx, git, tool.Opts{
 		Args: []string{"ls-remote", "--tags", url},
 		Env:  env,
 	})
@@ -102,7 +102,7 @@ func LsRemote(ctx context.Context, tools *tool.Finder, agent, url string) ([]Raw
 	}
 
 	var refs []RawRef
-	for line := range strings.Lines(string(out)) {
+	for line := range strings.Lines(string(res.Stdout)) {
 		sha, ref, ok := strings.Cut(strings.TrimSpace(line), "\t")
 		if !ok {
 			continue

@@ -178,43 +178,37 @@ func variationsArg(v info.VariantSet) string {
 	return string(b)
 }
 
-// FetchInfo is one evaluation context's fetch surface: each distfile
-// with the full URLs it may be fetched from, plus the port's own fetch
-// exceptions — the fetch.* options portfetch itself threads through to
-// curl. Ports that fetch from a repository rather than distfiles have
-// no Files.
-type FetchInfo struct {
-	Files         map[string][]string
-	DisableEPSV   bool
-	IgnoreSSLCert bool
-	UserAgent     string
-}
-
 // FetchInfo reports the fetch surface for one evaluation context —
 // URLs assembled by MacPorts' own portfetch machinery, mirror macros
 // expanded. noMirrors skips the MacPorts fallback mirrors (the switch
 // behind port fetch --no-mirrors): the right mode when the distfiles
 // sought are for a version the mirrors cannot have yet.
-func (e *Evaluator) FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (FetchInfo, error) {
+//
+// The value returned is info's, like every other answer an evaluator
+// gives. Only the session is eval's to supply: what comes back is a
+// fact about the port, and belongs with the rest of the vocabulary so
+// that a caller which merely reads a fetch surface — or scripts one —
+// need not import the machine that assembles it.
+func (e *Evaluator) FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (info.FetchInfo, error) {
 	nm := "0"
 	if noMirrors {
 		nm = "1"
 	}
 	reply, err := e.sess.Call(ctx, "fetchinfo", portdir, subport, variationsArg(variants), nm)
 	if err != nil {
-		return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: %w", portdir, err)
+		return info.FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: %w", portdir, err)
 	}
 	fields, errs := syntax.DictValues(reply)
 	if len(errs) != 0 {
-		return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed reply %q: %w", portdir, reply, errs[0])
+		return info.FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed reply %q: %w", portdir, reply, errs[0])
 	}
 	fileFields, errs := syntax.DictValues(fields["files"])
 	if len(errs) != 0 {
-		return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed files dict %q: %w", portdir, fields["files"], errs[0])
+		return info.FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed files dict %q: %w", portdir, fields["files"], errs[0])
 	}
 	epsv, haveEpsv := fields["use_epsv"]
 	sslcert, haveSslcert := fields["ignore_sslcert"]
-	fi := FetchInfo{
+	fi := info.FetchInfo{
 		Files: make(map[string][]string, len(fileFields)),
 		// portfetch's own tests, with its defaults when the reply lacks
 		// the option: epsv on, certificates verified.
@@ -225,7 +219,7 @@ func (e *Evaluator) FetchInfo(ctx context.Context, portdir, subport string, vari
 	for file, raw := range fileFields {
 		urls, errs := syntax.ListValues(raw)
 		if len(errs) != 0 {
-			return FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed url list %q: %w", portdir, raw, errs[0])
+			return info.FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed url list %q: %w", portdir, raw, errs[0])
 		}
 		fi.Files[file] = urls
 	}

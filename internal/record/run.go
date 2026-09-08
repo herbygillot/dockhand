@@ -3,6 +3,7 @@ package record
 import (
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -160,13 +161,13 @@ type Run struct {
 	Forced string `json:"forced,omitempty"`
 	// Manifest is what the install laid down, collected from inside the
 	// environment that built it.
-	Manifest *verify.Manifest `json:"manifest,omitempty"`
+	Manifest *artifact.Manifest `json:"manifest,omitempty"`
 	// Baseline is the same picture of what the change is measured
 	// against. Both are pointers because both absences are real and mean
 	// different things: a port never installed has no baseline, and a
 	// build that did not get far enough to install produced nothing to
 	// measure.
-	Baseline *verify.Manifest `json:"baseline,omitempty"`
+	Baseline *artifact.Manifest `json:"baseline,omitempty"`
 	// BaselineSource says where the baseline came from — a binary
 	// archive, a banked manifest, the machine's own install. The same
 	// difference means different things depending on the answer, and a
@@ -190,5 +191,5 @@ type Run struct {
 	// also produced something that runs. Each line carries the argv
 	// beside the output, because output with no visible provenance is
 	// not evidence.
-	Probes []verify.ProbeLine `json:"probes,omitempty"`
+	Probes []artifact.Probe `json:"probes,omitempty"`
 }

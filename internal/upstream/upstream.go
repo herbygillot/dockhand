@@ -24,7 +24,6 @@ package upstream
 
 import (
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/verdict"
 )
 
 // Verdict classifies what the two resolvers said.
@@ -190,7 +189,7 @@ type Report struct {
 // heuristic that keeps a deliberately conservative livecheck from being
 // charged with rot when only prereleases are newer.
 //
-// The heuristic itself is verdict.Prerelease and is deliberately not
+// The heuristic itself is macports.Prerelease and is deliberately not
 // spelled here. It used to be, and it was this package's alone until the
 // mint needed the same answer about the target a change was minted
 // against — a prerelease target is held back from an unattended
@@ -198,7 +197,7 @@ type Report struct {
 // heuristic, drifting from this one the first time either was fixed.
 // What stays here is the word this package thinks in: the planners ask
 // whether a version is STABLE, and the negation is the whole difference.
-func Stable(version string) bool { return !verdict.Prerelease(version) }
+func Stable(version string) bool { return !macports.Prerelease(version) }
 
 // Judge rules on an observation. Ordering is macports.VerCmp — a pure
 // comparison, so judging cannot fail.
@@ -387,7 +386,7 @@ func judgeLivecheckAboveStable(obs Observation, r Report, against string) Report
 // computed from one regexp while stability was judged by another would
 // name the release of a version the judgment did not think was a
 // prerelease.
-func releaseBase(version string) (string, bool) { return verdict.PrereleaseBase(version) }
+func releaseBase(version string) (string, bool) { return macports.PrereleaseBase(version) }
 
 // corroborate re-judges a LivecheckAhead-of-releases report against
 // the tag list, the second witness the releases feed cannot speak

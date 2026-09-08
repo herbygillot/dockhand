@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -23,20 +24,62 @@ func TestReportRendering(t *testing.T) {
 		}
 		return "", errors.New("not found")
 	})
-	runVersion = func(path string, args ...string) string {
+	runVersion = func(_ context.Context, path string, args ...string) string {
 		if strings.Contains(path, "git") {
 			return "git version 2.4.0"
 		}
 		return ""
 	}
 
-	out := Probe(tools).String()
+	out := Probe(t.Context(), tools).String()
 	require.Contains(t, out, "port-tclsh   /opt/local/bin/port-tclsh")
 	require.Contains(t, out, "tclsh        missing")
 	require.Contains(t, out, "below the 2.5 floor")
 	require.Contains(t, out, "evaluation               available")
 	require.Contains(t, out, "branch workflow          unavailable")
 	require.Contains(t, out, "VM verification          unavailable (no tart)")
+}
+
+// Every probe that execs runs under the context the caller handed in.
+// They used to run under context.Background(), which meant a run's
+// interrupt was noticed only between probes and never reached the exec
+// that was hanging — and doctor is precisely what someone runs when the
+// machine is already misbehaving. A context cancelled before the probe
+// starts stands in for one cancelled during it: what is asserted is
+// which context arrived, not what the exec did with it.
+func TestProbesRunUnderTheCallersContext(t *testing.T) {
+	origVer, origProv := runVersion, provisioned
+	t.Cleanup(func() { runVersion, provisioned = origVer, origProv })
+
+	// port-tclsh is deliberately absent: its version probe runs a real
+	// port client through prefix.Version, and this test states a
+	// machine rather than asking this one.
+	tools := tool.NewFinder(func(name string) (string, error) {
+		switch name {
+		case "git", "gh", "tart":
+			return "/opt/local/bin/" + name, nil
+		}
+		return "", errors.New("not found")
+	})
+
+	var seen []error
+	runVersion = func(ctx context.Context, path string, args ...string) string {
+		seen = append(seen, ctx.Err())
+		return ""
+	}
+	provisioned = func(ctx context.Context, _ *tool.Finder) ([]string, error) {
+		seen = append(seen, ctx.Err())
+		return nil, ctx.Err()
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	Probe(ctx, tools)
+
+	require.Len(t, seen, 3, "git's version, gh's version, and the base listing each exec")
+	for _, err := range seen {
+		assert.ErrorIs(t, err, context.Canceled)
+	}
 }
 
 func TestVersionBelowIsNumeric(t *testing.T) {

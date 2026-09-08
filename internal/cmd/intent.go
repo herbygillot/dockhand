@@ -19,6 +19,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/portnote"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
@@ -291,7 +292,7 @@ func dependentRoster(rs *runstate.Context, target tree.Target) []string {
 		return nil
 	}
 	src, err := os.ReadFile(path)
-	if err != nil || !intent.MentionsRevbump(src) {
+	if err != nil || !portnote.MentionsRevbump(src) {
 		return nil
 	}
 	name := target.Subport

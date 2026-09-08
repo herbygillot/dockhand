@@ -1,4 +1,4 @@
-package verdict
+package macports
 
 import (
 	"testing"

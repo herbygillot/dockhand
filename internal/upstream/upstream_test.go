@@ -712,13 +712,29 @@ func TestARefusedReleasesCallWallsTheAPI(t *testing.T) {
 	require.ErrorIs(t, err, courtesy.ErrWalled)
 }
 
-// gh answers a 304 with a non-zero exit, and tool.Output discards a
-// failed command's stdout — so the whole payoff of asking
-// conditionally arrives as an error with the status in its text. Read
-// it, or every unchanged releases feed loses its authoritative witness
-// the moment the TTL expires, which is the opposite of what
-// revalidation is for.
-func TestAConditionalReleasesCallReadsA304OutOfGhsFailure(t *testing.T) {
+// notModifiedHead is what gh writes to stdout when a conditional
+// releases call is answered 304: the response head, and no body. It
+// exits non-zero afterwards, because a 304 is not a 2xx — which is why
+// the head has to survive the failure for any of this to work.
+const notModifiedHead = "HTTP/2.0 304 Not Modified\r\nEtag: W/\"abc\"\r\n\r\n"
+
+// ghNotModified scripts that call: the head on stdout, gh's own
+// wording of the failure beside it.
+func ghNotModified(t *testing.T, asked *int) GhRunner {
+	t.Helper()
+	return func(_ context.Context, args ...string) (string, error) {
+		*asked++
+		assert.Contains(t, strings.Join(args, " "), `If-None-Match: W/"abc"`)
+		return notModifiedHead, errors.New(`gh api: HTTP 304: Not Modified (https://api.github.com/repos/x/y/releases)`)
+	}
+}
+
+// gh answers a 304 with a non-zero exit, so the whole payoff of asking
+// conditionally arrives on the stdout of a failed command. Read the
+// status line, or every unchanged releases feed loses its
+// authoritative witness the moment the TTL expires, which is the
+// opposite of what revalidation is for.
+func TestAConditionalReleasesCallReadsA304FromTheStatusLine(t *testing.T) {
 	dir := t.TempDir()
 	cache := courtesy.NewCache(dir, time.Hour, nil)
 	repo := Repo{URL: "https://github.com/x/y", TagPrefix: "v"}
@@ -733,20 +749,93 @@ func TestAConditionalReleasesCallReadsA304OutOfGhsFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1.2.0"}, vs)
 
-	// The TTL expires and the feed has not changed. gh prints the 304
-	// head and exits non-zero; what reaches us is the error alone.
+	// The TTL expires and the feed has not changed.
 	stale := courtesy.NewCache(dir, time.Nanosecond, nil)
 	asked := 0
-	notMod := func(_ context.Context, args ...string) (string, error) {
-		asked++
-		assert.Contains(t, strings.Join(args, " "), `If-None-Match: W/"abc"`)
-		return "", errors.New(`gh api: HTTP 304: Not Modified (https://api.github.com/repos/x/y/releases)`)
-	}
-	vs, src, err := Manners{Cache: stale}.releases(context.Background(), notMod, repo, "d1")
+	vs, src, err := Manners{Cache: stale}.releases(context.Background(), ghNotModified(t, &asked), repo, "d1")
 	require.NoError(t, err, "a 304 is the answer, not a failure")
 	assert.Equal(t, 1, asked)
 	assert.Equal(t, courtesy.Revalidated, src, "the census must show the cheap answer it was")
 	assert.Equal(t, []string{"1.2.0"}, vs, "the stored feed stands")
+}
+
+// D5: a 304 revalidation must not count against the host that gave it.
+//
+// The defect was structural, not arithmetic. Manners.ask ran inside the
+// cache's transport closure and classified the request by reading the
+// error it was handed; gh reports a 304 as a failure; so the strike was
+// recorded before anything could notice the 304 was a success. A tree
+// whose cache is working — every port revalidating, every revalidation
+// a 304 — walled its own forge after three ports and lost the
+// authoritative witness for the rest of the sweep.
+func TestA304DoesNotStrikeTheHostAndClearsTheStreak(t *testing.T) {
+	dir := t.TempDir()
+	repo := Repo{URL: "https://github.com/x/y", TagPrefix: "v"}
+	warm := Manners{Cache: courtesy.NewCache(dir, time.Hour, nil)}
+	seed := func(context.Context, ...string) (string, error) {
+		return "HTTP/2.0 200 OK\nETag: W/\"abc\"\n\n[{\"tag_name\":\"v1.2.0\"}]", nil
+	}
+	_, _, err := warm.releases(context.Background(), seed, repo, "d1")
+	require.NoError(t, err)
+
+	// Three strikes wall a host, which is the policy every case below
+	// is measured against.
+	pol := courtesy.Policy{Ceiling: 2, Backoff: time.Hour, Strikes: 3}
+	m := Manners{Cache: courtesy.NewCache(dir, time.Nanosecond, nil), Pacer: courtesy.NewPacer(pol, nil)}
+
+	asked := 0
+	for range 5 {
+		_, src, err := m.releases(context.Background(), ghNotModified(t, &asked), repo, "d1")
+		require.NoError(t, err)
+		assert.Equal(t, courtesy.Revalidated, src)
+	}
+	assert.Equal(t, 5, asked, "every call was made; nothing was refused behind a wall")
+	_, up := m.Pacer.Walled("api.github.com")
+	assert.False(t, up, "a working cache walled its own forge")
+
+	// And it clears the streak the way an answered call does: two
+	// unreadable failures, a 304, then two more, and the host is still
+	// being asked because no three ran consecutively.
+	boom := func(context.Context, ...string) (string, error) {
+		return "", errors.New("gh api: dial tcp: lookup api.github.com: no such host")
+	}
+	for range 2 {
+		_, _, err := m.releases(context.Background(), boom, repo, "d1")
+		require.Error(t, err)
+	}
+	_, _, err = m.releases(context.Background(), ghNotModified(t, &asked), repo, "d1")
+	require.NoError(t, err)
+	for range 2 {
+		_, _, err := m.releases(context.Background(), boom, repo, "d1")
+		require.Error(t, err)
+	}
+	_, up = m.Pacer.Walled("api.github.com")
+	assert.False(t, up, "a 304 must clear the strike counter exactly as a success does")
+
+	// The counter is real, though: the third consecutive failure walls.
+	_, _, err = m.releases(context.Background(), boom, repo, "d1")
+	require.Error(t, err)
+	_, up = m.Pacer.Walled("api.github.com")
+	assert.True(t, up, "three unanswered calls in a row is still a host to leave alone")
+}
+
+// The other half of the classification: a real refusal still counts,
+// and now counts by status rather than by phrase.
+func TestARefusedReleasesCallCountsAgainstTheHost(t *testing.T) {
+	pol := courtesy.Policy{Ceiling: 2, Backoff: time.Hour, Strikes: 3}
+	repo := Repo{URL: "https://github.com/x/y", TagPrefix: "v"}
+	for _, status := range []string{"403 Forbidden", "429 Too Many Requests"} {
+		m := Manners{Pacer: courtesy.NewPacer(pol, nil)}
+		refuse := func(context.Context, ...string) (string, error) {
+			return "HTTP/2.0 " + status + "\r\nX-RateLimit-Remaining: 0\r\n\r\n{}",
+				errors.New("gh api: the child said nothing this test reads")
+		}
+		_, _, err := m.releases(context.Background(), refuse, repo, "d1")
+		require.Error(t, err, status)
+		left, up := m.Pacer.Walled("api.github.com")
+		assert.True(t, up, "%s must wall the host on its own, at once", status)
+		assert.Positive(t, left)
+	}
 }
 
 func TestJudgeAuthoritativeReleasesOutrankTagHeuristics(t *testing.T) {

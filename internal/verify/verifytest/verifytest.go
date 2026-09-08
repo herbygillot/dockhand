@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -58,7 +59,7 @@ type Fake struct {
 	// members are probed as themselves, and a test that had to spell a
 	// job and a port into one string would be scripting a cache key
 	// instead of an answer.
-	Probes map[string]map[string][]verify.ProbeLine
+	Probes map[string]map[string][]artifact.Probe
 	// ProbeErr makes Probe fail per job ID — the guest that will not
 	// run the port's own binaries.
 	ProbeErr map[string]error
@@ -209,7 +210,7 @@ func (f *Fake) Manifests(_ context.Context, job verify.Job) (verify.Manifests, e
 // port nothing was scripted for. A port with no probe lines is a port
 // nothing was run against, which is what a provider that knows no
 // probes for it reports.
-func (f *Fake) Probe(_ context.Context, job verify.Job, port string) ([]verify.ProbeLine, error) {
+func (f *Fake) Probe(_ context.Context, job verify.Job, port string) ([]artifact.Probe, error) {
 	if err := f.ProbeErr[job.ID]; err != nil {
 		return nil, err
 	}

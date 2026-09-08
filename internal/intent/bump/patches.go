@@ -60,11 +60,6 @@ var patchTag = regexp.MustCompile(`:[0-9A-Za-z_-]+$`)
 // fit. A compressed patch (.gz, .bz2, .xz — base decompresses them on
 // the way to patch(1)) is not a unified diff and declines the same way,
 // from the parser.
-//
-// Every decline here is ByNetwork. Two things decided it that the memo
-// key does not hold: the patch's own bytes, which a maintainer rewrites
-// without touching the Portfile, and the source the hunks were looked
-// for in, which is whatever the server served for the new version.
 func relocatePatches(ctx context.Context, tools *tool.Finder, portdir string, vals info.Values, worksrcdir string, fetched []string) ([]plan.FileEdit, []string, error) {
 	strip := eval.StripLevel(vals.PatchPreArgs)
 	// The reader hands Relocate each target out of the fetched
@@ -96,24 +91,21 @@ func relocatePatches(ctx context.Context, tools *tool.Finder, portdir string, va
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			return nil, nil, &plan.Decline{Type: plan.PatchWontRelocate,
-				Detail:     rel + " is not in the portdir; a patch the port fetches from patch_sites is not dockhand's to refresh",
-				Determined: plan.ByNetwork}
+				Detail: rel + " is not in the portdir; a patch the port fetches from patch_sites is not dockhand's to refresh"}
 		case err != nil:
 			return nil, nil, fmt.Errorf("bump: %w", err)
 		}
 		p, err := patch.Parse(src)
 		if err != nil {
 			return nil, nil, &plan.Decline{Type: plan.PatchWontRelocate,
-				Detail:     rel + ": " + err.Error(),
-				Determined: plan.ByNetwork}
+				Detail: rel + ": " + err.Error()}
 		}
 		res, err := p.Relocate(read, strip)
 		var re *patch.RelocateError
 		switch {
 		case errors.As(err, &re):
 			return nil, nil, &plan.Decline{Type: plan.PatchWontRelocate,
-				Detail:     relocateDetail(rel, re),
-				Determined: plan.ByNetwork}
+				Detail: relocateDetail(rel, re)}
 		case err != nil:
 			return nil, nil, fmt.Errorf("bump: %s: %w", rel, err)
 		}

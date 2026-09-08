@@ -10,12 +10,14 @@
 //
 // Output and Run are the two shapes of a one-shot command. Output is
 // for a tool whose stdout is data and whose stderr is the story of a
-// failure, which is every wrapper that words an error. Run is one
-// merged transcript with the exec error as it came, which is what tart
-// needs: its diagnostics land on either stream, and its callers read
-// the output after a non-zero exit. IsTerminal is the one terminal
-// question, answered by the kernel rather than guessed from a file
-// mode.
+// failure, which is every wrapper that words an error; it hands back a
+// Result whether the command succeeded or not, because a child that
+// exits non-zero has often already said the thing its caller needs.
+// Run is one merged transcript with the exec error as it came, which
+// is what tart needs: its diagnostics land on either stream, and its
+// callers read the output after a non-zero exit. IsTerminal is the one
+// terminal question, answered by the kernel rather than guessed from a
+// file mode.
 //
 // What is not here is any judgment about a tool's output. A wrapper
 // that knows git's exit codes or gh's grammar lives with the package

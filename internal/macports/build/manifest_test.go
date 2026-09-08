@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // fixture is one of the captured manifests in testdata. They are real
@@ -182,7 +182,7 @@ func TestParseManifestOverARealPort(t *testing.T) {
 			"an executable has no install name to announce")
 		assert.Empty(t, d.Arch, "a thin file is one library and otool names no architecture")
 	}
-	assert.Equal(t, verify.Dylib{
+	assert.Equal(t, artifact.Dylib{
 		Path:           "/opt/local/lib/libbrotlicommon.1.2.0.dylib",
 		InstallName:    "/opt/local/lib/libbrotlicommon.1.dylib",
 		CompatVersion:  "1.0.0",
@@ -237,7 +237,7 @@ func TestParseManifestOverUniversalFiles(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "2.4.1_0+universal", got.Manifest.Version)
-	assert.Equal(t, []verify.Dylib{
+	assert.Equal(t, []artifact.Dylib{
 		{Path: "/tmp/dhfat/lib/libwidget.2.4.1.dylib", Arch: "x86_64",
 			InstallName: "/opt/local/lib/libwidget.2.dylib", CompatVersion: "2.0.0", CurrentVersion: "2.4.1"},
 		{Path: "/tmp/dhfat/lib/libwidget.2.4.1.dylib", Arch: "arm64",
@@ -338,7 +338,7 @@ func TestParseProbes(t *testing.T) {
 		"===> dockhand probe: output\nwidget: unknown option --version\nusage: widget [-v]\n" +
 		"===> dockhand probe: done\n"
 
-	assert.Equal(t, []verify.ProbeLine{
+	assert.Equal(t, []artifact.Probe{
 		{Binary: "/opt/local/bin/brotli", Argv: "/opt/local/bin/brotli --version", Output: "brotli 1.2.0"},
 		{Binary: "/opt/local/bin/widget", Argv: "/opt/local/bin/widget --version",
 			Output: "widget: unknown option --version\nusage: widget [-v]"},
@@ -355,7 +355,7 @@ func TestATruncatedProbeSweepKeepsWhatItGot(t *testing.T) {
 		"===> dockhand probe: argv\n/opt/local/bin/brotli --version\n" +
 		"===> dockhand probe: output\nbrotli 1.2.0\n"
 
-	assert.Equal(t, []verify.ProbeLine{
+	assert.Equal(t, []artifact.Probe{
 		{Binary: "/opt/local/bin/brotli", Argv: "/opt/local/bin/brotli --version", Output: "brotli 1.2.0"},
 	}, ParseProbes(out))
 }

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // BaselineArgs is the binary-only install that takes the "before"
@@ -228,13 +228,13 @@ rm -f "$files"
 // Capture is one framed manifest read back: the installation as the
 // environment described it, and the bindings the same otool sweep saw.
 //
-// The bindings are here rather than on verify.Manifest because they are
+// The bindings are here rather than on artifact.Manifest because they are
 // an observation about this capture and not a property of the port: a
 // manifest says what a port laid down, and who links to what is a
 // question asked across an installation. The caller assembles the
 // answer from as many captures as it took.
 type Capture struct {
-	Manifest verify.Manifest
+	Manifest artifact.Manifest
 	// LinksTo maps an install name to the captured files that record it
 	// as a dependency, in capture order and without repeats.
 	LinksTo map[string][]string
@@ -291,7 +291,7 @@ func ParseManifest(out string) (Capture, error) {
 		return Capture{}, err
 	}
 
-	m := verify.Manifest{
+	m := artifact.Manifest{
 		Port:     firstLine(sections[sectionPort]),
 		Platform: firstLine(sections[sectionPlatform]),
 	}
@@ -314,7 +314,7 @@ func ParseManifest(out string) (Capture, error) {
 	got := Capture{LinksTo: map[string][]string{}}
 	for _, s := range idOrder {
 		name := ids[s]
-		d := verify.Dylib{Path: s.path, Arch: s.arch, InstallName: name}
+		d := artifact.Dylib{Path: s.path, Arch: s.arch, InstallName: name}
 		for _, l := range links[s] {
 			if l.name == name {
 				d.CompatVersion, d.CurrentVersion = l.compat, l.current

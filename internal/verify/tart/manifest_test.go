@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -58,7 +59,7 @@ func TestManifestsReadsTheBaselineAndTakesTheInstalledSideLive(t *testing.T) {
 	assert.Empty(t, got.BaselineReason)
 	require.NotNil(t, got.Baseline)
 	assert.Equal(t, "2.4.1_0", got.Baseline.Version)
-	assert.Equal(t, []verify.Dylib{{
+	assert.Equal(t, []artifact.Dylib{{
 		Path:           "/opt/local/lib/libwidget.2.dylib",
 		InstallName:    "/opt/local/lib/libwidget.2.dylib",
 		CompatVersion:  "2.0.0",
@@ -303,7 +304,7 @@ func TestProbeRunsThePortsOwnBinaries(t *testing.T) {
 	lines, err := g.provider().Probe(t.Context(), g.job(), "libwidget")
 	require.NoError(t, err)
 
-	assert.Equal(t, []verify.ProbeLine{{
+	assert.Equal(t, []artifact.Probe{{
 		Binary: prog,
 		Argv:   prog + " --version",
 		Output: "widget 3.0.0",

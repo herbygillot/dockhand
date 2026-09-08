@@ -609,8 +609,7 @@ func exitTable(t *testing.T) []exitRow {
 		// patch, which is why it is a decline and not a tree error.
 		exitRow{name: "*plan.Decline PatchWontRelocate (bump: a hunk's lines are not in the new source)",
 			err: &plan.Decline{Type: plan.PatchWontRelocate,
-				Detail:     "patch-no-fink.diff: configure.ac hunk 2: its lines do not occur in the new source",
-				Determined: plan.ByNetwork},
+				Detail: "patch-no-fink.diff: configure.ac hunk 2: its lines do not occur in the new source"},
 			as: new(*plan.Decline)},
 		exitRow{name: "*plan.Decline wrapped",
 			err: fmt.Errorf("bump: %w", &plan.Decline{Type: plan.AlreadyCurrent}), as: new(*plan.Decline)},
@@ -1006,7 +1005,7 @@ func exitTable(t *testing.T) []exitRow {
 		build.ErrNoTally,
 		shell.ErrClaimed,
 		rpc.ErrHandshake,
-		rpc.ErrBroken,
+		rpc.ErrBrokenSession,
 		info.ErrMalformedSelection,
 		upstreamforge.ErrUnbound,
 		bumprevision.ErrNoReason,

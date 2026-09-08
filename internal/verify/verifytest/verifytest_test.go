@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -51,11 +52,11 @@ func TestFakeWorkersAreScripted(t *testing.T) {
 func TestFakeManifestsAreScripted(t *testing.T) {
 	job := verify.Job{Provider: "fake", ID: "fake-1"}
 	want := verify.Manifests{
-		Baseline:       &verify.Manifest{Port: "jq", Version: "1.7", Platform: "darwin 24 arm64"},
+		Baseline:       &artifact.Manifest{Port: "jq", Version: "1.7", Platform: "darwin 24 arm64"},
 		BaselineSource: verify.BaselineArchive,
-		Installed: &verify.Manifest{Port: "jq", Version: "1.8", Platform: "darwin 24 arm64",
+		Installed: &artifact.Manifest{Port: "jq", Version: "1.8", Platform: "darwin 24 arm64",
 			Files:  []string{"/opt/local/bin/jq", "/opt/local/lib/libjq.1.dylib"},
-			Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "2.0.0", CurrentVersion: "2.0.0"}}},
+			Dylibs: []artifact.Dylib{{Path: "/opt/local/lib/libjq.1.dylib", InstallName: "/opt/local/lib/libjq.1.dylib", CompatVersion: "2.0.0", CurrentVersion: "2.0.0"}}},
 		Links: map[string]map[string][]string{
 			"oniguruma": {"/opt/local/lib/libjq.1.dylib": {"/opt/local/bin/onig"}},
 		},
@@ -91,9 +92,9 @@ func TestFakeManifestsAreScripted(t *testing.T) {
 
 func TestFakeProbesAreScriptedPerPort(t *testing.T) {
 	job := verify.Job{Provider: "fake", ID: "fake-1"}
-	jq := []verify.ProbeLine{{Binary: "/opt/local/bin/jq", Argv: "jq --version", Output: "jq-1.8\n"}}
-	oniguruma := []verify.ProbeLine{{Binary: "/opt/local/bin/onig-config", Argv: "onig-config --version", Output: "6.9.9\n"}}
-	f := &Fake{Probes: map[string]map[string][]verify.ProbeLine{job.ID: {"jq": jq, "oniguruma": oniguruma}}}
+	jq := []artifact.Probe{{Binary: "/opt/local/bin/jq", Argv: "jq --version", Output: "jq-1.8\n"}}
+	oniguruma := []artifact.Probe{{Binary: "/opt/local/bin/onig-config", Argv: "onig-config --version", Output: "6.9.9\n"}}
+	f := &Fake{Probes: map[string]map[string][]artifact.Probe{job.ID: {"jq": jq, "oniguruma": oniguruma}}}
 
 	// Each member of a cohort is probed as itself: a double that
 	// answered the same lines for every port would let a caller that

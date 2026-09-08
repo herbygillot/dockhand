@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/intent/bumprevision"
@@ -88,14 +89,14 @@ func measured(m verify.Manifests) *verifytest.Fake {
 }
 
 // dylib is one library row as the capture produces it.
-func dylib(path, name, compat string) verify.Dylib {
-	return verify.Dylib{Path: path, Arch: "arm64", InstallName: name,
+func dylib(path, name, compat string) artifact.Dylib {
+	return artifact.Dylib{Path: path, Arch: "arm64", InstallName: name,
 		CompatVersion: compat, CurrentVersion: compat}
 }
 
 // installed is one side of a comparison.
-func installed(port, version string, libs ...verify.Dylib) *verify.Manifest {
-	return &verify.Manifest{Port: port, Version: version, Platform: "Testos",
+func installed(port, version string, libs ...artifact.Dylib) *artifact.Manifest {
+	return &artifact.Manifest{Port: port, Version: version, Platform: "Testos",
 		Files: []string{"/opt/local/lib"}, Dylibs: libs}
 }
 

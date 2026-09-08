@@ -84,12 +84,12 @@ func find(tools *tool.Finder, defaultPrefix string) (Prefix, error) {
 // rather than as the port client's stderr, because that is the text
 // Version has always wrapped and the callers log.
 var runVersion = func(ctx context.Context, path string, args ...string) (string, error) {
-	out, _, err := tool.Output(ctx, path, tool.Opts{Args: args})
+	res, err := tool.Output(ctx, path, tool.Opts{Args: args})
 	var f *tool.Failure
 	if errors.As(err, &f) {
 		err = f.Err
 	}
-	return string(out), err
+	return string(res.Stdout), err
 }
 
 // Version reports the MacPorts version this installation runs, as the

@@ -11,15 +11,16 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// The instruction-comment rule, against the comments the tree actually
-// writes.
+// The instruction-comment rule: what the finding says once the reading
+// has been done.
 //
-// Every source below is transcribed from a real Portfile, with the port
-// and the line it was read at named in the row. That is not decoration:
-// the plan's own sentence for this rule — "increase the revision of the
-// following ports when updating" — matches ZERO Portfiles, and a rule
-// written to a fixture invented alongside it would have passed its
-// tests forever while finding nothing in the field.
+// The reading is portnote's and the corpus lives there — every shape
+// the tree writes, port by port, transcribed from real Portfiles,
+// together with the negations that match the family and mean the
+// opposite of it. Every source below is from that same corpus, and what
+// this table is for is the half portnote cannot do: it is handed a
+// Portfile's bytes and does not know whose they are, and three of the
+// four judgments here need exactly that.
 //
 // The rows that must produce NOTHING are half the table and the more
 // important half. A comment that says a revbump is unnecessary, and a
@@ -46,50 +47,7 @@ func TestInstructionCommentQuotesTheShapesTheTreeWrites(t *testing.T) {
 			quote: true,
 		},
 		{
-			name:  "ffmpeg: one name, one line",
-			port:  "ffmpeg",
-			src:   "# Please increase the revision of mpv whenever ffmpeg's version is updated.\n",
-			ports: []string{"mpv"},
-			quote: true,
-		},
-		{
-			name:  "curl: the condition names the port back",
-			port:  "curl",
-			src:   "# Increase the revision of p5-www-curl whenever the version of curl gets updated.\n",
-			ports: []string{"p5-www-curl"},
-			quote: true,
-		},
-		{
-			name:  "db48: 'any time' ends the roster",
-			port:  "db48",
-			src:   "# Increase the revision of p5-berkeleydb any time the db48 version changes.\n",
-			ports: []string{"p5-berkeleydb"},
-			quote: true,
-		},
-		{
-			name:  "grpc: a quoted name under a NOTE: prefix",
-			port:  "grpc",
-			src:   "# NOTE: Also rev-bump 'apache-arrow' when updating this port\n",
-			ports: []string{"apache-arrow"},
-			quote: true,
-		},
-		{
-			name:  "librime: rev-bump with the name straight after it",
-			port:  "librime",
-			src:   "# Please rev-bump squirrel-ime whenever librime-devel updates\n",
-			ports: []string{"squirrel-ime"},
-			quote: true,
-		},
-		{
-			name: "sbcl: category prefixes, and 'possibly' inside the list",
-			port: "sbcl",
-			src: "# Please bump the revisions of math/maxima, math/fricas and possibly\n" +
-				"# math/maxima-devel when this port changes.\n",
-			ports: []string{"maxima", "fricas", "maxima-devel"},
-			quote: true,
-		},
-		{
-			name: "openssl3: a header that points at bullets, with the caveats kept in the quote",
+			name: "openssl3: a multi-line roster is quoted whole, caveats and all",
 			port: "openssl3",
 			src: "# Please revbump these ports when updating the openssl3 version/revision\n" +
 				"#  - freeradius (#43461)\n" +
@@ -100,60 +58,15 @@ func TestInstructionCommentQuotesTheShapesTheTreeWrites(t *testing.T) {
 			quote: true,
 		},
 		{
-			name:  "spdlog: a header and a single bullet",
-			port:  "spdlog",
-			src:   "# Ports that depend on this port must be revbump after update:\n# - tiledb\n",
-			ports: []string{"tiledb"},
-			quote: true,
-		},
-		{
-			name: "protobuf3-cpp: the condition is on the line ABOVE the verb",
-			port: "protobuf3-cpp",
-			src: "# NOTE: For a minor or major version number change, also\n" +
-				"# NOTE:   Revbump et, protobuf-c, mosh and py-onnx\n",
-			ports: []string{"et", "protobuf-c", "mosh", "py-onnx"},
-			quote: true,
-		},
-		{
-			name: "icu: the unnamed form names nobody",
+			name: "icu: the unnamed form is a finding with a criterion and no candidates",
 			port: "icu",
 			src: "# Please increase the revision number of the dependents whenever the library\n" +
 				"# version number changes.\n",
 			quote: true,
 		},
-		{
-			name: "cmark: 'all ports that link with the library' is a class, not a roster",
-			port: "cmark",
-			src: "# Any version update requires revbumping all ports that link with the library\n" +
-				"# because the full version number is in the library's install name.\n",
-			quote: true,
-		},
-		{
-			name:  "abseil: ports that depend on this port",
-			port:  "abseil",
-			src:   "# Ports that depend on this port must be revbump after update.\n",
-			quote: true,
-		},
-		{
-			name: "geos: a conditional instruction about all dependents",
-			port: "geos",
-			src: "# NOTE: When updating this port, check whether the dylib name and/or version\n" +
-				"# NOTE: changes. If so, all dependents will need to be rev-bumped.\n",
-			quote: true,
-		},
 
-		// The negations. Each of these matches the family and means the
-		// opposite of it.
-		{
-			name: "openssl3 line 147: too obscure to justify revbumping the dependents",
-			port: "openssl3",
-			src:  "# The ABI difference is real but is too obscure to justify\n# revbumping the dependents.\n",
-		},
-		{
-			name: "py-sip4: no rev-bumps are needed",
-			port: "py-sip4",
-			src:  "#  -> SO: no rev-bumps are be needed.\n",
-		},
+		// A negation, which portnote has already declined: the finding
+		// road must not resurrect one.
 		{
 			name: "perl5: rather not revbump many p5 ports",
 			port: "perl5",
@@ -249,21 +162,6 @@ func TestTwoCommentBlocksAreTwoFindings(t *testing.T) {
 	require.Len(t, got, 2)
 	assert.Equal(t, "# Please revbump mpv whenever ffmpeg's version is updated.", got[0].Quote)
 	assert.Equal(t, "# Also rev-bump apache-arrow when updating this port", got[1].Quote)
-}
-
-// A comment inside a braced body is still read. The rule that cares
-// where a comment sits is the rider's first proof, which is about
-// EDITING bytes; this only reads them, and privoxy's own instruction
-// lives inside a subport block.
-func TestAnInstructionInsideABracedBodyIsStillRead(t *testing.T) {
-	src := "name privoxy\nsubport ${name}-pki-bundle {\n" +
-		"    # Please rev-bump squirrel-ime whenever librime-devel updates\n}\n"
-	got := instructionFindings([]byte(src), "www/privoxy", "privoxy", nil)
-	require.Len(t, got, 1)
-	require.Len(t, got[0].Candidates, 1)
-	assert.Equal(t, "squirrel-ime", got[0].Candidates[0].Port)
-	assert.Equal(t, "    # Please rev-bump squirrel-ime whenever librime-devel updates", got[0].Quote,
-		"the quote keeps its own indentation: a quote that was reflowed is not verbatim")
 }
 
 // The source is the portdir a reader would cite and not the path on

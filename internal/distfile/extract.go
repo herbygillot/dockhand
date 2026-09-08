@@ -108,12 +108,12 @@ func extractWith(ctx context.Context, tools *tool.Finder, archives []string, nam
 
 // members lists an archive's entries.
 func members(ctx context.Context, tar, archive string) ([]string, error) {
-	out, _, err := tool.Output(ctx, tar, tool.Opts{Args: []string{"-tf", archive}})
+	res, err := tool.Output(ctx, tar, tool.Opts{Args: []string{"-tf", archive}})
 	if err != nil {
 		return nil, fmt.Errorf("distfile: listing %s: %s", path.Base(archive), err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
 	}
 	var names []string
-	for line := range strings.Lines(string(out)) {
+	for line := range strings.Lines(string(res.Stdout)) {
 		if n := strings.TrimRight(strings.TrimSuffix(line, "\n"), "/"); n != "" {
 			names = append(names, strings.TrimPrefix(n, "./"))
 		}
@@ -153,12 +153,12 @@ func pickMember(members []string, preferDir, name string) (string, error) {
 
 // extract reads one member's bytes out of an archive.
 func extract(ctx context.Context, tar, archive, member string) ([]byte, error) {
-	out, _, err := tool.Output(ctx, tar, tool.Opts{Args: []string{"-xOf", archive, member}})
+	res, err := tool.Output(ctx, tar, tool.Opts{Args: []string{"-xOf", archive, member}})
 	if err != nil {
 		return nil, fmt.Errorf("distfile: extracting %s from %s: %s", member, path.Base(archive), err) //nolint:errorlint // not wrapped: the child's words survive as text and its identity does not; a child's exit status is not dockhand's to hand on
 	}
-	if len(out) > maxMemberSize {
-		return nil, fmt.Errorf("distfile: %s is %d bytes, past the %d byte cap", member, len(out), maxMemberSize)
+	if len(res.Stdout) > maxMemberSize {
+		return nil, fmt.Errorf("distfile: %s is %d bytes, past the %d byte cap", member, len(res.Stdout), maxMemberSize)
 	}
-	return out, nil
+	return res.Stdout, nil
 }

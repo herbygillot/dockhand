@@ -23,8 +23,15 @@ func startShell(t *testing.T) *shell.Proc {
 
 func startSession(t *testing.T, initScripts ...string) *Session {
 	t.Helper()
+	return startSessionWith(t, nil, initScripts...)
+}
+
+// startSessionWith is startSession for the tests that need a session built
+// with non-default transport bounds.
+func startSessionWith(t *testing.T, opts []Option, initScripts ...string) *Session {
+	t.Helper()
 	p := startShell(t)
-	s, err := New(context.Background(), p, WithInit(initScripts...))
+	s, err := New(context.Background(), p, append([]Option{WithInit(initScripts...)}, opts...)...)
 	require.NoError(t, err) // New kills the proc on failure
 	t.Cleanup(func() { s.Close() })
 	return s
@@ -101,8 +108,99 @@ func TestSessionTimeoutBreaksSession(t *testing.T) {
 	defer cancel()
 	_, err := s.Call(ctx, "eval", "after 10000")
 	require.Error(t, err, "hung call must not return")
+	// The call that witnessed the break branches on the same sentinel as
+	// the ones after it, and the cause stays reachable through it.
+	require.ErrorIs(t, err, ErrBrokenSession)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 	_, err = s.Call(context.Background(), "ping")
-	require.ErrorIs(t, err, ErrBroken)
+	require.ErrorIs(t, err, ErrBrokenSession)
+}
+
+func TestSessionFrameLimitBreaksSession(t *testing.T) {
+	s := startSessionWith(t, []Option{WithFrameLimit(4 << 10)})
+	_, err := s.Call(context.Background(), "eval", "string repeat x 20000")
+	require.ErrorIs(t, err, ErrFrameLimit)
+	require.ErrorIs(t, err, ErrBrokenSession)
+	// A handler error leaves a session usable; a frame past the limit is
+	// a protocol violation and must not be mistaken for one.
+	var ce CallError
+	require.NotErrorAs(t, err, &ce, "a limit breach is not a handler error")
+	requireBrokenAndSilent(t, s)
+}
+
+func TestSessionFrameLimitIsCheckedBeforeAllocation(t *testing.T) {
+	// A child that advertises a length it has no intention of writing is
+	// the whole reason the check precedes the make(): the frame below
+	// claims a terabyte and sends four bytes, and the session must refuse
+	// it without waiting for, or allocating for, the rest.
+	s := startSessionWith(t, []Option{WithFrameLimit(4 << 10)}, `
+proc liar {} {
+    puts stdout "TCLRPC1 ok 1099511627776"
+    puts stdout "nope"
+    flush stdout
+    return unreached
+}
+::tclrpc::register liar liar
+`)
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.Call(context.Background(), "liar")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrFrameLimit)
+		require.ErrorIs(t, err, ErrBrokenSession)
+	case <-time.After(30 * time.Second):
+		t.Fatal("session waited on a frame it should have refused outright")
+	}
+	requireBrokenAndSilent(t, s)
+}
+
+func TestSessionLineLimitBreaksSession(t *testing.T) {
+	// Noise, not a frame: the tolerance for stray stdout is what makes an
+	// unbounded line read reachable, so the bound has to hold there too.
+	s := startSessionWith(t, []Option{WithLineLimit(4 << 10)}, `
+proc shouty {} {
+    puts [string repeat x 20000]
+    return quiet
+}
+::tclrpc::register shouty shouty
+`)
+	_, err := s.Call(context.Background(), "shouty")
+	require.ErrorIs(t, err, ErrLineLimit)
+	require.ErrorIs(t, err, ErrBrokenSession)
+	requireBrokenAndSilent(t, s)
+}
+
+func TestSessionDefaultLimitsAdmitRealPayloads(t *testing.T) {
+	// The bounds are sized above what MacPorts actually returns; the
+	// largest Portfile in the ports tree is 139 KiB, and a snapshot of it
+	// is smaller than the file. A megabyte with room to spare is the
+	// contract.
+	s := startSession(t)
+	require.Len(t, call(t, s, "eval", "string repeat x 1000000"), 1000000)
+	require.Equal(t, "pong", call(t, s, "ping"), "a legitimate payload must not break the session")
+}
+
+// requireBrokenAndSilent asserts the sticky half of the contract: a broken
+// session answers every later call with ErrBrokenSession, and answers it
+// from its own recorded state rather than by touching a dead process.
+func requireBrokenAndSilent(t *testing.T, s *Session) {
+	t.Helper()
+	select {
+	case <-s.proc.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("a broken session left its process running")
+	}
+	for i := range 2 {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := s.Call(ctx, "ping")
+		cancel()
+		require.ErrorIs(t, err, ErrBrokenSession, "call %d after breakage", i)
+		require.NotErrorIs(t, err, context.DeadlineExceeded,
+			"a broken session must answer from its own state, not by waiting on I/O")
+	}
 }
 
 func TestSessionRefusesClaimedProc(t *testing.T) {

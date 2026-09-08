@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/exitcode"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
@@ -66,8 +65,8 @@ func (scriptedOracle) Subports(context.Context, string) ([]string, error) {
 	return nil, errors.New("scriptedOracle: Subports not scripted")
 }
 
-func (scriptedOracle) FetchInfo(context.Context, string, string, info.VariantSet, bool) (eval.FetchInfo, error) {
-	return eval.FetchInfo{}, errors.New("scriptedOracle: FetchInfo not scripted")
+func (scriptedOracle) FetchInfo(context.Context, string, string, info.VariantSet, bool) (info.FetchInfo, error) {
+	return info.FetchInfo{}, errors.New("scriptedOracle: FetchInfo not scripted")
 }
 
 var _ port.Oracle = scriptedOracle{}
@@ -557,26 +556,68 @@ func TestOutcomeHardIsTotal(t *testing.T) {
 }
 
 // The releases witness asks conditionally and reads the answer's
-// status line, so an unchanged feed costs a 304 and no body.
-func TestParseGhResponse(t *testing.T) {
+// status line, so an unchanged feed costs a 304 and no body — and the
+// status line is read from stdout, where it is, rather than from the
+// error gh raises because a 304 is not a 2xx.
+func TestReadGhResponse(t *testing.T) {
 	body := `[{"tag_name":"v1.3.0"}]`
-	answer, err := parseGhResponse("HTTP/2.0 200 OK\r\nEtag: W/\"abc\"\r\nX-Other: 1\r\n\r\n"+body, "")
+	answer, outcome, err := readGhResponse("HTTP/2.0 200 OK\r\nEtag: W/\"abc\"\r\nX-Other: 1\r\n\r\n"+body, "", nil)
 	require.NoError(t, err)
 	assert.False(t, answer.NotModified)
 	assert.Equal(t, `W/"abc"`, answer.Validator)
 	assert.JSONEq(t, body, string(answer.Body))
+	assert.Equal(t, courtesy.Answered, outcome)
 
-	answer, err = parseGhResponse("HTTP/2.0 304 Not Modified\r\nEtag: W/\"abc\"\r\n\r\n", `W/"abc"`)
-	require.NoError(t, err)
+	// The shape gh actually produces for a revalidation: the head on
+	// stdout, and a failure beside it.
+	notMod := errors.New(`gh api: HTTP 304: Not Modified (https://api.github.com/repos/x/y/releases)`)
+	answer, outcome, err = readGhResponse("HTTP/2.0 304 Not Modified\r\nEtag: W/\"abc\"\r\n\r\n", `W/"abc"`, notMod)
+	require.NoError(t, err, "the answer a conditional request asked for is not a failure")
 	assert.True(t, answer.NotModified)
 	assert.Equal(t, `W/"abc"`, answer.Validator, "a 304 keeps the validator it revalidated against")
+	assert.Equal(t, courtesy.NotModified, outcome, "and the host is credited, not charged")
+
+	// A 304 against nothing is a forge that has malfunctioned: there is
+	// no stored body for it to mean, so it is an ordinary failure.
+	_, outcome, err = readGhResponse("HTTP/2.0 304 Not Modified\r\n\r\n", "", notMod)
+	require.Error(t, err)
+	assert.Equal(t, courtesy.Unanswered, outcome)
+
+	// A refusal, read by number rather than by phrase.
+	for _, status := range []string{"403 Forbidden", "429 Too Many Requests", "503 Service Unavailable"} {
+		_, outcome, err = readGhResponse("HTTP/2.0 "+status+"\r\n\r\n{}", "", errors.New("gh api: refused"))
+		require.Error(t, err, status)
+		assert.Equal(t, courtesy.Refused, outcome, status)
+	}
+
+	// A status with no meaning to a conditional GET is a plain failure:
+	// worth a strike, not a wall.
+	_, outcome, err = readGhResponse("HTTP/2.0 404 Not Found\r\n\r\n{}", "", errors.New("gh api: HTTP 404"))
+	require.Error(t, err)
+	assert.Equal(t, courtesy.Unanswered, outcome)
 
 	// A gh that stops honouring --include costs a body every time and
 	// is still correct, which is the whole reason for the fallback.
-	answer, err = parseGhResponse(body, "")
+	answer, outcome, err = readGhResponse(body, "", nil)
 	require.NoError(t, err)
 	assert.False(t, answer.NotModified)
 	assert.JSONEq(t, body, string(answer.Body))
+	assert.Equal(t, courtesy.Answered, outcome)
+
+	// With no head to read, the words are all there is — for a refusal.
+	// Never for a 304: recovering that from prose is the defect.
+	_, outcome, err = readGhResponse("", "", errors.New("gh api: HTTP 403: API rate limit exceeded"))
+	require.Error(t, err)
+	assert.Equal(t, courtesy.Refused, outcome)
+
+	_, outcome, err = readGhResponse("", `W/"abc"`, notMod)
+	require.Error(t, err, "a 304 with no status line is not read out of the message")
+	assert.Equal(t, courtesy.Unanswered, outcome)
+
+	// Dockhand's own clock is nobody's fault.
+	_, outcome, err = readGhResponse("", "", context.Canceled)
+	require.Error(t, err)
+	assert.Equal(t, courtesy.Ours, outcome)
 }
 
 func TestReleasesArgsAreConditional(t *testing.T) {

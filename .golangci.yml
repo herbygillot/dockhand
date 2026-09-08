@@ -111,6 +111,10 @@ linters:
             - github.com/herbygillot/dockhand/internal/macports
             - github.com/herbygillot/dockhand/internal/platform
             - github.com/herbygillot/dockhand/internal/record
+            # artifact holds the installed facts the ABI comparison reads;
+            # they left verify so the record and the analyses can name a fact
+            # without importing the provider that observed it.
+            - github.com/herbygillot/dockhand/internal/artifact
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/macports/
@@ -165,6 +169,10 @@ linters:
             - github.com/herbygillot/dockhand/internal/macports
             - github.com/herbygillot/dockhand/internal/platform
             - github.com/herbygillot/dockhand/internal/record
+            # artifact holds the installed facts the ABI comparison reads;
+            # they left verify so the record and the analyses can name a fact
+            # without importing the provider that observed it.
+            - github.com/herbygillot/dockhand/internal/artifact
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: os/exec
@@ -194,6 +202,10 @@ linters:
             # did would make a note's bytes depend on when they were
             # written rather than on what was observed.
             - time
+            # artifact holds the installed facts a run's evidence carries;
+            # they left verify so the record can name a fact without importing
+            # the provider that observed it.
+            - github.com/herbygillot/dockhand/internal/artifact
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/git
@@ -219,6 +231,10 @@ linters:
             - testing
             - time
             - github.com/stretchr/testify
+            # artifact holds the installed facts a run's evidence carries;
+            # they left verify so the record can name a fact without importing
+            # the provider that observed it.
+            - github.com/herbygillot/dockhand/internal/artifact
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/git

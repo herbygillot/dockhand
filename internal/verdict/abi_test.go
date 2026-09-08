@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -35,10 +36,10 @@ const capturesDir = "../macports/build/testdata"
 // manifest-universal.txt captured it: a universal libwidget at 2.4.1
 // whose two slices agree, announcing /opt/local/lib/libwidget.2.dylib
 // with compatibility version 2.0.0.
-func widgetBefore() *verify.Manifest {
-	return &verify.Manifest{
+func widgetBefore() *artifact.Manifest {
+	return &artifact.Manifest{
 		Port: "libwidget", Version: "2.4.1_0+universal", Platform: "26.6.2 arm64",
-		Dylibs: []verify.Dylib{
+		Dylibs: []artifact.Dylib{
 			{Path: "/tmp/dhfat/lib/libwidget.2.4.1.dylib", Arch: "x86_64",
 				InstallName: "/opt/local/lib/libwidget.2.dylib", CompatVersion: "2.0.0", CurrentVersion: "2.4.1"},
 			{Path: "/tmp/dhfat/lib/libwidget.2.4.1.dylib", Arch: "arm64",
@@ -53,10 +54,10 @@ func widgetBefore() *verify.Manifest {
 
 // The after side, from manifest-universal-after.txt: the same port at
 // 3.0.0, announcing libwidget.3.dylib at compatibility version 3.0.0.
-func widgetAfter() *verify.Manifest {
-	return &verify.Manifest{
+func widgetAfter() *artifact.Manifest {
+	return &artifact.Manifest{
 		Port: "libwidget", Version: "3.0.0_0+universal", Platform: "26.6.2 arm64",
-		Dylibs: []verify.Dylib{
+		Dylibs: []artifact.Dylib{
 			{Path: "/tmp/dhfat3/lib/libwidget.3.0.0.dylib", Arch: "x86_64",
 				InstallName: "/opt/local/lib/libwidget.3.dylib", CompatVersion: "3.0.0", CurrentVersion: "3.0.0"},
 			{Path: "/tmp/dhfat3/lib/libwidget.3.0.0.dylib", Arch: "arm64",
@@ -73,12 +74,12 @@ func widgetAfter() *verify.Manifest {
 // libbrotlicommon files all announce the one install name, and the
 // executable /opt/local/bin/brotli is absent because otool -D prints
 // nothing for a program.
-func brotli() *verify.Manifest {
-	m := &verify.Manifest{Port: "brotli", Version: "1.2.0_0", Platform: "26.6.2 arm64"}
+func brotli() *artifact.Manifest {
+	m := &artifact.Manifest{Port: "brotli", Version: "1.2.0_0", Platform: "26.6.2 arm64"}
 	for _, lib := range []string{"libbrotlicommon", "libbrotlidec", "libbrotlienc"} {
 		name := "/opt/local/lib/" + lib + ".1.dylib"
 		for _, suffix := range []string{".1.2.0.dylib", ".1.dylib", ".dylib"} {
-			m.Dylibs = append(m.Dylibs, verify.Dylib{
+			m.Dylibs = append(m.Dylibs, artifact.Dylib{
 				Path:        "/opt/local/lib/" + lib + suffix,
 				InstallName: name, CompatVersion: "1.0.0", CurrentVersion: "1.2.0",
 			})
@@ -89,7 +90,7 @@ func brotli() *verify.Manifest {
 
 // measured is the ordinary input: an environment that answered, a
 // baseline unpacked from a binary archive, a branch built from source.
-func measured(before, after *verify.Manifest) ABIInput {
+func measured(before, after *artifact.Manifest) ABIInput {
 	return ABIInput{
 		Port: "libwidget", Portdir: "devel/libwidget", Described: true, FromSource: true,
 		Manifests: verify.Manifests{
@@ -174,8 +175,8 @@ func TestARenamedInstallNameIsABreakAndTheCriterionSaysBetweenWhat(t *testing.T)
 // a 2.0.0 x86_64 slice onto a 3.0.0 arm64 one. It is a function rather
 // than two rows inline in its test so the capture guard below covers it
 // like every other transcription.
-func widgetMixed() []verify.Dylib {
-	return []verify.Dylib{
+func widgetMixed() []artifact.Dylib {
+	return []artifact.Dylib{
 		{Path: "/tmp/dhfat/lib/libwidget.mixed.dylib", Arch: "x86_64",
 			InstallName: "/opt/local/lib/libwidget.2.dylib", CompatVersion: "2.0.0", CurrentVersion: "2.4.1"},
 		{Path: "/tmp/dhfat/lib/libwidget.mixed.dylib", Arch: "arm64",
@@ -262,11 +263,11 @@ func TestALibraryThatGainsAMajorIsNotABreak(t *testing.T) {
 	// strip to the logical name libXaw, and a map keyed by that name
 	// with last-write-wins would report a rename on every rebuild and
 	// propose revbumping every X11 dependent in the tree.
-	one := &verify.Manifest{Port: "xorg-libXaw", Version: "1.0.16_0", Platform: "26.6.2 arm64",
-		Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libXaw6.6.dylib",
+	one := &artifact.Manifest{Port: "xorg-libXaw", Version: "1.0.16_0", Platform: "26.6.2 arm64",
+		Dylibs: []artifact.Dylib{{Path: "/opt/local/lib/libXaw6.6.dylib",
 			InstallName: "/opt/local/lib/libXaw.6.dylib", CompatVersion: "6.0.0", CurrentVersion: "6.0.0"}}}
-	both := &verify.Manifest{Port: "xorg-libXaw", Version: "1.0.17_0", Platform: "26.6.2 arm64",
-		Dylibs: []verify.Dylib{
+	both := &artifact.Manifest{Port: "xorg-libXaw", Version: "1.0.17_0", Platform: "26.6.2 arm64",
+		Dylibs: []artifact.Dylib{
 			{Path: "/opt/local/lib/libXaw6.6.dylib",
 				InstallName: "/opt/local/lib/libXaw.6.dylib", CompatVersion: "6.0.0", CurrentVersion: "6.0.0"},
 			{Path: "/opt/local/lib/libXaw7.7.dylib",
@@ -292,9 +293,9 @@ func TestALibraryThatGainsAMajorIsNotABreak(t *testing.T) {
 }
 
 func TestCompatibilityVersionNarrowsAndWidens(t *testing.T) {
-	at := func(compat string) *verify.Manifest {
-		return &verify.Manifest{Port: "openexr", Version: "3.2.4_0", Platform: "26.6.2 arm64",
-			Dylibs: []verify.Dylib{{Path: "/opt/local/lib/libImath-3_2.30.3.2.2.dylib",
+	at := func(compat string) *artifact.Manifest {
+		return &artifact.Manifest{Port: "openexr", Version: "3.2.4_0", Platform: "26.6.2 arm64",
+			Dylibs: []artifact.Dylib{{Path: "/opt/local/lib/libImath-3_2.30.3.2.2.dylib",
 				InstallName: "/opt/local/lib/libImath-3_2.30.dylib", CompatVersion: compat, CurrentVersion: "30.3.2"}}}
 	}
 
@@ -331,9 +332,9 @@ func TestAnRpathInstallNameIsNotComparable(t *testing.T) {
 	// build hash in its name — librustc_driver-a9b31f558d66d404.dylib —
 	// which moves on every build. Compared, it would report a removal
 	// and an addition forever and propose a cohort for rust every time.
-	at := func(hash string) *verify.Manifest {
-		return &verify.Manifest{Port: "rust", Version: "1.89.0_0", Platform: "26.6.2 arm64",
-			Dylibs: []verify.Dylib{{Path: "/opt/local/lib/rustlib/librustc_driver-" + hash + ".dylib",
+	at := func(hash string) *artifact.Manifest {
+		return &artifact.Manifest{Port: "rust", Version: "1.89.0_0", Platform: "26.6.2 arm64",
+			Dylibs: []artifact.Dylib{{Path: "/opt/local/lib/rustlib/librustc_driver-" + hash + ".dylib",
 				InstallName: "@rpath/librustc_driver-" + hash + ".dylib", CompatVersion: "0.0.0", CurrentVersion: "0.0.0"}}}
 	}
 
@@ -357,7 +358,7 @@ func TestAnExecutableIsNoLibrary(t *testing.T) {
 	// capture leaves it out. A row that arrives with an empty install
 	// name anyway describes nothing to compare.
 	m := brotli()
-	m.Dylibs = append(m.Dylibs, verify.Dylib{Path: "/opt/local/bin/brotli"})
+	m.Dylibs = append(m.Dylibs, artifact.Dylib{Path: "/opt/local/bin/brotli"})
 
 	a := ABIDelta(measured(m, brotli()))
 	assert.Equal(t, ABIUnchanged, a.Verdict)
@@ -428,7 +429,7 @@ func TestABIUnavailableTellsTheThreeAbsencesApart(t *testing.T) {
 		// wipe. It has to be refused by name instead.
 		a := ABIDelta(ABIInput{Port: "libwidget", Described: true,
 			Manifests: verify.Manifests{
-				Baseline: &verify.Manifest{Port: "libwidget"}, BaselineSource: verify.BaselineNone,
+				Baseline: &artifact.Manifest{Port: "libwidget"}, BaselineSource: verify.BaselineNone,
 				Installed: widgetAfter(),
 			}})
 		assert.Equal(t, ABIUnavailable, a.Verdict)
@@ -472,7 +473,7 @@ func TestTheCapturesStillSayWhatTheseRowsTranscribe(t *testing.T) {
 	// what pins a name to a file, and the reason three brotli files can
 	// be shown to be one library — and `otool -L`'s line carrying both
 	// version fields.
-	for file, rows := range map[string][]verify.Dylib{
+	for file, rows := range map[string][]artifact.Dylib{
 		"manifest-universal.txt":       append(widgetBefore().Dylibs, widgetMixed()...),
 		"manifest-universal-after.txt": widgetAfter().Dylibs,
 		"manifest-brotli.txt":          brotli().Dylibs,
@@ -522,7 +523,7 @@ func TestOneSideWithNoLibraryIsRefusedRatherThanConcluded(t *testing.T) {
 	// unusable in the guest, registry paths that are not on disk, a
 	// batch cut short, all of it with stderr sent to /dev/null — arrives
 	// here looking like a complete answer.
-	empty := &verify.Manifest{Port: "libwidget", Version: "2.4.1_0", Platform: "Sequoia",
+	empty := &artifact.Manifest{Port: "libwidget", Version: "2.4.1_0", Platform: "Sequoia",
 		Files: []string{"/opt/local/lib/libwidget.2.dylib", "/opt/local/share/doc/widget"}}
 
 	t.Run("an empty before compares as nothing moved", func(t *testing.T) {

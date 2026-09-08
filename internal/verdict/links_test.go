@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/artifact"
 )
 
 func TestInstallNamesReadNamesAndNotPaths(t *testing.T) {
@@ -72,7 +72,7 @@ func TestAHeadlineThatPublishesNothingProvesNothing(t *testing.T) {
 func TestTheProofIsOverInstallNamesTheHeadlineActuallyPublishes(t *testing.T) {
 	// A dependent bound to the OLD name after a rebuild is the thing
 	// this proof exists to catch: it did not pick the change up.
-	old := &verify.Manifest{Port: "libwidget", Dylibs: []verify.Dylib{{
+	old := &artifact.Manifest{Port: "libwidget", Dylibs: []artifact.Dylib{{
 		Path: "/opt/local/lib/libwidget.2.dylib", InstallName: "/opt/local/lib/libwidget.2.dylib"}}}
 
 	stale := map[string][]string{"/opt/local/lib/libwidget.2.dylib": {"/opt/local/lib/libgdal.36.dylib"}}
@@ -91,15 +91,15 @@ func TestTheProofIsOverInstallNamesTheHeadlineActuallyPublishes(t *testing.T) {
 // revbumped because a library moved, that line is evidence for a claim
 // the measurement does not support.
 func TestTheProofIsTakenAgainstWhatMovedAndNotAgainstEverything(t *testing.T) {
-	before := &verify.Manifest{Port: "libwidget", Version: "2.4.1_0", Platform: "Sequoia",
-		Dylibs: []verify.Dylib{
+	before := &artifact.Manifest{Port: "libwidget", Version: "2.4.1_0", Platform: "Sequoia",
+		Dylibs: []artifact.Dylib{
 			{Path: "/opt/local/lib/libwidget.2.dylib", InstallName: "/opt/local/lib/libwidget.2.dylib",
 				CompatVersion: "2.0.0", CurrentVersion: "2.4.1"},
 			{Path: "/opt/local/lib/libwidgetx.1.dylib", InstallName: "/opt/local/lib/libwidgetx.1.dylib",
 				CompatVersion: "1.0.0", CurrentVersion: "1.0.0"},
 		}}
-	after := &verify.Manifest{Port: "libwidget", Version: "3.0_0", Platform: "Sequoia",
-		Dylibs: []verify.Dylib{
+	after := &artifact.Manifest{Port: "libwidget", Version: "3.0_0", Platform: "Sequoia",
+		Dylibs: []artifact.Dylib{
 			{Path: "/opt/local/lib/libwidget.3.dylib", InstallName: "/opt/local/lib/libwidget.3.dylib",
 				CompatVersion: "3.0.0", CurrentVersion: "3.0.0"},
 			{Path: "/opt/local/lib/libwidgetx.1.dylib", InstallName: "/opt/local/lib/libwidgetx.1.dylib",

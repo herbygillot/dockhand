@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/macports/build"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -203,7 +204,7 @@ func rosterOf(body string) []string {
 // refuses, and every phase up to it passes. A port the job did not build
 // gets no lines rather than an error: a caller asking about a member the
 // cohort never reached has learned that nothing was run, which is true.
-func (p Provider) Probe(ctx context.Context, job verify.Job, port string) ([]verify.ProbeLine, error) {
+func (p Provider) Probe(ctx context.Context, job verify.Job, port string) ([]artifact.Probe, error) {
 	if err := p.owns(ctx, job); err != nil {
 		return nil, err
 	}

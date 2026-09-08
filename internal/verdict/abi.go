@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -402,7 +403,7 @@ func lopsided(in ABIInput, port string, before, after published) (string, bool) 
 // fileCount says how much of an installation was described, so a
 // refusal about an empty library list is not confused with a refusal
 // about an empty manifest.
-func fileCount(m *verify.Manifest) string {
+func fileCount(m *artifact.Manifest) string {
 	n := 0
 	if m != nil {
 		n = len(m.Files)
@@ -523,11 +524,11 @@ type published map[string]map[string]string
 // in the filesystem. A path whose slices disagree about their install
 // name or their compatibility version is not one library with one
 // answer, and no arch's answer is more true than the other's.
-func publishedBy(m *verify.Manifest) (published, []ABIChange) {
+func publishedBy(m *artifact.Manifest) (published, []ABIChange) {
 	if m == nil {
 		return published{}, nil
 	}
-	byPath := map[string][]verify.Dylib{}
+	byPath := map[string][]artifact.Dylib{}
 	var order []string
 	for _, d := range m.Dylibs {
 		// An empty install name is not a library. The capture leaves
@@ -602,7 +603,7 @@ type nameIn struct{ lib, name string }
 
 // archNames states a universal file's disagreement in its own terms,
 // so the finding says what was seen rather than that something was.
-func archNames(rows []verify.Dylib) string {
+func archNames(rows []artifact.Dylib) string {
 	var parts []string
 	for _, d := range rows {
 		arch := d.Arch
@@ -848,7 +849,7 @@ func criterion(in ABIInput, a ABI) string {
 // versionOf is the version a manifest reports, which is the whole
 // archive-naming string — version, revision and variants — because that
 // and not the bare version identifies the build being described.
-func versionOf(m *verify.Manifest) string {
+func versionOf(m *artifact.Manifest) string {
 	if m == nil || m.Version == "" {
 		return "an unrecorded version"
 	}

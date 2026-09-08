@@ -356,7 +356,7 @@ func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string,
 		// hold answering a question nobody put. What the hold governs is
 		// what happens without anybody there — the publication, the runs an
 		// unattended pump would start, the branch a merge would retire.
-		if verdict.Prerelease(target) {
+		if macports.Prerelease(target) {
 			r.Hold = &record.Hold{Reason: prereleaseHoldReason(target), At: born}
 		}
 		// The same ticket the trailer names, so that the pull request
@@ -380,7 +380,7 @@ func (e *Engine) bear(ctx context.Context, m *Minted, p *plan.Plan, base string,
 		fmt.Fprintf(e.Err, "warning: recording the change on %s: %v\n", m.Branch, err)
 		return
 	}
-	if verdict.Prerelease(target) {
+	if macports.Prerelease(target) {
 		// The auto-hold, said out loud, because it is the one hold nobody
 		// asked for. `dockhand hold` announces itself and its release, and
 		// the case that most needs announcing is the one a person did not

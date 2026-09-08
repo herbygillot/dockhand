@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/artifact"
 )
 
 // probePrefix frames a probe sweep, for the reason the manifest's own
@@ -92,9 +92,9 @@ done < ` + roster + `
 // falsehood. That is the opposite of ParseManifest's rule, deliberately
 // — a truncated manifest reads as libraries that vanished, where a
 // truncated probe reads as fewer binaries asked.
-func ParseProbes(out string) []verify.ProbeLine {
-	var lines []verify.ProbeLine
-	var cur *verify.ProbeLine
+func ParseProbes(out string) []artifact.Probe {
+	var lines []artifact.Probe
+	var cur *artifact.Probe
 	section := ""
 	flush := func() {
 		if cur != nil {
@@ -108,7 +108,7 @@ func ParseProbes(out string) []verify.ProbeLine {
 			section = strings.TrimSpace(rest)
 			if section == probeBinary {
 				flush()
-				cur = &verify.ProbeLine{}
+				cur = &artifact.Probe{}
 			}
 			if section == probeDone {
 				flush()

@@ -1,45 +1,6 @@
 package verify
 
-// The json tags below are lowercase because these values are written
-// into a verification note, whose every other key is lowercase; without
-// tags their exported Go names would be the wire keys. None of them
-// carries omitempty, and that is deliberate: a baseline and an
-// installed manifest are read side by side, and a key that vanishes
-// when its value is empty makes the two blocks misalign exactly where
-// the difference is.
-
-// Dylib is one shared library an installed port carries, as the linker
-// records it rather than as the filesystem shows it.
-//
-// The three recorded fields are what a dependent port is actually bound
-// to. An install name that moves breaks every dependent at load time,
-// on a machine that is not the one that built anything; a compatibility
-// version that goes backwards breaks them the same way. Both are
-// invisible in a file listing and both are why a listing alone is not a
-// manifest.
-type Dylib struct {
-	// Path is where the library sits in the installation.
-	Path string `json:"path"`
-	// Arch is the slice this row was read from, empty where the file
-	// carried only one and the environment named no architecture.
-	//
-	// A universal file is several libraries in one path, and they can
-	// disagree: a lipo of a 2.0.0 x86_64 slice onto a 3.0.0 arm64 slice
-	// announces two different install names under one name in the
-	// filesystem, and that has been built and captured rather than
-	// imagined. Collapsing the slices to one would invent a measurement;
-	// a row per slice lets the disagreement be seen and said.
-	Arch string `json:"arch"`
-	// InstallName is what the library announces itself as — what a
-	// dependent links against, which is not always where it was found.
-	InstallName string `json:"install_name"`
-	// CompatVersion is the compatibility version a dependent must
-	// satisfy.
-	CompatVersion string `json:"compat_version"`
-	// CurrentVersion is the library's own version, which may move
-	// freely as long as CompatVersion does not.
-	CurrentVersion string `json:"current_version"`
-}
+import "github.com/herbygillot/dockhand/internal/artifact"
 
 // The three answers to "where did the baseline come from". They are
 // constants rather than a provider's free text because a reader has to
@@ -65,44 +26,28 @@ const (
 	BaselineNone = "none"
 )
 
-// Manifest is one installation seen from outside: which port, at which
-// version, on which platform, the files it owns and the libraries among
-// them.
-//
-// Platform is the environment's own word for itself, copied down rather
-// than resolved into a platform.Release, because a manifest is a report
-// of what was observed and an environment naming a release this repo's
-// table cannot is still telling the truth.
-//
-// It carries no method on purpose. Comparing two manifests is a
-// judgment — a file that vanished may be a regression or the point of
-// the change — and judgments are made where the plan is, not here.
-type Manifest struct {
-	Port     string `json:"port"`
-	Version  string `json:"version"`
-	Platform string `json:"platform"`
-	// Files are the paths the port owns, as the package manager lists
-	// them.
-	Files []string `json:"files"`
-	// Dylibs are the shared libraries among those files, with what the
-	// linker recorded in each.
-	Dylibs []Dylib `json:"dylibs"`
-}
-
 // Manifests is a comparison's two sides and the bindings that make a
 // difference between them matter.
+//
+// The two sides are artifact values because the installation they
+// describe is a fact about the build and not about this contract: the
+// record stores them and the analyses read them, and neither should
+// have to import a provider interface to name one. What is verify's
+// own here is the surrounding answer — where the baseline came from,
+// why there is none, and who was seen binding to what — because only a
+// provider is in a position to say.
 //
 // The pointers are nil-able because both absences are real and mean
 // different things: a port that has never been installed has no
 // baseline to be measured against, and a build that did not get far
 // enough to install produced nothing to measure.
 //
-// This type carries no json tags, unlike the others in this file. It never
-// reaches a note: it is one provider's answer to one question, taken
-// apart by the caller into the fields a run records.
+// This type carries no json tags, unlike the artifact values it holds.
+// It never reaches a note: it is one provider's answer to one question,
+// taken apart by the caller into the fields a run records.
 type Manifests struct {
 	// Baseline is the installation the change is measured against.
-	Baseline *Manifest
+	Baseline *artifact.Manifest
 	// BaselineSource says where that baseline came from — a binary
 	// archive, an earlier build, the machine's own install. The same
 	// difference means different things depending on the answer, and a
@@ -124,7 +69,7 @@ type Manifests struct {
 	// says only "unavailable" leaves a reader to pick one.
 	BaselineReason string
 	// Installed is what this verification produced.
-	Installed *Manifest
+	Installed *artifact.Manifest
 	// Links is who binds to what, per SUBJECT: the dependent's own port
 	// name, then a library's install name, then the files that dependent
 	// installed which record it.
@@ -150,16 +95,4 @@ type Manifests struct {
 	// Copying the map onto the note would store the question again
 	// instead of the answer.
 	Links map[string]map[string][]string
-}
-
-// ProbeLine is one thing a probe ran and what came back.
-//
-// Argv is the command as it was run, spelled the way a reader could run
-// it again, because output with no visible provenance is not evidence —
-// a version string proves something only when the line above it says
-// which binary was asked and how.
-type ProbeLine struct {
-	Binary string `json:"binary"`
-	Argv   string `json:"argv"`
-	Output string `json:"output"`
 }
