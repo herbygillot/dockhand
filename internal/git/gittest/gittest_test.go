@@ -119,7 +119,9 @@ func TestFetchedLeavesOnlyTheRemoteTrackingRef(t *testing.T) {
 	// names it, which is what a fetch of a moved remote leaves.
 	ahead := Commit(t, repo, "scratch", "main", "sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8")
 	Fetched(t, repo, "origin", "main", ahead)
-	require.NoError(t, repo.DeleteBranch(ctx, "scratch"))
+	// Removed the only way a ref moves now: one delete line, with the
+	// value it must hold, in an UpdateRefs batch.
+	require.NoError(t, repo.UpdateRefs(ctx, []git.RefUpdate{{Ref: "refs/heads/scratch", Old: ahead}}))
 
 	got, err := repo.RevParse(ctx, "refs/remotes/origin/main")
 	require.NoError(t, err)

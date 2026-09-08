@@ -1,5 +1,9 @@
-// Package git drives the git CLI against one repository, plumbing
-// commands only. The same principle that has dockhand drive MacPorts
+// Package git is the plumbing dockhand shells out to. It holds no
+// dockhand fact and decides nothing; it knows how to write objects, how
+// to move refs in one batch, and how to read what a repository holds.
+//
+// It drives the git CLI against one repository, plumbing commands
+// only. The same principle that has dockhand drive MacPorts
 // rather than reimplement it applies to git verbatim: a Go git library
 // is a reimplementation, and it diverges from real git exactly where
 // this design lives — linked worktrees, the sparse index, notes — in
@@ -31,10 +35,6 @@ import (
 
 // ErrNotARepo reports a directory that no git repository contains.
 var ErrNotARepo = errors.New("git: not inside a git repository")
-
-// ErrBranchExists reports a mint refused because its branch already
-// exists: there is a change in flight under that name.
-var ErrBranchExists = errors.New("git: branch already exists")
 
 // Repo is one repository, addressed by its top-level working directory.
 type Repo struct {
@@ -252,12 +252,6 @@ func (r *Repo) RelPath(path string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
-// ErrTipMoved reports an extend refused because the branch is no
-// longer where the caller last saw it: something else has already
-// added to it, and committing on the tip that was read would either
-// discard that work or bury it.
-var ErrTipMoved = errors.New("git: branch tip moved")
-
 // File is one file's place in a commit: the bytes to record at a path,
 // or that path's removal. Path is slash-separated and relative to the
 // repository root, the way a tree names it.
@@ -267,124 +261,30 @@ type File struct {
 	Delete  bool   // remove the path instead of writing to it
 }
 
-// Commit is one commit's worth of work: the files it moves, and the
-// message it carries. Message reaches commit-tree verbatim — git
-// appends nothing to it, so a trailing newline here is a trailing
-// newline in the object, and two messages differing by one are two
-// different commits.
-type Commit struct {
-	Files   []File
-	Message string
-}
-
-// MintRequest describes one branch to mint: a chain of commits on a
-// base revision. The chain is plural because one change can need more
-// than one commit to state itself — a cohort moves several ports, and
-// each port's move is its own commit with its own message — and the
-// ordinary single-file change is the chain of one.
-type MintRequest struct {
-	Branch  string   // local branch name to create; must not exist
-	Base    string   // revision the first commit's parent resolves from
-	Commits []Commit // oldest first; the last one is where the branch lands
-}
-
-// Mint creates a branch carrying a chain of commits, entirely in the
-// object database: hash the blobs, graft them into the parent's tree,
-// commit, chain the next commit onto that one, then create the ref
-// refusing to move an existing one. No worktree, no index, no
-// checkout — the caller's HEAD and working tree are never touched
-// (D21).
-func (r *Repo) Mint(ctx context.Context, req MintRequest) (string, error) {
-	if err := checkCommits(req.Branch, req.Commits); err != nil {
-		return "", err
-	}
-	if r.HasBranch(ctx, req.Branch) {
-		return "", fmt.Errorf("%w: %s", ErrBranchExists, req.Branch)
-	}
-	commit, err := r.RevParse(ctx, req.Base+"^{commit}")
-	if err != nil {
-		return "", err
-	}
-	for _, c := range req.Commits {
-		if commit, err = r.commit(ctx, commit, c); err != nil {
-			return "", err
-		}
-	}
-	// The empty old-value makes creation atomic: the ref must not
-	// exist, so two concurrent mints cannot silently trade the name.
-	if _, err := r.git(ctx, "update-ref", "refs/heads/"+req.Branch, commit, ""); err != nil {
-		return "", err
-	}
-	return commit, nil
-}
-
-// Extend adds one commit to a branch that already exists, refusing
-// unless the branch is still at expectedTip. Two sessions extending
-// one branch must not both win: the tip is read first so the refusal
-// can say where the branch actually is, and update-ref is handed the
-// old value so the swap itself is atomic — the window between the read
-// and the write belongs to git, not to dockhand.
-func (r *Repo) Extend(ctx context.Context, branch, expectedTip string, c Commit) (string, error) {
-	if err := checkCommits(branch, []Commit{c}); err != nil {
-		return "", err
-	}
-	ref := "refs/heads/" + branch
-	tip, err := r.RevParse(ctx, ref)
-	if err != nil {
-		return "", err
-	}
-	if tip != expectedTip {
-		return "", fmt.Errorf("%w: %s is at %s, not %s", ErrTipMoved, branch, Abbrev(tip), Abbrev(expectedTip))
-	}
-	commit, err := r.commit(ctx, tip, c)
-	if err != nil {
-		return "", err
-	}
-	if _, err := r.git(ctx, "update-ref", ref, commit, expectedTip); err != nil {
-		// A lost lease and a broken repository leave update-ref with
-		// the same exit code, and this package classifies by code
-		// rather than by message text. So the branch is asked where it
-		// is now: a tip that has moved says so itself, and anything
-		// else is git's own failure, handed on as it came.
-		if now, rerr := r.RevParse(ctx, ref); rerr == nil && now != expectedTip {
-			return "", fmt.Errorf("%w: %s is at %s, not %s", ErrTipMoved, branch, Abbrev(now), Abbrev(expectedTip))
-		}
-		return "", err
-	}
-	return commit, nil
-}
-
-// commit writes one commit on parent: the files grafted into parent's
-// tree, then commit-tree with the message as its bytes stand.
-func (r *Repo) commit(ctx context.Context, parent string, c Commit) (string, error) {
-	tree, err := r.GraftTree(ctx, parent, c.Files)
-	if err != nil {
-		return "", err
-	}
-	return r.gitStdin(ctx, []byte(c.Message), "commit-tree", tree, "-p", parent, "-F", "-")
-}
-
-// checkCommits refuses a chain that would record nothing. A branch is
-// at least one commit, and a commit is at least one file: a commit with
-// no files grafts the parent's tree unchanged, so commit-tree records
-// that same tree again and the branch lands on an empty commit.
+// CommitTree writes a commit object over tree with the given parents and
+// message and returns its sha. It moves NO ref, and under R23 nothing in
+// this package moves one on a caller's behalf either: the object is
+// unreferenced until a statestore.Amend names it in the same update-ref
+// batch as the record that says what it is for. An empty parents list
+// writes a root commit, which is the state ref's first write over
+// statestore.EmptyTree. The shipped Repo.commit is unexported and
+// hardcodes `-p parent`, so it could not write that root; this is its
+// lift, and it is the ONLY commit-writer the design has — change.Commit,
+// change.Snapshot and the store's Amend all come here.
 //
-// Both refusals belong here because this package is what promises what
-// a minted branch contains. Neither is reachable today — the engine
-// refuses a no-op at verdict.NothingToMint, before a request is ever
-// built — but Extend has no such caller in front of it at all, and a
-// guard that stops one level short of the thing it defends is the
-// shape a later plural walks into.
-func checkCommits(branch string, commits []Commit) error {
-	if len(commits) == 0 {
-		return fmt.Errorf("git: %s: a branch is at least one commit", branch)
+// The message reaches commit-tree verbatim, on stdin, because git
+// appends nothing to what -F gives it: a trailing newline here is a
+// trailing newline in the object, and two messages differing by one are
+// two different commits. Every fixture sha this package pins was
+// recorded through that road.
+func (r *Repo) CommitTree(ctx context.Context, tree string, parents []string, message string) (string, error) {
+	args := make([]string, 0, 4+2*len(parents))
+	args = append(args, "commit-tree", tree)
+	for _, p := range parents {
+		args = append(args, "-p", p)
 	}
-	for _, c := range commits {
-		if len(c.Files) == 0 {
-			return fmt.Errorf("git: %s: a commit is at least one file", branch)
-		}
-	}
-	return nil
+	args = append(args, "-F", "-")
+	return r.gitStdin(ctx, []byte(message), args...)
 }
 
 // GraftTree writes a tree equal to base's but with every file applied:
@@ -398,10 +298,11 @@ func checkCommits(branch string, commits []Commit) error {
 //
 // The textbook way to rewrite several paths at once is a temporary
 // index — read-tree, update-index --index-info, write-tree — and that
-// road is deliberately closed: scrubbedEnv drops GIT_INDEX_FILE and
-// Mint promises no index. ls-tree and mktree are the whole toolkit, so
-// the plural case is one walk of the tree rather than one walk per
-// file.
+// road is deliberately closed: scrubbedEnv drops GIT_INDEX_FILE, and
+// this package promises no index, so the caller's HEAD and working tree
+// are never touched by a write it makes (D21). ls-tree and mktree are
+// the whole toolkit, so the plural case is one walk of the tree rather
+// than one walk per file.
 func (r *Repo) GraftTree(ctx context.Context, base string, files []File) (string, error) {
 	baseTree, err := r.RevParse(ctx, base+"^{tree}")
 	if err != nil {

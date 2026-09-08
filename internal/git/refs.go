@@ -247,11 +247,23 @@ func logHeader(line string) (sha, subject string, ok bool) {
 	return line[:shaLen], line[shaLen+1:], true
 }
 
-// DeleteBranch removes a local branch regardless of merge state —
-// deliberately the one porcelain call here: branch -D owns the
-// configuration-section and reflog cleanup that a raw update-ref -d
-// would leave behind.
-func (r *Repo) DeleteBranch(ctx context.Context, name string) error {
-	_, err := r.git(ctx, "branch", "-D", name)
-	return err
+// RefsUnder lists the full names of every ref under a slash-terminated
+// prefix, from `for-each-ref`. A READING verb for the one namespace
+// nothing else enumerates: `doctor` asks it for change.PinRef("") to
+// name a pin whose id no record carries — the population a recreated
+// state ref leaves behind (statestore.Compact's doc says why no sweep
+// takes it). It spells no ref literal; the prefix is the caller's, and
+// the ref-literal census holds it so.
+//
+// for-each-ref patterns are path-wise, the same match Branches relies
+// on, so the slash is what keeps refs/dockhand/verify/ from listing a
+// refs/dockhand/verify-scratch somebody left behind. An empty listing
+// is nil and no error: a namespace nothing has written to yet is a
+// namespace with nothing in it, which is the answer, not a failure.
+func (r *Repo) RefsUnder(ctx context.Context, prefix string) ([]string, error) {
+	out, err := r.git(ctx, "for-each-ref", "--format=%(refname)", prefix)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
 }

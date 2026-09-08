@@ -45,7 +45,7 @@ const UpstreamURL = "https://github.com/macports/macports-ports.git"
 // environment so it holds before the repository's own config exists.
 // The config is written with the same identity for the commands the
 // git package runs: those inherit the test process's environment,
-// which never holds these variables, so a Mint's commit-tree reads
+// which never holds these variables, so a fixture's commit-tree reads
 // user.name from the repository.
 var identity = []string{
 	"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
@@ -115,15 +115,26 @@ func PortsTree(t *testing.T, tools *tool.Finder) *git.Repo {
 // returns the new tip. One commit carrying one file: the chain of one
 // that every fixture here wants, and the shape the goldens were
 // recorded against.
+//
+// The three plumbing steps are spelled out here because git.Mint is
+// gone: R23 leaves the git package with no verb that writes an object
+// and a ref in one act, since the only road that may do that is
+// statestore.Amend's batch. What a fixture wants is Mint's body without
+// Mint's ref policy, and this is it — graft the file into the base's
+// tree, write the commit over that tree, then land the branch with one
+// `create` line, which is still the line that refuses a name already in
+// flight. The objects are byte-identical to the ones Mint wrote, so
+// every golden sha recorded against the old road stands.
 func Commit(t *testing.T, repo *git.Repo, branch, base, path, content, message string) string {
 	t.Helper()
-	sha, err := repo.Mint(context.Background(), git.MintRequest{
-		Branch: branch, Base: base, Commits: []git.Commit{{
-			Files:   []git.File{{Path: path, Content: []byte(content)}},
-			Message: message,
-		}},
-	})
+	ctx := context.Background()
+	parent, err := repo.RevParse(ctx, base+"^{commit}")
 	require.NoError(t, err)
+	tree, err := repo.GraftTree(ctx, parent, []git.File{{Path: path, Content: []byte(content)}})
+	require.NoError(t, err)
+	sha, err := repo.CommitTree(ctx, tree, []string{parent}, message)
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateRefs(ctx, []git.RefUpdate{{Ref: "refs/heads/" + branch, New: sha}}))
 	return sha
 }
 

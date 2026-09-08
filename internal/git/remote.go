@@ -40,10 +40,14 @@ func (r *Repo) PushForce(ctx context.Context, remote, branch string) error {
 	return err
 }
 
-// PushDelete removes a branch from a remote — the undo of Push, for
-// cleanup that follows a merged PR. Deleting a ref that is already
-// gone is an error from git, and callers who want idempotence should
-// treat it as advisory.
+// PushDelete removes branch from remote. It is a FOREIGN effect — a
+// remote cannot join a local update-ref batch — and so it is the one
+// deletion in the design that keeps record -> effect -> outcome:
+// publish.DeleteForkIn writes the record.DeleteFork step Requested, this
+// runs outside every lock, and publish.ForkGoneIn writes what became of
+// it. Deleting a copy that is already gone is an error from git; the
+// sequencer observes RemoteHas first rather than treating that error as
+// advisory, which is classifying by words.
 func (r *Repo) PushDelete(ctx context.Context, remote, branch string) error {
 	_, err := r.git(ctx, "push", remote, "--delete", branch)
 	return err
@@ -61,22 +65,22 @@ func (r *Repo) TrackedRemote(ctx context.Context, branch string) string {
 	return out
 }
 
-// PushedTo names the remote a branch has been pushed to — the one
-// holding refs/remotes/<remote>/<branch> — and "" when none does.
+// PushedTo names the remote a copy of branch was pushed to, "" when
+// none, from the remote-tracking refs and not from branch.<name>.remote —
+// a config line `git switch -c` writes for branches that exist nowhere
+// but here. A READING verb of a LOCAL CACHE, kept from the shipped
+// package for publish.Standing's question — was a copy ever pushed, and
+// where — and for nothing that decides a foreign effect's outcome: the
+// tracking ref is written by this machine's own push or fetch and by
+// nothing the remote does, so a copy the forge deleted (auto-delete on
+// merge, a hand in another checkout) stays listed until `fetch --prune`
+// (measured, and the shipped doc said so). publish.DeleteFork observes
+// RemoteHas, never this.
 //
-// The remote-tracking ref rather than the tracking configuration,
-// because the two answer different questions. branch.<name>.remote
-// says where a branch's upstream lives, and a branch cut from a
-// remote-tracking base has one before it has ever left the machine;
-// branch.<name>.merge is absent after a bare `git push origin foo`.
-// The ref is written by every successful push, -u or bare, and by
-// nothing else. It is the same ref PushForce leases against, so what
-// counts as "the last push" is the same here as there.
-//
-// It can be stale: a copy deleted on the remote leaves the ref behind
-// until `fetch --prune`. For the callers this has that is the right
-// answer — the copy did exist, and so may a pull request opened from
-// it.
+// The tracking ref is also the ref PushForce leases against, so what
+// counts as "the last push" is the same here as there, and
+// branch.<name>.merge — absent after a bare `git push origin foo` —
+// could not have answered even the question this does answer.
 //
 // When more than one remote holds a copy, the first in ref order is
 // named. That is not a shape dockhand produces — Push sends a branch
@@ -139,4 +143,30 @@ func (r *Repo) remoteCopies(ctx context.Context, want string) (map[string]string
 		}
 	}
 	return copies, nil
+}
+
+// RemoteHas reports whether remote holds a branch of this name, read
+// from the remote itself — `git ls-remote --heads <remote> <branch>` —
+// and never from refs/remotes/, which is a cache of this machine's own
+// last push or fetch. It is the observation a foreign effect's OUTCOME
+// rests on (publish.DeleteFork, before and after its push-delete):
+// measured, a copy deleted on the remote leaves the tracking ref
+// standing and makes `push --delete` fail, so a sequencer that observed
+// the cache would retry, forever, a deletion that can never succeed and
+// report as owed a copy that does not exist. A non-nil error is "could
+// not ask the remote" and never "absent" (rule 7): the sequencer writes
+// Uncertain on it and looks again next pass.
+//
+// The pattern handed to ls-remote is the fully qualified ref rather than
+// the bare name, because ls-remote patterns match whole trailing path
+// components: `dockhand/jq` would answer for a refs/heads/other/dockhand/jq
+// nobody asked about, while refs/heads/dockhand/jq names one ref and only
+// that one. The remote is passed after `--` so a name that begins with a
+// dash reaches git as a remote and not as an option.
+func (r *Repo) RemoteHas(ctx context.Context, remote, branch string) (bool, error) {
+	out, err := r.git(ctx, "ls-remote", "--heads", "--", remote, "refs/heads/"+branch)
+	if err != nil {
+		return false, err
+	}
+	return out != "", nil
 }

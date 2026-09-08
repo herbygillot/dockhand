@@ -54,8 +54,8 @@ func newRepoWith(t *testing.T, files map[string]string) *Repo {
 		require.NoError(t, err, "git %v: %s", args, out)
 	}
 	run("init", "--quiet")
-	// Repo-local identity: Mint's commit-tree reads committer identity
-	// from config, and a bare CI runner has none globally.
+	// Repo-local identity: CommitTree reads the committer identity from
+	// config, and a bare CI runner has none globally.
 	run("config", "user.name", "t")
 	run("config", "user.email", "t@t")
 	for path, content := range files {
@@ -75,11 +75,45 @@ func newRepoWith(t *testing.T, files map[string]string) *Repo {
 	return r
 }
 
+// testCommit is one commit's worth of work as these fixtures state it:
+// the files it records and the message it carries. The package's own
+// Commit struct was Mint's request shape and retired with Mint — under
+// R23 nothing here writes an object and a ref in one act, so CommitTree
+// takes a tree and a message and never needs to know that the tree came
+// from a set of files. The fixtures still need to know, so the shape
+// lives with them.
+type testCommit struct {
+	Files   []File
+	Message string
+}
+
 // oneFile is the chain of one these tests mint: a single commit
 // carrying a single file, which is every change dockhand makes today
 // and the shape the goldens were recorded against.
-func oneFile(path, content, message string) []Commit {
-	return []Commit{{Files: []File{{Path: path, Content: []byte(content)}}, Message: message}}
+func oneFile(path, content, message string) []testCommit {
+	return []testCommit{{Files: []File{{Path: path, Content: []byte(content)}}, Message: message}}
+}
+
+// mint is Mint's body with Mint's ref policy taken out of the package
+// and handed to the caller: graft each commit's files into the tree the
+// one before it left, write the commit over that tree, and land the
+// branch with one `create` line — the same line, and the same refusal
+// of a name already in flight, that update-ref gave the shipped Mint.
+// The objects are byte-identical to the ones Mint wrote, which is why
+// every pinned sha below is still the sha it was.
+func mint(t *testing.T, r *Repo, branch, base string, commits []testCommit) string {
+	t.Helper()
+	ctx := context.Background()
+	tip, err := r.RevParse(ctx, base+"^{commit}")
+	require.NoError(t, err)
+	for _, c := range commits {
+		tree, terr := r.GraftTree(ctx, tip, c.Files)
+		require.NoError(t, terr)
+		tip, err = r.CommitTree(ctx, tree, []string{tip}, c.Message)
+		require.NoError(t, err)
+	}
+	require.NoError(t, r.UpdateRefs(ctx, []RefUpdate{{Ref: "refs/heads/" + branch, New: tip}}))
+	return tip
 }
 
 func TestOpenRefusesAPlainDirectory(t *testing.T) {
@@ -88,7 +122,11 @@ func TestOpenRefusesAPlainDirectory(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotARepo)
 }
 
-func TestMintCreatesTheBranchAndTouchesNothing(t *testing.T) {
+// The object-database road — GraftTree, CommitTree, then one create
+// line — lands a branch without going anywhere near a worktree. It is
+// the claim the shipped Mint made and the one every caller still needs
+// after Mint's ref half moved into statestore.Amend's batch.
+func TestTheObjectDatabaseRoadCreatesTheBranchAndTouchesNothing(t *testing.T) {
 	r := newRepo(t)
 	ctx := context.Background()
 
@@ -97,12 +135,8 @@ func TestMintCreatesTheBranchAndTouchesNothing(t *testing.T) {
 	headBefore, err := r.RevParse(ctx, "HEAD")
 	require.NoError(t, err)
 
-	sha, err := r.Mint(ctx, MintRequest{
-		Branch:  "dockhand/jq-1.8",
-		Base:    primary,
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	})
-	require.NoError(t, err)
+	sha := mint(t, r, "dockhand/jq-1.8", primary,
+		oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"))
 
 	// The branch exists and carries exactly the new content, parented
 	// on the base.
@@ -122,8 +156,8 @@ func TestMintCreatesTheBranchAndTouchesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "a tree\n", string(readme))
 
-	// HEAD did not move and the working tree is clean: the mint
-	// happened entirely in the object database.
+	// HEAD did not move and the working tree is clean: it happened
+	// entirely in the object database.
 	headAfter, err := r.RevParse(ctx, "HEAD")
 	require.NoError(t, err)
 	assert.Equal(t, headBefore, headAfter)
@@ -135,75 +169,15 @@ func TestMintCreatesTheBranchAndTouchesNothing(t *testing.T) {
 	assert.Equal(t, "version 1.7\n", string(onDisk))
 }
 
-func TestMintRefusesAnInFlightBranch(t *testing.T) {
+// A path whose directory is not in the tree is refused by the graft,
+// before any commit object exists and long before a ref line is
+// written — and it is refused as a path, not as a name collision.
+func TestGraftRefusesAPathThatIsNotThere(t *testing.T) {
 	r := newRepo(t)
-	ctx := context.Background()
-	req := MintRequest{
-		Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	}
-	_, err := r.Mint(ctx, req)
-	require.NoError(t, err)
-	_, err = r.Mint(ctx, req)
-	require.ErrorIs(t, err, ErrBranchExists)
-}
-
-func TestMintRefusesAPathThatIsNotThere(t *testing.T) {
-	r := newRepo(t)
-	_, err := r.Mint(context.Background(), MintRequest{
-		Branch: "dockhand/x-1", Base: "HEAD",
-		Commits: oneFile("sysutils/nope/Portfile", "x", "x"),
-	})
+	_, err := r.GraftTree(context.Background(), "HEAD",
+		[]File{{Path: "sysutils/nope/Portfile", Content: []byte("x")}})
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "exists", "a bad path is not a branch collision")
-}
-
-// A branch is at least one commit and a commit is at least one file.
-// Nothing upstream can reach either refusal today — the engine settles
-// a no-op before a request is built — but an empty commit is a branch
-// that records nothing, and refusing it is this package's job because
-// this package is what says what a minted branch contains. Extend gets
-// the same rule with nothing at all in front of it.
-func TestMintAndExtendRefuseACommitThatRecordsNothing(t *testing.T) {
-	r := newRepo(t)
-	ctx := context.Background()
-
-	_, err := r.Mint(ctx, MintRequest{Branch: "dockhand/nothing", Base: "HEAD"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "a branch is at least one commit")
-
-	_, err = r.Mint(ctx, MintRequest{
-		Branch: "dockhand/nothing", Base: "HEAD",
-		Commits: []Commit{{Message: "jq: a message and no change"}},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "a commit is at least one file")
-	assert.False(t, r.HasBranch(ctx, "dockhand/nothing"), "a refused mint leaves no branch")
-
-	// A chain refused for its last link mints none of it: the guard runs
-	// over the whole chain before any object is written.
-	_, err = r.Mint(ctx, MintRequest{
-		Branch: "dockhand/nothing", Base: "HEAD",
-		Commits: append(
-			oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-			Commit{Message: "jq: a message and no change"},
-		),
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "a commit is at least one file")
-	assert.False(t, r.HasBranch(ctx, "dockhand/nothing"), "a refused chain leaves no branch")
-
-	tip, err := r.Mint(ctx, MintRequest{
-		Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	})
-	require.NoError(t, err)
-	_, err = r.Extend(ctx, "dockhand/jq-1.8", tip, Commit{Message: "jq: a message and no change"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "a commit is at least one file")
-	now, err := r.RevParse(ctx, "dockhand/jq-1.8")
-	require.NoError(t, err)
-	assert.Equal(t, tip, now, "a refused extend leaves the branch where it was")
 }
 
 // A tree object is nothing but the names, modes and object ids it
@@ -250,7 +224,7 @@ func TestGraftOfOneFileBuildsTheTreeItAlwaysBuilt(t *testing.T) {
 // not carry one and the sha would then differ by machine and by
 // season. scrubbedEnv passes these two variables through on purpose,
 // which is what lets a test set them at all.
-func TestMintOfOneCommitLandsWhereItAlwaysLanded(t *testing.T) {
+func TestOneCommitLandsWhereItAlwaysLanded(t *testing.T) {
 	t.Setenv("GIT_AUTHOR_DATE", "2026-09-01T00:00:00Z")
 	t.Setenv("GIT_COMMITTER_DATE", "2026-09-01T00:00:00Z")
 	r := newRepo(t)
@@ -260,12 +234,10 @@ func TestMintOfOneCommitLandsWhereItAlwaysLanded(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "8c1d3699b58db282958eed7bb69f2de8a2cdc6f6", base, "the fixture's own commit")
 
-	sha, err := r.Mint(ctx, MintRequest{
-		Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "5ec8f4dfbb929302ae9d32ac7c3fa57985e4c0b3", sha)
+	sha := mint(t, r, "dockhand/jq-1.8", "HEAD",
+		oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"))
+	assert.Equal(t, "5ec8f4dfbb929302ae9d32ac7c3fa57985e4c0b3", sha,
+		"CommitTree writes the object Mint's unexported commit wrote")
 
 	// The message is in that sha as its bytes stand: commit-tree
 	// appends no newline, so a chain that joined or normalized messages
@@ -428,21 +400,17 @@ func TestGraftRefusesOnePathNamedTwice(t *testing.T) {
 // seeing the tree the one before it left — which is what makes a
 // cohort's per-port commits readable as separate changes rather than
 // one squashed blob.
-func TestMintChainsItsCommitsInOrder(t *testing.T) {
+func TestCommitTreeChainsItsCommitsInOrder(t *testing.T) {
 	r := newRepoWith(t, map[string]string{
 		"sysutils/jq/Portfile": "version 1.7\n",
 		"devel/olm/Portfile":   "version 3.2\n",
 	})
 	ctx := context.Background()
 
-	tip, err := r.Mint(ctx, MintRequest{
-		Branch: "dockhand/cohort", Base: "HEAD",
-		Commits: []Commit{
-			{Files: []File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n")}}, Message: "jq: update to 1.8"},
-			{Files: []File{{Path: "devel/olm/Portfile", Content: []byte("version 3.3\n")}}, Message: "olm: update to 3.3"},
-		},
+	tip := mint(t, r, "dockhand/cohort", "HEAD", []testCommit{
+		{Files: []File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n")}}, Message: "jq: update to 1.8"},
+		{Files: []File{{Path: "devel/olm/Portfile", Content: []byte("version 3.3\n")}}, Message: "olm: update to 3.3"},
 	})
-	require.NoError(t, err)
 
 	history, err := r.RevList(ctx, tip, 10)
 	require.NoError(t, err)
@@ -471,54 +439,6 @@ func TestMintChainsItsCommitsInOrder(t *testing.T) {
 	blob, err := r.BlobAt(ctx, history[1], "devel/olm/Portfile")
 	require.NoError(t, err)
 	assert.Equal(t, "version 3.2\n", string(blob), "the first commit predates the second's edit")
-}
-
-// Extend is a lease, not a push. Two sessions that read the same tip
-// both build a commit; only the first to write wins, and the second is
-// told the tip moved rather than burying the first session's work
-// under its own.
-func TestExtendRefusesTheSessionWhoseTipMoved(t *testing.T) {
-	r := newRepo(t)
-	ctx := context.Background()
-	tip, err := r.Mint(ctx, MintRequest{
-		Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	})
-	require.NoError(t, err)
-
-	// Two sessions, opened separately on the one repository, each
-	// holding the tip they read before either of them wrote.
-	first, err := Open(ctx, tools, r.Root)
-	require.NoError(t, err)
-	second, err := Open(ctx, tools, r.Root)
-	require.NoError(t, err)
-
-	won, err := first.Extend(ctx, "dockhand/jq-1.8", tip, Commit{
-		Files:   []File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\nrevision 1\n")}},
-		Message: "jq: bump revision",
-	})
-	require.NoError(t, err)
-	assert.NotEqual(t, tip, won)
-
-	_, err = second.Extend(ctx, "dockhand/jq-1.8", tip, Commit{
-		Files:   []File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.9\n")}},
-		Message: "jq: update to 1.9",
-	})
-	require.ErrorIs(t, err, ErrTipMoved)
-	assert.Contains(t, err.Error(), Abbrev(won), "the refusal says where the branch actually is")
-
-	// The loser changed nothing: the branch is the winner's commit, on
-	// the winner's content, with no third commit anywhere.
-	now, err := r.RevParse(ctx, "dockhand/jq-1.8")
-	require.NoError(t, err)
-	assert.Equal(t, won, now)
-	blob, err := r.BlobAt(ctx, "dockhand/jq-1.8", "sysutils/jq/Portfile")
-	require.NoError(t, err)
-	assert.Equal(t, "version 1.8\nrevision 1\n", string(blob))
-	history, err := r.RevList(ctx, "dockhand/jq-1.8", 10)
-	require.NoError(t, err)
-	assert.Len(t, history, 3, "one base, one mint, one extend")
-	assert.True(t, r.IsAncestor(ctx, tip, won), "the winner built on the tip it leased")
 }
 
 func TestPrimaryBranchFallsBackToTheCurrentOne(t *testing.T) {
@@ -677,13 +597,8 @@ func TestANoteGitCouldNotReadIsNotAnAbsentNote(t *testing.T) {
 func TestBranchesMatchesTheNamespaceNotSubstrings(t *testing.T) {
 	r := newRepo(t)
 	ctx := context.Background()
-	for _, req := range []MintRequest{
-		{Branch: "dockhand/jq-1.8", Base: "HEAD", Commits: oneFile("sysutils/jq/Portfile", "a\n", "a")},
-		{Branch: "dockhand-hidden", Base: "HEAD", Commits: oneFile("sysutils/jq/Portfile", "b\n", "b")},
-	} {
-		_, err := r.Mint(ctx, req)
-		require.NoError(t, err)
-	}
+	mint(t, r, "dockhand/jq-1.8", "HEAD", oneFile("sysutils/jq/Portfile", "a\n", "a"))
+	mint(t, r, "dockhand-hidden", "HEAD", oneFile("sysutils/jq/Portfile", "b\n", "b"))
 	got, err := r.Branches(ctx, "dockhand/")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"dockhand/jq-1.8"}, got)
@@ -696,12 +611,8 @@ func TestBranchesMatchesTheNamespaceNotSubstrings(t *testing.T) {
 func TestBranchTipsListsEveryBranchWithItsTip(t *testing.T) {
 	r := newRepo(t)
 	ctx := context.Background()
-	minted, err := r.Mint(ctx, MintRequest{Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "a\n", "a")})
-	require.NoError(t, err)
-	hand, err := r.Mint(ctx, MintRequest{Branch: "erasure-test", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "b\n", "b")})
-	require.NoError(t, err)
+	minted := mint(t, r, "dockhand/jq-1.8", "HEAD", oneFile("sysutils/jq/Portfile", "a\n", "a"))
+	hand := mint(t, r, "erasure-test", "HEAD", oneFile("sysutils/jq/Portfile", "b\n", "b"))
 	head, err := r.RevParse(ctx, "HEAD")
 	require.NoError(t, err)
 	primary, err := r.PrimaryBranch(ctx)
@@ -726,11 +637,8 @@ func TestBranchTipsListsEveryBranchWithItsTip(t *testing.T) {
 func TestMaterializeIgnoresTheWorkingTree(t *testing.T) {
 	r := newRepo(t)
 	ctx := context.Background()
-	sha, err := r.Mint(ctx, MintRequest{
-		Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	})
-	require.NoError(t, err)
+	sha := mint(t, r, "dockhand/jq-1.8", "HEAD",
+		oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"))
 	require.NoError(t, os.WriteFile(filepath.Join(r.Root, "sysutils", "jq", "Portfile"), []byte("DIRTY\n"), 0o644))
 
 	dest := t.TempDir()
@@ -745,11 +653,8 @@ func TestRevListNewestFirst(t *testing.T) {
 	ctx := context.Background()
 	head, err := r.RevParse(ctx, "HEAD")
 	require.NoError(t, err)
-	sha, err := r.Mint(ctx, MintRequest{
-		Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	})
-	require.NoError(t, err)
+	sha := mint(t, r, "dockhand/jq-1.8", "HEAD",
+		oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"))
 	shas, err := r.RevList(ctx, "dockhand/jq-1.8", 10)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(shas), 2)
@@ -876,20 +781,17 @@ func TestPushForceReplacesARewrittenBranch(t *testing.T) {
 
 	sha, err := r.RevParse(ctx, "HEAD")
 	require.NoError(t, err)
-	mint := func(msg string) string {
-		s, merr := r.Mint(ctx, MintRequest{
-			Branch: "dockhand/jq-2.0", Base: sha,
-			Commits: oneFile("sysutils/jq/Portfile", "version "+msg+"\n", msg),
-		})
-		require.NoError(t, merr)
-		return s
+	land := func(msg string) string {
+		return mint(t, r, "dockhand/jq-2.0", sha, oneFile("sysutils/jq/Portfile", "version "+msg+"\n", msg))
 	}
-	first := mint("jq: update to 2.0")
+	first := land("jq: update to 2.0")
 	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-2.0"))
 
 	// Replace: delete and re-mint — different content, unrelated tip.
-	require.NoError(t, r.DeleteBranch(ctx, "dockhand/jq-2.0"))
-	second := mint("jq: update to 2.1")
+	// The deletion is one delete line carrying the value the branch must
+	// hold, which is the only shape a ref removal has now.
+	require.NoError(t, r.UpdateRefs(ctx, []RefUpdate{{Ref: "refs/heads/dockhand/jq-2.0", Old: first}}))
+	second := land("jq: update to 2.1")
 	require.NotEqual(t, first, second)
 
 	require.Error(t, r.Push(ctx, "fork", "dockhand/jq-2.0"), "a rewritten branch is not a fast-forward")
@@ -899,11 +801,14 @@ func TestPushForceReplacesARewrittenBranch(t *testing.T) {
 	assert.Equal(t, second, strings.TrimSpace(string(got)))
 }
 
-// Two linked worktrees share one notes ref, so they must share one
-// lock: the lock lives in the COMMON git dir. Placing it per-worktree
-// was the assessment's sharpest catch — two views of the same notes
-// holding different locks defeats the lost-update protection entirely.
-func TestNotesLockIsSharedAcrossLinkedWorktrees(t *testing.T) {
+// Two linked worktrees share every ref this design writes — the state
+// ref, the branches, the notes — so they must share the one lock those
+// writes are taken under: it lives in the COMMON git dir. Placing it
+// per-worktree was the assessment's sharpest catch, and two views of one
+// repository holding different locks defeats the lost-update protection
+// entirely. The lock itself is statestore's to acquire now; what this
+// package still owes it is the path, and the path is what must be one.
+func TestTheCommonDirFileIsSharedAcrossLinkedWorktrees(t *testing.T) {
 	r := newRepo(t)
 	ctx := context.Background()
 
@@ -913,13 +818,27 @@ func TestNotesLockIsSharedAcrossLinkedWorktrees(t *testing.T) {
 	linked, err := Open(ctx, tools, wt)
 	require.NoError(t, err)
 
-	p1, err := r.notesLockPath(ctx)
+	p1, err := r.CommonDirFile(ctx, ".dockhand-ledger.lock")
 	require.NoError(t, err)
-	p2, err := linked.notesLockPath(ctx)
+	p2, err := linked.CommonDirFile(ctx, ".dockhand-ledger.lock")
 	require.NoError(t, err)
-	r1, _ := filepath.EvalSymlinks(p1)
-	r2, _ := filepath.EvalSymlinks(p2)
-	assert.Equal(t, r1, r2, "one repository, one notes lock, however many worktrees")
+	// The lock file does not exist yet — nothing here acquires it — so
+	// the symlinks are resolved on the DIRECTORY and the name rejoined.
+	// EvalSymlinks of a path that is not there returns "" and an error,
+	// and two empty strings compare equal, which would make this test
+	// pass over any two answers at all.
+	resolve := func(p string) string {
+		dir, err := filepath.EvalSymlinks(filepath.Dir(p))
+		require.NoError(t, err, p)
+		return filepath.Join(dir, filepath.Base(p))
+	}
+	r1, r2 := resolve(p1), resolve(p2)
+	assert.Equal(t, r1, r2, "one repository, one lock file, however many worktrees")
+
+	// It is a path under the common git dir and not under the linked
+	// worktree's private one, which is the whole claim.
+	assert.Equal(t, ".dockhand-ledger.lock", filepath.Base(r1))
+	assert.NotContains(t, r2, filepath.Join("worktrees", "linked"), "the linked worktree's private dir is not it")
 }
 
 // Abbrev is the twelve-character sha every message prints, and for a
@@ -946,11 +865,8 @@ func TestMintBranchNameRoundTripsThroughBranches(t *testing.T) {
 
 	r := newRepo(t)
 	ctx := context.Background()
-	_, err := r.Mint(ctx, MintRequest{
-		Branch: MintBranchName("jq-1.8"), Base: "HEAD",
-		Commits: oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"),
-	})
-	require.NoError(t, err)
+	mint(t, r, MintBranchName("jq-1.8"), "HEAD",
+		oneFile("sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8"))
 	got, err := r.Branches(ctx, BranchNamespace)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"dockhand/jq-1.8"}, got)
@@ -962,17 +878,13 @@ func TestMintBranchNameRoundTripsThroughBranches(t *testing.T) {
 func TestCommitsWithPathsNamesEachCommitsOwnPaths(t *testing.T) {
 	r := newRepo(t)
 	ctx := context.Background()
-	tip, err := r.Mint(ctx, MintRequest{
-		Branch: "dockhand/jq-1.8", Base: "HEAD",
-		Commits: []Commit{
-			{Files: []File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n")}}, Message: "jq: update to 1.8"},
-			{Files: []File{
-				{Path: "README", Content: []byte("a tree, twice\n")},
-				{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\nrevision 1\n")},
-			}, Message: "jq: rebuild, and a word in the README"},
-		},
+	tip := mint(t, r, "dockhand/jq-1.8", "HEAD", []testCommit{
+		{Files: []File{{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\n")}}, Message: "jq: update to 1.8"},
+		{Files: []File{
+			{Path: "README", Content: []byte("a tree, twice\n")},
+			{Path: "sysutils/jq/Portfile", Content: []byte("version 1.8\nrevision 1\n")},
+		}, Message: "jq: rebuild, and a word in the README"},
 	})
-	require.NoError(t, err)
 
 	got, err := r.CommitsWithPaths(ctx, tip, "HEAD")
 	require.NoError(t, err)
