@@ -21,7 +21,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // Format is the plan wire format version this build writes.
@@ -62,6 +61,97 @@ type FileEdit struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
 	Reason  string `json:"reason"`
+}
+
+// Finding is something examining the port turned up that nobody asked
+// about: an instruction comment telling whoever updates this port to
+// bump something else, a check the planner could not make. It is what
+// the planner SAW, not what the record KEEPS.
+//
+// It is plan's own type and not record's, so that plan — the value
+// every intent produces and every realization consumes — depends on
+// nothing durable. A planner runs with a Portfile and a parse tree in
+// hand and no store, no ref and no repository; making it speak the
+// note's shape would put the durable record underneath every planner
+// and every test that builds a plan by hand, to buy nothing but a
+// shared struct.
+//
+// What the note keeps beyond this is exactly what the note is for and
+// the planner cannot know: WHEN the finding was made part of a change,
+// and WHETHER anyone has answered it since. Both are stamped when the
+// change is minted, which is the one place a plan-time finding becomes
+// a durable one and therefore the one place a kind or a disposition
+// this tree does not know can be refused.
+type Finding struct {
+	// Kind is what sort of finding this is, in the vocabulary the note
+	// classifies by — "instruction-comment", "patches-unchecked".
+	//
+	// A plain string here and a typed enum in the record, deliberately.
+	// The enum is the note's, because the note outlives the process that
+	// wrote it and a kind a later build cannot classify is a kind nobody
+	// should be able to write; a plan lives for one process. Stating the
+	// kind as a word and converting it at the single stamping site keeps
+	// the enum's one gate where it belongs instead of spreading the
+	// note's type down into every planner.
+	Kind string `json:"kind"`
+	// Ports are the ports the finding is about — the context being
+	// changed, for a finding read out of its Portfile.
+	Ports []string `json:"ports,omitempty"`
+	// Candidates are the ports the finding named, with what it said
+	// about each.
+	Candidates []Candidate `json:"candidates,omitempty"`
+	// Criterion is the measurement in words a reader can check. The
+	// mechanical criterion is necessary and never sufficient, so it is
+	// stated rather than implied.
+	Criterion string `json:"criterion,omitempty"`
+	// Source and Quote are where a non-mechanical finding came from and
+	// what it actually said — a comment in the Portfile, cited the way a
+	// reader would cite it. A finding that cannot be traced back to its
+	// words is an assertion.
+	Source string `json:"source,omitempty"`
+	Quote  string `json:"quote,omitempty"`
+	// Disposition says whether this finding is a question or a
+	// statement: Proposed for one a human still owes an answer to,
+	// Accepted for one that opens with its own verdict and asks nothing.
+	//
+	// A planner states it because only the planner knows which it made.
+	// A finding still proposed holds an unattended publication until
+	// somebody answers it, so a statement that arrived proposed would
+	// wait forever for an answer nobody can give; the distinction is
+	// made where the sentence is written and carried, not re-derived
+	// from the kind at the far end.
+	//
+	// Dismissed is absent from this end on purpose. Dismissal is a
+	// person's answer to a finding that already exists, written onto the
+	// record long after the plan is gone.
+	Disposition string `json:"disposition,omitempty"`
+}
+
+// The two dispositions a plan-time finding can carry. They are the
+// note's own words so the stamp at mint is a conversion rather than a
+// translation table, and they are plain strings for the reason Kind is.
+const (
+	// Proposed is a finding nobody has answered yet: a question the
+	// change carries until a person takes it up or says no.
+	Proposed = "proposed"
+	// Accepted is a finding that is already its own answer — the check
+	// that could not be made, reported so a reader knows it was not
+	// made. Nothing here is a question.
+	Accepted = "accepted"
+)
+
+// Candidate is one port a finding named, whether or not the finding
+// proposes doing anything to it.
+//
+// The ports named and passed over are recorded beside the ones put
+// forward, because they are exactly what a reviewer must check by hand:
+// a port left out is a decision, and a decision no reader can see is a
+// decision nobody can disagree with.
+type Candidate struct {
+	Port string `json:"port"`
+	// Reason is why this port is here, either way — in the words the
+	// finding would use to a person.
+	Reason string `json:"reason,omitempty"`
 }
 
 // Plan is the value. A plan carries its own identity: the intent that
@@ -119,10 +209,7 @@ type Plan struct {
 	//
 	// Absent rather than null when there is none, on Riders' precedent,
 	// so every plan document that predates them hashes to what it did.
-	// It is record's own type: there is one findings vocabulary in this
-	// tree and it is the note's, because a finding that cannot be
-	// recorded is a finding nobody can answer.
-	Findings []record.Finding `json:"findings,omitempty"`
+	Findings []Finding `json:"findings,omitempty"`
 	// Predicted is the delta the shadow evaluation says these edits
 	// produce, in canonical wire form.
 	//

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/checksums"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
@@ -30,6 +31,9 @@ checksums           rmd160  aaaa \
 	assert.Equal(t, "cccc", edits[0].New)
 	assert.Equal(t, "dddd", edits[1].New)
 	assert.Equal(t, "12", edits[2].New)
+	for _, e := range edits {
+		assert.Equal(t, edit.Checksum, e.Kind, e.Reason)
+	}
 
 	// A recorded value that appears nowhere as a literal declines.
 	old[0].Value = "zzzz"
@@ -51,9 +55,12 @@ func TestChecksumEditsRenamesLiteralFilenames(t *testing.T) {
 		[]string{"foo-1.0.tar.gz"}, []string{"foo-2.0.tar.gz"}, sums)
 	require.NoError(t, err)
 	require.Len(t, edits, 3)
+	// The rename is found by its KIND and not by its sentence: that is
+	// the whole point of stamping it, and the assertion reads the way a
+	// caller now has to.
 	var renamed bool
 	for _, e := range edits {
-		if e.Reason == "distfile name" {
+		if e.Kind == edit.DistfileName {
 			renamed = true
 			assert.Equal(t, "foo-1.0.tar.gz", e.Old)
 			assert.Equal(t, "foo-2.0.tar.gz", e.New)
@@ -97,6 +104,6 @@ checksums           ${name}-${version}${extract.suffix} \
 	require.NoError(t, err)
 	require.Len(t, edits, 2, "the two values are rewritten; the name is not an edit")
 	for _, e := range edits {
-		assert.NotEqual(t, reasonDistfileName, e.Reason)
+		assert.NotEqual(t, edit.DistfileName, e.Kind)
 	}
 }

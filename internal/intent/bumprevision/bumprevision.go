@@ -148,6 +148,7 @@ func revisionEdit(src []byte, cst *syntax.Script, before info.Snapshot, vals inf
 		}
 		next := strconv.Itoa(n + 1)
 		return next, edit.Edit{
+			Kind:  edit.RevisionBump,
 			Start: loc.Span.Start, End: loc.Span.End,
 			Old: loc.Span.Text(src), New: next,
 			Reason: "revision +1: " + reason,
@@ -233,6 +234,7 @@ func insertRevision(src []byte, cst *syntax.Script, before info.Snapshot, vals i
 	}
 	at := cmd.Span.End + nl + 1
 	return edit.Edit{
+		Kind:  edit.RevisionBump,
 		Start: at, End: at, Old: "",
 		New:    string(indent) + "revision" + gap(cmd) + "1\n",
 		Reason: "revision +1 (line added): " + reason,

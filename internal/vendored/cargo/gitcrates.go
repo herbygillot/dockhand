@@ -133,7 +133,11 @@ func githubEdits(ctx context.Context, rc vendored.Regen, cratesSpan text.Span, c
 		for n := 0; n < 2 && start > 0 && rc.Src[start-1] == '\n'; n++ {
 			start--
 		}
-		return []edit.Edit{{Start: start, End: span.End,
+		// VendoredBlock: the span is the one vendored.Locate corroborated,
+		// widened only over the blank line above it. Dropping a block is a
+		// change to a located block and not the introduction of a fetch
+		// source, which is the distinction VendoredNew draws below.
+		return []edit.Edit{{Kind: edit.VendoredBlock, Start: start, End: span.End,
 			Old: string(rc.Src[start:span.End]), New: "", Reason: "drop cargo.crates_github"}}, nil
 	}
 
@@ -142,11 +146,15 @@ func githubEdits(ctx context.Context, rc vendored.Regen, cratesSpan text.Span, c
 		return nil, err
 	}
 	if located {
-		return []edit.Edit{{Start: span.Start, End: span.End,
+		return []edit.Edit{{Kind: edit.VendoredBlock, Start: span.Start, End: span.End,
 			Old: span.Text(rc.Src), New: block, Reason: "regenerate cargo.crates_github"}}, nil
 	}
 	// Introduced by this version: the block is born beside its sibling.
-	return []edit.Edit{{Start: cratesSpan.End, End: cratesSpan.End,
+	// VendoredNew and not VendoredBlock, because there is no located span
+	// to contain the insert and what it adds is a new FETCH SOURCE — the
+	// span-containment argument a machine publication rests on does not
+	// reach it.
+	return []edit.Edit{{Kind: edit.VendoredNew, Start: cratesSpan.End, End: cratesSpan.End,
 		Old: "", New: "\n\n" + block, Reason: "add cargo.crates_github"}}, nil
 }
 

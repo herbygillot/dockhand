@@ -3,6 +3,7 @@ package checksums
 import (
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,9 +51,9 @@ func TestReplacements(t *testing.T) {
 		map[string]Sums{"foo-1.0.tar.gz": fresh})
 	require.NoError(t, err)
 	assert.Equal(t, []Replacement{
-		{Old: "old-a", New: "aa", Reason: "checksum rmd160"},
-		{Old: "old-b", New: "bb", Reason: "checksum sha256"},
-		{Old: "9", New: "12", Reason: "checksum size"},
+		{Kind: edit.Checksum, Old: "old-a", New: "aa", Reason: "checksum rmd160"},
+		{Kind: edit.Checksum, Old: "old-b", New: "bb", Reason: "checksum sha256"},
+		{Kind: edit.Checksum, Old: "9", New: "12", Reason: "checksum size"},
 	}, reps)
 
 	// The named form resolves per file.

@@ -1,18 +1,7 @@
-// Package record is the verification record's data model and its wire
-// format: the value a commit's git note holds, and the strict codec
-// that turns it into bytes and back. It is a leaf — it reads and
-// writes no repository, asks no provider, and reaches no tree. What
-// stores a record is the ledger's business; what a record means is the
-// verdict's; this package only says what a record *is*.
-//
-// Schema 3 is a clean break. Schema 2 held one flat port and one run
-// per platform; this one holds a change — its subjects, where it is
-// bound, what was found about it, and one verdict per subject per
-// platform. Every field the overhaul's later steps write is declared
-// here even where nothing writes it yet, because a field added to a
-// note format after the fact is a coordination event between every
-// checkout that reads one, and the point of landing all of them at
-// once is to spend that event exactly once.
+// Package record is the durable shape of what dockhand knows about a
+// change, and its codec. It decides nothing: no promotability, no
+// eligibility, no interpretation of a provider status. Those live with
+// the domain that owns the question.
 //
 // Declaration order is wire order: encoding/json emits struct fields
 // as declared, and this is also status --json's public surface, so
@@ -20,36 +9,325 @@
 // golden that re-marshals one.
 package record
 
-import (
-	"sort"
-	"time"
+import "time"
+
+// Schema versions the NOTE, which is a derived export: a build that
+// cannot read one clears it and regenerates from the store.
+const Schema = 4
+
+// DocSchema versions the four documents in the state ref. IT IS A
+// TRIPWIRE AND NOT A MIGRATION, and an earlier draft of this comment had
+// it the other way round — an additive-only discipline, a migrate-on-read
+// inside Amend, and a refusal for documents from a newer peer.
+//
+// That was compatibility scaffolding for software that has shipped
+// nothing. dockhand is pre-release: the ruling is that we optimize for
+// ease of refactoring and do not care about previous data formats, so a
+// shape change is a shape change and the state ref is recreated. A
+// migrator would be a permanent tax on every future edit, paid to
+// preserve records nobody has promised anybody.
+//
+// WHAT THE NUMBER STILL BUYS is one comparison, and it is worth keeping
+// for a rule-7 reason rather than a compatibility one: encoding/json
+// ignores fields it does not know and zero-fills the ones it is missing,
+// so reading a document written before a shape change SILENTLY SUCCEEDS
+// and yields a wrong answer — a lease with no owner, a crossing that
+// reads as unknown. Refusing on the version turns that into a stated
+// refusal a person can act on.
+//
+// THE ONE THING RESETTING COSTS, and it is operational rather than
+// archival: clearing the ref discards LIVE leases, so every environment
+// the machine currently holds is leaked with nothing left to name it.
+// The remedy is a drain and not a migrator — reconcile, let the pass
+// discharge what it owes, then recreate. Anything else in the ref is
+// re-derivable from the branches and the forge.
+const DocSchema = 1
+
+// ContentID is a digest over the complete file set a change writes.
+// It is what binds a proof to the bytes that earned it, and it is
+// durable because a reader a week later must be able to tell whether
+// the evidence on this note describes the tip it is attached to.
+type ContentID string
+
+// Driver is who an act was carried out by — a person, or dockhand
+// running unattended.
+//
+// The two uses of this type are not the same thing, and keeping them
+// verbally apart is the whole of the ruling behind it. A RECORDED
+// Driver — Change.AskedBy, Publication.By, PublicationState.PublishedBy
+// — is provenance and nothing else: no gate reads one back, and it
+// exists so that a later question about how a change reached review is a
+// query rather than an estimate. A Driver PASSED as an invoker is the
+// opposite: it is a decision input, and the publish gates turn on it.
+// Feeding a recorded one into a gate would let a change authorize
+// itself by claiming its own history, which is why the invoker always
+// arrives as a parameter at the call site that decides.
+//
+// Which one a value is is never inferred either. A run's invoker is
+// declared — --auto, DOCKHAND_AUTO — and dockhand never asks whether a
+// terminal is attached to work it out.
+type Driver string
+
+const (
+	// Human is a person's own act, and the invoker of every verb that
+	// did not declare otherwise.
+	Human Driver = "human"
+	// Machine is dockhand acting unattended: what a run in auto mode
+	// mints is recorded as asked by the machine, and the one unattended
+	// publish road publishes as it.
+	Machine Driver = "machine"
 )
 
-// Record is a commit's verification record, stored as its git note
-// under the verification notes ref: sha-keyed, local to this machine,
-// read back by status.
-//
-// The record is born at mint rather than at first submit. That is what
-// makes the per-subject facts — the portdir, the intent, the target a
-// supersede decision compares — writable at all: a branch minted with
-// --no-verify submits nothing, and a record that waited for a job
-// would have nowhere to keep them.
-//
-// Two maps, not one. Jobs is keyed by release name: one guest per
-// platform, shared by every subject in the change. Runs is keyed by
-// RunKey(port, release): one verdict per subject per platform. The
-// split is the whole reason for the shape — a shared guest is released
-// once, when every run on it is terminal, so Released lives on the job
-// and never on a run.
+// Record is one note on one mint commit. It is a struct of four
+// sections because dockhand tracks four lifecycles, and each section
+// names the package permitted to advance it. The note stays one
+// object, and therefore one atomic git write; ownership is expressed
+// in the mutation API, not in the file layout.
 type Record struct {
 	Schema int    `json:"schema"`
 	Sha    string `json:"sha"`
-	Tree   string `json:"tree"` // content identity: a message-only amend moves Sha, not Tree
+	Tree   string `json:"tree"`
+
+	Change Change `json:"change"` // owner: internal/change
+	// Runs on the exported note are a PROJECTION of the change's
+	// attempts, flattened to (port, platform) for a person reading the
+	// commit. The authority is Attempt.Runs in the state ref; this is
+	// the readable copy, and nothing decides from it.
+	//
+	// The projection is MANY-TO-ONE and the collapse rule has to be
+	// stated or two builds of one port silently fight over a key: take
+	// the attempts whose Sha is this commit, and for each (member,
+	// platform) keep the most recently STARTED attempt that reached a
+	// terminal verdict. A retry therefore replaces its predecessor in the
+	// note while both survive in the store, which is the right way round
+	// — the note is what a person reads, and the store is what happened.
+	//
+	// Both halves of the key come off the attempt itself: the member port
+	// from the Runs map, and the platform from Attempt.Platform. An
+	// earlier draft had the platform only on the attempt's LEASE, so the
+	// exporter would have had to split lease.Slot's joined string to
+	// recover it — a hand-written scanner over a joined string, which is
+	// the exact defect RunKey was made a struct to kill. And a QUEUED
+	// attempt has no lease at all, so the queued projection this section
+	// promises could not have been written.
+	Runs        map[RunKey]Run    `json:"runs,omitempty"`
+	Leases      map[string]Lease  `json:"leases,omitempty"`      // owner: internal/lease, keyed by platform
+	Publication *PublicationState `json:"publication,omitempty"` // owner: internal/publish
+}
+
+// RunKey is a pair, not a string. The current "port@release" spelling
+// is parsed back out by three call sites with a hand-written scanner,
+// which is a struct wearing a string's clothes.
+type RunKey struct {
+	Port     string `json:"port"`
+	Platform string `json:"platform"`
+}
+
+// ChangeID identifies a change for its whole life. It is minted when
+// the change record is first written — which may be BEFORE a mint, for
+// a prepared revision a gate refused — and it never changes.
+//
+// It is not the branch name, not the slug and not the mint sha, and the
+// reason is that each of those is either absent at some point in the
+// life or reusable across two different changes. A branch deleted and
+// recreated for a later change of the same port would share a slug and
+// a branch name; a publication keyed on either would be reattached to
+// work it has nothing to do with. The branch is a BINDING on a change,
+// not its identity.
+type ChangeID string
+
+// ChangeState is where a change has got to, and it exists because
+// nothing else in this struct can say. A draft of this design named the
+// five states in prose, gave the store a Compact that drops "closed"
+// records, and then had no field for closed to land in — so changes,
+// the one kind every other kind is keyed on, could never be dropped and
+// the tree grew for the life of the repository. SupersededBy covers one
+// branch of the enum and nothing covered the others.
+//
+// THERE IS NO STATE BETWEEN THE RECORD AND THE REF. A draft had two —
+// ChangePrepared (minted, ref not yet created) and ChangeExtending
+// (extended, ref not yet moved) — each the honest name for a crash
+// window between an Amend and the ref move that followed it. R23 closed
+// the window: change.MintIn and change.ExtendIn queue the ref line into
+// the SAME update-ref batch as the record (statestore.Txn.Ref), so a
+// change is Minted the moment it exists and Extended the moment the
+// record says so, and a state that could only be reached by dying is
+// not a state. Two open states, four closed.
+type ChangeState string
+
+const (
+	// The constants carry the type's name because record already spells a
+	// RUN's supersession as Superseded, and two Superseded constants in
+	// one package is precisely the weak identity this design is about.
+	ChangeMinted   ChangeState = "minted"
+	ChangeExtended ChangeState = "extended"
+	// The last four are the closed states. Compact may drop a change in
+	// one of them, and only then.
+	ChangeSuperseded ChangeState = "superseded"
+	ChangeDiscarded  ChangeState = "discarded"
+	ChangePublished  ChangeState = "published"
+	// ChangeAbandoned is a change that was minted, failed, and that nobody
+	// is going to carry further. It exists because without it a minted
+	// change whose verification failed stays ChangeMinted forever: nothing
+	// moves it, Closed() is false, and Compact may never drop it. That was
+	// inert while nothing counted changes — a stale branch was just a stale
+	// branch — and it stops being inert the moment a budget does, because
+	// every permanently-failing port then holds a slot for good.
+	ChangeAbandoned ChangeState = "abandoned"
+)
+
+// Closed reports that a change's life is over, which is the single
+// predicate Compact tests. It is a method rather than a set literal at
+// the call site so that adding a state is a compile-time visit here
+// rather than a silent omission there.
+func (s ChangeState) Closed() bool {
+	return s == ChangeSuperseded || s == ChangeDiscarded ||
+		s == ChangePublished || s == ChangeAbandoned
+}
+
+// Crossing is how a change's version moved with respect to stability. It
+// is a MINT-TIME fact, recorded on the change, and it is separate from
+// publish.Facts.Direction — which asks whether the version moved FORWARD
+// and must be recomputed at publication because a tip can move. Two
+// questions at two moments, which is rule 2.
+//
+// The distinction the tree does not currently draw: internal/engine/
+// mint.go:359 and :383 both test only verdict.Prerelease(TARGET), never
+// the version the port already rides. So a port going 2.0 -> 2.1-rc1 —
+// a genuine change of posture — and one going 2.1-rc1 -> 2.1-rc2 — where
+// the posture judgment was made by whoever put it on a prerelease — are
+// announced identically, on every update, forever. The concept already
+// exists one layer up and never reaches the mint:
+// internal/upstream.PrereleaseLateral (upstream.go:68-74) is exactly
+// "the port itself rides prereleases".
+//
+// THE FROM SIDE IS THE EVALUATED VERSION, info.Values.Version, and
+// naming it is not pedantry — a draft left it undefined and the two
+// candidate strings give OPPOSITE answers on real ports. The bump path's
+// "current version" is the CARRIER LITERAL (internal/intent/bump/bump.go:142,
+// `moving := carrier.Text(src) != b.Version`), i.e. the raw text at the
+// version span. Three ports in the tree — math/gts, science/gerris,
+// science/gfsview — carry `version 0.7.6-20${snapshot}`, and the
+// heuristic fires TRUE on that literal because it matches the Tcl
+// VARIABLE NAME, while the evaluated value 0.7.6-20121130 reads false.
+// One port, one predicate, two answers, decided by which string the
+// caller happened to hold. Where the evaluated version is unavailable the
+// answer is CrossingUnknown, which is what rule 7's slot is for.
+//
+// THE HOLD IS BORN FROM THIS, not from a test on the target alone, and
+// that fixes a contradiction live in the tree today. internal/upstream
+// resolves PrereleaseLateral because "alpha to alpha gives up no
+// stability, so resolution proceeds... field-measured on amber-lang,
+// whose only possible update path a stricter rule had closed"
+// (upstream.go:68-74) — and internal/engine/mint.go:359 then tests
+// verdict.Prerelease(TARGET) and holds exactly that move. dockhand
+// resolves a port's only available update and then withholds it. That is
+// D28, and this ruling closes it.
+//
+// THE HUMAN ROAD NEVER REFUSES ON THIS. A maintainer asking for a
+// release candidate by name is asking for a legitimate thing, and
+// dockhand does not second-guess a typed version — mint.go's own comment
+// says so. What StableToPrerelease earns is a WARNING: the operator is
+// told they are taking the port out of stable, once, at the moment they
+// do it — and Warns is that telling. The MACHINE road refuses the same
+// crossing, through WithholdsUnattended below. One value, read twice for
+// two different purposes: a sentence to a person, a gate on a machine.
+type Crossing string
+
+const (
+	// CrossingUnknown is the zero value: the comparison could not be made
+	// — an unparseable current version, an evaluation that failed. Rule 7.
+	CrossingUnknown    Crossing = ""
+	StableToStable     Crossing = "stable"
+	StableToPrerelease Crossing = "leaving-stable" // the one that warns
+	PrereleaseLateral  Crossing = "prerelease-lateral"
+	PrereleaseToStable Crossing = "returning-to-stable"
+)
+
+// Warns reports the crossing a person should be told about as it
+// happens. Only one does, and naming it as a method rather than testing
+// the constant at the call site means adding a crossing is a
+// compile-time visit here.
+func (c Crossing) Warns() bool { return c == StableToPrerelease }
+
+// WithholdsUnattended is the 2026-09-06 ruling on what a machine may
+// publish, and it is the WHOLE of the prerelease condition: a change is
+// born held when it takes its port OUT of stable, and not otherwise.
+//
+//	StableToStable      allowed — 99.7% of real moves
+//	PrereleaseLateral   allowed — already prerelease, following upstream up
+//	PrereleaseToStable  allowed — always; it is a move TOWARDS stable
+//	StableToPrerelease  HELD    — the only hard gate
+//	CrossingUnknown     HELD    — rule 7; see below
+//
+// This settles what ruling 1's "non-prerelease version bump" means. It
+// is not "the target is not a prerelease" — that reading held 93% of
+// GitHub ports once the provenance table was priced, and it is the
+// reading that produces the contradiction below. It is "the change does
+// not leave stable".
+//
+// MEASURED over 14,639 real version moves in macports-ports across
+// twelve months: 14,596 StableToStable, 26 PrereleaseLateral, 9
+// PrereleaseToStable, and 8 StableToPrerelease. This refuses those 8 and
+// admits 99.945%. Three of the 8 are regex false positives on -devel
+// ports whose FROM side is misread, so they err toward refusal.
+//
+// WHY THE HEURISTIC'S BLINDNESS DOES NOT REACH THIS. verdict.Prerelease
+// misreads a port's versioning STYLE, not individual versions — it sees
+// 12% of the 1,142 entries riding a commit hash, a datestamp or a
+// prerelease name. It therefore misreads BOTH SIDES of a bump the same
+// way, and the misread CANCELS: Stable(20250920) && !Stable(20260101) is
+// true && false, so no gate fires. That cancellation is the structural
+// reason a crossing works where a target test cannot, and it is not
+// luck.
+//
+// CrossingUnknown is held, and the ruling did not name it: mine, under
+// rule 7. "I could not compare" is not "it did not leave stable", and a
+// machine must not publish what it could not classify.
+func (c Crossing) WithholdsUnattended() bool {
+	return c == StableToPrerelease || c == CrossingUnknown
+}
+
+type Change struct {
+	Schema int         `json:"schema"`
+	ID     ChangeID    `json:"id"`
+	State  ChangeState `json:"state"`
+	// Branch is the branch this record binds while Bound(), and the name
+	// it HAD afterwards. It is never cleared: a closed record that forgot
+	// its branch could not say "was dockhand/foo, deleted" or "kept under
+	// --keep-merged" to `status`, and the release of the NAME for reuse is
+	// Bound() and not an empty field — one predicate where a draft had
+	// CloseIn and SupersedeIn each blanking the field so MintIn's
+	// ErrStanding check would pass. Whether a kept name still stands in
+	// git is git's fact, observed (HasBranch, Resolve) and judged by the
+	// create line; the record does not judge it twice.
+	Branch string `json:"branch,omitempty"`
+	// Tip is the commit the record names, and while Bound() it is what
+	// the ref — Branch, or Pin — holds, BY CONSTRUCTION: the batch that
+	// wrote this record moved the ref to it, or asserted it. There is no
+	// state under which the record names a commit its ref does not carry;
+	// a draft had two, and they are gone with the window that made them.
+	// A ref that no longer holds Tip was moved by a foreign hand, which
+	// change.Resolve reports as ErrTipDisagrees and never trusts either
+	// way.
+	Tip string `json:"tip,omitempty"`
+	// Pin is the ref keeping a BRANCHLESS record's Tip alive —
+	// change.PinRef(ID) — and empty for a record with a Branch. It is a
+	// field and not a rule ("Branch empty and MintedVia Adopted") because
+	// change.CloseIn queues a delete line for it with Tip as the expected
+	// value, and a delete line for a ref that does not exist refuses the
+	// whole batch: the record has to SAY whether a pin exists (rule 7).
+	// change.PinLostIn clears it when a hand has already deleted the ref.
+	Pin string `json:"pin,omitempty"`
 	// Slug is the name the branch was minted under, written from the
 	// plan that named it. It is recorded rather than read back out of
 	// the branch name, because parsing a branch name is a guess and the
 	// value that produced it is right here.
 	Slug string `json:"slug,omitempty"`
+	// Content is the digest over the complete file set this change
+	// writes: what binds the evidence on this note to the bytes that
+	// earned it.
+	Content ContentID `json:"content"`
 	// Subjects are the members of the change, in build order.
 	// Subjects[0] is the headline: the port the change is about, the one
 	// a refusal names and the one the branch is named for. More than one
@@ -57,8 +335,7 @@ type Record struct {
 	Subjects []Subject `json:"subjects,omitempty"`
 	// Destination is how far this change's contract reaches, recorded
 	// when it was minted rather than inferred later from what happens to
-	// be running. A change bound for the branch alone is never drained:
-	// nobody asked for a verdict, so the pump must not invent one.
+	// be running.
 	Destination Destination `json:"destination,omitempty"`
 	// AskedBy is who asked for that destination. It is provenance and
 	// never an input to any gate — the ladder's arithmetic counts human
@@ -72,18 +349,15 @@ type Record struct {
 	// that decides anything.
 	Agent string `json:"agent,omitempty"`
 	// MintedVia says whether this change came from a deliberate single
-	// target or from a sweep over many.
+	// target, from a sweep over many, from a cohort — or from no mint of
+	// dockhand's at all.
 	MintedVia MintedVia `json:"minted_via,omitempty"`
-	// Jobs are the environments this change was submitted to, keyed by
-	// release name. One per platform, whatever the number of subjects.
-	Jobs map[string]JobRecord `json:"jobs,omitempty"`
-	// Runs are the verdicts, keyed by RunKey(port, release). A change
-	// with one subject has one run per job; that the key already carries
-	// the port at N==1 is deliberate, so the day a cohort lands nothing
-	// has to re-key notes that already exist.
-	Runs map[string]Run `json:"runs,omitempty"`
-	// Hold is a person stopping this change from proceeding, with their
-	// reason. A pointer because "not held" and "held for no stated
+	// Crossing is recorded, not merely announced, so that `status` and a
+	// reviewer reading the note can see that this change took its port out
+	// of stable — a warning nobody was at the terminal for is no warning.
+	Crossing Crossing `json:"crossing,omitempty"`
+	// Hold is a brake on this change, with its origin and the reason
+	// given. A pointer because "not held" and "held for no stated
 	// reason" are different facts.
 	Hold *Hold `json:"hold,omitempty"`
 	// Riders are the discovered todos folded into the change's own
@@ -100,29 +374,176 @@ type Record struct {
 	// commit's trailer and the pull request's body.
 	ClosesTicket string `json:"closes_ticket,omitempty"`
 	// SupersededBy names the newer sibling's branch, written on the
-	// older record when a port-keyed supersede takes its place. The
-	// branch becomes its own end state until a person cleans it up: the
-	// record still holds what was learned, and the field says why
-	// nothing more will be learned.
+	// older record when a port-keyed supersede takes its place. It is one
+	// of the two ways a record gives its name up; see Bound.
 	SupersededBy string `json:"superseded_by,omitempty"`
+	// Closed is when the change entered a closed state; Compact's tail is
+	// measured from here.
+	Closed *time.Time `json:"closed,omitempty"`
 	// Base is the commit the change was minted on top of, with the time
 	// that commit was made. Both halves are needed by different readers:
 	// the sha is the honest "before" a baseline is measured at, and the
 	// time is how a reader tells a change written against a week-old
 	// tree from one written against today's.
 	Base Base `json:"base,omitzero"`
-	// Evidence names the tip whose runs this record's findings were
-	// measured on, for a record that inherited them rather than earning
-	// them — an extended cohort's second commit stands on the first
-	// commit's verification.
-	Evidence *Measured `json:"evidence,omitempty"`
 }
 
-// Hold is a person stopping a change, with the reason they gave.
-type Hold struct {
-	Reason string    `json:"reason"`
-	At     time.Time `json:"at"`
+// Bound reports that this record's ref is its own: the branch or pin
+// holds Tip, the name is not free, and change.DemolishIn may not delete
+// it. False for a closed record and for one a newer sibling superseded
+// while its publication stayed open (change.SupersedeIn) — the two ways
+// a record gives its name up. ONE predicate, read by change.MintIn's and
+// change.AdoptIn's ErrStanding check, by change.Standing, by
+// change.Resolve when two records carry one branch name (names are
+// reused; ids are not), by run.Pending's Superseded reason, by
+// change.SupersedeIn's ErrNotBound refusal, and by change.DemolishIn's
+// refusal. A method so that a new way of giving a
+// name up is a compile-time visit here.
+func (c Change) Bound() bool { return !c.State.Closed() && c.SupersededBy == "" }
+
+// Destination is how far the MACHINE may carry a change, and it has
+// TWO values. ToVerdict is deleted: a draft used it to mean "a
+// verification was asked for", and under always-enqueue that question is
+// answered by the attempt's existence and by nothing on the change — so
+// `verify` on a --no-verify branch enqueues and flips nothing, and the
+// shipped askVerdict (which flipped the destination so the drain would
+// admit the run) has no successor. run.Pending's NoDestination refusal
+// went with it: an attempt's existence IS the ask. The zero value is
+// unset and change.MintIn refuses it, so a caller cannot mint a change
+// bound for nowhere by forgetting the field.
+type Destination string
+
+const (
+	// ToBranch is --no-verify: mint the branch and stop.
+	ToBranch Destination = "branch"
+	// ToPublished carries the change through to a pull request.
+	ToPublished Destination = "published"
+)
+
+// MintedVia says how a change came to exist. It is the field the
+// ladder's arithmetic turns on — human promotions of sweep-minted
+// changes are its numerator — so it is recorded rather than inferred
+// afterwards from a branch name.
+type MintedVia string
+
+const (
+	// MintedSingle is a change the user named, one target per run.
+	MintedSingle MintedVia = "single"
+	// MintedSweep is a change a sweep proposed on its own.
+	MintedSweep MintedVia = "sweep"
+	// MintedCohort is a change minted around a headline and the
+	// dependents a finding proposed with it.
+	MintedCohort MintedVia = "cohort"
+	// MintedAdopted is a change dockhand did not mint: a dockhand/ branch
+	// with no record (hand-made, or made before the state ref was
+	// recreated) that `verify` met, or a working tree `verify <portdir>`
+	// snapshotted so the attempt it queues has a sha to be built from.
+	// A machine may never demolish one — Discard's machine road tests
+	// this value and not a sentence — because dockhand did not make the
+	// thing it would be deleting. It is what makes D22's last road
+	// trackable without giving a pass the right to eat it.
+	MintedAdopted MintedVia = "adopted"
+)
+
+// Subject is one member of a change: a port, where it lives, and what
+// was done to it.
+//
+// A cohort's members differ in every one of these, which is why they
+// are a struct per member rather than parallel slices on the change. A
+// dependent revision-bumped because its library's ABI moved carries a
+// different intent, a different target and a different reason from the
+// headline that caused it, and a record that flattened them would make
+// the pull request body guess.
+type Subject struct {
+	// Port is the port's own name, as `port` would be given it.
+	Port string `json:"port"`
+	// Names is the port and its subports — every name a build log can
+	// blame that belongs to this member.
+	//
+	// It exists for the subport-vs-parent blame guard: a cohort log that
+	// fails on py312-foo must map to the member that owns it, and a
+	// reader matching on Port alone would find no member and blame a
+	// stranger, or blame nobody.
+	//
+	// It is written as [Port] even when the port has no subports at all,
+	// because the empty slice already means something else: a reader
+	// cannot otherwise tell "this port has no subports" from "nobody
+	// ever asked".
+	Names []string `json:"names,omitempty"`
+	// Portdir is the <category>/<port> directory the change touched, on
+	// the host. It is what gets staged ahead of the environment's own
+	// ports tree.
+	Portdir string `json:"portdir,omitempty"`
+	// Intent is what was done — bump, refresh, bump-revision. It is per
+	// member and not per change: a cohort's headline is a version bump
+	// and its members are revision bumps, in one commit series.
+	Intent string `json:"intent,omitempty"`
+	// Target is what this member moved to: a version ("1.9"), a
+	// re-derivation ("checksums"), a revision ("rev2").
+	//
+	// It is recorded so that deciding whether one change supersedes
+	// another is a comparison of two values rather than a parse of two
+	// branch names.
+	Target string `json:"target,omitempty"`
+	// Reason is why this member is in the change, in the words that
+	// reach the commit body — for a cohort member, the criterion the
+	// finding measured.
+	Reason string `json:"reason,omitempty"`
 }
+
+// Hold is the brake on a change, and it now says WHO SET IT, because
+// the two producers withhold different acts. A draft wrote the crossing's
+// born-hold as the same value a person's `hold` writes, and run.Start
+// and run.Pending both refused a held change — so `bump amber-lang --to
+// 0.3.2-alpha` enqueued its attempt and then refused its own
+// opportunistic start, and no drain ever started it until `unhold`,
+// which also lifted the publication hold. cli_spec flow 10 (ruled) shows
+// that bump SUBMITTED with "the hold is on publication, not on the
+// build", and the shipped mint says the same in as many words. Origin is
+// what makes the two reaches typed rather than sentences (rule 6).
+type Hold struct {
+	Origin HoldOrigin `json:"origin"`
+	Reason string     `json:"reason"`
+	At     time.Time  `json:"at"`
+}
+
+// HoldOrigin is who set a hold, and therefore what it withholds. The
+// zero value is unknown and change.Held treats it as withholding
+// EVERYTHING (rule 7): a hold record nobody stamped an origin on is a
+// wiring gap, and a machine must not publish or delete past a gap.
+//
+//	HoldPerson    withholds verification, publication and deletion —
+//	              the hold verb's contract. Verify and Accept refuse at
+//	              resolve (exit 23); run.Pending refuses it as Held;
+//	              every publication road refuses it; demolish refuses it.
+//	HoldCrossing  withholds ONLY the unattended acts: publish.Authorize's
+//	              machine road and the machine's demolish (app's
+//	              mayDemolish, before change.DemolishIn). It
+//	              never withholds a build, and the human road is warned
+//	              rather than refused. It is born in change.MintIn from
+//	              Crossing.WithholdsUnattended and nowhere else.
+//
+// `unhold` clears either.
+type HoldOrigin string
+
+const (
+	HoldUnknown  HoldOrigin = ""
+	HoldPerson   HoldOrigin = "person"
+	HoldCrossing HoldOrigin = "crossing"
+)
+
+// WithholdsVerification is the one reach a crossing hold does NOT have.
+// A method rather than a comparison at the four call sites, so a new
+// origin is a compile-time visit here; the unknown origin withholds, by
+// rule 7.
+func (o HoldOrigin) WithholdsVerification() bool { return o != HoldCrossing }
+
+// WithholdsUnattended reports whether a machine may act past this hold.
+// No origin permits it: a person's hold and a crossing's both withhold
+// the unattended acts, and the unknown origin withholds by rule 7. It
+// exists so the machine road's question has one answer beside the human
+// road's, rather than a comparison somebody narrows later.
+func (o HoldOrigin) WithholdsUnattended() bool { return true }
 
 // Base is the commit a change was minted on top of.
 type Base struct {
@@ -130,287 +551,119 @@ type Base struct {
 	CommittedAt time.Time `json:"committed_at"`
 }
 
-// Measured is where a record's evidence was earned, when it was not
-// earned here: the tip whose runs a finding was measured on.
-//
-// The Go name is not the wire key. record.Evidence is already taken by
-// the audit ref's own type — a published change's verified/unverified
-// claim — and two exported Evidence in one package will not build. The
-// field is Record.Evidence, the key stays "evidence", and only the type
-// is spelled differently.
-type Measured struct {
-	From string `json:"from"`
+// Finding is something verification noticed that nobody asked about:
+// a library whose ABI moved, the dependents that would need a revision
+// bump, an instruction comment in the Portfile, an upstream statement
+// about compatibility.
+type Finding struct {
+	Kind FindingKind `json:"kind"`
+	// Diverged is the portdir-relative paths a reconstruction found the
+	// tip does not match, for KindStealth. Data and not a sentence: the
+	// pass that raises this hold is unattended, so the only account a
+	// person gets is what is written here.
+	Diverged []string `json:"diverged,omitempty"`
+	// Ports are the ports the finding is about.
+	Ports []string `json:"ports,omitempty"`
+	// Candidates are the ports it examined, with what it concluded
+	// about each.
+	Candidates []Candidate `json:"candidates,omitempty"`
+	// Criterion is the measurement in words a reader can check: which
+	// install name moved, which compatibility version changed, between
+	// which two builds on which platform. The mechanical criterion is
+	// necessary and never sufficient, so it is stated rather than
+	// implied.
+	Criterion string `json:"criterion,omitempty"`
+	// Source and Quote are where a non-mechanical finding came from and
+	// what it actually said — an upstream release note, a comment in the
+	// Portfile. A finding that cannot be traced back to its words is an
+	// assertion.
+	Source string `json:"source,omitempty"`
+	Quote  string `json:"quote,omitempty"`
+	// Disposition and At carry no omitempty. A finding with no
+	// disposition on the wire would read as one nobody had to answer,
+	// and the zero value of the type is not one of the three words.
+	Disposition Disposition `json:"disposition"`
+	At          time.Time   `json:"at"`
 }
 
-// Headline is the subject the change is about: the port a refusal
-// names, the one the branch is named for, and the one a cohort is
-// built around. A record with no subjects has the zero Subject, which
-// names no port — the same answer a caller gets from an empty record
-// everywhere else.
-func (r Record) Headline() Subject {
-	if len(r.Subjects) == 0 {
-		return Subject{}
-	}
-	return r.Subjects[0]
-}
+// FindingKind is an enum, not a free string. It is declared here
+// because the note is the only thing that outlives the process that
+// wrote it; a presenter that invents a kind writes a note a later
+// build cannot classify.
+type FindingKind string
 
-// Ports lists the change's ports in build order, headline first.
-//
-// It does not sort and it does not deduplicate. The order is the order
-// a cohort must be built in, and a repeated port is a malformed record
-// that a projection quietly collapsing it would hide.
-func (r Record) Ports() []string {
-	out := make([]string, 0, len(r.Subjects))
-	for _, s := range r.Subjects {
-		out = append(out, s.Port)
-	}
-	return out
-}
+const (
+	KindABIDependents FindingKind = "abi-dependents"
+	KindInstruction   FindingKind = "instruction"
+	KindStealth       FindingKind = "stealth-change"
+)
 
-// Portdirs lists the directories the change touched, in the same
-// order, without repeats and without the empties.
-//
-// This one does deduplicate, because it feeds staging: the portdirs go
-// into the environment ahead of its own ports tree, and staging one
-// directory twice is at best wasted work. A subject that never
-// recorded a portdir contributes nothing to stage, so it is skipped
-// rather than staged as "".
-func (r Record) Portdirs() []string {
-	out := make([]string, 0, len(r.Subjects))
-	seen := make(map[string]bool, len(r.Subjects))
-	for _, s := range r.Subjects {
-		if s.Portdir == "" || seen[s.Portdir] {
-			continue
-		}
-		seen[s.Portdir] = true
-		out = append(out, s.Portdir)
-	}
-	return out
-}
+// Disposition is what has become of a finding. A finding proposes and
+// never executes, so the proposal and the answer to it are two facts
+// and this is the second one.
+type Disposition string
 
-// Platforms lists the releases this change was submitted to, sorted
-// for stable rendering.
-//
-// It projects the jobs and never the runs. A job is one guest on one
-// platform; a run is one subject's verdict on it, so a cohort of nine
-// on two platforms has two platforms and eighteen runs. Reading the
-// run keys would answer with the wrong number and the wrong words.
-func (r Record) Platforms() []string {
-	out := make([]string, 0, len(r.Jobs))
-	for k := range r.Jobs {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
+const (
+	// Proposed is a finding nobody has answered yet. It is the state a
+	// finding is appended in, and an unanswered one is a question the
+	// change is still carrying.
+	Proposed Disposition = "proposed"
+	// Accepted means the proposal was taken up — the cohort was built,
+	// the revision bumped.
+	Accepted Disposition = "accepted"
+	// Dismissed means a person looked and said no. Dismissal is an
+	// answer worth recording, not an absence: a finding that vanished
+	// when declined would be proposed again on the next look.
+	Dismissed Disposition = "dismissed"
+)
 
-// AnyState reports whether any run is in the given state.
-func (r Record) AnyState(s RunState) bool {
-	for _, run := range r.Runs {
-		if run.State == s {
-			return true
-		}
-	}
-	return false
-}
-
-// Promotable is the gate promote applies to a verdict set: at least
-// one run passed, none failed, and every SUBJECT answered for. A port
-// declining a platform (unsupported) does not block — that refusal is
-// often the change working — but an unexplained failure does, because
-// it is exactly the question review will ask.
+// Candidate is one port a finding examined, whether or not the finding
+// proposes doing anything to it.
 //
-// The per-subject clause is what plurality added, and it is not the
-// same rule stated twice. A cohort's runs are summed over the whole
-// map, so a change whose headline passed and whose dependent was
-// blocked by a stranger, or errored, or never reached at all, satisfies
-// "one passed and none failed" — and publishing it would put a port
-// into a pull request on evidence that does not exist. That is the same
-// thing the settle's unbuilt guard refuses to invent, refused again at
-// the gate that would have spent it.
-//
-// A record naming no subjects is answered by the run map alone. Every
-// change dockhand mints names its subjects, so this is a note written
-// by something else or from before the schema, and inventing a roster
-// for it out of the run keys would be a guess in the direction that
-// blocks a publication.
-//
-// It is stated here, on the record, so the rule has one home; the
-// verdict package presents it as a judgment rather than restating it.
-// The clauses the later steps add — a hold stops a promotion, and so
-// does a finding still proposed — belong with those steps' verbs, and
-// are deliberately not smuggled in with the schema.
-func (r Record) Promotable() bool {
-	// Some run, somewhere, says the change works. This is the record's
-	// rule and not the headline's, and it survives the dependents being
-	// made best effort: a change that nothing ever built has no evidence
-	// to publish on, whatever the reason each individual member had.
-	if !r.AnyState(Passed) {
-		return false
-	}
-	if len(r.Subjects) == 0 {
-		// A note naming no subjects is answered by the runs alone, and
-		// there is no headline to hold to a higher standard than the
-		// rest: without a roster, "dependent" is not a thing this record
-		// can say about anything. So the older, stricter rule stands
-		// here — any failure blocks — rather than a best-effort reading
-		// resting on a distinction the record cannot make.
-		return !r.AnyState(Failed)
-	}
-	head := r.Headline().Port
-	if !r.proven(head) || r.failed(head) {
-		return false
-	}
-	// The dependents are best effort, and the gate says so by not asking
-	// them for a pass (maintainer's ruling, 2026-09-04). A revision bump
-	// is owed to a dependent because the library it links moved; whether
-	// that dependent builds today is frequently a fact about the
-	// dependent — gthumb was already broken on this platform, measured,
-	// and a gate that held the whole change for it would make a cohort
-	// hostage to the least maintained port in it. What the failure earns
-	// is a sentence in the pull request body, not a veto.
+// The ports the tool declined to touch are recorded beside the ones it
+// proposes, because they are exactly what a reviewer must check by
+// hand: a dependent excluded for being obsolete, replaced, or already
+// in flight is a decision, and a decision no reader can see is a
+// decision nobody can disagree with.
+type Candidate struct {
+	Port string `json:"port"`
+	// Portdir is where it lives, when the finding knows.
+	Portdir string `json:"portdir,omitempty"`
+	// Proposed says the finding puts this port forward. A candidate
+	// without it was looked at and left out.
+	Proposed bool `json:"proposed,omitempty"`
+	// Reason is why, either way.
+	Reason string `json:"reason,omitempty"`
+	// Solo says this member is bumped by the change but left out of the
+	// cohort's own build, because a member already in it declares a
+	// conflict and MacPorts will not activate both. What it must not
+	// lose is its revision, which is why it stays proposed; what it is
+	// not owed is a build of its own — the person is told it was
+	// withheld, and that is the answer.
+	Solo bool `json:"solo,omitempty"`
+	// Over names the seated member this candidate lost its seat to —
+	// the sibling it declares a conflict with, or that declares one
+	// with it, spelled as the proposal spells that member. It is set
+	// wherever Solo is set and is empty otherwise.
 	//
-	// Terminal is still required, and that is not the same relaxation.
-	// A dependent still building is not a best-effort outcome, it is no
-	// outcome: publishing over it would put a body in front of a
-	// reviewer that its own guest is still in the middle of disproving.
-	for _, s := range r.Subjects {
-		if s.Port == head {
-			continue
-		}
-		// Proven anywhere is answered — a pass on one platform beside a
-		// cancellation on another is a member with evidence, not a hole
-		// — and otherwise every run must be an outcome about the port.
-		if !r.proven(s.Port) && !r.settledFor(s.Port) {
-			return false
-		}
-	}
-	return true
-}
-
-// failed reports whether any of one subject's runs failed.
-func (r Record) failed(port string) bool {
-	for key, run := range r.Runs {
-		if runPort(key) == port && run.State == Failed {
-			return true
-		}
-	}
-	return false
-}
-
-// settledFor reports whether a subject has at least one run and every
-// run it has reached an outcome about the dependent. A subject with no
-// run at all is not settled: nobody has asked about it, which is the
-// hole Promotable exists to find.
-//
-// Not every terminal state is an outcome (maintainer's ruling,
-// 2026-09-04). Best effort rests on the argument that whether a
-// dependent builds is a fact about the dependent, and three terminal
-// states are facts about something else: errored is the machine's
-// failure to answer, by its own reviewer-facing sentence; canceled is
-// a person's "no"; superseded is the branch moving. A promotion that
-// read those as settled would be reading absence of evidence as
-// evidence — and, for canceled, could supply the absence itself by
-// stopping the builds it was about to publish over.
-func (r Record) settledFor(port string) bool {
-	seen := false
-	for key, run := range r.Runs {
-		if runPort(key) != port {
-			continue
-		}
-		seen = true
-		if !run.State.Outcome() {
-			return false
-		}
-	}
-	return seen
-}
-
-// proven reports whether one subject's own runs argue for publishing
-// it: a pass somewhere, or nothing but refusals.
-//
-// The second clause is Promotable's unsupported rule read per member
-// rather than per record. A port that declined every platform it was
-// asked about has said the change is right about it, and a cohort where
-// one member declines everywhere must not be stuck for want of a pass
-// that port has told us it will never give. Anything else — queued,
-// running, blocked, errored, no run at all — is a member nobody has an
-// answer for yet.
-//
-// Withheld counts as a refusal, and it is the weaker of the two: an
-// unsupported member is the PORT saying not here, while a withheld one
-// is dockhand saying not with these siblings — the port might well have
-// passed, and nobody asked it. It is admitted anyway because the
-// alternative is worse. A cohort holding two ports that conflict cannot
-// build both in one guest, and most cohorts hold such a pair, so
-// treating the held-back member as unanswered would make the ordinary
-// cohort permanently unpublishable — a gate that refuses everything
-// protects nothing. What it costs is one subject's evidence, and the
-// pull request body states that in the member's own line rather than
-// leaving a reviewer to notice an absence (maintainer's ruling,
-// 2026-09-04).
-// The key is what says which subject a run is about; nothing on a run
-// repeats it.
-func (r Record) proven(port string) bool {
-	// Every run is looked at before the answer is given. A pass on one
-	// platform beside a cancellation on another is a proven member, and
-	// a reader that stopped at the first run it met would answer
-	// differently depending on which one the map handed it first.
-	seen, allRefused := false, true
-	for key, run := range r.Runs {
-		if runPort(key) != port {
-			continue
-		}
-		if run.State == Passed {
-			return true
-		}
-		seen = true
-		if run.State != Unsupported && run.State != Withheld {
-			allRefused = false
-		}
-	}
-	return seen && allRefused
-}
-
-// UnprovenMembers names the dependents a promotion would publish
-// without a pass. It is the list the author is told at promote time and
-// the count the audit row carries; the two are one reading so they
-// cannot disagree.
-//
-// It is deliberately not proven's complement. proven answers the GATE
-// — may this change publish — and admits a withheld member as a
-// refusal so the ordinary cohort can. This answers the AUDIT — what did
-// the publication carry — and a withheld member is a bumped port nobody
-// built, the same exposure as a failed or blocked one. What it leaves
-// out is a member whose every run is unsupported: that is the port's
-// own answer about the platform, not evidence that went missing.
-func (r Record) UnprovenMembers() []string {
-	head := r.Headline().Port
-	var out []string
-	for _, s := range r.Subjects {
-		if s.Port == head || r.hasEvidence(s.Port) {
-			continue
-		}
-		out = append(out, s.Port)
-	}
-	return out
-}
-
-// hasEvidence reports a pass on some platform, or a port that declined
-// every platform it was asked about.
-func (r Record) hasEvidence(port string) bool {
-	seen, allDeclined := false, true
-	for key, run := range r.Runs {
-		if runPort(key) != port {
-			continue
-		}
-		if run.State == Passed {
-			return true
-		}
-		seen = true
-		if run.State != Unsupported {
-			allDeclined = false
-		}
-	}
-	return seen && allDeclined
+	// It is a field and not a reading of Reason, because Reason is prose
+	// for the person and this is a fact the tool acts on. A renderer that
+	// rewords the sentence must not be able to change which port gets
+	// deactivated, and it cannot once the name travels on its own.
+	Over string `json:"over,omitempty"`
+	// Forced says a person overrode the withholding: this candidate is
+	// Solo — it would have been bumped and left out of the guest — and
+	// was seated anyway, last, with the member Over names deactivated
+	// before its own build. Set only where Solo and Over are set.
+	//
+	// It is on the candidate and not only on the run because the run is
+	// written when the cohort is submitted, and a cohort accepted with
+	// --no-verify is never submitted at that moment: the person's
+	// override would live nowhere but in the reason's prose, and a hand
+	// `dockhand verify` of the branch afterwards would have to parse the
+	// sentence or drop the ask. The resubmission roads read this and
+	// Solo instead — a withheld member stays out of the guest and a
+	// forced one goes in last — with the run, where there is one, saying
+	// the same thing.
+	Forced bool `json:"forced,omitempty"`
 }

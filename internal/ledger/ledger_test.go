@@ -2,13 +2,13 @@ package ledger
 
 // The ledger tests: custody of the notes, driven against real git.
 // What is proven here is the boundary — that absence and refusal stay
-// different answers, that the bytes on disk are the codec's plus the
+// different answers and that the refusal arrives as an identity rather
+// than as a sentence, that the bytes on disk are the codec's plus the
 // newline git adds, and that a scan hands back what git listed in the
 // order git listed it.
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -19,7 +19,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tool"
-	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // realTools is the finder every fixture here carries: the real PATH
@@ -43,18 +42,35 @@ func ledgerRepo(t *testing.T) (*Ledger, *git.Repo, string) {
 	return Open(repo), repo, sha
 }
 
-// passedOn is a settled run, the commonest thing a note holds: one
-// subject, one guest on the platform, one verdict keyed to both.
-func passedOn(sha string, plat string) record.Record {
+// exported is the commonest projection a note holds: one change with
+// one subject, the guest it was built in, and the verdict keyed to the
+// pair. It is what statestore.Export hands Write, written out here by
+// hand because the store arrives a step later.
+func exported(sha, plat string) record.Record {
 	return record.Record{
 		Schema: record.Schema, Sha: sha,
-		Subjects: []record.Subject{{Port: "jq", Names: []string{"jq"}}},
-		Jobs: map[string]record.JobRecord{plat: {
-			Job:  verify.Job{Provider: "fake", ID: "fake-1", Started: started},
-			Test: true,
-		}},
-		Runs: map[string]record.Run{record.RunKey("jq", plat): {
-			State: record.Passed, Platform: plat, Linted: true, Lint: "clean",
+		Change: record.Change{
+			Schema:   record.DocSchema,
+			ID:       "chg-01HZ",
+			State:    record.ChangeMinted,
+			Branch:   "dockhand/jq-1.8",
+			Tip:      sha,
+			Slug:     "jq-1.8",
+			Content:  "sha256:9f2c",
+			Subjects: []record.Subject{{Port: "jq", Names: []string{"jq"}}},
+		},
+		Runs: map[record.RunKey]record.Run{
+			{Port: "jq", Platform: plat}: {
+				State: record.Passed, Content: "sha256:9f2c", At: started,
+			},
+		},
+		Leases: map[string]record.Lease{plat: {
+			Schema:   record.DocSchema,
+			ID:       record.LeaseID{Provider: "fake", ID: "fake-1", Started: started},
+			Request:  "req-01HZ",
+			Change:   "chg-01HZ",
+			Platform: plat,
+			Phase:    record.Finished,
 		}},
 	}
 }
@@ -68,7 +84,7 @@ func TestReadAnswersAbsenceForAnUnnotedCommit(t *testing.T) {
 func TestWriteThenReadRoundTripsTheRecord(t *testing.T) {
 	l, _, sha := ledgerRepo(t)
 	ctx := context.Background()
-	want := passedOn(sha, "Testos")
+	want := exported(sha, "Testos")
 
 	require.NoError(t, l.Write(ctx, want))
 	got, err := l.Read(ctx, sha)
@@ -98,7 +114,7 @@ func TestWriteStoresTheCodecsBytesAndGitsNewline(t *testing.T) {
 	// one the other way.
 	l, repo, sha := ledgerRepo(t)
 	ctx := context.Background()
-	r := passedOn(sha, "Testos")
+	r := exported(sha, "Testos")
 	require.NoError(t, l.Write(ctx, r))
 
 	encoded, err := record.Encode(r)
@@ -109,12 +125,12 @@ func TestWriteStoresTheCodecsBytesAndGitsNewline(t *testing.T) {
 }
 
 func TestWriteStampsTheSchemaWhateverTheCallerHeld(t *testing.T) {
-	// A record read back from a note keeps the schema it decoded under,
-	// and passes through several hands before it is written again. The
-	// stamp is the codec's, and this is the proof it survives storage.
+	// A record decoded under one schema and handed straight back must
+	// not be written out claiming to be what it was. The stamp is the
+	// codec's, and this is the proof it survives storage.
 	l, _, sha := ledgerRepo(t)
 	ctx := context.Background()
-	r := passedOn(sha, "Testos")
+	r := exported(sha, "Testos")
 	r.Schema = 0
 
 	require.NoError(t, l.Write(ctx, r))
@@ -124,36 +140,57 @@ func TestWriteStampsTheSchemaWhateverTheCallerHeld(t *testing.T) {
 }
 
 func TestReadRefusesWhatItCannotHonourAndNeverAsAbsence(t *testing.T) {
-	// The distinction the whole layer rests on: a note that will not
-	// parse is an error, and specifically NOT git.ErrNoNote, because
-	// every caller that starts fresh on absence would otherwise start
-	// fresh over state that governs worker release and promotion.
+	// The distinction the layer rests on: a note that will not parse is
+	// an error, and specifically NOT git.ErrNoNote, because a commit
+	// the export has not reached and a commit whose export is corrupt
+	// are different facts and a reader that could not tell them apart
+	// would report a broken notes ref as an empty one.
+	//
+	// Each row asserts the IDENTITY and not the sentence. The message a
+	// person reads is built at the point of refusal and may be reworded
+	// without moving what code matches; that is the whole reason the
+	// codec declares sentinels.
 	l, repo, sha := ledgerRepo(t)
 	ctx := context.Background()
 
 	for _, tc := range []struct {
 		name string
 		body string
-		says string
+		is   error
 	}{
-		{"malformed", "{not json", "does not parse"},
+		{"malformed", "{not json", record.ErrMalformed},
 		{"a schema from the future",
-			`{"schema":99,"sha":"` + sha + `","runs":{}}`, "newer dockhand"},
-		{"a schema this build no longer reads",
-			`{"schema":2,"sha":"` + sha + `","port":"jq","runs":{}}`,
-			"cannot be carried over"},
+			`{"schema":99,"sha":"` + sha + `"}`, record.ErrSchemaTooNew},
+		{"every note this bump refuses",
+			`{"schema":3,"sha":"` + sha + `","port":"jq","runs":{}}`,
+			record.ErrSchemaTooOld},
 		{"a note describing another commit",
-			`{"schema":3,"sha":"0000000000000000000000000000000000000000","runs":{}}`,
-			"claims to describe"},
+			`{"schema":4,"sha":"0000000000000000000000000000000000000000"}`,
+			record.ErrShaMismatch},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gittest.Note(t, repo, sha, tc.body)
 			_, err := l.Read(ctx, sha)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.says)
+			require.ErrorIs(t, err, tc.is)
 			assert.NotErrorIs(t, err, git.ErrNoNote, "a refusal must never read as absence")
 		})
 	}
+}
+
+func TestTheSchemaRefusalNamesTheRemedyThisBuildCanHonour(t *testing.T) {
+	// Schema 4 refuses every note in every checkout, which is ruled and
+	// cheap: the note is a projection and the store still holds what
+	// happened. The sentence has to be true of THIS build, though — the
+	// ref it tells a person to clear is the ref this package writes to,
+	// and the commit it names is the one they asked about — or the
+	// remedy sends them somewhere the stale note is not.
+	l, repo, sha := ledgerRepo(t)
+	gittest.Note(t, repo, sha, `{"schema":3,"sha":"`+sha+`","port":"jq","runs":{}}`)
+
+	_, err := l.Read(context.Background(), sha)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "git notes --ref="+git.VerifyNotesRef+" remove "+sha)
 }
 
 func TestRemoveIsIdempotent(t *testing.T) {
@@ -161,7 +198,7 @@ func TestRemoveIsIdempotent(t *testing.T) {
 	// carried a note.
 	l, _, sha := ledgerRepo(t)
 	ctx := context.Background()
-	require.NoError(t, l.Write(ctx, passedOn(sha, "Testos")))
+	require.NoError(t, l.Write(ctx, exported(sha, "Testos")))
 
 	require.NoError(t, l.Remove(ctx, sha))
 	require.NoError(t, l.Remove(ctx, sha), "removing an unnoted commit is not an error")
@@ -178,8 +215,8 @@ func TestAllListsEveryAnnotatedCommit(t *testing.T) {
 		"version 1.9\n", "jq: update to 1.9")
 
 	assert.Empty(t, mustAll(t, l), "a repository with no notes annotates nothing")
-	require.NoError(t, l.Write(ctx, passedOn(sha, "Testos")))
-	require.NoError(t, l.Write(ctx, passedOn(other, "Testos")))
+	require.NoError(t, l.Write(ctx, exported(sha, "Testos")))
+	require.NoError(t, l.Write(ctx, exported(other, "Testos")))
 	assert.ElementsMatch(t, []string{sha, other}, mustAll(t, l))
 
 	require.NoError(t, l.Remove(ctx, other))
@@ -192,7 +229,3 @@ func mustAll(t *testing.T, l *Ledger) []string {
 	require.NoError(t, err)
 	return shas
 }
-
-// errClosure is the caller's own failure, to prove Update returns it
-// rather than swallowing or renaming it.
-var errClosure = errors.New("the caller's own refusal")

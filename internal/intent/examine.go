@@ -7,7 +7,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -89,14 +89,13 @@ type Cascade struct {
 // Examination is everything a look at the change turned up beyond the
 // change itself.
 //
-// Findings are record's own type rather than a planning one. There is
-// one findings vocabulary in this tree and it is the note's, because a
-// finding that cannot be recorded is a finding nobody can answer; a
-// second type here would exist only to be mapped onto the first. A
-// finding made at plan time carries record.Proposed and leaves At to
-// whoever appends it, which is the disposition's stated purpose.
+// Findings are plan's type, not the note's. An examination runs with
+// the source and the parse tree in hand and nothing durable at all, and
+// what it produces rides on the plan; the moment a finding was made
+// part of a change and the answer anyone has given it since are stamped
+// onto the record at mint, which is where those two facts first exist.
 //
-// Proposed is load-bearing for the one finding that ships here. An
+// plan.Proposed is load-bearing for the one finding that ships here. An
 // instruction comment is the port maintainer's written statement that
 // this change is incomplete without a revbump elsewhere, and the
 // machine gate holds an unattended publication until a person has
@@ -105,7 +104,7 @@ type Cascade struct {
 type Examination struct {
 	Riders   []Rider
 	Cascades []Cascade
-	Findings []record.Finding
+	Findings []plan.Finding
 }
 
 // Portfile is everything Examine reads about one port: the bytes, the
@@ -205,6 +204,12 @@ func Sweep(src []byte, cst *syntax.Script) (offered []Rider, dropped []Rule) {
 // rule is one entry of the sweep: the name a note carries, and the edit
 // it would make. A rule reads only the source, because a rule that
 // needed the evaluated state would be a finding and not a rider.
+//
+// Every rule stamps edit.Rider, and there is no second thing a
+// housekeeping rule could stamp: what a rider is, is housekeeping proved
+// inert and never proved right. It is written at the rule rather than
+// normalized in Sweep so that the one place an edit is built is the one
+// place that names what it is.
 type rule struct {
 	Rule Rule
 	Edit func(src []byte) (edit.Edit, bool)
@@ -381,7 +386,7 @@ func modelineEdit(src []byte) (edit.Edit, bool) {
 		}
 		rest = tail
 	}
-	return edit.Edit{Start: 0, End: 0, Old: "", New: Modeline + "\n", Reason: "modeline"}, true
+	return edit.Edit{Kind: edit.Rider, Start: 0, End: 0, Old: "", New: Modeline + "\n", Reason: "modeline"}, true
 }
 
 // isModeline reads one already-trimmed comment line for either editor's

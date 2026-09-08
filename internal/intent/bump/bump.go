@@ -216,6 +216,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	checksumsViaSet := false
 	if moving {
 		edits = append(edits, edit.Edit{
+			Kind:  edit.Version,
 			Start: carrier.Start, End: carrier.End,
 			Old: carrier.Text(src), New: b.Version, Reason: "version",
 		})
@@ -232,6 +233,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		case err == nil:
 			if revLoc.Span.Text(src) != "0" {
 				edits = append(edits, edit.Edit{
+					Kind:  edit.RevisionReset,
 					Start: revLoc.Span.Start, End: revLoc.Span.End,
 					Old: revLoc.Span.Text(src), New: "0", Reason: "revision reset",
 				})
@@ -556,6 +558,7 @@ func lastLiteralCandidate(cands []portstyle.Candidate) (portstyle.Candidate, boo
 // a Portfile means.
 func probeCarrier(ctx context.Context, h port.Handle, src []byte, span text.Span, target, current string) error {
 	probed, err := edit.Apply(src, []edit.Edit{{
+		Kind:  edit.Version,
 		Start: span.Start, End: span.End,
 		Old: span.Text(src), New: target, Reason: "version",
 	}})

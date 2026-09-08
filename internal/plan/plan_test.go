@@ -136,3 +136,37 @@ func TestMaterialize(t *testing.T) {
 		})
 	}
 }
+
+// A finding rides on the plan as plan's own shape, and the two facts
+// the note adds — when it was made part of a change, and what anyone
+// answered — are not here to be forgotten: they are stamped at mint.
+func TestAFindingRidesAsPlansOwnShape(t *testing.T) {
+	p := &Plan{
+		Format: Format,
+		Intent: "bump",
+		Findings: []Finding{{
+			Kind:        "instruction-comment",
+			Ports:       []string{"ffmpeg"},
+			Candidates:  []Candidate{{Port: "mpv", Reason: "named by the instruction comment"}},
+			Source:      "multimedia/ffmpeg/Portfile",
+			Quote:       "# Please revbump mpv whenever ffmpeg is updated",
+			Disposition: Proposed,
+		}},
+	}
+	var buf bytes.Buffer
+	require.NoError(t, p.Encode(&buf, exitcode.Of(exitcode.OK, "")))
+	out := buf.String()
+	assert.Contains(t, out, `"kind": "instruction-comment"`)
+	assert.Contains(t, out, `"port": "mpv"`)
+	assert.Contains(t, out, `"disposition": "proposed"`)
+}
+
+// Absent rather than null, on Riders' precedent: a plan that found
+// nothing omits the key rather than writing an empty list a consumer
+// iterating it has to guard.
+func TestAPlanWithNoFindingsOmitsTheKey(t *testing.T) {
+	p := &Plan{Format: Format, Intent: "bump"}
+	var buf bytes.Buffer
+	require.NoError(t, p.Encode(&buf, exitcode.Of(exitcode.OK, "")))
+	assert.NotContains(t, buf.String(), `"findings"`)
+}

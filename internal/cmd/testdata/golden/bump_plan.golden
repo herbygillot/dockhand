@@ -10,6 +10,7 @@ exit: 0
     "portfile_sha256": "5ea1d1c7c8464d9ef6f0983922cdf42501e39f6119264957a4177ac27a61553a",
     "edits": [
       {
+        "kind": 1,
         "start": 205,
         "end": 208,
         "old": "1.0",
@@ -17,6 +18,7 @@ exit: 0
         "reason": "version"
       },
       {
+        "kind": 2,
         "start": 229,
         "end": 230,
         "old": "2",
@@ -24,6 +26,7 @@ exit: 0
         "reason": "revision reset"
       },
       {
+        "kind": 5,
         "start": 629,
         "end": 669,
         "old": "ff1036f20a7520e2b181a0f67fcbd2a81fca0cd2",
@@ -31,6 +34,7 @@ exit: 0
         "reason": "checksum rmd160"
       },
       {
+        "kind": 5,
         "start": 700,
         "end": 764,
         "old": "f7d385b84fa1af5096571443b1c0aa3f07e399c512d9d1d318871cf702be922c",
@@ -38,6 +42,7 @@ exit: 0
         "reason": "checksum sha256"
       },
       {
+        "kind": 5,
         "start": 795,
         "end": 798,
         "old": "175",

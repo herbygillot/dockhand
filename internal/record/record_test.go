@@ -3,303 +3,122 @@ package record
 import (
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHeadlineIsTheFirstSubject(t *testing.T) {
-	r := Record{Subjects: []Subject{
-		{Port: "libwidget", Target: "3.0"},
-		{Port: "widget-tools", Target: "rev2"},
-	}}
-	assert.Equal(t, "libwidget", r.Headline().Port)
-	assert.Equal(t, "3.0", r.Headline().Target)
+// allChangeStates is every value of the enum, so the predicates below
+// are tested over the whole set rather than over the ones that happened
+// to come to mind. A state added without a line here fails the count.
+var allChangeStates = []ChangeState{
+	ChangeMinted, ChangeExtended,
+	ChangeSuperseded, ChangeDiscarded, ChangePublished, ChangeAbandoned,
 }
 
-func TestHeadlineOfARecordWithNoSubjects(t *testing.T) {
-	// The zero Subject names no port, which is the same answer an empty
-	// record gives everywhere else.
-	assert.Equal(t, Subject{}, Record{}.Headline())
-}
-
-func TestPortsKeepBuildOrder(t *testing.T) {
-	// Not sorted: the order is the order a cohort must be built in, and
-	// Ports[0] is the headline.
-	r := Record{Subjects: []Subject{{Port: "libwidget"}, {Port: "widget-tools"}, {Port: "aardvark"}}}
-	assert.Equal(t, []string{"libwidget", "widget-tools", "aardvark"}, r.Ports())
-	assert.Empty(t, Record{}.Ports())
-}
-
-func TestPortdirsAreStageable(t *testing.T) {
-	// This projection feeds staging, so it drops the empties and the
-	// repeats: staging one directory twice is at best wasted work, and
-	// staging "" is not a thing to do at all.
-	r := Record{Subjects: []Subject{
-		{Port: "libwidget", Portdir: "devel/libwidget"},
-		{Port: "libwidget-tools", Portdir: "devel/libwidget"},
-		{Port: "aardvark"},
-		{Port: "zebra", Portdir: "science/zebra"},
-	}}
-	assert.Equal(t, []string{"devel/libwidget", "science/zebra"}, r.Portdirs())
-	assert.Empty(t, Record{}.Portdirs())
-}
-
-func TestPlatformsProjectTheJobsAndNotTheRuns(t *testing.T) {
-	// Three subjects on two platforms is two environments. Reading the
-	// run keys would answer six, with the wrong words in them.
-	r := Record{
-		Jobs: map[string]JobRecord{
-			"Testos":    {Job: verify.Job{ID: "fake-1"}},
-			"Ancientos": {Job: verify.Job{ID: "fake-2"}},
-		},
-		Runs: map[string]Run{
-			RunKey("jq", "Testos"):           {State: Passed, Platform: "Testos"},
-			RunKey("oniguruma", "Testos"):    {State: Passed, Platform: "Testos"},
-			RunKey("jq", "Ancientos"):        {State: Unsupported, Platform: "Ancientos"},
-			RunKey("oniguruma", "Ancientos"): {State: Unsupported, Platform: "Ancientos"},
-		},
+func TestTwoOpenStatesAndFourClosed(t *testing.T) {
+	// R23 closed the window between the record and its ref, so there is
+	// no Prepared and no Extending: a state reachable only by dying is
+	// not a state. The count is asserted because Closed()'s whole reason
+	// for being a method is that adding a state is a visit here.
+	assert.Len(t, allChangeStates, 6)
+	open, closed := 0, 0
+	for _, s := range allChangeStates {
+		if s.Closed() {
+			closed++
+		} else {
+			open++
+		}
 	}
-	assert.Equal(t, []string{"Ancientos", "Testos"}, r.Platforms(), "sorted for stable rendering")
+	assert.Equal(t, 2, open)
+	assert.Equal(t, 4, closed)
 }
 
-func TestPlatformsOfAnEmptyRecord(t *testing.T) {
-	assert.Empty(t, Record{}.Platforms())
+func TestClosedNamesTheFourEndStates(t *testing.T) {
+	assert.False(t, ChangeMinted.Closed())
+	assert.False(t, ChangeExtended.Closed())
+	assert.True(t, ChangeSuperseded.Closed())
+	assert.True(t, ChangeDiscarded.Closed())
+	assert.True(t, ChangePublished.Closed())
+	assert.True(t, ChangeAbandoned.Closed())
 }
 
-func TestAnyState(t *testing.T) {
-	r := Record{Runs: map[string]Run{
-		RunKey("jq", "Testos"): {State: Passed},
-		RunKey("jq", "Oldos"):  {State: Blocked},
-	}}
-	assert.True(t, r.AnyState(Passed))
-	assert.True(t, r.AnyState(Blocked))
-	assert.False(t, r.AnyState(Failed))
-	assert.False(t, Record{}.AnyState(Passed), "a record with no runs is in no state")
+func TestChangeAbandonedIsClosedSoCompactCanDropIt(t *testing.T) {
+	// The reason the state exists: a minted change whose verification
+	// failed would otherwise stay ChangeMinted forever, Closed() false,
+	// and hold a budget slot for the life of the repository.
+	assert.True(t, Change{State: ChangeAbandoned}.State.Closed())
+	assert.False(t, Change{State: ChangeAbandoned}.Bound())
 }
 
-func TestPromotable(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		runs map[string]Run
-		want bool
-	}{
-		{"a single pass", map[string]Run{RunKey("jq", "Testos"): {State: Passed}}, true},
-		{"a pass beside a port that declines the platform", map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Unsupported}}, true},
-		{"a pass beside a dependency that blocked the test", map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Blocked}}, true},
-		{"a pass beside a run still going", map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Running}}, true},
-		{"a pass beside a run still being submitted", map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("jq", "Oldos"): {State: Submitting}}, true},
-		{"one member of the cohort failed, which is the question review asks", map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Failed}}, false},
-		{"nothing passed yet", map[string]Run{RunKey("jq", "Testos"): {State: Running}}, false},
-		{"the machine could not answer", map[string]Run{RunKey("jq", "Testos"): {State: Errored}}, false},
-		{"no runs at all", nil, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, Record{Runs: tc.runs}.Promotable())
-		})
+func TestAnUnknownStateIsNotClosed(t *testing.T) {
+	// The zero value is not one of the six words. It reads as open,
+	// which is the answer that keeps Compact's hands off a record
+	// nothing can classify.
+	assert.False(t, ChangeState("").Closed())
+	assert.False(t, ChangeState("prepared").Closed())
+}
+
+func TestBoundIsTheOnePredicateForARecordsClaimOnItsName(t *testing.T) {
+	// The two ways a record gives its name up, and nothing else.
+	assert.True(t, Change{State: ChangeMinted}.Bound())
+	assert.True(t, Change{State: ChangeExtended}.Bound())
+	assert.False(t, Change{State: ChangePublished}.Bound(),
+		"a closed record's name is free")
+	assert.False(t, Change{State: ChangeMinted, SupersededBy: "dockhand/jq-1.9"}.Bound(),
+		"a superseded record gives the name up while its publication stays open")
+}
+
+func TestBoundIsNotAffectedByTheBranchFieldBeingSet(t *testing.T) {
+	// Branch is never cleared: a closed record still says which name it
+	// HAD, so `status` can report "was dockhand/jq-1.8, deleted". The
+	// release of the name is Bound() and not an empty field.
+	c := Change{State: ChangeDiscarded, Branch: "dockhand/jq-1.8"}
+	assert.False(t, c.Bound())
+	assert.Equal(t, "dockhand/jq-1.8", c.Branch)
+}
+
+func TestOnlyLeavingStableWarns(t *testing.T) {
+	assert.True(t, StableToPrerelease.Warns())
+	assert.False(t, StableToStable.Warns())
+	assert.False(t, PrereleaseLateral.Warns())
+	assert.False(t, PrereleaseToStable.Warns())
+	assert.False(t, CrossingUnknown.Warns())
+}
+
+func TestTheMachineIsHeldByLeavingStableAndByNotKnowing(t *testing.T) {
+	// The whole of the prerelease condition (ruled 2026-09-06): a change
+	// is born held when it takes its port OUT of stable, and not
+	// otherwise. PrereleaseLateral is the D28 case — amber-lang's only
+	// available update, which the shipped target test withheld.
+	assert.False(t, StableToStable.WithholdsUnattended())
+	assert.False(t, PrereleaseLateral.WithholdsUnattended())
+	assert.False(t, PrereleaseToStable.WithholdsUnattended())
+	assert.True(t, StableToPrerelease.WithholdsUnattended())
+	// Rule 7: "I could not compare" is not "it did not leave stable".
+	assert.True(t, CrossingUnknown.WithholdsUnattended())
+	assert.Equal(t, CrossingUnknown, Crossing(""), "the unknown crossing is the zero value")
+}
+
+func TestAPersonsHoldWithholdsVerificationAndACrossingsDoesNot(t *testing.T) {
+	// cli_spec flow 10: bump on a prerelease SUBMITS — the hold is on
+	// publication, not on the build.
+	assert.True(t, HoldPerson.WithholdsVerification())
+	assert.False(t, HoldCrossing.WithholdsVerification())
+}
+
+func TestTheUnknownHoldOriginIsRefused(t *testing.T) {
+	// A hold record nobody stamped an origin on is a wiring gap, and a
+	// machine must not publish, build or delete past a gap.
+	assert.Equal(t, HoldUnknown, HoldOrigin(""))
+	assert.True(t, HoldUnknown.WithholdsVerification())
+	assert.True(t, HoldUnknown.WithholdsUnattended())
+	// A hold value built without its origin reads as the refused zero
+	// rather than as a crossing's narrow hold.
+	h := Hold{Reason: "waiting on upstream"}
+	assert.True(t, h.Origin.WithholdsVerification())
+}
+
+func TestNoHoldOriginPermitsAnUnattendedAct(t *testing.T) {
+	for _, o := range []HoldOrigin{HoldUnknown, HoldPerson, HoldCrossing} {
+		assert.True(t, o.WithholdsUnattended(), "origin %q", o)
 	}
-}
-
-// The gate asks after every member and not only after the run map. A
-// cohort reaches shapes one subject cannot — a pass beside a member
-// nothing ever built — and the run arithmetic reads those as
-// promotable, which publishes a port on evidence that does not exist.
-//
-// What it asks of a DEPENDENT changed on 2026-09-04: the dependents are
-// best effort and do not gate on their outcome, only on having reached
-// one. A dependent that failed, was blocked, or errored is published
-// over and named on stderr and in the body; a dependent still building,
-// or with no run at all, is still a hole and still blocks. The headline
-// is unchanged and is not best effort.
-func TestPromotableAnswersForEverySubject(t *testing.T) {
-	cohort := []Subject{{Port: "jq"}, {Port: "oniguruma"}}
-	for _, tc := range []struct {
-		name     string
-		subjects []Subject
-		runs     map[string]Run
-		want     bool
-	}{
-		{"both members passed", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Passed}}, true},
-		// Best effort: these reached an outcome, and the outcome does
-		// not gate. Each is stated to the author before the pull request
-		// exists and to the reviewer in its body.
-		{"a dependent blocked by a stranger", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Blocked}}, true},
-		// Errored is the machine's silence, and canceled is a person's
-		// "no": neither says anything about the port, so neither settles
-		// it (ruled 2026-09-04, and the argument is the ruling's own — a
-		// dependent's build is a fact about the dependent, and these are
-		// not).
-		{"a dependent the guest said nothing about", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Errored}}, false},
-		{"a dependent somebody canceled", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Canceled}}, false},
-		{"a dependent that failed", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Failed}}, true},
-		// And these did not reach one. No outcome is not a best-effort
-		// outcome: the guest is still mid-way through answering, or
-		// nobody ever asked.
-		{"a dependent still queued", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Queued}}, false},
-		{"a dependent still running", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Running}}, false},
-		{"a dependent with no run at all", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}}, false},
-		// The headline is the change, and none of the above applies.
-		{"the headline failed", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Failed}, RunKey("oniguruma", "Testos"): {State: Passed}}, false},
-		// A port that declined every platform it was asked about has
-		// said the change is right about it, which is the unsupported
-		// rule read per member.
-		{"a member that declines every platform", cohort, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Unsupported}}, true},
-		{"a member proven on one platform and declining the other", cohort, map[string]Run{
-			RunKey("jq", "Testos"):        {State: Passed},
-			RunKey("oniguruma", "Testos"): {State: Unsupported},
-			RunKey("oniguruma", "Oldos"):  {State: Passed}}, true},
-		// The map hands its keys over in no order, so a member's pass
-		// must be found whichever run is met first.
-		{"a member proven on one platform and canceled on the other", cohort, map[string]Run{
-			RunKey("jq", "Testos"):        {State: Passed},
-			RunKey("oniguruma", "Testos"): {State: Passed},
-			RunKey("oniguruma", "Oldos"):  {State: Canceled}}, true},
-		// A note naming no subjects is answered by the runs alone: it
-		// was written by something that does not name them, and a roster
-		// guessed out of the keys would be a guess that blocks.
-		{"a record that names no subjects", nil, map[string]Run{
-			RunKey("jq", "Testos"): {State: Passed}, RunKey("oniguruma", "Testos"): {State: Blocked}}, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, Record{Subjects: tc.subjects, Runs: tc.runs}.Promotable())
-		})
-	}
-}
-
-// A cohort that holds two ports MacPorts will not activate together
-// builds one of them and bumps both. If the held-back member counted as
-// unanswered, the change could never be published — and since most
-// cohorts hold such a pair, the gate would refuse nearly everything,
-// which protects nothing.
-func TestAWithheldMemberDoesNotBlockPromotion(t *testing.T) {
-	r := Record{
-		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl"}, {Port: "gegl-devel"}},
-		Runs: map[string]Run{
-			RunKey("libraw", "Testos"):     {State: Passed, Platform: "Testos"},
-			RunKey("gegl", "Testos"):       {State: Passed, Platform: "Testos"},
-			RunKey("gegl-devel", "Testos"): {State: Withheld, Platform: "Testos"},
-		},
-	}
-	assert.True(t, r.Promotable(),
-		"a member held back from one guest is answered for, not unanswered")
-}
-
-// What it must not do is paper over a member nobody has an answer for.
-// Withheld says dockhand chose not to ask; queued says nobody has asked
-// yet, and that is still a change with a hole in it.
-func TestWithheldDoesNotExcuseAnUnansweredMember(t *testing.T) {
-	r := Record{
-		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl-devel"}, {Port: "gthumb"}},
-		Runs: map[string]Run{
-			RunKey("libraw", "Testos"):     {State: Passed, Platform: "Testos"},
-			RunKey("gegl-devel", "Testos"): {State: Withheld, Platform: "Testos"},
-			RunKey("gthumb", "Testos"):     {State: Queued, Platform: "Testos"},
-		},
-	}
-	assert.False(t, r.Promotable(), "gthumb has no verdict, and withholding a sibling does not give it one")
-}
-
-// A dependent that failed does not block: its revision is owed because
-// the library it links moved, and whether it builds today is usually a
-// fact about the dependent. gthumb was already broken on the platform
-// when this was measured, and a gate that held the change for it would
-// make a cohort hostage to the least maintained port in it.
-func TestAFailedDependentDoesNotBlockPromotion(t *testing.T) {
-	r := Record{
-		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl-devel"}, {Port: "gthumb"}},
-		Runs: map[string]Run{
-			RunKey("libraw", "Testos"):     {State: Passed, Platform: "Testos"},
-			RunKey("gegl-devel", "Testos"): {State: Withheld, Platform: "Testos"},
-			RunKey("gthumb", "Testos"):     {State: Failed, Platform: "Testos"},
-		},
-	}
-	assert.True(t, r.Promotable(), "the dependents are best effort; the body says which did not pass")
-}
-
-// The headline is not best effort. It is the change.
-func TestAFailedHeadlineStillBlocks(t *testing.T) {
-	r := Record{
-		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl"}},
-		Runs: map[string]Run{
-			RunKey("libraw", "Testos"): {State: Failed, Platform: "Testos"},
-			RunKey("gegl", "Testos"):   {State: Passed, Platform: "Testos"},
-		},
-	}
-	assert.False(t, r.Promotable(), "a dependent passing does not answer for the port that broke")
-}
-
-// Best effort is about outcomes, not about waiting. A dependent still
-// building has no outcome at all, and publishing over it would put a
-// body in front of a reviewer that its own guest is mid-way through
-// disproving.
-func TestADependentStillBuildingBlocks(t *testing.T) {
-	r := Record{
-		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl"}},
-		Runs: map[string]Run{
-			RunKey("libraw", "Testos"): {State: Passed, Platform: "Testos"},
-			RunKey("gegl", "Testos"):   {State: Running, Platform: "Testos"},
-		},
-	}
-	assert.False(t, r.Promotable(), "no outcome is not a best-effort outcome")
-}
-
-// UnprovenMembers is the one reading behind two outputs — the lines the
-// author is shown at promote time, and the count the audit row carries
-// — so they cannot disagree. The headline is never listed: it gates, so
-// a promotion that got this far has a pass for it.
-func TestUnprovenMembersNamesTheDependentsWithoutAPass(t *testing.T) {
-	r := Record{
-		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl"}, {Port: "gegl-devel"}, {Port: "gthumb"}, {Port: "geeqie"}},
-		Runs: map[string]Run{
-			RunKey("libraw", "Testos"):     {State: Passed},
-			RunKey("gegl", "Testos"):       {State: Passed},
-			RunKey("gegl-devel", "Testos"): {State: Withheld},
-			RunKey("gthumb", "Testos"):     {State: Failed},
-			RunKey("geeqie", "Testos"):     {State: Unsupported},
-		},
-	}
-	assert.Equal(t, []string{"gegl-devel", "gthumb"}, r.UnprovenMembers(),
-		"withheld and failed were published without a pass; unsupported is the port's own answer; the headline is never listed")
-	assert.True(t, r.Promotable(), "and the change still publishes — which is the whole reason the count exists")
-}
-
-// A member a person forced into the build — seated last, with the
-// sibling it conflicts with deactivated first (the D24 override, ruled
-// 2026-09-05 pending the maintainer) — is judged like any built
-// dependent, and the gate reads it that way: its pass proves it, and
-// its failure is published over as best effort and named by the audit.
-// Forced changes nothing about the gate; it says what environment the
-// answer was earned in, and that is the body's to state.
-func TestAForcedMemberIsGatedLikeAnyBuiltDependent(t *testing.T) {
-	r := Record{
-		Subjects: []Subject{{Port: "libraw"}, {Port: "gegl"}, {Port: "gegl-devel"}},
-		Runs: map[string]Run{
-			RunKey("libraw", "Testos"):     {State: Passed, Platform: "Testos"},
-			RunKey("gegl", "Testos"):       {State: Passed, Platform: "Testos"},
-			RunKey("gegl-devel", "Testos"): {State: Passed, Platform: "Testos", Forced: "gegl"},
-		},
-	}
-	assert.True(t, r.Promotable())
-	assert.Empty(t, r.UnprovenMembers(), "a forced member that passed has a pass; nothing was published without one")
-
-	failed := r.Runs[RunKey("gegl-devel", "Testos")]
-	failed.State = Failed
-	r.Runs[RunKey("gegl-devel", "Testos")] = failed
-	assert.True(t, r.Promotable(), "a dependent that failed does not block, forced or not")
-	assert.Equal(t, []string{"gegl-devel"}, r.UnprovenMembers(),
-		"and the audit names it, because the bump was published without a pass")
 }

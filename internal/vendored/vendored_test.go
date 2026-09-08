@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
@@ -113,10 +114,13 @@ func TestValidateBlockRejectsOutputOfTheWrongKind(t *testing.T) {
 func TestEditReplacesTheLocatedSpan(t *testing.T) {
 	span, err := locate(t, cargoPortfile, CargoCrates)
 	require.NoError(t, err)
-	edit := Edit([]byte(cargoPortfile), span, []byte("cargo.crates \\\n    libc 0.2.156 a5f43f1"), CargoCrates)
-	assert.Equal(t, span.Start, edit.Start)
-	assert.Equal(t, span.End, edit.End)
-	assert.Contains(t, edit.Old, "aho-corasick")
-	assert.Contains(t, edit.New, "libc")
-	assert.Equal(t, "regenerate cargo.crates", edit.Reason)
+	e := Edit([]byte(cargoPortfile), span, []byte("cargo.crates \\\n    libc 0.2.156 a5f43f1"), CargoCrates)
+	assert.Equal(t, span.Start, e.Start)
+	assert.Equal(t, span.End, e.End)
+	assert.Contains(t, e.Old, "aho-corasick")
+	assert.Contains(t, e.New, "libc")
+	assert.Equal(t, "regenerate cargo.crates", e.Reason)
+	// The span came from Locate, which is the whole of VendoredBlock's
+	// contract: one named Tcl command, refused on zero or several.
+	assert.Equal(t, edit.VendoredBlock, e.Kind)
 }

@@ -12,13 +12,16 @@ import (
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
-// reasonDistfileName marks the replacements that rename a distfile
-// inside a checksums block. They are optional, and the only optional
-// kind: a block may spell its distfile with substitutions —
-// ${name}-${version}${extract.suffix} is the common form — in which
-// case the version edit has already renamed it and there is no literal
-// to rewrite. The shadow evaluation the new names came from is the
-// proof that it re-derived correctly.
+// reasonDistfileName is the sentence a reader sees beside a replacement
+// that renames a distfile inside a checksums block. What such a
+// replacement IS travels as edit.DistfileName; this is prose and
+// nothing decides from it.
+//
+// They are optional, and the only optional one: a block may spell its
+// distfile with substitutions — ${name}-${version}${extract.suffix} is
+// the common form — in which case the version edit has already renamed
+// it and there is no literal to rewrite. The shadow evaluation the new
+// names came from is the proof that it re-derived correctly.
 const reasonDistfileName = "distfile name"
 
 // checksumEdits computes the edits bringing a checksums block to the
@@ -59,13 +62,14 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		}
 		seen[r.File] = true
 		reps = append(reps, checksums.Replacement{
-			Old: r.File, New: renamed[r.File], Reason: reasonDistfileName,
+			Kind: edit.DistfileName,
+			Old:  r.File, New: renamed[r.File], Reason: reasonDistfileName,
 		})
 	}
 
 	edits, unlocated, viaSet := rewrite.Edits(src, cst, portstyle.ScopeOf(src, contextName), contextName, reps)
 	for _, u := range unlocated {
-		if u.Reason == reasonDistfileName {
+		if u.Kind == edit.DistfileName {
 			slog.Debug("distfile name is not a literal; the version edit renames it",
 				"old", u.Old, "new", u.New)
 			continue

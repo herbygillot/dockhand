@@ -74,6 +74,7 @@ func Edits(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, cont
 					break
 				}
 				edits = append(edits, edit.Edit{
+					Kind:   rep.Kind,
 					Start:  w.Span.Start,
 					End:    w.Span.End,
 					Old:    lit,
@@ -163,8 +164,28 @@ func locateInSets(src []byte, cst *syntax.Script, scope func(syntax.Command) boo
 		if rep.New == rep.Old {
 			continue
 		}
-		edits = append(edits, edit.Edit{Start: chosen.start, End: chosen.end,
+		edits = append(edits, edit.Edit{Kind: setKind(rep.Kind),
+			Start: chosen.start, End: chosen.end,
 			Old: rep.Old, New: rep.New, Reason: rep.Reason})
 	}
 	return edits
+}
+
+// setKind is what a replacement BECOMES when it is located outside any
+// checksums command. A checksum placed in a `set` carrier is not the
+// same act as one rewritten where the block spells it: the carrier is
+// chosen by the aliasing heuristic above, and the caller then owes a
+// proof that no sibling context moved — which is the whole reason
+// edit.ChecksumSet is a kind of its own rather than a flag beside
+// edit.Checksum.
+//
+// Every other kind travels unchanged. A distfile name found in a set
+// carrier is still a distfile rename, and relabelling it as a checksum
+// would name it something it is not; nothing is lost by leaving it,
+// because the confined set admits neither.
+func setKind(k edit.Kind) edit.Kind {
+	if k == edit.Checksum {
+		return edit.ChecksumSet
+	}
+	return k
 }

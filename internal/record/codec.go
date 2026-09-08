@@ -6,10 +6,6 @@ import (
 	"fmt"
 )
 
-// Schema is the note format this build writes, and the only one it
-// reads. Encode stamps it; Decode refuses anything else.
-const Schema = 3
-
 // NotesRef names the notes namespace the refusals below tell a user to
 // clear. It repeats git.VerifyNotesRef because this package is a leaf
 // that must not reach the repository, and the messages are pinned to
@@ -31,14 +27,20 @@ var (
 	// refused rather than half-read, because a newer build may record
 	// state this one would act on wrongly.
 	ErrSchemaTooNew = errors.New("record: note is from a newer dockhand")
-	// ErrSchemaTooOld reports a note from before schema 3. There is no
-	// lift: the schema-3 record is a different shape, not a wider one,
-	// and the remedy is to discard the note and re-earn the evidence.
-	ErrSchemaTooOld = errors.New("record: note predates schema 3")
+	// ErrSchemaTooOld reports a note from before the current schema.
+	// There is no lift: the note is a different shape, not a wider one,
+	// and — because the note is a derived export of the state ref — the
+	// remedy is to discard it and regenerate rather than to migrate it.
+	ErrSchemaTooOld = errors.New("record: note predates this build's schema")
 	// ErrShaMismatch reports a note that names a commit other than the
 	// one it is attached to — the note was copied or mangled, and acting
 	// on it would release or promote against the wrong tip.
 	ErrShaMismatch = errors.New("record: note describes another commit")
+	// ErrMalformedRunKey reports run-map key bytes that are not a
+	// "port@platform" pair. It exists so the ONE place that reads the
+	// joined spelling back refuses what it cannot split, where the three
+	// hand-written scanners it replaces each answered "" and carried on.
+	ErrMalformedRunKey = errors.New("record: run key is not port@platform")
 )
 
 // refusal is one of the four, as a caller matches it and as a person
@@ -66,6 +68,42 @@ func refuse(kind, cause error, format string, a ...any) error {
 	return &refusal{kind: kind, cause: cause, msg: fmt.Sprintf(format, a...)}
 }
 
+// runKeySep separates a run key's two halves on the wire. The names
+// are joinable because neither can carry an "@" — a port name is
+// [A-Za-z0-9._+-] and a platform name is Apple's marketing word — so
+// the key is unambiguous without quoting or escaping.
+const runKeySep = '@'
+
+// MarshalText spells a RunKey as the "port@platform" bytes a JSON
+// object key must be. It exists because encoding/json will not use a
+// struct as a map key at all, and the alternative — keeping the joined
+// string as the Go type — is the struct-wearing-a-string's-clothes that
+// RunKey was made to end. The pair is the type; the join is the wire,
+// and it happens HERE and in Unmarshal below, which is one place rather
+// than the three hand-written scanners it replaces.
+func (k RunKey) MarshalText() ([]byte, error) {
+	out := make([]byte, 0, len(k.Port)+1+len(k.Platform))
+	out = append(out, k.Port...)
+	out = append(out, runKeySep)
+	out = append(out, k.Platform...)
+	return out, nil
+}
+
+// UnmarshalText reads the pair back, refusing bytes with no separator.
+// A key that names no platform is not a run this build can place, and
+// answering with a half-filled pair would put every unparseable key in
+// one bucket keyed by the empty platform — a collision the reader could
+// never see.
+func (k *RunKey) UnmarshalText(b []byte) error {
+	for i := 0; i < len(b); i++ {
+		if b[i] == runKeySep {
+			k.Port, k.Platform = string(b[:i]), string(b[i+1:])
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %q", ErrMalformedRunKey, string(b))
+}
+
 // Encode renders a record as the bytes a note holds: two-space indent,
 // no trailing newline, fields in declaration order, map keys sorted by
 // encoding/json, and HTML escaping left on, so a Detail carrying <, >
@@ -85,17 +123,17 @@ func Encode(r Record) ([]byte, error) {
 
 // Decode reads a note's bytes as the record for wantSha.
 //
-// Notes govern worker release and promotion, so they are validated
-// strictly rather than read hopefully. What is NOT refused is a key
-// this build does not know: encoding/json ignores it, and that is the
-// additive policy stated on purpose — a field appended by a later
-// build is read past by this one, and only a change to what an
-// existing key MEANS bumps the number.
+// The note is a derived export and the state ref is the authority, so a
+// note this build cannot read is cleared and regenerated rather than
+// lifted. What is NOT refused is a key this build does not know:
+// encoding/json ignores it, and that is deliberate for the NOTE alone —
+// the state documents get the opposite discipline, which is what
+// DocSchema is for.
 //
 // The schema is checked before the sha. A note from another schema is
 // unreadable whatever commit it names, and the remedy — remove it — is
-// the same either way; checking the sha first would answer a schema-2
-// note with a sentence about corruption.
+// the same either way; checking the sha first would answer an
+// older-schema note with a sentence about corruption.
 func Decode(b []byte, wantSha string) (Record, error) {
 	var r Record
 	if err := json.Unmarshal(b, &r); err != nil {
@@ -108,14 +146,13 @@ func Decode(b []byte, wantSha string) (Record, error) {
 			"note on %s was written by a newer dockhand (schema %d, this build speaks %d); upgrade dockhand",
 			wantSha, r.Schema, Schema)
 	}
-	// Anything older is refused outright, and the schema-1 lift that
-	// used to sit here is gone. Schema 3 keys its runs by subject and
-	// platform, splits the environment off from the verdict, and records
-	// the change at mint; an older note answers none of those questions,
-	// so a lift would have to invent the answers. The remedy is both
-	// halves of one sentence — discard what is there, then re-mint the
-	// evidence — because removing the note alone leaves a branch that
-	// looks unverified for a reason nobody can see.
+	// Anything older is refused outright, and there is no lift. Schema 4
+	// is a different shape and not a wider one: the change, the runs, the
+	// leases and the publication are four owned sections where the older
+	// note had one flat record, so a lift would have to invent the
+	// answers. It costs nothing to refuse, because the note is a
+	// projection — the state ref still holds what happened, and the
+	// export is rewritten from it.
 	if r.Schema < Schema {
 		return Record{}, refuse(ErrSchemaTooOld, nil,
 			"note on %s is schema %d and this build reads only %d — the old evidence cannot be carried over; "+

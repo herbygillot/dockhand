@@ -206,6 +206,11 @@ linters:
             # they left verify so the record can name a fact without importing
             # the provider that observed it.
             - github.com/herbygillot/dockhand/internal/artifact
+            # edit is the shared byte-span vocabulary and its typed Kind:
+            # a change's regions are what the machine-publication ruling
+            # is decided on, so the record must be able to name one
+            # without importing a planner that produced it.
+            - github.com/herbygillot/dockhand/internal/edit
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/git
@@ -235,6 +240,11 @@ linters:
             # they left verify so the record can name a fact without importing
             # the provider that observed it.
             - github.com/herbygillot/dockhand/internal/artifact
+            # edit is the shared byte-span vocabulary and its typed Kind:
+            # a change's regions are what the machine-publication ruling
+            # is decided on, so the record must be able to name one
+            # without importing a planner that produced it.
+            - github.com/herbygillot/dockhand/internal/edit
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: github.com/herbygillot/dockhand/internal/git

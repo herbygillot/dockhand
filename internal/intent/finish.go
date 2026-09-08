@@ -367,7 +367,8 @@ func ridersLanded(headline []edit.Edit, riders []Rider) []edit.Edit {
 		start := en.e.Start + shift
 		shift += len(en.e.New) - (en.e.End - en.e.Start)
 		if en.rider {
-			out = append(out, edit.Edit{Start: start, End: start + len(en.e.New), New: en.e.New})
+			out = append(out, edit.Edit{Kind: edit.Rider,
+				Start: start, End: start + len(en.e.New), New: en.e.New})
 		}
 	}
 	return out

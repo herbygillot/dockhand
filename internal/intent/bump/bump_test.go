@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -106,6 +107,21 @@ func TestBumpPlanEndToEnd(t *testing.T) {
 	assert.Equal(t, 1, reasons["checksum rmd160"])
 	assert.Equal(t, 1, reasons["checksum sha256"])
 	assert.Equal(t, 1, reasons["checksum size"])
+
+	// The same set, said in the vocabulary a machine reads. Reason is the
+	// sentence a person sees and nothing decides from it any more, so the
+	// kinds are asserted beside it rather than instead of it: a bump of
+	// this shape is exactly one version edit, one revision reset and the
+	// three checksums, and no edit anywhere in the plan may be
+	// Unclassified.
+	kinds := make(map[edit.Kind]int)
+	for _, e := range p.Edits {
+		require.NotEqual(t, edit.Unclassified, e.Kind, "edit %q left its kind unstamped", e.Reason)
+		kinds[e.Kind]++
+	}
+	assert.Equal(t, 1, kinds[edit.Version])
+	assert.Equal(t, 1, kinds[edit.RevisionReset])
+	assert.Equal(t, 3, kinds[edit.Checksum])
 
 	// The new sha256 must be of the NEW distfile. With a server that
 	// answered every path alike this assertion could not tell whether

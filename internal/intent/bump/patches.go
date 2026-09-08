@@ -16,7 +16,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/patch"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tool"
 )
 
@@ -149,9 +148,9 @@ func hunksMoved(n int) string {
 
 // FindingPatchesUnchecked is the kind of the finding a bump carries
 // when it fetched no distfile and so had nothing to check the port's
-// patches against. A constant because two packages spell it: this one
-// writes it, and render prints the plan's line from its own copy, tied
-// to this one by test.
+// patches against. A constant because it is a word two sides agree on:
+// this file writes it, and whatever prints a plan's findings selects a
+// sentence by it.
 const FindingPatchesUnchecked = "patches-unchecked"
 
 // patchesUnchecked is the sentence a plan carries about the patches it
@@ -162,21 +161,21 @@ const FindingPatchesUnchecked = "patches-unchecked"
 //
 // A statement, and not a proposal. It opens with its own verdict the
 // way the ABI check's "unavailable" does, so a renderer can print it
-// as it stands, and it carries record.Accepted for the same reason
-// that finding does: nothing here is a question, and a finding still
+// as it stands, and it carries plan.Accepted for the same reason that
+// finding does: nothing here is a question, and a finding still
 // proposed would hold an unattended publication for an answer nobody
 // can give. The count and not the names, because the names are the
 // Portfile's own patchfiles line and a port can carry dozens.
-func patchesUnchecked(port string, n int) record.Finding {
+func patchesUnchecked(port string, n int) plan.Finding {
 	noun := "patchfiles were"
 	if n == 1 {
 		noun = "patchfile was"
 	}
-	return record.Finding{
+	return plan.Finding{
 		Kind:  FindingPatchesUnchecked,
 		Ports: []string{port},
 		Criterion: fmt.Sprintf("patch check unavailable: %s's %d %s not checked against the new source because no distfile was fetched",
 			port, n, noun),
-		Disposition: record.Accepted,
+		Disposition: plan.Accepted,
 	}
 }

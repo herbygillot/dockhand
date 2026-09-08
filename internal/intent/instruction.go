@@ -6,7 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portnote"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/plan"
 )
 
 // The instruction-comment finding: a comment in the Portfile telling
@@ -56,9 +56,9 @@ const FindingInstruction = "instruction-comment"
 // direction — it says what triggers a bump of this port, not what to
 // bump with it — and a token the index already calls a dependent is a
 // port whatever the word list thinks of it.
-func instructionFindings(src []byte, portdir, port string, deps []string) []record.Finding {
+func instructionFindings(src []byte, portdir, port string, deps []string) []plan.Finding {
 	source := portfileSource(portdir)
-	var out []record.Finding
+	var out []plan.Finding
 	for _, note := range portnote.Instructions(src, deps) {
 		kept := make([]string, 0, len(note.Ports))
 		for _, n := range note.Ports {
@@ -82,7 +82,7 @@ func instructionFindings(src []byte, portdir, port string, deps []string) []reco
 			// nothing here for a cohort to weigh.
 			continue
 		}
-		f := record.Finding{
+		f := plan.Finding{
 			Kind:  FindingInstruction,
 			Ports: []string{port},
 			// Verbatim, and Criterion deliberately left empty: the
@@ -91,10 +91,10 @@ func instructionFindings(src []byte, portdir, port string, deps []string) []reco
 			// it to drift.
 			Source:      source,
 			Quote:       note.Quote,
-			Disposition: record.Proposed,
+			Disposition: plan.Proposed,
 		}
 		for _, n := range kept {
-			f.Candidates = append(f.Candidates, record.Candidate{
+			f.Candidates = append(f.Candidates, plan.Candidate{
 				Port: n, Reason: "named by the instruction comment in " + source})
 		}
 		out = append(out, f)

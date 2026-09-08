@@ -51,6 +51,7 @@ func toolchainMinEdit(ctx context.Context, tools *tool.Finder, src []byte, cst *
 	}
 	slog.Debug("go.toolchain_min moves", "declared", declared, "required", required)
 	return edit.Edit{
+		Kind:  edit.ToolchainMin,
 		Start: span.Start, End: span.End,
 		Old: declared, New: required, Reason: "go.toolchain_min",
 	}, true, nil

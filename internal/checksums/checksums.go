@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+
+	"github.com/herbygillot/dockhand/internal/edit"
 )
 
 // Sums is the checksum triple a Portfile's checksums option records.
@@ -104,7 +106,17 @@ var ErrUnresolved = errors.New("checksums: cannot resolve a new value")
 // Replacement is one literal inside a checksums block that must be
 // rewritten, with the reason it moved — provenance a plan carries
 // through to what a human reads.
+//
+// Kind is the same provenance for the machine, and it travels here
+// rather than being decided by whoever turns a replacement into an
+// edit: a checksums block carries hashes AND, where the block spells
+// them literally, the distfile names those hashes are recorded under,
+// and only the caller assembling the set knows which of the two a given
+// replacement is. checksums/rewrite locates literals and cannot tell
+// them apart without reading Reason, which is exactly the string-sniffing
+// the kind exists to end.
 type Replacement struct {
+	Kind   edit.Kind
 	Old    string
 	New    string
 	Reason string
@@ -131,7 +143,8 @@ func Replacements(recorded []Recorded, sums map[string]Sums) ([]Replacement, err
 		if !ok {
 			return nil, fmt.Errorf("%w: unknown type %s", ErrUnresolved, r.Type)
 		}
-		out = append(out, Replacement{Old: r.Value, New: value, Reason: "checksum " + r.Type})
+		out = append(out, Replacement{Kind: edit.Checksum,
+			Old: r.Value, New: value, Reason: "checksum " + r.Type})
 	}
 	return out, nil
 }

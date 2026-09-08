@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/info"
@@ -38,6 +39,10 @@ func TestPlanIncrementsTheRevision(t *testing.T) {
 	assert.Equal(t, "4", p.Edits[0].New)
 	assert.Contains(t, p.Edits[0].Reason, "openssl soname moved",
 		"the reason travels in the edit, into the plan and the eventual commit")
+	// And the kind travels beside it, which is the half a machine reads:
+	// the Reason here is a sentence the USER typed, so nothing can be
+	// recovered from it.
+	assert.Equal(t, edit.RevisionBump, p.Edits[0].Kind)
 	assert.Equal(t, "bump-revision", p.Intent)
 	assert.Nil(t, p.Riders)
 }
@@ -118,6 +123,11 @@ func TestInsertedRevisionRidesWithTheModeline(t *testing.T) {
 	assert.Equal(t, "modeline", p.Edits[0].Reason, "the insertion at offset 0 sorts first")
 	assert.Equal(t, "revision 1\n", p.Edits[1].New)
 	assert.Equal(t, []string{"modeline"}, p.Riders)
+	// An inserted revision line is still a revision bump, and the rider
+	// beside it is still housekeeping: sorting by offset mixed them, and
+	// the kinds are what tell them apart afterwards.
+	assert.Equal(t, edit.Rider, p.Edits[0].Kind)
+	assert.Equal(t, edit.RevisionBump, p.Edits[1].Kind)
 
 	bare, err := BumpRevision{Reason: "openssl soname moved", Riders: intent.RidersNone}.
 		Plan(context.Background(), h, nil)

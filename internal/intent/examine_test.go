@@ -76,6 +76,20 @@ func TestExamineReadsTheWholeLeadingCommentBlockForAModeline(t *testing.T) {
 	}
 }
 
+// Every rider the sweep offers says what it is. Housekeeping is the one
+// thing a rule can produce — proved inert, never proved right — and the
+// permitted set for an unattended publication does not contain it, so a
+// rider that arrived Unclassified and a rider that arrived stamped would
+// be judged the same today and differently the moment a kind is added.
+func TestRidersAreStampedAsRiders(t *testing.T) {
+	src, cst := parsed(t, "# an ordinary note\nPortSystem 1.0\nname x\n")
+	riders := Riders(src, cst)
+	require.NotEmpty(t, riders)
+	for _, r := range riders {
+		assert.Equal(t, edit.Rider, r.Edit.Kind, string(r.Rule))
+	}
+}
+
 // A rule dropped for failing the first proof is a fact the sweep
 // reports, because "no rule had anything to offer" and "a rule offered
 // something and it was suppressed" are two different answers and the

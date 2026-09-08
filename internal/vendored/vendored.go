@@ -182,6 +182,7 @@ func ValidateBlock(out []byte, k Kind) ([]byte, error) {
 // package still never interprets what a block holds.
 func Edit(src []byte, span text.Span, block []byte, k Kind) edit.Edit {
 	return edit.Edit{
+		Kind:   edit.VendoredBlock,
 		Start:  span.Start,
 		End:    span.End,
 		Old:    span.Text(src),

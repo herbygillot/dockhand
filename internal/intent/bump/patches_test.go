@@ -18,8 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/plan"
-	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/render"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/tool"
 )
@@ -307,8 +305,7 @@ patchfiles patch-foo.diff patch-bar.diff
 	assert.Equal(t, FindingPatchesUnchecked, f.Kind)
 	assert.Equal(t, []string{"unfetched"}, f.Ports)
 	assert.Equal(t, "patch check unavailable: unfetched's 2 patchfiles were not checked against the new source because no distfile was fetched", f.Criterion)
-	assert.Equal(t, record.Accepted, f.Disposition, "a statement, not a question")
-	assert.True(t, f.At.IsZero(), "the stamp is the realizer's, at mint")
+	assert.Equal(t, plan.Accepted, f.Disposition, "a statement, not a question")
 }
 
 // The sentence counts, and agrees with itself about one.
@@ -317,10 +314,4 @@ func TestPatchesUnchecked(t *testing.T) {
 		patchesUnchecked("foo", 1).Criterion)
 	assert.Equal(t, "patch check unavailable: foo's 2 patchfiles were not checked against the new source because no distfile was fetched",
 		patchesUnchecked("foo", 2).Criterion)
-}
-
-// render prints the plan's line from its own spelling of the kind, so
-// the two spellings must be one word.
-func TestPatchesUncheckedKindIsRendersOwn(t *testing.T) {
-	assert.Equal(t, render.KindPatchesUnchecked, FindingPatchesUnchecked)
 }

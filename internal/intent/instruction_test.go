@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/macports/info"
-	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/plan"
 )
 
 // The instruction-comment rule: what the finding says once the reading
@@ -117,17 +117,20 @@ func TestInstructionCommentQuotesTheShapesTheTreeWrites(t *testing.T) {
 			assert.Equal(t, FindingInstruction, f.Kind)
 			assert.Equal(t, []string{row.port}, f.Ports)
 			assert.Equal(t, "devel/"+row.port+"/Portfile", f.Source)
-			assert.Equal(t, record.Proposed, f.Disposition,
+			assert.Equal(t, plan.Proposed, f.Disposition,
 				"an instruction comment is a question, and the machine gate holds an unattended publication until it is answered")
 			assert.Equal(t, strings.TrimRight(row.src, "\n"), f.Quote,
 				"the quote is the whole comment block, byte for byte")
 			assert.Empty(t, f.Criterion,
 				"the criterion of this finding IS its quote; writing it into two keys would be two places for it to drift")
 
+			// A comment names candidates and proposes nobody, which is
+			// now the type's own statement: plan.Candidate carries a port
+			// and the reason it is named, and nothing that could put one
+			// forward.
 			var named []string
 			for _, c := range f.Candidates {
 				named = append(named, c.Port)
-				assert.False(t, c.Proposed, "a comment names candidates and proposes nobody")
 				assert.Contains(t, c.Reason, "devel/"+row.port+"/Portfile")
 			}
 			assert.Equal(t, row.ports, named)
