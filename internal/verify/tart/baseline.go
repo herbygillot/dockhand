@@ -132,7 +132,15 @@ func (p Provider) baseline(ctx context.Context, vm string, req verify.Request) e
 		// settle, because what it buys is the download this would spend.
 		return p.put(ctx, vm, baselineFile, verify.BaselineBanked+"\n")
 	case len(req.Baseline) == 0:
-		return decline("no merge-base portdir was staged, so there is nothing to install as the before")
+		// The caller's own account, where it has one. "No merge-base
+		// portdir was staged" is true and, on its own, a dead end: what
+		// went wrong happened before the request was built, on the other
+		// side of this seam. See verify.Request.BaselineNote.
+		why := "no merge-base portdir was staged, so there is nothing to install as the before"
+		if req.BaselineNote != "" {
+			why += ": " + oneLine(req.BaselineNote)
+		}
+		return decline(why)
 	}
 
 	if err := p.stage(ctx, vm, req.Baseline); err != nil {

@@ -347,7 +347,11 @@ func stamp(port string, r record.Run, e Evidence) record.Run {
 	r.Content = e.Spec.Content
 	r.At = e.At
 	if m, ok := e.Manifests[port]; ok {
-		r.Manifest, r.Baseline, r.BaselineSource = m.Candidate, m.Baseline, m.Source
+		// Reason travels with Source. Writing one without the other is
+		// what left "none" standing alone on the record with nothing to
+		// explain it — see record.Run.BaselineReason.
+		r.Manifest, r.Baseline = m.Candidate, m.Baseline
+		r.BaselineSource, r.BaselineReason = m.Source, m.Reason
 	}
 	if probes, ok := e.Probes[port]; ok {
 		r.Probes = probes

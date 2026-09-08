@@ -75,17 +75,23 @@ var ErrNothingToBuild = errors.New("run: every member is answered without a buil
 // a member that declined the platform is not in the request and a graph
 // drawn over the roster would name positions the guest does not have.
 func Plan(spec Spec, pre map[string]Preflight) (verify.Request, map[string]record.Run, error) {
-	return plan(spec, pre, nil)
+	return plan(spec, pre, nil, "")
 }
 
 // PlanWith is Plan with the baseline the stager materialized, which is
 // the input the ABI comparison exists to read and which nothing used to
 // supply.
-func PlanWith(spec Spec, pre map[string]Preflight, baseline []string) (verify.Request, map[string]record.Run, error) {
-	return plan(spec, pre, baseline)
+//
+// note is why there is no baseline when there is none — see
+// verify.Request.BaselineNote. It is a second parameter rather than a
+// sentinel inside the slice because an empty baseline and a FAILED
+// baseline are two facts, and the whole cost of this path was one being
+// read as the other.
+func PlanWith(spec Spec, pre map[string]Preflight, baseline []string, note string) (verify.Request, map[string]record.Run, error) {
+	return plan(spec, pre, baseline, note)
 }
 
-func plan(spec Spec, pre map[string]Preflight, baseline []string) (verify.Request, map[string]record.Run, error) {
+func plan(spec Spec, pre map[string]Preflight, baseline []string, note string) (verify.Request, map[string]record.Run, error) {
 	runs := make(map[string]record.Run, len(spec.Withheld)+len(spec.Roster))
 	for _, w := range spec.Withheld {
 		runs[w.Port] = record.Run{
@@ -145,8 +151,9 @@ func plan(spec Spec, pre map[string]Preflight, baseline []string) (verify.Reques
 		// walk of an installed port, inside a guest that has just spent
 		// ten to forty minutes building it, against a comparison that
 		// otherwise cannot run at all.
-		Manifest: true,
-		Baseline: baseline,
+		Manifest:     true,
+		Baseline:     baseline,
+		BaselineNote: note,
 	}
 	return req, runs, nil
 }

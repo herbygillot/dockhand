@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/artifact"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -319,4 +320,24 @@ func TestAPassIsNotAnnotatedWithAnUnreadPreflight(t *testing.T) {
 	got := Judge(e).Runs["jq"]
 	assert.Equal(t, record.Passed, got.State)
 	assert.NotContains(t, got.Detail, "known_fail")
+}
+
+// THE REASON TRAVELS WITH THE SOURCE. "none" alone is the shape of a
+// guess — a port that did not exist at the merge base, an archive never
+// published, a capture cut off, and a merge-base portdir that would not
+// stage are four facts with four remedies — and stamp wrote Source and
+// dropped Reason, so the record held the guess-shaped value that
+// run.Manifests.Reason's own doc forbids.
+func TestAVerdictRecordsWhyThereIsNoBaseline(t *testing.T) {
+	e := evidenceOf([]Member{member("jq")}, verify.Status{State: verify.Passed}, "built ok\n")
+	e.Manifests = map[string]Manifests{"jq": {
+		Candidate: &artifact.Manifest{Port: "jq", Version: "1.8"},
+		Source:    "none",
+		Reason:    "no merge-base portdir was staged, so there is nothing to install as the before",
+	}}
+
+	got := Judge(e).Runs["jq"]
+	assert.Equal(t, "none", got.BaselineSource)
+	assert.Equal(t, "no merge-base portdir was staged, so there is nothing to install as the before",
+		got.BaselineReason, "a source with no reason is a record that cannot be acted on")
 }

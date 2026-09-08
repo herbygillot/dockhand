@@ -171,6 +171,23 @@ type Run struct {
 	// reader that could not tell would report a stale baseline's age as
 	// this change's doing.
 	BaselineSource string `json:"baseline_source,omitempty"`
+	// BaselineReason is WHY there is no baseline, in the environment's own
+	// words, and empty when there is one.
+	//
+	// It rides beside BaselineSource because "none" alone is the shape of
+	// a guess: a port that did not exist at the merge base, an archive
+	// that was never published, a capture that was cut off and a
+	// merge-base portdir that would not stage are four facts with four
+	// remedies. run.Manifests.Reason says exactly that and has said it all
+	// along; what was missing was anywhere durable to put it, so
+	// judge.stamp wrote Source and dropped Reason on the floor.
+	//
+	// Measured: a real settlement recorded baseline_source "none" with
+	// nothing to explain it, the ABI comparison declined for want of a
+	// before, the cohort proposal declined on the ABI comparison, and no
+	// sentence anywhere said why — for a port whose maintainer comment
+	// asks in so many words for its dependents to be revbumped.
+	BaselineReason string `json:"baseline_reason,omitempty"`
 	// Links are the link-proof lines: which installed files bind to
 	// which library, in the words a reader can check. The provider
 	// gathers every install name mapped to its dependents, because the

@@ -362,8 +362,28 @@ func (s *stager) Baseline(ctx context.Context, sha string, subjects []record.Sub
 	s.keep = append(s.keep, drop)
 	out := make([]string, 0, len(subjects))
 	for _, sub := range subjects {
+		// A SUBJECT THAT WOULD NOT MATERIALIZE IS AN ERROR, not a `continue`.
+		//
+		// It was a continue, and that is the first of four places one
+		// baseline failure was swallowed on its way to nobody. An empty
+		// slice with a nil error is indistinguishable from "this change has
+		// no base", so run.Start proceeded, the provider declined for want
+		// of a before, the ABI comparison declined on the provider, the
+		// cohort declined on the comparison, and the record ended up
+		// holding baseline_source "none" with nothing to explain it.
+		//
+		// Measured on a real change whose merge-base portdir was present at
+		// the base commit the record names — so the staging failed for a
+		// reason that no longer exists anywhere, which is precisely what a
+		// swallowed error costs.
+		//
+		// The caller still treats a missing baseline as degradation rather
+		// than a fault (run.Start), which is the design: the comparison
+		// says "undescribed" and the build is still worth running. What
+		// changes is that it now degrades WITH A REASON.
 		if err := s.repo.Materialize(ctx, sha, sub.Portdir, dir); err != nil {
-			continue
+			return nil, fmt.Errorf("staging %s at %s for the baseline: %w",
+				sub.Portdir, git.Abbrev(sha), err)
 		}
 		out = append(out, filepath.Join(dir, filepath.FromSlash(sub.Portdir)))
 	}

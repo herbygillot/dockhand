@@ -150,10 +150,17 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 	// the comparison degrades to "undescribed", which is exactly what
 	// abi.Delta's Described flag exists to say.
 	baseline, berr := stage.Baseline(ctx, c.Base.Sha, c.Subjects)
+	var baselineNote string
 	if berr != nil {
-		baseline = nil
+		// STILL NOT A FAULT OF THIS ATTEMPT — the comparison degrades to
+		// "undescribed" and the build is worth running — but the reason
+		// travels now instead of being dropped. It was dropped, and the
+		// record then held baseline_source "none" with nothing to explain
+		// it while a cohort proposal declined three layers downstream on
+		// the strength of that nothing.
+		baseline, baselineNote = nil, berr.Error()
 	}
-	req, declined, err := PlanWith(spec, pre, baseline)
+	req, declined, err := PlanWith(spec, pre, baseline, baselineNote)
 	if errors.Is(err, ErrNothingToBuild) {
 		return declineOnly(ctx, st, a, declined, now)
 	}

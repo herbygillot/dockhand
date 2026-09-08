@@ -205,6 +205,24 @@ type Request struct {
 	// measurement asks. A provider that cannot take one says so by name
 	// rather than reporting an empty comparison.
 	Baseline []string
+	// BaselineNote is WHY the caller staged no baseline, in its own
+	// words, and empty when it staged one or when it simply had no base
+	// to stage from.
+	//
+	// It exists because "empty means take no baseline here" is three
+	// different facts and the provider can only see one of them. A change
+	// with no recorded base, a caller that holds a banked measurement,
+	// and a merge-base portdir that WOULD NOT STAGE all arrive as an
+	// empty slice — and the third is a fault whose explanation lives on
+	// the caller's side of the seam and nowhere else.
+	//
+	// Measured: a real settlement recorded baseline_source "none" and the
+	// provider's own honest sentence, "no merge-base portdir was staged,
+	// so there is nothing to install as the before" — which is true, and
+	// a dead end, because what went wrong happened before the request was
+	// built. The provider quotes this beside its own sentence so the
+	// record carries both halves.
+	BaselineNote string
 	// Banked says the caller already holds a measurement for this
 	// Portfile blob on this platform, so the environment must not spend
 	// a download taking one.

@@ -77,7 +77,7 @@ func TestProposeCohortProposesWhereTheInterfaceMoved(t *testing.T) {
 	e, j := passedEvidence(t)
 	lo := &local{rows: []portindex.Dependent{dependentRow("gdal")}}
 
-	f, ok, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	f, ok, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	require.True(t, ok, "an install name that moved is what a revbump rests on")
 	assert.Equal(t, record.KindABIDependents, f.Kind)
@@ -96,7 +96,7 @@ func TestProposeCohortDoesNothingForAHeadlineThatFailed(t *testing.T) {
 		"Error: Failed to build libwidget: boom\n")
 	lo := &local{rows: []portindex.Dependent{dependentRow("gdal")}}
 
-	_, ok, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, Judge(e))
+	_, ok, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, Judge(e))
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Empty(t, lo.asked, "the index is not even read")
@@ -110,7 +110,7 @@ func TestProposeCohortDoesNotReaskAnAnsweredProposal(t *testing.T) {
 	c := minted("chg-1")
 	c.Findings = []record.Finding{{Kind: record.KindABIDependents, Disposition: record.Dismissed}}
 
-	_, ok, err := proposeCohort(t.Context(), &local{rows: []portindex.Dependent{dependentRow("gdal")}},
+	_, ok, _, err := proposeCohort(t.Context(), &local{rows: []portindex.Dependent{dependentRow("gdal")}},
 		stateWith(nil, nil), c, settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	assert.False(t, ok)
@@ -123,7 +123,7 @@ func TestProposeCohortRefusesRatherThanConcludingNoDependents(t *testing.T) {
 	e, j := passedEvidence(t)
 	boom := errors.New("no PortIndex in this tree")
 
-	_, ok, err := proposeCohort(t.Context(), &local{err: boom}, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	_, ok, _, err := proposeCohort(t.Context(), &local{err: boom}, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
 	require.ErrorIs(t, err, boom)
 	assert.False(t, ok)
 }
@@ -133,7 +133,7 @@ func TestProposeCohortRefusesRatherThanConcludingNoDependents(t *testing.T) {
 // tree would be a record nobody reads.
 func TestProposeCohortSaysNothingWhereNothingDependsOnTheHeadline(t *testing.T) {
 	e, j := passedEvidence(t)
-	_, ok, err := proposeCohort(t.Context(), &local{}, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	_, ok, _, err := proposeCohort(t.Context(), &local{}, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
@@ -147,7 +147,7 @@ func TestProposeCohortExcludesADependentAnotherChangeIsAlreadyCarrying(t *testin
 	other := minted("chg-2")
 	other.Subjects = []record.Subject{{Port: "gdal"}}
 
-	f, ok, err := proposeCohort(t.Context(), &local{rows: []portindex.Dependent{dependentRow("gdal")}},
+	f, ok, _, err := proposeCohort(t.Context(), &local{rows: []portindex.Dependent{dependentRow("gdal")}},
 		stateWith([]record.Change{minted("chg-1"), other}, nil), minted("chg-1"), settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	assert.False(t, ok, "the one candidate is excluded, so there is nothing to put forward")
@@ -163,7 +163,7 @@ func TestProposeCohortExcludesTheMembersTheChangeAlreadyCarries(t *testing.T) {
 	c := minted("chg-1")
 	c.Subjects = []record.Subject{{Port: "libwidget"}, {Port: "gdal"}}
 
-	_, ok, err := proposeCohort(t.Context(), &local{rows: []portindex.Dependent{dependentRow("gdal")}},
+	_, ok, _, err := proposeCohort(t.Context(), &local{rows: []portindex.Dependent{dependentRow("gdal")}},
 		stateWith([]record.Change{c}, nil), c, settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	assert.False(t, ok)
@@ -189,7 +189,7 @@ func TestProposeCohortReadsTheCuesAtTheAttemptsCommit(t *testing.T) {
 	c := minted("chg-1")
 	c.Subjects = []record.Subject{{Port: "libwidget", Portdir: "devel/libwidget"}}
 
-	_, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), c, settledOn("libwidget"), e, j)
+	_, _, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), c, settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"cafe:devel/libwidget"}, lo.read,
 		"the attempt's sha and the change's own tree-relative portdir")
@@ -283,7 +283,7 @@ func TestProposeCohortSaysWhatItAskedForAndDidNotGet(t *testing.T) {
 	e.Unavailable = []string{"the environment was asked what it installed and could not answer: guest gone"}
 	lo := &local{rows: []portindex.Dependent{dependentRow("gdal")}, cueErr: errors.New("blob unreadable")}
 
-	f, ok, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	f, ok, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	require.True(t, ok, "the cues are an input and not a gate: the measurement still speaks")
 	assert.Contains(t, f.Criterion, "could not answer",
@@ -299,8 +299,52 @@ func TestProposeCohortAddsNoCaveatWhenNothingWasMissed(t *testing.T) {
 	e, j := passedEvidence(t)
 	lo := &local{rows: []portindex.Dependent{dependentRow("gdal")}}
 
-	f, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	f, _, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
 	require.NoError(t, err)
 	assert.NotContains(t, f.Criterion, "unaccounted for")
 	assert.NotContains(t, f.Criterion, "could not answer")
+}
+
+// A COHORT THAT DECLINED SAYS WHY, AND IT SAYS IT TO THE RECORD.
+// Cohort.Declined is composed carefully — it names the measurement that
+// refused and, when a maintainer's comment asks for a revbump anyway,
+// that the comment "is recorded as its own finding for a human to
+// weigh". Finding() returns false for a decline, so every one of those
+// sentences was built and dropped on the floor.
+//
+// Measured on a real change: a port whose comment asks in so many words
+// for its dependents to be revbumped settled with no proposal, no
+// reason, and an analysis phase of "finished" — and the person who went
+// looking could not find out from the record why.
+func TestProposeCohortReturnsWhyItProposedNothing(t *testing.T) {
+	// A pass with no baseline: the ABI comparison has no before, so the
+	// verdict is unavailable and the cohort declines on it. This is the
+	// exact shape the field produced.
+	e, _ := passedEvidence(t)
+	e.Manifests = map[string]Manifests{"libwidget": {
+		Candidate: manifest("1.1", "libwidget.3.dylib"),
+		Source:    "none",
+		Reason:    "no merge-base portdir was staged: staging devel/libwidget at abc123 for the baseline: boom",
+	}}
+	j := Judge(e)
+	lo := &local{rows: []portindex.Dependent{dependentRow("gdal")}}
+
+	f, ok, declined, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	require.NoError(t, err)
+	assert.False(t, ok, "no measurement, no proposal")
+	assert.Empty(t, f.Kind)
+	require.NotEmpty(t, declined, "the reason the cohort declined must not be dropped")
+	assert.Contains(t, declined, "ABI check unavailable")
+	assert.Contains(t, declined, "no merge-base portdir was staged",
+		"the environment's own account of the missing baseline reaches the sentence")
+}
+
+// AND A PORT NOTHING DEPENDS ON SAYS THAT, rather than returning an
+// empty-handed silence a reader cannot tell from a check that never ran.
+func TestProposeCohortSaysWhenNothingDependsOnTheHeadline(t *testing.T) {
+	e, j := passedEvidence(t)
+	_, ok, declined, err := proposeCohort(t.Context(), &local{}, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Contains(t, declined, "no port in the index declares a dependency on libwidget")
 }

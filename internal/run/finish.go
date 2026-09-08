@@ -165,7 +165,7 @@ func Finish(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ve
 	j := Judge(ev)
 
 	c := s0.Changes[string(cur.Change)]
-	finding, propose, perr := proposeCohort(ctx, local, s0, c, cur, ev, j)
+	finding, propose, declined, perr := proposeCohort(ctx, local, s0, c, cur, ev, j)
 	if perr != nil {
 		// A proposal that could not be made is not a finding of "no
 		// dependents" (rule 7), and it is not a reason to withhold a
@@ -203,7 +203,7 @@ func Finish(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ve
 		// from. It used to travel back as an advisory after the attempt
 		// was settled — and a later Finish returns immediately for a
 		// settled attempt, so the only retry was a person noticing a line.
-		settled.Analysis = analysisOf(perr, at)
+		settled.Analysis = analysisOf(perr, declined, at)
 		tx.PutAttempt(settled)
 		if propose {
 			return change.ProposeIn(tx, cur.Change, finding, at)
@@ -258,23 +258,23 @@ var ErrNoLease = errors.New("run: the attempt names a lease the store does not h
 // run a second time over the same dependents and ask a person a question
 // they have already answered — accepted by the commit that seated the
 // members, or dismissed by name.
-func proposeCohort(ctx context.Context, local Local, s statestore.State, c record.Change, a record.Attempt, ev Evidence, j Judgment) (record.Finding, bool, error) {
+func proposeCohort(ctx context.Context, local Local, s statestore.State, c record.Change, a record.Attempt, ev Evidence, j Judgment) (record.Finding, bool, string, error) {
 	if local == nil || len(ev.Spec.Roster) == 0 {
-		return record.Finding{}, false, nil
+		return record.Finding{}, false, "", nil
 	}
 	head := ev.Spec.Roster[0]
 	if j.Runs[head.Port].State != record.Passed || answered(c) {
-		return record.Finding{}, false, nil
+		return record.Finding{}, false, "", nil
 	}
 	rows, unread, err := local.Dependents(ctx, head.Port)
 	if err != nil {
 		// No index, or one that would not walk. Rule 7: no finding is not
 		// a finding of "no dependents", so nothing is recorded and the
 		// caller is told the check was unavailable.
-		return record.Finding{}, false, err
+		return record.Finding{}, false, "", err
 	}
 	if len(rows) == 0 {
-		return record.Finding{}, false, nil
+		return record.Finding{}, false, "no port in the index declares a dependency on " + head.Port, nil
 	}
 	m := ev.Manifests[head.Port]
 	delta := abi.Delta(abi.Input{
@@ -316,11 +316,25 @@ func proposeCohort(ctx context.Context, local Local, s statestore.State, c recor
 			" could not be read ("+ierr.Error()+"), so any port they name is unaccounted for here")
 	}
 	deps, short := dependents.From(rows, unread, inFlight(s, c.ID), carried(c))
-	f, ok := dependents.Propose(delta, quotes, deps, short, CohortCap).Finding()
+	cohort := dependents.Propose(delta, quotes, deps, short, CohortCap)
+	f, ok := cohort.Finding()
 	if ok {
 		f.Criterion = withUnavailable(f.Criterion, missed)
+		return f, true, "", nil
 	}
-	return f, ok, nil
+	// A COHORT THAT DECLINED SAYS WHY, and for the whole of the overhaul
+	// it said it to nobody. Cohort.Declined is composed carefully — it
+	// names the measurement that refused, the files it could not compare,
+	// and, when a maintainer's comment asks for a revbump anyway, that
+	// the comment "is recorded as its own finding for a human to weigh."
+	// Finding() returns false for a decline, so every one of those
+	// sentences was built and dropped on the floor.
+	//
+	// Measured on a real change: a port whose comment asks in so many
+	// words for its dependents to be revbumped settled with no proposal,
+	// no reason, and an analysis phase of "finished" — and the person who
+	// went looking could not find out from the record why.
+	return record.Finding{}, false, withUnavailable(cohort.Declined, missed), nil
 }
 
 // withUnavailable appends what this settlement asked for and did not get
@@ -422,9 +436,14 @@ func subjectDir(c record.Change, port string) string {
 // propose — is Finished; a refusal is Uncertain with the cause and a
 // backoff, which is the same shape Release and Step carry for the same
 // problem.
-func analysisOf(err error, at time.Time) *record.Analysis {
+func analysisOf(err error, declined string, at time.Time) *record.Analysis {
 	if err == nil {
-		return &record.Analysis{Phase: record.Finished, At: at.UTC()}
+		// A SUCCESS THAT CONCLUDED NOTHING SAYS WHAT IT CONCLUDED. The
+		// phase is Finished either way — nothing failed — but "finished"
+		// with an empty Detail is indistinguishable from "finished, and it
+		// proposed a cohort", and it was the only thing the record held
+		// about an analysis that declined.
+		return &record.Analysis{Phase: record.Finished, At: at.UTC(), Detail: declined}
 	}
 	until := at.UTC().Add(analysisBackoff(1))
 	return &record.Analysis{Phase: record.Uncertain, At: at.UTC(),
@@ -468,7 +487,7 @@ func Analyse(ctx context.Context, st *statestore.Store, local Local, a record.At
 		return ErrNoChange
 	}
 	ev, j := replay(a)
-	finding, propose, perr := proposeCohort(ctx, local, s0, c, a, ev, j)
+	finding, propose, declined, perr := proposeCohort(ctx, local, s0, c, a, ev, j)
 	at := now()
 	return st.Amend(ctx, func(tx *statestore.Txn) error {
 		cur, held := tx.State().Attempts[a.ID]
@@ -486,7 +505,10 @@ func Analyse(ctx context.Context, st *statestore.Store, local Local, a record.At
 			tx.PutAttempt(cur)
 			return nil
 		}
-		cur.Analysis = &record.Analysis{Phase: record.Finished, At: at.UTC(), Attempts: tries}
+		// The retry road records what it concluded for the same reason the
+		// settle road does: a finished analysis with nothing to show is
+		// two different outcomes wearing one value.
+		cur.Analysis = &record.Analysis{Phase: record.Finished, At: at.UTC(), Attempts: tries, Detail: declined}
 		tx.PutAttempt(cur)
 		if propose {
 			return change.ProposeIn(tx, cur.Change, finding, at)
