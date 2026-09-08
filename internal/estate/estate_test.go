@@ -61,10 +61,10 @@ func TestSweepRemovesWhatIsRemovableAndKeepsTheRest(t *testing.T) {
 		held("dockhand-golden-sequoia", verify.HeldReference),
 	})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"dockhand-worker-a", "dockhand-probe-1", "dockhand-base-sequoia"}, swept.Removed)
-	assert.Equal(t, []string{"dockhand-golden-sequoia"}, swept.Kept)
-	assert.Equal(t, []string{"dockhand-worker-a", "dockhand-probe-1", "dockhand-base-sequoia"}, f.Discarded,
-		"and the reference copy was never even offered to the provider")
+	assert.Equal(t, []string{"dockhand-worker-a", "dockhand-probe-1"}, swept.Removed)
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-golden-sequoia"}, swept.Kept)
+	assert.Equal(t, []string{"dockhand-worker-a", "dockhand-probe-1"}, f.Discarded,
+		"and neither image was even offered to the provider")
 }
 
 // The refusing zero at the boundary where the act is irreversible: a
@@ -92,10 +92,10 @@ func TestSweepTreatsAnAlreadyGoneHoldingAsGone(t *testing.T) {
 // policy, so it belongs in Kept beside the ones the policy withheld —
 // never in the failures.
 func TestSweepCountsAProvidersOwnRefusalAsKept(t *testing.T) {
-	f := &verifytest.Fake{DiscardErr: map[string]error{"dockhand-base-sequoia": verify.ErrKept}}
-	swept, err := Sweep(context.Background(), f, []verify.Holding{held("dockhand-base-sequoia", verify.HeldDerived)})
+	f := &verifytest.Fake{DiscardErr: map[string]error{"dockhand-worker-a": verify.ErrKept}}
+	swept, err := Sweep(context.Background(), f, []verify.Holding{held("dockhand-worker-a", verify.HeldWorker)})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"dockhand-base-sequoia"}, swept.Kept)
+	assert.Equal(t, []string{"dockhand-worker-a"}, swept.Kept)
 	assert.Empty(t, swept.Removed)
 }
 
@@ -137,11 +137,12 @@ func TestDivideConfinesAPurgeToItsOwnGuests(t *testing.T) {
 		held("dockhand-golden-sequoia", verify.HeldReference),
 	}, "/Users/me/ports")
 
-	assert.Equal(t, []string{"dockhand-worker-mine", "dockhand-probe-1", "dockhand-base-sequoia"},
-		Names(got.Remove), "this checkout's guest, and the machine's own ownerless resources")
+	assert.Equal(t, []string{"dockhand-worker-mine", "dockhand-probe-1"},
+		Names(got.Remove), "this checkout's guest, and a scratch clone nobody owns")
 	assert.Equal(t, []string{"dockhand-worker-theirs"}, Names(got.Theirs))
 	assert.Equal(t, []string{"dockhand-worker-nobodys"}, Names(got.Unowned))
-	assert.Equal(t, []string{"dockhand-golden-sequoia"}, Names(got.Reference))
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-golden-sequoia"}, Names(got.Images),
+		"the provider's installation, which is `provision tart --purge`'s and not a purge's")
 }
 
 // An empty Owner means two different things depending on the KIND, and
@@ -156,8 +157,8 @@ func TestAnEmptyOwnerIsAGapOnlyWhereAnOwnerCouldExist(t *testing.T) {
 
 	assert.Equal(t, []string{"dockhand-worker-a"}, Names(got.Unowned),
 		"a guest with no attribution is a missing fact and is left")
-	assert.Equal(t, []string{"dockhand-base-sequoia"}, Names(got.Remove),
-		"an image has no owner to miss and belongs to the machine")
+	assert.Equal(t, []string{"dockhand-base-sequoia"}, Names(got.Images),
+		"an image is the provider's installation and is never a purge's to take")
 }
 
 // A caller that could not determine its own checkout must not sweep on

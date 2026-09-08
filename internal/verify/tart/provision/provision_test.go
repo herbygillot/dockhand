@@ -10,6 +10,8 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports/session"
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/tool"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
 
@@ -143,4 +145,87 @@ func TestToolchainLabelPatternSurvivesBothSpellings(t *testing.T) {
 	// made the original failure invisible.
 	assert.Contains(t, body, "(after installing them)",
 		"the toolchain is re-asserted after the install")
+}
+
+// fakeTart writes a tart(1) that records its argv and answers `list`
+// from a file the test controls, so the removal order and the refusals
+// are provable without a hypervisor.
+func fakeTart(t *testing.T, present []string) (Tart, *string) {
+	t.Helper()
+	dir := t.TempDir()
+	vms, calls := dir+"/vms", dir+"/calls"
+	require.NoError(t, os.WriteFile(vms, []byte(strings.Join(present, "\n")+"\n"), 0o644))
+	bin := dir + "/tart"
+	require.NoError(t, os.WriteFile(bin, []byte(`#!/bin/sh
+echo "$@" >> `+calls+`
+case "$1" in
+  list) while IFS= read -r v; do [ -n "$v" ] && echo "local $v"; done < `+vms+`; exit 0;;
+  delete) grep -vx "$2" `+vms+` > `+vms+`.n && mv `+vms+`.n `+vms+`; exit 0;;
+esac
+exit 0
+`), 0o755))
+	return Tart{Tools: tool.NewFinder(func(name string) (string, error) {
+		if name == string(tool.Tart) {
+			return bin, nil
+		}
+		return "", os.ErrNotExist
+	})}, &calls
+}
+
+func readCalls(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return ""
+	}
+	require.NoError(t, err)
+	return string(b)
+}
+
+// PURGE IS PROVISIONING'S COUNTERPART, and it takes both images: the
+// vanilla base and the golden it is cloned from. `dockhand purge`
+// removes a CHECKOUT's guests and never these — an image is one per
+// macOS release and shared by every checkout on the host.
+func TestPurgeRemovesBothImagesForARelease(t *testing.T) {
+	seq, ok := platform.ByName("Sequoia")
+	require.True(t, ok)
+	base, golden := tart.BaseName(seq), tart.GoldenName(seq)
+	tt, calls := fakeTart(t, []string{base, golden, "dockhand-worker-1", "somebody-elses-vm"})
+
+	gone, err := tt.Purge(t.Context(), seq)
+	require.NoError(t, err)
+	assert.Equal(t, []string{base, golden}, gone,
+		"the base FIRST: interrupted between the two, what survives is the copy that can rebuild the other")
+
+	log := readCalls(t, *calls)
+	assert.Contains(t, log, "delete "+base)
+	assert.Contains(t, log, "delete "+golden)
+	assert.NotContains(t, log, "delete dockhand-worker-1", "a guest is `dockhand purge`'s, not this verb's")
+	assert.NotContains(t, log, "somebody-elses-vm")
+}
+
+// Removing an installation that is half there is exactly when this is
+// reached for, so a name that is already gone is skipped rather than
+// refused.
+func TestPurgeSkipsAnImageThatIsAlreadyGone(t *testing.T) {
+	seq, ok := platform.ByName("Sequoia")
+	require.True(t, ok)
+	tt, _ := fakeTart(t, []string{tart.GoldenName(seq)})
+
+	gone, err := tt.Purge(t.Context(), seq)
+	require.NoError(t, err)
+	assert.Equal(t, []string{tart.GoldenName(seq)}, gone, "the golden alone; the base was not there")
+
+	tt2, _ := fakeTart(t, nil)
+	gone, err = tt2.Purge(t.Context(), seq)
+	require.NoError(t, err)
+	assert.Empty(t, gone, "nothing to remove is an answer, not a failure")
+}
+
+// A release nobody named is refused rather than sweeping every image on
+// the machine.
+func TestPurgeRefusesAnUnnamedRelease(t *testing.T) {
+	tt, _ := fakeTart(t, nil)
+	_, err := tt.Purge(t.Context(), platform.Release{})
+	require.ErrorIs(t, err, verify.ErrUnsupported)
 }

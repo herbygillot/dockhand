@@ -199,10 +199,13 @@ func TestPurgeRefusesABranchAWorktreeHasCheckedOut(t *testing.T) {
 	assert.Len(t, shas, 1, "not even the notes, which are removed last")
 }
 
-func TestPurgeTakesEveryHoldingButTheReferenceCopies(t *testing.T) {
-	// The one rule the whole change turns on, end to end: workers,
-	// scratch clones and derived images go; the reference copy stays,
-	// and it is REPORTED as staying rather than silently omitted.
+func TestPurgeTakesTheGuestsAndLeavesTheProvidersImages(t *testing.T) {
+	// The line the whole verb turns on: GUESTS are a purge's — workers
+	// and the scratch clones a crash stranded — and IMAGES are not. The
+	// provider's installation is one per macOS release, shared by every
+	// checkout on the host, and `provision tart --purge` is what removes
+	// it. Both images are REPORTED as staying rather than silently
+	// omitted, with the verb that would take them.
 	repo, st, led := purgeFixture(t)
 	f := &verifytest.Fake{Held: []verify.Holding{
 		holding("dockhand-worker-b", verify.HeldWorker),
@@ -215,10 +218,11 @@ func TestPurgeTakesEveryHoldingButTheReferenceCopies(t *testing.T) {
 
 	res, err := op.Run(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-probe-1", "dockhand-worker-b"}, res.Removed,
+	assert.Equal(t, []string{"dockhand-probe-1", "dockhand-worker-b"}, res.Removed,
 		"named and sorted, so a report reads the same twice")
-	assert.Equal(t, []string{"dockhand-golden-sequoia"}, res.Kept)
-	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-probe-1", "dockhand-worker-b"}, f.Discarded)
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-golden-sequoia"}, res.Kept,
+		"a purge that took the base left a machine that could not verify; it does not any more")
+	assert.Equal(t, []string{"dockhand-probe-1", "dockhand-worker-b"}, f.Discarded)
 }
 
 func TestPurgeLeavesAnotherCheckoutsGuestsAlone(t *testing.T) {
@@ -238,13 +242,13 @@ func TestPurgeLeavesAnotherCheckoutsGuestsAlone(t *testing.T) {
 
 	res, err := op.Run(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-worker-mine"}, res.Removed,
-		"this checkout's guest, and the image no checkout owns; sorted, as Survey leaves them")
+	assert.Equal(t, []string{"dockhand-worker-mine"}, res.Removed,
+		"this checkout's guest, and nothing else")
 	assert.Equal(t, []string{"dockhand-worker-theirs"}, res.Theirs)
 	assert.Equal(t, []string{"dockhand-worker-nobodys"}, res.Unowned)
-	assert.Equal(t, []string{"dockhand-golden-sequoia"}, res.Kept)
-	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-worker-mine"}, f.Discarded,
-		"and the provider was never even asked about the other three")
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-golden-sequoia"}, res.Kept)
+	assert.Equal(t, []string{"dockhand-worker-mine"}, f.Discarded,
+		"and the provider was never even asked about the other four")
 }
 
 func TestForceDoesNotReachAnotherCheckoutsGuests(t *testing.T) {

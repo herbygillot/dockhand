@@ -969,8 +969,14 @@ func Purged(w io.Writer, p app.PurgeResult) {
 	// standing would report a clean machine that is not one, and the
 	// three reasons need three different next steps from the reader:
 	// nothing, nothing, and one named command.
+	// THE IMAGES ARE NAMED WITH THE VERB THAT REMOVES THEM. A purge does
+	// not touch the provider's installation — that is one per macOS
+	// release and shared by every checkout on the host — and a person who
+	// wanted the disk back has to be told which command does it, at the
+	// moment they asked, rather than discovering it from a failed
+	// `verify` later.
 	if len(p.Kept) > 0 {
-		fmt.Fprintf(w, "kept %d reference image(s); `provision tart` restores a base by cloning one\n", len(p.Kept))
+		fmt.Fprintf(w, "kept %d tart image(s); `dockhand provision tart --macos <release> --purge` removes those\n", len(p.Kept))
 		for _, name := range p.Kept {
 			fmt.Fprintf(w, "  %s\n", name)
 		}

@@ -63,7 +63,8 @@ type PurgeResult struct {
 	Removed []string
 	// Kept, Theirs and Unowned are the three reasons a holding stayed,
 	// and they are three fields because they are three sentences. Kept
-	// is the reference copies, which stay whoever asks. Theirs is
+	// is the provider's IMAGES — the base and reference copies a purge
+	// never takes, removable with `provision tart --purge`. Theirs is
 	// another checkout's guests, named with the root that claims them.
 	// Unowned is guests nothing on this machine attributes — reported
 	// here, and cleared by `cycle --reclaim-unattributed`, which
@@ -91,19 +92,28 @@ type PurgeResult struct {
 //
 // WHAT GOES: the change branches under refs/heads/dockhand/, the
 // verification pins under refs/dockhand/verify/, the state ref and
-// every record in it, every record in the verify notes ref, and every
-// VM this provider named — workers, scratch clones and prepared base
-// images alike.
+// every record in it, every record in the verify notes ref, and this
+// checkout's own guests at the provider — the verification workers and
+// any scratch clone a crash stranded.
 //
-// WHAT STAYS: the provider's reference copies, and every guest that is
-// not this checkout's. On tart the reference copies are the goldens,
-// and they stay because they are the only thing here that cannot be
-// reconstructed on this machine: a base is restored by cloning a
-// golden, which under copy-on-write costs neither time nor disk, and a
-// golden is restored by fetching and provisioning from scratch. The
-// rule is stated once as verify.HoldingKind.Removable and the provider
-// names its own kinds; nothing in this package knows what a golden is
-// called.
+// WHAT STAYS: the provider's IMAGES, and every guest that is not this
+// checkout's.
+//
+// THE IMAGES ARE PROVISIONING'S AND NOT A PURGE'S. On tart those are
+// the vanilla bases and the goldens: the provider's installation, built
+// once per macOS release, shared by every checkout on the host, and
+// expensive — a fetch, a MacPorts install and a toolchain. A first cut
+// of this verb took the bases on the argument that a base is restored
+// by cloning a golden and therefore costs nothing to rebuild. The
+// argument was true and the conclusion was wrong: it left a machine
+// that could not verify until somebody restored, and the person who
+// typed `purge` was told to run the FULL provisioning road rather than
+// the one-command clone. The verb that made them is the verb that
+// unmakes them, and that verb is `provision tart --purge`.
+//
+// The rule is stated once as verify.HoldingKind.Removable and the
+// provider names its own kinds; nothing in this package knows what a
+// golden is called.
 //
 // A PURGE IS CONFINED TO ITS OWN GUESTS. A machine may host several
 // dockhand checkouts, and this verb removes the ones attributed to
@@ -126,14 +136,6 @@ type PurgeResult struct {
 // it left, rather than removing a peer's build. The wrong answer is a
 // purge that did less than asked and named what it skipped, which is
 // the direction rule 7 points at a boundary that destroys VMs.
-//
-// THE IMAGES ARE NOT CONFINED, AND CANNOT BE. A base image is one copy
-// shared by every checkout on the host — no checkout owns it, there is
-// no owner to compare, and verify.HoldingKind.Attributable says so — so
-// it goes with the rest. That is safe for a peer in a way removing its
-// guest would not be: a running build was cloned from the base and does
-// not need it any more, and the next `provision` restores it from a
-// reference copy for nothing.
 //
 // THE STATE REF GOES WITH THE GUESTS, and that is one decision rather
 // than two. An earlier purge kept the state ref on the argument that
@@ -234,7 +236,7 @@ func (p Purge) Run(ctx context.Context) (PurgeResult, error) {
 	} else {
 		split = estate.Divide(held, p.Me.Root)
 		res.Removed = estate.Names(split.Remove)
-		res.Kept = estate.Names(split.Reference)
+		res.Kept = estate.Names(split.Images)
 		res.Theirs = estate.Names(split.Theirs)
 		res.Unowned = estate.Names(split.Unowned)
 	}

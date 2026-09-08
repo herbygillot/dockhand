@@ -191,23 +191,26 @@ type Split struct {
 	// verb for them, which is where the design already put this
 	// population and the flag that takes it.
 	Unowned []verify.Holding
-	// Reference is the copies that always stay, whoever asks.
-	Reference []verify.Holding
+	// Images are the provider's own installation — base and reference
+	// copies — which a purge never takes. They are `provision tart`'s,
+	// and `provision tart --purge` is what removes them.
+	Images []verify.Holding
 }
 
 // Divide sorts a listing by what root may take it. It is PURE and it is
 // the whole of the ownership policy, stated once.
 //
-// THE ORDER OF THE TESTS IS THE POLICY. A reference copy is refused
-// before anyone asks whose it is, because it stays for a reason that
-// has nothing to do with ownership. A kind that cannot name a checkout
-// goes to Remove without an owner test, because its empty Owner is a
-// fact about what it is (verify.HoldingKind.Attributable) rather than a
-// missing record — reading it as "unattributed" would make purge
-// unable to clear a stranded scratch guest or a base image forever.
-// Only then is an attributable holding compared, and an EMPTY owner
-// there is the weak answer lease.Standing calls Unattributed: reported,
-// not taken.
+// THE ORDER OF THE TESTS IS THE POLICY. An image is set aside before
+// anyone asks whose it is, because it stays for a reason that has
+// nothing to do with ownership: it belongs to the provider's
+// installation rather than to a verification, and `provision tart
+// --purge` is the verb for it. A kind that cannot name a checkout goes
+// to Remove without an owner test, because its empty Owner is a fact
+// about what it is (verify.HoldingKind.Attributable) rather than a
+// missing record — reading it as "unattributed" would leave a stranded
+// scratch guest standing forever. Only then is an attributable holding
+// compared, and an EMPTY owner there is the weak answer lease.Standing
+// calls Unattributed: reported, not taken.
 //
 // An empty root is nobody: every attributable holding lands in Unowned
 // rather than matching. A caller that could not determine its own
@@ -218,8 +221,13 @@ func Divide(held []verify.Holding, root string) Split {
 	var s Split
 	for _, h := range held {
 		switch {
+		case h.Kind.Image():
+			s.Images = append(s.Images, h)
 		case !h.Kind.Removable():
-			s.Reference = append(s.Reference, h)
+			// A kind nobody classified: not a guest a purge may take, and
+			// not an image either. It stays, and it is reported with the
+			// images because "left standing" is what a reader needs.
+			s.Images = append(s.Images, h)
 		case !h.Kind.Attributable():
 			s.Remove = append(s.Remove, h)
 		case h.Owner == "" || root == "":

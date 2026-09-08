@@ -124,3 +124,41 @@ func TestHoldingKindsSayWhatTheyAre(t *testing.T) {
 	assert.Equal(t, "unclassified", verify.HoldingUnknown.String(),
 		"a kind nobody set says so rather than printing a number")
 }
+
+// THE LINE BETWEEN GUESTS AND IMAGES, which moved once and should not
+// move again by accident.
+//
+// A first cut let a purge take base images too, reasoning that a base is
+// restored by cloning a golden and so costs nothing to rebuild. True,
+// and beside the point: it left a machine that could not verify until
+// somebody restored, over a verb whose name promises only to clean up
+// after itself. Guests are a purge's; images are `provision tart
+// --purge`'s.
+func TestOnlyGuestsAreRemovableAndOnlyImagesAreImages(t *testing.T) {
+	for kind, want := range map[verify.HoldingKind]struct{ removable, image bool }{
+		verify.HeldWorker:    {true, false},
+		verify.HeldScratch:   {true, false},
+		verify.HeldDerived:   {false, true},
+		verify.HeldReference: {false, true},
+		// The refusing zero is NEITHER: not a guest a purge may take, and
+		// not an image a provisioner may delete.
+		verify.HoldingUnknown: {false, false},
+	} {
+		assert.Equal(t, want.removable, kind.Removable(), "%s removable", kind)
+		assert.Equal(t, want.image, kind.Image(), "%s image", kind)
+	}
+}
+
+// The provider refuses an image at the destructive verb too, so a
+// caller that assembled its own list cannot reach a `tart delete` of the
+// installation through the guest road.
+func TestDiscardRefusesABaseImageAsWellAsAGolden(t *testing.T) {
+	for _, h := range []verify.Holding{
+		{Name: "dockhand-base-sequoia", Kind: verify.HeldDerived},
+		{Name: "dockhand-golden-sequoia", Kind: verify.HeldReference},
+	} {
+		err := Provider{Tools: tools}.Discard(t.Context(), h)
+		require.ErrorIs(t, err, verify.ErrKept, h.Name)
+		require.ErrorContains(t, err, h.Name)
+	}
+}

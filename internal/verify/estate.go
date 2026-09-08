@@ -82,27 +82,54 @@ const (
 	HeldScratch
 	// HeldDerived is a resource the provider can make again from a
 	// HeldReference one: a prepared base image, restorable by cloning.
-	// Removing it costs the clone and nothing else, which is what makes
-	// it a purge's business at all.
+	// It is an IMAGE and not a guest, so a purge leaves it standing —
+	// removing it costs a clone to put back, but it costs a machine that
+	// cannot verify until somebody does.
 	HeldDerived
 	// HeldReference is the copy a derived one is rebuilt FROM. It is the
 	// one thing on the machine that cannot be reconstructed locally —
-	// remaking it means fetching and provisioning from scratch — so a
-	// purge keeps it, and Discard refuses it at the provider as well.
-	// Two refusals for one rule, because the caller's is a policy and
-	// the provider's is a fact about what it can put back.
+	// remaking it means fetching and provisioning from scratch — and it
+	// is the most expensive thing the provider holds.
 	HeldReference
 )
 
-// Removable reports a holding a purge may take: one the provider can
-// produce again without leaving this machine.
+// Removable reports a holding a PURGE may take: a guest, and never an
+// image.
+//
+// THE LINE IS BETWEEN GUESTS AND IMAGES, and it moved once. A first cut
+// had a purge take base images too, on the argument that a base is
+// restored by cloning a golden and therefore costs nothing to rebuild.
+// The argument is true and the conclusion was wrong: it left a machine
+// that could not verify until somebody restored, and the person who
+// typed `purge` was not told which of the two commands would do it. A
+// verb that clears this checkout's work should not also disassemble the
+// provider every checkout on the host builds against.
+//
+// So the two populations belong to two verbs. Guests are ephemeral,
+// created per verification, and are `purge`'s. Images are the
+// provider's own installation, built by `provision tart` and removed by
+// `provision tart --purge` — the verb that made them is the verb that
+// unmakes them.
 //
 // A METHOD SO THAT A FIFTH KIND IS A COMPILE-TIME VISIT HERE rather
 // than a missed case at each call site, which is Outcome.Closes' and
 // Standing.Seizable's shape and their reason. It is stated once and
 // read everywhere, and the unknown zero falls out of it as false.
 func (k HoldingKind) Removable() bool {
-	return k == HeldWorker || k == HeldScratch || k == HeldDerived
+	return k == HeldWorker || k == HeldScratch
+}
+
+// Image reports a holding that is part of the provider's installation
+// rather than one verification's environment: something `provision`
+// built and only `provision` takes away.
+//
+// It is the complement of Removable over the kinds this package
+// declares, and it is written as its own predicate rather than as
+// !Removable() because the unknown zero must be NEITHER — a holding
+// nobody classified is not a guest a purge may take, and it is not an
+// image a provisioner may delete either.
+func (k HoldingKind) Image() bool {
+	return k == HeldDerived || k == HeldReference
 }
 
 // Attributable reports a kind that is created FOR a checkout and can
@@ -151,7 +178,7 @@ func (k HoldingKind) String() string {
 // knows. A caller meeting it has asked for something the machine cannot
 // put back, and the honest response is to report the name rather than
 // to try another verb.
-var ErrKept = errors.New("verify: this holding is a reference copy and is not removed")
+var ErrKept = errors.New("verify: this holding is one of the provider's images, not a guest")
 
 // Keeper is the optional capability of naming everything the provider
 // holds on dockhand's behalf, and removing one of them.

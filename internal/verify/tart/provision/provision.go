@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -440,4 +441,59 @@ func (t Tart) Restore(ctx context.Context, r platform.Release) error {
 			verify.ErrNoEnvironment, base, golden, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// Purge removes this provider's IMAGES for a release: the vanilla base
+// and the golden it is cloned from.
+//
+// IT IS THE COUNTERPART OF Provision AND IT LIVES HERE FOR THAT REASON.
+// The verb that builds an installation is the verb that takes it away;
+// `dockhand purge` clears a CHECKOUT's work — its branches, its
+// records, its guests — and an image is none of those. A first cut had
+// purge take the bases, which left a machine that could not verify
+// until somebody restored, over a verb whose name promises only to
+// clean up after itself.
+//
+// IT IS NOT A RESTORE'S OPPOSITE EITHER. Restore replaces a drifted
+// base from its golden and needs the golden to survive; this removes
+// both, because a caller asking to reclaim the disk means the whole
+// installation. What is left afterwards is a host with no environments
+// at all, and `provision tart --macos <release>` is the way back — the
+// full road, fetch included, because there is no longer a local copy to
+// clone from.
+//
+// A GUEST STILL RUNNING IS NOT TOUCHED, and that is deliberate: tart
+// refuses to delete a running VM and this does not force it. The worker
+// population is `dockhand purge`'s, and a caller that wants both runs
+// both.
+//
+// An image that is already gone is not a failure. Removing an
+// installation that is half there — a golden with no base, a base whose
+// golden was deleted by hand — is exactly when this is reached for, so
+// each name is asked about and skipped rather than refused.
+func (t Tart) Purge(ctx context.Context, r platform.Release) ([]string, error) {
+	if r.IsZero() {
+		return nil, fmt.Errorf("%w: no release named", verify.ErrUnsupported)
+	}
+	var gone []string
+	var failed []error
+	// The base first and the golden second: if the removal is
+	// interrupted between them, what survives is the copy that can
+	// rebuild the other, rather than the one that cannot.
+	for _, name := range []string{tart.BaseName(r), tart.GoldenName(r)} {
+		ok, err := tart.HasVM(ctx, t.Tools, name)
+		if err != nil {
+			return gone, err
+		}
+		if !ok {
+			continue
+		}
+		_, _ = tart.CLI(ctx, t.Tools, nil, "stop", name)
+		if out, derr := tart.CLI(ctx, t.Tools, nil, "delete", name); derr != nil {
+			failed = append(failed, fmt.Errorf("removing %s: %s", name, strings.TrimSpace(out)))
+			continue
+		}
+		gone = append(gone, name)
+	}
+	return gone, errors.Join(failed...)
 }

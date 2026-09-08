@@ -26,6 +26,7 @@ type provisionTartAction struct {
 	memoryMB int
 	validate bool
 	restore  bool
+	purge    bool
 }
 
 func (a provisionTartAction) Execute(ctx context.Context, s *Services) error {
@@ -34,6 +35,27 @@ func (a provisionTartAction) Execute(ctx context.Context, s *Services) error {
 		return a.provisionAll(ctx, s, t)
 	}
 
+	if a.purge {
+		// THE COUNTERPART OF PROVISIONING, and the reason `dockhand purge`
+		// does not do this: an image is the provider's installation, built
+		// once per release and shared by every checkout on the host, where
+		// a purge clears one checkout's own work. The verb that made them
+		// takes them away.
+		gone, err := t.Purge(ctx, a.release)
+		for _, name := range gone {
+			fmt.Fprintf(s.Err, "removed %s\n", name)
+		}
+		if err != nil {
+			return err
+		}
+		if len(gone) == 0 {
+			fmt.Fprintf(s.Err, "no tart images for %s to remove\n", a.release.Name)
+			return nil
+		}
+		fmt.Fprintf(s.Err, "%s has no verification images now; `dockhand provision tart --macos %s` builds one again\n",
+			a.release.Name, strings.ToLower(a.release.Name))
+		return nil
+	}
 	if a.restore {
 		// The golden is the remedy D19 promises: a drifted base is
 		// re-cloned from the copy nothing ever ran, which under
@@ -143,6 +165,7 @@ func provisionTart(s *Services) *cobra.Command {
 		memoryMB int
 		validate bool
 		restore  bool
+		purge    bool
 	)
 	c := &cobra.Command{
 		Use:   "tart",
@@ -161,8 +184,15 @@ func provisionTart(s *Services) *cobra.Command {
 				}
 				release = r
 			}
-			if all && (validate || restore) {
-				return usagef("--macos all provisions; --validate and --restore take one release")
+			if all && (validate || restore || purge) {
+				// `all` short-circuits into provisionAll before any of these
+				// branches, so an unrefused `--macos all --purge` would BUILD
+				// every release rather than remove one — the opposite of what
+				// was typed, at the cost of a download per release.
+				return usagef("--macos all provisions; --validate, --restore and --purge take one release")
+			}
+			if purge && (validate || restore) {
+				return usagef("--purge removes this release's images; --validate and --restore act on one that stands")
 			}
 			// Provisioning BUILDS the environments verification is cloned
 			// from, and needs nothing else: no repository, no ports tree, no
@@ -180,6 +210,7 @@ func provisionTart(s *Services) *cobra.Command {
 				memoryMB: memoryMB,
 				validate: validate,
 				restore:  restore,
+				purge:    purge,
 			}.Execute(cmd.Context(), s)
 		},
 	}
@@ -203,6 +234,14 @@ func provisionTart(s *Services) *cobra.Command {
 	c.Flags().BoolVar(&validate, "validate", false,
 		"validate an existing base instead of building one: re-run the pristine checks against the base already there")
 	c.Flags().BoolVar(&restore, "restore", false, "replace the base with a fresh clone of its golden copy")
+	// --purge is the counterpart of provisioning and NOT part of
+	// `dockhand purge`, which clears a checkout's own work. An image is
+	// the provider's installation — one per release, shared by every
+	// checkout on the host, and expensive to rebuild — so the verb that
+	// built it is the verb that removes it, and a person has to say
+	// which release they mean.
+	c.Flags().BoolVar(&purge, "purge", false,
+		"remove this release's tart images — the vanilla base and its golden — and reclaim their disk")
 	return c
 }
 
