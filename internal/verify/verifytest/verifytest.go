@@ -47,6 +47,20 @@ type Fake struct {
 	// answer, which a caller must absorb rather than report as an
 	// empty machine.
 	WorkersErr error
+	// Held scripts Holdings: everything this provider is keeping on
+	// dockhand's behalf, of every kind. Separate from Live because the
+	// audit's population and a purge's are not the same one seen twice —
+	// see Holdings.
+	Held []verify.Holding
+	// HoldingsErr makes Holdings fail — the machine that cannot be
+	// listed, which estate.Survey must report as ErrNoEstate rather than
+	// as an empty estate.
+	HoldingsErr error
+	// DiscardErr makes Discard fail per holding NAME. Keyed by name and
+	// not by job id, because three of the four kinds are not jobs.
+	DiscardErr map[string]error
+	// Discarded is every holding Discard removed, in call order.
+	Discarded []string
 	// Inventory scripts Manifests per job ID. Named for what it holds
 	// rather than for the method, on Live's precedent.
 	Inventory map[string]verify.Manifests
@@ -231,6 +245,38 @@ func (f *Fake) Workers(context.Context) ([]verify.Worker, error) {
 		return nil, f.WorkersErr
 	}
 	return f.Live, nil
+}
+
+var _ verify.Keeper = (*Fake)(nil)
+
+// Holdings answers what a test scripted in Held, and NOT Live projected
+// through a kind.
+//
+// The two fields are separate because the two capabilities answer
+// different questions and a fake that derived one from the other could
+// not express the case that matters most: a machine holding images and
+// no workers at all, which is what a purge meets after a drain. A test
+// that wants a worker in both lists writes it in both, which is one
+// line and is honest about there being two facts.
+func (f *Fake) Holdings(context.Context) ([]verify.Holding, error) {
+	if f.HoldingsErr != nil {
+		return nil, f.HoldingsErr
+	}
+	return f.Held, nil
+}
+
+// Discard removes a holding, and refuses one this fake was told to keep
+// — which is the real provider's own refusal (verify.ErrKept) and not
+// the caller's policy, so a test can prove the two are independent.
+func (f *Fake) Discard(_ context.Context, h verify.Holding) error {
+	if err := f.DiscardErr[h.Name]; err != nil {
+		return err
+	}
+	if !h.Kind.Removable() {
+		return fmt.Errorf("%w: %s", verify.ErrKept, h.Name)
+	}
+	f.Discarded = append(f.Discarded, h.Name)
+	return nil
 }
 
 var (

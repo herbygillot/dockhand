@@ -136,7 +136,7 @@ func (p Provider) prefixOf() prefix.Prefix {
 // back out of a name honest rather than a guess at someone else's
 // scheme.
 func BaseName(r platform.Release) string {
-	return "dockhand-base-" + strings.ToLower(r.CompactName())
+	return BasePrefix + strings.ToLower(r.CompactName())
 }
 
 const (
@@ -146,6 +146,19 @@ const (
 	// which also keeps port names, which may contain characters a VM
 	// name may not, out of the naming scheme entirely.
 	WorkerPrefix = "dockhand-worker-"
+	// BasePrefix and GoldenPrefix are the other two roles dockhand names
+	// on this backend, spelled here beside WorkerPrefix so that the four
+	// prefixes are ONE LIST in one place.
+	//
+	// They were literals inside BaseName and GoldenName, which was fine
+	// while the only question anyone asked was "what is this release's
+	// image called". Holdings asks the question backwards — given a name
+	// on this machine, what IS it — and a reader that spelled the
+	// prefixes itself would be a second copy of the naming scheme, one
+	// deletion away from disagreeing with the constructor about what a
+	// base is called.
+	BasePrefix   = "dockhand-base-"
+	GoldenPrefix = "dockhand-golden-"
 	// overlayDir is where the edited portdirs are staged in the guest.
 	overlayDir = "/tmp/dockhand-overlay"
 	// stateDir holds the runner's own record of where it got to.
@@ -1330,15 +1343,30 @@ func (p Provider) Release(ctx context.Context, job verify.Job) error {
 	} else if !ok {
 		return fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
-	_, _ = CLI(ctx, p.Tools, nil, "stop", job.ID)
-	// A delete can race a guest that is still coming up — tart refuses
-	// to remove a running VM, and stop is not instantaneous. Retrying
-	// briefly costs nothing and is the difference between a released
-	// slot and one lost until someone notices.
+	return removeVM(ctx, p.Tools, job.ID)
+}
+
+// removeVM stops a guest and deletes it, and it is the ONE spelling of
+// how a tart VM dies. Release reaches it for a leased worker and
+// Discard for anything else this provider holds; a second copy of the
+// retry below is a second chance to get the race wrong.
+//
+// A delete can race a guest that is still coming up — tart refuses to
+// remove a running VM, and stop is not instantaneous. Retrying briefly
+// costs nothing and is the difference between a released slot and one
+// lost until someone notices.
+//
+// It does NOT guard with HasVM and does not clear an attribution: both
+// are the caller's, because they mean different things per caller. A
+// Release must answer ErrUnknownJob for an absent guest (an obligation
+// turns on it) and owns a worker's sidecar; a Discard is handed a name
+// a listing just produced and has nothing to clear.
+func removeVM(ctx context.Context, tools *tool.Finder, name string) error {
+	_, _ = CLI(ctx, tools, nil, "stop", name)
 	var out string
 	var err error
 	for i := 0; i < 10; i++ {
-		if out, err = CLI(ctx, p.Tools, nil, "delete", job.ID); err == nil {
+		if out, err = CLI(ctx, tools, nil, "delete", name); err == nil {
 			return nil
 		}
 		select {
@@ -1346,9 +1374,9 @@ func (p Provider) Release(ctx context.Context, job verify.Job) error {
 			return ctx.Err()
 		case <-time.After(time.Second):
 		}
-		_, _ = CLI(ctx, p.Tools, nil, "stop", job.ID)
+		_, _ = CLI(ctx, tools, nil, "stop", name)
 	}
-	return fmt.Errorf("verify/tart: releasing %s: %s", job.ID, strings.TrimSpace(out))
+	return fmt.Errorf("verify/tart: removing %s: %s", name, strings.TrimSpace(out))
 }
 
 // GoldenName is the untouched reference copy of a base image. It is
@@ -1360,7 +1388,7 @@ func (p Provider) Release(ctx context.Context, job verify.Job) error {
 // named dockhand-base-sequoia-golden would contain the base's own name,
 // and everything that looks a base up by substring would find two.
 func GoldenName(r platform.Release) string {
-	return "dockhand-golden-" + strings.ToLower(r.CompactName())
+	return GoldenPrefix + strings.ToLower(r.CompactName())
 }
 
 // assertClean refuses to verify in an environment that is not what it

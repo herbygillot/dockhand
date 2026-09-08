@@ -871,30 +871,41 @@ func Purged(w io.Writer, p app.PurgeResult) {
 	if p.DryRun {
 		verb = "would remove"
 	}
-	fmt.Fprintf(w, "%s %d branch(es) · %d pin(s) · %d record(s)\n",
+	fmt.Fprintf(w, "%s %d branch(es) \u00b7 %d pin(s) \u00b7 %d record(s)\n",
 		verb, len(p.Branches), len(p.Pins), p.Notes)
 	for _, ref := range p.Branches {
 		fmt.Fprintf(w, "  %s\n", strings.TrimPrefix(ref, "refs/heads/"))
 	}
+	// THE STATE REF IS ITS OWN LINE and it carries the record count,
+	// because that count is the last account anybody gets of what was in
+	// there: nothing survives the purge to look it up afterwards.
+	if p.StateRef {
+		fmt.Fprintf(w, "%s the state ref and the %d change record(s) it held\n", verb, p.Records)
+	}
 	// THE ENVIRONMENTS ARE REPORTED SEPARATELY FROM THE REFS, and their
-	// absence is reported differently from their emptiness: nil means
-	// --environments was not asked for and the provider was never
-	// consulted, where an empty non-nil slice means it was asked and
-	// answered none. Collapsing those two into one line would tell a
-	// person the machine is clean on the strength of a question nobody
-	// put.
-	if p.Environments != nil {
-		fmt.Fprintf(w, "%s %d environment(s)\n", verb, len(p.Environments))
-		for _, name := range p.Environments {
+	// absence is reported differently from their emptiness: nil means the
+	// provider was never reached, where an empty non-nil slice means it
+	// was asked and held none. Collapsing those two into one line would
+	// tell a person the machine is clean on the strength of a question
+	// nobody put.
+	if p.Removed != nil {
+		fmt.Fprintf(w, "%s %d environment(s)\n", verb, len(p.Removed))
+		for _, name := range p.Removed {
 			fmt.Fprintf(w, "  %s\n", name)
 		}
-		fmt.Fprintln(w, "base and golden images are untouched; `provision tart` owns those")
 	}
-	if p.InventoryRefused != nil {
+	// WHAT WAS KEPT IS SAID OUT LOUD. A person who has just removed
+	// everything else needs to know these are still here — both so the
+	// next `provision` is understood to be cheap, and so a machine that
+	// is not actually empty is not reported as one.
+	if len(p.Kept) > 0 {
+		fmt.Fprintf(w, "kept %d reference image(s); `provision tart` restores a base by cloning one\n", len(p.Kept))
+		for _, name := range p.Kept {
+			fmt.Fprintf(w, "  %s\n", name)
+		}
+	}
+	if p.EstateRefused != nil {
 		// Rule 7 at the surface: not "there are none".
-		fmt.Fprintf(w, "environments were NOT removed: %v\n", p.InventoryRefused)
-	}
-	if p.Kept > 0 {
-		fmt.Fprintf(w, "the state ref is untouched: %d change record(s) remain, and `status` will still list them\n", p.Kept)
+		fmt.Fprintf(w, "environments were NOT removed: %v\n", p.EstateRefused)
 	}
 }

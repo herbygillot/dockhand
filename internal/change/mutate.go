@@ -2,8 +2,6 @@ package change
 
 import (
 	"errors"
-	"fmt"
-	"sort"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/plan"
@@ -859,64 +857,4 @@ func PinLostIn(tx *statestore.Txn, id record.ChangeID, d *TipDisagreement, now t
 	c.Pin = ""
 	tx.PutChange(c)
 	return nil
-}
-
-// ErrPurgeRefMissing is PurgeIn refusing a ref whose tip the caller did
-// not supply. A delete line without an expected old is an unchecked
-// delete (R23's measured wire: an empty old field means "unverified"),
-// so a caller that cannot say what a ref holds may not ask for it to go.
-var ErrPurgeRefMissing = errors.New("change: a purge line names a ref with no expected tip")
-
-// PurgeIn queues a delete line for every dockhand-owned ref the caller
-// found, and it is the change lifecycle's because the change lifecycle
-// owns both namespaces: refs/heads/dockhand/* is a change's branch and
-// refs/dockhand/verify/* is a branchless snapshot's pin. R23 puts the
-// line where the owner is, so a `purge` operation that spelled these
-// refs itself — or reached git directly — would be the second ref-mover
-// the whole design exists to make unrepresentable, and the store's two
-// AST tests would refuse it.
-//
-// IT IS NOT DemolishIn IN A LOOP, and the difference is the point.
-// DemolishIn is the death of ONE change: it reads that change's record,
-// refuses while it is still Bound(), refuses a branchless one, and takes
-// its expected-old from the RECORD's Tip — because a change whose branch
-// moved under the discard's feet must lose the whole commit. Purge is
-// not a death; it is the removal of an artifact. Its population is what
-// GIT holds, not what the store remembers, so it takes every ref a
-// listing found — including the branches of changes that closed long ago
-// and the branches of changes no record ever named — and its expected-old
-// is what the REF held when it was listed, not what any record claims.
-// Those are two different questions with two different answers, and rule
-// 2 says they get two functions.
-//
-// The records are deliberately left alone. Purge removes local git
-// artifacts; it does not close changes, because a closed change is a
-// statement about the work and deleting a branch is a statement about
-// this checkout. A caller that wants both asks for both.
-//
-// tips is ref name -> the object it held when listed, from
-// git.Repo.RefsWithTips, which reads the pair in one command so the two
-// cannot straddle a concurrent write. A name outside the two owned
-// namespaces is refused by Txn.Ref itself as statestore.ErrForeignRef;
-// PurgeIn does not pre-filter, because one refusal in one place is the
-// store's own job and duplicating it here would be a second judgment of
-// the same question.
-func PurgeIn(tx *statestore.Txn, tips map[string]string) (int, error) {
-	names := make([]string, 0, len(tips))
-	for name := range tips {
-		names = append(names, name)
-	}
-	// Sorted so a batch's lines are in a stated order: the reflog a
-	// person reads afterwards is then in the same order twice, and a
-	// test can pin it.
-	sort.Strings(names)
-	for _, name := range names {
-		if tips[name] == "" {
-			return 0, fmt.Errorf("%w: %s", ErrPurgeRefMissing, name)
-		}
-		if err := tx.Ref(name, "", tips[name]); err != nil {
-			return 0, err
-		}
-	}
-	return len(names), nil
 }

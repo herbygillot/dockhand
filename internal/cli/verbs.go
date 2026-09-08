@@ -1325,33 +1325,34 @@ func pathBase(p string) string {
 	return p
 }
 
-// purgeCmd removes this checkout's dockhand branches, pins and records.
+// purgeCmd removes everything dockhand made here, except the provider's
+// reference images.
 //
 // It is a housekeeping verb and it sits beside discard, which is the
-// same act over one change. What purge does NOT do is close anything:
-// it removes the local git artifacts and leaves the state ref alone,
-// so the change records survive and `status` still lists them. That
-// asymmetry is app.Purge's, stated in its doc and reported on the last
-// line of its own output, because a person whose branches have all just
-// gone will read the next `status` as a bug otherwise.
+// same act over one change. THERE IS NO FLAG DECIDING HOW MUCH IT
+// TAKES, and that is the correction: an earlier purge gated the
+// provider behind --environments and left the state ref alone
+// unconditionally, so the default swept a third of what a person asking
+// for a purge means and the two halves could be left disagreeing about
+// what this machine holds. What stays is one rule, stated at the
+// provider (verify.HoldingKind) rather than at the command line.
 //
-// Needs is Repo alone: no verifier, no planner, no tree. Purge asks git
-// what it holds and the store what it remembers, and a checkout with no
-// MacPorts installation and no provider can still be cleaned up — which
-// is very often exactly the checkout that needs it.
+// Needs is Repo and Verifier. The verifier is asked for on every purge
+// now, but asking is not the same as requiring: Acquire only opens a
+// temporary root for it, VerifyProvider hands back nil where the host
+// has none, and app.Purge reads that absence as an estate it could not
+// survey. So a checkout with no MacPorts installation and no tart is
+// still cleaned up — which is very often exactly the checkout that
+// needs it — and it is TOLD that the machine was not asked.
 func purgeCmd(s *Services) *cobra.Command {
-	var dry, force, envs bool
+	var dry, force bool
 	c := &cobra.Command{
 		Use:   "purge",
-		Short: "Remove this checkout's dockhand branches, pins and records",
+		Short: "Remove every dockhand branch, pin, record and environment in this checkout",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			// Needs is decided by the flags, which is the composition
-			// root's whole job: a purge without --environments resolves
-			// no verifier at all, and on a host with no provider that is
-			// the difference between working and refusing.
-			if err := s.Acquire(ctx, app.Needs{Repo: true, Verifier: envs}); err != nil {
+			if err := s.Acquire(ctx, app.Needs{Repo: true, Verifier: true}); err != nil {
 				return err
 			}
 			repo, err := s.Repo()
@@ -1369,10 +1370,8 @@ func purgeCmd(s *Services) *cobra.Command {
 			op := app.Purge{
 				Repo: repo, State: st, Ledger: led,
 				Progress: sink{w: s.Err},
-				DryRun:   dry, Force: force, Environments: envs,
-			}
-			if envs {
-				op.Verifier = s.VerifyProvider()
+				Verifier: s.VerifyProvider(),
+				DryRun:   dry, Force: force,
 			}
 			res, err := op.Run(ctx)
 			if err != nil {
@@ -1383,7 +1382,6 @@ func purgeCmd(s *Services) *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&dry, "dry-run", false, "list what would be removed and remove nothing")
-	c.Flags().BoolVar(&force, "force", false, "proceed even while an environment is held — the running build's branch goes with it")
-	c.Flags().BoolVar(&envs, "environments", false, "also release every environment the provider is running; base and golden images are untouched")
+	c.Flags().BoolVar(&force, "force", false, "remove the records even though this machine's environments could not be listed")
 	return c
 }

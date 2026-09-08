@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/change"
+	"github.com/herbygillot/dockhand/internal/estate"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
-	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/statestore"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/verifytest"
@@ -50,7 +51,30 @@ func refsUnder(t *testing.T, repo *git.Repo, prefix string) []string {
 	return got
 }
 
-func TestPurgeRemovesBranchesPinsAndNotes(t *testing.T) {
+// fakeProv hands the same Fake back as a resolver, which is the shape
+// cli supplies.
+func fakeProv(f *verifytest.Fake) func(context.Context) (verify.Verifier, error) {
+	return func(context.Context) (verify.Verifier, error) { return f, nil }
+}
+
+func holding(name string, kind verify.HoldingKind) verify.Holding {
+	return verify.Holding{Name: name, Kind: kind, Job: verify.Job{ID: name, Provider: "tart"}}
+}
+
+// liveLease plants an unreturned lease, which is what makes a machine
+// this purge is not allowed to guess about.
+func liveLease(t *testing.T, st *statestore.Store) {
+	t.Helper()
+	require.NoError(t, st.Amend(context.Background(), func(tx *statestore.Txn) error {
+		tx.PutLease(record.Lease{
+			Request: "req-live", Change: "chg-a", Platform: "Sequoia",
+			Phase: record.Active, ID: record.LeaseID{Provider: "tart", ID: "dockhand-worker-req-live"},
+		})
+		return nil
+	}))
+}
+
+func TestPurgeRemovesBranchesPinsNotesAndTheStateRef(t *testing.T) {
 	repo, st, led := purgeFixture(t)
 	res, err := purgeOp(repo, st, led).Run(context.Background())
 	require.NoError(t, err)
@@ -58,24 +82,28 @@ func TestPurgeRemovesBranchesPinsAndNotes(t *testing.T) {
 	assert.Len(t, res.Branches, 2, "both dockhand branches are named")
 	assert.Len(t, res.Pins, 1)
 	assert.Equal(t, 1, res.Notes)
+	assert.True(t, res.StateRef, "and the state ref went with them")
 	assert.Empty(t, refsUnder(t, repo, "refs/heads/dockhand/"), "no dockhand branch survives")
 	assert.Empty(t, refsUnder(t, repo, "refs/dockhand/verify/"), "no pin survives")
 	shas, err := led.All(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, shas, "no record survives")
+
+	_, err = st.Read(context.Background())
+	require.ErrorIs(t, err, statestore.ErrNoState, "and the store is gone, not merely empty")
 }
 
-func TestPurgeLeavesTheStateRefAndSaysSo(t *testing.T) {
-	// The asymmetry purge is built on: the refs are artifacts of the
-	// work, the state ref is the record OF the work, and it carries the
-	// leases. A reader whose branches have all gone must be told the
-	// records remain or the next `status` reads as a bug.
+func TestPurgeTakesTheStateRefInTheSameBatchAsTheRefs(t *testing.T) {
+	// The whole reason Purge is not an Amend: the ref a state commit
+	// would land on is the one being deleted, so there is one batch and
+	// no commit. If the branches went and the state ref did not, this
+	// verb would have written a state commit and then orphaned it.
 	repo, st, led := purgeFixture(t)
 	_, err := purgeOp(repo, st, led).Run(context.Background())
 	require.NoError(t, err)
 
-	_, err = st.Read(context.Background())
-	require.NoError(t, err, "the state ref is still readable after a purge")
+	assert.Empty(t, refsUnder(t, repo, "refs/dockhand/"),
+		"nothing under refs/dockhand/ survives, the state ref included")
 }
 
 func TestPurgeLeavesEveryOtherBranchAlone(t *testing.T) {
@@ -95,16 +123,23 @@ func TestPurgeLeavesEveryOtherBranchAlone(t *testing.T) {
 
 func TestPurgeDryRunRemovesNothing(t *testing.T) {
 	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{Held: []verify.Holding{holding("dockhand-worker-a", verify.HeldWorker)}}
 	op := purgeOp(repo, st, led)
-	op.DryRun = true
+	op.Verifier, op.DryRun = fakeProv(f), true
+
 	res, err := op.Run(context.Background())
 	require.NoError(t, err)
 
 	assert.True(t, res.DryRun)
 	assert.Len(t, res.Branches, 2, "it still says what would go")
 	assert.Equal(t, 1, res.Notes)
+	assert.True(t, res.StateRef)
+	assert.Equal(t, []string{"dockhand-worker-a"}, res.Removed)
 	assert.Len(t, refsUnder(t, repo, "refs/heads/dockhand/"), 2, "and nothing went")
 	assert.Len(t, refsUnder(t, repo, "refs/dockhand/verify/"), 1)
+	assert.Empty(t, f.Discarded)
+	_, err = st.Read(context.Background())
+	require.NoError(t, err, "the state ref is untouched by a dry run")
 	shas, err := led.All(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, shas, 1)
@@ -117,12 +152,13 @@ func TestPurgeOnACheckoutWithNothingToDoIsNotAFailure(t *testing.T) {
 	assert.Empty(t, res.Branches)
 	assert.Empty(t, res.Pins)
 	assert.Zero(t, res.Notes)
+	assert.False(t, res.StateRef, "there was no state ref to remove")
 }
 
 func TestPurgeRefusesABranchAWorktreeHasCheckedOut(t *testing.T) {
 	// `git update-ref` DELETES what `git branch -D` refuses, so a linked
 	// worktree sitting on a dockhand branch would simply lose it with a
-	// dangling HEAD. The refusal is before any Amend, and --force does
+	// dangling HEAD. The refusal is before any write, and --force does
 	// NOT lift it.
 	repo, st, led := purgeFixture(t)
 	gittest.Checkout(t, repo, "dockhand/jq-1.8")
@@ -134,77 +170,47 @@ func TestPurgeRefusesABranchAWorktreeHasCheckedOut(t *testing.T) {
 	require.ErrorContains(t, err, "dockhand/jq-1.8", "the refusal names the branch")
 
 	assert.Len(t, refsUnder(t, repo, "refs/heads/dockhand/"), 2, "and nothing was removed")
+	_, err = st.Read(context.Background())
+	require.NoError(t, err, "not the state ref either")
 	shas, err := led.All(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, shas, 1, "not even the notes, which are removed last")
 }
 
-func TestAPurgeWithNothingToRemoveWritesNoStateRef(t *testing.T) {
-	// R23 makes a delete line a line of a state commit, so a purge that
-	// removes something necessarily writes one — and on a fresh checkout
-	// creates the ref. A purge with NOTHING to remove must not: a verb
-	// that manufactured operational state out of an empty checkout would
-	// be surprising, and there is no ref effect to carry.
-	repo, st := fixture(t)
-	_, err := purgeOp(repo, st, ledger.Open(repo)).Run(context.Background())
-	require.NoError(t, err)
-
-	_, err = st.Read(context.Background())
-	require.ErrorIs(t, err, statestore.ErrNoState,
-		"an empty purge leaves the checkout exactly as it found it")
-}
-
-// fakeProv hands the same Fake back as a resolver, which is the shape
-// cli supplies.
-func fakeProv(f *verifytest.Fake) func(context.Context) (verify.Verifier, error) {
-	return func(context.Context) (verify.Verifier, error) { return f, nil }
-}
-
-func worker(name, id string) verify.Worker {
-	return verify.Worker{Name: name, Job: verify.Job{ID: id, Provider: "tart"}}
-}
-
-func TestPurgeLeavesEnvironmentsAloneUnlessAsked(t *testing.T) {
-	// The default is the conservative one: purge clears this checkout's
-	// git artifacts and does not reach the provider at all.
+func TestPurgeTakesEveryHoldingButTheReferenceCopies(t *testing.T) {
+	// The one rule the whole change turns on, end to end: workers,
+	// scratch clones and derived images go; the reference copy stays,
+	// and it is REPORTED as staying rather than silently omitted.
 	repo, st, led := purgeFixture(t)
-	f := &verifytest.Fake{Live: []verify.Worker{worker("dockhand-worker-a", "a")}}
+	f := &verifytest.Fake{Held: []verify.Holding{
+		holding("dockhand-worker-b", verify.HeldWorker),
+		holding("dockhand-golden-sequoia", verify.HeldReference),
+		holding("dockhand-base-sequoia", verify.HeldDerived),
+		holding("dockhand-probe-1", verify.HeldScratch),
+	}}
 	op := purgeOp(repo, st, led)
 	op.Verifier = fakeProv(f)
 
 	res, err := op.Run(context.Background())
 	require.NoError(t, err)
-	assert.Nil(t, res.Environments, "nil, not empty: the provider was never asked")
-	assert.Empty(t, f.Released, "and nothing was released")
-}
-
-func TestPurgeEnvironmentsReleasesEveryWorker(t *testing.T) {
-	repo, st, led := purgeFixture(t)
-	f := &verifytest.Fake{Live: []verify.Worker{
-		worker("dockhand-worker-b", "b"),
-		worker("dockhand-worker-a", "a"),
-	}}
-	op := purgeOp(repo, st, led)
-	op.Verifier, op.Environments = fakeProv(f), true
-
-	res, err := op.Run(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"dockhand-worker-a", "dockhand-worker-b"}, res.Environments,
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-probe-1", "dockhand-worker-b"}, res.Removed,
 		"named and sorted, so a report reads the same twice")
-	assert.ElementsMatch(t, []string{"a", "b"}, f.Released)
+	assert.Equal(t, []string{"dockhand-golden-sequoia"}, res.Kept)
+	assert.Equal(t, []string{"dockhand-base-sequoia", "dockhand-probe-1", "dockhand-worker-b"}, f.Discarded)
 }
 
-func TestPurgeEnvironmentsDryRunReleasesNothing(t *testing.T) {
+func TestPurgeNeedsNoFlagToReachTheProvider(t *testing.T) {
+	// The correction this change is: there is no --environments, and the
+	// default is not the conservative third of the job it used to be.
 	repo, st, led := purgeFixture(t)
-	f := &verifytest.Fake{Live: []verify.Worker{worker("dockhand-worker-a", "a")}}
+	f := &verifytest.Fake{Held: []verify.Holding{holding("dockhand-worker-a", verify.HeldWorker)}}
 	op := purgeOp(repo, st, led)
-	op.Verifier, op.Environments, op.DryRun = fakeProv(f), true, true
+	op.Verifier = fakeProv(f)
 
 	res, err := op.Run(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"dockhand-worker-a"}, res.Environments, "it still says what would go")
-	assert.Empty(t, f.Released, "and nothing went")
-	assert.Len(t, refsUnder(t, repo, "refs/heads/dockhand/"), 2)
+	assert.Equal(t, []string{"dockhand-worker-a"}, res.Removed)
+	assert.Equal(t, []string{"dockhand-worker-a"}, f.Discarded)
 }
 
 func TestPurgeSaysWhenItCouldNotAskTheProvider(t *testing.T) {
@@ -212,46 +218,108 @@ func TestPurgeSaysWhenItCouldNotAskTheProvider(t *testing.T) {
 	// that reported "0 environments" here would be claiming a clean host
 	// on the strength of a question that was never answered.
 	repo, st, led := purgeFixture(t)
-	f := &verifytest.Fake{WorkersErr: errors.New("tart: command not found")}
+	f := &verifytest.Fake{HoldingsErr: errors.New("tart: command not found")}
 	op := purgeOp(repo, st, led)
-	op.Verifier, op.Environments = fakeProv(f), true
+	op.Verifier = fakeProv(f)
 
 	res, err := op.Run(context.Background())
-	require.NoError(t, err, "the refs and notes still go")
-	require.ErrorIs(t, res.InventoryRefused, lease.ErrNoInventory)
+	require.NoError(t, err, "the refs and notes still go: nothing was held")
+	require.ErrorIs(t, res.EstateRefused, estate.ErrNoEstate)
+	assert.Nil(t, res.Removed, "nil, not empty: the provider was never answered")
 	assert.Empty(t, refsUnder(t, repo, "refs/heads/dockhand/"), "the branches went regardless")
 }
 
 func TestPurgeSaysWhenTheHostHasNoProvider(t *testing.T) {
+	// The commonest case there is: a checkout on a machine that never
+	// had tart. It is cleaned up, and it is told the machine was not
+	// asked.
 	repo, st, led := purgeFixture(t)
+	res, err := purgeOp(repo, st, led).Run(context.Background()) // Verifier stays nil
+	require.NoError(t, err)
+	require.ErrorIs(t, res.EstateRefused, estate.ErrNoEstate)
+	assert.True(t, res.StateRef, "and the records still went")
+}
+
+func TestAProviderThatWouldNotResolveKeepsItsOwnCause(t *testing.T) {
+	// One sentinel, two causes. Both mean "the machine was not accounted
+	// for" to this operation, and they mean quite different things to
+	// the person reading the line — so a resolution failure must not
+	// arrive as "no provider is configured".
+	repo, st, led := purgeFixture(t)
+	boom := errors.New("tart answered, badly")
 	op := purgeOp(repo, st, led)
-	op.Environments = true // and Verifier stays nil
+	op.Verifier = func(context.Context) (verify.Verifier, error) { return nil, boom }
 
 	res, err := op.Run(context.Background())
 	require.NoError(t, err)
-	require.ErrorIs(t, res.InventoryRefused, lease.ErrNoInventory)
+	require.ErrorIs(t, res.EstateRefused, estate.ErrNoEstate, "the shape a caller decides from")
+	require.ErrorIs(t, res.EstateRefused, boom, "and the detail a person reads")
 }
 
-func TestAProviderThatCannotListIsNotAProviderWithNoWorkers(t *testing.T) {
-	// The same distinction one level down, where it is made.
-	f := &verifytest.Fake{}
-	_, err := lease.Inventory(context.Background(), &noLister{f})
-	require.ErrorIs(t, err, lease.ErrNoInventory)
+func TestPurgeRefusesToDropLeasesItCannotAccountFor(t *testing.T) {
+	// The one refusal left, and it exists BECAUSE the state ref now
+	// goes: the lease records are the last account of what this machine
+	// is running, and deleting them while the provider cannot be asked
+	// strands a guest under a name nothing can produce again.
+	repo, st, led := purgeFixture(t)
+	liveLease(t, st)
+	f := &verifytest.Fake{HoldingsErr: errors.New("tart: command not found")}
+	op := purgeOp(repo, st, led)
+	op.Verifier = fakeProv(f)
 
-	got, err := lease.Inventory(context.Background(), f)
+	_, err := op.Run(context.Background())
+	require.ErrorIs(t, err, ErrEstateUnknown)
+	require.ErrorIs(t, err, estate.ErrNoEstate, "and it carries the cause")
+	require.ErrorContains(t, err, "Sequoia", "the refusal names what is held")
+
+	assert.Len(t, refsUnder(t, repo, "refs/heads/dockhand/"), 2, "nothing was removed")
+	_, err = st.Read(context.Background())
 	require.NoError(t, err)
-	assert.Empty(t, got, "a provider that CAN list and lists nothing is a different answer")
 }
 
-// noLister is a Verifier that is not a WorkerLister.
-type noLister struct{ verify.Verifier }
+func TestForceLiftsTheEstateRefusal(t *testing.T) {
+	repo, st, led := purgeFixture(t)
+	liveLease(t, st)
+	f := &verifytest.Fake{HoldingsErr: errors.New("tart: command not found")}
+	op := purgeOp(repo, st, led)
+	op.Verifier, op.Force = fakeProv(f), true
 
-func TestDestroyTreatsAnAlreadyGoneWorkerAsGone(t *testing.T) {
-	// A listing that straddled somebody else's release is the ordinary
-	// case, not a fault: Destroy's job is that the named environments
-	// are gone when it returns, not that this call removed them.
-	f := &verifytest.Fake{ReleaseErr: map[string]error{"a": verify.ErrUnknownJob}}
-	gone, err := lease.Destroy(context.Background(), f, []verify.Worker{worker("dockhand-worker-a", "a")})
+	res, err := op.Run(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"dockhand-worker-a"}, gone)
+	assert.True(t, res.StateRef)
+	require.ErrorIs(t, res.EstateRefused, estate.ErrNoEstate, "and it still says it could not look")
+}
+
+func TestPurgeWithNoLiveLeasesDoesNotNeedTheProvider(t *testing.T) {
+	// The refusal is narrow on purpose: a store with nothing held has
+	// nothing to strand, so an unlistable machine is reported and never
+	// a stop.
+	repo, st, led := purgeFixture(t)
+	f := &verifytest.Fake{HoldingsErr: errors.New("tart: command not found")}
+	op := purgeOp(repo, st, led)
+	op.Verifier = fakeProv(f)
+
+	_, err := op.Run(context.Background())
+	require.NoError(t, err)
+}
+
+func TestPurgeRefusesAStateRefAmongTheOwnedRefs(t *testing.T) {
+	// The store adds its own line, once, at the end. A caller that
+	// passed refs/dockhand/state as though it were an artifact has made
+	// the same category error Txn.Ref refuses.
+	repo, st, _ := purgeFixture(t)
+	tip, err := repo.RevParse(context.Background(), statestore.Ref)
+	require.NoError(t, err)
+
+	err = st.Purge(context.Background(), map[string]string{statestore.Ref: tip})
+	require.ErrorIs(t, err, statestore.ErrForeignRef)
+}
+
+func TestPurgeRefusesARefWithNoExpectedTip(t *testing.T) {
+	// Every line carries an expected-old: a delete with no expectation
+	// would remove whatever the ref holds now, including a branch
+	// somebody moved a second ago.
+	_, st, _ := purgeFixture(t)
+	err := st.Purge(context.Background(), map[string]string{"refs/heads/dockhand/jq-1.8": ""})
+	require.ErrorIs(t, err, statestore.ErrPurgeTip)
 }

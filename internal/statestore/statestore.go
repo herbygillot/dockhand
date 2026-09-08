@@ -757,8 +757,7 @@ func (s *Store) Amend(ctx context.Context, mutate func(*Txn) error) error {
 		if err != nil {
 			return err
 		}
-		batch := append([]git.RefUpdate{{Ref: Ref, New: commit, Old: st.At}}, tx.refs...)
-		err = s.repo.UpdateRefs(ctx, batch)
+		err = s.batch(ctx, append([]git.RefUpdate{{Ref: Ref, New: commit, Old: st.At}}, tx.refs...))
 		if err == nil {
 			return nil
 		}
@@ -776,6 +775,108 @@ func (s *Store) Amend(ctx context.Context, mutate func(*Txn) error) error {
 			return fmt.Errorf("%w: %d attempts", ErrConcurrent, amendTries)
 		}
 	}
+}
+
+// Purge removes the dockhand-owned refs a caller listed AND THE STATE
+// REF ITSELF, in one all-or-nothing batch.
+//
+// IT IS NOT AN AMEND AND IT CANNOT BE ONE. Every other ref this store
+// moves is a line beside a state commit, because the record and the ref
+// are one act (R23). A purge has no record to write: the ref a commit
+// would land on is the one being deleted, so an Amend here would build
+// a state commit, publish it, and then need a second batch to remove
+// what it had just written. One batch, no commit, and the deletion of
+// refs/dockhand/state is a line in it like any other.
+//
+// THE STATE REF'S LINE GOES LAST. UpdateRefs classifies a refusal by
+// re-reading in batch order, and the branches and pins are the lines a
+// person can act on — a branch a hand moved between the listing and the
+// batch is the refusal worth surfacing, and putting the store's own
+// line first would report the whole purge as a lost race against
+// itself.
+//
+// The expected-old on every line is what the REF held: the caller's
+// tips for the owned namespaces, and this store's own tip for the state
+// ref. So a purge racing any writer at all refuses in full and removes
+// nothing, which is the only safe behaviour for a verb with no undo
+// beyond the reflog.
+//
+// A repository with no state ref is not an error: there is nothing to
+// delete and the owned refs may still be there — a checkout whose state
+// ref was recreated is exactly the population a purge is useful for.
+//
+// IT REPORTS NOTHING BUT SUCCESS. A count of lines would be a third
+// spelling of what the caller already has — it listed the tips, and it
+// read the store — and a number nobody could reconcile against those
+// two is the kind of return value a report starts trusting over the
+// facts it was built from.
+func (s *Store) Purge(ctx context.Context, tips map[string]string) error {
+	unlock, err := s.take(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	// The reflog before the deletion and not after it: `git log
+	// refs/dockhand/state` is the archive a purge leaves behind, and a
+	// repository that never had reflogs on would leave nothing at all.
+	if err := s.ensureReflog(ctx); err != nil {
+		return err
+	}
+	// Sorted so a batch's lines are in a stated order: the reflog a
+	// person reads afterwards is then in the same order twice, and a
+	// test can pin it.
+	names := slices.Sorted(maps.Keys(tips))
+	batch := make([]git.RefUpdate, 0, len(names)+1)
+	for _, name := range names {
+		switch {
+		case name == Ref:
+			// The store's own line is this function's to add, once, at the
+			// end. A caller that passed it has listed the state ref as
+			// though it were an owned artifact, which is the same category
+			// error Txn.Ref refuses.
+			return fmt.Errorf("%w: %s is the store's own line", ErrForeignRef, name)
+		case !owned(name):
+			return fmt.Errorf("%w: %s", ErrForeignRef, name)
+		case tips[name] == "":
+			return fmt.Errorf("%w: %s", ErrPurgeTip, name)
+		}
+		batch = append(batch, git.RefUpdate{Ref: name, New: "", Old: tips[name]})
+	}
+	st, err := s.Read(ctx)
+	switch {
+	case errors.Is(err, ErrNoState):
+	case err != nil:
+		return err
+	case st.At != "":
+		batch = append(batch, git.RefUpdate{Ref: Ref, New: "", Old: st.At})
+	}
+	if len(batch) == 0 {
+		return nil
+	}
+	return s.batch(ctx, batch)
+}
+
+// ErrPurgeTip is Purge refusing a ref whose tip the caller did not
+// supply. Every line carries an expected-old, and a caller that did not
+// read one has not established what it is deleting — a delete with no
+// expectation would remove whatever the ref holds now, including a
+// branch somebody moved a second ago.
+var ErrPurgeTip = errors.New("statestore: a purge line names a ref with no expected tip")
+
+// batch is the ONE place this store performs a ref update, and it is a
+// funnel rather than a convenience.
+//
+// R23's claim is that the store's commit is the only mover of the three
+// refs dockhand is the authority for, and onlymover_test.go proves it
+// by counting call sites: one package, one call. Amend and Purge are
+// two acts — a commit with its ref lines, and a removal that can have
+// no commit — and each spelling git.UpdateRefs itself would make that
+// census read two, which is a weaker claim for no gain. The error
+// classification stays with the caller, because what a refusal MEANS
+// differs: a lost race on the state line is retryable inside an Amend
+// and is a flat refusal inside a Purge.
+func (s *Store) batch(ctx context.Context, updates []git.RefUpdate) error {
+	return s.repo.UpdateRefs(ctx, updates)
 }
 
 // take acquires the ledger flock for this repository. The path resolves

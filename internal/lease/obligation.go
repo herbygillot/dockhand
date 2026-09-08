@@ -3,10 +3,8 @@ package lease
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
 	"slices"
-	"sort"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -649,81 +647,4 @@ func reclaim(ctx context.Context, prov verify.Verifier, ob Obligation) error {
 		return errors.New("lease: the backend named no job for " + ob.Worker)
 	}
 	return prov.Release(ctx, ob.Job)
-}
-
-// ErrNoInventory is Inventory saying it could not ask, which is not the
-// same answer as "there are none" (rule 7). A provider that is not a
-// WorkerLister has told us nothing about its environments; a listing
-// that failed has told us nothing either. Outstanding treats both as
-// silence on purpose — an audit that refused to run because one backend
-// cannot enumerate would report no obligations at all — but a caller
-// about to DESTROY what a listing names must be able to tell "nothing
-// to destroy" from "I never found out", because those two justify very
-// different next steps.
-var ErrNoInventory = errors.New("lease: this provider cannot list its environments")
-
-// Inventory is every environment the provider is running, and unlike the
-// unexported inventory it SAYS when it could not ask.
-//
-// The two exist together deliberately. Outstanding wants silence: it is
-// an audit over many facts and a backend that cannot enumerate is one
-// fact missing, not a reason to report nothing. A destructive caller
-// wants the refusal: it is about to act on this listing and being handed
-// an empty slice would read as "the machine is clean" when the truth is
-// "I did not look".
-func Inventory(ctx context.Context, prov verify.Verifier) ([]verify.Worker, error) {
-	if prov == nil {
-		return nil, fmt.Errorf("%w: no provider is configured", ErrNoInventory)
-	}
-	lister, ok := prov.(verify.WorkerLister)
-	if !ok {
-		return nil, ErrNoInventory
-	}
-	workers, err := lister.Workers(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNoInventory, err)
-	}
-	return workers, nil
-}
-
-// Destroy releases every environment named, at the provider, and reports
-// which ones went. It TOUCHES NO RECORD, and that is the whole of the
-// difference between it and Release.
-//
-// Release is the death of one LEASED environment: it reads the lease,
-// claims the release so no peer performs it twice, calls the provider,
-// and confirms the outcome on the record. Destroy is the death of an
-// environment the provider is holding whether or not any record here
-// ever named it — which is exactly the population a purge is for, since
-// the untracked worker (one no lease's request joins) is the one most
-// worth clearing and the one Release cannot reach at all.
-//
-// It is the lease package's because the lease lifecycle owns
-// environments: a caller that reached for verify.Verifier.Release itself
-// would be the second place in the tree that knows how an environment
-// dies, and the first thing to drift when that changes.
-//
-// A worker that is already gone is not an error. The provider answers
-// verify.ErrUnknownJob for a VM it cannot find, and a listing that
-// straddled somebody else's release is the ordinary case rather than a
-// fault — Destroy's job is that the named environments are gone when it
-// returns, not that this call is what removed them. Every other failure
-// is collected and returned together, so one stuck guest does not hide
-// the nine that went.
-func Destroy(ctx context.Context, prov verify.Verifier, workers []verify.Worker) ([]string, error) {
-	if prov == nil {
-		return nil, fmt.Errorf("%w: no provider is configured", ErrNoInventory)
-	}
-	gone := make([]string, 0, len(workers))
-	var failed []error
-	for _, w := range workers {
-		err := prov.Release(ctx, w.Job)
-		if err != nil && !errors.Is(err, verify.ErrUnknownJob) {
-			failed = append(failed, fmt.Errorf("releasing %s: %w", w.Name, err))
-			continue
-		}
-		gone = append(gone, w.Name)
-	}
-	sort.Strings(gone)
-	return gone, errors.Join(failed...)
 }
