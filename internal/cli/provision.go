@@ -98,7 +98,15 @@ func (a provisionTartAction) Execute(ctx context.Context, s *Services) error {
 		fmt.Fprintf(s.Err, "%s is what it claims: pristine, toolchain present, MacPorts answering\n", name)
 		return nil
 	}
-	return t.Provision(ctx, a.release, s.Err)
+	// THE NARRATION GOES TO STDERR AND THE RESULT TO STDOUT, which is
+	// bump's split and now this verb's: a caller scraping stdout used to
+	// get nothing at all from provision.
+	line, err := t.Provision(ctx, a.release, s.Err)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(s.Out, line)
+	return nil
 }
 
 // provisionCmd builds the provision command tree: one subcommand per
@@ -270,7 +278,11 @@ func (a provisionTartAction) provisionAll(ctx context.Context, s *Services, t pr
 			}
 		}
 		fmt.Fprintf(s.Err, "== provisioning %s\n", r.Name)
-		if perr := t.Provision(ctx, r, s.Err); perr != nil {
+		line, perr := t.Provision(ctx, r, s.Err)
+		if perr == nil {
+			fmt.Fprintln(s.Out, line)
+		}
+		if perr != nil {
 			// A full machine ends the sweep instead of joining the tally.
 			// The cap is machine-wide, so every release left would meet
 			// the same refusal, and reporting that as "provisioning failed

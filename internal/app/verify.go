@@ -214,8 +214,8 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 		atts, adopted = atts[:0], adopted[:0]
 		for _, pl := range r.Platforms {
 			spec := run.Spec{
-				Content: content, Roster: rosterOf(subjects), Platform: pl,
-				Test: r.Test, KeepEnv: r.KeepEnv, Trace: r.Trace,
+				Content: content, Roster: rosterOf(subjects), FromSource: fromSourceOf(subjects),
+				Platform: pl, Test: r.Test, KeepEnv: r.KeepEnv, Trace: r.Trace,
 			}
 			specs[pl.Name] = spec
 			if a, ok := run.Adoptable(attempts(tx.State()), content, spec.ID(), pl, v.Now()); ok {
@@ -265,6 +265,42 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 	for _, a := range atts {
 		row := Result{Did: Queued, Ref: ref, Attempt: a.ID}
 		if full {
+			res.Attempts = append(res.Attempts, row)
+			continue
+		}
+		// AN ADOPTEE THAT IS NOT QUEUED IS NOT STARTED. run.Adoptable
+		// draws from Queued, Active and settled-Passed, and run.Start
+		// refuses all but the first — so `verify` over a tip already
+		// verified, which is the case adoption exists for, returned
+		// ErrNotQueued and failed the whole verb.
+		if did, done := resumed(a); done {
+			row.Did = did
+			if did == Started {
+				row.Lease = leaseOf(a)
+			}
+			if did == Stood {
+				row.Verdict = verdictOf(a)
+				if r.Trace {
+					// The one thing adoption cannot give back. Trace is
+					// outside the SpecID precisely so a --trace rerun still
+					// matches, and a build whose log is closed is read rather
+					// than followed.
+					say(v.Progress, progress.Info,
+						"attempt "+a.ID+" already settled, so there is no live log to follow: `dockhand log "+string(a.Change)+"`")
+				}
+			}
+			if did == Started && r.Trace {
+				v.follow(ctx, prov, a)
+			}
+			if did == Started && r.Wait != nil {
+				final, werr := watch(ctx, v.State, v.Ledger, prov, v.Local, a, specs[a.Platform], *r.Wait, r.Residency, v.Residency, v.Claimant(), v.Now)
+				if werr != nil {
+					return res, werr
+				}
+				if final.Phase == record.Finished {
+					row.Did, row.Verdict = Stood, verdictOf(final)
+				}
+			}
 			res.Attempts = append(res.Attempts, row)
 			continue
 		}

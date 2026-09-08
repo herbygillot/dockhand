@@ -97,7 +97,11 @@ func Observe(ctx context.Context, prov verify.Verifier, l record.Lease, spec Spe
 			}
 		}
 	}
-	e.Manifests = manifestsOf(ctx, prov, job, spec)
+	var missed string
+	e.Manifests, missed = manifestsOf(ctx, prov, job, spec)
+	if missed != "" {
+		e.Unavailable = append(e.Unavailable, missed)
+	}
 	e.Probes = probesOf(ctx, prov, job, spec, prior)
 	return e, nil
 }
@@ -124,19 +128,28 @@ func Observe(ctx context.Context, prov verify.Verifier, l record.Lease, spec Spe
 // written: the headline's. A cohort's dependents are measured against
 // the headline's ABI, so the entry the proposal needs is the one that
 // exists.
-func manifestsOf(ctx context.Context, prov verify.Verifier, job verify.Job, spec Spec) map[string]Manifests {
+// It reports what it could not get beside what it got. A provider that
+// declares no manifest capability is answered by abi's own "this
+// environment cannot describe an installation", which is true; a
+// provider that CAN describe and was asked and failed is a different
+// fact wearing the same empty map, and saying nothing about it made a
+// broken analysis path look like a clean one (rule 7, stacked).
+func manifestsOf(ctx context.Context, prov verify.Verifier, job verify.Job, spec Spec) (map[string]Manifests, string) {
 	if len(spec.Roster) == 0 || !prov.Capabilities().InstalledManifest {
-		return nil
+		return nil, ""
 	}
 	m, ok := prov.(verify.Manifester)
 	if !ok {
-		return nil
+		return nil, ""
 	}
 	got, err := m.Manifests(ctx, job)
+	if errors.Is(err, verify.ErrUnknownJob) {
+		// The guest is gone, so there is nothing to describe. Not an
+		// unobtained check: nothing could have obtained it.
+		return nil, ""
+	}
 	if err != nil {
-		// Including ErrUnknownJob: the guest is gone, so there is nothing
-		// to describe and nothing to say about the port.
-		return nil
+		return nil, "the environment was asked what it installed and could not answer: " + err.Error()
 	}
 	return map[string]Manifests{
 		spec.Roster[0].Port: {
@@ -145,7 +158,7 @@ func manifestsOf(ctx context.Context, prov verify.Verifier, job verify.Job, spec
 			Source:    got.BaselineSource,
 			Reason:    got.BaselineReason,
 		},
-	}
+	}, ""
 }
 
 // probesOf runs each member's own binaries in the environment and keeps

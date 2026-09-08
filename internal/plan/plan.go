@@ -57,10 +57,33 @@ type ContextDelta struct {
 // the planner produced it complete, and a realizer that re-derived it
 // from spans would be re-planning. Reason is the sentence a renderer
 // and a pull request body say about it ("2 hunks moved").
+//
+// WHOLE BYTES STILL NEED A PRECONDITION, and for the whole of the
+// overhaul this type had none. The plan's one precondition was
+// PortfileSHA256, so a change whose Portfile was untouched at the base
+// but whose patch file somebody had rewritten in between committed the
+// planner's stale relocation straight over the newer file and passed
+// every drift check on the way. The argument above is about who DERIVES
+// the bytes, and it is right; it is not an argument about whether the
+// bytes the plan was derived FROM are still there.
 type FileEdit struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
 	Reason  string `json:"reason"`
+	// Was is the hex sha256 of this file's bytes AS THE PLANNER READ
+	// THEM, which is what makes the whole-file write checkable: the
+	// realizer holds it against the base tree and refuses a plan derived
+	// from bytes that are no longer there.
+	//
+	// EMPTY MEANS THE PLANNER FOUND NO SUCH FILE — a creation — and that
+	// is a claim about the world, not a missing field. A realizer refuses
+	// a creation over a file that exists, for the same reason it refuses
+	// a rewrite of bytes that changed: both are the plan being about some
+	// other state of this portdir. Rule 7 is satisfied by that second
+	// refusal rather than by a third value: a producer that forgets to
+	// set Was is claiming the file is new, and the first realization over
+	// a real portdir says so instead of overwriting quietly.
+	Was string `json:"was,omitempty"`
 }
 
 // Finding is something examining the port turned up that nobody asked

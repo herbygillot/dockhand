@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/statestore"
@@ -186,7 +187,13 @@ func TestMintInStampsPlanFindingsIntoTheRecord(t *testing.T) {
 		got, err = MintIn(tx, Minting{
 			ID: "chg-01", Branch: "dockhand/jq-1.8", Tip: tip, Content: content, Destination: record.ToBranch,
 			Findings: []plan.Finding{{
-				Kind: "instruction", Ports: []string{"jq"}, Source: "Portfile:12", Quote: "# bump oniguruma too",
+				// THE PLANNER'S OWN CONSTANT, not a literal. This test read
+				// "instruction" — a word no planner has ever written — and
+				// passed for the whole overhaul while every real
+				// instruction-comment finding failed the mint. A test that
+				// spells the input itself proves the conversion and not the
+				// vocabulary; see finding_test.go for the census that does.
+				Kind: intent.FindingInstruction, Ports: []string{"jq"}, Source: "Portfile:12", Quote: "# bump oniguruma too",
 				Candidates: []plan.Candidate{{Port: "oniguruma6", Reason: "the comment names it"}},
 			}},
 		}, now)

@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -106,4 +107,53 @@ func TestRenderPlanSaysWhatItCouldNotCheck(t *testing.T) {
 		"patch check unavailable: jq's 1 patchfile was not checked against the new source because no distfile was fetched\n"+
 		"predicted delta:\n", b.String())
 	assert.NotContains(t, b.String(), "revbump", "a proposal is status's line, not the plan summary's")
+}
+
+// AN EDIT THAT REPLACES A PAGE IS SUMMARIZED, NOT PRINTED. A Rust
+// port's cargo.crates block is one edit whose Old and New are each some
+// four hundred lines, and the narration printed both verbatim — eight
+// hundred lines of vendored crate names between the person and the
+// branch name they were waiting for.
+func TestABlockSizedEditIsReportedByItsShape(t *testing.T) {
+	block := strings.Repeat("    serde-1.0.203 abcdef0123456789\n", 400)
+	var b bytes.Buffer
+	Plan(&b, &plan.Plan{
+		Intent: "bump", Portdir: "lang/skim",
+		Edits: []edit.Edit{{Reason: "crates", Old: block, New: block + "    x-1.0 f\n"}},
+	})
+	out := b.String()
+	assert.NotContains(t, out, "serde-1.0.203", "the bytes belong to --plan's JSON, not to a terminal")
+	assert.Contains(t, out, "401 lines")
+	assert.LessOrEqual(t, strings.Count(out, "\n"), 4, "one edit is one line")
+}
+
+// AND A SMALL VALUE IS STILL THE NEWS. A version bump's whole point is
+// the two strings, and summarizing them would report the shape of a
+// fact the reader came for.
+func TestAnOrdinaryEditStillPrintsItsValues(t *testing.T) {
+	var b bytes.Buffer
+	Plan(&b, &plan.Plan{
+		Intent: "bump", Portdir: "lang/skim",
+		Edits: []edit.Edit{{Reason: "version", Old: "0.16.2", New: "0.19.0"}},
+	})
+	assert.Contains(t, b.String(), "0.16.2 -> 0.19.0")
+}
+
+// THE PLAN SAYS WHICH PATCH DID NOT COME OVER, before any branch
+// exists. A person reading a plan is deciding whether to mint it, and
+// this is the one finding that tells them they have work to do on the
+// branch afterwards — where it used to be a refusal they met instead of
+// a plan at all.
+func TestThePlanNarrationStatesAPatchThatDidNotCarryOver(t *testing.T) {
+	var b bytes.Buffer
+	Plan(&b, &plan.Plan{
+		Intent: "bump", Portdir: "lang/skim",
+		Findings: []plan.Finding{{
+			Kind:      KindPatchUnrelocated,
+			Source:    "files/patch-foo.diff",
+			Criterion: "patch not carried over: files/patch-foo.diff does not relocate onto the new source — Makefile hunk #1: its before-block occurs nowhere in the file. Refresh it by hand on the branch, then verify",
+		}},
+	})
+	assert.Contains(t, b.String(), "does not relocate onto the new source")
+	assert.Contains(t, b.String(), "Refresh it by hand on the branch")
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lockfile"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/report"
@@ -742,7 +741,7 @@ func cycleOp(ctx context.Context, s *Services, me record.OwnerID, passID string,
 	// a preflight that could not be read is scheduled as an ordinary
 	// build rather than declined, so the cost of the approximation is a
 	// known_fail discovered in the guest instead of before it.
-	stg := &stager{repo: repo, temp: s.Temp(), session: s.session, release: drainFrame()}
+	stg := &stager{repo: repo, temp: s.Temp(), session: s.session}
 	var ev = evaluatorFor(s)
 	return app.Cycle{
 		Repo: repo, State: st, Ledger: led, Env: s.PublishEnv(),
@@ -777,26 +776,6 @@ func evaluatorFor(s *Services) *blobEvaluatorPtr {
 // interface holding a zero struct would pass every nil check and panic
 // on the first call.
 type blobEvaluatorPtr struct{ blobEvaluator }
-
-// drainFrame is the platform frame a DRAIN's preflight is asked under,
-// and it is the zero Release on purpose.
-//
-// A queued attempt names its own platform and the preflight's frame is
-// per attempt, but run.Stager's signature is the QUEUE's — a sha and the
-// subjects — so a stager built for a whole pass cannot know which
-// attempt it is about to stage. The zero Release makes the evaluator use
-// its own default frame, which is the host's.
-//
-// WHAT THE APPROXIMATION COSTS IS BOUNDED AND STATED. The preflight
-// answers known_fail and use_xcode, both per-platform options; asked
-// under the host's frame for an attempt bound for another release, it
-// can miss a known_fail the target release declares. run.Plan then
-// schedules the member as an ordinary build and the guest discovers the
-// same fact — so the cost is a VM spent, never a wrong verdict, and it
-// is exactly the cost Preflight.Read exists to keep from becoming a
-// silent decline. A per-attempt frame needs the platform on Stage's
-// signature, which is run's to widen.
-func drainFrame() platform.Release { return platform.Release{} }
 
 // doctorCmd reports which tools are present and which capabilities they
 // enable. It is filed under Setup rather than Reports because it reports

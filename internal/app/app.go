@@ -501,6 +501,30 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 			return Result{}, change.ErrCheckedOut // 46: switch away first
 		}
 	}
+	// A BRANCH NOTHING OWNS IS NAMED, NOT COLLIDED WITH. MintIn's
+	// ErrStanding is the record-level half of a pair whose ref-level half
+	// is the create line, and its own doc says both are needed because
+	// "a record binds the name; a foreign ref stands at it". There is a
+	// THIRD case neither names, and it is dockhand's own leavings:
+	// retirement closes a change without necessarily taking its branch,
+	// so a rejected pull request leaves a branch with no live change.
+	//
+	// That reached the ref-level judge and came back as
+	//   git: refs/heads/dockhand/skim-5.7.0 is at "f45b30ab", expected ""
+	// — exit 45, "your own git moved this", reported as a foreign hand
+	// when the hand was dockhand's. Measured in the field, and it made
+	// the port unbumpable until the whole store was purged.
+	//
+	// The record knows better, so it says so, and names the verb that
+	// now clears it.
+	if !hasOld && c.Repo != nil && r.Slug != "" {
+		branch := branchFor(r.Slug)
+		if c.Repo.HasBranch(ctx, branch) {
+			return Result{}, fmt.Errorf("%w: %s stands with no change behind it, left by one that closed; `dockhand discard %s` removes it",
+				change.ErrOrphanBranch, branch, branch)
+		}
+	}
+
 	// commit: an unreferenced object over the base.
 	sha, content, err := change.Commit(ctx, c.Repo, r.Prepared, r.Prepared.Base.Sha)
 	if err != nil {
@@ -526,7 +550,8 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 	var adopted bool
 	spec := run.Spec{
 		Content: content, Roster: rosterOf(r.Prepared.Subjects),
-		Platform: r.Platform, Test: r.Test, KeepEnv: r.KeepEnv,
+		FromSource: fromSourceOf(r.Prepared.Subjects),
+		Platform:   r.Platform, Test: r.Test, KeepEnv: r.KeepEnv,
 	}
 	err = c.State.Amend(ctx, func(tx *statestore.Txn) error {
 		att, adopted = record.Attempt{}, false
@@ -578,6 +603,31 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 		// announced by app, after the Amend, from the returned attempt —
 		// never from inside the closure.
 		say(c.Progress, progress.Info, "adopted attempt "+att.ID+" started "+att.Started.Format(time.RFC3339))
+		// AND AN ADOPTEE THAT IS NOT QUEUED IS NOT STARTED. Adoption
+		// draws from three states and run.Start takes one; the two this
+		// road existed to make free were the two it turned into a mint
+		// error naming a branch that was fine.
+		if did, done := resumed(att); done {
+			res.Did = did
+			if did == Started {
+				res.Lease = leaseOf(att)
+			}
+			if did == Stood {
+				res.Verdict = verdictOf(att)
+				return res, nil
+			}
+			if r.Wait == nil {
+				return res, nil
+			}
+			final, werr := watch(ctx, c.State, c.Ledger, prov, c.Local, att, spec, *r.Wait, r.Residency, c.Residency, c.Claimant(), c.Now)
+			if werr != nil {
+				return res, werr
+			}
+			if final.Phase == record.Finished {
+				res.Did, res.Verdict = Stood, verdictOf(final)
+			}
+			return res, nil
+		}
 	}
 	// start ONCE, the sequencer. ErrNoVacancy: nothing written on the
 	// attempt, stays Queued, exit 60. ErrNoEnvironment: stays Queued with
@@ -653,6 +703,31 @@ func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ver
 	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	for a.Phase != record.Finished && ctx.Err() == nil {
+		// THE RE-READ IS FIRST, and it used to be last. The claim it
+		// exists to make — "a dispatcher that appeared mid-wait takes
+		// over" — held in exactly one direction, because AwaitRecord does
+		// not return on a timer: it loops internally until the attempt
+		// SETTLES. So the re-read sat after a call that only returns once
+		// the work is already done.
+		//
+		// A dispatcher that APPEARED was fine: this process was in the
+		// judging branch, which returns each iteration, so the re-read was
+		// reached. A dispatcher that VANISHED was not: this process was
+		// inside AwaitRecord, nothing would ever settle the attempt
+		// because the only thing that would have has died, and the re-read
+		// was never reached again.
+		//
+		// Measured in the field: a dispatcher killed mid-build, a guest
+		// that finished the build successfully, a record left saying
+		// "building", and `bump --wait 90m` sitting silent for the full
+		// ninety minutes on a build that had passed.
+		//
+		// Asked FIRST, the loop re-decides its role on every pass whatever
+		// the previous branch did, and both directions work for the same
+		// reason.
+		if reread != nil {
+			res = reread(ctx)
+		}
 		switch res.State {
 		case NoDispatcher:
 			var err error
@@ -661,16 +736,27 @@ func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ver
 			}
 		case ResidencyUnknown, DispatcherResident:
 			var err error
-			if a, err = run.AwaitRecord(ctx, st, a.ID, 5*time.Second); err != nil {
+			// BOUNDED, so a dispatcher that dies while this call is blocked
+			// costs one interval rather than the whole --wait. AwaitRecord
+			// returns the attempt unchanged when the window passes with no
+			// verdict, and the loop's own condition decides what next.
+			if a, err = run.AwaitFor(ctx, st, a.ID, 5*time.Second, residencyRecheck); err != nil {
 				return a, err
 			}
-		}
-		if reread != nil {
-			res = reread(ctx) // a dispatcher that appeared mid-wait takes over
 		}
 	}
 	return a, nil
 }
+
+// residencyRecheck is how long a watcher will sit inside AwaitRecord
+// before re-deciding whose job the verdict is.
+//
+// It is short because the cost of being wrong is the whole --wait: a
+// watcher waiting on a dispatcher that has died learns nothing until it
+// looks again, and looking is one lock probe. It is not shorter because
+// the probe touches a lockfile and a store read, and a watcher is
+// already polling the record every five seconds underneath.
+const residencyRecheck = 30 * time.Second
 
 // Promote is the operation behind the promote verb, and the tail of
 // bump --to-pr on a verifier-less host, sequenced by cli. Human BY
@@ -802,6 +888,54 @@ func rosterOf(subjects []record.Subject) []run.Member {
 	return out
 }
 
+// fromSourceOf names the subjects whose BINARY ARCHIVE MUST BE IGNORED,
+// which is run.Spec.FromSource — and this function is the producer that
+// field never had.
+//
+// The whole road below it was built and none of it was ever fed: the
+// spec hashes FromSource, the frozen roster carries it, run.Plan
+// intersects it with the ports being built, verify.Request declares it,
+// tart reads it per member to pass `port -s`, and record.Ask.FromSource
+// is what the pull request body and the ABI sentence read to say
+// "built from source". Every one of those was exercised by tests
+// handing the value in; nothing in the tree ever produced one, so
+// `refresh-checksums` verified its re-derived checksums against the
+// binary archive of the bytes it had just replaced. That is the one
+// verification the flag exists to prevent.
+//
+// THE RULE IS THE REQUEST'S OWN, quoted: "A version bump does not need
+// this: the new version yields an archive name that does not exist yet,
+// so MacPorts builds from source on its own. A re-derivation at an
+// unchanged version does, because the archive that matches predates the
+// change and verifying against it would verify nothing."
+//
+// So it turns on the SUBJECT's intent and not on the change's, because
+// a cohort's headline may be a re-derivation while its dependents are
+// untouched ports that should build from their archives in seconds —
+// which is exactly the distinction tart's own fromSource asks per
+// member.
+func fromSourceOf(subjects []record.Subject) []string {
+	var out []string
+	for _, s := range subjects {
+		if s.Intent == IntentRefresh {
+			out = append(out, s.Port)
+		}
+	}
+	return out
+}
+
+// IntentRefresh is the one intent whose change leaves the VERSION where
+// it was, and therefore the one whose verification must ignore the
+// binary archive: the archive that matches predates the change.
+//
+// It is spelled here rather than imported because internal/intent is the
+// CLI's catalogue and app must not depend on it. Exported so the tie can
+// be a test rather than a hope: cli's intent_test.go holds this string
+// against the catalogue's own Definition.Name, because a rename that
+// only moved one of the two would silently stop refresh-checksums
+// building from source and nothing would fail.
+const IntentRefresh = "refresh-checksums"
+
 // leaseOf is the lease token an attempt names, empty when nothing has
 // started it. See Result.Lease for why the token and not the provider's
 // own LeaseID.
@@ -819,6 +953,42 @@ func leaseOf(a record.Attempt) string { return a.Lease }
 // outranks blocked for the same reason. A settled attempt with no runs
 // at all is Errored rather than Passed — nothing was measured, and rule
 // 7 forbids reading an empty map as a pass.
+// resumed is what an ADOPTED attempt earns instead of a start, and the
+// answer for the two thirds of the adoptable population that cannot be
+// started at all.
+//
+// run.Adoptable draws from three states — Queued, Active and settled
+// Passed — and every caller in this package handed its answer straight
+// to run.Start, which refuses anything but Queued (ErrNotQueued). So the
+// two cases adoption exists FOR were the two that failed: `bump` or
+// `verify` over a tip somebody had already verified came back as a mint
+// error naming a branch that was perfectly fine, and one over a tip
+// still building did the same. The road that pays nothing was the road
+// that broke.
+//
+// Queued is the only startable answer, and the caller starts it. An
+// ACTIVE adoptee is already running and is joined by watching, which is
+// what --wait does with any started attempt. A SETTLED one has its
+// verdict earned: nothing to start, nothing to wait for, and Stood is
+// the honest realization even without --wait, because the answer the
+// caller asked for is on the record already.
+//
+// A trace is the one thing adoption cannot give back, and the caller
+// says so: Trace is outside the SpecID precisely so a --trace rerun
+// still matches, and a build whose log is already closed is `dockhand
+// log`'s.
+func resumed(a record.Attempt) (Realization, bool) {
+	switch {
+	case a.Queued():
+		return Queued, false
+	case a.Active():
+		return Started, true
+	case a.Settled():
+		return Stood, true
+	}
+	return Queued, false
+}
+
 func verdictOf(a record.Attempt) record.RunState {
 	rank := func(s record.RunState) int {
 		switch s {
@@ -913,9 +1083,18 @@ func exportNote(ctx context.Context, st *statestore.Store, l *ledger.Ledger, sha
 // exactly that explicit first write — the Amend below creates the ref —
 // and the question this read answers is "does a change already stand for
 // this port", whose honest answer on a checkout dockhand has never run
-// in is no. Every other read in this package propagates: Cancel and
-// Discard destroy provider resources, Cycle deletes, and Status reports
-// rather than writes, so on a virgin checkout each of them says so.
+// in is no. Cancel and Discard destroy provider resources and Cycle
+// deletes, so each of those propagates and says on a virgin checkout
+// that it cannot account for anything here.
+//
+// STATUS IS THE THIRD CASE and it is neither of these: it writes no
+// first record and destroys nothing, so it reads through
+// statestore.ReadOrEmpty and reports the empty lifecycle. That is not a
+// third rule — it is the sentinel's own rule read from the other side.
+// This doc claimed the opposite until the field showed the cost: the
+// first command after a purge, which removes the state ref by design,
+// exited non-zero with "no state ref in this repository" where the
+// honest answer was "nothing is in flight".
 func readBeforeMint(ctx context.Context, st *statestore.Store) (statestore.State, error) {
 	s, err := st.Read(ctx)
 	if errors.Is(err, statestore.ErrNoState) {

@@ -87,6 +87,60 @@ func (r *Repo) PushDeleteExact(ctx context.Context, remote, branch, expect strin
 	return err
 }
 
+// PrimaryRemote names the remote the primary branch tracks, falling back
+// to "origin". It is WHERE UPSTREAM IS for this checkout — the
+// repository a change is destined for, not the fork it is staged
+// through — and every road that needs to reach upstream asks it.
+//
+// The rule is not new; it was written inside gh.UpstreamRepo, which
+// needed the remote in order to read an owner/repo out of its URL.
+// Which remote is upstream is a pure question about refs and config,
+// with no forge in it at all, so it belongs here and gh asks it. A
+// second copy would be a second answer: a checkout like this one carries
+// six remotes — upstream, the maintainer's own fork, and four other
+// people's — and two functions disagreeing about which is upstream is
+// a branch cut from a stranger's tree.
+//
+// The fallback is "origin" and not an error, because a clone that never
+// set branch.<primary>.remote is the ordinary case and origin is what
+// git itself would use.
+func (r *Repo) PrimaryRemote(ctx context.Context) (string, error) {
+	primary, err := r.PrimaryBranch(ctx)
+	if err != nil {
+		return "", err
+	}
+	if remote := r.TrackedRemote(ctx, primary); remote != "" {
+		return remote, nil
+	}
+	return "origin", nil
+}
+
+// FetchBranch updates this machine's remote-tracking ref for one branch
+// of one remote, and touches nothing else: no local branch moves, no
+// working tree is read, and no other ref of that remote is fetched.
+//
+// THE REFSPEC IS EXPLICIT rather than the remote's configured one,
+// because what this call must do is exactly one thing and a configured
+// refspec is the user's to change. `git fetch <remote> <branch>` alone
+// writes FETCH_HEAD and updates the tracking ref only as a side effect
+// of whatever refspec happens to be configured; naming the mapping says
+// what lands and where.
+//
+// IT FORCES, for the reason git's own default refspec does
+// (+refs/heads/*:refs/remotes/origin/*): a remote-tracking ref is this
+// machine's CACHE of what the remote holds, not a branch anybody's work
+// sits on, so a remote that rewrote its history should be cached as it
+// now is rather than leaving the cache to disagree with it forever.
+//
+// A network failure comes back as the error it is. Nothing here decides
+// what to do about one: a caller that can proceed against what it
+// already has is the caller that knows so.
+func (r *Repo) FetchBranch(ctx context.Context, remote, branch string) error {
+	spec := "+refs/heads/" + branch + ":refs/remotes/" + remote + "/" + branch
+	_, err := r.git(ctx, "fetch", "--quiet", "--no-tags", "--", remote, spec)
+	return err
+}
+
 // TrackedRemote names the remote a branch tracks, "" when none.
 //
 // It is where a branch's upstream lives, and only that. It is not

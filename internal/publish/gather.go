@@ -221,7 +221,7 @@ func direction(ctx context.Context, e Env, c record.Change, primary, tip string,
 // declared for.
 func askForge(ctx context.Context, e Env, f Facts) ForgeFacts {
 	out := ForgeFacts{AsOf: f.AsOf, Fresh: true}
-	upstream, err := gh.UpstreamRepo(ctx, e.Repo)
+	upstream, err := gh.UpstreamRepo(ctx, e.Forge, e.Repo)
 	if err != nil {
 		out.Err = err
 		return out

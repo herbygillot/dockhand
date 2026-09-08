@@ -75,6 +75,14 @@ type PurgeResult struct {
 	Kept    []string
 	Theirs  []string
 	Unowned []string
+	// ForkCopies are the branches this checkout has pushed to a remote,
+	// as "<remote> <branch>". They are reported because the publication
+	// rows that name them go with the state ref, so after a purge nothing
+	// in this tool can find them again — and a person who wanted their
+	// fork tidied should learn that here rather than from a stale branch
+	// list months later. Nothing removes them: a remote is a foreign
+	// effect and a checkout purge did not ask for one.
+	ForkCopies []string
 	// EstateRefused carries estate.ErrNoEstate when the provider could
 	// not be enumerated. Rule 7: a purge that could not look must not
 	// report a clean machine, and it is a field rather than a returned
@@ -218,6 +226,26 @@ func (p Purge) Run(ctx context.Context) (PurgeResult, error) {
 	}
 	res.Branches = sortedNames(branches)
 	res.Pins = sortedNames(pins)
+
+	// THE FORK COPIES ARE NAMED, because after this they are unreachable.
+	// A publication row carries the exact remote and branch it pushed
+	// (record.Fork) and DeleteFork drives off it — and those rows go with
+	// the state ref. What is left is a branch on somebody's fork that no
+	// local branch, no record and no verb of this tool can find again.
+	//
+	// It is REPORTED and not removed. Removing it is a foreign effect on
+	// a remote, and a person who purges a checkout has not asked to touch
+	// their fork; a person who wants both should be told what the second
+	// one is. The listing costs one ref walk of material this repository
+	// already has — remote-tracking refs survive the purge, and
+	// git.Repo.Pushed answers exactly this question and is what
+	// publish.Standing already uses.
+	if copies, cerr := p.Repo.Pushed(ctx, "dockhand/"); cerr == nil {
+		for branch, remote := range copies {
+			res.ForkCopies = append(res.ForkCopies, remote+" "+branch)
+		}
+		sort.Strings(res.ForkCopies)
+	}
 
 	// The provider is resolved ONCE and surveyed here, with the refs, so
 	// that --dry-run can name what would go and the refusal below is

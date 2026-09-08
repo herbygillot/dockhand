@@ -211,6 +211,27 @@ type Attempt struct {
 	Tries     int        `json:"tries,omitempty"`
 	LastError string     `json:"last_error,omitempty"`
 
+	// Unchecked names the members whose PREFLIGHT COULD NOT BE READ, and
+	// why — port to the reason, in the words the reader of a verdict
+	// needs. Absent is "every member was asked and answered", and that is
+	// the only thing absent means.
+	//
+	// It is durable because the check happens at start and its cost is
+	// paid at settle, hours later and usually in another process. The
+	// preflight asks a staged Portfile for known_fail and use_xcode
+	// before a VM boots; when it cannot be read, run.Plan schedules the
+	// member as an ordinary build ON PURPOSE — a machine that could not
+	// ask has learned nothing about the port (run.Preflight.Read is rule
+	// 7 on that struct). What run.Plan's own doc PROMISED was that the
+	// cost of the unasked question would be stated where a person meets
+	// it, and nothing in the tree read Preflight.Err at all: a Portfile
+	// that would not evaluate produced a build that could have been
+	// declined for free, or one that needed Xcode and was never given it,
+	// and the verdict said only FAILED.
+	//
+	// So the fact travels on the attempt to the judge that writes the
+	// verdict, which is the reader who can put it beside a failure.
+	Unchecked map[string]string `json:"unchecked,omitempty"` // member port -> why
 	// Runs are this attempt's per-member verdicts, and they live HERE
 	// rather than only on the exported note. An earlier draft left them
 	// on record.Record alone, which quietly made the note authoritative

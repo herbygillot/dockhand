@@ -54,8 +54,33 @@ func TestAnUnknownResidencyNeverBlamesTheLock(t *testing.T) {
 		assert.NotContains(t, line, "lock",
 			"nothing here establishes that a lock was so much as opened")
 	}
-	assert.Contains(t, Residency(unknown), "not established",
+	assert.Contains(t, Residency(unknown), "not known",
 		"the fact itself is still said, because a missing line reads as an answer (rule 7)")
+
+	// AND IT MUST NOT READ AS THE NEGATIVE CASE. "not established" said
+	// what is unknown without blaming the lock — which is what this test
+	// was written for — but still parsed as a finding of absence, one
+	// line away from the genuine negative below. A resident dispatcher
+	// ran through a whole field exercise while status --no-update printed
+	// it, and it was read five times as "there is no dispatcher".
+	assert.NotEqual(t, Residency(unknown), Residency(app.Residency{State: app.NoDispatcher}))
+	for _, word := range []string{"no dispatcher", "not established"} {
+		assert.NotContains(t, Residency(unknown), word,
+			"an unknown residency may not borrow the negative case's words")
+	}
+}
+
+// THE RESIDENT LINE PARENTHESISES ONCE. who() already brackets what it
+// knows, and the caller used to wrap it again: "resident ((pid 1 on h),
+// since 13:04)".
+func TestTheResidentLineHasNoDoubledParens(t *testing.T) {
+	line := Residency(app.Residency{
+		State:  app.DispatcherResident,
+		Holder: record.OwnerID{PID: 4821, Host: "mac"},
+		Since:  time.Date(2026, 9, 8, 13, 31, 0, 0, time.UTC),
+	})
+	assert.NotContains(t, line, "((")
+	assert.Contains(t, line, "pid 4821 on mac")
 }
 
 // A STAMP THAT COULD NOT BE READ IS STILL A RESIDENT DISPATCHER. "The
@@ -330,3 +355,32 @@ func nonEmpty(lines []string) []string {
 type assertErr struct{ s string }
 
 func (e assertErr) Error() string { return e.s }
+
+// AN EMPTY REPORT SAYS IT IS EMPTY, and it distinguishes the two ways of
+// being empty. Every listing in Standings is a loop, so a checkout with
+// nothing open printed the residency line and stopped — indistinguishable
+// from a report that broke off mid-render, which is the silence rule 7
+// forbids. `purge` removes the state ref by design, so a store with none
+// is the ordinary thing the next command finds.
+func TestAnEmptyStandingSaysSoAndNamesTheRoadOnward(t *testing.T) {
+	var b bytes.Buffer
+	Standings(&b, app.StatusResult{
+		State:     statestore.State{}, // no At: statestore.ReadOrEmpty's answer
+		Residency: app.Residency{State: app.NoDispatcher},
+	}, now)
+	assert.Contains(t, b.String(), "nothing is in flight")
+	assert.Contains(t, b.String(), "dockhand bump", "a virgin checkout is told where to start")
+}
+
+// AND A STORE THAT HAS RUN IS NOT TOLD IT HAS NEVER RUN. "dockhand has
+// recorded nothing here" and "everything recorded here is closed" are
+// different facts, and only the first names a first step.
+func TestAnEmptyStandingOverAWrittenStoreDoesNotSayItIsVirgin(t *testing.T) {
+	var b bytes.Buffer
+	Standings(&b, app.StatusResult{
+		State:     statestore.State{At: "9f2c1ae0"},
+		Residency: app.Residency{State: app.NoDispatcher},
+	}, now)
+	assert.Contains(t, b.String(), "nothing is in flight")
+	assert.NotContains(t, b.String(), "dockhand bump")
+}

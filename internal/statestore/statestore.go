@@ -142,13 +142,58 @@ var lockDeadline = 30 * time.Second
 // that never gives up is a hang with a reason.
 const amendTries = 3
 
-// amendMessage is the subject every state commit carries. It is for the
+// amendMessage is the subject one state commit carries. It is for the
 // person reading `git log refs/dockhand/state`, which is the archive,
-// and nothing reads it back — a fact recovered from a commit message is
-// rule 6's prohibition. The trailing newline is the object's: CommitTree
-// hands the message to git verbatim, so a message without one is a
-// commit whose subject line is unterminated.
-const amendMessage = "dockhand: amend\n"
+// and NOTHING READS IT BACK — a fact recovered from a commit message is
+// rule 6's prohibition, and that is why this names the documents rather
+// than encoding a verb some later reader could be tempted to parse. The
+// trailing newline is the object's: CommitTree hands the message to git
+// verbatim, so a message without one is a commit whose subject line is
+// unterminated.
+//
+// IT WAS THE CONSTANT "dockhand: amend" FOR EVERY WRITE. The field
+// measured what that costs: `git log --oneline refs/dockhand/state` on a
+// working checkout is a column of one identical sentence, so the archive
+// — the thing this ref is FOR — could only be read by diffing every
+// commit by hand to find which one touched the record you were tracing.
+// One line naming the documents turns that into a scan.
+//
+// Three names and a count, because a subject line is a subject line and
+// a pass that settles forty attempts would otherwise write a paragraph.
+func amendMessage(files []git.File, refs int) string {
+	if len(files) == 0 {
+		if refs > 0 {
+			return fmt.Sprintf("dockhand: %s\n", plural(refs, "ref"))
+		}
+		// The create: an Amend whose closure wrote nothing, over a
+		// repository with no state ref, is the explicit first write that
+		// opens it.
+		return "dockhand: open the state ref\n"
+	}
+	const named = 3
+	parts := make([]string, 0, named)
+	for _, f := range files[:min(len(files), named)] {
+		name, _ := strings.CutSuffix(f.Path, docSuffix)
+		if f.Delete {
+			name = "-" + name
+		}
+		parts = append(parts, name)
+	}
+	subject := strings.Join(parts, ", ")
+	if rest := len(files) - named; rest > 0 {
+		subject += fmt.Sprintf(" (+%d)", rest)
+	}
+	return "dockhand: " + subject + "\n"
+}
+
+// plural is the count and its noun, for the one message that carries a
+// bare number.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
 
 // pinNamespace and branchNamespace are the two namespaces the store owns
 // besides Ref itself, spelled here because Txn.Ref has to JUDGE a name
@@ -388,6 +433,39 @@ func (s *Store) Read(ctx context.Context) (State, error) {
 	return st, nil
 }
 
+// ReadOrEmpty is Read for a road that REPORTS rather than acts: a
+// repository holding no state ref reads as an empty lifecycle instead of
+// an error.
+//
+// It does not blur the distinction ErrNoState exists to make; it draws
+// the line ErrNoState's own doc draws, one caller at a time. "There is
+// no state ref" and "the state ref could not be read" arrive here as
+// different things, and only the first becomes an empty State — a
+// corrupt tree, a broken cat-file session, an unreadable document still
+// come back as failures, because a reporter that printed "nothing to
+// report" over a broken store would be exactly the silence rule 7
+// forbids.
+//
+// WHO MAY USE IT is the test readBeforeMint states from the other side.
+// A pass that DESTROYS a provider resource refuses on ErrNoState,
+// because an empty read would have it conclude that every environment on
+// this machine is untracked. A road that only tells a person what is
+// here destroys nothing, and has every reason to answer.
+//
+// It exists because the answer was wrong in the field. `purge` removes
+// the state ref by design, so a store with none is now an ORDINARY state
+// rather than the rarity ErrNoState's doc imagined — and the first
+// command run after a purge met "statestore: no state ref in this
+// repository" on stderr with a non-zero exit, where the honest answer to
+// "what is in flight here" was "nothing".
+func (s *Store) ReadOrEmpty(ctx context.Context) (State, error) {
+	st, err := s.Read(ctx)
+	if errors.Is(err, ErrNoState) {
+		return newState(""), nil
+	}
+	return st, err
+}
+
 // newState is an empty read: four maps that exist, so that a caller may
 // range over a store holding nothing without asking whether it does.
 func newState(at string) State {
@@ -467,10 +545,18 @@ func absorbDoc[T any](into map[string]T, name, id string, data []byte, schemaOf 
 // mutators for its own kind, taking a *Txn (lease.ConfirmIn,
 // lease.RequestIn), a cross-lifecycle write is spelled as two owned
 // mutators in one transaction, and the Put* methods are called from the
-// owning package and nowhere else — enforced by review and by one test
-// that walks the AST for out-of-package callers. That is weaker than the
+// owning package and nowhere else — enforced by review and by
+// onlymover_test.go's TestOnlyTheOwningPackagePutsItsOwnKind, which
+// walks the AST for out-of-package callers. That is weaker than the
 // type system and stronger than a build-order sentence, and saying which
 // is the point.
+//
+// THAT TEST WAS CLAIMED HERE BEFORE IT EXISTED, and the admission
+// belongs in the file that argues hardest for checking things. The
+// sentence above named a census that was not in the tree; the rule held
+// across thirty call sites on discipline alone. It is this design's own
+// failure mode — a documented invariant with nothing re-proving it —
+// committed in its own most careful paragraph.
 type Txn struct {
 	state State
 	// changed is what the commit's tree will differ from its parent's
@@ -753,7 +839,36 @@ func (s *Store) Amend(ctx context.Context, mutate func(*Txn) error) error {
 		if err != nil {
 			return err
 		}
-		commit, err := s.repo.CommitTree(ctx, tree, parents, amendMessage)
+		// A WRITE THAT WROTE NOTHING IS NOT A COMMIT. The field found an
+		// empty commit on the state ref — no tree change, no ref line —
+		// and there are two ways to earn one: a closure that touched
+		// nothing (a settle pass that found nothing to settle), and a
+		// closure that wrote a document back BYTE FOR BYTE, which marks
+		// the record changed and grafts to the identical tree.
+		//
+		// The TREE is the test rather than the touched set, because only
+		// the tree catches the second. A dispatcher ticking every five
+		// minutes is the caller that makes it matter: each of those is
+		// three objects and a ref move, forever, and each one is a row in
+		// the archive that says nothing happened.
+		//
+		// NOT WHEN THERE ARE REF LINES. The state commit is what the ref
+		// batch's compare-and-set is anchored on — it is the line that
+		// makes the whole update-ref transaction atomic against a peer —
+		// so a transaction that moves a branch keeps its state commit even
+		// when no document changed.
+		//
+		// NOT ON THE CREATE either: st.At is empty for a repository with
+		// no state ref, and an explicit first write is entitled to open
+		// one (see ErrNoState).
+		if st.At != "" && len(tx.refs) == 0 {
+			if same, err := s.sameTree(ctx, st.At, tree); err != nil {
+				return err
+			} else if same {
+				return nil
+			}
+		}
+		commit, err := s.repo.CommitTree(ctx, tree, parents, amendMessage(files, len(tx.refs)))
 		if err != nil {
 			return err
 		}
@@ -919,6 +1034,21 @@ func (s *Store) ensureReflog(ctx context.Context) error {
 	}
 	s.logged = true
 	return nil
+}
+
+// sameTree reports whether a grafted tree is the one the commit already
+// holds — the test for a write that changed nothing.
+//
+// It resolves rather than remembers: the tip was read through the batch
+// session, which hands back the commit's own id and not its tree's, and
+// re-reading the tree by name is one plumbing call against a lock this
+// writer already holds.
+func (s *Store) sameTree(ctx context.Context, at, tree string) (bool, error) {
+	was, err := s.repo.RevParse(ctx, at+"^{tree}")
+	if err != nil {
+		return false, err
+	}
+	return was == tree, nil
 }
 
 // files renders the transaction's touched records as the tree edits

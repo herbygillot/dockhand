@@ -1,6 +1,7 @@
 package run
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
@@ -22,12 +23,15 @@ import (
 // and the sentinel is the authority. verify.Vacancy survives only as a
 // number `status` reports.
 //
-// The ordering is by record.Attempt.NotBefore then by age, so a
-// backed-off attempt waits its turn and the longest-waiting work goes
-// first. That is the whole policy, and it fixes two of the three defects
-// the drain has today — an alphabetical order that starves the tail of
-// the namespace, and a port that fails for its own reasons retried at
-// full cost every pass. The third ("how many may run" answered by a
+// The ordering is by record.Attempt.NotBefore then by age, so the
+// longest-waiting work goes first. That fixes ONE of the three defects
+// the drain had — an alphabetical order that starves the tail of the
+// namespace. It does NOT fix the second (a port that fails for its own
+// reasons retried at full cost every pass), and this doc claimed it did:
+// ordering is not gating, and the caller walks the whole list. Pending
+// refuses a backed-off attempt, which is where a gate belongs, and the
+// key here is what keeps a recovered one from being ranked behind every
+// fresh arrival forever. The third ("how many may run" answered by a
 // failed call) is not a defect under R8; it is the design. Writing the
 // backoff is Defer's job.
 //
@@ -111,6 +115,22 @@ const (
 	// statestore.PruneExpire's window — and the withheld ones counting
 	// against MaxQueued for the life of the repository.
 	Closed
+	// BackedOff is record.Attempt.NotBefore still in the future: an
+	// attempt that failed for its OWN reasons and is waiting out the
+	// interval Defer wrote.
+	//
+	// It is the one gate here that turns on time, and it is the reason
+	// Pending takes a clock. Order sorts by NotBefore and Order's doc
+	// claimed that fixed "a port that fails for its own reasons retried
+	// at full cost every pass" — but an ordering is not a gate: the drain
+	// walks the whole list calling Start, so a backed-off attempt was
+	// merely started LAST, and a queue holding one was started
+	// immediately. The backoff bought an ordering and nothing else.
+	//
+	// It is REPORTED and not dropped, like every other refusal here, so
+	// `cycle` says why a queued attempt did not move rather than leaving
+	// a person to infer it from silence.
+	BackedOff
 )
 
 // Pending derives Order's input from one read: the attempts eligible to
@@ -122,17 +142,22 @@ const (
 // pin them; the ORDERING of what may start is Order's and not this
 // function's.
 //
-// It takes a clock it does not currently read, and that is deliberate
-// rather than left over. Every gate here is a fact about the RECORD — a
-// hold, a supersession, a close — and none of them expires; the one
-// time-shaped fact in the queue is the backoff, which is Order's key and
-// not an eligibility question. The parameter stays because every road
-// that drains passes its own clock into this pair of calls already, and
-// a gate that does turn on time (a hold with an expiry, a claim that
-// went stale) lands here without moving every caller — and because a
-// pure decision in this design takes its facts as values, clock
-// included, rather than reading one.
-func Pending(s statestore.State, _ time.Time) (queued []record.Attempt, ineligible []NotStarted) {
+// THE BACKOFF IS A GATE HERE, and this doc used to argue it was not:
+// "the one time-shaped fact in the queue is the backoff, which is
+// Order's key and not an eligibility question", with the clock taken and
+// deliberately unread. That was wrong, and it made the backoff
+// ornamental. Order sorts a waiting attempt behind the ready ones and
+// the drain then walks the WHOLE list calling Start — so a deferred
+// attempt was started last rather than not at all, and a queue holding
+// only deferred attempts was started at once. The defect Defer exists to
+// end (a port that fails for its own reasons rebuilt at full cost every
+// pass) survived the whole overhaul intact.
+//
+// A person's own road is untouched: `verify` calls run.Start directly
+// and never comes through here, so a maintainer who wants the failing
+// port tried again right now still gets it. This gate is the DRAIN's,
+// which is the unattended caller the interval was written for.
+func Pending(s statestore.State, now time.Time) (queued []record.Attempt, ineligible []NotStarted) {
 	for _, id := range sortedAttempts(s) {
 		a := s.Attempts[id]
 		if !a.Queued() {
@@ -149,11 +174,35 @@ func Pending(s statestore.State, _ time.Time) (queued []record.Attempt, ineligib
 		case change.Held(c, change.ActVerify, record.Human) != nil:
 			ineligible = append(ineligible, NotStarted{Attempt: a.ID, Why: Held,
 				Detail: holdReason(c)})
+		case a.NotBefore != nil && a.NotBefore.After(now):
+			ineligible = append(ineligible, NotStarted{Attempt: a.ID, Why: BackedOff,
+				Detail: backoffReason(a, now)})
 		default:
 			queued = append(queued, a)
 		}
 	}
 	return queued, ineligible
+}
+
+// backoffReason is how long the wait has left and what earned it. The
+// last error is quoted because a backoff with no cause reads as the tool
+// stalling, where the truth is that the attempt failed for its own
+// reasons and is being spared a full-cost retry.
+func backoffReason(a record.Attempt, now time.Time) string {
+	d := a.NotBefore.Sub(now).Round(time.Second)
+	out := fmt.Sprintf("backing off for another %s after %s", d, tries(a.Tries))
+	if a.LastError != "" {
+		out += ": " + a.LastError
+	}
+	return out
+}
+
+// tries is the attempt count in words, so the sentence above reads.
+func tries(n int) string {
+	if n == 1 {
+		return "1 try"
+	}
+	return fmt.Sprintf("%d tries", n)
 }
 
 // holdReason is the person's own words for the hold, when they gave

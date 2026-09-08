@@ -256,3 +256,59 @@ func cohortFacts(d record.Disposition) Facts {
 		}
 	})
 }
+
+// THREE BLANK BOXES READ AS AN UNFILLED TEMPLATE, not as an open
+// question. dockhand classifies no change as a bugfix, an enhancement or
+// a security fix, and ticking one would be asserting a judgment it never
+// made — so the categories stay and a sentence says whose call it is. A
+// field run put a version bump in front of a reader and measured the
+// other reading.
+func TestTheTypeSectionSaysWhyItsBoxesAreBlank(t *testing.T) {
+	out := body(facts(), "1.2.3")
+
+	assert.Contains(t, out, "###### Type(s)")
+	assert.Contains(t, out, "- [ ] bugfix", "the categories are the person's to pick from")
+	assert.Contains(t, out, "dockhand does not classify changes")
+	assert.NotContains(t, out, "- [x] bugfix")
+	assert.NotContains(t, out, "- [x] enhancement")
+	assert.NotContains(t, out, "- [x] security fix")
+}
+
+// WHAT WAS NOT CHECKED REACHES THE REVIEWER. A bump that fetched no
+// distfile — a port fetched from a repository, say — had nothing to
+// check its patches against, and "not checked" and "checked, and still
+// where they were" are different answers. A body printing neither leaves
+// a reviewer to assume the second.
+//
+// It reached the plan narration and stopped there, and not because
+// anybody chose to stop it: the finding's kind was not a record kind, so
+// the mint that would have carried it failed outright and there was
+// never a record for a body to read.
+func TestTheBodyStatesThePatchesItCouldNotCheck(t *testing.T) {
+	f := facts(func(f *Facts) {
+		f.Change.Findings = []record.Finding{{
+			Kind: record.KindPatchesUnchecked, Disposition: record.Accepted,
+			Criterion: "patch check unavailable: jq's 2 patchfiles were not checked against the new source because no distfile was fetched",
+		}}
+	})
+	assert.Contains(t, body(f, "1.2.3"), "patch check unavailable: jq's 2 patchfiles were not checked")
+}
+
+// AND THE REVIEWER IS TOLD WHICH PATCH DID NOT COME OVER. A branch a
+// person published past this finding is one whose patch dockhand could
+// not verify carried; a body that did not say so would be the
+// complete-looking artifact the old outright decline was protecting
+// against, which is the whole condition on which that decline was
+// relaxed.
+func TestTheBodyNamesAPatchThatDidNotCarryOver(t *testing.T) {
+	f := facts(func(f *Facts) {
+		f.Change.Findings = []record.Finding{{
+			Kind: record.KindPatchUnrelocated, Disposition: record.Proposed,
+			Source:    "files/patch-foo.diff",
+			Criterion: "patch not carried over: files/patch-foo.diff does not relocate onto the new source — Makefile hunk #1: its before-block occurs nowhere in the file. Refresh it by hand on the branch, then verify",
+		}}
+	})
+	out := body(f, "1.2.3")
+	assert.Contains(t, out, "files/patch-foo.diff does not relocate onto the new source")
+	assert.Contains(t, out, "Makefile hunk #1")
+}

@@ -64,6 +64,43 @@ func (r *Repo) NotesList(ctx context.Context, ref string) ([]string, error) {
 
 // NoteRemove deletes a commit's note under the ref; a commit with no
 // note is fine — removal is idempotent.
+// NotesRefs lists the notes namespaces under a slash-terminated prefix,
+// by their short name — "dockhand/verify" for refs/notes/dockhand/verify.
+//
+// It exists because a namespace outlives the build that named it. A
+// purge that removed only the ref THIS build writes left every note an
+// older spelling had made, under a name nothing in the tree mentions any
+// more — measured: fifteen records under refs/notes/dockhand/outcome
+// survived a purge that reported removing everything.
+func (r *Repo) NotesRefs(ctx context.Context, prefix string) ([]string, error) {
+	out, err := r.git(ctx, "for-each-ref", "--format=%(refname)", "refs/notes/"+prefix)
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for line := range strings.Lines(out) {
+		if name := strings.TrimPrefix(strings.TrimSpace(line), "refs/notes/"); name != "" {
+			refs = append(refs, name)
+		}
+	}
+	return refs, nil
+}
+
+// DropNotesRef removes a whole notes namespace.
+//
+// A NOTES REF IS NOT AN OWNED REF and this is not a second ref-mover:
+// R23 reserves refs/dockhand/state, the pins and the dockhand branches
+// for the store's own batch, and refs/notes/ is none of them — this
+// package already writes and removes individual notes there. Deleting
+// the namespace is the same authority applied to the whole rather than
+// to one commit's entry, and it is what a purge of an ABANDONED spelling
+// needs: there is no list of commits to walk when nothing in the tree
+// knows what wrote them.
+func (r *Repo) DropNotesRef(ctx context.Context, ref string) error {
+	_, err := r.git(ctx, "update-ref", "-d", "refs/notes/"+ref)
+	return err
+}
+
 func (r *Repo) NoteRemove(ctx context.Context, ref, sha string) error {
 	_, err := r.git(ctx, "notes", "--ref="+ref, "remove", "--ignore-missing", sha)
 	return err

@@ -182,6 +182,38 @@ the release is in the same pass. (The `--verify` gate this paragraph used to
 name is gone with always-enqueue: nothing waits for a verdict and releases
 in the same breath any more.)
 
+**`--no-fetch`** on the `bump` family declines the fetch that keeps a
+change current. By default `bump`, `bump-revision` and
+`refresh-checksums` fetch upstream's primary branch and cut the change
+from the resulting remote-tracking ref rather than from the local
+branch, so the pull request is based on the newest tip the project has
+(D29). It updates that one tracking ref and nothing else: no local
+branch moves, no working tree is read, no index is touched. When
+upstream is ahead, one line on stderr says by how much and that the
+change carries those commits.
+
+**Which remote is upstream is asked, not assumed** (D30). `origin` is a
+convention — `git clone <your fork>` makes it the fork — so dockhand
+asks the forge, which is the only party that knows which repository is
+the project and which is a copy of it. Set `git config dockhand.upstream
+<remote>` to answer it yourself; that wins outright and asks nothing,
+which is what makes it the answer for a mirror, a private tree, or a
+host that is not GitHub. The same lookup decides where `promote` sends
+the pull request.
+
+A lookup or fetch that cannot run — offline, a proxy, no `gh`, every
+remote a fork — is not a planning error: the base falls back to the
+local primary, and a line says what could not be established and that
+the base may be behind. `--no-fetch` asks for that base on purpose and
+says nothing, because nothing was concealed.
+
+The cost is that drift has two causes now. The plan is made from the
+working tree and held against the base's bytes, so `ErrDrift` (exit 43)
+used to mean "you edited this Portfile on your primary branch". It can
+now also mean "the port moved upstream since you last pulled", which a
+clean `git status` will not explain — so the message names both
+remedies rather than guessing which is yours.
+
 **`dockhand hold <branch> [--reason ...]`** stops a change: nothing will
 publish, verify or retire it until `dockhand unhold <branch>` releases it.
 Holding an already-held branch is refused rather than silently overwriting

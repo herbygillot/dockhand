@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/exitcode"
+	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/intent/bump"
 	"github.com/herbygillot/dockhand/internal/intent/bumprevision"
@@ -343,9 +344,15 @@ type intentFlags struct {
 	keepEnv  bool
 	riders   bool
 	noRiders bool
-	on       string
-	wait     time.Duration
-	waitSet  bool
+	// noFetch declines the network round trip that keeps a change based
+	// on upstream's newest tip. Spelled as a REFUSAL because fetching is
+	// the default: a branch cut from a stale base is the defect, and a
+	// person who wants the stale one — offline, on a plane, pinning a
+	// reproduction to a known commit — is the one making the unusual ask.
+	noFetch bool
+	on      string
+	wait    time.Duration
+	waitSet bool
 
 	// The cohort mode's three, declared here rather than in a struct of
 	// their own because the arity check reads them beside the shared set:
@@ -367,6 +374,8 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"edit the Portfile where it stands, uncommitted — no branch, no commit")
 	c.Flags().BoolVar(&f.noVerify, "no-verify", false,
 		"mint the branch and ask for no build at all")
+	c.Flags().BoolVar(&f.noFetch, "no-fetch", false,
+		"base the change on your local primary branch without fetching upstream first")
 	c.Flags().DurationVar(&f.wait, "wait", 0,
 		"stay through the build without showing the log; watching one happen is dockhand log --trace")
 	c.Flags().BoolVar(&f.toPR, "to-pr", false,
@@ -587,7 +596,7 @@ func oneTarget(ctx context.Context, s *Services, v intentVerb, planner planning.
 	if f.planOnly {
 		return emitPlan(s.Out, pl)
 	}
-	prepared, err := prepare(ctx, s, pl)
+	prepared, err := prepare(ctx, s, pl, !f.noFetch)
 	if err != nil {
 		return err
 	}
@@ -633,7 +642,7 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 		Ledger:    led,
 		State:     st,
 		Temp:      s.Temp(),
-		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session, release: f.release},
+		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
 		Local:     s.ProposeTree(),
 		Verifier:  s.VerifyProvider(),
 		Me:        me,
@@ -714,7 +723,7 @@ func promoteAfterChange(ctx context.Context, s *Services, branch string) error {
 		return err
 	}
 	res, err := op.Run(ctx, branch, publish.Asks{})
-	report.Promotion(s.Out, res)
+	report.Promotion(s.Out, s.Err, res)
 	return err
 }
 
@@ -761,14 +770,16 @@ func manyTargets(ctx context.Context, s *Services, v intentVerb, planner plannin
 		func(ctx context.Context, t tree.Target, p intent.Params) (*plan.Plan, error) {
 			return planner.Plan(ctx, v.Name, t, p)
 		},
-		func(ctx context.Context, pl *plan.Plan) (change.Prepared, error) { return prepare(ctx, s, pl) })
+		func(ctx context.Context, pl *plan.Plan) (change.Prepared, error) {
+			return prepare(ctx, s, pl, !f.noFetch)
+		})
 	op := app.Survey{
 		Plan:     planningFor(s),
 		Repo:     repo,
 		Ledger:   led,
 		State:    st,
 		Temp:     s.Temp(),
-		Stage:    &stager{repo: repo, temp: s.Temp(), session: s.session, release: f.release},
+		Stage:    &stager{repo: repo, temp: s.Temp(), session: s.session},
 		Local:    s.ProposeTree(),
 		Verifier: s.VerifyProvider(),
 		Me:       s.Me(),
@@ -892,16 +903,24 @@ func sweepAdmission() run.Admission {
 // prepare turns a plan into the complete file set a change commits,
 // against THE BASE COMMIT'S BYTES and never the working file.
 //
-// The Portfile it holds the plan against is read out of git at the
-// merge base, because a plan is made against the bytes a commit would
-// land on: a Portfile a person edited on the primary branch since the
-// plan was made is ErrDrift here rather than a commit nobody predicted.
-func prepare(ctx context.Context, s *Services, pl *plan.Plan) (change.Prepared, error) {
+// The Portfile it holds the plan against is read out of git at the base,
+// because a plan is made against the bytes a commit would land on: a
+// Portfile a person edited on the primary branch since the plan was made
+// is ErrDrift here rather than a commit nobody predicted.
+//
+// THE BASE IS UPSTREAM'S FRESHLY FETCHED TIP by default, which widens
+// what ErrDrift can mean. It used to be this checkout's local primary,
+// so drift was always the person's own edit; it can now also be the
+// port having moved upstream since they last pulled, which is a drift
+// they did nothing to cause and the honest answer either way — the plan
+// was made against bytes that are not what the commit would land on.
+// The remedy differs, so the sentence names both.
+func prepare(ctx context.Context, s *Services, pl *plan.Plan, fetch bool) (change.Prepared, error) {
 	repo, err := s.Repo()
 	if err != nil {
 		return change.Prepared{}, err
 	}
-	base, err := baseOf(ctx, repo)
+	base, err := baseOf(ctx, s, repo, fetch)
 	if err != nil {
 		return change.Prepared{}, err
 	}
@@ -917,19 +936,55 @@ func prepare(ctx context.Context, s *Services, pl *plan.Plan) (change.Prepared, 
 	if s.ev != nil {
 		ev = blobEvaluator{ev: s.ev}
 	}
-	return change.Prepare(ctx, pl, change.Source{
-		Base: base, Portdir: change.TreePath(rel), Portfile: blob,
+	// The base's bytes for the whole files the plan rewrites, beside the
+	// Portfile's: a patch relocated at plan time is derived from bytes
+	// that must still be there, and until this was read the only thing
+	// held against the base was the Portfile.
+	aux, err := baseFiles(ctx, repo, base.Sha, rel, pl.Files)
+	if err != nil {
+		return change.Prepared{}, err
+	}
+	prepared, err := change.Prepare(ctx, pl, change.Source{
+		Base: base, Portdir: change.TreePath(rel), Portfile: blob, Files: aux,
 	}, ev)
+	if errors.Is(err, change.ErrDrift) {
+		return prepared, fmt.Errorf("%w; %s", err, driftRemedy(fetch))
+	}
+	return prepared, err
+}
+
+// driftRemedy is the sentence that turns drift into a next step, and
+// there are two of them because the base moved.
+//
+// While the base was this checkout's local primary, drift had ONE cause:
+// the person had edited the Portfile on that branch since planning, and
+// the remedy was to look at their own edit. Basing on upstream's
+// freshly fetched tip adds a second, and it is the more likely one —
+// the port moved upstream since they last pulled, they did nothing, and
+// their working tree is exactly as clean as they think it is. A message
+// naming only the first would send them hunting for an edit that does
+// not exist.
+//
+// Both are named rather than guessed between. Telling the two apart
+// would mean comparing the working file against both commits and
+// deciding which explanation fits, which is a diagnosis this line does
+// not need to make: the two remedies are one command each, and a person
+// who reads both knows immediately which is theirs.
+func driftRemedy(fetched bool) string {
+	if !fetched {
+		return "the Portfile in your tree is not what the base commit holds — check your own edits on the primary branch"
+	}
+	return "the Portfile in your tree is not what the base commit holds: either the port moved upstream since you last pulled (`git pull`, then bump again) or you have edits on your primary branch"
 }
 
 // baseOf is the commit a change is measured from: this checkout's
 // primary branch, with the moment it landed.
-func baseOf(ctx context.Context, repo *gitRepo) (record.Base, error) {
-	primary, err := repo.PrimaryBranch(ctx)
+func baseOf(ctx context.Context, s *Services, repo *gitRepo, fetch bool) (record.Base, error) {
+	rev, err := s.BaseRef(ctx, fetch)
 	if err != nil {
 		return record.Base{}, err
 	}
-	sha, err := repo.RevParse(ctx, primary)
+	sha, err := repo.RevParse(ctx, rev)
 	if err != nil {
 		return record.Base{}, err
 	}
@@ -938,6 +993,79 @@ func baseOf(ctx context.Context, repo *gitRepo) (record.Base, error) {
 		return record.Base{}, err
 	}
 	return record.Base{Sha: sha, CommittedAt: at}, nil
+}
+
+// freshPrimary fetches upstream's primary branch and names the
+// remote-tracking ref to cut from, so a change is minted on the newest
+// tip upstream has rather than on whatever this checkout last pulled.
+//
+// WHY THE BASE AND NOT THE LOCAL BRANCH. The base is the commit the mint
+// makes a parent (change.Commit grafts the file set onto it), so it is
+// literally what the pull request will be based on. A checkout a week
+// behind produced a branch a week behind, which merges badly, reviews
+// against stale neighbours, and is the one thing a maintainer cannot see
+// by looking at dockhand's output.
+//
+// IT MOVES NO LOCAL REF AND READS NO WORKING TREE. git.FetchBranch
+// updates one remote-tracking ref and nothing else; the person's own
+// primary branch, their checkout and their index are exactly as they
+// were. That is what makes this safe to do by default: dockhand cutting
+// from a fresher commit than the one checked out costs the person
+// nothing, where fast-forwarding their branch for them would be this
+// tool reaching into a working tree it promises not to touch.
+//
+// A FETCH THAT FAILED FALLS BACK AND SAYS SO. Offline, behind a proxy,
+// an ssh key not loaded: none of those should stop a bump, and none of
+// them may pass silently either — a base quietly older than it claims is
+// the shape of defect this tree calls rule 7. The caller reads the error
+// as "use what is here"; the sentence is written here because this is
+// where the reason is known.
+//
+// The ahead line is the OTHER half of a warning docs/todo.md files
+// against the retire sweep: "origin/master moved past your master by N
+// commits; a branch cut from it will carry them". This is now a place
+// that condition is created, so this is a place it is said.
+func freshPrimary(ctx context.Context, run gh.Runner, repo *gitRepo, w io.Writer, primary string) (string, error) {
+	// WHICH REMOTE IS UPSTREAM IS ASKED, NOT ASSUMED. "origin" is a
+	// convention: `git clone <your fork>` makes origin the FORK and sets
+	// the primary branch to track it, so a base cut from origin would be
+	// cut from a copy that may be months behind the project. gh.Upstream
+	// asks the forge, which is the only party that knows which repository
+	// is the project and which is somebody's copy of it.
+	//
+	// A CHECKOUT WHOSE UPSTREAM CANNOT BE ESTABLISHED IS TOLD SO AND
+	// PLANS ANYWAY, on its local primary branch. That is the ruling: the
+	// answer being unavailable — no forge, no network, every remote a
+	// fork — is not a reason a person cannot bump a port, and it is not a
+	// reason to quietly fetch from whatever remote happened to be first
+	// either. gh.Upstream's error carries what it looked for and what to
+	// add, so the sentence is worth printing whole.
+	remote, _, err := gh.Upstream(ctx, run, repo)
+	if err != nil {
+		fmt.Fprintf(w, "not fetching: %s\n", err)
+		fmt.Fprintf(w, "planning against your local %s, which may be behind\n", primary)
+		return "", err
+	}
+	if err := repo.FetchBranch(ctx, remote, primary); err != nil {
+		fmt.Fprintf(w, "could not fetch %s/%s (%s); planning against your local %s, which may be behind\n",
+			remote, primary, err, primary)
+		return "", err
+	}
+	ref := remote + "/" + primary
+	if n, err := repo.Behind(ctx, primary, ref); err == nil && n > 0 {
+		fmt.Fprintf(w, "%s is %s ahead of your %s; the change is cut from %s so it carries them\n",
+			ref, commits(n), primary, ref)
+	}
+	return ref, nil
+}
+
+// commits is the count with its noun, for the one sentence that carries
+// a number of them.
+func commits(n int) string {
+	if n == 1 {
+		return "1 commit"
+	}
+	return fmt.Sprintf("%d commits", n)
 }
 
 // emitPlan writes the plan document --plan asked for.

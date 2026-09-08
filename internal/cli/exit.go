@@ -123,6 +123,7 @@ func codeAndReason(err error) (int, string) {
 		return exitcode.PlanDeclined, "cohort-declined"
 	case errors.Is(err, change.ErrInFlight),
 		errors.Is(err, change.ErrStanding),
+		errors.Is(err, change.ErrOrphanBranch),
 		errors.Is(err, change.ErrTipMoved),
 		errors.Is(err, change.ErrNotBound),
 		errors.Is(err, statestore.ErrConcurrent):

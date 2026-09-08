@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -181,6 +182,26 @@ func (r *Repo) OwnCommits(ctx context.Context, rev, base string) ([]string, erro
 		return nil, err
 	}
 	return strings.Split(out, "\n"), nil
+}
+
+// Behind counts the commits ahead has that rev does not — how far rev
+// has fallen behind it.
+//
+// It is OwnCommits' range counted rather than listed, and it is a count
+// because the one caller wants a number for a sentence. Zero and an
+// error are different answers: a ref that does not resolve is not a ref
+// nothing is ahead of, and a caller that read the zero would report a
+// checkout as current on the strength of a failed lookup (rule 7).
+func (r *Repo) Behind(ctx context.Context, rev, ahead string) (int, error) {
+	out, err := r.git(ctx, "rev-list", "--count", ahead, "--not", rev)
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("git: counting %s past %s: %w", Abbrev(ahead), Abbrev(rev), err)
+	}
+	return n, nil
 }
 
 // CommitPaths is one commit as its log entry records it: the sha, the

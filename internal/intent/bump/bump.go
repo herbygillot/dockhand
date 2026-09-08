@@ -257,6 +257,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	var files []plan.FileEdit
 	var refreshed []string
 	unchecked := len(vals.Patchfiles) > 0
+	var patchFindings []plan.Finding
 
 	// Shadow the version edits to learn the new distfiles and their
 	// URLs, then fetch them for checksums.
@@ -385,11 +386,24 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		// is not consulted, and a patch that will not relocate declines
 		// the bump outright rather than shipping a branch whose patch
 		// phase would fail.
-		files, refreshed, err = relocatePatches(ctx, b.Tools, h.Target.Portdir, shadowVals, shadowVals.Worksrcdir, fetched)
+		var unresolved []plan.Finding
+		files, refreshed, unresolved, err = relocatePatches(ctx, b.Tools, h.Target.Portdir, shadowVals, shadowVals.Worksrcdir, fetched)
 		if err != nil {
 			return nil, err
 		}
 		unchecked = false
+		// A PATCH THAT WOULD NOT COME OVER IS A QUESTION, NOT THE END OF
+		// THE BUMP (ruled 8 September 2026). It used to decline the whole
+		// plan; the branch is minted now, carrying the patches that DID
+		// relocate and a Proposed finding naming each that did not, so a
+		// person can resolve it on the branch and the machine cannot
+		// publish past it. See FindingPatchUnrelocated.
+		//
+		// The relocations that succeeded are kept rather than discarded
+		// with the failure: each patch relocates independently of the
+		// others, and throwing away correct work would leave the person
+		// redoing a move dockhand already made.
+		patchFindings = append(patchFindings, unresolved...)
 
 		// Each present family regenerates its block for the target — the
 		// crate set and the checksum recorded for the distfile describe
@@ -471,6 +485,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	if unchecked {
 		p.Findings = append(p.Findings, patchesUnchecked(vals.Name, len(vals.Patchfiles)))
 	}
+	p.Findings = append(p.Findings, patchFindings...)
 	return p, nil
 }
 

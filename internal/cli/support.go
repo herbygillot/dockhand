@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -323,4 +324,38 @@ func provisionedReleases(ctx context.Context, s *Services) ([]platform.Release, 
 // step's, which records nothing when there is none.
 func needsPass() app.Needs {
 	return app.Needs{Repo: true, Evaluator: true, Fetcher: true, Verifier: true, Forge: true}
+}
+
+// baseFiles reads the base's bytes for every whole file a plan rewrites,
+// keyed by the plan's own portdir-relative paths — change.Source.Files,
+// which is what turns a whole-file write into a checkable one.
+//
+// A PATH THE BASE DOES NOT HOLD IS ABSENT AND NEVER AN ERROR, which is
+// the whole reason this uses the batch session rather than BlobAt:
+// `cat-file --batch` answers an unresolvable request with a missing line
+// and git.ErrNoObject, where BlobAt's error cannot tell "no such file"
+// from "the repository would not answer". A read that FAILED is returned
+// — a preparation that could not establish the precondition must not
+// proceed as though the file were new (rule 7).
+func baseFiles(ctx context.Context, repo *gitRepo, sha, portdir string, files []plan.FileEdit) (map[string][]byte, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	batch, err := repo.CatFile(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = batch.Close() }()
+	out := make(map[string][]byte, len(files))
+	for _, f := range files {
+		obj, err := batch.Object(sha + ":" + portdir + "/" + f.Path)
+		if errors.Is(err, git.ErrNoObject) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading %s at %s: %w", f.Path, git.Abbrev(sha), err)
+		}
+		out[f.Path] = obj.Data
+	}
+	return out, nil
 }

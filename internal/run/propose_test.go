@@ -25,6 +25,9 @@ type local struct {
 	unread []portindex.Unread
 	err    error
 	quotes []dependents.Instruction
+	// cueErr is what Instructions refuses with, so a test can be the
+	// broken half of the analysis path.
+	cueErr error
 	asked  []string
 	read   []string
 }
@@ -36,7 +39,7 @@ func (l *local) Dependents(_ context.Context, port string) ([]portindex.Dependen
 
 func (l *local) Instructions(_ context.Context, sha, portdir string) ([]dependents.Instruction, error) {
 	l.read = append(l.read, sha+":"+portdir)
-	return l.quotes, nil
+	return l.quotes, l.cueErr
 }
 
 // manifest is a one-library installation, so the delta below has
@@ -267,4 +270,37 @@ func current(t *testing.T, st *statestore.Store) statestore.State {
 	s, err := st.Read(t.Context())
 	require.NoError(t, err)
 	return s
+}
+
+// THE STACK IS THE DEFECT. Three reads on this path swallow their errors
+// with a correct rule-7 rationale each — an absence is not a finding —
+// and together they made a completely broken analysis path
+// indistinguishable from a clean one: the same proposal, on the same
+// criterion, with nothing saying what had been asked for and not got.
+// Each is still absorbed; none is still silent.
+func TestProposeCohortSaysWhatItAskedForAndDidNotGet(t *testing.T) {
+	e, j := passedEvidence(t)
+	e.Unavailable = []string{"the environment was asked what it installed and could not answer: guest gone"}
+	lo := &local{rows: []portindex.Dependent{dependentRow("gdal")}, cueErr: errors.New("blob unreadable")}
+
+	f, ok, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	require.NoError(t, err)
+	require.True(t, ok, "the cues are an input and not a gate: the measurement still speaks")
+	assert.Contains(t, f.Criterion, "could not answer",
+		"a gathering the observer lost travels to the sentence a person decides on")
+	assert.Contains(t, f.Criterion, "blob unreadable")
+	assert.Contains(t, f.Criterion, "unaccounted for",
+		"a cue names ports the index cannot, so a proposal made without them may be short")
+}
+
+// AND A CLEAN PATH SAYS NOTHING EXTRA. The caveat is a fact about this
+// settlement, never a standing disclaimer.
+func TestProposeCohortAddsNoCaveatWhenNothingWasMissed(t *testing.T) {
+	e, j := passedEvidence(t)
+	lo := &local{rows: []portindex.Dependent{dependentRow("gdal")}}
+
+	f, _, err := proposeCohort(t.Context(), lo, stateWith(nil, nil), minted("chg-1"), settledOn("libwidget"), e, j)
+	require.NoError(t, err)
+	assert.NotContains(t, f.Criterion, "unaccounted for")
+	assert.NotContains(t, f.Criterion, "could not answer")
 }

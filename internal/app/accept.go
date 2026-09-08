@@ -152,10 +152,17 @@ func (a Accept) Run(ctx context.Context, r AcceptRequest) (Result, error) {
 		if !enqueue {
 			return nil
 		}
-		members, withheld := run.Roster(tx.State().Changes[string(ref.ID())], record.Attempt{})
+		cur := tx.State().Changes[string(ref.ID())]
+		members, withheld := run.Roster(cur, record.Attempt{})
 		spec = run.Spec{
 			Content: content, Roster: members, Withheld: withheld,
-			Platform: r.Platform, Test: r.Test, KeepEnv: r.KeepEnv,
+			// Over the change's OWN subjects and not over the seated
+			// members: a cohort accepted onto a re-derivation still has to
+			// build that headline from source, and run.Plan intersects the
+			// list with the ports actually being built, so naming a
+			// withheld one costs nothing.
+			FromSource: fromSourceOf(cur.Subjects),
+			Platform:   r.Platform, Test: r.Test, KeepEnv: r.KeepEnv,
 		}
 		var err error
 		att, err = run.EnqueueIn(tx, run.Enqueue{Change: ref.ID(), Sha: sha, Content: content, Spec: spec, Platform: r.Platform, Ask: record.Ask{Test: r.Test, KeepEnv: r.KeepEnv}, EnqueuedBy: a.Me}, a.Now())

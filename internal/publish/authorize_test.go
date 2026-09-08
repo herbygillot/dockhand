@@ -466,3 +466,72 @@ func TestAuthorizeRefusesFactsThatDoNotSayWhoIsAsking(t *testing.T) {
 	assert.False(t, Asks{Ignore: true, NoPRCheck: true, Force: true}.noPRCheck(none))
 	assert.False(t, Asks{Ignore: true, NoPRCheck: true, Force: true}.force(none))
 }
+
+// AN INSTRUCTION COMMENT DOES NOT BLOCK A PERSON. ONLY THE MACHINE.
+// Ruled 8 September 2026, and the gate above is what implements it — but
+// this kind could never reach the gate: record.FindingKind spelled
+// "instruction" while every planner wrote "instruction-comment", so
+// change.stamp refused the word and MintIn failed the whole Amend. The
+// port never got a branch, let alone an advisory.
+//
+// Pinned by kind rather than left to the generic proposal test, because
+// the ruling is about this finding: a maintainer's own written
+// instruction is evidence no measurement produces, it can be wrong, and
+// what dockhand does with it is quote it and let a person decide.
+func TestAnInstructionCommentAdvisesThePersonAndRefusesTheMachine(t *testing.T) {
+	instructed := func(f *Facts) {
+		f.Change.Findings = []record.Finding{{
+			Kind: record.KindInstruction, Disposition: record.Proposed,
+			Source: "sysutils/jq/Portfile", Quote: "revbump dependents when this moves",
+		}}
+	}
+	_, _, err := Authorize(facts(machine, instructed), DefaultPace)
+	require.ErrorIs(t, err, ErrProposalOpen,
+		"there is nobody on the unattended road to have read the comment")
+
+	_, adv, err := Authorize(facts(instructed), Pace{})
+	require.NoError(t, err, "a person publishing past their own advisory is their answer")
+	assert.Contains(t, kinds(adv), AdviseProposal)
+}
+
+// AND A PATCH DOCKHAND COULD NOT CHECK BLOCKS NEITHER. It is a
+// statement and not a question — Accepted, not Proposed — so it says
+// what was not checked and holds nothing waiting for an answer nobody
+// can give.
+func TestAnUncheckedPatchFindingHoldsNeitherRoad(t *testing.T) {
+	unchecked := func(f *Facts) {
+		f.Change.Findings = []record.Finding{{
+			Kind: record.KindPatchesUnchecked, Disposition: record.Accepted,
+			Criterion: "patch check unavailable: jq's 2 patchfiles were not checked against the new source",
+		}}
+	}
+	_, adv, err := Authorize(facts(machine, unchecked), DefaultPace)
+	require.NoError(t, err)
+	assert.NotContains(t, kinds(adv), AdviseProposal)
+
+	_, _, err = Authorize(facts(unchecked), Pace{})
+	require.NoError(t, err)
+}
+
+// A PATCH THE BUMP COULD NOT CARRY OVER IS A QUESTION FOR A PERSON, and
+// the person is exactly who can answer it: they judge what the patch was
+// for, resolve it on the branch, and verify or promote. There is nobody
+// on the unattended road to do that.
+//
+// It used to decline the whole bump, so this branch never existed. Ruled
+// 8 September 2026.
+func TestAnUnrelocatedPatchAdvisesThePersonAndRefusesTheMachine(t *testing.T) {
+	stuck := func(f *Facts) {
+		f.Change.Findings = []record.Finding{{
+			Kind: record.KindPatchUnrelocated, Disposition: record.Proposed,
+			Source:    "files/patch-foo.diff",
+			Criterion: "patch not carried over: files/patch-foo.diff does not relocate onto the new source — Makefile hunk #1: its before-block occurs nowhere in the file. Refresh it by hand on the branch, then verify",
+		}}
+	}
+	_, _, err := Authorize(facts(machine, stuck), DefaultPace)
+	require.ErrorIs(t, err, ErrProposalOpen)
+
+	_, adv, err := Authorize(facts(stuck), Pace{})
+	require.NoError(t, err, "a person may publish past their own advisory; that is their answer")
+	assert.Contains(t, kinds(adv), AdviseProposal)
+}

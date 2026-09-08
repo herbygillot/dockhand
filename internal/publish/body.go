@@ -284,11 +284,23 @@ func body(f Facts, version string) string {
 
 	// The type of change is a question to the person reading, not an
 	// attestation about work dockhand did or skipped: dockhand classifies
-	// no change as a bugfix, an enhancement or a security fix, and an
-	// unticked box here reads as the open question it is. That is what
-	// separates it from the "Have you" list below, where an unticked box
-	// reads as a step someone declined to take.
+	// no change as a bugfix, an enhancement or a security fix. That is
+	// what separates it from the "Have you" list below, where an unticked
+	// box reads as a step someone declined to take.
+	//
+	// IT DID NOT READ AS AN OPEN QUESTION, and this doc used to claim it
+	// would. A field run put a version bump in front of a reader and three
+	// blank boxes read as an unfilled template — a submitter who did not
+	// bother rather than a tool that declined to classify. The boxes stay,
+	// because deleting them would take the categories away from the person
+	// who has to pick one; the sentence is what makes the blank a choice.
+	//
+	// It says WHO, because the answer is a judgment and the person running
+	// dockhand is the one who has it. Ticking one here would be dockhand
+	// asserting a classification it never determined, which is rule 7
+	// pointed the other way.
 	b.WriteString("\n###### Type(s)\n\n- [ ] bugfix\n- [ ] enhancement\n- [ ] security fix\n")
+	b.WriteString("\ndockhand does not classify changes; the maintainer ticks the one that applies.\n")
 	if len(passed) > 0 {
 		b.WriteString("\n###### Tested on\n")
 		for _, plat := range passed {

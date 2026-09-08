@@ -201,3 +201,62 @@ func moduleRoot(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// putOwners is the rule the Txn doc states: each lifecycle package
+// exports the mutators for its OWN kind, and the Put* methods are
+// called from the owning package and nowhere else.
+//
+// It is a map from the method to the packages allowed to call it. The
+// store itself is on every line because Compact and the absorb path
+// write every kind, and that is the store's own business.
+var putOwners = map[string]map[string]bool{
+	"PutChange":      {"internal/statestore": true, "internal/change": true},
+	"PutAttempt":     {"internal/statestore": true, "internal/run": true},
+	"PutLease":       {"internal/statestore": true, "internal/lease": true},
+	"PutPublication": {"internal/statestore": true, "internal/publish": true},
+}
+
+// THE OWNERSHIP RULE, AS A TEST RATHER THAN A SENTENCE — and this test
+// is why the sentence was worth doubting.
+//
+// Txn's own doc says the Put* methods "are called from the owning
+// package and nowhere else — enforced by review and by one test that
+// walks the AST for out-of-package callers". There was no such test.
+// The rule held, by discipline alone, across thirty call sites; the
+// enforcement it claimed did not exist. A documented invariant with no
+// check is the shape this whole tree keeps being caught by, and it was
+// asserted in the file that argues most carefully for checking things.
+//
+// Go cannot state the rule — there is no visibility that says "only
+// package change may call PutChange" without putting the caller inside
+// statestore, which is what created the god-closure this package
+// replaced. So the census says it, in the repository's own language,
+// re-proved on every build.
+func TestOnlyTheOwningPackagePutsItsOwnKind(t *testing.T) {
+	seen := map[string]int{}
+	walk(t, func(pkg, file string, node ast.Node, fset *token.FileSet) {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return
+		}
+		owners, watched := putOwners[sel.Sel.Name]
+		if !watched {
+			return
+		}
+		seen[sel.Sel.Name]++
+		assert.True(t, owners[pkg],
+			"%s calls %s — that kind's mutators belong to the package that owns the lifecycle (rule 4); "+
+				"a cross-lifecycle write is two OWNED mutators in one transaction",
+			fset.Position(call.Pos()), sel.Sel.Name)
+	})
+
+	// The same tripwire the census above carries: a walk that matches
+	// nothing cannot fail, and every one of these has production callers.
+	for name := range putOwners {
+		require.NotZero(t, seen[name], "the census matched no call to %s anywhere; the walk is broken", name)
+	}
+}

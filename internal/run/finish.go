@@ -151,6 +151,11 @@ func Finish(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ve
 		return cur, err
 	}
 	ev.Interrupt = itr
+	// THE UNASKED QUESTIONS, carried from the attempt to the judge. The
+	// preflight ran in the pass that STARTED this build, against a staged
+	// tree that pass has since dropped; the attempt is the only thing
+	// that still knows a member's Portfile would not evaluate.
+	ev.Unchecked = cur.Unchecked
 	if itr == nil && !ev.Vanished && !ev.Status.State.Terminal() {
 		// Still building. Nothing is written — an unchanged attempt
 		// rewritten is a state document per tick per attempt — and the
@@ -298,15 +303,53 @@ func proposeCohort(ctx context.Context, local Local, s statestore.State, c recor
 	// os.ReadFile then read whatever Portfile was under the process's
 	// working directory, and the error was discarded.
 	quotes, ierr := local.Instructions(ctx, a.Sha, subjectDir(c, head.Port))
+	missed := ev.Unavailable
 	if ierr != nil {
 		// The maintainer's cues are an input and not a gate: a Portfile
 		// that could not be read leaves the measurement to speak alone,
-		// which is what it did before the cues existed.
+		// which is what it did before the cues existed. It is NOT silent
+		// though — a cue names ports the index cannot, so a proposal made
+		// without them may be missing members, and the person deciding on
+		// it is the one who has to know that.
 		quotes = nil
+		missed = append(missed, "the maintainer's cues in "+subjectDir(c, head.Port)+
+			" could not be read ("+ierr.Error()+"), so any port they name is unaccounted for here")
 	}
 	deps, short := dependents.From(rows, unread, inFlight(s, c.ID), carried(c))
 	f, ok := dependents.Propose(delta, quotes, deps, short, CohortCap).Finding()
+	if ok {
+		f.Criterion = withUnavailable(f.Criterion, missed)
+	}
 	return f, ok, nil
+}
+
+// withUnavailable appends what this settlement asked for and did not get
+// to the criterion the proposal was reached on.
+//
+// It is the criterion because that is the durable sentence a person
+// meets when they are asked to revbump thirty-nine ports: the finding is
+// what the record keeps and what `status` and the pull request body
+// render, and a caveat anywhere else would not travel with the question
+// it qualifies.
+//
+// THE STACK IS THE DEFECT, not any one absorption. Three reads on this
+// path swallow their errors with a correct rule-7 rationale each — an
+// absence is not a finding — and together they made a completely broken
+// analysis indistinguishable from a clean one. Each is still absorbed;
+// none is still silent.
+func withUnavailable(criterion string, missed []string) string {
+	if len(missed) == 0 {
+		return criterion
+	}
+	out := criterion
+	for _, m := range missed {
+		if out == "" {
+			out = m
+			continue
+		}
+		out += "; " + m
+	}
+	return out
 }
 
 // answered reports whether a person has already given this change's

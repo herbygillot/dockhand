@@ -94,6 +94,20 @@ type Services struct {
 	// Forge runs one gh invocation and returns its stdout.
 	Forge gh.Runner
 
+	// base is the memo behind BaseRef: the commit a mint cuts from,
+	// resolved ONCE per process.
+	//
+	// It is a memo and not a field because resolving it goes to the
+	// NETWORK — upstream's primary branch is fetched so a change is based
+	// on the newest tip rather than on whatever this checkout last pulled
+	// — and a sweep plans hundreds of ports through a worker pool. One
+	// fetch per port would be hundreds of round trips to say the same
+	// thing, and worse, the ports at the end of a long sweep would be
+	// based on a different commit from the ones at the start: one
+	// invocation must mint one base.
+	base     baseMemo
+	baseOnce sync.Once
+
 	// Now is the clock. A field so a test may pin it and so a pass and
 	// the report of it agree about when the pass was.
 	Now func() time.Time
@@ -318,6 +332,53 @@ func (s *Services) Prefix() (prefix.Prefix, error) {
 // Repo, Tree, State, Ledger, Temp and Eval hand back what Acquire
 // opened, and refuse a road that did not declare them. The refusal is
 // what makes the declaration load-bearing rather than documentation.
+// baseMemo is what BaseRef resolved, kept so the answer and its failure
+// are both remembered.
+type baseMemo struct {
+	ref string
+	err error
+}
+
+// BaseRef is the rev a mint cuts its change from: upstream's primary
+// branch, fetched, so the branch dockhand hands a maintainer is based on
+// the newest tip the project has rather than on the one their checkout
+// happens to hold.
+//
+// ONE FETCH PER INVOCATION, whatever it is planning. See the memo's own
+// doc: a sweep would otherwise make one round trip per port and, worse,
+// spread one sweep's changes across several bases.
+//
+// fetch false is the caller declining the network — the `--no-fetch`
+// road — and it answers with the local primary without asking anything.
+// The two are memoized together on purpose: an invocation that says
+// --no-fetch says it once.
+func (s *Services) BaseRef(ctx context.Context, fetch bool) (string, error) {
+	s.baseOnce.Do(func() { s.base.ref, s.base.err = s.resolveBase(ctx, fetch) })
+	return s.base.ref, s.base.err
+}
+
+func (s *Services) resolveBase(ctx context.Context, fetch bool) (string, error) {
+	repo, err := s.Repo()
+	if err != nil {
+		return "", err
+	}
+	primary, err := repo.PrimaryBranch(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !fetch {
+		return primary, nil
+	}
+	ref, err := freshPrimary(ctx, s.Forge, repo, s.Err, primary)
+	if err != nil {
+		// freshPrimary said why on stderr. A fetch that failed must not
+		// stop a bump — offline is not a planning error — and it must not
+		// pass silently either, which is what the sentence is for.
+		return primary, nil
+	}
+	return ref, nil
+}
+
 func (s *Services) Repo() (*git.Repo, error) {
 	if s.repo == nil {
 		return nil, errNotAcquired{"a repository"}

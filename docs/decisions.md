@@ -1294,3 +1294,188 @@ by request.
 deletion `status` no longer performs. Every `status` golden that shows
 a retirement or a drain line belongs to `cycle`. A band `status` could
 exit on because a write failed is `cycle`'s now.
+
+## D28 — A finding is not a refusal: what needs a person blocks the machine, not the person
+
+**Ruled 8 September 2026**, from two observations one afternoon apart.
+
+**A comment somebody wrote in a Portfile must not cost a maintainer
+their branch.** The instruction-comment finding quotes a maintainer's
+own written instruction to whoever updates the port — evidence no
+measurement produces, which can name a break `otool` cannot see and
+which can also be wrong. What dockhand does with it is quote it. That
+is a question addressed to a person, and the road with nobody on it is
+the one that must stop.
+
+**A patch dockhand cannot carry over is the same shape.** A hunk whose
+before-block no longer occurs verbatim is precisely the case where the
+tool's judgment runs out and a person's begins: they know what the
+patch was for. They can resolve it on top of the bump branch, or fold
+the resolution into the bump commit, and then verify or promote. A
+refusal at plan time takes that road away and leaves them to redo by
+hand the version and checksum work dockhand had already done.
+
+**So the rule.** A fact the tool cannot settle is recorded as a
+`record.Finding` and never as a refusal of the whole act. Its
+disposition says who it stops:
+
+- `Proposed` is a QUESTION. `publish.Authorize`'s fourth gate refuses
+  an unattended publication (`ErrProposalOpen`) and advises a person
+  through — publishing past their own advisory is their answer, and
+  `dockhand dismiss` records that they looked and said no.
+- `Accepted` is a STATEMENT. It holds nothing, because there is nothing
+  to answer: "no distfile was fetched, so the patches were not checked"
+  tells a reviewer what was not established and asks them for nothing.
+
+**What this is not.** It is not a licence to ship a complete-looking
+artefact that is wrong, which is the thing this tool promises against
+and the argument the outright decline rested on. That argument holds;
+its conclusion was too strong. A branch is not complete-looking when
+its record, its plan narration and its own pull request body all name
+the patch that did not come over and why. The condition on relaxing the
+refusal IS that the sentence travels all three ways.
+
+**The zero-fuzz rule is untouched.** dockhand still relocates a hunk
+only where its before-block occurs exactly once, verbatim, and rewrites
+nothing inside one. What changed is the price of failing to: a finding
+on a minted branch rather than the branch's non-existence.
+
+**What it cost.** `plan.PatchWontRelocate` is deleted rather than kept
+for a caller that no longer exists — the taxonomy is ten members now.
+`relocatePatches` collects per patch instead of returning at the first
+failure, and keeps the relocations that succeeded: each patch relocates
+independently, and discarding correct work would leave a person redoing
+a move dockhand had already made.
+
+**The defect underneath, which is why this was invisible.**
+`record.FindingKind` is an exhaustive table and `change.stamp` refuses
+any word not in it; `MintIn` returns that error, so the Amend writes
+nothing at all. The table spelled `"instruction"` while every planner
+wrote `"instruction-comment"`, and did not spell `"patches-unchecked"`
+at all. So both findings failed the mint outright for every invoker —
+`dockhand bump` died on any port carrying a maintainer instruction
+comment (49 Portfiles on the tree) and on any port whose patches could
+not be checked (69). The rule was enforced in one direction only: "a
+presenter that invents a kind writes a note a later build cannot
+classify" was checked, and "every word a planner writes is a word the
+table admits" was not. `internal/change/finding_test.go` is that
+census, and it is the third entry in the class
+`internal/statestore/onlymover_test.go` opened.
+
+## D29 — A change is cut from upstream's newest tip, fetched
+
+**Ruled 8 September 2026.** `bump`, `bump-revision` and
+`refresh-checksums` fetch the primary branch of the remote the primary
+branch tracks — `origin` unless the checkout says otherwise — and base
+the change on the resulting remote-tracking ref, not on the local
+branch.
+
+**Why the base and not something cosmetic.** The base is the commit the
+mint makes a parent: `change.Commit` grafts the file set onto it, so
+the base IS what the pull request is based on. A checkout a week behind
+produced a branch a week behind — merges badly, reviews against stale
+neighbours, and duplicates work somebody upstream has already done.
+Nothing in dockhand's output said so, because from inside the process
+a stale base and a current one look identical.
+
+**It moves no local ref and reads no working tree.** `git.FetchBranch`
+names an explicit refspec and updates exactly one remote-tracking ref:
+the person's branch, index and checkout are where they left them. That
+is the whole reason this can be the default. Fast-forwarding their
+primary branch for them would reach into a working tree this tool
+promises not to touch, and would fail or do damage on a dirty one.
+
+**A fetch that failed falls back and says so.** Offline, a proxy, an
+ssh key not loaded: none of those should stop a bump, and none may pass
+silently — a base quietly older than it claims is rule 7's shape. The
+line names the remote, the branch and the failure, and says the local
+primary may be behind. `--no-fetch` is the same road asked for on
+purpose, and says nothing because nothing was concealed.
+
+**One fetch per invocation.** Memoized on `Services`. A sweep plans
+hundreds of ports through a worker pool; per-port fetching would be
+hundreds of round trips for one fact and — worse — would spread one
+sweep's changes across several bases as upstream moved under it.
+
+**What it costs: drift gained a second cause.** The plan is made from
+the working tree and held against the base's bytes, so drift used to
+mean one thing — the person edited the Portfile on their primary branch
+since planning. It can now also mean the port moved upstream since they
+last pulled, which they did nothing to cause and which their clean
+`git status` will not explain. Both remedies are named rather than
+guessed between: telling them apart is a diagnosis the line does not
+need to make, and a person who reads both knows at once which is
+theirs.
+
+That cost buys something on the same road. Measured live the day this
+landed: a checkout seven commits behind, `bump darktable`, and upstream
+had **already** bumped darktable to the very version being asked for.
+The old base would have minted a branch redoing it and opened a
+duplicate pull request. The new one refused, named the commit, and said
+`git pull`.
+
+**The stale-primary advisory now has a second home.** `docs/todo.md`
+files a warning against the retire sweep, which advances
+`origin/<primary>` under a standing checkout and says nothing. Fetching
+here creates the same condition, so the same sentence is said here:
+"origin/master is N commits ahead of your master; the change is cut
+from origin/master so it carries them." The sweep's half is still open.
+
+**Which remote is upstream is asked of the forge, not assumed** — see
+D30, which this ruling forced. `git.Repo.PrimaryRemote` (the primary
+branch's tracked remote, else `origin`) survives only as the candidate
+the question is asked ABOUT.
+
+## D30 — `origin` is a convention; which remote is upstream is asked of the forge
+
+**Ruled 8 September 2026**, the same afternoon as D29 and because of it.
+Basing a change on `origin/<primary>` made the question urgent, but the
+assumption was already in the tree and already wrong in a worse place.
+
+**The arrangement that breaks it is the common one.** `git clone <your
+fork>` makes `origin` the FORK and sets the primary branch to track it.
+So both halves of the old rule — the primary branch's tracked remote,
+else `origin` — name the person's own copy, on the checkout shape the
+GitHub fork workflow produces by default.
+
+**Two roads read the answer and neither survives it being wrong.** The
+mint bases a change on it (D29), so a wrong answer cuts branches from a
+copy that may be months behind the project. `publish` hands it to `gh
+pr create --repo`, so a wrong answer opens the pull request **against
+the person's own fork**, where nobody who maintains the project will
+ever see it — and nothing downstream can catch that, because a pull
+request from a fork to that same fork is a perfectly valid pull
+request. That second one predates D29 and was the more dangerous of the
+two.
+
+**Only the forge knows.** Which repository is the project and which is
+somebody's copy is not in a URL, not in tracking config and not in a
+name; it is a fact about the fork network. `gh.Upstream` asks
+`repos/<owner>/<repo>` once and the answer is complete either way: a
+repository that is not a fork IS the upstream, and one that is names
+its own `source`. `source` is preferred over `parent` because a fork of
+a fork's parent is another fork, and the project is the root of the
+network.
+
+**Knowing the project and being able to reach it are two facts**, and
+they get two sentences. A checkout whose remotes are all forks is told
+which repository upstream is and what to add: "`macports/macports-ports`
+is the upstream of `herbygillot/macports-ports`, and no remote here
+points at it — `git remote add upstream` one, or set
+`dockhand.upstream`."
+
+**`dockhand.upstream` is the escape hatch**, and it is git config
+rather than a flag: which remote is upstream is a property of the
+checkout, not of an invocation, and a person who had to type it would
+type it on every bump forever. It wins outright and asks the forge
+nothing, which is what makes it an answer for a mirror, a private tree,
+or a host that is not GitHub at all.
+
+**It refuses rather than guessing.** A caller that can proceed on
+something weaker says so in its own words: the mint declines the fetch,
+prints what the lookup was looking for, and bases the change on the
+local primary branch — which is D29's fallback and this ruling's too.
+`publish` has no such fallback and needs none: the failure lands on
+`ForgeFacts.Err` like every other forge failure, refusing the machine
+and advising the person, on the same rail `gh.ForkRemote` — this
+function's mirror image — has always used.

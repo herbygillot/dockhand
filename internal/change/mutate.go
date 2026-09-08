@@ -193,6 +193,10 @@ func findingKind(word string) (record.FindingKind, bool) {
 		return record.KindABIDependents, true
 	case string(record.KindInstruction):
 		return record.KindInstruction, true
+	case string(record.KindPatchesUnchecked):
+		return record.KindPatchesUnchecked, true
+	case string(record.KindPatchUnrelocated):
+		return record.KindPatchUnrelocated, true
 	case string(record.KindStealth):
 		return record.KindStealth, true
 	}
@@ -238,6 +242,22 @@ func candidates(in []plan.Candidate) []record.Candidate {
 // foreign ref stands at it — and a road that met the second without the
 // first would report a person's branch as a dockhand race. Exit 11.
 var ErrStanding = errors.New("change: a change already stands for this branch")
+
+// ErrOrphanBranch is a mint refusing a branch name that git holds and no
+// live change owns: dockhand's own leavings rather than a peer's race or
+// a person's branch.
+//
+// It is the THIRD member of the pair ErrStanding's doc describes. A
+// record binds the name (ErrStanding, 11); a foreign ref stands at it
+// (git.ErrRefMoved, 45); and a branch left behind by a change that has
+// since closed is neither — retirement abandons a rejected change
+// without necessarily taking its branch, and the name stays occupied.
+// Reaching the ref-level judge for it reported dockhand's own leavings
+// as a foreign hand, with a raw expected-value error and no remedy.
+//
+// Exit 11 with ErrStanding: both are "this name is taken, resolve it and
+// rerun", and the remedy is in the sentence.
+var ErrOrphanBranch = errors.New("change: a branch of this name stands with no change behind it")
 
 // ErrTipMoved is ExtendIn refusing because the change's recorded Tip is
 // not the one the caller extended from: an Accept that planned against

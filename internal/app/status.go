@@ -103,7 +103,20 @@ type StatusResult struct {
 // what it settled, and a caller that threw the result away would lose a
 // judgment it just wrote.
 func (s Status) Run(ctx context.Context, r StatusRequest) (StatusResult, error) {
-	st, err := s.State.Read(ctx)
+	// ReadOrEmpty, and this is the ONE operation in the package entitled
+	// to it. A status destroys nothing, so the destructive-pass argument
+	// behind statestore.ErrNoState does not reach it, and `purge` removes
+	// the state ref by design — which makes "no state ref" an ordinary
+	// thing for the next command to find rather than a failure. In the
+	// field the first command after a purge exited non-zero with
+	// "statestore: no state ref in this repository", where the true
+	// answer to "what is in flight here" was: nothing.
+	//
+	// Everything downstream already reads an empty State correctly: the
+	// settle loop ranges over no attempts, Outstanding reports no
+	// obligations, and the facts loop ranges over no changes. Only the
+	// read itself was refusing.
+	st, err := s.State.ReadOrEmpty(ctx)
 	if err != nil {
 		return StatusResult{}, err
 	}
@@ -124,6 +137,29 @@ func (s Status) Run(ctx context.Context, r StatusRequest) (StatusResult, error) 
 			}
 		}
 	}
+	// ONE AUTHORITATIVE SNAPSHOT, AFTER THE UPDATING PHASE. res.State was
+	// the read taken BEFORE the settle loop above and was never
+	// refreshed, so one result carried an old Active attempt beside the
+	// Settled list naming it, and beside publication facts gathered
+	// fresh below.
+	//
+	// Measured in the field, in one report:
+	//     settled attempt att-66a675ef…
+	//     dockhand/skim-5.7.0   building, 22m ago
+	// The verb told a person it had settled the attempt and then told
+	// them the attempt was still building.
+	//
+	// Re-read only when something was actually written — a status that
+	// settled nothing has nothing to be stale about, and a second read of
+	// the whole state ref is not free.
+	if len(res.Settled) > 0 {
+		fresh, ferr := s.State.Read(ctx)
+		if ferr != nil {
+			return res, ferr
+		}
+		res.State = fresh
+	}
+
 	// owed: a report, nothing seized.
 	if provErr == nil {
 		if res.Obligations, err = lease.Outstanding(ctx, s.State, prov, s.Me, "", s.Now()); err != nil {

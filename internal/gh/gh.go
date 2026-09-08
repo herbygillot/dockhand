@@ -101,27 +101,26 @@ func OpenPortPRs(ctx context.Context, gh Runner, upstream, port string) ([]PullR
 	return nil, fmt.Errorf("listing open PRs on %s: more than %d pages", upstream, openPRPageLimit)
 }
 
-// UpstreamRepo names the owner/repo the PR targets: the remote the
-// primary branch tracks — where the work forked from is where it goes
-// back to.
-func UpstreamRepo(ctx context.Context, repo *git.Repo) (string, error) {
-	primary, err := repo.PrimaryBranch(ctx)
-	if err != nil {
-		return "", err
-	}
-	remote := repo.TrackedRemote(ctx, primary)
-	if remote == "" {
-		remote = "origin"
-	}
-	remotes, err := repo.Remotes(ctx)
-	if err != nil {
-		return "", err
-	}
-	owner, name, ok := OwnerRepoFromURL(remotes[remote])
-	if !ok {
-		return "", fmt.Errorf("cannot read owner/repo from remote %q (%s)", remote, remotes[remote])
-	}
-	return owner + "/" + name, nil
+// UpstreamRepo names the owner/repo the PR targets.
+//
+// IT USED TO BE A GUESS, and the guess was "the remote the primary
+// branch tracks, else origin" — which is right for a checkout cloned
+// from the project and wrong for the commoner arrangement, `git clone
+// <your fork>`, where both halves of it name the person's own copy. The
+// value goes to `gh pr create --repo`, so the wrong answer opens the
+// pull request against the fork, where nobody who maintains the project
+// will ever see it. Nothing downstream could have caught that: a pull
+// request from a fork to that same fork is a perfectly valid pull
+// request.
+//
+// It asks the forge now (Upstream), which is the only party that knows
+// which repository is the project. A failure lands on ForgeFacts.Err
+// like every other forge failure — refusing the machine and advising
+// the person — which is the same rail ForkRemote, its neighbour and
+// mirror image, has always used.
+func UpstreamRepo(ctx context.Context, run Runner, repo *git.Repo) (string, error) {
+	_, ownerRepo, err := Upstream(ctx, run, repo)
+	return ownerRepo, err
 }
 
 // OwnerRepoFromURL reads owner and repository out of a git remote URL,

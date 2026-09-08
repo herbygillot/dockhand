@@ -156,5 +156,41 @@ func (l *Ledger) Purge(ctx context.Context) (int, error) {
 			return 0, fmt.Errorf("purging the record on %s: %w", sha, err)
 		}
 	}
+	// AND THE NAMESPACES THIS BUILD DOES NOT KNOW, dropped whole.
+	//
+	// A notes namespace outlives the build that named it. Removing the
+	// records under VerifyNotesRef left every note an older spelling had
+	// made — measured: fifteen under refs/notes/dockhand/outcome survived
+	// a purge that reported removing every record in the checkout, under
+	// a name nothing in the current source mentions at all.
+	//
+	// THE REF THIS BUILD WRITES IS EXEMPT, and that is the paragraph
+	// above rather than an oversight: its notes are removed one at a time
+	// precisely so git's own reflog for the ref survives and a person can
+	// undo the removal. An ABANDONED namespace has no such argument —
+	// nothing here can list what its notes attach to or read what they
+	// mean, so there is no per-commit removal to make and the ref itself
+	// is the only handle. Dropping it leaves the objects for gc's own
+	// window, which is the same recovery the rest of this design leans on.
+	//
+	// The count stays the count of records THIS BUILD keeps, because that
+	// is the number a report can honestly explain.
+	refs, err := l.repo.NotesRefs(ctx, notesNamespace)
+	if err != nil {
+		return len(shas), fmt.Errorf("listing dockhand notes namespaces: %w", err)
+	}
+	for _, ref := range refs {
+		if ref == git.VerifyNotesRef {
+			continue
+		}
+		if err := l.repo.DropNotesRef(ctx, ref); err != nil {
+			return len(shas), fmt.Errorf("removing the %s notes namespace: %w", ref, err)
+		}
+	}
 	return len(shas), nil
 }
+
+// notesNamespace is the prefix every notes ref dockhand has ever written
+// lives under. It is a PREFIX and not a list, so a namespace this build
+// does not know about is still this tool's to clean up.
+const notesNamespace = "dockhand/"

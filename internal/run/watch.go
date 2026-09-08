@@ -33,8 +33,35 @@ import (
 // waiting out the caller's whole duration for it would report a
 // still-running build.
 func AwaitRecord(ctx context.Context, st *statestore.Store, attempt string, every time.Duration) (record.Attempt, error) {
+	return AwaitFor(ctx, st, attempt, every, 0)
+}
+
+// AwaitFor is AwaitRecord with a WINDOW: it gives up after `within` and
+// returns the attempt as it last stood, unsettled, with no error.
+//
+// It exists because a watcher's role can change while it is blocked
+// here. app.watch chooses between judging and waiting by residency, and
+// a dispatcher that dies mid-wait leaves nobody to settle the attempt —
+// so an unbounded wait is a wait for something that will never happen.
+// A window turns that from the whole of the caller's --wait into one
+// interval, after which the caller re-decides whose job the verdict is.
+//
+// A zero or negative window is unbounded, which is AwaitRecord's own
+// contract and what a caller that has no role to re-decide wants.
+//
+// GIVING UP IS NOT AN ERROR AND NOT A VERDICT. What comes back is the
+// attempt unchanged; the caller's loop condition decides what that
+// means. Reporting a timeout as a failure here would tell a person their
+// build had broken when it is still running.
+func AwaitFor(ctx context.Context, st *statestore.Store, attempt string, every, within time.Duration) (record.Attempt, error) {
 	if every <= 0 {
 		every = defaultWatch
+	}
+	var deadline <-chan time.Time
+	if within > 0 {
+		timer := time.NewTimer(within)
+		defer timer.Stop()
+		deadline = timer.C
 	}
 	t := time.NewTicker(every)
 	defer t.Stop()
@@ -67,6 +94,11 @@ func AwaitRecord(ctx context.Context, st *statestore.Store, attempt string, ever
 			// still arrives in the record for whoever reads it next — so
 			// this is the caller's own expiry and never an error about the
 			// attempt.
+			return last, nil
+		case <-deadline:
+			// The window passed with no verdict. Nil deadline means no
+			// window, and a nil channel blocks forever, so an unbounded
+			// caller never takes this branch.
 			return last, nil
 		case <-t.C:
 		}

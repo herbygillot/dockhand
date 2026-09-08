@@ -55,9 +55,20 @@ var ErrNothingToBuild = errors.New("run: every member is answered without a buil
 // does not declare known_fail" from "the staged Portfile could not be
 // read", and an unread member is scheduled as an ordinary build: a
 // machine that could not ask has learned nothing about the port. What it
-// costs is stated where a person will meet it — Start warns from
-// Preflight.Err — rather than silently swallowed here, because a check
-// that did not happen is news and a judgment is not the place to say so.
+// costs is stated where a person will meet it rather than swallowed
+// here, because a check that did not happen is news and a judgment about
+// the platform is not the place to say so.
+//
+// WHERE THAT IS was wrong in this doc for the whole of the overhaul. It
+// said "Start warns from Preflight.Err", and nothing in the tree read
+// Preflight.Err at all — no warning, no record, and an Evidence.Preflight
+// field that nothing filled. So a Portfile that would not evaluate bought
+// a VM, forty minutes and a bare FAILED, with the one fact that explained
+// it discarded at this line. Start now writes the failures onto the
+// attempt (record.Attempt.Unchecked), Finish carries them to Judge, and
+// stamp puts the sentence beside the verdict that paid for it — hours
+// later and usually in another process, which is why the fact has to be
+// durable rather than printed.
 //
 // The request's parallel slices — Requires and Deactivate — are built
 // over the ports ACTUALLY BEING BUILT and never over the roster, because

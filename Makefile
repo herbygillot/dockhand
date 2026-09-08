@@ -1,5 +1,24 @@
 BINARY := dockhand
-VERSION ?= 0.0.0-dev
+
+# VERSION names the BUILD, because every pull request dockhand opens
+# signs off with it: publish.Env.Version exists "so that a published
+# sentence found to be wrong can be traced to the build that wrote it".
+# A fixed default traces to nothing, and in the field every pull request
+# an exercise opened went upstream reading "opened by dockhand
+# 0.0.0-dev".
+#
+# So it is derived from the RELEASE TAG, if this commit has one behind
+# it — v-prefixed only, so the repository's own operational tags (a
+# pre-overhaul checkpoint, say) cannot be mistaken for a release —
+# carrying --dirty, since a build with uncommitted changes is not the
+# commit it claims. A caller may override it: VERSION=1.2.0 make build.
+#
+# THE COMMIT IS NOT DERIVED HERE. An untagged tree keeps the placeholder
+# and cmd/dockhand replaces it from the go toolchain's own vcs.revision
+# stamp, which is already in every binary built inside a repository and
+# is right for `go build` and `go install` too — roads this Makefile
+# never sees.
+VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --dirty 2>/dev/null || echo 0.0.0-dev)
 
 # The vendored tree is the tree under test: fail loudly if it is
 # missing or inconsistent rather than falling back to the module cache.

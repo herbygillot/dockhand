@@ -132,7 +132,10 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		return a, deferred(ctx, st, a, fmt.Errorf("%w: the record hashes to %s and carries %s",
 			ErrSpecMismatch, got, a.Spec), now)
 	}
-	staged, pre, err := stage.Stage(ctx, a.Sha, c.Subjects)
+	// THE ATTEMPT'S OWN PLATFORM FRAMES ITS PREFLIGHT. spec is Frozen
+	// from the record, so the release is the one this build is bound for
+	// — not the host's, and not whichever release a matrix listed first.
+	staged, pre, err := stage.Stage(ctx, a.Sha, c.Subjects, spec.Platform)
 	if err != nil {
 		// A re-plan that could not materialize the commit is this
 		// attempt's own fault in the only sense Defer cares about: nothing
@@ -209,6 +212,7 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		cur.Owner = by.Owner
 		cur.Started = now.UTC()
 		cur.Runs = startedRuns(spec, req, declined, now)
+		cur.Unchecked = unchecked(pre)
 		tx.PutAttempt(cur)
 		started = cur
 		return nil
@@ -216,6 +220,34 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		return a, err
 	}
 	return started, nil
+}
+
+// unchecked is the preflight's failures, kept because they are the only
+// part of a preflight that outlives Plan.
+//
+// Everything a preflight ANSWERED has already had its whole effect by
+// the time this is called: a member declaring known_fail is not in the
+// request and carries record.Unsupported, and use_xcode is in
+// verify.Request.NeedsXcode. What it could not answer has had no effect
+// at all, which is precisely why it has to be written down — run.Plan
+// schedules an unread member as an ordinary build, and the person who
+// reads the verdict hours later is the one who needs to know the
+// question was never asked.
+//
+// Nil for a clean preflight, so the record carries the field only when
+// it has something to say.
+func unchecked(pre map[string]Preflight) map[string]string {
+	var out map[string]string
+	for port, pf := range pre {
+		if pf.Read || pf.Err == nil {
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[port] = pf.Err.Error()
+	}
+	return out
 }
 
 // startedRuns is what the attempt carries the moment the guest is

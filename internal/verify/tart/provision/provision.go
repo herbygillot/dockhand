@@ -84,13 +84,13 @@ func imageRef(r platform.Release) string {
 // built. Progress goes to w because most of this is a download of tens
 // of gigabytes, and a command silent that long is indistinguishable
 // from a hung one.
-func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) error {
+func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) (string, error) {
 	if r.IsZero() {
-		return fmt.Errorf("%w: no release named", verify.ErrUnsupported)
+		return "", fmt.Errorf("%w: no release named", verify.ErrUnsupported)
 	}
 	version, err := t.macPortsVersion()
 	if err != nil {
-		return err
+		return "", err
 	}
 	// Provisioning is a transaction against a TEMPORARY name: the
 	// existing base survives untouched until its replacement has passed
@@ -104,11 +104,11 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 
 	say("pulling %s", imageRef(r))
 	if out, err := tart.CLI(ctx, t.Tools, nil, "pull", imageRef(r)); err != nil {
-		return fmt.Errorf("%w: pulling %s: %s", verify.ErrNoEnvironment, imageRef(r), strings.TrimSpace(out))
+		return "", fmt.Errorf("%w: pulling %s: %s", verify.ErrNoEnvironment, imageRef(r), strings.TrimSpace(out))
 	}
 	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", name)
 	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", imageRef(r), name); err != nil {
-		return fmt.Errorf("%w: cloning to %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
+		return "", fmt.Errorf("%w: cloning to %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
 	}
 
 	// Size before anything runs, so the golden inherits it too: a
@@ -128,7 +128,7 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	}
 	if cpus > 0 && memMB > 0 {
 		if out, err := tart.CLI(ctx, t.Tools, nil, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memMB)); err != nil {
-			return fmt.Errorf("%w: sizing %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
+			return "", fmt.Errorf("%w: sizing %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
 		}
 	}
 	if t.XcodeDir != "" {
@@ -139,17 +139,17 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 		// the APFS container inside grows after boot.
 		say("growing the disk to %d GB (Xcode needs room to expand)", xcodeDiskGB)
 		if out, err := tart.CLI(ctx, t.Tools, nil, "set", name, "--disk-size", strconv.Itoa(xcodeDiskGB)); err != nil {
-			return fmt.Errorf("%w: growing %s's disk: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
+			return "", fmt.Errorf("%w: growing %s's disk: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
 		}
 		// The guest recovery partition would sit between the container
 		// and the new space; see gpt.go for why removing it pre-boot is
 		// the only automatable path.
 		img, err := diskImagePath(name)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if removed, err := removeRecoveryPartition(img); err != nil {
-			return fmt.Errorf("%w: preparing %s's partition map: %w", verify.ErrNoEnvironment, name, err)
+			return "", fmt.Errorf("%w: preparing %s's partition map: %w", verify.ErrNoEnvironment, name, err)
 		} else if removed {
 			say("removed the guest recovery partition (a VM never boots it; the space joins the container)")
 		}
@@ -168,7 +168,7 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 		// value by mutating it after the fact. Which band a full machine
 		// exits in is decided where the road is known, over
 		// verify.ErrNoVacancy.
-		return err
+		return "", err
 	}
 	runErr := make(chan error, 1)
 	go func() {
@@ -178,56 +178,56 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	defer func() { _, _ = tart.CLI(context.WithoutCancel(ctx), t.Tools, nil, "stop", name) }()
 	if err := tart.WaitRunning(ctx, t.Tools, name, runErr); err != nil {
 		unlockAdmission()
-		return err
+		return "", err
 	}
 	unlockAdmission()
 
 	host, err := guestIP(ctx, t.Tools, name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	say("waiting for %s to accept a login", host)
 	if err := waitSSH(ctx, host); err != nil {
-		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
+		return "", fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
 	}
 
 	// The one step that cannot use the agent, because it is what
 	// installs the agent.
 	say("installing the tart guest agent %s", AgentVersion)
 	if out, err := sshRun(ctx, host, installAgentScript()); err != nil {
-		return fmt.Errorf("%w: installing the guest agent: %w\n%s",
+		return "", fmt.Errorf("%w: installing the guest agent: %w\n%s",
 			verify.ErrNoEnvironment, err, strings.TrimSpace(out))
 	}
 	say("waiting for the agent to answer")
 	if err := tart.WaitAgent(ctx, t.Tools, name); err != nil {
-		return fmt.Errorf("%w: the agent was installed but does not answer: %w", verify.ErrNoEnvironment, err)
+		return "", fmt.Errorf("%w: the agent was installed but does not answer: %w", verify.ErrNoEnvironment, err)
 	}
 
 	say("checking the image can compile")
 	if err := t.ensureToolchain(ctx, name, say); err != nil {
-		return err
+		return "", err
 	}
 	xcodeNote := ""
 	if t.XcodeDir != "" {
 		xip, xv, err := PickXcode(t.XcodeDir, r)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if err := expandGuestDisk(ctx, t.Tools, name, say); err != nil {
-			return err
+			return "", err
 		}
 		if err := t.installXcode(ctx, name, host, xip, xv, say); err != nil {
-			return err
+			return "", err
 		}
 		xcodeNote = ", Xcode " + xv
 	}
 	say("installing MacPorts %s", version)
 	if err := t.installMacPorts(ctx, name, r, version); err != nil {
-		return err
+		return "", err
 	}
 	say("verifying the image is what it claims")
 	if err := t.assertPristine(ctx, name); err != nil {
-		return err
+		return "", err
 	}
 	// The golden is taken after the checks pass and before anything has
 	// run the image, so it records a state that was verified rather than
@@ -243,18 +243,24 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	}
 	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", golden)
 	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", name, golden); err != nil {
-		return fmt.Errorf("%w: taking the golden copy %s: %s",
+		return "", fmt.Errorf("%w: taking the golden copy %s: %s",
 			verify.ErrNoEnvironment, golden, strings.TrimSpace(out))
 	}
 	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", base)
 	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", name, base); err != nil {
-		return fmt.Errorf("%w: installing the base %s: %s",
+		return "", fmt.Errorf("%w: installing the base %s: %s",
 			verify.ErrNoEnvironment, base, strings.TrimSpace(out))
 	}
 	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", name)
 
-	say("provisioned %s — %s, MacPorts %s%s (golden: %s)", base, r, version, xcodeNote, golden)
-	return nil
+	// THE RESULT IS RETURNED, NOT NARRATED. Everything above is progress
+	// and belongs on stderr; this one line answers "what did the command
+	// do", which is stdout's job — and this verb used to write it to the
+	// narration sink with the rest, so a caller scraping stdout got
+	// NOTHING from provision while bump answered there and promote
+	// answered there with an advisory mixed in. Three verbs, three
+	// conventions. The caller prints it.
+	return fmt.Sprintf("provisioned %s — %s, MacPorts %s%s (golden: %s)", base, r, version, xcodeNote, golden), nil
 }
 
 // guestIP waits for the guest to have an address, which is needed only

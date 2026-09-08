@@ -68,6 +68,38 @@ func cohortBody(c record.Change, vs []Verdict) string {
 				fmt.Fprintf(&b, "\nRe-planning this change from its own base did not reproduce the tip: %s.\n",
 					strings.Join(f.Diverged, ", "))
 			}
+		case record.KindPatchesUnchecked:
+			// WHAT WAS NOT CHECKED, said to the reviewer. "not checked" and
+			// "checked, and still where they were" are different answers,
+			// and a body that printed neither leaves a reviewer to assume
+			// the second — which is the whole reason bump makes this
+			// finding at all (rule 7).
+			//
+			// The criterion opens with its own verdict, so it is printed as
+			// it stands rather than under a label that would say it twice —
+			// the same reading report.Plan gives it in the plan narration.
+			// This is the second half of a finding that used to reach the
+			// plan and stop there, because its kind could not become a
+			// record kind and the mint that would have carried it failed.
+			if f.Criterion != "" {
+				fmt.Fprintf(&b, "\n%s\n", f.Criterion)
+			}
+		case record.KindPatchUnrelocated:
+			// A PATCH THE BUMP COULD NOT CARRY OVER, and the reviewer is the
+			// second person who needs to know. This branch used never to
+			// exist — the bump declined outright — so the sentence had
+			// nowhere to be said; now it can be published past by a person,
+			// and a body that did not carry it would be the
+			// complete-looking artifact the old decline was protecting
+			// against.
+			//
+			// Dismissed is spelled, like the instruction comment's, because
+			// "somebody looked and said the patch is fine" is a different
+			// fact from "nobody has looked".
+			fmt.Fprintf(&b, "\n%s\n", f.Criterion)
+			if f.Disposition == record.Dismissed {
+				b.WriteString("\nDismissed by hand: the patch was judged to carry over as it stands.\n")
+			}
 		case record.KindABIDependents:
 			b.WriteString(dependentsSection(f, vs))
 		}

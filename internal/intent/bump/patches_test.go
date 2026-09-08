@@ -144,16 +144,32 @@ func TestBumpLeavesAPatchThatStillApplies(t *testing.T) {
 }
 
 // The line the patch removes is gone from 2.0, so the before-block
-// occurs nowhere: the bump declines, naming the patch, the file and
-// the hunk as patch(1) would number it.
-func TestBumpDeclinesAPatchWhoseHunkIsGone(t *testing.T) {
+// occurs nowhere. The bump PROCEEDS and carries the question: a Proposed
+// finding naming the patch, the file and the hunk as patch(1) would
+// number it.
+//
+// It used to decline the whole plan, and the argument was that a bump
+// shipping a half-refreshed patch is the complete-looking wrong artifact
+// this tool promises against. Ruled 8 September 2026: the premise holds
+// and the conclusion was too strong — a branch that says on its record
+// and in its own body which patch did not come over is not
+// complete-looking, and the person who meets it can do the one thing
+// dockhand may not, which is judge what the patch was for.
+func TestBumpCarriesAPatchWhoseHunkIsGoneAsAQuestion(t *testing.T) {
 	p, err := planPatched(t, strings.Replace(makefile, "LDFLAGS = -lstdc++", "LDFLAGS = -lc++", 1))
-	require.Nil(t, p)
-	var d *plan.Decline
-	require.ErrorAs(t, err, &d)
-	assert.Equal(t, plan.PatchWontRelocate, d.Type)
-	assert.Equal(t, "files/patch-foo.diff: Makefile hunk #1: its before-block occurs nowhere in the file", d.Detail)
-	assert.Contains(t, err.Error(), "refresh the patch by hand")
+	require.NoError(t, err, "a patch a person can fix must not cost them the branch")
+	require.NotNil(t, p)
+
+	require.Len(t, p.Findings, 1)
+	f := p.Findings[0]
+	assert.Equal(t, FindingPatchUnrelocated, f.Kind)
+	assert.Equal(t, plan.Proposed, f.Disposition,
+		"Proposed is what refuses the machine and advises the person: nobody unattended can judge a patch")
+	assert.Equal(t, "files/patch-foo.diff", f.Source)
+	assert.Contains(t, f.Criterion, "Makefile hunk #1: its before-block occurs nowhere in the file")
+	assert.Contains(t, f.Criterion, "Refresh it by hand on the branch, then verify")
+
+	assert.Empty(t, p.Files, "the patch dockhand could not move is left exactly as it is")
 }
 
 // The give-ups that need no evaluator: what the helper says when the
@@ -207,18 +223,26 @@ func TestRelocatePatchesGivesUpOnThePatchItself(t *testing.T) {
 			for name, body := range tc.files {
 				require.NoError(t, os.WriteFile(filepath.Join(portdir, "files", name), []byte(body), 0o644))
 			}
-			files, moved, err := relocatePatches(context.Background(), tool.NewFinder(nil), portdir, tc.vals, "bumpee-2.0", []string{archive})
+			files, moved, unresolved, err := relocatePatches(context.Background(), tool.NewFinder(nil), portdir, tc.vals, "bumpee-2.0", []string{archive})
+			require.NoError(t, err, "a patch a person can fix is never an error here")
 			if tc.want == "" {
-				require.NoError(t, err)
 				assert.Empty(t, files, "the hunk is where it was")
 				assert.Empty(t, moved)
+				assert.Empty(t, unresolved)
 				return
 			}
-			var d *plan.Decline
-			require.ErrorAs(t, err, &d)
-			assert.Equal(t, plan.PatchWontRelocate, d.Type)
-			assert.Equal(t, tc.want, d.Detail)
-			assert.Nil(t, files)
+			require.Len(t, unresolved, 1)
+			assert.Equal(t, FindingPatchUnrelocated, unresolved[0].Kind)
+			assert.Equal(t, plan.Proposed, unresolved[0].Disposition)
+			// The want strings are the old decline Details: the patch's own
+			// path, then the reason. The finding carries the path in Source
+			// and the reason in Criterion, so the sentence is not printed
+			// with the path twice.
+			rel := filesDir + "/" + patchName
+			reason := strings.TrimPrefix(strings.TrimPrefix(tc.want, rel), ":")
+			assert.Equal(t, rel, unresolved[0].Source)
+			assert.Contains(t, unresolved[0].Criterion, strings.TrimSpace(reason))
+			assert.Empty(t, files, "the patch dockhand could not move is left as it is")
 		})
 	}
 }
@@ -241,13 +265,13 @@ func TestRelocatePatchesReadsOnlyTheFileThePatchPhaseOpens(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(portdir, "files"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(portdir, "files", patchName), []byte(patchBody), 0o644))
 
-	files, moved, err := relocatePatches(context.Background(), tool.NewFinder(nil), portdir, info.Values{Patchfiles: []string{patchName}}, "bumpee-2.0", []string{archive})
-	var d *plan.Decline
-	require.ErrorAs(t, err, &d)
-	assert.Equal(t, plan.PatchWontRelocate, d.Type)
-	assert.Contains(t, d.Detail, "files/patch-foo.diff: Makefile hunk #1: the file could not be read")
-	assert.Contains(t, d.Detail, "bumpee-2.0/Makefile")
-	assert.Nil(t, files)
+	files, moved, unresolved, err := relocatePatches(context.Background(), tool.NewFinder(nil), portdir, info.Values{Patchfiles: []string{patchName}}, "bumpee-2.0", []string{archive})
+	require.NoError(t, err)
+	require.Len(t, unresolved, 1)
+	assert.Equal(t, "files/patch-foo.diff", unresolved[0].Source)
+	assert.Contains(t, unresolved[0].Criterion, "Makefile hunk #1: the file could not be read")
+	assert.Contains(t, unresolved[0].Criterion, "bumpee-2.0/Makefile")
+	assert.Empty(t, files)
 	assert.Nil(t, moved)
 }
 
@@ -256,10 +280,11 @@ func TestRelocatePatchesReadsOnlyTheFileThePatchPhaseOpens(t *testing.T) {
 // end to end — bump_plan.golden carries no "files" key and its summary
 // is unchanged.
 func TestRelocatePatchesDoesNothingWithoutPatchfiles(t *testing.T) {
-	files, moved, err := relocatePatches(context.Background(), nil, t.TempDir(), info.Values{}, "bumpee-2.0", nil)
+	files, moved, unresolved, err := relocatePatches(context.Background(), nil, t.TempDir(), info.Values{}, "bumpee-2.0", nil)
 	require.NoError(t, err)
 	assert.Nil(t, files)
 	assert.Nil(t, moved)
+	assert.Nil(t, unresolved)
 }
 
 func TestHunksMoved(t *testing.T) {

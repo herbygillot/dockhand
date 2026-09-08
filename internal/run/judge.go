@@ -355,7 +355,48 @@ func stamp(port string, r record.Run, e Evidence) record.Run {
 	if r.State == record.Passed {
 		r.Evidence = e.Claim
 	}
+	// THE QUESTION THIS BUILD NEVER ASKED, said beside the verdict it
+	// paid for. A member whose preflight could not be read was scheduled
+	// as an ordinary build on purpose — a machine that could not ask has
+	// learned nothing about the port — but the cost of not asking lands
+	// here: the port may declare known_fail on this platform, or may need
+	// an Xcode the request never asked for, and the verdict would say
+	// only FAILED.
+	//
+	// Only on a verdict the omission could have CHANGED. A pass proves
+	// the port builds whatever its Portfile declares, and a decline or an
+	// interrupt was reached without consulting the preflight either way;
+	// hanging the note on those would be noise on every member of every
+	// attempt staged from an unreadable tree.
+	if why, ok := e.Unchecked[port]; ok && unaskedMatters(r.State) {
+		r.Detail = join(r.Detail, "its Portfile could not be read before the build ("+why+"), so known_fail and use_xcode were never consulted")
+	}
 	return r
+}
+
+// unaskedMatters is the verdicts an unread preflight could have changed:
+// the ones where the port did not build. A pass needed no preflight to
+// be true, and Unsupported is the very answer the preflight would have
+// given.
+func unaskedMatters(s record.RunState) bool {
+	switch s {
+	case record.Failed, record.Errored, record.Blocked:
+		return true
+	case record.Queued, record.Submitting, record.Running,
+		record.Passed, record.Unsupported, record.Canceled,
+		record.Superseded, record.Withheld:
+		return false
+	}
+	return false
+}
+
+// join appends a clause to a detail that may be empty, so a verdict with
+// no diagnosis of its own still carries the one thing known about it.
+func join(detail, clause string) string {
+	if detail == "" {
+		return clause
+	}
+	return detail + "; " + clause
 }
 
 // fold reduces the members' answers about one guest to the job's one

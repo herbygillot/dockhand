@@ -35,9 +35,10 @@ func TestOrderPutsTheLongestWaitingFirst(t *testing.T) {
 	assert.Equal(t, "zebra", got[0].ID, "age decides, not the alphabet")
 }
 
-// A BACKED-OFF ATTEMPT WAITS ITS TURN. The backoff Defer wrote is the
-// key, so a port that fails for its own reasons stops costing a VM on
-// every pass.
+// A BACKED-OFF ATTEMPT WAITS ITS TURN IN THE ORDER. That is all the
+// ordering does — the GATE is Pending's, and this test used to be the
+// whole of the backoff's coverage while the drain started the attempt
+// anyway.
 func TestOrderPutsABackedOffAttemptBehindEveryReadyOne(t *testing.T) {
 	got := Order([]record.Attempt{
 		backedOff(queued("broken", 3*time.Hour), clock.Add(30*time.Minute)),
@@ -216,3 +217,40 @@ func TestAdmitTellsTheQueueCapFromThePassCap(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, WithheldUnknown, why, "an admitted target names no reason, and nothing reads it")
 }
+
+// ORDERING IS NOT GATING, and for the whole of the overhaul the backoff
+// was only an ordering. Order sorts a waiting attempt behind the ready
+// ones; the drain then walks the WHOLE list calling Start, so a deferred
+// attempt was merely started last — and a queue holding nothing else was
+// started at once. The defect Defer exists to end, a port that fails for
+// its own reasons rebuilt at full cost every pass, survived it.
+func TestPendingRefusesAnAttemptStillWaitingOutItsBackoff(t *testing.T) {
+	c := minted("broken")
+	a := attemptOn("a-broken", "broken")
+	a.NotBefore = ptr(clock.Add(30 * time.Minute))
+	a.Tries, a.LastError = 3, "the staged Portfile would not evaluate"
+
+	q, no := Pending(stateWith([]record.Change{c}, []record.Attempt{a}), clock)
+	assert.Empty(t, q, "a queue of one deferred attempt starts nothing")
+	require.Len(t, no, 1)
+	assert.Equal(t, BackedOff, no[0].Why)
+	assert.Contains(t, no[0].Detail, "30m0s")
+	assert.Contains(t, no[0].Detail, "3 tries")
+	assert.Contains(t, no[0].Detail, "would not evaluate",
+		"a backoff with no cause reads as the tool stalling")
+}
+
+// AND AN EXPIRED ONE IS OVER. The gate is the deadline and not the
+// presence of a deadline: a recovered port rejoins the queue.
+func TestPendingAdmitsAnAttemptWhoseBackoffHasPassed(t *testing.T) {
+	c := minted("recovered")
+	a := attemptOn("a-recovered", "recovered")
+	a.NotBefore = ptr(clock.Add(-time.Minute))
+
+	q, no := Pending(stateWith([]record.Change{c}, []record.Attempt{a}), clock)
+	assert.Empty(t, no)
+	require.Len(t, q, 1)
+	assert.Equal(t, "a-recovered", q[0].ID)
+}
+
+func ptr(t time.Time) *time.Time { return &t }

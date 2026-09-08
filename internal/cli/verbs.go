@@ -84,7 +84,7 @@ func verifyCmd(s *Services) *cobra.Command {
 			stay := waitPtr(cmd, wait, trace)
 			op := app.Verify{
 				Repo: repo, Ledger: led, State: st,
-				Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session, release: releases[0]},
+				Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
 				Local:     s.ProposeTree(),
 				Verifier:  s.VerifyProvider(),
 				Me:        s.Me(),
@@ -819,7 +819,7 @@ func promoteCmd(s *Services) *cobra.Command {
 				return err
 			}
 			res, err := op.Run(ctx, args[0], asks)
-			report.Promotion(s.Out, res)
+			report.Promotion(s.Out, s.Err, res)
 			return err
 		},
 	}
@@ -928,7 +928,7 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 	residency := probeResidency(ctx, repo)
 	op := app.Accept{
 		Plan: planningFor(s), Repo: repo, Ledger: led, State: st,
-		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session, release: f.release},
+		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
 		Local:     s.ProposeTree(),
 		Verifier:  s.VerifyProvider(),
 		Me:        s.Me(),
@@ -1270,8 +1270,13 @@ func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate
 		if err != nil {
 			return change.Prepared{}, err
 		}
+		aux, err := baseFiles(ctx, repo, tip, dir, pl.Files)
+		if err != nil {
+			return change.Prepared{}, err
+		}
 		return change.Prepare(ctx, pl, change.Source{
-			Base: record.Base{Sha: tip, CommittedAt: at}, Portdir: change.TreePath(dir), Portfile: blob,
+			Base: record.Base{Sha: tip, CommittedAt: at}, Portdir: change.TreePath(dir),
+			Portfile: blob, Files: aux,
 		}, blobEvaluator{ev: ev})
 	}
 }

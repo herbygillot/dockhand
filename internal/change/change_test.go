@@ -143,10 +143,13 @@ func TestPrepareIsTheOneFileSet(t *testing.T) {
 func TestPrepareCarriesThePlansAuxiliaryFiles(t *testing.T) {
 	repo, _ := newRepo(t)
 	pl := aPlan()
-	pl.Files = []plan.FileEdit{{Path: "files/patch-a.diff", Content: "--- a\n", Reason: "2 hunks moved"}}
+	was := []byte("--- a\n+++ b\n")
+	pl.Files = []plan.FileEdit{{Path: "files/patch-a.diff", Content: "--- a\n",
+		Reason: "2 hunks moved", Was: edit.FileSHA256(was)}}
 	base := primary(t, repo)
 	p, err := Prepare(context.Background(), pl,
-		Source{Base: record.Base{Sha: base}, Portdir: portdir, Portfile: []byte("version 1.7\n")}, nil)
+		Source{Base: record.Base{Sha: base}, Portdir: portdir, Portfile: []byte("version 1.7\n"),
+			Files: map[string][]byte{"files/patch-a.diff": was}}, nil)
 	require.NoError(t, err)
 	require.Len(t, p.Files, 2)
 	assert.Equal(t, "files/patch-a.diff", p.Files[1].Path,
@@ -461,4 +464,68 @@ func plant(t *testing.T, repo *git.Repo, args ...string) string {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v: %s", args, out)
 	return string(out)
+}
+
+// THE PORTFILE WAS THE PLAN'S ONLY PRECONDITION, and everything beside
+// it was written on trust. A change whose Portfile is untouched at the
+// base but whose patch file somebody rewrote in between committed the
+// planner's stale relocation over the newer file and passed every drift
+// check on the way.
+func TestPrepareRefusesAWholeFileWhoseBaseBytesMoved(t *testing.T) {
+	repo, _ := newRepo(t)
+	pl := aPlan()
+	pl.Files = []plan.FileEdit{{Path: "files/patch-a.diff", Content: "--- relocated\n",
+		Was: edit.FileSHA256([]byte("--- what the planner read\n"))}}
+
+	_, err := Prepare(context.Background(), pl,
+		Source{Base: record.Base{Sha: primary(t, repo)}, Portdir: portdir,
+			Portfile: []byte("version 1.7\n"),
+			Files:    map[string][]byte{"files/patch-a.diff": []byte("--- somebody refreshed it\n")}}, nil)
+	require.ErrorIs(t, err, ErrDrift)
+	assert.Contains(t, err.Error(), "files/patch-a.diff", "a person meeting drift needs the path")
+}
+
+// AND ONE THAT IS GONE. A plan that rewrites a file the base no longer
+// holds is about some other state of this portdir, and writing it back
+// would resurrect a deleted patch.
+func TestPrepareRefusesAWholeFileTheBaseNoLongerHolds(t *testing.T) {
+	repo, _ := newRepo(t)
+	pl := aPlan()
+	pl.Files = []plan.FileEdit{{Path: "files/patch-a.diff", Content: "--- relocated\n",
+		Was: edit.FileSHA256([]byte("--- what the planner read\n"))}}
+
+	_, err := Prepare(context.Background(), pl,
+		Source{Base: record.Base{Sha: primary(t, repo)}, Portdir: portdir,
+			Portfile: []byte("version 1.7\n")}, nil)
+	assert.ErrorIs(t, err, ErrDrift)
+}
+
+// AN EMPTY Was IS A CLAIM AND NOT A MISSING FIELD: the planner found no
+// such file. Over a base that holds one it is the same mistake read from
+// the other side — and it is what a producer that simply forgot to
+// record Was runs into on its first real portdir, out loud, instead of
+// overwriting quietly.
+func TestPrepareRefusesACreationOverAFileThatExists(t *testing.T) {
+	repo, _ := newRepo(t)
+	pl := aPlan()
+	pl.Files = []plan.FileEdit{{Path: "files/patch-a.diff", Content: "--- new\n"}}
+
+	_, err := Prepare(context.Background(), pl,
+		Source{Base: record.Base{Sha: primary(t, repo)}, Portdir: portdir,
+			Portfile: []byte("version 1.7\n"),
+			Files:    map[string][]byte{"files/patch-a.diff": []byte("--- it was here all along\n")}}, nil)
+	assert.ErrorIs(t, err, ErrDrift)
+}
+
+// AND A GENUINE CREATION GOES THROUGH.
+func TestPrepareAcceptsANewFileTheBaseDoesNotHold(t *testing.T) {
+	repo, _ := newRepo(t)
+	pl := aPlan()
+	pl.Files = []plan.FileEdit{{Path: "files/patch-new.diff", Content: "--- new\n"}}
+
+	p, err := Prepare(context.Background(), pl,
+		Source{Base: record.Base{Sha: primary(t, repo)}, Portdir: portdir,
+			Portfile: []byte("version 1.7\n")}, nil)
+	require.NoError(t, err)
+	require.Len(t, p.Files, 2)
 }

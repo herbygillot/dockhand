@@ -31,6 +31,7 @@ package report
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -116,12 +117,30 @@ func Residency(r app.Residency) string {
 		if !r.Since.IsZero() {
 			since = ", since " + r.Since.Local().Format("15:04")
 		}
-		return "dispatch resident (" + strings.TrimPrefix(who(r), "dispatch ") + since + ")"
+		// NO SECOND PAIR OF PARENS. who() already parenthesises what it
+		// knows, and wrapping it produced "resident ((pid N on host),
+		// since 13:31)".
+		return "dispatch resident " + strings.TrimPrefix(who(r), "dispatch ") + since
 	case app.NoDispatcher:
 		return "no dispatcher on this checkout"
 	case app.ResidencyUnknown:
 	}
-	return "dispatcher residency not established"
+	// IT SAYS IT DOES NOT KNOW, and the old line did not. "dispatcher
+	// residency not established" reads as a finding of absence — we
+	// looked, there is none — and sits one line away from the genuine
+	// negative above, which a reader cannot then tell it from.
+	//
+	// Measured: a resident dispatcher ran through an entire field
+	// exercise while `status --no-update` printed the old line five
+	// times, and every inference drawn from it was wrong for twenty
+	// minutes.
+	//
+	// It still does not say WHICH road, for the reason the doc above
+	// gives: a failed probe and a --no-update that never probed arrive
+	// here identically and the value cannot tell them apart. What
+	// changes is that the sentence is now about knowledge rather than
+	// about the world.
+	return "whether a dispatcher is running here is not known"
 }
 
 // who names the resident dispatcher as tersely as the stamp allows. A
@@ -298,17 +317,23 @@ func VerifyRows(w io.Writer, v app.VerifyResult, r app.Residency) {
 // Promotion writes what a publication did. The advisories come FIRST
 // and the outcome last, because an advisory is what a reviewer will
 // have to be told and the URL is what the person typing this came for.
-func Promotion(w io.Writer, p app.PromoteResult) {
+// TWO SINKS, and they used to be one. Advisories and the running-build
+// note are NARRATION and go where bump's narration goes; the URL is the
+// ANSWER and is what a caller scraping stdout came for. Mixing them put
+// "  unverified: publishing unverified..." on stdout above the URL, so a
+// script reading stdout for a pull request address got a sentence too.
+func Promotion(out, narrate io.Writer, p app.PromoteResult) {
 	if p.Body != "" {
-		fmt.Fprintln(w, p.Body)
+		fmt.Fprintln(out, p.Body) // --body IS the answer; nothing else is printed
 		return
 	}
 	for _, a := range p.Advisories {
-		fmt.Fprintf(w, "  %s: %s\n", a.Kind, a.Text)
+		fmt.Fprintf(narrate, "  %s: %s\n", a.Kind, a.Text)
 	}
 	for _, id := range p.Running {
-		fmt.Fprintf(w, "  attempt %s is still building; `dockhand cancel` stops it\n", id)
+		fmt.Fprintf(narrate, "  attempt %s is still building; `dockhand cancel` stops it\n", id)
 	}
+	w := out
 	if p.Published == nil {
 		return
 	}
@@ -316,7 +341,25 @@ func Promotion(w io.Writer, p app.PromoteResult) {
 		fmt.Fprintf(w, "opened %s\n", p.Published.URL)
 		return
 	}
-	fmt.Fprintln(w, "pushed to the fork; no pull request was asked for")
+	// WHAT COMPLETED IS READ, and it used to be assumed. publish.Apply
+	// returns its Outcome ON THE ERROR PATH TOO — deliberately, and its
+	// doc says why: "Completed names what completed, so a caller can tell
+	// a branch pushed with no pull request from a branch that never left
+	// the machine." This renderer never asked, so an Outcome with no URL
+	// fell through to the --no-pr success line, which is also exactly
+	// what a total failure looks like.
+	//
+	// Measured in the field: a refused push printed "pushed to the fork;
+	// no pull request was asked for" on stdout while stderr said
+	// "push-branch failed and nothing was completed", exit 11. Nothing
+	// had been pushed.
+	//
+	// So the sentence is only said when the push is in Completed. A
+	// caller whose push did not complete has an error to render and
+	// nothing here to add.
+	if slices.Contains(p.Published.Completed, record.PushBranch) {
+		fmt.Fprintln(w, "pushed to the fork; no pull request was asked for")
+	}
 }
 
 // Pass writes what one cycle did — the pass's own summary, which is
@@ -420,6 +463,11 @@ func ineligible(ns run.NotStarted) string {
 		return "a newer sibling replaced its change" + detail(ns.Detail)
 	case run.Closed:
 		return "its change is closed" + detail(ns.Detail)
+	case run.BackedOff:
+		// No remedy named: the wait ends on its own, and a person who
+		// wants it now runs `dockhand verify`, which does not come through
+		// the queue at all.
+		return "waiting out a backoff" + detail(ns.Detail)
 	case run.IneligibleUnknown:
 	}
 	return "ineligible" + detail(ns.Detail)
@@ -470,6 +518,25 @@ func Standings(w io.Writer, s app.StatusResult, now time.Time) {
 	}
 	for _, d := range s.Disagreeing {
 		fmt.Fprintf(w, BranchLine, d.Ref, disagreement(d))
+	}
+	// THE EMPTY REPORT SAYS IT IS EMPTY. Everything above is a loop, so a
+	// checkout with nothing in flight printed the residency line and then
+	// stopped — a reader cannot tell that from a report that broke off,
+	// which is the ambiguity rule 7 is about. It is not a rare shape
+	// either: `purge` removes the state ref by design, so the next
+	// `status` finds exactly this.
+	//
+	// The second half is said only when the store itself is absent (an
+	// empty At is statestore.ReadOrEmpty's answer for a repository with
+	// no state ref), because "dockhand has recorded nothing here" and
+	// "dockhand has recorded things here and none of them are open" are
+	// different facts and the first one names the road onward.
+	if len(rows) == 0 && len(s.Disagreeing) == 0 && len(s.Obligations) == 0 {
+		if s.State.At == "" {
+			fmt.Fprintln(w, "nothing is in flight, and dockhand has recorded nothing in this checkout yet: `dockhand bump <port>` starts one")
+		} else {
+			fmt.Fprintln(w, "nothing is in flight")
+		}
 	}
 	Obligations(w, s.Obligations)
 	if v := s.Vacancy; v.Known {
@@ -941,7 +1008,12 @@ func Purged(w io.Writer, p app.PurgeResult) {
 	if p.DryRun {
 		verb = "would remove"
 	}
-	fmt.Fprintf(w, "%s %d branch(es) \u00b7 %d pin(s) \u00b7 %d record(s)\n",
+	// "note(s)" AND NOT "record(s)". These are the verify notes; the line
+	// below counts the CHANGE records in the state ref. Both used to say
+	// "record", two lines apart, counting different populations, and a
+	// reader could not tell that "6 record(s)" and "1 change record(s)"
+	// were not six and one of the same thing.
+	fmt.Fprintf(w, "%s %d branch(es) \u00b7 %d pin(s) \u00b7 %d note(s)\n",
 		verb, len(p.Branches), len(p.Pins), p.Notes)
 	for _, ref := range p.Branches {
 		fmt.Fprintf(w, "  %s\n", strings.TrimPrefix(ref, "refs/heads/"))
@@ -992,6 +1064,15 @@ func Purged(w io.Writer, p app.PurgeResult) {
 		for _, name := range p.Unowned {
 			fmt.Fprintf(w, "  %s\n", name)
 		}
+	}
+	// WHAT THIS PURGE CANNOT REACH. The rows that named these went with
+	// the state ref, so nothing in the tool will find them again.
+	if len(p.ForkCopies) > 0 {
+		fmt.Fprintf(w, "%d branch(es) remain on a remote and are no longer tracked by anything here\n", len(p.ForkCopies))
+		for _, c := range p.ForkCopies {
+			fmt.Fprintf(w, "  %s\n", c)
+		}
+		fmt.Fprintln(w, "  remove them on the forge, or with `git push <remote> --delete <branch>`")
 	}
 	if p.EstateRefused != nil {
 		// Rule 7 at the surface: not "there are none".

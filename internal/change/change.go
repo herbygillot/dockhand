@@ -130,6 +130,39 @@ func (p Prepared) materialize() ([]git.File, error) {
 	return files, nil
 }
 
+// precondition holds one whole-file edit against the base, which is the
+// drift check the Portfile has always had and the files beside it never
+// did.
+//
+// TWO REFUSALS, and they are the same refusal: the plan is about some
+// other state of this portdir. A rewrite whose recorded Was does not
+// match the base's bytes was derived from bytes that are gone — the
+// patch someone refreshed upstream while the plan sat in a file. A
+// creation (an empty Was, which is the planner saying it found no such
+// file) over a path the base already holds is the same mistake read from
+// the other side, and it is what a producer that simply forgot to record
+// Was runs into on its first real portdir. Neither writes.
+//
+// The message names the PATH, because a person meeting drift needs to
+// know which file to look at, and the Portfile's own ErrDrift line names
+// the Portfile for the same reason.
+func precondition(f plan.FileEdit, src Source) error {
+	was, held := src.Files[f.Path]
+	switch {
+	case f.Was == "" && held:
+		return fmt.Errorf("%w: %s already exists at %s, and the plan was made without it",
+			ErrDrift, f.Path, git.Abbrev(src.Base.Sha))
+	case f.Was == "":
+		return nil
+	case !held:
+		return fmt.Errorf("%w: %s is gone at %s, and the plan rewrites it",
+			ErrDrift, f.Path, git.Abbrev(src.Base.Sha))
+	case edit.FileSHA256(was) != f.Was:
+		return fmt.Errorf("%w: %s at %s", ErrDrift, f.Path, git.Abbrev(src.Base.Sha))
+	}
+	return nil
+}
+
 // Identify is the content identity of a prepared set over a base: the
 // git tree object id the change produces. GraftTree already computes
 // it — Repo.commit is literally GraftTree followed by commit-tree — so
@@ -213,6 +246,23 @@ type Source struct {
 	Base     record.Base
 	Portdir  TreePath
 	Portfile []byte
+	// Files are the BASE's bytes for the whole files the plan rewrites,
+	// keyed by the same portdir-relative path plan.FileEdit carries. A
+	// path the plan names and this map does not hold did not exist at the
+	// base.
+	//
+	// It is the auxiliary half of Portfile above, and it exists because
+	// the plan's one precondition used to be the Portfile's hash alone: a
+	// change whose Portfile was untouched at the base but whose patch
+	// file somebody had rewritten in between committed the planner's
+	// stale relocation over the newer file and passed every drift check.
+	//
+	// The caller reads them, because reading a blob at a commit is git's
+	// and this package holds no repository. An absent key is a claim —
+	// "the base does not have this file" — so a caller that forgets to
+	// fill it makes every rewrite look like a creation, which Prepare
+	// refuses out loud rather than writing quietly.
+	Files map[string][]byte
 }
 
 // Prepare turns a plan into a complete file set against a base blob,
@@ -261,6 +311,9 @@ func Prepare(ctx context.Context, p *plan.Plan, src Source, ev Evaluator) (Prepa
 	files := make([]File, 0, 1+len(p.Files))
 	files = append(files, File{Path: macports.PortfileName, Content: edited})
 	for _, f := range p.Files {
+		if err := precondition(f, src); err != nil {
+			return Prepared{}, err
+		}
 		files = append(files, File{Path: f.Path, Content: []byte(f.Content)})
 	}
 	out := Prepared{

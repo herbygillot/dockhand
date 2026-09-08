@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/lease"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/statestore"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -28,10 +29,15 @@ type stager struct {
 	// of the seam is that the queue carries an identity and the staging
 	// happens at the moment of starting.
 	seen []string
+	// framed records the RELEASE each staging was asked under, because
+	// the preflight is per-platform and a stager built for a whole pass
+	// used to answer every attempt under one frame.
+	framed []platform.Release
 }
 
-func (s *stager) Stage(_ context.Context, sha string, subjects []record.Subject) ([]Member, map[string]Preflight, error) {
+func (s *stager) Stage(_ context.Context, sha string, subjects []record.Subject, on platform.Release) ([]Member, map[string]Preflight, error) {
 	s.seen = append(s.seen, sha)
+	s.framed = append(s.framed, on)
 	if s.err != nil {
 		return nil, nil, s.err
 	}
@@ -453,4 +459,42 @@ func TestAFrozenRosterCarriesTheInputsNothingCouldDeriveBefore(t *testing.T) {
 	require.Len(t, fake.Submitted, 1)
 	assert.Equal(t, []string{"jq"}, fake.Submitted[0].FromSource, "and they reach the provider")
 	assert.Equal(t, [][]string{nil, {"jq"}}, fake.Submitted[0].Requires)
+}
+
+// THE PREFLIGHT IS FRAMED ON THE ATTEMPT'S OWN RELEASE, and it is the
+// attempt that has to supply it because a stager is built for a PASS.
+// known_fail and use_xcode are per-platform Portfile options, so a frame
+// is a wrong answer rather than a missing one: `verify --on all` asked a
+// three-release matrix under releases[0], and the drain asked every
+// attempt it started under the zero release — the HOST's frame — for
+// guests bound somewhere else.
+func TestStartFramesThePreflightOnTheAttemptsOwnRelease(t *testing.T) {
+	st := newStore(t)
+	c := changeOf("chg-1", "jq")
+	a := enqueued(t, st, c, specOf("jq"))
+	stg := &stager{}
+
+	_, err := Start(t.Context(), st, &verifytest.Fake{}, stg, a, claimant(), clock)
+	require.NoError(t, err)
+	assert.Equal(t, []platform.Release{sequoia}, stg.framed,
+		"the release comes off the frozen spec, never off whoever built the stager")
+}
+
+// AND THE UNASKED QUESTION IS WRITTEN DOWN AT START. The preflight runs
+// against a staged tree the pass drops at its end, so the attempt is the
+// only thing that can still tell a settlement hours later that a
+// member's Portfile would not evaluate.
+func TestStartRecordsTheMembersWhosePreflightCouldNotBeRead(t *testing.T) {
+	st := newStore(t)
+	c := changeOf("chg-1", "jq")
+	a := enqueued(t, st, c, specOf("jq"))
+	stg := &stager{pre: map[string]Preflight{
+		"jq": {Err: errors.New("no Tcl evaluator was acquired")},
+	}}
+
+	got, err := Start(t.Context(), st, &verifytest.Fake{}, stg, a, claimant(), clock)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"jq": "no Tcl evaluator was acquired"}, got.Unchecked)
+	assert.Equal(t, record.Running, got.Runs["jq"].State,
+		"an unread preflight is not a decline: the member is built like any other")
 }

@@ -12,6 +12,7 @@ import (
 	"regexp"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/patch"
@@ -59,7 +60,7 @@ var patchTag = regexp.MustCompile(`:[0-9A-Za-z_-]+$`)
 // fit. A compressed patch (.gz, .bz2, .xz — base decompresses them on
 // the way to patch(1)) is not a unified diff and declines the same way,
 // from the parser.
-func relocatePatches(ctx context.Context, tools *tool.Finder, portdir string, vals info.Values, worksrcdir string, fetched []string) ([]plan.FileEdit, []string, error) {
+func relocatePatches(ctx context.Context, tools *tool.Finder, portdir string, vals info.Values, worksrcdir string, fetched []string) ([]plan.FileEdit, []string, []plan.Finding, error) {
 	strip := eval.StripLevel(vals.PatchPreArgs)
 	// The reader hands Relocate each target out of the fetched
 	// distfiles at exactly worksrcdir/<target>: the directory the port
@@ -83,30 +84,32 @@ func relocatePatches(ctx context.Context, tools *tool.Finder, portdir string, va
 
 	var files []plan.FileEdit
 	var moved []string
+	var unresolved []plan.Finding
 	for _, pf := range vals.Patchfiles {
 		name := patchTag.ReplaceAllString(pf, "")
 		rel := filesDir + "/" + name
 		src, err := os.ReadFile(filepath.Join(portdir, filesDir, filepath.FromSlash(name)))
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			return nil, nil, &plan.Decline{Type: plan.PatchWontRelocate,
-				Detail: rel + " is not in the portdir; a patch the port fetches from patch_sites is not dockhand's to refresh"}
+			unresolved = append(unresolved, patchUnrelocated(vals.Name, rel,
+				"it is not in the portdir; a patch the port fetches from patch_sites is not dockhand's to refresh"))
+			continue
 		case err != nil:
-			return nil, nil, fmt.Errorf("bump: %w", err)
+			return nil, nil, nil, fmt.Errorf("bump: %w", err)
 		}
 		p, err := patch.Parse(src)
 		if err != nil {
-			return nil, nil, &plan.Decline{Type: plan.PatchWontRelocate,
-				Detail: rel + ": " + err.Error()}
+			unresolved = append(unresolved, patchUnrelocated(vals.Name, rel, err.Error()))
+			continue
 		}
 		res, err := p.Relocate(read, strip)
 		var re *patch.RelocateError
 		switch {
 		case errors.As(err, &re):
-			return nil, nil, &plan.Decline{Type: plan.PatchWontRelocate,
-				Detail: relocateDetail(rel, re)}
+			unresolved = append(unresolved, patchUnrelocated(vals.Name, rel, relocateReason(re)))
+			continue
 		case err != nil:
-			return nil, nil, fmt.Errorf("bump: %s: %w", rel, err)
+			return nil, nil, nil, fmt.Errorf("bump: %s: %w", rel, err)
 		}
 		n := res.Moved()
 		if n == 0 {
@@ -118,23 +121,75 @@ func relocatePatches(ctx context.Context, tools *tool.Finder, portdir string, va
 				slog.Debug("hunk relocated", "patch", rel, "file", h.File, "hunk", h.Hunk, "from", h.OldStart, "to", h.NewStart)
 			}
 		}
-		files = append(files, plan.FileEdit{Path: rel, Content: string(res.Bytes), Reason: hunksMoved(n)})
+		// Was is the precondition: these bytes are what the relocation was
+		// derived from, and a realizer that meets different ones at the
+		// base is holding a plan about some other state of this portdir.
+		files = append(files, plan.FileEdit{Path: rel, Content: string(res.Bytes),
+			Reason: hunksMoved(n), Was: edit.FileSHA256(src)})
 		moved = append(moved, name)
 	}
-	return files, moved, nil
+	return files, moved, unresolved, nil
 }
 
-// relocateDetail is the decline's sentence for a hunk that would not
-// move: the patch, then the file and hunk as patch(1) would number it,
-// then why. Composed from the error's fields rather than its text
-// because the fields are the answer — a planner that had to parse them
-// back out of a message could not be trusted to.
-func relocateDetail(rel string, re *patch.RelocateError) string {
-	d := fmt.Sprintf("%s: %s hunk #%d: %s", rel, re.File, re.Hunk, re.Reason)
+// relocateReason is the sentence for a hunk that would not move: the
+// file and the hunk as patch(1) would number it, then why. Composed
+// from the error's fields rather than its text because the fields are
+// the answer — a planner that had to parse them back out of a message
+// could not be trusted to.
+//
+// WITHOUT the patch's own path. It used to compose a decline's whole
+// Detail, path included; the finding carries the path in Source, and a
+// sentence naming it twice reads as a mistake.
+func relocateReason(re *patch.RelocateError) string {
+	d := fmt.Sprintf("%s hunk #%d: %s", re.File, re.Hunk, re.Reason)
 	if re.Err != nil {
 		d += ": " + re.Err.Error()
 	}
 	return d
+}
+
+// FindingPatchUnrelocated is the kind of the finding a bump carries when
+// a patch does not come over to the new source by the one move dockhand
+// will make for it.
+//
+// IT USED TO DECLINE THE WHOLE BUMP, and the argument for that was the
+// best sentence in this package: "a patch half refreshed is a patch
+// nobody wrote, and a bump that ships one is the complete-looking wrong
+// artifact this tool promises against." Ruled 8 September 2026: the
+// premise is right and the conclusion was too strong. A branch is not a
+// complete-looking artifact when it says, on the record and in its own
+// pull request body, which patch did not come over and why — and the
+// person who meets it can do the one thing dockhand may not, which is
+// judge what the patch was for. They resolve it on top of the branch, or
+// fold it into the bump commit, and then verify or promote.
+//
+// WHAT IS UNCHANGED IS THE ZERO-FUZZ RULE. dockhand still moves a hunk
+// only where its before-block occurs exactly once, verbatim; anything
+// past that is a person's judgment. What changed is that failing to make
+// that move now costs the bump a finding rather than its existence.
+//
+// It carries Proposed, so publish.Authorize refuses an unattended
+// publication and advises a person through — the machine has nobody to
+// do the judging, and that is the whole distinction. It is NOT
+// FindingPatchesUnchecked, which is Accepted: "nothing was fetched, so
+// nothing was checked" is a statement, and this is a question.
+const FindingPatchUnrelocated = "patch-unrelocated"
+
+// patchUnrelocated is one patch that did not come over, named with its
+// path and the reason in the words patch(1) numbers hunks in.
+//
+// One finding per patch rather than one listing them all: each carries
+// its own Source, a reader fixing them takes them one at a time, and a
+// change with three of these should read as three questions.
+func patchUnrelocated(port, rel, why string) plan.Finding {
+	return plan.Finding{
+		Kind:   FindingPatchUnrelocated,
+		Ports:  []string{port},
+		Source: rel,
+		Criterion: "patch not carried over: " + rel + " does not relocate onto the new source — " + why +
+			". Refresh it by hand on the branch, then verify",
+		Disposition: plan.Proposed,
+	}
 }
 
 // hunksMoved is the FileEdit's reason: what happened to the patch, in

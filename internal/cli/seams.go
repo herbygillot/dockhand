@@ -72,13 +72,6 @@ type stager struct {
 	// frame. A draft that reused it would have answered the host's
 	// question about a guest's Portfile.
 	session func(ctx context.Context, opts ...eval.Option) (*eval.Evaluator, error)
-	// release is the platform the preflight is framed on. It is a value
-	// on the stager and not a parameter of Stage because run.Stager's
-	// signature is the queue's — a sha and the subjects — and the
-	// platform is the ATTEMPT's, which the road that built this stager
-	// already knows. A stager built for one attempt answers for that
-	// attempt's platform.
-	release platform.Release
 	// keep collects the per-stage cleanups, so a pass that stages forty
 	// attempts can drop forty temporary trees at the end of the pass
 	// rather than at the end of the process. See Cleanup.
@@ -93,7 +86,7 @@ type stager struct {
 // an ordinary build, because a machine that could not ask has learned
 // nothing about the port, where a KnownFail == false read as an answer
 // would spend a VM and come back FAILED.
-func (s *stager) Stage(ctx context.Context, sha string, subjects []record.Subject) ([]run.Member, map[string]run.Preflight, error) {
+func (s *stager) Stage(ctx context.Context, sha string, subjects []record.Subject, on platform.Release) ([]run.Member, map[string]run.Preflight, error) {
 	dir, drop, err := s.temp.MakeDir("stage")
 	if err != nil {
 		return nil, nil, err
@@ -111,7 +104,7 @@ func (s *stager) Stage(ctx context.Context, sha string, subjects []record.Subjec
 			Portdir: staged,
 			Names:   append([]string(nil), sub.Names...),
 		})
-		pre[sub.Port] = s.preflight(ctx, staged, sub)
+		pre[sub.Port] = s.preflight(ctx, staged, sub, on)
 	}
 	// The overlay has to be a tree; see the type's doc. A missing
 	// _resources is not a staging failure — some trees do not carry one
@@ -163,11 +156,11 @@ func (s *stager) Cleanup() {
 // distinction is refusing to conflate them: an evaluation that could
 // not run comes back Read false with its error, and run.Plan schedules
 // the member normally.
-func (s *stager) preflight(ctx context.Context, staged string, sub record.Subject) run.Preflight {
+func (s *stager) preflight(ctx context.Context, staged string, sub record.Subject, on platform.Release) run.Preflight {
 	if s.session == nil {
 		return run.Preflight{Err: errNotAcquired{"an evaluator"}}
 	}
-	frame := info.Platform{OS: "macosx", Major: s.release.Darwin, Arch: "arm"}
+	frame := info.Platform{OS: "macosx", Major: on.Darwin, Arch: "arm"}
 	ev, err := s.session(ctx, eval.WithPlatform(frame))
 	if err != nil {
 		return run.Preflight{Err: err}

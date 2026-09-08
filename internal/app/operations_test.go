@@ -47,7 +47,7 @@ type stager struct {
 	seen []string
 }
 
-func (s *stager) Stage(_ context.Context, sha string, subjects []record.Subject) ([]run.Member, map[string]run.Preflight, error) {
+func (s *stager) Stage(_ context.Context, sha string, subjects []record.Subject, _ platform.Release) ([]run.Member, map[string]run.Preflight, error) {
 	s.seen = append(s.seen, sha)
 	if s.err != nil {
 		return nil, nil, s.err
@@ -934,4 +934,93 @@ func TestADryRunWritesNoStateCommit(t *testing.T) {
 	after, err := st.Read(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, before.At, after.At, "the state ref did not move")
+}
+
+// AN ADOPTED ATTEMPT IS NOT HANDED TO A FUNCTION THAT REFUSES IT.
+// run.Adoptable draws from three states — Queued, Active and settled
+// Passed — and every caller passed its answer straight to run.Start,
+// which takes only Queued. So the two cases adoption exists FOR were
+// exactly the two that failed the whole verb: a tip somebody had already
+// verified, and one still building.
+func TestVerifyResumesAnAttemptThatAlreadyPassedRatherThanStartingIt(t *testing.T) {
+	repo, st := fixture(t)
+	seed(t, st)
+	gittest.Commit(t, repo, "dockhand/jq-1.9", "HEAD", "sysutils/jq/Portfile", "version 1.9\n", "jq: 1.9")
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia},
+		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}}
+	wait := 5 * time.Second
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now}
+
+	first, err := v.Run(t.Context(), VerifyRequest{Target: "dockhand/jq-1.9",
+		Platforms: []platform.Release{sequoia}, Wait: &wait, Residency: Residency{State: NoDispatcher}})
+	require.NoError(t, err)
+	require.Len(t, first.Attempts, 1)
+	require.Equal(t, Stood, first.Attempts[0].Did)
+
+	second, err := v.Run(t.Context(), VerifyRequest{Target: "dockhand/jq-1.9",
+		Platforms: []platform.Release{sequoia}})
+	require.NoError(t, err, "adopting a passed attempt is the free road, not an error")
+	require.Len(t, second.Attempts, 1)
+	assert.Equal(t, first.Attempts[0].Attempt, second.Attempts[0].Attempt, "the same attempt was adopted")
+	assert.Equal(t, Stood, second.Attempts[0].Did, "the verdict is earned; there is nothing to start or wait for")
+	assert.Equal(t, record.Passed, second.Attempts[0].Verdict)
+	assert.Len(t, fake.Submitted, 1, "adoption is what stops the machine paying twice")
+}
+
+// AND ONE STILL RUNNING IS JOINED, NOT RESTARTED. The lease it already
+// holds is the one the row names.
+func TestVerifyResumesAnAttemptThatIsStillRunning(t *testing.T) {
+	repo, st := fixture(t)
+	seed(t, st)
+	gittest.Commit(t, repo, "dockhand/jq-1.9", "HEAD", "sysutils/jq/Portfile", "version 1.9\n", "jq: 1.9")
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia}} // stays Running
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now}
+
+	first, err := v.Run(t.Context(), VerifyRequest{Target: "dockhand/jq-1.9", Platforms: []platform.Release{sequoia}})
+	require.NoError(t, err)
+	require.Equal(t, Started, first.Attempts[0].Did)
+
+	second, err := v.Run(t.Context(), VerifyRequest{Target: "dockhand/jq-1.9", Platforms: []platform.Release{sequoia}})
+	require.NoError(t, err)
+	require.Len(t, second.Attempts, 1)
+	assert.Equal(t, first.Attempts[0].Attempt, second.Attempts[0].Attempt)
+	assert.Equal(t, Started, second.Attempts[0].Did)
+	assert.Equal(t, first.Attempts[0].Lease, second.Attempts[0].Lease, "the running attempt's own lease, not a new one")
+	assert.Len(t, fake.Submitted, 1, "one guest, asked for once")
+}
+
+// A RE-DERIVATION MUST NOT BE VERIFIED AGAINST THE ARCHIVE IT REPLACES.
+// `refresh-checksums` leaves the version where it was, so the published
+// binary archive is the one built from the bytes the change has just
+// corrected — installing it would prove nothing and would say "passed".
+//
+// The whole road for this existed and none of it was ever fed: the spec
+// hashes FromSource, the frozen roster carries it, run.Plan intersects
+// it, verify.Request declares it and tart reads it per member to pass
+// `-s`. Nothing in the tree produced one.
+func TestARederivationIsBuiltFromSourceAndAVersionBumpIsNot(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	c := Change{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now}
+
+	p := preparedBump(t, repo, "jq", "1.9")
+	p.Subjects[0].Intent, p.Intent = IntentRefresh, IntentRefresh
+	_, err := c.Run(t.Context(), ChangeRequest{Prepared: p, Delivery: Enqueue, Platform: sequoia, Slug: "jq-refresh"})
+	require.NoError(t, err)
+	require.Len(t, fake.Submitted, 1)
+	assert.Equal(t, []string{"jq"}, fake.Submitted[0].FromSource,
+		"the archive that matches a re-derivation predates the change")
+
+	// And a version bump does NOT ask for it: the new version yields an
+	// archive name that does not exist yet, so MacPorts builds from
+	// source on its own and forcing -s buys nothing.
+	fake.Submitted = nil
+	q := preparedBump(t, repo, "oniguruma", "6.9.10")
+	_, err = c.Run(t.Context(), ChangeRequest{Prepared: q, Delivery: Enqueue, Platform: sequoia, Slug: "oniguruma-6.9.10"})
+	require.NoError(t, err)
+	require.Len(t, fake.Submitted, 1)
+	assert.Empty(t, fake.Submitted[0].FromSource)
 }

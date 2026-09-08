@@ -141,8 +141,28 @@ func (d Discard) run(ctx context.Context, c record.Change, absent *change.TipDis
 				return err
 			}
 		}
-		if err := change.CloseIn(tx, c.ID, record.ChangeDiscarded, "", d.Now()); err != nil {
-			return err // ErrPublicationOpen: close the pull request instead
+		// AN ALREADY-CLOSED CHANGE IS DEMOLISHED AND NOT CLOSED AGAIN,
+		// which is how discard became the recovery for a branch nothing
+		// owns.
+		//
+		// Retirement closes a change without necessarily taking its
+		// branch: a rejected pull request abandons the record and the
+		// deletion is a separate policy. What that leaves is a branch with
+		// no live change — and the next mint of that slug collided with it
+		// at the ref level and reported a raw git error, while `discard`
+		// refused with ErrNotBound because CloseIn will not close a closed
+		// record. Nothing but `purge` could clear it, and purge takes the
+		// whole store.
+		//
+		// So the close is skipped where there is nothing to close, and the
+		// rest of the road runs unchanged. DemolishIn's own guard is the
+		// one that matters here and it still applies: it refuses a change
+		// that is still Bound(), so this cannot demolish live work.
+		cur := tx.State().Changes[string(c.ID)]
+		if cur.Bound() {
+			if err := change.CloseIn(tx, c.ID, record.ChangeDiscarded, "", d.Now()); err != nil {
+				return err // ErrPublicationOpen: close the pull request instead
+			}
 		}
 		run.WithdrawIn(tx, c.ID, record.InterruptCanceled, d.Me, d.Now())
 		if c.Branch == "" || absent != nil {

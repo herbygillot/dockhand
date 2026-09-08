@@ -33,6 +33,15 @@ remote's owner (`gh.ForkRemote`); the advisory should say "the copy on
 
 ## The stale-primary advisory is not yet paired with the sweep that moves the ref
 
+**Half of it landed elsewhere, 8 September 2026.** The `bump` family
+now fetches `origin/<primary>` and cuts changes from it (D29), which
+makes dockhand itself a creator of this condition — so the sentence
+this item asks for is said there: "origin/master is N commits ahead of
+your master; the change is cut from origin/master so it carries them."
+What is written below is unchanged: **the retire sweep still advances
+the ref and still says nothing when it does**, which is the half this
+item is about.
+
 **What remains of "a stale primary silently enlarges a hand-made
 cohort" (shipped 2026-09-05 as `2232b9a`).** `ChangedPortdirs` now
 names, on stderr, each roster member that came from a commit the
@@ -44,6 +53,18 @@ master by N commit(s); a branch cut from it will carry them" — would
 put the warning at the cause rather than only at the symptom.
 
 ## The patches-unchecked finding reaches the plan, not yet the pull request body
+
+**Closed 8 September 2026, and the reason it was stuck was not the body.**
+The finding could never become a record finding at all:
+`record.FindingKind` did not spell `patches-unchecked`, `change.stamp`
+refuses any word not in that table, and `MintIn` returns the refusal —
+so the mint wrote nothing and there was no record for a body to read.
+`dockhand bump` failed outright on the 69 Portfiles that produce it.
+The kind is admitted now, `publish.cohortBody` renders the criterion,
+and a census in `internal/change/finding_test.go` holds every word a
+planner writes against the table. See D28.
+
+**What was written below stands as the original diagnosis.**
 
 **What remains of "a bump that fetches nothing leaves its patches
 unchecked, and says nothing" (shipped 2026-09-05 as `19f90cc`).** The
@@ -99,7 +120,35 @@ maintainer move the revision, which policy asks of them anyway. (1) is
 the honest verification; (2) is the cheaper one and points at the real
 omission. Either is small; neither is made.
 
+**The overhaul lost the marking altogether, and it is back (2026-09-08).**
+`engine.Policy.fromSource` went with the engine, and nothing in the
+overhauled tree replaced it: the whole road survived — `run.Spec` hashes
+`FromSource`, the frozen roster carries it, `run.Plan` intersects it with
+the ports being built, `verify.Request` declares it and the tart adapter
+reads it per member to pass `-s` — and no caller ever set one. So
+`refresh-checksums` verified its re-derived checksums against the binary
+archive built from the bytes it had just replaced, which is the one
+verification that flag exists to prevent. `app.fromSourceOf` is the
+producer now, reading `record.Subject.Intent`, and `internal/cli`'s
+`intent_test.go` holds the spelling against the verb catalogue so a
+rename cannot quietly undo it again.
+
+What is written above is unchanged by that: the branch road still makes
+no from-source decision, and the ruling between (1) and (2) is still
+open. The one thing that moved is that "the seams already exist" is true
+end to end again rather than true on paper.
+
 ## On the branch road, members are built in portdir order, not dependency order
+
+**Diagnosed further, 8 September 2026: this is a dead field, not an
+ordering choice.** `run.Spec.Requires` has no producer. `edgesFor`
+builds the graph, `EnqueueIn` freezes it on the roster,
+`verify.Request.Requires` declares it and the tart adapter reads it —
+and no `run.Spec` literal in `internal/app` ever sets one, so every
+guest receives a nil graph and builds in roster order whatever road it
+came from. It is the same shape as `Ask.FromSource`, and it survived
+the 8 September fix pass because that pass fixed the field beside it.
+Filed as item 23 in the disposition's next-pass list; still open.
 
 **Left by the review of the runner change (shipped 2026-09-05 as
 `8579bfd`).** `SubjectsOf` orders a branch's members by portdir, and

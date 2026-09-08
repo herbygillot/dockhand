@@ -592,10 +592,51 @@ type Finding struct {
 // build cannot classify.
 type FindingKind string
 
+// THE VALUES ARE THE PLANNERS' OWN WORDS, and two of them were not.
+// A plan-time finding arrives here as a string and change.stamp converts
+// it through an exhaustive table, refusing anything else with
+// ErrUnknownFinding — and MintIn returns that error, so the whole Amend
+// writes nothing: no branch, no record. The two kinds the tree actually
+// produces are intent.FindingInstruction ("instruction-comment") and
+// bump.FindingPatchesUnchecked ("patches-unchecked"), and NEITHER was
+// spelled here. `dockhand bump` therefore failed outright on any port
+// carrying a maintainer instruction comment, and on any port whose
+// patches could not be checked — measured on the real tree: 49 and 69
+// Portfiles respectively.
+//
+// It is the defect this file's own doc invites. "A presenter that
+// invents a kind writes a note a later build cannot classify" is the
+// right rule and it is enforced in the right place; what nothing checked
+// was the other direction — that every word a planner writes is a word
+// this table admits. internal/cli's finding_test.go is that check now.
 const (
 	KindABIDependents FindingKind = "abi-dependents"
-	KindInstruction   FindingKind = "instruction"
-	KindStealth       FindingKind = "stealth-change"
+	// KindInstruction was "instruction" and the planners have always
+	// written "instruction-comment": intent.FindingInstruction, the rule
+	// named throughout internal/intent, and the spelling plan.Finding's
+	// own doc gives as "the vocabulary the note classifies by". The
+	// record moved to the planners' word rather than the other way, so
+	// the one place the word is argued for is the one that keeps it.
+	KindInstruction FindingKind = "instruction-comment"
+	// KindPatchesUnchecked is bump.FindingPatchesUnchecked: a bump that
+	// fetched no distfile had nothing to check the port's patches
+	// against. It carries Accepted and not Proposed, so it states a fact
+	// and does not hold an unattended publication for an answer nobody
+	// can give — see bump.patchesUnchecked.
+	KindPatchesUnchecked FindingKind = "patches-unchecked"
+	// KindPatchUnrelocated is bump.FindingPatchUnrelocated: a patch the
+	// bump could not carry onto the new source by the one move it will
+	// make — every hunk's before-block found once, verbatim, with only
+	// its line numbers rewritten.
+	//
+	// It carries Proposed and not Accepted, which is the difference
+	// between it and KindPatchesUnchecked above. "Nothing was fetched, so
+	// nothing was checked" is a statement; "this patch does not carry
+	// over and somebody has to look" is a QUESTION, and a question with
+	// nobody on the unattended road to answer it is what
+	// publish.Authorize's fourth gate exists for.
+	KindPatchUnrelocated FindingKind = "patch-unrelocated"
+	KindStealth          FindingKind = "stealth-change"
 )
 
 // Disposition is what has become of a finding. A finding proposes and

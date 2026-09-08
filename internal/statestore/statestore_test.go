@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,31 @@ func TestAmendCreatesTheRefInARepositoryThatHasNeverRunDockhand(t *testing.T) {
 	// parent of it.
 	parents := plant(t, repo, "rev-list", "--parents", "-1", Ref)
 	assert.Equal(t, at+"\n", parents, "the first state commit has no parent")
+}
+
+// AND ReadOrEmpty IS THE ONE CALLER THAT MAY COLLAPSE THEM: a road that
+// only REPORTS. It reads an absent ref as an empty lifecycle and still
+// keeps every other failure a failure, because a reporter that printed
+// "nothing to report" over a broken store would be the silence rule 7
+// forbids. The distinction above survives it — the ranging caller cannot
+// tell the two apart, and does not need to, because it destroys nothing.
+func TestReadOrEmptyAnswersAnAbsentRefAndStillRefusesABrokenOne(t *testing.T) {
+	repo, store := newStore(t)
+	ctx := context.Background()
+
+	st, err := store.ReadOrEmpty(ctx)
+	require.NoError(t, err, "a report over a repository dockhand never ran in says: nothing")
+	assert.Empty(t, st.At, "an empty At is how a report tells a virgin store from a written one")
+	assert.NotNil(t, st.Changes, "the maps exist, so a caller may range without asking")
+
+	// A ref that resolves to something UNREADABLE is not an absence, and
+	// the empty answer must not reach it. The ports tree's own HEAD is a
+	// commit whose tree holds directories, which is the shape tripwire.
+	head := strings.TrimSpace(plant(t, repo, "rev-parse", "HEAD"))
+	plant(t, repo, "update-ref", Ref, head)
+	_, err = store.ReadOrEmpty(ctx)
+	require.Error(t, err, "a store that could not be read is a failure, never an empty report")
+	assert.NotErrorIs(t, err, ErrNoState)
 }
 
 // RULE 7, THE HEADLINE CASE. "dockhand has never run here" and
@@ -556,4 +582,76 @@ func TestOwedMatchesAnOwnerThatCameBackThroughTheTree(t *testing.T) {
 	st, err := store.Read(ctx)
 	require.NoError(t, err)
 	require.Len(t, st.Owed(me), 1, "this checkout's own obligation is its own after a round trip")
+}
+
+// THE ARCHIVE HAS TO BE READABLE, and for the whole of the overhaul it
+// was not: every state commit carried the constant "dockhand: amend", so
+// `git log --oneline refs/dockhand/state` on a working checkout was a
+// column of one identical sentence and finding the write that touched a
+// record meant diffing every commit by hand.
+//
+// Nothing reads the subject back — that is rule 6, and it is why this
+// names documents rather than encoding a verb.
+func TestAStateCommitNamesTheDocumentsItWrote(t *testing.T) {
+	repo, store := newStore(t)
+	ctx := context.Background()
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		tx.PutChange(record.Change{ID: "chg-a1b2", Schema: record.DocSchema})
+		return nil
+	}))
+	assert.Contains(t, plant(t, repo, "log", "-1", "--format=%s", Ref), "change-chg-a1b2")
+}
+
+// AND A COUNT WHEN THERE ARE MORE THAN A SUBJECT LINE HOLDS. A pass that
+// settles forty attempts must not write a paragraph.
+func TestAStateCommitSubjectCountsWhatItCouldNotName(t *testing.T) {
+	repo, store := newStore(t)
+	ctx := context.Background()
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		for _, id := range []record.ChangeID{"chg-1", "chg-2", "chg-3", "chg-4", "chg-5"} {
+			tx.PutChange(record.Change{ID: id, Schema: record.DocSchema})
+		}
+		return nil
+	}))
+	subject := plant(t, repo, "log", "-1", "--format=%s", Ref)
+	assert.Contains(t, subject, "(+2)")
+	assert.LessOrEqual(t, len(strings.TrimSpace(subject)), 100, "a subject line is a subject line")
+}
+
+// A WRITE THAT WROTE NOTHING IS NOT A COMMIT. The field found an empty
+// commit on the state ref, and there are two ways to earn one: a closure
+// that touched nothing, and a closure that wrote a document back byte
+// for byte. The tree is the test, because only the tree catches the
+// second — and a dispatcher ticking every five minutes is the caller
+// that makes three objects and a ref move per tick add up.
+func TestAnAmendThatChangesNothingWritesNoCommit(t *testing.T) {
+	repo, store := newStore(t)
+	ctx := context.Background()
+
+	c := record.Change{ID: "chg-a1b2", Schema: record.DocSchema}
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error { tx.PutChange(c); return nil }))
+	before := plant(t, repo, "rev-parse", Ref)
+
+	// Touched nothing at all.
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error { return nil }))
+	// Wrote the same document back, byte for byte: changed, and identical.
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error { tx.PutChange(c); return nil }))
+
+	assert.Equal(t, before, plant(t, repo, "rev-parse", Ref),
+		"the ref did not move, so no commit and no objects were written")
+}
+
+// BUT THE CREATE STILL CREATES. An Amend whose closure wrote nothing,
+// over a repository with no state ref, is the explicit first write
+// ErrNoState's doc reserves — and it must leave a ref behind.
+func TestAnEmptyAmendStillOpensTheStateRef(t *testing.T) {
+	_, store := newStore(t)
+	ctx := context.Background()
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error { return nil }))
+	st, err := store.Read(ctx)
+	require.NoError(t, err, "a ref holding nothing is an answer, not an absence")
+	assert.NotEmpty(t, st.At)
 }

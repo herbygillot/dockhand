@@ -289,3 +289,34 @@ func TestOneMemberKeepingTheGuestKeepsItForEverybody(t *testing.T) {
 	assert.Equal(t, ReleaseAndReport, fold(ReleaseQuietly, ReleaseAndReport))
 	assert.Equal(t, ReleaseQuietly, fold(ReleaseQuietly, ReleaseQuietly))
 }
+
+// THE QUESTION THE BUILD NEVER ASKED IS SAID BESIDE THE VERDICT IT PAID
+// FOR. run.Plan schedules a member whose preflight could not be read as
+// an ordinary build — a machine that could not ask has learned nothing
+// about the port — and Plan's own doc promised the cost of the unasked
+// question would be stated where a person meets it. Nothing in the tree
+// read Preflight.Err at all, so an unreadable Portfile bought a VM and a
+// bare FAILED.
+func TestAFailureSaysWhenItsPreflightWasNeverRead(t *testing.T) {
+	e := evidenceOf([]Member{member("jq")}, verify.Status{State: verify.Failed},
+		"--->  Building jq\nError: failed\n")
+	e.Unchecked = map[string]string{"jq": "no Tcl evaluator was acquired"}
+
+	got := Judge(e).Runs["jq"]
+	assert.Equal(t, record.Failed, got.State)
+	assert.Contains(t, got.Detail, "no Tcl evaluator was acquired")
+	assert.Contains(t, got.Detail, "known_fail")
+}
+
+// AND ONLY ON A VERDICT THE OMISSION COULD HAVE CHANGED. A pass proves
+// the port builds whatever its Portfile declares, so the note there
+// would be noise on every member of every attempt staged from a tree
+// that would not evaluate.
+func TestAPassIsNotAnnotatedWithAnUnreadPreflight(t *testing.T) {
+	e := evidenceOf([]Member{member("jq")}, verify.Status{State: verify.Passed}, "built ok\n")
+	e.Unchecked = map[string]string{"jq": "no Tcl evaluator was acquired"}
+
+	got := Judge(e).Runs["jq"]
+	assert.Equal(t, record.Passed, got.State)
+	assert.NotContains(t, got.Detail, "known_fail")
+}

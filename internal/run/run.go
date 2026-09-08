@@ -166,16 +166,46 @@ type Preflight struct {
 // same switch statement written twice, once in the gate and once in
 // settle, and the two disagree.
 type Evidence struct {
-	Lease     record.LeaseID
-	Platform  platform.Release
-	Spec      Spec
-	Status    verify.Status
-	Vanished  bool
-	Log       string
-	LogRead   bool
-	Members   []verify.MemberState
-	Preflight map[string]Preflight
-	Prior     map[string]record.Run
+	Lease    record.LeaseID
+	Platform platform.Release
+	Spec     Spec
+	Status   verify.Status
+	Vanished bool
+	Log      string
+	LogRead  bool
+	Members  []verify.MemberState
+	// Unchecked is the members whose preflight COULD NOT BE READ, port to
+	// reason, carried from record.Attempt.Unchecked.
+	//
+	// It replaces a `Preflight map[string]Preflight` that nothing ever
+	// filled and nothing ever read — the whole preflight was declared
+	// here as though a judge could re-derive it, when the staged tree it
+	// was read from is dropped at the end of the pass that started the
+	// build. What survives is the FAILURE, because it is the only part
+	// with an unpaid cost: a preflight that answered has already declined
+	// its member or asked for Xcode, and one that did not has had no
+	// effect on anything and is a question nobody asked.
+	//
+	// Judge puts it beside a verdict, which is where run.Plan's doc
+	// always said it would be and where nothing in the tree was putting
+	// it.
+	Unchecked map[string]string
+	// Unavailable is the checks this settlement ASKED FOR AND DID NOT
+	// GET, in sentences a person reads.
+	//
+	// Every gathering below absorbs its own refusal, and each absorption
+	// is right on its own: an environment that built the port and then
+	// could not describe it is a missing observation and never a verdict
+	// about the port. Stacked, they were indistinguishable from a clean
+	// run — a completely broken analysis path and a healthy one produced
+	// the same finding, which is what makes "no finding is not a finding
+	// of none" (rule 7) true in the code and false to the reader.
+	//
+	// So the refusals are still absorbed and are no longer silent: they
+	// travel here and Finish writes them onto the proposal's criterion,
+	// which is the durable sentence a person meets.
+	Unavailable []string
+	Prior       map[string]record.Run
 	// Interrupt is a cancellation or supersession the caller is asking
 	// the judge to READ. It is evidence and not a verdict: Judge returns
 	// every member Canceled (or Superseded) with Disposition ReleaseQuietly
@@ -274,7 +304,26 @@ type Local interface {
 // working-tree road one road rather than a special case that could not
 // queue.
 type Stager interface {
-	Stage(ctx context.Context, sha string, subjects []record.Subject) (roster []Member, pre map[string]Preflight, err error)
+	// Stage takes the RELEASE the attempt is bound for, because the
+	// preflight it reads is per-platform: known_fail and use_xcode are
+	// per-platform Portfile options, and a frame is a wrong answer rather
+	// than a missing one.
+	//
+	// It was a value on the implementation until this signature widened,
+	// and the two callers that build one stager for more than one attempt
+	// both got it wrong in the only way that shape can. `verify --on all`
+	// passed releases[0] and preflighted a three-release matrix under one
+	// of them; the drain passed the ZERO release on purpose — its own
+	// comment named this signature as the fix — so every attempt a
+	// dispatcher started was preflighted under the HOST's frame, for a
+	// guest bound somewhere else. The cost was bounded (a VM spent
+	// discovering a known_fail that could have been read for free, never
+	// a wrong verdict), and it was paid on every drain of every pass.
+	//
+	// The zero Release stays meaningful: it is "no frame", which lets an
+	// evaluator answer under its own default, and it is what a caller with
+	// genuinely no platform in hand passes.
+	Stage(ctx context.Context, sha string, subjects []record.Subject, on platform.Release) (roster []Member, pre map[string]Preflight, err error)
 	// Baseline materializes the SAME subjects as they stood at another
 	// commit — the merge base — so a provider that can measure what a
 	// change is leaving has a before to compare against.
