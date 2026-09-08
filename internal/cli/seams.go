@@ -387,5 +387,31 @@ func (s *stager) Baseline(ctx context.Context, sha string, subjects []record.Sub
 		}
 		out = append(out, filepath.Join(dir, filepath.FromSlash(sub.Portdir)))
 	}
+	// THE OVERLAY IS A PORTS TREE, NOT A BAG OF PORTDIRS, and the baseline
+	// overlay was a bag of portdirs. Stage materializes build.ResourcesDir
+	// beside its members and this did not, while the tart provider stages
+	// both overlays through one function that tars _resources out of
+	// whichever root it is handed. So the host tar was asked for a
+	// directory that was not there on EVERY baseline, for EVERY port, on
+	// every run.
+	//
+	// That is why the ABI comparison has never produced a measurement.
+	// Not a bad guest, not a missing archive: the before was never staged,
+	// so the provider declined for want of one, the comparison declined on
+	// the provider, and the cohort proposal declined on the comparison —
+	// down a path that discarded its own reasoning at four separate
+	// points, which is why it read as environmental for as long as it did.
+	//
+	// The provider's own comment says the consequence in advance: a port
+	// served from an overlay without _resources "has no archive site at
+	// all", and `port -b install` fails with "no usable archive sites
+	// configured" — "That is the baseline's entire second step, which
+	// means the ABI comparison cannot be made for any port anywhere until
+	// this is staged." It was written about the branch overlay, and it was
+	// true of the baseline overlay the whole time.
+	if err := s.repo.Materialize(ctx, sha, build.ResourcesDir, dir); err != nil {
+		return nil, fmt.Errorf("staging %s at %s for the baseline: %w",
+			build.ResourcesDir, git.Abbrev(sha), err)
+	}
 	return out, nil
 }
