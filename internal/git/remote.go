@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -21,35 +22,68 @@ func (r *Repo) Remotes(ctx context.Context) (map[string]string, error) {
 	return remotes, nil
 }
 
-// Push pushes a branch to a remote under its own name, recording the
-// upstream tracking configuration — the push config a later PR lookup
-// derives the head ref from (D21), and what makes a bare `git push`
-// work for the human who takes the branch over.
-func (r *Repo) Push(ctx context.Context, remote, branch string) error {
-	_, err := r.git(ctx, "push", "-u", remote, branch)
+// RemoteTip is the object a remote's branch currently holds, "" when it
+// holds none. It is asked of the REMOTE and never of a tracking ref: a
+// tracking ref is written by this machine's own push or fetch and by
+// nothing the remote does, so it answers "what did I last see" where
+// this answers "what is there".
+//
+// It is what an expected-value push or delete is built over, and it is
+// separate from RemoteHas because existence and identity are different
+// questions — a caller that only needs to know whether a copy stands
+// should not have to carry an object id it will not use.
+func (r *Repo) RemoteTip(ctx context.Context, remote, branch string) (string, error) {
+	out, err := r.git(ctx, "ls-remote", "--heads", "--", remote, "refs/heads/"+branch)
+	if err != nil {
+		return "", err
+	}
+	line := strings.TrimSpace(out)
+	if line == "" {
+		return "", nil
+	}
+	oid, _, ok := strings.Cut(line, "\t")
+	if !ok {
+		return "", fmt.Errorf("git: %s answered a listing this build cannot read: %q", remote, line)
+	}
+	return strings.TrimSpace(oid), nil
+}
+
+// PushExact sends ONE OBJECT to ONE REF, asserting what that ref holds
+// now. It is the only push a publication makes.
+//
+// THE SOURCE IS AN OBJECT ID AND NOT A BRANCH NAME, and that is the
+// whole reason this exists. Push sent the branch, so whatever the branch
+// held at the moment git ran is what left the machine — and a
+// publication authorizes BYTES: it revalidates a tip, spends a forge
+// round trip on the pull request's state, and only then pushes. A commit
+// arriving in that window (an `accept` in another terminal, a person's
+// own `git commit`, a `bump --replace`) was published under a permit
+// that described the earlier one, with the evidence, the body and the
+// publication row all naming a commit nobody sent. A probe changed the
+// branch inside the forge callback and watched the later commit land.
+//
+// THE DESTINATION IS SPELLED IN FULL, so a remote whose HEAD or push
+// configuration would have routed a bare name elsewhere cannot.
+//
+// expect is what the remote ref must hold for this to be allowed: an
+// object id to replace, or "" to require that it does not exist yet.
+// git spells both as --force-with-lease=<ref>:<expect>, which refuses
+// with "stale info" rather than overwriting — so a fork copy somebody
+// else moved between the gather and here stops the publication instead
+// of being trampled.
+func (r *Repo) PushExact(ctx context.Context, remote, oid, branch, expect string) error {
+	ref := "refs/heads/" + branch
+	_, err := r.git(ctx, "push", "--force-with-lease="+ref+":"+expect, "--", remote, oid+":"+ref)
 	return err
 }
 
-// PushForce replaces a remote branch with the local one — promote
-// --force's republish after a branch was re-minted. --force-with-lease
-// rather than --force: the lease is the remote-tracking ref the last
-// push recorded, so a copy moved from another machine is refused
-// instead of trampled.
-func (r *Repo) PushForce(ctx context.Context, remote, branch string) error {
-	_, err := r.git(ctx, "push", "--force-with-lease", "-u", remote, branch)
-	return err
-}
-
-// PushDelete removes branch from remote. It is a FOREIGN effect — a
-// remote cannot join a local update-ref batch — and so it is the one
-// deletion in the design that keeps record -> effect -> outcome:
-// publish.DeleteForkIn writes the record.DeleteFork step Requested, this
-// runs outside every lock, and publish.ForkGoneIn writes what became of
-// it. Deleting a copy that is already gone is an error from git; the
-// sequencer observes RemoteHas first rather than treating that error as
-// advisory, which is classifying by words.
-func (r *Repo) PushDelete(ctx context.Context, remote, branch string) error {
-	_, err := r.git(ctx, "push", remote, "--delete", branch)
+// PushDeleteExact removes branch from remote, asserting the object it
+// holds. It is PushDelete with the guard PushDelete does not have: a
+// remote branch reused or advanced after publication is a conflict to
+// report, never a newer piece of work to delete on an old record's say-so.
+func (r *Repo) PushDeleteExact(ctx context.Context, remote, branch, expect string) error {
+	ref := "refs/heads/" + branch
+	_, err := r.git(ctx, "push", "--force-with-lease="+ref+":"+expect, "--", remote, ":"+ref)
 	return err
 }
 
@@ -66,26 +100,21 @@ func (r *Repo) TrackedRemote(ctx context.Context, branch string) string {
 }
 
 // PushedTo names the remote a copy of branch was pushed to, "" when
-// none, from the remote-tracking refs and not from branch.<name>.remote —
-// a config line `git switch -c` writes for branches that exist nowhere
-// but here. A READING verb of a LOCAL CACHE, kept from the shipped
-// package for publish.Standing's question — was a copy ever pushed, and
-// where — and for nothing that decides a foreign effect's outcome: the
-// tracking ref is written by this machine's own push or fetch and by
-// nothing the remote does, so a copy the forge deleted (auto-delete on
-// merge, a hand in another checkout) stays listed until `fetch --prune`
-// (measured, and the shipped doc said so). publish.DeleteFork observes
-// RemoteHas, never this.
+// none, from the remote-tracking refs.
 //
-// The tracking ref is also the ref PushForce leases against, so what
-// counts as "the last push" is the same here as there, and
-// branch.<name>.merge — absent after a bare `git push origin foo` —
-// could not have answered even the question this does answer.
+// IT IS A REPORTING VERB AND NO EFFECT IS AIMED BY IT ANY MORE.
+// publish.DeleteFork used to choose its target this way, and this
+// function's own doc conceded the hazard — "when more than one remote
+// holds a copy, the first in ref order is named" — which is a sort
+// order deciding which remote loses a branch. The publication row now
+// records the exact remote, branch and object it pushed
+// (record.Fork), and the deletion addresses that. What is left here is
+// the question the tracking refs can honestly answer: did a copy of
+// this branch ever leave this machine, and roughly where to.
 //
-// When more than one remote holds a copy, the first in ref order is
-// named. That is not a shape dockhand produces — Push sends a branch
-// to one remote — and a second copy would need a question this does
-// not ask.
+// The tracking ref is written by this machine's own push or fetch and
+// by nothing the remote does, so a copy the forge deleted stays listed
+// until `fetch --prune`. Nothing that decides a foreign effect reads it.
 func (r *Repo) PushedTo(ctx context.Context, branch string) (string, error) {
 	copies, err := r.remoteCopies(ctx, branch)
 	if err != nil {

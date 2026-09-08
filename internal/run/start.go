@@ -3,10 +3,10 @@ package run
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/lease"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/statestore"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -25,6 +25,23 @@ var ErrNoChange = errors.New("run: the attempt's change has no record")
 // not by a re-read race: the phase is asked inside the lease Amend, so
 // the loser sees the winner's write.
 var ErrNotQueued = errors.New("run: the attempt is not queued")
+
+// ErrSpecMismatch is Start refusing an attempt whose frozen roster does
+// not hash to the SpecID beside it.
+//
+// It is a REFUSAL AND NOT A REPAIR. The id is what adoption, the queue
+// and publication's verdict projection all join on, so an attempt whose
+// two halves disagree cannot be started under either of them: building
+// the roster would file evidence under a question nobody asked, and
+// re-hashing the roster would rename work other records already point
+// at. A person is the one who resolves it, by discarding the attempt and
+// asking again.
+//
+// It should be unreachable in a tree that only ever writes both halves
+// together at enqueue. It exists because the id used to be stored ALONE
+// and re-derived from the change hours later, which silently produced
+// exactly this disagreement and had nothing to notice it.
+var ErrSpecMismatch = errors.New("run: the attempt's roster does not hash to its spec id")
 
 // Start is the sequencer that turns a queued attempt into a running one,
 // and it is the ONLY function that submits to a provider. Every road
@@ -95,7 +112,26 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		return a, ErrNotQueued
 	}
 
-	members, withheld := Roster(c, a)
+	// THE QUESTION IS THE FROZEN ONE, replayed from the attempt, and it
+	// used to be rebuilt from the change's CURRENT subjects and findings.
+	// That made a queued attempt mean whatever the change meant by the
+	// time a drain reached it: a probe queued one member, added a second
+	// to the change, started the old attempt, and the provider received
+	// both while the recorded Spec id sat unchanged. Two of the hashed
+	// inputs were not on the record at all, so the id could not even be
+	// recomputed honestly.
+	spec := Frozen(a)
+	if got := spec.ID(); got != a.Spec {
+		// THE RECORD DISAGREES WITH ITSELF and this attempt is not
+		// startable. It is a refusal and not a repair: the id is what
+		// adoption, the queue and publication's projection all join on, so
+		// a build started under a spec that hashes to something else would
+		// file its evidence under a question nobody asked. Deferred like
+		// any other fault of this attempt's own, so it backs off instead of
+		// being retried at full cost every pass.
+		return a, deferred(ctx, st, a, fmt.Errorf("%w: the record hashes to %s and carries %s",
+			ErrSpecMismatch, got, a.Spec), now)
+	}
 	staged, pre, err := stage.Stage(ctx, a.Sha, c.Subjects)
 	if err != nil {
 		// A re-plan that could not materialize the commit is this
@@ -104,8 +140,17 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		// at full cost every pass is the defect the backoff exists to end.
 		return a, deferred(ctx, st, a, err, now)
 	}
-	spec := specFor(a, members, withheld, staged, release(a))
-	req, declined, err := Plan(spec, pre)
+	spec = seat(spec, staged)
+	// THE BASE'S OWN PORTDIRS, so the provider has a before to compare
+	// the change against. A change with no recorded base has none, and a
+	// staging that could not produce one is not a fault of this attempt:
+	// the comparison degrades to "undescribed", which is exactly what
+	// abi.Delta's Described flag exists to say.
+	baseline, berr := stage.Baseline(ctx, c.Base.Sha, c.Subjects)
+	if berr != nil {
+		baseline = nil
+	}
+	req, declined, err := PlanWith(spec, pre, baseline)
 	if errors.Is(err, ErrNothingToBuild) {
 		return declineOnly(ctx, st, a, declined, now)
 	}
@@ -163,7 +208,6 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		cur.Lease = l.Request
 		cur.Owner = by.Owner
 		cur.Started = now.UTC()
-		cur.Members = memberPorts(members)
 		cur.Runs = startedRuns(spec, req, declined, now)
 		tx.PutAttempt(cur)
 		started = cur
@@ -249,44 +293,27 @@ func declineOnly(ctx context.Context, st *statestore.Store, a record.Attempt, de
 	return out, err
 }
 
-// specFor rebuilds the question this attempt asks, from the record and
-// from the staging that just happened.
+// seat joins the frozen roster to the directories the stager just
+// materialized, by port.
 //
-// The members come from the RECORD (Roster) and their portdirs from the
-// STAGER, joined by port: that split is what lets Spec.ID computed here
-// equal the one the enqueue computed hours earlier, since the id covers
-// the roster by identity and never by location.
-func specFor(a record.Attempt, seated []Member, held []Withheld, staged []Member, rel platform.Release) Spec {
+// IT ADDS A LOCATION AND CHANGES NO IDENTITY, which is what keeps
+// Spec.ID stable across it: the id covers the roster by port, name and
+// forced-sibling and never by path, so a spec seated on this host hashes
+// to what the enqueue computed on another. A member the stager did not
+// produce keeps an empty Portdir and is refused downstream rather than
+// silently built from somewhere else.
+func seat(spec Spec, staged []Member) Spec {
 	dirs := make(map[string]string, len(staged))
 	for _, m := range staged {
 		dirs[m.Port] = m.Portdir
 	}
-	out := make([]Member, 0, len(seated))
-	for _, m := range seated {
+	out := make([]Member, 0, len(spec.Roster))
+	for _, m := range spec.Roster {
 		m.Portdir = dirs[m.Port]
 		out = append(out, m)
 	}
-	return Spec{
-		Content:  a.Content,
-		Roster:   out,
-		Withheld: held,
-		Platform: rel,
-		Test:     a.Ask.Test,
-		KeepEnv:  a.Ask.KeepEnv,
-	}
-}
-
-// release is the platform this attempt runs on, as the record named it.
-// A run is keyed by release name and "the default" is not a key, so the
-// resolution happened at enqueue and this only spells the name back into
-// the value the provider takes. A name this build does not know comes
-// back as the zero Release, which the provider reads as its own default
-// — the honest answer for a record written by another build, and never a
-// substitution of one release's evidence for another's, because the name
-// on the record is what the verdict is filed under either way.
-func release(a record.Attempt) platform.Release {
-	r, _ := platform.ByName(a.Platform)
-	return r
+	spec.Roster = out
+	return spec
 }
 
 // deferred is Start's own fault road: record the backoff and hand back

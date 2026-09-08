@@ -326,9 +326,15 @@ func Promotion(w io.Writer, p app.PromoteResult) {
 // that order and never the reverse: a pass is N outcomes, most of them
 // uneventful, and a reader scanning for the handful that are addressed
 // to them should not have to scroll past thirty that are not.
-func Pass(w io.Writer, p app.Pass, dry bool) {
-	if dry {
-		fmt.Fprintln(w, "dry run: nothing irreversible was performed — and this is NOT a read-only pass; it still observed, judged and settled")
+func Pass(w io.Writer, p app.Pass) {
+	// A SURVEY IS A DIFFERENT REPORT, and it is told apart by the value
+	// rather than by a flag the caller passes alongside it. Pass used to
+	// take a `dry bool` and print a banner over the acting pass's own
+	// counts; the two are different answers now, so the value says which
+	// it is and there is nothing for a caller to get wrong.
+	if p.Would != nil {
+		would(w, *p.Would, p)
+		return
 	}
 	settled, started := 0, 0
 	for _, res := range p.Changes {
@@ -846,6 +852,70 @@ func short(s string) string {
 		return s
 	}
 	return s[:8]
+}
+
+// would renders a dry run, which is a survey and not a pass: every stage
+// reports the population it WOULD have acted on, and nothing ran.
+//
+// It prints its own shape rather than the acting pass's counts, because
+// the two answer different questions and one line reading "0 settled"
+// over a survey that found four settleable attempts would be worse than
+// no line at all.
+func would(w io.Writer, d app.Would, p app.Pass) {
+	fmt.Fprintln(w, "dry run: nothing was performed — every line below is what a pass WOULD do")
+	fmt.Fprintf(w, "%d discharge · %d settle · %d retire · %d publish · %d start\n",
+		len(d.Discharge), len(d.Settle), len(d.Retire), len(d.Publish), len(d.Start))
+	for _, ob := range d.Discharge {
+		fmt.Fprintf(w, "  would discharge %s\n", obligationLine(ob))
+	}
+	for _, id := range d.Settle {
+		fmt.Fprintf(w, "  would poll and judge attempt %s\n", id)
+	}
+	for _, id := range d.Analyse {
+		fmt.Fprintf(w, "  would analyse the evidence of attempt %s\n", id)
+	}
+	for _, id := range d.Resume {
+		fmt.Fprintf(w, "  would resume the unfinished publication of %s\n", id)
+	}
+	for _, id := range d.Retire {
+		fmt.Fprintf(w, "  would retire %s\n", id)
+	}
+	for _, id := range d.DeleteFork {
+		fmt.Fprintf(w, "  would delete the fork copy for %s\n", id)
+	}
+	for _, id := range d.Publish {
+		fmt.Fprintf(w, "  would consider %s for publication\n", id)
+	}
+	for _, id := range d.Start {
+		fmt.Fprintf(w, "  would start attempt %s\n", id)
+	}
+	if d.Compact {
+		fmt.Fprintln(w, "  would compact closed records")
+	}
+	if d.Maintain {
+		fmt.Fprintln(w, "  would run git maintenance")
+	}
+	// What it would NOT take is reported too: an obligation left standing
+	// is the thing a person most often wants to know is being left alone.
+	for _, ob := range p.Owed {
+		fmt.Fprintf(w, "  owed, not taken: %s\n", obligationLine(ob))
+	}
+	for _, r := range p.Refusals {
+		fmt.Fprintf(w, "  could not survey %s: %v\n", r.Change, r.Err)
+	}
+}
+
+// obligationLine is one obligation as a survey names it: what it is,
+// whose it is, and which environment it names.
+func obligationLine(ob lease.Obligation) string {
+	line := string(ob.Change) + "/" + ob.Platform
+	if ob.Worker != "" {
+		line += " (" + ob.Worker + ")"
+	}
+	if ob.Root != "" {
+		line += " — " + ob.Root + "'s"
+	}
+	return line
 }
 
 // Purged renders what a purge removed, or would have.

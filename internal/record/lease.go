@@ -154,7 +154,41 @@ type Attempt struct {
 	Started time.Time `json:"started"`
 	Phase   Phase     `json:"phase"`
 	Lease   string    `json:"lease,omitempty"`
-	Members []string  `json:"members,omitempty"`
+	// Roster is the FROZEN QUESTION this attempt asks, written at enqueue
+	// and never rewritten.
+	//
+	// Spec above is a hash OF THIS VALUE, and for a long time it was the
+	// only thing stored: the attempt kept the digest of a specification
+	// and not the specification, so nothing could replay what the hash
+	// named. The drain rebuilt the roster from the change's CURRENT
+	// subjects and findings hours later, which is a different question
+	// wearing the same id — a probe queued one member, added a second to
+	// the change, started the old attempt, and the provider received both
+	// while the recorded hash sat there unchanged. Two of the hashed
+	// inputs (FromSource, Requires) were not derivable from the record at
+	// all, which internal/app said out loud and did not fix.
+	//
+	// So the identity and the thing it identifies live together, and
+	// run.Start refuses an attempt whose rebuilt spec does not hash to
+	// the id on the record.
+	Roster Roster `json:"roster,omitzero"`
+	// Analysis is what became of the POST-BUILD work this attempt's
+	// evidence feeds: the ABI comparison and the cohort proposal.
+	//
+	// It is durable because that work can fail for reasons the build has
+	// nothing to do with — an unbuilt reverse index, a Portfile that
+	// would not read — and it used to have nowhere to be recorded. The
+	// failure travelled back to the caller as an advisory AFTER the
+	// attempt was settled, and a later Finish returns immediately for a
+	// settled attempt, so the only retry was a person noticing the line
+	// and running something again. The measurement itself survives on
+	// Runs, so the analysis is genuinely replayable; it just had no state
+	// saying it was owed.
+	//
+	// Nil is "nothing to analyse or nobody has tried yet". A Requested or
+	// Uncertain phase is work a pass picks up, on the same backoff shape
+	// Release and Step carry.
+	Analysis *Analysis `json:"analysis,omitempty"`
 	// Interrupt is the observation that a person or a supersession stopped
 	// this attempt before the provider answered. It is DURABLE and it is
 	// EVIDENCE: run.Judge reads it (Evidence.Interrupt) and returns every
@@ -254,10 +288,27 @@ type Publication struct {
 	Basis   []Region  `json:"basis,omitempty"`
 	Content ContentID `json:"content"`
 	Target  string    `json:"target"`
-	Steps   []Step    `json:"steps,omitempty"`
-	Number  int       `json:"number,omitempty"`
-	URL     string    `json:"url,omitempty"`
-	Outcome Outcome   `json:"outcome,omitempty"`
+	// Fork is the EXACT EXTERNAL TARGET this publication owns: which
+	// remote, which branch on it, and which object was pushed. It is
+	// written when the push completes and is never inferred.
+	//
+	// It used to be absent, and a deferred fork deletion reconstructed
+	// its target from incidental local refs — publish.DeleteFork read the
+	// change for a branch NAME and asked git which remote held a copy of
+	// it, which answers with the first remote in ref order. A probe put
+	// the branch on two remotes and watched the deletion take the wrong
+	// one, leaving the intended fork copy standing. Even with one remote,
+	// existence was all that was checked: a remote branch reused or
+	// advanced after publication was newer work an old record would have
+	// deleted on its own say-so.
+	//
+	// The zero value is a row that never pushed, which DeleteFork refuses
+	// rather than guessing about.
+	Fork    Fork    `json:"fork,omitzero"`
+	Steps   []Step  `json:"steps,omitempty"`
+	Number  int     `json:"number,omitempty"`
+	URL     string  `json:"url,omitempty"`
+	Outcome Outcome `json:"outcome,omitempty"`
 }
 
 // Outcome is how a publication ended. It is an enum and not a free
@@ -345,6 +396,24 @@ type Claim struct {
 	By      string    `json:"by"`
 	At      time.Time `json:"at"`
 	Expires time.Time `json:"expires"`
+	// Token is the FENCE. It is minted fresh every time a claim is taken
+	// or re-taken, and a completion that does not present the token
+	// currently on the record writes nothing.
+	//
+	// It exists because a claim without one cannot be completed safely.
+	// Every transition here used to address the SLOT — the one live lease
+	// for (change, platform) — so an observation taken before a
+	// concurrent pass returned lease A and acquired lease B in the same
+	// slot would land on B: an adversarial probe released a replacement
+	// owned by another root and marked a replacement's release complete.
+	// Keying the transitions on Request fixes which DOCUMENT is
+	// addressed; the token fixes which CLAIM, so a second pass that
+	// seized the same lease in the gap is not completed by the first
+	// pass's stale reply.
+	//
+	// It is not an expiry and does not replace Expires: a claim can be
+	// current and stale-held at once, and those are two questions.
+	Token string `json:"token,omitempty"`
 	// Pass is the PASS TOKEN: the id of the cycle pass that took this
 	// claim, stamped from the pass lockfile. It is here and NOT on
 	// OwnerID.Since, which a draft proposed restamping per pass (F3):
@@ -388,3 +457,99 @@ func (l Lease) Owed() bool { return l.Release != nil && l.Release.Done == nil }
 
 // Returned reports that the provider confirmed the handback.
 func (l Lease) Returned() bool { return l.Release != nil && l.Release.Done != nil }
+
+// Roster is an attempt's frozen execution specification: exactly the
+// inputs SpecID hashes, in the shape the store keeps them.
+//
+// IT IS THE HASHED VALUE AND NOTHING ELSE. Portdirs are absent because
+// they are a filesystem fact the stager supplies at start and SpecID
+// deliberately excludes — a key that included a path would match nothing
+// across processes. Content, Platform and the Ask live on the Attempt
+// already and are not repeated here, because a record with two places
+// to read one fact has two places to get it wrong.
+type Roster struct {
+	Seats    []Seat     `json:"seats,omitempty"`
+	Withheld []Withhold `json:"withheld,omitempty"`
+	// FromSource names members whose binary archive is to be ignored, and
+	// Requires is the dependency graph among the seats. Both are inside
+	// SpecID and NEITHER was derivable from the record before this type
+	// existed, which is why a re-derived spec could not hash to the id
+	// beside it whenever a caller had set them.
+	FromSource []string   `json:"from_source,omitempty"`
+	Requires   [][]string `json:"requires,omitempty"`
+}
+
+// Seat is one member of a frozen roster, in build order.
+type Seat struct {
+	Port  string   `json:"port"`
+	Names []string `json:"names,omitempty"`
+	// Forced names the sibling the environment deactivates immediately
+	// before this member is built — the D24 override, and empty for every
+	// ordinary seat.
+	Forced string `json:"forced,omitempty"`
+}
+
+// Withhold is one member the roster bumped and did not build, with the
+// reason a reader is owed.
+type Withhold struct {
+	Port string `json:"port"`
+	Why  string `json:"why"`
+}
+
+// Members is the roster's ports in build order, headline first: the
+// projection every reader of "which ports is this attempt about" wants.
+//
+// A METHOD AND NOT A FIELD, which it used to be. A stored member list
+// beside a stored roster is one fact in two places, and the two drifted
+// the moment anything rewrote either — which is the shape of the defect
+// the roster exists to close, reproduced one field down.
+func (a Attempt) Members() []string {
+	out := make([]string, 0, len(a.Roster.Seats))
+	for _, s := range a.Roster.Seats {
+		out = append(out, s.Port)
+	}
+	return out
+}
+
+// Fork is where a publication's branch actually went, recorded at the
+// moment it went there.
+//
+// THE OID IS THE POINT. Remote and Branch say which ref to address; OID
+// says what this publication put there, so a later deletion can assert
+// that the copy it is removing is still the one this row created. A
+// remote branch that has moved since is somebody else's work, and the
+// honest answer is a conflict rather than a deletion.
+type Fork struct {
+	Remote string `json:"remote"`
+	Branch string `json:"branch"`
+	OID    string `json:"oid"`
+}
+
+// Pushed reports a fork target complete enough to address. A row with
+// no push has none, and every reader that would act on one asks this
+// first rather than testing a field.
+func (f Fork) Pushed() bool { return f.Remote != "" && f.Branch != "" && f.OID != "" }
+
+// Analysis is the state of an attempt's post-build work: the ABI
+// comparison over its manifests and the cohort proposal that rests on
+// it.
+//
+// The phases are the ones every other owed effect here uses. Finished
+// is "it ran and its answer is recorded, including the answer that
+// there was nothing to propose". Requested is "it is owed"; Uncertain
+// is "it was tried and could not be completed". Both are picked up by a
+// pass, on the backoff NotBefore carries, so a permanently unreadable
+// index is not re-walked on every five-minute tick.
+type Analysis struct {
+	Phase     Phase      `json:"phase"`
+	At        time.Time  `json:"at"`
+	Detail    string     `json:"detail,omitempty"`
+	Attempts  int        `json:"attempts,omitempty"`
+	NotBefore *time.Time `json:"not_before,omitempty"`
+}
+
+// Owed reports post-build analysis a pass should pick up.
+func (a Attempt) AnalysisOwed() bool {
+	return a.Analysis != nil &&
+		(a.Analysis.Phase == Requested || a.Analysis.Phase == Uncertain)
+}

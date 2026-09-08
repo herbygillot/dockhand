@@ -625,7 +625,7 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 	if err != nil {
 		return err
 	}
-	me := s.Me(s.Now())
+	me := s.Me()
 	residency := probeResidency(ctx, repo)
 	op := app.Change{
 		Plan:      planningFor(s),
@@ -771,7 +771,7 @@ func manyTargets(ctx context.Context, s *Services, v intentVerb, planner plannin
 		Stage:    &stager{repo: repo, temp: s.Temp(), session: s.session, release: f.release},
 		Local:    s.ProposeTree(),
 		Verifier: s.VerifyProvider(),
-		Me:       s.Me(s.Now()),
+		Me:       s.Me(),
 		Now:      s.Now,
 		Progress: sink{w: s.Err},
 	}

@@ -270,7 +270,7 @@ func TestDeleteForkRemovesTheCopyAndRecordsIt(t *testing.T) {
 	head, err := repo.RevParse(t.Context(), "HEAD")
 	require.NoError(t, err)
 	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", head, "sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8")
-	require.NoError(t, repo.Push(t.Context(), "fork", "dockhand/jq-1.8"))
+	require.NoError(t, repo.PushExact(t.Context(), "fork", sha, "dockhand/jq-1.8", ""))
 
 	has, err := repo.RemoteHas(t.Context(), "fork", "dockhand/jq-1.8")
 	require.NoError(t, err)
@@ -280,6 +280,9 @@ func TestDeleteForkRemovesTheCopyAndRecordsIt(t *testing.T) {
 	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangePublished,
 		Branch: "dockhand/jq-1.8", Tip: sha, Content: "tree-1"})
 	plantPublication(t, st, record.Publication{ID: "pub-1", Change: "chg-1", Outcome: record.Merged,
+		// The exact target the push established. A row that records none
+		// is refused rather than aimed by a listing's sort order.
+		Fork:  record.Fork{Remote: "fork", Branch: "dockhand/jq-1.8", OID: sha},
 		Steps: []record.Step{{Kind: record.DeleteFork, Phase: record.Requested, At: clock, Attempt: 1}}})
 
 	owed := ForkOwed(readState(t, st))
@@ -309,7 +312,7 @@ func TestAForeignDeletionLeavesTheCacheStandingAndTheSequencerCopes(t *testing.T
 	head, err := repo.RevParse(t.Context(), "HEAD")
 	require.NoError(t, err)
 	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", head, "sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8")
-	require.NoError(t, repo.Push(t.Context(), "fork", "dockhand/jq-1.8"))
+	require.NoError(t, repo.PushExact(t.Context(), "fork", sha, "dockhand/jq-1.8", ""))
 
 	// A FOREIGN HAND deletes the copy — the forge's auto-delete on merge,
 	// or a person in another checkout — and this machine is not told. It
@@ -319,7 +322,7 @@ func TestAForeignDeletionLeavesTheCacheStandingAndTheSequencerCopes(t *testing.T
 	// its own tracking ref on the way and destroy the very state under
 	// test.
 	elsewhere := gittest.Init(t, tools, "", map[string]string{"x": "y"})
-	require.NoError(t, elsewhere.PushDelete(t.Context(), fork, "dockhand/jq-1.8"))
+	require.NoError(t, elsewhere.PushDeleteExact(t.Context(), fork, "dockhand/jq-1.8", sha))
 
 	// MEASURED, and both are what the design says: the remote-tracking
 	// cache still lists the copy, so PushedTo still names the remote...
@@ -328,7 +331,7 @@ func TestAForeignDeletionLeavesTheCacheStandingAndTheSequencerCopes(t *testing.T
 	assert.Equal(t, "fork", remote, "a foreign deletion leaves the tracking ref standing")
 	// ...and a push-delete of it fails, which is why a sequencer over the
 	// cache would retry a deletion that can never succeed.
-	require.Error(t, repo.PushDelete(t.Context(), "fork", "dockhand/jq-1.8"))
+	require.Error(t, repo.PushDeleteExact(t.Context(), "fork", "dockhand/jq-1.8", sha))
 	// The remote itself is the authority, and it says the copy is gone.
 	has, err := repo.RemoteHas(t.Context(), "fork", "dockhand/jq-1.8")
 	require.NoError(t, err)
@@ -338,6 +341,9 @@ func TestAForeignDeletionLeavesTheCacheStandingAndTheSequencerCopes(t *testing.T
 	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangePublished,
 		Branch: "dockhand/jq-1.8", Tip: sha, Content: "tree-1"})
 	plantPublication(t, st, record.Publication{ID: "pub-1", Change: "chg-1", Outcome: record.Merged,
+		// The exact target the push established. A row that records none
+		// is refused rather than aimed by a listing's sort order.
+		Fork:  record.Fork{Remote: "fork", Branch: "dockhand/jq-1.8", OID: sha},
 		Steps: []record.Step{{Kind: record.DeleteFork, Phase: record.Requested, At: clock, Attempt: 1}}})
 
 	owed := ForkOwed(readState(t, st))
@@ -404,4 +410,110 @@ func plantChange(t *testing.T, st *statestore.Store, c record.Change) {
 		tx.PutChange(c)
 		return nil
 	}))
+}
+
+// THE DELETION IS AIMED BY THE RECORD, NOT BY A LISTING'S SORT ORDER.
+//
+// DeleteFork used to read the change for a branch NAME and ask PushedTo
+// which remote held a copy — which answers with the first remote in ref
+// order. With the branch on an unrelated remote and on the fork, a probe
+// watched the unrelated remote's branch go while the intended fork copy
+// survived.
+func TestDeleteForkTakesTheRecordedRemoteAndNotTheFirstOneListed(t *testing.T) {
+	repo := gittest.PortsTree(t, tools)
+	gittest.BareFork(t, repo, "me", "fork")
+	gittest.BareRemote(t, repo, "them", "aa-unrelated")
+	head, err := repo.RevParse(t.Context(), "HEAD")
+	require.NoError(t, err)
+	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", head, "sysutils/jq/Portfile", "version 1.8\n", "jq")
+	require.NoError(t, repo.PushExact(t.Context(), "fork", sha, "dockhand/jq-1.8", ""))
+	require.NoError(t, repo.PushExact(t.Context(), "aa-unrelated", sha, "dockhand/jq-1.8", ""))
+
+	st := statestore.Open(repo)
+	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangePublished,
+		Branch: "dockhand/jq-1.8", Tip: sha, Content: "tree-1"})
+	plantPublication(t, st, record.Publication{ID: "pub-1", Change: "chg-1", Outcome: record.Merged,
+		Fork:  record.Fork{Remote: "fork", Branch: "dockhand/jq-1.8", OID: sha},
+		Steps: []record.Step{{Kind: record.DeleteFork, Phase: record.Requested, At: clock}}})
+
+	owed := ForkOwed(readState(t, st))
+	require.NoError(t, DeleteFork(t.Context(), Env{Repo: repo, State: st}, owed[0], func() time.Time { return clock }))
+
+	onFork, err := repo.RemoteHas(t.Context(), "fork", "dockhand/jq-1.8")
+	require.NoError(t, err)
+	assert.False(t, onFork, "the recorded target went")
+	onOther, err := repo.RemoteHas(t.Context(), "aa-unrelated", "dockhand/jq-1.8")
+	require.NoError(t, err)
+	assert.True(t, onOther, "and the unrelated remote's copy was never touched")
+}
+
+// A REMOTE BRANCH THAT MOVED IS SOMEBODY ELSE'S WORK. Existence used to
+// be the whole check, so a copy reused or advanced after publication was
+// newer work an old record deleted on its own say-so.
+func TestDeleteForkRefusesACopyThatIsNoLongerTheOneItPushed(t *testing.T) {
+	repo := gittest.PortsTree(t, tools)
+	gittest.BareFork(t, repo, "me", "fork")
+	head, err := repo.RevParse(t.Context(), "HEAD")
+	require.NoError(t, err)
+	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", head, "sysutils/jq/Portfile", "version 1.8\n", "jq")
+	require.NoError(t, repo.PushExact(t.Context(), "fork", sha, "dockhand/jq-1.8", ""))
+	moved := gittest.Commit(t, repo, "dockhand/jq-1.9", sha, "sysutils/jq/Portfile", "version 1.9\n", "newer")
+	require.NoError(t, repo.PushExact(t.Context(), "fork", moved, "dockhand/jq-1.8", sha))
+
+	st := statestore.Open(repo)
+	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangePublished,
+		Branch: "dockhand/jq-1.8", Tip: sha, Content: "tree-1"})
+	plantPublication(t, st, record.Publication{ID: "pub-1", Change: "chg-1", Outcome: record.Merged,
+		Fork:  record.Fork{Remote: "fork", Branch: "dockhand/jq-1.8", OID: sha},
+		Steps: []record.Step{{Kind: record.DeleteFork, Phase: record.Requested, At: clock}}})
+
+	owed := ForkOwed(readState(t, st))
+	require.NoError(t, DeleteFork(t.Context(), Env{Repo: repo, State: st}, owed[0], func() time.Time { return clock }))
+
+	has, err := repo.RemoteHas(t.Context(), "fork", "dockhand/jq-1.8")
+	require.NoError(t, err)
+	assert.True(t, has, "the newer work stands")
+	step, _ := stepOf(readPublication(t, st, "pub-1"), record.DeleteFork)
+	assert.Equal(t, record.Uncertain, step.Phase, "reported as a conflict, and still owed")
+	assert.Contains(t, step.Detail, "somebody else moved it")
+}
+
+// A row that records no push is refused rather than guessed at: it is
+// the shape of a publication whose PushBranch never completed, and
+// nothing here can tell that from a target the record never held.
+func TestDeleteForkRefusesARowWithNoRecordedFork(t *testing.T) {
+	repo := gittest.PortsTree(t, tools)
+	st := statestore.Open(repo)
+	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangePublished, Branch: "dockhand/jq-1.8"})
+	plantPublication(t, st, record.Publication{ID: "pub-1", Change: "chg-1", Outcome: record.Merged,
+		Steps: []record.Step{{Kind: record.DeleteFork, Phase: record.Requested, At: clock}}})
+
+	owed := ForkOwed(readState(t, st))
+	require.NoError(t, DeleteFork(t.Context(), Env{Repo: repo, State: st}, owed[0], func() time.Time { return clock }))
+	step, _ := stepOf(readPublication(t, st, "pub-1"), record.DeleteFork)
+	assert.Equal(t, record.Uncertain, step.Phase)
+	assert.Contains(t, step.Detail, "records no fork copy")
+}
+
+// UNFINISHED IS THE JOURNAL'S READER, and it did not exist: Apply wrote
+// Requested-then-Uncertain steps that nothing ever consumed, so one
+// failed push or `pr create` excluded the change from publication
+// forever.
+func TestUnfinishedFindsStartedWorkAndIgnoresTheRest(t *testing.T) {
+	st := newStore(t)
+	plantPublication(t, st, record.Publication{ID: "pub-owed", Change: "chg-1", Outcome: record.Open,
+		Steps: []record.Step{
+			{Kind: record.PushBranch, Phase: record.Finished, At: clock},
+			{Kind: record.OpenPR, Phase: record.Uncertain, At: clock},
+		}})
+	plantPublication(t, st, record.Publication{ID: "pub-done", Change: "chg-2", Outcome: record.Open,
+		Steps: []record.Step{{Kind: record.PushBranch, Phase: record.Finished, At: clock}}})
+	plantPublication(t, st, record.Publication{ID: "pub-settled", Change: "chg-3", Outcome: record.Merged,
+		Steps: []record.Step{{Kind: record.OpenPR, Phase: record.Uncertain, At: clock}}})
+	plantPublication(t, st, record.Publication{ID: "pub-fork", Change: "chg-4", Outcome: record.Open,
+		Steps: []record.Step{{Kind: record.DeleteFork, Phase: record.Requested, At: clock}}})
+
+	got := Unfinished(readState(t, st))
+	require.Len(t, got, 1, "only the row with started publication work")
+	assert.Equal(t, "pub-owed", got[0].ID)
 }

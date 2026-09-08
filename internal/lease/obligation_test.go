@@ -84,9 +84,9 @@ func TestTheFourKindsAndNothingElse(t *testing.T) {
 	require.Error(t, err)
 
 	// Due: a kept guest whose deadline has passed.
-	held(t, st, "kept")
+	kept := held(t, st, "kept")
 	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
-		RetainIn(tx, "kept", platformName, now.Add(-time.Minute))
+		RetainIn(tx, kept.Request, now.Add(-time.Minute))
 		return nil
 	}))
 
@@ -159,7 +159,7 @@ func TestAJoinedWorkerIsNotUntracked(t *testing.T) {
 	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangeMinted})
 	l := held(t, st, "chg-1")
 	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
-		HandleIn(tx, "chg-1", platformName, "dockhand-worker-named")
+		HandleIn(tx, l.Request, "dockhand-worker-named")
 		return nil
 	}))
 
@@ -562,4 +562,85 @@ func TestARequestedLeaseStandsWhenTheBackendCannotBeAsked(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, stands, 1)
 	assert.True(t, leaseOn(t, st, "chg-1").Held(), "nothing was claimed and nothing was destroyed")
+}
+
+// THE RECOVERY DEFECT, WHOLE. A stranded request whose lookup finds a
+// real job, whose release then fails, must leave the DISCOVERED
+// IDENTITY on the record.
+//
+// Before it did: resolve assigned the found job into a local variable
+// and called fulfil, so a failed release left the durable lease with an
+// empty provider and id — but Owed, because the seize had already
+// claimed it. The next pass took the Owed road, which does not ask
+// LookupRequest, put the empty job to the provider, and read the
+// resulting ErrUnknownJob as CONFIRMED ABSENCE. One transport failure
+// marked a lease returned while its worker was still running, and
+// Outstanding then joined that lease against the inventory so the
+// untracked audit could not find the guest either.
+func TestARecoveredJobIdentityIsPersistedBeforeTheReleaseIsTried(t *testing.T) {
+	st := newStore(t)
+	table(t, alive(), nil)
+	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangeMinted})
+
+	fake := &verifytest.Fake{SubmitErr: errors.New("i/o timeout")}
+	_, err := Acquire(t.Context(), st, fake, "chg-1", request(""), claimant(me()), at(-time.Hour))
+	require.Error(t, err)
+	fake.SubmitErr = nil
+
+	req := leaseOn(t, st, "chg-1").Request
+	fake.Lookups = map[string]verify.RequestObservation{req: {State: verify.Found,
+		Job: verify.Job{Provider: "fake", ID: "real-job"}}}
+	fake.ReleaseErr = map[string]error{"real-job": errors.New("transport failed")}
+
+	obs, err := Outstanding(t.Context(), st, fake, me(), "pass-1", now)
+	require.NoError(t, err)
+	require.Len(t, obs, 1)
+	stands, err := Discharge(t.Context(), st, fake, obs, seizure(time.Minute), claimant(me()), at(0))
+	require.NoError(t, err)
+	assert.Len(t, stands, 1, "the release failed, so the obligation stands")
+
+	l := leaseOn2(t, st, "chg-1")
+	assert.Equal(t, "real-job", l.ID.ID, "the identity survives the failed release")
+	assert.Equal(t, "fake", l.ID.Provider)
+	assert.True(t, l.Owed(), "owed, not returned")
+	assert.False(t, l.Returned())
+
+	// The next pass now has a job to release, and releases THAT.
+	fake.ReleaseErr = nil
+	later := now.Add(2 * time.Hour)
+	obs, err = Outstanding(t.Context(), st, fake, me(), "pass-2", later)
+	require.NoError(t, err)
+	require.Len(t, obs, 1)
+	_, err = Discharge(t.Context(), st, fake, obs, seizure(time.Minute), claimant(me()), func() time.Time { return later })
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"real-job"}, fake.Released,
+		"the real job, never an empty one whose ErrUnknownJob would read as absence")
+	assert.True(t, leaseOn2(t, st, "chg-1").Returned())
+}
+
+// A seizure addresses the LEASE the obligation named, not whatever is
+// currently live on its slot. An observation of lease A, applied after a
+// peer returned A and acquired B, used to claim B — including a B owned
+// by another root, which no Standing had authorised.
+func TestASeizureCannotLandOnAReplacementLease(t *testing.T) {
+	st := newStore(t)
+	table(t, alive(), nil)
+	plantChange(t, st, record.Change{ID: "chg-1", State: record.ChangeMinted})
+
+	// The obligation this pass is holding names a lease that is gone.
+	stale := []Obligation{{
+		Kind: Due, Standing: Mine, Change: "chg-1", Platform: platformName,
+		Request: "an-old-request", Since: now.Add(-time.Hour),
+	}}
+	replacement := heldBy(t, st, "chg-1", record.OwnerID{Root: "/elsewhere", Host: "mac", PID: 7, Since: birth})
+
+	fake := &verifytest.Fake{}
+	_, err := Discharge(t.Context(), st, fake, stale, seizure(time.Minute), claimant(me()), at(0))
+	require.NoError(t, err)
+
+	assert.Empty(t, fake.Released, "nothing was released on a stale observation")
+	after := leaseOn(t, st, "chg-1")
+	assert.Equal(t, replacement.Request, after.Request)
+	assert.Equal(t, "/elsewhere", after.Owner.Root, "and the replacement's owner was not taken over")
 }

@@ -117,7 +117,7 @@ func TestEnqueueInCarriesTheAskAndBothIdentities(t *testing.T) {
 	assert.True(t, got.Ask.KeepEnv)
 	assert.Equal(t, owner(), got.EnqueuedBy)
 	assert.Equal(t, owner(), got.Owner, "the enqueuer holds it until something starts it")
-	assert.Equal(t, []string{"jq"}, got.Members)
+	assert.Equal(t, []string{"jq"}, got.Members())
 	assert.NotEmpty(t, got.Spec, "the adoption key is computed at enqueue")
 
 	s, err := st.Read(t.Context())
@@ -284,12 +284,12 @@ func TestWithdrawInFinishesEveryQueuedAttemptOfOneChange(t *testing.T) {
 	st := newStore(t)
 	plantChange(t, st, minted("chg-1"))
 	plantAttempt(t, st, record.Attempt{ID: "a-queued", Change: "chg-1", Sha: "cafe",
-		Phase: record.Requested, Members: []string{"jq"}})
+		Phase: record.Requested, Roster: record.Roster{Seats: []record.Seat{{Port: "jq"}}}})
 	live := record.Attempt{ID: "a-live", Change: "chg-1", Sha: "cafe",
-		Phase: record.Active, Lease: "req-1", Members: []string{"jq"}}
+		Phase: record.Active, Lease: "req-1", Roster: record.Roster{Seats: []record.Seat{{Port: "jq"}}}}
 	plantAttempt(t, st, live)
 	plantAttempt(t, st, record.Attempt{ID: "a-other", Change: "chg-2", Sha: "beef",
-		Phase: record.Requested, Members: []string{"gdal"}})
+		Phase: record.Requested, Roster: record.Roster{Seats: []record.Seat{{Port: "gdal"}}}})
 
 	var withdrawn []record.Attempt
 	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
@@ -321,7 +321,7 @@ func TestWithdrawInWritesTheStateItsTypedCauseNames(t *testing.T) {
 	st := newStore(t)
 	plantChange(t, st, minted("chg-1"))
 	plantAttempt(t, st, record.Attempt{ID: "a-1", Change: "chg-1", Sha: "cafe",
-		Phase: record.Requested, Members: []string{"jq"}})
+		Phase: record.Requested, Roster: record.Roster{Seats: []record.Seat{{Port: "jq"}}}})
 
 	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
 		WithdrawIn(tx, "chg-1", record.InterruptSuperseded, owner(), clock)

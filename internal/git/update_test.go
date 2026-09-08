@@ -555,7 +555,7 @@ func TestRemoteHasAsksTheRemoteAndNotTheTrackingRef(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, has, "nothing has been pushed yet")
 
-	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-1.8"))
+	require.NoError(t, r.PushExact(ctx, "fork", a, "dockhand/jq-1.8", ""))
 	has, err = r.RemoteHas(ctx, "fork", "dockhand/jq-1.8")
 	require.NoError(t, err)
 	assert.True(t, has)
@@ -577,7 +577,7 @@ func TestRemoteHasAsksTheRemoteAndNotTheTrackingRef(t *testing.T) {
 	// The name is matched whole: the fully qualified ref is the pattern,
 	// so a shorter name is not a copy of a longer one.
 	require.NoError(t, r.UpdateRefs(ctx, []RefUpdate{{Ref: "refs/heads/dockhand/jq-1.8", New: a, Old: a}}))
-	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-1.8"))
+	require.NoError(t, r.PushExact(ctx, "fork", a, "dockhand/jq-1.8", ""))
 	has, err = r.RemoteHas(ctx, "fork", "dockhand/jq")
 	require.NoError(t, err)
 	assert.False(t, has, "dockhand/jq is not dockhand/jq-1.8")

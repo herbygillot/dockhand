@@ -693,19 +693,20 @@ func TestPushDeleteRemovesTheForkCopy(t *testing.T) {
 	_, err = exec.Command("git", "-C", r.Root, "branch", "dockhand/jq-1.8", sha).CombinedOutput()
 	require.NoError(t, err)
 
-	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-1.8"))
-	assert.Equal(t, "fork", r.TrackedRemote(ctx, "dockhand/jq-1.8"))
+	require.NoError(t, r.PushExact(ctx, "fork", sha, "dockhand/jq-1.8", ""))
 	lsRemote, err := exec.Command("git", "-C", fork, "branch", "--list", "dockhand/jq-1.8").Output()
 	require.NoError(t, err)
 	require.Contains(t, string(lsRemote), "dockhand/jq-1.8")
 
-	require.NoError(t, r.PushDelete(ctx, "fork", "dockhand/jq-1.8"))
+	require.NoError(t, r.PushDeleteExact(ctx, "fork", "dockhand/jq-1.8", sha))
 	lsRemote, err = exec.Command("git", "-C", fork, "branch", "--list", "dockhand/jq-1.8").Output()
 	require.NoError(t, err)
 	assert.Empty(t, strings.TrimSpace(string(lsRemote)))
 
-	// Deleting the already-gone ref is git's error, advisory by contract.
-	assert.Error(t, r.PushDelete(ctx, "fork", "dockhand/jq-1.8"))
+	// The lease refuses a delete whose expected object is not there:
+	// deleting an already-gone ref, and deleting one somebody moved, are
+	// both "the copy is not what this caller thinks it is".
+	assert.Error(t, r.PushDeleteExact(ctx, "fork", "dockhand/jq-1.8", sha))
 }
 
 // A tracked upstream is not a push. The three branches here are the
@@ -739,7 +740,9 @@ func TestPushedToReadsTheRemoteTrackingRefNotTheTrackingConfig(t *testing.T) {
 
 	git("branch", "--track", "dockhand/jq", "fork/base")
 	git("branch", "dockhand/jq-1.8", "HEAD")
-	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-1.8"))
+	head, herr := r.RevParse(ctx, "HEAD")
+	require.NoError(t, herr)
+	require.NoError(t, r.PushExact(ctx, "fork", head, "dockhand/jq-1.8", ""))
 	git("branch", "dockhand/jq-1.9", "HEAD")
 	git("push", "--quiet", "fork", "dockhand/jq-1.9")
 
@@ -785,7 +788,7 @@ func TestPushForceReplacesARewrittenBranch(t *testing.T) {
 		return mint(t, r, "dockhand/jq-2.0", sha, oneFile("sysutils/jq/Portfile", "version "+msg+"\n", msg))
 	}
 	first := land("jq: update to 2.0")
-	require.NoError(t, r.Push(ctx, "fork", "dockhand/jq-2.0"))
+	require.NoError(t, r.PushExact(ctx, "fork", first, "dockhand/jq-2.0", ""))
 
 	// Replace: delete and re-mint — different content, unrelated tip.
 	// The deletion is one delete line carrying the value the branch must
@@ -794,8 +797,9 @@ func TestPushForceReplacesARewrittenBranch(t *testing.T) {
 	second := land("jq: update to 2.1")
 	require.NotEqual(t, first, second)
 
-	require.Error(t, r.Push(ctx, "fork", "dockhand/jq-2.0"), "a rewritten branch is not a fast-forward")
-	require.NoError(t, r.PushForce(ctx, "fork", "dockhand/jq-2.0"))
+	require.Error(t, r.PushExact(ctx, "fork", second, "dockhand/jq-2.0", ""),
+		"the lease says the ref must not exist, and it does")
+	require.NoError(t, r.PushExact(ctx, "fork", second, "dockhand/jq-2.0", first))
 	got, err := exec.Command("git", "-C", fork, "rev-parse", "dockhand/jq-2.0").Output()
 	require.NoError(t, err)
 	assert.Equal(t, second, strings.TrimSpace(string(got)))

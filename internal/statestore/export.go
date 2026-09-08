@@ -169,7 +169,7 @@ func runsAt(st State, sha string) map[record.RunKey]record.Run {
 		}
 		// A queued attempt has no Runs of its own: what the note shows for
 		// it is the ask, against every member it will build.
-		for _, member := range a.Members {
+		for _, member := range a.Members() {
 			take(record.RunKey{Port: member, Platform: a.Platform},
 				held{run: record.Run{Ask: a.Ask, State: record.Queued, Content: a.Content}, started: a.Started})
 		}

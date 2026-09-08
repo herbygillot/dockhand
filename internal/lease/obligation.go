@@ -447,6 +447,23 @@ func Discharge(ctx context.Context, st *statestore.Store, prov verify.Verifier, 
 	return stands, nil
 }
 
+// WouldTake is mayTake asked without acting: whether this pass would
+// seize this obligation under this policy.
+//
+// It exists for the dry-run road, which must be able to report what
+// discharge would take WITHOUT reaching a sequencer that takes it. The
+// alternative — a survey re-implementing the seize list — is the second
+// copy of a rule the whole Standing table exists to state once, and it
+// is the copy that would drift.
+//
+// It is the PREDICATE ONLY and deliberately not the backoff: waiting
+// reads the store for a refused release's NotBefore, and a survey that
+// reported an obligation as takeable while the backoff still stood
+// would over-promise by exactly one pass.
+func WouldTake(ob Obligation, pol Seizure, now time.Time) bool {
+	return mayTake(ob, pol, now)
+}
+
 // mayTake is Standing's table and the two narrowings, in one place so
 // the seize list is stated once. An obligation whose kind nobody set is
 // refused here rather than switched on later: Discharge does not guess a
@@ -568,11 +585,33 @@ func seize(ctx context.Context, st *statestore.Store, ob Obligation, by Claimant
 }
 
 // seizeIn is seize's whole transaction body, as a pure function of the
-// state it is handed: no live lease on the slot is the zero lease and
-// false, every run, whatever the run before it found.
+// state it is handed: no lease under this obligation's request token is
+// the zero lease and false, every run, whatever the run before it found.
+//
+// IT ADDRESSES THE REQUEST AND NOT THE SLOT, and that is the correction
+// this function exists in its present form for. It used to ask liveOn
+// for whichever lease was currently live on (Change, Platform) and claim
+// THAT — so an obligation observed before a peer returned lease A and
+// acquired lease B in the same slot seized B on A's evidence. An
+// adversarial probe walked exactly that: an expired observation of one
+// lease released a REPLACEMENT owned by another root, a guest this
+// checkout had no standing over at all.
+//
+// The obligation carries the token (Obligation.Request, written from
+// record.Lease.Request), the store keys the document by it, and the
+// Standing that authorised this seizure was decided over THAT lease's
+// owner and claim. Addressing anything else discards the decision.
+//
+// A lease already returned in the window is not seizable: the
+// obligation is discharged and the claim would be over a document
+// nothing owes. That is a re-check of eligibility inside the
+// transaction, which is the other half of what the slot keying lost.
 func seizeIn(tx *statestore.Txn, ob Obligation, by Claimant, now time.Time) (record.Lease, bool) {
-	cur, ok := liveOn(tx.State(), ob.Change, ob.Platform)
-	if !ok {
+	if ob.Request == "" {
+		return record.Lease{}, false
+	}
+	cur, ok := tx.State().Leases[ob.Request]
+	if !ok || cur.Returned() {
 		return record.Lease{}, false
 	}
 	return claimIn(tx, cur, by, now)
@@ -608,10 +647,33 @@ func resolve(ctx context.Context, st *statestore.Store, prov verify.Verifier, ob
 	}
 	switch obs.State {
 	case verify.Absent:
-		return Confirm(ctx, st, l.Change, l.Platform, Absent,
+		return Confirm(ctx, st, claimOf(l), Absent,
 			"the provider confirms nothing was created for this request", now())
 	case verify.Found:
-		l.ID = record.LeaseID{Provider: obs.Job.Provider, ID: obs.Job.ID, Started: obs.Job.Started}
+		// THE IDENTITY IS PERSISTED BEFORE THE RELEASE IS ATTEMPTED, and
+		// the ordering is the whole of a recovery defect. This used to
+		// assign obs.Job into the LOCAL l and call fulfil; a release that
+		// then failed left the durable lease with an empty provider and
+		// id, moved from Requested to Owed by the claim seize had already
+		// taken. The next pass no longer asked LookupRequest — Owed does
+		// not — put the empty job to the provider, and read the resulting
+		// ErrUnknownJob as confirmed absence. One transport failure turned
+		// a running worker into a returned lease, and Outstanding then
+		// joined that lease against the inventory and hid the guest from
+		// the untracked audit too.
+		//
+		// Rule 3 is "persist identity before any call that can outlive the
+		// process", and a recovered identity is an identity.
+		identified, ok, ierr := identify(ctx, st, l.Request, obs.Job)
+		if ierr != nil {
+			return ierr
+		}
+		if !ok {
+			// The lease moved under us between the seize and this write. The
+			// obligation stands and the next pass re-reads it.
+			return errStands
+		}
+		l = identified
 		out, ferr := fulfil(ctx, st, prov, l, now)
 		if ferr != nil {
 			return ferr
@@ -631,10 +693,39 @@ func resolve(ctx context.Context, st *statestore.Store, prov verify.Verifier, ob
 // written, so the next pass finds an Owed obligation rather than a
 // Requested one and does not ask a silent provider again on every tick.
 func stillOwed(ctx context.Context, st *statestore.Store, l record.Lease, detail string, now func() time.Time) error {
-	if err := Confirm(ctx, st, l.Change, l.Platform, Failed, detail, now()); err != nil {
+	if err := Confirm(ctx, st, claimOf(l), Failed, detail, now()); err != nil {
 		return err
 	}
 	return errStands
+}
+
+// identify writes a provider identity onto a lease that had none, under
+// the claim this pass holds, and hands back the record as it now
+// stands.
+//
+// It is a compare-and-set on the claim token and on the ABSENCE of an
+// identity: a lease that already names a job is not re-identified — the
+// answer we are holding is about a request, and a lease that acquired a
+// handle in the window is being handled by whoever wrote it — and a
+// lease whose claim moved is not ours to write at all.
+func identify(ctx context.Context, st *statestore.Store, request string, job verify.Job) (record.Lease, bool, error) {
+	var out record.Lease
+	var wrote bool
+	err := st.Amend(ctx, func(tx *statestore.Txn) error {
+		out, wrote = record.Lease{}, false
+		cur, ok := tx.State().Leases[request]
+		if !ok || cur.Returned() || cur.ID.ID != "" {
+			return nil
+		}
+		cur.ID = record.LeaseID{Provider: job.Provider, ID: job.ID, Started: job.Started}
+		tx.PutLease(cur)
+		out, wrote = cur, true
+		return nil
+	})
+	if err != nil {
+		return record.Lease{}, false, err
+	}
+	return out, wrote, nil
 }
 
 // reclaim hands back an untracked worker through the provider's own

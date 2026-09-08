@@ -53,6 +53,17 @@ func (s *stager) Stage(_ context.Context, sha string, subjects []record.Subject)
 	return out, pre, nil
 }
 
+func (s *stager) Baseline(_ context.Context, sha string, subjects []record.Subject) ([]string, error) {
+	if sha == "" {
+		return nil, nil
+	}
+	out := make([]string, 0, len(subjects))
+	for _, sub := range subjects {
+		out = append(out, "/baseline/"+sub.Port)
+	}
+	return out, nil
+}
+
 func claimant() lease.Claimant {
 	return lease.Claimant{Owner: owner(), Expires: clock.Add(time.Hour), Pass: "pass-1"}
 }
@@ -361,4 +372,85 @@ func TestFinishWithAnInterruptStopsARunningBuildThroughTheJudge(t *testing.T) {
 	assert.Equal(t, record.InterruptSuperseded, got.Interrupt.Why)
 	assert.Equal(t, []string{"fake-1"}, fake.Released,
 		"under the five-method Verifier there is no Cancel: Release of a running guest is the stop")
+}
+
+// ROSTER DRIFT, WHICH IS WHY THE SPECIFICATION IS FROZEN.
+//
+// Queue one member; add a second to the change; start the old attempt.
+// The drain used to rebuild the roster from the change's CURRENT
+// subjects, so the provider received both members while the attempt's
+// recorded Spec id sat unchanged — a different question under the same
+// identity, and nothing able to notice.
+func TestStartBuildsTheQueuedRosterAndNotTheChangesCurrentOne(t *testing.T) {
+	st := newStore(t)
+	c := changeOf("chg-1", "jq")
+	a := enqueued(t, st, c, specOf("jq"))
+
+	// The change grows a member after the attempt was queued.
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		cur := tx.State().Changes[string(c.ID)]
+		cur.Subjects = append(cur.Subjects, record.Subject{Port: "later", Names: []string{"later"}})
+		tx.PutChange(cur)
+		return nil
+	}))
+
+	fake := &verifytest.Fake{}
+	started, err := Start(t.Context(), st, fake, &stager{}, a, claimant(), clock)
+	require.NoError(t, err)
+
+	require.Len(t, fake.Submitted, 1)
+	assert.Equal(t, []string{"jq"}, fake.Submitted[0].Ports,
+		"the question that was queued, not the one the change has since become")
+	assert.Equal(t, a.Spec, started.Spec, "and the id still names what actually ran")
+	assert.Equal(t, []string{"jq"}, started.Members())
+}
+
+// The identity and the thing it identifies are written together, so a
+// record whose two halves disagree is refused rather than built. It
+// should be unreachable; it exists because the id used to be stored
+// alone and re-derived hours later, which produced exactly this
+// disagreement silently.
+func TestStartRefusesAnAttemptWhoseRosterDoesNotHashToItsSpecID(t *testing.T) {
+	st := newStore(t)
+	c := changeOf("chg-1", "jq")
+	a := enqueued(t, st, c, specOf("jq"))
+
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		cur := tx.State().Attempts[a.ID]
+		cur.Roster.Seats = append(cur.Roster.Seats, record.Seat{Port: "smuggled"})
+		tx.PutAttempt(cur)
+		return nil
+	}))
+	tampered, err := st.Read(t.Context())
+	require.NoError(t, err)
+
+	fake := &verifytest.Fake{}
+	_, err = Start(t.Context(), st, fake, &stager{}, tampered.Attempts[a.ID], claimant(), clock)
+	require.ErrorIs(t, err, ErrSpecMismatch)
+	assert.Empty(t, fake.Submitted, "nothing was built under a question nobody asked")
+}
+
+// The hashed inputs that were not on the record at all. internal/app
+// said so out loud — "FromSource and Requires are inside it and are NOT
+// re-derivable from the record" — and a spec carrying either could
+// therefore never be replayed, nor its id recomputed honestly.
+func TestAFrozenRosterCarriesTheInputsNothingCouldDeriveBefore(t *testing.T) {
+	st := newStore(t)
+	c := changeOf("chg-1", "jq", "oniguruma")
+	spec := specOf("jq", "oniguruma")
+	spec.FromSource = []string{"jq"}
+	spec.Requires = [][]string{nil, {"jq"}}
+	a := enqueued(t, st, c, spec)
+
+	back := Frozen(a)
+	assert.Equal(t, []string{"jq"}, back.FromSource)
+	assert.Equal(t, [][]string{nil, {"jq"}}, back.Requires)
+	assert.Equal(t, a.Spec, back.ID(), "and the thawed question hashes to the recorded id")
+
+	fake := &verifytest.Fake{}
+	_, err := Start(t.Context(), st, fake, &stager{}, a, claimant(), clock)
+	require.NoError(t, err)
+	require.Len(t, fake.Submitted, 1)
+	assert.Equal(t, []string{"jq"}, fake.Submitted[0].FromSource, "and they reach the provider")
+	assert.Equal(t, [][]string{nil, {"jq"}}, fake.Submitted[0].Requires)
 }

@@ -105,10 +105,14 @@ func TestBareForkNamesBothRemotes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"origin": UpstreamURL, "herby": fork}, remotes)
 
-	// The fork takes a push, and the push records the tracking remote
-	// a PR lookup reads.
-	require.NoError(t, repo.Push(ctx, "herby", "dockhand/jq-1.8"))
-	assert.Equal(t, "herby", repo.TrackedRemote(ctx, "dockhand/jq-1.8"))
+	// The fork takes a push, and the remote-tracking ref it writes is
+	// what PushedTo reads back.
+	tip, terr := repo.RevParse(ctx, "dockhand/jq-1.8")
+	require.NoError(t, terr)
+	require.NoError(t, repo.PushExact(ctx, "herby", tip, "dockhand/jq-1.8", ""))
+	to, perr := repo.PushedTo(ctx, "dockhand/jq-1.8")
+	require.NoError(t, perr)
+	assert.Equal(t, "herby", to)
 }
 
 func TestFetchedLeavesOnlyTheRemoteTrackingRef(t *testing.T) {

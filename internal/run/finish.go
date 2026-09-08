@@ -160,7 +160,7 @@ func Finish(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ve
 	j := Judge(ev)
 
 	c := s0.Changes[string(cur.Change)]
-	finding, propose, perr := proposeCohort(ctx, local, s0, c, ev, j)
+	finding, propose, perr := proposeCohort(ctx, local, s0, c, cur, ev, j)
 	if perr != nil {
 		// A proposal that could not be made is not a finding of "no
 		// dependents" (rule 7), and it is not a reason to withhold a
@@ -182,17 +182,24 @@ func Finish(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ve
 		// job and only a Poll answers with a handle — and it matters most
 		// for a guest that is being KEPT, since the handle is what a
 		// person types to go and look inside it.
-		lease.HandleIn(tx, cur.Change, lse.Platform, ev.Status.Handle)
+		lease.HandleIn(tx, lse.Request, ev.Status.Handle)
 		switch j.Disposition {
 		case Keep:
 			// The guest stands, on a deadline rather than until somebody
 			// remembers: lease.Outstanding reads the Retain back as a Due
 			// obligation once it passes.
-			lease.RetainIn(tx, cur.Change, lse.Platform, at.Add(lease.KeepFor))
+			lease.RetainIn(tx, lse.Request, at.Add(lease.KeepFor))
 			claimed, took = record.Lease{}, false
 		case ReleaseAndReport, ReleaseQuietly:
 			claimed, took = lease.RequestIn(tx, cur.Change, lse.Platform, by, at)
 		}
+		// WHAT BECAME OF THE ANALYSIS IS WRITTEN WITH THE VERDICT, in the
+		// same transaction, so a failure has somewhere to be picked up
+		// from. It used to travel back as an advisory after the attempt
+		// was settled — and a later Finish returns immediately for a
+		// settled attempt, so the only retry was a person noticing a line.
+		settled.Analysis = analysisOf(perr, at)
+		tx.PutAttempt(settled)
 		if propose {
 			return change.ProposeIn(tx, cur.Change, finding, at)
 		}
@@ -246,7 +253,7 @@ var ErrNoLease = errors.New("run: the attempt names a lease the store does not h
 // run a second time over the same dependents and ask a person a question
 // they have already answered — accepted by the commit that seated the
 // members, or dismissed by name.
-func proposeCohort(ctx context.Context, local Local, s statestore.State, c record.Change, ev Evidence, j Judgment) (record.Finding, bool, error) {
+func proposeCohort(ctx context.Context, local Local, s statestore.State, c record.Change, a record.Attempt, ev Evidence, j Judgment) (record.Finding, bool, error) {
 	if local == nil || len(ev.Spec.Roster) == 0 {
 		return record.Finding{}, false, nil
 	}
@@ -266,8 +273,11 @@ func proposeCohort(ctx context.Context, local Local, s statestore.State, c recor
 	}
 	m := ev.Manifests[head.Port]
 	delta := abi.Delta(abi.Input{
-		Port:      head.Port,
-		Portdir:   head.Portdir,
+		Port: head.Port,
+		// The change's own tree-relative portdir, which is what a reader
+		// of the finding needs; head.Portdir is the stager's host path and
+		// is empty on every settlement that did not just stage.
+		Portdir:   subjectDir(c, head.Port),
 		Described: m.Candidate != nil || m.Baseline != nil,
 		// The headline's own run says whether the installed side ignored
 		// the archive, because "measured against what was published" and
@@ -279,7 +289,15 @@ func proposeCohort(ctx context.Context, local Local, s statestore.State, c recor
 		Source:     abi.Source(m.Source),
 		Reason:     m.Reason,
 	})
-	quotes, ierr := local.Instructions(ctx, head.Portdir)
+	// THE CUES COME FROM THE COMMIT AND NOT FROM THE WORKING DIRECTORY.
+	// The portdir is the change's own — the subject's tree-relative path,
+	// which the record keeps — and the sha is the attempt's, so what is
+	// read is the Portfile as this change left it. The old call passed
+	// the roster member's Portdir, which is a host path the STAGER fills
+	// in and which is empty on every settlement that did not just stage:
+	// os.ReadFile then read whatever Portfile was under the process's
+	// working directory, and the error was discarded.
+	quotes, ierr := local.Instructions(ctx, a.Sha, subjectDir(c, head.Port))
 	if ierr != nil {
 		// The maintainer's cues are an input and not a gate: a Portfile
 		// that could not be read leaves the measurement to speak alone,
@@ -338,6 +356,133 @@ func carried(c record.Change) map[string]bool {
 	out := map[string]bool{}
 	for _, s := range c.Subjects {
 		out[strings.ToLower(s.Port)] = true
+	}
+	return out
+}
+
+// subjectDir is a member's TREE-RELATIVE portdir, off the change's own
+// subjects. It is the durable answer to "where does this port live",
+// and the one every reader of a settled attempt needs: run.Member's
+// Portdir is a host path the stager fills in at start, so it is empty
+// for the settle, status and cancel roads that replay a frozen roster.
+func subjectDir(c record.Change, port string) string {
+	for _, sub := range c.Subjects {
+		if sub.Port == port {
+			return sub.Portdir
+		}
+	}
+	return ""
+}
+
+// analysisOf is the post-build work's durable state after one try. A
+// success — including the success that concluded there was nothing to
+// propose — is Finished; a refusal is Uncertain with the cause and a
+// backoff, which is the same shape Release and Step carry for the same
+// problem.
+func analysisOf(err error, at time.Time) *record.Analysis {
+	if err == nil {
+		return &record.Analysis{Phase: record.Finished, At: at.UTC()}
+	}
+	until := at.UTC().Add(analysisBackoff(1))
+	return &record.Analysis{Phase: record.Uncertain, At: at.UTC(),
+		Detail: err.Error(), Attempts: 1, NotBefore: &until}
+}
+
+// analysisBackoff is how long a refused analysis waits: five minutes,
+// doubling, capped at an hour. It is lease.retryAfter's schedule and its
+// reasoning — the floor is the resident dispatcher's own cadence, and
+// the ceiling is short enough that a fixed index comes back on its own
+// and long enough that a permanently broken one is not re-walked on
+// every tick.
+func analysisBackoff(attempts int) time.Duration {
+	const base, ceiling = 5 * time.Minute, time.Hour
+	wait := base
+	for i := 1; i < attempts && wait < ceiling; i++ {
+		wait *= 2
+	}
+	return min(wait, ceiling)
+}
+
+// Analyse is the post-build work as a RETRY: the ABI comparison and the
+// cohort proposal, over the evidence a settled attempt already holds.
+//
+// IT READS THE RECORD AND NOT LIVE EVIDENCE, which is what makes it
+// replayable at all. record.Run keeps each member's Manifest, Baseline
+// and BaselineSource, so everything abi.Delta needs survives settlement;
+// what was missing was a state saying the analysis was owed and a caller
+// that acted on it.
+//
+// It writes the finding and the analysis state in ONE transaction, the
+// same pairing Finish makes, so an attempt never reads as analysed with
+// no finding or the reverse.
+func Analyse(ctx context.Context, st *statestore.Store, local Local, a record.Attempt, now func() time.Time) error {
+	s0, err := st.Read(ctx)
+	if err != nil {
+		return err
+	}
+	c, ok := s0.Changes[string(a.Change)]
+	if !ok {
+		return ErrNoChange
+	}
+	ev, j := replay(a)
+	finding, propose, perr := proposeCohort(ctx, local, s0, c, a, ev, j)
+	at := now()
+	return st.Amend(ctx, func(tx *statestore.Txn) error {
+		cur, held := tx.State().Attempts[a.ID]
+		if !held || !cur.AnalysisOwed() {
+			return nil // somebody else finished it
+		}
+		tries := 1
+		if cur.Analysis != nil {
+			tries = cur.Analysis.Attempts + 1
+		}
+		if perr != nil {
+			until := at.UTC().Add(analysisBackoff(tries))
+			cur.Analysis = &record.Analysis{Phase: record.Uncertain, At: at.UTC(),
+				Detail: perr.Error(), Attempts: tries, NotBefore: &until}
+			tx.PutAttempt(cur)
+			return nil
+		}
+		cur.Analysis = &record.Analysis{Phase: record.Finished, At: at.UTC(), Attempts: tries}
+		tx.PutAttempt(cur)
+		if propose {
+			return change.ProposeIn(tx, cur.Change, finding, at)
+		}
+		return nil
+	})
+}
+
+// replay rebuilds the two values proposeCohort reads out of a settled
+// attempt's own record: the manifests it measured, and the verdicts it
+// reached. It is the durable half of Evidence and Judgment, and nothing
+// here asks a provider anything — the build is long over.
+func replay(a record.Attempt) (Evidence, Judgment) {
+	ev := Evidence{Spec: Frozen(a), Manifests: map[string]Manifests{}}
+	j := Judgment{Runs: map[string]record.Run{}}
+	for port, r := range a.Runs {
+		j.Runs[port] = r
+		ev.Manifests[port] = Manifests{
+			Baseline:  r.Baseline,
+			Candidate: r.Manifest,
+			Source:    r.BaselineSource,
+		}
+	}
+	return ev, j
+}
+
+// Owed is every settled attempt whose post-build analysis is still
+// owed and past its backoff, in a stable order.
+func Owed(s statestore.State, now time.Time) []record.Attempt {
+	var out []record.Attempt
+	for _, id := range sortedAttempts(s) {
+		a := s.Attempts[id]
+		if !a.Settled() || !a.AnalysisOwed() {
+			continue
+		}
+		if a.Analysis.NotBefore != nil && now.Before(*a.Analysis.NotBefore) {
+			continue
+		}
+		out = append(out, a)
 	}
 	return out
 }

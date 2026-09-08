@@ -115,7 +115,7 @@ func (s Status) Run(ctx context.Context, r StatusRequest) (StatusResult, error) 
 	// settle: by residency, and only NoDispatcher judges.
 	if s.Residency.State == NoDispatcher && provErr == nil {
 		for _, a := range live(st, s.Me) {
-			final, err := run.Finish(ctx, s.State, s.Ledger, prov, s.Local, a, specOf(st, a), nil, s.Claimant(), s.Now)
+			final, err := run.Finish(ctx, s.State, s.Ledger, prov, s.Local, a, run.Frozen(a), nil, s.Claimant(), s.Now)
 			if err != nil {
 				return res, err
 			}

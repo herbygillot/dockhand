@@ -197,3 +197,130 @@ func ids[T any](m map[string]T) []string {
 	}
 	return out
 }
+
+// THE PROBE THAT MADE A PRESERVED OBLIGATION UNFULFILLABLE.
+//
+// Retention correctly keeps a publication with an outstanding fork
+// deletion, and used to drop the CHANGE that step reads its branch from
+// — four independent sweeps over four local timestamps, each asking only
+// its own age. The pass preserved the obligation and destroyed the
+// information needed to complete it, in the same transaction.
+func TestCompactKeepsTheChangeAPreservedForkDeletionNeeds(t *testing.T) {
+	_, store := newStore(t)
+	ctx := context.Background()
+	old := time.Now().Add(-90 * 24 * time.Hour)
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		tx.PutChange(record.Change{ID: "chg-owed", Branch: "dockhand/jq-1.8",
+			State: record.ChangePublished, Closed: &old})
+		tx.PutPublication(record.Publication{ID: "pub-owed", Change: "chg-owed",
+			By: record.Human, Outcome: record.Merged, Steps: []record.Step{
+				{Kind: record.DeleteFork, Phase: record.Requested, At: old},
+			}})
+		// A closed change nothing still needs goes, so the test proves a
+		// rooted exception rather than a compaction that stopped working.
+		tx.PutChange(record.Change{ID: "chg-done", State: record.ChangePublished, Closed: &old})
+		return nil
+	}))
+
+	_, err := store.Compact(ctx, keep(7))
+	require.NoError(t, err)
+
+	st, err := store.Read(ctx)
+	require.NoError(t, err)
+	require.Contains(t, st.Changes, "chg-owed", "the change the owed step reads its branch from")
+	assert.Equal(t, "dockhand/jq-1.8", st.Changes["chg-owed"].Branch)
+	assert.NotContains(t, st.Changes, "chg-done", "and an unrooted closed change still goes")
+	assert.Contains(t, st.Publications, "pub-owed")
+}
+
+// AN OPEN CHANGE KEEPS ITS EVIDENCE, whatever the tail says. A settled
+// attempt is the only place a verdict lives; publication candidacy is "a
+// passed attempt at this tip" and adoption reuses one across changes, so
+// aging one out under a change that is still standing removes the
+// evidence a live decision rests on.
+func TestCompactKeepsASettledAttemptWhoseChangeIsStillOpen(t *testing.T) {
+	_, store := newStore(t)
+	ctx := context.Background()
+	old := time.Now().Add(-90 * 24 * time.Hour)
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		tx.PutChange(record.Change{ID: "chg-open", State: record.ChangeMinted, Branch: "dockhand/jq-1.8"})
+		tx.PutAttempt(record.Attempt{ID: "att-old", Change: "chg-open", Sha: "cafe",
+			Phase: record.Finished, Runs: map[string]record.Run{"jq": {State: record.Passed, At: old}}})
+
+		tx.PutChange(record.Change{ID: "chg-closed", State: record.ChangePublished, Closed: &old})
+		tx.PutAttempt(record.Attempt{ID: "att-closed", Change: "chg-closed", Sha: "beef",
+			Phase: record.Finished, Runs: map[string]record.Run{"jq": {State: record.Passed, At: old}}})
+		return nil
+	}))
+
+	_, err := store.Compact(ctx, keep(7))
+	require.NoError(t, err)
+
+	st, err := store.Read(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, st.Attempts, "att-old", "the live change's evidence stands")
+	assert.NotContains(t, st.Attempts, "att-closed", "and a closed change's tail still goes")
+}
+
+// An attempt whose change this pass drops goes with it, whatever its own
+// age: a record naming a change nothing can look up answers no question
+// anybody can ask.
+func TestCompactDropsAnAttemptWithTheChangeItNames(t *testing.T) {
+	_, store := newStore(t)
+	ctx := context.Background()
+	old := time.Now().Add(-90 * 24 * time.Hour)
+	recent := time.Now().Add(-time.Minute)
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		tx.PutChange(record.Change{ID: "chg-gone", State: record.ChangePublished, Closed: &old})
+		tx.PutAttempt(record.Attempt{ID: "att-recent", Change: "chg-gone", Sha: "cafe",
+			Phase: record.Finished, Lease: "req-1",
+			Runs: map[string]record.Run{"jq": {State: record.Passed, At: recent}}})
+		done := old
+		tx.PutLease(record.Lease{Request: "req-1", Change: "chg-gone", Phase: record.Finished,
+			Release: &record.Release{Requested: old, Done: &done}})
+		return nil
+	}))
+
+	_, err := store.Compact(ctx, keep(7))
+	require.NoError(t, err)
+
+	st, err := store.Read(ctx)
+	require.NoError(t, err)
+	assert.NotContains(t, st.Changes, "chg-gone")
+	assert.NotContains(t, st.Attempts, "att-recent", "it names a change nothing can look up")
+	assert.NotContains(t, st.Leases, "req-1", "and the lease it named goes with it")
+}
+
+// A returned lease a SURVIVING attempt still names is the only account
+// of which environment that verdict was earned in. A reader following
+// record.Attempt.Lease to nothing cannot tell "handed back long ago"
+// from "never existed".
+func TestCompactKeepsALeaseASurvivingAttemptNames(t *testing.T) {
+	_, store := newStore(t)
+	ctx := context.Background()
+	old := time.Now().Add(-90 * 24 * time.Hour)
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		tx.PutChange(record.Change{ID: "chg-open", State: record.ChangeMinted, Branch: "dockhand/jq-1.8"})
+		tx.PutAttempt(record.Attempt{ID: "att-open", Change: "chg-open", Sha: "cafe",
+			Phase: record.Finished, Lease: "req-named",
+			Runs: map[string]record.Run{"jq": {State: record.Passed, At: old}}})
+		done := old
+		tx.PutLease(record.Lease{Request: "req-named", Change: "chg-open", Phase: record.Finished,
+			Release: &record.Release{Requested: old, Done: &done}})
+		tx.PutLease(record.Lease{Request: "req-orphan", Change: "chg-open", Phase: record.Finished,
+			Release: &record.Release{Requested: old, Done: &done}})
+		return nil
+	}))
+
+	_, err := store.Compact(ctx, keep(7))
+	require.NoError(t, err)
+
+	st, err := store.Read(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, st.Leases, "req-named", "the surviving attempt still points at it")
+	assert.NotContains(t, st.Leases, "req-orphan", "and a returned lease nothing names still goes")
+}

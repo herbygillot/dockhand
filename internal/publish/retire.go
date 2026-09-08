@@ -287,26 +287,42 @@ func DeleteFork(ctx context.Context, e Env, p record.Publication, now func() tim
 	if step.NotBefore != nil && at.Before(*step.NotBefore) {
 		return nil
 	}
-	branch, err := forkBranch(ctx, e, p)
-	if err != nil {
-		return err
-	}
-	remote, err := e.Repo.PushedTo(ctx, branch)
-	if err != nil {
-		return gone(ctx, e, p.ID, record.Uncertain, "reading this checkout's remote-tracking refs: "+err.Error(), step, at)
-	}
-	if remote == "" {
+	// THE TARGET IS THE ROW'S OWN, AND IT IS NOT INFERRED. This used to
+	// read the change for a branch NAME and ask PushedTo which remote
+	// held a copy of it — which answers with the first remote in ref
+	// order, so a branch standing on two remotes had its deletion aimed
+	// by a listing's sort. A probe put the branch on an unrelated remote
+	// and on the fork, and watched the unrelated remote's branch go while
+	// the intended fork copy survived.
+	//
+	// A row with no recorded push is refused rather than guessed at. It
+	// is the shape of a publication whose PushBranch never completed, and
+	// nothing here can tell that from one whose target the record simply
+	// never held — so a person is the one who resolves it, which is what
+	// `status` reports the step for.
+	if !p.Fork.Pushed() {
 		return gone(ctx, e, p.ID, record.Uncertain,
-			"no remote in this checkout holds a copy of "+branch+", so the deletion cannot be attempted or observed here", step, at)
+			"this publication records no fork copy, so there is nothing here to address", step, at)
 	}
-	has, err := e.Repo.RemoteHas(ctx, remote, branch)
+	remote, branch := p.Fork.Remote, p.Fork.Branch
+	tip, err := e.Repo.RemoteTip(ctx, remote, branch)
 	if err != nil {
 		return gone(ctx, e, p.ID, record.Uncertain, "asking "+remote+" about "+branch+": "+err.Error(), step, at)
 	}
-	if !has {
+	if tip == "" {
 		return gone(ctx, e, p.ID, record.Finished, "already gone from "+remote, step, at)
 	}
-	pushErr := e.Repo.PushDelete(ctx, remote, branch)
+	if tip != p.Fork.OID {
+		// SOMEBODY ELSE'S WORK. The copy under this name is no longer the
+		// object this publication put there — reused, or advanced by a
+		// hand — and deleting it would destroy work on the strength of an
+		// old record's say-so. A conflict is reported and the step stays
+		// owed, so `status` names it and a person decides.
+		return gone(ctx, e, p.ID, record.Uncertain,
+			"the copy on "+remote+" is at "+git.Abbrev(tip)+" and this publication pushed "+git.Abbrev(p.Fork.OID)+
+				"; somebody else moved it, so it is not this record's to delete", step, at)
+	}
+	pushErr := e.Repo.PushDeleteExact(ctx, remote, branch, p.Fork.OID)
 	// The remote again, and the push's own error is NOT what decides. A
 	// delete that reported a failure and removed the branch, and one that
 	// reported nothing and removed nothing, are told apart by asking the
@@ -351,31 +367,6 @@ func forkStep(p record.Publication) (record.Step, bool) {
 	return record.Step{}, false
 }
 
-// forkBranch is the name the fork copy is under: the change's own
-// branch, read from the store.
-//
-// It is read rather than carried on the row, and that is the honest
-// consequence of the row being keyed by the change: record.Publication
-// names a ChangeID and no branch, so the name lives where the change
-// lifecycle keeps it. A closed change KEEPS its Branch — the record is
-// never blanked, so that a closed row can still say "was dockhand/foo" —
-// which is what makes this readable at exactly the moment the change is
-// closed and the copy is owed.
-func forkBranch(ctx context.Context, e Env, p record.Publication) (string, error) {
-	st, err := e.State.Read(ctx)
-	if err != nil {
-		return "", err
-	}
-	c, ok := st.Changes[string(p.Change)]
-	if !ok {
-		return "", fmt.Errorf("%w: the publication names a change the store no longer holds", ErrNoChange)
-	}
-	if c.Branch == "" {
-		return "", fmt.Errorf("%w: %s", ErrNoBranch, p.Change)
-	}
-	return c.Branch, nil
-}
-
 // retryAfter is how long a refused fork deletion waits before the next
 // pass tries it again: five minutes, doubling, capped at an hour.
 //
@@ -396,3 +387,61 @@ func retryAfter(attempts int) time.Duration {
 	}
 	return min(wait, ceiling)
 }
+
+// Unfinished is every publication whose journal shows work started and
+// not completed: a PushBranch, OpenPR or RefreshPR step left Requested
+// or Uncertain.
+//
+// IT EXISTS BECAUSE THE JOURNAL HAD NO READER. Apply opens a row before
+// its first external effect and marks a failed one Uncertain, which is
+// exactly the right shape for recovery — and nothing consumed it. The
+// pass's publication stage selects CANDIDATES, and its candidate rule
+// excludes every change already carrying an unsettled row at the same
+// content; the retirement stage asks only whether the pull request is
+// merged, closed or open, and a row whose PR creation never happened
+// reads as Open. So a single failed push or failed `pr create` left a
+// row that was excluded from publication forever and never continued by
+// anything: the content could not be published again from that checkout
+// at all, and the only way out was a person typing `promote`.
+//
+// The DeleteFork step is NOT here. It is retirement's, it is owed after
+// a change is closed rather than during a publication, and ForkOwed is
+// its own population with its own backoff — one function per question.
+func Unfinished(s statestore.State) []record.Publication {
+	var out []record.Publication
+	for _, key := range slices.Sorted(maps.Keys(s.Publications)) {
+		p := s.Publications[key]
+		if p.Outcome.Settled() {
+			// A settled row is retirement's business and not a resumption's:
+			// whatever its steps say, the forge has finished with it.
+			continue
+		}
+		if owedStep(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// owedStep reports a publication step that was started and never
+// finished. Requested is "we said we would and cannot prove we did";
+// Uncertain is "we tried and the answer never came back". Both are work
+// a reconciliation must resolve, and neither is a completion.
+func owedStep(p record.Publication) bool {
+	for _, step := range p.Steps {
+		switch step.Kind {
+		case record.PushBranch, record.OpenPR, record.RefreshPR:
+			if step.Phase == record.Requested || step.Phase == record.Uncertain {
+				return true
+			}
+		case record.RecordOutcome, record.DeleteFork:
+		}
+	}
+	return false
+}
+
+// Owed reports a publication with a step still started-and-unfinished.
+// It is Unfinished's predicate for one row, exported so a caller that
+// has just reconciled can ask whether anything is left rather than
+// re-walking the whole store.
+func Owed(p record.Publication) bool { return !p.Outcome.Settled() && owedStep(p) }

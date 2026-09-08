@@ -242,20 +242,44 @@ func TestAPassLeadsWithCountsAndNamesWhatNeedsAPerson(t *testing.T) {
 			"chg-2": {Did: app.Stood, Verdict: record.Passed},
 		},
 		Refusals: []app.Refusal{{Change: "chg-9", Err: assertErr{"held"}}},
-	}, false)
+	})
 	lines := nonEmpty(strings.Split(b.String(), "\n"))
 	assert.Contains(t, lines[0], "1 settled")
 	assert.Contains(t, lines[0], "1 started")
 	assert.Contains(t, b.String(), "chg-9 needs you: held")
 }
 
-// A DRY RUN IS NOT A READ-ONLY PASS AND THE REPORT MUST NOT CALL IT
-// ONE: it still observes, judges and settles, because settling is how it
-// learns what it would do.
-func TestADryRunRefusesToCallItselfReadOnly(t *testing.T) {
+// A DRY RUN IS A SURVEY AND IS REPORTED AS ONE. It used to be an acting
+// pass with a banner over it — the banner said so, honestly, because the
+// pass really did settle, release and submit. It no longer does, so the
+// report is the survey's own shape and the counts are of what WOULD
+// happen rather than of what did.
+func TestADryRunReportsWhatWouldHappenAndNotWhatDid(t *testing.T) {
 	var b bytes.Buffer
-	Pass(&b, app.Pass{Changes: map[record.ChangeID]app.Result{}}, true)
-	assert.Contains(t, b.String(), "NOT a read-only pass")
+	Pass(&b, app.Pass{
+		Changes: map[record.ChangeID]app.Result{},
+		Would: &app.Would{
+			Settle: []string{"att-1"},
+			Start:  []string{"att-2"},
+			Retire: []record.ChangeID{"chg-1"},
+		},
+	})
+	out := b.String()
+	assert.Contains(t, out, "nothing was performed")
+	assert.Contains(t, out, "1 settle")
+	assert.Contains(t, out, "would poll and judge attempt att-1")
+	assert.Contains(t, out, "would start attempt att-2")
+	assert.Contains(t, out, "would retire chg-1")
+	assert.NotContains(t, out, "0 settled", "an acting pass's counts are not a survey's")
+}
+
+// An acting pass carries no Would, and a reader can tell the two kinds
+// apart from the value alone.
+func TestAnActingPassIsReportedAsOne(t *testing.T) {
+	var b bytes.Buffer
+	Pass(&b, app.Pass{Changes: map[record.ChangeID]app.Result{}})
+	assert.Contains(t, b.String(), "0 settled")
+	assert.NotContains(t, b.String(), "would")
 }
 
 // THE ALLOWANCE IS REPORTED OVER THE PACE'S WINDOW AND NOT THE STORE'S.

@@ -204,7 +204,12 @@ func claimIn(tx *statestore.Txn, l record.Lease, by Claimant, now time.Time) (re
 		l.Release.By = spell(by.Owner)
 	}
 	l.Owner = by.Owner
-	l.Claim = &record.Claim{By: spell(by.Owner), At: now, Expires: by.Expires, Pass: by.Pass}
+	// A FRESH TOKEN ON EVERY CLAIM, including a re-take of our own
+	// standing obligation. That is what makes it a fence: a pass whose
+	// provider reply arrives after a peer re-claimed the same lease
+	// presents a token the record no longer carries, and Confirm writes
+	// nothing rather than completing somebody else's claim.
+	l.Claim = &record.Claim{By: spell(by.Owner), At: now, Expires: by.Expires, Pass: by.Pass, Token: mintClaim()}
 	tx.PutLease(l)
 	return l, true
 }
@@ -240,11 +245,40 @@ const (
 // both write Done; Failed leaves the obligation standing and records
 // the attempt, so the next reconciliation sees work owed rather than a
 // lease that claims to have been returned.
-func Confirm(ctx context.Context, st *statestore.Store, change record.ChangeID, platform string, out Outcome, detail string, now time.Time) error {
+func Confirm(ctx context.Context, st *statestore.Store, c Claimed, out Outcome, detail string, now time.Time) error {
 	return st.Amend(ctx, func(tx *statestore.Txn) error {
-		ConfirmIn(tx, change, platform, out, detail, now)
+		ConfirmIn(tx, c, out, detail, now)
 		return nil
 	})
+}
+
+// Claimed is a claim this caller holds: WHICH lease, and WHICH claim on
+// it. Every completion presents one, and the only way to obtain one is
+// claimOf over a record.Lease that a claim road handed back.
+//
+// It is a type rather than two string parameters because the two are a
+// pair and Go will silently accept them transposed. That is not a
+// hypothetical: the first cut of this fence took (request, token) as
+// bare strings, and the existing tests — written against the older
+// slot-addressed spelling, (change, platform) — kept COMPILING and
+// silently confirmed nothing. A value that can only be built from a
+// lease cannot be assembled out of whatever strings are in scope.
+type Claimed struct {
+	Request string
+	Token   string
+}
+
+// claimOf is the only constructor: the lease's own key and the token of
+// the claim currently on it. A lease with no claim yields a zero Token,
+// which ConfirmIn refuses — Confirm is the second half of a claim, and a
+// caller holding an unclaimed lease is performing an obligation nobody
+// took.
+func claimOf(l record.Lease) Claimed {
+	c := Claimed{Request: l.Request}
+	if l.Claim != nil {
+		c.Token = l.Claim.Token
+	}
+	return c
 }
 
 // ConfirmIn is Confirm as a transaction step, for the same reason
@@ -258,14 +292,24 @@ func Confirm(ctx context.Context, st *statestore.Store, change record.ChangeID, 
 // claimed is not this call's to finish: Confirm is the second half of a
 // claim, and writing Done over an unclaimed lease would retire an
 // environment nobody had taken responsibility for.
-func ConfirmIn(tx *statestore.Txn, change record.ChangeID, platform string, out Outcome, detail string, now time.Time) {
-	l, ok := liveOn(tx.State(), change, platform)
-	if !ok || l.Release == nil {
-		return
+func ConfirmIn(tx *statestore.Txn, c Claimed, out Outcome, detail string, now time.Time) bool {
+	l, ok := tx.State().Leases[c.Request]
+	if !ok || l.Returned() || l.Release == nil {
+		return false
+	}
+	if l.Claim == nil || c.Token == "" || l.Claim.Token != c.Token {
+		// THE FENCE. The claim this completion belongs to is not the claim
+		// the record carries: a peer seized the lease in the window
+		// between our claim and the provider's reply, and completing it
+		// here would write Done over a claim we do not hold — retiring an
+		// environment on the strength of somebody else's responsibility.
+		// Nothing is written and the caller is told, so a pass reports the
+		// obligation as standing rather than as discharged.
+		return false
 	}
 	switch out {
 	case Unconfirmed:
-		return
+		return false
 	case Released, Absent:
 		done := now
 		l.Release.Done = &done
@@ -283,6 +327,7 @@ func ConfirmIn(tx *statestore.Txn, change record.ChangeID, platform string, out 
 		l.Release.NotBefore = &until
 	}
 	tx.PutLease(l)
+	return true
 }
 
 // retryAfter is how long a refused release waits before the next pass
@@ -380,8 +425,26 @@ func Fulfil(ctx context.Context, st *statestore.Store, prov verify.Verifier, l r
 // obligation that still stands, and dropping it from the report would
 // have the pass claim it had discharged an environment it had not.
 func fulfil(ctx context.Context, st *statestore.Store, prov verify.Verifier, l record.Lease, now func() time.Time) (Outcome, error) {
+	// AN EMPTY JOB CANNOT PRODUCE EVIDENCE OF ABSENCE, and this refusal
+	// is the whole of a defect that turned a transport failure into a
+	// false handback. A Requested lease whose lookup found a real job,
+	// released, and failed used to leave the record with its provider and
+	// id still EMPTY; the next pass saw an ordinary Owed obligation, put
+	// the empty job to the provider, and tart answered ErrUnknownJob —
+	// "that is not a tart job" — which classify reads as CONFIRMED
+	// ABSENCE. The lease was marked returned while the worker was still
+	// running, and Outstanding then joined it away from the untracked
+	// audit that would have found the guest.
+	//
+	// So a lease with no identity is Failed and stays owed. The provider
+	// was not asked, because there is nothing to ask it about; the
+	// recovery is a request lookup, which is the Requested road.
+	if l.ID.ID == "" {
+		const detail = "this lease names no job yet, so a release cannot be attempted or confirmed"
+		return Failed, Confirm(ctx, st, claimOf(l), Failed, detail, now())
+	}
 	out, detail := classify(prov.Release(ctx, jobOf(l)))
-	return out, Confirm(ctx, st, l.Change, l.Platform, out, detail, now())
+	return out, Confirm(ctx, st, claimOf(l), out, detail, now())
 }
 
 // Closes reports an outcome that ends an obligation: the provider let
@@ -441,9 +504,9 @@ const KeepFor = 24 * time.Hour
 // Held is the precondition and it is checked: a lease with a release
 // already claimed is on its way back, and a Retain on it would be a
 // deadline for keeping something nobody is keeping.
-func RetainIn(tx *statestore.Txn, change record.ChangeID, platform string, until time.Time) {
-	l, ok := liveOn(tx.State(), change, platform)
-	if !ok || !l.Held() {
+func RetainIn(tx *statestore.Txn, request string, until time.Time) {
+	l, ok := tx.State().Leases[request]
+	if !ok || l.Returned() || !l.Held() {
 		return
 	}
 	l.Retain = &until
@@ -593,10 +656,15 @@ func retire(ctx context.Context, st *statestore.Store, change record.ChangeID, p
 		if !ok {
 			return nil
 		}
-		if _, took := claimIn(tx, l, by, now); !took {
+		claimed, took := claimIn(tx, l, by, now)
+		if !took {
 			return nil
 		}
-		ConfirmIn(tx, change, platform, Absent, detail, now)
+		// The claim this transaction just took, by its own token: the two
+		// writes are one transaction, so the fence can never be stale here
+		// — but presenting it keeps ConfirmIn's contract single, with no
+		// caller exempt from the rule that a completion names its claim.
+		ConfirmIn(tx, claimOf(claimed), Absent, detail, now)
 		return nil
 	})
 }
@@ -641,9 +709,9 @@ func ActiveIn(tx *statestore.Txn, l record.Lease) bool {
 // having Acquire assume the job id is the environment's name — is one
 // backend's fact written into the kernel, which is the defect the debug
 // verbs reaching into tart were about.
-func HandleIn(tx *statestore.Txn, change record.ChangeID, platform, handle string) {
-	l, ok := liveOn(tx.State(), change, platform)
-	if !ok || handle == "" || l.Handle == handle {
+func HandleIn(tx *statestore.Txn, request, handle string) {
+	l, ok := tx.State().Leases[request]
+	if !ok || l.Returned() || handle == "" || l.Handle == handle {
 		return
 	}
 	l.Handle = handle
@@ -714,6 +782,18 @@ func sameOwner(a, b record.OwnerID) bool {
 // without a reader having to assemble one.
 func spell(o record.OwnerID) string {
 	return o.Host + "/" + strconv.Itoa(o.PID)
+}
+
+// mintClaim makes a claim token: the fence a completion presents, fresh
+// on every claim. Random and not derived from the claimant or the
+// instant, because two re-claims by one owner in one second must not
+// produce one token — that is exactly the ABA the fence exists to
+// catch. Eight bytes: it is compared, never joined on, and it only has
+// to be unrepeatable rather than globally unique.
+func mintClaim() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // mint makes a request token: the name the lease document is stored

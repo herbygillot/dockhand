@@ -89,6 +89,12 @@ func newRoot(version string) (*cobra.Command, *Services) {
 		Verifier: realVerifier(tools),
 		Lister:   realLister(tools),
 		Now:      time.Now,
+		// THE PROCESS'S BIRTH, read once, here, as close to the actual
+		// start as this package gets. lease.sameProcess compares it
+		// against the kernel's fork time with a one-minute window sized on
+		// Go's own startup, so it must be read at startup and never
+		// recomputed — see Services.Me for what restamping it cost.
+		born: time.Now().UTC(),
 		// The agent marker is process state, so it is read here and
 		// nowhere below: a service that read its own environment would be
 		// deciding provenance rather than being told it.

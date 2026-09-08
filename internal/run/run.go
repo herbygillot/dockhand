@@ -245,7 +245,17 @@ type Manifests struct {
 // finding of "no dependents".
 type Local interface {
 	Dependents(ctx context.Context, port string) ([]portindex.Dependent, []portindex.Unread, error)
-	Instructions(ctx context.Context, portdir string) ([]dependents.Instruction, error)
+	// Instructions reads the maintainer's cues out of a Portfile AT A
+	// COMMIT, and the commit is the point.
+	//
+	// It used to take a host path, and the path it was given on every
+	// settlement that goes through the frozen roster is EMPTY — run.Roster
+	// seats members with a port and names and no portdir — so
+	// os.ReadFile(portdir + "/Portfile") read whatever Portfile happened
+	// to be under the process's working directory, and the error was
+	// discarded. A cue is a fact about the port as this change left it,
+	// which only the commit can answer.
+	Instructions(ctx context.Context, sha, portdir string) ([]dependents.Instruction, error)
 }
 
 // Stager materializes the portdirs an attempt will build from the commit
@@ -265,6 +275,23 @@ type Local interface {
 // queue.
 type Stager interface {
 	Stage(ctx context.Context, sha string, subjects []record.Subject) (roster []Member, pre map[string]Preflight, err error)
+	// Baseline materializes the SAME subjects as they stood at another
+	// commit — the merge base — so a provider that can measure what a
+	// change is leaving has a before to compare against.
+	//
+	// IT IS A SECOND METHOD AND NOT A SECOND RETURN VALUE OF Stage,
+	// because the two are asked at different moments and one of them can
+	// honestly decline. A change with no recorded base has no before, and
+	// a provider that cannot take one says so by name; both are an empty
+	// slice here rather than a failure, which is what lets the ordinary
+	// road stay unchanged while the measured one gets its input.
+	//
+	// The seam had NO ROOM FOR THIS AT ALL, which is why
+	// verify.Request.Baseline — a documented field the provider honours —
+	// was set by nothing in the tree, and every ABI comparison downstream
+	// ran with no before and no after. Adding a call site was not the
+	// missing piece; the shape was.
+	Baseline(ctx context.Context, sha string, subjects []record.Subject) (portdirs []string, err error)
 }
 
 // Disposition is what should become of the environment. It is a

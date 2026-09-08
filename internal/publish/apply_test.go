@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -38,7 +39,20 @@ func published(t *testing.T) (*git.Repo, *statestore.Store, string) {
 	require.NoError(t, err)
 	sha := gittest.Commit(t, repo, "dockhand/jq-1.8", head,
 		"sysutils/jq/Portfile", "version 1.8\n", "jq: update to 1.8")
-	return repo, statestore.Open(repo), sha
+	st := statestore.Open(repo)
+	// THE CHANGE RECORD IS PLANTED, because in production one always
+	// stands: a permit exists only because Gather read the change it is
+	// over, and Apply re-reads it at the effect boundary to notice a
+	// hold, a closure or a supersession that landed in the window. A
+	// fixture with no record was a fixture no production road produces.
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		tx.PutChange(record.Change{
+			ID: "chg-1", State: record.ChangeMinted, Branch: "dockhand/jq-1.8",
+			Tip: sha, Content: "tree-1", Destination: record.ToPublished,
+		})
+		return nil
+	}))
+	return repo, st, sha
 }
 
 // EACH STEP IS RECORDED BEFORE IT IS ATTEMPTED AND ITS OUTCOME AFTER, so
@@ -182,8 +196,12 @@ func TestApplyRefusesWhenTheBranchMovedUnderThePermit(t *testing.T) {
 	has, err := repo.RemoteHas(t.Context(), "fork", "dockhand/jq-1.8")
 	require.NoError(t, err)
 	assert.False(t, has)
-	_, rerr := st.Read(t.Context())
-	assert.ErrorIs(t, rerr, statestore.ErrNoState)
+	// Nothing was RECORDED either, asserted over the rows rather than
+	// over the absence of a state ref: the fixture now plants a change,
+	// which is the shape production always has.
+	after, rerr := st.Read(t.Context())
+	require.NoError(t, rerr)
+	assert.Empty(t, after.Publications, "no row was opened for a permit that never acted")
 }
 
 // A PULL REQUEST THAT APPEARED IN THE WINDOW IS STALE TOO. The permit's
@@ -327,4 +345,142 @@ func TestAPersonRefreshingAMachinesRowTakesNothingOffItsBooks(t *testing.T) {
 	s := readState(t, st)
 	assert.Equal(t, record.Machine, s.Publications["pub-01"].By, "the machine's opening stays the machine's")
 	assert.Equal(t, 1, Spent(s, clock).Within(MaxWindow, clock))
+}
+
+// THE PUBLICATION RACE. A commit arriving between the permit's tip check
+// and the push used to be what git sent: the push named a BRANCH, so
+// whatever the branch held when git ran left the machine, under a permit
+// whose evidence, body and row all described the earlier commit. A probe
+// moved the branch from inside the forge callback and watched the later
+// commit land on the fork.
+func TestApplyPushesTheAuthorizedObjectAndNotWhateverTheBranchHolds(t *testing.T) {
+	repo, st, sha := published(t)
+	var later string
+	var log []string
+	forge := scriptedForge(&log, func(args []string) (string, error) {
+		if args[0] == "api" && later == "" {
+			// The branch moves while the forge is being asked, which is the
+			// window the tip check cannot cover.
+			later = gittest.Commit(t, repo, "dockhand/jq-1.9", sha,
+				"sysutils/jq/Portfile", "version 1.9\n", "later, unauthorised commit")
+			gittest.MoveBranch(t, repo, "dockhand/jq-1.8", later)
+		}
+		return "[]", nil
+	})
+	env := Env{Repo: repo, State: st, Forge: forge}
+
+	f := facts(func(f *Facts) {
+		f.Tip, f.Change.Tip, f.Own = sha, sha, []string{sha}
+		f.Attempts[0].Sha = sha
+		f.Asks = Asks{NoPR: true}
+	})
+	p, _, err := Authorize(f, Pace{})
+	require.NoError(t, err)
+
+	_, err = Apply(t.Context(), env, p)
+	require.NoError(t, err)
+	require.NotEmpty(t, later, "the fixture did not move the branch")
+
+	tip, err := repo.RemoteTip(t.Context(), "fork", "dockhand/jq-1.8")
+	require.NoError(t, err)
+	assert.Equal(t, sha, tip, "the authorized object")
+	assert.NotEqual(t, later, tip, "and never the one that arrived in the window")
+}
+
+// The push records its EXACT TARGET, which is what lets a later deletion
+// address the copy this publication made rather than infer one from
+// local refs.
+func TestApplyRecordsTheForkItPushedTo(t *testing.T) {
+	repo, st, sha := published(t)
+	var log []string
+	env := Env{Repo: repo, State: st, Forge: scriptedForge(&log, func([]string) (string, error) {
+		return "[]", nil
+	})}
+	f := facts(func(f *Facts) {
+		f.Tip, f.Change.Tip, f.Own = sha, sha, []string{sha}
+		f.Attempts[0].Sha = sha
+		f.Asks = Asks{NoPR: true}
+	})
+	p, _, err := Authorize(f, Pace{})
+	require.NoError(t, err)
+	_, err = Apply(t.Context(), env, p)
+	require.NoError(t, err)
+
+	after, err := st.Read(t.Context())
+	require.NoError(t, err)
+	require.Len(t, after.Publications, 1)
+	for _, row := range after.Publications {
+		assert.True(t, row.Fork.Pushed())
+		assert.Equal(t, "fork", row.Fork.Remote)
+		assert.Equal(t, "dockhand/jq-1.8", row.Fork.Branch)
+		assert.Equal(t, sha, row.Fork.OID, "the object, so a deletion can assert it")
+	}
+}
+
+// A HOLD APPLIED IN THE WINDOW STOPS THE PUBLICATION. Revalidation
+// asked git about the tip and the forge about the pull request, and
+// never asked the STORE about the change — so a person's `hold`, landing
+// between Gather and the push, left the permit valid. Serializing passes
+// does not help: `hold` takes no pass lock.
+func TestApplyRefusesWhenAHoldLandedInTheWindow(t *testing.T) {
+	repo, st, sha := published(t)
+	var log []string
+	forge := scriptedForge(&log, func(args []string) (string, error) {
+		if args[0] == "api" {
+			require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+				return change.HoldIn(tx, "chg-1", "stop publication",
+					record.OwnerID{Root: "/w/ports"}, clock)
+			}))
+		}
+		return "[]", nil
+	})
+	env := Env{Repo: repo, State: st, Forge: forge}
+
+	f := facts(func(f *Facts) {
+		f.Tip, f.Change.Tip, f.Own = sha, sha, []string{sha}
+		f.Attempts[0].Sha = sha
+	})
+	p, _, err := Authorize(f, Pace{})
+	require.NoError(t, err)
+
+	_, err = Apply(t.Context(), env, p)
+	require.ErrorIs(t, err, ErrStale)
+
+	tip, terr := repo.RemoteTip(t.Context(), "fork", "dockhand/jq-1.8")
+	require.NoError(t, terr)
+	assert.Empty(t, tip, "nothing was pushed")
+}
+
+// The same boundary over the other two ways a change stops being
+// publishable while a permit is in flight.
+func TestApplyRefusesAChangeClosedOrSupersededInTheWindow(t *testing.T) {
+	for name, mutate := range map[string]func(*record.Change){
+		"closed":     func(c *record.Change) { c.State = record.ChangePublished },
+		"superseded": func(c *record.Change) { c.SupersededBy = "chg-2" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo, st, sha := published(t)
+			var log []string
+			forge := scriptedForge(&log, func(args []string) (string, error) {
+				if args[0] == "api" {
+					require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+						c := tx.State().Changes["chg-1"]
+						mutate(&c)
+						tx.PutChange(c)
+						return nil
+					}))
+				}
+				return "[]", nil
+			})
+			f := facts(func(f *Facts) {
+				f.Tip, f.Change.Tip, f.Own = sha, sha, []string{sha}
+				f.Attempts[0].Sha = sha
+			})
+			p, _, err := Authorize(f, Pace{})
+			require.NoError(t, err)
+
+			_, err = Apply(t.Context(), Env{Repo: repo, State: st, Forge: forge}, p)
+			require.ErrorIs(t, err, ErrStale)
+		})
+	}
 }

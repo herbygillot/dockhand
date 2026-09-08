@@ -87,7 +87,7 @@ func verifyCmd(s *Services) *cobra.Command {
 				Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session, release: releases[0]},
 				Local:     s.ProposeTree(),
 				Verifier:  s.VerifyProvider(),
-				Me:        s.Me(s.Now()),
+				Me:        s.Me(),
 				Residency: residencyFunc(repo),
 				Now:       s.Now,
 				Progress:  sink{w: s.Err},
@@ -198,7 +198,7 @@ func statusCmd(s *Services) *cobra.Command {
 			op := app.Status{
 				Repo: repo, Ledger: led, State: st, Env: s.PublishEnv(),
 				Local: s.ProposeTree(), Verifier: s.VerifyProvider(),
-				Me: s.Me(s.Now()), Residency: residency, Now: s.Now,
+				Me: s.Me(), Residency: residency, Now: s.Now,
 			}
 			res, runErr := op.Run(ctx, app.StatusRequest{NoUpdate: noUpdate, Forge: forgePolicy(noUpdate, refresh)})
 			if asJSON {
@@ -567,9 +567,17 @@ func cancelCmd(s *Services) *cobra.Command {
 			}
 			op := app.Cancel{
 				Repo: repo, Ledger: led, State: st, Verifier: s.VerifyProvider(),
-				Local: s.ProposeTree(), Me: s.Me(s.Now()), Now: s.Now, Progress: sink{w: s.Err},
+				Local: s.ProposeTree(), Me: s.Me(), Now: s.Now, Progress: sink{w: s.Err},
 			}
 			res, err := op.Run(ctx, args[0])
+			// The three are reported separately because they cost
+			// different things: withdrawing an intent throws away nothing,
+			// stopping a build throws away work in progress, and releasing
+			// an environment destroys a guest somebody may have been
+			// keeping on purpose.
+			for _, id := range res.Withdrawn {
+				fmt.Fprintf(s.Out, "withdrew queued attempt %s\n", id)
+			}
 			for _, id := range res.Stopped {
 				fmt.Fprintf(s.Out, "stopped attempt %s\n", id)
 			}
@@ -664,7 +672,7 @@ func holdCmd(s *Services) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := (app.Hold{State: st, Now: s.Now}).Run(ctx, id, message, s.Me(s.Now())); err != nil {
+			if err := (app.Hold{State: st, Now: s.Now}).Run(ctx, id, message, s.Me()); err != nil {
 				return err
 			}
 			fmt.Fprintf(s.Out, "held %s\n", args[0])
@@ -756,7 +764,7 @@ func discardCmd(s *Services) *cobra.Command {
 			}
 			op := app.Discard{
 				Repo: repo, State: st, Ledger: led, Verifier: s.VerifyProvider(),
-				Local: s.ProposeTree(), Me: s.Me(s.Now()), Now: s.Now,
+				Local: s.ProposeTree(), Me: s.Me(), Now: s.Now,
 				Progress: sink{w: s.Err},
 				// Invoker is a CONSTANT of this road: a typed verb is a person,
 				// and there is nothing to detect.
@@ -923,7 +931,7 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session, release: f.release},
 		Local:     s.ProposeTree(),
 		Verifier:  s.VerifyProvider(),
-		Me:        s.Me(s.Now()),
+		Me:        s.Me(),
 		Residency: residencyFunc(repo),
 		Now:       s.Now,
 		Progress:  sink{w: s.Err},
@@ -1340,7 +1348,7 @@ func pathBase(p string) string {
 // attribution says whose each guest is (estate.Divide against Me.Root).
 //
 // Me IS PASSED FOR THAT SECOND RULE and for nothing else. It is
-// s.Me(s.Now()) like every other operation's, and only its Root is
+// s.Me() like every other operation's, and only its Root is
 // read: a guest outlives the process that made it, so the durable
 // question asked of one is which CHECKOUT, never which PID.
 //
@@ -1378,7 +1386,7 @@ func purgeCmd(s *Services) *cobra.Command {
 				Repo: repo, State: st, Ledger: led,
 				Progress: sink{w: s.Err},
 				Verifier: s.VerifyProvider(),
-				Me:       s.Me(s.Now()),
+				Me:       s.Me(),
 				DryRun:   dry, Force: force,
 			}
 			res, err := op.Run(ctx)

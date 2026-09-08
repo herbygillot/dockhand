@@ -174,13 +174,26 @@ func Fetched(t *testing.T, repo *git.Repo, remote, branch, sha string) {
 // as the login. Returns the fork's path.
 func BareFork(t *testing.T, repo *git.Repo, login, remote string) string {
 	t.Helper()
+	run(t, repo.Root, "remote", "add", "origin", UpstreamURL)
+	return BareRemote(t, repo, login, remote)
+}
+
+// BareRemote is BareFork without the upstream: one more bare repository
+// added under its own name.
+//
+// It is split out because BareFork adds `origin` and a second call
+// therefore fails, which made "this checkout has two remotes holding one
+// branch" — the shape that aimed a fork deletion at the wrong one —
+// unfixturable. A test that wants a second copy asks for a remote, not
+// for another upstream.
+func BareRemote(t *testing.T, repo *git.Repo, login, remote string) string {
+	t.Helper()
 	owner := filepath.Join(t.TempDir(), login)
 	require.NoError(t, os.MkdirAll(owner, 0o755))
-	fork := filepath.Join(owner, "ports")
-	run(t, owner, "init", "--bare", "--quiet", fork)
-	run(t, repo.Root, "remote", "add", "origin", UpstreamURL)
-	run(t, repo.Root, "remote", "add", remote, fork)
-	return fork
+	bare := filepath.Join(owner, "ports")
+	run(t, owner, "init", "--bare", "--quiet", bare)
+	run(t, repo.Root, "remote", "add", remote, bare)
+	return bare
 }
 
 // Note writes body verbatim as the commit's note under the verify ref,

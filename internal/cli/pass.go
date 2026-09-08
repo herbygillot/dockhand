@@ -164,7 +164,7 @@ func cycleCmd(s *Services) *cobra.Command {
 			// does not wait — the pending band's own answer, since nothing
 			// was refused and the work is being done by somebody else this
 			// second.
-			me := s.Me(s.Now())
+			me := s.Me()
 			held, holder, err := takePassLock(ctx, repo, me, "cycle")
 			if err != nil {
 				return err
@@ -375,8 +375,7 @@ func paceOf(c *cobra.Command, noPublish bool, max int, window time.Duration) (pu
 // stampedes or silently coalesces. Slices wake, notice the wall clock
 // has moved, and run ONE pass.
 func dispatchLoop(ctx context.Context, s *Services, repo *git.Repo, req app.CycleRequest, pace publish.Pace, l loop) error {
-	start := s.Now()
-	me := s.Me(start)
+	me := s.Me()
 	path, err := lockPath(ctx, repo, dispatchLock)
 	if err != nil {
 		return err
@@ -475,16 +474,22 @@ func dispatchLoop(ctx context.Context, s *Services, repo *git.Repo, req app.Cycl
 // why the residency lock exists beside it. A tick that cannot take it
 // says so and is not an error: another pass is doing the work.
 func onePass(ctx context.Context, s *Services, repo *git.Repo, req app.CycleRequest, pace publish.Pace, said map[record.ChangeID]string) (int, error) {
-	// OwnerID.Since IS RESTAMPED PER PASS, and this line is the whole of
-	// it. record/lease.go documents Since as the process's start time,
-	// which under a one-shot verb is also the pass's start; in a resident
-	// dispatcher it would never advance, so lease.Outstanding could not
-	// tell this pass's live work from last week's residue owned by the
-	// same live PID, and the reconcile stage would be inert or
-	// destructive. The PROCESS start is kept separately, for the
-	// residency stamp, which answers a different question — "since when
-	// has a scheduler been here".
-	me := s.Me(s.Now())
+	// ONE IDENTITY FOR THE WHOLE PROCESS, and this line no longer moves
+	// it. A draft restamped OwnerID.Since here on every pass, reasoning
+	// that a resident dispatcher otherwise could not tell this pass's
+	// work from last week's residue under the same PID. The reasoning was
+	// right about the problem and wrong about the field: Since is half of
+	// the (PID, start-time) pair that decides whether a process is the
+	// SAME PROCESS, and lease.sameProcess admits a gap of one minute, so
+	// a dispatcher restamping per pass read as DEAD to every peer from
+	// its second minute of life — seizable, with LiveElsewhere and
+	// EarlierPass both unreachable. record.Claim.Pass already says this
+	// in the durable vocabulary.
+	//
+	// The pass distinction is the PASS TOKEN's, which this function
+	// already has from the pass lock and already stamps through
+	// Claimant.Pass. Two questions, two fields.
+	me := s.Me()
 	held, holder, err := takePassLock(ctx, repo, me, "dispatch")
 	if err != nil {
 		return exitcode.OK, err
@@ -555,7 +560,7 @@ func announce(w io.Writer, p app.Pass, dry bool, said map[record.ChangeID]string
 	if !acted(p) && len(fresh) == 0 {
 		return
 	}
-	report.Pass(w, p, dry)
+	report.Pass(w, p)
 }
 
 // acted reports that this tick changed something durable — the four
@@ -599,7 +604,7 @@ func finish(w io.Writer, p app.Pass, dry bool, err error) error {
 	if err != nil {
 		return err
 	}
-	report.Pass(w, p, dry)
+	report.Pass(w, p)
 	return exitWith(p.Exit())
 }
 

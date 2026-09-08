@@ -130,33 +130,98 @@ func (s *Store) Compact(ctx context.Context, keep Retention) (int, error) {
 		// state this run was handed rather than added to across runs.
 		dropped = 0
 		st := tx.State()
-		for _, id := range slices.Sorted(maps.Keys(st.Changes)) {
-			c := st.Changes[id]
-			if c.State.Closed() && keep.past(now, c.Closed) {
-				tx.Drop(changePrefix + id + docSuffix)
-				dropped++
+
+		// THE ORDER IS THE DEPENDENCY ORDER, and that is the whole of what
+		// this function was missing. It used to be four independent sweeps
+		// over four local timestamps: each kind asked only its own age, so
+		// a record could be dropped while something the pass KEPT still
+		// needed it. A probe built an old closed change with an outstanding
+		// fork deletion and compacted; the retention rule correctly kept
+		// the publication and dropped the change — and publish.DeleteFork
+		// then failed, because it reads the branch off the change. The
+		// preserved obligation had been made unfulfillable by the same
+		// pass that preserved it.
+		//
+		// So each kind is decided against what survives above it:
+		// publications root changes, changes root attempts, attempts root
+		// leases. Four passes, one direction, and nothing is dropped that
+		// something still standing can still ask for.
+
+		// 1 · PUBLICATIONS decide for themselves (mayDrop already refuses
+		// to drop an unsettled row, an owed fork deletion, or a machine
+		// row inside the allowance window).
+		drop := map[string]bool{}
+		for _, id := range slices.Sorted(maps.Keys(st.Publications)) {
+			if keep.mayDrop(now, st.Publications[id]) {
+				drop[publicationPrefix+id+docSuffix] = true
 			}
 		}
+
+		// 2 · CHANGES, rooted by every publication that survives. A row
+		// this pass is keeping names a change, and every question left to
+		// ask of that row — which branch the fork copy is under, what was
+		// published and at what content — is answered from the change.
+		rooted := map[record.ChangeID]bool{}
+		for _, id := range slices.Sorted(maps.Keys(st.Publications)) {
+			if !drop[publicationPrefix+id+docSuffix] {
+				rooted[st.Publications[id].Change] = true
+			}
+		}
+		for _, id := range slices.Sorted(maps.Keys(st.Changes)) {
+			c := st.Changes[id]
+			if c.State.Closed() && keep.past(now, c.Closed) && !rooted[c.ID] {
+				drop[changePrefix+id+docSuffix] = true
+			}
+		}
+
+		// 3 · ATTEMPTS. A settled attempt is dropped when it is old enough
+		// AND its change is over; an attempt whose change this pass is
+		// dropping goes with it, whatever its own age, because it names a
+		// change nothing can look up.
+		//
+		// AN OPEN CHANGE KEEPS ITS EVIDENCE, whatever the tail says. A
+		// settled attempt is the only place a verdict lives, publication
+		// candidacy is "a passed attempt at this tip", and adoption reuses
+		// one across changes — so aging out an attempt under a change that
+		// is still standing removes the evidence a live decision rests on.
+		// The old rule asked only the attempt's own timestamp and did
+		// exactly that.
 		for _, id := range slices.Sorted(maps.Keys(st.Attempts)) {
 			a := st.Attempts[id]
-			if a.Settled() && keep.past(now, settledAt(a)) {
-				tx.Drop(attemptPrefix + id + docSuffix)
-				dropped++
+			c, known := st.Changes[string(a.Change)]
+			switch {
+			case drop[changePrefix+string(a.Change)+docSuffix]:
+				drop[attemptPrefix+id+docSuffix] = true
+			case !a.Settled() || !keep.past(now, settledAt(a)):
+			case known && !c.State.Closed():
+				// live change, authoritative evidence: kept
+			default:
+				drop[attemptPrefix+id+docSuffix] = true
+			}
+		}
+
+		// 4 · LEASES, rooted by the attempts that survive. A returned
+		// lease is history; a returned lease a surviving attempt still
+		// NAMES is the only account of which environment that verdict was
+		// earned in, and a reader following record.Attempt.Lease to
+		// nothing cannot tell "handed back long ago" from "never existed".
+		named := map[string]bool{}
+		for _, id := range slices.Sorted(maps.Keys(st.Attempts)) {
+			a := st.Attempts[id]
+			if a.Lease != "" && !drop[attemptPrefix+id+docSuffix] {
+				named[a.Lease] = true
 			}
 		}
 		for _, id := range slices.Sorted(maps.Keys(st.Leases)) {
 			l := st.Leases[id]
-			if l.Returned() && keep.past(now, l.Release.Done) {
-				tx.Drop(leasePrefix + id + docSuffix)
-				dropped++
+			if l.Returned() && keep.past(now, l.Release.Done) && !named[id] {
+				drop[leasePrefix+id+docSuffix] = true
 			}
 		}
-		for _, id := range slices.Sorted(maps.Keys(st.Publications)) {
-			p := st.Publications[id]
-			if keep.mayDrop(now, p) {
-				tx.Drop(publicationPrefix + id + docSuffix)
-				dropped++
-			}
+
+		for _, name := range slices.Sorted(maps.Keys(drop)) {
+			tx.Drop(name)
+			dropped++
 		}
 		return nil
 	})

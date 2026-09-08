@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -221,7 +220,18 @@ func tclTrue(v string) bool {
 // records nothing: no finding is not a finding of "no dependents"
 // (rule 7). An unbuilt PortIndex is exactly that case, and it is the
 // ordinary one on a fresh checkout.
-type local struct{ tr *tree.Tree }
+// local answers run.Local: the reverse index for a port's dependents,
+// and the maintainer's cues out of a Portfile AT A COMMIT.
+//
+// It carries a repository as well as a tree because the cues are read
+// from git. They used to come from a host path, and the path handed in
+// on every settlement that replays a frozen roster is empty — so the
+// read landed on whatever Portfile was under the process's working
+// directory, and its error was discarded.
+type local struct {
+	tr   *tree.Tree
+	repo *gitRepo
+}
 
 // Dependents is the reverse index's answer for one port.
 func (l local) Dependents(_ context.Context, portName string) ([]portindex.Dependent, []portindex.Unread, error) {
@@ -255,8 +265,14 @@ func (l local) Dependents(_ context.Context, portName string) ([]portindex.Depen
 // could not be built therefore narrows nothing rather than losing the
 // instruction, which is why the index error is dropped and the quote
 // still travels.
-func (l local) Instructions(_ context.Context, portdir string) ([]dependents.Instruction, error) {
-	src, err := os.ReadFile(filepath.Join(portdir, macports.PortfileName)) //nolint:gosec // the portdir is the record's own
+func (l local) Instructions(ctx context.Context, sha, portdir string) ([]dependents.Instruction, error) {
+	if l.repo == nil {
+		return nil, errNotAcquired{"a repository"}
+	}
+	if sha == "" || portdir == "" {
+		return nil, fmt.Errorf("reading maintainer cues: no commit or portdir was named")
+	}
+	src, err := l.repo.BlobAt(ctx, sha, portdir+"/"+macports.PortfileName)
 	if err != nil {
 		return nil, err
 	}
@@ -327,4 +343,36 @@ func (e identityAt) IdentityAt(ctx context.Context, rev, portdir string) (macpor
 		return macports.Identity{}, err
 	}
 	return macports.Identity{Epoch: v.Epoch, Version: v.Version, Revision: v.Revision}, nil
+}
+
+// Baseline materializes the subjects as they stood at another commit —
+// the merge base — so the provider can measure what the change is
+// leaving behind.
+//
+// IT IS A SEPARATE STAGING DIRECTORY from Stage's, deliberately: the two
+// trees hold the same paths with different contents, and one directory
+// would have the second Materialize overwrite the first. Both are
+// registered for cleanup on the same run.
+//
+// A SUBJECT THE BASE DOES NOT HOLD IS SKIPPED AND NOT A FAILURE. A
+// change that ADDS a port has no before for it, which is a fact about
+// the change rather than a staging error, and a provider handed a
+// partial baseline measures what it can.
+func (s *stager) Baseline(ctx context.Context, sha string, subjects []record.Subject) ([]string, error) {
+	if sha == "" || len(subjects) == 0 {
+		return nil, nil
+	}
+	dir, drop, err := s.temp.MakeDir("baseline")
+	if err != nil {
+		return nil, err
+	}
+	s.keep = append(s.keep, drop)
+	out := make([]string, 0, len(subjects))
+	for _, sub := range subjects {
+		if err := s.repo.Materialize(ctx, sha, sub.Portdir, dir); err != nil {
+			continue
+		}
+		out = append(out, filepath.Join(dir, filepath.FromSlash(sub.Portdir)))
+	}
+	return out, nil
 }

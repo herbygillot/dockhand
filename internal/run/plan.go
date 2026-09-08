@@ -64,6 +64,17 @@ var ErrNothingToBuild = errors.New("run: every member is answered without a buil
 // a member that declined the platform is not in the request and a graph
 // drawn over the roster would name positions the guest does not have.
 func Plan(spec Spec, pre map[string]Preflight) (verify.Request, map[string]record.Run, error) {
+	return plan(spec, pre, nil)
+}
+
+// PlanWith is Plan with the baseline the stager materialized, which is
+// the input the ABI comparison exists to read and which nothing used to
+// supply.
+func PlanWith(spec Spec, pre map[string]Preflight, baseline []string) (verify.Request, map[string]record.Run, error) {
+	return plan(spec, pre, baseline)
+}
+
+func plan(spec Spec, pre map[string]Preflight, baseline []string) (verify.Request, map[string]record.Run, error) {
 	runs := make(map[string]record.Run, len(spec.Withheld)+len(spec.Roster))
 	for _, w := range spec.Withheld {
 		runs[w.Port] = record.Run{
@@ -101,6 +112,30 @@ func Plan(spec Spec, pre map[string]Preflight) (verify.Request, map[string]recor
 		FromSource: keep(spec.FromSource, ports),
 		Requires:   edgesFor(spec, ports),
 		Deactivate: deactivateFor(seated),
+		// THE EVIDENCE THE ANALYSIS READS, and neither field was set by
+		// anything in the tree until now.
+		//
+		// verify.Request.Manifest and .Baseline are documented, tart
+		// honours both, run.Observe gathers what comes back, and
+		// darwin/abi and internal/dependents — some three thousand lines
+		// between them — decide a cohort proposal from it. Nothing asked.
+		// So Observe's manifest map was always empty, abi.Delta ran with
+		// Described false on every attempt, and the whole comparison
+		// produced a finding about nothing.
+		//
+		// MEASURED ALWAYS, rather than when a caller says it wants one.
+		// Request.Manifest's own doc argues for asking, on the grounds
+		// that the walk costs something and a caller who only wants to
+		// know whether the port builds should not pay for it — which was
+		// right when the answer was read by nothing. It is the wrong trade
+		// now: whether the headline HAS dependents is not knowable before
+		// the build (it is a reverse-index question the settle road asks),
+		// so a request that waited to be told would never be told. One
+		// walk of an installed port, inside a guest that has just spent
+		// ten to forty minutes building it, against a comparison that
+		// otherwise cannot run at all.
+		Manifest: true,
+		Baseline: baseline,
 	}
 	return req, runs, nil
 }

@@ -134,9 +134,16 @@ type CycleRequest struct {
 	// Superseded deletes branches a newer sibling replaced. Opt-in.
 	Superseded bool
 
-	// DryRun withholds exactly the irreversible stages — discharge,
-	// retire's deletions, apply, and compact — and performs every other
-	// one, settling included.
+	// DryRun takes the SURVEY ROAD instead of the acting one: every
+	// stage's population is read and reported, and no stage runs. It is
+	// not a filter over the acting pass, and it used to be — a field each
+	// stage consulted, which three of them did not, so a "dry" run
+	// polled builds, released environments, closed rows and submitted
+	// queued work. See Cycle.Run.
+	//
+	// The answer comes back in Pass.Would, which is nil on a pass that
+	// acted; a reader can therefore tell the two kinds of Pass apart
+	// without being told which was asked for.
 	DryRun bool
 }
 
@@ -193,6 +200,58 @@ type Pass struct {
 	// neither is an exit band.
 	Maintained  bool
 	MaintainErr error
+	// Would is a DRY RUN's whole answer, and nil on a pass that acted.
+	//
+	// It is a separate value rather than the fields above filled in with
+	// hypotheticals, because "obligations that still stand after
+	// discharge" and "obligations discharge would take" are different
+	// facts and one field cannot mean both. A reader holding a Pass can
+	// tell which kind it has by whether this is nil.
+	Would *Would
+}
+
+// Would is what a pass would have done: the populations each stage
+// would have acted on, read and reported and nothing else.
+//
+// EVERY FIELD IS THE RESULT OF A READ. Nothing here polls a build,
+// claims an obligation, asks a forge to write, or boots anything. The
+// forge IS asked — publish.Standing is a read and a retirement decision
+// cannot be predicted without it — and the reads are cached the same way
+// the acting pass's are.
+type Would struct {
+	// Discharge is every obligation the seize policy would have taken,
+	// with the ones it would have reported instead left out — those are
+	// in Owed on the Pass, where a report already renders them.
+	Discharge []lease.Obligation
+	// Settle is the Active attempts this checkout owns, which the settle
+	// stage would poll and possibly judge. Polling is a read; what makes
+	// it an effect is the release and the note that follow a verdict.
+	Settle []string
+	// Analyse is the settled attempts whose post-build analysis is owed
+	// and past its backoff.
+	Analyse []string
+	// Retire is the changes whose pull request the forge has finished
+	// with, and DeleteFork the publications owing a fork copy's removal.
+	Retire     []record.ChangeID
+	DeleteFork []record.ChangeID
+	// Resume is the changes carrying a publication step that was started
+	// and never finished, which the resume stage would reconcile and, if
+	// the world shows the work genuinely did not happen, perform.
+	Resume []record.ChangeID
+	// Publish is the changes the machine publication slot would have
+	// authorized against, before the allowance is consulted: a candidate
+	// list and never a promise, since Authorize is what decides and it
+	// takes facts this stage has not gathered.
+	Publish []record.ChangeID
+	// Start is the queued attempts the drain would have submitted, in the
+	// order it would have taken them and bounded by nothing: capacity is
+	// a fact about the machine at the moment of the drain, and a dry run
+	// that pretended to know it would be reporting a guess.
+	Start []string
+	// Compact and Maintain say whether those stages were asked for, since
+	// neither has a population a read can produce.
+	Compact  bool
+	Maintain bool
 }
 
 // Publications is what this pass PUT IN FRONT OF REVIEWERS, and it is
@@ -279,6 +338,34 @@ func (p Pass) Exit() int {
 //	compact LAST but one, maintenance last — `git maintenance run
 //	  --auto`, outside every lock, advisory on failure.
 func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
+	// THE DRY RUN IS A DIFFERENT ROAD, AND THAT IS THE WHOLE FIX.
+	//
+	// It used to be a field each stage consulted, and the stages did not
+	// all consult it: discharge, retire's deletions, apply and compact
+	// were guarded, and the DRAIN, the SETTLE loop and the note
+	// re-export were not. A --dry-run pass therefore polled builds,
+	// released environments, cancelled runs, closed publication rows and
+	// SUBMITTED QUEUED WORK — a probe gave a cycle one queued attempt,
+	// DryRun true and a fake provider, and counted one Submit and an
+	// Active attempt. The type's own doc claimed it "withholds exactly
+	// the irreversible stages", and starting a build is not withheld by
+	// any reading of that.
+	//
+	// The defect was structural rather than an oversight in any one
+	// stage: each newly added step had to remember its own guard, and a
+	// supposedly observational branch could reach a mutating helper
+	// several layers down. So the guards are GONE and the branch is here,
+	// once, at the top: survey holds no path to a mutator, and a stage
+	// added below cannot be reached from it by forgetting anything.
+	if r.DryRun {
+		return c.survey(ctx, r)
+	}
+	return c.perform(ctx, r)
+}
+
+// perform is the pass that acts. Every stage in it is unconditional in
+// the dry-run sense: this function is unreachable from a dry run.
+func (c Cycle) perform(ctx context.Context, r CycleRequest) (Pass, error) {
 	p := Pass{Started: c.Now(), Changes: map[record.ChangeID]Result{}}
 	prov, provErr := provider(ctx, c.Verifier)
 	// closed is what this pass ENDED — retired, or swept as a stray — and
@@ -291,7 +378,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 	// than an empty list, because this stage DESTROYS provider resources.
 	// The seize list is lease.Standing's table under the Seizure policy;
 	// everything else comes back with its Standing for the report.
-	if r.Discharge && provErr == nil && !r.DryRun {
+	if r.Discharge && provErr == nil {
 		obs, err := lease.Outstanding(ctx, c.State, prov, c.Me, c.PassID, c.Now())
 		if err != nil {
 			return p, err
@@ -311,7 +398,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 	}
 	if provErr == nil {
 		for _, a := range live(st, c.Me) {
-			final, err := run.Finish(ctx, c.State, c.Ledger, prov, c.Local, a, specOf(st, a), nil, c.Claimant(), c.Now)
+			final, err := run.Finish(ctx, c.State, c.Ledger, prov, c.Local, a, run.Frozen(a), nil, c.Claimant(), c.Now)
 			if err != nil {
 				return p, err
 			}
@@ -323,6 +410,26 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 		}
 	}
 
+	// 1b · ANALYSE. Post-build work a settled attempt still owes: the ABI
+	// comparison and the cohort proposal, over evidence the record
+	// already holds.
+	//
+	// It is a stage because the work can fail for reasons the build has
+	// nothing to do with — an unbuilt reverse index, a Portfile that
+	// would not read — and its failure used to be reported as an advisory
+	// AFTER the attempt was settled, with no durable state and therefore
+	// no retry: a later Finish returns immediately for a settled attempt,
+	// so a person noticing the line was the only recovery. The
+	// measurement survives on record.Run, so the analysis is replayable;
+	// what it lacked was somewhere to say it was owed.
+	if c.Local != nil {
+		for _, a := range run.Owed(st, c.Now()) {
+			if err := run.Analyse(ctx, c.State, c.Local, a, c.Now); err != nil {
+				p.Refusals = append(p.Refusals, Refusal{Change: a.Change, Err: err})
+			}
+		}
+	}
+
 	// 2 · CLOSE (retire). For each open publication: publish.Standing over
 	// fresh ForgeFacts; when settled, the Cancel operation's stages first
 	// (a merged change's live builds stopped, its KEPT leases released
@@ -330,7 +437,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 	// lease behind), then ONE Amend with publish.RetireIn, change.CloseIn
 	// (ChangePublished on merged, ChangeAbandoned on rejected or
 	// withdrawn), run.WithdrawIn over its queued attempts and — under
-	// Retirement Demolish, not DryRun, dem.Local != "", the branch
+	// Retirement Demolish, dem.Local != "", the branch
 	// resolved (no ErrTipDisagrees), the worktree list read and the
 	// branch not checked out, and mayDemolish re-asked INSIDE the closure
 	// over tx.State() — change.DemolishIn, with publish.DeleteForkIn
@@ -402,7 +509,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 			}
 		}
 		wt, wtErr := "", error(nil)
-		if r.Retirement == Demolish && !r.DryRun && dem.Local != "" {
+		if r.Retirement == Demolish && dem.Local != "" {
 			wt, wtErr = c.Repo.CheckedOutAt(ctx, old.Branch)
 			switch {
 			case wtErr != nil:
@@ -411,8 +518,8 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 				p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: change.ErrCheckedOut}) // kept: checked out
 			}
 		}
-		demolish := r.Retirement == Demolish && !r.DryRun && dem.Local != "" && wtErr == nil && wt == ""
-		fork := r.Retirement == Demolish && !r.DryRun && dem.Fork != ""
+		demolish := r.Retirement == Demolish && dem.Local != "" && wtErr == nil && wt == ""
+		fork := r.Retirement == Demolish && dem.Fork != ""
 		to := record.ChangePublished
 		if out != record.Merged {
 			to = record.ChangeAbandoned
@@ -456,7 +563,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 		p.Retired = append(p.Retired, publish.Outcome{Number: pub.Number, URL: pub.URL, At: c.Now()})
 	}
 	// the fork copies: a foreign effect, outside every lock, on its backoff.
-	if !r.DryRun {
+	{
 		st2, err := c.State.Read(ctx)
 		if err != nil {
 			return p, err
@@ -479,6 +586,33 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 		return p, err
 	}
 
+	// 2b · RESUME. Publication steps that were started and never
+	// finished, reconciled against the world and then continued.
+	//
+	// IT IS ITS OWN STAGE AND NOT A WIDER CANDIDATE RULE, which is the
+	// whole correction. Apply journals each step before it acts and marks
+	// a failed one Uncertain — exactly the right shape for recovery — and
+	// nothing read it: the candidate rule EXCLUDES every change already
+	// carrying an unsettled row at the same content, and the retirement
+	// loop asks only whether the pull request is merged, closed or open,
+	// which a row whose PR creation never happened answers "open". So one
+	// failed push or one failed `pr create` left a row that was excluded
+	// from publication forever and continued by nothing; the content
+	// could not be published again from this checkout at all, and a
+	// person typing `promote` was the only way out. Selecting new work
+	// and finishing started work are two questions, and they get two
+	// stages.
+	//
+	// It runs for a PERSON'S pass as well as a machine's, and before the
+	// publication slot rather than after it. Finishing something already
+	// begun is not a new publication, so it is not the machine road's to
+	// gate and it does not spend the allowance — Apply continues the row
+	// that already exists, and openRow's one-row-per-change rule is what
+	// makes that true.
+	if err := c.resume(ctx, r, &p); err != nil {
+		return p, err
+	}
+
 	// 3 · PUBLISH, machine only, against the durable allowance. The
 	// candidate population is every change with Destination ToPublished,
 	// a Passed attempt on its tip, no hold a machine may not pass, and NO
@@ -489,7 +623,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 	// derived over the store); publish.Authorize against Pace — the first
 	// ErrPaceSpent stops the slot; publish.Apply. The same three
 	// functions Promote calls, with the invoker Machine.
-	if r.Publish && c.Grants.Invoker == record.Machine && !r.DryRun {
+	if r.Publish && c.Grants.Invoker == record.Machine {
 		st3, err := c.State.Read(ctx)
 		if err != nil {
 			return p, err
@@ -567,7 +701,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 
 	// 5 · COMPACT, only when asked, with the machine-row floor stamped
 	// from the one constant; then maintenance.
-	if r.Compact != nil && !r.DryRun {
+	if r.Compact != nil {
 		keep := *r.Compact
 		keep.MachineWindow = publish.MaxWindow
 		n, err := c.State.Compact(ctx, keep)
@@ -604,7 +738,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 	// of it. It is asked here rather than in cli because a second front
 	// end driving this operation would otherwise inherit the debt (R2
 	// gives cli the loop, the lock and the signals only).
-	if !r.DryRun && c.Repo != nil {
+	if c.Repo != nil {
 		if err := c.Repo.Maintain(ctx); err != nil {
 			p.MaintainErr = err
 		} else {
@@ -668,7 +802,7 @@ func (c Cycle) strays(ctx context.Context, r CycleRequest, p *Pass, closed map[r
 				continue
 			}
 			closed[ch.ID] = true
-		case r.Superseded && !r.DryRun && ch.SupersededBy != "" && ch.Branch != "" && c.Repo.HasBranch(ctx, ch.Branch) && mayDemolish(ch, c.Grants.Invoker):
+		case r.Superseded && ch.SupersededBy != "" && ch.Branch != "" && c.Repo.HasBranch(ctx, ch.Branch) && mayDemolish(ch, c.Grants.Invoker):
 			wt, err := c.Repo.CheckedOutAt(ctx, ch.Branch)
 			if err != nil {
 				p.Refusals = append(p.Refusals, Refusal{Change: ch.ID, Err: err}) // could not read the worktree list
@@ -832,3 +966,189 @@ func targetOf(s record.Subject) tree.Target {
 }
 
 func isPaceSpent(err error) bool { return errors.Is(err, publish.ErrPaceSpent) }
+
+// survey is the dry run: what each stage of a pass would act on, read
+// and reported and nothing else.
+//
+// IT HOLDS NO PATH TO A MUTATOR, and that is the property the flag
+// could not give. Every call below is a read — the store, the process
+// table, the forge's cached or refreshed word — and the writing
+// sequencers (lease.Discharge, run.Finish, run.Start, publish.Apply,
+// publish.RetireIn, publish.DeleteFork, change.CloseIn,
+// change.DemolishIn, Store.Compact, Export, maintenance) are not
+// reachable from this function at all. A stage added to perform is
+// invisible here until somebody adds it here too, which is a gap a
+// reader can see rather than an effect a person cannot.
+//
+// THE FORGE IS ASKED. A retirement decision is publish.Standing over
+// the forge's word, and a dry run that skipped it would report nothing
+// about the one stage a person most wants previewed. Asking is a read;
+// what makes retirement an effect is the row and the branch that follow.
+//
+// THE PROVIDER IS ASKED FOR ITS OBLIGATIONS AND ITS VACANCY, both of
+// which lease.Outstanding and verify.Vacancy define as reports that
+// seize and change nothing. It is NOT asked to poll a build: polling is
+// harmless, but a poll is only ever made from inside run.Finish, which
+// judges — and judging is the effect.
+func (c Cycle) survey(ctx context.Context, r CycleRequest) (Pass, error) {
+	p := Pass{Started: c.Now(), Changes: map[record.ChangeID]Result{}}
+	w := &Would{Compact: r.Compact != nil, Maintain: c.Repo != nil}
+	p.Would = w
+
+	prov, provErr := provider(ctx, c.Verifier)
+	st, err := c.State.Read(ctx)
+	if err != nil {
+		return p, err
+	}
+
+	// 0 · what discharge would take, and what it would only report. The
+	// split is lease.mayTake's, asked here without acting on either side.
+	if r.Discharge && provErr == nil {
+		obs, oerr := lease.Outstanding(ctx, c.State, prov, c.Me, c.PassID, c.Now())
+		if oerr != nil {
+			return p, oerr
+		}
+		pol := lease.Seizure{Set: true, Grace: r.DischargeAfter, Unattributed: r.ReclaimUnattributed}
+		for _, ob := range obs {
+			if lease.WouldTake(ob, pol, c.Now()) {
+				w.Discharge = append(w.Discharge, ob)
+				continue
+			}
+			p.Owed = append(p.Owed, ob)
+		}
+	}
+
+	// 1 · what settle would poll and judge.
+	if provErr == nil {
+		for _, a := range live(st, c.Me) {
+			w.Settle = append(w.Settle, a.ID)
+		}
+	}
+
+	// 1b · which settled attempts still owe their post-build analysis.
+	for _, a := range run.Owed(st, c.Now()) {
+		w.Analyse = append(w.Analyse, a.ID)
+	}
+
+	// 2b · which unfinished publications resume would continue.
+	for _, pub := range publish.Unfinished(st) {
+		w.Resume = append(w.Resume, pub.Change)
+	}
+
+	// 2 · what close would retire, and which fork copies it owes.
+	for _, key := range slices.Sorted(maps.Keys(st.Publications)) {
+		pub := st.Publications[key]
+		if pub.Outcome.Settled() {
+			continue
+		}
+		old := st.Changes[string(pub.Change)]
+		ref, rerr := change.Resolve(ctx, c.Repo, c.State, resolveTarget(old))
+		if rerr != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: rerr})
+			continue
+		}
+		f, gerr := publish.Gather(ctx, c.Env, ref, r.Forge, publish.Asks{}, c.Grants.Invoker, c.Now())
+		if gerr != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: gerr})
+			continue
+		}
+		out, _, serr := publish.Standing(pub, f.Forge)
+		if serr != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: serr})
+			continue
+		}
+		if out.Settled() {
+			w.Retire = append(w.Retire, old.ID)
+		}
+	}
+	for _, pub := range publish.ForkOwed(st) {
+		w.DeleteFork = append(w.DeleteFork, pub.Change)
+	}
+
+	// 3 · which changes the publication slot would consider. A candidate
+	// list and never a promise: Authorize is what decides, over facts a
+	// survey has not gathered and an allowance it must not spend.
+	if r.Publish && c.Grants.Invoker == record.Machine {
+		for _, cand := range candidates(st) {
+			w.Publish = append(w.Publish, cand.ID)
+		}
+	}
+
+	// 4 · what the drain would start, in the order it would take them.
+	if provErr == nil {
+		queued, ineligible := run.Pending(st, c.Now())
+		p.Ineligible = ineligible
+		for _, a := range run.Order(queued, c.Now()) {
+			w.Start = append(w.Start, a.ID)
+		}
+		p.Vacancy = ask(ctx, prov)
+	}
+
+	p.Ended = c.Now()
+	return p, nil
+}
+
+// resume finishes publications whose journal shows work started and not
+// completed: observe what the world actually holds, complete the steps
+// that already happened, and perform the ones that did not.
+//
+// THE OBSERVATION COMES FIRST AND IS NOT A DECISION. publish.Reconcile
+// asks the remote for the branch's object and reads the gather's forge
+// answer, and marks Finished only what it can confirm — so a step whose
+// call errored after the effect landed stops being retried, and a step
+// that genuinely did not happen stays owed. Only then is Authorize
+// asked, and Authorize is still the only thing that decides.
+//
+// A ROW WHOSE STEPS ALL RECONCILE NEEDS NOTHING FURTHER, and Authorize
+// says so itself: the permit is a no-op, because the branch's own pull
+// request is open at this tip. The row is left for the retirement stage,
+// which is whose it is once the forge has it.
+func (c Cycle) resume(ctx context.Context, r CycleRequest, p *Pass) error {
+	st, err := c.State.Read(ctx)
+	if err != nil {
+		return err
+	}
+	for _, pub := range publish.Unfinished(st) {
+		old := st.Changes[string(pub.Change)]
+		if old.ID == "" {
+			// A row naming a change the store no longer holds. Compaction
+			// roots a change its publications need, so this is a hand or an
+			// older build; it is reported rather than guessed at.
+			p.Refusals = append(p.Refusals, Refusal{Change: pub.Change, Err: publish.ErrNoChange})
+			continue
+		}
+		ref, err := change.Resolve(ctx, c.Repo, c.State, resolveTarget(old))
+		if err != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+			continue
+		}
+		f, err := publish.Gather(ctx, c.Env, ref, r.Forge, publish.Asks{}, c.Grants.Invoker, c.Now())
+		if err != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+			continue
+		}
+		row, err := publish.Reconcile(ctx, c.Env, pub, f)
+		if err != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+			continue
+		}
+		if !publish.Owed(row) {
+			continue // the world had already done what the journal was unsure of
+		}
+		permit, adv, err := publish.Authorize(f, publish.Pace{})
+		p.Advisories = append(p.Advisories, adv...)
+		if err != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+			continue
+		}
+		if permit.NoOp() {
+			continue
+		}
+		out, err := publish.Apply(ctx, c.Env, permit)
+		if err != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+		}
+		p.Published = append(p.Published, out)
+	}
+	return nil
+}

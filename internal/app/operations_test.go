@@ -61,6 +61,20 @@ func (s *stager) Stage(_ context.Context, sha string, subjects []record.Subject)
 	return members, pre, nil
 }
 
+// Baseline is the merge base's copies of the same subjects. The fake
+// stages them under a second root, which is the real stager's shape:
+// the two trees hold the same paths with different contents.
+func (s *stager) Baseline(_ context.Context, sha string, subjects []record.Subject) ([]string, error) {
+	if sha == "" {
+		return nil, nil
+	}
+	out := make([]string, 0, len(subjects))
+	for _, sub := range subjects {
+		out = append(out, "/baseline/"+sub.Port)
+	}
+	return out, nil
+}
+
 // quiet is run.Local with nothing to say: no dependents, no cues. A
 // settle over it proposes no cohort, which keeps these tests about the
 // operation's SEQUENCE rather than about dependents.Propose.
@@ -70,7 +84,7 @@ func (quiet) Dependents(context.Context, string) ([]portindex.Dependent, []porti
 	return nil, nil, nil
 }
 
-func (quiet) Instructions(context.Context, string) ([]dependents.Instruction, error) {
+func (quiet) Instructions(context.Context, string, string) ([]dependents.Instruction, error) {
 	return nil, nil
 }
 
@@ -770,4 +784,154 @@ func portsOf(subjects []record.Subject) []string {
 		out = append(out, s.Port)
 	}
 	return out
+}
+
+// CANCEL REVOKES QUEUED INTENT, and for a long time it did not.
+//
+// The verb handled Active attempts and settled ones holding an
+// environment, and had no case at all for QUEUED work — so it reported
+// success and left an attempt the next pass's drain started, booting a
+// guest for a change a person had just cancelled. WithdrawIn was already
+// the durable transition; cancellation was the one road that did not
+// compose it.
+func TestCancelWithdrawsQueuedWorkSoADrainCannotStartIt(t *testing.T) {
+	repo, st := fixture(t)
+	// A full machine: Start refuses with ErrNoVacancy and leaves the
+	// attempt QUEUED, which is the population this test is about and the
+	// one cancel had no case for.
+	fake := &verifytest.Fake{SubmitErr: verify.ErrNoVacancy}
+	op := Change{
+		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now,
+	}
+	res, err := op.Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, "jq", "1.8"),
+		Delivery: Enqueue, Platform: sequoia, Slug: "jq-1.8",
+	})
+	require.NoError(t, err)
+	fake.SubmitErr = nil
+
+	before, err := st.Read(t.Context())
+	require.NoError(t, err)
+	require.True(t, before.Attempts[res.Attempt].Queued(), "the fixture is a queued attempt")
+
+	c := Cancel{Repo: repo, Ledger: ledger.Open(repo), State: st, Verifier: has(fake),
+		Local: quiet{}, Me: me(), Now: now}
+	out, err := c.Run(t.Context(), "dockhand/jq-1.8")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{res.Attempt}, out.Withdrawn,
+		"reported as withdrawn and not as stopped: nothing was running to stop")
+	assert.Empty(t, out.Stopped)
+
+	after, err := st.Read(t.Context())
+	require.NoError(t, err)
+	a := after.Attempts[res.Attempt]
+	assert.False(t, a.Queued(), "no drain can start it now")
+	assert.True(t, a.Settled())
+	assert.Equal(t, record.Canceled, verdictOf(a))
+
+	queued, _ := run.Pending(after, now())
+	assert.Empty(t, queued, "and the queue no longer offers it")
+}
+
+// The no-provider shortcut counted an environment and not the intent, so
+// a cancel on a host with no tart reported success over queued work and
+// revoked nothing. There is nothing to stop and there IS something to
+// revoke, and the revocation needs no provider at all.
+func TestCancelWithNoProviderStillWithdrawsQueuedWork(t *testing.T) {
+	repo, st := fixture(t)
+	// Queued on a machine that had a provider; cancelled from a shell
+	// where none resolves, which is the ordinary shape of this.
+	op := Change{
+		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(&verifytest.Fake{SubmitErr: verify.ErrNoVacancy}), Me: me(), Now: now,
+	}
+	res, err := op.Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, "jq", "1.8"),
+		Delivery: Enqueue, Platform: sequoia, Slug: "jq-1.8",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Attempt)
+
+	c := Cancel{Repo: repo, Ledger: ledger.Open(repo), State: st, Verifier: hasNone,
+		Local: quiet{}, Me: me(), Now: now}
+	out, err := c.Run(t.Context(), "dockhand/jq-1.8")
+	require.NoError(t, err)
+	assert.Equal(t, []string{res.Attempt}, out.Withdrawn)
+
+	after, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.False(t, after.Attempts[res.Attempt].Queued())
+}
+
+// A DRY RUN PERFORMS NOTHING, and this is the probe that used to pass
+// the other way.
+//
+// The flag was a field each stage consulted, and three did not: the
+// drain, the settle loop and the note re-export ran unguarded. Given one
+// queued attempt, DryRun true and a working provider, a "dry" cycle
+// counted one Submit and left an Active attempt — it booted a virtual
+// machine. It also polled builds, released environments and closed
+// publication rows.
+func TestADryRunSubmitsNothingAndSettlesNothing(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	prov := &order{Fake: fake}
+
+	// One running build and one queued attempt: the two populations the
+	// unguarded stages acted on.
+	running := enqueued(t, repo, st, prov, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Started, running.Did)
+	fake.SubmitErr = &verify.NoVacancyError{Busy: 2, Limit: 2}
+	waiting := enqueued(t, repo, st, prov, "oniguruma", "6.9", "oniguruma-6.9")
+	require.Equal(t, Queued, waiting.Did)
+
+	fake.SubmitErr = nil
+	fake.States = map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}
+	fake.Logs = map[string]string{"fake-1": "--->  Building jq\n"}
+	// What the FIXTURE asked the provider for is not what the pass asked
+	// for, and the assertions below are about the pass.
+	prov.calls, fake.Submitted, fake.Released = nil, nil, nil
+
+	p, err := cycleOp(repo, st, prov).Run(t.Context(), CycleRequest{
+		DryRun: true, Discharge: true, DischargeAfter: time.Hour, Retirement: Demolish, Forge: 1,
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, fake.Submitted, "no build was started")
+	assert.Empty(t, fake.Released, "no environment was destroyed")
+	assert.NotContains(t, prov.calls, "submit fake-2")
+
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.True(t, s.Attempts[running.Attempt].Active(), "the running build was not settled")
+	assert.True(t, s.Attempts[waiting.Attempt].Queued(), "the queued attempt was not started")
+
+	// And it SAYS what it would have done, which is the whole point of
+	// asking.
+	require.NotNil(t, p.Would)
+	assert.Equal(t, []string{running.Attempt}, p.Would.Settle)
+	assert.Equal(t, []string{waiting.Attempt}, p.Would.Start)
+}
+
+// The survey holds no path to a mutator, so the store it read is the
+// store it leaves: a dry run writes no state commit at all.
+func TestADryRunWritesNoStateCommit(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+
+	before, err := st.Read(t.Context())
+	require.NoError(t, err)
+
+	_, err = cycleOp(repo, st, fake).Run(t.Context(), CycleRequest{
+		DryRun: true, Discharge: true, DischargeAfter: time.Hour, Retirement: Demolish,
+		Superseded: true, Forge: 1, Compact: &statestore.Retention{Set: true, ClosedFor: 1},
+	})
+	require.NoError(t, err)
+
+	after, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, before.At, after.At, "the state ref did not move")
 }

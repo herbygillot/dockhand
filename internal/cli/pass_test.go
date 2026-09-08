@@ -164,11 +164,14 @@ func TestAPassThatCouldNotRunReportsNothing(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 	assert.Empty(t, b.String(), "nothing was observed, judged or settled; the report must not say otherwise")
 
-	// And a pass that DID run still reports, dry-run banner and all.
+	// And a survey that DID run reports what it would have done.
 	var ran bytes.Buffer
-	require.NoError(t, finish(&ran, app.Pass{Changes: map[record.ChangeID]app.Result{}}, true, nil))
-	assert.Contains(t, ran.String(), "NOT a read-only pass")
-	assert.Contains(t, ran.String(), "0 settled")
+	require.NoError(t, finish(&ran, app.Pass{
+		Changes: map[record.ChangeID]app.Result{},
+		Would:   &app.Would{Start: []string{"att-1"}},
+	}, true, nil))
+	assert.Contains(t, ran.String(), "nothing was performed")
+	assert.Contains(t, ran.String(), "would start attempt att-1")
 }
 
 // liveHolder is a lock stamp naming THIS process, which is what a real

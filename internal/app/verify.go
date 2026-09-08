@@ -351,7 +351,7 @@ func supersede(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov
 	stale := run.Stale(s, c, tip)
 	for _, a := range stale.Active {
 		itr := &record.Interrupt{Why: record.InterruptSuperseded, By: me, At: now(), Detail: "the branch moved to " + tip}
-		if _, err := run.Finish(ctx, st, l, prov, local, a, specOf(s, a), itr, by, now); err != nil {
+		if _, err := run.Finish(ctx, st, l, prov, local, a, run.Frozen(a), itr, by, now); err != nil {
 			return err
 		}
 	}

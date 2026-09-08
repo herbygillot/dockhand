@@ -97,6 +97,15 @@ type Services struct {
 	// the report of it agree about when the pass was.
 	Now func() time.Time
 
+	// born is THIS PROCESS'S START, read once when the root command is
+	// built and never again. It is record.OwnerID.Since for every
+	// identity this process produces, which is what makes the (PID,
+	// start-time) liveness pair an identity rather than a coincidence —
+	// see Me. Unexported and written once, so no verb can move it; a
+	// test that needs a fixed one builds its Services through newRoot's
+	// own path or sets it there.
+	born time.Time
+
 	// The resolved handles. Every one is filled by Acquire and by
 	// nothing else: there is no lazy accessor, which is the point.
 	repo  *git.Repo
@@ -262,15 +271,15 @@ func (s *Services) Close() {
 // finding nobody asked for.
 func (s *Services) ProposeTree() local {
 	if s.tr != nil {
-		return local{tr: s.tr}
+		return local{tr: s.tr, repo: s.repo}
 	}
 	t, err := tree.Open(s.TreeRoot)
 	if err != nil {
 		slog.Debug("no ports tree for the propose step; cohort proposals will record nothing", "err", err)
-		return local{}
+		return local{repo: s.repo}
 	}
 	s.tr = t
-	return local{tr: t}
+	return local{tr: t, repo: s.repo}
 }
 
 // Pool starts n evaluators against this run's installation and
@@ -434,14 +443,31 @@ func (s *Services) publishEval() publish.Evaluator {
 // otherwise, because `dockhand exec` runs with no repository at all and
 // still takes an environment that has to be attributable.
 //
-// since is a parameter rather than time.Now() because a RESIDENT
-// DISPATCHER RESTAMPS IT PER PASS. record/lease.go says Since is the
-// process's start time, which under a one-shot verb is also the pass's;
-// under a process that lives a month it never advances, so
-// lease.Outstanding could not tell this pass's live work from last
-// week's residue owned by the same live PID, and reconcile would be
-// inert or destructive.
-func (s *Services) Me(since time.Time) record.OwnerID {
+// SINCE IS THE PROCESS'S BIRTH AND IT NEVER MOVES. It used to be a
+// parameter, so that a resident dispatcher could restamp it on every
+// pass; that made the identity useless and the liveness check actively
+// wrong, and record.Claim.Pass already says so in the durable
+// vocabulary ("Since is the process's start time and half of the
+// liveness pair that decides whether a PID is the same process, so
+// moving it per pass would make a resident dispatcher's own leases read
+// as a stranger's between passes").
+//
+// The arithmetic that made it certain rather than merely risky:
+// lease.sameProcess admits a gap of at most one minute between a
+// recorded Since and the kernel's process start, sized on a measurement
+// of Go's own startup (291ms and 479ms on two runs). A dispatcher
+// restamping per pass writes a Since hours after its birth, so from its
+// second minute of life EVERY peer asking about it got `gone` —
+// DeadElsewhere, which Standing.Seizable admits — and the
+// LiveElsewhere protection that exists precisely for "a person's verb
+// running beside a live dispatcher" was unreachable. EarlierPass was
+// unreachable too, since reaching it needs sameOwner and sameOwner
+// compares Since exactly.
+//
+// What a pass needs instead is a PASS token, and it already has one:
+// Claimant.Pass, stamped onto record.Claim.Pass, which is a report
+// field by construction and never a seize condition.
+func (s *Services) Me() record.OwnerID {
 	root := s.TreeRoot
 	if s.repo != nil {
 		root = s.repo.Root
@@ -450,7 +476,7 @@ func (s *Services) Me(since time.Time) record.OwnerID {
 	if err != nil {
 		host = ""
 	}
-	return record.OwnerID{Root: canonical(root), Host: host, PID: os.Getpid(), Since: since.UTC()}
+	return record.OwnerID{Root: canonical(root), Host: host, PID: os.Getpid(), Since: s.born}
 }
 
 // canonical is Root's one spelling. A path that cannot be resolved

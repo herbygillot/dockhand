@@ -10,7 +10,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/ledger"
-	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/run"
@@ -49,6 +48,13 @@ type Cancel struct {
 type CancelResult struct {
 	Stopped  []string // attempts finished with Interrupt Canceled
 	Released []string // kept environments handed back, verdicts standing
+	// Withdrawn is the QUEUED attempts this cancellation revoked: work
+	// that had not started and now never will. It is a third field and
+	// not folded into Stopped because the two are different acts with
+	// different costs — stopping a build destroys an environment and
+	// throws away work in progress, withdrawing an intent throws away
+	// nothing — and a person who typed cancel is owed the difference.
+	Withdrawn []string
 }
 
 // Run resolves the target and cancels what stands on its tip. A moved or
@@ -72,6 +78,31 @@ func (c Cancel) Run(ctx context.Context, target string) (CancelResult, error) {
 // tip, never a Ref.
 func (c Cancel) run(ctx context.Context, st statestore.State, id record.ChangeID, tip string) (CancelResult, error) {
 	var res CancelResult
+
+	// THE QUEUED INTENT IS REVOKED FIRST, BEFORE ANY PROVIDER IS ASKED
+	// FOR, and this stage used to be missing entirely.
+	//
+	// Cancel handled Active attempts and settled ones holding an
+	// environment, and had no case at all for QUEUED work: the verb
+	// reported success and left an attempt that the next pass's drain
+	// started, booting a guest for a change a person had just cancelled.
+	// WithdrawIn was already the durable transition — discard, supersede
+	// and retire all compose it — and cancellation was the one road that
+	// did not.
+	//
+	// The ORDER is the point twice over. Revoking the intent to create
+	// more external work before stopping the work that exists closes the
+	// window in which a concurrent drain starts what the release has just
+	// finished paying for. And revoking needs NO PROVIDER — there is no
+	// environment to stop, only a record to move — so it happens above
+	// the resolution, and a cancel on a host with no tart still takes
+	// back what it can.
+	withdrawn, err := c.withdraw(ctx, id, tip)
+	if err != nil {
+		return res, err
+	}
+	res.Withdrawn = withdrawn
+
 	prov, err := provider(ctx, c.Verifier)
 	if err != nil {
 		// nothing held needs no provider; anything held is an error
@@ -83,11 +114,12 @@ func (c Cancel) run(ctx context.Context, st statestore.State, id record.ChangeID
 	if err := supersede(ctx, c.State, c.Ledger, prov, c.Local, st, id, tip, c.Claimant(), c.Me, c.Now); err != nil {
 		return res, err
 	}
+
 	for _, a := range onTip(st, id, tip) {
 		switch {
 		case a.Active():
 			itr := &record.Interrupt{Why: record.InterruptCanceled, By: c.Me, At: c.Now(), Detail: "canceled by the user"}
-			if _, err := run.Finish(ctx, c.State, c.Ledger, prov, c.Local, a, specOf(st, a), itr, c.Claimant(), c.Now); err != nil {
+			if _, err := run.Finish(ctx, c.State, c.Ledger, prov, c.Local, a, run.Frozen(a), itr, c.Claimant(), c.Now); err != nil {
 				return res, err
 			}
 			res.Stopped = append(res.Stopped, a.ID)
@@ -99,6 +131,27 @@ func (c Cancel) run(ctx context.Context, st statestore.State, id record.ChangeID
 		}
 	}
 	return res, nil
+}
+
+// withdraw revokes this change's queued attempts at the tip that
+// stands, and reports what it took back.
+//
+// It is scoped to the TIP like the rest of Cancel: a former tip's queued
+// work is supersede's population, which supersede itself withdraws, and
+// taking both here would make the two stages overlap on a record each
+// wants to write its own Interrupt onto.
+func (c Cancel) withdraw(ctx context.Context, id record.ChangeID, tip string) ([]string, error) {
+	var out []string
+	err := c.State.Amend(ctx, func(tx *statestore.Txn) error {
+		out = nil
+		for _, a := range run.WithdrawIn(tx, id, record.InterruptCanceled, c.Me, c.Now()) {
+			if a.Sha == tip {
+				out = append(out, a.ID)
+			}
+		}
+		return nil
+	})
+	return out, err
 }
 
 // Claimant is who this cancellation is, written onto every claim it
@@ -113,6 +166,12 @@ func (c Cancel) Claimant() lease.Claimant { return lease.Claimant{Owner: c.Me} }
 // `discard` that works on a laptop with no tart and one that refuses.
 func nothingHeld(s statestore.State, id record.ChangeID, tip string) bool {
 	for _, a := range onTip(s, id, tip) {
+		// QUEUED WORK IS DELIBERATELY NOT COUNTED HERE, and that is only
+		// correct because the withdrawal now happens above the provider
+		// resolution. This predicate answers "is there an ENVIRONMENT to
+		// stop", which is the only question a missing provider makes
+		// unanswerable; a queued attempt has none, and the intent behind it
+		// has already been revoked by the time anything asks this.
 		if a.Active() || (a.Settled() && held(s, a)) {
 			return false
 		}
@@ -145,38 +204,4 @@ func held(s statestore.State, a record.Attempt) bool {
 	}
 	l, ok := s.Leases[a.Lease]
 	return ok && l.Held()
-}
-
-// specOf re-derives the question an attempt was enqueued with, from the
-// RECORD and from nothing else, so that the spec a drain hands Finish an
-// hour later is the spec the enqueue computed. run.Roster is what seats
-// the members — including a withheld one and a person's forced override
-// — and the Ask carries the enqueuer's --test and --keep-env rather than
-// the flags of whatever process is settling.
-//
-// KeepEnv and Trace are outside run.Spec.ID by construction, so a spec
-// re-derived here matches the enqueued one whether or not the watcher
-// asked to keep the environment; FromSource and Requires are inside it
-// and are NOT re-derivable from the record — they are the preflight's,
-// read from a staged Portfile at start — which is why this value is for
-// OBSERVING a run and never for enqueuing one. run.Start derives its own.
-func specOf(s statestore.State, a record.Attempt) run.Spec {
-	c := s.Changes[string(a.Change)]
-	members, withheld := run.Roster(c, a)
-	rel, known := platform.ByName(a.Platform)
-	if !known {
-		// A release this build cannot name: the platform is carried as the
-		// record spells it so nothing downstream invents one, and the
-		// provider refuses it as unsupported rather than building the
-		// wrong thing.
-		rel = platform.Release{Name: a.Platform}
-	}
-	return run.Spec{
-		Content:  a.Content,
-		Roster:   members,
-		Withheld: withheld,
-		Platform: rel,
-		Test:     a.Ask.Test,
-		KeepEnv:  a.Ask.KeepEnv,
-	}
 }

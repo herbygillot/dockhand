@@ -278,7 +278,7 @@ func TestAClaimIsNotACompletion(t *testing.T) {
 	assert.False(t, l.Returned())
 	assert.Equal(t, now, leaseOn(t, st, "chg-1").Release.Requested)
 
-	require.NoError(t, Confirm(t.Context(), st, "chg-1", platformName, Released, "", now.Add(time.Second)))
+	require.NoError(t, Confirm(t.Context(), st, claimOf(leaseOn(t, st, "chg-1")), Released, "", now.Add(time.Second)))
 	s, err := st.Read(t.Context())
 	require.NoError(t, err)
 	require.Len(t, s.Leases, 1)
@@ -457,7 +457,7 @@ func TestTheZeroOutcomeWritesNothing(t *testing.T) {
 	require.True(t, took)
 
 	before := leaseOn(t, st, "chg-1")
-	require.NoError(t, Confirm(t.Context(), st, "chg-1", platformName, Unconfirmed, "", now.Add(time.Hour)))
+	require.NoError(t, Confirm(t.Context(), st, claimOf(leaseOn(t, st, "chg-1")), Unconfirmed, "", now.Add(time.Hour)))
 	after := leaseOn(t, st, "chg-1")
 	assert.Equal(t, before.Release, after.Release, "nothing was recorded")
 	assert.False(t, after.Returned())
@@ -471,7 +471,7 @@ func TestAFailedReleaseBacksOffRatherThanRetryingEveryTick(t *testing.T) {
 	_, _, err := Request(t.Context(), st, "chg-1", platformName, claimant(me()), now)
 	require.NoError(t, err)
 
-	require.NoError(t, Confirm(t.Context(), st, "chg-1", platformName, Failed, "tart is busy", now))
+	require.NoError(t, Confirm(t.Context(), st, claimOf(leaseOn(t, st, "chg-1")), Failed, "tart is busy", now))
 	l := leaseOn(t, st, "chg-1")
 	assert.True(t, l.Owed(), "still owed: a failure closes nothing")
 	assert.Equal(t, 1, l.Release.Attempts)
@@ -479,7 +479,7 @@ func TestAFailedReleaseBacksOffRatherThanRetryingEveryTick(t *testing.T) {
 	require.NotNil(t, l.Release.NotBefore)
 	assert.Equal(t, now.Add(5*time.Minute), *l.Release.NotBefore, "the first retry is the next pass and no sooner")
 
-	require.NoError(t, Confirm(t.Context(), st, "chg-1", platformName, Failed, "tart is busy", now))
+	require.NoError(t, Confirm(t.Context(), st, claimOf(leaseOn(t, st, "chg-1")), Failed, "tart is busy", now))
 	l = leaseOn(t, st, "chg-1")
 	assert.Equal(t, 2, l.Release.Attempts)
 	assert.Equal(t, now.Add(10*time.Minute), *l.Release.NotBefore, "and it doubles")
@@ -497,8 +497,8 @@ func TestASucceedingReleaseClearsWhatTheFailuresLeft(t *testing.T) {
 	held(t, st, "chg-1")
 	_, _, err := Request(t.Context(), st, "chg-1", platformName, claimant(me()), now)
 	require.NoError(t, err)
-	require.NoError(t, Confirm(t.Context(), st, "chg-1", platformName, Failed, "tart is busy", now))
-	require.NoError(t, Confirm(t.Context(), st, "chg-1", platformName, Released, "", now.Add(time.Hour)))
+	require.NoError(t, Confirm(t.Context(), st, claimOf(leaseOn(t, st, "chg-1")), Failed, "tart is busy", now))
+	require.NoError(t, Confirm(t.Context(), st, claimOf(leaseOn(t, st, "chg-1")), Released, "", now.Add(time.Hour)))
 
 	l := leaseOn2(t, st, "chg-1")
 	require.True(t, l.Returned())
@@ -513,7 +513,7 @@ func TestASucceedingReleaseClearsWhatTheFailuresLeft(t *testing.T) {
 func TestConfirmOverAnUnclaimedLeaseWritesNothing(t *testing.T) {
 	st := newStore(t)
 	held(t, st, "chg-1")
-	require.NoError(t, Confirm(t.Context(), st, "chg-1", platformName, Released, "", now))
+	require.NoError(t, Confirm(t.Context(), st, claimOf(leaseOn(t, st, "chg-1")), Released, "", now))
 	assert.True(t, leaseOn(t, st, "chg-1").Held(), "still held, and still nobody's obligation")
 }
 
@@ -523,10 +523,10 @@ func TestConfirmOverAnUnclaimedLeaseWritesNothing(t *testing.T) {
 // nobody is keeping is not a fact.
 func TestRetainInWritesTheDeadlineOnlyOnAHeldLease(t *testing.T) {
 	st := newStore(t)
-	held(t, st, "chg-1")
+	l0 := held(t, st, "chg-1")
 
 	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
-		RetainIn(tx, "chg-1", platformName, now.Add(KeepFor))
+		RetainIn(tx, l0.Request, now.Add(KeepFor))
 		return nil
 	}))
 	l := leaseOn(t, st, "chg-1")
@@ -536,7 +536,7 @@ func TestRetainInWritesTheDeadlineOnlyOnAHeldLease(t *testing.T) {
 	_, _, err := Request(t.Context(), st, "chg-1", platformName, claimant(me()), now)
 	require.NoError(t, err)
 	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
-		RetainIn(tx, "chg-1", platformName, now.Add(72*time.Hour))
+		RetainIn(tx, l0.Request, now.Add(72*time.Hour))
 		return nil
 	}))
 	assert.Equal(t, now.Add(24*time.Hour), *leaseOn(t, st, "chg-1").Retain, "unchanged")
@@ -547,10 +547,10 @@ func TestRetainInWritesTheDeadlineOnlyOnAHeldLease(t *testing.T) {
 // different call, which is why it is a step of its own.
 func TestHandleInRecordsTheProvidersOwnName(t *testing.T) {
 	st := newStore(t)
-	held(t, st, "chg-1")
+	l0 := held(t, st, "chg-1")
 	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
-		HandleIn(tx, "chg-1", platformName, "dockhand-worker-abc")
-		HandleIn(tx, "chg-1", platformName, "")
+		HandleIn(tx, l0.Request, "dockhand-worker-abc")
+		HandleIn(tx, l0.Request, "")
 		return nil
 	}))
 	assert.Equal(t, "dockhand-worker-abc", leaseOn(t, st, "chg-1").Handle)
@@ -602,3 +602,79 @@ func (s *spy) Release(ctx context.Context, job verify.Job) error {
 }
 
 var _ verify.Verifier = (*spy)(nil)
+
+// THE ABA, WHICH IS WHY THE TRANSITIONS ARE KEYED ON THE REQUEST AND
+// FENCED BY THE CLAIM.
+//
+// Observe lease A. A peer returns A and acquires B in the same slot.
+// Apply A's reply. Under the slot-addressed spelling this landed on B —
+// a probe marked a replacement's release complete, and a stale
+// observation released a replacement owned by another root. Now A's
+// reply names A's document, and B is untouched.
+func TestAStaleConfirmationDoesNotLandOnTheReplacement(t *testing.T) {
+	st := newStore(t)
+	a := held(t, st, "chg-1")
+	_, took, err := Request(t.Context(), st, "chg-1", platformName, claimant(me()), now)
+	require.NoError(t, err)
+	require.True(t, took)
+	stale := claimOf(leaseOn(t, st, "chg-1"))
+
+	// A goes back, and the slot is re-acquired.
+	require.NoError(t, Confirm(t.Context(), st, stale, Released, "", now))
+	b := held(t, st, "chg-1")
+	require.NotEqual(t, a.Request, b.Request, "a different lease occupies the slot")
+	_, _, err = Request(t.Context(), st, "chg-1", platformName, claimant(me()), now)
+	require.NoError(t, err)
+
+	// A's late reply arrives.
+	require.NoError(t, Confirm(t.Context(), st, stale, Released, "late reply about A", now))
+
+	after := leaseOn(t, st, "chg-1")
+	assert.Equal(t, b.Request, after.Request)
+	assert.False(t, after.Returned(), "the replacement was not returned by the old lease's reply")
+}
+
+// The same fence one level in: a completion whose claim was superseded
+// writes nothing, so a pass reports the obligation as standing rather
+// than as discharged.
+func TestAConfirmationOverASupersededClaimWritesNothing(t *testing.T) {
+	st := newStore(t)
+	held(t, st, "chg-1")
+	_, _, err := Request(t.Context(), st, "chg-1", platformName, claimant(me()), now)
+	require.NoError(t, err)
+	first := claimOf(leaseOn(t, st, "chg-1"))
+
+	// A peer re-claims the same lease: a fresh token on every claim.
+	_, _, err = Request(t.Context(), st, "chg-1", platformName, claimant(me()), now.Add(time.Minute))
+	require.NoError(t, err)
+	second := claimOf(leaseOn(t, st, "chg-1"))
+	require.NotEqual(t, first.Token, second.Token, "a re-take mints a new token")
+
+	require.NoError(t, Confirm(t.Context(), st, first, Released, "", now.Add(time.Hour)))
+	assert.False(t, leaseOn(t, st, "chg-1").Returned(), "the stale claim closed nothing")
+
+	require.NoError(t, Confirm(t.Context(), st, second, Released, "", now.Add(time.Hour)))
+	assert.True(t, leaseOn2(t, st, "chg-1").Returned(), "the current claim closes it")
+}
+
+// AN EMPTY JOB IS NOT EVIDENCE OF ABSENCE. A lease that names no job
+// cannot be released, and a provider's ErrUnknownJob about a job that
+// was never submitted must not read as a confirmed handback — that
+// turned one transport failure into a lease marked returned while its
+// worker was still running.
+func TestALeaseWithNoJobIsNeverConfirmedAbsent(t *testing.T) {
+	st := newStore(t)
+	held(t, st, "chg-1")
+	_, _, err := Request(t.Context(), st, "chg-1", platformName, claimant(me()), now)
+	require.NoError(t, err)
+
+	l := leaseOn(t, st, "chg-1")
+	l.ID = record.LeaseID{} // the shape a lost recovery used to leave behind
+	fake := &verifytest.Fake{}
+	out, err := fulfil(t.Context(), st, fake, l, at(0))
+	require.NoError(t, err)
+
+	assert.Equal(t, Failed, out, "still owed, and the provider was not asked")
+	assert.Empty(t, fake.Released, "nothing was released on an empty job")
+	assert.False(t, leaseOn(t, st, "chg-1").Returned())
+}

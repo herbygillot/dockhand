@@ -73,6 +73,26 @@ func EnqueueIn(tx *statestore.Txn, e Enqueue, now time.Time) (record.Attempt, er
 	if e.Sha == "" {
 		return record.Attempt{}, ErrNoSha
 	}
+	// THE SPEC IS STAMPED FROM THE ENQUEUE, over whatever the caller put
+	// in it, and this is Acquire's rule about Request.ID applied to the
+	// other value that had two spellings.
+	//
+	// Enqueue carries Content, Platform and Ask; Spec carries Content,
+	// Platform, Test and KeepEnv. They are the SAME FOUR FACTS and
+	// nothing made them agree, so a caller that filled one and not the
+	// other produced an attempt whose stored Content, Platform and Ask
+	// described one question while its SpecID hashed another. Nothing
+	// noticed, because nothing could re-derive the hash to compare —
+	// which is the defect the frozen roster closes, and this is the half
+	// of it that lives at the boundary rather than in the record.
+	//
+	// Stamped rather than refused: the enqueue's own fields are what the
+	// attempt is written from, so they are the authority by construction,
+	// and an error here would ask every caller to spell one fact twice
+	// and get it right.
+	e.Spec.Content = e.Content
+	e.Spec.Platform = e.Platform
+	e.Spec.Test, e.Spec.KeepEnv = e.Ask.Test, e.Ask.KeepEnv
 	a := record.Attempt{
 		Schema:     record.DocSchema,
 		ID:         mintAttempt(),
@@ -86,7 +106,11 @@ func EnqueueIn(tx *statestore.Txn, e Enqueue, now time.Time) (record.Attempt, er
 		Ask:        e.Ask,
 		Started:    now.UTC(),
 		Phase:      record.Requested,
-		Members:    memberPorts(e.Spec.Roster),
+		// THE SPECIFICATION, BESIDE ITS HASH. Spec above identifies this
+		// value and this value is what it identifies; storing only the
+		// digest left nothing able to replay what the digest named, and the
+		// drain rebuilt a different question under the same id.
+		Roster: freeze(e.Spec),
 	}
 	tx.PutAttempt(a)
 	return a, nil
@@ -105,7 +129,7 @@ func mintAttempt() string {
 	return "att-" + hex.EncodeToString(b[:])
 }
 
-// memberPorts is the roster as the record spells it: one port per
+// memberPorts is the roster as a request spells it: one port per
 // member, in build order, headline first.
 func memberPorts(members []Member) []string {
 	out := make([]string, 0, len(members))
@@ -114,6 +138,70 @@ func memberPorts(members []Member) []string {
 	}
 	return out
 }
+
+// freeze is a Spec as the record keeps it: exactly the inputs SpecID
+// hashes, and nothing that is a fact about this filesystem or this
+// process.
+//
+// Portdir is dropped on purpose and is the one field that must be. It is
+// where the stager put the member's directory on THIS host at THIS
+// moment; SpecID excludes it for that reason, and freezing it would put
+// a path into a document another process reads back.
+func freeze(spec Spec) record.Roster {
+	out := record.Roster{
+		FromSource: append([]string(nil), spec.FromSource...),
+		Requires:   append([][]string(nil), spec.Requires...),
+	}
+	for _, m := range spec.Roster {
+		out.Seats = append(out.Seats, record.Seat{
+			Port: m.Port, Names: append([]string(nil), m.Names...), Forced: m.Forced,
+		})
+	}
+	for _, w := range spec.Withheld {
+		out.Withheld = append(out.Withheld, record.Withhold{Port: w.Port, Why: w.Why})
+	}
+	return out
+}
+
+// thaw is freeze's inverse: the question the attempt froze, as the value
+// every judge and every provider call takes.
+//
+// Content, Platform and the Ask come from the ATTEMPT rather than from
+// the roster, because that is where the record keeps them and a second
+// copy inside the roster would be a second place to disagree. KeepEnv
+// and Trace are outside SpecID by construction, so a spec thawed with
+// the enqueuer's ask still hashes to the id the enqueue computed.
+func thaw(a record.Attempt) Spec {
+	rel, known := platform.ByName(a.Platform)
+	if !known {
+		// A release this build cannot name: carried as the record spells it
+		// so nothing downstream invents one, and the provider refuses it as
+		// unsupported rather than building the wrong thing.
+		rel = platform.Release{Name: a.Platform}
+	}
+	spec := Spec{
+		Content:    a.Content,
+		Platform:   rel,
+		Test:       a.Ask.Test,
+		KeepEnv:    a.Ask.KeepEnv,
+		FromSource: append([]string(nil), a.Roster.FromSource...),
+		Requires:   append([][]string(nil), a.Roster.Requires...),
+	}
+	for _, s := range a.Roster.Seats {
+		spec.Roster = append(spec.Roster, Member{
+			Port: s.Port, Names: append([]string(nil), s.Names...), Forced: s.Forced,
+		})
+	}
+	for _, w := range a.Roster.Withheld {
+		spec.Withheld = append(spec.Withheld, Withheld{Port: w.Port, Why: w.Why})
+	}
+	return spec
+}
+
+// Frozen is the question an attempt was enqueued with, thawed from the
+// record and from nothing else. It is what every observer of a run — the
+// settle road, status, cancel — asks with, and what Start replays.
+func Frozen(a record.Attempt) Spec { return thaw(a) }
 
 // Adoptable is the answer to "is an attempt for exactly this question
 // already standing?" — an open (Queued or Active) or Passed attempt with
@@ -317,7 +405,7 @@ func WithdrawIn(tx *statestore.Txn, id record.ChangeID, why record.InterruptWhy,
 		if a.Runs == nil {
 			a.Runs = map[string]record.Run{}
 		}
-		for _, port := range a.Members {
+		for _, port := range a.Members() {
 			r := a.Runs[port]
 			r.State, r.Detail, r.At = withdrawnState(why), withdrawnDetail(why), at
 			a.Runs[port] = r

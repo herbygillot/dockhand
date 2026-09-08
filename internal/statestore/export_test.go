@@ -79,7 +79,7 @@ func TestExportKeepsTheLatestTerminalVerdictPerMemberAndPlatform(t *testing.T) {
 		// A queued attempt has no runs of its own; what a person sees for
 		// it is that a run is waiting.
 		tx.PutAttempt(record.Attempt{ID: "att-queued", Change: "chg-1", Sha: tip, Platform: "sequoia",
-			Started: late, Phase: record.Requested, Members: []string{"libwidget"}})
+			Started: late, Phase: record.Requested, Roster: record.Roster{Seats: []record.Seat{{Port: "libwidget"}}}})
 		// An attempt against another commit is another commit's note.
 		tx.PutAttempt(record.Attempt{ID: "att-elsewhere", Change: "chg-1", Sha: "deadbeef", Platform: "sequoia",
 			Started: late, Phase: record.Finished,
