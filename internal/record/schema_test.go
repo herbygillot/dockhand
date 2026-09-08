@@ -1,7 +1,6 @@
 package record
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -182,7 +181,8 @@ func TestEveryFieldRoundTrips(t *testing.T) {
 func TestEveryFieldIsOnTheWireInOrder(t *testing.T) {
 	b, err := Encode(populated())
 	require.NoError(t, err)
-	assert.JSONEq(t, wire, string(b))
+	//nolint:testifylint // not JSONEq: that compares parsed values, and would pass on any key order, any indentation and either escaping — which are the three things this pin exists to hold.
+	assert.Equal(t, wire, string(b))
 }
 
 func TestTheZeroRecordIsFourKeys(t *testing.T) {
@@ -192,9 +192,8 @@ func TestTheZeroRecordIsFourKeys(t *testing.T) {
 	// note about nothing and should be visible as such.
 	b, err := Encode(Record{})
 	require.NoError(t, err)
-	var keys map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(b, &keys))
-	assert.ElementsMatch(t, []string{"schema", "sha", "tree", "change"}, mapKeys(keys))
+	//nolint:testifylint // the bytes are the claim; JSONEq would accept the same four keys spread over any layout.
+	assert.Equal(t, "{\n  \"schema\": 4,\n  \"sha\": \"\",\n  \"tree\": \"\",\n  \"change\": {\n    \"schema\": 0,\n    \"id\": \"\",\n    \"state\": \"\",\n    \"content\": \"\"\n  }\n}", string(b))
 }
 
 func TestTheNoteSchemaIsFourAndTheDocumentsAreOne(t *testing.T) {
@@ -216,12 +215,4 @@ func TestAnUnknownKeyIsReadPast(t *testing.T) {
 	got, err := Decode(b, "abc")
 	require.NoError(t, err)
 	assert.Equal(t, ChangeID("chg-1"), got.Change.ID)
-}
-
-func mapKeys(m map[string]json.RawMessage) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }
