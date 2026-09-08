@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -44,15 +43,13 @@ func stubMachine(t *testing.T, list string) {
 func TestAdmitRefusesTypedAtCapacity(t *testing.T) {
 	stubMachine(t, tartListFixture) // two running
 	_, err := Admit(context.Background(), tools, 2)
-	var cap_ *verify.CapacityError
-	require.ErrorAs(t, err, &cap_)
-	assert.Equal(t, 2, cap_.Busy)
-	assert.Contains(t, err.Error(), "all 2 verification slots are busy")
-	// Admission counts slots and cannot know who is asking, so what it
-	// builds is the deferrable refusal: pending work, until a caller
-	// standing there stamps it synchronous.
-	assert.Equal(t, exitcode.VerifyQueued, cap_.DockhandExit(), "an unstamped refusal is a deferred run")
-	assert.False(t, cap_.Synchronous, "the provider never fills this in")
+	require.ErrorIs(t, err, verify.ErrNoVacancy, "the decision branches on identity, never on words")
+	var full *verify.NoVacancyError
+	require.ErrorAs(t, err, &full)
+	assert.Equal(t, 2, full.Busy)
+	assert.Equal(t, 2, full.Limit)
+	assert.False(t, full.AsOf.IsZero(), "the observation is stamped when it was made")
+	assert.Contains(t, err.Error(), "all 2 slots busy")
 
 	// A refusal holds no lock: the next caller with room admits.
 	unlock, err := Admit(context.Background(), tools, 3)

@@ -1,0 +1,258 @@
+package publish
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/darwin/abi"
+	"github.com/herbygillot/dockhand/internal/record"
+)
+
+// A VERIFIED BODY VOUCHES FOR WHAT THE RECORD REMEMBERS, in the shape of
+// macports-ports' own pull request template, with the boxes dockhand can
+// honestly answer checked and the ones it could not have answered
+// deleted.
+func TestAVerifiedBodyStatesTheEvidenceAndChecksWhatItCanVouchFor(t *testing.T) {
+	lint := "clean"
+	f := facts(func(f *Facts) {
+		f.Attempts[0].Runs = map[string]record.Run{"jq": {
+			State: record.Passed, Content: "tree-1", At: clock,
+			Ask:  record.Ask{Test: true, FromSource: true},
+			Lint: &lint,
+		}}
+		f.Change.ClosesTicket = "12345"
+		f.Change.Riders = []string{"a modeline"}
+	})
+	out := body(f, "1.2.3")
+
+	assert.Contains(t, out, "Verified with [dockhand](")
+	// The environment words the claim; the two qualifiers this run earned
+	// attach to the ACT the claim opens with, not to its tail.
+	assert.Contains(t, out, "Sequoia: linted clean, built from source and tested in a pristine VM.")
+	assert.Contains(t, out, "###### Tested on\n- macOS Sequoia — built in a pristine VM, via dockhand\n")
+	assert.Contains(t, out, "Branch head `aaaa`, against the ports tree as of 2026-09-07.")
+	assert.Contains(t, out, "Also: a modeline.\n")
+	assert.Contains(t, out, "Closes: https://trac.macports.org/ticket/12345\n")
+	assert.Contains(t, out, "- [x] checked your Portfile with `port lint`?")
+	assert.Contains(t, out, "- [x] tried existing tests with `sudo port test`?")
+	assert.Contains(t, out, "- [x] tried a full install with")
+	assert.Contains(t, out, "referenced existing tickets on [Trac]")
+	assert.Contains(t, out, "Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3\n")
+
+	// A single subject's lines are not prefixed with its own port: the
+	// pull request is about that port and its title says so.
+	assert.NotContains(t, out, "jq on Sequoia")
+}
+
+// A BODY WITH NOTHING TO SAY ABOUT A RUN SAYS WHICH OF THE SEVERAL
+// POSSIBLE REASONS IS ITS OWN. The shipped body printed "no verification
+// environment on the submitting machine" for every one of them,
+// including for a --no-verify branch nobody ever asked to verify.
+func TestAnUnverifiedBodyNamesItsOwnCause(t *testing.T) {
+	noVerify := facts(func(f *Facts) {
+		f.Change.Destination = record.ToBranch
+		f.Attempts = nil
+	})
+	assert.Contains(t, body(noVerify, ""),
+		"Not verified: this branch was minted with --no-verify, so no verification was ever asked for.")
+
+	noProvider := facts(func(f *Facts) { f.Attempts = nil })
+	assert.Contains(t, body(noProvider, ""),
+		"Not verified: no verification environment on the submitting machine, so nothing was run.")
+
+	// A COHORT COMMIT INHERITS THE HEADLINE'S VERIFICATION BY DESIGN and
+	// carries no runs over its own content. Evidence is keyed by CONTENT
+	// now, so the body can tell this from "nothing was ever run" — which is
+	// the pair the shipped body could not, and it published "nothing was
+	// run" directly above an ABI measurement.
+	extended := facts(func(f *Facts) {
+		f.Change.Content = "tree-2"
+		f.Attempts[0].Content = "tree-1"
+	})
+	assert.Contains(t, body(extended, ""),
+		"this commit adds to a change that was verified at `aaaa`, and its own verification has not come back.")
+}
+
+// THE THREE RUN-DERIVED BOXES ARE DELETED WHERE NOTHING RAN. An
+// unchecked box under "Have you" says a step was available and not
+// taken; printing one for a step that was never on offer is a false
+// implication that costs a reviewer real attention.
+func TestTheRunBoxesAreDeletedRatherThanLeftUnticked(t *testing.T) {
+	out := body(facts(func(f *Facts) { f.Attempts = nil }), "")
+	assert.NotContains(t, out, "port lint")
+	assert.NotContains(t, out, "sudo port test")
+	assert.NotContains(t, out, "pristine VM")
+	// And the two questions dockhand can never answer are gone for good.
+	assert.NotContains(t, out, "basic functionality")
+	assert.NotContains(t, out, "most important variants")
+}
+
+// A FAILURE IS NEVER LOCAL TO THIS MACHINE. A member can be proven on
+// one platform and failed on another and the change still publish, since
+// the dependents are best effort — and then the failure is the one line
+// a reviewer most needs, on the body that is otherwise vouching. Found
+// live: a body that listed gegl's pass on Sonoma and simply omitted its
+// failure on Sequoia.
+func TestAVerifiedBodyStillStatesAFailureOnAnotherPlatform(t *testing.T) {
+	sonoma := func(state record.RunState) func(*Facts) {
+		return func(f *Facts) {
+			f.Attempts = append(f.Attempts, record.Attempt{
+				ID: "att-2", Change: "chg-1", Sha: "aaaa", Content: "tree-1",
+				Platform: "Sonoma", Phase: record.Finished, Started: clock,
+				Runs: map[string]record.Run{
+					"jq":     {State: record.Passed, At: clock},
+					"libfoo": {State: state, At: clock},
+				},
+			})
+		}
+	}
+	f := cohortFacts(record.Accepted)
+	sonoma(record.Failed)(&f)
+	out := body(f, "")
+	assert.Contains(t, out, "Verified with [dockhand](")
+	assert.Contains(t, out, "libfoo on Sonoma: the build failed, and this was published anyway.")
+
+	// A run that is merely this machine's afternoon IS kept local, for a
+	// subject already proven elsewhere.
+	f = cohortFacts(record.Accepted)
+	sonoma(record.Canceled)(&f)
+	out = body(f, "")
+	assert.Contains(t, out, "Verified with [dockhand](")
+	assert.NotContains(t, out, "libfoo on Sonoma:")
+}
+
+// A COHORT'S LINES NAME THEIR SUBJECT, because "Sequoia: built in a
+// pristine VM" said nine times over is a claim about nine different
+// ports that reads as one repeated nine times.
+func TestACohortsEvidenceLinesNameTheirMember(t *testing.T) {
+	out := body(cohortFacts(record.Accepted), "")
+	assert.Contains(t, out, "jq on Sequoia:")
+	assert.Contains(t, out, "libfoo on Sequoia:")
+}
+
+// THE COHORT SECTION RESTATES THE CRITERION VERBATIM AND CARRIES THE
+// CAVEAT BESIDE IT. One sentence in the commit body, the pull request
+// and the terminal line, made once in the judgment rather than reworded
+// per audience — which is the whole argument for a proposal: a person
+// can check the one claim behind it with otool by hand.
+func TestTheCohortSectionQuotesTheCriterionAndItsLimits(t *testing.T) {
+	out := body(cohortFacts(record.Accepted), "")
+	assert.Contains(t, out, "install name libjq.1.dylib -> libjq.2.dylib.")
+	assert.Contains(t, out, abi.Limits+".")
+	assert.Contains(t, out, "Revision bumped in this change:")
+	assert.Contains(t, out, "  — libfoo (devel/libfoo): links libjq; /opt/local/bin/foo -> libjq.1.dylib\n")
+	// The ports examined and left out are printed with the reason: a
+	// decision no reader can see is a decision nobody can disagree with.
+	assert.Contains(t, out, "\n"+listedHeader+"\n")
+	assert.Contains(t, out, "  — libbar (devel/libbar): build-only dependent\n")
+}
+
+// A PROPOSAL STILL OPEN IN A PUBLISHED BODY IS A PERSON HAVING PUBLISHED
+// PAST THEIR OWN ADVISORY, which is theirs to do and worth saying out
+// loud rather than dressing up as a cohort. A dismissed one says so too.
+func TestAnUnansweredOrDismissedProposalIsStated(t *testing.T) {
+	assert.Contains(t, body(cohortFacts(record.Proposed), ""),
+		"1 dependent needs a revision bump (libfoo) was proposed and is not in this change.")
+	assert.Contains(t, body(cohortFacts(record.Dismissed), ""),
+		"1 dependent needs a revision bump (libfoo) was proposed and dismissed by hand.")
+}
+
+// A MEMBER THE BODY CLAIMS A BUMP FOR IS NEVER LISTED WITH NOTHING
+// BESIDE IT: the reviewer reading "Revision bumped in this change" is
+// owed either the evidence or the reason there is none, on the same
+// line.
+func TestAMemberWithNoProofSaysWhy(t *testing.T) {
+	f := cohortFacts(record.Accepted)
+	f.Attempts[0].Runs["libfoo"] = record.Run{State: record.Failed, At: clock}
+	assert.Contains(t, body(f, ""),
+		"  — libfoo (devel/libfoo): links libjq; the build failed, so nothing was measured\n")
+
+	// Nobody looked, and it is not the member's own doing: the silence
+	// stands, because the reason is stated once elsewhere.
+	f = cohortFacts(record.Accepted)
+	f.Attempts[0].Runs["libfoo"] = record.Run{State: record.Passed, At: clock}
+	assert.Contains(t, body(f, ""), "  — libfoo (devel/libfoo): links libjq\n")
+
+	// The sweep ran and found no binding: the port is build-only in fact
+	// whatever its depends_* fields said, and the revbump was still spent.
+	f = cohortFacts(record.Accepted)
+	f.Attempts[0].Runs["libfoo"] = record.Run{State: record.Passed, At: clock, Links: []string{}}
+	assert.Contains(t, body(f, ""), "links nothing that moved")
+}
+
+// THE MAINTAINER'S OWN WORDS ARE QUOTED VERBATIM AND INDENTED, because a
+// quote that was reflowed is not verbatim.
+func TestAnInstructionCommentIsQuotedWhole(t *testing.T) {
+	f := facts(func(f *Facts) {
+		f.Change.Findings = []record.Finding{{
+			Kind: record.KindInstruction, Disposition: record.Accepted,
+			Source: "sysutils/jq/Portfile:12",
+			Quote:  "# when updating this port, rev-bump\n# every dependent",
+		}}
+	})
+	out := body(f, "")
+	assert.Contains(t, out, "The comment in sysutils/jq/Portfile:12 says:\n\n  # when updating this port, rev-bump\n  # every dependent\n")
+}
+
+// A RECONSTRUCTION THAT DID NOT REPRODUCE THE TIP NAMES THE FILES. The
+// pass that raises the hold is unattended, so the only account anybody
+// gets is what is written down — data, not a sentence.
+func TestADivergentReconstructionNamesThePaths(t *testing.T) {
+	f := facts(func(f *Facts) {
+		f.Change.Findings = []record.Finding{{
+			Kind: record.KindStealth, Disposition: record.Dismissed,
+			Diverged: []string{"Portfile", "files/patch-a.diff"},
+		}}
+	})
+	assert.Contains(t, body(f, ""),
+		"Re-planning this change from its own base did not reproduce the tip: Portfile, files/patch-a.diff.")
+}
+
+// AN ORDINARY BUMP CARRIES NO COHORT SECTION AT ALL.
+func TestAnOrdinaryBumpHasNoCohortSection(t *testing.T) {
+	out := body(facts(), "")
+	assert.NotContains(t, out, "Revision bumped in this change")
+	assert.NotContains(t, out, listedHeader)
+	assert.NotContains(t, out, abi.Limits)
+}
+
+// THE BODY IS THE BYTES THE PUBLICATION SENDS: Gather renders it once
+// and Authorize measures THAT, so `--body` is a preview of the real
+// thing rather than a second rendering that could drift from it.
+func TestTheBodyOnTheFactsIsWhatTheGateMeasures(t *testing.T) {
+	f := facts()
+	require.Equal(t, "a body", f.Body)
+	long := strings.Repeat("x", f.BodyLimit+1)
+	f.Body = long
+	_, _, err := Authorize(f, Pace{})
+	require.ErrorIs(t, err, ErrBodyTooLong)
+}
+
+// cohortFacts is a change with a headline and one revbumped dependent,
+// its proposal at the disposition given.
+func cohortFacts(d record.Disposition) Facts {
+	return facts(func(f *Facts) {
+		f.Change.Subjects = append(f.Change.Subjects, record.Subject{
+			Port: "libfoo", Portdir: "devel/libfoo", Intent: "bump-revision", Target: "rev1",
+			Reason: "links libjq",
+		})
+		f.Change.Findings = []record.Finding{{
+			Kind:      record.KindABIDependents,
+			Criterion: "install name libjq.1.dylib -> libjq.2.dylib",
+			Ports:     []string{"libfoo"},
+			Candidates: []record.Candidate{
+				{Port: "libfoo", Portdir: "devel/libfoo", Proposed: true, Reason: "links libjq"},
+				{Port: "libbar", Portdir: "devel/libbar", Reason: "build-only dependent"},
+			},
+			Disposition: d,
+			At:          clock,
+		}}
+		f.Attempts[0].Runs["libfoo"] = record.Run{
+			State: record.Passed, Content: "tree-1", At: clock,
+			Links: []string{"/opt/local/bin/foo -> libjq.1.dylib"},
+		}
+	})
+}

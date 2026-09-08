@@ -2,7 +2,6 @@ package provision
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -160,15 +159,14 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) er
 	// is a fast typed refusal, never a mid-provision hang.
 	unlockAdmission, err := tart.Admit(ctx, t.Tools, tart.Provider{}.Capabilities().Concurrent)
 	if err != nil {
-		// Someone is standing here. Provisioning queues nothing and
-		// records no run, so a refusal for want of a slot must not answer
-		// as a deferral — `cycle` provisions nothing, and there is no run
-		// for it to start. The provider counts slots and cannot know who
-		// asked, so the caller that is waiting says so.
-		var full *verify.CapacityError
-		if errors.As(err, &full) {
-			full.Synchronous = true
-		}
+		// The refusal travels as the provider stated it. Provisioning
+		// queues nothing and records no run, so "somebody is standing
+		// here" is true of this call — and it is NOT written back onto the
+		// error any more: a provider's observation and a caller's road are
+		// two facts (rule 2), and the shipped tree carried them on one
+		// value by mutating it after the fact. Which band a full machine
+		// exits in is decided where the road is known, over
+		// verify.ErrNoVacancy.
 		return err
 	}
 	runErr := make(chan error, 1)

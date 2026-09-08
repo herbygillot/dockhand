@@ -16,11 +16,9 @@ package verify
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/artifact"
-	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/platform"
 )
@@ -432,6 +430,16 @@ var (
 	// ErrUnknownJob reports a job the provider does not recognize,
 	// which is what a stale job file looks like.
 	ErrUnknownJob = errors.New("verify: unknown job")
+	// ErrNoVacancy is every concurrent-environment slot being spoken
+	// for. See NoVacancyError for the contract it carries, which is the
+	// load-bearing half.
+	//
+	// It is a sentinel because a caller must branch on identity without
+	// reading a sentence, which is rule 6: run.Start stops submitting on
+	// it, run.Defer refuses to write a backoff for it, and lease.Acquire
+	// retires the lease it wrote a moment earlier on it. Three decisions,
+	// one identity, no words.
+	ErrNoVacancy = errors.New("verify: no verification slot is free")
 )
 
 // NoProvider reports a machine with no verify provider at all, in its
@@ -494,59 +502,6 @@ type Verifier interface {
 	// as the second, the first is retried forever and every pass pays
 	// for the failure again.
 	Release(ctx context.Context, job Job) error
-}
-
-// CapacityError is a submission refused for want of a slot: every
-// concurrent-VM licence is spoken for, counted live at admission. It
-// is a machine fact — the deferred-branch flow absorbs it exactly as
-// it absorbs a missing environment — and it exists as a type because
-// the alternative was discovering a full machine through a
-// two-minute agent timeout.
-type CapacityError struct {
-	Busy, Cap int
-	// Synchronous says someone is waiting on this answer: the --verify
-	// gate, `verify <portdir>`, an exec. Nothing is queued in that case
-	// and nobody will come back for it, which is a different outcome
-	// from the same refusal met by a submit that defers.
-	//
-	// The provider cannot fill this in — admission counts slots and has
-	// no idea who is asking — so it is stamped by the caller that knows
-	// it is standing there.
-	Synchronous bool
-}
-
-// Error states the fact and names no verb (D27, ruled 2026-09-05 with
-// its implementation, pending the maintainer): a provider package does
-// not know which CLI verb will act on a full machine, and the sentence
-// is recorded into a queued run's detail where it outlives any renaming
-// of that verb. The remedy — `dockhand cycle` starts what was deferred
-// — is the caller's to add, and the report adds it beside the queued
-// line. "deferred" is not said here either, because the same refusal
-// is met synchronously, where nothing is deferred at all.
-func (e *CapacityError) Error() string {
-	return fmt.Sprintf("all %d verification slots are busy (%d VMs running)", e.Cap, e.Busy)
-}
-
-// DockhandExit: a full machine met by a submit is pending — the run is
-// deferred and `cycle` starts it when a slot frees, so nothing is
-// wrong and the caller should ask again. Met by someone waiting, the
-// same fact is the machine refusing the ask, because there is no
-// deferred run to come back for.
-func (e *CapacityError) DockhandExit() int {
-	if e.Synchronous {
-		return exitcode.VerifierBusy
-	}
-	return exitcode.VerifyQueued
-}
-
-// Code names the refusal for a machine, and says which of the two it
-// was: the twin's reason is what a script reads when the band alone
-// does not say whether anything is still coming.
-func (e *CapacityError) Code() string {
-	if e.Synchronous {
-		return "verifier-busy"
-	}
-	return "verify-queued"
 }
 
 // Executor is the optional capability of reaching inside a live

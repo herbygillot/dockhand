@@ -541,6 +541,196 @@ linters:
               desc: the note is a derived export; this lifecycle writes the state ref and nothing else
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
               desc: a test that reached for the real backend would be proving something about tart; the provider seam is verifytest's job
+        # run is the verification lifecycle: the queue, the two
+        # sequencers, and the ONE interpreter of a provider's answer. Its
+        # denials are the same layering the other lifecycles carry, plus
+        # two that are specific to it and are the whole reason its seams
+        # are interfaces.
+        #
+        # The first is the STAGER. Materializing an attempt's commit and
+        # reading its preflight is git, a temp root and a MacPorts
+        # evaluation — so a run that could reach eval and git would have
+        # no reason to declare run.Stager at all, and the re-plan the
+        # drain ruling chose would collapse back into the sequencer. The
+        # seam is what makes the queue carry an identity and a question
+        # rather than a filesystem path, and these two lines are what
+        # holds it.
+        #
+        # The second is the LOCAL half of a cohort proposal. run.Local
+        # exists because the propose step needs a reverse index and the
+        # maintainer's Portfile cues and run holds neither; portindex is
+        # ALLOWED because dependents.From takes its row type and the
+        # translation crosses here as values, exactly as it does in
+        # internal/dependents — naming the row type is not opening an
+        # index, and nothing here does.
+        run:
+          files:
+            - "**/internal/run/**"
+            - "!**/internal/run/*_test.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into the lifecycles; a lifecycle that imported it would be importing its own caller
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cli composes app and app calls run, so run must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: the one interpreter states verdicts, not sentences a reader meets; the strings it does produce ride the record (Run.Detail) and a judge that could phrase a report would start deciding from words (rule 6)
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: streams, a clock and process state stay with the verb; every clock read in this package is passed in for exactly that reason
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: the one ref-mover is statestore, and run reaches git only through it (R23); staging a commit is the Stager's, which is why that is an interface
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: the preflight evaluation belongs to the Stager the composition root implements; a run that could evaluate would fold the re-plan back into the sequencer and could not be tested without a ports tree
+            - pkg: github.com/herbygillot/dockhand/internal/macports/portnote
+              desc: the maintainer's Portfile cues arrive through run.Local, so the propose step reads values and never a file
+            - pkg: github.com/herbygillot/dockhand/internal/tempdir
+              desc: where a staged portdir lives is the Stager's business; a queue that knew a path could not be drained by another process
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: that a job's id is the environment's name is one backend's fact — Observe asserts the OPTIONAL interfaces off the verify.Verifier it was handed and never names a backend
+            - pkg: github.com/herbygillot/dockhand/internal/gh
+              desc: a publication is a foreign effect and publish's; a lifecycle that could ask a forge would ask it from inside an Amend
+            - pkg: github.com/herbygillot/dockhand/internal/upstream
+              desc: where a release comes from is the planners' business; run verifies changes already planned
+            - pkg: net
+              desc: provider and network I/O never goes inside an Amend closure or inside a lock, and the surest way to hold that is a package that cannot reach either
+        # run's own tests, on lease-tests' precedent: the same denials,
+        # and the fixture repository the state ref has to live in. The
+        # sequencers drive a REAL statestore over a REAL repository —
+        # what they prove is an ordering of writes against a
+        # compare-and-set, and a fake store would prove something about
+        # the fake — so internal/git is NOT denied here.
+        #
+        # It cannot be, and the reason is worth stating rather than
+        # leaving as a gap someone closes by accident: a rule matches by
+        # PREFIX, so a line naming internal/git covers internal/git/gittest
+        # too, and gittest is the fixture. The property a git denial would
+        # buy — that no test moves a ref outside the store (R23) — is held
+        # instead by internal/statestore/onlymover_test.go, which walks
+        # the AST for callers of git.UpdateRefs and for owned ref names
+        # spelled outside the store. That is a stronger check than an
+        # import line, and it is where the rule already lives.
+        run-tests:
+          files:
+            - "**/internal/run/*_test.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into the lifecycles; a test that imported it would be testing its own caller
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cli composes app and app calls run, so run must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: what a verdict looks like to a reader is render's and is pinned by render's own goldens
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: streams, a clock and process state stay with the verb
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: the judge and the queue are testable with no ports tree behind them, and a test that opened an evaluator would end that
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: a test that reached for the real backend would be proving something about tart; the provider seam is verifytest's job
+        # publish owns the publication lifecycle: the gate ladder, the
+        # permit, the effects a permit authorizes, and retirement's one
+        # foreign effect. Its import list is RULED and the design states
+        # it: change, gh, git, macports, record, statestore — with no
+        # ledger among them, which is the whole layering claim the
+        # package makes. record.Record is the note's shape, a derived
+        # export, and nothing decides from a derived copy; a draft had
+        # publish.Facts carrying one, so the ladder would have decided
+        # from the projection while every other road decided from the
+        # state ref. A package that cannot reach the exporter cannot make
+        # that mistake, which is why ledger is the first line below.
+        #
+        # darwin/abi is the one edge beyond the ruled list and it is one
+        # CONSTANT wide: abi.Limits, the caveat that travels beside a
+        # measurement's criterion wherever it is quoted. The pull request
+        # body quotes the criterion a cohort proposal rests on, and the
+        # sentence saying what otool cannot see has to be the same
+        # sentence in the commit body and in the pull request — which is
+        # exactly why it is a constant and not a paragraph anyone
+        # rewords. abi is a pure leaf with a four-entry allow list of its
+        # own, so the edge costs nothing but the constant.
+        #
+        # A deny list, like its sibling lifecycles, because what this
+        # package must not acquire is narrower than a purity claim: it
+        # pushes, it opens pull requests and it writes the state ref, so
+        # it is effectful by construction. The three that matter:
+        #
+        #   - A TERMINAL. Authorize is pure and every mutator here runs
+        #     inside an Amend closure, which may be retried; a refusal is
+        #     a sentinel and an advisory is a VALUE on the result,
+        #     precisely so that nothing here has to choose when a person
+        #     reads it. The shipped promote printed its advisories from
+        #     inside the forge walk, so no caller could count them.
+        #   - THE LAYERS ABOVE. app calls publish; cli calls app. An
+        #     import back is a cycle, and one that compiled would put the
+        #     command line inside a transaction.
+        #   - os/exec AND net. Every effect here goes through git.Repo or
+        #     the gh.Runner seam, which is what lets Apply be driven by a
+        #     scripted forge over a real bare repository; a package that
+        #     could shell out or open a socket itself would have a second
+        #     way to reach the network, and the rule that no forge call
+        #     happens inside an Amend would be a rule about today's code.
+        publish:
+          files:
+            - "**/internal/publish/**"
+            - "!**/internal/publish/*_test.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: a decision reads the state ref, never the note's derived export; publish cannot even obtain a record.Record, which is what stops the gate ladder deciding from the projection
+            - pkg: github.com/herbygillot/dockhand/internal/run
+              desc: publication never observes, judges or settles a run — an Active attempt on the tip is an advisory naming `dockhand cancel`, and a publish that could call Finish would be a second judge
+            - pkg: github.com/herbygillot/dockhand/internal/lease
+              desc: an environment is run's and lease's; a publication holds none and releases none
+            - pkg: github.com/herbygillot/dockhand/internal/verify
+              desc: what a change is worth building is run's question; naming a job here would put a provider vocabulary under every pull request
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: a refusal here is a sentinel and an advisory is a typed value, so nothing has to choose a sentence; the pull request body is BYTES THE FORGE STORES and not a rendering for a terminal, which is why it lives here and is pinned by this package's own tests
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: streams, a clock and process state stay with the verb; every clock read in this package is passed in for exactly that reason
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cli composes app and app calls publish, so publish must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into this package and its siblings; an import into it would put the husk underneath the lifecycle that replaces it
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: the evaluation Direction needs arrives through publish.Evaluator, which app implements; a publication that could open a Tcl shell could not be argued about without a MacPorts installation
+            - pkg: github.com/herbygillot/dockhand/internal/upstream
+              desc: where a release comes from is the planners' business; publication weighs a change already planned
+            - pkg: github.com/herbygillot/dockhand/internal/plan
+              desc: re-planning a change is change.Reconstruct's, and its verdict arrives here as a parameter — a publication that held a planner would recompute its own permission
+            - pkg: os/exec
+              desc: every effect goes through git.Repo or the gh.Runner seam; a package that shelled out itself would have a second road to the forge, outside the funnel and outside the tests that drive it
+            - pkg: net
+              desc: provider and network I/O never goes inside an Amend closure or inside a lock, and the surest way to hold that is a package that cannot reach the network except through the one seam
+        # publish's own tests, on lease-tests' and run-tests' precedent:
+        # the same denials, and the fixture repository the state ref and
+        # the bare fork have to live in.
+        #
+        # internal/git is NOT denied here and cannot be: a rule matches by
+        # PREFIX, so a line naming internal/git covers internal/git/gittest
+        # too, and gittest is the fixture. What these tests prove needs a
+        # real repository — that `ls-remote` and `push --delete` behave
+        # the way DeleteFork's doc says they do, and that a foreign
+        # deletion leaves this machine's tracking ref standing — and a
+        # fake git would prove something about the fake. The property an
+        # import denial would buy (no test moves a ref outside the store,
+        # R23) is held instead by internal/statestore/onlymover_test.go,
+        # which walks the AST.
+        publish-tests:
+          files:
+            - "**/internal/publish/*_test.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: a test that opened a note would be testing the projection this package is forbidden to read
+            - pkg: github.com/herbygillot/dockhand/internal/run
+              desc: a test that settled a run would be proving something about the verification lifecycle
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: what a refusal looks like to a reader is the report layer's and is pinned by its own goldens
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: streams, a clock and process state stay with the verb
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into the lifecycles; a test that imported it would be testing its own caller
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cli composes app and app calls publish, so publish must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: the evaluation seam is scripted in these tests, which is the whole reason it is a seam — a publication's direction is arguable with no MacPorts installation behind it
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: a test that booted a worker would be proving something about tart; nothing here needs an environment
         # verify names a job and its outcome, and record embeds a Job, so
         # verify sits below record. An import the other way is a cycle;
         # this says so before the compiler does, with the reason on it.

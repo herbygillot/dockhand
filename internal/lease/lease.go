@@ -468,7 +468,7 @@ func RetainIn(tx *statestore.Txn, change record.ChangeID, platform string, until
 // on this road too.
 //
 // A CAPACITY REFUSAL CLOSES THE LEASE IT JUST WROTE, in the same pass,
-// without asking the provider anything. verify.CapacityError carries the
+// without asking the provider anything. verify.ErrNoVacancy carries the
 // assertion that nothing was created, so the Requested lease is retired
 // with Outcome Absent — "confirmed not to exist: also done" — rather
 // than left standing for a LookupRequest round trip. That matters at
@@ -525,8 +525,7 @@ func Acquire(ctx context.Context, st *statestore.Store, prov verify.Verifier, ch
 
 	job, serr := prov.Submit(ctx, req)
 	if serr != nil {
-		var full *verify.CapacityError
-		if errors.As(serr, &full) {
+		if errors.Is(serr, verify.ErrNoVacancy) {
 			// The refusal asserts that nothing was created, so the record
 			// this call wrote a moment ago names nothing and is retired
 			// here rather than left for a round trip. Its own failure is

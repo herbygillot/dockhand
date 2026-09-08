@@ -219,13 +219,27 @@ type PullRequest struct {
 	Head PRHead `json:"head"`
 }
 
-// PRHead is the part of a pull request's head that dockhand reads —
-// the branch name. GitHub sends the sha and the repository beside it,
-// and neither is read: a ref is enough to invert a branch name dockhand
-// minted, and the tree behind it is the dearer source docs/todo.md
-// leaves for later.
+// PRHead is the part of a pull request's head that dockhand reads: the
+// branch name, and the commit that branch is at on the forge.
+//
+// Ref is read to invert a branch name dockhand minted — the version a
+// change takes its port to is in the slug — and the repository beside it
+// is still not read, since the tree behind the head is the dearer source
+// docs/todo.md leaves for later.
+//
+// Sha is what makes "this change is already in front of reviewers"
+// answerable. publish.Authorize returns a NO-OP permit when the branch's
+// own pull request is open at the tip being published, which is what
+// stops a resident dispatcher re-applying publication to every open pull
+// request on every tick — 288 forge writes per PR per day, each counted
+// against the machine's allowance. There is no local fact that answers
+// it: the remote-tracking ref is this machine's own last push, and the
+// head ref alone says nothing about which commit the forge has. It costs
+// nothing to read — the pulls response already carries it — and it stays
+// out of MarshalJSON's published five, so `status --json` is unchanged.
 type PRHead struct {
 	Ref string `json:"ref"`
+	Sha string `json:"sha"`
 }
 
 // published is the document `status --json` has always emitted for a

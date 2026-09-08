@@ -2,13 +2,13 @@ package verify
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/platform"
 )
 
@@ -80,21 +80,38 @@ func TestSupportsIsPerRelease(t *testing.T) {
 		"a provider with no platforms has no default either")
 }
 
-// The same refusal, two outcomes: a submit that defers is pending
-// work, and an ask someone is waiting on is the machine saying no.
-// Only the caller can tell the two apart, so only the caller stamps
-// it.
-func TestCapacityErrorBandTurnsOnWhoIsWaiting(t *testing.T) {
-	deferred := &CapacityError{Busy: 2, Cap: 2}
-	assert.Equal(t, exitcode.VerifyQueued, deferred.DockhandExit())
-	assert.Equal(t, "pending", exitcode.Family(deferred.DockhandExit()))
-	assert.Equal(t, "verify-queued", deferred.Code())
+// ONE IDENTITY, TWO IDIOMS. errors.Is is the DECISION — run.Start stops
+// submitting, run.Defer refuses to write a backoff, lease.Acquire
+// retires the lease it just wrote — and errors.As is the OBSERVATION, so
+// a report can say how full the machine was and when. The shipped tree
+// carried a Synchronous field on this value instead, stamped by MUTATING
+// the error at three call sites: a provider's observation and a caller's
+// road on one value, with the decision written in afterwards. Which road
+// is standing there is the caller's own fact and no longer travels here.
+func TestNoVacancyIsOneIdentityAndOneObservation(t *testing.T) {
+	at := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
+	full := &NoVacancyError{Busy: 2, Limit: 2, AsOf: at}
 
-	waiting := &CapacityError{Busy: 2, Cap: 2, Synchronous: true}
-	assert.Equal(t, exitcode.VerifierBusy, waiting.DockhandExit())
-	assert.Equal(t, "environment", exitcode.Family(waiting.DockhandExit()))
-	assert.Equal(t, "verifier-busy", waiting.Code())
+	require.ErrorIs(t, full, ErrNoVacancy, "the decision branches on identity and never on words")
+	var seen *NoVacancyError
+	require.ErrorAs(t, fmt.Errorf("submitting: %w", full), &seen)
+	assert.Equal(t, 2, seen.Busy)
+	assert.Equal(t, 2, seen.Limit)
+	assert.Equal(t, at, seen.AsOf)
+	assert.Contains(t, full.Error(), "all 2 slots busy")
+}
 
-	assert.Equal(t, deferred.Error(), waiting.Error(),
-		"the sentence is the same fact and is written into notes; only the band moved")
+// AN UNKNOWN VACANCY ADMITS NOTHING, which is rule 7 on the one value
+// whose zero is most expensive: Free == 0 alone would mean both "the
+// machine is full" and "the provider could not be asked", so a provider
+// that is DOWN would read as a busy one.
+func TestAnUnknownVacancyAdmitsNothing(t *testing.T) {
+	assert.False(t, Vacancy{}.Admits(1), "nobody asked, so nothing is admitted")
+	assert.False(t, Vacancy{Free: 4, Limit: 4}.Admits(1),
+		"a count with no Known behind it is a forged zero, not an answer")
+	assert.True(t, Vacancy{Known: true, Free: 2, Limit: 2}.Admits(2))
+	assert.False(t, Vacancy{Known: true, Free: 1, Limit: 2}.Admits(2),
+		"the n is ENVIRONMENTS, and a cohort is one guest for N members")
+	assert.True(t, Vacancy{Known: true, Free: 0, Limit: 2}.Admits(0),
+		"a full machine is a legitimate observation and never a refusal to observe")
 }

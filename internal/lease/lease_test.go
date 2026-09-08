@@ -185,13 +185,13 @@ func sonoma() platform.Release {
 }
 
 // A SATURATED MACHINE MUST NOT LEAVE A PHANTOM PER REFUSAL. The
-// capacity error asserts that nothing was created, so the lease written
-// moments earlier is retired Absent in the same pass rather than
+// no-vacancy refusal asserts that nothing was created, so the lease
+// written moments earlier is retired Absent in the same pass rather than
 // standing for a LookupRequest round trip on every queued attempt on
 // every tick.
 func TestACapacityRefusalClosesTheLeaseItJustWrote(t *testing.T) {
 	st := newStore(t)
-	full := &verify.CapacityError{Busy: 2, Cap: 2}
+	full := &verify.NoVacancyError{Busy: 2, Limit: 2}
 	fake := &verifytest.Fake{SubmitErr: full}
 
 	_, err := Acquire(t.Context(), st, fake, "chg-1", request(""), claimant(me()), at(0))

@@ -28,11 +28,18 @@ var cacheDir = func() (string, error) {
 // stance, machine-scoped): `tart list` is the truth, which also
 // counts VMs dockhand did not start — a user's own tart VM spends an
 // Apple licence slot just the same, and any ledger would have missed
-// it. On refusal the typed CapacityError comes back and no lock is
+// it. On refusal the typed NoVacancyError comes back and no lock is
 // held; on admission the caller holds the lock through clone and
 // start — until its new VM is itself visible as running — so two
 // dockhands serialize their starts instead of both counting the same
 // free slot.
+//
+// THE REFUSAL CARRIES verify.NoVacancyError'S CONTRACT and this is
+// where it is true: the count and the comparison happen under the
+// machine-wide lock and BEFORE the clone and `tart run`, so a refusal
+// here asserts that nothing was created for the request — which is what
+// lets lease.Acquire retire the lease it wrote a moment earlier instead
+// of leaving a phantom obligation for a round trip.
 func Admit(ctx context.Context, tools *tool.Finder, capacity int) (func(), error) {
 	dir, err := cacheDir()
 	if err != nil {
@@ -49,7 +56,7 @@ func Admit(ctx context.Context, tools *tool.Finder, capacity int) (func(), error
 	}
 	if busy >= capacity {
 		unlock()
-		return nil, &verify.CapacityError{Busy: busy, Cap: capacity}
+		return nil, &verify.NoVacancyError{Busy: busy, Limit: capacity, AsOf: time.Now()}
 	}
 	return unlock, nil
 }
