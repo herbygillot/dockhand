@@ -847,3 +847,36 @@ func short(s string) string {
 	}
 	return s[:8]
 }
+
+// Purged renders what a purge removed, or would have.
+//
+// The three populations are printed separately because they are three
+// different kinds of loss. A branch is a person's work and its removal
+// is the only irreversible line here — git keeps a reflog entry, but
+// nothing else names the commit — so the branches are listed by name
+// rather than counted. The pins and the notes are machinery: a pin kept
+// a snapshot reachable and a note is a derived export that regenerates
+// from the state ref, so a count is the whole of what a reader needs.
+//
+// THE KEPT LINE IS NOT DECORATION. Purge deliberately leaves the state
+// ref, so a checkout whose branches have all just gone will still have
+// `status` list every change. A reader who was not told that reads the
+// next command's output as a bug, so the count is stated here, once,
+// beside the removal that caused it.
+func Purged(w io.Writer, p app.PurgeResult) {
+	if p.DryRun {
+		fmt.Fprintln(w, "dry run: nothing was removed")
+	}
+	verb := "removed"
+	if p.DryRun {
+		verb = "would remove"
+	}
+	fmt.Fprintf(w, "%s %d branch(es) · %d pin(s) · %d record(s)\n",
+		verb, len(p.Branches), len(p.Pins), p.Notes)
+	for _, ref := range p.Branches {
+		fmt.Fprintf(w, "  %s\n", strings.TrimPrefix(ref, "refs/heads/"))
+	}
+	if p.Kept > 0 {
+		fmt.Fprintf(w, "the state ref is untouched: %d change record(s) remain, and `status` will still list them\n", p.Kept)
+	}
+}

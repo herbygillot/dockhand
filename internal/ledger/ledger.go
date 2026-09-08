@@ -44,6 +44,7 @@ package ledger
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -118,4 +119,42 @@ func (l *Ledger) Remove(ctx context.Context, sha string) error {
 // change which record a first-match scan finds.
 func (l *Ledger) All(ctx context.Context) ([]string, error) {
 	return l.repo.NotesList(ctx, git.VerifyNotesRef)
+}
+
+// Purge removes every record this ledger holds and reports how many
+// went, for a `purge` that is clearing a checkout's dockhand artifacts.
+//
+// It is the ledger's because the ledger is the only thing in the tree
+// that knows a note: the ref name, the codec, and that a note attaches
+// to a commit rather than standing on its own. A caller that removed
+// these by reaching for git would be the second thing that knows, and
+// the package map's whole claim for this package is that there is one.
+//
+// REMOVING THE NOTES IS NOT DESTROYING ANYTHING, and that is why this
+// verb can exist at all while its neighbours are hedged with refusals.
+// The note is a DERIVED EXPORT stamped from the state ref, which is the
+// authority: a build that cannot read one clears it and regenerates, and
+// statestore.Export writes it again on the next settle. Deleting the
+// state ref would be a different act with a different cost — it discards
+// live leases, so every environment the machine holds is leaked with
+// nothing left to name it — and it is not this verb's.
+//
+// It walks All and removes one at a time rather than deleting the notes
+// ref outright. One removal per commit is what Remove already does
+// idempotently, it leaves git's own reflog for the notes ref intact so
+// the removal is recoverable by a person who wishes it undone, and a
+// note that vanished between the listing and its removal is fine for the
+// same reason Remove is idempotent. The count is what was listed, which
+// is the honest answer to "how many records did this checkout hold".
+func (l *Ledger) Purge(ctx context.Context) (int, error) {
+	shas, err := l.All(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, sha := range shas {
+		if err := l.Remove(ctx, sha); err != nil {
+			return 0, fmt.Errorf("purging the record on %s: %w", sha, err)
+		}
+	}
+	return len(shas), nil
 }

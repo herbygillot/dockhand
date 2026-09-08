@@ -1324,3 +1324,57 @@ func pathBase(p string) string {
 	}
 	return p
 }
+
+// purgeCmd removes this checkout's dockhand branches, pins and records.
+//
+// It is a housekeeping verb and it sits beside discard, which is the
+// same act over one change. What purge does NOT do is close anything:
+// it removes the local git artifacts and leaves the state ref alone,
+// so the change records survive and `status` still lists them. That
+// asymmetry is app.Purge's, stated in its doc and reported on the last
+// line of its own output, because a person whose branches have all just
+// gone will read the next `status` as a bug otherwise.
+//
+// Needs is Repo alone: no verifier, no planner, no tree. Purge asks git
+// what it holds and the store what it remembers, and a checkout with no
+// MacPorts installation and no provider can still be cleaned up — which
+// is very often exactly the checkout that needs it.
+func purgeCmd(s *Services) *cobra.Command {
+	var dry, force bool
+	c := &cobra.Command{
+		Use:   "purge",
+		Short: "Remove this checkout's dockhand branches, pins and records",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			if err := s.Acquire(ctx, app.Needs{Repo: true}); err != nil {
+				return err
+			}
+			repo, err := s.Repo()
+			if err != nil {
+				return err
+			}
+			st, err := s.State()
+			if err != nil {
+				return err
+			}
+			led, err := s.Ledger()
+			if err != nil {
+				return err
+			}
+			res, err := app.Purge{
+				Repo: repo, State: st, Ledger: led,
+				Progress: sink{w: s.Err},
+				DryRun:   dry, Force: force,
+			}.Run(ctx)
+			if err != nil {
+				return err
+			}
+			report.Purged(s.Out, res)
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&dry, "dry-run", false, "list what would be removed and remove nothing")
+	c.Flags().BoolVar(&force, "force", false, "proceed even while an environment is held — the running build's branch goes with it")
+	return c
+}

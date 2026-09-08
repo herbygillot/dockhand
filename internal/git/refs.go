@@ -267,3 +267,38 @@ func (r *Repo) RefsUnder(ctx context.Context, prefix string) ([]string, error) {
 	}
 	return strings.Split(out, "\n"), nil
 }
+
+// RefsWithTips lists every ref under a slash-terminated prefix WITH the
+// object it points at, from one `for-each-ref`.
+//
+// It exists because a delete line needs its expected-old and RefsUnder
+// cannot supply one. That is not an optimization to save N rev-parses:
+// it is the difference between a checked delete and an unchecked one.
+// The wire was measured for R23 — under -z an empty <oldvalue> field
+// means "unverified", so `delete <ref> NUL <empty>` removes the ref
+// whatever it holds, and a ref a person moved between the listing and
+// the batch would go with it. Reading name and tip in the same command
+// is also what makes the pair CONSISTENT: two calls could straddle a
+// concurrent write and pair a name with a value it no longer has, which
+// the batch would then refuse for the wrong reason.
+//
+// Ref names cannot contain a space (git refuses them at creation), so a
+// single space is an unambiguous separator between the two fields.
+//
+// An empty listing is an empty map and no error, for RefsUnder's reason:
+// a namespace nothing has written to is a namespace with nothing in it.
+func (r *Repo) RefsWithTips(ctx context.Context, prefix string) (map[string]string, error) {
+	out, err := r.git(ctx, "for-each-ref", "--format=%(refname) %(objectname)", prefix)
+	if err != nil || out == "" {
+		return map[string]string{}, err
+	}
+	tips := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		name, sha, ok := strings.Cut(line, " ")
+		if !ok || name == "" || sha == "" {
+			return nil, fmt.Errorf("git: for-each-ref line %q is not a name and an object", line)
+		}
+		tips[name] = sha
+	}
+	return tips, nil
+}

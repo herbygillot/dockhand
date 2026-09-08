@@ -188,7 +188,7 @@ func newRoot(version string) (*cobra.Command, *Services) {
 	// resident loop and `cycle` is the person's one-shot, which is why
 	// they are filed together here rather than one of them being shelved
 	// under Setup as a daemon.
-	add("branch", "Housekeeping:", holdCmd(s), unholdCmd(s), discardCmd(s), dispatchCmd(s), cycleCmd(s))
+	add("branch", "Housekeeping:", holdCmd(s), unholdCmd(s), discardCmd(s), purgeCmd(s), dispatchCmd(s), cycleCmd(s))
 	add("report", "Reports:", outdatedCmd(s), classifyCmd(s))
 	// Setup is the verbs that run BEFORE there is anything to maintain,
 	// and mostly outside a checkout. Filing doctor here rather than under

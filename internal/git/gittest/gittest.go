@@ -146,6 +146,17 @@ func MoveBranch(t *testing.T, repo *git.Repo, branch, sha string) {
 	run(t, repo.Root, "update-ref", "refs/heads/"+branch, sha)
 }
 
+// Checkout puts the repository's own worktree on a branch, so a test
+// can stand the one state `git update-ref` treats differently from
+// every other: a ref some worktree holds. update-ref DELETES what
+// `git branch -D` refuses, which is why anything whose batch would move
+// or delete a branch must ask CheckedOutAt first — and why a fixture
+// that can produce the condition is worth having.
+func Checkout(t *testing.T, repo *git.Repo, branch string) {
+	t.Helper()
+	run(t, repo.Root, "checkout", branch)
+}
+
 // Fetched records sha as where remote's branch was last seen — the
 // remote-tracking ref refs/remotes/<remote>/<branch>, which is all a
 // fetch leaves behind and all the git package reads when it asks where
