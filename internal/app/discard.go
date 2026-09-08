@@ -158,8 +158,23 @@ func (d Discard) run(ctx context.Context, c record.Change, absent *change.TipDis
 		// rest of the road runs unchanged. DemolishIn's own guard is the
 		// one that matters here and it still applies: it refuses a change
 		// that is still Bound(), so this cannot demolish live work.
+		//
+		// THE TEST IS "ALREADY CLOSED" AND NOT Bound(), which is what this
+		// guard first asked and is not the same question. Bound() is false
+		// for TWO reasons — "the record is closed" and "a newer sibling
+		// superseded it while its publication stayed open" — and only the
+		// first is a record with nothing left to close. A SUPERSEDED
+		// change is still open, still minted, and still listed by `status`.
+		//
+		// Measured: `discard` on a superseded change printed "discarded
+		// <id>", exited 0, and left the record minted. It then stood in
+		// every listing as a passed change whose branch no longer existed,
+		// and nothing but `purge` could clear it — which is the exact
+		// defect the paragraph above was written to fix, reintroduced by
+		// reaching for the nearest predicate instead of the one the
+		// sentence names.
 		cur := tx.State().Changes[string(c.ID)]
-		if cur.Bound() {
+		if !cur.State.Closed() {
 			if err := change.CloseIn(tx, c.ID, record.ChangeDiscarded, "", d.Now()); err != nil {
 				return err // ErrPublicationOpen: close the pull request instead
 			}

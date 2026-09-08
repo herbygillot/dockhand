@@ -412,3 +412,50 @@ func TestDestinationIsWrittenAtMint(t *testing.T) {
 	assert.Equal(t, record.ToBranch, destination(Enqueue))
 	assert.Equal(t, record.ToBranch, destination(Branch))
 }
+
+// A SUPERSEDED CHANGE IS NOT A CLOSED ONE, and discard must close it.
+//
+// The guard here first asked Bound(), which is false for TWO reasons —
+// "the record is closed" and "a newer sibling superseded it while its
+// publication stayed open" — where only the first is a record with
+// nothing left to close. So `discard` on a superseded change printed
+// "discarded <id>", exited 0, and left the record MINTED: standing in
+// every listing as an open change whose branch no longer existed, with
+// nothing but `purge` able to clear it. That is the exact defect the
+// guard was added to fix, reintroduced by reaching for the nearest
+// predicate rather than the one the reasoning names.
+func TestDiscardClosesASupersededChange(t *testing.T) {
+	repo, st := fixture(t)
+	first, err := changeOp(repo, st).Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, "jq", "1.8"), Delivery: Branch, Slug: "jq-1.8",
+	})
+	require.NoError(t, err)
+
+	// The shape a --replace leaves when the old change's PUBLICATION IS
+	// STILL OPEN: supersedeIn releases the name and leaves the record
+	// minted, where a --replace with nothing published closes it outright.
+	// Planted directly, because reproducing it through the operation
+	// would mean standing up a live pull request.
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		cur := tx.State().Changes[string(first.Ref.ID())]
+		cur.SupersededBy = "dockhand/jq-1.9"
+		tx.PutChange(cur)
+		return nil
+	}))
+
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	old := s.Changes[string(first.Ref.ID())]
+	require.NotEmpty(t, old.SupersededBy, "the fixture must actually supersede")
+	require.False(t, old.State.Closed(), "a superseded change is still open — that is the whole point")
+	require.False(t, old.Bound(), "and it is not Bound(), which is what made the wrong guard look right")
+
+	d := Discard{Repo: repo, State: st, Me: me(), Now: now, Invoker: record.Human}
+	_, err = d.Run(t.Context(), string(first.Ref.ID()))
+	require.NoError(t, err)
+
+	s, err = st.Read(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, record.ChangeDiscarded, s.Changes[string(first.Ref.ID())].State,
+		"discard reported success, so the record must not still be open")
+}
