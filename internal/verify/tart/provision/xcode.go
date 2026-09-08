@@ -7,47 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/darwin/xcode"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 )
-
-// xcodeBounds is the first Xcode version each release cannot run, by
-// Darwin major — Apple raises the macOS floor partway through each
-// Xcode line, so the bound is a minor, not a major. An absent entry
-// means no known bound (the newest release runs the newest Xcode).
-//
-//	Monterey: Xcode 14.3 requires Ventura
-//	Ventura:  Xcode 15.3 requires Sonoma
-//	Sonoma:   Xcode 16.3 requires Sequoia
-//	Sequoia:  Xcode 26.4 requires Tahoe 26.2
-var xcodeBounds = map[int]string{
-	21: "14.3",
-	22: "15.3",
-	23: "16.3",
-	24: "26.4",
-}
-
-// RecommendedXcode names the Xcode a release should get: the newest
-// release-form version below its bound. The specific version matters
-// greatly per macOS release — Apple raises the floor mid-line — which
-// is why this is a table a guided workflow can print, not a "download
-// the latest" suggestion.
-func RecommendedXcode(r platform.Release) (version string, capped bool) {
-	switch r.Darwin {
-	case 21:
-		return "14.2", true
-	case 22:
-		return "15.2", true
-	case 23:
-		return "16.2", true
-	case 24:
-		return "26.3", true
-	}
-	return "", false // the newest release runs the newest Xcode
-}
 
 // PickXcode chooses the archive to install for a release: the newest
 // .xip in dir whose version the release can run. dir may also name one
@@ -58,7 +24,7 @@ func RecommendedXcode(r platform.Release) (version string, capped bool) {
 // environment, and verdicts from a beta toolchain answer a question
 // nobody asked.
 func PickXcode(dir string, r platform.Release) (path, version string, err error) {
-	bound := xcodeBounds[r.Darwin]
+	bound := xcode.Bound(r)
 	candidates := map[string]string{} // version -> path
 	add := func(p string) {
 		if v, ok := xipVersion(filepath.Base(p)); ok {

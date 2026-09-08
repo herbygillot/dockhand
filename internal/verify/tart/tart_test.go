@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -52,7 +53,7 @@ func TestCapabilitiesClaimOnlyViability(t *testing.T) {
 // otherwise boot a guest to install "".
 func TestSubmitRefusesARequestThatNamesNoPort(t *testing.T) {
 	for _, ports := range [][]string{nil, {}, {""}, {"", "jq"}} {
-		_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: ports})
+		_, err := Provider{}.Submit(t.Context(), verify.Request{ID: "a1b2c3", Ports: ports})
 		require.ErrorIs(t, err, verify.ErrUnsupported)
 		assert.Contains(t, err.Error(), "no port named")
 	}
@@ -71,7 +72,7 @@ func TestSubmitRefusesAPortNameThatWouldCarryALine(t *testing.T) {
 		{"jq", "oniguruma\t"},
 		{"jq", ""},
 	} {
-		_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: ports})
+		_, err := Provider{}.Submit(t.Context(), verify.Request{ID: "a1b2c3", Ports: ports})
 		require.ErrorIs(t, err, verify.ErrUnsupported, "%q", ports)
 		assert.Contains(t, err.Error(), "is not a port name")
 	}
@@ -99,7 +100,7 @@ func TestSubmitRefusesADeactivateNameThatWouldCarryALine(t *testing.T) {
 		{"", "gegl\t"},
 	} {
 		_, err := Provider{}.Submit(t.Context(), verify.Request{
-			Ports: []string{"jq", "gegl-devel"}, Deactivate: deactivate,
+			ID: "a1b2c3", Ports: []string{"jq", "gegl-devel"}, Deactivate: deactivate,
 		})
 		require.ErrorIs(t, err, verify.ErrUnsupported, "%q", deactivate)
 		assert.Contains(t, err.Error(), "is not a port name")
@@ -109,7 +110,7 @@ func TestSubmitRefusesADeactivateNameThatWouldCarryALine(t *testing.T) {
 	// through: the request fails further in, at the base lookup, which
 	// is the next thing Submit does and a different sentinel.
 	_, err := Provider{}.Submit(t.Context(), verify.Request{
-		Ports: []string{"jq", "gegl", "gegl-devel"}, Deactivate: []string{"", "", "gegl"},
+		ID: "a1b2c3", Ports: []string{"jq", "gegl", "gegl-devel"}, Deactivate: []string{"", "", "gegl"},
 	})
 	require.ErrorIs(t, err, verify.ErrNoEnvironment)
 	assert.NotErrorIs(t, err, verify.ErrUnsupported)
@@ -124,13 +125,13 @@ func TestSubmitRefusesADeactivateNameThatWouldCarryALine(t *testing.T) {
 // a road anyone walks.
 func TestSubmitRefusesADeactivationAtOneSubject(t *testing.T) {
 	for _, deactivate := range [][]string{{"gegl"}, {"", "gegl"}} {
-		_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: []string{"gegl-devel"}, Deactivate: deactivate})
+		_, err := Provider{}.Submit(t.Context(), verify.Request{ID: "a1b2c3", Ports: []string{"gegl-devel"}, Deactivate: deactivate})
 		require.ErrorIs(t, err, verify.ErrUnsupported, "%q", deactivate)
 		assert.Contains(t, err.Error(), `a one-port build cannot deactivate "gegl" first`)
 	}
 
 	// Empty entries ask for nothing, at one subject as at several.
-	_, err := Provider{}.Submit(t.Context(), verify.Request{Ports: []string{"jq"}, Deactivate: []string{""}})
+	_, err := Provider{}.Submit(t.Context(), verify.Request{ID: "a1b2c3", Ports: []string{"jq"}, Deactivate: []string{""}})
 	require.ErrorIs(t, err, verify.ErrNoEnvironment, "the door let it through")
 }
 
@@ -288,8 +289,10 @@ func TestWorkersReportEveryWorkerWithItsOwner(t *testing.T) {
 	got, err := Provider{Tools: tools}.Workers(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []verify.Worker{
-		{Name: "dockhand-worker-1", Owner: "/Users/someone/ports", Job: verify.Job{Provider: "tart", ID: "dockhand-worker-1"}},
-		{Name: "dockhand-worker-2", Job: verify.Job{Provider: "tart", ID: "dockhand-worker-2"}},
+		{Name: "dockhand-worker-1", Owner: "/Users/someone/ports", Request: "1",
+			Job: verify.Job{Provider: "tart", ID: "dockhand-worker-1", Request: "1"}},
+		{Name: "dockhand-worker-2", Request: "2",
+			Job: verify.Job{Provider: "tart", ID: "dockhand-worker-2", Request: "2"}},
 	}, got, "an unattributed worker still holds a slot, and each carries the job Release accepts")
 }
 
@@ -301,4 +304,76 @@ func TestWorkersRefuseWhenTheMachineWillNotAnswer(t *testing.T) {
 	_, err := Provider{Tools: tools}.Workers(t.Context())
 	require.ErrorIs(t, err, verify.ErrNoEnvironment)
 	assert.Contains(t, err.Error(), "exit status 1", "the cause survives the wrapping")
+}
+
+// The request id IS the worker's name, which is what makes recovery
+// possible at all: a guest can be joined back to the lease that was
+// written before it existed, from nothing but the name tart itself
+// carries. A sidecar cannot do that job — it can be deleted while the
+// VM keeps running — so the name is where the identity lives.
+func TestAWorkerIsNamedForItsRequest(t *testing.T) {
+	assert.Equal(t, "dockhand-worker-a1b2c3", WorkerName("a1b2c3"))
+	assert.Equal(t, "a1b2c3", RequestOf(WorkerName("a1b2c3")))
+	assert.Equal(t, "a1-b2-c3", RequestOf(WorkerName("a1-b2-c3")),
+		"the prefix is cut, not split: an id carrying a hyphen comes back whole")
+	assert.Empty(t, RequestOf("unrelated-vm"), "a name that is not a worker names no request")
+	assert.Empty(t, RequestOf(BaseName(platform.Releases[0])), "nor does a base")
+}
+
+// A request with no id, or one that would not survive a round trip
+// through `tart clone` and `tart list`, is refused before anything is
+// created. Rule 3 is undone at the door otherwise: the guest would
+// exist and nothing written down could name it.
+func TestSubmitRefusesARequestIDThatCannotNameAWorker(t *testing.T) {
+	for _, id := range []string{"", "a b", "a/b", "a\nb", "id.with.dots", strings.Repeat("a", 65)} {
+		_, err := Provider{}.Submit(t.Context(), verify.Request{ID: id, Ports: []string{"jq"}})
+		require.ErrorIs(t, err, verify.ErrUnsupported, "%q", id)
+		assert.Contains(t, err.Error(), "cannot name a worker", "%q", id)
+	}
+	for _, id := range []string{"a1b2c3", "7b9e9e549bb5", "a-b", "a_b", "A1"} {
+		assert.True(t, requestID(id), id)
+	}
+}
+
+// Absent is a POSITIVE observation and the whole reason this capability
+// exists: a lease written before a call that never created anything is
+// retired on it, in the pass that finds it, rather than standing
+// forever. The id here is one no machine has a guest for.
+func TestLookupRequestReportsAbsenceForAGuestThatIsNotHere(t *testing.T) {
+	testenv.Tool(t, "tart")
+	obs, err := Provider{Tools: tools}.LookupRequest(t.Context(), "000000000000dockhandtest")
+	require.NoError(t, err)
+	assert.Equal(t, verify.Absent, obs.State)
+	assert.Zero(t, obs.Job, "nothing was found, so there is no job to name")
+}
+
+// An id this provider could not have created a guest under is refused
+// rather than answered Absent. Absent is a claim about the machine, and
+// a claim closes an obligation.
+func TestLookupRequestRefusesAnIDItCouldNotHaveCreated(t *testing.T) {
+	_, err := Provider{Tools: tools}.LookupRequest(t.Context(), "not a name")
+	require.ErrorIs(t, err, verify.ErrUnsupported)
+}
+
+// Release answers ErrUnknownJob for a guest that is not here, which is
+// the guard its siblings already carried. Confirmed absence discharges
+// an obligation; a transport failure leaves it standing — and before
+// this they were the same error, so a VM somebody had already deleted
+// was owed forever.
+//
+// It touches nothing: HasVM says no and the verb returns before any
+// stop or delete is attempted.
+func TestReleaseReportsAGuestThatIsAlreadyGone(t *testing.T) {
+	testenv.Tool(t, "tart")
+	err := Provider{Tools: tools}.Release(t.Context(),
+		verify.Job{Provider: "tart", ID: WorkerName("000000000000dockhandtest")})
+	require.ErrorIs(t, err, verify.ErrUnknownJob)
+}
+
+// A job from another provider is not this provider's to release, and
+// saying so before HasVM keeps this verb from asking tart about a name
+// that was never tart's.
+func TestReleaseRejectsAForeignJob(t *testing.T) {
+	err := Provider{}.Release(t.Context(), verify.Job{Provider: "github", ID: "123"})
+	require.ErrorIs(t, err, verify.ErrUnknownJob)
 }

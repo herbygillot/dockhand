@@ -265,6 +265,17 @@ func Exec(ctx context.Context, tools *tool.Finder, vm string, argv ...string) (s
 // is to kill it, and killing this one leaks the worker and the licence
 // slot with it.
 func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, error) {
+	// The identity the call is filed under, refused first because
+	// everything after it is named for it. A request with no id, or one
+	// this backend cannot spell into a VM name, is a guest nothing could
+	// join back to the record that was written before the call — which
+	// is the whole of rule 3 undone at the door. Refusing here is the
+	// contract RequestLookup rests on: every worker this provider
+	// creates carries its request id in its name, so there is no such
+	// thing as a tart guest of dockhand's that recovery cannot address.
+	if !requestID(req.ID) {
+		return verify.Job{}, fmt.Errorf("%w: %q cannot name a worker", verify.ErrUnsupported, req.ID)
+	}
 	// An empty slice and an empty headline are the same malformed
 	// request: both name nothing to build, and a request that named
 	// nothing would boot a guest to install it.
@@ -324,11 +335,11 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 		}
 	}()
 
-	name := WorkerPrefix + stamp()
+	name := WorkerName(req.ID)
 	if out, err := CLI(ctx, p.Tools, nil, "clone", base.VM, name); err != nil {
 		return verify.Job{}, fmt.Errorf("%w: clone: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
-	job := verify.Job{Provider: "tart", ID: name, Started: time.Now()}
+	job := verify.Job{Provider: "tart", ID: name, Started: time.Now(), Request: req.ID}
 	writeAttribution(name, req.Owner)
 
 	// The guest outlives this call, so every failure from here on must
@@ -1107,14 +1118,117 @@ func (p Provider) Workers(ctx context.Context) ([]verify.Worker, error) {
 		// That a job's id IS the VM's name is this provider's own fact,
 		// stated here once so that Release can be handed a worker's Job
 		// without any caller having to know it.
-		workers = append(workers, verify.Worker{Name: vm, Owner: OwnerOf(vm),
-			Job: verify.Job{Provider: "tart", ID: vm}})
+		// The request id comes out of the NAME and not out of the
+		// attribution sidecar, so a worker whose sidecar was lost still
+		// joins the lease that named it. That is what makes the audit's
+		// "untracked" mean "no record here names this guest" rather than
+		// "no cache file here names this guest".
+		workers = append(workers, verify.Worker{Name: vm, Owner: OwnerOf(vm), Request: RequestOf(vm),
+			Job: verify.Job{Provider: "tart", ID: vm, Request: RequestOf(vm)}})
 	}
 	return workers, nil
 }
 
 // The capability is the contract, provably.
 var _ verify.WorkerLister = Provider{}
+
+// WorkerName is the guest a request is created under: this provider's
+// prefix and the caller's own request id, and nothing else.
+//
+// The id is IN THE NAME rather than in a sidecar because a name is the
+// one thing about a VM that cannot be lost independently of the VM. An
+// attribution file can be deleted, a cache directory can be moved, and
+// either would leave a running guest that nothing could join to the
+// lease written before it existed; a name is carried by tart itself.
+// That is what makes RequestOf below total over this provider's own
+// guests, and what makes LookupRequest a question tart can answer
+// without keeping records.
+//
+// It replaces a random stamp minted inside Submit. The stamp was fine
+// as a unique name and useless as an identity: it did not exist until
+// after the call that could strand the guest, so a crash in that window
+// left a VM with a name nothing here had ever written down.
+func WorkerName(request string) string { return WorkerPrefix + request }
+
+// RequestOf recovers the request id a worker was created for, and ""
+// for a name that is not one of this provider's workers. It is
+// WorkerName read backwards, and it is a cut rather than a split
+// because the prefix is fixed and the rest is the id entire — an id
+// carrying a hyphen must come back whole.
+func RequestOf(vm string) string {
+	id, ok := strings.CutPrefix(vm, WorkerPrefix)
+	if !ok {
+		// A name that is not one of this provider's workers names no
+		// request, and returning the name itself would be worse than
+		// returning nothing: the caller joins the state ref on this
+		// string, so a base or a stranger's VM would match whatever lease
+		// happened to have been minted under that token.
+		return ""
+	}
+	return id
+}
+
+// requestID reports whether an id can be carried into a VM name as
+// itself.
+//
+// A narrow alphabet on purpose, and narrower than the ids the caller
+// mints: a name goes into `tart clone`'s argv and comes back out of
+// `tart list`'s output, and this package joins the two by string
+// equality. A name carrying a space would come back as two words, one
+// carrying a slash would name a path, and one carrying the prefix's own
+// hyphens in the wrong place would still round-trip — so the refusal is
+// about what a name may CONTAIN and not about what it means. Lowercase
+// hex is what lease mints; the alphabet here is a little wider than
+// that so a future token spelling is not a change to this provider.
+func requestID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// LookupRequest implements verify.RequestLookup: what became of a
+// request id, asked of the machine and not of any record.
+//
+// It is a HasVM over the name the id would have been created under,
+// which is the whole of what this provider has to do because the id is
+// the name. Present is Found, with the job that names it; absent is
+// Absent, which is a positive observation and what lets a lease written
+// before a call that never happened be retired. A listing that failed
+// is Unknown WITH the error: the caller must not read "I could not ask
+// tart" as "there is no such guest", because the act on the other side
+// of that answer closes an obligation.
+//
+// The job it hands back carries no Started. The provider does not know
+// when a guest it is meeting for the first time was created, and a
+// fabricated instant on a record's identity is worse than a zero one
+// (rule 7); Release, which is what this job is for, is addressed by
+// Provider and ID alone.
+func (p Provider) LookupRequest(ctx context.Context, id string) (verify.RequestObservation, error) {
+	if !requestID(id) {
+		return verify.RequestObservation{}, fmt.Errorf("%w: %q cannot name a worker", verify.ErrUnsupported, id)
+	}
+	name := WorkerName(id)
+	ok, err := HasVM(ctx, p.Tools, name)
+	if err != nil {
+		return verify.RequestObservation{}, err
+	}
+	if !ok {
+		return verify.RequestObservation{State: verify.Absent}, nil
+	}
+	return verify.RequestObservation{State: verify.Found,
+		Job: verify.Job{Provider: "tart", ID: name, Request: id}}, nil
+}
+
+// The capability is the contract, provably.
+var _ verify.RequestLookup = Provider{}
 
 // workerNames picks this provider's guests out of a `tart list
 // --quiet` listing. Prefix, not substring: the name is dockhand's own
@@ -1180,8 +1294,30 @@ func (p Provider) Log(ctx context.Context, job verify.Job) (string, error) {
 }
 
 // Release discards the worker, and with it any debug handle.
+//
+// It answers ErrUnknownJob for a guest that is not here, which is the
+// guard Poll and Log already carried and this verb did not. The
+// difference is not cosmetic: an environment somebody already deleted
+// and a machine that will not answer had the same shape as errors, so
+// the obligation for a VM that is demonstrably gone was owed forever
+// and every reconciliation paid for the same failure again. Confirmed
+// absence is a DONE release (lease.Absent); a transport failure is an
+// owed one. The sentinel is what tells them apart.
+//
+// The attribution sidecar is cleared either way. A guest that is not
+// here has no attribution to keep, and one that would not delete has
+// its name in the error, which is what a person needs to go and remove
+// it by hand.
 func (p Provider) Release(ctx context.Context, job verify.Job) error {
 	defer clearAttribution(job.ID)
+	if job.Provider != "tart" {
+		return fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
+	}
+	if ok, err := HasVM(ctx, p.Tools, job.ID); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
+	}
 	_, _ = CLI(ctx, p.Tools, nil, "stop", job.ID)
 	// A delete can race a guest that is still coming up — tart refuses
 	// to remove a running VM, and stop is not instantaneous. Retrying

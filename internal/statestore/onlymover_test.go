@@ -63,12 +63,14 @@ var theMover = map[string]bool{
 // is a ref writer in waiting: somebody about to spell a ref rather than
 // ask for one.
 //
-// internal/change joins this list when it lands — change.BranchRef and
-// change.PinRef are the public spellings, and the store's own copies
-// here are the boundary it judges names against. Nothing else may carry
-// one.
+// internal/change is on this list because it has landed —
+// change.BranchRef and change.PinRef are the public spellings, and the
+// store's own copies here are the boundary it judges names against.
+// Nothing else may carry one, and a third entry is a change to R23
+// before it is a change to this map.
 var ownedLiterals = map[string]bool{
 	"internal/statestore": true,
+	"internal/change":     true,
 }
 
 // ownedPrefixes is what a ref literal is measured against. The state ref

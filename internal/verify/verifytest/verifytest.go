@@ -98,10 +98,28 @@ type Fake struct {
 	Evidence string
 	Xcode    map[platform.Release]bool
 
+	// Lookups scripts LookupRequest per request id, OVERRIDING what this
+	// fake would otherwise answer from its own history. It is how a test
+	// writes the answer that matters most and is hardest to arrange: a
+	// provider that could not tell, which must never close an
+	// obligation.
+	Lookups map[string]verify.RequestObservation
+	// LookupErr makes LookupRequest fail per request id — the machine
+	// that will not answer, which a caller must absorb rather than read
+	// as an absent guest.
+	LookupErr map[string]error
+
 	// Submitted records every request, in order.
 	Submitted []verify.Request
 	// Released records every released job ID, in order.
 	Released []string
+
+	// jobs is what this fake actually created, by request id, so
+	// LookupRequest can answer out of its own history instead of a
+	// script. A fake that answered Absent for everything unscripted
+	// would make the recovery paths pass by default in the one
+	// direction that destroys things.
+	jobs map[string]verify.Job
 
 	nextID int
 }
@@ -129,7 +147,14 @@ func (f *Fake) Submit(_ context.Context, req verify.Request) (verify.Job, error)
 	}
 	f.Submitted = append(f.Submitted, req)
 	f.nextID++
-	return verify.Job{Provider: "fake", ID: fmt.Sprintf("fake-%d", f.nextID), Started: time.Now()}, nil
+	job := verify.Job{Provider: "fake", ID: fmt.Sprintf("fake-%d", f.nextID), Started: time.Now(), Request: req.ID}
+	if req.ID != "" {
+		if f.jobs == nil {
+			f.jobs = map[string]verify.Job{}
+		}
+		f.jobs[req.ID] = job
+	}
+	return job, nil
 }
 
 func (f *Fake) Poll(_ context.Context, job verify.Job) (verify.Status, error) {
@@ -165,7 +190,38 @@ func (f *Fake) Release(_ context.Context, job verify.Job) error {
 		return err
 	}
 	f.Released = append(f.Released, job.ID)
+	// A released job is gone, which is what LookupRequest must say about
+	// it afterwards: the whole point of Absent is that a provider
+	// confirming a guest does not exist DISCHARGES the obligation, so a
+	// fake whose history did not forget would prove the opposite of what
+	// a caller relies on.
+	delete(f.jobs, job.Request)
+	for id, j := range f.jobs {
+		if j.ID == job.ID {
+			delete(f.jobs, id)
+		}
+	}
 	return nil
+}
+
+var _ verify.RequestLookup = (*Fake)(nil)
+
+// LookupRequest answers out of this fake's own history — the job it
+// created for that id, if it still holds one — unless a test scripted
+// something else. Unknown is never the default: a provider that says
+// "I could not tell" is a state a test must ask for, because it is the
+// one answer that leaves an obligation standing.
+func (f *Fake) LookupRequest(_ context.Context, id string) (verify.RequestObservation, error) {
+	if err := f.LookupErr[id]; err != nil {
+		return verify.RequestObservation{}, err
+	}
+	if obs, ok := f.Lookups[id]; ok {
+		return obs, nil
+	}
+	if job, ok := f.jobs[id]; ok {
+		return verify.RequestObservation{State: verify.Found, Job: job}, nil
+	}
+	return verify.RequestObservation{State: verify.Absent}, nil
 }
 
 var _ verify.WorkerLister = (*Fake)(nil)

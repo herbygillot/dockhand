@@ -151,6 +151,25 @@ func (c Capabilities) Supports(r platform.Release) bool {
 // Request is one verification: build these ports, from these portdirs,
 // under this variant frame.
 type Request struct {
+	// ID is assigned by the CALLER, before Submit is called, and the
+	// adapter must carry it into whatever name or metadata its backend
+	// uses to identify the resource.
+	//
+	// This is a change to the provider contract and it is not optional:
+	// rule 3 — persist identity before any call that can outlive the
+	// process — is UNATTAINABLE without it. Before it, tart minted the
+	// worker name inside Submit, from crypto/rand, and returned it; so
+	// the identity every recovery path joins on did not exist until
+	// after the call that can strand it. A provider that cannot accept a
+	// client-assigned request identity, and cannot be asked about one
+	// before a handle exists, can be an interactive tool but cannot
+	// offer unattended verification.
+	//
+	// The caller here is lease.Acquire and nothing else: it mints the
+	// token, writes the lease under it, and only then submits. An empty
+	// ID is a request no recovery can resolve, and a provider that
+	// carries the id into a resource name refuses one it cannot spell.
+	ID string
 	// Ports are what to install — port or subport names, as `port`
 	// itself would be given them.
 	//
@@ -314,6 +333,19 @@ type Job struct {
 	Provider string    `json:"provider"`
 	ID       string    `json:"id"`
 	Started  time.Time `json:"started"`
+	// Request is the caller-assigned Request.ID this job was started
+	// for, echoed back by a provider that can carry one. It is what
+	// turns a job into something an UNRECORDED submission can still be
+	// found by: RequestLookup answers with a Job, and the only thing
+	// tying that Job to the lease the caller wrote before the call is
+	// this field.
+	//
+	// Empty is a provider that does not carry request ids, which is the
+	// same provider RequestLookup's type assertion refuses. It is not
+	// part of a job's identity — Release and Poll are addressed by
+	// Provider and ID — so a caller reconstructing a Job from a record
+	// leaves it empty and loses nothing.
+	Request string `json:"request,omitempty"`
 }
 
 // State is where a job is.
@@ -446,6 +478,21 @@ type Verifier interface {
 	// either way it must never ride along on Poll — polling is cheap
 	// or the whole submit-and-poll shape stops being usable.
 	Log(ctx context.Context, job Job) (string, error)
+	// Release must distinguish CONFIRMED ABSENCE from a transport
+	// failure, because those have opposite recoveries: an environment
+	// the provider says is gone DISCHARGES the obligation, and one it
+	// could not reach leaves it standing. Confirmed absence is spelled
+	// ErrUnknownJob, which is the same word every other verb on this
+	// interface uses for a job the provider does not have.
+	//
+	// It is stated here because it was the one verb that did not do it.
+	// Every tart verb that touches a guest guards with HasVM and reports
+	// ErrUnknownJob — except Release, so "already gone" and "could not
+	// tell" arrived as the same error, and lease.classify had no way to
+	// tell an environment somebody else already deleted from a provider
+	// that would not answer. The first is done; the second is owed. Read
+	// as the second, the first is retried forever and every pass pays
+	// for the failure again.
 	Release(ctx context.Context, job Job) error
 }
 
@@ -536,7 +583,73 @@ type InteractiveShell interface {
 type Worker struct {
 	Name  string
 	Owner string
+	// Request is the caller-assigned Request.ID this worker was created
+	// for, when the backend can carry one. It is what turns "a VM
+	// belonging to this checkout" — which attribution can already answer
+	// — into "the VM belonging to THIS request", which is what recovery
+	// actually needs: lease.Outstanding joins the provider's inventory
+	// to the state ref on this field, and a worker that joins no lease
+	// is the untracked one the audit exists to find.
+	//
+	// Empty means the backend does not carry request ids, or this guest
+	// predates the one that does. Both are workers a listing must still
+	// report — an unattributed, unjoinable worker still holds a slot —
+	// so this is a fact about the join and never a reason to omit a row.
+	Request string
+	Job     Job
+}
+
+// RequestState is what the provider can say about a caller-assigned
+// request id. Absent and Unknown are different answers and must not be
+// collapsed: "I looked and there is nothing" permits discharge; "I could
+// not tell" does not. The zero value is Unknown for exactly that reason
+// — an observation nobody filled in must not read as an answer that
+// closes an obligation.
+type RequestState uint8
+
+const (
+	// Unknown is the refusing zero: the provider could not say. It never
+	// closes an obligation and never releases anything.
+	Unknown RequestState = iota
+	// Absent is the provider looking and finding nothing for this id. It
+	// is a positive observation, not a failure, and it is what lets a
+	// lease written before a call that never happened be retired.
+	Absent
+	// Found is the provider naming the job the id belongs to, so the
+	// caller can release it through the ordinary road.
+	Found
+)
+
+// RequestObservation is one answer about a request id: what the provider
+// saw, and — when it saw something — the job that names it. Job is
+// meaningful only under Found; under Absent and Unknown it is the zero
+// value, because a job nobody found has no id to carry.
+type RequestObservation struct {
+	State RequestState
 	Job   Job
+}
+
+// RequestLookup answers what became of a caller-assigned request id,
+// BEFORE any handle exists. It is an OPTIONAL interface rather than a
+// method on Verifier, following the pattern this package already uses
+// six times over: a backend that cannot answer it is still a perfectly
+// good interactive tool, it simply cannot offer unattended verification,
+// and the type assertion is where that is decided rather than a sentence
+// in a doc comment.
+//
+// It exists because of the one window rule 3 opens on purpose. A lease
+// is written Requested, with the id and no handle, and THEN the provider
+// is called; a crash in between leaves a record naming something only
+// the provider can resolve. Without this method that record could never
+// be discharged at all — it has no handle to release and no answer to
+// wait for — which is the failure an adversarial pass found in the first
+// version of the reclaim stage.
+//
+// The observation is the provider's whole answer. What to do about it —
+// retire the lease, release the job, or leave the obligation standing —
+// needs records the provider does not have and stays the caller's.
+type RequestLookup interface {
+	LookupRequest(ctx context.Context, id string) (RequestObservation, error)
 }
 
 // WorkerLister is the optional capability of naming every environment

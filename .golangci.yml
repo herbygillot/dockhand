@@ -41,9 +41,9 @@ linters:
         - fmt.Fprintln
         - (*github.com/herbygillot/dockhand/internal/macports/eval.Evaluator).Close
         - (*github.com/herbygillot/dockhand/internal/tcl/rpc.Session).Close
-    # The layering under the notes: record, ledger and verdict are split
-    # apart so that a judgment can be read, and tested, with no repo, no
-    # worker and no clock behind it. Nothing in the type system says so.
+    # The layering under the notes: record, ledger and the analyses are
+    # split apart so that a judgment can be read, and tested, with no
+    # repo, no worker and no clock behind it. Nothing in the type system says so.
     # The property lives in the import block of every file, where one
     # convenient call is enough to lose it, and losing it is quiet — the
     # tests still pass, they just need a fixture rig to run. These rules
@@ -54,38 +54,42 @@ linters:
     # whole net family. Test files are in scope on purpose: a table test
     # reaching for a repo is the first sign the purity has gone.
     #
-    # The two pure packages are held by an ALLOW list, and the rest by
-    # deny lists. A deny list only knows the edges someone thought of:
-    # verdict importing internal/macports/eval or internal/upstream
-    # passed a full run clean while dragging os/exec in behind it, which
-    # is the same lost property arriving by a route nobody had named. An
-    # allow list inverts that — a new import is a lint failure until it
-    # is argued for — and it is affordable only because these two
-    # packages are meant to stay small. The deny entries stay under it,
+    # The pure packages are held by an ALLOW list, and the rest by deny
+    # lists. A deny list only knows the edges someone thought of: the
+    # analyses' ancestor, internal/verdict, importing
+    # internal/macports/eval or internal/upstream passed a full run
+    # clean while dragging os/exec in behind it, which is the same lost
+    # property arriving by a route nobody had named. An allow list
+    # inverts that — a new import is a lint failure until it is argued
+    # for — and it is affordable only because these packages are meant
+    # to stay small. The deny entries stay under it,
     # because prefix matching means allowing internal/verify allows the
     # tart provider too, and because the reason an edge is forbidden is
     # worth saying at the import line where someone adds it.
     #
     # Each pure package gets a second rule for its own tests, allowing
-    # the harness — testify, testing, and the file reading a corpus
+    # the harness — testify, testing, and the file reading a capture
     # sweep needs — and repeating the denials, so a test that reaches
     # for a repository still fails.
     depguard:
       rules:
-        # verdict decides; it never looks. Every fact it weighs — a poll
-        # status, a build log, a PR's state, whether a dependency's
-        # Portfile says nomaintainer — arrives as a value from the caller
-        # that did the I/O. That is what lets the settle corpus run as a
-        # table test, and it holds only while verdict cannot reach the
-        # packages that read the world for themselves.
-        verdict:
+        # darwin/abi decides; it never looks. It compares two
+        # installations the environment already described, and every
+        # value it weighs — the two manifests, where the baseline came
+        # from, whether the environment was asked at all — arrives from
+        # the caller that did the I/O. That is what lets the whole
+        # comparison run as a table test with no worker, no repository
+        # and no provider behind it, and it holds only while this
+        # package cannot reach the packages that read the world.
+        #
+        # It is the narrower half of what internal/verdict used to hold
+        # under this rule, and its allow list is narrower to match: the
+        # measurement speaks Mach-O and artifact, and nothing else.
+        abi:
           files:
-            - "**/internal/verdict/**"
-            - "!**/internal/verdict/*_test.go"
+            - "**/internal/darwin/abi/**"
+            - "!**/internal/darwin/abi/*_test.go"
           allow:
-            - fmt
-            - iter
-            - regexp
             - sort
             # strconv, for the one comparison that cannot be made as
             # text: a Mach-O compatibility version is numbers, and real
@@ -97,90 +101,186 @@ linters:
             # is what this list is about.
             - strconv
             - strings
-            - github.com/herbygillot/dockhand/internal/exitcode
-            # macports, the root package only, for VerCmp: version
-            # ordering is base's semantics or it is wrong, and a
-            # judgment that says one pull request goes further than
-            # another must order the way base does. The package is a
-            # port of vercomp.c with no imports at all; its
-            # subpackages are where the tree is read and Tcl is run,
-            # and the trailing-slash denial below fences every one of
-            # them off — depguard gives the longer prefix the last
-            # word — so this admits the arithmetic and nothing that
-            # reads the world.
-            - github.com/herbygillot/dockhand/internal/macports
-            - github.com/herbygillot/dockhand/internal/platform
-            - github.com/herbygillot/dockhand/internal/record
-            # artifact holds the installed facts the ABI comparison reads;
-            # they left verify so the record and the analyses can name a fact
-            # without importing the provider that observed it.
+            # artifact holds the installed facts the comparison reads;
+            # they left verify so the record and the analyses can name a
+            # fact without importing the provider that observed it. It
+            # is this package's ONE dockhand edge, which is the ruled
+            # import direction stated where it would be broken.
             - github.com/herbygillot/dockhand/internal/artifact
-            - github.com/herbygillot/dockhand/internal/verify
           deny:
-            - pkg: github.com/herbygillot/dockhand/internal/macports/
-              desc: verdict may order versions the way base does, never evaluate a Portfile or read a tree to learn one — the version is a fact the caller passes in
+            - pkg: github.com/herbygillot/dockhand/internal/verify
+              desc: the ruled direction gives this package one edge and it goes to artifact; the three baseline-source words are declared here and pinned equal to the provider's by a test, which is the only place the two spellings meet
+            - pkg: github.com/herbygillot/dockhand/internal/record
+              desc: a measurement is not a finding — the note's kinds closed around what a record carries, and the cohort proposal is what states this measurement's criterion
+            - pkg: github.com/herbygillot/dockhand/internal/macports
+              desc: an install name is not a MacPorts version; nothing here orders one, and a package that could evaluate a Portfile would stop being a comparison of two captures
             - pkg: github.com/herbygillot/dockhand/internal/git
               desc: the caller reads the repo and passes the facts in; a judgment that opens git needs one to be tested
-            - pkg: github.com/herbygillot/dockhand/internal/gh
-              desc: verdict decides from a PR's facts, mapped by the caller — it never runs gh itself
-            - pkg: github.com/herbygillot/dockhand/internal/tool
-              desc: which binaries this machine has is a fact, discovered once by the caller, not asked for mid-decision
             - pkg: github.com/herbygillot/dockhand/internal/ledger
-              desc: custody of the notes is the ledger's; verdict judges the record it is handed
+              desc: custody of the notes is the ledger's; this compares what it is handed
             - pkg: github.com/herbygillot/dockhand/internal/engine
-              desc: the engine calls verdict, so verdict must not call back
-            - pkg: github.com/herbygillot/dockhand/internal/intent
-              desc: what the user asked for is resolved before the judgment, never during it
+              desc: the engine is being dissolved into the lifecycles; an analysis that imported it would be importing its own caller
             - pkg: github.com/herbygillot/dockhand/internal/render
-              desc: verdict returns the decision; wording it is a separate job with its own goldens
+              desc: the criterion's words are produced here because they ride a commit body; everything else about presentation is the projection layer's, with its own goldens
             - pkg: github.com/herbygillot/dockhand/internal/cmd
-              desc: cmd calls verdict, so verdict must not call back
+              desc: cmd sits at the top; nothing this low may call back
             - pkg: github.com/herbygillot/dockhand/internal/runstate
-              desc: runstate carries streams, a clock and process state, which are the three things a judgment must not have
-            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
-              desc: verdict may speak verify's vocabulary but never the provider that boots and polls workers
+              desc: runstate carries streams, a clock and process state, which are the three things a comparison must not have
             - pkg: os/exec
-              desc: a decision that shells out is not a decision, it is a second opinion from the machine
+              desc: what otool printed is parsed where the capture happens; a comparison that ran a command would be measuring this machine
             - pkg: net
-              desc: the network is the caller's; a verdict has to reach the same answer offline
-        # verdict's own tests: the same judgment package, plus the
-        # harness and the file reading the corpus sweep does. The two
-        # denials are the holes prefix matching leaves in the allowances
-        # above them — os/exec sits under os, and the tart provider
-        # under verify — and they are the two a test would reach for
-        # first if a judgment ever needed a machine to reproduce.
-        verdict-tests:
+              desc: the network is the caller's; the same two manifests have to compare the same offline
+        # darwin/abi's own tests: the same package, the harness, and the
+        # one file read — the captures in internal/macports/build, read
+        # by relative path so a real `otool` capture dropped into them
+        # fails the transcription here rather than agreeing with itself
+        # forever.
+        #
+        # verify is allowed HERE and denied above, and the asymmetry is
+        # the point: the package declares the three baseline-source
+        # words itself because it may not import the provider, and one
+        # test asserts those three constants equal the provider's. The
+        # import that would be a lost property in the package is the
+        # mechanism that stops the two spellings drifting.
+        abi-tests:
           files:
-            - "**/internal/verdict/*_test.go"
+            - "**/internal/darwin/abi/*_test.go"
           allow:
-            - errors
-            - fmt
-            - iter
             - os
-            - path/filepath
-            - regexp
-            - slices
             - sort
             - strings
             - testing
             - github.com/stretchr/testify
-            - github.com/herbygillot/dockhand/internal/corpustest
-            - github.com/herbygillot/dockhand/internal/exitcode
-            - github.com/herbygillot/dockhand/internal/macports
-            - github.com/herbygillot/dockhand/internal/platform
-            - github.com/herbygillot/dockhand/internal/record
-            # artifact holds the installed facts the ABI comparison reads;
-            # they left verify so the record and the analyses can name a fact
-            # without importing the provider that observed it.
             - github.com/herbygillot/dockhand/internal/artifact
             - github.com/herbygillot/dockhand/internal/verify
           deny:
             - pkg: os/exec
-              desc: a table test that shells out is testing the machine, not the judgment
-            - pkg: github.com/herbygillot/dockhand/internal/macports/
-              desc: the judgment orders versions; a test that evaluates a Portfile to get one proves something else
+              desc: a table test that shells out is testing the machine, not the comparison
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
-              desc: the corpus is files; a test that boots a worker proves something else
+              desc: the captures are files; a test that boots a worker proves something else
+        # dependents decides who a moved library obliges, and it never
+        # looks either. The rows arrive from the caller that read the
+        # index, the in-flight branches from the caller that read the
+        # repository, and the maintainer's comments from the note — an
+        # ordering that walked the tree to place a cohort would need a
+        # checkout to be argued about, which is the one thing this
+        # decision most needs to be arguable without.
+        #
+        # macports/portindex is allowed and it is the ruled exception:
+        # From folds index rows into Dependents, and the ruling that
+        # kept this package at the top level kept the translation in it,
+        # so the import says "I am built from the reverse index" rather
+        # than scattering the same loop across every caller that holds
+        # the two facts the index cannot carry. The rest of the macports
+        # subtree — where the tree is read and Tcl is run — is off the
+        # allow list and therefore already refused; the two entries
+        # below name the routes that would drag a Tcl shell in, because
+        # depguard reads a deny before an allow and a trailing-slash
+        # denial here would take the index down with it.
+        #
+        # macports/port is deliberately NOT named, and the reason is
+        # measured rather than assumed: its path is a PREFIX of
+        # macports/portindex, so denying it by name refuses the index
+        # too — depguard matches a deny by prefix and a deny outranks a
+        # longer allow. The allow list already refuses it, which is the
+        # whole argument for holding these two packages by allow.
+        dependents:
+          files:
+            - "**/internal/dependents/**"
+            - "!**/internal/dependents/*_test.go"
+          allow:
+            - sort
+            - strconv
+            - strings
+            - github.com/herbygillot/dockhand/internal/darwin/abi
+            - github.com/herbygillot/dockhand/internal/macports/portindex
+            - github.com/herbygillot/dockhand/internal/record
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: the reverse index is the one thing this reads rows from; evaluating a Portfile to learn a dependency is the walk this decision refuses to be able to make
+            - pkg: github.com/herbygillot/dockhand/internal/macports/build
+              desc: what a build needs is the provider's concern; a proposal that could ask for one has stopped being a decision about the index
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: which branch is already carrying a port is a fact the caller scans for and passes in as InFlight
+            - pkg: github.com/herbygillot/dockhand/internal/gh
+              desc: a cohort is proposed from the tree and the measurement; a forge has nothing to say about who needs a revision bump
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: custody of the notes is the ledger's; the proposal is handed the findings a record already carries
+            - pkg: github.com/herbygillot/dockhand/internal/verify
+              desc: whether a member built is run's judgment; this one is about what the index declares and what the measurement said
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into the lifecycles; a decision that imported it would be importing its own caller
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: the decision states the reason on every candidate; choosing sentences for a reader is the projection layer's job, with its own goldens
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd sits at the top; nothing this low may call back
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: streams, a clock and process state are the three things a pure decision must not have
+            - pkg: os/exec
+              desc: a proposal that shells out is not a proposal, it is a second opinion from the machine
+            - pkg: net
+              desc: the same rows have to propose the same cohort offline
+        # dependents' own tests: the same decision, the harness, the
+        # index rows From translates, and darwin/abi — because the
+        # measurements these tests are handed are taken through the real
+        # comparator rather than fabricated as literals, so a decline
+        # sentence cannot pass against a verdict nothing produces.
+        dependents-tests:
+          files:
+            - "**/internal/dependents/*_test.go"
+          allow:
+            - testing
+            - github.com/stretchr/testify
+            - github.com/herbygillot/dockhand/internal/artifact
+            - github.com/herbygillot/dockhand/internal/darwin/abi
+            - github.com/herbygillot/dockhand/internal/macports/portindex
+            - github.com/herbygillot/dockhand/internal/record
+          deny:
+            - pkg: os/exec
+              desc: a table test that shells out is testing the machine, not the decision
+            - pkg: github.com/herbygillot/dockhand/internal/macports/eval
+              desc: the rows are values; a test that evaluated a Portfile to get them would prove something about the tree
+            - pkg: github.com/herbygillot/dockhand/internal/macports/build
+              desc: the rows are values; a test that assembled a build to get them would prove something else
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: a cohort needs no worker to be argued about, which is most of the point of it being pure
+        # darwin/xcode is a table about the operating system: which
+        # Apple toolchain a Darwin release expects, and which one it
+        # cannot run. It left the tart provisioner because a second
+        # provider could not reach it there, so what it must not acquire
+        # is any knowledge of how a guest is booted — the allow list is
+        # one edge wide, and platform.Release is the whole of its input.
+        darwin-xcode:
+          files:
+            - "**/internal/darwin/xcode/**"
+            - "!**/internal/darwin/xcode/*_test.go"
+          allow:
+            - github.com/herbygillot/dockhand/internal/platform
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/verify
+              desc: a fact about macOS is not a fact about a verification provider; this table moved out of one so that a second could read it
+            - pkg: github.com/herbygillot/dockhand/internal/tool
+              desc: which binaries this machine has is the provisioner's question; this answers about a release, not about a host
+            - pkg: os/exec
+              desc: the table is knowledge, not a probe; asking the machine would answer about the machine dockhand runs on rather than the guest
+        # darwin/xcode's own tests: the table, the harness, and base's
+        # version ordering — the recommendation is checked to be BELOW
+        # the bound with the same comparison the archive picker uses,
+        # because 4.0 against 30.0 is the pair a text compare gets
+        # wrong.
+        darwin-xcode-tests:
+          files:
+            - "**/internal/darwin/xcode/*_test.go"
+          allow:
+            - testing
+            - github.com/stretchr/testify
+            - github.com/herbygillot/dockhand/internal/macports
+            - github.com/herbygillot/dockhand/internal/platform
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/macports/
+              desc: version ordering is base's arithmetic; a test that evaluated a Portfile to get a version proves something else
+            - pkg: os/exec
+              desc: a table test that shells out is testing the machine, not the table
         # record is the wire and nothing else — the note's field order,
         # its states, and the strict codec that refuses a future schema
         # or a sha that does not match. Everything that stores, judges or
@@ -219,8 +319,6 @@ linters:
               desc: the ledger imports record, not the other way about
             - pkg: github.com/herbygillot/dockhand/internal/engine
               desc: the wire format must not depend on the verbs that happen to write it
-            - pkg: github.com/herbygillot/dockhand/internal/verdict
-              desc: a record says what was observed; what that is worth is verdict's to say
         # record's own tests: the wire, the harness, and the clock a job
         # timestamp needs. The bytes are pinned as string constants, so
         # nothing here reads a file or a repository.
@@ -251,8 +349,6 @@ linters:
               desc: record makes the bytes; putting them somewhere is the ledger's job
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: the ledger imports record, not the other way about
-            - pkg: github.com/herbygillot/dockhand/internal/verdict
-              desc: a record says what was observed; what that is worth is verdict's to say
             - pkg: github.com/herbygillot/dockhand/internal/verify/tart
               desc: the tests pin bytes; a provider under them would prove something else
         # render is the other half of the split verdict began: a
@@ -346,8 +442,6 @@ linters:
           files:
             - "**/internal/ledger/**"
           deny:
-            - pkg: github.com/herbygillot/dockhand/internal/verdict
-              desc: the ledger hands records back and the caller asks verdict; a scan that judges hides the judgment behind a repo
             - pkg: github.com/herbygillot/dockhand/internal/engine
               desc: the engine calls the ledger, so the ledger must not call back
             - pkg: github.com/herbygillot/dockhand/internal/intent
@@ -378,8 +472,6 @@ linters:
               desc: a pull request is not a note; a client that knew the wire format would start deciding what goes on one
             - pkg: github.com/herbygillot/dockhand/internal/ledger
               desc: gh answers about pull requests and keeps nothing; custody of the notes is the ledger's
-            - pkg: github.com/herbygillot/dockhand/internal/verdict
-              desc: gh reports a PR's state, and whether that state means a duplicate is verdict's to say
             - pkg: github.com/herbygillot/dockhand/internal/render
               desc: the words left this package deliberately; a client that phrases its answers takes their goldens back with it
             - pkg: github.com/herbygillot/dockhand/internal/engine
@@ -388,6 +480,67 @@ linters:
               desc: cmd calls gh, so gh must not call back
             - pkg: github.com/herbygillot/dockhand/internal/runstate
               desc: a client returns values and errors; what is printed of them, and when, belongs to the verb that asked
+        # lease owns one of the four durable lifecycles: what this
+        # checkout has been handed by a provider and what it owes back.
+        # Its promise is narrower than purity and worth naming — it is
+        # the ONE package that both writes lease records and calls a
+        # provider, so what it must not do is grow a second opinion about
+        # anything else. The three steps it is made of (a transaction, a
+        # provider call outside every lock, a transaction) only stay
+        # separable while nothing here can reach a verb, a peer lifecycle
+        # or a named backend.
+        #
+        # os/exec is deliberately NOT denied, and it is the one edge worth
+        # justifying rather than forbidding: Standing rests on a (PID,
+        # start-time) pair against this host's process table, and `ps` is
+        # how a Go program without a vendored syscall package asks. It is
+        # confined to liveness.go behind one variable, which is also what
+        # makes the decision testable.
+        lease:
+          files:
+            - "**/internal/lease/**"
+            - "!**/internal/lease/*_test.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into the lifecycles; a lifecycle that imported it would be importing its own caller
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd composes the operations that call lease, so lease must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: an obligation carries a typed Kind and Standing precisely so nothing here has to choose a sentence; a lease that could phrase its own report would start deciding from words (rule 6)
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: what is printed of an obligation, and when, belongs to the verb that asked
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: the note is a derived export; this lifecycle writes the state ref and nothing else
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: that a job's id is the environment's name is one backend's fact — the whole point of Worker.Job and RequestLookup is that the kernel never learns it
+            - pkg: github.com/herbygillot/dockhand/internal/git
+              desc: the one ref-mover is statestore, and lease reaches git only through it (R23)
+        # lease's own tests, on record-tests' precedent: the same denials,
+        # and the fixture repository the record has to live in.
+        #
+        # gittest is the one edge that opens, and it opens because these
+        # tests drive a REAL statestore over a REAL repository — what they
+        # prove is an ordering of writes against a compare-and-set, and a
+        # fake store would prove something about the fake. internal/git
+        # itself stays denied even here: a test that reached past the
+        # fixture for the ref-writing verbs would be the first sign R23
+        # had gone.
+        lease-tests:
+          files:
+            - "**/internal/lease/*_test.go"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into the lifecycles; a test that imported it would be testing its own caller
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd composes the operations that call lease, so lease must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: an obligation carries a typed Kind and Standing precisely so nothing here has to choose a sentence
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: what is printed of an obligation, and when, belongs to the verb that asked
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: the note is a derived export; this lifecycle writes the state ref and nothing else
+            - pkg: github.com/herbygillot/dockhand/internal/verify/tart
+              desc: a test that reached for the real backend would be proving something about tart; the provider seam is verifytest's job
         # verify names a job and its outcome, and record embeds a Job, so
         # verify sits below record. An import the other way is a cycle;
         # this says so before the compiler does, with the reason on it.
@@ -445,6 +598,61 @@ linters:
               desc: Apply takes a Snapshotter, which is the two questions it actually asks; naming the evaluator here puts the Tcl shell back in render's dependency set
             - pkg: os/exec
               desc: the three edges above are the routes that existed, and this is the property they were denied for
+        # change owns the change lifecycle: it prepares content, writes
+        # the one commit a change is made of, and holds the mutators that
+        # move a change's record inside a statestore transaction. So it
+        # reaches git (it writes objects), statestore (it IS one of the
+        # four owners), record (it writes the durable shape), plan (it
+        # consumes one) and the MacPorts facts it judges versions by.
+        #
+        # A deny list, because what this package must not acquire is
+        # narrower than a purity claim and each edge is worth saying at
+        # the import line where somebody would add it. The three that
+        # matter:
+        #
+        #   - A TERMINAL. Every mutator here runs inside an Amend
+        #     closure, which may be retried, so a mutator that printed
+        #     would print twice for one act; and the closure holds a
+        #     flock every peer's status waits on. What a road says about
+        #     a refusal is the road's, which is why every decline here is
+        #     a sentinel and not a sentence.
+        #   - A PROVIDER, or anything that reaches one. Provider and
+        #     network I/O never goes inside an Amend closure, and the way
+        #     to make that hold is for this package not to be able to
+        #     reach one at all.
+        #   - THE LAYERS ABOVE. app calls change; cli calls app. An
+        #     import back is a cycle, and one that compiled would put the
+        #     command line inside a transaction.
+        #
+        # ledger is denied for the reason Held's and Behind's doc
+        # comments give: a decision reads the state ref's record.Change
+        # and never the note's derived export, and a package that could
+        # open a note would let one road read the copy while another
+        # reads the original.
+        change:
+          files:
+            - "**/internal/change/**"
+          deny:
+            - pkg: github.com/herbygillot/dockhand/internal/ledger
+              desc: a decision reads record.Change from the state ref, never the note's derived export; custody of the notes is the ledger's
+            - pkg: github.com/herbygillot/dockhand/internal/render
+              desc: a refusal here is a sentinel and the words for it are the road's; a mutator that phrased its own would phrase it inside a retried closure
+            - pkg: github.com/herbygillot/dockhand/internal/runstate
+              desc: streams, a clock and process state stay with the verb; every clock read in this package is passed in for exactly that reason
+            - pkg: github.com/herbygillot/dockhand/internal/cmd
+              desc: cmd calls app and app calls change, so change must not call back
+            - pkg: github.com/herbygillot/dockhand/internal/engine
+              desc: the engine is being dissolved into this package and its siblings; an import into it would put the husk underneath the lifecycle that replaces it
+            - pkg: github.com/herbygillot/dockhand/internal/verify
+              desc: what a change is worth building is run's question; a lifecycle that named a job would put a provider vocabulary under every mint
+            - pkg: github.com/herbygillot/dockhand/internal/gh
+              desc: a publication is a foreign effect and publish's; a change that could ask a forge would ask it from inside an Amend
+            - pkg: github.com/herbygillot/dockhand/internal/upstream
+              desc: where a release comes from is the planners' business; change realizes plans already made
+            - pkg: github.com/herbygillot/dockhand/internal/vendored
+              desc: the vendored families are a planner's concern; a change that regenerated one would be planning
+            - pkg: net
+              desc: provider and network I/O never goes inside an Amend closure or inside a lock, and the surest way to hold that is a package that cannot reach either
         # A vendored family holds one block's format and the tool that
         # writes it, and nothing above that. It says why a block cannot
         # be honest — the family is the only thing that knows — but what
