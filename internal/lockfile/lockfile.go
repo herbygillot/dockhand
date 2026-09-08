@@ -101,13 +101,26 @@ func Acquire(ctx context.Context, path string, deadline time.Duration) (func(), 
 // to lock: the exclusion is the descriptor's and stands either way, so
 // the error is discarded and the reader meets an empty Holder, which
 // Probe reports as "resident, holder unknown".
+//
+// THE RELEASE ERASES THE STAMP, which is the other half of writing one
+// honestly and was missing from the first cut. A stamp that outlived
+// its hold is what a contender reads in the window between the next
+// holder's flock and the next holder's write — measured as four
+// concurrent passes naming a pid that had been dead for minutes — and
+// what an Acquire-taker leaves standing over a crashed holder's bytes.
+// Erased under the exclusive hold and never after it, so no other
+// process can be mid-write when the file is truncated; what a
+// concurrent probe sees in that window is an empty stamp, which is the
+// honest answer for a lock nobody has stamped yet. A CRASHED holder
+// erases nothing and cannot, which is why the stamp is also checked
+// against the process table when it is read — see attested.
 func Hold(ctx context.Context, path string, h Holder, deadline time.Duration) (func(), error) {
 	f, err := lock(ctx, path, deadline)
 	if err != nil {
 		return nil, err
 	}
 	stamp(f, h)
-	return release(f), nil
+	return unstamp(f), nil
 }
 
 // Probe reports whether an EXCLUSIVE holder has this lock, and who it
@@ -129,12 +142,23 @@ func Hold(ctx context.Context, path string, h Holder, deadline time.Duration) (f
 // The three answers are the three the caller needs (rule 7):
 //
 //	(_, false, nil)   the shared lock was taken: nobody holds it exclusively
-//	(h, true,  nil)   EWOULDBLOCK: somebody does, and h is the stamp it left
+//	(h, true,  nil)   EWOULDBLOCK: somebody does, and h is the stamp it
+//	                  left IF this host can still see the process that
+//	                  wrote it; the empty Holder otherwise
 //	(_, false, err)   the lock could not be read at all — a permission
 //	                  error, a filesystem with no flock — which is NOT
 //	                  "no dispatcher", and a caller that read it as one
 //	                  would appoint itself judge beside a scheduler it
 //	                  could not see
+//
+// THE STAMP IS CHECKED BEFORE IT IS REPEATED, and attested carries the
+// argument: a lock file's bytes are not evidence that their author is
+// the holder, and "a pass is already running here: dispatch (pid 99999,
+// since 19:00:00)" for a pid nobody can find sends an operator looking
+// for a scheduler that does not exist. A stamp this host cannot vouch
+// for comes back empty and the residency beside it stays true, which is
+// rule 7 on the pair: the flock said somebody is here, and no reading
+// of a JSON blob may take that back.
 //
 // A file that does not exist is the first answer and not the third: a
 // lock nobody has ever taken has no holder. The file is NOT created
@@ -144,7 +168,7 @@ func Hold(ctx context.Context, path string, h Holder, deadline time.Duration) (f
 //
 // The shared lock is dropped before this function returns, so a prober
 // holds nothing.
-func Probe(_ context.Context, path string) (Holder, bool, error) {
+func Probe(ctx context.Context, path string) (Holder, bool, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, 0o644) //nolint:gosec // the path is the composition root's, from $GIT_COMMON_DIR
 	if errors.Is(err, os.ErrNotExist) {
 		return Holder{}, false, nil
@@ -162,7 +186,7 @@ func Probe(_ context.Context, path string) (Holder, bool, error) {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		return Holder{}, false, nil
 	case errors.Is(err, syscall.EWOULDBLOCK), errors.Is(err, syscall.EAGAIN):
-		return read(f), true, nil
+		return attested(ctx, read(f)), true, nil
 	default:
 		return Holder{}, false, fmt.Errorf("probing %s: %w", path, err)
 	}
@@ -213,6 +237,23 @@ func release(f *os.File) func() {
 	return func() {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		_ = f.Close()
+	}
+}
+
+// unstamp is Hold's release: erase the stamp, THEN drop the flock.
+//
+// In that order and never the reverse, because between the unlock and
+// the truncate the file would be a stamped lock somebody else may
+// already hold — the exact confusion the stamp exists to prevent, made
+// worse by being written by the process that just left. A truncate that
+// fails leaves the old bytes, which attested refuses on the next read;
+// there is nothing to report and nobody to report it to, so the error
+// goes the way stamp's does.
+func unstamp(f *os.File) func() {
+	drop := release(f)
+	return func() {
+		_ = f.Truncate(0)
+		drop()
 	}
 }
 

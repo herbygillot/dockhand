@@ -377,3 +377,25 @@ func TestReleaseRejectsAForeignJob(t *testing.T) {
 	err := Provider{}.Release(t.Context(), verify.Job{Provider: "github", ID: "123"})
 	require.ErrorIs(t, err, verify.ErrUnknownJob)
 }
+
+// Shell answers ErrUnknownJob for an environment that is not there,
+// which is the guard Exec and Poll already carried. `tart exec` exits
+// non-zero for an absent VM exactly as it does for a user's own shell
+// exiting non-zero, and reading every ExitError as the second made
+// `dockhand shell <a released worker>` print tart's "does not exist" and
+// exit 0 — so a script written as `dockhand shell $w && next-step` went
+// on as if it had had a session.
+func TestShellReportsAnEnvironmentThatIsNotThere(t *testing.T) {
+	testenv.Tool(t, "tart")
+	err := Provider{Tools: tools}.Shell(t.Context(),
+		verify.Job{Provider: "tart", ID: WorkerName("000000000000dockhandtest")})
+	require.ErrorIs(t, err, verify.ErrUnknownJob)
+}
+
+// A job from another provider is not this provider's to open a shell in,
+// and saying so before HasVM keeps the verb from asking tart about a
+// name that was never tart's.
+func TestShellRejectsAForeignJob(t *testing.T) {
+	err := Provider{}.Shell(t.Context(), verify.Job{Provider: "github", ID: "123"})
+	require.ErrorIs(t, err, verify.ErrUnknownJob)
+}

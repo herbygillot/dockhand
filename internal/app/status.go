@@ -84,6 +84,17 @@ type StatusResult struct {
 	Residency   Residency
 	Spent       publish.Spend
 	Vacancy     verify.Vacancy
+	// NoUpdate is the DEPTH THIS RESULT WAS PRODUCED AT, carried on the
+	// value because nothing downstream can recover it. A pure read
+	// settles nothing, polls nothing and asks no forge, and every one of
+	// those absences looks exactly like a default `status` that found
+	// nothing to settle, no provider to poll and no open change to ask
+	// about. The report has to say which of the two a reader is holding
+	// (rule 7), and it used to guess from an unknown residency and an
+	// empty Settled — which is also true of a DEFAULT status whose lock
+	// probe failed, so the guess printed "nothing was polled" over a
+	// report that had polled.
+	NoUpdate bool
 }
 
 // Run reads, settles by residency, reports what is owed, and gathers the
@@ -96,7 +107,7 @@ func (s Status) Run(ctx context.Context, r StatusRequest) (StatusResult, error) 
 	if err != nil {
 		return StatusResult{}, err
 	}
-	res := StatusResult{State: st, Residency: s.Residency, Facts: map[record.ChangeID]publish.Facts{}}
+	res := StatusResult{State: st, Residency: s.Residency, Facts: map[record.ChangeID]publish.Facts{}, NoUpdate: r.NoUpdate}
 	if r.NoUpdate {
 		return res, nil // one read, and says so on its first line
 	}

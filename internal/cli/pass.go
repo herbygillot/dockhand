@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -49,8 +50,9 @@ const dischargeGrace = 15 * time.Minute
 
 // passFlags are the flags `cycle` spells and `dispatch` INHERITS
 // VERBATIM. It is one type because dispatch is the same pass: it does
-// not respell them and it does not re-police them, and only two are held
-// back from a resident loop — see dispatchCmd.
+// not respell them and it does not re-police them, and only the three
+// irreversible-under-nobody's-eye ones are held back from a resident
+// loop — see checkLoopFlags.
 type passFlags struct {
 	noDischarge bool
 	keepMerged  bool
@@ -178,11 +180,7 @@ func cycleCmd(s *Services) *cobra.Command {
 			}
 			defer stg.Cleanup()
 			p, err := op.Run(ctx, req)
-			report.Pass(s.Out, p, req.DryRun)
-			if err != nil {
-				return err
-			}
-			return exitWith(p.Exit())
+			return finish(s.Out, p, req.DryRun, err)
 		},
 	}
 	f.register(c)
@@ -282,13 +280,29 @@ type loop struct {
 // for facts that move on the order of days.
 const minEvery = time.Minute
 
-// checkLoopFlags is the two refusals a RESIDENT loop earns, and the one
-// the cadence itself earns.
+// checkLoopFlags is the three refusals a RESIDENT loop earns, and the
+// one the cadence itself earns.
 //
 // --superseded is refused on a resident loop and ACCEPTED WITH --once. A
 // supersession is dockhand's own inference from two branch names, and an
 // unattended process deleting somebody's work on an inference, hourly,
 // forever, is the one act in the pass that a re-read cannot undo.
+//
+// --reclaim-unattributed is refused on the SAME ARGUMENT and a worse
+// worst case. It is the successor of the shipped --reclaim-orphans,
+// whose documented rule was that dockhand reclaims the untracked
+// workers THIS CHECKOUT MAY CLAIM and that "a worker another checkout
+// started is named and left to that checkout's own cycle"; the flag
+// lifts that restraint, and lease.mayTake seizes an Untracked worker
+// with NO GRACE PERIOD at all, because a person who typed it is
+// standing there. Attribution is a per-user cache file, so a dispatcher
+// under launchd — whose HOME is not the interactive shell's — or one
+// running after that cache was cleared reads every live guest on the
+// machine as unattributed and destroys it on the first tick, including
+// another checkout's hours-long build. --superseded, whose worst
+// outcome is a deleted local branch, is refused here; this one, whose
+// worst outcome is a destroyed environment, may not be accepted. Both
+// lift under --once, which is a person watching.
 //
 // --dry-run is accepted ONLY with --once: a loop that previews forever
 // is a process pretending to work.
@@ -296,6 +310,8 @@ func checkLoopFlags(c *cobra.Command, f *passFlags, once bool, every time.Durati
 	switch {
 	case f.superseded && !once:
 		return usagef("--superseded deletes branches on an inference; a resident dispatcher may not, and `dockhand dispatch --once --superseded` may")
+	case f.reclaim && !once:
+		return usagef("--reclaim-unattributed destroys environments nothing accounts for, with no grace period; a resident dispatcher may not, and `dockhand dispatch --once --reclaim-unattributed` may")
 	case f.dryRun && !once:
 		return usagef("--dry-run needs --once; a loop that previews forever is a process pretending to work")
 	case !once && c.Flags().Changed("every") && every < minEvery:
@@ -338,6 +354,18 @@ func paceOf(c *cobra.Command, noPublish bool, max int, window time.Duration) (pu
 // not wait and it does not run a degraded pass: the queue is the state
 // ref and the resident process is already draining it, so there is
 // nothing for this one to do and nothing was refused.
+//
+// A RESIDENT DISPATCHER OUTLIVES A PASS THAT COULD NOT RUN. The pass's
+// band is not the process's — that is the 84 ruling — and neither is
+// the pass's error: a fresh checkout has no state ref until somebody
+// bumps, and app.Cycle propagates statestore.ErrNoState by design
+// because its first stage destroys provider resources. A loop that
+// returned it exited 1 before its first sleep, which under launchd
+// KeepAlive is the restart loop the ruling was written to avoid, and
+// which killed a healthy scheduler on any single transient forge, git
+// or provider failure besides. The exits that remain are a clean
+// shutdown, a usage refusal, and the startup refusals above — a lock
+// that could not be taken, a repository that could not be opened.
 //
 // SLEEP IS MEASURED FROM THE END OF A PASS, in WALL-CLOCK SLICES. From
 // the end, so a pass that overruns its period cannot stack. In slices,
@@ -389,18 +417,43 @@ func dispatchLoop(ctx context.Context, s *Services, repo *git.Repo, req app.Cycl
 	// is a fact about THIS process's output, and a new dispatcher should
 	// re-announce what it has never said.
 	said := map[record.ChangeID]string{}
+	// And the same memory for the pass's own failures, for the same
+	// reason and with the same words — see announceErr.
+	var failing string
 
 	for {
 		passStart := s.Now()
-		code, err := onePass(ctx, s, repo, req, pace, said)
-		if err != nil {
-			return err
-		}
+		code, err := runPass(ctx, s, repo, req, pace, said)
 		if l.once {
 			// --once IS THE ONLY PLACE A PASS'S CODE REACHES A SHELL, and
 			// with it exit 62 — the spent-allowance band — gets back the
-			// producer it lost when `cycle --auto` retired.
+			// producer it lost when `cycle --auto` retired. A pass that
+			// could not run at all is the supervised road's error, exactly
+			// as it is `cycle`'s.
+			if err != nil {
+				return err
+			}
 			return exitWith(code)
+		}
+		if err != nil {
+			// A RESIDENT DISPATCHER DOES NOT DIE OF A PASS. The band a
+			// pass returns is not this process's — the ruling says so of
+			// 84 and the argument is the same for an error: `dockhand
+			// dispatch` in a checkout whose state ref does not exist yet
+			// would otherwise print its banner and exit 1 before it ever
+			// slept, and under launchd KeepAlive that is the restart loop
+			// the 84 ruling was written to avoid. A state ref appears the
+			// moment somebody bumps; a forge, a provider or a git command
+			// comes back on the tick after the network does. Both are
+			// waited out here, and neither is silent.
+			if ctx.Err() != nil {
+				fmt.Fprintln(s.Err, "dispatch stopping")
+				return nil
+			}
+			failing = announceErr(s.Err, err, failing)
+		} else if failing != "" {
+			fmt.Fprintln(s.Err, "dispatch: passes are running again")
+			failing = ""
 		}
 		if err := sleepFrom(ctx, s.Now, passStart, l.every); err != nil {
 			// A canceled context is a clean shutdown: dispatch exits 0 on
@@ -455,9 +508,99 @@ func onePass(ctx context.Context, s *Services, repo *git.Repo, req app.CycleRequ
 	if err != nil {
 		return exitcode.OK, err
 	}
-	report.Pass(s.Err, p, req.DryRun)
-	report.Refusals(s.Err, unsaid(p.Refusals, said))
+	announce(s.Err, p, req.DryRun, said)
 	return p.Exit(), nil
+}
+
+// runPass is the tick dispatchLoop performs, behind a variable so a test
+// can hand the loop a pass that fails without standing up a state ref, a
+// forge and a provider to make one fail honestly. What is under test
+// there is the CADENCE's answer to a failed pass, which is the whole of
+// what dispatchLoop decides.
+var runPass = onePass
+
+// announce writes ONE TICK's report, and it is EDGE-TRIGGERED: a tick
+// that neither acted nor found anything new to refuse says nothing at
+// all.
+//
+// THE MEMORY WAS NOT ENOUGH BY ITSELF. report.Pass ends by printing
+// every refusal it holds, so the first cut — report.Pass followed by
+// report.Refusals over the un-said subset — printed a stable refusal
+// TWICE on the tick it first appeared and once on every tick after,
+// which at `--every 5m` is 288 identical "needs you" lines a day on
+// stderr. That is precisely how an operator learns to ignore the
+// channel the exit-band ruling exists to protect, and it is why the
+// suppression is here rather than in the words: cli owns the announced-at
+// memory and report owns the sentences.
+//
+// WHAT COUNTS AS ACTING is the pass's ACTS and never the standing state
+// it re-reports. Changes, Retired, Published and a compaction are
+// things this tick DID; Owed, Ineligible, Advisories and Vacancy are
+// what the world looks like, and every one of them is as stable across
+// ticks as a refusal is — an environment owed elsewhere, an attempt held
+// by a person, an advisory on a candidate already in front of reviewers.
+// A tick that spoke for those would have exchanged 288 refusal lines a
+// day for 288 obligation lines a day. `status` is where standing state
+// is asked for, and the residency ruling makes it the attention channel
+// here.
+//
+// A tick that ACTED prints its report WHOLE, refusals included, said or
+// not. That is the one place a sentence repeats, and it repeats beside a
+// summary of work that just happened rather than beside nothing: the
+// reader of an eventful tick is owed the whole picture, and the run of
+// identical lines the edge-trigger exists to kill cannot form out of
+// ticks that each did something.
+func announce(w io.Writer, p app.Pass, dry bool, said map[record.ChangeID]string) {
+	fresh := unsaid(p.Refusals, said)
+	if !acted(p) && len(fresh) == 0 {
+		return
+	}
+	report.Pass(w, p, dry)
+}
+
+// acted reports that this tick changed something durable — the four
+// results a pass produces by doing rather than by looking. See announce
+// for why Owed, Ineligible, Advisories and Vacancy are not on this list.
+func acted(p app.Pass) bool {
+	return len(p.Changes) > 0 || len(p.Retired) > 0 || len(p.Published) > 0 || p.Compacted != nil
+}
+
+// announceErr is the edge-trigger over a pass that could not run, and it
+// returns the memory the next tick compares against.
+//
+// It keys on the SENTENCE for the same reason unsaid does: a fresh
+// checkout says "no state ref in this repository" every five minutes
+// until somebody bumps, and a scheduler that repeated it 288 times a day
+// would be the restart loop's quieter twin. An error that CHANGES is
+// news and is said again.
+func announceErr(w io.Writer, err error, last string) string {
+	text := err.Error()
+	if text == last {
+		return last
+	}
+	fmt.Fprintf(w, "dispatch: this pass could not run: %v\n", err)
+	return text
+}
+
+// finish is what a PERSON'S pass says when it is over, and the order is
+// the whole of it: a pass that could not run gets no report.
+//
+// report.Pass renders a complete, all-zero summary for the zero Pass —
+// "0 settled · 0 started · 0 retired · 0 published · 0 owed · 0
+// refused", under the dry run's "it still observed, judged and settled"
+// banner — and a pass that failed on its first statestore.Read observed
+// nothing, judged nothing and settled nothing. The error goes to stderr
+// and that summary went to STDOUT, so a CI wrapper or a cron job
+// capturing stdout came away with a finished pass asserting zero
+// obligations on a checkout whose record could not be read at all. The
+// counts a partial pass would have carried are worth less than the lie:
+// nothing here is durable that `status` cannot re-read.
+func finish(w io.Writer, p app.Pass, dry bool, err error) error {
+	if err != nil {
+		return err
+	}
+	report.Pass(w, p, dry)
+	return exitWith(p.Exit())
 }
 
 // unsaid is the edge-trigger: the refusals this process has not already

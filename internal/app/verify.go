@@ -150,7 +150,7 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 		} else {
 			tip, content, err = tipOf(ctx, v.Repo, branch)
 			if err == nil {
-				subjects, base, err = branchSubjects(ctx, v.Repo, tip)
+				subjects, base, err = v.branchSubjects(ctx, branch, tip)
 			}
 		}
 		if err != nil {
@@ -175,6 +175,17 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 		}
 		cont, err := contentOf(ctx, v.Repo, d.Found)
 		if err != nil {
+			return res, err
+		}
+		// THE AUDIT RUNS HERE, over the tip the person left, and this is
+		// the one road that can produce *change.PortdirDisagreement: a
+		// follow is the only moment a record's subjects and a branch's own
+		// diff are two independent descriptions of one change. Answering
+		// review feedback with a commit that also edits another portdir
+		// makes the recorded roster a description of something the branch
+		// no longer is, and staging it would build one portdir and record a
+		// verdict over the content of two.
+		if err := v.auditFollowed(ctx, c, d.Found); err != nil {
 			return res, err
 		}
 		id, tip, content, subjects = c.ID, d.Found, cont, c.Subjects
@@ -230,6 +241,10 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 		return res, err
 	}
 	res.Change = ref
+	// the note, over the state this road leaves: an adoption's record, the
+	// attempts it enqueued, and — under --wait — the verdict the watch
+	// below settles, in one projection at the end rather than three.
+	defer func() { exportNote(ctx, v.State, v.Ledger, tip, v.Progress) }()
 	// the supersede stage for a FOLLOW runs HERE, after the Amend, over
 	// the former tip's attempts — the old tip is now a former tip.
 	if followed {
@@ -290,6 +305,19 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 // store's key, and the provider's handle is on the lease. That is one
 // extra read, on the --trace road only, and it is the honest cost of the
 // attempt carrying a token rather than a provider's name.
+//
+// A PROVIDER THAT CANNOT STREAM IS SAID, NOT SWALLOWED. run.Follow
+// refuses one with verify.ErrUnsupported, and this road used to discard
+// that error into a goroutine nobody read — so --trace on such a backend
+// was a flag that printed nothing and explained nothing, which reads to
+// a person as a build that produced no output. The question is asked
+// HERE, on the caller's own goroutine and before anything detaches,
+// because a refusal a person needs to see must arrive while they are
+// still being told what happened; run.Follow keeps the contract and this
+// asks the same question to decide whether there is anything to detach.
+// Whatever the stream itself then fails at is narrated by the goroutine,
+// except under a cancelled context, which is the caller's own expiry
+// (the build outlives it by design) and never a failed stream.
 func (v Verify) follow(ctx context.Context, prov verify.Verifier, a record.Attempt) {
 	st, err := v.State.Read(ctx)
 	if err != nil {
@@ -299,7 +327,16 @@ func (v Verify) follow(ctx context.Context, prov verify.Verifier, a record.Attem
 	if !ok || v.Out == nil {
 		return
 	}
-	go func() { _ = run.Follow(ctx, prov, l, v.Out) }()
+	if _, ok := prov.(verify.Streamer); !ok {
+		say(v.Progress, progress.Warn, "--trace: "+verify.ErrUnsupported.Error()+
+			": this provider does not stream a live log; `dockhand log "+string(a.Change)+"` once the record settles")
+		return
+	}
+	go func() {
+		if err := run.Follow(ctx, prov, l, v.Out); err != nil && ctx.Err() == nil {
+			say(v.Progress, progress.Warn, "--trace: "+err.Error())
+		}
+	}()
 }
 
 // supersede is the stale + finish + release stage shared by Verify,
@@ -402,20 +439,103 @@ func contentOf(ctx context.Context, repo *git.Repo, sha string) (record.ContentI
 // operation holds no evaluator — Verify's dependencies are a repository,
 // a store, a stager and a provider — so the honest answer is the one
 // that says nobody asked.
-func branchSubjects(ctx context.Context, repo *git.Repo, tip string) ([]record.Subject, record.Base, error) {
-	base, err := baseOf(ctx, repo, tip)
+//
+// IT IS A METHOD because it SAYS something. The roster a stale primary
+// enlarges is change.ForeignMembers' data and this is the road that has
+// a stream (rule 1): the local primary never fetches, a hand-made branch
+// cut from origin/<primary> carries every upstream commit the local one
+// has not caught up to, and their portdirs are counted as the branch's.
+// The roster stands — D21 stands with it — and one line names which
+// members are somebody else's, where they came from, and the remedy.
+func (v Verify) branchSubjects(ctx context.Context, branch, tip string) ([]record.Subject, record.Base, error) {
+	primary, err := v.Repo.PrimaryBranch(ctx)
 	if err != nil {
 		return nil, record.Base{}, err
 	}
-	dirs, err := change.ChangedPortdirs(ctx, repo, record.Change{Tip: tip}, base.Sha)
+	base, err := baseAt(ctx, v.Repo, tip, primary)
 	if err != nil {
 		return nil, record.Base{}, err
 	}
+	dirs, err := change.ChangedPortdirs(ctx, v.Repo, record.Change{Tip: tip}, base.Sha)
+	if err != nil {
+		return nil, record.Base{}, err
+	}
+	v.adviseForeign(ctx, branch, primary, base.Sha, tip, dirs)
 	subjects := make([]record.Subject, 0, len(dirs))
 	for _, dir := range dirs {
 		subjects = append(subjects, record.Subject{Port: path.Base(dir), Portdir: dir})
 	}
 	return subjects, base, nil
+}
+
+// auditFollowed holds a followed branch's OWN diff against the roster
+// its record claims — change.ChangedPortdirs with the record, which is
+// the cross-check that function exists for and the only production road
+// that can reach it. A minted change's record and its commit are written
+// by one act and cannot disagree; a followed one's commit was written by
+// a person, and the two descriptions are independent.
+//
+// It refuses and never repairs. Both readings are wrong when they differ
+// — staging the record's set under-stages a portdir a later commit added
+// and verifies something other than the branch, and staging git's set
+// verifies a directory the change never claimed — so *PortdirDisagreement
+// names both sides and a person says which is true. Where they agree the
+// record's own order stands, because it knows what git does not: which
+// subject is the headline, and the order the members must be built in.
+//
+// It is BEST EFFORT ABOUT NOTHING: an audit that could not run is an
+// error, not a shrug. The one soft answer is a record that names no
+// portdir at all, which ChangedPortdirs already treats as nobody having
+// said — git's answer then stands unopposed and there is nothing to hold
+// it against.
+func (v Verify) auditFollowed(ctx context.Context, c record.Change, tip string) error {
+	primary, err := v.Repo.PrimaryBranch(ctx)
+	if err != nil {
+		return err
+	}
+	base, err := baseAt(ctx, v.Repo, tip, primary)
+	if err != nil {
+		return err
+	}
+	dirs, err := change.ChangedPortdirs(ctx, v.Repo, record.Change{ID: c.ID, Tip: tip, Subjects: c.Subjects}, base.Sha)
+	if err != nil {
+		// A DISAGREEMENT A STALE PRIMARY CAUSED STILL SAYS SO. The derived
+		// side of it is the diff against the LOCAL primary, so a checkout
+		// forty commits behind its remote makes a followed branch disagree
+		// with its own record about forty portdirs it never touched — and a
+		// refusal listing them with no word about where they came from
+		// sends a person looking through their own commits for edits that
+		// are not theirs. The refusal stands either way; the advisory is
+		// what makes it answerable.
+		var d *change.PortdirDisagreement
+		if errors.As(err, &d) {
+			v.adviseForeign(ctx, c.Branch, primary, base.Sha, tip, d.Derived)
+		}
+		return err
+	}
+	v.adviseForeign(ctx, c.Branch, primary, base.Sha, tip, dirs)
+	return nil
+}
+
+// adviseForeign says the stale-primary advisory, once, about the roster
+// that was just derived. It decides nothing and returns nothing: the
+// members it names are already in the roster and stay there.
+func (v Verify) adviseForeign(ctx context.Context, branch, primary, base, tip string, dirs []string) {
+	foreign := change.ForeignMembers(ctx, v.Repo, primary, base, tip, dirs)
+	if len(foreign) == 0 {
+		return
+	}
+	members := make([]string, 0, len(foreign))
+	for _, f := range foreign {
+		commits := make([]string, 0, len(f.From))
+		for _, c := range f.From {
+			commits = append(commits, git.Abbrev(c.Sha)+" "+c.Subject)
+		}
+		members = append(members, f.Portdir+" (from "+strings.Join(commits, ", ")+")")
+	}
+	say(v.Progress, progress.Warn, branch+": "+primary+" is behind origin/"+primary+
+		", so the change counts portdirs the branch does not own: "+strings.Join(members, ", ")+
+		"; fast-forward "+primary+" and the roster is the branch's own again")
 }
 
 // snapshotSubject is the working tree's one subject: the portdir a
@@ -427,22 +547,27 @@ func snapshotSubject(ctx context.Context, repo *git.Repo, portdir string) ([]rec
 	if err != nil {
 		return nil, record.Base{}, err
 	}
-	base, err := baseOf(ctx, repo, "HEAD")
+	primary, err := repo.PrimaryBranch(ctx)
+	if err != nil {
+		return nil, record.Base{}, err
+	}
+	base, err := baseAt(ctx, repo, "HEAD", primary)
 	if err != nil {
 		return nil, record.Base{}, err
 	}
 	return []record.Subject{{Port: path.Base(rel), Portdir: rel}}, base, nil
 }
 
-// baseOf is the commit an adoption is measured from: the merge base of
+// baseAt is the commit an adoption is measured from: the merge base of
 // the tip with this checkout's primary branch, with the moment it landed
 // — the same pair change.Prepare records for a minted change, so an
 // adopted change and a minted one answer change.Behind identically.
-func baseOf(ctx context.Context, repo *git.Repo, rev string) (record.Base, error) {
-	primary, err := repo.PrimaryBranch(ctx)
-	if err != nil {
-		return record.Base{}, err
-	}
+//
+// The primary is a PARAMETER because the two roads that take a base also
+// have to name it in the advisory beside it, and a function that read it
+// again would make one fact into two — the same argument change.Behind's
+// own branch parameter carries.
+func baseAt(ctx context.Context, repo *git.Repo, rev, primary string) (record.Base, error) {
 	sha, err := repo.MergeBase(ctx, rev, primary)
 	if err != nil {
 		return record.Base{}, err

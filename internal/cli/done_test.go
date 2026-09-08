@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -140,8 +141,10 @@ func TestASecondDispatcherExitsZeroNamingTheHolder(t *testing.T) {
 	path, err := lockPath(ctx, repo, dispatchLock)
 	require.NoError(t, err)
 
-	resident := lockfile.Holder{PID: 4821, Host: "kestrel", Verb: "dispatch", Since: time.Now().Add(-time.Hour)}
-	release, err := lockfile.Hold(ctx, path, resident, 0)
+	// The stamp names a LIVE process, because lockfile.Probe repeats a
+	// stamp only when this host can still see the process that wrote it
+	// — a losing caller must not name a pid that is not running.
+	release, err := lockfile.Hold(ctx, path, liveHolder(t, "dispatch"), 0)
 	require.NoError(t, err)
 	t.Cleanup(release)
 
@@ -152,7 +155,7 @@ func TestASecondDispatcherExitsZeroNamingTheHolder(t *testing.T) {
 	require.NoError(t, err, "a second dispatcher exits 0")
 	assert.Equal(t, exitcode.OK, ExitCode(err))
 	assert.Contains(t, out.String(), "already resident")
-	assert.Contains(t, out.String(), "4821", "it names the holder")
+	assert.Contains(t, out.String(), strconv.Itoa(os.Getpid()), "it names the holder")
 }
 
 // THE RESIDENCY PROBE TAKES NOTHING, so two verbs probing at once
@@ -170,11 +173,11 @@ func TestProbingResidencyNeitherTakesTheLockNorSeesAProber(t *testing.T) {
 
 	path, err := lockPath(ctx, repo, dispatchLock)
 	require.NoError(t, err)
-	release, err := lockfile.Hold(ctx, path, lockfile.Holder{PID: 99, Verb: "dispatch"}, 0)
+	release, err := lockfile.Hold(ctx, path, liveHolder(t, "dispatch"), 0)
 	require.NoError(t, err)
 	r := probeResidency(ctx, repo)
 	assert.Equal(t, app.DispatcherResident, r.State)
-	assert.Equal(t, 99, r.Holder.PID)
+	assert.Equal(t, os.Getpid(), r.Holder.PID)
 	release()
 	assert.Equal(t, app.NoDispatcher, probeResidency(ctx, repo).State)
 }

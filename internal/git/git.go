@@ -187,6 +187,33 @@ func (r *Repo) RevParse(ctx context.Context, rev string) (string, error) {
 	return r.git(ctx, "rev-parse", "--verify", "--quiet", rev)
 }
 
+// Maintain runs `git maintenance run --auto`: git's own housekeeping, at
+// git's own threshold, in this checkout.
+//
+// IT EXISTS BECAUSE DOCKHAND PROVOKES THE REPACK AND NOTHING PAYS FOR
+// IT. Every primitive statestore.Amend uses — hash-object, mktree,
+// commit-tree, update-ref — is PLUMBING, and plumbing never runs git's
+// automatic maintenance, so the store writes three loose objects per
+// amend and cleans up after none of them; the threshold is crossed at
+// roughly 2,300 amends and the repack that follows lands on the
+// maintainer's next `git commit` or `git pull`. The bill is real and it
+// is charged to the wrong person. `--auto` is the whole point: it asks
+// git whether the thresholds are crossed and does nothing when they are
+// not, so a pass every minute is not a repack every minute.
+//
+// ITS CALLER IS Cycle.Run's LAST LINE and it is not cli's: a second
+// front end driving the operation would otherwise inherit the debt. It
+// runs outside every lock the operation holds — never inside an Amend
+// closure or the ledger's flock, which would hold a repository-wide
+// flock for the length of a repack — and its failure is an advisory on
+// app.Pass rather than an error: a gc.lock held by the operator's own
+// `git maintenance start` means somebody else is already doing it, and
+// that is not a failed pass.
+func (r *Repo) Maintain(ctx context.Context) error {
+	_, err := r.git(ctx, "maintenance", "run", "--auto")
+	return err
+}
+
 // HasBranch reports whether a local branch exists, by exact name.
 func (r *Repo) HasBranch(ctx context.Context, name string) bool {
 	_, err := r.git(ctx, "show-ref", "--verify", "--quiet", "refs/heads/"+name)

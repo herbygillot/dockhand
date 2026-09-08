@@ -174,6 +174,9 @@ type Pass struct {
 	Refusals   []Refusal
 	Ineligible []run.NotStarted
 	Retired    []publish.Outcome
+	// Published is every publish.Apply this pass made, the failed ones
+	// included: see the publish stage for why the outcome of a failure is
+	// kept, and Publications for the count a report may print.
 	Published  []publish.Outcome
 	Owed       []lease.Obligation
 	Advisories []publish.Advisory
@@ -181,6 +184,45 @@ type Pass struct {
 	Started    time.Time
 	Ended      time.Time
 	Compacted  *int
+	// Maintained is whether `git maintenance run --auto` ran at the end of
+	// this pass, and MaintainErr is why it did not. Two fields because the
+	// zero value of one could not tell "not run" from "ran and said
+	// nothing" (rule 7): a dry run performs no maintenance and has no
+	// error, and a gc.lock held by the operator's own `git maintenance
+	// start` is somebody else doing it — neither is a failed pass, and
+	// neither is an exit band.
+	Maintained  bool
+	MaintainErr error
+}
+
+// Publications is what this pass PUT IN FRONT OF REVIEWERS, and it is
+// deliberately not len(Published).
+//
+// The publish stage keeps publish.Apply's Outcome on the error path,
+// because publish.Outcome.Completed is how a caller tells "pushed, no
+// pull request" from "never left the machine". A report that counted
+// every entry therefore printed a publication for a candidate whose
+// Apply refused before any I/O at all — an `accept` between Gather and
+// Apply returns ErrStale over a zero Outcome — and printed the row with
+// an empty URL beneath it. Nothing was pushed, no pull request existed,
+// and the pass said one was published.
+//
+// A publication is an entry that completed a step which OPENS OR MOVES a
+// pull request. A push alone is not one: the branch is on the fork and
+// the change is not in front of anybody, which is what the Refusal row
+// beside it says. A no-op permit never reaches Apply, so it is not here
+// to be counted either.
+func (p Pass) Publications() []publish.Outcome {
+	var out []publish.Outcome
+	for _, o := range p.Published {
+		for _, kind := range o.Completed {
+			if kind == record.OpenPR || kind == record.RefreshPR {
+				out = append(out, o)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // Attention is ruling 3's partition — an ALLOW-LIST of the quiet
@@ -234,10 +276,16 @@ func (p Pass) Exit() int {
 //	  rather than branches, and this one does.
 //	publish AFTER settle and BEFORE drain: publication frees no slot.
 //	drain: run.Order, then run.Start until the FIRST ErrNoVacancy.
-//	compact LAST but one, maintenance last.
+//	compact LAST but one, maintenance last — `git maintenance run
+//	  --auto`, outside every lock, advisory on failure.
 func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 	p := Pass{Started: c.Now(), Changes: map[record.ChangeID]Result{}}
 	prov, provErr := provider(ctx, c.Verifier)
+	// closed is what this pass ENDED — retired, or swept as a stray — and
+	// it exists for the re-export tail alone: a change that is no longer
+	// Bound() is not in the tail's standing population, and the note on
+	// its last commit is exactly the one that has just become wrong.
+	closed := map[record.ChangeID]bool{}
 
 	// 0 · DISCHARGE. Outstanding propagates statestore.ErrNoState rather
 	// than an empty list, because this stage DESTROYS provider resources.
@@ -330,8 +378,20 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 			continue
 		}
 		out, dem, err := publish.Standing(pub, f.Forge)
-		if err != nil || !out.Settled() {
+		if err != nil {
+			// A FORGE THAT COULD NOT BE ASKED IS NOT A FORGE THAT SAID
+			// "STILL OPEN", and collapsing the two into one `continue` is
+			// the silence rule 7 forbids: publish.Standing refuses stale
+			// facts (ErrNotFresh) and carries the lookup's own error, and a
+			// pass that dropped both would report "0 retired · 0 refused"
+			// for a host whose `gh` has been uninstalled for a week — the
+			// absence of retirements as the operator's only signal, which is
+			// the observable D13 exists to remove.
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
 			continue
+		}
+		if !out.Settled() {
+			continue // the forge answered, and the answer is that it is still open
 		}
 		if provErr == nil {
 			// Cancel's stages over the RECORD: a moved or deleted branch
@@ -392,6 +452,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 		if kept != nil {
 			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: kept})
 		}
+		closed[old.ID] = true
 		p.Retired = append(p.Retired, publish.Outcome{Number: pub.Number, URL: pub.URL, At: c.Now()})
 	}
 	// the fork copies: a foreign effect, outside every lock, on its backoff.
@@ -414,7 +475,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 	// commit there is no half-written change for a pass to finish, and a
 	// branch a person moved by hand is reported by status and answered by
 	// the person. Written here as the body of strays.
-	if err := c.strays(ctx, r, &p); err != nil {
+	if err := c.strays(ctx, r, &p, closed); err != nil {
 		return p, err
 	}
 
@@ -472,6 +533,13 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 			if err != nil {
 				p.Refusals = append(p.Refusals, Refusal{Change: cand.ID, Err: err})
 			}
+			// THE OUTCOME IS COLLECTED ON THE ERROR PATH TOO, and that is
+			// deliberate: publish.Outcome.Completed exists precisely so a
+			// caller can tell "pushed, no pull request" from "never left the
+			// machine", and an Apply that pushed and then failed to open has
+			// left a fact on the fork that a row of nothing would hide. What
+			// this row is NOT is a publication, and that question is
+			// Publications' — never len(Published).
 			p.Published = append(p.Published, out)
 		}
 	}
@@ -508,8 +576,70 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 		}
 		p.Compacted = &n
 	}
+
+	// 5b · RE-EXPORT, the backstop statestore.Export names: every note
+	// dockhand writes comes through one function, and `cycle` rewrites the
+	// ones whose projection is behind. UNCONDITIONAL, because it cannot
+	// yet be conditional — record.Record carries no field for the state
+	// commit a projection was read from, so there is no stamp to compare
+	// and every candidate is rewritten. The population is the changes a
+	// note can still be wrong about: the standing ones, plus the ones THIS
+	// pass closed, whose notes went stale in the retire Amend above.
+	//
+	// AFTER COMPACT, deliberately: a change compacted away this pass has
+	// no record to project, and Export answers ErrNoChangeAt for it, which
+	// is the honest end of a note nothing can regenerate. Running before
+	// compact would rewrite it one last time and leave the same permanent
+	// staleness a discard removes its note to avoid.
+	c.reexport(ctx, &p, closed)
+
+	// 6 · MAINTAIN, unconditionally the last line and regardless of
+	// whether compact ran — the robot pays its own housekeeping bill at a
+	// moment nobody is waiting (Q09). Skipped under --dry-run, because a
+	// repack is irreversible work even though it changes no state this
+	// design records. Its failure is an advisory and never a band: `git
+	// maintenance run --auto` refusing a gc.lock the operator's own
+	// scheduled maintenance holds is somebody else doing it, and a pass
+	// that settled, retired, published and drained did not fail because
+	// of it. It is asked here rather than in cli because a second front
+	// end driving this operation would otherwise inherit the debt (R2
+	// gives cli the loop, the lock and the signals only).
+	if !r.DryRun && c.Repo != nil {
+		if err := c.Repo.Maintain(ctx); err != nil {
+			p.MaintainErr = err
+		} else {
+			p.Maintained = true
+		}
+	}
 	p.Ended = c.Now()
 	return p, nil
+}
+
+// reexport rewrites the derived note on every commit whose projection
+// this pass could have moved, and fails nothing: a read it could not
+// make is a pass that says so and carries on, because a note is a view
+// and no decision in this tree reads one.
+//
+// It is Cycle's alone. Every other road exports the ONE commit it
+// touched, immediately after its own Amend; this is the sweep that
+// catches the process that died between those two writes, and a process
+// that dies is exactly the case the operation's own call cannot cover.
+func (c Cycle) reexport(ctx context.Context, p *Pass, closed map[record.ChangeID]bool) {
+	if c.Ledger == nil {
+		return
+	}
+	st, err := c.State.Read(ctx)
+	if err != nil {
+		say(c.Progress, progress.Warn, "the verify notes were not re-exported: "+err.Error())
+		return
+	}
+	for _, key := range slices.Sorted(maps.Keys(st.Changes)) {
+		ch := st.Changes[key]
+		if ch.Tip == "" || (!ch.Bound() && !closed[ch.ID]) {
+			continue
+		}
+		exportNote(ctx, c.State, c.Ledger, ch.Tip, c.Progress)
+	}
 }
 
 // strays is the close stage's sweep over the change lifecycle's other
@@ -520,7 +650,7 @@ func (c Cycle) Run(ctx context.Context, r CycleRequest) (Pass, error) {
 // branch in-transaction on every replace and Survey supersede, so
 // --superseded's population is a superseded change whose branch a hand
 // recreated; retiring CycleRequest.Superseded is not settled here.
-func (c Cycle) strays(ctx context.Context, r CycleRequest, p *Pass) error {
+func (c Cycle) strays(ctx context.Context, r CycleRequest, p *Pass, closed map[record.ChangeID]bool) error {
 	st, err := c.State.Read(ctx)
 	if err != nil {
 		return err
@@ -535,7 +665,9 @@ func (c Cycle) strays(ctx context.Context, r CycleRequest, p *Pass) error {
 				return change.CloseIn(tx, ch.ID, record.ChangeDiscarded, "", c.Now())
 			}); err != nil {
 				p.Refusals = append(p.Refusals, Refusal{Change: ch.ID, Err: err}) // a hand-moved pin (45), or a peer's close
+				continue
 			}
+			closed[ch.ID] = true
 		case r.Superseded && !r.DryRun && ch.SupersededBy != "" && ch.Branch != "" && c.Repo.HasBranch(ctx, ch.Branch) && mayDemolish(ch, c.Grants.Invoker):
 			wt, err := c.Repo.CheckedOutAt(ctx, ch.Branch)
 			if err != nil {

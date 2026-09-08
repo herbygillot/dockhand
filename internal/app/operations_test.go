@@ -1,0 +1,773 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/herbygillot/dockhand/internal/change"
+	"github.com/herbygillot/dockhand/internal/dependents"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/gittest"
+	"github.com/herbygillot/dockhand/internal/ledger"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/run"
+	"github.com/herbygillot/dockhand/internal/statestore"
+	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/verifytest"
+)
+
+// THE FIXTURES BELOW ARE WHAT MAKES THIS PACKAGE TESTABLE AT ALL, and
+// they are the design's own claim cashed: nine operations over INJECTED
+// VALUES, no file opened, no lock taken, no environment read. A pass, a
+// verification, an extension, a status and a cancellation all run here
+// against a real temporary git repository, a real state ref, a scripted
+// provider and a scripted stager — no VM, no ports tree, no network.
+//
+// Before these existed, Cycle, Verify, Accept, Status and Cancel had no
+// test that EXECUTED them: app_test.go constructed Change, Discard and
+// Survey only, and every regression in the five sequencers those five
+// operations are went uncaught by `go test ./...`.
+
+// stager is the consumer-owned seam Start turns an attempt's identity
+// into a staged directory through. It is run's own test double, stood up
+// again here because what these tests drive is the operation above it.
+type stager struct {
+	err  error
+	seen []string
+}
+
+func (s *stager) Stage(_ context.Context, sha string, subjects []record.Subject) ([]run.Member, map[string]run.Preflight, error) {
+	s.seen = append(s.seen, sha)
+	if s.err != nil {
+		return nil, nil, s.err
+	}
+	members := make([]run.Member, 0, len(subjects))
+	pre := map[string]run.Preflight{}
+	for _, sub := range subjects {
+		members = append(members, run.Member{Port: sub.Port, Portdir: "/stage/" + sub.Port, Names: sub.Names})
+		pre[sub.Port] = run.Preflight{Read: true}
+	}
+	return members, pre, nil
+}
+
+// quiet is run.Local with nothing to say: no dependents, no cues. A
+// settle over it proposes no cohort, which keeps these tests about the
+// operation's SEQUENCE rather than about dependents.Propose.
+type quiet struct{}
+
+func (quiet) Dependents(context.Context, string) ([]portindex.Dependent, []portindex.Unread, error) {
+	return nil, nil, nil
+}
+
+func (quiet) Instructions(context.Context, string) ([]dependents.Instruction, error) {
+	return nil, nil
+}
+
+// has and hasNone are the Verifier seam: a function, because a machine
+// with no tart is not an error.
+func has(p verify.Verifier) func(context.Context) (verify.Verifier, error) {
+	return func(context.Context) (verify.Verifier, error) { return p, nil }
+}
+
+func hasNone(context.Context) (verify.Verifier, error) { return nil, verify.ErrNoProvider }
+
+// roomy is a Fake that also reports its free room — the eighth optional
+// interface, which app.ask reads for the pass and status reports.
+type roomy struct {
+	*verifytest.Fake
+	room verify.Vacancy
+	err  error
+}
+
+func (r *roomy) Vacancy(context.Context) (verify.Vacancy, error) { return r.room, r.err }
+
+// streaming is a Fake that also hands its live log over — the ninth
+// optional interface, which --trace watches a build through.
+type streaming struct {
+	*verifytest.Fake
+	log string
+}
+
+func (s *streaming) Stream(_ context.Context, _ verify.Job, w io.Writer) error {
+	_, err := io.WriteString(w, s.log)
+	return err
+}
+
+// recorder is a progress.Sink that keeps what it was told, so a test can
+// assert that a refusal a person needs to see was actually said.
+type recorder struct{ lines []string }
+
+func (r *recorder) Stage(string, string)              {}
+func (r *recorder) Say(_ progress.Level, text string) { r.lines = append(r.lines, text) }
+func (r *recorder) Stream(io.Reader)                  {}
+func (r *recorder) said(want string) bool {
+	for _, l := range r.lines {
+		if strings.Contains(l, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// sequoia is a concrete release, because an attempt's slot is a (change,
+// platform) pair and the zero release would make every fixture share one.
+var sequoia = platform.Releases[0]
+
+// enqueued mints a change through the Change operation with a provider
+// present, so the record, the branch, the attempt and the lease all come
+// from the roads that write them rather than from a literal.
+func enqueued(t *testing.T, repo *git.Repo, st *statestore.Store, prov verify.Verifier, port, version, slug string) Result {
+	t.Helper()
+	op := Change{
+		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(prov), Me: me(), Now: now,
+	}
+	res, err := op.Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, port, version),
+		Delivery: Enqueue, Platform: sequoia, Slug: slug,
+	})
+	require.NoError(t, err)
+	return res
+}
+
+// ---------------------------------------------------------------- Status
+
+// STATUS AT ITS THREE DEPTHS, which are three different claims about
+// what a reader is holding and not three verbosities.
+//
+// --no-update is ONE READ: it settles nothing, polls nothing, asks no
+// forge, and says so on the result rather than leaving a reader to guess
+// from an empty Settled — which is also what a default status that found
+// nothing to settle looks like (rule 7).
+func TestStatusNoUpdateReadsAndJudgesNothing(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	res := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Started, res.Did, "the fixture is a running build")
+	fake.States = map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}
+
+	s := Status{Repo: repo, Ledger: ledger.Open(repo), State: st, Local: quiet{},
+		Verifier: has(fake), Me: me(), Residency: Residency{State: NoDispatcher}, Now: now}
+	out, err := s.Run(t.Context(), StatusRequest{NoUpdate: true})
+	require.NoError(t, err)
+
+	assert.True(t, out.NoUpdate, "the depth rides on the value, because nothing downstream can recover it")
+	assert.Empty(t, out.Settled)
+	assert.Empty(t, out.Obligations, "a pure read asks the provider nothing")
+	assert.Empty(t, fake.Released, "and destroys nothing")
+
+	stored, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.True(t, stored.Attempts[res.Attempt].Active(), "the attempt was not judged")
+}
+
+// WITH NO DISPATCHER, STATUS IS THE JUDGE: it settles what this checkout
+// is running, which is what releases the idle 33 GB guest. One job, one
+// judge — and here nobody else is holding the chair.
+func TestStatusSettlesWhenNoDispatcherIsResident(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	res := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	fake.States = map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}
+	fake.Logs = map[string]string{"fake-1": "--->  Building jq\n"}
+
+	s := Status{Repo: repo, Ledger: ledger.Open(repo), State: st, Local: quiet{},
+		Verifier: has(fake), Me: me(), Residency: Residency{State: NoDispatcher}, Now: now}
+	out, err := s.Run(t.Context(), StatusRequest{Forge: 0})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{res.Attempt}, out.Settled)
+	assert.Equal(t, []string{"fake-1"}, fake.Released, "the verdict frees the environment")
+
+	stored, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.True(t, stored.Attempts[res.Attempt].Settled())
+	assert.Equal(t, record.Passed, stored.Attempts[res.Attempt].Runs["jq"].State)
+}
+
+// A RESIDENT DISPATCHER OWNS THE CHAIR. Status still reports — the
+// obligations, the vacancy, the record — and judges nothing, because two
+// judges over one job is the defect residency exists to prevent.
+func TestStatusUnderAResidentDispatcherReportsWithoutJudging(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	res := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	fake.States = map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}
+	prov := &roomy{Fake: fake, room: verify.Vacancy{Known: true, Free: 1, Limit: 2, AsOf: clock}}
+
+	s := Status{Repo: repo, Ledger: ledger.Open(repo), State: st, Local: quiet{},
+		Verifier: has(prov), Me: me(),
+		Residency: Residency{State: DispatcherResident, Holder: record.OwnerID{PID: 999}}, Now: now}
+	out, err := s.Run(t.Context(), StatusRequest{})
+	require.NoError(t, err)
+
+	assert.Empty(t, out.Settled, "the scheduler settles it, not this process")
+	assert.Empty(t, fake.Released)
+	assert.Equal(t, verify.Vacancy{Known: true, Free: 1, Limit: 2, AsOf: clock}, out.Vacancy,
+		"the machine's free room is reported by the provider that can answer it")
+
+	stored, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.True(t, stored.Attempts[res.Attempt].Active())
+}
+
+// A PROVIDER THAT CANNOT REPORT ITS ROOM LEAVES THE ANSWER UNKNOWN, and
+// unknown is a fact the report shows rather than a zero that reads as a
+// full machine.
+func TestStatusReportsUnknownRoomForAProviderThatCannotAnswer(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+
+	s := Status{Repo: repo, Ledger: ledger.Open(repo), State: st, Local: quiet{},
+		Verifier: has(fake), Me: me(), Residency: Residency{State: DispatcherResident}, Now: now}
+	out, err := s.Run(t.Context(), StatusRequest{})
+	require.NoError(t, err)
+	assert.False(t, out.Vacancy.Known)
+	assert.False(t, out.Vacancy.Admits(1), "an unknown vacancy admits nothing")
+}
+
+// ---------------------------------------------------------------- Cancel
+
+// CANCEL IS TWO CALLS: run.Finish with Interrupt Canceled for each
+// Active attempt on the tip, and lease.Release for each SETTLED
+// attempt's kept environment. Both lifecycles, in the one road a person
+// types, and the verdict a settled attempt already earned stands.
+func TestCancelStopsTheLiveBuildAndFreesItsEnvironment(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	res := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+
+	c := Cancel{Repo: repo, Ledger: ledger.Open(repo), State: st, Verifier: has(fake),
+		Local: quiet{}, Me: me(), Now: now}
+	out, err := c.Run(t.Context(), "dockhand/jq-1.8")
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{res.Attempt}, out.Stopped)
+	assert.Equal(t, []string{"fake-1"}, fake.Released, "stopping a job IS releasing its environment")
+
+	stored, err := st.Read(t.Context())
+	require.NoError(t, err)
+	a := stored.Attempts[res.Attempt]
+	assert.True(t, a.Settled())
+	assert.Equal(t, record.Canceled, verdictOf(a), "a cancellation ends without concluding")
+}
+
+// A KEPT ENVIRONMENT IS HANDED BACK AND THE VERDICT STANDS. This is the
+// second of Cancel's two lifecycles, and it is a different population
+// from the first: the attempt is already settled, and what cancel frees
+// is the guest a --keep-env debug session left holding a slot.
+func TestCancelReleasesAKeptEnvironmentWithoutTouchingItsVerdict(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	res := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	// The build fails, which is the disposition that KEEPS the guest: what
+	// a failed verification hands back is the environment it failed in.
+	fake.States = map[string]verify.Status{"fake-1": {State: verify.Failed, Handle: "w-1"}}
+	fake.Logs = map[string]string{"fake-1": "Error: jq did not build\n"}
+
+	s := Status{Repo: repo, Ledger: ledger.Open(repo), State: st, Local: quiet{},
+		Verifier: has(fake), Me: me(), Residency: Residency{State: NoDispatcher}, Now: now}
+	_, err := s.Run(t.Context(), StatusRequest{})
+	require.NoError(t, err)
+	require.Empty(t, fake.Released, "a failure keeps the environment it failed in")
+
+	c := Cancel{Repo: repo, Ledger: ledger.Open(repo), State: st, Verifier: has(fake),
+		Local: quiet{}, Me: me(), Now: now}
+	out, err := c.Run(t.Context(), "dockhand/jq-1.8")
+	require.NoError(t, err)
+
+	assert.Empty(t, out.Stopped, "nothing was running")
+	require.Len(t, out.Released, 1, "the kept guest is handed back")
+	assert.Equal(t, []string{"fake-1"}, fake.Released)
+
+	stored, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, record.Failed, verdictOf(stored.Attempts[res.Attempt]),
+		"the verdict it earned is not rewritten by handing the slot back")
+}
+
+// NOTHING HELD NEEDS NO PROVIDER, which is the difference between a
+// `cancel` that works on a laptop with no tart and one that refuses.
+func TestCancelWithNoProviderSucceedsWhenNothingIsHeld(t *testing.T) {
+	repo, st := fixture(t)
+	op := changeOp(repo, st)
+	_, err := op.Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, "jq", "1.8"), Delivery: Branch, Slug: "jq-1.8",
+	})
+	require.NoError(t, err)
+
+	c := Cancel{Repo: repo, Ledger: ledger.Open(repo), State: st, Verifier: hasNone,
+		Local: quiet{}, Me: me(), Now: now}
+	out, err := c.Run(t.Context(), "dockhand/jq-1.8")
+	require.NoError(t, err)
+	assert.Empty(t, out.Stopped)
+	assert.Empty(t, out.Released)
+}
+
+// A MOVED REF STOPS NOTHING. The person moved the branch themselves, and
+// they are asked which of the two they meant before an environment is
+// destroyed.
+func TestCancelRefusesARefAHandMoved(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	moved := gittest.Commit(t, repo, "moved", "dockhand/jq-1.8", "sysutils/jq/Portfile", "version 1.9\n", "by hand")
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefUpdate{
+		{Ref: change.BranchRef("dockhand/jq-1.8"), New: moved, Old: refOf(t, repo, "dockhand/jq-1.8")},
+	}))
+
+	c := Cancel{Repo: repo, Ledger: ledger.Open(repo), State: st, Verifier: has(fake),
+		Local: quiet{}, Me: me(), Now: now}
+	_, err := c.Run(t.Context(), "dockhand/jq-1.8")
+	require.Error(t, err)
+	assert.True(t, isTipDisagrees(err), "45, and nothing was stopped")
+	assert.Empty(t, fake.Released)
+}
+
+func refOf(t *testing.T, repo *git.Repo, branch string) string {
+	t.Helper()
+	sha, err := repo.RevParse(t.Context(), branch)
+	require.NoError(t, err)
+	return sha
+}
+
+// ---------------------------------------------------------------- Verify
+
+// THE ADOPT ROAD: a dockhand/ branch with no record at all. `verify`
+// writes the record and the branch's assert line in ONE Amend, enqueues
+// an attempt over the tip it just read, and the Ref it returns is the
+// WITNESS that the batch landed — resolved after the commit, never
+// carried across it.
+func TestVerifyAdoptsABranchWithNoRecordAndAnnouncesIt(t *testing.T) {
+	repo, st := fixture(t)
+	seed(t, st)
+	tip := gittest.Commit(t, repo, "dockhand/jq-1.9", "HEAD", "sysutils/jq/Portfile", "version 1.9\n", "jq: 1.9")
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia}}
+
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now}
+	res, err := v.Run(t.Context(), VerifyRequest{Target: "dockhand/jq-1.9", Platforms: []platform.Release{sequoia}})
+	require.NoError(t, err)
+
+	assert.True(t, res.Adopted, "a branch dockhand had not tracked is adopted, and the road says so")
+	assert.Equal(t, "dockhand/jq-1.9", res.Change.Branch())
+	assert.Equal(t, tip, res.Change.Tip(), "the Ref is resolved after the Amend, so it witnesses the batch")
+	require.Len(t, res.Attempts, 1)
+	assert.Equal(t, Started, res.Attempts[0].Did)
+	assert.Equal(t, 0, res.Exit())
+
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	c := s.Changes[string(res.Change.ID())]
+	assert.Equal(t, record.MintedAdopted, c.MintedVia, "the record says where it came from")
+	assert.Equal(t, tip, c.Tip)
+	require.Len(t, fake.Submitted, 1, "the adoption enqueued and started one attempt")
+}
+
+// A HOST WITH NO PROVIDER REFUSES AND ENQUEUES NOTHING. `verify` is the
+// one road with no branch to leave behind as its excuse, so the refusal
+// comes before any record is written.
+func TestVerifyRefusesAHostWithNoProviderAndAdoptsNothing(t *testing.T) {
+	repo, st := fixture(t)
+	seed(t, st)
+	gittest.Commit(t, repo, "dockhand/jq-1.9", "HEAD", "sysutils/jq/Portfile", "version 1.9\n", "jq: 1.9")
+
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: hasNone, Me: me(), Now: now}
+	_, err := v.Run(t.Context(), VerifyRequest{Target: "dockhand/jq-1.9", Platforms: []platform.Release{sequoia}})
+	require.ErrorIs(t, err, verify.ErrNoProvider)
+
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, s.Changes, "nothing was adopted")
+}
+
+// --trace ON A PROVIDER THAT CANNOT STREAM SAYS SO. It used to discard
+// run.Follow's ErrUnsupported into a goroutine nobody read, which
+// printed nothing and explained nothing — indistinguishable, to the
+// person who typed the flag, from a build that produced no output.
+func TestVerifyTraceSaysSoWhenTheProviderCannotStream(t *testing.T) {
+	repo, st := fixture(t)
+	seed(t, st)
+	gittest.Commit(t, repo, "dockhand/jq-1.9", "HEAD", "sysutils/jq/Portfile", "version 1.9\n", "jq: 1.9")
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia},
+		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}}
+	rec := &recorder{}
+	var out bytes.Buffer
+	wait := time.Second
+
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now, Progress: rec, Out: &out}
+	_, err := v.Run(t.Context(), VerifyRequest{
+		Target: "dockhand/jq-1.9", Platforms: []platform.Release{sequoia},
+		Trace: true, Wait: &wait, Residency: Residency{State: NoDispatcher},
+	})
+	require.NoError(t, err)
+	assert.True(t, rec.said("--trace"), "the refusal a person needs to see was said: %v", rec.lines)
+	assert.Empty(t, out.String(), "and nothing was written to the trace stream")
+}
+
+// --trace ON A PROVIDER THAT CAN STREAM WATCHES THE BUILD, which the
+// ruled surface calls the only way to watch a build happen. The stream
+// judges nothing: the verdict still arrives through the record.
+func TestVerifyTraceStreamsTheProvidersBytes(t *testing.T) {
+	repo, st := fixture(t)
+	seed(t, st)
+	gittest.Commit(t, repo, "dockhand/jq-1.9", "HEAD", "sysutils/jq/Portfile", "version 1.9\n", "jq: 1.9")
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia},
+		States: map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}}
+	prov := &streaming{Fake: fake, log: "--->  Building jq\n"}
+	rec := &recorder{}
+	traced := &syncBuffer{}
+	wait := 5 * time.Second
+
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(prov), Me: me(), Now: now, Progress: rec, Out: traced}
+	res, err := v.Run(t.Context(), VerifyRequest{
+		Target: "dockhand/jq-1.9", Platforms: []platform.Release{sequoia},
+		Trace: true, Wait: &wait, Residency: Residency{State: NoDispatcher},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Attempts, 1)
+	assert.Equal(t, Stood, res.Attempts[0].Did, "the verdict came from the record, not from the stream")
+	assert.Equal(t, record.Passed, res.Attempts[0].Verdict)
+	assert.Eventually(t, func() bool { return traced.String() == "--->  Building jq\n" },
+		5*time.Second, 10*time.Millisecond, "the provider's bytes reached the trace stream")
+}
+
+// syncBuffer is the --trace sink, written by run.Follow's goroutine and
+// read by the test, so the race detector has one mutex to see rather
+// than a data race to report.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// ----------------------------------------------------------------- Cycle
+
+// order is a provider that records the SEQUENCE of what it was asked,
+// which is the only way to assert a stage order from outside: the pass's
+// stages are not a column to read down, they are edges, and each edge is
+// an argument about what a crash leaves or what a slot costs.
+type order struct {
+	*verifytest.Fake
+	calls []string
+}
+
+func (o *order) Poll(ctx context.Context, job verify.Job) (verify.Status, error) {
+	o.calls = append(o.calls, "poll "+job.ID)
+	return o.Fake.Poll(ctx, job)
+}
+
+func (o *order) Release(ctx context.Context, job verify.Job) error {
+	o.calls = append(o.calls, "release "+job.ID)
+	return o.Fake.Release(ctx, job)
+}
+
+func (o *order) Submit(ctx context.Context, req verify.Request) (verify.Job, error) {
+	job, err := o.Fake.Submit(ctx, req)
+	if err == nil {
+		o.calls = append(o.calls, "submit "+job.ID)
+	}
+	return job, err
+}
+
+func cycleOp(repo *git.Repo, st *statestore.Store, prov verify.Verifier) Cycle {
+	return Cycle{
+		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(prov), Grants: Grants{Invoker: record.Human}, Me: me(), PassID: "pass-1", Now: now,
+	}
+}
+
+// SETTLE COMES BEFORE DRAIN, AND THE EDGE IS THE WHOLE ARGUMENT: a
+// settle frees a slot and produces the verdicts the later stages read,
+// so a pass that drained first would start nothing on a machine its own
+// finished builds were still holding.
+//
+// Asserted over the PROVIDER'S CALL SEQUENCE rather than over the store,
+// because the pass's stages are edges and not a column: what has to be
+// true is that the running build was polled and its environment handed
+// back before the queued one was submitted.
+func TestCycleSettlesBeforeItDrains(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	prov := &order{Fake: fake}
+
+	// A running build on one change, and a queued attempt on another that
+	// met a full machine when it was minted.
+	running := enqueued(t, repo, st, prov, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Started, running.Did)
+	fake.SubmitErr = &verify.NoVacancyError{Busy: 2, Limit: 2}
+	waiting := enqueued(t, repo, st, prov, "oniguruma", "6.9", "oniguruma-6.9")
+	require.Equal(t, Queued, waiting.Did, "the machine was full when this one was minted")
+
+	// The room frees the moment the first build's verdict is in.
+	fake.SubmitErr = nil
+	fake.States = map[string]verify.Status{"fake-1": {State: verify.Passed, Handle: "w-1"}}
+	fake.Logs = map[string]string{"fake-1": "--->  Building jq\n"}
+	prov.calls = nil // what the fixture asked for is not what the pass asked for
+
+	p, err := cycleOp(repo, st, prov).Run(t.Context(), CycleRequest{
+		Discharge: true, DischargeAfter: time.Hour, Retirement: ReportOnly, Forge: 1,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"poll fake-1", "release fake-1", "submit fake-2"}, prov.calls,
+		"the verdict and the freed slot come first; the queue is drained into what they left")
+	assert.Equal(t, Stood, p.Changes[recordID(running)].Did)
+	assert.Equal(t, record.Passed, p.Changes[recordID(running)].Verdict)
+	assert.Equal(t, Started, p.Changes[recordID(waiting)].Did)
+	assert.Equal(t, 0, p.Exit(), "a pass that did its work needs nobody")
+
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.True(t, s.Attempts[running.Attempt].Settled())
+	assert.True(t, s.Attempts[waiting.Attempt].Active())
+}
+
+// A REFUSAL IN ONE STAGE DOES NOT ABORT THE PASS. The retire stage meets
+// a publication whose forge it cannot ask; that is a Refusal row and a
+// person's business, and the drain behind it still runs — because a pass
+// that stopped on the first thing it could not do would leave a machine
+// idle over a `gh` that has been uninstalled for a week, with the
+// absence of retirements as the operator's only signal.
+func TestCycleCarriesOnPastARefusalInAnEarlierStage(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{SubmitErr: &verify.NoVacancyError{Busy: 2, Limit: 2}}
+	waiting := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Queued, waiting.Did)
+
+	// An open publication on that change. Env is zero here, so the forge
+	// cannot be asked at all — which is exactly the fact rule 7 says must
+	// not be collapsed into "still open".
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		tx.PutPublication(record.Publication{
+			ID: "pub-1", Change: recordID(waiting), By: record.Human, Outcome: record.Open,
+		})
+		return nil
+	}))
+	fake.SubmitErr = nil
+
+	p, err := cycleOp(repo, st, fake).Run(t.Context(), CycleRequest{
+		Discharge: true, DischargeAfter: time.Hour, Retirement: ReportOnly, Forge: 1,
+	})
+	require.NoError(t, err, "a refusal is a row, never a stop")
+
+	require.Len(t, p.Refusals, 1)
+	assert.Equal(t, recordID(waiting), p.Refusals[0].Change)
+	assert.True(t, p.Attention(), "a family nobody argued into the quiet list is loud")
+	assert.Equal(t, 84, p.Exit())
+
+	assert.Equal(t, Started, p.Changes[recordID(waiting)].Did, "the drain ran behind the refusal")
+	require.Len(t, fake.Submitted, 1, "the drain seated the attempt the full machine had left queued")
+}
+
+// THE VACANCY IS REPORTED AND NEVER CONSULTED, and it is asked AFTER the
+// drain has already stopped, so it can never become a gate by accident
+// of ordering: this machine says it is full, and the pass started
+// everything it had anyway.
+func TestCycleReportsTheVacancyItNeverGatedOn(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{SubmitErr: &verify.NoVacancyError{Busy: 2, Limit: 2}}
+	waiting := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Queued, waiting.Did)
+	fake.SubmitErr = nil
+	prov := &roomy{Fake: fake, room: verify.Vacancy{Known: true, Free: 0, Limit: 2, AsOf: clock}}
+
+	p, err := cycleOp(repo, st, prov).Run(t.Context(), CycleRequest{
+		Discharge: true, DischargeAfter: time.Hour, Retirement: ReportOnly, Forge: 1,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, verify.Vacancy{Known: true, Free: 0, Limit: 2, AsOf: clock}, p.Vacancy)
+	assert.False(t, p.Vacancy.Admits(1))
+	assert.Equal(t, Started, p.Changes[recordID(waiting)].Did,
+		"the sentinel is the authority; the observation is an economy and never a gate")
+}
+
+// A PASS ON A MACHINE WITH NO PROVIDER STILL RUNS. It discharges
+// nothing, settles nothing and drains nothing — every one of those needs
+// a provider — and it still closes the change lifecycle's other deaths
+// and reports, which is what makes a tart-less host a place a pass is
+// worth running at all.
+func TestCycleRunsWithoutAProvider(t *testing.T) {
+	repo, st := fixture(t)
+	_, err := changeOp(repo, st).Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, "jq", "1.8"), Delivery: Branch, Slug: "jq-1.8",
+	})
+	require.NoError(t, err)
+
+	c := cycleOp(repo, st, nil)
+	c.Verifier = hasNone
+	p, err := c.Run(t.Context(), CycleRequest{
+		Discharge: true, DischargeAfter: time.Hour, Retirement: ReportOnly, Forge: 1,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, p.Refusals)
+	assert.Empty(t, p.Owed, "nothing could be asked, so nothing is claimed to be owed")
+	assert.False(t, p.Vacancy.Known, "and the machine's room is unknown rather than zero")
+	assert.Equal(t, 0, p.Exit())
+}
+
+func recordID(r Result) record.ChangeID { return r.Ref.ID() }
+
+// seed makes the state ref exist without writing a record into it: an
+// empty Amend, which is what the first write of any lifecycle would
+// leave behind. The operations that READ before they write need it,
+// since statestore.ErrNoState is a fact about the repository and not an
+// empty store.
+func seed(t *testing.T, st *statestore.Store) {
+	t.Helper()
+	require.NoError(t, st.Amend(t.Context(), func(*statestore.Txn) error { return nil }))
+}
+
+// ---------------------------------------------------------------- Accept
+
+// ACCEPT EXTENDS THE BRANCH THAT ALREADY CARRIES THE CHANGE. Its ticks
+// are extend + answer and never begin or mint: ONE Amend moves the
+// branch to the cohort commit (the record's CAS and the ref's update
+// line in the same batch), marks the proposal Accepted, and enqueues the
+// cohort's own verification — and the Ref that comes back is resolved
+// AFTER the batch, so it witnesses that the branch actually moved.
+func TestAcceptExtendsTheBranchAndAnswersTheProposal(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia}}
+	minted := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	before := minted.Ref.Tip()
+
+	// The proposal a settled verification would have written: oniguruma
+	// depends on jq's ABI and wants a revision bump beside it.
+	propose(t, st, minted.Ref.ID(), record.Candidate{Port: "oniguruma", Portdir: "devel/oniguruma", Proposed: true})
+
+	a := Accept{
+		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now,
+		Prepare: func(_ context.Context, _ string, cands []record.Candidate) (change.Prepared, error) {
+			require.Len(t, cands, 1)
+			return change.Prepared{
+				Portdir:  change.TreePath("devel/oniguruma"),
+				Subjects: []record.Subject{{Port: "oniguruma", Names: []string{"oniguruma"}, Portdir: "devel/oniguruma", Intent: "revision"}},
+				Files:    []change.File{{Path: "Portfile", Content: []byte("version 6.8\nrevision 1\n")}},
+				Intent:   "revision",
+				Summary:  "oniguruma: revbump for jq",
+			}, nil
+		},
+	}
+	res, err := a.Run(t.Context(), AcceptRequest{Branch: "dockhand/jq-1.8", Platform: sequoia})
+	require.NoError(t, err)
+
+	assert.Equal(t, Started, res.Did)
+	assert.NotEqual(t, before, res.Ref.Tip(), "the branch carries the cohort commit now")
+	assert.Equal(t, "dockhand/jq-1.8", res.Ref.Branch(), "it extends; it never mints a second branch")
+
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	c := s.Changes[string(minted.Ref.ID())]
+	assert.Equal(t, record.ChangeExtended, c.State)
+	assert.Equal(t, res.Ref.Tip(), c.Tip, "the record's CAS and the ref's update line landed together")
+	assert.Equal(t, []string{"jq", "oniguruma"}, portsOf(c.Subjects), "the headline keeps its place")
+	require.Len(t, c.Findings, 1)
+	assert.Equal(t, record.Accepted, c.Findings[0].Disposition, "the answer is given once, and recorded")
+
+	require.Len(t, fake.Submitted, 2, "the cohort's own verification was enqueued and started")
+	assert.Equal(t, []string{"jq", "oniguruma"}, fake.Submitted[1].Ports)
+}
+
+// A CHANGE WITH NOTHING TO ACCEPT REFUSES BY NAME AND WRITES NOTHING.
+// The proposal is what this road answers, so its absence is exit 10's
+// decline and never an empty cohort commit.
+func TestAcceptRefusesAChangeCarryingNoProposal(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia}}
+	minted := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	before := minted.Ref.Tip()
+
+	a := Accept{Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now}
+	_, err := a.Run(t.Context(), AcceptRequest{Branch: "dockhand/jq-1.8", Platform: sequoia})
+	require.ErrorIs(t, err, change.ErrNoProposal)
+
+	assert.Equal(t, before, refOf(t, repo, "dockhand/jq-1.8"), "the branch did not move")
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, before, s.Changes[string(minted.Ref.ID())].Tip)
+}
+
+// --no-verify EXTENDS AND ENQUEUES NOTHING, which is the same narrowing
+// the mint road makes: the branch carries the cohort, and the person
+// says when it is verified.
+func TestAcceptUnderNoVerifyExtendsWithoutEnqueueing(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{Platforms: []platform.Release{sequoia}}
+	minted := enqueued(t, repo, st, fake, "jq", "1.8", "jq-1.8")
+	propose(t, st, minted.Ref.ID(), record.Candidate{Port: "oniguruma", Portdir: "devel/oniguruma", Proposed: true})
+
+	a := Accept{
+		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now,
+		Prepare: func(context.Context, string, []record.Candidate) (change.Prepared, error) {
+			return change.Prepared{
+				Portdir:  change.TreePath("devel/oniguruma"),
+				Subjects: []record.Subject{{Port: "oniguruma", Names: []string{"oniguruma"}, Portdir: "devel/oniguruma", Intent: "revision"}},
+				Files:    []change.File{{Path: "Portfile", Content: []byte("version 6.8\nrevision 1\n")}},
+				Intent:   "revision", Summary: "oniguruma: revbump for jq",
+			}, nil
+		},
+	}
+	res, err := a.Run(t.Context(), AcceptRequest{Branch: "dockhand/jq-1.8", Platform: sequoia, NoVerify: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, Minted, res.Did, "extended, and nothing was asked of a provider")
+	assert.Empty(t, res.Attempt)
+	require.Len(t, fake.Submitted, 1, "only the original bump's own submit")
+
+	s, err := st.Read(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, record.ChangeExtended, s.Changes[string(minted.Ref.ID())].State)
+}
+
+// propose writes the cohort finding a settled verification's propose
+// step would have written, so the fixture is the record Accept reads and
+// not a shape invented beside it.
+func propose(t *testing.T, st *statestore.Store, id record.ChangeID, cands ...record.Candidate) {
+	t.Helper()
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		return change.ProposeIn(tx, id, record.Finding{
+			Kind:       record.KindABIDependents,
+			Candidates: cands,
+			Criterion:  "the install name moved between the two builds",
+		}, clock)
+	}))
+}
+
+func portsOf(subjects []record.Subject) []string {
+	out := make([]string, 0, len(subjects))
+	for _, s := range subjects {
+		out = append(out, s.Port)
+	}
+	return out
+}

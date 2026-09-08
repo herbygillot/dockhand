@@ -39,6 +39,15 @@ var ErrNoChangeAt = errors.New("statestore: no change in the store is at this co
 // dockhand writes comes through here, so there is no second, unstamped
 // writer for the re-export to silently overwrite.
 //
+// app.exportNote is that caller, deferred at each road's end so that one
+// operation amending three times — mint, enqueue, then settle under
+// --wait — exports the state it LEAVES rather than each state it passed
+// through; and Cycle.reexport is the pass's unconditional sweep behind
+// it. The one road that does not export is `discard`, which REMOVES
+// through ledger.Remove instead: the change is over, and once compaction
+// drops its record a re-export could only answer ErrNoChangeAt, which
+// would leave the stale note permanently uncorrectable.
+//
 // THE STAMP HAS NO FIELD YET, and this comment is the honest form of
 // that. record.Record — the ruled shape, one package over — carries
 // Schema, Sha and Tree and no place to record the state commit this

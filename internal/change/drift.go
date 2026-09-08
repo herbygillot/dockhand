@@ -169,7 +169,8 @@ func (e *PortdirDisagreement) Unwrap() error { return ErrPortdirsDisagree }
 // wrote an advisory to stderr about members the branch does not own when
 // the local primary is behind its remote; that advisory is a SENTENCE
 // about this data and belongs to the road that has a stream, which is
-// rule 1 — this function returns what it found.
+// rule 1 — this function returns what it found, and ForeignMembers below
+// returns the advisory's own facts for the road that says it.
 func ChangedPortdirs(ctx context.Context, repo *git.Repo, c record.Change, base string) ([]string, error) {
 	if repo == nil || c.Tip == "" || base == "" {
 		return nil, fmt.Errorf("%w: an audit needs a repository, a tip and a base", ErrIncomplete)
@@ -233,6 +234,111 @@ func ChangedPortdirs(ctx context.Context, repo *git.Repo, c record.Change, base 
 	// something git does not: which subject is the headline, and the order
 	// the members must be built in.
 	return recorded, nil
+}
+
+// Foreign is one member of a derived roster that the branch does not
+// own: a portdir a stale primary put in the diff, with the upstream
+// commits that actually touched it, oldest first — the order they landed
+// upstream, which is how a person reading a log expects to find them.
+//
+// It is DATA and not a sentence, for the reason ChangedPortdirs gives
+// above: the shipped derivation wrote this to stderr from inside the
+// derivation, and the road that has a stream is the one that may say it.
+type Foreign struct {
+	Portdir string
+	From    []git.CommitPaths
+}
+
+// ForeignMembers names which of a derived roster's portdirs came from
+// commits the branch does not own — and changes nothing.
+//
+// The condition is a STALE PRIMARY. The diff's base is the LOCAL
+// primary, which never fetches (D21: the local position is the answer,
+// staleness included), while a hand-made branch is ordinarily cut from
+// origin/<primary>, which dockhand's own retire sweep advances when a
+// pull request merges. Everything upstream landed between the two
+// positions is then in the branch's diff, and its portdirs are counted,
+// built, and claimed as the branch's — a cohort submitted as
+// `oniguruma6, jq, mise` when the branch touched two, the third being
+// dockhand's own merged pull request (field, 2026-09-03). A branch
+// dockhand minted is immune: it forks from the local primary, so its
+// merge base is its fork point.
+//
+// Ruled an advisory (2026-09-04): D21 stands, the roster stands, and the
+// road that derived it says which members are somebody else's and where
+// they came from. The remedy is the user's — a fast-forward of the local
+// primary moves the merge base, and the foreign commits fall out of the
+// diff on the next derivation with no re-cut of the branch.
+//
+// FROM REFS ALONE. The remote-tracking ref is whatever the last fetch
+// left, and the commits the branch carries that the primary lacks are
+// the range from the diff's base to the branch's fork point on that ref:
+// reachable from the tip and from origin/<primary>, and not from
+// <primary>. A member is named only when no commit of the branch's own
+// touches it — the branch editing a port upstream also moved is a roster
+// the branch earned, not an enlargement.
+//
+// BEST EFFORT, on the reflog's model: no remote-tracking ref means
+// nothing to compare against, and a git error on the way says nothing at
+// all. This is corroboration beside a roster, and a verification must
+// not fail over the words beside it — which is why it returns one value
+// and no error, and why an empty answer means only that there is nothing
+// to say.
+func ForeignMembers(ctx context.Context, repo *git.Repo, primary, base, tip string, derived []string) []Foreign {
+	if repo == nil || primary == "" || base == "" || tip == "" || len(derived) == 0 {
+		return nil
+	}
+	// The remote-tracking ref, spelled here because it is nobody's
+	// authority: refs/remotes/ is this machine's cache of what a fetch
+	// last saw, no ref dockhand writes lives under it, and the store's
+	// three owned namespaces are elsewhere. Reading it is a reading, and
+	// this whole function is one.
+	remote := "refs/remotes/origin/" + primary
+	if _, err := repo.RevParse(ctx, remote); err != nil {
+		return nil
+	}
+	fork, err := repo.MergeBase(ctx, remote, tip)
+	if err != nil || fork == base {
+		return nil
+	}
+	foreign, err := repo.CommitsWithPaths(ctx, fork, base)
+	if err != nil {
+		return nil
+	}
+	ownPaths, err := repo.DiffNames(ctx, fork, tip)
+	if err != nil {
+		return nil
+	}
+	own := map[string]bool{}
+	for _, p := range ownPaths {
+		if dir, ok := portdirOf(p); ok {
+			own[dir] = true
+		}
+	}
+	inRoster := make(map[string]bool, len(derived))
+	for _, dir := range derived {
+		inRoster[dir] = true
+	}
+	from := map[string][]git.CommitPaths{}
+	for i := len(foreign) - 1; i >= 0; i-- {
+		c := foreign[i]
+		named := map[string]bool{}
+		for _, p := range c.Paths {
+			dir, ok := portdirOf(p)
+			if !ok || !inRoster[dir] || own[dir] || named[dir] {
+				continue
+			}
+			named[dir] = true
+			from[dir] = append(from[dir], git.CommitPaths{Sha: c.Sha, Subject: c.Subject})
+		}
+	}
+	var out []Foreign
+	for _, dir := range derived {
+		if commits, ok := from[dir]; ok {
+			out = append(out, Foreign{Portdir: dir, From: commits})
+		}
+	}
+	return out
 }
 
 // recordedPortdirs is what the record says the change touches, in the

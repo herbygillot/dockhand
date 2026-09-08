@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // The refusals of the publication lifecycle, in one file because they
@@ -347,3 +349,62 @@ func (e *ForgeSilentError) Error() string {
 // underneath it, so errors.Is finds ErrForgeSilent and a reader still
 // meets whatever the forge actually did.
 func (e *ForgeSilentError) Unwrap() []error { return []error{ErrForgeSilent, e.Err} }
+
+// ErrStepPartial is the identity of a publication that got HALFWAY: at
+// least one authorized step completed and a later one did not. It is a
+// sentinel beside StepError for the reason every other pair here is one
+// — a caller may ask errors.Is without knowing the type.
+//
+// It carries no exit band, like everything else in this file. What a
+// half-done publication MEANS to a process is the command line's to
+// number, and it numbers it out of the two facts StepError carries: a
+// branch pushed whose pull request would not open and one whose pull
+// request would not refresh are different codes, and neither may be
+// folded into the band of last resort, because a wrapper reading "1"
+// re-runs and pushes a second time.
+var ErrStepPartial = errors.New("publish: a publication step failed after an earlier one completed")
+
+// StepError is a failed step WITH what already stands, which is the
+// whole of why it exists: publish.Apply records each step before
+// attempting it and marks a failure Uncertain, so the store knows what
+// happened, but the error travelling up to a shell used to be the raw
+// `gh` or `git` failure and a caller had no way to tell "the branch is
+// on the fork and the pull request is not" from "nothing left this
+// machine".
+//
+// Kind is the step that failed and Completed is what finished before it,
+// in the permit's order. Both are DATA and not prose: rule 6 forbids a
+// caller recovering either by reading the words underneath, which are
+// whatever the forge's cli chose to print.
+type StepError struct {
+	Kind      record.StepKind
+	Completed []record.StepKind
+	Err       error
+}
+
+func (e *StepError) Error() string {
+	if len(e.Completed) == 0 {
+		return fmt.Sprintf("publish: %s failed and nothing was completed: %v", e.Kind, e.Err)
+	}
+	done := make([]string, 0, len(e.Completed))
+	for _, k := range e.Completed {
+		done = append(done, string(k))
+	}
+	return fmt.Sprintf("publish: %s failed after %s completed — that half stands: %v",
+		e.Kind, strings.Join(done, ", "), e.Err)
+}
+
+// Did reports that a step of this kind completed before the failure.
+func (e *StepError) Did(k record.StepKind) bool {
+	for _, done := range e.Completed {
+		if done == k {
+			return true
+		}
+	}
+	return false
+}
+
+// Unwrap returns the identity a caller branches on and the cause
+// underneath it, so errors.Is finds ErrStepPartial and a reader still
+// meets whatever the forge actually did.
+func (e *StepError) Unwrap() []error { return []error{ErrStepPartial, e.Err} }

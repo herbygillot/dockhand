@@ -29,6 +29,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"time"
@@ -297,6 +298,38 @@ type Result struct {
 	Owed       []Obligation
 }
 
+// ErrMintedSubmitErrored is the identity of the one half-done outcome a
+// change road can leave: the branch is minted, its attempt is enqueued,
+// and the submission to the verifier then failed. A sentinel beside
+// MintError, so a caller may ask errors.Is without knowing the type.
+var ErrMintedSubmitErrored = errors.New("app: the branch was minted and its verification could not be submitted")
+
+// MintError is that outcome typed with the two names a caller needs —
+// the branch that now exists and the attempt left queued on it — because
+// the half that stands is not recoverable from the words underneath,
+// which are whatever the provider said (rule 6).
+//
+// IT CARRIES NO EXIT BAND. cli's classifier numbers it, the way it
+// numbers every other identity: what a half-done mint MEANS to a shell
+// is the command line's contract, and a Result that reported success
+// beside an error would say the opposite of what happened. The road
+// returns this instead of the raw provider failure so a wrapper can tell
+// "the branch exists, submit again" from "nothing was written".
+type MintError struct {
+	Branch  string
+	Attempt string
+	Err     error
+}
+
+func (e *MintError) Error() string {
+	return fmt.Sprintf("minted %s, and attempt %s could not be submitted — the branch stands: %v",
+		e.Branch, e.Attempt, e.Err)
+}
+
+// Unwrap returns the identity a caller branches on and the cause
+// underneath it.
+func (e *MintError) Unwrap() []error { return []error{ErrMintedSubmitErrored, e.Err} }
+
 // Exit is the band Result lands in. The verdict codes are the shipped
 // exitcode table's (70 failed, 71 blocked, 72 unsupported, 73 errored
 // or canceled); they are written out here because this is the ONE
@@ -522,6 +555,11 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 	if err != nil {
 		return Result{Did: NotRealized}, err // nothing was written, the ref included
 	}
+	// the note, over the state this road leaves: the commit exists now, so
+	// every return below is a return a reviewer can read with `git log
+	// --notes` — the --no-verify branch included, which is the road that
+	// carried no note at all.
+	defer func() { exportNote(ctx, c.State, c.Ledger, sha, c.Progress) }()
 	// resolve: the batch created the branch; app holds no Ref it did not
 	// resolve. A foreign move in the second between is reported here.
 	ref, err := change.Resolve(ctx, c.Repo, c.State, m.Branch)
@@ -557,7 +595,12 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 	case isNoEnvironment(err):
 		res.Deferred = &Deferral{Reason: NoEnvironment, Detail: err.Error()}
 	default:
-		return res, err
+		// THE HALF THAT STANDS IS NAMED. Everything before this line
+		// committed: the branch exists, the attempt is queued on it, and
+		// only the submission failed. Handed up raw, that arrived at a
+		// shell as the band of last resort, which told a wrapper nothing
+		// happened while a branch it will meet again sat in the checkout.
+		return res, &MintError{Branch: m.Branch, Attempt: att.ID, Err: err}
 	}
 	if r.Wait == nil || res.Did != Started {
 		return res, nil
@@ -693,6 +736,11 @@ func (p Promote) Run(ctx context.Context, target string, a publish.Asks) (Promot
 		return PromoteResult{Advisories: adv}, err
 	}
 	out, err := publish.Apply(ctx, p.Env, permit)
+	// the note, after the publication's own writes: record.Record carries
+	// a Publication section and project() fills it, so a promotion that
+	// never exported left a note that could not name a pull request under
+	// any circumstances.
+	exportNote(ctx, p.State, p.Ledger, ref.Tip(), p.Progress)
 	return PromoteResult{Published: &out, Advisories: adv, Running: permit.Running()}, err
 }
 
@@ -819,6 +867,40 @@ func publicationOpen(s statestore.State, id record.ChangeID) bool {
 		}
 	}
 	return false
+}
+
+// exportNote writes the derived verify note for one commit, and it is
+// the answer to statestore.Export's own question — "who calls it, since
+// a derived view nobody derives is just an absent one". THE OPERATION
+// THAT CHANGED A COMMIT-BOUND FACT CALLS IT, immediately after its
+// Amend: a mint (so a `--no-verify` branch carries the record a reviewer
+// reads with `git log --notes`), a settle, an extension, a publication
+// (so a note can name a pull request at all), and Cycle's own re-export
+// tail behind all of them.
+//
+// IT IS DEFERRED AT THE ROAD'S END rather than called at each Amend,
+// because one operation may amend three times — mint, then enqueue, then
+// settle under --wait — and the note is a PROJECTION of the state as it
+// finally stands, not a diary of the writes that got there. One export
+// per road, over the state the road left.
+//
+// IT NEVER FAILS AN OPERATION AND NEVER SWALLOWS ANYTHING. Nothing reads
+// a note to decide, so a note that could not be written cannot make a
+// decision wrong and must not turn a landed mint into an error; and a
+// note that was not written is exactly the kind of silence rule 7
+// forbids, so it is SAID. Cycle's unconditional re-export is the backstop
+// underneath both.
+//
+// IT MUST NOT BE CALLED FROM INSIDE AN AMEND CLOSURE: Export takes the
+// store's lock, the flock is not reentrant, and a nested take is a writer
+// waiting out its own deadline against itself.
+func exportNote(ctx context.Context, st *statestore.Store, l *ledger.Ledger, sha string, p progress.Sink) {
+	if st == nil || l == nil || sha == "" {
+		return
+	}
+	if err := st.Export(ctx, l, sha); err != nil {
+		say(p, progress.Warn, "the verify note on "+git.Abbrev(sha)+" was not written: "+err.Error())
+	}
 }
 
 // readBeforeMint is the read a MINT road makes to ask what is already

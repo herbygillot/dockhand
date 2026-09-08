@@ -38,7 +38,8 @@ tart list
   `tart list` shows the base and golden images and **no** `dockhand-worker-*`.
 - **A finding:** `doctor` reporting a base it cannot clone. Not a finding, but
   stop anyway: a `dockhand-worker-*` already listed means both licence slots
-  may not be free — reclaim it (`dockhand cycle --reclaim-orphans`) or wait.
+  may not be free — reclaim it (`dockhand cycle --reclaim-unattributed`) or
+  wait.
 
 Everything below runs in a `macports-ports` checkout with your fork as a
 remote. Use `/tmp/dockhand` explicitly so an older installed binary cannot be
@@ -496,7 +497,8 @@ tart list                                 # expect: no dockhand-worker-*
 
 4. **Recover the machine.** In order: `dockhand cancel <branch>` (releases the
    worker), `dockhand discard <branch>` (drops the branch and its note),
-   `tart list`, and `dockhand cycle --reclaim-orphans` for anything left behind, and
+   `tart list`, and `dockhand cycle --reclaim-unattributed` for anything left
+   behind, and
    `dockhand status` once more — its orphan audit names workers no note
    accounts for.
 
@@ -776,7 +778,7 @@ portindex                              # ~1-2 minutes if they do not
   The exit status is **0**: a proposal is advisory and human-gated, and a
   status that failed over one would make the tool something to avoid running.
   The second half of that sentence says `(source not recorded)` rather than
-  `(built from source)` unless the run was `--recheck` or a checksum refresh.
+  `(built from source)` unless the run was a checksum refresh.
   Nothing in a manifest records how an installation was produced, so the
   criterion states the absence instead of assuming; `(built from source)` on a
   plain bump would be a claim nobody measured.

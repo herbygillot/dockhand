@@ -163,6 +163,9 @@ func (a Accept) Run(ctx context.Context, r AcceptRequest) (Result, error) {
 	}); err != nil {
 		return Result{}, err
 	}
+	// the note, over the state this road leaves: the cohort commit is the
+	// change's tip now, and the note on it is what a reviewer reads.
+	defer func() { exportNote(ctx, a.State, a.Ledger, sha, a.Progress) }()
 	// resolve: the batch moved the branch; app holds no Ref it did not
 	// resolve. A foreign move in the second between is reported here.
 	newRef, err := change.Resolve(ctx, a.Repo, a.State, r.Branch)

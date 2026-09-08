@@ -1058,9 +1058,21 @@ func (p Provider) Exec(ctx context.Context, job verify.Job, argv ...string) (str
 // the file mode's: /dev/null is a character device too, and a shell
 // fed from it must run without a terminal rather than die asking for
 // its size.
+// THE ENVIRONMENT IS ASKED ABOUT BEFORE A SHELL IS OPENED IN IT, the
+// guard Exec and Poll above already carry. Every *exec.ExitError from
+// `tart exec` is read below as the user's own shell exiting non-zero,
+// and tart exits non-zero for the absent VM too: `dockhand shell
+// dockhand-worker-deadbeef` printed tart's "does not exist" on stderr
+// and exited 0, so `dockhand shell $w && next-step` ran the next step
+// with no session behind it. A released environment is gone and says so.
 func (p Provider) Shell(ctx context.Context, job verify.Job) error {
 	if job.Provider != "tart" {
 		return fmt.Errorf("%w: %s is not a tart job", verify.ErrUnknownJob, job.Provider)
+	}
+	if ok, err := HasVM(ctx, p.Tools, job.ID); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
 	bin, err := p.Tools.Find(tool.Tart)
 	if err != nil {

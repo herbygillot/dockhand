@@ -69,8 +69,9 @@ verify: submitted jq on Tahoe (job dockhand-worker-6f2a1b); `dockhand status` fo
 
 The commit is already in the project's format (`jq: update to 1.8.2`),
 its parent is your primary branch, and your checked-out files are never
-touched. `dockhand` exits; the VM carries on without it — or stay
-attached with `--trace`, which streams the build log until the verdict.
+touched. `dockhand` exits; the VM carries on without it — or stay for
+the verdict with `--wait 20m`, which returns as soon as the build
+settles. Watching one happen is `dockhand log --trace`.
 
 Two sibling intents work the same way: `refresh-checksums` repairs
 recorded checksums at an unchanged version, and `bump-revision`
@@ -138,8 +139,11 @@ and opens the PR against the upstream repository. The title is the
 commit's subject, and the body is the project's own PR template with
 what was actually verified checked off. Before opening anything it
 searches upstream's open PRs for the same change, and refuses to file a
-duplicate. `--closes 12345` links a Trac ticket; `--no-pr` stops after
-the push.
+duplicate. `--no-pr` stops after the push, `--title` overrides the
+subject, and `--body` prints the pull request body and does nothing
+else. A Trac ticket is linked where the change is made — `dockhand bump
+--closes 12345 jq` — because what a change closes belongs to the commit
+and not to the invocation that pushes it.
 
 ### Sweep up
 
@@ -153,9 +157,18 @@ A branch whose PR merged is done: `status` reports it and names
 withholds that), and everything kept says why — an open PR, a
 rejection, a branch never promoted. `cycle` also starts the runs that
 were waiting for a slot; `--superseded` removes the branches a newer
-sibling replaced, and `--reclaim-orphans` frees the VMs no note claims.
-`discard` deletes one branch and releases everything it holds, including
-a failed build's kept VM.
+sibling replaced, and `--reclaim-unattributed` frees the environments no
+lease in this state ref accounts for. `discard` deletes one branch and
+releases everything it holds, including a failed build's kept VM.
+
+`cycle` is one pass, by hand. `dockhand dispatch` is the same pass on a
+timer — a resident scheduler that settles, retires, publishes and starts
+what is queued every `--every 5m`, holds one lock per checkout so a
+second one exits 0 naming the holder, and never exits on a branch that
+needs a person; `status` is the attention channel instead. `--once`
+performs a single pass and exits, which is the shape a cron entry wants.
+Its publication allowance is `--publish-max 20` per `--publish-every 6h`,
+and `--no-publish` withholds it entirely.
 
 ### Look before you leap
 
@@ -167,11 +180,20 @@ dockhand bump --plan --to 1.8.2 jq   # print the computation, as JSON
 dockhand bump --in-place jq          # edit the working tree, no branch, no commit
 ```
 
-A port already at the newest release declines — `bump --recheck`
-proceeds anyway, re-deriving checksums and vendored blocks at the same
-version, which is how you catch an upstream that re-rolled a release.
-It verifies from source, because an archive built for a version that
-did not move says nothing about the distfile just fetched.
+A port already at the newest release declines, and re-deriving at an
+unchanged version is its own verb rather than a flag on this one:
+
+```bash
+dockhand refresh-checksums jq        # refresh, for short
+```
+
+It re-fetches the distfiles and repairs the recorded checksums and
+vendored blocks at the same version, which is how you catch an upstream
+that re-rolled a release — and it says so on every summary, because a
+checksum that moves under a version that did not is either a benign
+re-tar or a supply-chain event, and the edit cannot tell you which. It
+verifies from source, because an archive built for a version that did
+not move says nothing about the distfile just fetched.
 
 ## What can this machine do?
 
@@ -235,10 +257,11 @@ dockhand provision tart --macos sequoia
 Provisioning proves what it built — no foreign package manager, a
 working compiler, MacPorts answering — and keeps a golden copy that
 never runs, so a base that drifts is restored by a free clone
-(`--restore`) rather than a rebuild. `--recheck` re-runs the proofs on
-demand. With `--xcode <dir>` pointing at downloaded Xcode `.xip`
-archives, the image also gets the newest full Xcode its release can
-run — which is what lets ports that need `xcodebuild` verify too.
+(`--restore`) rather than a rebuild. `--validate` re-runs the proofs on a
+base already there, building nothing. With `--xcode <dir>` pointing at
+downloaded Xcode `.xip` archives, the image also gets the newest full
+Xcode its release can run — which is what lets ports that need
+`xcodebuild` verify too.
 
 Verdicts are recorded per commit and per macOS release, so one branch
 can carry `passed (Sonoma)` alongside `unsupported (Monterey)` — and
@@ -246,23 +269,38 @@ can carry `passed (Sonoma)` alongside `unsupported (Monterey)` — and
 
 ## Exit codes
 
-Failures say whose problem it is:
+An exit status answers *whose problem is this*. The bands are decades,
+and that is the point of the numbering: a script that wants the shape of
+the answer rather than the answer reads `$?/10` and keeps working when a
+code it has never heard of is added beside the ones it knows.
 
-| | |
-|---|---|
-| `0` | success |
-| `1` | the operation failed |
-| `2` | bad flag, unknown command, invalid arguments |
-| `3` | the machine — MacPorts missing, no VM available |
-| `4` | the ports tree — not a tree, port not found |
-| `5` | an intent declined: nothing to do, or not safely doable |
-| `6` | verification ran, and the port does not build |
+| | | |
+|---|---|---|
+| `0` | success | the work asked for was done, or is underway |
+| `1` | failure | nothing here says whose fault it is — the band of last resort |
+| `2` | usage | the invocation is wrong; the remedy is `--help` |
+| `10`–`13` | declined | the plan's problem: dockhand could have done it and judged it should not |
+| `20`–`24` | refused | the destination's problem: a duplicate PR, a merged branch, a hold, a machine gate |
+| `30`–`36` | environment | this machine: no MacPorts, no tart, no base image, every slot busy |
+| `40`–`46` | tree | where dockhand was pointed: not a tree, no such port, no such branch, a branch a hand moved |
+| `50`–`53` | upstream | somebody else's: a distfile, a witness, a forge API |
+| `60`–`62` | pending | nobody's problem yet: queued, and waiting on something that happens on its own |
+| `70`–`73` | verdict | a verification answered, and not with a pass |
+| `80`–`84` | partial | half the work stands: a branch minted whose build would not submit, a branch pushed whose PR would not open, a pass with a row that needs a person |
 
-One case splits progress from contract: if the branch was created but
-its verification could not start — no base images, every VM slot taken —
-the exit is `3` while the branch stands, the way a failed `git push`
-never deletes the commit. The message names the follow-up, and
-`--no-verify` narrows the contract to just the branch.
+Every JSON document carries the same answer inside it, as
+`{"exit":{"code":…,"family":…,"reason":…}}`, so a caller that captured
+stdout through a pipe and lost `$?` still knows how the run ended. Codes
+outside the table have no family, and a wrapper must treat them as
+unrecognized rather than rounding them to a neighbour — `3` through `9`
+included, which were the pre-band codes and now mean nothing.
+
+The partial band is why `1` is narrower than it looks: if the branch was
+minted and its verification could not be submitted, the exit is `80`
+while the branch stands, the way a failed `git push` never deletes the
+commit — and a branch pushed whose pull request would not open is `81`,
+never `1`, because a wrapper that re-ran on `1` would push and file
+twice. `--no-verify` narrows the contract to just the branch.
 
 ## Building
 

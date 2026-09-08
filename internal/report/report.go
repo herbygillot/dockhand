@@ -32,10 +32,12 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -66,13 +68,23 @@ const BranchLine = "%-32s %s\n"
 //	resident      — information: the scheduler will start it, and who it is
 //	not resident  — an instruction naming the two verbs that would
 //
-// The third state is not a third sentence. Under ResidencyUnknown the
-// lock could not be READ — a permission error, a filesystem with no
-// flock — and a process that answered "nobody is resident" would appoint
-// itself judge beside a scheduler it could not see (rule 7). So it says
-// what it could not learn and instructs nothing, and `status --no-update`
-// (which takes no lock at all, and is Unknown by construction) prints no
-// remedy line whatsoever — see Standings.
+// The third state is not a third sentence. Under ResidencyUnknown this
+// process does not know whether a scheduler is running here, and one
+// that answered "nobody is resident" would appoint itself judge beside a
+// scheduler it could not see (rule 7). So it says what it does not know
+// and instructs nothing.
+//
+// WHAT IT MUST NOT SAY IS WHY. ResidencyUnknown is reached two ways —
+// a probe that failed (a permission error, a filesystem with no flock)
+// and `status --no-update`, which takes no lock at all and is Unknown BY
+// CONSTRUCTION — and the value cannot tell them apart. The shipped
+// sentence named the first cause unconditionally, so a healthy
+// `status --no-update` on a local disk announced that the dispatch lock
+// could not be read when nothing had opened it, and sent operators
+// hunting a filesystem fault that did not exist. A projection may render
+// only what it was handed: the fact here is "unknown", the cause is not
+// on the value, and inventing one is the same rule-6 mistake as
+// recovering a fact by reading words.
 //
 // It returns "" for the states with nothing to say, so a caller may
 // print it unconditionally and get no blank line for its trouble.
@@ -83,7 +95,7 @@ func Remedy(r app.Residency) string {
 	case app.NoDispatcher:
 		return "  nothing here will start it yet: `dockhand dispatch` keeps them moving, or `dockhand cycle` starts them once"
 	case app.ResidencyUnknown:
-		return "  the dispatch lock could not be read, so whether a scheduler is running here is unknown"
+		return "  whether a scheduler is resident on this checkout was not established, so nothing here promises to start it"
 	}
 	return ""
 }
@@ -92,6 +104,11 @@ func Remedy(r app.Residency) string {
 // itself — the fact the surface calls the biggest of what status must
 // newly report, because a resident dispatcher publishes by default and
 // a standing grant is only inspectable if this line exists.
+//
+// Its Unknown branch says what is unknown and never why, for the reason
+// Remedy's does: the two roads into that state are a probe that failed
+// and a `--no-update` that never probed, the value does not distinguish
+// them, and the shipped line asserted the first for both.
 func Residency(r app.Residency) string {
 	switch r.State {
 	case app.DispatcherResident:
@@ -104,7 +121,7 @@ func Residency(r app.Residency) string {
 		return "no dispatcher on this checkout"
 	case app.ResidencyUnknown:
 	}
-	return "dispatcher residency unknown: the lock could not be read"
+	return "dispatcher residency not established"
 }
 
 // who names the resident dispatcher as tersely as the stamp allows. A
@@ -323,13 +340,19 @@ func Pass(w io.Writer, p app.Pass, dry bool) {
 		case app.Minted, app.Queued, app.Shown, app.Edited, app.NothingToDo, app.NotRealized:
 		}
 	}
+	// PUBLICATIONS AND NOT Published: the pass keeps publish.Apply's
+	// Outcome on the error path too, so that a caller can tell "pushed, no
+	// pull request" from "never left the machine", and a count over every
+	// entry reported a publication for a candidate that refused before any
+	// I/O at all — with an empty URL on the line beneath it.
+	published := p.Publications()
 	fmt.Fprintf(w, "%d settled · %d started · %d retired · %d published · %d owed · %d refused\n",
-		settled, started, len(p.Retired), len(p.Published), len(p.Owed), len(p.Refusals))
+		settled, started, len(p.Retired), len(published), len(p.Owed), len(p.Refusals))
 	if p.Compacted != nil {
 		fmt.Fprintf(w, "  %d closed records dropped\n", *p.Compacted)
 	}
-	for _, out := range p.Published {
-		fmt.Fprintf(w, "  published %s\n", out.URL)
+	for _, out := range published {
+		fmt.Fprintf(w, "  published %s\n", publication(out))
 	}
 	for _, out := range p.Retired {
 		fmt.Fprintf(w, "  retired #%d %s\n", out.Number, out.URL)
@@ -340,10 +363,32 @@ func Pass(w io.Writer, p app.Pass, dry bool) {
 	for _, ns := range p.Ineligible {
 		fmt.Fprintf(w, "  attempt %s not started: %s\n", ns.Attempt, ineligible(ns))
 	}
+	if p.MaintainErr != nil {
+		// Advisory and never a band: a gc.lock held by the operator's own
+		// `git maintenance start` is somebody else doing the housekeeping,
+		// and the pass that settled, retired, published and drained did not
+		// fail because of it.
+		fmt.Fprintf(w, "  git maintenance did not run: %v\n", p.MaintainErr)
+	}
 	Refusals(w, p.Refusals)
 	if v := p.Vacancy; v.Known {
 		fmt.Fprintf(w, "  %d of %d environments free\n", v.Free, v.Limit)
 	}
+}
+
+// publication is how a pass names one publication it made. The URL is
+// what a person wants and what they can open; a pull request whose
+// number the forge gave but whose URL it did not is named by the number,
+// because an empty string on a line reading "published" is the shape of
+// a publication that never happened.
+func publication(out publish.Outcome) string {
+	switch {
+	case out.URL != "":
+		return out.URL
+	case out.Number != 0:
+		return "#" + strconv.Itoa(out.Number)
+	}
+	return "(the forge named neither a number nor a url)"
 }
 
 // Refusals writes the rows a pass could not carry forward. It is
@@ -395,9 +440,13 @@ func detail(s string) string {
 // its settle posture from, and a report that printed a second reading
 // of the lock could disagree with the judgment that was already made.
 func Standings(w io.Writer, s app.StatusResult, now time.Time) {
-	if s.Residency.State == app.ResidencyUnknown && len(s.Settled) == 0 {
-		// --no-update, or a lock that could not be read. Both settled
-		// nothing, and the reader is owed the reason before the rows.
+	if s.NoUpdate {
+		// THE PURE READ, SAID BECAUSE IT WAS ASKED FOR and not inferred
+		// from what came back empty. A default `status` whose lock probe
+		// failed also settles nothing and also carries an unknown
+		// residency, and the shipped condition — unknown plus no settled
+		// attempts — printed this line over a report that had polled the
+		// provider, listed obligations and read the forge cache.
 		fmt.Fprintln(w, "the ledger as written: nothing was polled, nothing was settled, and no forge was asked")
 	}
 	fmt.Fprintln(w, Residency(s.Residency))
@@ -414,30 +463,101 @@ func Standings(w io.Writer, s app.StatusResult, now time.Time) {
 		}
 	}
 	for _, d := range s.Disagreeing {
-		fmt.Fprintf(w, BranchLine, d.Ref, disagreement(d.Absent))
+		fmt.Fprintf(w, BranchLine, d.Ref, disagreement(d))
 	}
 	Obligations(w, s.Obligations)
 	if v := s.Vacancy; v.Known {
 		fmt.Fprintf(w, "%d of %d environments free\n", v.Free, v.Limit)
 	}
 	if s.Spent.Counted() {
-		fmt.Fprintf(w, "machine publications spent: %d in the last %s (as of %s)\n", s.Spent.Within(publish.MaxWindow, now), publish.MaxWindow, short(s.Spent.At()))
+		fmt.Fprintln(w, allowance(s.Spent, now))
 	}
 	if anyQueued(rows) {
 		fmt.Fprintln(w, Remedy(s.Residency))
 	}
 }
 
+// allowance is the standing publication grant `status` prints, and the
+// window it counts over is THE PACE'S and not the store's.
+//
+// The two are different numbers and the shipped line printed the wrong
+// one. publish.MaxWindow is 24h: the floor statestore.Compact keeps
+// machine publication rows above, and the span publish.Gather collects
+// stamps over precisely because Gather is handed no Pace. It is not an
+// allowance and nothing is measured against it — Spend.Within is what
+// applies the pace, and publish.Authorize asks it over pace.Window. A
+// report counting the store's floor said "9 in the last 24h" for a
+// machine that had spent 2 of 20 in the six hours that decide whether
+// the next publication is refused.
+//
+// THE PACE IT NAMES IS THE DEFAULT, AND IT SAYS SO. A dispatcher's own
+// --publish-max and --publish-every live in the process holding the
+// lock; the residency stamp carries a pid, a host and a verb, and there
+// is nowhere else for `status` to read them from. So the line prints the
+// grant a dispatcher gets when nobody overrode it, names it as the
+// default, and never claims to know what the resident one was started
+// with — which is the honest half of the fact rather than a confident
+// wrong one.
+func allowance(spent publish.Spend, now time.Time) string {
+	pace := publish.DefaultPace
+	return fmt.Sprintf("machine publications: %d of %d in the last %s (the default allowance; counted as of %s)",
+		spent.Within(pace.Window, now), pace.Max, pace.Window, short(spent.At()))
+}
+
 // disagreement is the line a bound record whose ref a foreign hand
-// moved earns, and the two halves of it are two different remedies: a
-// branch that MOVED is followed with `verify`, and one that is GONE is
-// ended with `discard`. Shown rather than skipped, because a change
-// missing from the listing reads as nothing to report (rule 7).
-func disagreement(absent bool) string {
-	if absent {
-		return "the branch is gone — `dockhand discard <branch>` ends it"
+// moved earns, and the two halves of it are two different remedies. It
+// is shown rather than skipped, because a change missing from the
+// listing reads as nothing to report (rule 7).
+//
+// EVERY REMEDY HERE IS A ROAD THAT ACTUALLY EXISTS, and the reason that
+// sentence has to be written down is that one of them did not. The
+// shipped line offered `dockhand discard <branch>` for a MOVED branch;
+// Discard.Run resolves before it does anything, meets the same
+// disagreement this line was rendered from, and refuses it — exit 45,
+// the very code the report is describing. A person told to abandon a
+// change that way ran a command that could not work, and on a host with
+// no verifier the other half of the sentence refused too (exit 33,
+// before FollowIn), leaving no road at all.
+//
+// So the moved half names the two that work, in the order a person
+// wants them: `verify` FOLLOWS the commit they made, and git puts the
+// ref back where the record says it was, which is what makes every other
+// verb — `discard` included — resolve again. The recorded tip is printed
+// rather than described, because a remedy a reader has to go and look
+// something up for is a remedy they will get wrong.
+//
+// The gone half keeps `discard`: Discard.Run carries an absent ref
+// through as the observation its close is handed, so that road really
+// does end the record.
+func disagreement(d *change.TipDisagreement) string {
+	if d == nil {
+		return "the record and its ref disagree"
 	}
-	return "moved by hand — `dockhand verify <branch>` follows your commit, `dockhand discard <branch>` ends it"
+	if d.Absent {
+		return "the branch is gone — `dockhand discard " + target(d) + "` ends it"
+	}
+	return "moved by hand — `dockhand verify " + target(d) + "` follows your commit, or " + restore(d) + " puts it back"
+}
+
+// target is the name a person types at a verb for this ref: the branch,
+// or the change id behind a pin, which is what change.Resolve takes.
+func target(d *change.TipDisagreement) string {
+	if b, ok := strings.CutPrefix(d.Ref, "refs/heads/"); ok {
+		return b
+	}
+	return string(d.ID)
+}
+
+// restore is the git that puts a hand-moved ref back at the tip the
+// record holds. A branch is moved with `git branch -f` and anything else
+// — the pin a branchless snapshot lives on — with `git update-ref`,
+// because the ref namespaces are not the same and a command that named
+// the wrong one would be the second remedy in this file that cannot run.
+func restore(d *change.TipDisagreement) string {
+	if b, ok := strings.CutPrefix(d.Ref, "refs/heads/"); ok {
+		return "`git branch -f " + b + " " + short(d.Recorded) + "`"
+	}
+	return "`git update-ref " + d.Ref + " " + short(d.Recorded) + "`"
 }
 
 // Obligations lists what this checkout owes and what it merely found.

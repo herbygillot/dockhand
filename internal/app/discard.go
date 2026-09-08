@@ -152,6 +152,21 @@ func (d Discard) run(ctx context.Context, c record.Change, absent *change.TipDis
 	}); err != nil {
 		return res, err // git.ErrRefMoved: the branch moved under the discard; nothing changed
 	}
+	// THE EXPORT REMOVAL this operation's own doc declares, and it is a
+	// removal rather than a re-export because the change is gone: a note
+	// left behind describes a change nothing in the store holds, and once
+	// `cycle --compact` drops the closed record a re-export would answer
+	// statestore.ErrNoChangeAt forever, which makes the stale note
+	// permanently uncorrectable. Removal is idempotent — a commit that
+	// never carried a note is fine — and it is best effort for the reason
+	// every note write is: nothing reads a note to decide, and a discard
+	// that closed the change did not fail because a derived view outlived
+	// it by a pass.
+	if d.Ledger != nil && c.Tip != "" {
+		if err := d.Ledger.Remove(ctx, c.Tip); err != nil {
+			say(d.Progress, progress.Warn, "the verify note on "+git.Abbrev(c.Tip)+" was not removed: "+err.Error())
+		}
+	}
 	res.Closed, res.Deleted = c.ID, refsOf(c, absent)
 	return res, nil
 }

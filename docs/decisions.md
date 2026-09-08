@@ -849,7 +849,12 @@ verbs and split: `--replace` is the in-flight policy, on one target,
 and `--recheck` is bump's re-derivation parameter, which additionally
 sets the run's from-source flag, because an archive matching an
 unmoved version predates the change and a pass earned by unpacking it
-proves nothing about the distfile just fetched. `promote --force`
+proves nothing about the distfile just fetched. **Superseded
+(2026-09-07):** `--recheck` is deleted outright rather than renamed —
+`refresh-checksums` was already the verb for re-deriving at an unchanged
+version, and it wins on all three counts the flag was argued on. The
+from-source reasoning above is unchanged and is now the verb's.
+ `promote --force`
 keeps its name — it is git's own word for the force-push-with-lease it
 performs, and it moves a branch dockhand published rather than
 destroying one it minted. And `status` never auto-discards — amended (2026-08-31):
@@ -1273,7 +1278,8 @@ rest — and `clean`'s `--superseded` comes with it. Each thing `cycle`
 removes has its own flag, and the flag's shape follows the default:
 what happens unless withheld gets `--keep-<x>` (`--keep-merged`); what
 happens only when asked gets a plain flag (`--superseded`,
-`--reclaim-orphans`). A universal `--keep` would have been withholding
+`--reclaim-orphans` — since renamed `--reclaim-unattributed`, an
+environment no lease accounts for rather than an "orphan"). A universal `--keep` would have been withholding
 for one and meaningless for the other, and hard to aim.
 
 **A passing run's environment is kept by the person who started it.**

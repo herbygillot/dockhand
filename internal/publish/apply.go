@@ -69,7 +69,7 @@ func Apply(ctx context.Context, e Env, p Permit) (Outcome, error) {
 	if err := revalidate(ctx, e, f); err != nil {
 		return Outcome{}, err
 	}
-	id, err := openRow(ctx, e, f)
+	id, err := openRow(ctx, e, f, p.steps)
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -88,7 +88,13 @@ func Apply(ctx context.Context, e Env, p Permit) (Outcome, error) {
 			// The retire pass resolves an Uncertain OpenPR by asking the forge,
 			// which is the one authority that knows.
 			_ = mark(ctx, e, id, kind, record.Uncertain, err.Error(), f.AsOf)
-			return out, err
+			// WHAT ALREADY STANDS TRAVELS WITH THE FAILURE. The Outcome
+			// carries it for a caller that kept the value, and the error
+			// carries it for the one that did not — cli's classifier is the
+			// second, and the partial band it computes from this is the
+			// difference between a wrapper re-running a publication and one
+			// that knows the branch is already on the fork.
+			return out, &StepError{Kind: kind, Completed: slices.Clone(out.Completed), Err: err}
 		}
 		if number != 0 || url != "" {
 			out.Number, out.URL = number, url
@@ -227,19 +233,35 @@ func prNumberIn(url string) int {
 // no PR" from "PR opened", and two rows for one change make that
 // question unanswerable.
 //
-// By is written once, at creation, and never restamped. It is the
-// provenance Spent is derived over — a machine's opening counted against
-// the machine's allowance — so a person refreshing a pull request a
-// dispatcher opened must not take that spend off the machine's books.
-// Content, Target and Basis DO move with the change, because they
-// describe what is being published now.
-func openRow(ctx context.Context, e Env, f Facts) (string, error) {
+// BY IS WHO OPENED THE PULL REQUEST, and that is what makes it the
+// provenance Spent may be derived over. It is stamped at creation from
+// the invoker that made the row, and moved to the machine in exactly one
+// case: the machine performing the OpenPR step on a row a person left
+// without one. A person's `promote --no-pr` creates a row with By Human,
+// Outcome Open and no pull request; the change then moves past that
+// content, the dispatcher's publish slot takes it up, and Apply
+// continues THAT row — one open row per change — and opens a real pull
+// request on it. Without this the opening is invisible to Spent, and a
+// machine holding N such rows opens N pull requests beyond --publish-max
+// with the allowance still reporting itself unspent.
+//
+// It moves ONE WAY, Human to Machine, and never back. A person
+// refreshing a pull request a dispatcher opened must not take that spend
+// off the machine's books, which is the property the never-restamped
+// rule was protecting; and a person who opens the pull request on a row
+// a machine pushed takes nothing off them either, because the machine
+// never opened one. Content, Target and Basis DO move with the change,
+// because they describe what is being published now.
+func openRow(ctx context.Context, e Env, f Facts, steps []record.StepKind) (string, error) {
 	id := ""
 	err := e.State.Amend(ctx, func(tx *statestore.Txn) error {
 		st := tx.State()
 		p, found := unsettledRow(st, f.Change.ID)
 		if !found {
 			p = record.Publication{ID: mintID(), Change: f.Change.ID, By: f.Invoker, Outcome: record.Open}
+		}
+		if f.Invoker == record.Machine && p.By != record.Machine && slices.Contains(steps, record.OpenPR) {
+			p.By = record.Machine
 		}
 		p.Content = f.Change.Content
 		p.Target = headline(f.Change).Target

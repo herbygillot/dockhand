@@ -233,3 +233,98 @@ func TestApplyUnderNoPRPushesAndAsksTheForgeNothing(t *testing.T) {
 	assert.Zero(t, out.Number, "a push with no pull request is the publication whose number stays zero")
 	assert.Empty(t, log)
 }
+
+// A MACHINE'S OPENING COUNTS AGAINST THE MACHINE'S ALLOWANCE, WHOEVER
+// MADE THE ROW.
+//
+// `promote --no-pr` leaves a person's row: By Human, Outcome Open, a
+// push and no pull request. The change then moves past that content, the
+// dispatcher's publish slot takes it up, and Apply continues THAT row —
+// one open row per change — and opens a real pull request on it. With By
+// stamped once at creation, publish.Spent skipped the row entirely, so
+// the machine could open N such pull requests beyond --publish-max with
+// the pace still reporting the allowance unspent.
+func TestAMachineOpeningOnAPersonsRowCountsAgainstThePace(t *testing.T) {
+	repo, st, sha := published(t)
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		tx.PutPublication(record.Publication{
+			ID: "pub-01", Change: "chg-1", By: record.Human, Outcome: record.Open, Content: "tree-0",
+			Steps: []record.Step{{Kind: record.PushBranch, Phase: record.Finished, At: clock.Add(-time.Hour), Attempt: 1}},
+		})
+		return nil
+	}))
+	var log []string
+	forge := scriptedForge(&log, func(args []string) (string, error) {
+		switch {
+		case args[0] == "api":
+			return "[]", nil // the person asked for no pull request, so there is none
+		case args[0] == "pr" && args[1] == "create":
+			return "https://github.com/macports/macports-ports/pull/77\n", nil
+		}
+		return "", nil
+	})
+	env := Env{Repo: repo, State: st, Forge: forge, Version: "1.2.3"}
+
+	before := Spent(readState(t, st), clock)
+	require.Zero(t, before.Within(MaxWindow, clock), "the person's row spent nothing of the machine's allowance")
+
+	f := facts(machine, func(f *Facts) {
+		f.Tip, f.Change.Tip, f.Own = sha, sha, []string{sha}
+		f.Attempts[0].Sha = sha
+	})
+	p, _, err := Authorize(f, DefaultPace)
+	require.NoError(t, err)
+	require.Equal(t, []record.StepKind{record.PushBranch, record.OpenPR}, p.Steps())
+	out, err := Apply(t.Context(), env, p)
+	require.NoError(t, err)
+	require.Equal(t, 77, out.Number)
+
+	s := readState(t, st)
+	require.Len(t, s.Publications, 1, "one open row per change: the machine continued the person's")
+	row := s.Publications["pub-01"]
+	assert.Equal(t, record.Machine, row.By, "By is who opened the pull request")
+	assert.Equal(t, 1, Spent(s, clock).Within(MaxWindow, clock),
+		"the opening the machine performed is the opening the pace counts")
+}
+
+// AND IT MOVES ONE WAY ONLY. A person refreshing a pull request a
+// dispatcher opened must not take that spend off the machine's books,
+// which is the property the never-restamped rule was protecting.
+func TestAPersonRefreshingAMachinesRowTakesNothingOffItsBooks(t *testing.T) {
+	repo, st, sha := published(t)
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		tx.PutPublication(record.Publication{
+			ID: "pub-01", Change: "chg-1", By: record.Machine, Outcome: record.Open, Number: 42,
+			URL: "https://example.invalid/pull/1", Content: "tree-0",
+			Steps: []record.Step{
+				{Kind: record.PushBranch, Phase: record.Finished, At: clock.Add(-time.Hour), Attempt: 1},
+				{Kind: record.OpenPR, Phase: record.Finished, At: clock.Add(-time.Hour), Attempt: 1},
+			},
+		})
+		return nil
+	}))
+	var log []string
+	forge := scriptedForge(&log, func(args []string) (string, error) {
+		if args[0] == "api" {
+			return `[{"number":42,"title":"jq: update to 1.8","state":"open","html_url":"https://example.invalid/pull/1","head":{"ref":"dockhand/jq-1.8","sha":"` + sha + `"}}]`, nil
+		}
+		return "", nil
+	})
+	env := Env{Repo: repo, State: st, Forge: forge, Version: "1.2.3"}
+
+	f := facts(func(f *Facts) {
+		f.Tip, f.Change.Tip, f.Own = sha, sha, []string{sha}
+		f.Attempts[0].Sha = sha
+		f.Forge.Own, f.Forge.OwnFound = openPR(42, "older"), true
+		f.Asks.Force = true // a person's own re-push of a branch a pull request already stands on
+	})
+	p, _, err := Authorize(f, Pace{})
+	require.NoError(t, err)
+	require.Contains(t, p.Steps(), record.RefreshPR)
+	_, err = Apply(t.Context(), env, p)
+	require.NoError(t, err)
+
+	s := readState(t, st)
+	assert.Equal(t, record.Machine, s.Publications["pub-01"].By, "the machine's opening stays the machine's")
+	assert.Equal(t, 1, Spent(s, clock).Within(MaxWindow, clock))
+}

@@ -77,9 +77,10 @@ intent finding an in-flight branch for its port refuses and names it;
 only a branch that is exactly the minted commit: work the user added
 past the mint refuses, and `discard` stays the explicit act for
 dropping it. Re-deriving a port at the version it already carries is a
-separate question and now a separate flag, `bump --recheck`, which also
-makes the verification build from source: the archive matching an
-unmoved version predates the change. `promote --force` keeps its name
+separate question and now a separate VERB, `refresh-checksums` (`refresh`)
+— the flag spelling `bump --recheck` was deleted outright for duplicating
+it — which also makes the verification build from source: the archive
+matching an unmoved version predates the change. `promote --force` keeps its name
 and is a different act — force-push the fork copy (with lease) and
 refresh the open PR's title and body — because it moves a branch
 dockhand published rather than destroying one it minted. `status` reports each
@@ -92,23 +93,32 @@ pipe below, and every plan-file argument in this document, describe the
 superseded surface.
 
 **Auto mode is declared, never inferred (2026-09-02).** The invoker is a
-**person** for every verb unless the invocation says otherwise, and there
-are exactly two ways to say otherwise (the `auto` verb was a third until
-D27 retired it into `cycle --auto`):
+**person** for every verb unless the invocation says otherwise.
+
+**Amended (2026-09-07): THE VERB IS THE DECLARATION, and it is the only
+one.** `--auto` and `DOCKHAND_AUTO` are both gone — the binary rejects the
+flag with exit `2` and reads the variable nowhere — and what replaced them
+is a verb that can only be the machine:
 
 ```
-dockhand <verb> --auto         # the persistent flag, on any verb
-DOCKHAND_AUTO=1 dockhand ...   # the environment, for a launchd plist
+dockhand dispatch              # the resident scheduler: the machine, by construction
+dockhand dispatch --once       # one unattended pass, for a cron entry
+dockhand cycle                 # one pass as a PERSON; publishes nothing
 ```
+
+A flag beside `dispatch` would be a second way to say one thing, so
+`dockhand dispatch --auto` is a usage error. The reasoning below survives
+the change unaltered — nothing infers the invoker from a terminal — and is
+now enforced by there being no ambient value to read at all: `record.Driver`
+is a constant of each road, set where the operation is built.
 
 Nothing asks whether a terminal is attached. `tool.IsTerminal` exists and is
 one import away, and reaching for it would make the answer depend on how the
 process was started rather than on what the operator said — a pipe, a CI
 runner or a `script` wrapper would each silently move a person's authority
 onto a machine, or the reverse, with nothing in the invocation to read. The
-command line is the nearer declaration, so `--auto=false` withdraws a
-standing `DOCKHAND_AUTO` for one invocation, and a value that is neither
-true nor false is a usage error rather than a guess.
+command line is the nearer declaration — and with the verb carrying it,
+there is no standing declaration to withdraw and no value to misparse.
 
 `AI_AGENT` names which agent was driving, if any. It is recorded beside the
 declaration and read by no gate, so setting it can neither grant nor
@@ -141,19 +151,22 @@ then retires the branch of a merged pull request, locally and on the fork
 (**`--keep-merged`** withholds it, and each kept branch's line says why it
 stands); removes the branches a newer sibling replaced when asked
 (`--superseded`, as `clean` had it); reclaims the untracked workers this
-checkout may claim when asked (**`--reclaim-orphans`** — a worker another
-checkout started is named and left to that checkout's own `cycle`); and
-starts what was deferred. Only a branch dockhand minted is ever deleted: a
+checkout may claim when asked (**`--reclaim-unattributed`**, renamed from
+`--reclaim-orphans` — an environment another checkout started is named and
+left to that checkout's own pass); and starts what was deferred. Only a branch dockhand minted is ever deleted: a
 hand-made branch carrying a verify note is shown, settled and left alone,
 whatever its pull request did. `clean` is retired; `cycle` is `clean` plus
 the rest.
 
-**`dockhand cycle --auto`** is one unattended reconciler pass — the cron and
-launchd entrypoint, and what the `auto` verb used to be. It is `cycle` run
-as the machine, and the declaration is what hands the reconciler the one
-thing a person's `cycle` must never carry: a **publish slot**. Publication
-through that slot is refused on this build; see `24` below. A person's
-`cycle` publishes nothing.
+**`dockhand dispatch`** is the unattended reconciler — the launchd
+entrypoint, and what `cycle --auto` and the `auto` verb before it used to
+be. It is the same pass run as the machine, on a timer (`--every 5m`), and
+being that verb is what hands it the one thing a person's `cycle` must
+never carry: a **publish slot**, paced at `--publish-max 20` per
+`--publish-every 6h` and withheld entirely by `--no-publish`. **`dockhand
+dispatch --once`** performs one pass and exits, which is the shape a cron
+entry wants. Publication through the slot is refused on this build; see
+`24` below. A person's `cycle` publishes nothing.
 
 **`--keep-env`** on `verify` and on the `bump` family (`bump`,
 `bump-revision` including `--for`, `refresh-checksums`) keeps a passing
@@ -161,10 +174,13 @@ run's environment the way a failure's is kept by rule (D27): recorded on
 the run when it is submitted, carried through a deferral, and honoured
 when the run settles — `status` then says "environment kept" beside the
 pass, and `dockhand shell` reaches it until `cancel` or `discard` gives it
-back. It rides a submitted run, so `verify <portdir>` and the `--verify`
-gate — which wait for their verdict and release in the same breath —
-refuse it rather than drop it. Not a flag on `status` or `cycle`: by the
-time either settles, the release is in the same pass.
+back. It rides a submitted run, so the five deliveries that produce none —
+`--no-verify`, `--plan`, `--diff`, `--in-place` and `--riders` — refuse it
+rather than drop it, beside `--test` and `--wait`, which ride one for the
+same reason. Not a flag on `status` or `cycle`: by the time either settles,
+the release is in the same pass. (The `--verify` gate this paragraph used to
+name is gone with always-enqueue: nothing waits for a verdict and releases
+in the same breath any more.)
 
 **`dockhand hold <branch> [--reason ...]`** stops a change: nothing will
 publish, verify or retire it until `dockhand unhold <branch>` releases it.
@@ -244,18 +260,24 @@ The pipe is available when you want it. Sweeps never want it.
 ## Intent verbs
 
 ```
-bump <sel> [--to <version> | --latest] [--recheck]   # no flag: latest
+bump <sel> [--to <version> | --latest]             # no flag: latest
 bump-revision <sel>                # alias: revbump
 bump-revision --for <branch>       # the plural invocation: accept a revbump proposal
-bump-epoch <sel>
-refresh-checksums <sel>            # never auto-promotable; carries its cause
-vendor <sel>                       # regenerate vendored block (T3)
-deps <sel> --add/--remove <spec> [--kind lib|build|run] [--variant <v>]
-patches <sel> [--drop-obsolete]
-modify <sel> --set <field>=<value> # scalar, no-cascade fields only
-obsolete <sel> --replaced-by <port>
-migrate <sel> --idiom <name>
+bump-epoch <sel>                   # NOT SHIPPED
+refresh-checksums <sel>            # alias: refresh; carries its cause
+vendor <sel>                       # NOT SHIPPED — regenerate vendored block (T3)
+deps <sel> --add/--remove <spec>   # NOT SHIPPED
+patches <sel> [--drop-obsolete]    # NOT SHIPPED
+modify <sel> --set <field>=<value> # NOT SHIPPED
+obsolete <sel> --replaced-by <port> # NOT SHIPPED
+migrate <sel> --idiom <name>       # NOT SHIPPED
 ```
+
+**Amended.** Three intents ship — `bump`, `bump-revision` (`revbump`) and
+`refresh-checksums` (`refresh`) — and they are one catalogue rather than
+three commands, so every shared flag below is registered once and means the
+same thing on all three. The rest of the list is the design's shape for
+what a fourth would look like, and is marked so nobody types one.
 
 Notes on naming and shape:
 
@@ -760,11 +782,11 @@ that distinction stated at a scale that stops running out of room.
 | `10`–`13` | declined | the plan's: dockhand understood the request, could have carried it out, and judged it should not | nothing broke and nothing was written; the next move is the user's |
 | `20`–`24` | refused | the destination's: the change is fine, the place it would go will not take it | the branch or the pull request, never the edit |
 | `30`–`36` | environment | the machine's | installing or provisioning something |
-| `40`–`44` | tree | where dockhand was pointed | a different path, branch or flag — never an install |
+| `40`–`46` | tree | where dockhand was pointed | a different path, branch or flag — never an install |
 | `50`–`53` | upstream | somebody else's | waiting, or the port's livecheck |
 | `60`–`62` | pending | nobody's yet: nothing failed and nothing finished | asking again later |
 | `70`–`73` | verdict | the verification answered, and not with a pass | the log, or the port |
-| `80`–`83` | partial | the operation did half its work, and that half stands | knowing what stands before re-running |
+| `80`–`84` | partial | the operation did half its work, and that half stands | knowing what stands before re-running |
 
 The families are the contract a script should branch on. The fine codes
 below are the contract a script may branch on when the family is too coarse,
@@ -779,6 +801,12 @@ interchangeable.
 | `11` | `BranchInFlight` | the port already has a change in flight; discard it, pick it up, or `--replace` |
 | `12` | `AlreadyCurrent` | nothing to do — and riders went undone with it |
 | `13` | `Ambiguous` | the target names several in-flight branches, or the branch changes several evaluation contexts; say which |
+
+`13` is reserved rather than produced. `change.Resolve` is ruled to
+*resolve* an ambiguous target rather than refuse it — the `Bound()` record
+wins where two carry one name, and the newest change wins for a port —
+so making this code reachable is a change to that ruling, not a
+renumbering.
 
 Every decline carries its remedy in the sentence, which is what keeps a
 decline from reading as a failure. `12` is its own code so a sweep can tell
@@ -799,7 +827,7 @@ ever going to ride, which puts the decline back at `10`.
 |---|---|---|
 | `20` | `DuplicatePR` | an open upstream PR already proposes this change; join it, `--title`, or `--no-pr-check` |
 | `21` | `PRMerged` | the branch's own PR already merged — a dead end, not a conflict; `dockhand cycle` retires it |
-| `22` | `Superseded` | work a newer sibling has already replaced: a followed run whose branch moved out from under it |
+| `22` | `Superseded` | work a newer sibling has already replaced |
 | `23` | `Held` | a branch deliberately held back: `dockhand hold` placed it, a prerelease target was born under it, or a publication-time re-witness found upstream serving other bytes |
 | `24` | `MachineGate` | a road refused this invoker where a person asking for the same thing would be allowed it — see the four reasons below |
 
@@ -822,9 +850,9 @@ what it was reserved for. Its four reasons:
 |---|---|
 | `open-proposal` | an unattended publication of a change still carrying an unanswered finding; a person promoting is told what they are publishing past and allowed it |
 | `no-positive-evidence` | an unattended publication of a tip with no passing verification; a person publishes an unverified change with a complaint, and absence of evidence is not a reason for a machine to spend a reviewer's attention |
-| `promote-is-human` | `dockhand promote` in auto mode. There is exactly one machine publish path — the reconciler's slot — and a promote that published as the machine would be a second one |
+| `promote-is-human` | *retired with the declaration.* `dockhand promote` in auto mode — and nothing can declare that any more: a typed promote is a person by construction, `Grants.Invoker` being a constant of the road. The rule it protected still holds, and holds structurally: there is exactly one machine publish path, the dispatcher's slot |
 | `machine-publish-disabled` | this build does not let a machine spend ring 3 at all. The permission is a build-time constant and it is false; flipping it is the trust ladder's ruling to make |
-| `machine-publish-no-verifier` | `--to-pr` in auto mode on a machine that cannot verify: with a verifier the change is queued for the reconciler's slot, and without one the only publication left is an immediate one on a person's authority |
+| `machine-publish-no-verifier` | *retired with the declaration,* for the same reason: the run that could declare itself unattended is gone. `--to-pr` on a verifier-less host is now a person sequencing `promote` after the mint, in the one invocation that asked |
 | `machine-republish` | an unattended publication met a pull request already open for the branch. The slot decides this a phase earlier and calls it work done; reaching the verb with it is a bug above the verb, and the funnel refuses rather than force-updating a review it did not open |
 
 A finding proposes and never executes, so a change carrying an unanswered
@@ -864,14 +892,17 @@ defers instead, the same two facts are `61` and `60` — the difference is
 whether anyone is still standing there, and whether a run was recorded for
 `cycle` to start.
 
-Four asks wait for their answer and then leave, so four stamp `36`: the
-`--verify` gate, `verify <portdir>`, `exec`, and `provision`. The provider
-counts slots and cannot know who asked, which is why the caller says so.
-`exec` returns the refusal rather than counting it as a release whose
-command failed — the command never ran — and ends there, because the cap is
-machine-wide and the next release would meet the same wall.
+**Amended: after always-enqueue there is one such ask left, not four.** A
+change road meeting `verify.ErrNoVacancy` leaves its attempt queued and
+exits `60`, so `36` is now only the verbs that need a guest in the
+invocation that asked — `exec` above all, with `shell` and `provision`
+beside it. The provider counts slots and cannot know who asked, which is why
+the caller says so. `exec` returns the refusal rather than counting it as a
+release whose command failed — the command never ran — and ends there,
+because the cap is machine-wide and the next release would meet the same
+wall.
 
-### Tree — `40`–`44`
+### Tree — `40`–`46`
 
 | Code | Name | What happened |
 |---|---|---|
@@ -880,6 +911,12 @@ machine-wide and the next release would meet the same wall.
 | `42` | `NotARepo` | the branch workflow needs a git checkout; `--in-place` edits the tree directly |
 | `43` | `Drift` | the Portfile is no longer the one that was planned against |
 | `44` | `BranchNotFound` | the target names no in-flight branch; `dockhand status` lists what is |
+| `45` | `BranchMoved` | the record's tip and the ref disagree, or a dockhand ref moved between a road's resolve and its commit — a person's own git on a dockhand branch. `dockhand verify <branch>` follows the commit, and `git branch -f <branch> <recorded tip>` puts it back |
+| `46` | `BranchCheckedOut` | a batch would move or delete a branch some worktree has it checked out in — an accept, a discard, a replace, a retirement. Measured rather than assumed: `git branch -f` refuses such a branch and the update-ref batch does not. Switch away first |
+
+`44` is `change.ErrNoRecord` and nothing else, and it is deliberately not
+`41`: a wrapper reading `41` runs `portindex` for a tree that does not
+carry the port, where the remedy here is a different branch name.
 
 ### Upstream — `50`–`53`
 
@@ -927,8 +964,9 @@ band by default.
 Nothing here failed. These must never share a band with a refusal, because
 the remedy is to ask again rather than to fix anything.
 
-`62` is what `dockhand cycle --auto` exits with when its publish slot has
-work left over — a person's `cycle` hands in no slot and cannot reach it —
+`62` is what `dockhand dispatch --once` exits with when its publish slot has
+work left over — a person's `cycle` publishes nothing and cannot reach it,
+and a resident `dispatch` never exits —
 and it deliberately reports only the **waiting**. A refusal is stated
 on the branch it is about and does not become the pass's status: on this
 build every candidate is refused with `machine-publish-disabled`, and a cron
@@ -962,9 +1000,15 @@ a person stopping their own build, so it lands in the band that says the
 verification ended without a verdict — but "could not answer: canceled" is
 a sentence that contradicts itself, and the twin's `reason` is what tells
 the two apart: `verification-errored` against `verification-canceled`. The
-other two ways a followed run can end without a verdict leave this band
-entirely: a superseded run is `22`, and one still waiting for a slot is
-`60`.
+one still waiting for a slot leaves this band entirely and is `60`.
+
+**Amended.** A followed run that was SUPERSEDED exits `73` with the reason
+`superseded`, not `22`: what the caller asked for was a verdict, and the
+run ended without reaching one, which is what this band is for and what
+somebody waiting on it needs to hear. `22` names the destination refusing
+work a newer sibling replaced, and it has no producer today — a superseded
+change is closed and its branch demolished, so a verb naming it meets a ref
+that is gone (`45`) rather than a record that says why.
 
 `72` is not a port declining a platform. That is the record's *unsupported*
 state, it is frequently the change working exactly as intended, and the
@@ -975,7 +1019,7 @@ retired environment code, for the reason the row gives: nothing is missing
 that provisioning would supply. Like `50`, it is a renumbering the ruled
 table did not enumerate and the bands require.
 
-### Partial — `80`–`83`
+### Partial — `80`–`84`
 
 | Code | Name | What happened |
 |---|---|---|
@@ -983,17 +1027,33 @@ table did not enumerate and the bands require.
 | `81` | `PushedPRFailed` | the branch is pushed; the pull request would not open |
 | `82` | `PRRefreshFailed` | the branch is pushed; its pull request still describes the change it used to carry |
 | `83` | `SweepHardErrors` | a sweep finished with rows that were not declines |
+| `84` | `PassNeedsAttention` | a pass whose summary holds a row addressed to a person. A partial-completion code because a pass is N outcomes rather than one refusal |
 
 Re-running is not free and not always safe, so these can never be folded
 into `1`: a script must be able to tell "nothing happened" from "the branch
 is pushed and the PR is not".
+
+`80` is `app.MintError` and `81`/`82` are `publish.StepError`, each carrying
+what already completed as DATA rather than in its sentence — the branch that
+now exists and the attempt left on it, the step that failed and the steps
+that finished before it. The classifier asks for them **before** the
+sentinel table, which is the one place it does not read in band order: a
+partial identity wraps the failure that caused it, that cause may carry a
+band of its own, and if the cause won, the remedy printed would be "run it
+again" — the one thing a caller holding a pushed branch must not do.
+
+`84` reaches a process status in exactly two places, `dockhand dispatch
+--once` and a person's `dockhand cycle`. A resident dispatcher never exits,
+and one that exited non-zero because a branch needs a person would, under
+launchd `KeepAlive`, be a restart loop; `status` is the attention channel
+there instead.
 
 ### Where the mapping lives
 
 A typed error owns its band **where it is defined**, by implementing
 `DockhandExit() int` — so the band cannot be forgotten in a table two
 packages away, which is the trap every new error type used to walk into.
-`internal/cmd/exit.go` holds only the other half: the sentinels, which cannot
+`internal/cli/exit.go` holds only the other half: the sentinels, which cannot
 carry a method, and which name a dozen packages `internal/exitcode` would
 have to import to see them. Typed errors are consulted first, so a sentinel
 wrapped by an error that knows better keeps the better band.

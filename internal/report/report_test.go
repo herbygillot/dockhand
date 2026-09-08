@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/change"
+	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/statestore"
 )
@@ -34,8 +36,26 @@ func TestTheTwoRemedySentencesAndTheOneAdmission(t *testing.T) {
 	assert.Contains(t, none, "`dockhand cycle` starts them once")
 
 	unknown := Remedy(app.Residency{State: app.ResidencyUnknown})
-	assert.Contains(t, unknown, "could not be read")
-	assert.NotContains(t, unknown, "dockhand ", "an unreadable lock instructs nothing (rule 7)")
+	assert.Contains(t, unknown, "not established")
+	assert.NotContains(t, unknown, "dockhand ", "an unestablished residency instructs nothing (rule 7)")
+}
+
+// AN UNKNOWN RESIDENCY SAYS WHAT IS UNKNOWN AND NEVER WHY. The state is
+// reached two ways — a probe that failed, and `status --no-update`,
+// which takes no lock at all and is Unknown by construction — and the
+// value does not distinguish them. The shipped sentences asserted the
+// first cause for both, so a healthy pure read announced that the
+// dispatch lock could not be read when nothing had opened it.
+func TestAnUnknownResidencyNeverBlamesTheLock(t *testing.T) {
+	unknown := app.Residency{State: app.ResidencyUnknown}
+	for _, line := range []string{Residency(unknown), Remedy(unknown)} {
+		assert.NotContains(t, line, "could not be read",
+			"the cause is not on the value, so no projection may name one")
+		assert.NotContains(t, line, "lock",
+			"nothing here establishes that a lock was so much as opened")
+	}
+	assert.Contains(t, Residency(unknown), "not established",
+		"the fact itself is still said, because a missing line reads as an answer (rule 7)")
 }
 
 // A STAMP THAT COULD NOT BE READ IS STILL A RESIDENT DISPATCHER. "The
@@ -133,10 +153,26 @@ func TestTheNoUpdateDepthSaysWhatItDidNotAsk(t *testing.T) {
 	Standings(&b, app.StatusResult{
 		State:     statestore.State{},
 		Residency: app.Residency{State: app.ResidencyUnknown},
+		NoUpdate:  true,
 	}, now)
 	first := nonEmpty(strings.Split(b.String(), "\n"))[0]
 	assert.Contains(t, first, "nothing was polled")
 	assert.Contains(t, first, "no forge was asked")
+}
+
+// AND IT SAYS IT ONLY WHEN IT WAS ASKED FOR. A default `status` whose
+// lock probe failed carries the same unknown residency and settles
+// nothing, and the shipped condition — unknown plus an empty Settled —
+// claimed nothing had been polled over a report that had polled the
+// provider and read the forge cache.
+func TestADefaultStatusNeverClaimsItAskedNothing(t *testing.T) {
+	var b bytes.Buffer
+	Standings(&b, app.StatusResult{
+		State:     statestore.State{},
+		Residency: app.Residency{State: app.ResidencyUnknown}, // the probe failed
+	}, now)
+	assert.NotContains(t, b.String(), "nothing was polled",
+		"the depth is on the result; it is never inferred from what came back empty")
 }
 
 // A DISAGREEING REF IS SHOWN AND NEVER SKIPPED, with the two remedies
@@ -144,11 +180,54 @@ func TestTheNoUpdateDepthSaysWhatItDidNotAsk(t *testing.T) {
 // and one that is GONE is ended with `discard`. A change missing from
 // the listing would read as nothing to report (rule 7).
 func TestADisagreeingRefIsShownWithTheRemedyItsHalfEarns(t *testing.T) {
-	assert.Contains(t, disagreement(false), "dockhand verify")
-	assert.Contains(t, disagreement(false), "moved by hand")
-	assert.Contains(t, disagreement(true), "dockhand discard")
-	assert.NotContains(t, disagreement(true), "dockhand verify",
+	moved := &change.TipDisagreement{
+		ID: "chg-01", Ref: "refs/heads/dockhand/jq-1.8.1",
+		Recorded: "4a1cbe9f0d2e5", Found: "0000abc",
+	}
+	gone := &change.TipDisagreement{
+		ID: "chg-02", Ref: "refs/heads/dockhand/foo-2.0",
+		Recorded: "77c1e2b", Absent: true,
+	}
+	assert.Contains(t, disagreement(moved), "dockhand verify dockhand/jq-1.8.1")
+	assert.Contains(t, disagreement(moved), "moved by hand")
+	assert.Contains(t, disagreement(gone), "dockhand discard dockhand/foo-2.0")
+	assert.NotContains(t, disagreement(gone), "dockhand verify",
 		"a branch that is gone cannot be followed")
+}
+
+// THE MOVED HALF MUST NOT ADVERTISE `discard`, and this is the one
+// assertion in the file that is about a road rather than a sentence.
+// app.Discard resolves before it does anything, meets the very
+// disagreement this line was rendered from, and refuses it with exit 45
+// — so the shipped remedy told a person to abandon their change by
+// running a command that could not work. What is offered instead is the
+// pair app.Discard's own doc names: `verify` follows the commit, and git
+// puts the ref back at the tip the record holds, which is what makes
+// every other verb resolve again.
+func TestTheMovedRemedyOffersOnlyRoadsThatRun(t *testing.T) {
+	moved := &change.TipDisagreement{
+		ID: "chg-01", Ref: "refs/heads/dockhand/jq-1.8.1", Recorded: "4a1cbe9f0d2e5",
+	}
+	line := disagreement(moved)
+	assert.NotContains(t, line, "discard",
+		"discard refuses a moved tip (exit 45); advertising it is a remedy that cannot run")
+	assert.Contains(t, line, "git branch -f dockhand/jq-1.8.1 4a1cbe9f",
+		"the recorded tip is printed, because a remedy a reader must look something up for is one they will get wrong")
+}
+
+// A PIN IS NOT A BRANCH. A branchless snapshot lives on
+// refs/dockhand/verify/<id>, which `git branch -f` would not move — it
+// would make a branch called refs/heads/refs/dockhand/... — so the
+// restore for one is `git update-ref`, and the verb takes the change id
+// rather than a branch name it has not got.
+func TestAMovedPinIsRestoredWithUpdateRefAndNamedByItsID(t *testing.T) {
+	pin := &change.TipDisagreement{
+		ID: "chg-77", Ref: change.PinRef("chg-77"), Recorded: "b19f0c4d",
+	}
+	line := disagreement(pin)
+	assert.Contains(t, line, "git update-ref refs/dockhand/verify/chg-77 b19f0c4d")
+	assert.Contains(t, line, "dockhand verify chg-77")
+	assert.NotContains(t, line, "git branch -f")
 }
 
 // A PASS SAYS ITS COUNTS FIRST AND THE ROWS THAT WANT A PERSON AFTER: a
@@ -177,6 +256,37 @@ func TestADryRunRefusesToCallItselfReadOnly(t *testing.T) {
 	var b bytes.Buffer
 	Pass(&b, app.Pass{Changes: map[record.ChangeID]app.Result{}}, true)
 	assert.Contains(t, b.String(), "NOT a read-only pass")
+}
+
+// THE ALLOWANCE IS REPORTED OVER THE PACE'S WINDOW AND NOT THE STORE'S.
+// publish.MaxWindow is 24h — the floor compaction keeps machine rows
+// above, and the span Gather collects stamps over because Gather is
+// handed no Pace — and nothing is ever measured against it. The line
+// used to count over it, so a machine with two publications in the six
+// hours that decide the next refusal was reported as nine in a day, and
+// the number a reader compared against --publish-max was not the number
+// publish.Authorize would compute.
+func TestTheAllowanceIsCountedOverThePaceWindow(t *testing.T) {
+	inside := now.Add(-2 * time.Hour)
+	outside := now.Add(-9 * time.Hour) // inside MaxWindow, outside the pace
+	state := statestore.State{At: "9f1c4ae2b7", Publications: map[string]record.Publication{
+		"pub-1": {ID: "pub-1", By: record.Machine, Steps: []record.Step{
+			{Kind: record.OpenPR, Phase: record.Finished, At: inside},
+		}},
+		"pub-2": {ID: "pub-2", By: record.Machine, Steps: []record.Step{
+			{Kind: record.OpenPR, Phase: record.Finished, At: outside},
+		}},
+	}}
+	spend := publish.Spent(state, now)
+	require.Equal(t, 2, spend.Within(publish.MaxWindow, now), "both are inside the store's floor")
+
+	line := allowance(spend, now)
+	assert.Contains(t, line, "1 of 20 in the last 6h",
+		"the window is publish.DefaultPace's, and the cap it is measured against is printed beside it")
+	assert.Contains(t, line, "the default allowance",
+		"a dispatcher's own --publish-every lives in the process holding the lock; this line may not claim to know it")
+	assert.Contains(t, line, "9f1c4ae2", "the state commit the count was taken from")
+	assert.NotContains(t, line, "24h")
 }
 
 // nonEmpty drops blank lines so a test can index the lines that carry

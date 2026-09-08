@@ -96,11 +96,42 @@ func provisionCmd(s *Services) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "provision",
 		Short: "Prepare verification environments",
+		Args:  provisionArgs,
+		// A GROUPING VERB STILL HAS TO REFUSE A STRAY WORD, and cobra will
+		// not do it for a command with no Run: `execute` returns flag.ErrHelp
+		// for an unrunnable command BEFORE it validates arguments, so
+		// `dockhand provision xcode` printed provision's help to stdout and
+		// exited 0 while provisioning nothing — a Makefile carrying the
+		// pre-overhaul spelling reported success forever. Declaring the body
+		// makes the command runnable, which is what puts Args in the path at
+		// all; with no arguments it is what a bare `dockhand provision`
+		// always did, and with one it never runs, because provisionArgs
+		// refused first.
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	tart := provisionTart(s)
 	tart.AddCommand(provisionXcode(s))
 	c.AddCommand(tart)
 	return c
+}
+
+// provisionArgs refuses a stray word under `provision` with the ruled
+// usage code — an unknown subcommand is the invocation's problem, exit
+// 2, the same answer `dockhand status extra` gives — and names the
+// nesting for the one spelling that MOVED.
+//
+// `provision xcode` was the shipped verb and is now `provision tart
+// xcode`, because baking a toolchain into a golden image is a tart act
+// and the path should say which provider it belongs to before a second
+// one exists. cobra's own suggestion machinery cannot find it: it
+// searches this command's children, and the new spelling is a
+// grandchild. So the one word whose meaning was relocated is answered
+// by name, and every other stray word gets cobra's "unknown command".
+func provisionArgs(c *cobra.Command, args []string) error {
+	if len(args) > 0 && args[0] == "xcode" {
+		return usagef("`dockhand provision xcode` is now `dockhand provision tart xcode`: baking a toolchain into a golden image is a tart act, and the path says so")
+	}
+	return noArgs(c, args)
 }
 
 func provisionTart(s *Services) *cobra.Command {

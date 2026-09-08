@@ -539,21 +539,43 @@ var errStands = errors.New("lease: the obligation was not closed and still stand
 // decided is its own. It is Request with claimIn in place of RequestIn:
 // the same transaction, the same write, one guard fewer, and the guard
 // that is gone is the one Standing already answered.
+//
+// THE CLOSURE ASSIGNS BOTH OF ITS CAPTURES ON EVERY PATH, and that is
+// the whole of what seizeIn exists for. statestore.Amend runs its
+// closure AGAIN over a fresh read when the state ref loses its
+// compare-and-set to a writer that never took the flock — a stray
+// `git update-ref`, an older build, the ref recreated after ErrDocShape
+// — so a closure that wrote its answer into a captured variable on one
+// path and left it alone on another would carry the FIRST, discarded
+// run's claim out of the last one. Written that way, a lost race
+// returned a lease the committed transaction never claimed: take() went
+// on to call the provider's Release on it, destroying an environment on
+// the strength of a claim that is not in the store, and Discharge then
+// reported the obligation discharged with no claim, no Release.Done and
+// no lease behind it. A function whose returns ARE the assignment
+// cannot leak across a retry, because there is nothing to leak into.
 func seize(ctx context.Context, st *statestore.Store, ob Obligation, by Claimant, now time.Time) (record.Lease, bool, error) {
 	var l record.Lease
 	var took bool
 	err := st.Amend(ctx, func(tx *statestore.Txn) error {
-		cur, ok := liveOn(tx.State(), ob.Change, ob.Platform)
-		if !ok {
-			return nil
-		}
-		l, took = claimIn(tx, cur, by, now)
+		l, took = seizeIn(tx, ob, by, now)
 		return nil
 	})
 	if err != nil {
 		return record.Lease{}, false, err
 	}
 	return l, took, nil
+}
+
+// seizeIn is seize's whole transaction body, as a pure function of the
+// state it is handed: no live lease on the slot is the zero lease and
+// false, every run, whatever the run before it found.
+func seizeIn(tx *statestore.Txn, ob Obligation, by Claimant, now time.Time) (record.Lease, bool) {
+	cur, ok := liveOn(tx.State(), ob.Change, ob.Platform)
+	if !ok {
+		return record.Lease{}, false
+	}
+	return claimIn(tx, cur, by, now)
 }
 
 // resolve is the Requested kind's road: a lease with a request token and

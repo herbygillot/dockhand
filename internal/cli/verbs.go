@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/exitcode"
 	"github.com/herbygillot/dockhand/internal/intent"
+	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -241,16 +242,39 @@ func forgePolicy(noUpdate, refresh bool) publish.ForgePolicy {
 	return publish.ForgeAsCached
 }
 
-// statusDocument is `status --json`: the same report, machine-readable,
+// statusDocument is `status --json`: THE SAME REPORT, machine-readable,
 // with the exit twin inside it so a caller that captured stdout through
 // a pipe and lost $? still knows how the run ended.
+//
+// "The same report" is the whole specification and it is a demanding
+// one. An earlier shape carried five fields per change — id, branch,
+// state, tip, held — and record.ChangeState has no verdict values, so a
+// passed change, a failed one, three still queued and one nobody ever
+// asked to build all came back `"state":"minted"`: a dashboard over
+// twelve changes could not find the failure, and reported the fleet
+// healthy. Everything the human report renders is therefore here — the
+// attempts and their per-member verdicts, the pull request with the
+// AsOf that makes "open" different from "open when I last looked", the
+// hold's reason, the proposals awaiting an answer, and the refs a
+// foreign hand moved.
+//
+// WHAT IT CARRIES IS TYPED VALUES AND NEVER THE REPORT'S SENTENCES.
+// report.Standings decides what a PERSON is told — "FAILED 2h ago",
+// worst-run-first, in attention order — and that judgment is not
+// duplicated here: a machine gets record.RunState per member and
+// decides for itself, which is rule 6 and which is also why this
+// document cannot drift from the report's prose. Every field is tagged,
+// including the ones that arrive from another package's struct: an
+// untagged embed spells its keys in Go's PascalCase, and a consumer
+// reading `.vacancy.free` off a key named `Free` reads null.
 type statusDocument struct {
-	Exit       exitcode.Twin  `json:"exit"`
-	Residency  residencyDoc   `json:"residency"`
-	Settled    []string       `json:"settled,omitempty"`
-	Vacancy    verify.Vacancy `json:"vacancy"`
-	Changes    []changeDoc    `json:"changes"`
-	Obligation []string       `json:"obligations,omitempty"`
+	Exit        exitcode.Twin     `json:"exit"`
+	Residency   residencyDoc      `json:"residency"`
+	Settled     []string          `json:"settled,omitempty"`
+	Vacancy     vacancyDoc        `json:"vacancy"`
+	Changes     []changeDoc       `json:"changes"`
+	Disagreeing []disagreementDoc `json:"disagreeing,omitempty"`
+	Obligations []obligationDoc   `json:"obligations,omitempty"`
 }
 
 type residencyDoc struct {
@@ -259,12 +283,114 @@ type residencyDoc struct {
 	Since  time.Time `json:"since,omitzero"`
 }
 
+// vacancyDoc is verify.Vacancy with the tags it does not carry. Known
+// is first and it is not omitted: "the machine has no free slots" and
+// "I could not find out" are two facts (rule 7), and a document that
+// dropped the flag would leave a zero Free meaning both.
+type vacancyDoc struct {
+	Known bool      `json:"known"`
+	Free  int       `json:"free"`
+	Limit int       `json:"limit"`
+	AsOf  time.Time `json:"as_of,omitzero"`
+}
+
+// changeDoc is one change as a machine reads it: the record's own
+// fields, then the three things the human report adds beneath the line
+// — the verification standing, the pull request, and what the change
+// proposes that nobody has answered.
 type changeDoc struct {
-	ID     record.ChangeID    `json:"id"`
-	Branch string             `json:"branch,omitempty"`
-	State  record.ChangeState `json:"state"`
-	Tip    string             `json:"tip,omitempty"`
-	Held   bool               `json:"held,omitempty"`
+	ID         record.ChangeID    `json:"id"`
+	Branch     string             `json:"branch,omitempty"`
+	State      record.ChangeState `json:"state"`
+	Tip        string             `json:"tip,omitempty"`
+	Held       bool               `json:"held"`
+	HoldReason string             `json:"hold_reason,omitempty"`
+	// Attempts are every attempt on this change, current or not. An
+	// attempt whose Sha is not the change's tip says nothing about what
+	// stands — which is what Current is for — but it is not dropped: a
+	// caller asking why a branch was re-verified needs the former tip's
+	// work to still be in the document.
+	Attempts []attemptDoc    `json:"attempts"`
+	PR       *pullRequestDoc `json:"pull_request,omitempty"`
+	Proposes []string        `json:"proposes,omitempty"`
+}
+
+// attemptDoc is one attempt's standing. It carries the record's phase
+// AND the three predicates the record exports over it, because they are
+// not the same question: Queued is Requested with no lease, and a
+// consumer re-deriving that from `phase` alone would be reimplementing
+// record.Attempt.Queued in jq.
+type attemptDoc struct {
+	ID       string       `json:"id"`
+	Platform string       `json:"platform,omitempty"`
+	Sha      string       `json:"sha,omitempty"`
+	Current  bool         `json:"current"`
+	Phase    record.Phase `json:"phase"`
+	Queued   bool         `json:"queued"`
+	Active   bool         `json:"active"`
+	Settled  bool         `json:"settled"`
+	Started  time.Time    `json:"started,omitzero"`
+	Runs     []runDoc     `json:"runs,omitempty"`
+}
+
+// runDoc is one member's verdict on one attempt — the value that was
+// missing, and the only thing in this document that answers "did it
+// build".
+type runDoc struct {
+	Port   string          `json:"port"`
+	State  record.RunState `json:"state"`
+	Detail string          `json:"detail,omitempty"`
+}
+
+// pullRequestDoc is a forge standing WITH THE MOMENT IT WAS LEARNED.
+// Fresh says whether this invocation asked or served what a cycle
+// cached, because "open" and "open when I last looked" are different
+// claims and a machine must be able to tell them apart — the same
+// boundary publish.Authorize enforces on the deciding side.
+type pullRequestDoc struct {
+	Number int       `json:"number"`
+	State  string    `json:"state,omitempty"`
+	URL    string    `json:"url,omitempty"`
+	AsOf   time.Time `json:"as_of,omitzero"`
+	Fresh  bool      `json:"fresh"`
+}
+
+// disagreementDoc is a bound record whose ref a foreign hand moved.
+// Shown rather than skipped for the reason the report shows it: a
+// change missing from the listing reads as nothing to report.
+type disagreementDoc struct {
+	ID       record.ChangeID `json:"id"`
+	Ref      string          `json:"ref"`
+	Recorded string          `json:"recorded,omitempty"`
+	Found    string          `json:"found,omitempty"`
+	Absent   bool            `json:"absent"`
+}
+
+// obligationDoc is one environment this checkout owes or merely found.
+//
+// It is an OBJECT and not a lease id, and that is the whole of a defect
+// this shape removes: the document used to emit `o.ID.ID`, and an
+// Untracked obligation is built from provider inventory and never has a
+// lease — so two leaking guests serialized as `["", ""]`, two entries
+// that could not be told apart, correlated with nothing, and passable
+// to no follow-up command. Its identity lives in Worker, Request and
+// Job, so those are carried; so is Root, because a foreign obligation is
+// NAMED and never seized, and a machine that cannot read the name has
+// no more idea whose it is than a person told "somebody else's".
+type obligationDoc struct {
+	Kind     string          `json:"kind"`
+	Standing string          `json:"standing"`
+	Seizable bool            `json:"seizable"`
+	Change   record.ChangeID `json:"change,omitempty"`
+	Platform string          `json:"platform,omitempty"`
+	Worker   string          `json:"worker,omitempty"`
+	Lease    string          `json:"lease,omitempty"`
+	Request  string          `json:"request,omitempty"`
+	Job      string          `json:"job,omitempty"`
+	Root     string          `json:"root,omitempty"`
+	Since    time.Time       `json:"since,omitzero"`
+	Attempts int             `json:"attempts,omitempty"`
+	Why      string          `json:"why,omitempty"`
 }
 
 func statusDoc(res app.StatusResult, err error) statusDocument {
@@ -272,18 +398,79 @@ func statusDoc(res app.StatusResult, err error) statusDocument {
 		Exit:      TwinOf(err),
 		Residency: residencyDoc{State: residencyWord(res.Residency.State), Holder: res.Residency.Holder.PID, Since: res.Residency.Since},
 		Settled:   res.Settled,
-		Vacancy:   res.Vacancy,
+		Vacancy: vacancyDoc{
+			Known: res.Vacancy.Known, Free: res.Vacancy.Free,
+			Limit: res.Vacancy.Limit, AsOf: res.Vacancy.AsOf,
+		},
+	}
+	// An empty listing is [] and never null. `changes` carries no
+	// omitempty precisely so a checkout with nothing standing SAYS so,
+	// and a consumer iterating a null it did not expect is a consumer
+	// that crashes on the quietest possible answer.
+	doc.Changes = []changeDoc{}
+	byChange := map[record.ChangeID][]record.Attempt{}
+	for _, a := range res.State.Attempts {
+		byChange[a.Change] = append(byChange[a.Change], a)
 	}
 	for _, key := range slices.Sorted(maps.Keys(res.State.Changes)) {
-		c := res.State.Changes[key]
-		doc.Changes = append(doc.Changes, changeDoc{
-			ID: c.ID, Branch: c.Branch, State: c.State, Tip: c.Tip, Held: c.Hold != nil,
+		doc.Changes = append(doc.Changes, changeDocOf(res, res.State.Changes[key], byChange))
+	}
+	for _, d := range res.Disagreeing {
+		doc.Disagreeing = append(doc.Disagreeing, disagreementDoc{
+			ID: d.ID, Ref: d.Ref, Recorded: d.Recorded, Found: d.Found, Absent: d.Absent,
 		})
 	}
 	for _, o := range res.Obligations {
-		doc.Obligation = append(doc.Obligation, o.ID.ID)
+		doc.Obligations = append(doc.Obligations, obligationDoc{
+			Kind: obligationWord(o.Kind), Standing: standingWord(o.Standing), Seizable: o.Standing.Seizable(),
+			Change: o.Change, Platform: o.Platform, Worker: o.Worker, Lease: o.ID.ID,
+			Request: o.Request, Job: o.Job.ID, Root: o.Root, Since: o.Since,
+			Attempts: o.Attempts, Why: o.Why,
+		})
 	}
 	return doc
+}
+
+// changeDocOf is one change and everything hanging off it.
+func changeDocOf(res app.StatusResult, c record.Change, byChange map[record.ChangeID][]record.Attempt) changeDoc {
+	d := changeDoc{ID: c.ID, Branch: c.Branch, State: c.State, Tip: c.Tip, Held: c.Hold != nil}
+	if c.Hold != nil {
+		// "held" with no reason and "held for a reason nobody wrote down"
+		// are the same to a reader, and the second is what happened.
+		d.HoldReason = c.Hold.Reason
+	}
+	d.Attempts = []attemptDoc{}
+	for _, a := range byChange[c.ID] {
+		d.Attempts = append(d.Attempts, attemptDocOf(a, c.Tip))
+	}
+	slices.SortStableFunc(d.Attempts, func(x, y attemptDoc) int { return strings.Compare(x.ID, y.ID) })
+	if f, ok := res.Facts[c.ID]; ok && f.Forge.OwnFound {
+		d.PR = &pullRequestDoc{
+			Number: f.Forge.Own.Number, State: f.Forge.Own.State, URL: f.Forge.Own.HTMLURL,
+			AsOf: f.Forge.AsOf, Fresh: f.Forge.Fresh,
+		}
+	}
+	for _, f := range c.Findings {
+		if f.Disposition == record.Proposed {
+			d.Proposes = append(d.Proposes, f.Criterion)
+		}
+	}
+	return d
+}
+
+// attemptDocOf is one attempt, with its members' verdicts in port order
+// so two runs of `status --json` over one store cannot differ.
+func attemptDocOf(a record.Attempt, tip string) attemptDoc {
+	d := attemptDoc{
+		ID: a.ID, Platform: a.Platform, Sha: a.Sha, Current: a.Sha == tip,
+		Phase: a.Phase, Queued: a.Queued(), Active: a.Active(), Settled: a.Settled(),
+		Started: a.Started,
+	}
+	for _, port := range slices.Sorted(maps.Keys(a.Runs)) {
+		r := a.Runs[port]
+		d.Runs = append(d.Runs, runDoc{Port: port, State: r.State, Detail: r.Detail})
+	}
+	return d
 }
 
 // residencyWord is the three states as a document spells them. A word
@@ -296,6 +483,52 @@ func residencyWord(st app.ResidencyState) string {
 	case app.DispatcherResident:
 		return "resident"
 	case app.ResidencyUnknown:
+	}
+	return "unknown"
+}
+
+// obligationWord is an obligation's kind as a document spells it, for
+// residencyWord's reason: lease.ObligationKind is an iota, and a
+// consumer reading `3` would be carrying that package's declaration
+// order. The zero value is named rather than dropped — an obligation of
+// no stated kind is a fact Discharge refuses to act on, and a document
+// that omitted it would read as no obligation at all.
+func obligationWord(k lease.ObligationKind) string {
+	switch k {
+	case lease.Owed:
+		return "owed"
+	case lease.Requested:
+		return "requested"
+	case lease.Untracked:
+		return "untracked"
+	case lease.Due:
+		return "due"
+	case lease.UnknownObligation:
+	}
+	return "unknown"
+}
+
+// standingWord is whether THIS pass may act on an obligation, spelled
+// for a machine. It rides beside Seizable rather than instead of it:
+// the standing says who the environment belongs to and the boolean says
+// what this pass would do about it, and a consumer paging an operator
+// needs the first while a consumer predicting the next cycle needs the
+// second.
+func standingWord(st lease.Standing) string {
+	switch st {
+	case lease.Mine:
+		return "mine"
+	case lease.EarlierPass:
+		return "earlier-pass"
+	case lease.LiveElsewhere:
+		return "live-elsewhere"
+	case lease.DeadElsewhere:
+		return "dead-elsewhere"
+	case lease.ForeignRoot:
+		return "foreign-root"
+	case lease.Unattributed:
+		return "unattributed"
+	case lease.StandingUnknown:
 	}
 	return "unknown"
 }
@@ -702,7 +935,7 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 		Wait: f.waitFor(), Residency: residency,
 		Prov: change.Provenance{AskedBy: record.Human, Via: record.MintedCohort, Agent: s.Agent},
 	})
-	report.Change(s.Out, res, residency)
+	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency)
 	if err != nil {
 		return err
 	}

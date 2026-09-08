@@ -494,12 +494,8 @@ func runIntent(ctx context.Context, s *Services, v intentVerb, params intent.Par
 	if len(res.Targets) == 0 {
 		return usagef("%q named no port", params.Target)
 	}
-	if len(res.Targets) > 1 && f.toPR {
-		// A USAGE error and not a machine gate: a flag that turned a
-		// maintainer:me sweep into four hundred pull requests would be the
-		// single most expensive typo dockhand could offer.
-		return usagef("--to-pr under a selector naming %d ports; name one port, or promote the branches you mean",
-			len(res.Targets))
+	if err := refuseByArity(len(res.Targets), params, f); err != nil {
+		return err
 	}
 	planner := planning.Planner{
 		Eval: mustEval(s), Fetch: s.Fetch(), Temp: s.Temp(), Catalog: definitions(),
@@ -508,6 +504,58 @@ func runIntent(ctx context.Context, s *Services, v intentVerb, params intent.Par
 		return oneTarget(ctx, s, v, planner, params, f, res.Targets[0])
 	}
 	return manyTargets(ctx, s, v, planner, params, f, res.Targets)
+}
+
+// refuseByArity is the second half of the flag check, and it is the half
+// that cannot be asked at parse time: arity is not known until the
+// selector resolves, so a flag that means one thing about one port and
+// nothing about four hundred is answered HERE.
+//
+// The list is app.SurveyRequest's own — "refused by arity are --replace,
+// --diff, --in-place, --closes, --to, --to-pr, --wait" — and the reason
+// each is refused rather than dropped is the same in every case: the
+// sweep road carries none of them, so a flag accepted here would be a
+// flag the operation silently ignores or, worse, honours by writing the
+// opposite of what was asked. --in-place under a selector reached
+// app.Survey with Delivery InPlace and minted a committed branch per
+// port; --to copied one version literal into every plan. A refusal one
+// second before that is the cheapest correction dockhand can offer, and
+// every message names the road that DOES support the flag.
+//
+// --plan is deliberately absent: it is the one write-nothing mode a
+// sweep can honour, and it does — see manyTargets, where each target's
+// document reaches stdout and the census moves to stderr so the stream
+// stays parseable. --no-verify, --test, --keep-env, --riders,
+// --no-riders, --on and --latest are carried by SurveyRequest and are
+// not asked about here.
+//
+// It is TOTAL over the count rather than guarded at the call site: a
+// single target refuses nothing, and a check whose caller has to
+// remember that is a check that grows a second caller without one.
+func refuseByArity(n int, params intent.Params, f *intentFlags) error {
+	if n <= 1 {
+		return nil
+	}
+	switch {
+	case f.toPR:
+		// A USAGE error and not a machine gate: a flag that turned a
+		// maintainer:me sweep into four hundred pull requests would be the
+		// single most expensive typo dockhand could offer.
+		return usagef("--to-pr under a selector naming %d ports; name one port, or promote the branches you mean", n)
+	case f.inPlace:
+		return usagef("--in-place edits one Portfile where it stands; a selector naming %d ports has no one file to edit — name one port", n)
+	case f.diff:
+		return usagef("--diff prints one branch's patch; a selector naming %d ports would run %d of them into one stream — name one port, or --plan for the whole selector", n, n)
+	case f.replace:
+		return usagef("--replace replaces one port's in-flight branch; a sweep meets its own standing branches and resumes past them — name one port")
+	case f.waitSet:
+		return usagef("--wait stays through one build; a sweep over %d ports enqueues and detaches — name one port, or `dockhand status` for the standings", n)
+	case params.Version != "":
+		return usagef("--to names one port's version; a selector naming %d ports would set every one of them to %q — name one port, or --latest for the whole selector", n, params.Version)
+	case params.ClosesTicket != "":
+		return usagef("--closes names the ticket one change closes; a selector naming %d ports would put the same trailer on every commit — name one port", n)
+	}
+	return nil
 }
 
 // oneTarget is the single-port road: plan, show, prepare, and app.Change.
@@ -607,7 +655,7 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 		Residency: residency,
 	}
 	res, runErr := op.Run(ctx, req)
-	report.Change(s.Out, res, residency)
+	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency)
 	if runErr != nil {
 		return runErr
 	}
@@ -622,6 +670,36 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 		}
 	}
 	return exitWith(res.Exit())
+}
+
+// quietWhereNoBuildWasAsked withdraws the no-provider advisory from a
+// result whose caller asked for no build at all.
+//
+// THE ADVISORY IS A FACT ABOUT THE MACHINE AND --no-verify IS A FACT
+// ABOUT THE INVOCATION, and the two reach app through the same nil.
+// cli acquires a verifier exactly where Needs says a build may start,
+// so --no-verify and --riders wire none; app reads a nil resolver as
+// verify.ErrNoProvider, which is correct — a host with no tart wires
+// none either — and answers a mint with "unverified; install tart and
+// `dockhand verify`". On a machine with tart installed and five
+// provisioned bases that sentence is false twice over: it instructs a
+// person to install software they already have, and a reader who takes
+// it as a diagnosis concludes their VM stack is broken. It is rule 7
+// arriving through the wiring rather than through a value.
+//
+// The premise of the sentence is THIS LAYER'S OWN CHOICE, so this is
+// where it is withdrawn, and the withdrawal is total rather than
+// conditional on whether a verifier could have been found: asking for
+// no build is not a question about the machine, and a mint that was
+// asked to stay a mint is reported as one and says nothing further. It
+// touches nothing else — the deferral is read for an exit code only on
+// a QUEUED result, and a delivery that never enqueued cannot produce
+// one.
+func quietWhereNoBuildWasAsked(res app.Result, d app.Delivery) app.Result {
+	if d == app.Branch && res.Deferred != nil && res.Deferred.Reason == app.NoProvider {
+		res.Deferred = nil
+	}
+	return res
 }
 
 // promoteAfterChange is the delegation's body, kept short on purpose:
@@ -679,32 +757,11 @@ func manyTargets(ctx context.Context, s *Services, v intentVerb, planner plannin
 	// none of it — the zero Manners is the single-target road — and four
 	// hundred arriving at one forge in one minute need all of it.
 	m, _ := sweepManners(s)
-	i := 0
-	next := func(ctx context.Context) (app.Planned, bool) {
-		if i >= len(targets) {
-			return app.Planned{}, false
-		}
-		t := targets[i]
-		i++
-		p := params
-		p.Target = t.Portdir
-		if v.Resolve != nil && p.Riders != intent.RidersOnly {
-			// The sweep's Manners: paced and cached, because four hundred
-			// ports arriving at one forge in one minute need all of it.
-			if err := v.Resolve(ctx, s, io.Discard, t, &p, m); err != nil {
-				return app.Planned{Target: t.Portdir, Decline: err}, true
-			}
-		}
-		pl, err := planner.Plan(ctx, v.Name, t, p)
-		if err != nil {
-			return app.Planned{Target: t.Portdir, Decline: err}, true
-		}
-		prepared, err := prepare(ctx, s, pl)
-		if err != nil {
-			return app.Planned{Target: t.Portdir, Decline: err}, true
-		}
-		return app.Planned{Target: t.Portdir, Prepared: prepared, Slug: pl.Slug, Riders: pl.Riders}, true
-	}
+	next := sweepPool(s, v, params, f, targets, m,
+		func(ctx context.Context, t tree.Target, p intent.Params) (*plan.Plan, error) {
+			return planner.Plan(ctx, v.Name, t, p)
+		},
+		func(ctx context.Context, pl *plan.Plan) (change.Prepared, error) { return prepare(ctx, s, pl) })
 	op := app.Survey{
 		Plan:     planningFor(s),
 		Repo:     repo,
@@ -728,11 +785,93 @@ func manyTargets(ctx context.Context, s *Services, v intentVerb, planner plannin
 		InFlight:  app.Advance,
 		Prov:      change.Provenance{AskedBy: record.Human, Via: record.MintedSweep, Agent: s.Agent},
 	})
-	report.Sweep(s.Out, sw, probeResidency(ctx, repo))
+	report.Sweep(sweepCensus(s, f), sw, probeResidency(ctx, repo))
 	if err != nil {
 		return err
 	}
 	return exitWith(sw.Exit())
+}
+
+// sweepPool is manyTargets' producer: one target at a time, resolved,
+// planned, SHOWN and prepared, with a plan failure becoming that
+// target's decline rather than the sweep's end.
+//
+// SHOWN IS THE WORD THAT WAS MISSING. --plan is the one write-nothing
+// mode a selector can honour — app.Survey answers Delivery Document
+// with a Shown row per target and writes nothing anywhere — but a row
+// saying "shown" is not a document, and the plan the pool computed was
+// dropped on the floor: a `--plan` over a category planned every port,
+// discarded every plan, and printed a one-line census of zeroes. The
+// plan is emitted HERE, where it exists, because the pool is the only
+// place on this road that holds one.
+//
+// It takes the plan and prepare steps as functions rather than reaching
+// for a planning.Planner, so that what this road does with a plan is
+// exercisable without a ports tree, an evaluator and a git checkout.
+func sweepPool(s *Services, v intentVerb, params intent.Params, f *intentFlags, targets []tree.Target,
+	m upstream.Manners,
+	planOne func(ctx context.Context, t tree.Target, p intent.Params) (*plan.Plan, error),
+	prepareOne func(ctx context.Context, pl *plan.Plan) (change.Prepared, error),
+) func(context.Context) (app.Planned, bool) {
+	i := 0
+	return func(ctx context.Context) (app.Planned, bool) {
+		if i >= len(targets) {
+			return app.Planned{}, false
+		}
+		t := targets[i]
+		i++
+		p := params
+		p.Target = t.Portdir
+		if v.Resolve != nil && p.Riders != intent.RidersOnly {
+			// The sweep's Manners: paced and cached, because four hundred
+			// ports arriving at one forge in one minute need all of it.
+			if err := v.Resolve(ctx, s, io.Discard, t, &p, m); err != nil {
+				return app.Planned{Target: t.Portdir, Decline: err}, true
+			}
+		}
+		pl, err := planOne(ctx, t, p)
+		if err != nil {
+			return app.Planned{Target: t.Portdir, Decline: err}, true
+		}
+		if f.planOnly {
+			// The document the caller asked for, on the stream --plan
+			// promises: one JSON object per target, in selector order, which
+			// a consumer reads with a json.Decoder in a loop. The single
+			// target's road emits exactly this object for exactly this flag,
+			// so the two arities speak one language.
+			//
+			// And it RETURNS, for the same reason oneTarget returns before
+			// its own prepare: --plan changes nothing, so it holds the plan
+			// against no base commit and cannot decline for a drift nobody
+			// was going to commit over. app.Survey answers a Document
+			// delivery with a Shown row and never looks at the Prepared.
+			if err := emitPlan(s.Out, pl); err != nil {
+				return app.Planned{Target: t.Portdir, Decline: err}, true
+			}
+			return app.Planned{Target: t.Portdir, Slug: pl.Slug, Riders: pl.Riders}, true
+		}
+		prepared, err := prepareOne(ctx, pl)
+		if err != nil {
+			return app.Planned{Target: t.Portdir, Decline: err}, true
+		}
+		return app.Planned{Target: t.Portdir, Prepared: prepared, Slug: pl.Slug, Riders: pl.Riders}, true
+	}
+}
+
+// sweepCensus is the stream the sweep's own summary is written to, and
+// it moves for one flag only.
+//
+// Under --plan stdout belongs to the plan documents, so the census — a
+// person's line, not a machine's — goes to stderr beside the selector's
+// notes and the per-target progress. That is the single road's
+// discipline too: there report.Plan writes the human summary to stderr
+// and emitPlan writes the document to stdout, and a caller piping
+// stdout into jq gets JSON and nothing else on both arities.
+func sweepCensus(s *Services, f *intentFlags) io.Writer {
+	if f.planOnly {
+		return s.Err
+	}
+	return s.Out
 }
 
 // sweepAdmission is run.Admission's two integers, which a sweep cannot

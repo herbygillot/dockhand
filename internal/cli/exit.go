@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/publish"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/statestore"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -96,6 +97,18 @@ func codeAndReason(err error) (int, string) {
 	if errors.As(err, &coder) {
 		return coder.DockhandExit(), ""
 	}
+	// 80-82, THE PARTIAL BAND, AND IT IS ASKED BEFORE THE TABLE ON
+	// PURPOSE. Everywhere else the switch is ordered by band and the
+	// first row that matches wins; here the ordering would be wrong,
+	// because these two identities WRAP the failure that caused them and
+	// that cause may well carry a row of its own. A push that stands with
+	// a pull request that does not is not "whatever `gh` said" — it is
+	// the one fact a caller must act on differently from every other,
+	// since the remedy for the cause is to run the command again and
+	// running it again would push a second time. Half-done outranks why.
+	if code, reason, ok := partial(err); ok {
+		return code, reason
+	}
 	switch {
 	// 10-13, the plan's problem: dockhand understood the request, could
 	// have carried it out, and judged that it should not.
@@ -118,6 +131,17 @@ func codeAndReason(err error) (int, string) {
 		// rerun; the rerun finds no standing change, or the peer's. It is
 		// deliberately NOT the tree band's 45, which is a FOREIGN HAND.
 		return exitcode.BranchInFlight, "branch-in-flight"
+	case errors.Is(err, publish.ErrStale):
+		// The publish road's own form of the same fact: Apply revalidated
+		// immediately before the first irreversible act and found the
+		// branch no longer where Authorize weighed it. It shares 11's band
+		// because it shares 11's remedy exactly — re-gather, re-authorize,
+		// rerun — and it is not 45, because nothing here has established
+		// that the hand was foreign; the reason names which of the two the
+		// caller is holding. In the default it exited 1, where a wrapper
+		// could not tell "the promotion is stale, run it again" from "the
+		// promotion broke".
+		return exitcode.BranchInFlight, "publication-stale"
 
 	// 20-24, the destination's problem. Every one of these waits on a
 	// human decision and will wait forever.
@@ -133,9 +157,19 @@ func codeAndReason(err error) (int, string) {
 		errors.Is(err, publish.ErrUnproven),
 		errors.Is(err, publish.ErrDirectionUnknown),
 		errors.Is(err, publish.ErrEpochOwed),
+		errors.Is(err, publish.ErrDrifted),
 		errors.Is(err, app.ErrMachineMayNotDemolish):
 		// The machine gate: an automatic act a policy refused, where a
 		// person asking for the same thing would be allowed it.
+		//
+		// ErrDrifted BELONGS HERE AND NOT IN 43. The tree band's drift is
+		// a plan measured against bytes that have since moved, which no
+		// invoker may act on; this one is publish's own words — "the
+		// machine refusing a change whose base has moved underneath it …
+		// a person is advised and publishes anyway if they mean to" — and
+		// a refusal a person would not have met is the definition of this
+		// band. Left in the default it exited 1, which told a dispatcher's
+		// wrapper that something broke when nothing had.
 		return exitcode.MachineGate, "machine-gate"
 
 	// 30-36, the machine: every one of these has an installation or a
@@ -170,8 +204,19 @@ func codeAndReason(err error) (int, string) {
 	// path, branch or flag — never an install.
 	case errors.Is(err, tree.ErrNotPortsTree):
 		return exitcode.NotPortsTree, "not-ports-tree"
-	case errors.Is(err, tree.ErrPortNotFound), errors.Is(err, change.ErrNoRecord):
+	case errors.Is(err, tree.ErrPortNotFound):
 		return exitcode.PortNotFound, "port-not-found"
+	case errors.Is(err, change.ErrNoRecord):
+		// A TARGET NAMING NO IN-FLIGHT BRANCH, and it is 44 rather than
+		// 41 because the two send a wrapper to different remedies: 41 says
+		// the ports tree does not carry that port, whose remedy is a
+		// `portindex` or a different tree, and this says the STORE holds
+		// no change for what was named, whose remedy is a different branch
+		// — `dockhand status` lists the ones that exist. internal/change's
+		// own resolve.go says of this sentinel that "every other road
+		// refuses (exit 44)", and folding it into 41 made that sentence
+		// false for hold, discard, cancel, promote, log and shell alike.
+		return exitcode.BranchNotFound, "branch-not-found"
 	case errors.Is(err, git.ErrNotARepo):
 		// A tree that is not a git checkout is a fact about the tree: the
 		// remedy is a different checkout or --in-place, never fixing the
@@ -224,6 +269,52 @@ func codeAndReason(err error) (int, string) {
 	default:
 		return exitcode.Failure, ""
 	}
+}
+
+// partial is the 80-82 band: an operation that did HALF ITS WORK, where
+// the half it did stands. It answers ok=false for everything else, so
+// codeAndReason's table is reached unchanged by every error that
+// committed nothing.
+//
+// THESE CAN NEVER BE FOLDED INTO Failure. The exitcode declarations say
+// why in one sentence — "a script must be able to tell 'nothing
+// happened' from 'the branch is pushed and the PR is not'" — and the
+// cost of getting it wrong is not a bad message: a retry wrapper reading
+// 1 re-pushes and opens a second pull request for one change, or mints a
+// second branch for a port that already has one.
+//
+// The two identities are the lifecycles' and the numbering is this
+// package's, which is the same division the sentinel table below is
+// built on: publish.StepError says WHICH step failed and what finished
+// before it, app.MintError says the branch stands and the submit did
+// not, and neither package spells a code.
+func partial(err error) (int, string, bool) {
+	var step *publish.StepError
+	if errors.As(err, &step) {
+		// A step that failed with NOTHING behind it is not partial: the
+		// push itself is the first effect, and a push that never landed
+		// left the forge exactly as it was.
+		if !step.Did(record.PushBranch) {
+			return 0, "", false
+		}
+		switch step.Kind {
+		case record.OpenPR:
+			return exitcode.PushedPRFailed, "pushed-pr-failed", true
+		case record.RefreshPR:
+			return exitcode.PRRefreshFailed, "pr-refresh-failed", true
+		case record.PushBranch, record.RecordOutcome, record.DeleteFork:
+			// RecordOutcome writes the store and DeleteFork is retirement's
+			// own effect, which a pass retries by itself (publish.ForkOwed);
+			// neither leaves the shape the 80 band is about.
+			return 0, "", false
+		}
+		return 0, "", false
+	}
+	var minted *app.MintError
+	if errors.As(err, &minted) {
+		return exitcode.MintedSubmitErrored, "minted-submit-errored", true
+	}
+	return 0, "", false
 }
 
 // TwinOf is the exit status a document says inside itself: the same code
