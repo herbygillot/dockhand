@@ -8,3 +8,5 @@ package platform
 // codebase stays honest to its own hermetic-CI rule: everything
 // builds on a machine with nothing but Go, Linux runners included.
 func physicalCores() int { return 0 }
+
+func physicalMemoryMB() int { return 0 }

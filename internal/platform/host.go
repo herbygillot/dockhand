@@ -26,3 +26,20 @@ func PhysicalCores() int {
 	}
 	return physicalCores()
 }
+
+// PhysicalMemoryMB is the host's installed memory in megabytes, zero
+// when the host will not say — including any host that is not macOS.
+//
+// It sits beside PhysicalCores for that function's own reason: every
+// consumer that sizes work to the host should measure through one door.
+// It exists at all because a sizing rule was deriving MEMORY FROM CORES
+// — "2 GB per granted core", from "the one measured fact" — and a ratio
+// is not a measurement. On a 128 GB host that granted a nine-core guest
+// 18 GB and left 110 GB idle, and the guest died in a parallel C++
+// compile.
+func PhysicalMemoryMB() int {
+	if !HostIsMac() {
+		return 0
+	}
+	return physicalMemoryMB()
+}
