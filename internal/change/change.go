@@ -27,10 +27,11 @@ import (
 // settled by the field's type, not by a convention".
 //
 // The two values are genuinely different things. plan.Plan.Portdir is a
-// HOST path: plan.Apply joins the Portfile name onto it and calls
-// os.ReadFile, so an in-place realization needs the absolute directory a
-// person's tree actually has. What a commit needs is the path inside the
-// tree, and git.File.Path is documented "slash-separated, repo-relative"
+// HOST path — an in-place realization needs the absolute directory a
+// person's tree actually has, which is why change.Tree exists and why
+// the join into it happens in the caller that holds a repository. What
+// a commit needs is the path inside the tree, and git.File.Path is
+// documented "slash-separated, repo-relative"
 // — a leading slash is an empty first segment, which GraftTree refuses.
 // A change built from the first would refuse at the graft, or, if some
 // future graft were more forgiving, write a portdir nobody asked for.

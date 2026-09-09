@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -179,34 +180,47 @@ func emitDiff(ctx context.Context, s *Services, prepared change.Prepared) error 
 	return err
 }
 
-// writeInPlace edits the Portfile where it stands: no branch, no commit,
-// and nothing recorded.
-//
-// It writes the SAME file set a mint would commit, from the same
-// Prepared, which is what keeps the three realizations honest about each
-// other: --diff shows these bytes, --in-place writes them, and a mint
-// commits them, all from one preparation rather than three.
+// workTree is change.Tree over a person's actual checkout. IT IS THE
+// BOUNDARY change's own rule names — "the conversion happens once, in
+// the caller that holds a repository" — so the join from a tree-relative
+// path to a host one happens here and nowhere inside change.
+type workTree struct{ root string }
+
+func (w workTree) host(p string) string { return filepath.Join(w.root, filepath.FromSlash(p)) }
+
+func (w workTree) Read(p string) ([]byte, bool, error) {
+	b, err := os.ReadFile(w.host(p))
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return b, true, nil
+}
+
+func (w workTree) Write(p string, content []byte, mode fs.FileMode) error {
+	return os.WriteFile(w.host(p), content, mode)
+}
+
+func (w workTree) Remove(p string) error {
+	if err := os.Remove(w.host(p)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// writeInPlace realizes a change into the working tree and commits
+// nothing. What it applies, and what happens if part of it fails, is
+// change.Prepared.ApplyTo's — this holds the repository and therefore
+// the paths, and says the sentence.
 func writeInPlace(s *Services, pl *plan.Plan, prepared change.Prepared) error {
-	// THE REPOSITORY ROOT, because change.File.Path is tree-relative. It
-	// used to join the plan's own HOST portdir onto a portdir-relative
-	// path; the prefix is on the path now, so the join that remains is the
-	// one that turns a tree path into a host path — and it is the same
-	// join for every file, whatever portdir it belongs to.
 	repo, err := s.Repo()
 	if err != nil {
 		return err
 	}
-	for _, f := range prepared.Files {
-		path := filepath.Join(repo.Root, filepath.FromSlash(f.Path))
-		if f.Delete {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-				return err
-			}
-			continue
-		}
-		if err := os.WriteFile(path, f.Content, 0o644); err != nil { //nolint:gosec // a Portfile is world-readable by design
-			return err
-		}
+	if err := prepared.ApplyTo(workTree{root: repo.Root}); err != nil {
+		return err
 	}
 	fmt.Fprintf(s.Out, "edited %s in place; nothing was committed\n", pl.Portdir)
 	return nil
