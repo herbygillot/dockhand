@@ -362,6 +362,19 @@ type Job struct {
 	// Provider and ID — so a caller reconstructing a Job from a record
 	// leaves it empty and loses nothing.
 	Request string `json:"request,omitempty"`
+	// Base names the EXACT environment image this job ran on, for a
+	// provider that builds from one — "repo@sha256:…" for an OCI image.
+	//
+	// It exists because a platform is not an image. A verdict earned on
+	// "Tahoe" says which macOS and not which BUILD of it, and the bases
+	// dockhand provisions come from a `:latest` tag that moves, so two
+	// passes months apart could both say Tahoe and mean different disks
+	// with nothing in either record to show it.
+	//
+	// Empty is a provider with no such notion, or one that could not
+	// determine it — the same silence, because in both cases nothing
+	// here knows, and rule 7 forbids answering that with a name.
+	Base string `json:"base,omitempty"`
 }
 
 // State is where a job is.

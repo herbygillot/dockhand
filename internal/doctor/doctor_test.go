@@ -183,3 +183,51 @@ func hasTart(t *testing.T) *tool.Finder {
 		return "", errors.New("not found")
 	})
 }
+
+// A PLATFORM IS NOT AN IMAGE, and doctor now says which. "Tahoe" names
+// a macOS and not a build of it, and the bases dockhand provisions come
+// from a `:latest` tag that moves — so two machines could both report
+// "available (Tahoe)" and be verifying on different disks.
+func TestDoctorNamesTheImageBehindEachBase(t *testing.T) {
+	const img = "ghcr.io/cirruslabs/macos-tahoe-vanilla@sha256:eeec54bf"
+	op, or, ob := provisioned, restorable, baseImage
+	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Tahoe"}, nil }
+	restorable = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
+	baseImage = func(release string) string {
+		if release == "Tahoe" {
+			return img
+		}
+		return ""
+	}
+	t.Cleanup(func() { provisioned, restorable, baseImage = op, or, ob })
+
+	tools := tool.NewFinder(func(name string) (string, error) {
+		if name == "tart" {
+			return "/opt/local/bin/tart", nil
+		}
+		return "", errors.New("not found")
+	})
+	out := Probe(t.Context(), tools).String()
+	assert.Contains(t, out, "Tahoe: "+img)
+}
+
+// A BASE PROVISIONED BEFORE DOCKHAND RECORDED ONE SAYS SO BY SAYING
+// NOTHING: the moment that could answer has passed, and `latest` has
+// moved since, so there is no honest way to fill it in later.
+func TestDoctorInventsNoImageForABaseThatRecordedNone(t *testing.T) {
+	op, or, ob := provisioned, restorable, baseImage
+	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Tahoe"}, nil }
+	restorable = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
+	baseImage = func(string) string { return "" }
+	t.Cleanup(func() { provisioned, restorable, baseImage = op, or, ob })
+
+	tools := tool.NewFinder(func(name string) (string, error) {
+		if name == "tart" {
+			return "/opt/local/bin/tart", nil
+		}
+		return "", errors.New("not found")
+	})
+	out := Probe(t.Context(), tools).String()
+	assert.Contains(t, out, "available (Tahoe)")
+	assert.NotContains(t, out, "Tahoe: ", "no line at all, rather than an empty one")
+}

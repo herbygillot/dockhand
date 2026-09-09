@@ -14,7 +14,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/session"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/tool"
+	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/verify/tart/provision"
 )
 
@@ -30,6 +32,19 @@ var provisioned = func(ctx context.Context, tools *tool.Finder) ([]string, error
 		names = append(names, r.Name)
 	}
 	return names, nil
+}
+
+// baseImage answers which IMAGE a provisioned base was built from, by
+// release name. Indirected on provisioned's precedent so a doctor test
+// stays hermetic.
+//
+// It is read and never derived: the bases come from a `:latest` tag that
+// moves, so the only moment that could answer is the pull, and that
+// answer was written down then. A base provisioned before dockhand
+// recorded one answers "", which doctor prints as nothing rather than as
+// a guess.
+var baseImage = func(release string) string {
+	return tart.BaseImage(tart.BaseName(platform.Release{Name: release}))
 }
 
 // restorable is indirected for hermetic tests, on provisioned's
@@ -107,6 +122,11 @@ type Report struct {
 	// The tart binary being present says nothing about whether any
 	// environment exists; the bases are the capability.
 	VMBases []string
+	// VMImages is the exact image each provisioned base was built from,
+	// by release name, for the bases that recorded one. A release absent
+	// from the map is a base that predates the recording, which doctor
+	// says by saying nothing.
+	VMImages map[string]string
 	// VMGoldens are the releases whose GOLDEN copy is present: the ones
 	// a base can be cloned back from without leaving the machine.
 	//
@@ -195,8 +215,14 @@ func Probe(ctx context.Context, tools *tool.Finder) Report {
 	go2port := find(tool.Go2Port, "")
 	cargo2port := find(tool.Cargo2Port, "")
 
+	images := map[string]string{}
+	for _, b := range bases {
+		if img := baseImage(b); img != "" {
+			images[b] = img
+		}
+	}
 	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port},
-		VMBases: bases, VMGoldens: goldens}
+		VMBases: bases, VMGoldens: goldens, VMImages: images}
 }
 
 // String renders the report: each tool, then the capabilities the
@@ -253,6 +279,14 @@ func (r Report) String() string {
 			line += "; restorable: " + strings.Join(kept, ", ")
 		}
 		fmt.Fprintf(&b, "  %-24s available (%s)\n", "VM verification", line)
+		// The image under the release, because "Tahoe" names a macOS and
+		// not a build of it, and a verdict is only as reproducible as the
+		// base it was earned on.
+		for _, rel := range r.VMBases {
+			if img := r.VMImages[rel]; img != "" {
+				fmt.Fprintf(&b, "  %-24s   %s: %s\n", "", rel, img)
+			}
+		}
 	}
 	cap(byName[tool.Go2Port].Found, "Go vendored blocks", "no go2port")
 	cap(byName[tool.Cargo2Port].Found, "Rust vendored blocks", "no cargo2port")

@@ -29,8 +29,13 @@ type Lease struct {
 	// Request is the token the CALLER minted and the provider echoed
 	// back. It is what recovery joins on, and it is written before the
 	// provider is called — which is the whole of rule 3.
-	Request  string     `json:"request"`
-	Handle   string     `json:"handle,omitempty"` // the provider's own name, once known
+	Request string `json:"request"`
+	Handle  string `json:"handle,omitempty"` // the provider's own name, once known
+	// Image is the exact environment image the provider ran this on,
+	// carried from verify.Job.Base. The lease is where it ARRIVES; the
+	// attempt is where it stays, because a lease goes back and a verdict
+	// has to outlive the environment that earned it.
+	Image    string     `json:"image,omitempty"`
 	Change   ChangeID   `json:"change"`
 	Owner    OwnerID    `json:"owner"`
 	Platform string     `json:"platform"`
@@ -135,6 +140,11 @@ type Attempt struct {
 	// splitting a joined string, which is the defect RunKey exists to
 	// remove.
 	Platform string `json:"platform"`
+	// Image is the exact environment image this attempt ran on, beside
+	// the release it names: a platform says which macOS, and this says
+	// which build of it. Empty for an attempt whose provider had no such
+	// notion, or that ran before a base recorded one.
+	Image string `json:"image,omitempty"`
 	// Owner is who holds the attempt's live work — the process that
 	// started it and will judge it. EnqueuedBy is who ASKED: the person's
 	// shell that ran `bump`, or the sweep. They part the moment dispatch

@@ -413,10 +413,20 @@ func TestZeroResidencyIsUnknown(t *testing.T) {
 
 // A CHANGE BOUND FOR A PULL REQUEST SAYS SO ON THE RECORD, which is what
 // the machine slot reads to know a change is its business at all.
+//
+// AND THE OTHER TWO ARE NOT ONE DESTINATION. They were — every delivery
+// but --to-pr recorded ToBranch — which made ToBranch disagree with its
+// own doc ("ToBranch is --no-verify"), and a reader took the doc at its
+// word: publish.unrunCause told reviewers a branch had been minted with
+// a flag nobody typed, and shadowed the honest sentence for the case it
+// had actually met.
+//
+// The three are the tool's own verbs: bump stops at a branch, verify
+// stops at a verdict, promote goes all the way.
 func TestDestinationIsWrittenAtMint(t *testing.T) {
-	assert.Equal(t, record.ToPublished, destination(PullRequest))
-	assert.Equal(t, record.ToBranch, destination(Enqueue))
-	assert.Equal(t, record.ToBranch, destination(Branch))
+	assert.Equal(t, record.ToPublished, destination(PullRequest), "--to-pr")
+	assert.Equal(t, record.ToBranch, destination(Branch), "--no-verify stops at the branch")
+	assert.Equal(t, record.ToVerdict, destination(Enqueue), "and the default asks for a verdict")
 }
 
 // A SUPERSEDED CHANGE IS NOT A CLOSED ONE, and discard must close it.

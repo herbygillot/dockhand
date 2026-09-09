@@ -413,9 +413,27 @@ func (c Change) Bound() bool { return !c.State.Closed() && c.SupersededBy == "" 
 // bound for nowhere by forgetting the field.
 type Destination string
 
+// The three are a LADDER, and they are the tool's own three verbs: bump
+// stops at a branch, verify stops at a verdict, promote goes all the
+// way. Each names where the change is meant to STOP, which is the only
+// question a reader of this field ever has.
+//
+// ToVerdict was missing, and its absence made ToBranch a lie. Every
+// ordinary bump was recorded ToBranch beside every --no-verify one, so
+// the word meant less than its own documentation said and anything
+// reading it as "--no-verify" was reading a fact that is not there. The
+// publish body did exactly that: it told reviewers a branch had been
+// minted with a flag nobody typed, and shadowed the honest sentence for
+// the case it had actually met.
 const (
-	// ToBranch is --no-verify: mint the branch and stop.
+	// ToBranch is --no-verify: mint the branch and stop. An adoption is
+	// bound here too — a person pointing at work that already exists has
+	// asked for nowhere further.
 	ToBranch Destination = "branch"
+	// ToVerdict is the default: mint the branch and get it built. Where
+	// it goes after that is a person's call, which is why this is not
+	// ToPublished.
+	ToVerdict Destination = "verdict"
 	// ToPublished carries the change through to a pull request.
 	ToPublished Destination = "published"
 )

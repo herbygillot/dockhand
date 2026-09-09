@@ -449,7 +449,11 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	if out, err := CLI(ctx, p.Tools, nil, "clone", base.VM, name); err != nil {
 		return verify.Job{}, fmt.Errorf("%w: clone: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
 	}
-	job := verify.Job{Provider: "tart", ID: name, Started: time.Now(), Request: req.ID}
+	// The base's own provenance travels with the job: which macOS is
+	// base.Release, which IMAGE of it is this, and only the moment it was
+	// pulled could say. See NoteBase.
+	job := verify.Job{Provider: "tart", ID: name, Started: time.Now(), Request: req.ID,
+		Base: BaseImage(base.VM)}
 	writeAttribution(name, req.Owner)
 
 	// The guest outlives this call, so every failure from here on must

@@ -887,15 +887,27 @@ func newChangeID() record.ChangeID {
 // carry one: see ChangeRequest.Slug.
 func branchFor(slug string) string { return git.MintBranchName(slug) }
 
-// destination is the flags-to-record translation, and the only one: a
-// --to-pr change is bound ToPublished so the machine slot can see it,
-// and every other delivery is ToBranch. A Document or InPlace road never
-// reaches here, because neither mints.
+// destination is the flags-to-record translation, and the only one. The
+// three are the ladder record.Destination documents: --to-pr is bound
+// ToPublished so the machine slot can see it, --no-verify stops at the
+// branch, and the default asks for a verdict and stops there. A Document
+// or InPlace road never reaches here, because neither mints.
+//
+// EVERY DELIVERY BUT --to-pr USED TO BE ToBranch, which made ToBranch
+// disagree with its own doc — it says "--no-verify", and it was also
+// every ordinary bump. Nothing branched on the difference, so nothing
+// broke; what broke was a reader. publish.unrunCause took ToBranch at
+// its word and told reviewers a branch had been minted with a flag
+// nobody typed.
 func destination(d Delivery) record.Destination {
-	if d == PullRequest {
+	switch d {
+	case PullRequest:
 		return record.ToPublished
+	case Branch:
+		return record.ToBranch
+	case Document, InPlace, Enqueue:
 	}
-	return record.ToBranch
+	return record.ToVerdict
 }
 
 // attempts is every attempt in one read, in a stable order, so that

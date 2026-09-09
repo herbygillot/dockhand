@@ -216,6 +216,10 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		}
 		cur.Phase = record.Active
 		cur.Lease = l.Request
+		// The environment's exact identity, kept on the ATTEMPT because
+		// the lease goes back and a verdict has to outlive the guest that
+		// earned it.
+		cur.Image = l.Image
 		cur.Owner = by.Owner
 		cur.Started = now.UTC()
 		cur.Runs = startedRuns(spec, req, declined, now)
