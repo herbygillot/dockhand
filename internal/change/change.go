@@ -734,3 +734,17 @@ type Provenance struct {
 	Agent   string
 	Via     record.MintedVia
 }
+
+// TargetFor is the name Resolve takes for a record: its
+// Branch for a branch record, PinRef(ID) for a branchless one —
+// Resolve's fourth target form, which names the record by id and reads
+// the pin. A port is NOT the name for it, since a port may carry a
+// snapshot and a branch change at once. Status's facts loop, Discard, Cycle's
+// retire and publish's resumption share it, which is why it lives here
+// rather than in any one of them.
+func TargetFor(c record.Change) string {
+	if c.Branch == "" {
+		return PinRef(c.ID)
+	}
+	return c.Branch
+}

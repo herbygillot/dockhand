@@ -107,7 +107,10 @@ func TestCycleReexportsTheNoteAndPaysItsHousekeepingBill(t *testing.T) {
 	_, err := l.Read(ctx, tip)
 	require.Error(t, err)
 
+	// Env carries the store too, because a Cycle whose publication env
+	// knows no store is under-configured rather than merely terse.
 	c := Cycle{Repo: repo, State: st, Ledger: l, Me: me(), Now: now, Progress: &sink{},
+		Env:    publish.Env{Repo: repo, State: st},
 		Grants: Grants{Invoker: record.Human}}
 	p, err := c.Run(ctx, CycleRequest{Forge: publish.ForgeRefresh})
 	require.NoError(t, err)
@@ -125,7 +128,10 @@ func TestDryRunPerformsNoMaintenance(t *testing.T) {
 	l := ledger.Open(repo)
 	mintedChange(t, repo, st, l)
 
+	// Env carries the store too, because a Cycle whose publication env
+	// knows no store is under-configured rather than merely terse.
 	c := Cycle{Repo: repo, State: st, Ledger: l, Me: me(), Now: now, Progress: &sink{},
+		Env:    publish.Env{Repo: repo, State: st},
 		Grants: Grants{Invoker: record.Human}}
 	p, err := c.Run(ctx, CycleRequest{Forge: publish.ForgeRefresh, DryRun: true})
 	require.NoError(t, err)

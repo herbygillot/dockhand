@@ -382,8 +382,8 @@ func TestMayDemolish(t *testing.T) {
 // A BRANCHLESS RECORD IS NAMED BY ITS PIN, because a port may carry a
 // snapshot and a branch change at once.
 func TestResolveTargetNamesAPinnedRecordByItsPin(t *testing.T) {
-	assert.Equal(t, "dockhand/jq-1.8", resolveTarget(record.Change{Branch: "dockhand/jq-1.8"}))
-	assert.Equal(t, change.PinRef("chg-1"), resolveTarget(record.Change{ID: "chg-1"}))
+	assert.Equal(t, "dockhand/jq-1.8", change.TargetFor(record.Change{Branch: "dockhand/jq-1.8"}))
+	assert.Equal(t, change.PinRef("chg-1"), change.TargetFor(record.Change{ID: "chg-1"}))
 }
 
 // NEEDS IS COMPUTED FROM THE WHOLE REQUEST: a verifier only where an

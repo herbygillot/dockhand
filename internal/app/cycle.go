@@ -474,7 +474,7 @@ func (c Cycle) perform(ctx context.Context, r CycleRequest) (Pass, error) {
 			continue
 		}
 		old := st.Changes[string(pub.Change)]
-		ref, resolveErr := change.Resolve(ctx, c.Repo, c.State, resolveTarget(old))
+		ref, resolveErr := change.Resolve(ctx, c.Repo, c.State, change.TargetFor(old))
 		if resolveErr != nil {
 			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: resolveErr}) // moved by hand, or could not be read
 			continue
@@ -609,9 +609,7 @@ func (c Cycle) perform(ctx context.Context, r CycleRequest) (Pass, error) {
 	// gate and it does not spend the allowance — Apply continues the row
 	// that already exists, and openRow's one-row-per-change rule is what
 	// makes that true.
-	if err := c.resume(ctx, r, &p); err != nil {
-		return p, err
-	}
+	c.resume(ctx, r, st, &p)
 
 	// 3 · PUBLISH, machine only, against the durable allowance. The
 	// candidate population is every change with Destination ToPublished,
@@ -1042,7 +1040,7 @@ func (c Cycle) survey(ctx context.Context, r CycleRequest) (Pass, error) {
 			continue
 		}
 		old := st.Changes[string(pub.Change)]
-		ref, rerr := change.Resolve(ctx, c.Repo, c.State, resolveTarget(old))
+		ref, rerr := change.Resolve(ctx, c.Repo, c.State, change.TargetFor(old))
 		if rerr != nil {
 			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: rerr})
 			continue
@@ -1089,66 +1087,25 @@ func (c Cycle) survey(ctx context.Context, r CycleRequest) (Pass, error) {
 }
 
 // resume finishes publications whose journal shows work started and not
-// completed: observe what the world actually holds, complete the steps
-// that already happened, and perform the ones that did not.
+// completed.
 //
-// THE OBSERVATION COMES FIRST AND IS NOT A DECISION. publish.Reconcile
-// asks the remote for the branch's object and reads the gather's forge
-// answer, and marks Finished only what it can confirm — so a step whose
-// call errored after the effect landed stops being retried, and a step
-// that genuinely did not happen stays owed. Only then is Authorize
-// asked, and Authorize is still the only thing that decides.
-//
-// A ROW WHOSE STEPS ALL RECONCILE NEEDS NOTHING FURTHER, and Authorize
-// says so itself: the permit is a no-op, because the branch's own pull
-// request is open at this tip. The row is left for the retirement stage,
-// which is whose it is once the forge has it.
-func (c Cycle) resume(ctx context.Context, r CycleRequest, p *Pass) error {
-	st, err := c.State.Read(ctx)
-	if err != nil {
-		return err
+// The LADDER is publish.Resume's — reconcile what the world actually
+// holds, ask what is still owed, authorize, apply — because that
+// sequence is publication's own and an operation that spelled it out
+// step by step would be doing publication's job. What stays here is
+// this operation's: WHEN in the pass it happens, and what the pass
+// reports.
+func (c Cycle) resume(ctx context.Context, r CycleRequest, st statestore.State, p *Pass) {
+	for _, d := range publish.Resume(ctx, c.Env, st, r.Forge, c.Grants.Invoker, c.Now()) {
+		p.Advisories = append(p.Advisories, d.Advisories...)
+		if d.Err != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: d.Change, Err: d.Err})
+		}
+		// The outcome is kept on the error path too: what reached the
+		// forge is a fact whether or not the call that made it came back
+		// clean.
+		if d.Ran {
+			p.Published = append(p.Published, d.Out)
+		}
 	}
-	for _, pub := range publish.Unfinished(st) {
-		old := st.Changes[string(pub.Change)]
-		if old.ID == "" {
-			// A row naming a change the store no longer holds. Compaction
-			// roots a change its publications need, so this is a hand or an
-			// older build; it is reported rather than guessed at.
-			p.Refusals = append(p.Refusals, Refusal{Change: pub.Change, Err: publish.ErrNoChange})
-			continue
-		}
-		ref, err := change.Resolve(ctx, c.Repo, c.State, resolveTarget(old))
-		if err != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-			continue
-		}
-		f, err := publish.Gather(ctx, c.Env, ref, r.Forge, publish.Asks{}, c.Grants.Invoker, c.Now())
-		if err != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-			continue
-		}
-		row, err := publish.Reconcile(ctx, c.Env, pub, f)
-		if err != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-			continue
-		}
-		if !publish.Owed(row) {
-			continue // the world had already done what the journal was unsure of
-		}
-		permit, adv, err := publish.Authorize(f, publish.Pace{})
-		p.Advisories = append(p.Advisories, adv...)
-		if err != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-			continue
-		}
-		if permit.NoOp() {
-			continue
-		}
-		out, err := publish.Apply(ctx, c.Env, permit)
-		if err != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-		}
-		p.Published = append(p.Published, out)
-	}
-	return nil
 }

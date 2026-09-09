@@ -196,7 +196,7 @@ func (s Status) Run(ctx context.Context, r StatusRequest) (StatusResult, error) 
 		if c.State.Closed() {
 			continue
 		}
-		ref, err := change.Resolve(ctx, s.Repo, s.State, resolveTarget(c))
+		ref, err := change.Resolve(ctx, s.Repo, s.State, change.TargetFor(c))
 		if isTipDisagrees(err) {
 			res.Disagreeing = append(res.Disagreeing, disagreementOf(err))
 			continue
@@ -217,16 +217,3 @@ func (s Status) Run(ctx context.Context, r StatusRequest) (StatusResult, error) 
 // carries no pass token: a status is not a pass, and a lease it settles
 // must not be attributed to one.
 func (s Status) Claimant() lease.Claimant { return lease.Claimant{Owner: s.Me} }
-
-// resolveTarget is the name change.Resolve takes for a record: its
-// Branch for a branch record, change.PinRef(ID) for a branchless one —
-// Resolve's fourth target form, which names the record by id and reads
-// the pin. A port is NOT the name for it, since a port may carry a
-// snapshot and a branch change at once. Status's facts loop, Discard and
-// Cycle's retire share it.
-func resolveTarget(c record.Change) string {
-	if c.Branch == "" {
-		return change.PinRef(c.ID)
-	}
-	return c.Branch
-}
