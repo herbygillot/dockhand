@@ -19,6 +19,15 @@ const (
 	// transformed form (perl5), so the new literal cannot be derived
 	// from the requested version alone.
 	TransformedStyle
+	// ChecksumsStale is a checksums list in which a distfile's name moved
+	// with the version and its digests did not — the half of a multi-file
+	// list this evaluation could not fetch.
+	ChecksumsStale
+	// ChecksumsUnreached is a Portfile carrying more than one checksums
+	// command, of which this evaluation took only some — the rest sit in
+	// branches it did not run and would be left describing the old
+	// release.
+	ChecksumsUnreached
 	// FetchNotDriven means the version moved but nothing fetch-derived
 	// moved with it: the version does not drive the fetch (a pinned
 	// ref straddle), and bumping it alone would fetch the old source.
@@ -81,6 +90,10 @@ func (t DeclineType) String() string {
 		return "checksums could not be located for editing"
 	case SubportsChanged:
 		return "subports would appear or disappear"
+	case ChecksumsStale:
+		return "a distfile was renamed and kept its old digests"
+	case ChecksumsUnreached:
+		return "a checksums command this evaluation never reached would be left behind"
 	case TargetNotReached:
 		return "the edit would not reach its target value"
 	case UnexpectedChange:
@@ -109,6 +122,10 @@ func (t DeclineType) Code() string {
 		return "fetch-not-driven"
 	case ChecksumsNotLocated:
 		return "checksums-not-located"
+	case ChecksumsStale:
+		return "checksums-stale"
+	case ChecksumsUnreached:
+		return "checksums-unreached"
 	case SubportsChanged:
 		return "subports-changed"
 	case TargetNotReached:
@@ -149,6 +166,10 @@ func (t DeclineType) Remedy() string {
 		return "find what actually drives the fetch and move that first"
 	case ChecksumsNotLocated:
 		return "dockhand rewrites only the checksums a Portfile writes plainly; write them there, or regenerate the block that supplies them"
+	case ChecksumsUnreached:
+		return "this Portfile selects its distfiles by a condition this evaluation resolved one way; update the other branch's checksums by hand, or run dockhand where the other branch is taken"
+	case ChecksumsStale:
+		return "this evaluation fetches one architecture's distfiles and cannot re-derive the rest; update the remaining entries by hand, or `sudo port -v checksum` on a machine that fetches them"
 	case SubportsChanged:
 		return "land the subport change on its own first, then run this again"
 	case TargetNotReached:

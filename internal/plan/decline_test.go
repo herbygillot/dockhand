@@ -28,7 +28,23 @@ func TestEveryDeclineTypeIsNamedCodedAndRemedied(t *testing.T) {
 		assert.False(t, seen[dt.Code()], "%q is claimed twice", dt.Code())
 		seen[dt.Code()] = true
 	}
-	assert.Len(t, seen, 10, "the taxonomy is ten members; a change to it is a change to the contract")
+	// TWELVE, and the two that arrived are named here because this line
+	// exists to make an addition deliberate rather than incidental.
+	//
+	// ChecksumsStale and ChecksumsUnreached are the two shapes of one
+	// defect: a bump that re-derives the distfiles this evaluation could
+	// fetch and leaves the rest describing the release before. One is
+	// visible in the predicted delta — a file renamed with its digests
+	// unmoved, terraform's multi-architecture list — and one is not,
+	// because the checksums command sits in a branch this host did not
+	// take and never evaluates at all, which is gh's. Measured across
+	// the tree at 137 and 601 ports.
+	//
+	// They are two members and not one because their REMEDIES differ,
+	// which is what this loop asks of every member: one is fixed by
+	// re-deriving on a machine that fetches the other architecture, the
+	// other by taking the other branch.
+	assert.Len(t, seen, 12, "the taxonomy is twelve members; a change to it is a change to the contract")
 }
 
 // The sentence is the finding, then the detail, then the remedy — the

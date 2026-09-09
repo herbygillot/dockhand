@@ -111,3 +111,68 @@ func TestOwnChangesConcatenatesFramesInOrder(t *testing.T) {
 	assert.Equal(t, []string{"1"}, got[0].New, "frames in canonical order, so the result is stable")
 	assert.Equal(t, []string{"2"}, got[1].New)
 }
+
+// A CHECKSUMS LIST READ BACK AS THE GROUPS IT IS. The record keeps the
+// declared shape — "type/value alternation, possibly distfile-keyed" —
+// and both shapes have to survive the round trip: the keyed one that a
+// multi-architecture port writes, and the bare one a single-distfile
+// port writes with no filename at all.
+func TestChecksumGroupsReadsBothShapes(t *testing.T) {
+	keyed := ChecksumGroups([]string{
+		"a_1.0_amd64.zip", "rmd160", "aaa", "sha256", "bbb", "size", "10",
+		"a_1.0_arm64.zip", "rmd160", "ccc", "sha256", "ddd", "size", "20",
+	})
+	require.Len(t, keyed, 2)
+	assert.Equal(t, "a_1.0_amd64.zip", keyed[0].File)
+	assert.Equal(t, "bbb", keyed[0].Digests["sha256"])
+	assert.Equal(t, "ddd", keyed[1].Digests["sha256"])
+
+	bare := ChecksumGroups([]string{"rmd160", "aaa", "sha256", "bbb", "size", "10"})
+	require.Len(t, bare, 1)
+	assert.Empty(t, bare[0].File, "a single-distfile list names no file")
+	assert.Equal(t, "bbb", bare[0].Digests["sha256"])
+
+	assert.Empty(t, ChecksumGroups(nil))
+}
+
+// A RENAMED DISTFILE THAT KEPT ITS DIGESTS IS A PORT THAT WILL NOT
+// FETCH. One evaluation retrieves one architecture's files, so a bump
+// re-derives what it could measure and RENAMES the rest through
+// ${version} — leaving the new name over the old release's sum.
+//
+// Measured on terraform-1.16 at 1.16.0 -> 1.16.2: the arm64 digests
+// followed, the amd64 entry became terraform_1.16.2_darwin_amd64.zip
+// with 1.16.0's sha256 under it.
+func TestARenamedDistfileMustNotKeepItsDigests(t *testing.T) {
+	stale := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+		{Subport: "terraform-1.16"}: {{Field: info.FieldChecksums,
+			Old: []string{
+				"tf_1.16.0_amd64.zip", "sha256", "OLD-AMD", "size", "1",
+				"tf_1.16.0_arm64.zip", "sha256", "OLD-ARM", "size", "2"},
+			New: []string{
+				"tf_1.16.2_amd64.zip", "sha256", "OLD-AMD", "size", "1",
+				"tf_1.16.2_arm64.zip", "sha256", "NEW-ARM", "size", "3"},
+		}},
+	}}
+	err := ChecksumsFollowTheirFiles(stale, "terraform-1.16")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tf_1.16.2_amd64.zip", "the refusal names the file left behind")
+	assert.Contains(t, err.Error(), "tf_1.16.2_arm64.zip", "and the one that was measured beside it")
+
+	// Every group followed: nothing to say.
+	good := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+		{Subport: "p"}: {{Field: info.FieldChecksums,
+			Old: []string{"p_1.zip", "sha256", "A", "p_2.zip", "sha256", "B"},
+			New: []string{"p_9.zip", "sha256", "X", "p_8.zip", "sha256", "Y"}}},
+	}}
+	assert.NoError(t, ChecksumsFollowTheirFiles(good, "p"))
+
+	// A list whose group count moved is not one this can read, and it
+	// guesses at nothing.
+	reshaped := info.Delta{Changed: map[info.SubportKey][]info.FieldChange{
+		{Subport: "p"}: {{Field: info.FieldChecksums,
+			Old: []string{"p_1.zip", "sha256", "A"},
+			New: []string{"p_9.zip", "sha256", "A", "p_8.zip", "sha256", "B"}}},
+	}}
+	assert.NoError(t, ChecksumsFollowTheirFiles(reshaped, "p"))
+}

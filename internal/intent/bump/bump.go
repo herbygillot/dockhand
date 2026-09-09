@@ -456,7 +456,19 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			CST:       cst,
 			MayChange: bumpMayChange,
 			Accept: func(predicted info.Delta) error {
-				return b.accept(vals, predicted, moving, exact)
+				if err := b.accept(vals, predicted, moving, exact); err != nil {
+					return err
+				}
+				// A DISTFILE THIS EVALUATION COULD NOT FETCH MUST NOT BE
+				// LEFT DESCRIBING THE OLD RELEASE. The two shapes are
+				// asked separately because only one of them is visible
+				// here: a renamed file with unmoved digests is IN the
+				// prediction, and a checksums command in a branch this
+				// host did not take is not in it at all.
+				if err := intent.ChecksumsFollowTheirFiles(predicted, vals.Name); err != nil {
+					return err
+				}
+				return intent.ChecksumsAllRewritten(src, cst, vals.Name, edits)
 			},
 			ViaSet:     checksumsViaSet,
 			Riders:     b.Riders,
