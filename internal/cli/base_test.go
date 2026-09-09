@@ -82,39 +82,6 @@ func TestDriftNamesTheRemedyThatFitsTheBase(t *testing.T) {
 		"without a fetch the base is their own branch, so the only cause is their own edit")
 }
 
-// THE ONE-PORTDIR REFUSAL NAMES A REMEDY, AND THE REMEDY MUST WORK.
-//
-// change.Prepared carries one Portdir, so a cohort spanning several is
-// refused by name — "exclude members until it does". But change.Cohort
-// applies --exclude by MARKING a candidate rather than dropping it ("not
-// bumped, not built, and listed so a reviewer can disagree"), so an
-// excluded member stays in the slice carrying a portdir it will not
-// touch. Counting those made the remedy unanswerable: a six-portdir
-// cohort with five excluded still counted six.
-//
-// Measured on a real proposal — cmark's six dependents, five excluded,
-// same refusal, same number.
-func TestPortdirsOfCountsOnlyWhatTheCohortBumps(t *testing.T) {
-	cands := []record.Candidate{
-		{Port: "Aseprite", Portdir: "graphics/Aseprite", Proposed: true},
-		{Port: "PrismLauncher", Portdir: "games/PrismLauncher"},
-		{Port: "mkvtoolnix", Portdir: "multimedia/mkvtoolnix"},
-		{Port: "nheko", Portdir: "net/nheko"},
-	}
-	assert.Equal(t, []string{"graphics/Aseprite"}, portdirsOf(cands),
-		"an excluded member touches nothing, so it contributes no portdir")
-}
-
-// AND EVERY MEMBER PROPOSED IS COUNTED, so a genuine multi-portdir
-// cohort is still refused rather than silently writing a wrong join.
-func TestPortdirsOfStillSeesARealMultiPortdirCohort(t *testing.T) {
-	cands := []record.Candidate{
-		{Port: "Aseprite", Portdir: "graphics/Aseprite", Proposed: true},
-		{Port: "nheko", Portdir: "net/nheko", Proposed: true},
-	}
-	assert.Len(t, portdirsOf(cands), 2)
-}
-
 // A REVBUMP COMMIT STATES WHY USERS MUST REBUILD, which is the
 // MEASUREMENT and not the membership.
 //

@@ -187,8 +187,17 @@ func emitDiff(ctx context.Context, s *Services, prepared change.Prepared) error 
 // other: --diff shows these bytes, --in-place writes them, and a mint
 // commits them, all from one preparation rather than three.
 func writeInPlace(s *Services, pl *plan.Plan, prepared change.Prepared) error {
+	// THE REPOSITORY ROOT, because change.File.Path is tree-relative. It
+	// used to join the plan's own HOST portdir onto a portdir-relative
+	// path; the prefix is on the path now, so the join that remains is the
+	// one that turns a tree path into a host path — and it is the same
+	// join for every file, whatever portdir it belongs to.
+	repo, err := s.Repo()
+	if err != nil {
+		return err
+	}
 	for _, f := range prepared.Files {
-		path := filepath.Join(pl.Portdir, filepath.FromSlash(f.Path))
+		path := filepath.Join(repo.Root, filepath.FromSlash(f.Path))
 		if f.Delete {
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				return err

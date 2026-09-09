@@ -127,7 +127,8 @@ func TestPrepareIsTheOneFileSet(t *testing.T) {
 	// order. One list, and every realization of this change is built from
 	// it.
 	require.Len(t, p.Files, 1)
-	assert.Equal(t, "Portfile", p.Files[0].Path)
+	assert.Equal(t, "sysutils/jq/Portfile", p.Files[0].Path,
+		"File.Path is tree-relative: the portdir prefix is joined at this boundary, not at materialize")
 	assert.Equal(t, "version 1.8\n", string(p.Files[0].Content))
 	assert.Equal(t, portdir, p.Portdir, "the portdir is tree-relative, from Source and not from the plan's host path")
 	require.Len(t, p.Subjects, 1)
@@ -152,8 +153,8 @@ func TestPrepareCarriesThePlansAuxiliaryFiles(t *testing.T) {
 			Files: map[string][]byte{"files/patch-a.diff": was}}, nil)
 	require.NoError(t, err)
 	require.Len(t, p.Files, 2)
-	assert.Equal(t, "files/patch-a.diff", p.Files[1].Path,
-		"a plan's whole files ride in the same set as the Portfile; there is no second place to write one")
+	assert.Equal(t, "sysutils/jq/files/patch-a.diff", p.Files[1].Path,
+		"a plan's whole files ride in the same set as the Portfile, tree-relative like it")
 }
 
 func TestPrepareRefusesTheDriftedPortfile(t *testing.T) {
@@ -405,7 +406,8 @@ func TestReconstructComparesTheRePlanAgainstTheTip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, got.Compared)
 	assert.NotEqual(t, got.Tip, got.Content)
-	assert.Equal(t, []string{"Portfile"}, got.Diverged, "paths, because a person has to answer this")
+	assert.Equal(t, []string{"sysutils/jq/Portfile"}, got.Diverged,
+		"paths, because a person has to answer this — tree-relative, since a change may span portdirs and \"Portfile\" would name several")
 	simplicity, _ = Judge(got)
 	assert.Equal(t, Unjudged, simplicity, "different bytes is not a finding about simplicity")
 }

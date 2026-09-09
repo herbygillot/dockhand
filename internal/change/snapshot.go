@@ -69,7 +69,10 @@ func Snapshot(ctx context.Context, repo *git.Repo, id record.ChangeID, portdir s
 	if err != nil {
 		return "", "", err
 	}
-	p := Prepared{Portdir: TreePath(rel), Files: append(files, gone...)}
+	// The portdir prefix is joined HERE, at the boundary that holds it:
+	// walkPortdir and removedSince both answer in portdir-relative paths,
+	// and change.File.Path is tree-relative. See File.Path.
+	p := Prepared{Portdir: TreePath(rel), Files: under(rel, append(files, gone...))}
 	content, err = p.Identify(ctx, repo, head)
 	if err != nil {
 		return "", "", err
@@ -183,4 +186,16 @@ func removedSince(ctx context.Context, repo *git.Repo, rev, portdir string, have
 	}
 	slices.SortFunc(gone, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return gone, nil
+}
+
+// under puts a portdir's own prefix on each file's path, so a set walked
+// relative to one directory becomes the tree-relative set change.File
+// carries.
+func under(portdir string, files []File) []File {
+	out := make([]File, len(files))
+	for i, f := range files {
+		f.Path = portdir + "/" + f.Path
+		out[i] = f
+	}
+	return out
 }

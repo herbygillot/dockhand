@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -326,26 +325,22 @@ func diverged(ctx context.Context, repo *git.Repo, tip string, p Prepared) ([]st
 			// does not carry has diverged; a file the change DELETES and the
 			// commit does not carry agrees with it.
 			if !f.Delete {
-				out = append(out, portdirRel(f.Path, p.Portdir))
+				out = append(out, f.Path)
 			}
 			continue
 		case err != nil:
 			return nil, err
 		}
 		if f.Delete || string(obj.Data) != string(f.Content) {
-			out = append(out, portdirRel(f.Path, p.Portdir))
+			out = append(out, f.Path)
 		}
 	}
 	slices.Sort(out)
 	return out, nil
 }
 
-// portdirRel undoes materialize's join, so what is reported is the
-// portdir-relative path the File was written with rather than the
-// tree-relative one git wanted.
-func portdirRel(path string, portdir TreePath) string {
-	if rest, ok := strings.CutPrefix(path, string(portdir)+"/"); ok {
-		return rest
-	}
-	return path
-}
+// portdirRel USED TO LIVE HERE, undoing materialize's join so a
+// divergence was reported by its portdir-relative name. There is no join
+// to undo: change.File.Path is tree-relative now, and a tree-relative
+// name is the better one to report anyway — a change may span portdirs,
+// and "Portfile" would name several of them.

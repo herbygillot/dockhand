@@ -45,8 +45,23 @@ type TreePath string
 // the current design has no way to express either, and a change that
 // can only rewrite an existing text file is a change that cannot
 // remove a stale patch.
+//
+// PATH IS TREE-RELATIVE, and it was portdir-relative. The two are one
+// join apart and the join is the whole of the difference: while every
+// File in a set shared one prefix, Prepared.materialize could supply it
+// — and a set whose files did NOT share one prefix could not be
+// expressed at all. That is a cohort. A port's dependents live wherever
+// they live: cmark's six span graphics, games, multimedia and net, and
+// no single prefix reaches them.
+//
+// So the prefix moves to the producers, which is where TreePath's own
+// doc says a conversion belongs — "once, at the boundary, in the caller
+// that holds a repository" — and this field now means what git.File.Path
+// already means, "slash-separated, repo-relative". materialize passes it
+// through rather than joining, and a Prepared becomes something several
+// of which can be assembled into one change (see Merge).
 type File struct {
-	Path    string // portdir-relative, slash-separated
+	Path    string // tree-relative, slash-separated
 	Mode    fs.FileMode
 	Content []byte
 	Delete  bool
@@ -122,7 +137,7 @@ func (p Prepared) materialize() ([]git.File, error) {
 			return nil, fmt.Errorf("%w: %s asks for %v", ErrMode, f.Path, f.Mode)
 		}
 		files = append(files, git.File{
-			Path:    string(p.Portdir) + "/" + f.Path,
+			Path:    f.Path,
 			Content: f.Content,
 			Delete:  f.Delete,
 		})
@@ -161,6 +176,82 @@ func precondition(f plan.FileEdit, src Source) error {
 		return fmt.Errorf("%w: %s at %s", ErrDrift, f.Path, git.Abbrev(src.Base.Sha))
 	}
 	return nil
+}
+
+// Merge assembles several prepared units into ONE change: a port's own
+// change and the changes its dependents need, which is what a cohort is.
+//
+// IT EXISTS BECAUSE Prepare IS SINGULAR AND CORRECT. One plan makes one
+// subject in one portdir with one file set, and that is exactly a bump —
+// its subports share the portdir, and a selector bumping four hundred
+// ports makes four hundred separate changes. What a cohort adds is not a
+// wider Prepare but an assembly, and saying so keeps every member on the
+// same road a solo revbump takes: the same drift check, the same
+// precondition, the same evaluation, prepared by the same function.
+//
+// The cohort road did not assemble; it planned candidates[0] and stopped.
+// So a six-member cohort bumped one port, and the refusal a person met
+// ("this cohort spans 6 portdirs and change.Prepared carries one")
+// described a symptom of that rather than the limit itself — two members
+// sharing one portdir would have fared no better.
+//
+// IDENTITY COMES FROM THE FIRST and content from all of them. Portdir,
+// Intent, Summary, Closes, Base, Predict, Before and After are the
+// HEADLINE's — a change is one commit with one message about one thing —
+// while Subjects, Files, Findings and Regions are every member's, in the
+// order given. That split is the whole design: identity is about what
+// the change IS, content is about what it WRITES, and only the second is
+// plural.
+//
+// TWO REFUSALS, both about assembling things that are not one change. A
+// member prepared against a different base is a member planned against a
+// different tree, and the commit would carry bytes nobody predicted. Two
+// members writing one path is a collision that GraftTree would refuse
+// later and less clearly — "named twice in one tree" — with nothing
+// saying which members disagreed.
+func Merge(parts ...Prepared) (Prepared, error) {
+	if len(parts) == 0 {
+		return Prepared{}, fmt.Errorf("%w: nothing to assemble", ErrIncomplete)
+	}
+	out := parts[0]
+	out.Subjects = slices.Clone(parts[0].Subjects)
+	out.Files = slices.Clone(parts[0].Files)
+	out.Findings = slices.Clone(parts[0].Findings)
+	out.Regions = slices.Clone(parts[0].Regions)
+
+	seen := make(map[string]string, len(out.Files))
+	for _, f := range out.Files {
+		seen[f.Path] = subjectName(parts[0])
+	}
+	for _, p := range parts[1:] {
+		if p.Base.Sha != out.Base.Sha {
+			return Prepared{}, fmt.Errorf("%w: %s was prepared against %s and %s against %s",
+				ErrIncomplete, subjectName(p), git.Abbrev(p.Base.Sha),
+				subjectName(parts[0]), git.Abbrev(out.Base.Sha))
+		}
+		for _, f := range p.Files {
+			if by, clash := seen[f.Path]; clash {
+				return Prepared{}, fmt.Errorf("%w: %s and %s both write %s",
+					ErrIncomplete, by, subjectName(p), f.Path)
+			}
+			seen[f.Path] = subjectName(p)
+			out.Files = append(out.Files, f)
+		}
+		out.Subjects = append(out.Subjects, p.Subjects...)
+		out.Findings = append(out.Findings, p.Findings...)
+		out.Regions = append(out.Regions, p.Regions...)
+	}
+	return out, nil
+}
+
+// subjectName is a prepared unit's port, for the sentences above. A unit
+// with no subject is named by its portdir, which is the next most useful
+// thing a person can look at.
+func subjectName(p Prepared) string {
+	if len(p.Subjects) > 0 && p.Subjects[0].Port != "" {
+		return p.Subjects[0].Port
+	}
+	return string(p.Portdir)
 }
 
 // Identify is the content identity of a prepared set over a base: the
@@ -308,13 +399,17 @@ func Prepare(ctx context.Context, p *plan.Plan, src Source, ev Evaluator) (Prepa
 	// The Portfile first and the plan's whole files after it, in the
 	// plan's own order: one list, written once, and the only list any
 	// realization of this change is built from.
+	// The portdir prefix is joined HERE, at the boundary that holds it,
+	// and the plan's own paths stay portdir-relative on the plan (which is
+	// what precondition looks them up by). See File.Path.
+	under := func(rel string) string { return string(src.Portdir) + "/" + rel }
 	files := make([]File, 0, 1+len(p.Files))
-	files = append(files, File{Path: macports.PortfileName, Content: edited})
+	files = append(files, File{Path: under(macports.PortfileName), Content: edited})
 	for _, f := range p.Files {
 		if err := precondition(f, src); err != nil {
 			return Prepared{}, err
 		}
-		files = append(files, File{Path: f.Path, Content: []byte(f.Content)})
+		files = append(files, File{Path: under(f.Path), Content: []byte(f.Content)})
 	}
 	out := Prepared{
 		Portdir: src.Portdir,

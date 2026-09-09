@@ -1226,28 +1226,23 @@ func execCmd(s *Services) *cobra.Command {
 // an evaluation are exactly what "no operation opens a file" forbids
 // app from doing.
 //
-// IT PREPARES ONE MEMBER, AND THAT IS A MEASURED LIMIT RATHER THAN A
-// PREFERENCE. change.Prepared carries ONE Portdir and change's
-// materialize joins every File.Path under it, so a Prepared per member
-// cannot be concatenated — the second member's files would land under
-// the first member's directory — and a cohort spanning several portdirs
-// is not expressible in one Prepared as the type stands. app.Accept's
-// own doc records the same finding and puts the whole cohort behind this
-// one seam so the gap stays at one visible boundary; this implementation
-// therefore refuses a multi-portdir cohort by name rather than writing a
-// wrong join, and the remedy is a Prepared that carries per-subject
-// portdirs.
+// IT PREPARED ONE MEMBER, AND THAT WAS THE WHOLE OF THE COHORT ROAD.
+// The limit was read as "one portdir" and refused by name — "this cohort
+// spans 6 portdirs and change.Prepared carries one" — but this function
+// planned cands[0] and stopped, so two members sharing one portdir fared
+// no better. change.File.Path is tree-relative now and change.Merge
+// assembles prepared units, so the loop below prepares every member the
+// proposal seats and hands the assembly back as one change.
+//
+// WHAT THAT BUYS BESIDES EXPRESSIVENESS is that every member travels the
+// road a solo revbump travels: the same plan, the same precondition, the
+// same drift check against the base, the same evaluation. A member that
+// was never prepared was never checked either.
 func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate, string) (change.Prepared, error) {
 	return func(ctx context.Context, tip string, cands []record.Candidate, criterion string) (change.Prepared, error) {
-		dirs := portdirsOf(cands)
-		switch len(dirs) {
-		case 0:
+		members := bumped(cands)
+		if len(members) == 0 {
 			return change.Prepared{}, change.ErrEmptyCohort
-		case 1:
-		default:
-			return change.Prepared{}, fmt.Errorf(
-				"%w: this cohort spans %d portdirs and change.Prepared carries one; exclude members until it does",
-				change.ErrEmptyCohort, len(dirs))
 		}
 		repo, err := s.Repo()
 		if err != nil {
@@ -1257,58 +1252,66 @@ func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate
 		if err != nil {
 			return change.Prepared{}, err
 		}
-		dir := dirs[0]
-		blob, err := repo.BlobAt(ctx, tip, dir+"/Portfile")
-		if err != nil {
-			return change.Prepared{}, err
-		}
 		at, err := repo.CommittedAt(ctx, tip)
 		if err != nil {
 			return change.Prepared{}, err
 		}
-		pl, err := planningFor(s).Plan(ctx, "bump-revision", targetOf(dir, cands[0]), cohortParams(dir, cands, criterion))
-		if err != nil {
-			return change.Prepared{}, err
+		// ONE PREPARE PER MEMBER, ASSEMBLED. It used to plan cands[0] and
+		// stop, so a six-member cohort bumped one port and the refusal a
+		// person met named the wrong limit ("this cohort spans 6 portdirs")
+		// — two members sharing one portdir fared no better.
+		//
+		// Each member goes down exactly the road a solo revbump takes: the
+		// same plan, the same precondition, the same drift check, the same
+		// evaluation. change.Merge then makes them one change, which is
+		// what a cohort is — a port's change and its dependents' changes.
+		parts := make([]change.Prepared, 0, len(members))
+		for _, c := range members {
+			dir := c.Portdir
+			blob, berr := repo.BlobAt(ctx, tip, dir+"/Portfile")
+			if berr != nil {
+				return change.Prepared{}, berr
+			}
+			pl, perr := planningFor(s).Plan(ctx, "bump-revision", targetOf(dir, c), cohortParams(dir, cands, criterion))
+			if perr != nil {
+				// A MEMBER THAT WILL NOT PLAN NAMES THE ROAD PAST ITSELF.
+				// One member's Portfile can defeat the revision edit — a
+				// revision driven by a variable, a PortGroup, a conditional —
+				// and the other five are fine. dockhand does NOT drop it
+				// quietly: a dependent silently left out of a revbump cohort
+				// ships stale against a library that moved, which is the exact
+				// harm the cohort exists to prevent. So the person is told
+				// which member, why, and the one flag that proceeds without
+				// it.
+				return change.Prepared{}, fmt.Errorf("%s: %w; `--exclude %s` leaves it out and bumps the rest, and the record keeps it listed so a reviewer can disagree",
+					c.Port, perr, c.Port)
+			}
+			aux, aerr := baseFiles(ctx, repo, tip, dir, pl.Files)
+			if aerr != nil {
+				return change.Prepared{}, aerr
+			}
+			part, cerr := change.Prepare(ctx, pl, change.Source{
+				Base: record.Base{Sha: tip, CommittedAt: at}, Portdir: change.TreePath(dir),
+				Portfile: blob, Files: aux,
+			}, blobEvaluator{ev: ev})
+			if cerr != nil {
+				return change.Prepared{}, fmt.Errorf("%s: %w", c.Port, cerr)
+			}
+			parts = append(parts, part)
 		}
-		aux, err := baseFiles(ctx, repo, tip, dir, pl.Files)
-		if err != nil {
-			return change.Prepared{}, err
-		}
-		return change.Prepare(ctx, pl, change.Source{
-			Base: record.Base{Sha: tip, CommittedAt: at}, Portdir: change.TreePath(dir),
-			Portfile: blob, Files: aux,
-		}, blobEvaluator{ev: ev})
+		return change.Merge(parts...)
 	}
 }
 
-// portdirsOf is the distinct portdirs a candidate list BUMPS, in
-// first-seen order.
-//
-// PROPOSED ONLY, and the word is load-bearing. change.Cohort applies
-// --exclude by MARKING a candidate rather than dropping it — "not
-// bumped, not built, and listed so a reviewer can disagree" — so an
-// excluded member is still in the slice, carrying the portdir it would
-// have touched and does not.
-//
-// Counting those made the one-portdir refusal above unanswerable. It
-// says "exclude members until it does", and excluding members did not
-// move the number: a six-portdir cohort with five excluded still counted
-// six, so the remedy it names could not be taken by anybody. Measured on
-// a real proposal — cmark's six dependents, five excluded, same refusal,
-// same count.
-//
-// That is the defect report.disagreement's own doc was written about
-// after the last one: "EVERY REMEDY HERE IS A ROAD THAT ACTUALLY EXISTS,
-// and the reason that sentence has to be written down is that one of
-// them did not."
-func portdirsOf(cands []record.Candidate) []string {
-	var out []string
+// bumped is the candidates a cohort actually revbumps, in the proposal's
+// order. An excluded member is still in the slice — change.Cohort marks
+// rather than drops, so a reviewer can see what was left out and
+// disagree — and it writes nothing.
+func bumped(cands []record.Candidate) []record.Candidate {
+	var out []record.Candidate
 	for _, c := range cands {
-		if !c.Proposed || c.Portdir == "" {
-			continue
-		}
-		if !slices.Contains(out, c.Portdir) {
-			out = append(out, c.Portdir)
+		if c.Proposed && c.Portdir != "" {
+			out = append(out, c)
 		}
 	}
 	return out
