@@ -913,6 +913,11 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 	if err := s.Acquire(ctx, app.Needs{Repo: true, Evaluator: true, Verifier: !f.noVerify}); err != nil {
 		return err
 	}
+	// Same as the singular road: a cohort's members are preflighted too,
+	// and at os.major 0 every one of them declines. See settleRelease.
+	if err := settleRelease(ctx, s, f, !f.noVerify); err != nil {
+		return err
+	}
 	repo, err := s.Repo()
 	if err != nil {
 		return err

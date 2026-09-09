@@ -384,3 +384,43 @@ func TestAnEmptyStandingOverAWrittenStoreDoesNotSayItIsVirgin(t *testing.T) {
 	assert.Contains(t, b.String(), "nothing is in flight")
 	assert.NotContains(t, b.String(), "dockhand bump")
 }
+
+// A FINDING A READER CANNOT SEE IS A FINDING THAT DID NOT HAPPEN.
+//
+// Every kind rendered as `"proposes: " + Criterion`, and only one kind
+// fills Criterion. An instruction-comment keeps the maintainer's own
+// words in Quote, so on cmark — whose Portfile says in as many words
+// that any version update requires revbumping its dependents — status
+// printed "proposes:" and stopped.
+func TestAnInstructionCommentIsShownAndNotSwallowed(t *testing.T) {
+	line := proposalLine(record.Finding{
+		Kind:   record.KindInstruction,
+		Source: "devel/cmark/Portfile",
+		Quote:  "# Any version update requires revbumping\n# all ports that link with the library",
+	})
+	assert.Contains(t, line, "devel/cmark/Portfile")
+	assert.Contains(t, line, "requires revbumping")
+	assert.NotContains(t, line, "\n", "a status line is one line")
+}
+
+// THE CANDIDATES ARE THE ACTIONABLE HALF. A criterion says what moved;
+// only the list says what to do about it, and the list was never shown.
+func TestAnABIProposalNamesThePortsItProposes(t *testing.T) {
+	line := proposalLine(record.Finding{
+		Kind:      record.KindABIDependents,
+		Criterion: "install name libcmark.0.30.3.dylib → libcmark.0.31.2.dylib",
+		Candidates: []record.Candidate{
+			{Port: "Aseprite"}, {Port: "nheko"}, {Port: "mkvtoolnix"},
+		},
+	})
+	assert.Contains(t, line, "Aseprite")
+	assert.Contains(t, line, "nheko")
+	assert.Contains(t, line, "mkvtoolnix")
+	assert.Contains(t, line, "install name", "and the criterion still rides along")
+}
+
+// A KIND THIS BUILD CANNOT READ STILL PRINTS SOMETHING, for the same
+// reason: silence would be indistinguishable from no finding at all.
+func TestAnEmptyFindingStillSaysItsKind(t *testing.T) {
+	assert.Contains(t, proposalLine(record.Finding{Kind: "something-new"}), "something-new")
+}

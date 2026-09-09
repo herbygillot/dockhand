@@ -720,13 +720,53 @@ func standingRows(s app.StatusResult, now time.Time) []standingRow {
 		}
 		for _, f := range c.Findings {
 			if f.Disposition == record.Proposed {
-				row.notes = append(row.notes, "proposes: "+f.Criterion)
+				row.notes = append(row.notes, proposalLine(f))
 			}
 		}
 		rows = append(rows, row)
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
 	return rows
+}
+
+// proposalLine is what a proposed finding says on a status line.
+//
+// IT USED TO BE `"proposes: " + f.Criterion` FOR EVERY KIND, and only
+// one kind fills Criterion. An instruction-comment carries the
+// maintainer's own words in Quote, so it printed as the bare word
+// "proposes:" and nothing else — on cmark, where the sentence it was
+// hiding is "Any version update requires revbumping all ports that link
+// with the library". That is the most important thing anybody could
+// read about that change and status showed a blank.
+//
+// An abi-dependents finding fills Criterion but ALSO carries the
+// candidates, and those are the actionable half: a criterion tells a
+// reader what moved, and only the list tells them what to do about it.
+//
+// A kind this build does not know still prints something, because a
+// finding a reader cannot see is a finding that did not happen.
+func proposalLine(f record.Finding) string {
+	switch {
+	case f.Quote != "":
+		quote := strings.Join(strings.Fields(f.Quote), " ")
+		if f.Source != "" {
+			return "proposes: " + f.Source + ": " + quote
+		}
+		return "proposes: " + quote
+	case len(f.Candidates) > 0:
+		ports := make([]string, 0, len(f.Candidates))
+		for _, c := range f.Candidates {
+			ports = append(ports, c.Port)
+		}
+		line := "proposes: " + strings.Join(ports, ", ")
+		if f.Criterion != "" {
+			line += " — " + f.Criterion
+		}
+		return line
+	case f.Criterion != "":
+		return "proposes: " + f.Criterion
+	}
+	return "proposes: " + string(f.Kind)
 }
 
 // nameOf is what a change is called on a line: its branch, or the

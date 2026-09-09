@@ -244,6 +244,41 @@ func releaseFlag(on string) (platform.Release, error) {
 	return parseRelease(on)
 }
 
+// settleRelease fills in the platform a change will be verified on,
+// BEFORE the attempt is minted.
+//
+// It used to be left zero and resolved inside the provider at submit
+// time, where tart.baseFor substitutes Bases[0] for a zero release —
+// the one place nobody else can see the answer. Three parties then
+// disagreed about a single run: the guest built on the newest base, the
+// record said the platform was "", and the PREFLIGHT evaluated every
+// staged Portfile at os.major 0.
+//
+// That last one is why this exists. Zero is older than any PortGroup
+// supports, so qt5's min-version callback, qt6's, and every
+// cxx_standard port declare known_fail against it — and run.Plan
+// declines a known_fail member BEFORE booting a VM. Measured on cmark's
+// dependents: Aseprite, PrismLauncher and nheko were all recorded
+// `unsupported` — a verdict that exits 0, reads as the change working
+// as intended, and counts as an outcome a promotion may publish on —
+// without a guest ever building one of them. None of the three declares
+// known_fail in its Portfile at all.
+func settleRelease(ctx context.Context, s *Services, f *intentFlags, verifying bool) error {
+	if !verifying || !f.release.IsZero() {
+		return nil
+	}
+	provisioned, err := provisionedReleases(ctx, s)
+	if err != nil {
+		return err
+	}
+	rel, err := resolveReleaseSet(nil, provisioned, true)
+	if err != nil {
+		return err
+	}
+	f.release = rel[0]
+	return nil
+}
+
 // resolveReleaseSet resolves a list flag against the provisioned bases:
 // nothing means the newest, "all" means every base, and otherwise each
 // value in the order given, duplicates included.

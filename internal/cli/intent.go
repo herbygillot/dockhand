@@ -496,6 +496,11 @@ func runIntent(ctx context.Context, s *Services, v intentVerb, params intent.Par
 	if err := s.Acquire(ctx, needs); err != nil {
 		return err
 	}
+	// The platform, before anything is minted: the record, the preflight
+	// and the guest must be told the same one. See settleRelease.
+	if err := settleRelease(ctx, s, f, needs.Verifier); err != nil {
+		return err
+	}
 	res, err := resolveSelector(ctx, s, params.Target)
 	if err != nil {
 		return err

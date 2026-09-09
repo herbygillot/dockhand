@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git/gittest"
 	"github.com/herbygillot/dockhand/internal/macports/build"
+	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tempdir"
 )
@@ -67,4 +68,33 @@ func TestBaselineWithNoBaseStagesNothing(t *testing.T) {
 		[]record.Subject{{Port: "jq", Portdir: "sysutils/jq"}})
 	require.NoError(t, err)
 	assert.Empty(t, dirs)
+}
+
+// "I WAS NOT TOLD WHICH PLATFORM" IS NOT "THE PORT DECLINES", and the
+// gap between those two sentences cost a whole cohort.
+//
+// A zero platform.Release means os.major 0. Nothing has ever shipped as
+// macOS 0, so qt5's min-version callback fires, qt6's fires, and every
+// compiler.cxx_standard port declines against it — and run.Plan reads a
+// known_fail member as the PORT refusing the platform and records
+// record.Unsupported without booting a guest. Measured on cmark's
+// dependents: Aseprite, PrismLauncher and nheko all came back
+// "unsupported", and not one of them has known_fail in its Portfile.
+//
+// The severity is that unsupported is not an error. It exits 0, it is
+// documented as frequently being the change working exactly as
+// intended, and publish counts it as an outcome about the port that a
+// promotion may proceed on. A cohort that built nothing looked fine.
+//
+// Unread is the safe direction: run.Plan schedules a member whose
+// preflight could not answer, because a preflight exists to save a VM
+// and never to invent a verdict.
+func TestAPreflightWithNoPlatformDoesNotDeclineThePort(t *testing.T) {
+	s := &stager{}
+	pf := s.preflight(context.Background(), t.TempDir(), record.Subject{Port: "nheko"}, platform.Release{})
+
+	assert.False(t, pf.Read, "an unanswerable preflight is unread, never a decline")
+	assert.False(t, pf.KnownFail, "and it must not claim the port declares known_fail")
+	require.Error(t, pf.Err, "and it says why, rather than answering silently")
+	assert.Contains(t, pf.Err.Error(), "no platform")
 }

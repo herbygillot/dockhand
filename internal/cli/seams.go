@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -157,6 +158,22 @@ func (s *stager) Cleanup() {
 // not run comes back Read false with its error, and run.Plan schedules
 // the member normally.
 func (s *stager) preflight(ctx context.Context, staged string, sub record.Subject, on platform.Release) run.Preflight {
+	// RULE 7, AND THE MOST EXPENSIVE PLACE IT WAS MISSING. A zero
+	// release means os.major 0, which is older than any macOS that has
+	// ever existed — so qt5's min-version callback fires, qt6's fires,
+	// every cxx_standard port declines, and run.Plan reads all of it as
+	// the PORT refusing the platform and records `unsupported` without
+	// booting a guest. Measured: three of cmark's dependents, none of
+	// which declares known_fail in its Portfile at all.
+	//
+	// "I was not told which platform" is not "the port declines". It
+	// comes back unread, exactly like a Portfile that could not be
+	// evaluated, and run.Plan then schedules the member normally — the
+	// safe direction, because a preflight exists to save a VM and never
+	// to invent a verdict.
+	if on.IsZero() {
+		return run.Preflight{Err: errors.New("no platform to evaluate the port against")}
+	}
 	if s.session == nil {
 		return run.Preflight{Err: errNotAcquired{"an evaluator"}}
 	}
