@@ -2,57 +2,96 @@ package bump
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/herbygillot/dockhand/internal/edit"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
-// framed answers as a port with two branches would: the one this host
-// took, and one other.
-func framed(other []string) func(context.Context, info.Platform) (info.Values, error) {
-	return func(_ context.Context, p info.Platform) (info.Values, error) {
-		if p.Major >= 19 {
-			return info.Values{Semantic: info.Semantic{Distfiles: []string{"here-5.0.1.tar.gz"}}}, nil
+// twoBranch answers as a port with two branches does: modern systems
+// take the first, older ones the second. `pinned` says whether the older
+// branch holds its own release — LyX and cliclick do — or names itself
+// after the port's version, as gh's binary branch does.
+func twoBranch(pinned bool) framer {
+	return func(_ context.Context, p info.Platform, src []byte) (info.Values, error) {
+		v := "5.0.1"
+		if src != nil && strings.Contains(string(src), "5.0.2") {
+			v = "5.0.2"
 		}
-		return info.Values{Semantic: info.Semantic{Distfiles: other}}, nil
+		if p.Major >= 19 {
+			return vals("modern-" + v + ".tar.gz"), nil
+		}
+		if pinned {
+			return vals("legacy-4.0.1.tar.gz"), nil
+		}
+		return vals("legacy-" + v + ".zip"), nil
 	}
 }
 
-// A BRANCH THAT PINS ITS OWN RELEASE IS NOT STALE. cliclick holds
-// cliclick-4.0.1 for the systems the 5.x line dropped, beside its own
-// 32-bit and c89 patches. A bump of 5.0.1 leaves it exactly as it should,
-// and refusing the port for that would be refusing it for being right.
-func TestAPinnedBranchDoesNotMakeABumpStale(t *testing.T) {
-	here := info.Values{Semantic: info.Semantic{Distfiles: []string{"here-5.0.1.tar.gz"}}}
-	assert.False(t, tracksVersion(t.Context(), framed([]string{"legacy-4.0.1.tar.gz"}), here, "5.0.1"),
-		"the other branch fetches 4.0.1; moving 5.0.1 cannot stale it")
+func vals(distfiles ...string) info.Values {
+	return info.Values{Semantic: info.Semantic{Distfiles: distfiles}}
 }
 
-// AND A BRANCH NAMED FOR THE VERSION IS. gh's binary branch is
-// gh_${version}_macOS_amd64.zip: a bump renames the file and leaves the
-// digests of the release before under it, so the port fails its checksum
-// on every system that takes that branch.
-func TestABranchNamedForTheVersionIsStale(t *testing.T) {
-	here := info.Values{Semantic: info.Semantic{Distfiles: []string{"here-5.0.1.tar.gz"}}}
-	assert.True(t, tracksVersion(t.Context(), framed([]string{"gh_5.0.1_macOS_amd64.zip"}), here, "5.0.1"))
+// the edit a bump of 5.0.1 -> 5.0.2 would write
+func theEdit() ([]byte, []edit.Edit) {
+	src := []byte("version 5.0.1\n")
+	return src, []edit.Edit{{Kind: edit.Version, Start: 8, End: 13, Old: "5.0.1", New: "5.0.2", Reason: "version"}}
 }
 
-// NO FRAMES, NO REPRIEVE. A road with no evaluator pool to spend cannot
-// tell the two apart, and the honest answer where a defect cannot be
-// ruled out is the refusal that shipped. The refinement only ever
-// removes a refusal it has earned the right to remove.
-func TestWithoutFramesTheRefusalStands(t *testing.T) {
-	here := info.Values{Semantic: info.Semantic{Distfiles: []string{"here-5.0.1.tar.gz"}}}
-	assert.True(t, tracksVersion(t.Context(), nil, here, "5.0.1"))
-	assert.True(t, tracksVersion(t.Context(), framed([]string{"legacy-4.0.1.tar.gz"}), here, ""),
-		"no version to look for is not evidence of safety")
+// A BRANCH THAT FETCHES THE SAME FILE AFTER THE EDIT IS NOT STALE, and
+// that is measured rather than read off a filename. LyX pins 2.3.8 in
+// two of its three branches and cliclick holds 4.0.1 in its legacy one;
+// applying a bump of the current line moves neither.
+func TestAPinnedBranchIsNotStale(t *testing.T) {
+	src, edits := theEdit()
+	frame, stale := staleElsewhere(t.Context(), twoBranch(true), vals("modern-5.0.1.tar.gz"), src, edits)
+	assert.False(t, stale)
+	assert.Empty(t, frame)
+}
 
-	// Every frame produced what this one did: the enumeration learned
-	// nothing, so it concedes to the refusal rather than clearing it.
-	same := func(_ context.Context, _ info.Platform) (info.Values, error) {
-		return here, nil
+// AND ONE WHOSE FETCH MOVES IS. gh's binary branch names itself after
+// ${version}: the edit renames the file its untouched digests describe.
+// The refusal names the frame that showed it.
+func TestABranchWhoseFetchMovesIsStale(t *testing.T) {
+	src, edits := theEdit()
+	frame, stale := staleElsewhere(t.Context(), twoBranch(false), vals("modern-5.0.1.tar.gz"), src, edits)
+	assert.True(t, stale)
+	assert.NotEmpty(t, frame, "a refusal that cannot name where it looked is not actionable")
+}
+
+// THE NAME WAS NEVER THE QUESTION. A first version of this asked whether
+// the other branch's distfile CONTAINED the version being moved, which
+// would clear this port wrongly: its legacy branch fetches a file whose
+// name never changes and whose content follows the version, so the
+// digests go stale under a name that stayed put.
+func TestAMovingFetchUnderAnUnchangingNameIsStale(t *testing.T) {
+	src, edits := theEdit()
+	rolling := func(_ context.Context, p info.Platform, s []byte) (info.Values, error) {
+		if p.Major >= 19 {
+			return vals("modern-5.0.1.tar.gz"), nil
+		}
+		if s != nil && strings.Contains(string(s), "5.0.2") {
+			return vals("legacy-latest.tar.gz", "extra-5.0.2.patch"), nil
+		}
+		return vals("legacy-latest.tar.gz"), nil
 	}
-	assert.True(t, tracksVersion(t.Context(), same, here, "5.0.1"))
+	_, stale := staleElsewhere(t.Context(), rolling, vals("modern-5.0.1.tar.gz"), src, edits)
+	assert.True(t, stale, "the fetch moved; that the name did not is beside the point")
+}
+
+// NO FRAMES, NO REPRIEVE — and neither does an enumeration that learned
+// nothing. This may only ever remove a refusal it has earned.
+func TestWithoutEvidenceTheRefusalStands(t *testing.T) {
+	src, edits := theEdit()
+	_, stale := staleElsewhere(t.Context(), nil, vals("modern-5.0.1.tar.gz"), src, edits)
+	assert.True(t, stale)
+
+	same := func(_ context.Context, _ info.Platform, _ []byte) (info.Values, error) {
+		return vals("modern-5.0.1.tar.gz"), nil
+	}
+	_, stale = staleElsewhere(t.Context(), same, vals("modern-5.0.1.tar.gz"), src, edits)
+	assert.True(t, stale, "every frame took the branch already accounted for")
 }

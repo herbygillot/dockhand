@@ -741,12 +741,12 @@ func (s *Services) fetchSession(ctx context.Context) (*portfetch.Fetcher, error)
 // The evaluators are closed with the rest of the run's services, since
 // their lifetime is the invocation's and a caller holding a framed
 // handle must not outlive them.
-func (s *Services) Frames(target tree.Target) func(context.Context, info.Platform) (info.Values, error) {
+func (s *Services) Frames(target tree.Target) func(context.Context, info.Platform, []byte) (info.Values, error) {
 	if s.pfx == "" {
 		return nil
 	}
 	cache := map[info.Platform]*eval.Evaluator{}
-	return func(ctx context.Context, f info.Platform) (info.Values, error) {
+	return func(ctx context.Context, f info.Platform, src []byte) (info.Values, error) {
 		ev, ok := cache[f]
 		if !ok {
 			p, err := pool.New(ctx, s.pfx, 1, eval.WithPlatform(f))
@@ -757,6 +757,18 @@ func (s *Services) Frames(target tree.Target) func(context.Context, info.Platfor
 			ev = p.Evaluators()[0]
 			cache[f] = ev
 		}
-		return port.New(target, ev).WithTempDir(s.Temp()).Values(ctx)
+		h := port.New(target, ev).WithTempDir(s.Temp())
+		if src == nil {
+			return h.Values(ctx)
+		}
+		// The SAME shadow every other prediction in this tool is made
+		// against, evaluated in another frame: the bytes an edit would
+		// write, asked what they mean somewhere this host is not.
+		shadow, cleanup, err := h.Shadow(src)
+		if err != nil {
+			return info.Values{}, err
+		}
+		defer cleanup()
+		return shadow.Values(ctx)
 	}
 }

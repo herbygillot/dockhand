@@ -193,7 +193,11 @@ type Params struct {
 	// command its evaluation never reached — and enumerating a release
 	// table's worth of frames for every ordinary bump would spend
 	// mportinit thirty times to learn nothing.
-	Frames func(ctx context.Context, p info.Platform) (info.Values, error)
+	// src nil evaluates the Portfile as it stands; src non-nil shadows
+	// those bytes and evaluates those, which is what turns "would this
+	// branch go stale" from a guess about a filename into a measurement
+	// of whether the edit moves what the branch fetches.
+	Frames func(ctx context.Context, p info.Platform, src []byte) (info.Values, error)
 }
 
 // Identity is what a change is called, decided by the intent that made
