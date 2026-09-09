@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/spf13/cobra"
 	"io"
 	"testing"
@@ -229,4 +230,30 @@ func TestAnErrorWithAMessageIsStillPrinted(t *testing.T) {
 		root.PrintErrln(root.ErrPrefix(), err.Error())
 	}
 	assert.Contains(t, errOut.String(), "a branch already stands")
+}
+
+// A TREE WITH NO PortIndex HAS A CODE OF ITS OWN, and had none at all.
+// The dependent survey returns portindex.ErrNoIndex unwrapped, nothing
+// in the ladder matched it, and dockhand — whose own `usage` topic
+// advertises banded exit codes — answered 1, the band of last resort.
+//
+// Measured in the field on a delve bump: the port built clean in a VM,
+// the survey then found no index, and 99 seconds of passing work came
+// back as an untyped failure naming a file.
+//
+// It is 47 and not 40 or 41. The tree IS a ports tree, so 40 would be
+// false; no port was being looked up, so 41 would be false too. What is
+// missing is a generated file with a one-command remedy, which is what
+// a wrapper reading the code has to be able to say.
+func TestAMissingPortIndexIsInTheTreeBandAndNotTheLastResort(t *testing.T) {
+	err := fmt.Errorf("dependent analysis: %w", portindex.ErrNoIndex)
+	assert.Equal(t, exitcode.NoPortIndex, ExitCode(err))
+	assert.NotEqual(t, 1, ExitCode(err), "the band of last resort is not an answer")
+
+	// A NAME LOOKUP STILL BLAMES THE NAME. tree.indexLookup wraps a
+	// missing index as ErrPortNotFound on purpose — a person who asked
+	// for a port by name is owed "that port is not here" — and the arm
+	// order has to keep that true.
+	assert.Equal(t, exitcode.PortNotFound, ExitCode(
+		fmt.Errorf("%q: %w (the tree has no PortIndex)", "jq", tree.ErrPortNotFound)))
 }

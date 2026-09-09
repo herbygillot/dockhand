@@ -1,6 +1,9 @@
 package tree
 
 import (
+	"github.com/herbygillot/dockhand/internal/macports"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -116,4 +119,29 @@ func TestDependentsWithoutAnIndexRefuses(t *testing.T) {
 	byKey, err := tr.Maintained()
 	require.ErrorIs(t, err, portindex.ErrNoIndex)
 	assert.Nil(t, byKey)
+}
+
+// THE REMEDY TRAVELS WITH THE REFUSAL. A tree with no PortIndex is a
+// one-command problem, and the sentinel alone names a missing file:
+// "portindex: tree has no PortIndex: /path". It says nothing about what
+// wanted the index, and nothing about `portindex` being the fix.
+//
+// It is met at the worst possible moment. The dependent survey runs
+// AFTER the port is installed in the VM, so a person read that sentence
+// as the outcome of a build that had, in fact, passed.
+func TestADependentSurveyWithoutAnIndexSaysHowToFixIt(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, macports.PortGroupDir), 0o755))
+
+	tr, err := Open(root)
+	require.NoError(t, err, "it is a ports tree; only the generated index is missing")
+
+	_, derr := tr.Dependents()
+	require.Error(t, derr)
+	require.ErrorIs(t, derr, portindex.ErrNoIndex,
+		"the sentinel survives, so cli can band it")
+	assert.Contains(t, derr.Error(), "dependent analysis needs it",
+		"and it says what wanted the index")
+	assert.Contains(t, derr.Error(), "portindex "+root,
+		"and the one command that makes one, in the tree the caller named")
 }

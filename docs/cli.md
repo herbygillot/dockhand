@@ -829,7 +829,7 @@ that distinction stated at a scale that stops running out of room.
 | `10`–`13` | declined | the plan's: dockhand understood the request, could have carried it out, and judged it should not | nothing broke and nothing was written; the next move is the user's |
 | `20`–`24` | refused | the destination's: the change is fine, the place it would go will not take it | the branch or the pull request, never the edit |
 | `30`–`36` | environment | the machine's | installing or provisioning something |
-| `40`–`46` | tree | where dockhand was pointed | a different path, branch or flag — never an install |
+| `40`–`47` | tree | where dockhand was pointed | a different path, branch or flag, or one command in the tree — never an install |
 | `50`–`53` | upstream | somebody else's | waiting, or the port's livecheck |
 | `60`–`62` | pending | nobody's yet: nothing failed and nothing finished | asking again later |
 | `70`–`74` | verdict | the verification answered, and not with a pass | the log, or the port |
@@ -964,6 +964,7 @@ wall.
 | `44` | `BranchNotFound` | the target names no in-flight branch; `dockhand status` lists what is |
 | `45` | `BranchMoved` | the record's tip and the ref disagree, or a dockhand ref moved between a road's resolve and its commit — a person's own git on a dockhand branch. `dockhand verify <branch>` follows the commit, and `git branch -f <branch> <recorded tip>` puts it back |
 | `46` | `BranchCheckedOut` | a batch would move or delete a branch some worktree has it checked out in — an accept, a discard, a replace, a retirement. Measured rather than assumed: `git branch -f` refuses such a branch and the update-ref batch does not. Switch away first |
+| `47` | `NoPortIndex` | the tree carries no PortIndex and something needed one — a dependent survey above all. Its own code because the tree IS a ports tree (not `40`) and no port was being looked up (not `41`): what is missing is a generated file, and `portindex <tree>` is the whole remedy. It had no code at all until a delve bump met it AFTER a passing VM build and answered `1` |
 
 `44` is `change.ErrNoRecord` and nothing else, and it is deliberately not
 `41`: a wrapper reading `41` runs `portindex` for a tree that does not

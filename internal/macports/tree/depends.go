@@ -1,6 +1,10 @@
 package tree
 
-import "github.com/herbygillot/dockhand/internal/macports/portindex"
+import (
+	"fmt"
+
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
+)
 
 // Dependents returns the tree's reverse dependency index: for each port
 // name, lowercased, every port declaring it under depends_lib,
@@ -35,7 +39,19 @@ func (t *Tree) Dependents() (portindex.Reverse, error) {
 func (t *Tree) buildDependents() (portindex.Reverse, error) {
 	idx, err := t.lockedIndex()
 	if err != nil {
-		return portindex.Reverse{}, err
+		// THE REMEDY TRAVELS WITH THE REFUSAL, because the sentinel alone
+		// names a missing file and not what wanted it or how to make one.
+		// A person met this AFTER a passing VM build — the dependent
+		// survey runs once the port is installed — and read "portindex:
+		// tree has no PortIndex: /path", which says nothing about the
+		// build having succeeded, nothing about what is now blocked, and
+		// nothing about `portindex` being the one command that fixes it.
+		//
+		// It is wrapped here rather than at the sentinel because this is
+		// where the NEED is known: indexLookup wants a name and says so
+		// in its own words, and this wants the dependent graph.
+		return portindex.Reverse{}, fmt.Errorf(
+			"%w: dependent analysis needs it — run `portindex %s`", err, t.root)
 	}
 	return idx.Dependents()
 }

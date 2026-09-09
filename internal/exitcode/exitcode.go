@@ -136,6 +136,22 @@ const (
 	// move the branch under that worktree's index. The remedy is to
 	// switch away first.
 	BranchCheckedOut = 46
+	// NoPortIndex is a ports tree carrying no PortIndex, asked for
+	// something that needs one — a dependent survey, a name lookup.
+	//
+	// IT IS ITS OWN CODE and not 40 or 41. The tree is a ports tree, so
+	// 40 would be false; no port was being looked up, so 41 would be
+	// false too. What is missing is a GENERATED file, and the remedy is
+	// neither a different path nor a different flag but one command in
+	// the tree the caller already named — which is the sentence a
+	// wrapper reading this code needs to print.
+	//
+	// It exists because the condition had no code at all: the dependents
+	// survey returns portindex.ErrNoIndex unwrapped, nothing in the
+	// ladder matched it, and a tool that advertises banded exit codes
+	// answered 1 — the band of last resort — after a build that had
+	// already passed. Measured in the field on a delve bump.
+	NoPortIndex = 47
 )
 
 // 50-53, upstream: SOMEONE ELSE'S problem. A fetch, a witness or a

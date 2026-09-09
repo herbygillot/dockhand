@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
@@ -207,6 +208,14 @@ func codeAndReason(err error) (int, string) {
 		return exitcode.NotPortsTree, "not-ports-tree"
 	case errors.Is(err, tree.ErrPortNotFound):
 		return exitcode.PortNotFound, "port-not-found"
+	case errors.Is(err, portindex.ErrNoIndex):
+		// AFTER ErrPortNotFound, because tree.indexLookup wraps a missing
+		// index as one: a person who asked for a port by name is owed
+		// "that port is not here", and the index is the reason rather
+		// than the answer. Every other road that needs the index — the
+		// dependent survey above all — has no name to blame and gets
+		// this.
+		return exitcode.NoPortIndex, "no-port-index"
 	case errors.Is(err, change.ErrNoRecord):
 		// A TARGET NAMING NO IN-FLIGHT BRANCH, and it is 44 rather than
 		// 41 because the two send a wrapper to different remedies: 41 says
