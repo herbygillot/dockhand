@@ -109,7 +109,7 @@ func body(f Facts, version string) string {
 			executed = true
 		case record.Queued, record.Submitting, record.Running,
 			record.Blocked, record.Canceled, record.Superseded, record.Errored,
-			record.Withheld:
+			record.Faulted, record.Withheld:
 			// Nothing was answered. A run that never reached a verdict proves
 			// no subject and leaves every question the boxes ask exactly as
 			// unasked as no run at all. A withheld run belongs here too: it is
@@ -215,6 +215,11 @@ func body(f Facts, version string) string {
 			// the environment could not answer, and that is never a finding
 			// about the port.
 			what = "the environment could not answer, which is a fact about the machine and not about the port"
+		case record.Faulted:
+			// And the reviewer is told WHOSE tooling, because "the
+			// environment could not answer" would be a false statement
+			// about a machine that answered everything it was asked.
+			what = "dockhand's own tooling did not produce an answer, which is a fact about dockhand and not about the port"
 		}
 		// A verdict is a fact about the change; the rest is a fact about this
 		// machine's afternoon. On a verified body the second kind stays local
@@ -528,7 +533,8 @@ func provenance(c record.Change, head string) string {
 func localToThisMachine(s record.RunState) bool {
 	switch s {
 	case record.Queued, record.Submitting, record.Running,
-		record.Canceled, record.Superseded, record.Errored, record.Blocked:
+		record.Canceled, record.Superseded, record.Errored, record.Faulted,
+		record.Blocked:
 		return true
 	case record.Passed, record.Failed, record.Unsupported, record.Withheld:
 		return false

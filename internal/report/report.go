@@ -816,7 +816,7 @@ func verdictLine(a record.Attempt, now time.Time) (string, int) {
 		rank = 45
 	case record.Queued, record.Submitting, record.Running,
 		record.Failed, record.Unsupported, record.Blocked,
-		record.Canceled, record.Superseded, record.Errored:
+		record.Canceled, record.Superseded, record.Errored, record.Faulted:
 	}
 	return verdictWord(worst) + " " + since(a.Started, now), rank
 }
@@ -830,7 +830,7 @@ func bad(s record.RunState) int {
 	switch s {
 	case record.Failed:
 		return 5
-	case record.Errored, record.Canceled, record.Superseded:
+	case record.Errored, record.Faulted, record.Canceled, record.Superseded:
 		return 4
 	case record.Unsupported:
 		return 3
@@ -861,6 +861,8 @@ func verdictWord(s record.RunState) string {
 		return "unsupported"
 	case record.Errored:
 		return "errored"
+	case record.Faulted:
+		return "faulted"
 	case record.Canceled:
 		return "canceled"
 	case record.Superseded:

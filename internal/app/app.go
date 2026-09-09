@@ -364,6 +364,12 @@ func (r Result) Exit() int {
 			// is what 73 is for and what a caller waiting on one needs to
 			// hear; the twin's reason says which of the three it was.
 			return 73
+		case record.Faulted:
+			// The FOURTH way, and its own code, because the remedy is not
+			// 73's: nothing is wrong with this machine and retrying will
+			// reproduce it exactly. A script that treats it as 73 waits
+			// forever for a guest that was never the problem.
+			return 74
 		case record.Queued, record.Submitting, record.Running, record.Withheld:
 			// A Stood result holding an unfinished or unseated run is an
 			// incident and not a verdict: the road said it stayed for the
@@ -1024,7 +1030,7 @@ func verdictOf(a record.Attempt) record.RunState {
 		switch s {
 		case record.Failed:
 			return 5
-		case record.Errored, record.Canceled, record.Superseded:
+		case record.Errored, record.Faulted, record.Canceled, record.Superseded:
 			return 4
 		case record.Unsupported:
 			return 3

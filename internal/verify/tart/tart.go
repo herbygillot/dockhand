@@ -1395,7 +1395,17 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 	case "running":
 		return verify.Status{State: verify.Running}, nil
 	}
-	return verify.Status{State: verify.Errored,
+	// BY ELIMINATION, and the elimination is complete: the cat above
+	// SUCCEEDED, so the guest is up, reachable, and answering. What it
+	// answered with is not one of the three words dockhand's own runner
+	// writes. Nothing is wrong with this machine and nothing has been
+	// learned about the port — the apparatus in between is what did not
+	// work, and that is Faulted rather than Errored.
+	//
+	// It was Errored, which told a person their machine could not answer
+	// while the machine was answering, and released the running guest
+	// that held the reason.
+	return verify.Status{State: verify.Faulted,
 		Detail: "the guest reported no state; the runner did not start"}, nil
 }
 

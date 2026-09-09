@@ -254,7 +254,7 @@ func settledFor(vs []Verdict, port string) bool {
 			// platform, a neighbour stopped it before it was reached, or this
 			// build deliberately kept it out of the guest.
 		case record.Queued, record.Submitting, record.Running,
-			record.Canceled, record.Superseded, record.Errored:
+			record.Canceled, record.Superseded, record.Errored, record.Faulted:
 			return false
 		default:
 			// A state word this build cannot read is not an outcome. The

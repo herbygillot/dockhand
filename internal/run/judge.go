@@ -241,7 +241,27 @@ func judgeRun(in runInput) memberVerdict {
 		}
 	case verify.Errored:
 		r.State, r.Detail = record.Errored, in.Status.Detail
-		disposition = ReleaseQuietly
+		// KEPT, and it used to go back quietly on the reasoning that an
+		// errored environment is a fact about the machine and never a
+		// finding about the port. The premise is right and the
+		// conclusion did not follow: a machine fault is still a fault
+		// somebody has to diagnose, and the environment is where the
+		// diagnosis lives.
+		//
+		// The environment that is GONE is the Vanished branch above, so
+		// what reaches here is present — stopped, perhaps, but its disk
+		// outlives the guest and holds what MacPorts itself wrote down.
+		// Measured: a cohort's guest trapped four minutes in, the
+		// verdict released the worker twenty seconds after it was seen,
+		// and how far five ports had got became unanswerable.
+		disposition = Keep
+	case verify.Faulted:
+		r.State, r.Detail = record.Faulted, in.Status.Detail
+		// KEPT MOST OF ALL. The environment is healthy — that is what
+		// Faulted MEANS — so this guest is both the crime scene for a
+		// dockhand defect and cheap to walk into: `dockhand shell` works
+		// on it, because it is still running.
+		disposition = Keep
 	}
 	return memberVerdict{Settled: true, Run: r, Disposition: disposition}
 }
@@ -388,7 +408,11 @@ func unaskedMatters(s record.RunState) bool {
 		return true
 	case record.Queued, record.Submitting, record.Running,
 		record.Passed, record.Unsupported, record.Canceled,
-		record.Superseded, record.Withheld:
+		record.Superseded, record.Withheld,
+		// A fault is not a verdict a preflight could have changed. The
+		// maintainer's cues are about the PORT, and a runner that never
+		// started read none of them and was stopped by none of them.
+		record.Faulted:
 		return false
 	}
 	return false

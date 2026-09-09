@@ -229,18 +229,30 @@ func TestASkippedMemberIsBlockedOnThePrerequisiteItNames(t *testing.T) {
 	assert.Contains(t, got.Detail, "libwidget fails to build")
 }
 
-// A MEMBER THE GUEST SAID NOTHING ABOUT IS ERRORED AND NEVER PASSED. A
-// promotion sums the passes over every member, so a pass invented for a
-// member nobody built would authorize publishing on evidence that does
-// not exist.
-func TestAMemberTheGuestNeverAnnouncedIsErroredAndNotPassed(t *testing.T) {
+// A MEMBER THE GUEST SAID NOTHING ABOUT IS NEVER PASSED. A promotion
+// sums the passes over every member, so a pass invented for a member
+// nobody built would authorize publishing on evidence that does not
+// exist.
+//
+// And it is FAULTED, not errored, because look at what the guest did:
+// it PASSED. It was healthy, it was reachable, it answered everything
+// it was asked. What did not happen is that dockhand's own cohort
+// runner never announced a member it was told to build. Calling that a
+// machine fault told a person to go and fix a machine that was working.
+//
+// So the guest is KEPT. It is the only place that defect can be looked
+// at, it is still running, and its slot was about to be free anyway.
+// This case used to release it.
+func TestAMemberTheGuestNeverAnnouncedIsFaultedAndNotPassed(t *testing.T) {
 	roster := []Member{member("libwidget"), member("gdal")}
 	log := verify.SubjectMarker("libwidget") + "\n0 errors and 0 warnings found\n"
 	e := evidenceOf(roster, verify.Status{State: verify.Passed}, log)
 
 	j := Judge(e)
 	assert.Equal(t, record.Passed, j.Runs["libwidget"].State)
-	assert.Equal(t, record.Errored, j.Runs["gdal"].State)
+	assert.Equal(t, record.Faulted, j.Runs["gdal"].State)
+	assert.Equal(t, Keep, j.Disposition,
+		"the healthy guest holding a dockhand defect is the last thing to throw away")
 }
 
 // A WITHHELD MEMBER IS OUT OF THE JUDGMENT ENTIRELY. The log is silent
@@ -269,16 +281,41 @@ func TestATerminalMemberIsNotRejudged(t *testing.T) {
 }
 
 // AN ERRORED ENVIRONMENT IS A FACT ABOUT THE MACHINE and never a finding
-// about the port, so the guest goes back quietly and the provider's own
-// account is what the record carries.
-func TestAnErroredEnvironmentIsTheMachinesFault(t *testing.T) {
+// about the port, and the provider's own account is what the record
+// carries.
+//
+// The guest is KEPT, and it used to go back quietly. The premise above
+// is right and the conclusion drawn from it was not: a machine fault is
+// still a fault somebody has to diagnose, and the environment is where
+// the diagnosis lives. An environment that is GONE is the Vanished case
+// below; what reaches here is present, and its disk outlives it.
+//
+// Measured: a cohort's guest trapped four minutes into a five-port
+// build, the verdict released the worker twenty seconds after anyone
+// saw it, and how far those five ports had got became unanswerable.
+func TestAnErroredEnvironmentIsTheMachinesFaultAndIsKept(t *testing.T) {
 	e := evidenceOf([]Member{member("jq")},
 		verify.Status{State: verify.Errored, Detail: "the guest never came up"}, "")
 
 	j := Judge(e)
 	assert.Equal(t, record.Errored, j.Runs["jq"].State)
 	assert.Equal(t, "the guest never came up", j.Runs["jq"].Detail)
-	assert.Equal(t, ReleaseQuietly, j.Disposition)
+	assert.Equal(t, Keep, j.Disposition)
+}
+
+// A FAULT IS THE MACHINE WORKING AND DOCKHAND NOT. It gets its own word
+// so that a status line, a pull request body and an exit code all stop
+// blaming a machine that did everything it was asked, and the guest is
+// kept because a healthy environment can still be walked into.
+func TestAFaultedRunBlamesDockhandAndKeepsTheGuest(t *testing.T) {
+	e := evidenceOf([]Member{member("jq")},
+		verify.Status{State: verify.Faulted,
+			Detail: "the guest reported no state; the runner did not start"}, "")
+
+	j := Judge(e)
+	assert.Equal(t, record.Faulted, j.Runs["jq"].State)
+	assert.Equal(t, "the guest reported no state; the runner did not start", j.Runs["jq"].Detail)
+	assert.Equal(t, Keep, j.Disposition)
 }
 
 // KEEP WINS OVER EITHER RELEASE, because one guest holds every member: a

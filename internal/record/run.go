@@ -46,6 +46,23 @@ const (
 	// Errored means the environment could not answer, which is a fact
 	// about the machine and never a finding about the port.
 	Errored RunState = "errored"
+	// Faulted means the environment was FINE and dockhand's own
+	// apparatus did not deliver an answer: the runner that did not
+	// start, the cohort member the guest never announced.
+	//
+	// It is its own word for the reason Withheld is. Errored says the
+	// machine could not answer, and the machine answered every question
+	// it was asked — a guest that reported no state was RUNNING when it
+	// was asked, and a member nobody announced sat inside a guest that
+	// PASSED. Failed says the port does not build, and nothing here
+	// looked at the port. Filing this under Errored told a person to go
+	// and fix their machine over a defect in dockhand, and released the
+	// one environment that could have proved it.
+	//
+	// So the state names dockhand's own machinery and the detail says
+	// which part of it, which is the same rule Withheld follows for
+	// dockhand's deliberate acts. This is the accidental one.
+	Faulted RunState = "faulted"
 	// Withheld means this build deliberately did not run the subject,
 	// and nothing about the subject is the reason. A cohort member that
 	// declares a conflict with a member already in the guest is the case

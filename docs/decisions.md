@@ -1479,3 +1479,69 @@ local primary branch — which is D29's fallback and this ruling's too.
 `ForgeFacts.Err` like every other forge failure, refusing the machine
 and advising the person, on the same rail `gh.ForkRemote` — this
 function's mirror image — has always used.
+
+## D31 — Three participants can fail a verification, and each gets its own word
+
+A verification asks a question of a **port**, in an **environment**,
+through a **harness** — dockhand's own apparatus: the runner script in
+the guest, the state protocol, the reading of it. Any of the three can
+fail to do its job, and until now dockhand had nine documented words for
+what a verification *concluded* and exactly one for what stopped it
+concluding. Verdicts were richly typed; non-verdicts were a string.
+
+**`Errored` was doing two jobs, and its documentation was only true for
+one of them.** *"The environment could not answer, which is a fact about
+the machine and never a finding about the port"* is exactly right — and
+it was also the state for a guest that was **running, reachable, and
+answering**, whose runner dockhand had failed to start. The sentence was
+a false statement about a machine that was working.
+
+**So `Faulted` is its own word**, on the same rule `Withheld` already
+established: *"It is its own word because every neighbouring one would be
+a false statement about the port."* `Withheld` names dockhand's
+**deliberate** act. `Faulted` names its **accidental** one. `Errored`
+keeps its meaning, and its existing documentation becomes true without a
+character changing.
+
+**The provider reaches it by elimination, and needs to know nothing about
+dockhand to do so.** A provider knows one thing no one else can: whether
+its own environment is healthy. If the environment is up, was asked, and
+what came back is not an answer, the harness is what failed. That is the
+whole seam — the provider reports the observation, the judge assigns the
+word — and it is why no provider has to re-derive this taxonomy.
+
+**`74` is apart from `73` because the remedy is.** An environment fault is
+worth another guest. A harness fault will reproduce exactly on every one
+of them, so a script retrying `73` waits forever for a machine that was
+never the problem. The band was designed for this: a caller reading
+`$?/10` keeps working when a code it has never heard of appears beside
+the ones it knows.
+
+**And the disposition rule is written down, in one sentence: keep the
+environment whenever it can still answer a question somebody will ask.**
+It was never written, so the cases were decided one at a time and
+drifted. Two had drifted wrong. An errored environment went back quietly
+— the premise ("a fact about the machine, never about the port") was
+right and the conclusion did not follow, because a machine fault is still
+a fault somebody has to diagnose and the environment is where the
+diagnosis lives. And `unbuilt` released a guest that had **passed** —
+healthy, running, its slot free anyway — holding the only proof that
+dockhand's cohort runner had skipped a member it was told to build.
+
+Nothing decided either of those. No rule said otherwise. There is one
+now, and it covers every existing case as well as the two it corrects:
+
+| | the question | disposition |
+|---|---|---|
+| passed | none, unless `--keep-env` asked | release / keep (D27) |
+| failed | why did it fail? | keep |
+| faulted | why did the runner not work? | keep — and the guest is **healthy**, so it can actually be asked |
+| errored, present | how far did it get? | keep — the disk outlives the guest |
+| errored, vanished | nothing can answer | nothing to release |
+| canceled | a person stopped it | release quietly |
+| blocked | about a port outside this change | release quietly |
+
+Measured in the field, and the reason this ruling exists: a cohort's
+guest trapped inside Apple's Virtualization framework four minutes into a
+five-port build, the verdict released the worker twenty seconds after
+anyone saw it, and how far those five ports had got became unanswerable.

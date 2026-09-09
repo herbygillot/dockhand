@@ -303,6 +303,12 @@ func TestResultExitBands(t *testing.T) {
 		{"blocked behind a sibling", Result{Did: Stood, Verdict: record.Blocked}, 71},
 		{"unsupported", Result{Did: Stood, Verdict: record.Unsupported}, 72},
 		{"canceled ends without concluding", Result{Did: Stood, Verdict: record.Canceled}, 73},
+		{"an environment that could not answer", Result{Did: Stood, Verdict: record.Errored}, 73},
+		// APART FROM 73, because the remedy is not 73's. Nothing is wrong
+		// with this machine, and a script that reads a fault as an
+		// environment problem retries forever against a guest that was
+		// never the problem.
+		{"dockhand's own tooling did not answer", Result{Did: Stood, Verdict: record.Faulted}, 74},
 		{"nothing realized", Result{}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

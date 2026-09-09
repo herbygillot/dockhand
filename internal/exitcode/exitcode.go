@@ -194,6 +194,20 @@ const (
 	// happened is that the verification ended, which is what a caller
 	// waiting on one needs to hear; the twin's reason says which.
 	VerifyErrored = 73
+	// VerifyFaulted is a verification that ended without a verdict
+	// because DOCKHAND did not produce one, in an environment that was
+	// working. It sits in this band for the same reason 73 does — the
+	// verification ended, and that is what a waiting caller needs — and
+	// apart from 73 because the remedy is not the same one. An
+	// environment fault is worth another guest; this is worth a bug
+	// report, and a script that retries it will retry it forever.
+	//
+	// It is the third way a run ends without concluding anything, and
+	// the enumeration above named only two because nothing had a word
+	// for this one. Adding it is what this band's numbering is for: a
+	// caller reading $?/10 keeps working, and one that knows 73 exactly
+	// is not told a machine is broken when none is.
+	VerifyFaulted = 74
 )
 
 // 80-83, partial: the operation did HALF ITS WORK, and the half it did

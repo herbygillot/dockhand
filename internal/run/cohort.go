@@ -500,13 +500,21 @@ func memberBlocked(r record.Run, member, detail string) memberVerdict {
 // this case is written down: a promotion sums the passes over every
 // member, so a pass invented for a member nobody built would authorize
 // publishing on evidence that does not exist. It is not failed either —
-// nothing here is a finding about the port — so the guest goes back.
+// nothing here is a finding about the port — and it is not errored,
+// because the machine did every single thing it was asked. It is
+// dockhand's own runner that did not report, so the guest is KEPT: it
+// is the only place that defect can be looked at.
 func unbuilt(r record.Run) memberVerdict {
-	r.State = record.Errored
+	r.State = record.Faulted
 	// Nothing stopped this member, so nothing is blamed for it, and a
 	// blame an earlier settlement wrote must not outlive the reading
 	// that put it there.
 	r.Blamed = ""
 	r.Detail = "the guest reported no output for this subject"
-	return memberVerdict{Settled: true, Run: r, Disposition: ReleaseQuietly}
+	// KEPT. The guest PASSED — it is healthy, it is running, and the
+	// slot it holds was about to be free anyway. What it contains is the
+	// evidence that dockhand's cohort runner did not announce a member
+	// it was asked to build, which is a defect in dockhand and the one
+	// thing releasing this guest made impossible to look at.
+	return memberVerdict{Settled: true, Run: r, Disposition: Keep}
 }

@@ -344,10 +344,29 @@ type Stager interface {
 }
 
 // Disposition is what should become of the environment. It is a
-// decision the judge makes and the application performs, which is the
-// right separation: the state alone cannot derive it, because an
-// errored run means keep-the-worker when the worker vanished and
-// release-it when the provider failed.
+// decision the judge makes and the application performs.
+//
+// THE RULE IS ONE SENTENCE: keep the environment whenever it can still
+// answer a question somebody will ask.
+//
+//	passed              nobody has a question       release
+//	                    unless --keep-env asked     keep (D27)
+//	failed              why did it fail?            keep
+//	faulted             why did the runner not      keep — and the guest
+//	                    work?                       is HEALTHY, so it can
+//	                                                actually be asked
+//	errored, present    how far did it get?         keep — the disk
+//	                                                outlives the guest
+//	errored, vanished   nothing can answer          nothing to release
+//	canceled            a person stopped it         release quietly
+//	blocked             about a port outside        release quietly
+//	                    this change
+//
+// It is written down because it WAS NOT, and so the cases were decided
+// one at a time and drifted. That is how unbuilt came to release a
+// guest that had PASSED — healthy, reachable, its slot free anyway —
+// holding the only proof that dockhand's own cohort runner had skipped
+// a member. Nothing decided that. No rule said otherwise.
 type Disposition uint8
 
 const (

@@ -817,7 +817,7 @@ that distinction stated at a scale that stops running out of room.
 | `40`–`46` | tree | where dockhand was pointed | a different path, branch or flag — never an install |
 | `50`–`53` | upstream | somebody else's | waiting, or the port's livecheck |
 | `60`–`62` | pending | nobody's yet: nothing failed and nothing finished | asking again later |
-| `70`–`73` | verdict | the verification answered, and not with a pass | the log, or the port |
+| `70`–`74` | verdict | the verification answered, and not with a pass | the log, or the port |
 | `80`–`84` | partial | the operation did half its work, and that half stands | knowing what stands before re-running |
 
 The families are the contract a script should branch on. The fine codes
@@ -1012,7 +1012,7 @@ question may answer in an hour, and reading an unanswered lookup as "no pull
 request" is what would make a pass open a second one beside somebody's
 first.
 
-### Verdict — `70`–`73`
+### Verdict — `70`–`74`
 
 | Code | Name | What happened |
 |---|---|---|
@@ -1020,6 +1020,20 @@ first.
 | `71` | `VerifyBlocked` | the run never reached the change: a dependency failed first, so the port is untested rather than disproven |
 | `72` | `VerifyUnsupported` | the provider cannot run what was asked for |
 | `73` | `VerifyErrored` | the verification ended without a verdict: the environment could not answer, or a person stopped the run |
+| `74` | `VerifyFaulted` | the verification ended without a verdict because **dockhand's own tooling** did not produce one, in an environment that was working |
+
+`74` is apart from `73` because the remedy is not the same. `73` says the
+machine could not answer, and the answer to that is another guest. `74`
+says the machine answered everything it was asked and dockhand's apparatus
+inside it did not deliver a verdict — the runner that never started, the
+cohort member the guest never announced. Another guest will reproduce it
+exactly, so a script that reads a fault as an environment problem retries
+forever against a machine that was never the problem.
+
+Both used to be `73`, which told a person to go and fix a machine that was
+working, and released the one environment that could have shown them what
+dockhand did wrong. A faulted run now KEEPS its environment: it is healthy,
+`dockhand shell` reaches it, and it is the only place the defect exists.
 
 `73` is a fact about the machine and exits here anyway, because what
 happened is that the verification ended without a verdict — which is what a

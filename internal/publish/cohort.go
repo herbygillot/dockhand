@@ -274,7 +274,8 @@ func unmeasured(states []record.RunState, solo bool) string {
 		case record.Withheld:
 			withheld = true
 		case record.Passed, record.Unsupported, record.Queued, record.Submitting,
-			record.Running, record.Canceled, record.Superseded, record.Errored:
+			record.Running, record.Canceled, record.Superseded, record.Errored,
+			record.Faulted:
 		}
 	}
 	switch {

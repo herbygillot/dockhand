@@ -377,6 +377,20 @@ const (
 	// Errored means the environment could not answer, which is a fact
 	// about the machine and never a finding about the port.
 	Errored
+	// Faulted means the ENVIRONMENT WAS FINE and the answer still did
+	// not arrive: dockhand's own apparatus in the guest did not deliver
+	// one. It is a fact about dockhand and never about the machine or
+	// the port.
+	//
+	// The two are separated because only the provider can tell them
+	// apart and only the provider ever will. A provider knows whether
+	// its own environment is healthy; it needs to know nothing about
+	// dockhand's internals to reach this state, because it is reached BY
+	// ELIMINATION — the environment is up, it was asked, and what came
+	// back was not an answer. Every consumer downstream wants the
+	// difference: a machine fault is worth another guest, and a harness
+	// fault will fail the same way on every one of them.
+	Faulted
 )
 
 func (s State) String() string {
@@ -389,6 +403,8 @@ func (s State) String() string {
 		return "failed"
 	case Errored:
 		return "errored"
+	case Faulted:
+		return "faulted"
 	}
 	return "unknown"
 }
@@ -400,8 +416,8 @@ func (s State) Terminal() bool { return s != Running }
 // terminal.
 type Status struct {
 	State State
-	// Detail explains an Errored state — why the environment could not
-	// answer.
+	// Detail explains an Errored or Faulted state — why no answer
+	// arrived, from whichever party failed to produce one.
 	Detail string
 	// Handle names the environment the job ran in, for a provider that
 	// can hold one, and is empty for a provider that cannot. It is

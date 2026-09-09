@@ -340,11 +340,11 @@ func evidence(f Facts, vs []Verdict, machine bool) ([]Advisory, error) {
 			adv = append(adv, Advisory{Kind: AdviseBlocked,
 				Text: fmt.Sprintf("%s declines %s (known_fail)", v.Port, v.Platform)})
 		case record.Passed, record.Failed, record.Queued, record.Submitting, record.Running,
-			record.Canceled, record.Superseded, record.Errored, record.Withheld:
+			record.Canceled, record.Superseded, record.Errored, record.Faulted, record.Withheld:
 			// Not a story about why this tip is unverified: a pass and a
 			// failure are handled above, and the rest are this machine's own
-			// afternoon, which the body states per run and a gate has nothing
-			// to add to.
+			// afternoon — or dockhand's, for a fault — which the body states
+			// per run and a gate has nothing to add to.
 		}
 	}
 	return adv, nil
