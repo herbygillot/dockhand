@@ -80,10 +80,19 @@ const exitNoteMax = 200
 //
 // Both halves are kept because tart uses both: a refusal arrives as a
 // non-zero status, and a guest that stopped on its own arrives as a
-// sentence on stdout with a zero one. Nothing is written when there is
-// nothing to say, so ExitOf's empty answer means "it said nothing" and
-// never "nobody looked" — rule 7, for the one question a crashed run
-// leaves behind.
+// sentence on stdout with a zero one.
+//
+// THIS USED TO CLAIM THAT AN EMPTY ExitOf MEANS "it said nothing" AND
+// NEVER "nobody looked", and detachment breaks that. The note is written
+// by a goroutine inside the submitting process, so it exists on the
+// roads that stay — `verify --wait`, `dispatch` — and cannot exist for a
+// bump, which returns seconds after submitting while the guest builds
+// for half an hour. An empty answer is therefore genuinely ambiguous,
+// and the honest response is the one stoppedDetail already makes: add
+// nothing when there is nothing, and never explain the silence.
+//
+// Measured: a detached bump whose guest was killed left no note at all,
+// and the record said only that the environment had stopped.
 func noteExit(vm, out string, err error) {
 	say := strings.Join(strings.Fields(out), " ")
 	switch {

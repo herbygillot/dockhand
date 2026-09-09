@@ -283,6 +283,31 @@ func CLI(ctx context.Context, tools *tool.Finder, stdin io.Reader, args ...strin
 	return tool.Run(ctx, bin, tool.Opts{Args: args, Stdin: stdin})
 }
 
+// detachedCLI is CLI for a command that must outlive the call that
+// started it, which is exactly one: `tart run`.
+//
+// A VIRTUAL MACHINE IS NOT A CHILD OF THE INVOCATION THAT ASKED FOR IT.
+// bump submits and returns — "mint, enqueue durably, try to start,
+// detach always" — so the process that started the guest is gone
+// seconds later, while the build runs for half an hour. Without a
+// session of its own the guest holds the INVOKING SHELL'S process
+// group, and anything that signals that group takes the build with it.
+//
+// Measured: a detached bump left `tart run` at pgid <the shell's>, and
+// a TERM to that group stopped the guest mid-build. The record said
+// "the environment stopped before the run reported an outcome" and
+// nothing else, because the only party that could have said more had
+// already exited. Agent shells, CI runners and `timeout` all reap
+// process groups; this machine's shell happens not to, which is the
+// only reason it went unnoticed.
+func detachedCLI(ctx context.Context, tools *tool.Finder, args ...string) (string, error) {
+	bin, err := tools.Find(tool.Tart)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
+	}
+	return tool.Run(ctx, bin, tool.Opts{Args: args, OwnSession: true})
+}
+
 // HasVM reports whether a local VM of exactly this name exists. Exact,
 // not substring: dockhand-base-sonoma must not be found inside
 // dockhand-base-sonoma-anything — the same hazard GoldenName's naming
@@ -486,7 +511,7 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	// at capacity, out of disk — surfaces as itself.
 	runErr := make(chan error, 1)
 	go func() {
-		out, err := CLI(context.WithoutCancel(ctx), p.Tools, nil, "run", "--no-graphics", name)
+		out, err := detachedCLI(context.WithoutCancel(ctx), p.Tools, "run", "--no-graphics", name)
 		// KEPT, because this is the only account of the guest's death
 		// anybody will ever have. WaitRunning below reads the channel
 		// while the VM is coming up and never again, so a run that came

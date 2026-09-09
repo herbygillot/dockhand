@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Opts is what a one-shot command takes besides its binary.
@@ -18,6 +19,23 @@ type Opts struct {
 	Env []string
 	// Stdin feeds the command; nil is no input.
 	Stdin io.Reader
+	// OwnSession puts the child in a session of its own, so a signal
+	// aimed at whoever invoked this process does not reach it.
+	//
+	// IT IS FOR A CHILD MEANT TO OUTLIVE THE CALL THAT STARTED IT. A
+	// process inherits its parent's process group, so a job controller
+	// that reaps the group on completion — which agent shells, CI
+	// runners and `timeout` all do — takes the child with it. Measured
+	// on a detached bump: the virtual machine came up holding the
+	// INVOKING SHELL'S pgid, and a TERM to that group stopped it
+	// mid-build, leaving "the environment stopped before the run
+	// reported an outcome" and no account of why, because the process
+	// that would have written one had already exited.
+	//
+	// It is not a way to leak processes. Whoever sets it owes an answer
+	// for what it started; dockhand's is the lease, which is what
+	// reclaims a worker nobody is holding.
+	OwnSession bool
 	// Limit bounds how many bytes are kept from each of the child's
 	// two streams. Zero keeps everything, which is what every caller
 	// whose stdout is a document — an archive, a JSON body, a tag
@@ -113,6 +131,9 @@ func Output(ctx context.Context, bin string, o Opts) (Result, error) {
 	cmd := exec.CommandContext(ctx, bin, o.Args...)
 	cmd.Env = o.Env
 	cmd.Stdin = o.Stdin
+	if o.OwnSession {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	}
 	out, errb := capped{limit: o.Limit}, capped{limit: o.Limit}
 	cmd.Stdout, cmd.Stderr = &out, &errb
 
@@ -181,6 +202,9 @@ func Run(ctx context.Context, bin string, o Opts) (string, error) {
 	cmd := exec.CommandContext(ctx, bin, o.Args...)
 	cmd.Env = o.Env
 	cmd.Stdin = o.Stdin
+	if o.OwnSession {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	}
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
 	err := cmd.Run()
