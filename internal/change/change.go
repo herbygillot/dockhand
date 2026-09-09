@@ -661,6 +661,32 @@ func Cross(p Prepared) record.Crossing {
 // same number, and two spellings of it are two.
 const tracTicket = "https://trac.macports.org/ticket/"
 
+// listed is the members a commit body names.
+//
+// The subject line names the headline in the project's "port: what
+// changed" convention, so repeating it in the body would say the same
+// thing twice. That is why this skipped Subjects[0], and for a bump it
+// is still right.
+//
+// A COHORT HAS NO HEADLINE MEMBER. Its subject is the change the cohort
+// is FOR — "cmark: update to 0.31.2, bump dependents" — and cmark is not
+// one of the ports it revbumps at all; Subjects[0] is merely whichever
+// member merged first. Skipping it dropped a Portfile the commit
+// actually edits. Measured on cmark's cohort: the commit body listed
+// four of the five ports it changed, while the pull request body next
+// door listed all five, which is how the two renderers disagreeing
+// showed which one was wrong.
+//
+// So the test is the convention itself, and it degrades safely either
+// way: skip the first subject when the subject line already names it,
+// list it when it does not.
+func listed(p Prepared) []record.Subject {
+	if len(p.Subjects) > 0 && strings.HasPrefix(p.Summary, p.Subjects[0].Port+":") {
+		return p.Subjects[1:]
+	}
+	return p.Subjects
+}
+
 // Message builds the commit message for a prepared set: the summary, the
 // body, and Closes as a TRAILER — the one place the ticket is spelled
 // into git, from which PromoteFacts reads it back off the record and
@@ -684,13 +710,11 @@ const tracTicket = "https://trac.macports.org/ticket/"
 func Message(p Prepared) string {
 	var b strings.Builder
 	b.WriteString(p.Summary)
-	if members := p.Subjects; len(members) > 1 {
-		// A cohort's body says why all N moved. The headline is
-		// Subjects[0] and has its own subject line; the rest are the
-		// members, each with the reason the proposal gave for it, which is
-		// the sentence a reviewer checks.
+	if members := listed(p); len(members) > 0 && len(p.Subjects) > 1 {
+		// A cohort's body says why all N moved, each with the reason the
+		// proposal gave for it, which is the sentence a reviewer checks.
 		b.WriteString("\n\nRevision bumped in this change:\n")
-		for _, m := range members[1:] {
+		for _, m := range members {
 			b.WriteString("  " + memberLine(m) + "\n")
 		}
 	}

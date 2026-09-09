@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -530,4 +531,40 @@ func TestPrepareAcceptsANewFileTheBaseDoesNotHold(t *testing.T) {
 			Portfile: []byte("version 1.7\n")}, nil)
 	require.NoError(t, err)
 	require.Len(t, p.Files, 2)
+}
+
+// A COHORT COMMIT MUST NAME EVERY PORTFILE IT EDITS.
+//
+// The body skipped Subjects[0] because a bump's subject line already
+// names the headline. A cohort has no headline member — its subject is
+// the change it is FOR ("cmark: update to 0.31.2, bump dependents") and
+// cmark is not one of the ports it revbumps. Measured: the commit body
+// listed four of the five Portfiles it changed, while the pull request
+// body next door listed all five.
+func TestACohortBodyNamesEveryMemberItEdits(t *testing.T) {
+	p := Prepared{
+		Summary: "cmark: update to 0.31.2, bump dependents",
+		Subjects: []record.Subject{
+			{Port: "Aseprite", Portdir: "graphics/Aseprite"},
+			{Port: "nheko", Portdir: "net/nheko"},
+		},
+	}
+	msg := Message(p)
+	assert.Contains(t, msg, "Aseprite", "the first subject is edited too, and the subject line does not name it")
+	assert.Contains(t, msg, "nheko")
+}
+
+// AND A BUMP STILL DOES NOT SAY ITS HEADLINE TWICE, which is the rule
+// the skip was written for and is still right.
+func TestABumpBodyDoesNotRepeatTheSubjectsHeadline(t *testing.T) {
+	p := Prepared{
+		Summary: "jq: update to 1.8.2",
+		Subjects: []record.Subject{
+			{Port: "jq", Portdir: "sysutils/jq"},
+			{Port: "oniguruma", Portdir: "devel/oniguruma"},
+		},
+	}
+	msg := Message(p)
+	assert.Contains(t, msg, "oniguruma")
+	assert.Equal(t, 1, strings.Count(msg, "jq"), "named once, in the subject")
 }

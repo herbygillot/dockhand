@@ -87,6 +87,27 @@ func Start(ctx context.Context, pfx prefix.Prefix, opts ...Option) (*Evaluator, 
 	}
 	sopts := cfg.sopts
 	if !cfg.platform.IsZero() {
+		// THE ZERO GOT LAUNDERED, and this is where it should have been
+		// caught. IsZero asks whether the STRUCT is empty, and a caller
+		// that hardcodes the OS and the arch around an unresolved release
+		// hands over info.Platform{macosx, 0, arm} — which is not the zero
+		// struct, so the guard above waved it through and
+		// platformOverrides told port `os_major 0 os_version 0.0.0`, and,
+		// because 0 < 10, `cxx_stdlib libstdc++`.
+		//
+		// No macOS has ever been version 0, so that frame is never a
+		// question anybody meant to ask: it makes qt5's min-version
+		// callback fire, qt6's fire, and every compiler.cxx_standard port
+		// declare known_fail — which reads downstream as the PORT
+		// declining the platform. Measured on three of cmark's dependents,
+		// none of which declares known_fail at all.
+		//
+		// A major of zero is refused rather than corrected, because
+		// choosing a release here would be inventing the answer the caller
+		// failed to resolve.
+		if cfg.platform.Major == 0 {
+			return nil, fmt.Errorf("eval: platform %s has no major version; nothing has ever shipped as macOS 0, and evaluating against it makes ports declare known_fail that do not", cfg.platform)
+		}
 		sopts = append(sopts, session.WithInit(platformOverrides(cfg.platform)))
 	}
 	s, err := session.Start(ctx, pfx, sopts...)

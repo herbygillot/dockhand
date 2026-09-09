@@ -1304,8 +1304,56 @@ func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate
 			}
 			parts = append(parts, part)
 		}
-		return change.Merge(parts...)
+		merged, merr := change.Merge(parts...)
+		if merr != nil {
+			return change.Prepared{}, merr
+		}
+		// THE SUBJECT IS THE CHANGE THIS COHORT IS FOR, not a member of
+		// it. See cohortSummary.
+		subject, serr := repo.Subject(ctx, tip)
+		if serr != nil {
+			return change.Prepared{}, serr
+		}
+		if subject = strings.TrimSpace(subject); subject != "" {
+			merged.Summary = cohortSummary(subject)
+		}
+		return merged, nil
 	}
+}
+
+// cohortSuffix is what a cohort adds to the subject of the change it is
+// for. MacPorts subjects are "port: what changed", and what changed here
+// is that change plus its dependents.
+const cohortSuffix = ", bump dependents"
+
+// cohortSummary is the subject line a cohort commit carries.
+//
+// change.Merge takes its identity from parts[0], so this used to be the
+// FIRST MEMBER'S plan: "Aseprite: install name
+// /opt/local/lib/libcmark.0.30.3.dylib → ... on 26.6.2 arm64". Two
+// hundred and sixty-three characters, against a git convention of about
+// fifty, naming a port that is in the cohort only because something else
+// moved — and `promote --title` defaults to the tip's subject, so that
+// was the pull request's title too.
+//
+// A cohort commit is stacked on the change it is for, so the tip's own
+// subject IS that change's summary. "cmark: update to 0.31.2" becomes
+// "cmark: update to 0.31.2, bump dependents", which names the port that
+// actually moved and says what this commit adds.
+//
+// THE MEASUREMENT IS NOT LOST, and that matters, because the criterion
+// is deliberately the candidate's own words so a reviewer can check the
+// one claim behind the proposal with otool. It moves to where a reviewer
+// reads it — the commit body and the pull request body — rather than
+// into a title nothing can display.
+//
+// A branch that already carries a cohort commit keeps one suffix: a
+// re-accept reads a tip that has been through here before.
+func cohortSummary(tip string) string {
+	if strings.HasSuffix(tip, cohortSuffix) {
+		return tip
+	}
+	return tip + cohortSuffix
 }
 
 // bumped is the candidates a cohort actually revbumps, in the proposal's
