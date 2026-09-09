@@ -51,6 +51,7 @@ package intent
 
 import (
 	"context"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/macports/info"
@@ -197,7 +198,7 @@ type Params struct {
 	// those bytes and evaluates those, which is what turns "would this
 	// branch go stale" from a guess about a filename into a measurement
 	// of whether the edit moves what the branch fetches.
-	Frames func(ctx context.Context, p info.Platform, src []byte) (info.Values, error)
+	Frames func(ctx context.Context, p info.Platform, src []byte) (FrameFetch, error)
 }
 
 // Identity is what a change is called, decided by the intent that made
@@ -225,3 +226,32 @@ type Identity struct {
 	// with its checklist box honestly unchecked.
 	ClosesTicket string
 }
+
+// FrameFetch is what a port fetches in one platform frame: where the
+// files come from, what they are called, and what they are checked
+// against.
+//
+// SITES ARE PART OF THE IDENTITY AND NOT DECORATION. Two frames can
+// fetch a file of the same NAME from different places — claude-code
+// serves .../darwin-arm64/claude and .../darwin-x64/claude, one binary
+// name and two URLs — so a comparison over distfiles alone reports two
+// distinct branches as one and learns nothing about either.
+//
+// Checksums travel with it because the caller that re-derives a frame's
+// digests needs to know which recorded block it is replacing, and the
+// caller that only asks whether a branch moved needs neither. One shape
+// answers both rather than two shapes drifting apart.
+type FrameFetch struct {
+	Sites     []string
+	Distfiles []string
+	Checksums []string
+}
+
+// Same reports two frames fetching the same thing from the same place.
+func (f FrameFetch) Same(o FrameFetch) bool {
+	return slices.Equal(f.Sites, o.Sites) && slices.Equal(f.Distfiles, o.Distfiles)
+}
+
+// Empty is a frame that fetches nothing, which is a frame that told us
+// nothing rather than one that fetches from nowhere.
+func (f FrameFetch) Empty() bool { return len(f.Distfiles) == 0 }

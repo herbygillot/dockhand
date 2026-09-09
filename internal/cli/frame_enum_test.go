@@ -74,7 +74,20 @@ func TestFrameEnumeration(t *testing.T) {
 				if verr != nil {
 					continue
 				}
-				seen[key{f, name}] = strings.Join(vals.Distfiles, " ") + " || " + strings.Join(vals.Checksums, " ")
+				// master_sites is not on info.Semantic, so it is read as
+				// the option it is — the same way staging reads known_fail.
+				// Whether a framed evaluation can name its own URLs is the
+				// whole precondition for re-deriving another frame's
+				// digests.
+				opts, oerr := h.Options(ctx, "master_sites", "dist_subdir", "fetch.type")
+				sites := "(unread)"
+				if oerr == nil {
+					sites = opts["master_sites"]
+					if opts["fetch.type"] != "" && opts["fetch.type"] != "standard" {
+						sites += "  [fetch.type=" + opts["fetch.type"] + "]"
+					}
+				}
+				seen[key{f, name}] = strings.Join(vals.Distfiles, " ") + "\n       sites: " + sites
 			}
 			p.Close()
 		}
@@ -83,7 +96,7 @@ func TestFrameEnumeration(t *testing.T) {
 	for _, name := range names {
 		distinct := map[string][]string{}
 		for _, f := range frames {
-			if v, ok := seen[key{f, name}]; ok && v != " || " {
+			if v, ok := seen[key{f, name}]; ok && !strings.HasPrefix(v, "\n") {
 				distinct[v] = append(distinct[v], f)
 			}
 		}
@@ -109,8 +122,8 @@ func brief(frames []string) string {
 }
 
 func tail(s string) string {
-	if len(s) > 150 {
-		return s[:150]
+	if len(s) > 240 {
+		return s[:240]
 	}
 	return s
 }

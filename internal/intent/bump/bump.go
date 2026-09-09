@@ -500,7 +500,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 					// for the systems 5.x dropped — is correctly untouched
 					// by this bump, and refusing it would refuse the port
 					// for doing the right thing.
-					if frame, stale := staleElsewhere(ctx, b.Frames, vals, src, edits); stale {
+					if frame, stale := staleElsewhere(ctx, b.Frames, hereFetch(ctx, h, vals), src, edits); stale {
 						return &plan.Decline{Type: plan.ChecksumsUnreached,
 							Detail: fmt.Sprintf("the checksums command at line %d was not reached by this evaluation, and on %s this edit moves what the port fetches",
 								intent.LineOf(src, left[0].Start), frame)}

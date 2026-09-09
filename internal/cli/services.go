@@ -16,6 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/distfile"
 	"github.com/herbygillot/dockhand/internal/gh"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
@@ -741,34 +742,46 @@ func (s *Services) fetchSession(ctx context.Context) (*portfetch.Fetcher, error)
 // The evaluators are closed with the rest of the run's services, since
 // their lifetime is the invocation's and a caller holding a framed
 // handle must not outlive them.
-func (s *Services) Frames(target tree.Target) func(context.Context, info.Platform, []byte) (info.Values, error) {
+func (s *Services) Frames(target tree.Target) func(context.Context, info.Platform, []byte) (intent.FrameFetch, error) {
 	if s.pfx == "" {
 		return nil
 	}
 	cache := map[info.Platform]*eval.Evaluator{}
-	return func(ctx context.Context, f info.Platform, src []byte) (info.Values, error) {
+	return func(ctx context.Context, f info.Platform, src []byte) (intent.FrameFetch, error) {
 		ev, ok := cache[f]
 		if !ok {
 			p, err := pool.New(ctx, s.pfx, 1, eval.WithPlatform(f))
 			if err != nil {
-				return info.Values{}, err
+				return intent.FrameFetch{}, err
 			}
 			s.closers = append(s.closers, p.Close)
 			ev = p.Evaluators()[0]
 			cache[f] = ev
 		}
 		h := port.New(target, ev).WithTempDir(s.Temp())
-		if src == nil {
-			return h.Values(ctx)
+		if src != nil {
+			// The SAME shadow every other prediction in this tool is made
+			// against, evaluated in another frame: the bytes an edit would
+			// write, asked what they mean somewhere this host is not.
+			shadow, cleanup, err := h.Shadow(src)
+			if err != nil {
+				return intent.FrameFetch{}, err
+			}
+			defer cleanup()
+			h = shadow
 		}
-		// The SAME shadow every other prediction in this tool is made
-		// against, evaluated in another frame: the bytes an edit would
-		// write, asked what they mean somewhere this host is not.
-		shadow, cleanup, err := h.Shadow(src)
+		vals, err := h.Values(ctx)
 		if err != nil {
-			return info.Values{}, err
+			return intent.FrameFetch{}, err
 		}
-		defer cleanup()
-		return shadow.Values(ctx)
+		// master_sites is not a field on info.Semantic, so it is read as
+		// the option it is — the same way staging reads known_fail. It is
+		// half the fetch identity: two frames can serve one filename from
+		// two URLs.
+		out := intent.FrameFetch{Distfiles: vals.Distfiles, Checksums: vals.Checksums}
+		if opts, oerr := h.Options(ctx, "master_sites"); oerr == nil {
+			out.Sites = strings.Fields(opts["master_sites"])
+		}
+		return out, nil
 	}
 }

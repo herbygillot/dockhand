@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/platform"
 )
 
@@ -46,7 +48,7 @@ import (
 // branch from a moving one, and the honest answer where a defect cannot
 // be ruled out is to decline. This only ever removes a refusal it has
 // earned the right to remove.
-func staleElsewhere(ctx context.Context, frames framer, here info.Values, src []byte, edits []edit.Edit) (string, bool) {
+func staleElsewhere(ctx context.Context, frames framer, here intent.FrameFetch, src []byte, edits []edit.Edit) (string, bool) {
 	if frames == nil {
 		return "this machine", true
 	}
@@ -54,25 +56,25 @@ func staleElsewhere(ctx context.Context, frames framer, here info.Values, src []
 	if err != nil {
 		return "this machine", true
 	}
-	measured := strings.Join(here.Distfiles, " ")
 	looked := false
 	for _, r := range platform.Releases {
 		for _, arch := range []string{"arm", "i386"} {
 			f := info.Platform{OS: "macosx", Major: r.Darwin, Arch: arch}
 			before, err := frames(ctx, f, nil)
-			if err != nil {
+			if err != nil || before.Empty() || before.Same(here) {
+				// Unreadable, or this frame takes the branch already
+				// accounted for. SITES ARE PART OF THAT COMPARISON:
+				// claude-code serves one filename, `claude`, from
+				// .../darwin-arm64/ and .../darwin-x64/, so distfiles
+				// alone would report its two branches as one.
 				continue
-			}
-			was := strings.Join(before.Distfiles, " ")
-			if was == "" || was == measured {
-				continue // this frame takes the branch already accounted for
 			}
 			after, err := frames(ctx, f, edited)
 			if err != nil {
 				continue
 			}
 			looked = true
-			if strings.Join(after.Distfiles, " ") != was {
+			if !after.Same(before) {
 				return fmt.Sprintf("%s/%s", r.Name, arch), true
 			}
 		}
@@ -88,4 +90,16 @@ func staleElsewhere(ctx context.Context, frames framer, here info.Values, src []
 // framer is the frame capability as this package takes it: evaluate this
 // port under another platform, optionally over bytes an edit would
 // write rather than the Portfile as it stands.
-type framer = func(ctx context.Context, p info.Platform, src []byte) (info.Values, error)
+type framer = func(ctx context.Context, p info.Platform, src []byte) (intent.FrameFetch, error)
+
+// hereFetch is what THIS evaluation fetches, in the shape the framed
+// ones are compared against. Its sites are read off the same handle the
+// plan was made with, so the comparison is between two answers to one
+// question rather than between an answer and a reconstruction.
+func hereFetch(ctx context.Context, h port.Handle, vals info.Values) intent.FrameFetch {
+	out := intent.FrameFetch{Distfiles: vals.Distfiles, Checksums: vals.Checksums}
+	if opts, err := h.Options(ctx, "master_sites"); err == nil {
+		out.Sites = strings.Fields(opts["master_sites"])
+	}
+	return out
+}

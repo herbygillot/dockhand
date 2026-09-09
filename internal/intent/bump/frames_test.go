@@ -8,90 +8,111 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/herbygillot/dockhand/internal/edit"
+	"github.com/herbygillot/dockhand/internal/intent"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 )
 
-// twoBranch answers as a port with two branches does: modern systems
-// take the first, older ones the second. `pinned` says whether the older
-// branch holds its own release — LyX and cliclick do — or names itself
-// after the port's version, as gh's binary branch does.
-func twoBranch(pinned bool) framer {
-	return func(_ context.Context, p info.Platform, src []byte) (info.Values, error) {
-		v := "5.0.1"
-		if src != nil && strings.Contains(string(src), "5.0.2") {
-			v = "5.0.2"
-		}
-		if p.Major >= 19 {
-			return vals("modern-" + v + ".tar.gz"), nil
-		}
-		if pinned {
-			return vals("legacy-4.0.1.tar.gz"), nil
-		}
-		return vals("legacy-" + v + ".zip"), nil
-	}
+// fetched is a frame's answer: where from, and what called.
+func fetched(site string, distfiles ...string) intent.FrameFetch {
+	return intent.FrameFetch{Sites: []string{site}, Distfiles: distfiles}
 }
 
-func vals(distfiles ...string) info.Values {
-	return info.Values{Semantic: info.Semantic{Distfiles: distfiles}}
-}
+// here is the branch this evaluation took, in every case below.
+var here = fetched("https://example.invalid/5.0.1", "modern-5.0.1.tar.gz")
 
-// the edit a bump of 5.0.1 -> 5.0.2 would write
+// theEdit is the edit a bump of 5.0.1 -> 5.0.2 would write.
 func theEdit() ([]byte, []edit.Edit) {
 	src := []byte("version 5.0.1\n")
 	return src, []edit.Edit{{Kind: edit.Version, Start: 8, End: 13, Old: "5.0.1", New: "5.0.2", Reason: "version"}}
 }
 
-// A BRANCH THAT FETCHES THE SAME FILE AFTER THE EDIT IS NOT STALE, and
-// that is measured rather than read off a filename. LyX pins 2.3.8 in
-// two of its three branches and cliclick holds 4.0.1 in its legacy one;
+// moved says whether the edited source is in play, which is how these
+// fakes stand in for a Portfile whose branch reads ${version}.
+func moved(src []byte) string {
+	if src != nil && strings.Contains(string(src), "5.0.2") {
+		return "5.0.2"
+	}
+	return "5.0.1"
+}
+
+// twoBranch is a port whose older systems take a second branch. pinned
+// says whether that branch holds its own release — LyX and cliclick do —
+// or names itself after the port's version, as gh's binary branch does.
+func twoBranch(pinned bool) framer {
+	return func(_ context.Context, p info.Platform, src []byte) (intent.FrameFetch, error) {
+		v := moved(src)
+		switch {
+		case p.Major >= 19:
+			return fetched("https://example.invalid/"+v, "modern-"+v+".tar.gz"), nil
+		case pinned:
+			return fetched("https://example.invalid/4.0.1", "legacy-4.0.1.tar.gz"), nil
+		default:
+			return fetched("https://example.invalid/"+v, "legacy-"+v+".zip"), nil
+		}
+	}
+}
+
+// A BRANCH THAT FETCHES THE SAME THING AFTER THE EDIT IS NOT STALE, and
+// that is measured rather than read off a filename. LyX pins 2.3.8 in two
+// of its three branches and cliclick holds 4.0.1 in its legacy one;
 // applying a bump of the current line moves neither.
 func TestAPinnedBranchIsNotStale(t *testing.T) {
 	src, edits := theEdit()
-	frame, stale := staleElsewhere(t.Context(), twoBranch(true), vals("modern-5.0.1.tar.gz"), src, edits)
+	frame, stale := staleElsewhere(t.Context(), twoBranch(true), here, src, edits)
 	assert.False(t, stale)
 	assert.Empty(t, frame)
 }
 
 // AND ONE WHOSE FETCH MOVES IS. gh's binary branch names itself after
 // ${version}: the edit renames the file its untouched digests describe.
-// The refusal names the frame that showed it.
+// The refusal names the frame that showed it, which is the thing a person
+// can go and reproduce.
 func TestABranchWhoseFetchMovesIsStale(t *testing.T) {
 	src, edits := theEdit()
-	frame, stale := staleElsewhere(t.Context(), twoBranch(false), vals("modern-5.0.1.tar.gz"), src, edits)
+	frame, stale := staleElsewhere(t.Context(), twoBranch(false), here, src, edits)
 	assert.True(t, stale)
 	assert.NotEmpty(t, frame, "a refusal that cannot name where it looked is not actionable")
 }
 
-// THE NAME WAS NEVER THE QUESTION. A first version of this asked whether
-// the other branch's distfile CONTAINED the version being moved, which
-// would clear this port wrongly: its legacy branch fetches a file whose
-// name never changes and whose content follows the version, so the
-// digests go stale under a name that stayed put.
-func TestAMovingFetchUnderAnUnchangingNameIsStale(t *testing.T) {
+// THE FILENAME IS HALF THE ANSWER AT MOST. claude-code serves one binary
+// called `claude` from .../darwin-arm64/ and .../darwin-x64/, with the
+// version in the URL and not in the name. Comparing distfiles alone
+// reports its two branches as identical, learns nothing about either, and
+// clears a port whose digests really do go stale — which is why
+// FrameFetch.Same asks about the sites too.
+func TestAMovingSiteUnderAnUnchangingFilenameIsStale(t *testing.T) {
 	src, edits := theEdit()
-	rolling := func(_ context.Context, p info.Platform, s []byte) (info.Values, error) {
+	rolling := func(_ context.Context, p info.Platform, s []byte) (intent.FrameFetch, error) {
 		if p.Major >= 19 {
-			return vals("modern-5.0.1.tar.gz"), nil
+			return here, nil
 		}
-		if s != nil && strings.Contains(string(s), "5.0.2") {
-			return vals("legacy-latest.tar.gz", "extra-5.0.2.patch"), nil
-		}
-		return vals("legacy-latest.tar.gz"), nil
+		return fetched("https://example.invalid/legacy/"+moved(s), "claude"), nil
 	}
-	_, stale := staleElsewhere(t.Context(), rolling, vals("modern-5.0.1.tar.gz"), src, edits)
-	assert.True(t, stale, "the fetch moved; that the name did not is beside the point")
+	frame, stale := staleElsewhere(t.Context(), rolling, here, src, edits)
+	assert.True(t, stale, "the SITE moved though the filename did not")
+	assert.NotEmpty(t, frame)
 }
 
-// NO FRAMES, NO REPRIEVE — and neither does an enumeration that learned
-// nothing. This may only ever remove a refusal it has earned.
+// NO EVIDENCE, NO REPRIEVE. A road with no evaluator pool cannot tell a
+// pinned branch from a moving one, and neither can an enumeration in
+// which every frame took the branch already accounted for. Both fall back
+// to the refusal that shipped: this may only ever remove one it has
+// earned the right to remove.
 func TestWithoutEvidenceTheRefusalStands(t *testing.T) {
 	src, edits := theEdit()
-	_, stale := staleElsewhere(t.Context(), nil, vals("modern-5.0.1.tar.gz"), src, edits)
-	assert.True(t, stale)
 
-	same := func(_ context.Context, _ info.Platform, _ []byte) (info.Values, error) {
-		return vals("modern-5.0.1.tar.gz"), nil
+	_, stale := staleElsewhere(t.Context(), nil, here, src, edits)
+	assert.True(t, stale, "no frames at all")
+
+	same := func(_ context.Context, _ info.Platform, _ []byte) (intent.FrameFetch, error) {
+		return here, nil
 	}
-	_, stale = staleElsewhere(t.Context(), same, vals("modern-5.0.1.tar.gz"), src, edits)
+	_, stale = staleElsewhere(t.Context(), same, here, src, edits)
 	assert.True(t, stale, "every frame took the branch already accounted for")
+
+	blank := func(_ context.Context, _ info.Platform, _ []byte) (intent.FrameFetch, error) {
+		return intent.FrameFetch{}, nil
+	}
+	_, stale = staleElsewhere(t.Context(), blank, here, src, edits)
+	assert.True(t, stale, "a frame that fetches nothing told us nothing")
 }
