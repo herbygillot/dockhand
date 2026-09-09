@@ -34,10 +34,14 @@ the branch and opens the pull request, and the body says the change was
 not pre-verified. Same command, same result, different amount of
 waiting. ` + "`dockhand doctor`" + ` says which of the two this machine is.
 
-SETTING UP THE VERIFIED ROAD is one command, once per machine and once
-per macOS release. tart is not dockhand's to install.
+SETTING UP THE VERIFIED ROAD is one command per macOS release you want
+to build on. tart is not dockhand's to install.
 
-    dockhand provision
+    dockhand provision tart --macos tahoe
+
+` + "`dockhand provision`" + ` on its own prints this help rather than doing
+anything: the release is not optional, because a base image is built for
+one. ` + "`dockhand doctor`" + ` lists the ones this machine already has.
 
 --to-pr STAYS FOR THE BUILD, because the pass is what authorizes the
 pull request and this invocation cannot hand you one without it. A

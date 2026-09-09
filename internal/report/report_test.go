@@ -509,3 +509,35 @@ func TestWorkOnAFormerTipIsNotTheStanding(t *testing.T) {
 	text, _, _ := standingOf(c, atts, now)
 	assert.Equal(t, "no verification asked for", text)
 }
+
+// "passed 2h ago" ABOUT A BUILD THAT FINISHED A SECOND AGO. verdictLine
+// timestamped the attempt's START where its own doc promised "when it
+// landed", so the number a person read was the build's DURATION rather
+// than its age. The longer the build, the more wrong it got — which is
+// exactly backwards, since a long build is the one somebody is waiting
+// on.
+//
+// run.stamp writes record.Run.At as the verdict is reached. That is the
+// fact this line is about.
+func TestAVerdictIsTimedFromWhenItLandedNotWhenItStarted(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	twoHourBuild := record.Attempt{
+		ID: "att", Phase: record.Finished,
+		Started: now.Add(-2 * time.Hour),
+		Runs: map[string]record.Run{
+			"jq": {State: record.Passed, At: now.Add(-30 * time.Second)},
+		},
+	}
+	line, _ := verdictLine(twoHourBuild, now)
+	assert.Contains(t, line, "passed")
+	assert.NotContains(t, line, "2h", "that is how long it took, not how long ago it answered")
+
+	// A record written before runs carried a stamp still says something
+	// rather than nothing: the attempt's start is the only time it has.
+	old := record.Attempt{
+		ID: "att", Phase: record.Finished, Started: now.Add(-3 * time.Hour),
+		Runs: map[string]record.Run{"jq": {State: record.Passed}},
+	}
+	line, _ = verdictLine(old, now)
+	assert.Contains(t, line, "3h", "an unstamped run falls back rather than going silent")
+}

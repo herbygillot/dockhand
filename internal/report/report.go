@@ -955,12 +955,31 @@ func attemptStanding(a record.Attempt, now time.Time) (string, int) {
 // verdictLine is a settled attempt's own words: the worst run on it,
 // with when it landed. Worst-first, because a cohort with one failure
 // is a change that failed.
+//
+// WHEN IT LANDED IS THE RUN'S OWN STAMP and not the attempt's start,
+// which is what this said for as long as it has existed. run.stamp
+// writes record.Run.At as the verdict is reached — "the claim belongs to
+// the environment that was actually used" — and this read
+// record.Attempt.Started instead, so a build that took two hours and
+// finished a second ago reported "passed 2h ago". The doc line above
+// already said "when it landed"; only the code disagreed.
+//
+// Reported twice from the field, on two different ports, before anybody
+// looked at the source.
+//
+// A run with no stamp falls back to the attempt's start, because the
+// alternative is saying nothing about a verdict a person is scanning
+// for. It is the older shape of the record and not a live case.
 func verdictLine(a record.Attempt, now time.Time) (string, int) {
 	worst := record.Passed
+	landed := a.Started
 	seen := false
 	for _, r := range a.Runs {
 		if bad(r.State) > bad(worst) || !seen {
 			worst, seen = r.State, true
+			if !r.At.IsZero() {
+				landed = r.At
+			}
 		}
 	}
 	if !seen {
@@ -979,7 +998,7 @@ func verdictLine(a record.Attempt, now time.Time) (string, int) {
 		record.Failed, record.Unsupported, record.Blocked,
 		record.Canceled, record.Superseded, record.Errored, record.Faulted:
 	}
-	return verdictWord(worst) + " " + since(a.Started, now), rank
+	return verdictWord(worst) + " " + since(landed, now), rank
 }
 
 // bad ranks two run states so verdictLine can take the worse of them.

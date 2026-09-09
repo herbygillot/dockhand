@@ -294,6 +294,11 @@ func TestTheUsageTopicIsReachableAndSaysWhatTheVerbsDoNot(t *testing.T) {
 	assert.Equal(t, "usage", found.Name(), "`dockhand usage` and `dockhand help usage` reach it")
 
 	for _, said := range []string{
+		// AN EXECUTABLE COMMAND AND NOT A CATEGORY. The walkthrough said
+		// `dockhand provision`, which only prints help — a new reader's
+		// first instruction did nothing. Reported from two field runs
+		// before anybody read the source.
+		"dockhand provision tart --macos",
 		"RETURN — the build is not done",
 		"dockhand status",
 		"push to your fork and open the PR",
