@@ -149,10 +149,14 @@ func TestBumpPlanEndToEnd(t *testing.T) {
 	// No patchfiles, so nothing rides beside the Portfile.
 	assert.Empty(t, p.Files)
 
-	// Apply it: the observed delta must equal the prediction.
-	_, err = p.Apply(context.Background(), ev)
+	// Materialize it: the edits produce the Portfile the plan describes.
+	// This used to go through plan.Apply, which wrote the file and then
+	// re-evaluated it; Apply had no production caller and is gone, and
+	// the drift and prediction guards it duplicated live in
+	// change.Prepare, on the road that actually runs.
+	src, err := os.ReadFile(filepath.Join(dir, macports.PortfileName))
 	require.NoError(t, err)
-	after, err := os.ReadFile(filepath.Join(dir, macports.PortfileName))
+	after, err := p.Materialize(src)
 	require.NoError(t, err)
 	assert.Contains(t, string(after), "version 2.0")
 	assert.Contains(t, string(after), "revision 0")

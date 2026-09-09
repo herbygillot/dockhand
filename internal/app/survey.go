@@ -8,13 +8,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/ledger"
-	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/run"
 	"github.com/herbygillot/dockhand/internal/statestore"
-	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -51,11 +49,9 @@ import (
 // enqueued and left Queued. Chunking happens only when the pool delivers
 // several targets at once; it is not the road.
 type Survey struct {
-	Plan     planning.Planner
 	Repo     *git.Repo
 	Ledger   *ledger.Ledger
 	State    *statestore.Store
-	Temp     tempdir.Root
 	Stage    run.Stager
 	Local    run.Local
 	Verifier func(context.Context) (verify.Verifier, error)

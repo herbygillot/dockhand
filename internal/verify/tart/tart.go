@@ -113,7 +113,17 @@ func (p Provider) baseFor(r platform.Release) (Base, error) {
 		return Base{}, fmt.Errorf("%w: no base images (see doctor)", verify.ErrNoEnvironment)
 	}
 	if r.IsZero() {
-		return p.Bases[0], nil
+		// A REQUEST THAT NAMES NO RELEASE IS A BUG UPSTREAM, not a case to
+		// serve. This used to answer Bases[0], which is how one run
+		// produced three different answers: the guest built on Tahoe, the
+		// record said the platform was "", and the preflight evaluated
+		// every Portfile at os.major 0 and reported that ports declare
+		// known_fail when their Portfiles say no such thing.
+		//
+		// The platform is resolved before anything is minted now, so
+		// nothing legitimate arrives here empty, and refusing is what
+		// makes that true rather than merely intended.
+		return Base{}, fmt.Errorf("%w: the request names no release, so no base can be chosen for it", verify.ErrUnsupported)
 	}
 	for _, b := range p.Bases {
 		if b.Release == r {

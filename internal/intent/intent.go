@@ -79,27 +79,6 @@ type Planner interface {
 	Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (*plan.Plan, error)
 }
 
-// CohortPlanner is the shape a plural intent has: one member planned
-// at a time, from the bytes the caller read rather than from the
-// working tree.
-//
-// It is a second interface rather than a widened Planner because the
-// two are asked different questions. A Planner is given a target and
-// goes and reads it; a CohortPlanner is given a member's source,
-// because the source that matters is what the BRANCH TIP holds — the
-// working tree is sacred, may differ, and is not what the extend commit
-// will be built on. The portdir travels beside the bytes for the same
-// reason: the handle is a shadow of those bytes, so the directory the
-// change lands in has to be stated rather than read off the handle.
-//
-// Only bumprevision implements it. That is not a coincidence and not a
-// limitation to design around: a cohort is a set of revision bumps, and
-// what makes it one commit is that every member's edit is the same
-// mechanical edit for the same stated reason.
-type CohortPlanner interface {
-	PlanMember(ctx context.Context, h port.Handle, src []byte, portdir string) (*plan.Plan, error)
-}
-
 // Definition is one entry in the catalogue: everything cmd needs to
 // build a verb, with nothing about how the verb is realized. Realizing
 // is identical for every intent and belongs to the shared action.

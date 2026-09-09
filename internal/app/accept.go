@@ -8,7 +8,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/ledger"
-	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -26,7 +25,6 @@ import (
 // propose step (change.ProposeIn) when the headline's verification
 // settled; resolve reads the stored finding and never re-derives it.
 type Accept struct {
-	Plan      planning.Planner
 	Repo      *git.Repo
 	Ledger    *ledger.Ledger
 	State     *statestore.Store

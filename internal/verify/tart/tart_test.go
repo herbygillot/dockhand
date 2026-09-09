@@ -211,11 +211,20 @@ func TestBaseForPicksTheRequestedRelease(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "second-sonoma", b.VM)
 
-	// No platform named takes the first, which is what a caller who
-	// does not care means.
-	b, err = p.baseFor(platform.Release{})
-	require.NoError(t, err)
-	assert.Equal(t, "first-sequoia", b.VM)
+	// AND A REQUEST THAT NAMES NO RELEASE IS REFUSED. This took the
+	// first base, on the reasoning that it is "what a caller who does not
+	// care means" — and there was no such caller. What actually arrived
+	// here empty was a request whose platform nobody had resolved, and
+	// serving it produced three answers to one question: the guest built
+	// on the first base, the record stored "", and the preflight
+	// evaluated every Portfile at os.major 0 and reported that ports
+	// declare known_fail when their Portfiles say no such thing.
+	//
+	// The platform is resolved before a change is minted now. Refusing
+	// here is what makes that a property rather than an intention.
+	_, err = p.baseFor(platform.Release{})
+	require.ErrorIs(t, err, verify.ErrUnsupported)
+	assert.Contains(t, err.Error(), "names no release")
 }
 
 // A release with no image is refused, never substituted: a build on one

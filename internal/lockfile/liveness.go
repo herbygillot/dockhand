@@ -2,11 +2,8 @@ package lockfile
 
 import (
 	"context"
-	"errors"
+	"github.com/herbygillot/dockhand/internal/proc"
 	"os"
-	"os/exec"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -101,48 +98,11 @@ func sameHost(host string) bool {
 // way to write a case for "a PID that is present with a later start
 // time" — the reused number this check exists for — without waiting for
 // a machine to churn through 99999 of them.
-var processStart = psStart
-
-// psStart asks ps, which is the portable question about a process a leaf
-// package can ask without vendoring a syscall package for one field.
-//
-// IT IS DELIBERATELY A SECOND COPY of the same question lease asks, and
-// the duplication is the price of the layering rather than an oversight.
-// lockfile is a leaf — an flock and a JSON blob — held by the notes
-// lock, the tart admission lock and the two dispatch locks alike, and
-// importing lease (which imports record, statestore and the rest of the
-// durable vocabulary) to reach an unexported helper would put that whole
-// graph underneath every mutual exclusion in the tree. The two also ask
-// DIFFERENT questions of the same output: lease asks whether a PID and a
-// birth name one process, and this asks only whether the process at a
-// PID is old enough to have written a stamp — see attested.
-//
-// `ps -o lstart= -p N` prints one line in the C locale's own format and
-// exits non-zero when there is no such process, which is the two facts
-// this needs in one call. A line that does not parse is an answer this
-// cannot use, and an unusable answer is a failure to look rather than a
-// guess in either direction.
-func psStart(ctx context.Context, pid int) (time.Time, bool, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
-		// ps exits non-zero for a pid it has no process for, which is the
-		// answer and not a failure. Anything else — no ps at all, a
-		// context that ended — is a failure to look, and attested must
-		// not read it as an absent process.
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return time.Time{}, false, nil
-		}
-		return time.Time{}, false, err
-	}
-	line := strings.TrimSpace(string(out))
-	start, perr := time.ParseInLocation(psLayout, line, time.Local)
-	if perr != nil {
-		return time.Time{}, false, perr
-	}
-	return start, true, nil
-}
-
-// psLayout is what `ps -o lstart=` prints — "Tue Sep  8 01:51:16 2026",
-// with the day of the month space-padded.
-const psLayout = "Mon Jan _2 15:04:05 2006"
+// The probe itself is internal/proc. This used to carry its own copy,
+// deliberately, so a leaf package would not import lease and put lease's
+// thirteen internal dependencies underneath every mutual exclusion in
+// the tree. That reason was sound and still is; it argued against
+// importing lease, not against sharing the mechanism, and proc depends
+// on nothing. What stays here is attested's own question: whether the
+// process at a pid is old enough to have written the stamp.
+var processStart = proc.Start

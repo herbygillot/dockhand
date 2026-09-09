@@ -642,11 +642,9 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 	me := s.Me()
 	residency := probeResidency(ctx, repo)
 	op := app.Change{
-		Plan:      planningFor(s),
 		Repo:      repo,
 		Ledger:    led,
 		State:     st,
-		Temp:      s.Temp(),
 		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
 		Local:     s.ProposeTree(),
 		Verifier:  s.VerifyProvider(),
@@ -779,11 +777,9 @@ func manyTargets(ctx context.Context, s *Services, v intentVerb, planner plannin
 			return prepare(ctx, s, pl, !f.noFetch)
 		})
 	op := app.Survey{
-		Plan:     planningFor(s),
 		Repo:     repo,
 		Ledger:   led,
 		State:    st,
-		Temp:     s.Temp(),
 		Stage:    &stager{repo: repo, temp: s.Temp(), session: s.session},
 		Local:    s.ProposeTree(),
 		Verifier: s.VerifyProvider(),

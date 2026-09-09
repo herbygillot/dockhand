@@ -931,8 +931,7 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 		return err
 	}
 	residency := probeResidency(ctx, repo)
-	op := app.Accept{
-		Plan: planningFor(s), Repo: repo, Ledger: led, State: st,
+	op := app.Accept{Repo: repo, Ledger: led, State: st,
 		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
 		Local:     s.ProposeTree(),
 		Verifier:  s.VerifyProvider(),

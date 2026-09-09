@@ -1,6 +1,7 @@
 package lease
 
 import (
+	"github.com/herbygillot/dockhand/internal/proc"
 	"os"
 	"testing"
 	"time"
@@ -87,7 +88,7 @@ func TestTheWindowIsSizedForTheMeasurementAndNotForGuessing(t *testing.T) {
 // format that changed underneath would fail here rather than turn every
 // live peer into a dead one.
 func TestThePsLayoutIsTheOneThisHostPrints(t *testing.T) {
-	got, err := time.ParseInLocation(psLayout, "Tue Sep  8 01:51:16 2026", time.UTC)
+	got, err := time.ParseInLocation(proc.Layout, "Tue Sep  8 01:51:16 2026", time.UTC)
 	require.NoError(t, err)
 	assert.Equal(t, time.Date(2026, 9, 8, 1, 51, 16, 0, time.UTC), got,
 		"the day of the month is space-padded, which _2 and not 2 is for")

@@ -92,7 +92,6 @@ type Prepared struct {
 	Portdir  TreePath
 	Subjects []record.Subject
 	Files    []File
-	Predict  info.Delta
 	// Before and After are the EVALUATED values of the headline port on
 	// either side of the change — info.Values.Version, never the carrier
 	// literal — and they are here because record.Crossing needs a producer
@@ -425,7 +424,6 @@ func Prepare(ctx context.Context, p *plan.Plan, src Source, ev Evaluator) (Prepa
 			Target:  targetIn(p.Slug, p.Port),
 		}},
 		Files:    files,
-		Predict:  predictOf(p),
 		Base:     src.Base,
 		Intent:   p.Intent,
 		Summary:  p.Summary,
@@ -552,81 +550,6 @@ func first(vals []string) string {
 		return ""
 	}
 	return vals[0]
-}
-
-// predictOf lifts the plan's canonical wire form back into an
-// info.Delta, which is the shape Prepared carries because a delta is
-// what a reader of a change asks for and plan.ContextDelta is a
-// rendering of one.
-//
-// WHAT SURVIVES THE ROUND TRIP AND WHAT DOES NOT, said here rather than
-// discovered later. A field change survives whole: the field name is
-// info.Field's own String, so the inversion is over one vocabulary
-// rather than two (rule 6 — nothing here recovers a fact by reading a
-// word somebody else chose). A context that APPEARED or VANISHED does
-// not: plan's wire form renders such a context as one-sided changes and
-// keeps no info.Values to re-inflate, and info exports no way to build
-// one field by field. The KEY survives, and the key is what the only
-// consumer in the tree reads — info.Delta.OtherContext asks which
-// contexts a delta touches, in any way, and never their values — so the
-// loss is stated and bounded rather than silent.
-func predictOf(p *plan.Plan) info.Delta {
-	var d info.Delta
-	for _, cd := range p.Predicted {
-		key := info.SubportKey{Subport: cd.Subport, Variants: info.VariantSet(cd.Variants)}
-		switch {
-		case cd.Added:
-			if d.Added == nil {
-				d.Added = map[info.SubportKey]info.Values{}
-			}
-			d.Added[key] = info.Values{}
-		case cd.Removed:
-			if d.Removed == nil {
-				d.Removed = map[info.SubportKey]info.Values{}
-			}
-			d.Removed[key] = info.Values{}
-		default:
-			changes := make([]info.FieldChange, 0, len(cd.Changes))
-			for _, ch := range cd.Changes {
-				f, ok := fieldNamed(ch.Field)
-				if !ok {
-					continue
-				}
-				changes = append(changes, info.FieldChange{Field: f, Old: ch.Old, New: ch.New})
-			}
-			if len(changes) == 0 {
-				continue
-			}
-			if d.Changed == nil {
-				d.Changed = map[info.SubportKey][]info.FieldChange{}
-			}
-			d.Changed[key] = changes
-		}
-	}
-	return d
-}
-
-// fieldNamed inverts info.Field.String over the closed set. The set
-// itself is walked — info.Fields(), which info generates from
-// info.Semantic — rather than a copy of the list or a pair of bounds,
-// so a field added there is inverted here without an edit and a field
-// RENAMED there stops matching here loudly rather than quietly: the
-// name comes from one place either way.
-//
-// It walked the constants FieldName..FieldDependsTest until the
-// comparison table became generated. That was a hole of exactly the
-// kind the generation closed: a field appended AFTER the last constant
-// named here would have been compared by info, recorded in a plan, and
-// then silently dropped on the way back in — the loop would never have
-// reached it. Asking the set for its members has no last constant to
-// go stale.
-func fieldNamed(name string) (info.Field, bool) {
-	for _, f := range info.Fields() {
-		if f.String() == name {
-			return f, true
-		}
-	}
-	return 0, false
 }
 
 // Cross is the mint-time stability fact record.Crossing is the durable

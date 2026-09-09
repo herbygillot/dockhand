@@ -38,14 +38,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/ledger"
-	"github.com/herbygillot/dockhand/internal/planning"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/run"
 	"github.com/herbygillot/dockhand/internal/statestore"
-	"github.com/herbygillot/dockhand/internal/tempdir"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
@@ -162,12 +160,9 @@ const (
 // run.EnqueueIn; the batch creates the branch), resolve, start ONCE,
 // detach.
 type Change struct {
-	Plan   planning.Planner
 	Repo   *git.Repo
 	Ledger *ledger.Ledger
 	State  *statestore.Store
-	Temp   tempdir.Root
-	// Stage is the re-plan seam run.Start needs: it materializes the
 	// portdir from the commit the attempt names. Change holds one even
 	// though it just prepared those files in memory, because the guest is
 	// seated from the RECORD on every road — this try, cycle's drain and a

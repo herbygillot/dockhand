@@ -2,10 +2,7 @@ package lease
 
 import (
 	"context"
-	"errors"
-	"os/exec"
-	"strconv"
-	"strings"
+	"github.com/herbygillot/dockhand/internal/proc"
 	"time"
 )
 
@@ -98,42 +95,7 @@ func sameProcess(since, start time.Time) bool {
 // point it at: a test scripts the process table, which is the only way
 // to write a case for "a PID that is present with a different start
 // time" at all.
-var processStart = psStart
-
-// psStart asks ps, which is the portable question about a process this
-// tree can ask without vendoring a syscall package for one field.
-//
-// `ps -o lstart= -p N` prints one line in the C locale's own format and
-// exits non-zero when there is no such process, which is the two facts
-// this needs in one call. The format is fixed by ps and not by a locale
-// variable dockhand sets, so the layout is a constant here; a line that
-// does not parse is an answer this cannot use, and an unusable answer is
-// unknownLiveness rather than a guess in either direction.
-//
-// The seconds are whole: ps truncates. See startupWindow, which is sized
-// for that and for the runtime's own startup.
-func psStart(ctx context.Context, pid int) (time.Time, bool, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
-		// ps exits non-zero for a pid it has no process for, which is the
-		// answer and not a failure. Anything else — no ps at all, a
-		// context that ended — is a failure to look, and the caller must
-		// not read it as an absent process.
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return time.Time{}, false, nil
-		}
-		return time.Time{}, false, err
-	}
-	line := strings.TrimSpace(string(out))
-	start, perr := time.ParseInLocation(psLayout, line, time.Local)
-	if perr != nil {
-		return time.Time{}, false, perr
-	}
-	return start, true, nil
-}
-
-// psLayout is what `ps -o lstart=` prints — "Tue Sep  8 01:51:16 2026",
-// with the day of the month space-padded — measured on this machine
-// rather than assumed.
-const psLayout = "Mon Jan _2 15:04:05 2006"
+// The probe itself is internal/proc: the same question lockfile asks,
+// for a different reason. What stays here is the JUDGMENT — whether a
+// pid and a birth name one process — which is lease's and not a leaf's.
+var processStart = proc.Start
