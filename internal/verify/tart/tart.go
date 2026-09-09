@@ -19,6 +19,7 @@ package tart
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -252,6 +253,39 @@ func HasVM(ctx context.Context, tools *tool.Finder, name string) (bool, error) {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[1] == name {
 			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Running reports whether a local VM is not merely present but ACTUALLY
+// RUNNING, and it exists because "present" and "running" are two facts
+// that Poll was reading as one.
+//
+// It asks for JSON rather than parsing the table HasVM reads. The state
+// is the table's last column and the column before it is a human
+// duration — "1 hour ago", three whitespace fields — so a positional
+// read of the text form is a read that a change in tart's date wording
+// would silently move.
+//
+// A VM that is not there at all is not running, and says so without an
+// error: the caller that needs to tell absence from stillness has
+// HasVM for the first question.
+func Running(ctx context.Context, tools *tool.Finder, name string) (bool, error) {
+	out, err := CLI(ctx, tools, nil, "list", "--source", "local", "--format", "json")
+	if err != nil {
+		return false, fmt.Errorf("%w: listing local VMs: %s", verify.ErrNoEnvironment, strings.TrimSpace(out))
+	}
+	var vms []struct {
+		Name  string `json:"Name"`
+		State string `json:"State"`
+	}
+	if err := json.Unmarshal([]byte(out), &vms); err != nil {
+		return false, fmt.Errorf("%w: reading the VM listing: %w", verify.ErrNoEnvironment, err)
+	}
+	for _, vm := range vms {
+		if vm.Name == name {
+			return vm.State == "running", nil
 		}
 	}
 	return false, nil
@@ -1310,8 +1344,24 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 	}
 	state, err := Exec(ctx, p.Tools, job.ID, "/bin/cat", stateDir+"/state")
 	if err != nil {
-		// The guest is not answering yet, or no longer is. Either way it
-		// has not reported an outcome, and inventing one would be worse.
+		// The guest is not answering. "Not yet" and "never again" were one
+		// answer here, and they are not one fact: a guest still booting
+		// will report, and a guest that has STOPPED will not.
+		//
+		// Reporting both as Running is rule 7's shape — "I could not reach
+		// it" said as "it is working" — and it costs a wait that cannot
+		// end. Measured: a cohort's guest died partway through a Skia
+		// compile, the VM stayed in the listing as `stopped`, and Poll
+		// answered Running to every poll a `--wait 300m` watcher made.
+		//
+		// A VM that is present but not running has not reported an outcome
+		// and never will, which is terminal. A listing that cannot be read
+		// leaves the old answer standing: a caller that could not ask is
+		// not entitled to conclude.
+		if running, rerr := Running(ctx, p.Tools, job.ID); rerr == nil && !running {
+			return verify.Status{State: verify.Errored,
+				Detail: "the environment stopped before the run reported an outcome"}, nil
+		}
 		return verify.Status{State: verify.Running}, nil
 	}
 
