@@ -1,7 +1,8 @@
-package cli
+package staging
 
 import (
 	"context"
+	"github.com/herbygillot/dockhand/internal/tool"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +33,7 @@ import (
 // cannot be made for any port anywhere until this is staged". It was
 // written about the branch overlay and was true of this one throughout.
 func TestBaselineStagesTheResourcesTreeBesideItsPortdirs(t *testing.T) {
-	repo := gittest.PortsTree(t, testFinder())
+	repo := gittest.PortsTree(t, tool.NewFinder(nil))
 	sha, err := repo.RevParse(t.Context(), "HEAD")
 	require.NoError(t, err)
 
@@ -40,7 +41,7 @@ func TestBaselineStagesTheResourcesTreeBesideItsPortdirs(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = root.Remove() })
 
-	s := &stager{repo: repo, temp: root}
+	s := &Stager{repo: repo, temp: root}
 	dirs, err := s.Baseline(context.Background(), sha,
 		[]record.Subject{{Port: "jq", Portdir: "sysutils/jq"}})
 	require.NoError(t, err)
@@ -58,12 +59,12 @@ func TestBaselineStagesTheResourcesTreeBesideItsPortdirs(t *testing.T) {
 // AND A CHANGE WITH NO RECORDED BASE STAGES NOTHING AND SAYS SO WITH A
 // NIL ERROR: that is a real absence, not a failure.
 func TestBaselineWithNoBaseStagesNothing(t *testing.T) {
-	repo := gittest.PortsTree(t, testFinder())
+	repo := gittest.PortsTree(t, tool.NewFinder(nil))
 	root, err := tempdir.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = root.Remove() })
 
-	s := &stager{repo: repo, temp: root}
+	s := &Stager{repo: repo, temp: root}
 	dirs, err := s.Baseline(context.Background(), "",
 		[]record.Subject{{Port: "jq", Portdir: "sysutils/jq"}})
 	require.NoError(t, err)
@@ -90,7 +91,7 @@ func TestBaselineWithNoBaseStagesNothing(t *testing.T) {
 // preflight could not answer, because a preflight exists to save a VM
 // and never to invent a verdict.
 func TestAPreflightWithNoPlatformDoesNotDeclineThePort(t *testing.T) {
-	s := &stager{}
+	s := &Stager{}
 	pf := s.preflight(context.Background(), t.TempDir(), record.Subject{Port: "nheko"}, platform.Release{})
 
 	assert.False(t, pf.Read, "an unanswerable preflight is unread, never a decline")

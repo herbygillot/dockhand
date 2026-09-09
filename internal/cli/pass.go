@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/staging"
 	"io"
 	"time"
 
@@ -721,7 +722,7 @@ func describeHolder(h lockfile.Holder) string {
 // Grants.Invoker is a CONSTANT of the road and never an ambient value:
 // record.Human from `cycle`, record.Machine from `dispatch`. The zero
 // Driver is unset and is a wiring gap, never a person.
-func cycleOp(ctx context.Context, s *Services, me record.OwnerID, passID string, invoker record.Driver, pace publish.Pace) (app.Cycle, *stager, error) {
+func cycleOp(ctx context.Context, s *Services, me record.OwnerID, passID string, invoker record.Driver, pace publish.Pace) (app.Cycle, *staging.Stager, error) {
 	repo, err := s.Repo()
 	if err != nil {
 		return app.Cycle{}, nil, err
@@ -741,7 +742,7 @@ func cycleOp(ctx context.Context, s *Services, me record.OwnerID, passID string,
 	// a preflight that could not be read is scheduled as an ordinary
 	// build rather than declined, so the cost of the approximation is a
 	// known_fail discovered in the guest instead of before it.
-	stg := &stager{repo: repo, temp: s.Temp(), session: s.session}
+	stg := staging.New(repo, s.Temp(), s.session)
 	var ev = evaluatorFor(s)
 	return app.Cycle{
 		Repo: repo, State: st, Ledger: led, Env: s.PublishEnv(),

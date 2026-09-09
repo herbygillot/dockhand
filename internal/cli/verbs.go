@@ -8,6 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/build"
+	"github.com/herbygillot/dockhand/internal/staging"
 	"log/slog"
 	"maps"
 	"os"
@@ -90,7 +91,7 @@ func verifyCmd(s *Services) *cobra.Command {
 			stay := waitPtr(cmd, wait, trace)
 			op := app.Verify{
 				Repo: repo, Ledger: led, State: st,
-				Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
+				Stage:     staging.New(repo, s.Temp(), s.session),
 				Local:     s.ProposeTree(),
 				Verifier:  s.VerifyProvider(),
 				Me:        s.Me(),
@@ -938,7 +939,7 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 	}
 	residency := probeResidency(ctx, repo)
 	op := app.Accept{Repo: repo, Ledger: led, State: st,
-		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
+		Stage:     staging.New(repo, s.Temp(), s.session),
 		Local:     s.ProposeTree(),
 		Verifier:  s.VerifyProvider(),
 		Me:        s.Me(),

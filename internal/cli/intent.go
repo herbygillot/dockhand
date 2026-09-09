@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/staging"
 	"io"
 	"strings"
 	"time"
@@ -645,7 +646,7 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 		Repo:      repo,
 		Ledger:    led,
 		State:     st,
-		Stage:     &stager{repo: repo, temp: s.Temp(), session: s.session},
+		Stage:     staging.New(repo, s.Temp(), s.session),
 		Local:     s.ProposeTree(),
 		Verifier:  s.VerifyProvider(),
 		Me:        me,
@@ -780,7 +781,7 @@ func manyTargets(ctx context.Context, s *Services, v intentVerb, planner plannin
 		Repo:     repo,
 		Ledger:   led,
 		State:    st,
-		Stage:    &stager{repo: repo, temp: s.Temp(), session: s.session},
+		Stage:    staging.New(repo, s.Temp(), s.session),
 		Local:    s.ProposeTree(),
 		Verifier: s.VerifyProvider(),
 		Me:       s.Me(),
