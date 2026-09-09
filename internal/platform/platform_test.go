@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -131,4 +132,16 @@ func TestForgivenessIsNotGuessing(t *testing.T) {
 		_, err := Parse(input)
 		require.ErrorIs(t, err, ErrUnknownRelease, input)
 	}
+}
+
+// HOST ARCH SPEAKS base's VOCABULARY AND NOT GO'S. os.arch names the
+// hardware family — "arm", "i386", "powerpc" — where Go says "arm64" and
+// "amd64", and a frame handed Go's spelling would be naming an
+// architecture MacPorts has no branch for.
+func TestHostArchIsSpelledTheWayMacPortsSpellsIt(t *testing.T) {
+	got := HostArch()
+	assert.Contains(t, []string{"arm", "i386"}, got,
+		"os.arch is the hardware family, not the ABI name")
+	assert.NotEqual(t, runtime.GOARCH, got,
+		"Go's spelling is never base's on either architecture dockhand runs on")
 }

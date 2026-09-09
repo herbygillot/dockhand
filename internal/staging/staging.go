@@ -222,7 +222,12 @@ func (s *Stager) preflight(ctx context.Context, staged string, sub record.Subjec
 	if s.session == nil {
 		return run.Preflight{Err: ErrNoEvaluator}
 	}
-	frame := info.Platform{OS: "macosx", Major: on.Darwin, Arch: "arm"}
+	// The architecture is THIS MACHINE'S, because a tart guest runs the
+	// architecture of the Mac hosting it — the frame is describing a
+	// real environment, not a hypothetical one. It was the literal "arm",
+	// which cost nothing while a frame did not simulate architecture and
+	// costs a wrong known_fail now that it does.
+	frame := info.Platform{OS: "macosx", Major: on.Darwin, Arch: platform.HostArch()}
 	ev, err := s.session(ctx, eval.WithPlatform(frame))
 	if err != nil {
 		return run.Preflight{Err: err}

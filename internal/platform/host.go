@@ -43,3 +43,23 @@ func PhysicalMemoryMB() int {
 	}
 	return physicalMemoryMB()
 }
+
+// HostArch is this machine's architecture in base's own os.arch
+// vocabulary — the hardware family, "arm" or "i386", and not the ABI
+// name Go uses.
+//
+// It exists for the one caller that builds an evaluation frame for a
+// VERIFICATION ENVIRONMENT rather than for a hypothetical: a tart guest
+// runs the architecture of the Mac hosting it, so the frame a preflight
+// evaluates against is this machine's, not a choice.
+//
+// It was a literal "arm" at that call site, which cost nothing while the
+// frame did not simulate architecture at all and costs something now
+// that it does: on an Intel Mac the preflight would have decided
+// known_fail and use_xcode for a guest that does not exist.
+func HostArch() string {
+	if runtime.GOARCH == "arm64" {
+		return "arm"
+	}
+	return "i386"
+}
