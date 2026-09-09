@@ -1,6 +1,7 @@
 package tart
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -154,4 +155,25 @@ func TestLogAndShellRefuseAStoppedGuestInWordsAPersonCanActOn(t *testing.T) {
 	err = p.Shell(context.Background(), job)
 	require.ErrorIs(t, err, verify.ErrNoEnvironment)
 	assert.Contains(t, err.Error(), "is stopped")
+}
+
+// A FOLLOWER THAT COULD NOT ATTACH MUST NOT LOOK LIKE A QUIET BUILD.
+//
+// `log --trace` on a stopped guest returned exit 0 and printed nothing,
+// while plain `log` on the same worker reported the guest stopped and
+// named the command to restart it. An empty successful return reads as
+// "the build is fine" or "there is nothing yet"; what had happened is
+// that nothing could be reached.
+//
+// Two causes, one symptom: Stream asked no reachability question, and it
+// converted every ExitError to success. The second is the load-bearing
+// one — followScript's four endings are `exit 0` to a line, so a
+// non-zero status is TART's and never the follower's.
+func TestStreamRefusesAStoppedGuestRatherThanReturningEmptySuccess(t *testing.T) {
+	p := Provider{Tools: fakeTart(t, "w-1", "stopped")}
+	var out bytes.Buffer
+	err := p.Stream(context.Background(), verify.Job{Provider: "tart", ID: "w-1"}, &out)
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.Contains(t, err.Error(), "is stopped")
+	assert.Empty(t, out.String())
 }

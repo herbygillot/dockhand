@@ -15,12 +15,15 @@ import (
 // macports-ports' own pull request template, with the boxes dockhand can
 // honestly answer checked and the ones it could not have answered
 // deleted.
+// yes is a port that declares an enabled test command.
+var yes = true
+
 func TestAVerifiedBodyStatesTheEvidenceAndChecksWhatItCanVouchFor(t *testing.T) {
 	lint := "clean"
 	f := facts(func(f *Facts) {
 		f.Attempts[0].Runs = map[string]record.Run{"jq": {
 			State: record.Passed, Content: "tree-1", At: clock,
-			Ask:  record.Ask{Test: true, FromSource: true},
+			Ask: record.Ask{Test: true, FromSource: true}, HasTests: &yes,
 			Lint: &lint,
 		}}
 		f.Change.ClosesTicket = "12345"
@@ -347,4 +350,40 @@ func TestTheBodyNamesAPatchThatDidNotCarryOver(t *testing.T) {
 	out := body(f, "1.2.3")
 	assert.Contains(t, out, "files/patch-foo.diff does not relocate onto the new source")
 	assert.Contains(t, out, "Makefile hunk #1")
+}
+
+// A REQUEST IS NOT A MEASUREMENT. "built and tested in a pristine VM"
+// came from Ask.Test alone, and MacPorts' test phase executes nothing
+// unless the Portfile sets test.run — which most ports do not. Measured
+// on repgrep 0.17.1: the log goes straight from "Executing
+// org.macports.test" to the next note, and the body still told reviewers
+// a suite had passed.
+//
+// Four states, because the record carries two facts and either can be
+// missing.
+func TestTheBodyOnlyClaimsTestsThatCouldHaveRun(t *testing.T) {
+	no := false
+	for _, c := range []struct {
+		name string
+		run  record.Run
+		want string
+		not  string
+	}{
+		{"asked, and the port has one", record.Run{Ask: record.Ask{Test: true}, HasTests: &yes},
+			"and tested in a pristine VM", ""},
+		{"asked, and the port has none", record.Run{Ask: record.Ask{Test: true}, HasTests: &no},
+			"the port enables no test command", "and tested"},
+		{"asked, and nobody could say", record.Run{Ask: record.Ask{Test: true}},
+			"whether a test suite ran was not recorded", "and tested"},
+		{"not asked at all", record.Run{},
+			"built in a pristine VM", "test"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := evidenceClaim("built in a pristine VM", c.run.Ask.FromSource, testEvidenceOf(c.run))
+			assert.Contains(t, got, c.want)
+			if c.not != "" {
+				assert.NotContains(t, got, c.not)
+			}
+		})
+	}
 }

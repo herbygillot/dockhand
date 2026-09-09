@@ -143,8 +143,18 @@ type Ask struct {
 // artifact package rather than from verify, for the same reason LeaseID
 // is declared here.
 type Run struct {
-	Ask   Ask      `json:"ask,omitzero"`
-	State RunState `json:"state"`
+	Ask Ask `json:"ask,omitzero"`
+	// HasTests is whether the PORT declares an enabled test command, as
+	// the preflight read it. Ask.Test is what was requested; this is what
+	// there was to run.
+	//
+	// A pointer, on Lint's precedent: nil is "nobody could ask", false is
+	// "asked, and the port enables no test command", and only true means
+	// a suite existed. The body used to say "built and tested in a
+	// pristine VM" from Ask.Test alone, which is a claim about a
+	// measurement nobody took.
+	HasTests *bool    `json:"has_tests,omitempty"`
+	State    RunState `json:"state"`
 	// Content is the digest of the file set this verdict was earned
 	// against, so a reader a week later can tell whether the evidence
 	// describes the tip it is attached to.

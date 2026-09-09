@@ -229,14 +229,16 @@ func (s *Stager) preflight(ctx context.Context, staged string, sub record.Subjec
 	}
 	defer ev.Close()
 	h := port.New(subportTarget(staged, sub), ev)
-	opts, err := h.Options(ctx, "known_fail", "use_xcode")
+	opts, err := h.Options(ctx, "known_fail", "use_xcode", "test.run")
 	if err != nil {
 		return run.Preflight{Err: err}
 	}
+	hasTests := tclTrue(opts["test.run"])
 	return run.Preflight{
 		Read:       true,
 		KnownFail:  tclTrue(opts["known_fail"]),
 		NeedsXcode: tclTrue(opts["use_xcode"]),
+		HasTests:   &hasTests,
 		Reason:     opts["known_fail_reason"],
 	}
 }

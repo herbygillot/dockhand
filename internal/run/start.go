@@ -222,7 +222,7 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		cur.Image = l.Image
 		cur.Owner = by.Owner
 		cur.Started = now.UTC()
-		cur.Runs = startedRuns(spec, req, declined, now)
+		cur.Runs = startedRuns(spec, req, declined, pre, now)
 		cur.Unchecked = unchecked(pre)
 		tx.PutAttempt(cur)
 		started = cur
@@ -274,7 +274,7 @@ func unchecked(pre map[string]Preflight) map[string]string {
 // build from source that never happened. Forced is the member's own for
 // the same reason — the sibling this one deactivated is not a fact about
 // any other member's build.
-func startedRuns(spec Spec, req verify.Request, declined map[string]record.Run, now time.Time) map[string]record.Run {
+func startedRuns(spec Spec, req verify.Request, declined map[string]record.Run, pre map[string]Preflight, now time.Time) map[string]record.Run {
 	runs := make(map[string]record.Run, len(req.Ports)+len(declined))
 	for port, r := range declined {
 		r.At = now.UTC()
@@ -296,9 +296,13 @@ func startedRuns(spec Spec, req verify.Request, declined map[string]record.Run, 
 				FromSource: fromSource[port],
 				Forced:     forced[port],
 			},
-			State:   record.Running,
-			Content: spec.Content,
-			At:      now.UTC(),
+			// What the PORT offers, recorded beside what was asked of it:
+			// a body that says "tested" has to be able to tell a suite that
+			// ran from a phase that had nothing to run.
+			HasTests: pre[port].HasTests,
+			State:    record.Running,
+			Content:  spec.Content,
+			At:       now.UTC(),
 		}
 	}
 	return runs

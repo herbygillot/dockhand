@@ -158,6 +158,18 @@ type Preflight struct {
 	KnownFail  bool
 	Reason     string
 	NeedsXcode bool
+	// HasTests is whether the port declares an ENABLED test command
+	// (test.run), and it is a pointer for the reason Read exists on this
+	// struct: false and "could not ask" are different answers, and the
+	// second must never be published as the first.
+	//
+	// It exists because --test was being reported as evidence that tests
+	// RAN. record.Ask.Test carries the request, and a pull request body
+	// derived "built and tested in a pristine VM" from it — while
+	// MacPorts' test phase executes nothing at all unless test.run is set,
+	// which most ports do not set. The ask is an intention; this is what
+	// the port actually offers.
+	HasTests *bool
 }
 
 // Evidence is everything gathered about one submitted job before

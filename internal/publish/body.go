@@ -137,10 +137,11 @@ func body(f Facts, version string) string {
 			// ignore the archive may say so. The test suite was asked of the
 			// ENVIRONMENT, and record.Ask carries it per run because a queued
 			// attempt has no environment to carry it on.
-			if r.Ask.Test {
+			ev := testEvidenceOf(r)
+			if ev == testsRan {
 				tested = true
 			}
-			what = evidenceClaim(evidenceOf(r), r.Ask.FromSource, r.Ask.Test)
+			what = evidenceClaim(evidenceOf(r), r.Ask.FromSource, ev)
 			// The lint claim rides the evidence line, because the checked box
 			// below is only honest if the body states what backs it. Lint is a
 			// pointer: nil is "no lint ran" and a pointer to the empty string
@@ -418,6 +419,37 @@ func evidenceOf(r record.Run) string {
 	return r.Evidence
 }
 
+// testEvidence is what a run can honestly say about a test suite, and it
+// has four values because the record carries two facts and either can be
+// missing.
+//
+// "built and tested in a pristine VM" used to come from Ask.Test alone —
+// the REQUEST. MacPorts' test phase executes nothing unless the Portfile
+// sets test.run, which most ports do not, so a body could tell reviewers
+// a suite had passed when the phase ran no command at all. Measured on
+// repgrep 0.17.1: the log goes straight from "Executing
+// org.macports.test" to the next note.
+type testEvidence int
+
+const (
+	testsNotAsked testEvidence = iota // --test was not given
+	testsRan                          // asked, and the port enables one
+	testsNone                         // asked, and the port enables none
+	testsUnknown                      // asked, and the preflight could not say
+)
+
+func testEvidenceOf(r record.Run) testEvidence {
+	switch {
+	case !r.Ask.Test:
+		return testsNotAsked
+	case r.HasTests == nil:
+		return testsUnknown
+	case *r.HasTests:
+		return testsRan
+	}
+	return testsNone
+}
+
 // evidenceClaim composes one pass's line: what the environment says a
 // pass proves, with the two qualifiers this run earned spliced in.
 //
@@ -432,18 +464,29 @@ func evidenceOf(r record.Run) string {
 // What this owns is the composition around it. "From source" and
 // "tested" are facts about this run and not about the machine, so they
 // attach to the act the claim opens with rather than to its tail.
-func evidenceClaim(claim string, fromSource, tested bool) string {
+func evidenceClaim(claim string, fromSource bool, tested testEvidence) string {
 	act, where, _ := strings.Cut(claim, " ")
 	if fromSource {
 		act += " from source"
 	}
-	if tested {
+	// "and tested" belongs to the ACT and reads inside the sentence;
+	// the two qualifications are about the port rather than the build,
+	// and follow the whole clause.
+	if tested == testsRan {
 		act += " and tested"
 	}
-	if where == "" {
-		return act
+	out := act
+	if where != "" {
+		out += " " + where
 	}
-	return act + " " + where
+	switch tested {
+	case testsNone:
+		out += ", and the port enables no test command"
+	case testsUnknown:
+		out += ", and whether a test suite ran was not recorded"
+	case testsRan, testsNotAsked:
+	}
+	return out
 }
 
 // unrunLine is the whole line a publication with no run at all carries.

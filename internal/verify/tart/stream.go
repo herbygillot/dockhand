@@ -1,11 +1,12 @@
 package tart
 
 import (
+	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tool"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -60,20 +61,37 @@ func (p Provider) Stream(ctx context.Context, job verify.Job, w io.Writer) error
 	// The child's own stdout, not a transcript: this is a stream, and a
 	// tool.Run that buffered it into a string would hand the caller the
 	// whole log at the end, which is the contract Log already has.
+	// REACHABILITY FIRST, the same question Log and Shell ask. A stopped
+	// guest cannot be exec'd into, and this road used to answer that with
+	// exit 0 and an empty stream — which a person reads as "the build is
+	// fine" or "there is nothing to show" rather than "I could not look".
+	// Measured in the field: `log --trace` returned 0 and printed nothing
+	// while plain `log` on the same worker reported the guest stopped and
+	// named the command to restart it.
+	if err := p.awake(ctx, job.ID); err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, bin, "exec", job.ID, "/bin/sh", "-c", followScript(stateDir))
 	cmd.Stdout = w
+	// tart's own words, kept: without this a failure to attach had no
+	// account at all, and the error below could only say that something
+	// went wrong.
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
 	err = cmd.Run()
 	if ctx.Err() != nil {
-		return nil
-	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		// The follower ends by killing its own tail, so a non-zero status
-		// says nothing about the build — and the build's verdict is not
-		// this road's to report in any case.
-		return nil
+		return nil // the caller stopped following; that is not a failure
 	}
 	if err != nil {
+		// EVERY EXIT THE FOLLOWER HAS IS ZERO — see followScript, whose
+		// four endings are `exit 0` to a line — so a non-zero status is
+		// TART's and never the script's. This used to convert every
+		// ExitError to success on the reasoning that "the follower ends by
+		// killing its own tail", which is true of the tail and not of the
+		// exec that could never reach it.
+		if said := strings.TrimSpace(errOut.String()); said != "" {
+			return fmt.Errorf("%w: streaming the build log from %s: %w: %s", verify.ErrNoEnvironment, job.ID, err, said)
+		}
 		return fmt.Errorf("%w: streaming the build log from %s: %w", verify.ErrNoEnvironment, job.ID, err)
 	}
 	return nil
