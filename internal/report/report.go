@@ -169,14 +169,50 @@ const hostUnset = ""
 // The order is the order a reader needs it: what exists now (a branch),
 // then what is happening to it (an attempt), then what they should do
 // (the remedy, and only where something is waiting).
-func Change(w io.Writer, res app.Result, r app.Residency) {
+// BranchVerb is what a road did to the branch it names, in the words a
+// person reads.
+//
+// It is a parameter and not a field on app.Result because the ROAD
+// knows and the result does not: Realization is an attempt-progress
+// axis — Minted, Queued, Started, Stood — and a plain bump that creates
+// a branch AND starts a build reports Started, exactly like a cohort
+// accept that extends one and starts a build. Branch provenance is a
+// second axis, and inventing it on the app/report seam to carry one word
+// would be the tail wagging the dog when the two call sites already
+// know.
+//
+// The line said "minted" for both. That is internal vocabulary, and for
+// the accept road it was also false: `bump-revision --for` adds a commit
+// to a branch that already stands, and its own doc says so — "It never
+// mints".
+type BranchVerb string
+
+const (
+	// Created is a road that made the branch it names.
+	Created BranchVerb = "Created"
+	// Updated is a road that added to one already standing.
+	Updated BranchVerb = "Updated"
+)
+
+// branchLine is the first line of a change road's report: what the road
+// did, and the branch it did it to. Created is the default, because a
+// road that did not say is overwhelmingly a mint and a wrong verb is
+// worse than a missing one.
+func branchLine(did BranchVerb, branch string) string {
+	if did == "" {
+		did = Created
+	}
+	return string(did) + " " + branch
+}
+
+func Change(w io.Writer, res app.Result, r app.Residency, did BranchVerb) {
 	switch res.Did {
 	case app.Shown, app.Edited, app.NotRealized, app.NothingToDo:
 		return
 	case app.Minted, app.Queued, app.Started, app.Stood:
 	}
 	if b := res.Ref.Branch(); b != "" {
-		fmt.Fprintf(w, "minted %s\n", b)
+		fmt.Fprintln(w, branchLine(did, b))
 	}
 	switch res.Did {
 	case app.Minted:

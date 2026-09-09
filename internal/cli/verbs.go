@@ -948,7 +948,7 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 		Wait: f.waitFor(), Residency: residency,
 		Prov: change.Provenance{AskedBy: record.Human, Via: record.MintedCohort, Agent: s.Agent},
 	})
-	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency)
+	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency, report.Updated)
 	if err != nil {
 		return err
 	}

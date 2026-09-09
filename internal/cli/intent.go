@@ -669,7 +669,7 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 		Residency: residency,
 	}
 	res, runErr := op.Run(ctx, req)
-	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency)
+	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency, report.Created)
 	if runErr != nil {
 		return runErr
 	}

@@ -106,6 +106,15 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) (s
 	if out, err := tart.CLI(ctx, t.Tools, nil, "pull", imageRef(r)); err != nil {
 		return "", fmt.Errorf("%w: pulling %s: %s", verify.ErrNoEnvironment, imageRef(r), strings.TrimSpace(out))
 	}
+	// WHICH IMAGE, resolved HERE and nowhere later. imageRef is a
+	// `:latest` reference, so the tag names a moving target and a verdict
+	// that said "built on Tahoe" named a release rather than an image.
+	// Read after the pull it is the image this base descends from; read
+	// at verify time it would be whatever upstream published since.
+	pinned := tart.Pinned(imageRef(r))
+	if pinned != "" {
+		say("image %s", pinned)
+	}
 	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", name)
 	if out, err := tart.CLI(ctx, t.Tools, nil, "clone", imageRef(r), name); err != nil {
 		return "", fmt.Errorf("%w: cloning to %s: %s", verify.ErrNoEnvironment, name, strings.TrimSpace(out))
@@ -252,6 +261,11 @@ func (t Tart) Provision(ctx context.Context, r platform.Release, w io.Writer) (s
 			verify.ErrNoEnvironment, base, strings.TrimSpace(out))
 	}
 	_, _ = tart.CLI(ctx, t.Tools, nil, "delete", name)
+	// The provenance follows the images it describes, under both names,
+	// because a restore rebuilds the base from the golden and the base
+	// is what a run clones.
+	tart.NoteBase(base, pinned)
+	tart.NoteBase(golden, pinned)
 
 	// THE RESULT IS RETURNED, NOT NARRATED. Everything above is progress
 	// and belongs on stderr; this one line answers "what did the command

@@ -98,12 +98,12 @@ func TestAnUnreadableStampStillNamesAResidentDispatcher(t *testing.T) {
 // that a script and a person are told the same story.
 func TestAQueuedChangeCarriesTheRemedyAndAStartedOneDoesNot(t *testing.T) {
 	var b bytes.Buffer
-	Change(&b, app.Result{Did: app.Queued, Attempt: "a-91c4"}, app.Residency{State: app.NoDispatcher})
+	Change(&b, app.Result{Did: app.Queued, Attempt: "a-91c4"}, app.Residency{State: app.NoDispatcher}, Created)
 	assert.Contains(t, b.String(), "attempt a-91c4 queued")
 	assert.Contains(t, b.String(), "dockhand dispatch")
 
 	b.Reset()
-	Change(&b, app.Result{Did: app.Started, Attempt: "a-91c4", Lease: "7f2a1234ff"}, app.Residency{State: app.NoDispatcher})
+	Change(&b, app.Result{Did: app.Started, Attempt: "a-91c4", Lease: "7f2a1234ff"}, app.Residency{State: app.NoDispatcher}, Created)
 	assert.Contains(t, b.String(), "attempt a-91c4 started (lease 7f2a1234)")
 	assert.NotContains(t, b.String(), "dockhand dispatch",
 		"a build that STARTED is waiting on nobody; the verdict arrives through status")
@@ -119,7 +119,7 @@ func TestATypedDeferralSpeaksInsteadOfTheRemedy(t *testing.T) {
 		Did:      app.Queued,
 		Attempt:  "a-1",
 		Deferred: &app.Deferral{Reason: app.NoEnvironment, Detail: "no base for macOS 26"},
-	}, app.Residency{State: app.NoDispatcher})
+	}, app.Residency{State: app.NoDispatcher}, Created)
 	assert.Contains(t, b.String(), "dockhand provision tart")
 	assert.NotContains(t, b.String(), "dockhand dispatch")
 }
@@ -132,7 +132,7 @@ func TestAMintWithNoProviderSaysTheBranchIsUnverified(t *testing.T) {
 	Change(&b, app.Result{
 		Did:      app.Minted,
 		Deferred: &app.Deferral{Reason: app.NoProvider, Detail: "unverified; install tart and `dockhand verify`"},
-	}, app.Residency{State: app.ResidencyUnknown})
+	}, app.Residency{State: app.ResidencyUnknown}, Created)
 	assert.Contains(t, b.String(), "unverified")
 }
 
@@ -442,4 +442,20 @@ func TestAPullRequestWithNoRecordedStateLeavesNoHole(t *testing.T) {
 
 	assert.Contains(t, forgeLine("open", 34573, now.Add(-time.Minute), now), "PR #34573 open,",
 		"and a state that IS known is still said")
+}
+
+// THE BRANCH LINE SAYS WHAT THE ROAD DID, and for one road it used to
+// say something false.
+//
+// "minted" was internal vocabulary, and `bump-revision --for` never
+// mints — its own doc says so; it adds a commit to a branch that already
+// stands. The word is the ROAD's to supply because app.Result cannot:
+// Realization is an attempt-progress axis, and a bump that creates a
+// branch and starts a build reports Started exactly like an accept that
+// extends one and starts a build.
+func TestTheBranchLineNamesWhatTheRoadActuallyDid(t *testing.T) {
+	assert.Equal(t, "Created dockhand/jq-1.8", branchLine(Created, "dockhand/jq-1.8"))
+	assert.Equal(t, "Updated dockhand/cmark-0.31.2", branchLine(Updated, "dockhand/cmark-0.31.2"))
+	assert.Equal(t, "Created dockhand/jq-1.8", branchLine("", "dockhand/jq-1.8"),
+		"a road that did not say is a mint, and a wrong verb is worse than a missing one")
 }
