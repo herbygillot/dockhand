@@ -119,7 +119,24 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// equality.
 	loc, lerr := portstyle.Locate(src, cst, vals, info.FieldVersion)
 	carrier, style, exact := loc.Span, loc.Style, true
-	if lerr == nil {
+	// write is what goes into the span, which is the target itself for a
+	// carrier whose literal IS the version and only a PART of it for one
+	// that computes the version from its literal.
+	write, viaSet, proven := b.Version, false, false
+
+	// DISCOVERY IS ASKED FIRST AND OF EVERY ROAD, including a
+	// corroborated one, because corroboration is a claim about TEXT and
+	// this is a claim about CAUSE. An obsolete-stub branch that
+	// hard-codes the version a sibling subport computes corroborates
+	// perfectly and drives nothing; only substituting a value and
+	// watching where it lands can tell the two apart. It costs one
+	// evaluation and it is purely additive — a carrier it cannot prove
+	// falls through to the roads below unchanged.
+	if found, ok := discover(ctx, h, src, cst, vals, b.Version); ok {
+		carrier, style, write, viaSet, proven, exact = found.Span, found.Style, found.Write, found.ViaSet, true, true
+		slog.Debug("version carrier proven by substitution", "style", style.String(),
+			"span", carrier, "literal", carrier.Text(src), "template", found.Template, "write", write)
+	} else if lerr == nil {
 		if loc.Style.Transformed() {
 			exact = false
 		}
@@ -134,16 +151,19 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		}
 		carrier, style, exact = cand.Span, cand.Style, false
 	}
-	slog.Debug("version carrier", "style", style.String(), "span", carrier, "literal", carrier.Text(src), "corroborated", lerr == nil)
+	if !proven {
+		slog.Debug("version carrier", "style", style.String(), "span", carrier, "literal", carrier.Text(src), "corroborated", lerr == nil)
+	}
 
 	// Whether the version is moving governs more than one decision
 	// below, so it is named once here — in carrier vocabulary, which is
 	// the target's own.
-	moving := carrier.Text(src) != b.Version
+	moving := carrier.Text(src) != write
 	if !moving && !b.Force {
-		// The carrier's own literal, read off the Portfile before
-		// anything is fetched.
-		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: carrier.Text(src),
+		// The port's own version and not the carrier's literal, which for
+		// a computed carrier is a FRAGMENT: "already in the desired
+		// state: 2" is a sentence about nothing a person asked for.
+		return nil, &plan.Decline{Type: plan.AlreadyCurrent, Detail: vals.Version,
 			Withheld: intent.Withheld(src, cst, b.Riders)}
 	}
 
@@ -174,7 +194,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	// re-evaluate, and demand the version moved. The corroboration rule
 	// extended one step — from "text equals value" to "text demonstrably
 	// drives value" — at the cost of one evaluation, only on this path.
-	if lerr != nil && moving {
+	if lerr != nil && moving && !proven {
 		if err := probeCarrier(ctx, h, src, carrier, b.Version, vals.Version); err != nil {
 			slog.Debug("counterfactual probe failed", "span", carrier, "err", err)
 			return nil, lerr
@@ -218,7 +238,7 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		edits = append(edits, edit.Edit{
 			Kind:  edit.Version,
 			Start: carrier.Start, End: carrier.End,
-			Old: carrier.Text(src), New: b.Version, Reason: "version",
+			Old: carrier.Text(src), New: write, Reason: "version",
 		})
 
 		// The revision reset: a present line rewrites to 0; an absent
@@ -468,7 +488,20 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 				if err := intent.ChecksumsFollowTheirFiles(predicted, vals.Name); err != nil {
 					return err
 				}
-				return intent.ChecksumsAllRewritten(src, cst, vals.Name, edits)
+				if err := intent.ChecksumsAllRewritten(src, cst, vals.Name, edits); err != nil {
+					return err
+				}
+				// A CARRIER IN A `set` IS JUSTIFIED BY ONE CONTEXT'S
+				// EVALUATION while the variable it writes may be read by
+				// siblings — a top-level `set ver` behind five subports
+				// moves all five. The guard is the one this package
+				// already applies to a checksum located the same way, for
+				// the identical reason, and the total shadow is what makes
+				// it answerable.
+				if viaSet {
+					return intent.ViaSetIsolated(predicted, vals.Name)
+				}
+				return nil
 			},
 			ViaSet:     checksumsViaSet,
 			Riders:     b.Riders,

@@ -151,3 +151,57 @@ func Locate(src []byte, tree *syntax.Script, vals info.Values, field info.Field)
 	c := candidates[best]
 	return Located{Field: field, Style: c.style, Span: c.span, Value: value}, nil
 }
+
+// Candidates is every span that could carry the field in this context,
+// corroborated or not, in document order. It is what Locate collects
+// before it corroborates, handed over so a caller with an EVALUATOR can
+// decide by experiment what this package can only decide by text.
+//
+// IT INCLUDES THE SETS, and that is the whole reason it exists. Locate's
+// decline drops SetVariable candidates on purpose — "the counterfactual
+// probe should not chase coincidental sets" — which is right for a probe
+// that writes a target verbatim and asks only whether anything moved: a
+// `set` whose value coincides with the version would pass that test
+// while driving nothing. A caller that instead SUBSTITUTES a probe value
+// and reads back where it landed can tell the two apart, and for a
+// version computed from a `set` — `version [terraformBaseVersion].${patchNumber}`
+// — that set is the only span there is.
+//
+// It reports Literal so a caller can skip a word it could not write a
+// value into, and Style so a refusal can name what it looked at.
+func Candidates(src []byte, tree *syntax.Script, vals info.Values, field info.Field) []Candidate {
+	var styles []styleSpec
+	switch field {
+	case info.FieldVersion:
+		styles = versionStyles
+	case info.FieldRevision:
+		styles = revisionStyles
+	case info.FieldName, info.FieldEpoch, info.FieldCategories,
+		info.FieldLicense, info.FieldMaintainers, info.FieldPlatforms,
+		info.FieldDescription, info.FieldHomepage, info.FieldLongDescription,
+		info.FieldDistfiles, info.FieldChecksums,
+		info.FieldDependsFetch, info.FieldDependsExtract,
+		info.FieldDependsPatch, info.FieldDependsBuild,
+		info.FieldDependsLib, info.FieldDependsRun, info.FieldDependsTest:
+		// Named rather than defaulted, the way Locate names them: a field
+		// added later arrives here as a compile-time question instead of
+		// silently answering "no candidates".
+		return nil
+	}
+	var out []Candidate
+	for cmd := range tree.Commands(src, ScopeOf(src, vals.Name)) {
+		name, ok := cmd.Name(src)
+		if !ok {
+			continue
+		}
+		for _, vc := range styles {
+			if name != vc.command || len(cmd.Words) <= vc.word {
+				continue
+			}
+			w := cmd.Words[vc.word]
+			_, lit := w.Literal(src)
+			out = append(out, Candidate{Style: vc.style, Span: w.Span, Literal: lit})
+		}
+	}
+	return out
+}
