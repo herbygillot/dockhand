@@ -337,6 +337,19 @@ type Change struct {
 	// when it was minted rather than inferred later from what happens to
 	// be running.
 	Destination Destination `json:"destination,omitempty"`
+	// Unverified is "no build was asked for" — --no-verify — recorded
+	// because the DESTINATION STOPPED BEING A PROXY FOR IT and a reader
+	// downstream cannot recover it any other way.
+	//
+	// It used to be readable off Destination: --no-verify wrote ToBranch,
+	// so ToPublished with no attempts could only mean a machine that had
+	// no environment to submit to. Once --no-verify and --to-pr composed,
+	// that inference broke in the worst way available — it published "no
+	// verification environment on the submitting machine" as a fact about
+	// a machine holding two provisioned bases, in a pull request body, to
+	// reviewers. Absence of a run has two causes and the record has to
+	// know which one it was (rule 7).
+	Unverified bool `json:"unverified,omitempty"`
 	// AskedBy is who asked for that destination. It is provenance and
 	// never an input to any gate — the ladder's arithmetic counts human
 	// and unattended promotions apart, and a field that could widen what

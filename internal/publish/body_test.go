@@ -387,3 +387,32 @@ func TestTheBodyOnlyClaimsTestsThatCouldHaveRun(t *testing.T) {
 		})
 	}
 }
+
+// A --no-verify PUBLICATION SAYS THE PERSON SKIPPED THE BUILD, and never
+// that the machine could not run one. The two are different facts and
+// only one of them is dockhand's to assert about somebody's hardware.
+//
+// This was measured in the field, on macports-ports#34584: a host with
+// two provisioned tart bases, both free, published "no verification
+// environment on the submitting machine" to reviewers, because
+// --no-verify used to write ToBranch and the body read the DESTINATION
+// as if it were the ASK. Making --no-verify and --to-pr compose turned a
+// sentence that had been true into one that was false, in public.
+func TestAnUnverifiedPublicationBlamesTheAskAndNotTheMachine(t *testing.T) {
+	for _, dest := range []record.Destination{record.ToPublished, record.ToBranch, record.ToVerdict} {
+		f := Facts{Change: record.Change{Destination: dest, Unverified: true}}
+		line := unrunLine(f)
+		assert.Contains(t, line, "not pre-verified",
+			"%s: the person asked for no build, whatever the change was bound for", dest)
+		assert.NotContains(t, line, "submitting machine",
+			"%s: dockhand does not diagnose a machine it never asked", dest)
+	}
+}
+
+// AND THE MACHINE'S OWN SENTENCE SURVIVES for the case it is true of: a
+// host with no verifier mints without enqueueing, nobody having asked to
+// skip anything, and a reviewer is owed the reason.
+func TestAHostWithNoVerifierStillSaysSo(t *testing.T) {
+	f := Facts{Change: record.Change{Destination: record.ToPublished}}
+	assert.Contains(t, unrunLine(f), "no verification environment on the submitting machine")
+}

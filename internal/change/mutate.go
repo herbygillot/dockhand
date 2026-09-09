@@ -23,12 +23,18 @@ type Minting struct {
 	Subjects    []record.Subject
 	Crossing    record.Crossing // Cross(p); MintIn derives the born-hold from it
 	Destination record.Destination
-	Closes      string
-	Findings    []plan.Finding
-	Riders      []string
-	Slug        string
-	Base        record.Base
-	Prov        Provenance
+	// Unverified is --no-verify: no build was asked for. Separate from
+	// Destination because the two are separate questions — where the
+	// change is bound, and how much evidence goes with it — and a reader
+	// that inferred one from the other published a false sentence about
+	// the submitting machine. See record.Change.Unverified.
+	Unverified bool
+	Closes     string
+	Findings   []plan.Finding
+	Riders     []string
+	Slug       string
+	Base       record.Base
+	Prov       Provenance
 }
 
 // ErrIncomplete is MintIn's, ExtendIn's, AdoptIn's and FollowIn's
@@ -67,9 +73,11 @@ var ErrUnknownFinding = errors.New("change: a finding names a kind this build ca
 // draft wrote this hold as the same value a person's `hold` writes, and
 // run.Start refused it, so a stable-to-prerelease bump enqueued and then
 // refused its own start (cli_spec flow 10, ruled, shows the attempt
-// submitted). Destination is ToBranch under --no-verify and by default,
-// ToPublished under --to-pr — two values, ToVerdict deleted — and
-// Change never publishes whatever it says.
+// submitted). Destination is ToPublished under --to-pr, ToBranch where
+// nothing asks to carry the change further, and ToVerdict for an
+// ordinary build — WHERE the change is bound and never whether one was
+// asked for, which is Minting.Unverified. Change never publishes
+// whatever either of them says.
 //
 // IT MAKES TWO JUDGMENTS FOR TWO QUESTIONS (rule 2), and both stay:
 //
@@ -112,7 +120,7 @@ func MintIn(tx *statestore.Txn, m Minting, now time.Time) (record.Change, error)
 	c := record.Change{
 		ID: m.ID, State: record.ChangeMinted, Branch: m.Branch, Tip: m.Tip,
 		Slug: m.Slug, Content: m.Content, Subjects: m.Subjects,
-		Destination: m.Destination, AskedBy: m.Prov.AskedBy, Agent: m.Prov.Agent,
+		Destination: m.Destination, Unverified: m.Unverified, AskedBy: m.Prov.AskedBy, Agent: m.Prov.Agent,
 		MintedVia: m.Prov.Via, Crossing: m.Crossing, Riders: m.Riders,
 		Findings: findings, ClosesTicket: m.Closes, Base: m.Base,
 	}

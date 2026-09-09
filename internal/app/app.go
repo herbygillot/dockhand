@@ -562,7 +562,7 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 	m := change.Minting{
 		ID: id, Branch: branchFor(r.Slug), Tip: sha, Content: content,
 		Subjects: r.Prepared.Subjects, Crossing: change.Cross(r.Prepared),
-		Destination: destination(r.Delivery), Closes: r.Prepared.Closes,
+		Destination: destination(r.Delivery), Unverified: r.Unverified, Closes: r.Prepared.Closes,
 		Findings: r.Prepared.Findings, Riders: r.Riders, Slug: r.Slug,
 		Base: r.Prepared.Base, Prov: r.Prov,
 	}
