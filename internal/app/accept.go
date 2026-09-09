@@ -63,7 +63,14 @@ type Accept struct {
 	// gap at one visible boundary instead of hiding a wrong join inside
 	// this operation, and keeps Accept's contribution what it is: the
 	// SEQUENCE, not the preparation.
-	Prepare func(ctx context.Context, tip string, cands []record.Candidate) (change.Prepared, error)
+	//
+	// criterion is the MEASUREMENT the proposal rests on, verbatim, and it
+	// is a parameter because it is what the revbump commits must state:
+	// "why users must rebuild". It lives on the finding rather than on any
+	// candidate — a candidate's own Reason says why that port is in the
+	// cohort ("depends_lib"), which is a different sentence for a
+	// different reader.
+	Prepare func(ctx context.Context, tip string, cands []record.Candidate, criterion string) (change.Prepared, error)
 }
 
 // AcceptRequest is what one `bump-revision --for` asked. Platform is
@@ -117,7 +124,7 @@ func (a Accept) Run(ctx context.Context, r AcceptRequest) (Result, error) {
 	// plan + prepare each member from the tip's blobs (a member that
 	// declines is named and the cohort proceeds), then one Prepared for
 	// the cohort commit.
-	prepared, err := a.prepareCohort(ctx, ref, candidates)
+	prepared, err := a.prepareCohort(ctx, ref, candidates, change.Criterion(c))
 	if err != nil {
 		return Result{}, err
 	}
@@ -232,11 +239,11 @@ func (a Accept) Run(ctx context.Context, r AcceptRequest) (Result, error) {
 // left to change.Commit, which would happily write a commit identical to
 // its parent and leave an extension recording a cohort that bumped
 // nothing.
-func (a Accept) prepareCohort(ctx context.Context, ref change.Ref, cands []record.Candidate) (change.Prepared, error) {
+func (a Accept) prepareCohort(ctx context.Context, ref change.Ref, cands []record.Candidate, criterion string) (change.Prepared, error) {
 	if a.Prepare == nil {
 		return change.Prepared{}, ErrNothingPrepared
 	}
-	p, err := a.Prepare(ctx, ref.Tip(), cands)
+	p, err := a.Prepare(ctx, ref.Tip(), cands, criterion)
 	if err != nil {
 		return change.Prepared{}, err
 	}

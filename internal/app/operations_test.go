@@ -680,7 +680,7 @@ func TestAcceptExtendsTheBranchAndAnswersTheProposal(t *testing.T) {
 	a := Accept{
 		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
 		Verifier: has(fake), Me: me(), Now: now,
-		Prepare: func(_ context.Context, _ string, cands []record.Candidate) (change.Prepared, error) {
+		Prepare: func(_ context.Context, _ string, cands []record.Candidate, _ string) (change.Prepared, error) {
 			require.Len(t, cands, 1)
 			return change.Prepared{
 				Portdir:  change.TreePath("devel/oniguruma"),
@@ -743,7 +743,7 @@ func TestAcceptUnderNoVerifyExtendsWithoutEnqueueing(t *testing.T) {
 	a := Accept{
 		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
 		Verifier: has(fake), Me: me(), Now: now,
-		Prepare: func(context.Context, string, []record.Candidate) (change.Prepared, error) {
+		Prepare: func(context.Context, string, []record.Candidate, string) (change.Prepared, error) {
 			return change.Prepared{
 				Portdir:  change.TreePath("devel/oniguruma"),
 				Subjects: []record.Subject{{Port: "oniguruma", Names: []string{"oniguruma"}, Portdir: "devel/oniguruma", Intent: "revision"}},

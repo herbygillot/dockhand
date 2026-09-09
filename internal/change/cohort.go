@@ -53,6 +53,23 @@ func Cohort(c record.Change, exclude, force []string) ([]record.Candidate, error
 	return forceMembers(cands, force)
 }
 
+// Criterion is the measurement the open cohort proposal rests on,
+// verbatim, and "" for a change carrying none.
+//
+// It is what the revbump commits a cohort writes must STATE — "why users
+// must rebuild" — and it lives on the finding, which is why it needs a
+// reader of its own. A candidate's Reason is a different sentence for a
+// different reader: it says why that port is in the cohort
+// ("depends_lib"), not why anybody has to rebuild it. A commit subject
+// built from the second tells a reviewer nothing they can check.
+func Criterion(c record.Change) string {
+	f, ok := proposal(c)
+	if !ok {
+		return ""
+	}
+	return f.Criterion
+}
+
 // proposal is the one Proposed cohort finding a change carries. A
 // finding already answered is not a proposal — an answer is given once —
 // and a change with none is ErrNoProposal, which is what a second

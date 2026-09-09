@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git/gittest"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // A CHANGE IS CUT FROM UPSTREAM'S NEWEST TIP, so the branch a maintainer
@@ -79,4 +80,66 @@ func TestDriftNamesTheRemedyThatFitsTheBase(t *testing.T) {
 	assert.Contains(t, driftRemedy(true), "edits on your primary branch")
 	assert.NotContains(t, driftRemedy(false), "git pull",
 		"without a fetch the base is their own branch, so the only cause is their own edit")
+}
+
+// THE ONE-PORTDIR REFUSAL NAMES A REMEDY, AND THE REMEDY MUST WORK.
+//
+// change.Prepared carries one Portdir, so a cohort spanning several is
+// refused by name — "exclude members until it does". But change.Cohort
+// applies --exclude by MARKING a candidate rather than dropping it ("not
+// bumped, not built, and listed so a reviewer can disagree"), so an
+// excluded member stays in the slice carrying a portdir it will not
+// touch. Counting those made the remedy unanswerable: a six-portdir
+// cohort with five excluded still counted six.
+//
+// Measured on a real proposal — cmark's six dependents, five excluded,
+// same refusal, same number.
+func TestPortdirsOfCountsOnlyWhatTheCohortBumps(t *testing.T) {
+	cands := []record.Candidate{
+		{Port: "Aseprite", Portdir: "graphics/Aseprite", Proposed: true},
+		{Port: "PrismLauncher", Portdir: "games/PrismLauncher"},
+		{Port: "mkvtoolnix", Portdir: "multimedia/mkvtoolnix"},
+		{Port: "nheko", Portdir: "net/nheko"},
+	}
+	assert.Equal(t, []string{"graphics/Aseprite"}, portdirsOf(cands),
+		"an excluded member touches nothing, so it contributes no portdir")
+}
+
+// AND EVERY MEMBER PROPOSED IS COUNTED, so a genuine multi-portdir
+// cohort is still refused rather than silently writing a wrong join.
+func TestPortdirsOfStillSeesARealMultiPortdirCohort(t *testing.T) {
+	cands := []record.Candidate{
+		{Port: "Aseprite", Portdir: "graphics/Aseprite", Proposed: true},
+		{Port: "nheko", Portdir: "net/nheko", Proposed: true},
+	}
+	assert.Len(t, portdirsOf(cands), 2)
+}
+
+// A REVBUMP COMMIT STATES WHY USERS MUST REBUILD, which is the
+// MEASUREMENT and not the membership.
+//
+// A candidate's own Reason says why that PORT is in the cohort
+// ("depends_lib"); the criterion says why anybody must rebuild ("install
+// name libcmark.0.30.3.dylib -> libcmark.0.31.2.dylib"). cohortReason's
+// own doc described the second and read the first, so the first cohort
+// dockhand ever proposed produced a commit titled "Aseprite:
+// depends_lib" — which tells a MacPorts reviewer nothing they can check,
+// where the whole argument for a proposal is that its one claim can be
+// checked by hand with otool.
+func TestCohortReasonStatesTheMeasurementAndNotTheMembership(t *testing.T) {
+	cands := []record.Candidate{{Port: "Aseprite", Portdir: "graphics/Aseprite", Proposed: true, Reason: "depends_lib"}}
+	criterion := "install name /opt/local/lib/libcmark.0.30.3.dylib → /opt/local/lib/libcmark.0.31.2.dylib"
+
+	assert.Equal(t, criterion, cohortReason(cands, criterion))
+	assert.NotContains(t, cohortReason(cands, criterion), "depends_lib",
+		"membership is a different sentence for a different reader")
+}
+
+// AND A COHORT WITH NO CRITERION FALLS BACK RATHER THAN SAYING NOTHING.
+// A proposal always carries one; the fallback is for a candidate list
+// reaching this by another road.
+func TestCohortReasonFallsBackWhenNoMeasurementIsCarried(t *testing.T) {
+	cands := []record.Candidate{{Port: "Aseprite", Proposed: true, Reason: "depends_lib"}}
+	assert.Equal(t, "depends_lib", cohortReason(cands, ""))
+	assert.Equal(t, "rebuild against the headline change", cohortReason(nil, ""))
 }

@@ -1237,8 +1237,8 @@ func execCmd(s *Services) *cobra.Command {
 // therefore refuses a multi-portdir cohort by name rather than writing a
 // wrong join, and the remedy is a Prepared that carries per-subject
 // portdirs.
-func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate) (change.Prepared, error) {
-	return func(ctx context.Context, tip string, cands []record.Candidate) (change.Prepared, error) {
+func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate, string) (change.Prepared, error) {
+	return func(ctx context.Context, tip string, cands []record.Candidate, criterion string) (change.Prepared, error) {
 		dirs := portdirsOf(cands)
 		switch len(dirs) {
 		case 0:
@@ -1266,7 +1266,7 @@ func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate
 		if err != nil {
 			return change.Prepared{}, err
 		}
-		pl, err := planningFor(s).Plan(ctx, "bump-revision", targetOf(dir, cands[0]), cohortParams(dir, cands))
+		pl, err := planningFor(s).Plan(ctx, "bump-revision", targetOf(dir, cands[0]), cohortParams(dir, cands, criterion))
 		if err != nil {
 			return change.Prepared{}, err
 		}
@@ -1281,12 +1281,33 @@ func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate
 	}
 }
 
-// portdirsOf is the distinct portdirs a candidate list touches, in
+// portdirsOf is the distinct portdirs a candidate list BUMPS, in
 // first-seen order.
+//
+// PROPOSED ONLY, and the word is load-bearing. change.Cohort applies
+// --exclude by MARKING a candidate rather than dropping it — "not
+// bumped, not built, and listed so a reviewer can disagree" — so an
+// excluded member is still in the slice, carrying the portdir it would
+// have touched and does not.
+//
+// Counting those made the one-portdir refusal above unanswerable. It
+// says "exclude members until it does", and excluding members did not
+// move the number: a six-portdir cohort with five excluded still counted
+// six, so the remedy it names could not be taken by anybody. Measured on
+// a real proposal — cmark's six dependents, five excluded, same refusal,
+// same count.
+//
+// That is the defect report.disagreement's own doc was written about
+// after the last one: "EVERY REMEDY HERE IS A ROAD THAT ACTUALLY EXISTS,
+// and the reason that sentence has to be written down is that one of
+// them did not."
 func portdirsOf(cands []record.Candidate) []string {
 	var out []string
 	for _, c := range cands {
-		if c.Portdir != "" && !slices.Contains(out, c.Portdir) {
+		if !c.Proposed || c.Portdir == "" {
+			continue
+		}
+		if !slices.Contains(out, c.Portdir) {
 			out = append(out, c.Portdir)
 		}
 	}
@@ -1297,10 +1318,10 @@ func portdirsOf(cands []record.Candidate) []string {
 // revision bump for the reason the MEASUREMENT gave, which is why the
 // plural road takes no --reason. Riders are RidersNone, because a cohort
 // commit revbumps other people's ports and makes no other edit.
-func cohortParams(dir string, cands []record.Candidate) intent.Params {
+func cohortParams(dir string, cands []record.Candidate, criterion string) intent.Params {
 	return intent.Params{
 		Target: dir,
-		Reason: cohortReason(cands),
+		Reason: cohortReason(cands, criterion),
 		Riders: intent.RidersNone,
 	}
 }
@@ -1311,7 +1332,23 @@ func cohortParams(dir string, cands []record.Candidate) intent.Params {
 // check the one claim behind it by hand, and a commit body, a pull
 // request and a terminal line that each reworded it would be three
 // claims a reviewer has to reconcile.
-func cohortReason(cands []record.Candidate) string {
+func cohortReason(cands []record.Candidate, criterion string) string {
+	// THE MEASUREMENT, and it was the first candidate's own Reason. Those
+	// are two different sentences for two different readers: a
+	// candidate's Reason says why that PORT is in the cohort
+	// ("depends_lib"), and the criterion says why anybody must REBUILD
+	// ("install name libcmark.0.30.3.dylib -> libcmark.0.31.2.dylib;
+	// compatibility_version widened").
+	//
+	// Measured on the first cohort dockhand ever proposed: the commit came
+	// out titled "Aseprite: depends_lib", which tells a MacPorts reviewer
+	// nothing they can check — where the whole argument for a proposal is
+	// that the one claim behind it can be checked by hand with otool.
+	// This function's own doc already described the criterion; it read
+	// the wrong field.
+	if criterion != "" {
+		return criterion
+	}
 	for _, c := range cands {
 		if c.Reason != "" {
 			return c.Reason
