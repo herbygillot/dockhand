@@ -1,10 +1,11 @@
-package cli
+package prepare
 
 import (
-	"github.com/herbygillot/dockhand/internal/record"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // A COHORT'S SUBJECT NAMES THE CHANGE IT IS FOR, not a member of it.
@@ -47,4 +48,33 @@ func TestAStagedTargetKeepsTheTwoPathSpacesApart(t *testing.T) {
 	sub := record.Candidate{Port: "py312-foo", Portdir: "python/py-foo"}
 	assert.Equal(t, "py312-foo", stagedTarget("/tmp/stage-1/python/py-foo", sub).Subport,
 		"and a subport is decided by the RECORD's name, not by the staged path")
+}
+
+// AND A COHORT WITH NO CRITERION FALLS BACK RATHER THAN SAYING NOTHING.
+// A proposal always carries one; the fallback is for a candidate list
+// reaching this by another road.
+func TestCohortReasonFallsBackWhenNoMeasurementIsCarried(t *testing.T) {
+	cands := []record.Candidate{{Port: "Aseprite", Proposed: true, Reason: "depends_lib"}}
+	assert.Equal(t, "depends_lib", cohortReason(cands, ""))
+	assert.Equal(t, "rebuild against the headline change", cohortReason(nil, ""))
+}
+
+// A REVBUMP COMMIT STATES WHY USERS MUST REBUILD, which is the
+// MEASUREMENT and not the membership.
+//
+// A candidate's own Reason says why that PORT is in the cohort
+// ("depends_lib"); the criterion says why anybody must rebuild ("install
+// name libcmark.0.30.3.dylib -> libcmark.0.31.2.dylib"). cohortReason's
+// own doc described the second and read the first, so the first cohort
+// dockhand ever proposed produced a commit titled "Aseprite:
+// depends_lib" — which tells a MacPorts reviewer nothing they can check,
+// where the whole argument for a proposal is that its one claim can be
+// checked by hand with otool.
+func TestCohortReasonStatesTheMeasurementAndNotTheMembership(t *testing.T) {
+	cands := []record.Candidate{{Port: "Aseprite", Portdir: "graphics/Aseprite", Proposed: true, Reason: "depends_lib"}}
+	criterion := "install name /opt/local/lib/libcmark.0.30.3.dylib → /opt/local/lib/libcmark.0.31.2.dylib"
+
+	assert.Equal(t, criterion, cohortReason(cands, criterion))
+	assert.NotContains(t, cohortReason(cands, criterion), "depends_lib",
+		"membership is a different sentence for a different reader")
 }

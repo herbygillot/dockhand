@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/staging"
 	"io"
 	"strings"
@@ -20,7 +21,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/intent/bump"
 	"github.com/herbygillot/dockhand/internal/intent/bumprevision"
 	"github.com/herbygillot/dockhand/internal/intent/refresh"
-	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portstyle"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"github.com/herbygillot/dockhand/internal/plan"
@@ -602,7 +602,7 @@ func oneTarget(ctx context.Context, s *Services, v intentVerb, planner planning.
 	if f.planOnly {
 		return emitPlan(s.Out, pl)
 	}
-	prepared, err := prepare(ctx, s, pl, !f.noFetch)
+	prepared, err := preparedChange(ctx, s, pl, !f.noFetch)
 	if err != nil {
 		return err
 	}
@@ -775,7 +775,7 @@ func manyTargets(ctx context.Context, s *Services, v intentVerb, planner plannin
 			return planner.Plan(ctx, v.Name, t, p)
 		},
 		func(ctx context.Context, pl *plan.Plan) (change.Prepared, error) {
-			return prepare(ctx, s, pl, !f.noFetch)
+			return preparedChange(ctx, s, pl, !f.noFetch)
 		})
 	op := app.Survey{
 		Repo:     repo,
@@ -917,7 +917,12 @@ func sweepAdmission() run.Admission {
 // they did nothing to cause and the honest answer either way — the plan
 // was made against bytes that are not what the commit would land on.
 // The remedy differs, so the sentence names both.
-func prepare(ctx context.Context, s *Services, pl *plan.Plan, fetch bool) (change.Prepared, error) {
+// preparedChange resolves the base this road cuts from and hands the
+// plan to the preparer. The base RESOLUTION stays here — it may fetch a
+// remote and it decides which commit a road cuts from, both of which are
+// the road's — and so does the drift sentence, because a sentinel's
+// words belong to whoever met it.
+func preparedChange(ctx context.Context, s *Services, pl *plan.Plan, fetch bool) (change.Prepared, error) {
 	repo, err := s.Repo()
 	if err != nil {
 		return change.Prepared{}, err
@@ -930,29 +935,16 @@ func prepare(ctx context.Context, s *Services, pl *plan.Plan, fetch bool) (chang
 	if err != nil {
 		return change.Prepared{}, err
 	}
-	blob, err := repo.BlobAt(ctx, base.Sha, rel+"/"+macports.PortfileName)
-	if err != nil {
-		return change.Prepared{}, err
-	}
 	var ev change.Evaluator
 	if s.ev != nil {
 		ev = blobEvaluator{ev: s.ev}
 	}
-	// The base's bytes for the whole files the plan rewrites, beside the
-	// Portfile's: a patch relocated at plan time is derived from bytes
-	// that must still be there, and until this was read the only thing
-	// held against the base was the Portfile.
-	aux, err := baseFiles(ctx, repo, base.Sha, rel, pl.Files)
-	if err != nil {
-		return change.Prepared{}, err
+	p := prepare.Preparer{Repo: repo, Temp: s.Temp(), Plan: planningFor(s), Eval: ev}
+	prepared, perr := p.AtBase(ctx, pl, base, change.TreePath(rel))
+	if errors.Is(perr, change.ErrDrift) {
+		return prepared, fmt.Errorf("%w; %s", perr, driftRemedy(fetch))
 	}
-	prepared, err := change.Prepare(ctx, pl, change.Source{
-		Base: base, Portdir: change.TreePath(rel), Portfile: blob, Files: aux,
-	}, ev)
-	if errors.Is(err, change.ErrDrift) {
-		return prepared, fmt.Errorf("%w; %s", err, driftRemedy(fetch))
-	}
-	return prepared, err
+	return prepared, perr
 }
 
 // driftRemedy is the sentence that turns drift into a next step, and

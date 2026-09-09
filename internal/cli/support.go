@@ -399,25 +399,3 @@ func needsPass() app.Needs {
 // from "the repository would not answer". A read that FAILED is returned
 // — a preparation that could not establish the precondition must not
 // proceed as though the file were new (rule 7).
-func baseFiles(ctx context.Context, repo *gitRepo, sha, portdir string, files []plan.FileEdit) (map[string][]byte, error) {
-	if len(files) == 0 {
-		return nil, nil
-	}
-	batch, err := repo.CatFile(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = batch.Close() }()
-	out := make(map[string][]byte, len(files))
-	for _, f := range files {
-		obj, err := batch.Object(sha + ":" + portdir + "/" + f.Path)
-		if errors.Is(err, git.ErrNoObject) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("reading %s at %s: %w", f.Path, git.Abbrev(sha), err)
-		}
-		out[f.Path] = obj.Data
-	}
-	return out, nil
-}
