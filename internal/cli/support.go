@@ -268,7 +268,25 @@ func settleRelease(ctx context.Context, s *Services, f *intentFlags, verifying b
 		return nil
 	}
 	provisioned, err := provisionedReleases(ctx, s)
-	if err != nil {
+	switch {
+	case errors.Is(err, verify.ErrNoProvider), errors.Is(err, verify.ErrNoEnvironment):
+		// NOT THIS FUNCTION'S REFUSAL TO MAKE, and making it here broke
+		// the road the composition root documents: "no tart at all is
+		// ErrNoProvider, and the roads narrow their contract around it (a
+		// bump mints and says unverified)". app.Change already does
+		// exactly that — it reads the resolver's error, declines to
+		// enqueue, mints the branch and carries the advisory.
+		//
+		// Resolving the platform is an errand on the way to a build. A
+		// machine with no build to reach has no platform to resolve and
+		// no question to answer, so this leaves the release as it found
+		// it and lets the road say the true thing.
+		//
+		// Measured: `bump litestream` on a host with no tart exited 33
+		// having minted nothing, where the design and the docs both say
+		// it mints and reports "unverified".
+		return nil
+	case err != nil:
 		return err
 	}
 	rel, err := resolveReleaseSet(nil, provisioned, true)
