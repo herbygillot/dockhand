@@ -2,6 +2,7 @@ package app
 
 import (
 	"io"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -162,4 +163,29 @@ func TestAuditFollowedNamesTheStalePrimaryBehindItsRefusal(t *testing.T) {
 	require.ErrorIs(t, err, change.ErrPortdirsDisagree)
 	require.Len(t, said.lines, 1, "the refusal stands; the advisory is what makes it answerable")
 	assert.Contains(t, said.lines[0], "devel/oniguruma (from ")
+}
+
+// A SUBPORT'S SNAPSHOT CARRIES THE SUBPORT'S OWN NAME. A portdir holding
+// subports is indistinguishable from any other directory, so the caller
+// that consulted the index is the only thing that can say which port
+// inside it was meant — and without that, `dockhand verify
+// terraform-1.16` would write a record naming "terraform" and blame the
+// parent for a subport's verdict.
+//
+// The portdir's base name is still the answer when nothing resolved a
+// subport, which is every port whose directory is its name.
+func TestASnapshotNamesTheSubportAndNotItsDirectory(t *testing.T) {
+	repo, _ := fixture(t)
+	dir := filepath.Join(repo.Root, "sysutils", "jq")
+
+	named, _, err := snapshotSubject(t.Context(), repo, dir, "jq-devel")
+	require.NoError(t, err)
+	require.Len(t, named, 1)
+	assert.Equal(t, "jq-devel", named[0].Port, "the port the person named")
+	assert.Equal(t, "sysutils/jq", named[0].Portdir, "in the directory that holds it")
+
+	plain, _, err := snapshotSubject(t.Context(), repo, dir, "")
+	require.NoError(t, err)
+	require.Len(t, plain, 1)
+	assert.Equal(t, "jq", plain[0].Port, "and the directory's base name when nothing said otherwise")
 }

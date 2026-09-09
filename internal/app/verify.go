@@ -59,7 +59,34 @@ type Verify struct {
 // attempt per entry in ONE Amend. Trace implies Wait and refuses more
 // than one release.
 type VerifyRequest struct {
-	Target    string
+	// Target is WHAT THE PERSON TYPED, and it stays that way because
+	// change.Resolve takes a branch, a port, a tip or a pin — never a
+	// portdir. Rewriting a port name into a path here would make every
+	// `verify <port>` on a change dockhand already tracks miss its own
+	// record and fall into the adopt road.
+	Target string
+	// Portdir is Target resolved to an ABSOLUTE portdir, for the adopt
+	// road alone: a port dockhand has no record for is verified as it
+	// sits, and that road snapshots a directory. Empty when Target names
+	// a branch, and empty when a caller already holds the path and put it
+	// in Target.
+	//
+	// It exists because "a port as it sits" — this verb's own Short, and
+	// the whole of the road — did not work for a port name. cli passed
+	// args[0] through untouched, app's adopt stage handed it to
+	// git.RelPath as if it were a path, and filepath.Rel refused every
+	// bare name and every relative one: `dockhand verify jq` answered
+	// "jq is outside the repository". Only an absolute portdir ever
+	// worked, and only a port with an existing record resolved by name.
+	// The resolution belongs to cli, which owns the ports index and the
+	// sweep grammar; app is handed the answer.
+	Portdir string
+	// Subport is the index-resolved port name, when the target named one.
+	// A subport's record must carry its OWN name and never the portdir's
+	// base — `verify terraform-1.16` is not a verification of terraform —
+	// and the snapshot road has no other way to know, because a portdir
+	// holding subports looks like any other directory.
+	Subport   string
 	Platforms []platform.Release
 	Test      bool
 	KeepEnv   bool
@@ -143,9 +170,13 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 		branch := branchOf(r.Target) // "" for a portdir
 		var base record.Base
 		if branch == "" {
-			tip, content, err = change.Snapshot(ctx, v.Repo, id, r.Target)
+			dir := r.Portdir
+			if dir == "" {
+				dir = r.Target // a caller that already held the path
+			}
+			tip, content, err = change.Snapshot(ctx, v.Repo, id, dir)
 			if err == nil {
-				subjects, base, err = snapshotSubject(ctx, v.Repo, r.Target)
+				subjects, base, err = snapshotSubject(ctx, v.Repo, dir, r.Subport)
 			}
 		} else {
 			tip, content, err = tipOf(ctx, v.Repo, branch)
@@ -599,7 +630,14 @@ func (v Verify) adviseForeign(ctx context.Context, branch, primary, base, tip st
 // person pointed at, tree-relative because that is what a commit names
 // and what the Stager materializes by. Names is nil for the reason
 // branchSubjects gives.
-func snapshotSubject(ctx context.Context, repo *git.Repo, portdir string) ([]record.Subject, record.Base, error) {
+//
+// SUBPORT IS THE PORT'S OWN NAME when the target resolved to one, and
+// the portdir's base name otherwise. A directory holding subports is not
+// distinguishable from any other directory, so the caller that consulted
+// the index is the only one that can say: `verify terraform-1.16` names
+// terraform-1.16, and a record saying "terraform" would blame the parent
+// for a subport's verdict.
+func snapshotSubject(ctx context.Context, repo *git.Repo, portdir, subport string) ([]record.Subject, record.Base, error) {
 	rel, err := repo.RelPath(portdir)
 	if err != nil {
 		return nil, record.Base{}, err
@@ -612,7 +650,11 @@ func snapshotSubject(ctx context.Context, repo *git.Repo, portdir string) ([]rec
 	if err != nil {
 		return nil, record.Base{}, err
 	}
-	return []record.Subject{{Port: path.Base(rel), Portdir: rel}}, base, nil
+	port := subport
+	if port == "" {
+		port = path.Base(rel)
+	}
+	return []record.Subject{{Port: port, Portdir: rel}}, base, nil
 }
 
 // baseAt is the commit an adoption is measured from: the merge base of

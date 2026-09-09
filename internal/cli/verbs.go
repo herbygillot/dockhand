@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/exitcode"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/lease"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -93,8 +94,13 @@ func verifyCmd(s *Services) *cobra.Command {
 				Progress:  sink{w: s.Err},
 				Out:       s.Out,
 			}
+			portdir, subport, err := verifyTarget(ctx, s, args[0])
+			if err != nil {
+				return err
+			}
 			res, err := op.Run(ctx, app.VerifyRequest{
-				Target: args[0], Platforms: releases, Test: test, KeepEnv: keepEnv,
+				Target: args[0], Portdir: portdir, Subport: subport,
+				Platforms: releases, Test: test, KeepEnv: keepEnv,
 				Trace: trace, Wait: stay, Residency: residency,
 			})
 			report.VerifyRows(s.Out, res, residency)
@@ -112,6 +118,45 @@ func verifyCmd(s *Services) *cobra.Command {
 	c.Flags().DurationVar(&wait, "timeout", 0,
 		"stay through the build, and stop it if it runs longer than this; the environment is kept either way")
 	return c
+}
+
+// verifyTarget resolves what a person typed into the portdir the adopt
+// road needs, and says which port inside it they meant.
+//
+// IT ANSWERS NOTHING FOR A BRANCH, which is the first thing it asks: a
+// dockhand/ name is a branch and never a port, and running it through
+// the ports index would look up a port called "dockhand/jq-1.8".
+//
+// THE RESOLUTION IS THE SWEEP GRAMMAR'S, the same one every other verb
+// that takes a port argument uses, so `verify` accepts exactly what
+// `bump` accepts and its own usage line stops being a promise nobody
+// kept — a bare port, a subport, a category-relative portdir, an
+// absolute one. It was none of those: args[0] went to app untouched and
+// reached git.RelPath as a path, so `dockhand verify jq` answered "jq is
+// outside the repository" and only an absolute portdir worked.
+//
+// A SELECTOR NAMING MORE THAN ONE PORT IS A USAGE ERROR rather than a
+// silent first-match. verify submits one environment for one subject;
+// which of four hundred ports a person meant is not a question this
+// layer may answer for them, and the refusal names the verb that does
+// sweep.
+//
+// A target that resolves to nothing is left ALONE and handed on as
+// typed. It may still be a tip or a pin — change.Resolve's other two
+// forms — and a `verify` of a sha that answered "no such port" would be
+// this function inventing a refusal for a road it does not own.
+func verifyTarget(ctx context.Context, s *Services, target string) (portdir, subport string, err error) {
+	if strings.HasPrefix(target, git.BranchNamespace) {
+		return "", "", nil
+	}
+	targets, rerr := resolveTargets(ctx, s, false, []string{target})
+	if rerr != nil || len(targets) == 0 {
+		return "", "", nil
+	}
+	if len(targets) > 1 {
+		return "", "", usagef("verify builds one port in one environment; %q names %d — name one, or `dockhand cycle` to work through what is standing", target, len(targets))
+	}
+	return targets[0].Portdir, targets[0].Subport, nil
 }
 
 // waitPtr is --timeout as a request takes it, with --trace's implication
