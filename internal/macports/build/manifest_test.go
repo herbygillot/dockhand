@@ -133,7 +133,7 @@ func TestBaselineFailureQuotesTheLineThatRefused(t *testing.T) {
 // the roster file, the way an argv word is. Everything a Portfile could
 // have written stays data.
 func TestTheManifestScriptSpellsNoPortName(t *testing.T) {
-	s := ManifestScript("/opt/local/bin/port", "/tmp/dockhand-verify/manifest.pre", "/tmp/dockhand-verify/manifest.ports", 3)
+	s := ManifestScript("/opt/local/bin/port", "/var/tmp/dockhand-verify/manifest.pre", "/var/tmp/dockhand-verify/manifest.ports", 3)
 
 	assert.NotContains(t, s, "libwidget")
 	assert.Contains(t, s, `while IFS= read -r line; do`)
@@ -320,7 +320,7 @@ func TestAnInstallNameIsNotMistakenForAHeader(t *testing.T) {
 }
 
 func TestProbeScriptAsksOnlyTheProgramsThePortLaidDown(t *testing.T) {
-	s := ProbeScript("/opt/local/bin/port", "/tmp/dockhand-verify/probe.0", "/tmp/dockhand-verify/manifest.ports", 0, "/opt/local")
+	s := ProbeScript("/opt/local/bin/port", "/var/tmp/dockhand-verify/probe.0", "/var/tmp/dockhand-verify/manifest.ports", 0, "/opt/local")
 
 	assert.Contains(t, s, "case \"$f\" in /opt/local/bin/*|/opt/local/sbin/*)")
 	assert.Contains(t, s, "--version")

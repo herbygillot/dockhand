@@ -41,7 +41,9 @@ type fakeGuest struct {
 }
 
 // guestState is the directory the guest's own state directory maps to.
-func (g *fakeGuest) guestState() string { return filepath.Join(g.root, "tmp", "dockhand-verify") }
+func (g *fakeGuest) guestState() string {
+	return filepath.Join(g.root, "var", "tmp", "dockhand-verify")
+}
 
 func (g *fakeGuest) read(name string) string {
 	g.t.Helper()
@@ -93,7 +95,7 @@ func (g *fakeGuest) provider() Provider {
 // THE REWRITE IS SCOPED TO DOCKHAND'S OWN GUEST PATHS, and that is not
 // a tidiness: it used to rewrite every "/tmp/" in every argument into
 // "$root/tmp/", which is right for the paths the guest is asked about
-// (overlayDir and stateDir, both "/tmp/dockhand-…") and catastrophic
+// (overlayDir and stateDir, both "/var/tmp/dockhand-…") and catastrophic
 // for the ones it is not.
 //
 // t.TempDir() lives under /tmp on Linux and under /var/folders on
@@ -105,13 +107,21 @@ func (g *fakeGuest) provider() Provider {
 // one, which is a fixture that measures the runner's TMPDIR rather than
 // the code.
 //
-// "/tmp/dockhand-" is the prefix of both guest directories and cannot
-// match a Go test's temp directory, which is /tmp/<TestName><digits>.
+// "/var/tmp/dockhand-" is the prefix of both guest directories and
+// cannot match a Go test's temp directory, which is
+// /tmp/<TestName><digits> on Linux and /var/folders/… on macOS.
+//
+// It is ONE prefix on purpose. The guest directories moved off /tmp so
+// their contents survive the reboot that reading a stopped guest costs,
+// and "/var/tmp/dockhand-" CONTAINS "/tmp/dockhand-" — so had only one
+// of them moved, this rewrite would have mangled it into
+// "/var$root/tmp/dockhand-". Both moved together, and the sed below
+// matches the longer prefix only.
 // Reproduce the Linux shape here with `TMPDIR=/tmp go test ./…/tart`.
 func newFakeGuest(t *testing.T, portCases string) *fakeGuest {
 	t.Helper()
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "tmp"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "var", "tmp"), 0o755))
 
 	// The guest's MacPorts installation: a prefix with a port(1) that
 	// answers what the test scripted, a portindex that reports a clean
@@ -178,7 +188,7 @@ n=$#
 i=0
 while [ "$i" -lt "$n" ]; do
   a=$1; shift
-  set -- "$@" "$(printf '%%s' "$a" | sed -e "s|/tmp/dockhand-|$root/tmp/dockhand-|g" -e "s|/usr/bin/otool|$root/gbin/otool|g")"
+  set -- "$@" "$(printf '%%s' "$a" | sed -e "s|/var/tmp/dockhand-|$root/var/tmp/dockhand-|g" -e "s|/usr/bin/otool|$root/gbin/otool|g")"
   i=$((i+1))
 done
 exec "$@"
@@ -305,7 +315,7 @@ func TestTheBaselineIsMeasuredBeforeTheChangeIsStaged(t *testing.T) {
 
 	// What the guest was holding when the baseline was installed, and
 	// what it holds now, are two different versions of the same portdir.
-	staged, err := os.ReadFile(filepath.Join(g.root, "tmp", "dockhand-overlay", "devel", "libwidget", "Portfile"))
+	staged, err := os.ReadFile(filepath.Join(g.root, "var", "tmp", "dockhand-overlay", "devel", "libwidget", "Portfile"))
 	require.NoError(t, err)
 	assert.Equal(t, "version 3.0\n", string(staged),
 		"the overlay the build will use is the branch's, and it replaced the merge base's")

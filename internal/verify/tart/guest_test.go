@@ -28,29 +28,42 @@ import (
 // If this test fails, a guest is being asked to run something no
 // verification in the field has ever run. That is a finding, not a
 // golden to re-record.
+//
+// IT WAS RE-RECORDED ONCE, DELIBERATELY, and this is the note that owes
+// you the reason. The runner's state directory moved off /tmp, because
+// /tmp does not survive a guest reboot and reading a stopped guest
+// means booting it — so the act of collecting the evidence destroyed
+// it. Measured on the golden Tahoe image; the reasoning is on stateDir
+// itself and the ruling is D31.
+//
+// The delta is exactly the path and nothing else: 577 bytes became 613,
+// which is nine occurrences of the directory times the four characters
+// "/var". No command, no order, no redirection changed. That
+// arithmetic is the whole claim — a re-record that could not show it
+// would be this pin failing to do its job.
 const frozenRunner = `set -u
-mkdir -p /tmp/dockhand-verify
-echo running > /tmp/dockhand-verify/state
-: > /tmp/dockhand-verify/log
+mkdir -p /var/tmp/dockhand-verify
+echo running > /var/tmp/dockhand-verify/state
+: > /var/tmp/dockhand-verify/log
 nohup /bin/sh -c '
   ok=yes
-  for f in /tmp/dockhand-verify/argv.lint /tmp/dockhand-verify/argv.test /tmp/dockhand-verify/argv; do
+  for f in /var/tmp/dockhand-verify/argv.lint /var/tmp/dockhand-verify/argv.test /var/tmp/dockhand-verify/argv; do
     [ -f "$f" ] || continue
     set --
     while IFS= read -r a; do set -- "$@" "$a"; done < "$f"
-    sudo -n /opt/local/bin/port "$@" >> /tmp/dockhand-verify/log 2>&1 || { ok=no; break; }
+    sudo -n /opt/local/bin/port "$@" >> /var/tmp/dockhand-verify/log 2>&1 || { ok=no; break; }
   done
   if [ "$ok" = yes ]
-  then echo passed > /tmp/dockhand-verify/state
-  else echo failed > /tmp/dockhand-verify/state
+  then echo passed > /var/tmp/dockhand-verify/state
+  else echo failed > /var/tmp/dockhand-verify/state
   fi
 ' >/dev/null 2>&1 &
 `
 
 func TestRunnerScriptIsFrozen(t *testing.T) {
 	assert.Equal(t, frozenRunner, runner("/opt/local/bin/port"))
-	assert.Len(t, runner("/opt/local/bin/port"), 577,
-		"the single-subject runner is 577 bytes and has been since it was written")
+	assert.Len(t, runner("/opt/local/bin/port"), 613,
+		"the single-subject runner is 613 bytes: the 577 it was written at, plus the nine \"/var\" the state directory move added")
 }
 
 // runnerAt is what makes the script runnable in a test, and it earns
@@ -65,15 +78,15 @@ func TestRunnerAtReproducesTheFrozenScript(t *testing.T) {
 // runner. Captured from the tree before the cohort was written and
 // asserted unchanged after — the file names, their order, their bodies,
 // and the shell strings the names are interpolated into.
-const soloTranscript = `ARGV exec dockhand-worker-cafe /bin/sh -c mkdir -p /tmp/dockhand-verify
-ARGV exec -i dockhand-worker-cafe /bin/sh -c cat > /tmp/dockhand-verify/argv
+const soloTranscript = `ARGV exec dockhand-worker-cafe /bin/sh -c mkdir -p /var/tmp/dockhand-verify
+ARGV exec -i dockhand-worker-cafe /bin/sh -c cat > /var/tmp/dockhand-verify/argv
 STDIN<<
 -d
 -N
 install
 jq
 STDIN>>
-ARGV exec -i dockhand-worker-cafe /bin/sh -c cat > /tmp/dockhand-verify/argv.lint
+ARGV exec -i dockhand-worker-cafe /bin/sh -c cat > /var/tmp/dockhand-verify/argv.lint
 STDIN<<
 lint
 jq
@@ -136,14 +149,14 @@ func TestArgvFilesAtACohort(t *testing.T) {
 		got = append(got, f.Dest()+" => "+strings.ReplaceAll(f.Body, "\n", "|"))
 	}
 	assert.Equal(t, []string{
-		"/tmp/dockhand-verify/subject.0 => ===> dockhand subject: jq|",
-		"/tmp/dockhand-verify/argv.0 => -d|-N|install|jq|",
-		"/tmp/dockhand-verify/argv.0.lint => lint|jq|",
-		"/tmp/dockhand-verify/requires.0 => ",
-		"/tmp/dockhand-verify/subject.1 => ===> dockhand subject: oniguruma|",
-		"/tmp/dockhand-verify/argv.1 => -d|-N|install|oniguruma|",
-		"/tmp/dockhand-verify/argv.1.lint => lint|oniguruma|",
-		"/tmp/dockhand-verify/requires.1 => ",
+		"/var/tmp/dockhand-verify/subject.0 => ===> dockhand subject: jq|",
+		"/var/tmp/dockhand-verify/argv.0 => -d|-N|install|jq|",
+		"/var/tmp/dockhand-verify/argv.0.lint => lint|jq|",
+		"/var/tmp/dockhand-verify/requires.0 => ",
+		"/var/tmp/dockhand-verify/subject.1 => ===> dockhand subject: oniguruma|",
+		"/var/tmp/dockhand-verify/argv.1 => -d|-N|install|oniguruma|",
+		"/var/tmp/dockhand-verify/argv.1.lint => lint|oniguruma|",
+		"/var/tmp/dockhand-verify/requires.1 => ",
 	}, got)
 }
 
@@ -166,19 +179,19 @@ func TestBeforeFilesAreStagedOnlyForAForcedMember(t *testing.T) {
 		got = append(got, f.Dest()+" => "+strings.ReplaceAll(f.Body, "\n", "|"))
 	}
 	assert.Equal(t, []string{
-		"/tmp/dockhand-verify/subject.0 => ===> dockhand subject: libfoo|",
-		"/tmp/dockhand-verify/argv.0 => -d|-N|install|libfoo|",
-		"/tmp/dockhand-verify/argv.0.lint => lint|libfoo|",
-		"/tmp/dockhand-verify/requires.0 => ",
-		"/tmp/dockhand-verify/subject.1 => ===> dockhand subject: gegl|",
-		"/tmp/dockhand-verify/argv.1 => -d|-N|install|gegl|",
-		"/tmp/dockhand-verify/argv.1.lint => lint|gegl|",
-		"/tmp/dockhand-verify/requires.1 => ",
-		"/tmp/dockhand-verify/subject.2 => ===> dockhand subject: gegl-devel|",
-		"/tmp/dockhand-verify/before.2 => -d|-N|-f|deactivate|gegl|",
-		"/tmp/dockhand-verify/argv.2 => -d|-N|install|gegl-devel|",
-		"/tmp/dockhand-verify/argv.2.lint => lint|gegl-devel|",
-		"/tmp/dockhand-verify/requires.2 => ",
+		"/var/tmp/dockhand-verify/subject.0 => ===> dockhand subject: libfoo|",
+		"/var/tmp/dockhand-verify/argv.0 => -d|-N|install|libfoo|",
+		"/var/tmp/dockhand-verify/argv.0.lint => lint|libfoo|",
+		"/var/tmp/dockhand-verify/requires.0 => ",
+		"/var/tmp/dockhand-verify/subject.1 => ===> dockhand subject: gegl|",
+		"/var/tmp/dockhand-verify/argv.1 => -d|-N|install|gegl|",
+		"/var/tmp/dockhand-verify/argv.1.lint => lint|gegl|",
+		"/var/tmp/dockhand-verify/requires.1 => ",
+		"/var/tmp/dockhand-verify/subject.2 => ===> dockhand subject: gegl-devel|",
+		"/var/tmp/dockhand-verify/before.2 => -d|-N|-f|deactivate|gegl|",
+		"/var/tmp/dockhand-verify/argv.2 => -d|-N|install|gegl-devel|",
+		"/var/tmp/dockhand-verify/argv.2.lint => lint|gegl-devel|",
+		"/var/tmp/dockhand-verify/requires.2 => ",
 	}, got, "one before file, for the forced member, and the sibling's name inside it")
 
 	for _, req := range []verify.Request{
@@ -348,8 +361,8 @@ func TestTheLinkProofIsPerDependentAndOnlyWhenAsked(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []string{
-		"/tmp/dockhand-verify/links.1 => -q|contents|oniguruma|",
-		"/tmp/dockhand-verify/links.2 => -q|contents|libfoo|",
+		"/var/tmp/dockhand-verify/links.1 => -q|contents|oniguruma|",
+		"/var/tmp/dockhand-verify/links.2 => -q|contents|libfoo|",
 	}, links, "the dependents are asked and the headline is not")
 }
 

@@ -1545,3 +1545,46 @@ Measured in the field, and the reason this ruling exists: a cohort's
 guest trapped inside Apple's Virtualization framework four minutes into a
 five-port build, the verdict released the worker twenty seconds after
 anyone saw it, and how far those five ports had got became unanswerable.
+
+**Amended — the guest's state directory moves off `/tmp`.** Keeping an
+environment is worthless if reading it destroys what it was kept for,
+and that is exactly what `/tmp` did. A guest whose environment died is
+kept *stopped*; a stopped guest is read by booting it; and booting it is
+what cleared `/tmp`. The act of collecting the evidence was the thing
+that destroyed it — measured the hard way, on the cohort above, where
+the runner's own log was lost to the attempt to recover it.
+
+D17's requirement was that the state outlive the SUBMITTING PROCESS —
+"the process that submits is not necessarily the one that collects" —
+and `/tmp` satisfied that and nothing more. It survives dockhand dying.
+It does not survive the guest dying, and the guest dying is the case
+this keeps meeting. The bar was set at the wrong process.
+
+Measured on the golden Tahoe image — write a marker to each, reboot the
+guest, look again: `/tmp` gone, `/var/tmp` intact. macOS purges
+`/private/tmp` at boot, and the daily cleaner
+(`/usr/libexec/tmp_cleaner`, `StartCalendarInterval` hour 0) carries
+`daily_clean_tmps_dirs="/tmp"` with a three-day retention, so it names
+`/tmp` and nothing else. `/var/tmp` is exposed to neither, and for
+evidence read within a day it is safe for a reason rather than by luck.
+
+`overlayDir` moves with `stateDir`, and had to: `/var/tmp/dockhand-`
+**contains** `/tmp/dockhand-`, so anything matching the shorter prefix
+would corrupt the longer — including the test fixture that rewrites
+guest paths into a temp root. One prefix, or two that a substring match
+cannot tell apart.
+
+**This re-recorded the frozen runner, once, deliberately.**
+`TestRunnerScriptIsFrozen` pins the runner's exact bytes and says a
+failure is "a finding, not a golden to re-record". It is still true, and
+this is the finding: 577 bytes became 613, which is nine occurrences of
+the state directory times the four characters `/var`. No command, no
+order, no redirection changed. That arithmetic is the whole claim, and a
+re-record that could not show it would be the pin failing to do its job.
+
+**And `log` and `shell` now answer a stopped guest in words.** Both
+checked that the VM existed and not that it was running, so on precisely
+the environment D31 keeps them for they failed with a raw exec error
+about a route to a guest. They now name the state and the remedy — and
+the remedy is only safe to give because of the move above: what the
+build wrote survives the restart.

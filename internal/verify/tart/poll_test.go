@@ -132,3 +132,26 @@ func TestRunningTellsRunningFromStoppedFromAbsent(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, gone)
 }
+
+// A KEPT GUEST IS A STOPPED GUEST, and the verbs kept for it must say so.
+//
+// D31 keeps the environment of a run that ended without a verdict, and
+// an environment that DIED is kept stopped. Log and Shell checked only
+// that the VM existed, so on exactly the guest they were kept for they
+// answered with a raw exec failure about a route to a guest. The remedy
+// is nameable and belongs in the sentence.
+func TestLogAndShellRefuseAStoppedGuestInWordsAPersonCanActOn(t *testing.T) {
+	p := Provider{Tools: fakeTart(t, "w-1", "stopped")}
+	job := verify.Job{Provider: "tart", ID: "w-1"}
+
+	_, err := p.Log(context.Background(), job)
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.Contains(t, err.Error(), "is stopped")
+	assert.Contains(t, err.Error(), "tart run --no-graphics w-1")
+	assert.Contains(t, err.Error(), "does not live in /tmp",
+		"the remedy is only safe because the state survives the restart")
+
+	err = p.Shell(context.Background(), job)
+	require.ErrorIs(t, err, verify.ErrNoEnvironment)
+	assert.Contains(t, err.Error(), "is stopped")
+}

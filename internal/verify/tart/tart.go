@@ -170,9 +170,30 @@ const (
 	BasePrefix   = "dockhand-base-"
 	GoldenPrefix = "dockhand-golden-"
 	// overlayDir is where the edited portdirs are staged in the guest.
-	overlayDir = "/tmp/dockhand-overlay"
+	overlayDir = "/var/tmp/dockhand-overlay"
 	// stateDir holds the runner's own record of where it got to.
-	stateDir = "/tmp/dockhand-verify"
+	//
+	// NOT /tmp, AND THE DIFFERENCE IS A GUEST REBOOT. D17 put these
+	// under /tmp because /tmp survives DOCKHAND exiting, and that was
+	// the wrong process to measure against: it survives dockhand dying
+	// and not the GUEST dying, and the guest dying is the case this
+	// keeps meeting. Worse, it was self-erasing. A stopped guest is read
+	// by booting it, and booting it is what cleared /tmp — measured the
+	// hard way, on a cohort whose evidence was destroyed by the attempt
+	// to read it.
+	//
+	// Measured on the golden Tahoe image: write a marker to each, reboot
+	// the guest, look again. /tmp gone, /var/tmp intact. macOS purges
+	// /private/tmp at boot, and the daily cleaner
+	// (/usr/libexec/tmp_cleaner, StartCalendarInterval hour 0) carries
+	// daily_clean_tmps_dirs="/tmp" and a three-day retention, so it
+	// names /tmp and nothing else. /var/tmp is exposed to neither.
+	//
+	// BOTH DIRECTORIES MOVE TOGETHER, and they have to: "/var/tmp/
+	// dockhand-" CONTAINS "/tmp/dockhand-", so anything rewriting the
+	// shorter prefix would corrupt the longer one. One prefix, or two
+	// that cannot be told apart by a substring match.
+	stateDir = "/var/tmp/dockhand-verify"
 	// concurrent is Apple's limit on macOS guests, not the machine's.
 	// Exported as Concurrent because it is not only a vacancy figure: it
 	// is the DIVISOR a guest's memory share is derived from, since what a
@@ -1171,6 +1192,9 @@ func (p Provider) Shell(ctx context.Context, job verify.Job) error {
 	} else if !ok {
 		return fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
 	}
+	if err := p.awake(ctx, job.ID); err != nil {
+		return err
+	}
 	bin, err := p.Tools.Find(tool.Tart)
 	if err != nil {
 		return fmt.Errorf("%w: %w", verify.ErrNoEnvironment, err)
@@ -1422,6 +1446,32 @@ func stoppedDetail(vm string) string {
 	return stopped
 }
 
+// awake refuses a guest that is present but not running, in the words a
+// person can act on.
+//
+// It exists because dockhand now KEEPS the environment of a run that
+// ended without a verdict (D31), and a guest whose environment died is
+// kept STOPPED. Log and Shell checked only that the VM existed, so on
+// exactly the environment they were kept for they failed with a raw
+// exec error about a route to a guest — which says nothing about what
+// is wrong or what to do.
+//
+// The remedy is in the message because it is a real one now: what the
+// build wrote survives the restart. That is the whole point of the
+// runner's state not living in /tmp, and before that move this sentence
+// would have been advice to destroy the evidence.
+func (p Provider) awake(ctx context.Context, id string) error {
+	running, err := Running(ctx, p.Tools, id)
+	if err != nil {
+		return err
+	}
+	if !running {
+		return fmt.Errorf("%w: environment %s is stopped — start it with `tart run --no-graphics %s`, then ask again; what the build wrote is still there, because it does not live in /tmp",
+			verify.ErrNoEnvironment, id, id)
+	}
+	return nil
+}
+
 // Log reads the build's output from the guest, in full — the fetch is
 // deliberate, so completeness beats the tail Poll used to carry.
 func (p Provider) Log(ctx context.Context, job verify.Job) (string, error) {
@@ -1432,6 +1482,9 @@ func (p Provider) Log(ctx context.Context, job verify.Job) (string, error) {
 		return "", err
 	} else if !ok {
 		return "", fmt.Errorf("%w: %s", verify.ErrUnknownJob, job.ID)
+	}
+	if err := p.awake(ctx, job.ID); err != nil {
+		return "", err
 	}
 	log, err := Exec(ctx, p.Tools, job.ID, "/bin/cat", stateDir+"/log")
 	if err != nil {

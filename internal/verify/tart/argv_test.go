@@ -23,9 +23,9 @@ func TestArgvFilesAtOnePort(t *testing.T) {
 	files := argvFiles(verify.Request{Ports: []string{"jq"}})
 
 	require.Len(t, files, 2, "no test was asked for, so argv.test is not written at all")
-	assert.Equal(t, "/tmp/dockhand-verify/argv", files[0].Dest())
+	assert.Equal(t, "/var/tmp/dockhand-verify/argv", files[0].Dest())
 	assert.Equal(t, "-d\n-N\ninstall\njq\n", files[0].Body)
-	assert.Equal(t, "/tmp/dockhand-verify/argv.lint", files[1].Dest())
+	assert.Equal(t, "/var/tmp/dockhand-verify/argv.lint", files[1].Dest())
 	assert.Equal(t, "lint\njq\n", files[1].Body)
 }
 
@@ -38,7 +38,7 @@ func TestArgvFilesWithTest(t *testing.T) {
 	require.Len(t, files, 3)
 	assert.Equal(t, "-d\n-N\ninstall\njq\n", files[0].Body)
 	assert.Equal(t, "lint\njq\n", files[1].Body)
-	assert.Equal(t, "/tmp/dockhand-verify/argv.test", files[2].Dest())
+	assert.Equal(t, "/var/tmp/dockhand-verify/argv.test", files[2].Dest())
 	assert.Equal(t, "-d\n-N\n-k\ntest\njq\n", files[2].Body)
 }
 
@@ -85,7 +85,7 @@ func TestArgvFilesCarryVariantsAndSource(t *testing.T) {
 func TestASecondPortIsTheOnlyThingThatMovesTheHeadlinesFiles(t *testing.T) {
 	solo := argvFiles(verify.Request{Ports: []string{"jq"}})
 	require.Len(t, solo, 2)
-	assert.Equal(t, "/tmp/dockhand-verify/argv", solo[0].Dest())
+	assert.Equal(t, "/var/tmp/dockhand-verify/argv", solo[0].Dest())
 	assert.Equal(t, "-d\n-N\ninstall\njq\n", solo[0].Body)
 
 	cohort := argvFiles(verify.Request{Ports: []string{"jq", "oniguruma"}})

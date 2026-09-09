@@ -109,7 +109,7 @@ func TestSplitSubjectsTable(t *testing.T) {
 func TestSplitSubjectsReturnsAMarkerlessLogByteForByte(t *testing.T) {
 	log := "--->  Verifying Portfile for jq\n" +
 		"--->  0 errors and 0 warnings found.\r\n" +
-		"DEBUG: Found port in file:///tmp/dockhand-overlay/sysutils/jq\n" +
+		"DEBUG: Found port in file:///var/tmp/dockhand-overlay/sysutils/jq\n" +
 		"\n" +
 		"Error: Failed to build jq: command execution failed\n" +
 		"Error: See /opt/local/var/macports/logs/x/main.log for details."
