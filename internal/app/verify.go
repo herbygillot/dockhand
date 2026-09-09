@@ -212,10 +212,31 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 			}
 		}
 		atts, adopted = atts[:0], adopted[:0]
+		// THE ROSTER IS THE RECORD'S, NOT THE SUBJECT LIST'S. rosterOf
+		// seats every subject and withholds nothing, and its own doc says
+		// why that is right: "for a freshly minted change there is no
+		// Accepted cohort finding and no attempt with runs, so Roster's
+		// answer is exactly this". A change that has ACCEPTED A COHORT is
+		// not freshly minted, and the two answers part exactly there.
+		//
+		// Measured: a cmark cohort verified through this road seated all
+		// six members, including the one the proposal marked Solo —
+		// mkvtoolnix-devel, "bumped here, and not built", because it
+		// conflicts with mkvtoolnix which the same cohort builds. The
+		// guest was handed both, which is the collision Solo exists to
+		// prevent, and the withheld list was empty.
+		//
+		// run.Roster is a strict generalization: with no accepted finding
+		// every subject falls to its default seat, which is rosterOf's
+		// answer. The mint roads keep rosterOf because they have no record
+		// to read yet — the change is being written in this same Amend.
+		cur := tx.State().Changes[string(id)]
+		members, withheld := run.Roster(cur, record.Attempt{})
 		for _, pl := range r.Platforms {
 			spec := run.Spec{
-				Content: content, Roster: rosterOf(subjects), FromSource: fromSourceOf(subjects),
-				Platform: pl, Test: r.Test, KeepEnv: r.KeepEnv, Trace: r.Trace,
+				Content: content, Roster: members, Withheld: withheld,
+				FromSource: fromSourceOf(subjects),
+				Platform:   pl, Test: r.Test, KeepEnv: r.KeepEnv, Trace: r.Trace,
 			}
 			specs[pl.Name] = spec
 			if a, ok := run.Adoptable(attempts(tx.State()), content, spec.ID(), pl, v.Now()); ok {

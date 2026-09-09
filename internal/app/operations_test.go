@@ -1024,3 +1024,51 @@ func TestARederivationIsBuiltFromSourceAndAVersionBumpIsNot(t *testing.T) {
 	require.Len(t, fake.Submitted, 1)
 	assert.Empty(t, fake.Submitted[0].FromSource)
 }
+
+// A COHORT VERIFIED THROUGH `verify` SEATS WHAT THE RECORD SAYS, and a
+// member the proposal marked Solo is BUMPED AND NOT BUILT.
+//
+// rosterOf seats every subject and withholds nothing. Its own doc says
+// why that is right — "for a freshly minted change there is no Accepted
+// cohort finding and no attempt with runs, so Roster's answer is exactly
+// this" — and a change that has ACCEPTED A COHORT is not freshly minted.
+// `accept` used run.Roster and `verify` did not, so a cohort verified
+// through this road handed the guest both mkvtoolnix and
+// mkvtoolnix-devel: the collision Solo exists to prevent.
+func TestVerifySeatsACohortFromTheRecordAndWithholdsItsSoloMember(t *testing.T) {
+	repo, st := fixture(t)
+	fake := &verifytest.Fake{}
+	// Minted without a build, so nothing holds a lease before the verify
+	// under test.
+	minted, err := changeOp(repo, st).Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, "jq", "1.8"), Delivery: Branch, Slug: "jq-1.8",
+	})
+	require.NoError(t, err)
+
+	// The shape `accept` leaves: a second subject, and an accepted cohort
+	// whose member conflicts with the headline the same cohort builds.
+	require.NoError(t, st.Amend(t.Context(), func(tx *statestore.Txn) error {
+		c := tx.State().Changes[string(minted.Ref.ID())]
+		c.Subjects = append(c.Subjects,
+			record.Subject{Port: "oniguruma", Names: []string{"oniguruma"}, Portdir: "devel/oniguruma"})
+		c.Findings = []record.Finding{{
+			Kind: record.KindABIDependents, Disposition: record.Accepted,
+			Candidates: []record.Candidate{
+				{Port: "oniguruma", Portdir: "devel/oniguruma", Proposed: true, Solo: true,
+					Over: "jq", Reason: "conflicts with jq, which this cohort builds"},
+			},
+		}}
+		tx.PutChange(c)
+		return nil
+	}))
+
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(fake), Me: me(), Now: now}
+	_, err = v.Run(t.Context(), VerifyRequest{Target: "dockhand/jq-1.8", Platforms: []platform.Release{sequoia}})
+	require.NoError(t, err)
+
+	require.Len(t, fake.Submitted, 1)
+	assert.NotContains(t, fake.Submitted[0].Ports, "oniguruma",
+		"a Solo member is bumped and NOT built; the guest must not hold it beside the member it conflicts with")
+	assert.Contains(t, fake.Submitted[0].Ports, "jq")
+}
