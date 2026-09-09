@@ -158,6 +158,15 @@ const (
 	// prefixes itself would be a second copy of the naming scheme, one
 	// deletion away from disagreeing with the constructor about what a
 	// base is called.
+	// Concurrent is Apple's limit on how many macOS guests may run at
+	// once. It is a fact about the platform and not about this machine,
+	// and it is exported because two different questions turn on it: how
+	// many jobs may run (vacancy), and how much of the host ONE of them
+	// may be given (provision.SizingFor). A per-guest resource share
+	// chosen without reference to this number is a share whose total
+	// nobody has bounded.
+	Concurrent = 2
+
 	BasePrefix   = "dockhand-base-"
 	GoldenPrefix = "dockhand-golden-"
 	// overlayDir is where the edited portdirs are staged in the guest.
@@ -165,7 +174,11 @@ const (
 	// stateDir holds the runner's own record of where it got to.
 	stateDir = "/tmp/dockhand-verify"
 	// concurrent is Apple's limit on macOS guests, not the machine's.
-	concurrent = 2
+	// Exported as Concurrent because it is not only a vacancy figure: it
+	// is the DIVISOR a guest's memory share is derived from, since what a
+	// sizing rule must bound is what every guest takes together. See
+	// provision.SizingFor.
+	concurrent = Concurrent
 	// Evidence is this provider's own phrase for what a pass proves. A
 	// clone of a prepared base carries nothing from the last
 	// verification, so a port that installed here installed against what

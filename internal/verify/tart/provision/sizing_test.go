@@ -26,7 +26,7 @@ func TestSizingFallsBackToThePerCoreFloor(t *testing.T) {
 		{1, 2048, 1, 2048},
 		{0, 131072, 0, 0}, // no cores, no sizing, whatever the memory
 	} {
-		cpus, mem := SizingFor(c.physical, c.hostMemMB)
+		cpus, mem := SizingFor(c.physical, c.hostMemMB, 2)
 		assert.Equal(t, c.cpus, cpus, "cpus for %d cores", c.physical)
 		assert.Equal(t, c.mem, mem, "memMB for %d cores, %d MB host", c.physical, c.hostMemMB)
 	}
@@ -41,17 +41,53 @@ func TestSizingFallsBackToThePerCoreFloor(t *testing.T) {
 // partway through a parallel Skia compile — 2 GB per concurrent clang on
 // C++ that wants more.
 func TestSizingGivesALargeHostsMemoryToTheGuest(t *testing.T) {
-	cpus, mem := SizingFor(18, 131072) // 128 GB, 18 cores
+	cpus, mem := SizingFor(18, 131072, 2) // 128 GB, 18 cores, Apple's two guests
 	assert.Equal(t, 9, cpus)
-	assert.Equal(t, 131072/3, mem, "a third of the host, not 2 GB a core")
+	assert.Equal(t, 131072/2/2, mem, "an equal share of half the host, not 2 GB a core")
 	assert.Greater(t, mem, 18432, "the old rule's answer was the problem")
 }
 
-// A THIRD AND NOT A HALF, because Apple's virtualisation ceiling is two
-// guests: at a half, two running guests would claim the whole machine
-// and leave the host nothing.
-func TestSizingLeavesTheHostAThirdWithTwoGuestsRunning(t *testing.T) {
+// WHAT IS BOUNDED IS WHAT THE GUESTS TAKE TOGETHER, which is the whole
+// point of deriving the per-guest share instead of choosing one. A
+// fraction picked per guest is a total nobody decided: a third each
+// looks modest and is 67% of the machine once both of Apple's guests are
+// running.
+//
+// The bound holds wherever the share is the answer. Where the FLOOR is
+// the answer it does not, and that is the floor doing its job: a budget
+// that cannot give each guest 2 GB per core is a machine already
+// over-subscribed, and shrinking the guest below a usable size would buy
+// nothing but a slower failure.
+func TestEveryGuestTogetherNeverExceedsTheHostShare(t *testing.T) {
+	const host, cores = 131072, 18
+	floor := cores / 2 * 2048
+	for _, guests := range []int{1, 2, 3, 4, 8} {
+		_, mem := SizingFor(cores, host, guests)
+		if mem == floor {
+			continue // the floor answered; see above
+		}
+		assert.LessOrEqual(t, guests*mem, host/HostShare,
+			"%d guests at %d MB each must not exceed half the host", guests, mem)
+	}
+}
+
+// AT APPLE'S ACTUAL CEILING THE TOTAL IS EXACTLY THE BUDGET, which is
+// the case that matters: two guests, half the machine, half left for the
+// person using it.
+func TestAtTheRealCeilingTheGuestsHoldHalfTheHost(t *testing.T) {
 	const host = 131072
-	_, mem := SizingFor(18, host)
-	assert.LessOrEqual(t, 2*mem, host*2/3+1, "two guests must not claim the machine")
+	_, mem := SizingFor(18, host, 2)
+	assert.Equal(t, host/2, 2*mem)
+	assert.Equal(t, host/2, mem*2, "and the other half is the browser and the checkout")
+}
+
+// AND THE SHARE FOLLOWS THE CEILING while the share is what answers. If
+// Apple allowed a third guest, each would get less and the total would
+// stay where it was put.
+func TestThePerGuestShareShrinksAsTheCeilingRises(t *testing.T) {
+	const host = 131072
+	_, two := SizingFor(18, host, 2)
+	_, three := SizingFor(18, host, 3)
+	assert.Greater(t, two, three, "more guests, smaller share")
+	assert.LessOrEqual(t, 3*three, host/HostShare, "and the total stays inside the budget")
 }

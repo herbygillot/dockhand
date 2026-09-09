@@ -1,11 +1,26 @@
 package provision
 
-import "github.com/herbygillot/dockhand/internal/platform"
+import (
+	"github.com/herbygillot/dockhand/internal/platform"
+	"github.com/herbygillot/dockhand/internal/verify/tart"
+)
+
+// HostShare is the most of the host's memory every guest may hold
+// BETWEEN THEM. Half: dockhand is a tool running on somebody's working
+// machine, not a build farm that owns it, and the other half is the
+// browser, the editor and the ports tree checkout the person is using
+// while a verification runs.
+//
+// It is the number that actually needs choosing. A per-guest fraction
+// picked on its own is a total nobody has bounded — a third each looks
+// modest and is 67% of the machine once Apple's two guests are both
+// running, which is not a decision anybody made.
+const HostShare = 2
 
 // SizingFor is the resource rule of thumb for one VM on a host with the
 // given physical core count and installed memory: half the cores (never
-// below one), and a THIRD OF THE HOST'S MEMORY, floored at 2 GB per
-// granted core.
+// below one), and an equal share of the guests' whole memory budget,
+// floored at 2 GB per granted core.
 //
 // MEMORY IS A FUNCTION OF MEMORY. It used to be 2 GB per granted core
 // and nothing else — "both derive from the one measured fact", said of a
@@ -16,19 +31,30 @@ import "github.com/herbygillot/dockhand/internal/platform"
 // partway through a parallel Skia compile, which is 2 GB per concurrent
 // clang on C++ that wants more.
 //
-// A THIRD AND NOT A HALF because Apple's virtualisation ceiling is two
-// guests: at a half, two running guests would claim the whole machine
-// and leave the host nothing. A third leaves a third.
+// THE PER-GUEST SHARE IS DERIVED AND NOT CHOSEN. What a sizing rule has
+// to bound is what the guests take TOGETHER, so the budget is stated
+// once (HostShare) and divided by however many may run at once — which
+// is tart.Concurrent, Apple's ceiling, and not a number this package
+// gets an opinion about. If that ceiling ever moves, the per-guest share
+// moves with it and the total stays where it was put.
 //
 // THE PER-CORE FLOOR STAYS, and it is what keeps this from being a
 // regression anywhere. On a small host the floor wins and the answer is
 // exactly what it was — 16 GB and eight cores still sizes 4 cpus and
 // 8 GB — so the rule only moves where the old one was wrong.
 //
+// The floor can EXCEED the share, and where it does the budget above is
+// not held. That is the floor doing its job rather than a hole in the
+// rule: a machine whose budget cannot give each guest 2 GB per granted
+// core is already over-subscribed, and shrinking a guest below a usable
+// size would buy nothing but a slower failure. At Apple's actual ceiling
+// this needs a host under about 110 MB per core to reach, which is no
+// machine that runs a macOS guest at all.
+//
 // hostMemMB of zero is a host that would not say, and the floor is then
 // the whole rule: an unmeasured machine is sized by the fact that was
 // measured rather than by a guess about the one that was not.
-func SizingFor(physical, hostMemMB int) (cpus, memMB int) {
+func SizingFor(physical, hostMemMB, guests int) (cpus, memMB int) {
 	if physical < 1 {
 		return 0, 0
 	}
@@ -37,8 +63,11 @@ func SizingFor(physical, hostMemMB int) (cpus, memMB int) {
 		cpus = 1
 	}
 	memMB = cpus * 2048
-	if third := hostMemMB / 3; third > memMB {
-		memMB = third
+	if guests < 1 {
+		guests = 1
+	}
+	if share := hostMemMB / HostShare / guests; share > memMB {
+		memMB = share
 	}
 	return cpus, memMB
 }
@@ -51,6 +80,6 @@ func hostSizing() (cpus, memMB, physical int) {
 	if n == 0 {
 		return 0, 0, 0
 	}
-	cpus, memMB = SizingFor(n, platform.PhysicalMemoryMB())
+	cpus, memMB = SizingFor(n, platform.PhysicalMemoryMB(), tart.Concurrent)
 	return cpus, memMB, n
 }
