@@ -199,9 +199,36 @@ func (s *Services) Acquire(ctx context.Context, n app.Needs) error {
 		s.tr = t
 	}
 	if n.Repo {
+		// THE REPOSITORY DOCKHAND KEEPS RECORDS IN IS A PORTS TREE'S
+		// CHECKOUT, and this is where that is checked, because the state
+		// ref lives in the tree's own repository and nowhere else.
+		//
+		// It used to open "." whenever no tree had been discovered. That
+		// is a silent fallback to WHATEVER REPOSITORY A PERSON HAPPENS TO
+		// BE STANDING IN, and what it produced was worse than an error:
+		// `status` in a git repository that is not a ports tree read that
+		// repository's absent state ref and answered "dockhand has
+		// recorded nothing in this checkout yet", and `purge` answered
+		// "removed 0 branch(es)". Both are true sentences about the wrong
+		// place. Measured by walking into it: `outdated` in the same
+		// directory exits 40 and says "not a ports tree", so one
+		// invocation knew and the next reported a clean checkout.
+		//
+		// Rule 7 is the whole of it — "I could not find out" must never
+		// arrive as "there is none" — and a person told their work is
+		// clean does not go looking for it.
+		//
+		// tree.Open is a stat and its result is DISCARDED: what is
+		// acquired here is the repository, and n.Tree is what asks for
+		// the tree object and pays for its index. The refusal is built
+		// there so the sentence a person reads is the same one every
+		// other verb gives them.
 		dir := s.TreeRoot
 		if dir == "" {
 			dir = "."
+		}
+		if _, err := tree.Open(dir); err != nil {
+			return err
 		}
 		r, err := git.Open(ctx, s.Tools, dir)
 		if err != nil {

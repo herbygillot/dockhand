@@ -139,12 +139,32 @@ func TestFetchedLeavesOnlyTheRemoteTrackingRef(t *testing.T) {
 	assert.True(t, repo.IsAncestor(ctx, primary, ahead), "the local primary is behind what was fetched")
 }
 
-// TestFixturesReproduceTheGoldenShas pins the property the goldens
-// depend on: under the golden date, the two-port tree cmd's golden
-// fixtures build, and the branches minted on it, land on the shas the
-// recorded goldens carry. Identity, message, file modes and bytes are
-// all in those shas, so a fixture that drifts by a byte fails here
-// before it fails every golden under internal/cmd/testdata/golden.
+// TestFixturesReproduceTheGoldenShas pins that the fixture tree is
+// BYTE-STABLE: under a fixed date, the two-port tree and the branches
+// minted on it land on recorded shas. Identity, message, file modes and
+// bytes are all in those shas, so a fixture that drifts by a byte fails
+// here — which means a change to the shape of the tree every test in
+// this repository runs against is deliberate and reviewed, rather than
+// discovered later as unrelated breakage somewhere downstream.
+//
+// IT NAMED internal/cmd/testdata/golden AS WHAT IT DEFENDED, and that
+// directory does not exist: internal/cmd went with the overhaul, and
+// the only mention of those goldens left in the tree was this sentence.
+// The canary outlived the thing it was watching for, which is worth
+// writing down rather than quietly re-recording, because a pin whose
+// stated reason is gone is a pin nobody can decide about.
+//
+// The property it still has is the one that made it fire: it is the
+// tripwire on the fixture itself.
+//
+// RE-RECORDED ONCE, DELIBERATELY. Init did not create
+// macports.PortGroupDir, which is the single structural feature
+// tree.Open stats to decide whether a directory IS a ports tree — so
+// every test ran against a repository full of portdirs that dockhand
+// itself would have refused, and the comment in Init already argued
+// that this was the wrong shape for a fixture to have. Adding it moved
+// every sha, because it is one more file in the first commit. Nothing
+// about how a commit is constructed changed.
 func TestFixturesReproduceTheGoldenShas(t *testing.T) {
 	t.Setenv("GIT_AUTHOR_DATE", "2026-09-01T00:00:00Z")
 	t.Setenv("GIT_COMMITTER_DATE", "2026-09-01T00:00:00Z")
@@ -153,9 +173,9 @@ func TestFixturesReproduceTheGoldenShas(t *testing.T) {
 		"devel/olm/Portfile":   "version 3.2.16\nmaintainers nomaintainer\n",
 	})
 	for _, c := range []struct{ version, sha string }{
-		{"2.0", "d1acb61bdcd7967566ceef2d89c1522728af8e5e"},
-		{"2.2", "73afafe06dd4db21a2aef0a6d95604ed47669ac3"},
-		{"2.3", "874f096ab5f10cedd4376b8a3318aa70bf2cbb4e"},
+		{"2.0", "961232f8a0df5e0b706b53c2cc7591fcea45ba86"},
+		{"2.2", "15e591c1b3934b093438e125573965d5405b1411"},
+		{"2.3", "348277003520f7e3fa10fd4defac91bab1a3831e"},
 	} {
 		got := Commit(t, repo, "dockhand/jq-"+c.version, "main", "sysutils/jq/Portfile",
 			"version "+c.version+"\n", "jq: update to "+c.version)

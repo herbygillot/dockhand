@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/testenv"
 	"github.com/herbygillot/dockhand/internal/tool"
 )
@@ -95,6 +96,18 @@ func Init(t *testing.T, tools *tool.Finder, dir string, files map[string]string)
 		res := filepath.Join(dir, "_resources", "port1.0", "fetch")
 		require.NoError(t, os.MkdirAll(res, 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(res, "archive_sites.tcl"), []byte("# fixture\n"), 0o644))
+
+		// AND THE PORTGROUP DIRECTORY, which is the feature that MAKES a
+		// directory a ports tree — macports.PortGroupDir is what
+		// tree.Open stats and the only structural question it asks. The
+		// fixture carried _resources without it, so it was a repository
+		// full of portdirs that dockhand itself would have refused, and
+		// the comment above already said why that is the wrong shape for
+		// a fixture to have.
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, filepath.FromSlash(macports.PortGroupDir)), 0o755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, filepath.FromSlash(macports.PortGroupDir), "muniversal-1.0.tcl"),
+			[]byte("# fixture\n"), 0o644))
 	}
 	run(t, dir, "add", ".")
 	run(t, dir, "commit", "--quiet", "-m", "initial tree")
