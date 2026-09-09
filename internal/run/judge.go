@@ -38,7 +38,7 @@ import (
 // Judge is the only place in dockhand that turns a provider status and
 // a build log into run states. Every road that settles reaches it
 // through Finish — cycle's settle stage, `status` where no dispatcher is
-// resident, the judge under --wait, Cancel and the stale stage — so
+// resident, the judge under --timeout, Cancel and the stale stage — so
 // `bump --verify` and `bump` can no longer reach opposite conclusions
 // about the same build.
 //
@@ -270,17 +270,37 @@ func judgeRun(in runInput) memberVerdict {
 // state repeated, because an interrupt is a fact about the JOB and the
 // job is shared. The typed cause decides the word — a person's cancel
 // and a tip that moved are different things to read on a record months
-// later — and the release is quiet, because nothing about the verdict
-// depends on whether the guest went back.
+// later.
 //
 // The log is still gathered by Observe before this is reached, and its
 // detail is the interrupt's own rather than the log's: what a stopped
 // build printed is evidence of where it got to, and the sentence a
 // person reads is why it stopped.
+//
+// THE TYPED CAUSE ALSO DECIDES THE GUEST, and it used to be quiet for
+// every interrupt on the reasoning that "nothing about the verdict
+// depends on whether the guest went back". That is true of the VERDICT
+// and was never the question the disposition asks, which is the one this
+// package answers everywhere else: keep the environment whenever it can
+// still answer a question somebody will ask.
+//
+// A cancel and a supersede are somebody deciding the WORK is unwanted —
+// the person typed `cancel`, or the tip moved past it — and nobody is
+// coming back to look inside a build they threw away. A TIMEOUT is the
+// opposite: the work was wanted and the waiting ran out, so the person
+// who set --timeout is precisely the person with an unanswered question
+// about how far it got. The log survives either way; what Keep buys is
+// `dockhand shell` into the guest that was building when the deadline
+// passed. It is retained on lease.KeepFor like any other kept
+// environment, so a reaped run costs a guest for a day and not forever.
 func interrupted(e Evidence, roster []Member) map[string]memberVerdict {
 	state := record.Canceled
 	if e.Interrupt.Why == record.InterruptSuperseded {
 		state = record.Superseded
+	}
+	disposition := ReleaseQuietly
+	if e.Interrupt.Why == record.InterruptTimeout {
+		disposition = Keep
 	}
 	out := make(map[string]memberVerdict, len(roster))
 	for _, m := range roster {
@@ -290,7 +310,7 @@ func interrupted(e Evidence, roster []Member) map[string]memberVerdict {
 		}
 		r := prior
 		r.State, r.Detail, r.Blamed = state, e.Interrupt.Detail, ""
-		out[m.Port] = memberVerdict{Settled: true, Run: r, Disposition: ReleaseQuietly}
+		out[m.Port] = memberVerdict{Settled: true, Run: r, Disposition: disposition}
 	}
 	return out
 }

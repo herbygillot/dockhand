@@ -546,9 +546,6 @@ func (c Cycle) perform(ctx context.Context, r CycleRequest) (Pass, error) {
 			// because both callers ran it identically: authorize, stop on a
 			// no-op, apply, and keep the outcome even when the call that
 			// made it came back with an error.
-			// The same ladder a resumption runs, and it lives in publish
-			// because both callers ran it identically: authorize, stop on a
-			// no-op, apply.
 			a := publish.AdvanceFrom(ctx, c.Env, f, c.Pace)
 			p.Advisories = append(p.Advisories, a.Advisories...)
 			if isPaceSpent(a.Err) {

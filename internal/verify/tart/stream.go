@@ -45,7 +45,7 @@ var _ verify.Streamer = Provider{}
 // nothing a port or a person named is ever syntax. The argv rule stands
 // where argv is what is being passed.
 //
-// A CANCELLED CONTEXT IS NOT AN ERROR. `--trace` under a --wait that
+// A CANCELLED CONTEXT IS NOT AN ERROR. `--trace` under a --timeout that
 // expired, or a person's ^C, is the caller's own expiry: the build
 // outlives it by design and the verdict still arrives in the record.
 // The child dies with the context (exec.CommandContext) and this returns

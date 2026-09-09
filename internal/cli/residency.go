@@ -57,7 +57,7 @@ func lockPath(ctx context.Context, repo *git.Repo, name string) (string, error) 
 // THREE STATES, because the lock can be unreadable. A permission error
 // or a filesystem with no flock is not "no dispatcher", and a process
 // that assumed so would appoint itself judge beside a dispatcher it
-// could not see. Under Unknown a --wait watches only and says so, and
+// could not see. Under Unknown a --timeout watches only and says so, and
 // Status settles nothing and says why (rule 7).
 //
 // The probe is a SHARED lock and never a try-lock; lockfile.Probe's own
@@ -87,7 +87,7 @@ func probeResidency(ctx context.Context, repo *git.Repo) app.Residency {
 // given, where the ones that do not wait are handed a value.
 //
 // A dependency is a value unless its answer legitimately changes under
-// the operation, and this one does: a --wait that lasts an hour must
+// the operation, and this one does: a --timeout that lasts an hour must
 // notice a dispatcher that appeared at minute ten and drop from judging
 // to watching. One judge per job, chosen by residency, and residency
 // changes.

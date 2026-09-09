@@ -756,6 +756,7 @@ mkdir -p ` + dir + `
 echo running > ` + dir + `/state
 : > ` + dir + `/log
 nohup /bin/sh -c '
+  echo $$ > ` + dir + `/pid
   ok=yes
   for f in ` + dir + `/argv.lint ` + dir + `/argv.test ` + dir + `/argv; do
     [ -f "$f" ] || continue
@@ -864,6 +865,7 @@ echo running > ` + dir + `/.state && mv -f ` + dir + `/.state ` + dir + `/state
 : > ` + dir + `/log
 nohup /bin/sh -c '
   d=` + dir + `
+  echo $$ > "$d/pid"
   n=` + strconv.Itoa(n) + `
   ok=yes
   i=0
@@ -1436,7 +1438,7 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 		// it" said as "it is working" — and it costs a wait that cannot
 		// end. Measured: a cohort's guest died partway through a Skia
 		// compile, the VM stayed in the listing as `stopped`, and Poll
-		// answered Running to every poll a `--wait 300m` watcher made.
+		// answered Running to every poll a `--timeout 300m` watcher made.
 		//
 		// A VM that is present but not running has not reported an outcome
 		// and never will, which is terminal. A listing that cannot be read

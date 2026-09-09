@@ -85,7 +85,7 @@ const exitNoteMax = 200
 // THIS USED TO CLAIM THAT AN EMPTY ExitOf MEANS "it said nothing" AND
 // NEVER "nobody looked", and detachment breaks that. The note is written
 // by a goroutine inside the submitting process, so it exists on the
-// roads that stay — `verify --wait`, `dispatch` — and cannot exist for a
+// roads that stay — `verify --timeout`, `dispatch` — and cannot exist for a
 // bump, which returns seconds after submitting while the guest builds
 // for half an hour. An empty answer is therefore genuinely ambiguous,
 // and the honest response is the one stoppedDetail already makes: add

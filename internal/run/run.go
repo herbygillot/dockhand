@@ -370,7 +370,10 @@ type Stager interface {
 //	errored, present    how far did it get?         keep — the disk
 //	                                                outlives the guest
 //	errored, vanished   nothing can answer          nothing to release
-//	canceled            a person stopped it         release quietly
+//	canceled            a person stopped the WORK   release quietly
+//	timed out           a person stopped WAITING    keep — the work was
+//	                                                wanted, so how far it
+//	                                                got is still a question
 //	blocked             about a port outside        release quietly
 //	                    this change
 //

@@ -55,6 +55,12 @@ import (
 type intentVerb struct {
 	intent.Definition
 	Short string
+	// Long is the verb's own paragraphs, for the one verb whose
+	// BEHAVIOUR is not derivable from its flags. Optional, and it should
+	// stay that way: a Long on every row would be a place for prose to
+	// accumulate, and the walkthrough that belongs to no single verb is
+	// `dockhand usage`.
+	Long string
 	// Flags declares the verb's own flags, binding them straight to the
 	// parameters they become, and returns the check for the combinations
 	// only this verb can judge.
@@ -109,6 +115,24 @@ func bumpVerb() intentVerb {
 			},
 		},
 		Short: "Bump a port to a new version, as a branch",
+		Long: `Bump a port to a new version, as a branch.
+
+THIS RETURNS BEFORE THE BUILD FINISHES. A bump writes the branch, hands
+the verification to a VM and exits: a port build takes minutes to hours,
+and the record outlives your terminal, so there is nothing to sit
+through. The branch exists either way; what is pending is its verdict,
+and "dockhand status" is where that arrives.
+
+--to-pr carries the change all the way to a pull request in this one
+invocation, staying for the build because the pass is what authorizes
+the publication. Add --no-verify to that and it returns at once, with a
+pull request whose body says it was not pre-verified.
+
+--timeout stops waiting AND stops the build, keeping its environment so
+that you can still look inside. Without it, a --to-pr has no deadline.
+
+See "dockhand usage" for the whole road worked end to end, both with a
+verification and without one.`,
 		Flags: func(c *cobra.Command, p *intent.Params) func() error {
 			c.Flags().StringVar(&p.Version, "to", "", "the version to bump to")
 			c.Flags().BoolVar(&p.Latest, "latest", false, "resolve and bump to the newest upstream release (the default)")
@@ -250,6 +274,7 @@ func intentCommand(s *Services, v intentVerb) *cobra.Command {
 		Use:     v.Name + " " + intentArgSketch,
 		Aliases: v.Aliases,
 		Short:   v.Short,
+		Long:    v.Long,
 		Args:    arity,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The cohort mode first, because it answers a different question
@@ -267,7 +292,7 @@ func intentCommand(s *Services, v intentVerb) *cobra.Command {
 				}
 			}
 			// The verb's own contradictions first: a --to that fights
-			// --latest is a plainer thing to be told than a --wait that
+			// --latest is a plainer thing to be told than a --timeout that
 			// fights --plan, and the caller who typed both is owed the
 			// nearer answer. Under --riders they are moot and skipped rather
 			// than answered — the verb's parameters are not read by a
@@ -333,7 +358,7 @@ func checkTicket(ticket string) (string, error) {
 // THE DEPTH QUESTION IS ONE FLAG, --no-verify, and the road behind it is
 // always enqueue, opportunistically start, detach always. The shipped
 // bare --verify went with the Gated delivery; --trace went to `log`;
-// --wait arrived as the only way for a caller to stay.
+// --timeout arrived as the only way for a caller to stay.
 type intentFlags struct {
 	planOnly bool
 	diff     bool
@@ -350,10 +375,10 @@ type intentFlags struct {
 	// the default: a branch cut from a stale base is the defect, and a
 	// person who wants the stale one — offline, on a plane, pinning a
 	// reproduction to a known commit — is the one making the unusual ask.
-	noFetch bool
-	on      string
-	wait    time.Duration
-	waitSet bool
+	noFetch    bool
+	on         string
+	timeout    time.Duration
+	timeoutSet bool
 
 	// The cohort mode's three, declared here rather than in a struct of
 	// their own because the arity check reads them beside the shared set:
@@ -377,8 +402,8 @@ func (f *intentFlags) register(c *cobra.Command) {
 		"mint the branch and ask for no build at all")
 	c.Flags().BoolVar(&f.noFetch, "no-fetch", false,
 		"base the change on your local primary branch without fetching upstream first")
-	c.Flags().DurationVar(&f.wait, "wait", 0,
-		"stay through the build without showing the log; watching one happen is dockhand log --trace")
+	c.Flags().DurationVar(&f.timeout, "timeout", 0,
+		"stay through the build, and stop it if it runs longer than this; the environment is kept either way")
 	c.Flags().BoolVar(&f.toPR, "to-pr", false,
 		"carry the change through to a pull request")
 	c.Flags().BoolVar(&f.replace, "replace", false,
@@ -392,12 +417,14 @@ func (f *intentFlags) register(c *cobra.Command) {
 	c.Flags().BoolVar(&f.keepEnv, "keep-env", false,
 		"keep the verification environment after a pass, as a failure keeps its own")
 	c.Flags().StringVar(&f.on, "on", "", "macOS release to verify on (one release)")
-	// Read in a PreRun so the road below can tell "--wait 0" from "no
-	// --wait": ChangeRequest.Wait is a POINTER precisely so that those are
-	// two values — an expiry DETACHES and never fails, so a timeout is the
-	// caller giving up on watching and never a verdict — and a duration
-	// flag alone cannot say which of the two was typed.
-	c.PreRun = func(cmd *cobra.Command, _ []string) { f.waitSet = cmd.Flags().Changed("wait") }
+	// Read in a PreRun so the road below can tell "--timeout 0" from no
+	// --timeout at all. ChangeRequest.Wait is a POINTER for the same
+	// reason and carries three answers, not two: nothing typed detaches,
+	// a duration reaps at expiry, and zero waits with no deadline — which
+	// is what --to-pr asks for on its own. A duration flag cannot say
+	// which of the three was meant, so the fact that it was TYPED is read
+	// here and nowhere else.
+	c.PreRun = func(cmd *cobra.Command, _ []string) { f.timeoutSet = cmd.Flags().Changed("timeout") }
 }
 
 // riderPolicy is the pair of switches read as the one choice they are.
@@ -415,7 +442,7 @@ func (f *intentFlags) riderPolicy() intent.RiderPolicy {
 // resolves what only the command line knows into what an operation
 // takes. Flag parsing is this layer's business, not an operation's.
 func (f *intentFlags) check() error {
-	rides := f.test || f.keepEnv || f.waitSet
+	rides := f.test || f.keepEnv || f.timeoutSet
 	writesNothing := f.noVerify || f.planOnly || f.diff || f.inPlace || f.riders
 	switch {
 	case f.diff && (f.inPlace || f.planOnly):
@@ -426,17 +453,11 @@ func (f *intentFlags) check() error {
 		// housekeeping change for a VM to disagree with — and a mint-only
 		// or write-nothing delivery leaves no run to test, no environment
 		// to keep and no verdict to stay for.
-		return usagef("--test, --keep-env and --wait ride a verification; --no-verify, --plan, --diff, --in-place and --riders each produce none")
+		return usagef("--test, --keep-env and --timeout ride a verification; --no-verify, --plan, --diff, --in-place and --riders each produce none")
 	case f.riders && f.noRiders:
 		return usagef("--riders and --no-riders are mutually exclusive")
 	case f.toPR && (f.planOnly || f.diff || f.inPlace):
 		return usagef("--to-pr carries a change to a pull request; it needs the default branch realization")
-	case f.toPR && f.noVerify:
-		// Not a contradiction of spelling but of meaning, which is why it
-		// is said rather than resolved: both write Destination, and they
-		// write opposite answers. Silently letting one win would make the
-		// destination depend on the order two lines happen to be in.
-		return usagef("--no-verify stops the change at the branch and --to-pr carries it to a pull request; ask for one")
 	case f.toPR && f.riders:
 		return usagef("--riders makes housekeeping the whole change, which is not a change to put in front of reviewers")
 	case f.replace && (f.planOnly || f.diff || f.inPlace):
@@ -450,37 +471,68 @@ func (f *intentFlags) check() error {
 	return nil
 }
 
-// delivery is the flags read as the ONE choice app.Delivery is. Five
-// values, since Gated was deleted with the depth flag that spelled it:
-// a change that starts its build immediately and one that queues differ
-// in LATENCY and not in ownership, because the branch is minted either
-// way.
+// delivery is the flags read as the ONE choice app.Delivery is: WHERE
+// the change is bound, and nothing else. Five values, since Gated was
+// deleted with the depth flag that spelled it: a change that starts its
+// build immediately and one that queues differ in LATENCY and not in
+// ownership, because the branch is minted either way.
+//
+// --to-pr IS ASKED BEFORE --no-verify and that order is the whole
+// ruling. They used to be refused together on the reasoning that both
+// wrote Destination and wrote opposite answers; only one of them is
+// about destination. A person who wants a pull request without a build
+// is asking a coherent thing — publish this on my authority, there is
+// nothing to wait for — and it is the same road a host with no verifier
+// has always taken. So --to-pr decides the destination, --no-verify
+// decides whether there is a build (ChangeRequest.Unverified), and
+// Branch is where a change goes when nothing asks to carry it further.
 func (f *intentFlags) delivery() app.Delivery {
 	switch {
 	case f.planOnly, f.diff:
 		return app.Document
 	case f.inPlace:
 		return app.InPlace
+	case f.toPR:
+		return app.PullRequest
 	case f.noVerify, f.riders:
 		// A rider changes nothing a build could notice, so a housekeeping
 		// branch is minted and left alone rather than costing a guest.
 		return app.Branch
-	case f.toPR:
-		return app.PullRequest
 	}
 	return app.Enqueue
 }
 
-// waitFor is --wait as the request takes it: nil to detach at once, or
-// the longest this caller stays. A pointer so that "no wait" and "wait
-// zero" are two values — expiry DETACHES and never fails, so a timeout
-// is the caller giving up on watching and never a verdict.
+// unverified is --no-verify as the request takes it, and --riders with
+// it: a housekeeping change has nothing a build could disagree with, so
+// it asks for none for a different reason and by the same answer.
+func (f *intentFlags) unverified() bool { return f.noVerify || f.riders }
+
+// waitFor is how long this caller stays, as the request takes it. THREE
+// ANSWERS on one pointer, and each is a different sentence:
+//
+//	nil     detach at once — the ordinary bump, which returns
+//	        before the build finishes on purpose
+//	zero    stay with no deadline — --to-pr, because a person who
+//	        asked for a pull request asked for the pass that
+//	        authorizes it, and a deadline nobody chose would just
+//	        put them back where they were trying not to be
+//	>0      stay this long, then STOP THE BUILD and keep its
+//	        environment — --timeout, which means what the word means
+//
+// A build asked for with no destination beyond the verdict detaches
+// unless --timeout says otherwise; that is the tool's whole shape and
+// --to-pr is the one thing that changes it, because it is the one ask
+// whose answer this invocation cannot deliver without waiting.
 func (f *intentFlags) waitFor() *time.Duration {
-	if !f.waitSet {
-		return nil
+	switch {
+	case f.timeoutSet:
+		d := f.timeout
+		return &d
+	case f.toPR && !f.unverified():
+		d := time.Duration(0)
+		return &d
 	}
-	d := f.wait
-	return &d
+	return nil
 }
 
 // runIntent is the whole of an intent verb's road: resolve the selector,
@@ -493,7 +545,7 @@ func (f *intentFlags) waitFor() *time.Duration {
 // because a sweep over four hundred ports that exited non-zero on forty
 // ordinary declines would have every CI wrapper around it wrong.
 func runIntent(ctx context.Context, s *Services, v intentVerb, params intent.Params, f *intentFlags) error {
-	needs := app.ChangeRequest{Delivery: f.delivery(), Fetches: v.Fetches && params.Riders != intent.RidersOnly}.Needs()
+	needs := app.ChangeRequest{Delivery: f.delivery(), Unverified: f.unverified(), Fetches: v.Fetches && params.Riders != intent.RidersOnly}.Needs()
 	if err := s.Acquire(ctx, needs); err != nil {
 		return err
 	}
@@ -527,7 +579,7 @@ func runIntent(ctx context.Context, s *Services, v intentVerb, params intent.Par
 // nothing about four hundred is answered HERE.
 //
 // The list is app.SurveyRequest's own — "refused by arity are --replace,
-// --diff, --in-place, --closes, --to, --to-pr, --wait" — and the reason
+// --diff, --in-place, --closes, --to, --to-pr, --timeout" — and the reason
 // each is refused rather than dropped is the same in every case: the
 // sweep road carries none of them, so a flag accepted here would be a
 // flag the operation silently ignores or, worse, honours by writing the
@@ -563,8 +615,8 @@ func refuseByArity(n int, params intent.Params, f *intentFlags) error {
 		return usagef("--diff prints one branch's patch; a selector naming %d ports would run %d of them into one stream — name one port, or --plan for the whole selector", n, n)
 	case f.replace:
 		return usagef("--replace replaces one port's in-flight branch; a sweep meets its own standing branches and resumes past them — name one port")
-	case f.waitSet:
-		return usagef("--wait stays through one build; a sweep over %d ports enqueues and detaches — name one port, or `dockhand status` for the standings", n)
+	case f.timeoutSet:
+		return usagef("--timeout stays through one build; a sweep over %d ports enqueues and detaches — name one port, or `dockhand status` for the standings", n)
 	case params.Version != "":
 		return usagef("--to names one port's version; a selector naming %d ports would set every one of them to %q — name one port, or --latest for the whole selector", n, params.Version)
 	case params.ClosesTicket != "":
@@ -655,34 +707,77 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 		Progress:  sink{w: s.Err},
 	}
 	req := app.ChangeRequest{
-		Prepared:  prepared,
-		Delivery:  f.delivery(),
-		Platform:  f.release,
-		Test:      f.test,
-		KeepEnv:   f.keepEnv,
-		Replace:   inFlight(f.replace),
-		Prov:      change.Provenance{AskedBy: record.Human, Via: record.MintedSingle, Agent: s.Agent},
-		Slug:      pl.Slug,
-		Riders:    pl.Riders,
-		Wait:      f.waitFor(),
-		Residency: residency,
+		Prepared:   prepared,
+		Delivery:   f.delivery(),
+		Platform:   f.release,
+		Test:       f.test,
+		KeepEnv:    f.keepEnv,
+		Replace:    inFlight(f.replace),
+		Prov:       change.Provenance{AskedBy: record.Human, Via: record.MintedSingle, Agent: s.Agent},
+		Slug:       pl.Slug,
+		Riders:     pl.Riders,
+		Unverified: f.unverified(),
+		Wait:       f.waitFor(),
+		Residency:  residency,
 	}
 	res, runErr := op.Run(ctx, req)
-	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency, report.Created)
+	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.unverified()), residency, report.Created)
 	if runErr != nil {
 		return runErr
 	}
-	if f.toPR && res.Did == app.Minted && res.Deferred != nil && res.Deferred.Reason == app.NoProvider {
-		// THE ONE LINE. On a host that cannot verify there will never be a
-		// pass, so nothing will ever publish this change through the
-		// machine's slot; the only remaining reading of --to-pr is "publish
-		// it now, on the person's authority", which is exactly what
-		// app.Promote is.
+	if f.toPR && carriedToAPullRequest(res, f.unverified()) {
+		// THE ONE LINE, and it is still one. --to-pr means one thing on
+		// every host — carry this change to a pull request, in this
+		// invocation, on my authority — and what differs is only what had
+		// to happen first: nothing, or a build this call stayed for.
+		// app.Promote is the same operation the `promote` verb runs, so
+		// what a pull request says and how a re-publication converges are
+		// decided in one place either way.
 		if err := promoteAfterChange(ctx, s, res.Ref.Branch()); err != nil {
 			return err
 		}
 	}
 	return exitWith(res.Exit())
+}
+
+// carriedToAPullRequest is whether a --to-pr change reached the state
+// that authorizes publishing it now.
+//
+// TWO ROADS AND ONE MEANING. A change nothing will ever build mints and
+// stops, and the only evidence its pull request can carry is the person
+// who typed the flag — which the body says. A change that was built
+// stayed for the verdict, and a pass is evidence: it is the strongest
+// case publish.Authorize ever sees, a human invoker with a passing
+// attempt on the tip.
+//
+// THE FIRST ROAD IS ASKED OF THE ASK AND NOT OF THE ADVISORY. Reading it
+// off the deferral was true for the only caller that exists — cli wires
+// no verifier when no build was asked for, so app answers NoProvider —
+// but it made the publication depend on a SENTENCE ABOUT THE MACHINE
+// rather than on what the person requested, and a caller that held a
+// verifier and asked for no build anyway would have minted a branch and
+// silently declined to publish it.
+//
+// EVERY OTHER OUTCOME PUBLISHES NOTHING and needs no case here, which is
+// the point of asking it this way round. A failure, a reap, a run that
+// ended without concluding, a build still queued because the machine had
+// no room — none of them is a pass, so none of them is a pull request,
+// and each already has an exit code that says which it was.
+func carriedToAPullRequest(res app.Result, unverified bool) bool {
+	switch res.Did {
+	case app.Minted:
+		return unverified || res.Deferred != nil && res.Deferred.Reason == app.NoProvider
+	case app.Stood:
+		return res.Verdict == record.Passed
+	case app.NotRealized, app.NothingToDo, app.Shown, app.Edited, app.Queued, app.Started:
+		// Named rather than defaulted, so that a realization added later
+		// arrives here as a compile-time question instead of silently
+		// joining the six that publish nothing. Queued and Started are
+		// the two worth reading twice: both mean a build is under way and
+		// this call is not staying for it, which is the ordinary bump and
+		// never a --to-pr, because --to-pr waits.
+	}
+	return false
 }
 
 // quietWhereNoBuildWasAsked withdraws the no-provider advisory from a
@@ -708,8 +803,8 @@ func changeOne(ctx context.Context, s *Services, pl *plan.Plan, prepared change.
 // touches nothing else — the deferral is read for an exit code only on
 // a QUEUED result, and a delivery that never enqueued cannot produce
 // one.
-func quietWhereNoBuildWasAsked(res app.Result, d app.Delivery) app.Result {
-	if d == app.Branch && res.Deferred != nil && res.Deferred.Reason == app.NoProvider {
+func quietWhereNoBuildWasAsked(res app.Result, unverified bool) app.Result {
+	if unverified && res.Deferred != nil && res.Deferred.Reason == app.NoProvider {
 		res.Deferred = nil
 	}
 	return res

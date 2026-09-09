@@ -569,6 +569,28 @@ type InteractiveShell interface {
 	Shell(ctx context.Context, job Job) error
 }
 
+// Stopper is the optional capability of STOPPING THE WORK WITHOUT
+// DESTROYING THE ENVIRONMENT. Release is the only thing on the required
+// interface that ends a build, and it ends the guest with it — which is
+// the right answer for a cancel and the wrong one for a --timeout, where
+// the person stopped waiting for work they still wanted and the guest is
+// the only place left to ask how far it got.
+//
+// It is optional because it is a real capability and not a formality: a
+// local VM can reach in and signal the runner, and a hosted CI provider
+// generally cannot stop a job while keeping its runner alive. A caller
+// that needs it type-asserts and phrases its own refusal — and the
+// refusal must be honest (rule 7): a provider that cannot stop the work
+// leaves it RUNNING, and saying otherwise would put a sentence in front
+// of a person that their own `dockhand log` contradicts a minute later.
+//
+// Stop is idempotent and reports ErrUnknownJob for a job the provider
+// does not have, like every other verb that touches a guest. Returning
+// nil means the work is stopped, not that a signal was sent.
+type Stopper interface {
+	Stop(ctx context.Context, job Job) error
+}
+
 // Worker is one environment a provider is running, named the way the
 // provider names it. Owner is the checkout that started it, when
 // anything says: attribution is informational everywhere it is

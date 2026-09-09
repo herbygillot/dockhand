@@ -132,7 +132,7 @@ func Hold(ctx context.Context, path string, h Holder, deadline time.Duration) (f
 // verify, an accept or a status probed, it WAS the resident. A
 // concurrent probe read "resident, holder = the other verb's pid" and
 // printed "dispatch (pid N) will start it" for a pid that would exit in
-// 200ms; a --wait entering that iteration dropped to watching with
+// 200ms; a --timeout entering that iteration dropped to watching with
 // nobody judging; and a `dockhand dispatch` starting at that instant
 // failed its own lock and exited 0 believing a scheduler was up, when
 // the holder was a `status`. So: a dispatcher holds LOCK_EX for its

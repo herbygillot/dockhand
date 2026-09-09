@@ -60,8 +60,20 @@ var ErrNothingPrepared = errors.New("app: the request carries no prepared subjec
 // the two refusals that depended on it. Gated meant the invoking process
 // owned a build; dispatch means the daemon does; both cannot be true
 // without either bypassing the queue or a blocking client — two judges.
-// The depth flag is only --no-verify. How long the caller stays is a
-// separate question, ChangeRequest.Wait, and not a delivery.
+// How long the caller stays is a separate question, ChangeRequest.Wait,
+// and not a delivery.
+//
+// WHETHER A BUILD IS ASKED FOR IS ALSO NOT A DELIVERY, and it used to
+// be: --no-verify was the "depth flag" and it chose Branch, so a person
+// who wanted a pull request without a build had no way to say it and the
+// two flags were refused together as a contradiction. They are not one:
+// --to-pr says WHERE the change is bound and --no-verify says HOW MUCH
+// EVIDENCE goes with it, and every combination of the two is meaningful.
+// So the build question moved to ChangeRequest.Unverified and Delivery
+// kept the destinations — the same separation Wait already has, and for
+// the same reason. Branch remains the destination a change takes when
+// nothing is asked to carry it further; it no longer MEANS "no build",
+// it merely has nowhere to put one.
 type Delivery uint8
 
 const (
@@ -99,7 +111,7 @@ func (r ChangeRequest) Needs() Needs {
 		Tree:      true,
 		Evaluator: true,
 		Fetcher:   r.Fetches,
-		Verifier:  r.Delivery == Enqueue || r.Delivery == PullRequest,
+		Verifier:  (r.Delivery == Enqueue || r.Delivery == PullRequest) && !r.Unverified,
 		Forge:     r.Delivery == PullRequest,
 	}
 }
@@ -109,7 +121,7 @@ func (r ChangeRequest) Needs() Needs {
 // (R13, R14). Three states, because the lock can be unreadable: a
 // permission error or a foreign filesystem is not "no dispatcher", and a
 // process that assumed so would appoint itself judge beside a
-// dispatcher it could not see. Under Unknown a --wait watches only, and
+// dispatcher it could not see. Under Unknown a --timeout watches only, and
 // says so; Status settles nothing and says why (rule 7).
 //
 // THE PROBE IS A SHARED LOCK, and the reason it is not a try-lock is a
@@ -118,7 +130,7 @@ func (r ChangeRequest) Needs() Needs {
 // verify, accept or status probed, it WAS the resident. A concurrent
 // probe read "resident, holder = <the other verb's pid>" and printed
 // "dispatch (pid N) will start it" for a pid that would exit in 200ms; a
-// --wait entering that iteration dropped to watching with nobody
+// --timeout entering that iteration dropped to watching with nobody
 // judging; and a `dockhand dispatch` starting at that instant failed its
 // own lock and exited 0 believing a scheduler was up, when the holder
 // was a `status`. So: dispatch holds LOCK_EX for its whole life;
@@ -150,7 +162,7 @@ type ResidencyState uint8
 
 const (
 	ResidencyUnknown   ResidencyState = iota // the lock could not be read
-	NoDispatcher                             // this process is the judge under --wait
+	NoDispatcher                             // this process is the judge under --timeout
 	DispatcherResident                       // watch the record; it judges
 )
 
@@ -171,7 +183,7 @@ type Change struct {
 	// could disagree with the drain about what it built.
 	Stage run.Stager
 	// Local is the propose step's seam, carried because the waiting judge
-	// under --wait calls run.Finish and Finish proposes.
+	// under --timeout calls run.Finish and Finish proposes.
 	Local run.Local
 	// Verifier is a function and every other dependency is a value,
 	// because a machine with no tart is not an error. Its ABSENCE is
@@ -238,11 +250,26 @@ type ChangeRequest struct {
 	// the catalogue entry cli chose. It is here for Needs and for nothing
 	// else: no road below branches on it.
 	Fetches bool
-	// Wait is nil to detach at once (the default), or the longest this
-	// caller stays. Expiry DETACHES and never fails: the attempt is
-	// unaffected either way, so a timeout is the caller giving up on
-	// watching, never a verdict. A pointer so "no wait" and "wait zero"
-	// are two values.
+	// Unverified says this request asks for NO BUILD AT ALL, which is
+	// --no-verify. It is separate from Delivery because it is a separate
+	// question: --no-verify --to-pr is a change carried to a pull request
+	// with nothing behind it but the person who typed it, and that is a
+	// road, not a contradiction. See the Delivery doc.
+	Unverified bool
+	// Wait is nil to detach at once (the default), or how long this
+	// caller stays. THREE VALUES, not two: nil detaches; a positive
+	// duration waits and REAPS the run at expiry (record.InterruptTimeout
+	// — the build is stopped and its guest kept); zero waits with no
+	// deadline at all, which is what --to-pr asks for when no --timeout
+	// was given, because a person who asked for a pull request asked for
+	// the thing that authorizes it.
+	//
+	// Expiry used to DETACH and never fail. It reaps now because that is
+	// what the word means and what people assume it means: a --timeout
+	// that quietly let an unwanted build run to completion would be a
+	// deadline in name only. What it costs is written where it is paid —
+	// a reaped run has no pass, so nothing downstream will publish it
+	// without a person saying so again.
 	Wait      *time.Duration
 	Residency Residency
 }
@@ -395,7 +422,7 @@ const (
 	Minted  // --no-verify, or no provider on this host: a branch, no attempt
 	Queued  // an attempt written; nothing started it yet
 	Started // an attempt running; no verdict — it arrives via status
-	Stood   // --wait stayed for the verdict
+	Stood   // --timeout stayed for the verdict
 )
 
 // Deferral says why no verification started, in a form a caller can act
@@ -485,7 +512,7 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 	// presence, BEFORE the mint Amend: no provider means mint without
 	// enqueue. Not a vacancy ask — R8 stands — a presence check.
 	prov, provErr := provider(ctx, c.Verifier)
-	enqueue := r.Delivery != Branch && !isNoProvider(provErr)
+	enqueue := r.Delivery != Branch && !r.Unverified && !isNoProvider(provErr)
 	if hasOld && r.Replace == Replace {
 		if _, err := change.Resolve(ctx, c.Repo, c.State, old.Branch); err != nil {
 			return Result{}, err // a hand moved it: 45, before any work is stopped
@@ -620,7 +647,7 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 			if r.Wait == nil {
 				return res, nil
 			}
-			final, werr := watch(ctx, c.State, c.Ledger, prov, c.Local, att, spec, *r.Wait, r.Residency, c.Residency, c.Claimant(), c.Now)
+			final, werr := watch(ctx, c.State, c.Ledger, prov, c.Local, att, spec, *r.Wait, r.Residency, c.Residency, c.Claimant(), c.Now, c.Progress)
 			if werr != nil {
 				return res, werr
 			}
@@ -657,7 +684,7 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 		return res, nil
 	}
 	// watch: by residency, re-read each iteration.
-	final, err := watch(ctx, c.State, c.Ledger, prov, c.Local, started, spec, *r.Wait, r.Residency, c.Residency, c.Claimant(), c.Now)
+	final, err := watch(ctx, c.State, c.Ledger, prov, c.Local, started, spec, *r.Wait, r.Residency, c.Residency, c.Claimant(), c.Now, c.Progress)
 	if err != nil {
 		return res, err
 	}
@@ -700,9 +727,30 @@ func supersedeIn(tx *statestore.Txn, old record.Change, by record.ChangeID, me r
 // attempt until terminal; Unknown -> watch only, and say so. It re-reads
 // residency each iteration so a dispatcher that appears mid-wait takes
 // over. Neither role polls the provider outside Finish (R10).
-func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov verify.Verifier, local run.Local, a record.Attempt, spec run.Spec, wait time.Duration, res Residency, reread func(context.Context) Residency, by lease.Claimant, now func() time.Time) (record.Attempt, error) {
-	ctx, cancel := context.WithTimeout(ctx, wait)
-	defer cancel()
+func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov verify.Verifier, local run.Local, a record.Attempt, spec run.Spec, wait time.Duration, res Residency, reread func(context.Context) Residency, by lease.Claimant, now func() time.Time, p progress.Sink) (record.Attempt, error) {
+	// A BLOCKING INVOCATION SAYS WHAT IT IS BLOCKING ON. Everything else
+	// about this tool is built so that walking away is free, so the one
+	// road that asks a person to stay owes them the reason, the scale and
+	// the way out — a terminal that has printed nothing for forty minutes
+	// is indistinguishable from one that has hung, and the person who
+	// cannot tell reaches for the thing that loses their work.
+	say(p, progress.Info, waiting(spec, wait))
+	// THE PARENT IS KEPT because the deadline is not the only way out of
+	// the loop and the two ways mean opposite things. A deadline that
+	// passes is this caller's --timeout and reaps; a parent that is
+	// canceled is the PERSON — Ctrl-C, or a signal cli forwarded — and
+	// reaping there would turn "stop showing me this" into "throw the
+	// build away", which is the one thing an interrupted wait must not
+	// do. Walking away stays free.
+	parent := ctx
+	if wait > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, wait)
+		defer cancel()
+	}
+	// A zero wait is UNBOUNDED and not "expire at once": --to-pr with no
+	// --timeout asks to stay until the thing that authorizes the pull
+	// request exists. The loop then ends on the verdict or on the person.
 	for a.Phase != record.Finished && ctx.Err() == nil {
 		// THE RE-READ IS FIRST, and it used to be last. The claim it
 		// exists to make — "a dispatcher that appeared mid-wait takes
@@ -720,7 +768,7 @@ func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ver
 		//
 		// Measured in the field: a dispatcher killed mid-build, a guest
 		// that finished the build successfully, a record left saying
-		// "building", and `bump --wait 90m` sitting silent for the full
+		// "building", and `bump --timeout 90m` sitting silent for the full
 		// ninety minutes on a build that had passed.
 		//
 		// Asked FIRST, the loop re-decides its role on every pass whatever
@@ -757,21 +805,82 @@ func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ver
 		case ResidencyUnknown, DispatcherResident:
 			var err error
 			// BOUNDED, so a dispatcher that dies while this call is blocked
-			// costs one interval rather than the whole --wait. AwaitRecord
-			// returns the attempt unchanged when the window passes with no
-			// verdict, and the loop's own condition decides what next.
+			// costs one interval rather than the whole --timeout.
+			// AwaitRecord returns the attempt unchanged when the window
+			// passes with no verdict, and the loop's own condition decides
+			// what next.
 			if a, err = run.AwaitFor(ctx, st, a.ID, 5*time.Second, residencyRecheck); err != nil {
 				return a, err
 			}
 		}
 	}
-	return a, nil
+	if a.Phase == record.Finished || parent.Err() != nil {
+		return a, nil
+	}
+	return reap(parent, st, l, prov, local, a, spec, by, now)
+}
+
+// reap stops a build whose caller's --timeout passed and settles the
+// attempt against it. It is the whole of what a deadline does, and it is
+// here rather than in cli because Change, Verify and Accept all wait
+// through this one loop and a deadline must mean the same thing in all
+// three.
+//
+// THE ORDER IS STOP THEN FINISH, and it is the whole reason Stop exists
+// as its own capability. Finish's first act is Observe, which reads the
+// guest's log; stopping first means the log it reads is the log of a
+// build that has ended, so what a person opens afterwards is where the
+// work actually got to rather than a snapshot from the middle of a race.
+// Then the judge sees record.InterruptTimeout and KEEPS the environment,
+// which is the point of stopping the work by signal instead of by
+// Release: the guest outlives the build.
+//
+// A PROVIDER THAT CANNOT STOP IS SAID SO AND NOT PAPERED OVER (rule 7).
+// The attempt still settles — the caller asked to stop waiting and that
+// much is always deliverable — but the detail says the build is still
+// running, because it is, and a person who reads "timed out" and finds a
+// live build in `dockhand log` has been told a false thing by their own
+// tool.
+func reap(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov verify.Verifier, local run.Local, a record.Attempt, spec run.Spec, by lease.Claimant, now func() time.Time) (record.Attempt, error) {
+	detail := "the --timeout passed; the build was stopped and its environment kept"
+	switch err := run.Stop(ctx, st, prov, a); {
+	case err == nil, errors.Is(err, verify.ErrUnknownJob):
+		// Nothing there to stop is a build that is not running, which is
+		// what was asked for.
+	case errors.Is(err, run.ErrCannotStop):
+		detail = "the --timeout passed; this provider cannot stop a build, so it is still running"
+	default:
+		detail = "the --timeout passed; the build could not be stopped and may still be running: " + err.Error()
+	}
+	itr := &record.Interrupt{Why: record.InterruptTimeout, By: by.Owner, At: now(), Detail: detail}
+	return run.Finish(ctx, st, l, prov, local, a, spec, itr, by, now)
+}
+
+// waiting is the sentence a caller that stays prints before it does.
+//
+// It names the WORK, the SCALE and the WAY OUT, in that order, because
+// those are the three things a person about to sit through a build needs
+// and none of them is knowable from a blinking cursor. The way out is
+// last and is the load-bearing half: Ctrl-C here costs nothing — the
+// guest is in its own session, the branch is minted, the attempt is
+// durable — and a person who does not know that will either wait for
+// something they did not want or kill something they did.
+func waiting(spec run.Spec, wait time.Duration) string {
+	what := "the build"
+	if n := len(spec.Roster); n > 1 {
+		what = fmt.Sprintf("the cohort's %d builds", n)
+	}
+	how := "with no deadline"
+	if wait > 0 {
+		how = "for up to " + wait.String() + ", then stopping it"
+	}
+	return fmt.Sprintf("waiting on %s %s — a `port build` takes minutes to hours; Ctrl-C is safe and leaves it running, and `dockhand status` has the verdict either way", what, how)
 }
 
 // residencyRecheck is how long a watcher will sit inside AwaitRecord
 // before re-deciding whose job the verdict is.
 //
-// It is short because the cost of being wrong is the whole --wait: a
+// It is short because the cost of being wrong is the whole --timeout: a
 // watcher waiting on a dispatcher that has died learns nothing until it
 // looks again, and looking is one lock probe. It is not shorter because
 // the probe touches a lockfile and a store read, and a watcher is
@@ -1011,9 +1120,9 @@ func leaseOf(a record.Attempt) string { return a.Lease }
 //
 // Queued is the only startable answer, and the caller starts it. An
 // ACTIVE adoptee is already running and is joined by watching, which is
-// what --wait does with any started attempt. A SETTLED one has its
+// what --timeout does with any started attempt. A SETTLED one has its
 // verdict earned: nothing to start, nothing to wait for, and Stood is
-// the honest realization even without --wait, because the answer the
+// the honest realization even without --timeout, because the answer the
 // caller asked for is on the record already.
 //
 // A trace is the one thing adoption cannot give back, and the caller
@@ -1093,7 +1202,7 @@ func publicationOpen(s statestore.State, id record.ChangeID) bool {
 //
 // IT IS DEFERRED AT THE ROAD'S END rather than called at each Amend,
 // because one operation may amend three times — mint, then enqueue, then
-// settle under --wait — and the note is a PROJECTION of the state as it
+// settle under --timeout — and the note is a PROJECTION of the state as it
 // finally stands, not a diary of the writes that got there. One export
 // per road, over the state the road left.
 //

@@ -72,6 +72,40 @@ func SettleIn(tx *statestore.Txn, a record.Attempt, ev Evidence, j Judgment, _ t
 	return cur
 }
 
+// jobOf is the lease-to-job translation, in one place. A job is how the
+// PROVIDER names the work and a lease is how the RECORD holds it; the
+// four fields that bridge them were written out at each call site until
+// there were two.
+func jobOf(l record.Lease) verify.Job {
+	return verify.Job{Provider: l.ID.Provider, ID: l.ID.ID, Started: l.ID.Started, Request: l.Request}
+}
+
+// Stop asks the provider to end the work an attempt is running while
+// leaving its environment standing. It is what a --timeout reap does
+// before it settles, and it is here rather than in app because the
+// caller holds an attempt and the provider needs a job — the lease
+// between them is this package's to read.
+//
+// ErrNoLease for an attempt holding no environment, ErrCannotStop for a
+// provider without the capability, and whatever the provider said
+// otherwise. Every one of those is a sentence the caller has to be able
+// to write truthfully, so none of them is swallowed.
+func Stop(ctx context.Context, st *statestore.Store, prov verify.Verifier, a record.Attempt) error {
+	stopper, ok := prov.(verify.Stopper)
+	if !ok {
+		return ErrCannotStop
+	}
+	s0, err := st.Read(ctx)
+	if err != nil {
+		return err
+	}
+	lse, held := s0.Leases[a.Lease]
+	if !held {
+		return ErrNoLease
+	}
+	return stopper.Stop(ctx, jobOf(lse))
+}
+
 // Finish is the sequencer over one attempt, and there is exactly one
 // order in which a verdict, its proposal and its release are written:
 //
@@ -89,7 +123,7 @@ func SettleIn(tx *statestore.Txn, a record.Attempt, ev Evidence, j Judgment, _ t
 //	Export                        the note onto the sha
 //
 // It is what every road that settles calls — status (no dispatcher),
-// cycle's settle stage, the judge under --wait, Cancel and the stale
+// cycle's settle stage, the judge under --timeout, Cancel and the stale
 // stage — so they cannot disagree about the order. The propose step is a
 // SEPARATE step and not part of Judge, because Judge as the cohort
 // proposer would be two judgments in one function (rule 2) and would
@@ -121,7 +155,7 @@ func SettleIn(tx *statestore.Txn, a record.Attempt, ev Evidence, j Judgment, _ t
 // Owed (lease.Discharge retries it) and the attempt Finished, so a rerun
 // finds nothing to judge; a crash before it leaves the attempt Active
 // and a rerun observes again. A Finished attempt is a no-op, which is
-// what makes the residency handoff during a --wait safe.
+// what makes the residency handoff during a --timeout safe.
 //
 // THE EXPORT'S FAILURE IS NOT THE SETTLEMENT'S. The note is a derived
 // projection of a state that is already committed, so a re-export a
@@ -235,6 +269,13 @@ func Finish(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ve
 // is reported and never guessed past: without the lease there is no job
 // to poll, and inventing one would poll a job no provider has.
 var ErrNoLease = errors.New("run: the attempt names a lease the store does not hold")
+
+// ErrCannotStop is a provider that does not implement verify.Stopper
+// being asked to stop work. It is not a failure of the stop: it is the
+// answer that no stop is available, which a caller must be able to tell
+// apart from one that was tried and did not take — the first leaves a
+// build running and the second may have left anything at all.
+var ErrCannotStop = errors.New("run: this provider cannot stop a build without destroying its environment")
 
 // proposeCohort is Finish's cohort step: the guest half off the evidence
 // (darwin/abi over the headline's Manifests), the local half through

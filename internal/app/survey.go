@@ -73,7 +73,7 @@ type Planned struct {
 }
 
 // SurveyRequest: refused by arity are --replace, --diff, --in-place,
-// --closes, --to, --riders' cohort forms, --to-pr, --wait. Admission is
+// --closes, --to, --riders' cohort forms, --to-pr, --timeout. Admission is
 // --max-queued / --max-per-sweep (spelling open, Q10). Next is the
 // pool's delivery, one target at a time, ok false when the selector is
 // exhausted; cli runs planning behind it.

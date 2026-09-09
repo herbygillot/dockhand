@@ -52,7 +52,7 @@ func TestPollReadsAnUnreachableRunningGuestAsStillRunning(t *testing.T) {
 // answering yet, or no longer is" — treated the two as one fact. They
 // are not. Measured on a real cohort: the guest died partway through a
 // Skia compile, the VM stayed in the listing as `stopped`, and Poll
-// answered Running to every poll a `--wait 300m` watcher made. That is
+// answered Running to every poll a `--timeout 300m` watcher made. That is
 // rule 7's shape, "I could not reach it" said as "it is working".
 func TestPollReadsAStoppedGuestAsTerminalRatherThanRunningForever(t *testing.T) {
 	p := Provider{Tools: fakeTart(t, "w-1", "stopped")}

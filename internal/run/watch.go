@@ -43,7 +43,7 @@ func AwaitRecord(ctx context.Context, st *statestore.Store, attempt string, ever
 // here. app.watch chooses between judging and waiting by residency, and
 // a dispatcher that dies mid-wait leaves nobody to settle the attempt —
 // so an unbounded wait is a wait for something that will never happen.
-// A window turns that from the whole of the caller's --wait into one
+// A window turns that from the whole of the caller's --timeout into one
 // interval, after which the caller re-decides whose job the verdict is.
 //
 // A zero or negative window is unbounded, which is AwaitRecord's own

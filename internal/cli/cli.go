@@ -239,6 +239,10 @@ func newRoot(version string) (*cobra.Command, *Services) {
 	// not under Survey, and it is last because it is done once.
 	add("setup", "Set up the machine:", provisionCmd(s), execCmd(s), doctorCmd(s))
 	root.AddCommand(versionCmd())
+	// UNGROUPED ON PURPOSE: a help topic is not a thing to do, so cobra
+	// files it under "Additional help topics" rather than among the
+	// verbs. `dockhand usage` and `dockhand help usage` both print it.
+	root.AddCommand(usageTopic())
 	return root, s
 }
 

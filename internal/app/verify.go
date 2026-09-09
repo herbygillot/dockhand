@@ -69,7 +69,7 @@ type VerifyRequest struct {
 }
 
 // VerifyResult is one row per platform. Exit is 0 if every attempt
-// started, 60 if any stayed queued, the verdict band under --wait; the
+// started, 60 if any stayed queued, the verdict band under --timeout; the
 // remedy line is by residency.
 type VerifyResult struct {
 	Change   change.Ref
@@ -263,7 +263,7 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 	}
 	res.Change = ref
 	// the note, over the state this road leaves: an adoption's record, the
-	// attempts it enqueued, and — under --wait — the verdict the watch
+	// attempts it enqueued, and — under --timeout — the verdict the watch
 	// below settles, in one projection at the end rather than three.
 	defer func() { exportNote(ctx, v.State, v.Ledger, tip, v.Progress) }()
 	// the supersede stage for a FOLLOW runs HERE, after the Amend, over
@@ -314,7 +314,7 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 				v.follow(ctx, prov, a)
 			}
 			if did == Started && r.Wait != nil {
-				final, werr := watch(ctx, v.State, v.Ledger, prov, v.Local, a, specs[a.Platform], *r.Wait, r.Residency, v.Residency, v.Claimant(), v.Now)
+				final, werr := watch(ctx, v.State, v.Ledger, prov, v.Local, a, specs[a.Platform], *r.Wait, r.Residency, v.Residency, v.Claimant(), v.Now, v.Progress)
 				if werr != nil {
 					return res, werr
 				}
@@ -333,7 +333,7 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 				if r.Trace {
 					v.follow(ctx, prov, started)
 				}
-				final, err := watch(ctx, v.State, v.Ledger, prov, v.Local, started, specs[a.Platform], *r.Wait, r.Residency, v.Residency, v.Claimant(), v.Now)
+				final, err := watch(ctx, v.State, v.Ledger, prov, v.Local, started, specs[a.Platform], *r.Wait, r.Residency, v.Residency, v.Claimant(), v.Now, v.Progress)
 				if err != nil {
 					return res, err
 				}

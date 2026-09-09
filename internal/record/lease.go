@@ -277,7 +277,18 @@ const (
 	InterruptUnknown    InterruptWhy = ""
 	InterruptCanceled   InterruptWhy = "canceled"   // a person asked
 	InterruptSuperseded InterruptWhy = "superseded" // the tip moved past it
+	InterruptTimeout    InterruptWhy = "timeout"    // the caller's --timeout expired
 )
+
+// InterruptTimeout is NOT InterruptCanceled with a different sentence,
+// and the difference is what a person stopped rather than how they said
+// it. A cancel is somebody deciding the WORK is not wanted; a timeout is
+// somebody deciding they will not WAIT for work they still want. The
+// record has to hold that apart — "a person asked" read months later
+// against a run nobody typed at is a lie — and the judge branches on it:
+// a cancel gives the guest back, a timeout keeps it, because the person
+// who ran out of patience is exactly the person who will want to look
+// inside. See run.interrupted.
 
 // Active reports an attempt that has an environment and no verdict yet:
 // it is what the stale stage stops and what Promote reports as an

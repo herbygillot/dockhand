@@ -256,13 +256,52 @@ func TestProvisionXcodeNestsUnderTart(t *testing.T) {
 // own. `exec` was in none — a real verb sitting under "Additional
 // Commands" beside `completion` — and nothing said so, because a missing
 // GroupID is not an error to cobra.
+//
+// THE RULE IS ABOUT VERBS AND IS NOW ASKED THAT WAY. `dockhand usage` is
+// a help topic: it has a Long and no RunE, so cobra files it under
+// "Additional help topics" and running it prints itself. Grouping it
+// would list a thing you cannot do among the things you can. Asking
+// cobra whether a command is runnable is what "verb" meant all along —
+// the old spelling was a list of three builtin names, which would have
+// grown a fourth entry per topic and stopped defending anything.
 func TestEveryVerbIsFiledUnderAGroup(t *testing.T) {
 	builtin := map[string]bool{"help": true, "completion": true, "version": true}
 	for _, c := range Root("test").Commands() {
-		if builtin[c.Name()] {
+		if builtin[c.Name()] || c.IsAdditionalHelpTopicCommand() {
 			continue
 		}
 		assert.NotEmpty(t, c.GroupID, "%s is in no group and will list under Additional Commands", c.Name())
+	}
+}
+
+// THE WALKTHROUGH IS REACHABLE BY BOTH NAMES A PERSON WOULD TRY, and
+// neither collides with cobra: cobra registers `help` and `completion`
+// and nothing else, and `usage` exists in it only as a rendering of a
+// command — UsageString, SetUsageTemplate — never as a command itself.
+//
+// What it must SAY is the three facts that were true and written
+// nowhere, each of which cost somebody a wrong assumption: that a bump
+// returns before its build finishes, that `status` is where the verdict
+// arrives, and that `promote` opens a pull request rather than only
+// pushing a branch.
+func TestTheUsageTopicIsReachableAndSaysWhatTheVerbsDoNot(t *testing.T) {
+	topic := usageTopic()
+	require.False(t, topic.Runnable(), "a help topic prints itself; it does not act")
+	require.True(t, topic.IsAdditionalHelpTopicCommand())
+
+	found, _, err := Root("test").Find([]string{"usage"})
+	require.NoError(t, err)
+	assert.Equal(t, "usage", found.Name(), "`dockhand usage` and `dockhand help usage` reach it")
+
+	for _, said := range []string{
+		"RETURN — the build is not done",
+		"dockhand status",
+		"push to your fork and open the PR",
+		"--to-pr --no-verify",
+		"--timeout",
+		"Ctrl-C is safe",
+	} {
+		assert.Contains(t, topic.Long, said)
 	}
 }
 

@@ -220,7 +220,7 @@ func (a Accept) Run(ctx context.Context, r AcceptRequest) (Result, error) {
 	if r.Wait == nil {
 		return res, nil
 	}
-	final, err := watch(ctx, a.State, a.Ledger, prov, a.Local, started, spec, *r.Wait, r.Residency, a.Residency, a.Claimant(), a.Now)
+	final, err := watch(ctx, a.State, a.Ledger, prov, a.Local, started, spec, *r.Wait, r.Residency, a.Residency, a.Claimant(), a.Now, a.Progress)
 	if err == nil && final.Phase == record.Finished {
 		res.Did, res.Verdict = Stood, verdictOf(final)
 	}

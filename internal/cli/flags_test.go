@@ -43,7 +43,7 @@ func TestTheFlagsRefusedByArity(t *testing.T) {
 		{"--in-place", intent.Params{}, intentFlags{inPlace: true}, "--in-place"},
 		{"--diff", intent.Params{}, intentFlags{diff: true}, "--diff"},
 		{"--replace", intent.Params{}, intentFlags{replace: true}, "--replace"},
-		{"--wait", intent.Params{}, intentFlags{waitSet: true, wait: time.Minute}, "--wait"},
+		{"--timeout", intent.Params{}, intentFlags{timeoutSet: true, timeout: time.Minute}, "--timeout"},
 		{"--to", intent.Params{Version: "1.8.2"}, intentFlags{}, "--to"},
 		{"--closes", intent.Params{ClosesTicket: "4127"}, intentFlags{}, "--closes"},
 	} {
@@ -164,17 +164,19 @@ func TestNoVerifyIsNotADiagnosisOfTheMachine(t *testing.T) {
 		Did:      app.Minted,
 		Deferred: &app.Deferral{Reason: app.NoProvider, Detail: "unverified; install tart and `dockhand verify`"},
 	}
-	assert.Nil(t, quietWhereNoBuildWasAsked(minted, app.Branch).Deferred,
+	assert.Nil(t, quietWhereNoBuildWasAsked(minted, true).Deferred,
 		"a caller who asked for no build is told nothing about a provider")
 
-	// Every other delivery keeps it: a change that ASKED to be built and
-	// found no provider is owed the sentence.
-	for _, d := range []app.Delivery{app.Enqueue, app.PullRequest} {
-		assert.NotNil(t, quietWhereNoBuildWasAsked(minted, d).Deferred, "%v", d)
-	}
+	// A change that ASKED to be built and found no provider is owed the
+	// sentence. It is read off the ASK and no longer off the delivery,
+	// which is what makes --no-verify --to-pr quiet too: that road asks
+	// for no build either, and it is the very road the advisory would
+	// have instructed to install software it does not need.
+	assert.NotNil(t, quietWhereNoBuildWasAsked(minted, false).Deferred)
+
 	// And a deferral of another kind is never touched.
 	other := app.Result{Did: app.Minted, Deferred: &app.Deferral{Reason: app.NoEnvironment, Detail: "no base image"}}
-	assert.NotNil(t, quietWhereNoBuildWasAsked(other, app.Branch).Deferred)
+	assert.NotNil(t, quietWhereNoBuildWasAsked(other, true).Deferred)
 }
 
 // `status --json` CARRIES THE VERIFICATION STANDING. record.ChangeState

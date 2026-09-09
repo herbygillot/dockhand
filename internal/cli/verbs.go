@@ -78,7 +78,7 @@ func verifyCmd(s *Services) *cobra.Command {
 				return err
 			}
 			residency := probeResidency(ctx, repo)
-			// --trace IMPLIES --wait: streaming a log until it finishes is
+			// --trace IMPLIES --timeout: streaming a log until it finishes is
 			// staying for the answer, and a caller that streamed and then
 			// detached would leave mid-sentence.
 			stay := waitPtr(cmd, wait, trace)
@@ -109,23 +109,29 @@ func verifyCmd(s *Services) *cobra.Command {
 	c.Flags().BoolVar(&test, "test", false, "also run the port's test suite (port test) after the install")
 	c.Flags().BoolVar(&keepEnv, "keep-env", false, "keep the environment after a pass, as a failure keeps its own")
 	c.Flags().BoolVar(&trace, "trace", false, "stay attached after submitting: stream the build log until it finishes")
-	c.Flags().DurationVar(&wait, "wait", 0, "stay through the build without showing the log")
+	c.Flags().DurationVar(&wait, "timeout", 0,
+		"stay through the build, and stop it if it runs longer than this; the environment is kept either way")
 	return c
 }
 
-// waitPtr is --wait as a request takes it, with --trace's implication
-// applied. A pointer so "no wait" and "wait zero" stay two values.
+// waitPtr is --timeout as a request takes it, with --trace's implication
+// applied. A pointer so the three answers stay three: nothing typed
+// detaches, a duration reaps at expiry, and zero stays with no deadline.
 func waitPtr(cmd *cobra.Command, d time.Duration, trace bool) *time.Duration {
-	if cmd.Flags().Changed("wait") {
+	if cmd.Flags().Changed("timeout") {
 		v := d
 		return &v
 	}
 	if trace {
-		// An unbounded stay, spelled as a very long one: the caller asked to
-		// watch until it finishes, and the context's own cancellation —
-		// their Ctrl-C — is what ends it. Interrupting is safe, because the
-		// build is detached and owned by the record.
-		v := 24 * time.Hour
+		// AN UNBOUNDED STAY, and it is now spelled as one. It used to be
+		// "a very long one" — 24 hours — which was a lie that cost
+		// nothing while expiry only detached. It would cost something now:
+		// a --timeout reaps, so a watcher left running overnight would
+		// have killed the build it was watching. Zero waits with no
+		// deadline, and the caller's own Ctrl-C is what ends it.
+		// Interrupting is safe, because the build is detached and owned by
+		// the record.
+		v := time.Duration(0)
 		return &v
 	}
 	return nil
@@ -951,7 +957,7 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 		Wait: f.waitFor(), Residency: residency,
 		Prov: change.Provenance{AskedBy: record.Human, Via: record.MintedCohort, Agent: s.Agent},
 	})
-	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.delivery()), residency, report.Updated)
+	report.Change(s.Out, quietWhereNoBuildWasAsked(res, f.unverified()), residency, report.Updated)
 	if err != nil {
 		return err
 	}

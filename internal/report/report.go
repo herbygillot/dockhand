@@ -974,7 +974,7 @@ func bad(s record.RunState) int {
 }
 
 // verdictWord is the one word a run state is printed as, and it is the
-// single place the vocabulary is spelled: `status`, a --wait and a
+// single place the vocabulary is spelled: `status`, a --timeout and a
 // pass's settle row all read the same word for the same state.
 func verdictWord(s record.RunState) string {
 	switch s {

@@ -41,7 +41,7 @@ var ErrNoChangeAt = errors.New("statestore: no change in the store is at this co
 //
 // app.exportNote is that caller, deferred at each road's end so that one
 // operation amending three times — mint, enqueue, then settle under
-// --wait — exports the state it LEAVES rather than each state it passed
+// --timeout — exports the state it LEAVES rather than each state it passed
 // through; and Cycle.reexport is the pass's unconditional sweep behind
 // it. The one road that does not export is `discard`, which REMOVES
 // through ledger.Remove instead: the change is over, and once compaction

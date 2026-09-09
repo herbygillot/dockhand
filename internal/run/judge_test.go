@@ -185,8 +185,36 @@ func TestAnInterruptIsReadByTheJudgeAndNeverWrittenByACaller(t *testing.T) {
 		assert.Equal(t, tc.want, j.Runs["gdal"].State)
 		assert.Equal(t, "stopped", j.Runs["jq"].Detail)
 		assert.Equal(t, ReleaseQuietly, j.Disposition,
-			"nothing about the verdict depends on whether the guest went back")
+			"nobody comes back to look inside a build they threw away")
 	}
+}
+
+// A TIMEOUT IS THE ONE INTERRUPT THAT KEEPS ITS GUEST, and the reason is
+// what the person stopped rather than how they said it. A cancel and a
+// supersede are somebody deciding the WORK is unwanted — they typed
+// `cancel`, or the tip moved past it. A --timeout is the opposite: the
+// work was wanted and the WAITING ran out, so the person who set the
+// deadline is precisely the one with an unanswered question about how
+// far the build got, and `dockhand shell` is where that is asked.
+//
+// It settles Canceled either way, because the run really did end without
+// concluding anything. What differs is the guest.
+func TestATimeoutKeepsItsEnvironmentAndACancelDoesNot(t *testing.T) {
+	stopped := func(why record.InterruptWhy) Judgment {
+		e := evidenceOf([]Member{member("jq"), member("gdal")},
+			verify.Status{State: verify.Running}, "")
+		e.Interrupt = &record.Interrupt{Why: why, Detail: "stopped"}
+		return Judge(e)
+	}
+
+	reaped := stopped(record.InterruptTimeout)
+	require.Len(t, reaped.Runs, 2)
+	assert.Equal(t, record.Canceled, reaped.Runs["jq"].State, "a reap concluded nothing")
+	assert.Equal(t, Keep, reaped.Disposition,
+		"the work was wanted, so how far it got is still a question somebody will ask")
+
+	assert.Equal(t, ReleaseQuietly, stopped(record.InterruptCanceled).Disposition,
+		"and a cancel is unchanged: the work itself was not wanted")
 }
 
 // A COHORT'S MEMBERS ARE JUDGED APART. The runner goes on past a

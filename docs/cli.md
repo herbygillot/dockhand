@@ -176,7 +176,7 @@ when the run settles — `status` then says "environment kept" beside the
 pass, and `dockhand shell` reaches it until `cancel` or `discard` gives it
 back. It rides a submitted run, so the five deliveries that produce none —
 `--no-verify`, `--plan`, `--diff`, `--in-place` and `--riders` — refuse it
-rather than drop it, beside `--test` and `--wait`, which ride one for the
+rather than drop it, beside `--test` and `--timeout`, which ride one for the
 same reason. Not a flag on `status` or `cycle`: by the time either settles,
 the release is in the same pass. (The `--verify` gate this paragraph used to
 name is gone with always-enqueue: nothing waits for a verdict and releases
@@ -235,16 +235,31 @@ branch for having been superseded: the ordinary pass, the report, the drain
 and the machine's publish slot all leave one exactly where it is.
 
 **`--to-pr`** asks a write intent to carry the change through to a pull
-request, and it means two different things. On a machine that can verify it
-binds the record to the reconciler's publish slot, which publishes it once
-it has a pass — refused on this build, at the moment the record would be
-bound, with nothing minted. On a machine that cannot verify there will never
-be a pass, so the only reading left is an immediate publication on the
-authority of the person who typed it: the ring-3 prechecks are asked first
-and **before anything is minted** (an own PR already merged is `21`, a
-duplicate title is `20`), and then the change is minted and published in the
-one invocation. An unattended run is refused on that road — it has no
-authority to lend — and so is a selector naming more than one port.
+request **in that one invocation**, on every host. It used to mean two
+different things chosen by a property of the machine — a person who
+installed tart found their `--to-pr` silently stop opening pull requests and
+start queueing them for a `dispatch` they were probably not running — and a
+flag whose semantics depend on host state is a seam in the wrong place. What
+differs by host now is only what has to happen in between.
+
+On a machine that cannot verify there will never be a pass, so the evidence
+is the person who typed it: the ring-3 prechecks are asked first and
+**before anything is minted** (an own PR already merged is `21`, a duplicate
+title is `20`), and then the change is minted and published. On a machine
+that can verify, the invocation **stays for the build** — the pass is what
+authorizes the publication, and `waitFor` reads `--to-pr` as an unbounded
+wait — and publishes on the verdict. A failure, a reap or any other
+non-pass publishes nothing and exits in its own band.
+
+`--no-verify` composes with it rather than contradicting it: the two are
+different axes — `--to-pr` says where the change is bound and `--no-verify`
+how much evidence goes with it — so `--no-verify --to-pr` is the road that
+returns a pull request at once, with a body that says it was not
+pre-verified. They were refused together on the reasoning that both wrote
+`Destination`; only one of them ever should have.
+
+A selector naming more than one port is still refused, and so is an
+unattended run on the publishing road — it has no authority to lend.
 
 **Riders.** Every headline intent is examined for housekeeping it could
 carry — one rule today, the editor modeline a Portfile opens without — and
@@ -885,6 +900,7 @@ what it was reserved for. Its four reasons:
 | `promote-is-human` | *retired with the declaration.* `dockhand promote` in auto mode — and nothing can declare that any more: a typed promote is a person by construction, `Grants.Invoker` being a constant of the road. The rule it protected still holds, and holds structurally: there is exactly one machine publish path, the dispatcher's slot |
 | `machine-publish-disabled` | this build does not let a machine spend ring 3 at all. The permission is a build-time constant and it is false; flipping it is the trust ladder's ruling to make |
 | `machine-publish-no-verifier` | *retired with the declaration,* for the same reason: the run that could declare itself unattended is gone. `--to-pr` on a verifier-less host is now a person sequencing `promote` after the mint, in the one invocation that asked |
+| `machine-publish-disabled` | *retired with the 2026-09-06 grant.* It named a build-time constant that was false; the machine road is `GrantSimpleBumps` now, and what it refuses it refuses by the grant rather than by a switch. Nothing in the tree has written this reason since |
 | `machine-republish` | an unattended publication met a pull request already open for the branch. The slot decides this a phase earlier and calls it work done; reaching the verb with it is a bug above the verb, and the funnel refuses rather than force-updating a review it did not open |
 
 A finding proposes and never executes, so a change carrying an unanswered
@@ -892,10 +908,13 @@ proposal is carrying a question; an unattended road has nobody to have read
 it and is refused, while a person promoting is looking at the proposal on
 their own `status` output and publishing anyway is their answer.
 
-`machine-publish-disabled` is asked of the **machine** even when a person
-typed the verb, wherever what is being bound is the machine's road: `bump
---to-pr` on a machine that can verify is a request that the reconciler
-publish, and who queues work for a road is not who walks it.
+The machine's grant is asked of the **machine** even when a person typed the
+verb, wherever what is being bound is the machine's road. That used to
+include `bump --to-pr` on a machine that can verify; it no longer does,
+because that invocation now walks the road itself and publishes as a person
+with a pass in hand. What remains on the machine's road is the dispatcher's
+slot, whose candidates are the `--to-pr` changes a person started and did
+not stay for.
 
 `22` is the destination refusing in the sense that matters: the answer the
 superseded run was about to give is about bytes that are no longer the tip.

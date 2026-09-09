@@ -41,11 +41,25 @@ import (
 // "/var". No command, no order, no redirection changed. That
 // arithmetic is the whole claim — a re-record that could not show it
 // would be this pin failing to do its job.
+//
+// IT WAS RE-RECORDED A SECOND TIME, and this is that reason. --timeout
+// reaps a build it outlived, and a reap has to find the work: the runner
+// now writes its own pid where the host can read it, so the stop kills
+// by PARENTAGE rather than by matching a pattern against a process list
+// (tart.stopScript says why that distinction is not a style choice).
+//
+// The delta is one line at the top of the subshell and nothing else: 613
+// bytes became 654, which is the 41 characters of "  echo $$ > " plus
+// the directory plus "/pid" and a newline. No command that builds
+// anything changed, no order changed, no redirection changed. The pid is
+// written by the shell that runs the build, so it is that shell's own
+// $$ at runtime and not a value dockhand interpolates.
 const frozenRunner = `set -u
 mkdir -p /var/tmp/dockhand-verify
 echo running > /var/tmp/dockhand-verify/state
 : > /var/tmp/dockhand-verify/log
 nohup /bin/sh -c '
+  echo $$ > /var/tmp/dockhand-verify/pid
   ok=yes
   for f in /var/tmp/dockhand-verify/argv.lint /var/tmp/dockhand-verify/argv.test /var/tmp/dockhand-verify/argv; do
     [ -f "$f" ] || continue
@@ -62,8 +76,8 @@ nohup /bin/sh -c '
 
 func TestRunnerScriptIsFrozen(t *testing.T) {
 	assert.Equal(t, frozenRunner, runner("/opt/local/bin/port"))
-	assert.Len(t, runner("/opt/local/bin/port"), 613,
-		"the single-subject runner is 613 bytes: the 577 it was written at, plus the nine \"/var\" the state directory move added")
+	assert.Len(t, runner("/opt/local/bin/port"), 654,
+		"the single-subject runner is 654 bytes: the 577 it was written at, plus the nine \"/var\" the state directory move added, plus the 41 of the pid line the --timeout reap needs")
 }
 
 // runnerAt is what makes the script runnable in a test, and it earns

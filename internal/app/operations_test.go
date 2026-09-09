@@ -119,6 +119,20 @@ func (s *streaming) Stream(_ context.Context, _ verify.Job, w io.Writer) error {
 	return err
 }
 
+// stoppable is a Fake that can end its work WITHOUT destroying the
+// environment — verify.Stopper, the tenth optional interface, which a
+// --timeout reap needs and which Release cannot stand in for: Release
+// takes the guest with it, and the guest is the thing being kept.
+type stoppable struct {
+	*verifytest.Fake
+	stopped []string
+}
+
+func (s *stoppable) Stop(_ context.Context, job verify.Job) error {
+	s.stopped = append(s.stopped, job.ID)
+	return nil
+}
+
 // recorder is a progress.Sink that keeps what it was told, so a test can
 // assert that a refusal a person needs to see was actually said.
 type recorder struct{ lines []string }
@@ -1077,7 +1091,7 @@ func TestVerifySeatsACohortFromTheRecordAndWithholdsItsSoloMember(t *testing.T) 
 // counter wraps a provider and records how often a wait loop asks it
 // anything. Poll is the expensive question — for the tart provider it is
 // a `tart list` plus an exec into the guest agent — so counting it
-// counts the load a `--wait` puts on the machine it is waiting for.
+// counts the load a `--timeout` puts on the machine it is waiting for.
 type counter struct {
 	*verifytest.Fake
 	polls atomic.Int64
@@ -1123,4 +1137,91 @@ func TestAWaitWithNoDispatcherDoesNotSpinOnTheGuest(t *testing.T) {
 	asked := c.polls.Load() - before
 	assert.LessOrEqual(t, asked, int64(2),
 		"a wait shorter than one interval asks the guest once, not continuously")
+}
+
+// A --timeout STOPS THE BUILD AND KEEPS ITS ENVIRONMENT. Both halves are
+// the claim, and neither was true of the flag this replaced: expiry used
+// to DETACH — the build ran on to completion, the caller simply stopped
+// looking — which is a deadline in name only, and which is not what a
+// person typing the word "timeout" is asking for.
+//
+// The environment is kept because of what the person stopped. They did
+// not decide the work was unwanted; they decided they would not wait for
+// it, which leaves them with an unanswered question about how far it got
+// and `dockhand shell` as the place to ask. It is retained on
+// lease.KeepFor like any other kept guest, so it costs a slot for a day
+// rather than forever.
+func TestATimeoutStopsTheBuildAndKeepsItsEnvironment(t *testing.T) {
+	repo, st := fixture(t)
+	// A provider that never settles: Poll answers Running for a job it
+	// has no script for, which is the build that outlives its deadline.
+	prov := &stoppable{Fake: &verifytest.Fake{}}
+	res := enqueued(t, repo, st, prov, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Started, res.Did, "the fixture is a running build")
+
+	wait := 50 * time.Millisecond
+	said := &recorder{}
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(prov), Me: me(), Now: now, Progress: said}
+	_, err := v.Run(t.Context(), VerifyRequest{
+		Target: "dockhand/jq-1.8", Platforms: []platform.Release{sequoia},
+		Wait: &wait, Residency: Residency{State: NoDispatcher}})
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, prov.stopped, "the deadline passed and the build was left running")
+
+	// A BLOCKING INVOCATION SAYS WHAT IT IS BLOCKING ON. Everything else
+	// in this tool is built so that walking away is free, so the one road
+	// that asks a person to stay owes them the reason, the scale and the
+	// way out — a terminal silent for forty minutes is indistinguishable
+	// from one that has hung, and a person who cannot tell reaches for
+	// the thing that loses their work.
+	assert.True(t, said.said("waiting on the build"), "the wait names what it is waiting for")
+	assert.True(t, said.said("minutes to hours"), "and how long that is likely to be")
+	assert.True(t, said.said("Ctrl-C is safe"), "and that leaving costs nothing")
+
+	after, err := st.Read(t.Context())
+	require.NoError(t, err)
+	require.Len(t, after.Attempts, 1)
+	for _, a := range after.Attempts {
+		require.Equal(t, record.Finished, a.Phase, "a reap settles the attempt")
+		for port, r := range a.Runs {
+			assert.Equal(t, record.Canceled, r.State, "%s: a reap concluded nothing", port)
+			assert.Contains(t, r.Detail, "--timeout",
+				"the record says why it stopped, in the words the person typed")
+		}
+		lse, held := after.Leases[a.Lease]
+		require.True(t, held, "the environment is kept, so its lease stands")
+		assert.NotNil(t, lse.Retain,
+			"and it is kept ON A DEADLINE — lease.KeepFor — rather than until somebody remembers")
+	}
+}
+
+// A PROVIDER THAT CANNOT STOP IS SAID SO AND NOT PAPERED OVER (rule 7).
+// The attempt still settles, because the caller asked to stop waiting
+// and that much is always deliverable — but the build really is still
+// running, and a record that claimed otherwise would be contradicted by
+// the person's own `dockhand log` a minute later.
+func TestAReapSaysSoWhenTheBuildCouldNotBeStopped(t *testing.T) {
+	repo, st := fixture(t)
+	prov := &verifytest.Fake{} // implements no verify.Stopper
+	res := enqueued(t, repo, st, prov, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Started, res.Did)
+
+	wait := 50 * time.Millisecond
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(prov), Me: me(), Now: now}
+	_, err := v.Run(t.Context(), VerifyRequest{
+		Target: "dockhand/jq-1.8", Platforms: []platform.Release{sequoia},
+		Wait: &wait, Residency: Residency{State: NoDispatcher}})
+	require.NoError(t, err)
+
+	after, err := st.Read(t.Context())
+	require.NoError(t, err)
+	for _, a := range after.Attempts {
+		for _, r := range a.Runs {
+			assert.Contains(t, r.Detail, "still running",
+				"a reap that could not reap says so rather than reporting a quiet death")
+		}
+	}
 }

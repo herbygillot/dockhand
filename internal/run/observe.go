@@ -61,7 +61,7 @@ func Observe(ctx context.Context, prov verify.Verifier, l record.Lease, spec Spe
 		Claim:    caps.Evidence,
 		At:       time.Now().UTC(),
 	}
-	job := verify.Job{Provider: l.ID.Provider, ID: l.ID.ID, Started: l.ID.Started, Request: l.Request}
+	job := jobOf(l)
 	st, err := prov.Poll(ctx, job)
 	switch {
 	case errors.Is(err, verify.ErrUnknownJob):
