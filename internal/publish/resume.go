@@ -9,19 +9,56 @@ import (
 	"github.com/herbygillot/dockhand/internal/statestore"
 )
 
-// Resumed is what finishing one unfinished publication came to.
+// Advanced is what carrying one change through the permit came to.
 //
 // Out STANDS EVEN WHEN Err IS SET, which is why Ran is separate from
 // both: Apply's outcome is what actually reached the forge, and a call
 // that failed after an effect landed has an outcome worth recording. A
 // caller that read Err and discarded Out would forget the push it just
 // made.
-type Resumed struct {
-	Change     record.ChangeID
+type Advanced struct {
 	Advisories []Advisory
 	Err        error
 	Out        Outcome
 	Ran        bool
+}
+
+// AdvanceFrom asks for a permit on facts already gathered, and applies
+// it. Authorize is still the only thing that decides; this is the three
+// steps that always follow it in the same order.
+//
+// THE FACTS ARE PASSED AND NOT GATHERED, because both callers already
+// hold them and each got them for its own reason — a resumption gathers
+// before it reconciles, and the machine slot gathers to see whether a
+// candidate is publishable at all. A ladder that gathered again would
+// ask the forge twice per change per pass.
+//
+// A no-op permit returns with Ran false and no error: the branch's own
+// pull request is already open at this tip, which is not a failure and
+// not a publication.
+func AdvanceFrom(ctx context.Context, env Env, f Facts, pace Pace) Advanced {
+	var a Advanced
+	permit, adv, err := Authorize(f, pace)
+	a.Advisories = adv
+	if err != nil {
+		a.Err = err
+		return a
+	}
+	if permit.NoOp() {
+		return a
+	}
+	// Ran before Err on purpose: Apply's outcome is what reached the
+	// forge, and it stands whether or not the call came back clean.
+	a.Out, a.Err = Apply(ctx, env, permit)
+	a.Ran = true
+	return a
+}
+
+// Resumed is one unfinished publication, finished — an Advanced with
+// the change it belongs to.
+type Resumed struct {
+	Change record.ChangeID
+	Advanced
 }
 
 // Resume finishes every publication whose journal shows work started and
@@ -83,23 +120,10 @@ func Resume(ctx context.Context, env Env, st statestore.State, forge ForgePolicy
 		if !Owed(row) {
 			continue // the world had already done what the journal was unsure of
 		}
-		permit, adv, aerr := Authorize(f, Pace{})
-		r.Advisories = adv
-		if aerr != nil {
-			r.Err = aerr
-			out = append(out, r)
-			continue
+		r.Advanced = AdvanceFrom(ctx, env, f, Pace{})
+		if r.Err == nil && !r.Ran && len(r.Advisories) == 0 {
+			continue // the permit was a no-op and there was nothing to say
 		}
-		if permit.NoOp() {
-			if len(adv) > 0 {
-				out = append(out, r)
-			}
-			continue
-		}
-		// Ran before Err on purpose: Apply's outcome is what reached the
-		// forge, and it stands whether or not the call came back clean.
-		r.Out, r.Err = Apply(ctx, env, permit)
-		r.Ran = true
 		out = append(out, r)
 	}
 	return out

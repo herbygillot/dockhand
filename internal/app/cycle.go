@@ -464,115 +464,8 @@ func (c Cycle) perform(ctx context.Context, r CycleRequest) (Pass, error) {
 	// exists to remove. So the disagreement is a Refusal row, the
 	// publication stays open, and the person answers it with `verify` or
 	// `discard`; nothing is deleted and nothing is lost.
-	st, err = c.State.Read(ctx)
-	if err != nil {
+	if err := c.retire(ctx, r, provErr, &p, closed); err != nil {
 		return p, err
-	}
-	for _, key := range slices.Sorted(maps.Keys(st.Publications)) {
-		pub := st.Publications[key]
-		if pub.Outcome.Settled() {
-			continue
-		}
-		old := st.Changes[string(pub.Change)]
-		ref, resolveErr := change.Resolve(ctx, c.Repo, c.State, change.TargetFor(old))
-		if resolveErr != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: resolveErr}) // moved by hand, or could not be read
-			continue
-		}
-		f, err := publish.Gather(ctx, c.Env, ref, r.Forge, publish.Asks{}, c.Grants.Invoker, c.Now())
-		if err != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-			continue
-		}
-		out, dem, err := publish.Standing(pub, f.Forge)
-		if err != nil {
-			// A FORGE THAT COULD NOT BE ASKED IS NOT A FORGE THAT SAID
-			// "STILL OPEN", and collapsing the two into one `continue` is
-			// the silence rule 7 forbids: publish.Standing refuses stale
-			// facts (ErrNotFresh) and carries the lookup's own error, and a
-			// pass that dropped both would report "0 retired · 0 refused"
-			// for a host whose `gh` has been uninstalled for a week — the
-			// absence of retirements as the operator's only signal, which is
-			// the observable D13 exists to remove.
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-			continue
-		}
-		if !out.Settled() {
-			continue // the forge answered, and the answer is that it is still open
-		}
-		if provErr == nil {
-			// Cancel's stages over the RECORD: a moved or deleted branch
-			// still owes the stop and the release of the recorded tip's work.
-			cancel := Cancel{Repo: c.Repo, Ledger: c.Ledger, State: c.State, Verifier: c.Verifier, Local: c.Local, Me: c.Me, Now: c.Now, Progress: c.Progress}
-			if _, err := cancel.run(ctx, st, old.ID, old.Tip); err != nil {
-				return p, err
-			}
-		}
-		wt, wtErr := "", error(nil)
-		if r.Retirement == Demolish && dem.Local != "" {
-			wt, wtErr = c.Repo.CheckedOutAt(ctx, old.Branch)
-			switch {
-			case wtErr != nil:
-				p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: wtErr}) // kept: could not read the worktree list (rule 7)
-			case wt != "":
-				p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: change.ErrCheckedOut}) // kept: checked out
-			}
-		}
-		demolish := r.Retirement == Demolish && dem.Local != "" && wtErr == nil && wt == ""
-		fork := r.Retirement == Demolish && dem.Fork != ""
-		to := record.ChangePublished
-		if out != record.Merged {
-			to = record.ChangeAbandoned
-		}
-		var kept error // the policy's refusal, re-asked under the flock; reset per closure run
-		if err := c.State.Amend(ctx, func(tx *statestore.Txn) error {
-			kept = nil
-			// mayDemolish over the state THIS closure is handed: a `hold` or a
-			// `verify` follow may have landed since the pass's read.
-			may := mayDemolish(tx.State().Changes[string(pub.Change)], c.Grants.Invoker)
-			if err := publish.RetireIn(tx, pub.ID, out, c.Now()); err != nil {
-				return err
-			}
-			if fork && may {
-				if err := publish.DeleteForkIn(tx, pub.ID, c.Now()); err != nil {
-					return err
-				}
-			}
-			if err := change.CloseIn(tx, pub.Change, to, "", c.Now()); err != nil {
-				return err // change.ErrNotBound: a peer closed it first — a Refusal row, not a stop
-			}
-			run.WithdrawIn(tx, pub.Change, record.InterruptSuperseded, c.Me, c.Now())
-			if (demolish || fork) && !may {
-				kept = ErrMachineMayNotDemolish // held or adopted since the read: the close lands, the deletions do not
-			}
-			if demolish && may {
-				return change.DemolishIn(tx, pub.Change, c.Now())
-			}
-			return nil
-		}); err != nil {
-			if errors.Is(err, change.ErrNotBound) {
-				p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
-				continue
-			}
-			return p, err
-		}
-		if kept != nil {
-			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: kept})
-		}
-		closed[old.ID] = true
-		p.Retired = append(p.Retired, publish.Outcome{Number: pub.Number, URL: pub.URL, At: c.Now()})
-	}
-	// the fork copies: a foreign effect, outside every lock, on its backoff.
-	{
-		st2, err := c.State.Read(ctx)
-		if err != nil {
-			return p, err
-		}
-		for _, pub := range publish.ForkOwed(st2) {
-			if err := publish.DeleteFork(ctx, c.Env, pub, c.Now); err != nil {
-				p.Refusals = append(p.Refusals, Refusal{Change: pub.Change, Err: err})
-			}
-		}
 	}
 	// The close stage also sweeps the change lifecycle's other deaths: a
 	// branchless snapshot whose attempts are all settled closes Discarded
@@ -649,30 +542,32 @@ func (c Cycle) perform(ctx context.Context, r CycleRequest) (Pass, error) {
 				continue
 			}
 			f.Simplicity, f.Why, f.Regions, f.Unattended = simplicity, why, rec.Regions, c.Grants.Grant
-			permit, adv, err := publish.Authorize(f, c.Pace)
-			p.Advisories = append(p.Advisories, adv...)
-			if isPaceSpent(err) {
+			// The same ladder a resumption runs, and it lives in publish
+			// because both callers ran it identically: authorize, stop on a
+			// no-op, apply, and keep the outcome even when the call that
+			// made it came back with an error.
+			// The same ladder a resumption runs, and it lives in publish
+			// because both callers ran it identically: authorize, stop on a
+			// no-op, apply.
+			a := publish.AdvanceFrom(ctx, c.Env, f, c.Pace)
+			p.Advisories = append(p.Advisories, a.Advisories...)
+			if isPaceSpent(a.Err) {
 				break // the allowance is the durable count; nothing more this tick
 			}
-			if err != nil {
-				p.Refusals = append(p.Refusals, Refusal{Change: cand.ID, Err: err})
-				continue
+			if a.Err != nil {
+				p.Refusals = append(p.Refusals, Refusal{Change: cand.ID, Err: a.Err})
 			}
-			if permit.NoOp() {
+			if !a.Ran {
 				continue // already in front of reviewers at this tip; not Spent
 			}
-			out, err := publish.Apply(ctx, c.Env, permit)
-			if err != nil {
-				p.Refusals = append(p.Refusals, Refusal{Change: cand.ID, Err: err})
-			}
-			// THE OUTCOME IS COLLECTED ON THE ERROR PATH TOO, and that is
-			// deliberate: publish.Outcome.Completed exists precisely so a
+			// The outcome is kept even when Apply came back with an error,
+			// deliberately: publish.Outcome.Completed exists precisely so a
 			// caller can tell "pushed, no pull request" from "never left the
 			// machine", and an Apply that pushed and then failed to open has
 			// left a fact on the fork that a row of nothing would hide. What
 			// this row is NOT is a publication, and that question is
 			// Publications' — never len(Published).
-			p.Published = append(p.Published, out)
+			p.Published = append(p.Published, a.Out)
 		}
 	}
 
@@ -745,6 +640,135 @@ func (c Cycle) perform(ctx context.Context, r CycleRequest) (Pass, error) {
 	}
 	p.Ended = c.Now()
 	return p, nil
+}
+
+// retire closes what the forge has finished with, and it is THE PASS'S
+// ONE TRANSACTION.
+//
+// Inside a single Amend it retires the publication, closes the change,
+// withdraws the attempt and demolishes the branch — publish, change and
+// run, atomically, because a retirement half-written is a change closed
+// against a publication still open or a branch standing for a record
+// nobody holds. That is why this stage is app's and cannot be moved
+// into any one of the three: whichever package took it would hold the
+// other two underneath it.
+//
+// It is a METHOD rather than ninety lines of perform for the same reason
+// strays, resume and reexport are: perform's job is the ORDER these run
+// in, and an ordering you have to read a transaction out of is not one
+// you can check.
+func (c Cycle) retire(ctx context.Context, r CycleRequest, provErr error, p *Pass, closed map[record.ChangeID]bool) error {
+	st, err := c.State.Read(ctx)
+	if err != nil {
+		return err
+	}
+	for _, key := range slices.Sorted(maps.Keys(st.Publications)) {
+		pub := st.Publications[key]
+		if pub.Outcome.Settled() {
+			continue
+		}
+		old := st.Changes[string(pub.Change)]
+		ref, resolveErr := change.Resolve(ctx, c.Repo, c.State, change.TargetFor(old))
+		if resolveErr != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: resolveErr}) // moved by hand, or could not be read
+			continue
+		}
+		f, err := publish.Gather(ctx, c.Env, ref, r.Forge, publish.Asks{}, c.Grants.Invoker, c.Now())
+		if err != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+			continue
+		}
+		out, dem, err := publish.Standing(pub, f.Forge)
+		if err != nil {
+			// A FORGE THAT COULD NOT BE ASKED IS NOT A FORGE THAT SAID
+			// "STILL OPEN", and collapsing the two into one `continue` is
+			// the silence rule 7 forbids: publish.Standing refuses stale
+			// facts (ErrNotFresh) and carries the lookup's own error, and a
+			// pass that dropped both would report "0 retired · 0 refused"
+			// for a host whose `gh` has been uninstalled for a week — the
+			// absence of retirements as the operator's only signal, which is
+			// the observable D13 exists to remove.
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+			continue
+		}
+		if !out.Settled() {
+			continue // the forge answered, and the answer is that it is still open
+		}
+		if provErr == nil {
+			// Cancel's stages over the RECORD: a moved or deleted branch
+			// still owes the stop and the release of the recorded tip's work.
+			cancel := Cancel{Repo: c.Repo, Ledger: c.Ledger, State: c.State, Verifier: c.Verifier, Local: c.Local, Me: c.Me, Now: c.Now, Progress: c.Progress}
+			if _, err := cancel.run(ctx, st, old.ID, old.Tip); err != nil {
+				return err
+			}
+		}
+		wt, wtErr := "", error(nil)
+		if r.Retirement == Demolish && dem.Local != "" {
+			wt, wtErr = c.Repo.CheckedOutAt(ctx, old.Branch)
+			switch {
+			case wtErr != nil:
+				p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: wtErr}) // kept: could not read the worktree list (rule 7)
+			case wt != "":
+				p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: change.ErrCheckedOut}) // kept: checked out
+			}
+		}
+		demolish := r.Retirement == Demolish && dem.Local != "" && wtErr == nil && wt == ""
+		fork := r.Retirement == Demolish && dem.Fork != ""
+		to := record.ChangePublished
+		if out != record.Merged {
+			to = record.ChangeAbandoned
+		}
+		var kept error // the policy's refusal, re-asked under the flock; reset per closure run
+		if err := c.State.Amend(ctx, func(tx *statestore.Txn) error {
+			kept = nil
+			// mayDemolish over the state THIS closure is handed: a `hold` or a
+			// `verify` follow may have landed since the pass's read.
+			may := mayDemolish(tx.State().Changes[string(pub.Change)], c.Grants.Invoker)
+			if err := publish.RetireIn(tx, pub.ID, out, c.Now()); err != nil {
+				return err
+			}
+			if fork && may {
+				if err := publish.DeleteForkIn(tx, pub.ID, c.Now()); err != nil {
+					return err
+				}
+			}
+			if err := change.CloseIn(tx, pub.Change, to, "", c.Now()); err != nil {
+				return err // change.ErrNotBound: a peer closed it first — a Refusal row, not a stop
+			}
+			run.WithdrawIn(tx, pub.Change, record.InterruptSuperseded, c.Me, c.Now())
+			if (demolish || fork) && !may {
+				kept = ErrMachineMayNotDemolish // held or adopted since the read: the close lands, the deletions do not
+			}
+			if demolish && may {
+				return change.DemolishIn(tx, pub.Change, c.Now())
+			}
+			return nil
+		}); err != nil {
+			if errors.Is(err, change.ErrNotBound) {
+				p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: err})
+				continue
+			}
+			return err
+		}
+		if kept != nil {
+			p.Refusals = append(p.Refusals, Refusal{Change: old.ID, Err: kept})
+		}
+		closed[old.ID] = true
+		p.Retired = append(p.Retired, publish.Outcome{Number: pub.Number, URL: pub.URL, At: c.Now()})
+	}
+	// the fork copies: a foreign effect, outside every lock, on its backoff.
+	{
+		st2, err := c.State.Read(ctx)
+		if err != nil {
+			return err
+		}
+		for _, pub := range publish.ForkOwed(st2) {
+			if err := publish.DeleteFork(ctx, c.Env, pub, c.Now); err != nil {
+				p.Refusals = append(p.Refusals, Refusal{Change: pub.Change, Err: err})
+			}
+		}
+	}
+	return nil
 }
 
 // reexport rewrites the derived note on every commit whose projection
