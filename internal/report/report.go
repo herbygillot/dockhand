@@ -755,10 +755,44 @@ func anyQueued(rows []standingRow) bool {
 // branches doing exactly what they should. A fleet's report is scanned,
 // not read, and what it is scanned for is the handful of changes that
 // want a person.
+// EvidenceFor is publish.isEvidenceFor's rule, and it must stay the
+// same rule: an attempt is a change's evidence when it is the change's
+// own, or when it built the same bytes AND ran a port the change names.
+//
+// BOTH HALVES ARE LOAD-BEARING. Content alone is enough for a MINTED
+// change, whose ContentID folds in its own edits — and not for a
+// SNAPSHOT, which writes nothing, so `verify <port>` on an unmodified
+// checkout produces the plain tree oid whatever port it names. Measured:
+// four jq snapshots and two oniguruma6 snapshots all carried one
+// content, and jq's verdict was about to become oniguruma6's.
+func EvidenceFor(a record.Attempt, c record.Change) bool {
+	if a.Change == c.ID {
+		return true
+	}
+	if c.Content == "" || a.Content != c.Content {
+		return false
+	}
+	for _, m := range a.Members() {
+		for _, s := range c.Subjects {
+			if s.Port == m {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func standingRows(s app.StatusResult, now time.Time) []standingRow {
+	// NOT BY CHANGE ID ALONE: a change that adopted a passing attempt owns
+	// none of its own, and a row keyed on ownership reported "no
+	// verification asked for" for a build that had passed minutes earlier.
 	byChange := map[record.ChangeID][]record.Attempt{}
-	for _, a := range s.State.Attempts {
-		byChange[a.Change] = append(byChange[a.Change], a)
+	for _, c := range s.State.Changes {
+		for _, a := range s.State.Attempts {
+			if EvidenceFor(a, c) {
+				byChange[c.ID] = append(byChange[c.ID], a)
+			}
+		}
 	}
 	var rows []standingRow
 	for _, c := range s.State.Changes {

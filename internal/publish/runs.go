@@ -38,6 +38,16 @@ type Verdict struct {
 	Port     string
 	Platform string
 	Run      record.Run
+	// At is the commit the attempt that earned this verdict was built
+	// at. It is USUALLY the change's own tip and is worth carrying for
+	// the times it is not: evidence is gathered by content, so a rebase,
+	// a reworded amend or a change that adopted another's passing
+	// attempt is proven by a build that happened under a different sha.
+	//
+	// A reader owed the provenance is the ruling: inheriting a verdict is
+	// fine as long as the body says which commit earned it. Empty is
+	// never rendered.
+	At string
 }
 
 // verdicts is the change's verdict set, collapsed to one run per
@@ -70,6 +80,7 @@ func verdicts(c record.Change, attempts []record.Attempt) []Verdict {
 		run      record.Run
 		started  int64
 		terminal bool
+		at       string
 		set      bool
 	}
 	best := map[record.RunKey]pick{}
@@ -82,7 +93,7 @@ func verdicts(c record.Change, attempts []record.Attempt) []Verdict {
 		for port, run := range a.Runs {
 			key := record.RunKey{Port: port, Platform: a.Platform}
 			cur, had := best[key]
-			cand := pick{run: run, started: a.Started.UnixNano(), terminal: run.State.Terminal(), set: true}
+			cand := pick{run: run, started: a.Started.UnixNano(), terminal: run.State.Terminal(), at: a.Sha, set: true}
 			if !had || better(cand.terminal, cand.started, cur.terminal, cur.started) {
 				best[key] = cand
 			}
@@ -97,7 +108,7 @@ func verdicts(c record.Change, attempts []record.Attempt) []Verdict {
 	for _, s := range c.Subjects {
 		for _, rel := range rels {
 			if p, ok := best[record.RunKey{Port: s.Port, Platform: rel}]; ok && p.set {
-				out = append(out, Verdict{Port: s.Port, Platform: rel, Run: p.run})
+				out = append(out, Verdict{Port: s.Port, Platform: rel, Run: p.run, At: p.at})
 			}
 		}
 	}

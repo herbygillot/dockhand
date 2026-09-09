@@ -151,12 +151,46 @@ func verifyTarget(ctx context.Context, s *Services, target string) (portdir, sub
 	}
 	targets, rerr := resolveTargets(ctx, s, false, []string{target})
 	if rerr != nil || len(targets) == 0 {
+		// A NAME THAT CANNOT BE A COMMIT IS A PORT THAT IS NOT THERE.
+		// Handing everything through was too generous: `dockhand verify
+		// oniguruma` — a port that does not exist, the real ones are
+		// oniguruma5 and oniguruma6 — reached app as a path and came back
+		// "git: oniguruma is outside the repository" at exit 1, while
+		// `outdated oniguruma` answered "tree: port not found" at 41. One
+		// missing port, two answers, and the untyped one belonged to the
+		// verb a person reaches for more often.
+		//
+		// A sha is hex. Anything with a letter past f cannot be one, so
+		// the tree's own refusal is the truthful answer and the
+		// pass-through keeps serving what it was written for: a commit, a
+		// pin, and a branch (returned above).
+		if rerr != nil && !couldBeCommit(target) {
+			return "", "", rerr
+		}
 		return "", "", nil
 	}
 	if len(targets) > 1 {
 		return "", "", usagef("verify builds one port in one environment; %q names %d — name one, or `dockhand cycle` to work through what is standing", target, len(targets))
 	}
 	return targets[0].Portdir, targets[0].Subport, nil
+}
+
+// couldBeCommit reports a target that a git object name could still be:
+// hex, and long enough that git would take it. It is deliberately
+// generous — its job is to protect change.Resolve's sha and pin forms
+// from a refusal cli has no business making, not to validate an object.
+func couldBeCommit(target string) bool {
+	if len(target) < 4 {
+		return false
+	}
+	for _, r := range target {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // waitPtr is --timeout as a request takes it, with --trace's implication
@@ -459,9 +493,17 @@ func statusDoc(res app.StatusResult, err error) statusDocument {
 	// and a consumer iterating a null it did not expect is a consumer
 	// that crashes on the quietest possible answer.
 	doc.Changes = []changeDoc{}
+	// For report.standingRows' reason, by the same rule: an adopted
+	// attempt is evidence for the bytes it built and the port it built
+	// them for, and a document keyed on which change happened to enqueue
+	// it reported an empty attempts array for a change that had passed.
 	byChange := map[record.ChangeID][]record.Attempt{}
-	for _, a := range res.State.Attempts {
-		byChange[a.Change] = append(byChange[a.Change], a)
+	for _, c := range res.State.Changes {
+		for _, a := range res.State.Attempts {
+			if report.EvidenceFor(a, c) {
+				byChange[c.ID] = append(byChange[c.ID], a)
+			}
+		}
 	}
 	for _, key := range slices.Sorted(maps.Keys(res.State.Changes)) {
 		doc.Changes = append(doc.Changes, changeDocOf(res, res.State.Changes[key], byChange))

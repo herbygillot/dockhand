@@ -925,14 +925,54 @@ func candidates(s statestore.State) []record.Change {
 	return out
 }
 
-// passedAtTip reports a settled attempt on the change's current tip
-// whose verdict is a pass. It walks attempts rather than reading a field
-// because there is no such field: a verdict is the attempt's, and a
-// change that carried one would be a second place to read it from.
+// passedAtTip reports a settled attempt over the change's current
+// CONTENT whose verdict is a pass. It walks attempts rather than reading
+// a field because there is no such field: a verdict is the attempt's,
+// and a change that carried one would be a second place to read it from.
+//
+// IT ASKED THE SHA AND THE CHANGE ID, and both were wrong for the same
+// reason. A ContentID is the tree oid, so a rebase or a reworded amend
+// moves the sha without changing a byte that was built — and an ADOPTED
+// attempt was earned under the other change's commit entirely. The
+// machine's grant requires a pass on the tip; keyed that way it withheld
+// publication from changes that had one, silently, which is the worst
+// shape a gate can fail in. openAtContent beside it was already written
+// this way.
 func passedAtTip(s statestore.State, c record.Change) bool {
-	for _, a := range onTip(s, c.ID, c.Tip) {
-		if a.Settled() && verdictOf(a) == record.Passed {
+	if c.Content == "" {
+		return false
+	}
+	for _, key := range slices.Sorted(maps.Keys(s.Attempts)) {
+		a := s.Attempts[key]
+		if evidenceFor(a, c) && a.Settled() && verdictOf(a) == record.Passed {
 			return true
+		}
+	}
+	return false
+}
+
+// evidenceFor is report.EvidenceFor's rule, kept here because app may
+// not import report: an attempt is a change's evidence when it is the
+// change's own, or when it built the same bytes AND ran a port the
+// change names.
+//
+// The second half is what stops a SNAPSHOT inheriting a stranger's
+// verdict. `verify <port>` on an unmodified checkout writes nothing, so
+// its ContentID is the plain tree oid — the same for every snapshot of
+// that checkout, whatever port it names — while a minted change folds
+// its own edits into its content and never collides.
+func evidenceFor(a record.Attempt, c record.Change) bool {
+	if a.Change == c.ID {
+		return true
+	}
+	if c.Content == "" || a.Content != c.Content {
+		return false
+	}
+	for _, m := range a.Members() {
+		for _, s := range c.Subjects {
+			if s.Port == m {
+				return true
+			}
 		}
 	}
 	return false

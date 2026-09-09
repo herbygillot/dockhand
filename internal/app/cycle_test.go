@@ -138,3 +138,49 @@ func TestDryRunPerformsNoMaintenance(t *testing.T) {
 	assert.False(t, p.Maintained, "a repack is work, and a dry run performs none")
 	assert.NoError(t, p.MaintainErr, "rule 7: not run is not failed")
 }
+
+// THE MACHINE'S GRANT SEES AN ADOPTED PASS. GrantSimpleBumps requires a
+// pass on the tip, and passedAtTip asked for an attempt whose Change was
+// this change and whose Sha was this tip. Both were wrong for one
+// reason: a ContentID is the tree oid, so a rebase or a reworded amend
+// moves the sha without changing a byte that was built, and an adopted
+// attempt was earned under another change's commit entirely.
+//
+// Keyed that way the slot withheld publication from changes that HAD a
+// pass — silently, which is the worst shape a gate can fail in: a person
+// waiting on a dispatcher sees nothing happen and nothing said.
+// openAtContent, immediately beside it, was already written this way.
+func TestTheMachineSlotSeesAPassEarnedUnderAnotherCommit(t *testing.T) {
+	const tree = "tree-identical"
+	adopting := record.Change{ID: "chg-new", Content: tree, Tip: "b996b42",
+		State: record.ChangeMinted, Branch: "dockhand/delve-1.27.2",
+		Subjects: []record.Subject{{Port: "delve"}}}
+	st := statestore.State{
+		Changes: map[string]record.Change{"chg-new": adopting},
+		Attempts: map[string]record.Attempt{
+			"att-1": {ID: "att-1", Change: "chg-old", Sha: "435f2c8", Content: tree,
+				Platform: "tahoe", Phase: record.Finished,
+				Roster: record.Roster{Seats: []record.Seat{{Port: "delve"}}},
+				Runs:   map[string]record.Run{"delve": {State: record.Passed}}},
+		},
+	}
+	assert.True(t, passedAtTip(st, adopting),
+		"the pass is over these exact bytes, under the commit that earned it")
+
+	// And bytes nobody built are still unproven.
+	other := record.Change{ID: "chg-x", Content: "tree-unrelated", Tip: "cafe",
+		Subjects: []record.Subject{{Port: "delve"}}}
+	assert.False(t, passedAtTip(st, other))
+
+	// A SNAPSHOT DOES NOT INHERIT A STRANGER'S VERDICT. `verify <port>`
+	// on an unmodified checkout writes nothing, so every snapshot of that
+	// checkout carries the SAME content whatever port it names — measured
+	// in the field, four jq snapshots and two oniguruma6 snapshots on one
+	// content id. The ports have to meet as well as the bytes.
+	neighbour := record.Change{ID: "chg-snap", Content: tree, Tip: "b996b42",
+		Subjects: []record.Subject{{Port: "oniguruma6"}}}
+	assert.False(t, passedAtTip(st, neighbour),
+		"a build of delve proves nothing about oniguruma6, whatever tree they share")
+	assert.False(t, passedAtTip(st, record.Change{ID: "chg-empty"}),
+		"a change with no content carries no proof")
+}

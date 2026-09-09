@@ -189,16 +189,18 @@ func TestStatusDocumentCarriesTheVerificationStanding(t *testing.T) {
 	res := app.StatusResult{
 		State: statestore.State{
 			Changes: map[string]record.Change{
-				"c1": {ID: "c1", Branch: "dockhand/jq-1.8.2", State: record.ChangeMinted, Tip: "aaa",
+				// Content is not decoration: change.MintIn refuses a change
+				// without one, and evidence is joined on it.
+				"c1": {ID: "c1", Branch: "dockhand/jq-1.8.2", State: record.ChangeMinted, Tip: "aaa", Content: "tree-aaa",
 					Findings: []record.Finding{{Disposition: record.Proposed, Criterion: "libjq.1 -> libjq.2"}}},
-				"c2": {ID: "c2", Branch: "dockhand/ivy-2.6", State: record.ChangeMinted, Tip: "bbb",
+				"c2": {ID: "c2", Branch: "dockhand/ivy-2.6", State: record.ChangeMinted, Tip: "bbb", Content: "tree-bbb",
 					Hold: &record.Hold{Reason: "waiting on upstream"}},
 			},
 			Attempts: map[string]record.Attempt{
-				"a1": {ID: "a1", Change: "c1", Sha: "aaa", Platform: "sequoia", Phase: record.Finished,
+				"a1": {ID: "a1", Change: "c1", Sha: "aaa", Content: "tree-aaa", Platform: "sequoia", Phase: record.Finished,
 					Started: now.Add(-2 * time.Hour),
 					Runs:    map[string]record.Run{"jq": {State: record.Failed, Detail: "build failed"}}},
-				"a2": {ID: "a2", Change: "c2", Sha: "bbb", Platform: "sequoia", Phase: record.Requested},
+				"a2": {ID: "a2", Change: "c2", Sha: "bbb", Content: "tree-bbb", Platform: "sequoia", Phase: record.Requested},
 			},
 		},
 		Facts: map[record.ChangeID]publish.Facts{

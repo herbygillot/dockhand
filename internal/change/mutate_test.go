@@ -734,3 +734,47 @@ func TestEveryMutatorRefusesAnIdTheStateDoesNotHold(t *testing.T) {
 		})
 	}
 }
+
+// A CLOSED RECORD DOES NOT CLAIM A PIN THAT CLOSING IT DELETED.
+// record.Change.Pin is a field rather than a rule precisely so that "the
+// record has to SAY whether a pin exists", and CloseIn queued the ref's
+// delete line while leaving the field set — so the record said one
+// existed, about a ref this very function had removed.
+//
+// change.Resolve believes the field. It looked the ref up, found
+// nothing, and answered ErrTipDisagrees: a foreign hand moved something.
+// Measured in the field: after `dockhand discard` of a snapshot, every
+// later `dockhand verify <port>` for that port exited 45 forever, never
+// reaching the adopt road at all.
+func TestClosingASnapshotStopsTheRecordClaimingItsPin(t *testing.T) {
+	repo, store := newRepo(t)
+	ctx := t.Context()
+	const id record.ChangeID = "chg-snap"
+
+	// A REAL PIN, because CloseIn's delete line is a compare-and-set: the
+	// ref must stand at the recorded tip or the whole batch refuses, and
+	// a fixture that skipped it would prove nothing about the road.
+	tip, err := repo.RevParse(ctx, "HEAD")
+	require.NoError(t, err)
+	require.NoError(t, store.Amend(ctx, func(tx *statestore.Txn) error {
+		tx.PutChange(record.Change{
+			ID: id, State: record.ChangeMinted, Tip: tip, Content: "tree-1",
+			Pin: PinRef(id), Destination: record.ToVerdict,
+		})
+		return tx.Ref(PinRef(id), tip, "")
+	}))
+	require.NoError(t, store.Amend(ctx, func(tx *statestore.Txn) error {
+		return CloseIn(tx, id, record.ChangeDiscarded, "", time.Now())
+	}))
+
+	st, err := store.Read(ctx)
+	require.NoError(t, err)
+	c := st.Changes[string(id)]
+	require.True(t, c.State.Closed(), "the change is closed")
+	assert.Empty(t, c.Pin,
+		"the pin's life IS the record's open life; the field must not outlive the ref")
+
+	// And the ref really is gone, so the field and the world agree.
+	_, rerr := repo.RevParse(ctx, PinRef(id))
+	assert.Error(t, rerr, "closing deletes the pin it stops claiming")
+}

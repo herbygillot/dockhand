@@ -247,7 +247,7 @@ func body(f Facts, version string) string {
 			// is not a cause, so it is not narrated.
 			continue
 		}
-		lines = append(lines, subjectPrefix(named(c), v.Port)+v.Platform+": "+what)
+		lines = append(lines, subjectPrefix(named(c), v.Port)+v.Platform+": "+what+earnedAt(v, f.Tip))
 	}
 
 	// One verdict per line: GitHub keeps single newlines in pull request
@@ -489,6 +489,28 @@ func evidenceClaim(claim string, fromSource bool, tested testEvidence) string {
 	return out
 }
 
+// earnedAt names the commit a verdict was earned at, and says nothing
+// when that is the commit being published.
+//
+// EVIDENCE IS GATHERED BY CONTENT, so a verdict can be a build of these
+// exact bytes under a different sha: a rebase, a reworded amend, or a
+// change that adopted another's passing attempt. Ruled: inheriting a
+// verdict is fine as long as the reader is told which commit earned it —
+// a reviewer looking at a body that vouches for a build must be able to
+// go and find the build. Silence would make the two cases
+// indistinguishable, and only one of them is checkable.
+//
+// It stays quiet in the ordinary case on purpose. Almost every line is
+// earned at the tip it is published for, and appending "(at <the same
+// sha>)" to all of them would bury the one line where it means
+// something.
+func earnedAt(v Verdict, tip string) string {
+	if v.At == "" || v.At == tip {
+		return ""
+	}
+	return " (at " + git.Abbrev(v.At) + ", identical tree)"
+}
+
 // unrunLine is the whole line a publication with no run at all carries.
 //
 // A BRANCH-BOUND CHANGE STATES ITS PROVENANCE RATHER THAN A CAUSE, and
@@ -549,7 +571,15 @@ func unrunLine(f Facts) string {
 func unrunCause(f Facts) string {
 	switch {
 	case len(f.Attempts) == 0:
-		return "no verification environment on the submitting machine, so nothing was run"
+		// IT DOES NOT SAY WHAT THE MACHINE LACKS, because it does not
+		// know. Nothing gathered here measures a verifier: zero attempts
+		// is reached by a host with no tart, by a person who asked for no
+		// build, and — until evidence was gathered by content — by a
+		// change whose passing attempt was adopted and therefore invisible
+		// to it. The old sentence named the first cause as a fact and was
+		// published, twice, on a machine holding two provisioned bases
+		// (macports-ports#34584, #34586). Rule 7: say what is known.
+		return "nothing has been run for this commit's content"
 	case !evidenceAt(f.Change, f.Attempts):
 		at := ""
 		for _, a := range f.Attempts {

@@ -149,10 +149,12 @@ func TestTheAttentionOrderPutsWhatNeedsAPersonFirst(t *testing.T) {
 	add := func(id, branch string, state record.RunState) {
 		st.Changes[id] = record.Change{
 			ID: record.ChangeID(id), Branch: branch, Tip: id + "-tip", State: record.ChangeMinted,
+			Content: record.ContentID(id + "-tree"),
 		}
 		st.Attempts[id+"-a"] = record.Attempt{
 			ID: id + "-a", Change: record.ChangeID(id), Sha: id + "-tip",
-			Phase: record.Finished, Started: now.Add(-time.Hour),
+			Content: record.ContentID(id + "-tree"),
+			Phase:   record.Finished, Started: now.Add(-time.Hour),
 			Runs: map[string]record.Run{"p": {State: state}},
 		}
 	}

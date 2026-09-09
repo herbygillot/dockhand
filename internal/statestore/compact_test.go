@@ -324,3 +324,67 @@ func TestCompactKeepsALeaseASurvivingAttemptNames(t *testing.T) {
 	assert.Contains(t, st.Leases, "req-named", "the surviving attempt still points at it")
 	assert.NotContains(t, st.Leases, "req-orphan", "and a returned lease nothing names still goes")
 }
+
+// EVIDENCE A LIVE CHANGE RESTS ON SURVIVES ITS ENQUEUER, which is the
+// case the comment above this rule always described and the code did not
+// implement. "Its change" meant the change that ENQUEUED the attempt,
+// and adoption is exactly the case where that is not the change relying
+// on it: `--replace` supersedes the enqueuer and mints a live change
+// over the identical tree, so the evidence became droppable at the
+// moment it started being load-bearing.
+func TestCompactKeepsEvidenceAnAdoptingChangeRestsOn(t *testing.T) {
+	_, store := newStore(t)
+	ctx := context.Background()
+	old := time.Now().Add(-90 * 24 * time.Hour)
+	const tree = "tree-identical"
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		// The enqueuer is superseded and closed; the change that adopted
+		// its verdict is standing, over the very same bytes.
+		tx.PutChange(record.Change{ID: "chg-superseded", State: record.ChangeSuperseded,
+			Content: tree, Closed: &old})
+		tx.PutAttempt(record.Attempt{ID: "att-adopted", Change: "chg-superseded", Sha: "435f2c8",
+			Content: tree, Phase: record.Finished,
+			Runs: map[string]record.Run{"delve": {State: record.Passed, At: old}}})
+
+		tx.PutChange(record.Change{ID: "chg-live", State: record.ChangeMinted,
+			Content: tree, Branch: "dockhand/delve-1.27.2"})
+		return nil
+	}))
+
+	_, err := store.Compact(ctx, keep(7))
+	require.NoError(t, err)
+
+	st, err := store.Read(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, st.Attempts, "att-adopted",
+		"the live change's only proof went with the change that happened to enqueue it")
+}
+
+// AND A VERDICT NOTHING RESTS ON STILL GOES. The rule widened; it did not
+// stop collecting. An attempt over bytes no open change carries is what
+// the tail is for.
+func TestCompactStillDropsEvidenceNoOpenChangeCarries(t *testing.T) {
+	_, store := newStore(t)
+	ctx := context.Background()
+	old := time.Now().Add(-90 * 24 * time.Hour)
+
+	require.NoError(t, store.Amend(ctx, func(tx *Txn) error {
+		tx.PutChange(record.Change{ID: "chg-done", State: record.ChangePublished,
+			Content: "tree-published", Closed: &old})
+		tx.PutAttempt(record.Attempt{ID: "att-done", Change: "chg-done", Sha: "beef",
+			Content: "tree-published", Phase: record.Finished,
+			Runs: map[string]record.Run{"jq": {State: record.Passed, At: old}}})
+		// A live change over DIFFERENT bytes must not hold it open.
+		tx.PutChange(record.Change{ID: "chg-elsewhere", State: record.ChangeMinted,
+			Content: "tree-unrelated", Branch: "dockhand/other-1.0"})
+		return nil
+	}))
+
+	_, err := store.Compact(ctx, keep(7))
+	require.NoError(t, err)
+
+	st, err := store.Read(ctx)
+	require.NoError(t, err)
+	assert.NotContains(t, st.Attempts, "att-done", "a closed change's tail still goes")
+}

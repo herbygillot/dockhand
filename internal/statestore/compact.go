@@ -186,15 +186,42 @@ func (s *Store) Compact(ctx context.Context, keep Retention) (int, error) {
 		// is still standing removes the evidence a live decision rests on.
 		// The old rule asked only the attempt's own timestamp and did
 		// exactly that.
+		//
+		// IT ASKED THE WRONG CHANGE, which is the half this comment
+		// already argued for and the code did not do. "Its change" was the
+		// one that ENQUEUED it, and adoption is precisely the case where
+		// that is not the change relying on it: `--replace` supersedes the
+		// enqueuer and mints a live change over the identical tree, so the
+		// evidence became droppable at the moment it started being load-
+		// bearing. Evidence is gathered by content everywhere else now
+		// (publish.attemptsFor), so retention asks the same question: is
+		// there ANY open change carrying these bytes.
+		// THE RULE ONLY EVER KEEPS MORE. Retention is widened by the
+		// content clause and nothing is narrowed by it: an attempt kept
+		// before because its own change is open is kept still. Compaction
+		// deletes records that no longer answer a question, and a pass
+		// that started dropping rows it used to keep — a contentless
+		// attempt under a live change, say — would be doing that on a
+		// guess about which malformed records nobody wants.
+		live := map[record.ContentID]bool{}
+		for _, key := range slices.Sorted(maps.Keys(st.Changes)) {
+			c := st.Changes[key]
+			if c.Content != "" && !c.State.Closed() && !drop[changePrefix+string(c.ID)+docSuffix] {
+				live[c.Content] = true
+			}
+		}
 		for _, id := range slices.Sorted(maps.Keys(st.Attempts)) {
 			a := st.Attempts[id]
 			c, known := st.Changes[string(a.Change)]
+			rested := known && !c.State.Closed() || live[a.Content]
 			switch {
-			case drop[changePrefix+string(a.Change)+docSuffix]:
+			case drop[changePrefix+string(a.Change)+docSuffix] && !live[a.Content]:
+				// the enqueuer is going and nothing else carries these bytes
 				drop[attemptPrefix+id+docSuffix] = true
 			case !a.Settled() || !keep.past(now, settledAt(a)):
-			case known && !c.State.Closed():
-				// live change, authoritative evidence: kept
+			case rested:
+				// a live change rests on this verdict — its own, or one
+				// carrying the same bytes: kept
 			default:
 				drop[attemptPrefix+id+docSuffix] = true
 			}

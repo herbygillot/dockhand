@@ -65,7 +65,7 @@ func Gather(ctx context.Context, e Env, ref change.Ref, policy ForgePolicy, asks
 	}
 	f := Facts{
 		Change:    c,
-		Attempts:  attemptsOf(st, c.ID),
+		Attempts:  attemptsFor(st, c),
 		Branch:    c.Branch,
 		Tip:       ref.Tip(),
 		Invoker:   invoker,
@@ -135,17 +135,84 @@ func Gather(ctx context.Context, e Env, ref change.Ref, policy ForgePolicy, asks
 	return f, nil
 }
 
-// attemptsOf is this change's attempts, in a stable order, so two
+// attemptsFor is the evidence for a content, in a stable order, so two
 // gathers over one store answer with the same list and a golden can pin
 // what a body says about it.
-func attemptsOf(s statestore.State, id record.ChangeID) []record.Attempt {
+//
+// IT ASKS CONTENT AND NOT THE CHANGE ID, which is what this package's
+// own design says two doc comments above verdicts: "an attempt earned
+// over the same content IS evidence for these bytes". verdicts and
+// evidenceAt already filter on a.Content; this was the candidate set
+// they drew from, and it disagreed with them.
+//
+// WHAT THE DISAGREEMENT COST: run.Adoptable matches on content, spec and
+// platform — never on a change — so a change that ADOPTS a passing
+// attempt owns none of its own. Every consumer here then found zero
+// attempts and concluded nothing had been run. Measured in the field on
+// macports-ports#34586: a delve bump built clean in a VM, `--replace`
+// minted a second change over the identical tree, adoption reused the
+// pass, and the pull request told reviewers "no verification environment
+// on the submitting machine". The build was on the same machine, minutes
+// earlier, and had passed.
+//
+// A ContentID is the git tree OID of the WHOLE resulting tree —
+// GraftTree(base, files) when minted, sha^{tree} when adopted — so two
+// changes sharing one are byte-identical trees and a moved base yields a
+// different id. There is no way for this to gather evidence about
+// different bytes.
+//
+// AND THE PORTS MUST MEET, which content alone does not settle for a
+// SNAPSHOT. `verify <port>` on an unmodified checkout writes nothing, so
+// its content is just the tree — identical for every snapshot of that
+// checkout whatever port it names. Measured in the field the moment this
+// was first built: four jq snapshots and two oniguruma6 snapshots all
+// carried content 709b8d48, and jq's verdict became oniguruma6's. A
+// minted change never collides that way, because GraftTree folds its own
+// edits in.
+//
+// So an attempt is evidence when it built these bytes AND it is about a
+// port this change names — record.Attempt.Members is the roster's own
+// answer to "which ports is this attempt about", present from the moment
+// it is enqueued. A change's OWN attempts are always evidence whatever
+// the rosters say: that is today's rule, and this may only ever add to
+// it.
+//
+// AUTHORITY IS NOT SHARED THE SAME WAY, and that line is the whole
+// safety of this. Which attempts a change may STOP, withdraw, or hand a
+// lease back for stays keyed to the change id, everywhere it already is:
+// evidence is about the bytes, and acting on another change's run would
+// be a far worse defect than the one this fixes.
+func attemptsFor(s statestore.State, c record.Change) []record.Attempt {
 	var out []record.Attempt
+	if c.Content == "" {
+		return nil // a change with no content owns no bytes to be proven
+	}
 	for _, key := range slices.Sorted(maps.Keys(s.Attempts)) {
-		if a := s.Attempts[key]; a.Change == id {
+		if a := s.Attempts[key]; isEvidenceFor(a, c) {
 			out = append(out, a)
 		}
 	}
 	return out
+}
+
+// isEvidenceFor is the one rule: an attempt is this change's evidence when
+// it is the change's own, or when it built the same bytes and ran a port
+// the change names. See attemptsFor for why both halves are needed.
+func isEvidenceFor(a record.Attempt, c record.Change) bool {
+	if a.Change == c.ID {
+		return true
+	}
+	if a.Content != c.Content {
+		return false
+	}
+	for _, m := range a.Members() {
+		for _, s := range c.Subjects {
+			if s.Port == m {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // running names the verifications still in flight on the tip being
@@ -158,7 +225,11 @@ func running(f Facts) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, a := range f.Attempts {
-		if a.Sha != f.Tip || !a.Active() || seen[a.Platform] {
+		// The content and not the sha, for attemptsFor's reason: an
+		// adopted attempt is building THESE BYTES under another change's
+		// commit, and a person told "nothing is running" while a guest
+		// works on their content has been told the wrong thing.
+		if a.Content != f.Change.Content || !a.Active() || seen[a.Platform] {
 			continue
 		}
 		seen[a.Platform] = true

@@ -712,6 +712,24 @@ func CloseIn(tx *statestore.Txn, id record.ChangeID, to record.ChangeState, by r
 		if err := tx.Ref(c.Pin, "", c.Tip); err != nil {
 			return err
 		}
+		// AND THE RECORD STOPS CLAIMING IT. Deleting the ref while
+		// leaving the field set makes the record say a pin exists that
+		// this very function removed, and record.Change.Pin's whole
+		// reason for being a field is that "the record has to SAY whether
+		// a pin exists (rule 7)".
+		//
+		// change.Resolve believes it: it takes c.Pin as the ref to look
+		// up, finds nothing, and answers ErrTipDisagrees — a foreign hand
+		// moved something — about a ref dockhand itself deleted on
+		// purpose. Measured in the field: after `discard` of a snapshot,
+		// every later `dockhand verify <port>` for that port exited 45
+		// forever, because Resolve met the closed record before it could
+		// reach the adopt road.
+		//
+		// PinLostIn already clears the field for the case where somebody
+		// ELSE deleted the ref. This is the same fact arriving by the
+		// other door.
+		c.Pin = ""
 	}
 	at := now.UTC()
 	c.State, c.Closed = to, &at
