@@ -53,6 +53,7 @@ import (
 	"context"
 
 	"github.com/herbygillot/dockhand/internal/distfile"
+	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/plan"
 	"github.com/herbygillot/dockhand/internal/tool"
@@ -180,6 +181,19 @@ type Params struct {
 	// Empty means the rule falls back to its word list, which is what it
 	// does for every ordinary port anyway.
 	Dependents []string
+	// Frames evaluates this same port under another platform frame, so a
+	// planner can see what a branch THIS host does not take would have
+	// fetched. Nil where the road has no evaluator pool to spend, and a
+	// planner that finds it nil must degrade rather than refuse: the
+	// question it answers is a refinement, never a precondition.
+	//
+	// A CAPABILITY AND NOT A COMPUTED FACT, unlike Dependents beside it,
+	// because it cannot be computed in advance. Whether a port needs it
+	// is not known until a plan exists — a bump discovers a checksums
+	// command its evaluation never reached — and enumerating a release
+	// table's worth of frames for every ordinary bump would spend
+	// mportinit thirty times to learn nothing.
+	Frames func(ctx context.Context, p info.Platform) (info.Values, error)
 }
 
 // Identity is what a change is called, decided by the intent that made

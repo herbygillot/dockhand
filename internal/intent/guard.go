@@ -270,6 +270,27 @@ func thisOne(groups []ChecksumGroup, skip int) string {
 // A checksum carried in a `set` and edited there lands in no command and
 // is left to ViaSetIsolated, whose question that is.
 func ChecksumsAllRewritten(src []byte, tree *syntax.Script, contextName string, edits []edit.Edit) error {
+	left := UnreachedChecksums(src, tree, contextName, edits)
+	if len(left) == 0 {
+		return nil
+	}
+	return &plan.Decline{Type: plan.ChecksumsUnreached,
+		Detail: fmt.Sprintf("the checksums command at line %d was not reached by this evaluation",
+			LineOf(src, left[0].Start))}
+}
+
+// UnreachedChecksums is the FACT ChecksumsAllRewritten judges: the
+// checksums commands in this context that no edit landed in.
+//
+// It is separate because the judgment needs something this package does
+// not have. A block left alone is a defect only if its distfile TRACKS
+// THE VERSION being moved — gh's binary branch is `gh_${version}_...`
+// and goes stale, while cliclick's legacy branch pins its own
+// `github.setup BlueM cliclick 4.0.1` beside its own patches and is
+// correctly untouched by a bump of the 5.x line. Telling those apart
+// takes the version and an evaluation of the branch that was not taken,
+// and both belong to the intent.
+func UnreachedChecksums(src []byte, tree *syntax.Script, contextName string, edits []edit.Edit) []text.Span {
 	var blocks []text.Span
 	for cmd := range tree.Commands(src, portstyle.ScopeOf(src, contextName)) {
 		if name, ok := cmd.Name(src); ok && (name == "checksums" || name == "checksums-append") {
@@ -297,19 +318,18 @@ func ChecksumsAllRewritten(src []byte, tree *syntax.Script, contextName string, 
 	if !any {
 		return nil
 	}
+	var left []text.Span
 	for i, ok := range rewritten {
 		if !ok {
-			return &plan.Decline{Type: plan.ChecksumsUnreached,
-				Detail: fmt.Sprintf("%d checksums commands in this port, and the one at line %d was not reached by this evaluation",
-					len(blocks), lineOf(src, blocks[i].Start))}
+			left = append(left, blocks[i])
 		}
 	}
-	return nil
+	return left
 }
 
-// lineOf is a byte offset as the line number a person can go and look
+// LineOf is a byte offset as the line number a person can go and look
 // at. A refusal that names a byte is a refusal nobody can act on.
-func lineOf(src []byte, at int) int {
+func LineOf(src []byte, at int) int {
 	if at > len(src) {
 		at = len(src)
 	}

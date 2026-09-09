@@ -72,6 +72,12 @@ type Bump struct {
 	// Dependents are what the tree's reverse index says depends on this
 	// port, carried through to the instruction-comment finding rule.
 	Dependents []string
+	// Frames evaluates this port under another platform frame, so a
+	// checksums command in a branch this host did not take can be asked
+	// what it would actually fetch. Nil is a road with no evaluator pool
+	// to spend, and tracksVersion degrades to the refusal rather than to
+	// silence. See intent.Params.Frames.
+	Frames func(ctx context.Context, p info.Platform) (info.Values, error)
 }
 
 var _ intent.Planner = Bump{}
@@ -488,8 +494,17 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 				if err := intent.ChecksumsFollowTheirFiles(predicted, vals.Name); err != nil {
 					return err
 				}
-				if err := intent.ChecksumsAllRewritten(src, cst, vals.Name, edits); err != nil {
-					return err
+				if left := intent.UnreachedChecksums(src, cst, vals.Name, edits); len(left) > 0 {
+					// Only a block that would GO STALE is a defect. A branch
+					// pinning its own older release — cliclick holds 4.0.1
+					// for the systems 5.x dropped — is correctly untouched
+					// by this bump, and refusing it would refuse the port
+					// for doing the right thing.
+					if tracksVersion(ctx, b.Frames, vals, vals.Version) {
+						return &plan.Decline{Type: plan.ChecksumsUnreached,
+							Detail: fmt.Sprintf("the checksums command at line %d was not reached by this evaluation, and another frame fetches a distfile named for %s",
+								intent.LineOf(src, left[0].Start), vals.Version)}
+					}
 				}
 				// A CARRIER IN A `set` IS JUSTIFIED BY ONE CONTEXT'S
 				// EVALUATION while the variable it writes may be read by

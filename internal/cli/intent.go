@@ -111,7 +111,8 @@ func bumpVerb() intentVerb {
 			Fetches: true,
 			New: func(p intent.Params) (intent.Planner, error) {
 				return bump.Bump{Version: p.Version, Tools: p.Tools,
-					ClosesTicket: p.ClosesTicket, Riders: p.Riders, Dependents: p.Dependents}, nil
+					ClosesTicket: p.ClosesTicket, Riders: p.Riders, Dependents: p.Dependents,
+					Frames: p.Frames}, nil
 			},
 		},
 		Short: "Bump a port to a new version, as a branch",
@@ -635,6 +636,11 @@ func oneTarget(ctx context.Context, s *Services, v intentVerb, planner planning.
 		}
 	}
 	params.Target = target.Portdir
+	// The frame capability is wired on the SINGLE-PORT road only. It is
+	// lazy — a planner that never meets an unreached checksums command
+	// never calls it — and a sweep over a selector must not be able to
+	// start a release table's worth of sessions per port.
+	params.Frames = s.Frames(target)
 	pl, err := planner.Plan(ctx, v.Name, target, params)
 	if err != nil {
 		return sayDecline(s, f, err)

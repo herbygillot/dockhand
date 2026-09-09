@@ -19,6 +19,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/eval/pool"
+	"github.com/herbygillot/dockhand/internal/macports/info"
+	"github.com/herbygillot/dockhand/internal/macports/port"
 	"github.com/herbygillot/dockhand/internal/macports/portfetch"
 	"github.com/herbygillot/dockhand/internal/macports/prefix"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
@@ -723,4 +725,38 @@ func (s *Services) fetchSession(ctx context.Context) (*portfetch.Fetcher, error)
 	}
 	s.closers, s.fetch = append(s.closers, f.Close), f
 	return f, nil
+}
+
+// Frames evaluates a port under another platform frame, for a planner
+// that needs to see what a branch this host does not take would fetch.
+//
+// IT IS LAZY AND CACHED, because it is expensive and rarely wanted. Each
+// frame is its own evaluator over its own session, and starting one runs
+// mportinit — on the order of a second. A bump asks for none of them;
+// only a bump that has found a checksums command its evaluation never
+// reached asks, and then it asks for a release table's worth. Caching by
+// frame means a port surveyed across thirty-two frames starts
+// thirty-two sessions and not thirty-two per port.
+//
+// The evaluators are closed with the rest of the run's services, since
+// their lifetime is the invocation's and a caller holding a framed
+// handle must not outlive them.
+func (s *Services) Frames(target tree.Target) func(context.Context, info.Platform) (info.Values, error) {
+	if s.pfx == "" {
+		return nil
+	}
+	cache := map[info.Platform]*eval.Evaluator{}
+	return func(ctx context.Context, f info.Platform) (info.Values, error) {
+		ev, ok := cache[f]
+		if !ok {
+			p, err := pool.New(ctx, s.pfx, 1, eval.WithPlatform(f))
+			if err != nil {
+				return info.Values{}, err
+			}
+			s.closers = append(s.closers, p.Close)
+			ev = p.Evaluators()[0]
+			cache[f] = ev
+		}
+		return port.New(target, ev).WithTempDir(s.Temp()).Values(ctx)
+	}
 }
