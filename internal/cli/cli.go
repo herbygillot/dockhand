@@ -111,6 +111,18 @@ func newRoot(version string) (*cobra.Command, *Services) {
 		Long:         logo + "\nA port maintenance utility for MacPorts.\nFrom upstream release to submitted port.",
 		Version:      version,
 		SilenceUsage: true,
+		// AND SILENCE ERRORS, because one of dockhand's is deliberately
+		// wordless. codeError carries a band a road computed with nothing
+		// for a person to read — the report already printed the sentence —
+		// and cobra printed it anyway, as a bare "dockhand: " on its own
+		// line after every non-zero verdict. exitWith already guards the
+		// zero case for exactly this reason ("cobra would print its empty
+		// message"); the non-zero case is the one codeError exists for,
+		// and it went out on every blocked and failed verification.
+		//
+		// Errors are printed in execute() instead, where an empty message
+		// can be told from an absent one.
+		SilenceErrors: true,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
 			treeRoot, err := c.Flags().GetString("tree")
 			if err != nil {
@@ -347,7 +359,12 @@ func execute(ctx context.Context, version string, args []string, out, errOut io.
 		root.PrintErrf("Run '%v --help' for usage.\n", root.CommandPath())
 		return exitcode.Usage
 	}
-	return ExitCode(root.ExecuteContext(ctx))
+	err := root.ExecuteContext(ctx)
+	// A message, or nothing at all. See SilenceErrors above.
+	if err != nil && err.Error() != "" {
+		root.PrintErrln(root.ErrPrefix(), err.Error())
+	}
+	return ExitCode(err)
 }
 
 // exactArgs is cobra.ExactArgs classified as a usage error.

@@ -35,13 +35,33 @@ func (c *Census) Add(r Result) {
 	}
 }
 
+// labelWidth is the column a list of labels needs: the widest of them,
+// never narrower than the width this report was written at.
+//
+// It WAS that width, as a literal 14 — and "bitbucket.setup" and
+// "sourcehut.setup" are fifteen, so those two rows pushed their counts
+// one place right and the count column stopped being a column. Read off
+// the data it cannot go stale the next time a style is named, which is
+// the only reason to compute a constant.
+func labelWidth(n int, at func(int) string) int {
+	w := 14
+	for i := range n {
+		if l := len(at(i)); l > w {
+			w = l
+		}
+	}
+	return w
+}
+
 // String renders the census as a small fixed-order report.
 func (c *Census) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d ports classified\n", c.Total)
-	for _, o := range []Outcome{Located, Probeable, NotLiteral, UnknownStyle, ParseFailed, EvalFailed} {
+	outcomes := []Outcome{Located, Probeable, NotLiteral, UnknownStyle, ParseFailed, EvalFailed}
+	ow := labelWidth(len(outcomes), func(i int) string { return outcomes[i].String() })
+	for _, o := range outcomes {
 		if n := c.ByOutcome[o]; n > 0 {
-			fmt.Fprintf(&b, "  %-14s %5d  (%.1f%%)\n", o, n, 100*float64(n)/float64(c.Total))
+			fmt.Fprintf(&b, "  %-*s %5d  (%.1f%%)\n", ow, o, n, 100*float64(n)/float64(c.Total))
 		}
 	}
 	if c.GoMinDeclared > 0 {
@@ -63,8 +83,9 @@ func (c *Census) String() string {
 			}
 			return rows[i].t < rows[j].t
 		})
+		sw := labelWidth(len(rows), func(i int) string { return rows[i].t.String() })
 		for _, r := range rows {
-			fmt.Fprintf(&b, "  %-14s %5d\n", r.t, r.n)
+			fmt.Fprintf(&b, "  %-*s %5d\n", sw, r.t, r.n)
 		}
 	}
 	return b.String()

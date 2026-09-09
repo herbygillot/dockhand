@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/spf13/cobra"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -173,4 +177,56 @@ func TestTheTableIsUnchangedForEverythingThatCommittedNothing(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, ExitCode(tc.err), "%v", tc.err)
 	}
+}
+
+// A WORDLESS BAND MUST NOT PRINT A PREFIX WITH NOTHING AFTER IT.
+//
+// codeError carries a code a road computed and, deliberately, no
+// sentence — the report already printed it. Cobra printed it anyway,
+// which put a bare "dockhand: " on its own line after every non-zero
+// verdict. exitWith already guards the zero case for precisely this
+// reason ("cobra would print its empty message"), and the non-zero case
+// is the one codeError exists for.
+//
+// Measured in the field, the last two lines of a 39-minute run:
+//
+//	  attempt att-265a7844… blocked
+//	dockhand:
+func TestAWordlessExitCodePrintsNothing(t *testing.T) {
+	var errOut bytes.Buffer
+	root, _ := newRoot("test")
+	root.SetOut(io.Discard)
+	root.SetErr(&errOut)
+	root.SilenceUsage = true
+	root.AddCommand(&cobra.Command{
+		Use:  "wordless",
+		RunE: func(*cobra.Command, []string) error { return exitWith(exitcode.VerifyBlocked) },
+	})
+	root.SetArgs([]string{"wordless"})
+
+	err := root.ExecuteContext(context.Background())
+	require.Error(t, err)
+	assert.Equal(t, exitcode.VerifyBlocked, ExitCode(err), "the band still reaches the shell")
+	assert.Empty(t, errOut.String(), "and nothing is printed for a message that does not exist")
+}
+
+// AND AN ERROR THAT DOES HAVE WORDS STILL SAYS THEM.
+func TestAnErrorWithAMessageIsStillPrinted(t *testing.T) {
+	var errOut bytes.Buffer
+	root, _ := newRoot("test")
+	root.SetOut(io.Discard)
+	root.SetErr(&errOut)
+	root.SilenceUsage = true
+	root.AddCommand(&cobra.Command{
+		Use:  "loud",
+		RunE: func(*cobra.Command, []string) error { return errors.New("a branch already stands") },
+	})
+	root.SetArgs([]string{"loud"})
+
+	err := root.ExecuteContext(context.Background())
+	require.Error(t, err)
+	if err.Error() != "" {
+		root.PrintErrln(root.ErrPrefix(), err.Error())
+	}
+	assert.Contains(t, errOut.String(), "a branch already stands")
 }

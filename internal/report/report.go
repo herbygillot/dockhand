@@ -642,11 +642,30 @@ func Obligations(w io.Writer, obs []lease.Obligation) {
 	for _, o := range obs {
 		what := obligationKind(o.Kind)
 		if o.Root != "" {
-			fmt.Fprintf(w, "owed elsewhere: %s on %s, held by %s\n", what, o.Platform, o.Root)
+			fmt.Fprintf(w, "owed elsewhere: %s%s, held by %s\n", what, onPlatform(o.Platform), o.Root)
 			continue
 		}
-		fmt.Fprintf(w, "owed: %s on %s (%s)\n", what, o.Platform, o.Why)
+		fmt.Fprintf(w, "owed: %s%s (%s)\n", what, onPlatform(o.Platform), o.Why)
 	}
+}
+
+// onPlatform is the platform clause, ABSENT rather than blank when
+// nothing named one.
+//
+// An Untracked obligation is an environment no lease accounts for — so
+// there is no lease to have recorded a platform, and the field is empty
+// by construction. It printed as a hole in the middle of the sentence:
+//
+//	owed elsewhere: an environment no lease accounts for on , held by /Users/…
+//
+// Rule 7 says a fact nobody has must not arrive as a fact; it says
+// nothing about it arriving as a comma. A shorter sentence is the
+// honest one.
+func onPlatform(p string) string {
+	if p == "" {
+		return ""
+	}
+	return " on " + p
 }
 
 // obligationKind is the one word an obligation kind is printed as. It

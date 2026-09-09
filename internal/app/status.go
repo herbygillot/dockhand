@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"slices"
 	"time"
@@ -162,8 +163,29 @@ func (s Status) Run(ctx context.Context, r StatusRequest) (StatusResult, error) 
 
 	// owed: a report, nothing seized.
 	if provErr == nil {
-		if res.Obligations, err = lease.Outstanding(ctx, s.State, prov, s.Me, "", s.Now()); err != nil {
-			return res, err
+		obs, oerr := lease.Outstanding(ctx, s.State, prov, s.Me, "", s.Now())
+		switch {
+		case errors.Is(oerr, statestore.ErrNoState):
+			// OUTSTANDING REFUSES AN UNREADABLE STATE ON PURPOSE, and the
+			// reason is a DIFFERENT caller: the reconciler on the other
+			// side destroys provider resources, so "I could not find out"
+			// must not arrive there as "there is nothing here". With an
+			// empty state every live worker looks untracked, including
+			// other checkouts'.
+			//
+			// Status is the caller that ruling is not about. It destroys
+			// nothing, and it already read the lifecycle through
+			// ReadOrEmpty for exactly that reason — so a checkout with no
+			// state ref has no leases to account for here, and saying so
+			// is not a claim about the machine.
+			//
+			// This is where the fix belongs. Loosening Outstanding itself
+			// fixed the same symptom and traded the safety property for an
+			// exit code; its own test caught it.
+		case oerr != nil:
+			return res, oerr
+		default:
+			res.Obligations = obs
 		}
 		res.Vacancy = ask(ctx, prov)
 	}
