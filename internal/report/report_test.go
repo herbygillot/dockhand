@@ -424,3 +424,22 @@ func TestAnABIProposalNamesThePortsItProposes(t *testing.T) {
 func TestAnEmptyFindingStillSaysItsKind(t *testing.T) {
 	assert.Contains(t, proposalLine(record.Finding{Kind: "something-new"}), "something-new")
 }
+
+// A PULL REQUEST WHOSE STATE NOBODY RECORDED YET SAYS LESS, NOT NOTHING.
+//
+// Seconds after `promote` opens one, the facts cached on the way out
+// carry a number and no state, and the line read:
+//
+//	PR #34573 , as of 1m ago
+//
+// A hole between the number and the comma is not an improvement on
+// saying less. `--refresh` is what fills it in, and does.
+func TestAPullRequestWithNoRecordedStateLeavesNoHole(t *testing.T) {
+	now := time.Now()
+	line := forgeLine("", 34573, now.Add(-time.Minute), now)
+	assert.Contains(t, line, "PR #34573,")
+	assert.NotContains(t, line, " ,", "no blank where a word would go")
+
+	assert.Contains(t, forgeLine("open", 34573, now.Add(-time.Minute), now), "PR #34573 open,",
+		"and a state that IS known is still said")
+}

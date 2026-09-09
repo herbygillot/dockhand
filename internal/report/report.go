@@ -944,7 +944,20 @@ func verdictWord(s record.RunState) string {
 // — so the AsOf is printed rather than implied, and `--refresh` is what
 // makes it now.
 func forgeLine(state string, number int, asOf, now time.Time) string {
-	line := fmt.Sprintf("PR #%d %s", number, state)
+	// The state is OMITTED when nothing recorded one, rather than left as
+	// a blank between the number and the comma:
+	//
+	//	PR #34573 , as of 1m ago
+	//
+	// Measured seconds after `promote` opened it, where the facts cached
+	// on the way out carried a number and no state yet. Same rule as
+	// onPlatform above, and the same reason: rule 7 forbids an unknown
+	// fact arriving as a fact, and a hole in a sentence is not an
+	// improvement on saying less. `--refresh` is what fills it in.
+	line := fmt.Sprintf("PR #%d", number)
+	if state != "" {
+		line += " " + state
+	}
 	if asOf.IsZero() {
 		return line + ", never looked up"
 	}
