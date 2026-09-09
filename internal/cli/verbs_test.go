@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/herbygillot/dockhand/internal/record"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,4 +26,25 @@ func TestACohortSubjectIsTheChangeItIsFor(t *testing.T) {
 func TestACohortSubjectDoesNotStutterOnReAccept(t *testing.T) {
 	once := cohortSummary("cmark: update to 0.31.2")
 	assert.Equal(t, once, cohortSummary(once))
+}
+
+// A MEMBER'S STAGED PORTDIR AND ITS RECORD PORTDIR ARE DIFFERENT PATH
+// SPACES, and conflating them is how the evaluator came to resolve a
+// portdir against the process's working directory.
+//
+// tree.Target.Portdir is documented "absolute portdir path"; a record's
+// Portdir is tree-relative. The subport is still decided by the record's
+// own name, because that is the name the cohort was proposed under —
+// the staged path's basename is the same word, but it is the record that
+// is authoritative about which port a member is.
+func TestAStagedTargetKeepsTheTwoPathSpacesApart(t *testing.T) {
+	c := record.Candidate{Port: "Aseprite", Portdir: "graphics/Aseprite"}
+	got := stagedTarget("/tmp/stage-1/graphics/Aseprite", c)
+	assert.Equal(t, "/tmp/stage-1/graphics/Aseprite", got.Portdir,
+		"the planner is pointed at a path this process made, never at a relative one")
+	assert.Empty(t, got.Subport, "a member named for its own directory needs no subport")
+
+	sub := record.Candidate{Port: "py312-foo", Portdir: "python/py-foo"}
+	assert.Equal(t, "py312-foo", stagedTarget("/tmp/stage-1/python/py-foo", sub).Subport,
+		"and a subport is decided by the RECORD's name, not by the staged path")
 }

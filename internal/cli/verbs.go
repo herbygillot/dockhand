@@ -5,7 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/build"
+	"log/slog"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -1269,14 +1275,58 @@ func cohortPrepare(s *Services) func(context.Context, string, []record.Candidate
 		// same plan, the same precondition, the same drift check, the same
 		// evaluation. change.Merge then makes them one change, which is
 		// what a cohort is — a port's change and its dependents' changes.
+		// THE MEMBERS ARE PLANNED FROM THE COMMIT, not from the working
+		// tree, and the two used to be different sources.
+		//
+		// A record's Portdir is TREE-RELATIVE. It was handed to
+		// tree.Target, whose Portdir is documented "absolute portdir
+		// path", and travelled from there to the Tcl evaluator — which
+		// resolved it against the PROCESS'S WORKING DIRECTORY. The cohort
+		// road therefore planned against whatever sat at that relative
+		// path beside wherever dockhand happened to be run, and worked
+		// only because that is normally the tree root. Run with --tree
+		// from anywhere else it evaluated the wrong file, or none, and the
+		// refusal that reached the person blamed the PORT and offered
+		// `--exclude` — which drops a dependent from a revbump, the exact
+		// harm a cohort exists to prevent.
+		//
+		// Staging the tip's portdirs first settles both halves at once.
+		// The path is constructed rather than inherited, so no working
+		// directory is involved; and the bytes the planner evaluates are
+		// the bytes Prepare is given below, so plan-source and
+		// prepare-source cannot disagree — which is what the branch tip
+		// being authoritative MEANS. run.Stager has staged builds this way
+		// since it was written ("from the object database, never from the
+		// working tree"); this is the same discipline reaching the road
+		// that plans.
+		root, drop, terr := s.Temp().MakeDir("cohort")
+		if terr != nil {
+			return change.Prepared{}, terr
+		}
+		defer drop()
+		for _, c := range members {
+			if merr := repo.Materialize(ctx, tip, c.Portdir, root); merr != nil {
+				return change.Prepared{}, fmt.Errorf("%s: staging %s from %s: %w", c.Port, c.Portdir, git.Abbrev(tip), merr)
+			}
+		}
+		// _resources beside them, because a Portfile that opens with
+		// `PortGroup github 1.0` cannot be evaluated without the tree's
+		// group files. A tree that carries none is not a failure here: the
+		// evaluation that needs one fails on its own terms, naming the
+		// member, which is a better sentence than this could write.
+		if merr := repo.Materialize(ctx, tip, build.ResourcesDir, root); merr != nil {
+			slog.Debug("cohort staging: no resources tree", "rev", tip, "err", merr)
+		}
+
 		parts := make([]change.Prepared, 0, len(members))
 		for _, c := range members {
 			dir := c.Portdir
-			blob, berr := repo.BlobAt(ctx, tip, dir+"/Portfile")
+			staged := filepath.Join(root, filepath.FromSlash(dir))
+			blob, berr := os.ReadFile(filepath.Join(staged, macports.PortfileName))
 			if berr != nil {
 				return change.Prepared{}, berr
 			}
-			pl, perr := planningFor(s).Plan(ctx, "bump-revision", targetOf(dir, c), cohortParams(dir, cands, criterion))
+			pl, perr := planningFor(s).Plan(ctx, "bump-revision", stagedTarget(staged, c), cohortParams(dir, cands, criterion))
 			if perr != nil {
 				// A MEMBER THAT WILL NOT PLAN NAMES THE ROAD PAST ITSELF.
 				// One member's Portfile can defeat the revision edit — a
@@ -1413,9 +1463,18 @@ func cohortReason(cands []record.Candidate, criterion string) string {
 }
 
 // targetOf names the evaluation context a cohort member is.
-func targetOf(dir string, c record.Candidate) tree.Target {
-	t := tree.Target{Portdir: dir}
-	if c.Port != "" && c.Port != pathBase(dir) {
+// stagedTarget points the planner at a member's STAGED portdir — an
+// absolute path this process made — while deciding the subport from the
+// record's own tree-relative name.
+//
+// The two are different path spaces and the split is the point.
+// tree.Target.Portdir is documented "absolute portdir path"; a record's
+// Portdir is tree-relative; and this function used to pass the second
+// where the first was meant, which is how the evaluator came to resolve
+// a portdir against the process's working directory.
+func stagedTarget(staged string, c record.Candidate) tree.Target {
+	t := tree.Target{Portdir: staged}
+	if c.Port != "" && c.Port != pathBase(c.Portdir) {
 		t.Subport = c.Port
 	}
 	return t
