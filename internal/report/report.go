@@ -854,25 +854,57 @@ func holdReason(h *record.Hold) string {
 // upstream duplicate are different problems with the same urgency, and
 // a reader scanning the page wants both above the thirty branches that
 // passed.
+//
+// THE STANDING IS THE CURRENT ONE AND NOT THE WORST ONE, and it used to
+// be the worst across every attempt on the tip — with no reference to
+// when any of them happened. So an infrastructure error beat a later
+// PASS forever: a person retried, the retry succeeded on the same
+// commit, and status went on reporting "errored" while `promote --body`
+// reported the successful verification off the same store. Measured in
+// the field on repgrep 0.17.1, where all three attempts sat on one sha.
+//
+// Two rules, because an attempt has one timestamp and a queued one has
+// not reached it:
+//
+//   - ANYTHING IN FLIGHT IS THE STANDING. A build running now is what is
+//     happening, whatever happened before it; this also fixes the same
+//     bug in its other guise, where a change actively rebuilding still
+//     read "failed".
+//   - OTHERWISE THE NEWEST SETTLED ONE. Among finished work the latest
+//     is the effective answer, and the earlier attempts are history.
+//
+// History is not lost: every attempt keeps its own record, and the
+// detailed roads still show them. What changes is which one a reader
+// meets on the summary line.
 func standingOf(c record.Change, atts []record.Attempt, now time.Time) (string, int, bool) {
-	worst, worstRank := "", 99
+	var inflight, newest *record.Attempt
 	queued := false
-	for _, a := range atts {
+	for i := range atts {
+		a := &atts[i]
 		if a.Sha != c.Tip {
 			continue // a former tip's work says nothing about what stands
 		}
-		text, rank := attemptStanding(a, now)
-		if a.Queued() {
+		switch {
+		case a.Queued():
 			queued = true
-		}
-		if rank < worstRank {
-			worst, worstRank = text, rank
+			if inflight == nil {
+				inflight = a
+			}
+		case a.Active():
+			inflight = a // a running build outranks a queued one as news
+		case newest == nil || a.Started.After(newest.Started):
+			newest = a
 		}
 	}
-	if worst == "" {
+	if inflight == nil && newest == nil {
 		return "no verification asked for", 40, false
 	}
-	return worst, worstRank, queued
+	effective := inflight
+	if effective == nil {
+		effective = newest
+	}
+	text, rank := attemptStanding(*effective, now)
+	return text, rank, queued
 }
 
 // attemptStanding is one attempt's line and its rank.

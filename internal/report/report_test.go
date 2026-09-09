@@ -459,3 +459,51 @@ func TestTheBranchLineNamesWhatTheRoadActuallyDid(t *testing.T) {
 	assert.Equal(t, "Created dockhand/jq-1.8", branchLine("", "dockhand/jq-1.8"),
 		"a road that did not say is a mint, and a wrong verb is worse than a missing one")
 }
+
+// A PASSING RETRY RESOLVES THE FAILURE IT RETRIED.
+//
+// The standing was the WORST attempt on the tip, with no reference to
+// when any of them happened, so an infrastructure error beat a later
+// pass forever. Measured on repgrep 0.17.1: three attempts on one sha —
+// a first run that errored, a canceled submission, and a retry that
+// passed — and status went on saying "errored" while promote --body
+// reported the successful verification off the same store.
+func TestAPassingRetryIsTheStandingAndNotTheOlderError(t *testing.T) {
+	now := time.Now()
+	c := record.Change{ID: "chg-1", Tip: "aaaa"}
+	atts := []record.Attempt{
+		{Sha: "aaaa", Phase: record.Finished, Started: now.Add(-30 * time.Minute),
+			Runs: map[string]record.Run{"repgrep": {State: record.Errored}}},
+		{Sha: "aaaa", Phase: record.Finished, Started: now.Add(-5 * time.Minute),
+			Runs: map[string]record.Run{"repgrep": {State: record.Passed}}},
+	}
+	text, _, _ := standingOf(c, atts, now)
+	assert.Contains(t, text, "passed")
+	assert.NotContains(t, text, "errored", "the older attempt is history, not the standing")
+}
+
+// AND A BUILD RUNNING NOW IS THE STANDING, whatever happened before it —
+// the same defect in its other guise, where a change actively rebuilding
+// still read as the failure it was rebuilding after.
+func TestAnInFlightBuildOutranksASettledFailure(t *testing.T) {
+	now := time.Now()
+	c := record.Change{ID: "chg-1", Tip: "aaaa"}
+	atts := []record.Attempt{
+		{Sha: "aaaa", Phase: record.Finished, Started: now.Add(-30 * time.Minute),
+			Runs: map[string]record.Run{"repgrep": {State: record.Failed}}},
+		{Sha: "aaaa", Phase: record.Active, Lease: "lease-1", Started: now.Add(-1 * time.Minute)},
+	}
+	text, _, _ := standingOf(c, atts, now)
+	assert.Contains(t, text, "building")
+}
+
+// A FORMER TIP'S WORK STILL SAYS NOTHING, which is the one part of the
+// old rule that was never in question.
+func TestWorkOnAFormerTipIsNotTheStanding(t *testing.T) {
+	now := time.Now()
+	c := record.Change{ID: "chg-1", Tip: "bbbb"}
+	atts := []record.Attempt{{Sha: "aaaa", Phase: record.Finished, Started: now,
+		Runs: map[string]record.Run{"repgrep": {State: record.Failed}}}}
+	text, _, _ := standingOf(c, atts, now)
+	assert.Equal(t, "no verification asked for", text)
+}
