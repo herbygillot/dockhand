@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/exitcode"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/tree"
 	"os"
 	"path/filepath"
@@ -136,4 +137,50 @@ func TestAPortsTreeCheckoutIsAcquired(t *testing.T) {
 	// is what pays for the index.
 	_, terr := s.Tree()
 	assert.Error(t, terr, "the check is a stat, not an acquisition")
+}
+
+// THE CHEAP PREREQUISITE IS ASKED BEFORE THE EXPENSIVE WORK. A road that
+// may build will also SURVEY — a passing attempt proposes its cohort at
+// settle — and that survey reads the ports index. Asked there, a tree
+// with no PortIndex cost a full VM build first: measured at 99 seconds
+// of clean delve build, then "tree has no PortIndex".
+//
+// Asked here it costs a file open, and the Tree caches it, so the work
+// is MOVED rather than added: what the survey was going to do happens
+// before a guest is ever asked for.
+func TestARoadThatWillBuildChecksTheIndexBeforeItBuilds(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, macports.PortGroupDir), 0o755))
+
+	s := &Services{TreeRoot: root, Tools: testFinder(), Err: &bytes.Buffer{}}
+	err := s.Acquire(t.Context(), app.Needs{Tree: true, Index: true})
+	require.Error(t, err, "the survey this road will reach cannot run")
+	assert.Equal(t, exitcode.NoPortIndex, ExitCode(err))
+	assert.Contains(t, err.Error(), "portindex "+root, "and the refusal carries its remedy")
+
+	// A ROAD THAT ASKS FOR NO BUILD ASKS FOR NO SURVEY, so the same tree
+	// is fine for it. --no-verify must not be blocked by a prerequisite
+	// of work it declined.
+	quiet := &Services{TreeRoot: root, Tools: testFinder(), Err: &bytes.Buffer{}}
+	assert.NoError(t, quiet.Acquire(t.Context(), app.Needs{Tree: true}))
+}
+
+// AND THE TWO TRACK EACH OTHER, because a pass proposes: every road that
+// may start a build will meet the survey when it settles, and neither
+// half is optional once the other is asked for.
+func TestTheIndexIsNeededExactlyWhereAVerifierIs(t *testing.T) {
+	for _, c := range []struct {
+		what string
+		req  app.ChangeRequest
+	}{
+		{"an ordinary bump", app.ChangeRequest{Delivery: app.Enqueue}},
+		{"--to-pr", app.ChangeRequest{Delivery: app.PullRequest}},
+		{"--no-verify", app.ChangeRequest{Delivery: app.Branch, Unverified: true}},
+		{"--no-verify --to-pr", app.ChangeRequest{Delivery: app.PullRequest, Unverified: true}},
+		{"--plan", app.ChangeRequest{Delivery: app.Document}},
+	} {
+		n := c.req.Needs()
+		assert.Equal(t, n.Verifier, n.Index,
+			"%s: a road that may build will survey when it passes", c.what)
+	}
 }

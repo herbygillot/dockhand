@@ -3,6 +3,9 @@ package doctor
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -31,7 +34,7 @@ func TestReportRendering(t *testing.T) {
 		return ""
 	}
 
-	out := Probe(t.Context(), tools).String()
+	out := Probe(t.Context(), tools, "").String()
 	require.Contains(t, out, "port-tclsh   /opt/local/bin/port-tclsh")
 	require.Contains(t, out, "tclsh        missing")
 	require.Contains(t, out, "below the 2.5 floor")
@@ -78,7 +81,7 @@ func TestProbesRunUnderTheCallersContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	Probe(ctx, tools)
+	Probe(ctx, tools, "")
 
 	require.Len(t, seen, 4,
 		"git's version, gh's version, and the two image listings — bases and goldens — each exec")
@@ -141,7 +144,7 @@ func TestDoctorNamesTheCloneWhenAGoldenStandsAndNoBaseDoes(t *testing.T) {
 	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
 	restorable = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Sequoia"}, nil }
 
-	out := Probe(t.Context(), hasTart(t)).String()
+	out := Probe(t.Context(), hasTart(t), "").String()
 	assert.Contains(t, out, "--restore", "the cheap remedy is named")
 	assert.Contains(t, out, "Sequoia", "and so is what it can be restored for")
 }
@@ -154,7 +157,7 @@ func TestDoctorNamesTheFullRoadWhenThereIsNoGoldenEither(t *testing.T) {
 	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
 	restorable = func(context.Context, *tool.Finder) ([]string, error) { return nil, nil }
 
-	out := Probe(t.Context(), hasTart(t)).String()
+	out := Probe(t.Context(), hasTart(t), "").String()
 	assert.Contains(t, out, "no base images and no goldens")
 	assert.NotContains(t, out, "--restore", "nothing to clone from, so nothing to offer")
 }
@@ -167,7 +170,7 @@ func TestDoctorReportsARestorableReleaseBesideTheAvailableOnes(t *testing.T) {
 	provisioned = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Sequoia"}, nil }
 	restorable = func(context.Context, *tool.Finder) ([]string, error) { return []string{"Sequoia", "Sonoma"}, nil }
 
-	out := Probe(t.Context(), hasTart(t)).String()
+	out := Probe(t.Context(), hasTart(t), "").String()
 	assert.Contains(t, out, "available (Sequoia; restorable: Sonoma)",
 		"the golden whose base is gone is named; the one that has a base is not repeated")
 }
@@ -207,7 +210,7 @@ func TestDoctorNamesTheImageBehindEachBase(t *testing.T) {
 		}
 		return "", errors.New("not found")
 	})
-	out := Probe(t.Context(), tools).String()
+	out := Probe(t.Context(), tools, "").String()
 	assert.Contains(t, out, "Tahoe: "+img)
 }
 
@@ -227,7 +230,36 @@ func TestDoctorInventsNoImageForABaseThatRecordedNone(t *testing.T) {
 		}
 		return "", errors.New("not found")
 	})
-	out := Probe(t.Context(), tools).String()
+	out := Probe(t.Context(), tools, "").String()
 	assert.Contains(t, out, "available (Tahoe)")
 	assert.NotContains(t, out, "Tahoe: ", "no line at all, rather than an empty one")
+}
+
+// DOCTOR SAYS WHETHER A SETTLING ROAD COULD SURVEY, and it used to say
+// nothing at all — so a page of "available" stood over a tree that could
+// not finish a bump. Every tool was present and every capability was
+// genuinely there; what was missing was a GENERATED file that no amount
+// of installing fixes, and a person reading the report had no way to see
+// it. They found out after a 99-second VM build.
+//
+// Three answers, and the third is the one that keeps doctor honest about
+// its own scope: outside a tree the question is NOT ASKED rather than
+// answered "unavailable", because nothing is wrong with the machine.
+func TestDoctorSaysWhetherTheDependentSurveyCanRun(t *testing.T) {
+	tools := tool.NewFinder(nil)
+
+	withIndex := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(withIndex, macports.IndexFile), []byte("x"), 0o644))
+	out := Probe(t.Context(), tools, withIndex).String()
+	assert.Contains(t, out, "dependent survey         available")
+
+	without := t.TempDir()
+	out = Probe(t.Context(), tools, without).String()
+	assert.Contains(t, out, "dependent survey         unavailable")
+	assert.Contains(t, out, "run `portindex "+without+"`",
+		"the remedy is one command, and it names the tree")
+
+	out = Probe(t.Context(), tools, "").String()
+	assert.Contains(t, out, "not checked (not standing in a ports tree)",
+		"doctor is about the MACHINE; a question it did not ask must not read as a failure")
 }

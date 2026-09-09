@@ -8,6 +8,7 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -137,6 +138,26 @@ type Report struct {
 	// copy-on-write — and this line is the difference between a person
 	// knowing that and rebuilding from scratch.
 	VMGoldens []string
+	// TreeRoot is the ports tree this report was taken in, or empty for a
+	// machine that is not standing in one.
+	//
+	// DOCTOR IS ABOUT THE MACHINE and this is the one tree fact it
+	// carries, because leaving it out made the rest of the report read as
+	// more than it was: "branch workflow available", "VM verification
+	// available", and a bump that then refused because the tree carried
+	// no PortIndex. Every tool was present and every capability was
+	// genuinely there; what was missing was a generated file that no
+	// amount of installing fixes. A person reading a page of "available"
+	// had no way to see it.
+	//
+	// It says WHERE it looked and never invents a tree: outside one, this
+	// is empty and the report says so, which is the answer rather than
+	// the absence of one.
+	TreeRoot string
+	// TreeIndex is whether that tree carries a readable ports index — the
+	// prerequisite of every road that settles a build, since a passing
+	// attempt surveys its dependents. Meaningless when TreeRoot is empty.
+	TreeIndex bool
 }
 
 // Probe examines the machine through the run's finder.
@@ -150,7 +171,7 @@ type Report struct {
 // never, and a report is exactly what someone asks for when the
 // machine is already misbehaving. With the context threaded, an
 // interrupt reaches the probe rather than being noticed after it.
-func Probe(ctx context.Context, tools *tool.Finder) Report {
+func Probe(ctx context.Context, tools *tool.Finder, treeRoot string) Report {
 	find := func(which tool.Tool, fallback string) Tool {
 		t := Tool{Name: string(which)}
 		path, err := tools.FindWith(which, fallback)
@@ -159,6 +180,17 @@ func Probe(ctx context.Context, tools *tool.Finder) Report {
 		}
 		t.Found, t.Path = true, path
 		return t
+	}
+
+	// The one tree fact, and it is a stat: whether the ports index a
+	// settling road will survey with is there. Probe never opens a tree
+	// and never fails on one — outside a tree this stays empty and the
+	// report says the question went unasked.
+	treeIndex := false
+	if treeRoot != "" {
+		if _, err := os.Stat(filepath.Join(treeRoot, macports.IndexFile)); err == nil {
+			treeIndex = true
+		}
 	}
 
 	portTclsh := find(tool.PortTclsh, prefix.Prefix(macports.DefaultPrefix).PortTclsh())
@@ -222,7 +254,8 @@ func Probe(ctx context.Context, tools *tool.Finder) Report {
 		}
 	}
 	return Report{Tools: []Tool{portTclsh, tclsh, git, gh, curl, tart, go2port, cargo2port},
-		VMBases: bases, VMGoldens: goldens, VMImages: images}
+		VMBases: bases, VMGoldens: goldens, VMImages: images,
+		TreeRoot: treeRoot, TreeIndex: treeIndex}
 }
 
 // String renders the report: each tool, then the capabilities the
@@ -257,6 +290,19 @@ func (r Report) String() string {
 	cap(byName[tool.Git].Found && byName[tool.Git].Note == "", "branch workflow", "git missing or below floor")
 	cap(byName[tool.Gh].Found, "GitHub integration", "no gh")
 	cap(byName[tool.Curl].Found, "non-http distfile fetch", "no curl: only http(s) sources reachable")
+	switch {
+	case r.TreeRoot == "":
+		// NOT AN "unavailable", because nothing is wrong with the machine:
+		// doctor was simply not run in a tree, and every line above still
+		// stands. Said rather than omitted, so a reader knows which
+		// question went unasked.
+		fmt.Fprintf(&b, "  %-24s not checked (not standing in a ports tree)\n", "dependent survey")
+	case r.TreeIndex:
+		fmt.Fprintf(&b, "  %-24s available (%s)\n", "dependent survey", r.TreeRoot)
+	default:
+		fmt.Fprintf(&b, "  %-24s unavailable (no PortIndex in %s: run `portindex %s`)\n",
+			"dependent survey", r.TreeRoot, r.TreeRoot)
+	}
 	switch {
 	case !byName[tool.Tart].Found:
 		cap(false, "VM verification", "no tart")

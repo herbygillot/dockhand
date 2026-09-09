@@ -48,7 +48,11 @@ func verifyCmd(s *Services) *cobra.Command {
 		Args:  exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := s.Acquire(ctx, app.Needs{Repo: true, Verifier: true}); err != nil {
+			// Tree and Index because verify SETTLES: a passing attempt
+			// proposes its cohort through Local, and that survey reads the
+			// ports index. Asked here, a tree with no index refuses before
+			// a guest is asked for rather than after one has built.
+			if err := s.Acquire(ctx, app.Needs{Repo: true, Verifier: true, Tree: true, Index: true}); err != nil {
 				return err
 			}
 			provisioned, err := provisionedReleases(ctx, s)
@@ -1003,7 +1007,10 @@ func runAccept(ctx context.Context, s *Services, f *intentFlags) error {
 	if err := f.check(); err != nil {
 		return err
 	}
-	if err := s.Acquire(ctx, app.Needs{Repo: true, Evaluator: true, Verifier: !f.noVerify}); err != nil {
+	// Tree and Index track the verifier, for needsPass' reason: a cohort
+	// that builds will settle, and a settle that passes surveys.
+	builds := !f.noVerify
+	if err := s.Acquire(ctx, app.Needs{Repo: true, Evaluator: true, Verifier: builds, Tree: builds, Index: builds}); err != nil {
 		return err
 	}
 	// Same as the singular road: a cohort's members are preflighted too,

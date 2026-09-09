@@ -792,10 +792,16 @@ func doctorCmd(s *Services) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// It declares NOTHING. doctor probes the machine's tools: no
 			// repository, no tree, no evaluator, no provider, no forge.
+			//
+			// The tree ROOT is handed over as a plain string and never
+			// acquired, which keeps that true: doctor stats one file under
+			// it to answer whether a settling road could survey, and works
+			// exactly as well outside a tree, where the root is empty and
+			// the report says the question went unasked.
 			if err := s.Acquire(cmd.Context(), app.Needs{}); err != nil {
 				return err
 			}
-			_, err := fmt.Fprint(s.Out, doctor.Probe(cmd.Context(), s.Tools))
+			_, err := fmt.Fprint(s.Out, doctor.Probe(cmd.Context(), s.Tools, s.TreeRoot))
 			return err
 		},
 	}

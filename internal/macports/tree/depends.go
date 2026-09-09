@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -36,6 +37,52 @@ func (t *Tree) Dependents() (portindex.Reverse, error) {
 	return t.deps, t.depsErr
 }
 
+// IndexReady reports whether the ports index this tree needs is there
+// and openable, WITHOUT paying for the survey that reads it. It is the
+// preflight for a road that will ask for dependents later.
+//
+// IT EXISTS BECAUSE THE CHEAP QUESTION WAS ASKED AFTER THE EXPENSIVE
+// WORK. The dependent survey runs at SETTLE — a passing build proposes
+// its cohort — so a bump on a tree with no PortIndex spent a full VM
+// build first and only then discovered a missing file. Measured: 99
+// seconds of clean delve build, then "tree has no PortIndex". The build
+// was not wasted in the sense of being wrong, and it was entirely wasted
+// in the sense that a stat would have said so before it started.
+//
+// It opens the index rather than stat-ing the file, and that is
+// deliberate: opening is what the survey will do, so a preflight that
+// merely stat-ed could pass and leave the same road failing later for a
+// reason it had promised to have checked. The Tree CACHES the open, so
+// the work is moved rather than repeated — on a tree that has an index,
+// this reads the quick accelerator the survey was going to read anyway.
+func (t *Tree) IndexReady() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, err := t.lockedIndex()
+	return t.needsIndex(err)
+}
+
+// needsIndex is the sentence a missing index gets, wherever it is met.
+//
+// THE REMEDY TRAVELS WITH THE REFUSAL, because the sentinel alone names
+// a missing file: "portindex: tree has no PortIndex: /path". It says
+// nothing about what wanted the index, and nothing about `portindex`
+// being the one command that makes one.
+//
+// It is one function because the two callers must say the SAME thing.
+// The preflight is where most people will meet this now, and a preflight
+// whose message was thinner than the late failure's would have made the
+// earlier answer the worse one — which is the opposite of the point.
+func (t *Tree) needsIndex(err error) error {
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, portindex.ErrNoIndex) {
+		return err
+	}
+	return fmt.Errorf("%w: dependent analysis needs it — run `portindex %s`", err, t.root)
+}
+
 func (t *Tree) buildDependents() (portindex.Reverse, error) {
 	idx, err := t.lockedIndex()
 	if err != nil {
@@ -50,8 +97,7 @@ func (t *Tree) buildDependents() (portindex.Reverse, error) {
 		// It is wrapped here rather than at the sentinel because this is
 		// where the NEED is known: indexLookup wants a name and says so
 		// in its own words, and this wants the dependent graph.
-		return portindex.Reverse{}, fmt.Errorf(
-			"%w: dependent analysis needs it — run `portindex %s`", err, t.root)
+		return portindex.Reverse{}, t.needsIndex(err)
 	}
 	return idx.Dependents()
 }

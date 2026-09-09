@@ -197,6 +197,21 @@ func (s *Services) Acquire(ctx context.Context, n app.Needs) error {
 			return err
 		}
 		s.tr = t
+		// THE CHEAP PREREQUISITE IS ASKED BEFORE THE EXPENSIVE WORK, which
+		// is the whole of this. A road that may build will also SURVEY —
+		// a passing attempt proposes its cohort at settle — and that
+		// survey reads the ports index. Asked there, a tree with no
+		// PortIndex costs a full VM build first: measured at 99 seconds
+		// of clean delve build, then "tree has no PortIndex".
+		//
+		// Opening it here is not extra work. The Tree caches the open, so
+		// what the survey was going to do happens now instead, with the
+		// refusal arriving before a guest is ever asked for.
+		if n.Index {
+			if err := t.IndexReady(); err != nil {
+				return err
+			}
+		}
 	}
 	if n.Repo {
 		// THE REPOSITORY DOCKHAND KEEPS RECORDS IN IS A PORTS TREE'S

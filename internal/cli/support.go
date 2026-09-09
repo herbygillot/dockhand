@@ -399,7 +399,11 @@ func provisionedReleases(ctx context.Context, s *Services) ([]platform.Release, 
 // already carries — and the only tree it would want is the propose
 // step's, which records nothing when there is none.
 func needsPass() app.Needs {
-	return app.Needs{Repo: true, Evaluator: true, Fetcher: true, Verifier: true, Forge: true}
+	// Tree and Index because a pass SETTLES: a passing attempt proposes
+	// its cohort, and that survey reads the ports index. A dispatcher on
+	// a tree with no index cannot finish the job it exists to do, so it
+	// says so at startup rather than after the first build it drains.
+	return app.Needs{Repo: true, Evaluator: true, Fetcher: true, Verifier: true, Forge: true, Tree: true, Index: true}
 }
 
 // baseFiles reads the base's bytes for every whole file a plan rewrites,

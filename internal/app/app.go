@@ -88,6 +88,16 @@ const (
 // computed by the composition root from the WHOLE parsed request.
 type Needs struct {
 	Repo, Forge, Verifier, Evaluator, Fetcher, Tree bool
+	// Index is the ports index, needed by any road that may SETTLE a
+	// build: a passing attempt proposes its cohort through Local, and
+	// that survey reads the tree's reverse dependency index.
+	//
+	// It tracks Verifier exactly, and is a separate field because it is a
+	// separate fact — a VM provider and a generated file fail for
+	// unrelated reasons and are fixed by unrelated commands. Deriving one
+	// from the other would put a machine's answer and a tree's answer
+	// behind one name.
+	Index bool
 }
 
 // Needs answers what this request will use, so the composition root can
@@ -106,12 +116,17 @@ type Needs struct {
 // the catalogue entry cli chose, and this method reports it rather than
 // deriving it from a delivery that cannot know.
 func (r ChangeRequest) Needs() Needs {
+	// A ROAD THAT MAY BUILD WILL ALSO SURVEY. A pass proposes its cohort
+	// at settle, so the two are asked together and neither is optional
+	// once a build may start.
+	verifies := (r.Delivery == Enqueue || r.Delivery == PullRequest) && !r.Unverified
 	return Needs{
 		Repo:      true,
 		Tree:      true,
 		Evaluator: true,
 		Fetcher:   r.Fetches,
-		Verifier:  (r.Delivery == Enqueue || r.Delivery == PullRequest) && !r.Unverified,
+		Verifier:  verifies,
+		Index:     verifies,
 		Forge:     r.Delivery == PullRequest,
 	}
 }
