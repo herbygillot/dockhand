@@ -514,7 +514,7 @@ linters:
             - pkg: github.com/herbygillot/dockhand/internal/report
               desc: the one interpreter states verdicts, not sentences a reader meets; the strings it does produce ride the record (Run.Detail) and a judge that could phrase a report would start deciding from words (rule 6)
             - pkg: github.com/herbygillot/dockhand/internal/git
-              desc: the one ref-mover is statestore, and run reaches git only through it (R23); staging a commit is the Stager's, which is why that is an interface
+              desc: run's durable queue carries an identity and a question and NEVER a filesystem path — a path written in October does not exist in November, and another process must be able to drain the attempt — so staging a commit is the Stager's, which is why that is an interface; a narrower ban would admit *git.Repo, and a Repo here IS the ability to hold a path. It does not buy R23 — statestore is the one ref-mover, enforced tree-wide by internal/statestore/onlymover_test.go walking the AST, and an import line could not secure a tree-wide property
             - pkg: github.com/herbygillot/dockhand/internal/macports/eval
               desc: the preflight evaluation belongs to the Stager the composition root implements; a run that could evaluate would fold the re-plan back into the sequencer and could not be tested without a ports tree
             - pkg: github.com/herbygillot/dockhand/internal/macports/portnote

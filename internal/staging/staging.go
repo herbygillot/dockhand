@@ -11,13 +11,19 @@
 // application, not the root.
 //
 // IT IS NOT UNDER internal/run, and the linter is what settled that.
-// run's depguard list forbids git and tempdir with a stated reason —
-// "the one ref-mover is statestore, and run reaches git only through it
-// (R23); staging a commit is the Stager's, which is why that is an
-// interface" — and a subpackage inherits the list. Holding a repository
-// and a temporary root is precisely this package's job, so it belongs
-// beside run rather than inside it. The rule was right and the first
-// placement was wrong.
+// run's depguard list forbids git and tempdir, and a subpackage inherits
+// the list. Holding a repository and a temporary root is precisely this
+// package's job, so it belongs beside run rather than inside it.
+//
+// The reason is not ref-moving, though the rule said so until this move
+// went looking: R23's one-ref-mover property is enforced tree-wide by
+// statestore's AST check, and an import line never secured it. What the
+// ban buys is that run's DURABLE QUEUE carries an identity and a
+// question and never a filesystem path — a path written in October does
+// not exist in November, and a dispatcher draining another process's
+// attempt cannot reach that process's temporary root. Turning an
+// identity into a staged tree at the moment of starting is what makes a
+// person's bump, a pass's drain and a later verify one road.
 //
 // Two defects lived here undisturbed while it did. Baseline never
 // materialized the tree's _resources, so no ABI baseline was ever
