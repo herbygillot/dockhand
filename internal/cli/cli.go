@@ -176,32 +176,57 @@ func newRoot(version string) (*cobra.Command, *Services) {
 			root.AddCommand(c)
 		}
 	}
+	// THE GROUPS ARE QUESTIONS A PERSON ARRIVES WITH, in the order the
+	// work happens. Registration order is display order, so the help
+	// reads as the workflow rather than as the alphabet.
+	//
+	// WHAT THIS REPLACED, and why, because three of the old groups were
+	// answering no question at all:
+	//
+	// "Test the port" held status, cancel and dismiss beside verify. Only
+	// verify tests anything. status is the most-run verb in the tool and
+	// was buried under a heading that does not describe it, and dismiss
+	// answers a FINDING — a person looking for "how do I answer this
+	// proposal" would not have looked there.
+	//
+	// "Housekeeping" held three unrelated kinds under one word: a brake
+	// (hold, unhold), a demolition (discard, purge) and the whole
+	// unattended workflow (dispatch, cycle). dispatch is not housekeeping;
+	// it is how the tool is meant to run.
+	//
+	// And exec was in no group at all, so a real verb sat among cobra's
+	// own builtins under "Additional Commands".
+	//
+	// The rule now: every group is 2-3 verbs, every title is a verb
+	// phrase, and a verb is filed by the QUESTION it answers rather than
+	// by the machinery it happens to touch.
+	add("survey", "Survey the tree:", outdatedCmd(s), classifyCmd(s))
 	add("intent", "Change a port:", intentCommands(s)...)
-	// dismiss sits with the verbs that read a verification's answer,
-	// because that is what it answers: a proposal is something a
-	// settlement found, and saying no to one is the other half of the
-	// cohort verb that says yes.
-	add("test", "Test the port:", verifyCmd(s), statusCmd(s), cancelCmd(s), dismissCmd(s))
-	add("submit", "Submit the port:", promoteCmd(s))
-	add("env", "Troubleshoot the port:", logCmd(s), shellCmd(s))
-	// hold and unhold sit at the FRONT of this group, ahead of the verbs
-	// that remove things: they are the brake on every road in the tool —
-	// publication, verification, retirement — and a reader scanning this
-	// group for "how do I stop it" should meet them before they meet
-	// discard, which is how the question gets answered by deleting the
-	// work instead. Behind them sit the two pass verbs, and the order
-	// between THEM is the dispatch ruling: `dispatch` is the machine's
-	// resident loop and `cycle` is the person's one-shot, which is why
-	// they are filed together here rather than one of them being shelved
-	// under Setup as a daemon.
-	add("branch", "Housekeeping:", holdCmd(s), unholdCmd(s), discardCmd(s), purgeCmd(s), dispatchCmd(s), cycleCmd(s))
-	add("report", "Reports:", outdatedCmd(s), classifyCmd(s))
-	// Setup is the verbs that run BEFORE there is anything to maintain,
-	// and mostly outside a checkout. Filing doctor here rather than under
-	// Reports says plainly that it reports on the MACHINE and not on the
-	// ports.
-	add("setup", "Setup:", provisionCmd(s), doctorCmd(s))
-	root.AddCommand(execCmd(s), versionCmd())
+	// The two forward moves, together: everything else in this tool
+	// either watches one of these or undoes it.
+	add("advance", "Verify and submit:", verifyCmd(s), promoteCmd(s))
+	// Watching, and looking inside what is being watched. status leads
+	// because it is the verb a person runs most and the one that names
+	// every road out of what it shows.
+	add("follow", "Follow a change:", statusCmd(s), logCmd(s), shellCmd(s))
+	// Telling dockhand what YOU decided: a proposal answered, a change
+	// held, a hold released. dismiss belongs here and not beside verify —
+	// it is a person's answer, not a test.
+	add("steer", "Steer a change:", dismissCmd(s), holdCmd(s), unholdCmd(s))
+	// The escalation, in order of how much it takes: a run, a change, the
+	// checkout. Filed together because they answer one question — "make
+	// it stop" — and a person asking it should see all three costs at
+	// once rather than reaching for the largest.
+	add("undo", "Stop or undo:", cancelCmd(s), discardCmd(s), purgeCmd(s))
+	// The pass verbs are their own group because they are not
+	// housekeeping: they are every group above, run together. The order
+	// between them is the dispatch ruling — cycle is the person's
+	// one-shot, dispatch the machine's resident loop.
+	add("pass", "Run the whole workflow:", cycleCmd(s), dispatchCmd(s))
+	// The machine rather than the ports, which is why doctor is here and
+	// not under Survey, and it is last because it is done once.
+	add("setup", "Set up the machine:", provisionCmd(s), execCmd(s), doctorCmd(s))
+	root.AddCommand(versionCmd())
 	return root, s
 }
 

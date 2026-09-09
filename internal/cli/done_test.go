@@ -252,18 +252,41 @@ func TestProvisionXcodeNestsUnderTart(t *testing.T) {
 	}
 }
 
-// THE SETUP GROUP holds provision and doctor. doctor moved here from
-// Reports because it reports on the MACHINE and not on the ports, and
-// the grouping is the only place that distinction is said to a reader.
-func TestTheSetupGroupHoldsProvisionAndDoctor(t *testing.T) {
-	root := Root("test")
+// EVERY VERB IS IN A GROUP, and the only ungrouped commands are cobra's
+// own. `exec` was in none — a real verb sitting under "Additional
+// Commands" beside `completion` — and nothing said so, because a missing
+// GroupID is not an error to cobra.
+func TestEveryVerbIsFiledUnderAGroup(t *testing.T) {
+	builtin := map[string]bool{"help": true, "completion": true, "version": true}
+	for _, c := range Root("test").Commands() {
+		if builtin[c.Name()] {
+			continue
+		}
+		assert.NotEmpty(t, c.GroupID, "%s is in no group and will list under Additional Commands", c.Name())
+	}
+}
+
+// THE GROUPS ARE QUESTIONS A PERSON ARRIVES WITH, and three of them are
+// pinned because their membership is the whole of an argument.
+//
+// doctor is with the machine verbs and not with the port surveys,
+// because it reports on the MACHINE — the grouping is the only place
+// that distinction is said to a reader. The pass verbs are together and
+// are not "housekeeping": dispatch is how the tool is meant to run.
+// dismiss is a person's ANSWER to a finding, so it sits with the other
+// verbs that tell dockhand what you decided rather than beside verify,
+// where somebody looking for it would never think to check.
+func TestTheGroupsFileEachVerbByTheQuestionItAnswers(t *testing.T) {
 	byGroup := map[string][]string{}
-	for _, c := range root.Commands() {
+	for _, c := range Root("test").Commands() {
 		byGroup[c.GroupID] = append(byGroup[c.GroupID], c.Name())
 	}
-	assert.ElementsMatch(t, []string{"provision", "doctor"}, byGroup["setup"])
-	assert.Contains(t, byGroup["branch"], "dispatch", "the pass verbs are filed together")
-	assert.Contains(t, byGroup["branch"], "cycle")
+	assert.ElementsMatch(t, []string{"provision", "exec", "doctor"}, byGroup["setup"])
+	assert.ElementsMatch(t, []string{"cycle", "dispatch"}, byGroup["pass"])
+	assert.Contains(t, byGroup["steer"], "dismiss", "dismiss is an answer, not a test")
+	assert.Contains(t, byGroup["undo"], "cancel", "the escalation is one group: a run, a change, the checkout")
+	assert.Contains(t, byGroup["undo"], "discard")
+	assert.Contains(t, byGroup["undo"], "purge")
 }
 
 // --publish-max 0 IS A USAGE ERROR and not a way to disable publication:
