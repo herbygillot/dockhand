@@ -451,7 +451,15 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	// at capacity, out of disk — surfaces as itself.
 	runErr := make(chan error, 1)
 	go func() {
-		_, err := CLI(context.WithoutCancel(ctx), p.Tools, nil, "run", "--no-graphics", name)
+		out, err := CLI(context.WithoutCancel(ctx), p.Tools, nil, "run", "--no-graphics", name)
+		// KEPT, because this is the only account of the guest's death
+		// anybody will ever have. WaitRunning below reads the channel
+		// while the VM is coming up and never again, so a run that came
+		// up cleanly and died an hour later wrote its explanation into a
+		// buffer that outlived the process holding it. Measured: three
+		// guests trapped inside Apple's Virtualization framework and
+		// every record said only that the environment had stopped.
+		noteExit(name, out, err)
 		runErr <- err
 	}()
 	if err := WaitRunning(ctx, p.Tools, name, runErr); err != nil {
@@ -1372,8 +1380,7 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 		// leaves the old answer standing: a caller that could not ask is
 		// not entitled to conclude.
 		if running, rerr := Running(ctx, p.Tools, job.ID); rerr == nil && !running {
-			return verify.Status{State: verify.Errored,
-				Detail: "the environment stopped before the run reported an outcome"}, nil
+			return verify.Status{State: verify.Errored, Detail: stoppedDetail(job.ID)}, nil
 		}
 		return verify.Status{State: verify.Running}, nil
 	}
@@ -1390,6 +1397,19 @@ func (p Provider) Poll(ctx context.Context, job verify.Job) (verify.Status, erro
 	}
 	return verify.Status{State: verify.Errored,
 		Detail: "the guest reported no state; the runner did not start"}, nil
+}
+
+// stoppedDetail says that the environment stopped, and says WHY when
+// the host kept an answer. The two sentences are joined rather than
+// swapped because they answer different questions — what happened to
+// the run, and what happened to the machine — and a reader of the
+// record needs both.
+func stoppedDetail(vm string) string {
+	const stopped = "the environment stopped before the run reported an outcome"
+	if last := ExitOf(vm); last != "" {
+		return stopped + ": " + last
+	}
+	return stopped
 }
 
 // Log reads the build's output from the guest, in full — the fetch is

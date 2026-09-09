@@ -734,6 +734,25 @@ func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ver
 			if a, err = run.Finish(ctx, st, l, prov, local, a, spec, nil, by, now); err != nil {
 				return a, err
 			}
+			// PACED, because nothing else paces it. The watcher branch below
+			// sits inside AwaitFor for up to residencyRecheck; this branch
+			// returns the moment Finish has looked, and Finish does not sleep.
+			// So the judging role spun: a `tart list` and a `tart exec` into
+			// the guest agent, as fast as the host would fork them, for the
+			// whole of a multi-hour build.
+			//
+			// Measured on a cohort of five C++ ports: the guest's VM helper
+			// trapped inside Apple's framework on an XPC event-handler thread,
+			// three times, four to seven minutes in. `tart exec` reaches the
+			// guest agent over that same channel. Hammering it is waste at
+			// best and a cause at worst, and pacing is what makes the
+			// difference measurable either way.
+			if a.Phase != record.Finished {
+				select {
+				case <-ctx.Done():
+				case <-time.After(judgeEvery):
+				}
+			}
 		case ResidencyUnknown, DispatcherResident:
 			var err error
 			// BOUNDED, so a dispatcher that dies while this call is blocked
@@ -757,6 +776,17 @@ func watch(ctx context.Context, st *statestore.Store, l *ledger.Ledger, prov ver
 // the probe touches a lockfile and a store read, and a watcher is
 // already polling the record every five seconds underneath.
 const residencyRecheck = 30 * time.Second
+
+// judgeEvery is how long the judging watcher waits before polling the
+// provider again.
+//
+// It is the interval AwaitFor already gives the WATCHING role, chosen
+// here for the same reason it was chosen there: the cost of being late
+// is one interval, and a verdict somebody is waiting on is worth
+// looking for often. What it must not be is absent, which is what it
+// was — run.Finish does not pace itself, so this loop's only speed
+// limit was how fast the host could fork `tart`.
+const judgeEvery = 5 * time.Second
 
 // Promote is the operation behind the promote verb, and the tail of
 // bump --to-pr on a verifier-less host, sequenced by cli. Human BY

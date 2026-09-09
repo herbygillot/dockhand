@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1071,4 +1072,55 @@ func TestVerifySeatsACohortFromTheRecordAndWithholdsItsSoloMember(t *testing.T) 
 	assert.NotContains(t, fake.Submitted[0].Ports, "oniguruma",
 		"a Solo member is bumped and NOT built; the guest must not hold it beside the member it conflicts with")
 	assert.Contains(t, fake.Submitted[0].Ports, "jq")
+}
+
+// counter wraps a provider and records how often a wait loop asks it
+// anything. Poll is the expensive question — for the tart provider it is
+// a `tart list` plus an exec into the guest agent — so counting it
+// counts the load a `--wait` puts on the machine it is waiting for.
+type counter struct {
+	*verifytest.Fake
+	polls atomic.Int64
+}
+
+func (c *counter) Poll(ctx context.Context, job verify.Job) (verify.Status, error) {
+	c.polls.Add(1)
+	return c.Fake.Poll(ctx, job)
+}
+
+// A WAIT MUST NOT SPIN ON THE GUEST IT IS WAITING FOR.
+//
+// The watching role has always been paced: AwaitFor polls the record on
+// a timer. The JUDGING role was not — run.Finish returns as soon as it
+// has looked and does not sleep, so with no dispatcher the loop asked
+// the provider as fast as the host could fork the processes, for the
+// whole of a build that can run for hours.
+//
+// Measured in the field: a cohort's guest trapped inside Apple's
+// Virtualization framework on an XPC event-handler thread, three times,
+// four to seven minutes in — and `tart exec` reaches the guest agent
+// over that same channel. Whether the hammering was a cause is not
+// settled here. That it was waste is.
+//
+// The bound is what makes the claim testable: a wait shorter than one
+// interval asks once. Unpaced, this same window was hundreds.
+func TestAWaitWithNoDispatcherDoesNotSpinOnTheGuest(t *testing.T) {
+	repo, st := fixture(t)
+	c := &counter{Fake: &verifytest.Fake{Platforms: []platform.Release{sequoia}}}
+	res := enqueued(t, repo, st, c, "jq", "1.8", "jq-1.8")
+	require.Equal(t, Started, res.Did, "the fixture is a running build")
+	require.Less(t, time.Second, judgeEvery, "this test's window must be inside one interval")
+
+	before := c.polls.Load()
+	wait := 900 * time.Millisecond
+	v := Verify{Repo: repo, Ledger: ledger.Open(repo), State: st, Stage: &stager{}, Local: quiet{},
+		Verifier: has(c), Me: me(), Now: now}
+	_, err := v.Run(t.Context(), VerifyRequest{
+		Target: "dockhand/jq-1.8", Platforms: []platform.Release{sequoia},
+		Wait: &wait, Residency: Residency{State: NoDispatcher}})
+	require.NoError(t, err)
+
+	asked := c.polls.Load() - before
+	assert.LessOrEqual(t, asked, int64(2),
+		"a wait shorter than one interval asks the guest once, not continuously")
 }
