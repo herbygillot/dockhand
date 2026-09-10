@@ -263,9 +263,10 @@ func (v Verify) Run(ctx context.Context, r VerifyRequest) (VerifyResult, error) 
 		// to read yet — the change is being written in this same Amend.
 		cur := tx.State().Changes[string(id)]
 		members, withheld := run.Roster(cur, record.Attempt{})
+		seated, requires := buildOrder(ctx, v.Local, members)
 		for _, pl := range r.Platforms {
 			spec := run.Spec{
-				Content: content, Roster: members, Withheld: withheld,
+				Content: content, Roster: seated, Requires: requires, Withheld: withheld,
 				FromSource: fromSourceOf(subjects),
 				Platform:   pl, Test: r.Test, KeepEnv: r.KeepEnv, Trace: r.Trace,
 			}

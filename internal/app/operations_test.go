@@ -85,6 +85,12 @@ func (quiet) Dependents(context.Context, string) ([]portindex.Dependent, []porti
 	return nil, nil, nil
 }
 
+// No index, so no build order — which is the road these operations
+// tests have always taken and the one buildOrder falls back to.
+func (quiet) Requires(context.Context, []string) (map[string][]string, error) {
+	return nil, nil
+}
+
 func (quiet) Instructions(context.Context, string, string) ([]dependents.Instruction, error) {
 	return nil, nil
 }

@@ -591,8 +591,9 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 	// performs no effect — a tx.Ref line is data the commit carries.
 	var att record.Attempt
 	var adopted bool
+	seated, requires := buildOrder(ctx, c.Local, rosterOf(r.Prepared.Subjects))
 	spec := run.Spec{
-		Content: content, Roster: rosterOf(r.Prepared.Subjects),
+		Content: content, Roster: seated, Requires: requires,
 		FromSource: fromSourceOf(r.Prepared.Subjects),
 		Platform:   r.Platform, Test: r.Test, KeepEnv: r.KeepEnv,
 	}

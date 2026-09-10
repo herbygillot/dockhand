@@ -159,8 +159,9 @@ func (a Accept) Run(ctx context.Context, r AcceptRequest) (Result, error) {
 		}
 		cur := tx.State().Changes[string(ref.ID())]
 		members, withheld := run.Roster(cur, record.Attempt{})
+		seated, requires := buildOrder(ctx, a.Local, members)
 		spec = run.Spec{
-			Content: content, Roster: members, Withheld: withheld,
+			Content: content, Roster: seated, Requires: requires, Withheld: withheld,
 			// Over the change's OWN subjects and not over the seated
 			// members: a cohort accepted onto a re-derivation still has to
 			// build that headline from source, and run.Plan intersects the

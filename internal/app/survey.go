@@ -240,9 +240,11 @@ func (s Survey) one(ctx context.Context, r SurveyRequest, t Planned, prov verify
 		if !enqueue {
 			return nil
 		}
+		seated, requires := buildOrder(ctx, s.Local, rosterOf(p.Subjects))
 		spec := run.Spec{
-			Content: content, Roster: rosterOf(p.Subjects), FromSource: fromSourceOf(p.Subjects),
-			Platform: r.Platform, Test: r.Test, KeepEnv: r.KeepEnv,
+			Content: content, Roster: seated, Requires: requires,
+			FromSource: fromSourceOf(p.Subjects),
+			Platform:   r.Platform, Test: r.Test, KeepEnv: r.KeepEnv,
 		}
 		var err error
 		att, err = run.EnqueueIn(tx, run.Enqueue{
