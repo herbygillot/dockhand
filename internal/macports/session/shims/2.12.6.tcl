@@ -83,7 +83,38 @@ proc fetchinfo {portdir {subport ""} {variations {}} {no_mirrors 0}} {
             dict set files $file $urls
         }
     }
-    set out [dict create files $files]
+    # URLs for the files the checksums NAME but this evaluation does not
+    # fetch — the terraform shape, where one architecture's distfile is
+    # recorded and another's is retrieved. A file carrying no tag of its
+    # own is fetched from the untagged site group, so that is the group
+    # its url is assembled from, by portfetch's own assemble_url.
+    #
+    # The whole loop runs in ONE worker evaluation. Assembling a url per
+    # site per file across the rpc costs minutes on a port like cargo,
+    # which names fifty distfiles across every mirror.
+    set named [dict create]
+    catch {
+        set named [$worker eval [list apply {{fetched} {
+            global checksums
+            if {![info exists checksums]} { return {} }
+            if {![info exists ::portfetch::urlmap(master_sites)]} { return {} }
+            set types [list md5 sha1 rmd160 sha256 sha512 size]
+            set out [dict create]
+            set skip 0
+            foreach tok $checksums {
+                if {$skip} { set skip 0; continue }
+                if {$tok in $types} { set skip 1; continue }
+                if {$tok in $fetched || [dict exists $out $tok]} { continue }
+                set urls {}
+                foreach site $::portfetch::urlmap(master_sites) {
+                    lappend urls [::portfetch::assemble_url $site $tok]
+                }
+                dict set out $tok $urls
+            }
+            return $out
+        }} [dict keys $files]]]
+    }
+    set out [dict create files $files named $named]
     foreach {opt key} {
         fetch.use_epsv use_epsv
         fetch.ignore_sslcert ignore_sslcert

@@ -20,6 +20,23 @@ type FetchInfo struct {
 	// would try for it, mirror macros already expanded. The order is
 	// portfetch's own preference and is load-bearing: a fetcher walks it.
 	Files map[string][]string
+	// Named maps a file the port's CHECKSUMS name, but which this
+	// evaluation does not fetch, to the URLs it would be fetched from.
+	//
+	// It is the terraform shape: a checksums command recording an
+	// architecture's distfile that this evaluation never retrieves,
+	// because distfiles names only the other one. Those digests still
+	// have to move when the version does, and nothing can move them
+	// without the bytes — so the fetch surface names where the bytes
+	// are, for a caller that has decided to go and get them.
+	//
+	// A file with no tag of its own is fetched from the untagged site
+	// group, which is where these urls come from. A port whose every
+	// master_sites entry is tagged has no such group and no entry here,
+	// which is the honest answer: MacPorts binds those files to sites
+	// through distfiles, and a file absent from distfiles has no
+	// binding to read.
+	Named map[string][]string
 	// DisableEPSV, IgnoreSSLCert and UserAgent are the port's fetch.*
 	// exceptions, stated in the negative form a fetcher acts on rather
 	// than the option's own polarity (fetch.use_epsv is a yes/no).

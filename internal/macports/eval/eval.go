@@ -244,6 +244,20 @@ func (e *Evaluator) FetchInfo(ctx context.Context, portdir, subport string, vari
 		}
 		fi.Files[file] = urls
 	}
+	namedFields, errs := syntax.DictValues(fields["named"])
+	if len(errs) != 0 {
+		return info.FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed named dict %q: %w", portdir, fields["named"], errs[0])
+	}
+	if len(namedFields) > 0 {
+		fi.Named = make(map[string][]string, len(namedFields))
+		for file, raw := range namedFields {
+			urls, errs := syntax.ListValues(raw)
+			if len(errs) != 0 {
+				return info.FetchInfo{}, fmt.Errorf("eval: fetchinfo of %s: malformed named url list %q: %w", portdir, raw, errs[0])
+			}
+			fi.Named[file] = urls
+		}
+	}
 	return fi, nil
 }
 

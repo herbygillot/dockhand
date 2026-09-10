@@ -73,3 +73,42 @@ checksums rmd160 0 sha256 0 size 0
 	require.Len(t, bare, 1, "no-mirrors mode leaves only the port's own site")
 	require.Contains(t, bare[0], "127.0.0.1")
 }
+
+// The terraform shape: checksums naming a distfile this evaluation does
+// not fetch. Its digests still have to move with the version, so the
+// fetch surface says where its bytes are.
+func TestFetchInfoNamesUnfetchedFiles(t *testing.T) {
+	e := newEvaluator(t)
+	dir := portdirWith(t, `PortSystem 1.0
+name namedprobe
+version 2.0
+master_sites http://127.0.0.1:1/files
+distfiles namedprobe-2.0-arm64.zip
+checksums namedprobe-2.0-amd64.zip \
+          rmd160 aa sha256 bb size 1 \
+          namedprobe-2.0-arm64.zip \
+          rmd160 cc sha256 dd size 2
+`)
+	fi, err := e.FetchInfo(context.Background(), dir, "", "", false)
+	require.NoError(t, err)
+	require.Contains(t, fi.Files, "namedprobe-2.0-arm64.zip")
+	require.NotContains(t, fi.Files, "namedprobe-2.0-amd64.zip", "distfiles names only one")
+
+	urls := fi.Named["namedprobe-2.0-amd64.zip"]
+	require.NotEmpty(t, urls, "the checksums name it, so the surface says where it is")
+	require.Contains(t, urls[0], "http://127.0.0.1:1/files/namedprobe-2.0-amd64.zip")
+}
+
+// A port that fetches everything it names has nothing extra to report.
+func TestFetchInfoNamesNothingExtraWhenAllFetched(t *testing.T) {
+	e := newEvaluator(t)
+	dir := portdirWith(t, `PortSystem 1.0
+name allfetched
+version 1.0
+master_sites http://127.0.0.1:1/files
+checksums rmd160 0 sha256 0 size 0
+`)
+	fi, err := e.FetchInfo(context.Background(), dir, "", "", false)
+	require.NoError(t, err)
+	require.Empty(t, fi.Named)
+}
