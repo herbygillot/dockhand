@@ -72,6 +72,28 @@ func buildOrder(ctx context.Context, local run.Local, roster []run.Member) ([]ru
 		return roster, nil
 	}
 
+	// A FORCED MEMBER IS SEATED LAST AND MAY NOT BE PULLED FORWARD.
+	// run.Roster puts it there deliberately — it deactivates a sibling,
+	// so everything that might need that sibling has to be built first —
+	// and a sort that read only the dependency graph moved it ahead of
+	// members that do need it. Found by a test written while asking a
+	// different question; the regression was mine, from the pass that
+	// gave Requires a producer.
+	//
+	// So the tail is not sorted, only the members before it. An edge
+	// from an earlier member INTO the forced tail survives in the graph
+	// and cannot be honoured by ordering: the runner finds no state file
+	// at a later position and builds anyway, which is exactly the open
+	// question about a forced member that is itself a prerequisite. This
+	// states that truthfully rather than resolving it by reordering.
+	firstForced := len(roster)
+	for i, m := range roster {
+		if m.Forced != "" {
+			firstForced = i
+			break
+		}
+	}
+
 	// POSITION 0 IS THE HEADLINE AND MAY NOT MOVE. run.Finish reads
 	// Spec.Roster[0] as the port a cohort proposal is about, and
 	// run.Observe keys the headline's manifest off it; a sort that
@@ -86,7 +108,19 @@ func buildOrder(ctx context.Context, local run.Local, roster []run.Member) ([]ru
 		return roster, nil
 	}
 
-	order, ok := topological(edges)
+	// Only the members before the forced tail take part in the sort, and
+	// only their edges to each other constrain it. An edge INTO the tail
+	// is dropped here and kept in the graph: it cannot move anything,
+	// because the tail's position is not this function's to choose.
+	prefix := make([][]int, firstForced)
+	for i := range prefix {
+		for _, j := range edges[i] {
+			if j < firstForced {
+				prefix[i] = append(prefix[i], j)
+			}
+		}
+	}
+	order, ok := topological(prefix)
 	if !ok {
 		// A cycle among members is a fact about the tree, not something
 		// to resolve by picking an order. MacPorts builds cyclic ports
@@ -95,6 +129,9 @@ func buildOrder(ctx context.Context, local run.Local, roster []run.Member) ([]ru
 		return roster, nil
 	}
 
+	for i := firstForced; i < len(roster); i++ {
+		order = append(order, i)
+	}
 	seated := make([]run.Member, 0, len(order))
 	requires := make([][]string, 0, len(order))
 	for _, i := range order {

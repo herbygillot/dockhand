@@ -86,6 +86,31 @@ func TestBuildOrderNeverMovesTheHeadline(t *testing.T) {
 	assert.Nil(t, requires)
 }
 
+// A FORCED MEMBER IS SEATED LAST AND STAYS THERE. run.Roster puts it
+// at the tail deliberately: it deactivates a sibling, so everything
+// that might need that sibling has to be built first. A sort reading
+// only the dependency graph moved it ahead of a member that needs it,
+// which is the shape of the open question about a forced member that is
+// itself a prerequisite — and resolving that by reordering would be
+// answering it, quietly, in the wrong direction.
+func TestBuildOrderKeepsAForcedMemberLast(t *testing.T) {
+	in := []run.Member{
+		{Port: "head"},
+		{Port: "a"},
+		{Port: "forced", Forced: "forced-devel"},
+	}
+	local := requiresLocal{edges: map[string][]string{
+		"head": nil, "a": {"forced", "head"}, "forced": {"head"},
+	}}
+	seated, requires := buildOrder(context.Background(), local, in)
+	assert.Equal(t, []string{"head", "a", "forced"}, memberNames(seated),
+		"the deactivation must not be pulled ahead of members that need the sibling")
+	// The edge is still stated, and the runner will find no state file
+	// at a later position and build anyway — today's behaviour, said out
+	// loud rather than reordered away.
+	assert.Equal(t, []string{"forced", "head"}, requires[1])
+}
+
 // Every failure yields the roster as it stood and no edges, because an
 // ordering is an optimization and may never refuse a verification.
 func TestBuildOrderFallsBackRatherThanFailing(t *testing.T) {
