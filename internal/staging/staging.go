@@ -138,6 +138,30 @@ func (s *Stager) Stage(ctx context.Context, sha string, subjects []record.Subjec
 	s.keep = append(s.keep, drop)
 	members := make([]run.Member, 0, len(subjects))
 	pre := make(map[string]run.Preflight, len(subjects))
+
+	// THE TREE IS BUILT BEFORE ANY MEMBER IS ASKED ANYTHING. The overlay
+	// has to be a tree (see the type's doc), and the preflight is an
+	// EVALUATION: it reads known_fail and use_xcode out of the staged
+	// Portfile, which is a Portfile that may open a port group. Read
+	// before _resources exists, that evaluation resolves port groups
+	// through getportresourcepath's fallback — against the
+	// INSTALLATION'S DEFAULT TREE, not the commit under test — or fails
+	// outright with "PortGroup not found" and leaves the member unread.
+	//
+	// Both outcomes decide scheduling. An unread preflight is scheduled
+	// as an ordinary build, so a known_fail the commit declares is
+	// spent on a VM and a use_xcode it declares is not asked for; a
+	// default tree that answers differently answers wrongly and in
+	// silence.
+	//
+	// A missing _resources is still not a staging failure — some trees
+	// do not carry one — so the error is carried into every preflight
+	// rather than refusing an attempt whose members would all
+	// materialize. It is recorded BEFORE the members are read, which is
+	// the difference: a preflight that ran without the tree used to
+	// stand as an answer unless materializing happened to fail.
+	resErr := s.repo.Materialize(ctx, sha, build.ResourcesDir, dir)
+
 	for _, sub := range subjects {
 		if err := s.repo.Materialize(ctx, sha, sub.Portdir, dir); err != nil {
 			return nil, nil, err
@@ -148,19 +172,11 @@ func (s *Stager) Stage(ctx context.Context, sha string, subjects []record.Subjec
 			Portdir: staged,
 			Names:   append([]string(nil), sub.Names...),
 		})
-		pre[sub.Port] = s.preflight(ctx, staged, sub, on)
-	}
-	// The overlay has to be a tree; see the type's doc. A missing
-	// _resources is not a staging failure — some trees do not carry one
-	// — so the error is reported through the preflight rather than
-	// refusing an attempt whose members all materialized.
-	if err := s.repo.Materialize(ctx, sha, build.ResourcesDir, dir); err != nil {
-		for port, pf := range pre {
-			if pf.Err == nil {
-				pf.Err = fmt.Errorf("staging %s: %w", build.ResourcesDir, err)
-				pre[port] = pf
-			}
+		pf := s.preflight(ctx, staged, sub, on)
+		if resErr != nil && pf.Err == nil {
+			pf.Err = fmt.Errorf("staging %s: %w", build.ResourcesDir, resErr)
 		}
+		pre[sub.Port] = pf
 	}
 	return members, pre, nil
 }
