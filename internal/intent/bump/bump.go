@@ -368,6 +368,47 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 				Detail: "every distfile comes from a vendored block"}
 		}
 
+		// THE FILES THE CHECKSUMS NAME AND THIS EVALUATION DOES NOT
+		// FETCH. Up to here a bump has only ever fetched what distfiles
+		// offered, which for terraform is one architecture out of the two
+		// its checksums record — so the amd64 entry kept the digests of
+		// the release being left and the plan was refused as dishonest.
+		//
+		// Nothing about that refusal was wrong; it was just early. A
+		// digest is a fact about bytes, not about the machine that
+		// hashes them, so a file this host will never build with is
+		// still a file this host can fetch and hash. The frame decides
+		// what a port fetches; it does not decide what a file hashes to.
+		//
+		// So they are fetched alongside the port's own, and the rest of
+		// the road — the recorded triples, the replacements, the
+		// rewrite — takes them without knowing the difference, because
+		// by then they are ordinary entries with new sums.
+		//
+		// THEY ARE FETCHED FOR THEIR DIGESTS AND FOR NOTHING ELSE, which
+		// is why they are marked. What the port extracts, patches and
+		// builds from is what distfiles names; these are its siblings on
+		// a mirror. Letting them into the fetched-archive list would let
+		// a patch target be read out of one — texlive names a -src
+		// companion beside the -run archive it builds, and both can hold
+		// a path the other does — and the patch would then be relocated
+		// onto an archive the port never opens.
+		digestOnly := map[string]bool{}
+		if extraOld, extraNew, ok := rederivable(
+			namedNotFetched(vals.Checksums, ownOld, supplied),
+			namedNotFetched(shadowVals.Checksums, ownNew, supplied),
+			fi.Named,
+		); ok {
+			slog.Debug("re-deriving distfiles named but not fetched",
+				"old", extraOld, "new", extraNew)
+			ownOld = append(ownOld, extraOld...)
+			ownNew = append(ownNew, extraNew...)
+			for _, f := range extraNew {
+				fi.Files[f] = namedURLs(fi, f)
+				digestOnly[f] = true
+			}
+		}
+
 		fetchDir, removeFetched, err := h.TempDir.MakeDir("distfiles")
 		if err != nil {
 			return nil, err
@@ -394,9 +435,12 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 			if err != nil {
 				return nil, fmt.Errorf("bump: %s: %w", file, err)
 			}
-			slog.Debug("fetched distfile", "file", file, "sha256", s.Sha256, "size", s.Size)
+			slog.Debug("fetched distfile", "file", file, "sha256", s.Sha256, "size", s.Size,
+				"digest-only", digestOnly[file])
 			sums[file] = s
-			fetched = append(fetched, dest)
+			if !digestOnly[file] {
+				fetched = append(fetched, dest)
+			}
 		}
 		// The fetch supersedes the carrier: bytes off the network are the
 		// stronger evidence, and both fields it could name are in
