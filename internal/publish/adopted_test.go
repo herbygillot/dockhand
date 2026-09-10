@@ -51,7 +51,7 @@ func TestAnAdoptedPassIsGatheredAsThisChangesEvidence(t *testing.T) {
 		"the change that adopted the attempt holds its verdict")
 
 	out := body(f, "")
-	assert.Contains(t, out, "Verified with", "and the body says so")
+	assert.Contains(t, out, "Build **verified** at commit", "and the body says so")
 	assert.NotContains(t, out, "no verification environment",
 		"never again a claim about a machine that was never asked")
 }

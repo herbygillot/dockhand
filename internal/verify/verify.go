@@ -375,6 +375,23 @@ type Job struct {
 	// determine it — the same silence, because in both cases nothing
 	// here knows, and rule 7 forbids answering that with a name.
 	Base string `json:"base,omitempty"`
+	// OS and Xcode are what the environment SAID ABOUT ITSELF, asked of
+	// it rather than assumed from the release it was provisioned for:
+	// the full product and build version — "26.6.2 (25G83)" — and the
+	// toolchain that would compile a port there.
+	//
+	// A platform is not a version and a version is not a toolchain. A
+	// verdict earned on Tahoe says which macOS and not which point
+	// release, and a reviewer reading "built in a pristine VM" is owed
+	// the machine it was pristine on. Base already carries which disk;
+	// these carry what booted off it.
+	//
+	// Empty is a provider that cannot say, or one that was not asked,
+	// and the same silence covers both: a body may report only what the
+	// provider actually provided, and rule 7 forbids answering an
+	// unasked question with a plausible name.
+	OS    string `json:"os,omitempty"`
+	Xcode string `json:"xcode,omitempty"`
 }
 
 // State is where a job is.

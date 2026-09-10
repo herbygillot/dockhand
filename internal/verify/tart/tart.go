@@ -535,6 +535,11 @@ func (p Provider) Submit(ctx context.Context, req verify.Request) (verify.Job, e
 	if err := p.assertClean(ctx, name); err != nil {
 		return fail(err)
 	}
+	// WHAT THE GUEST SAYS ABOUT ITSELF, asked here because here is the
+	// first moment there is anything to ask: WaitAgent has just answered,
+	// so the machine is up and every later step will talk to it anyway.
+	// The base says which image; this says which system booted off it.
+	job.OS, job.Xcode = describe(ctx, p.Tools, name)
 	if req.NeedsXcode {
 		if !p.hasXcode(ctx, base.Release, name) {
 			return fail(fmt.Errorf("%w: %s requires a full Xcode installation and this base has none — provision with --xcode, or promote unverified", verify.ErrNoEnvironment, req.Ports[0]))

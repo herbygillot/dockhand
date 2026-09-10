@@ -31,19 +31,19 @@ func TestAVerifiedBodyStatesTheEvidenceAndChecksWhatItCanVouchFor(t *testing.T) 
 	})
 	out := body(f, "1.2.3")
 
-	assert.Contains(t, out, "Verified with [dockhand](")
+	assert.Contains(t, out, "Build **verified** at commit")
 	// The environment words the claim; the two qualifiers this run earned
 	// attach to the ACT the claim opens with, not to its tail.
 	assert.Contains(t, out, "Sequoia: linted clean, built from source and tested in a pristine VM.")
 	assert.Contains(t, out, "###### Tested on\n- macOS Sequoia — built in a pristine VM, via dockhand\n")
-	assert.Contains(t, out, "Branch head `aaaa`, against the ports tree as of 2026-09-07.")
+	assert.Contains(t, out, "Written against the ports tree as of 2026-09-07.")
 	assert.Contains(t, out, "Also: a modeline.\n")
 	assert.Contains(t, out, "Closes: https://trac.macports.org/ticket/12345\n")
 	assert.Contains(t, out, "- [x] checked your Portfile with `port lint`?")
 	assert.Contains(t, out, "- [x] tried existing tests with `sudo port test`?")
 	assert.Contains(t, out, "- [x] tried a full install with")
 	assert.Contains(t, out, "referenced existing tickets on [Trac]")
-	assert.Contains(t, out, "Automated by [dockhand](https://github.com/herbygillot/dockhand) 1.2.3\n")
+	assert.Contains(t, out, "[dockhand](https://github.com/herbygillot/dockhand) 1.2.3\n")
 
 	// A single subject's lines are not prefixed with its own port: the
 	// pull request is about that port and its title says so.
@@ -124,7 +124,7 @@ func TestAVerifiedBodyStillStatesAFailureOnAnotherPlatform(t *testing.T) {
 	f := cohortFacts(record.Accepted)
 	sonoma(record.Failed)(&f)
 	out := body(f, "")
-	assert.Contains(t, out, "Verified with [dockhand](")
+	assert.Contains(t, out, "Build **verified** at commit")
 	assert.Contains(t, out, "libfoo on Sonoma: the build failed, and this was published anyway.")
 
 	// A run that is merely this machine's afternoon IS kept local, for a
@@ -132,7 +132,7 @@ func TestAVerifiedBodyStillStatesAFailureOnAnotherPlatform(t *testing.T) {
 	f = cohortFacts(record.Accepted)
 	sonoma(record.Canceled)(&f)
 	out = body(f, "")
-	assert.Contains(t, out, "Verified with [dockhand](")
+	assert.Contains(t, out, "Build **verified** at commit")
 	assert.NotContains(t, out, "libfoo on Sonoma:")
 }
 
@@ -427,4 +427,64 @@ func TestTheBodyDoesNotDiagnoseTheMachine(t *testing.T) {
 	assert.Contains(t, line, "nothing has been run for this commit's content")
 	assert.NotContains(t, line, "submitting machine",
 		"a body may not assert a fact about hardware it never measured")
+}
+
+// THE VERDICT NAMES THE COMMIT IT IS ABOUT. "Verified" with no sha is a
+// claim a reviewer cannot check: a branch moves, and a body that vouches
+// for whatever sits at its head today vouches for something else
+// tomorrow. It is the first line and the bold is the one thing scanned
+// for.
+func TestTheVerdictLineNamesItsCommit(t *testing.T) {
+	out := body(facts(), "1.2.3")
+	assert.Contains(t, out, "Submitted by [dockhand](")
+	assert.Contains(t, out, "Build **verified** at commit `aaaa`")
+	assert.Contains(t, out, "\n[dockhand](https://github.com/herbygillot/dockhand) 1.2.3\n",
+		"the footer is the tool and its build, and no sentence about automation")
+	assert.NotContains(t, out, "Automated by")
+
+	// And it is named ONCE: provenance keeps the half a reviewer cannot
+	// get anywhere else — how current the tree underneath was.
+	assert.NotContains(t, out, "Branch head `aaaa`")
+	assert.Contains(t, out, "Written against the ports tree")
+}
+
+// AN UNVERIFIED BODY SAYS SO IN THE SAME PLACE, so the one line a
+// reviewer scans for is in the same position whatever the answer, and
+// keeps its branch head — nothing above it named the commit.
+func TestAnUnverifiedBodySaysSoInTheSamePlace(t *testing.T) {
+	out := body(facts(func(f *Facts) { f.Attempts = nil }), "")
+	assert.Contains(t, out, "Build **not** verified")
+	assert.NotContains(t, out, "**verified** at commit")
+	assert.Contains(t, out, "Branch head `aaaa`")
+}
+
+// THE ENVIRONMENT IS REPORTED ONLY WHERE THE PROVIDER REPORTED IT. A
+// reviewer told "built in a pristine VM" is owed the machine it was
+// pristine on — but "Tahoe" is a release and not a point version, and
+// dockhand may say only what the guest actually answered.
+func TestTheEnvironmentIsNamedOnlyWhenItWasMeasured(t *testing.T) {
+	measured := facts(func(f *Facts) {
+		for i := range f.Attempts {
+			f.Attempts[i].OS = "26.6.2 (25G83)"
+			f.Attempts[i].Xcode = "Xcode 26.6"
+		}
+	})
+	out := body(measured, "")
+	assert.Contains(t, out, "on macOS 26.6.2 (25G83), Xcode 26.6.")
+
+	// A provider that said nothing produces no line at all, rather than a
+	// plausible sentence nobody measured.
+	silent := body(facts(), "")
+	assert.NotContains(t, silent, "  — on macOS")
+
+	// Half an answer is still an answer, and the half that is missing is
+	// simply absent.
+	partial := facts(func(f *Facts) {
+		for i := range f.Attempts {
+			f.Attempts[i].OS = "26.6.2 (25G83)"
+		}
+	})
+	out = body(partial, "")
+	assert.Contains(t, out, "on macOS 26.6.2 (25G83).")
+	assert.NotContains(t, out, "Xcode")
 }

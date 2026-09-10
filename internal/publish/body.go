@@ -2,6 +2,7 @@ package publish
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -80,7 +81,11 @@ func body(f Facts, version string) string {
 	verified := promotable(c, vs)
 
 	var b strings.Builder
-	b.WriteString("#### Description\n\n")
+	// WHO SUBMITTED THIS, first and once. A reviewer meeting a machine's
+	// pull request wants to know it is one before they read a word of
+	// what it claims, and the old "#### Description" heading said only
+	// that a description followed.
+	fmt.Fprintf(&b, "Submitted by [dockhand](%s):\n\n", RepoURL)
 
 	// Two facts about the whole run set, taken before any line is written
 	// because both of them decide what the lines below may leave out.
@@ -252,16 +257,23 @@ func body(f Facts, version string) string {
 
 	// One verdict per line: GitHub keeps single newlines in pull request
 	// bodies, so the set reads as the list it is.
+	// THE VERDICT IS THE FIRST LINE AND IT NAMES THE COMMIT. "Verified"
+	// with no sha is a claim a reviewer cannot check: a branch moves, and
+	// a body that vouches for whatever is at its head today vouches for
+	// something else tomorrow. The bold is the one thing scanned for.
 	switch {
 	case verified:
-		fmt.Fprintf(&b, "Verified with [dockhand](%s):\n", RepoURL)
+		fmt.Fprintf(&b, "Build **verified** at commit `%s`\n", git.Abbrev(f.Tip))
 	case len(lines) > 0:
-		b.WriteString("Not verified:\n")
+		b.WriteString("Build **not** verified\n")
 	default:
-		b.WriteString(unrunLine(f))
+		b.WriteString("Build **not** verified — " + unrunLine(f))
 	}
 	for _, line := range lines {
 		fmt.Fprintf(&b, "  — %s.\n", line)
+	}
+	if env := environmentLine(f); env != "" {
+		b.WriteString(env)
 	}
 
 	// The cohort, before the riders and after the evidence: it is part of
@@ -273,7 +285,16 @@ func body(f Facts, version string) string {
 		fmt.Fprintf(&b, "\n%s", cohort)
 	}
 
-	if prov := provenance(c, f.Tip); prov != "" {
+	// THE HEAD IS NAMED ONCE. A verified body's first line already says
+	// which commit the verdict is about, and repeating it four lines
+	// later reads as two facts where there is one. What provenance still
+	// carries in that case — how current the tree underneath was — is the
+	// half a reviewer cannot get anywhere else.
+	head := f.Tip
+	if verified {
+		head = ""
+	}
+	if prov := provenance(c, head); prov != "" {
 		fmt.Fprintf(&b, "\n%s\n", prov)
 	}
 	// The riders under one "Also": housekeeping folded into a commit that
@@ -377,7 +398,7 @@ func body(f Facts, version string) string {
 	// with no verification claim still owes the reviewer the fact of how
 	// it was made — and which build made it, so a sentence found to be
 	// wrong can be traced to the version that wrote it.
-	fmt.Fprintf(&b, "\nAutomated by [dockhand](%s)", RepoURL)
+	fmt.Fprintf(&b, "\n[dockhand](%s)", RepoURL)
 	if version != "" {
 		fmt.Fprintf(&b, " %s", version)
 	}
@@ -654,4 +675,58 @@ func localToThisMachine(s record.RunState) bool {
 	// An unknown state is shown rather than hidden: a word this build
 	// cannot read is not something to keep from a reviewer.
 	return false
+}
+
+// environmentLine says what the verification actually ran on, and only
+// what the provider actually said.
+//
+// A reviewer reading "built in a pristine VM" is owed the machine it was
+// pristine on: "Tahoe" names a release and not a point version, and a
+// port that builds on 26.6.2 with Xcode 26.6 is not thereby known to
+// build on 26.0 with Xcode 26.1. The environment is asked about itself
+// when the guest comes up and the answer travels to the attempt, so this
+// reports a MEASUREMENT rather than the release the base was provisioned
+// for.
+//
+// EVERY PART IS OPTIONAL AND THE WHOLE LINE IS. A provider that cannot
+// say, a guest that would not answer, and an attempt written before any
+// of this was recorded all produce the same nothing — and nothing is
+// what a body then says, because the alternative is a plausible sentence
+// nobody measured. Rule 7 at the one place it reaches a stranger.
+func environmentLine(f Facts) string {
+	seen := map[string]bool{}
+	var parts []string
+	for _, a := range f.Attempts {
+		if a.Content != f.Change.Content {
+			continue // evidence about other bytes describes another machine
+		}
+		one := strings.TrimSpace(strings.Join([]string{envWord("macOS", a.OS), envWord("", a.Xcode)}, ", "))
+		one = strings.Trim(one, ", ")
+		if one == "" || seen[one] {
+			continue
+		}
+		seen[one] = true
+		parts = append(parts, one)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	sort.Strings(parts)
+	var b strings.Builder
+	for _, p := range parts {
+		fmt.Fprintf(&b, "  — on %s.\n", p)
+	}
+	return b.String()
+}
+
+// envWord renders one environment fact, or nothing at all for one the
+// provider did not supply.
+func envWord(label, value string) string {
+	if value == "" {
+		return ""
+	}
+	if label == "" {
+		return value
+	}
+	return label + " " + value
 }

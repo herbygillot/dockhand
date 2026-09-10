@@ -219,7 +219,7 @@ func Start(ctx context.Context, st *statestore.Store, prov verify.Verifier, stag
 		// The environment's exact identity, kept on the ATTEMPT because
 		// the lease goes back and a verdict has to outlive the guest that
 		// earned it.
-		cur.Image = l.Image
+		cur.Image, cur.OS, cur.Xcode = l.Image, l.OS, l.Xcode
 		cur.Owner = by.Owner
 		cur.Started = now.UTC()
 		cur.Runs = startedRuns(spec, req, declined, pre, now)

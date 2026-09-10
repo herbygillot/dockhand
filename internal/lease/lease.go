@@ -632,7 +632,7 @@ func Acquire(ctx context.Context, st *statestore.Store, prov verify.Verifier, ch
 	// another, so Handle stays empty until a Status reports one. What is
 	// known is the identity, and that is what ActiveIn writes.
 	l.ID = record.LeaseID{Provider: job.Provider, ID: job.ID, Started: job.Started}
-	l.Image = job.Base
+	l.Image, l.OS, l.Xcode = job.Base, job.OS, job.Xcode
 	l.Phase = record.Active
 	return l, nil
 }

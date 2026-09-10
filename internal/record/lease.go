@@ -35,7 +35,17 @@ type Lease struct {
 	// carried from verify.Job.Base. The lease is where it ARRIVES; the
 	// attempt is where it stays, because a lease goes back and a verdict
 	// has to outlive the environment that earned it.
-	Image    string     `json:"image,omitempty"`
+	Image string `json:"image,omitempty"`
+	// OS and Xcode are what the environment said about ITSELF, carried
+	// from verify.Job: the full product and build version, and the
+	// toolchain a port would compile against there. Image says which
+	// disk; these say what booted off it.
+	//
+	// Empty is a provider that could not say or was not asked, and a
+	// reader may report only what is here — the silence is the answer
+	// where there is no answer.
+	OS       string     `json:"os,omitempty"`
+	Xcode    string     `json:"xcode,omitempty"`
 	Change   ChangeID   `json:"change"`
 	Owner    OwnerID    `json:"owner"`
 	Platform string     `json:"platform"`
@@ -140,6 +150,12 @@ type Attempt struct {
 	// splitting a joined string, which is the defect RunKey exists to
 	// remove.
 	Platform string `json:"platform"`
+	// OS and Xcode are the environment's own account of itself, carried
+	// from the lease so a verdict outlives the environment that earned
+	// it. A pull request body saying "built in a pristine VM" is owed
+	// the machine it was pristine on.
+	OS    string `json:"os,omitempty"`
+	Xcode string `json:"xcode,omitempty"`
 	// Image is the exact environment image this attempt ran on, beside
 	// the release it names: a platform says which macOS, and this says
 	// which build of it. Empty for an attempt whose provider had no such
