@@ -532,16 +532,27 @@ func (c Change) Run(ctx context.Context, r ChangeRequest) (Result, error) {
 		if _, err := change.Resolve(ctx, c.Repo, c.State, old.Branch); err != nil {
 			return Result{}, err // a hand moved it: 45, before any work is stopped
 		}
-		cancel := Cancel{Repo: c.Repo, Ledger: c.Ledger, State: c.State, Verifier: c.Verifier, Local: c.Local, Me: c.Me, Now: c.Now, Progress: c.Progress}
-		if _, err := cancel.run(ctx, st, old.ID, old.Tip); err != nil {
-			return Result{}, err
-		}
+		// EVERY REASON TO REFUSE IS ASKED BEFORE ANYTHING IS STOPPED.
+		// This check used to sit after the cancel, so a replacement
+		// refused for a checked-out branch had already canceled the old
+		// change's verification: the person was told to switch away, and
+		// the in-flight build they were told nothing about was gone. A
+		// refusal must leave the world as it found it.
+		//
+		// It does not replace the transactional guards below, and is not
+		// meant to: a worktree can be created between this read and the
+		// Amend. It decides the ORDER of a failure that is certain, not
+		// the outcome of a race.
 		wt, err := c.Repo.CheckedOutAt(ctx, old.Branch)
 		if err != nil {
 			return Result{}, err // could not read the worktree list: band 1, its own words (rule 7)
 		}
 		if wt != "" {
 			return Result{}, change.ErrCheckedOut // 46: switch away first
+		}
+		cancel := Cancel{Repo: c.Repo, Ledger: c.Ledger, State: c.State, Verifier: c.Verifier, Local: c.Local, Me: c.Me, Now: c.Now, Progress: c.Progress}
+		if _, err := cancel.run(ctx, st, old.ID, old.Tip); err != nil {
+			return Result{}, err
 		}
 	}
 	// A BRANCH NOTHING OWNS IS NAMED, NOT COLLIDED WITH. MintIn's

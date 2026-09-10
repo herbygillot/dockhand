@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,11 +14,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/change"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/gittest"
+	"github.com/herbygillot/dockhand/internal/ledger"
 	"github.com/herbygillot/dockhand/internal/platform"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/run"
 	"github.com/herbygillot/dockhand/internal/statestore"
 	"github.com/herbygillot/dockhand/internal/tool"
+	"github.com/herbygillot/dockhand/internal/verify/verifytest"
 )
 
 var (
@@ -474,4 +478,58 @@ func TestDiscardClosesASupersededChange(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, record.ChangeDiscarded, s.Changes[string(first.Ref.ID())].State,
 		"discard reported success, so the record must not still be open")
+}
+
+// A REFUSED REPLACEMENT LEAVES THE WORLD AS IT FOUND IT. --replace over
+// a branch that is checked out is exit 46, and the refusal used to come
+// AFTER the old change's verification had been canceled: the person was
+// told to switch away, and the in-flight work they were told nothing
+// about was already gone. Reported by GPT with a reproduction.
+//
+// The first change must really ENQUEUE, or there is nothing for the
+// cancel to destroy and this passes against the very ordering it exists
+// to refuse — which is what the first draft of it did.
+func TestChangeRefusedReplacementCancelsNothing(t *testing.T) {
+	repo, st := fixture(t)
+	prov := &verifytest.Fake{}
+	first := enqueued(t, repo, st, prov, "jq", "1.8", "jq-1.8")
+
+	before, err := st.Read(t.Context())
+	require.NoError(t, err)
+	require.Len(t, before.Attempts, 1, "the fixture premise: work is in flight")
+	var was record.Attempt
+	for _, a := range before.Attempts {
+		was = a
+	}
+	require.NotEqual(t, record.Finished, was.Phase, "and it has not finished")
+
+	// Check the branch out in a worktree, which is what makes the
+	// replacement refusable.
+	wt := filepath.Join(t.TempDir(), "held")
+	out, werr := exec.Command("git", "-C", repo.Root, "worktree", "add", "--quiet", wt, "dockhand/jq-1.8").CombinedOutput()
+	require.NoError(t, werr, string(out))
+
+	op := Change{
+		Repo: repo, State: st, Ledger: ledger.Open(repo), Stage: &stager{}, Local: quiet{},
+		Verifier: has(prov), Me: me(), Now: now,
+	}
+	_, err = op.Run(t.Context(), ChangeRequest{
+		Prepared: preparedBump(t, repo, "jq", "1.9"), Delivery: Enqueue,
+		Platform: sequoia, Slug: "jq-1.9", Replace: Replace,
+	})
+	require.ErrorIs(t, err, change.ErrCheckedOut)
+
+	after, err := st.Read(t.Context())
+	require.NoError(t, err)
+	require.Len(t, after.Attempts, 1)
+	var still record.Attempt
+	for _, a := range after.Attempts {
+		still = a
+	}
+	assert.Equal(t, was.Phase, still.Phase,
+		"a refused replacement must not cancel the verification it refused to replace")
+	assert.Equal(t, record.ChangeMinted, after.Changes[string(first.Ref.ID())].State,
+		"nor close the change")
+	assert.True(t, repo.HasBranch(t.Context(), "dockhand/jq-1.8"), "nor take its branch")
+	assert.Len(t, after.Changes, 1, "and nothing new was minted")
 }
