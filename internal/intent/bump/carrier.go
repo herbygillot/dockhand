@@ -26,6 +26,14 @@ type carrier struct {
 	// justified by ONE context's evaluation while the variable it writes
 	// may be read by siblings, so the caller owes it the isolation guard.
 	ViaSet bool
+	// Result is the port as it evaluates with Write in the span: the
+	// consequence of the plan, observed rather than predicted. Its
+	// version is the target by construction — discover accepts no
+	// carrier that fails to deliver one — and the rest of it says what
+	// else the write moves. Distfiles that rename, checksum keys that
+	// rename with them, a worksrcdir following distname are all read
+	// here, from the evaluation that proved the carrier.
+	Result info.Values
 }
 
 // discover finds which span drives the version and what to write into it,
@@ -67,6 +75,41 @@ type carrier struct {
 // honest answer: writing a target into a truncated sha would be wrong.
 // The caller keeps its existing inexact road for those.
 func discover(ctx context.Context, h port.Handle, src []byte, cst *syntax.Script, vals info.Values, target string) (carrier, bool) {
+	found := prove(ctx, h, src, cst, vals, target)
+	if len(found) != 1 {
+		return carrier{}, false
+	}
+	// CONFIRM AGAINST THE TARGET ITSELF. prove works in the arithmetic
+	// of one probe's affixes; this asks the question actually being
+	// asked. It costs one more evaluation — of the single surviving
+	// candidate, not of each — and buys two things the arithmetic
+	// cannot give.
+	//
+	// The first is that "reaches the target" stops being an inference. A
+	// carrier whose literal reaches the version by any route other than
+	// plain concatenation — read twice, normalized on the way, folded
+	// into a comparison — passes the affix test on one probe and lands
+	// somewhere else on the write. Proven, and still wrong.
+	//
+	// The second is Result: what the whole port evaluates to once the
+	// write is made. Distfiles rename, checksum keys rename with them,
+	// worksrcdir follows distname. Read from one evaluation, those stop
+	// being predictions about a tree and become a description of it.
+	c := found[0]
+	res, ok := evaluateWith(ctx, h, src, c.Span, c.Write)
+	if !ok || res.Version != target {
+		return carrier{}, false
+	}
+	c.Result = res
+	return c, true
+}
+
+// prove is the substitution experiment itself: every candidate span
+// whose literal is shown to compose the version by concatenation, with
+// the literal that would express the target. It is separated from
+// discover so that what the arithmetic alone concludes can be measured
+// against what the confirming evaluation accepts.
+func prove(ctx context.Context, h port.Handle, src []byte, cst *syntax.Script, vals info.Values, target string) []carrier {
 	var found []carrier
 	for _, c := range portstyle.Candidates(src, cst, vals, info.FieldVersion) {
 		if !c.Literal {
@@ -77,7 +120,8 @@ func discover(ctx context.Context, h port.Handle, src []byte, cst *syntax.Script
 		if probe == "" || probe == lit {
 			continue
 		}
-		got, ok := evaluateWith(ctx, h, src, c.Span, probe)
+		res, ok := evaluateWith(ctx, h, src, c.Span, probe)
+		got := res.Version
 		if !ok || got == vals.Version {
 			continue // this span does not drive the version
 		}
@@ -97,34 +141,31 @@ func discover(ctx context.Context, h port.Handle, src []byte, cst *syntax.Script
 			ViaSet:   c.Style == portstyle.SetVariable,
 		})
 	}
-	if len(found) != 1 {
-		return carrier{}, false
-	}
-	return found[0], true
+	return found
 }
 
 // evaluateWith is one shadow evaluation of the source with a value
 // written over a span. A failure to evaluate is not a finding — a probe
 // value the Portfile refuses says nothing about the carrier — so it
 // reports only whether an answer arrived.
-func evaluateWith(ctx context.Context, h port.Handle, src []byte, span text.Span, value string) (string, bool) {
+func evaluateWith(ctx context.Context, h port.Handle, src []byte, span text.Span, value string) (info.Values, bool) {
 	probed, err := edit.Apply(src, []edit.Edit{{
 		Kind: edit.Version, Start: span.Start, End: span.End,
 		Old: span.Text(src), New: value, Reason: "carrier probe",
 	}})
 	if err != nil {
-		return "", false
+		return info.Values{}, false
 	}
 	shadow, cleanup, err := h.Shadow(probed)
 	if err != nil {
-		return "", false
+		return info.Values{}, false
 	}
 	defer cleanup()
 	sv, err := shadow.Values(ctx)
 	if err != nil || sv.Version == "" {
-		return "", false
+		return info.Values{}, false
 	}
-	return sv.Version, true
+	return sv, true
 }
 
 // probeValue is a value of the LITERAL'S OWN SHAPE, so a Portfile that
