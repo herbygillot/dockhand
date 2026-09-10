@@ -57,6 +57,13 @@ type Decline struct {
 	Type       DeclineType
 	Field      info.Field
 	Candidates []Candidate
+	// Elsewhere is what an INTERPRETER said about the value this
+	// locator could not find in the text, in one clause — where it is
+	// actually composed. Locating is a reading of source and cannot
+	// produce this; a caller holding an evaluator can, and fills it in.
+	// Empty when nobody asked, which is the common case and costs the
+	// decline nothing.
+	Elsewhere string
 }
 
 // Error implements the error interface. The remedy rides on the end,
@@ -103,6 +110,9 @@ func (d *Decline) Remedy() string {
 		}
 		return "the field is not written in a style dockhand recognizes; edit the Portfile by hand"
 	case NotLiteral:
+		if d.Elsewhere != "" {
+			return d.Elsewhere
+		}
 		return "the value is computed rather than written; edit what computes it"
 	}
 	return ""

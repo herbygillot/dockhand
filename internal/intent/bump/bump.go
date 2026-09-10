@@ -153,7 +153,12 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 		}
 		cand, ok := lastLiteralCandidate(pd.Candidates)
 		if !ok {
-			return nil, lerr
+			// Nothing in the text to write into and nothing proven by
+			// substitution: the run ends here, so the last thing worth
+			// spending an evaluation on is telling the user WHERE the
+			// version comes from instead of that it is computed.
+			pd.Elsewhere = elsewhere(ctx, h, src, cst, vals)
+			return nil, pd
 		}
 		carrier, style, exact = cand.Span, cand.Style, false
 	}
@@ -203,6 +208,15 @@ func (b Bump) Plan(ctx context.Context, h port.Handle, fetch distfile.Fetcher) (
 	if lerr != nil && moving && !proven {
 		if err := probeCarrier(ctx, h, src, carrier, b.Version, vals.Version); err != nil {
 			slog.Debug("counterfactual probe failed", "span", carrier, "err", err)
+			var pd *portstyle.Decline
+			if errors.As(lerr, &pd) && pd.Type == portstyle.NotLiteral {
+				// The candidate the text offered does not drive the
+				// version. Whether the real carrier is a transform in
+				// this file or a name from outside it is the question
+				// the user is about to ask, so answer it here.
+				pd.Elsewhere = elsewhere(ctx, h, src, cst, vals)
+				return nil, pd
+			}
 			return nil, lerr
 		}
 		slog.Debug("carrier proven by counterfactual", "style", style.String(), "span", carrier)
