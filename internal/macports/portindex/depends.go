@@ -1,6 +1,7 @@
 package portindex
 
 import (
+	"errors"
 	"sort"
 	"strings"
 
@@ -264,4 +265,45 @@ func lowerFields(v string) []string {
 	out := strings.Fields(strings.ToLower(v))
 	sort.Strings(out)
 	return out
+}
+
+// Requires is the forward lookup: for each name asked about, the ports
+// it declares a dependency on, lowercased and sorted.
+//
+// It is the mirror of Dependents and it exists because the two questions
+// have different costs. "Who depends on X" cannot be answered without
+// reading every entry, and Dependents walks the whole index to build the
+// reverse map. "What does X depend on" is one entry, and a caller with a
+// roster of a dozen members should pay a dozen lookups rather than a
+// walk of twenty thousand.
+//
+// A name the index does not hold is absent from the result rather than
+// present and empty: "this port declares no dependencies" and "this
+// tree has never heard of it" are different answers and a caller
+// ordering a build cares which it got. Edges are reported for the
+// depends_* keys Dependent reports, so the two agree about what a
+// dependency is.
+func (ix *Index) Requires(names []string) (map[string][]string, []Unread, error) {
+	out := make(map[string][]string, len(names))
+	var unread []Unread
+	for _, name := range names {
+		e, err := ix.Lookup(name)
+		if err != nil {
+			if errors.Is(err, ErrNotIndexed) {
+				continue
+			}
+			return nil, unread, err
+		}
+		edges, bad := e.dependencyEdges()
+		for _, key := range bad {
+			unread = append(unread, Unread{Port: e.Name, Portdir: e.Portdir, Field: key})
+		}
+		req := make([]string, 0, len(edges))
+		for target := range edges {
+			req = append(req, target)
+		}
+		sort.Strings(req)
+		out[strings.ToLower(name)] = req
+	}
+	return out, unread, nil
 }

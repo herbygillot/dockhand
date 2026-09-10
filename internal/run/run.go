@@ -298,6 +298,16 @@ type Local interface {
 	// discarded. A cue is a fact about the port as this change left it,
 	// which only the commit can answer.
 	Instructions(ctx context.Context, sha, portdir string) ([]dependents.Instruction, error)
+	// Requires is the FORWARD lookup, and it is here because ordering a
+	// cohort's builds is a different question from proposing one.
+	// Dependents answers "who needs X" and cannot do it without reading
+	// every entry; this answers "what does X need" for a roster of a
+	// dozen, which is a dozen lookups.
+	//
+	// A name the index does not hold is absent from the answer, so a
+	// caller can tell a port that declares nothing from one this tree
+	// has never heard of.
+	Requires(ctx context.Context, ports []string) (map[string][]string, error)
 }
 
 // Stager materializes the portdirs an attempt will build from the commit

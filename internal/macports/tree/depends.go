@@ -102,6 +102,32 @@ func (t *Tree) buildDependents() (portindex.Reverse, error) {
 	return idx.Dependents()
 }
 
+// Requires is the forward lookup for a set of ports: what each declares
+// a dependency on, lowercased and sorted.
+//
+// It takes the same lock and reaches the same index as Dependents, and
+// it deliberately does NOT go through the cached reverse map. That map
+// costs a full pass over a 25 MB PortIndex, and the question a build
+// order asks — what do these dozen members need — is a dozen lookups.
+// A caller that ordered a cohort by paying for the reverse index would
+// be paying the settle survey's price at every mint.
+//
+// Unread fields are dropped rather than returned: a member whose
+// depends_* would not parse contributes no edges, which is one build
+// that runs when it might have been skipped, and the reverse index's
+// rule — a missing row is a missing cohort member — does not apply to
+// an ordering that is an optimization.
+func (t *Tree) Requires(ports []string) (map[string][]string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	idx, err := t.lockedIndex()
+	if err != nil {
+		return nil, t.needsIndex(err)
+	}
+	req, _, err := idx.Requires(ports)
+	return req, err
+}
+
 // Maintained returns the tree's maintainer index: normalized maintainer
 // key to the ports naming it, sorted. Built and cached on the same
 // terms as Dependents, off the same kind of full pass.

@@ -42,6 +42,18 @@ func (l local) Dependents(_ context.Context, portName string) ([]portindex.Depen
 	return rev.ByPort[strings.ToLower(portName)], rev.Unread, nil
 }
 
+// Requires is the forward dependency lookup, for ordering a cohort's
+// builds. A checkout with no tree acquired answers nothing, and the
+// caller treats that as "no ordering known" rather than as a failure:
+// the graph makes a build order better and its absence is what shipped
+// until now.
+func (l local) Requires(_ context.Context, ports []string) (map[string][]string, error) {
+	if l.tr == nil {
+		return nil, errNotAcquired{"a ports tree"}
+	}
+	return l.tr.Requires(ports)
+}
+
 // Instructions is the maintainer's own cues: a revision-bump comment in
 // the Portfile, read from the tree as it stands and TRANSCRIBED rather
 // than acted on.

@@ -37,6 +37,12 @@ func (l *local) Dependents(_ context.Context, port string) ([]portindex.Dependen
 	return l.rows, l.unread, l.err
 }
 
+// Nothing in this package asks the forward lookup: proposing a cohort
+// is the reverse question. It is here so the fake satisfies Local.
+func (l *local) Requires(context.Context, []string) (map[string][]string, error) {
+	return nil, nil
+}
+
 func (l *local) Instructions(_ context.Context, sha, portdir string) ([]dependents.Instruction, error) {
 	l.read = append(l.read, sha+":"+portdir)
 	return l.quotes, l.cueErr
