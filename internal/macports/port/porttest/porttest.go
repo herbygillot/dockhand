@@ -44,6 +44,7 @@ type Oracle struct {
 	OnSubports  func(ctx context.Context, portdir string) ([]string, error)
 	OnOptions   func(ctx context.Context, portdir, subport string, variants info.VariantSet, names ...string) (map[string]string, error)
 	OnFetchInfo func(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (info.FetchInfo, error)
+	OnGlobals   func(ctx context.Context, portdir, subport string, variants info.VariantSet) (map[string]string, error)
 }
 
 // The fake is held to the same interface as the evaluator, so a
@@ -88,6 +89,18 @@ func (o *Oracle) FetchInfo(ctx context.Context, portdir, subport string, variant
 		return info.FetchInfo{}, unscripted("FetchInfo", portdir, subport)
 	}
 	return o.OnFetchInfo(ctx, portdir, subport, variants, noMirrors)
+}
+
+// Globals reports what an interpreter would hold after evaluating a
+// context. A scripted oracle has no interpreter, so this is unscripted
+// until a test says otherwise — and a caller that treats the error as
+// "nothing to add" is the correct reading everywhere it is used: the
+// answer enriches a diagnostic and decides nothing.
+func (o *Oracle) Globals(ctx context.Context, portdir, subport string, variants info.VariantSet) (map[string]string, error) {
+	if o.OnGlobals == nil {
+		return nil, unscripted("Globals", portdir, subport)
+	}
+	return o.OnGlobals(ctx, portdir, subport, variants)
 }
 
 func unscripted(method, portdir, subport string) error {

@@ -178,3 +178,43 @@ proc livecheckrun {portdir subport dest} {
 
 # vercmp exposes MacPorts' own version ordering.
 ::tclrpc::register vercmp vercmp
+
+# globals reports what the worker interpreter HOLDS after evaluating a
+# port, rather than what its Portfile says. Options are plain Tcl
+# globals in port1.0 — portutil.tcl's `option` proc is documented in its
+# own source as transparently using them — so the interpreter that
+# finished evaluating a Portfile is a complete, already-computed record
+# of every name that participated, whatever file set it.
+#
+# That last part is the reason this exists. A carrier reached only
+# through a PortGroup is invisible to any search of the Portfile's own
+# text, and so is one composed from the subport name; both are ordinary
+# entries here. The caller can then say "the carrier is X and it is not
+# in this file" instead of "no candidate moved the version".
+#
+# Array elements are skipped: they are namespaced state (urlmap, the
+# depends_* accumulators) rather than options, and flattening them would
+# bury the scalars the caller is looking for. Values longer than max are
+# skipped too — a carrier is a version fragment, and long_description is
+# not one.
+proc portglobals {portdir {subport ""} {variations {}} {max 64}} {
+    set opts {}
+    if {$subport ne ""} {
+        set opts [list subport $subport]
+    }
+    set handle [mportopen "file://$portdir" $opts $variations]
+    set worker [ditem_key $handle workername]
+    set out [$worker eval [list apply {{max} {
+        set out [dict create]
+        foreach g [lsort [info globals]] {
+            if {[array exists ::$g]} continue
+            if {[catch {set v [set ::$g]}]} continue
+            if {$v eq "" || [string length $v] > $max} continue
+            dict set out $g $v
+        }
+        return $out
+    }} $max]]
+    mportclose $handle
+    return $out
+}
+::tclrpc::register globals portglobals

@@ -35,6 +35,9 @@ func (o oracle) Options(context.Context, string, string, info.VariantSet, ...str
 func (o oracle) FetchInfo(context.Context, string, string, info.VariantSet, bool) (info.FetchInfo, error) {
 	return info.FetchInfo{}, nil
 }
+func (o oracle) Globals(context.Context, string, string, info.VariantSet) (map[string]string, error) {
+	return nil, nil
+}
 
 var _ port.Oracle = oracle{}
 

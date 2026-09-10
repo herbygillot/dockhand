@@ -68,6 +68,9 @@ func (scriptedOracle) Subports(context.Context, string) ([]string, error) {
 func (scriptedOracle) FetchInfo(context.Context, string, string, info.VariantSet, bool) (info.FetchInfo, error) {
 	return info.FetchInfo{}, errors.New("scriptedOracle: FetchInfo not scripted")
 }
+func (scriptedOracle) Globals(context.Context, string, string, info.VariantSet) (map[string]string, error) {
+	return nil, errors.New("scriptedOracle: Globals not scripted")
+}
 
 var _ port.Oracle = scriptedOracle{}
 

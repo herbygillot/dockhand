@@ -54,6 +54,12 @@ type Oracle interface {
 	Options(ctx context.Context, portdir, subport string, variants info.VariantSet, names ...string) (map[string]string, error)
 	// FetchInfo reports a context's fetch surface.
 	FetchInfo(ctx context.Context, portdir, subport string, variants info.VariantSet, noMirrors bool) (info.FetchInfo, error)
+	// Globals reports what the interpreter HOLDS after evaluating a
+	// context, which is not the same question Options asks. Options
+	// names what it wants; this asks what is there, and so reaches
+	// values whose only mention in the Portfile's text is the one that
+	// is missing.
+	Globals(ctx context.Context, portdir, subport string, variants info.VariantSet) (map[string]string, error)
 }
 
 // The evaluator is the oracle, unchanged. A signature that drifts on
@@ -137,6 +143,13 @@ func (h Handle) SubportNames(ctx context.Context) ([]string, error) {
 // options the port does not have.
 func (h Handle) Options(ctx context.Context, names ...string) (map[string]string, error) {
 	return h.Ev.Options(ctx, h.Target.Portdir, h.Target.Subport, h.Variants, names...)
+}
+
+// Globals reports every scalar global this context's interpreter holds
+// after evaluating it — the names that took part in the evaluation,
+// whatever file set them.
+func (h Handle) Globals(ctx context.Context) (map[string]string, error) {
+	return h.Ev.Globals(ctx, h.Target.Portdir, h.Target.Subport, h.Variants)
 }
 
 // FetchInfo reports this context's fetch surface. noMirrors skips the
