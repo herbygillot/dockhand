@@ -15,6 +15,18 @@ const (
 	// consumers take a prefix rather than reading this directly.
 	DefaultPrefix = "/opt/local"
 
+	// ResourcesDir is the ports tree directory MacPorts reads its own
+	// configuration out of — archive sites, mirror sites, port groups.
+	// It is a fact about a TREE's layout, which is why it sits beside
+	// PortfileName: two roads need it for reasons that have nothing to
+	// do with each other. A staged tree without it can reach no binary
+	// archive, because portarchivefetch resolves archive_sites.tcl under
+	// the port's own tree with the fallback DISABLED. A shadow without
+	// it silently resolves port groups against the installation's
+	// default tree instead, because getportresourcepath's fallback is
+	// enabled — the same absence, one loud and one quiet.
+	ResourcesDir = "_resources"
+
 	// PortfileName is the file name of a port's definition within its
 	// portdir.
 	PortfileName = "Portfile"

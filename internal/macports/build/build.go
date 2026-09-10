@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/info"
 	"github.com/herbygillot/dockhand/internal/platform"
 )
@@ -143,12 +144,12 @@ func ParseTally(out string) (Tally, error) {
 	return Tally{Parsed: parsed, Succeeded: succeeded, Failed: failed}, nil
 }
 
-// ResourcesDir is the ports tree directory MacPorts reads its own
-// configuration out of — archive sites, mirror sites, port groups. A
-// staged tree without it is not a ports tree: portarchivefetch resolves
-// archive_sites.tcl under the port's own tree with the fallback
-// disabled, so a port served without it can reach no archive at all.
-const ResourcesDir = "_resources"
+// ResourcesDir is the tree's own resource directory, spelled once in
+// macports. A staged tree without it is not a ports tree:
+// portarchivefetch resolves archive_sites.tcl under the port's own tree
+// with the fallback disabled, so a port served without it can reach no
+// archive at all.
+const ResourcesDir = macports.ResourcesDir
 
 // SourcesLine is the sources.conf entry for a local tree. nosync says
 // the installation must not try to update it: an overlay is staged, not
