@@ -67,6 +67,24 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 		})
 	}
 
+	// A VALUE WRITTEN TWICE IN ONE SCOPE HAS NO UNIQUE PLACE TO GO.
+	// rewrite.Edits locates by value and takes the FIRST match, so a
+	// digest appearing in two checksums commands the same scope reaches
+	// sends its replacement to whichever comes first in the file —
+	// correct only by luck, and silently wrong otherwise.
+	//
+	// Scope is most of the defence and it was measured rather than
+	// assumed: a rewrite runs under ScopeOf, which reaches conditionals
+	// and the context's own subport and no other, so sibling subports
+	// holding identical digests never compete. What survives that is
+	// small — LyX keeps two byte-identical blocks inside two branches
+	// of one `if` — and for those the honest answer is to refuse rather
+	// than to write somewhere plausible.
+	if dup, ok := ambiguous(src, cst, portstyle.ScopeOf(src, contextName), reps); ok {
+		return nil, false, &plan.Decline{Type: plan.ChecksumsNotLocated,
+			Detail: fmt.Sprintf("%q is written in more than one checksums command in this context, so there is no one place to rewrite it", dup)}
+	}
+
 	edits, unlocated, viaSet := rewrite.Edits(src, cst, portstyle.ScopeOf(src, contextName), contextName, reps)
 	for _, u := range unlocated {
 		if u.Kind == edit.DistfileName {
@@ -81,4 +99,36 @@ func checksumEdits(src []byte, cst *syntax.Script, contextName string, old []che
 			Detail: fmt.Sprintf("recorded value %q not found as a literal (%s)", u.Old, u.Reason)}
 	}
 	return edits, viaSet, nil
+}
+
+// ambiguous reports a replacement whose old value is written more than
+// once among the checksums commands a scope reaches, and so cannot be
+// rewritten in a place anyone could defend.
+//
+// Every value a replacement carries is checked, sizes included. Two
+// distfiles of identical length is not a digest collision and it is the
+// same problem: the rewrite would put one file's new size where the
+// other's belongs.
+//
+// A value written in a `set` rather than in the command has its own
+// aliasing guard inside rewrite, which is where that knowledge lives;
+// this is only about the commands themselves.
+func ambiguous(src []byte, cst *syntax.Script, scope func(syntax.Command) bool, reps []checksums.Replacement) (string, bool) {
+	seen := map[string]int{}
+	for cmd := range cst.Commands(src, scope) {
+		if n, ok := cmd.Name(src); !ok || (n != "checksums" && n != "checksums-append") {
+			continue
+		}
+		for _, w := range cmd.Words[1:] {
+			if lit, ok := w.Literal(src); ok {
+				seen[lit]++
+			}
+		}
+	}
+	for _, r := range reps {
+		if r.New != r.Old && seen[r.Old] > 1 {
+			return r.Old, true
+		}
+	}
+	return "", false
 }

@@ -33,7 +33,11 @@ const (
 	// ref straddle), and bumping it alone would fetch the old source.
 	FetchNotDriven
 	// ChecksumsNotLocated means the recorded checksums could not all be
-	// matched to editable literal spans.
+	// matched to editable literal spans — either because a value is not
+	// written literally, or because it is written literally MORE THAN
+	// ONCE in one scope and no rewrite could say which occurrence was
+	// meant. Both are the same refusal: dockhand knows what the value
+	// must become and not where to put it.
 	ChecksumsNotLocated
 	// SubportsChanged means the shadow evaluation showed subports
 	// appearing or disappearing — beyond what a bump may do.
