@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
@@ -26,10 +25,18 @@ type Options struct {
 	Diff     bool
 }
 
-func Run(ctx context.Context, args []string, streams Streams, services *app.Services) error {
-	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
-		_, err := fmt.Fprintln(streams.Out, "Dockhand v2 groundwork. Command workflows are not wired yet.")
+func Run(ctx context.Context, args []string, streams Streams, config app.Config) error {
+	root, err := NewRoot(config)
+	if err != nil {
 		return err
 	}
+	root.SetArgs(append([]string{}, args...))
+	root.SetIn(streams.In)
+	root.SetOut(streams.Out)
+	root.SetErr(streams.Err)
+	return root.ExecuteContext(ctx)
+}
+
+func execute(ctx context.Context, command string, args []string, options Options, streams Streams, services *app.Services) error {
 	return ErrNotImplemented
 }

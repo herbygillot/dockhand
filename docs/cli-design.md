@@ -2,6 +2,26 @@
 
 See [architecture](architecture.md) for driver ownership, job milestones, and recovery, and [principles](principles.md) for the design commitments behind this flow.
 
+## Global options
+
+`--lockfile PATH` (short alias `-L PATH`) selects the ledger writer lockfile, defaulting to `$HOME/.dockhand/ledger.lock`. Both `--lockfile PATH` and `--lockfile=PATH` work before or after the command, as does the short alias. The `--` separator ends global option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty lockfile is rejected.
+
+```sh
+dockhand --lockfile /path/to/shared/ledger.lock status
+dockhand verify jq --lockfile=/path/to/shared/ledger.lock
+dockhand status -L /path/to/shared/ledger.lock
+```
+
+Dockhand has no config-directory setting and does not consult `DOCKHAND_CONFIG_DIR`. The ledger creates the lockfile and any missing parent directories when it is initialized, without acquiring the writer lock. All invocations that should serialize their writes must select the same lockfile. Ledger records remain in the ports repository. Help displays the resolved lockfile path and creates no directories or files.
+
+## Command parsing and help
+
+The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--lockfile` / `-L` and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
+
+`dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not initialize a ledger or require a Git repository or provider, and create no directories or files.
+
+The phase-one command names and flags are registered now, but their workflow handlers still return explicit not-implemented errors. Parsing `--json` does not yet implement JSON result rendering. Target resolution, revision-bound requests, and workflow execution will be connected through the shared workflow layer as those capabilities become available.
+
 ## The flow
 
 The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified. If `-P` / `--publish` is specified, the branch will ultimately be submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports).

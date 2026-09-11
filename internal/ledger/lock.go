@@ -12,14 +12,28 @@ import (
 
 var ErrLockTimeout = errors.New("ledger: timed out waiting for writer lock")
 
+func initializeLockfile(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("ledger: creating lockfile directory: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("ledger: opening writer lock: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("ledger: closing writer lock: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) lock(ctx context.Context) (*os.File, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.options.LockTimeout)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(s.repo.CommonDir, ".dockhand-ledger.lock")
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	path := s.options.Lockfile
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, fmt.Errorf("ledger: opening writer lock: %w", err)
 	}

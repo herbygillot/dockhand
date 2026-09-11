@@ -23,6 +23,7 @@ var (
 const stateFile = "state.json"
 
 type Options struct {
+	Lockfile         string
 	LockTimeout      time.Duration
 	OperationTimeout time.Duration
 }
@@ -36,6 +37,10 @@ func New(repo *git.Repository, options Options) (*Store, error) {
 	if repo == nil || !filepath.IsAbs(repo.CommonDir) || !filepath.IsAbs(repo.Root) {
 		return nil, errors.New("ledger: an opened repository is required")
 	}
+	if !filepath.IsAbs(options.Lockfile) {
+		return nil, errors.New("ledger: an absolute lockfile path is required")
+	}
+	options.Lockfile = filepath.Clean(options.Lockfile)
 	if options.LockTimeout < 0 || options.OperationTimeout < 0 {
 		return nil, errors.New("ledger: timeouts must not be negative")
 	}
@@ -44,6 +49,9 @@ func New(repo *git.Repository, options Options) (*Store, error) {
 	}
 	if options.OperationTimeout == 0 {
 		options.OperationTimeout = 30 * time.Second
+	}
+	if err := initializeLockfile(options.Lockfile); err != nil {
+		return nil, err
 	}
 	return &Store{repo: *repo, options: options}, nil
 }

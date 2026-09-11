@@ -8,6 +8,16 @@ Dockhand uses the user's global Git configuration for defaults. Repository Git c
 
 Accepted jobs record the effective choices needed to explain and reproduce their work. A later configuration change must not silently change an accepted job's source, build question, or requested destination. Credentials remain outside durable job records.
 
+### Ledger lockfile
+
+The global `--lockfile PATH` option, also available as `-L PATH`, selects the ledger writer lock. It defaults to `$HOME/.dockhand/ledger.lock`. There is no application config-directory setting or startup directory initialization; `.dockhand` is simply part of this default path. `DOCKHAND_CONFIG_DIR` is not consulted.
+
+Cobra owns the default and parses the path before handing it through `app.Config.Lockfile` and `app.Build` to `ledger.Options.Lockfile`. The option can appear before or after the command, up to the `--` argument separator. Relative paths resolve against the invocation's working directory, and an explicitly empty lockfile argument is an error. The ledger has no environment lookup or hardcoded lockfile location; its constructor requires an explicit absolute path.
+
+`ledger.New` creates any missing parent directories with mode 0700 and opens or creates the lockfile with mode 0600, then closes it. Existing directories and files retain their permissions, and an existing lockfile is neither truncated nor replaced. Initialization does not acquire the writer lock or create ledger records. It can therefore finish while another process holds the lock. Initialization errors are returned before a store is available. Writes subsequently open the existing file and acquire the bounded advisory lock; reads do not acquire it. Help and completion do not construct a ledger, create directories, or require a Git repository or provider.
+
+The default lock is shared by invocations using the same home directory. Processes intended to serialize their writes must use the same lockfile, including invocations from linked worktrees. A custom path changes which writers share that advisory lock; Git's expected-ref checks remain in force independently. The ledger data itself stays in the ports repository.
+
 ## The Ledger
 
 Dockhand uses Git for its authoritative workflow records, without a separate database service or database file. A dedicated ref, `refs/dockhand/state`, holds structured records for tracked changes, their revisions, jobs, attempts, resource ownership, and publication. These records live in the same repository as the change branches. Linked worktrees share the ledger through the Git common directory.
@@ -16,13 +26,13 @@ Git notes expose commit-associated summaries derived from the authoritative reco
 
 Logs, downloaded sources, build artifacts, and VM images may live outside Git. The ledger records their identities, locations, and retention obligations where needed. Losing an artifact must not erase the recorded outcome; where that artifact is required for further work, its absence prevents reuse.
 
-Ledger mutations use a common lock in the Git common directory and compare-and-set ref updates. Related records and branch or pin ref changes that must land together are committed in one ref transaction. Records that refer to source objects must keep those objects reachable for as long as recovery or reuse requires them; a SHA written inside JSON is not itself a Git reachability guarantee.
+Ledger mutations use the configured writer lock and compare-and-set ref updates. Related records and branch or pin ref changes that must land together are committed in one ref transaction. Records that refer to source objects must keep those objects reachable for as long as recovery or reuse requires them; a SHA written inside JSON is not itself a Git reachability guarantee.
 
 ### Snapshot reads and write transactions
 
 The initial ledger format is a schema-versioned `state.json` blob in the tree of each state commit. `Read` captures the state ref once, then reads the commit, tree, and document using immutable object IDs. It returns a caller-owned `Snapshot` with the captured commit ID as its version. Reads do not acquire or create the writer lock, query providers, or update records. A missing state ref is distinct from unreadable objects, malformed records, and an unsupported schema.
 
-`Update` acquires an advisory lock at `$GIT_COMMON_DIR/.dockhand-ledger.lock`, reads current state, invokes its mutation callback once, writes the new objects, and commits guarded ref changes. It never automatically replays a callback. The previous state commit is the new commit's parent; an unchanged state without ref effects does not produce another commit. The ledger commit uses a Dockhand identity independent of the user's commit identity. Git plumbing uses command-local hook, signing, and fsync settings without changing repository configuration or the checkout.
+`Update` acquires an advisory lock at the path supplied in `ledger.Options.Lockfile`, reads current state, invokes its mutation callback once, writes the new objects, and commits guarded ref changes. It never automatically replays a callback. The previous state commit is the new commit's parent; an unchanged state without ref effects does not produce another commit. The ledger commit uses a Dockhand identity independent of the user's commit identity. Git plumbing uses command-local hook, signing, and fsync settings without changing repository configuration or the checkout.
 
 The callback receives a transaction context and the current records. Callbacks run synchronously and must only validate and mutate state. Preparation, provider calls, publication, and other external work happen outside the transaction. Nested writes using the transaction context are rejected. Carry that context into calls made from the callback; replacing it with an unrelated context bypasses this nesting check and may cause a bounded lock wait.
 
