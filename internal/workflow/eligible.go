@@ -3,7 +3,6 @@ package workflow
 import (
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
@@ -28,7 +27,7 @@ func jobEligible(job record.Job, attempts []record.Attempt, now time.Time) bool 
 
 // cleanupEligible preserves invalid and missing-owner cases for the cleanup
 // handler to report; only known ineligible resources can be skipped.
-func cleanupEligible(resource record.Resource, attempts map[record.AttemptID]record.Attempt, now time.Time) bool {
+func cleanupEligible(resource record.Resource, attempt record.Attempt, now time.Time) bool {
 	if resource.State == record.ResourceReleased || resource.State == record.ResourceActive || live(resource.Claim, now) || !due(resource.RetryAt, now) {
 		return false
 	}
@@ -41,30 +40,5 @@ func cleanupEligible(resource record.Resource, attempts map[record.AttemptID]rec
 	default:
 		return true
 	}
-	attempt, exists := attempts[resource.AttemptID]
-	return !exists || attemptTerminal(attempt.State)
-}
-
-func controlEligible(request record.ControlRequest, state ledger.State, selected map[record.JobID]bool) bool {
-	if request.Kind != record.Cancel || request.AppliedAt != nil {
-		return false
-	}
-	applied := true
-	for _, id := range request.Jobs {
-		job, exists := state.Jobs[id]
-		if !exists {
-			return true
-		}
-		if job.CancelRequestedAt == nil && !jobTerminal(job.State) {
-			if selected[id] {
-				return true
-			}
-			applied = false
-		}
-	}
-	return applied
-}
-
-func resourceSelected(resource record.Resource, state ledger.State, selected map[record.JobID]bool, all bool) bool {
-	return all || selected[state.Attempts[resource.AttemptID].JobID]
+	return attemptTerminal(attempt.State)
 }

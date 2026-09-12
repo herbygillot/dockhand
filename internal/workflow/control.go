@@ -2,13 +2,14 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state"
 )
 
 // Control durably records an idempotent cancellation request for explicit jobs.
@@ -18,10 +19,10 @@ import (
 // Repeated job IDs and their order do not change intent. An equivalent retry is
 // a no-op; reuse of an ID for other intent returns ErrRequestConflict. A successful
 // call records intent only. A later Cycle applies it and reconciles any remote
-// cancellation. After an uncertain ledger commit, retry the original request.
+// cancellation. After an uncertain state commit, retry the original request.
 func (e *Engine) Control(ctx context.Context, request record.ControlRequest) error {
-	if e == nil || e.Ledger == nil {
-		return ErrNoLedger
+	if e == nil || e.State == nil || e.Repository == "" {
+		return ErrNoState
 	}
 	if request.Kind != record.Cancel {
 		return fmt.Errorf("%w: control %s", ErrUnsupportedAction, request.Kind)
@@ -37,11 +38,16 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 			return fmt.Errorf("%w: invalid job ID", ErrInvalidRequest)
 		}
 	}
-	return e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
-		if _, exists := tx.State.Requests[request.ID]; exists {
-			return ErrRequestConflict
-		}
-		if previous, exists := tx.State.Controls[request.ID]; exists {
+	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		accepted, err := tx.Request(ctx, request.ID)
+		if err == nil {
+			if accepted.Kind != record.CancelRequest {
+				return ErrRequestConflict
+			}
+			previous, err := tx.Control(ctx, request.ID)
+			if err != nil {
+				return err
+			}
 			previous.SubmittedAt = request.SubmittedAt
 			previous.AppliedAt = nil
 			if !reflect.DeepEqual(previous, request) {
@@ -49,59 +55,58 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 			}
 			return nil
 		}
+		if !errors.Is(err, state.ErrNotFound) {
+			return err
+		}
 		for _, id := range request.Jobs {
-			if _, exists := tx.State.Jobs[id]; !exists {
-				return fmt.Errorf("%w: job %s", ErrNotFound, id)
+			if _, err = tx.Job(ctx, id); err != nil {
+				return err
 			}
 		}
 		request.SubmittedAt = e.now()
-		if request.SubmittedAt.IsZero() {
-			return fmt.Errorf("workflow: control clock returned a zero time")
-		}
-		tx.State.Controls[request.ID] = request
-		return nil
+		return tx.PutControl(ctx, request)
 	})
 }
 
-// applyControls marks cancellation intent on selected nonterminal jobs. It marks
-// a control applied once all its jobs have received that intent or are terminal,
-// even when satisfying one control requires several differently scoped cycles.
-// This transaction never calls the provider or claims that a remote run stopped.
-func (e *Engine) applyControls(ctx context.Context, selected map[record.JobID]bool, controls []record.RequestID) (bool, error) {
-	changed := false
-	err := e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
-		now := e.now()
-		for _, id := range controls {
-			request, exists := tx.State.Controls[id]
-			if !exists {
-				continue
+func (e *Engine) applyControls(ctx context.Context, scope Scope, controls []record.ControlRequest) error {
+	selected := map[record.JobID]bool{}
+	for _, id := range scope.Jobs {
+		selected[id] = true
+	}
+	for _, candidate := range controls {
+		err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+			current, err := tx.Control(ctx, candidate.ID)
+			if err != nil {
+				return err
 			}
-			if request.Kind != record.Cancel || request.AppliedAt != nil {
-				continue
+			if current.AppliedAt != nil {
+				return nil
 			}
-			applied := true
-			for _, jobID := range request.Jobs {
-				job, exists := tx.State.Jobs[jobID]
-				if !exists {
-					return fmt.Errorf("%w: control %s names missing job %s", ledger.ErrInvalidState, id, jobID)
+			now := e.now()
+			for _, id := range current.Jobs {
+				job, err := tx.Job(ctx, id)
+				if err != nil {
+					return err
 				}
+				applicable := scope.All || selected[id]
 				if job.CancelRequestedAt == nil && !jobTerminal(job.State) {
-					if selected[jobID] {
-						job.CancelRequestedAt = &now
-						tx.State.Jobs[jobID] = job
-						changed = true
-					} else {
-						applied = false
+					if !applicable {
+						continue
+					}
+					job.CancelRequestedAt = &now
+					if err = tx.PutJob(ctx, job); err != nil {
+						return err
 					}
 				}
+				if err = tx.ApplyControl(ctx, current.ID, id, now); err != nil {
+					return err
+				}
 			}
-			if applied {
-				request.AppliedAt = &now
-				tx.State.Controls[id] = request
-				changed = true
-			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-		return nil
-	})
-	return changed, err
+	}
+	return nil
 }

@@ -4,10 +4,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
@@ -15,20 +15,20 @@ var (
 	// ErrNotImplemented identifies work whose executor is not implemented.
 	// Cycle reports it as a job problem without discarding the accepted request.
 	ErrNotImplemented = errors.New("workflow: job execution is not implemented")
-	// ErrNoLedger means the engine or its ledger dependency is missing.
-	ErrNoLedger = errors.New("workflow: ledger is required")
+	// ErrNoState means the engine or its state dependency is missing.
+	ErrNoState = errors.New("workflow: state store and repository are required")
 	// ErrInvalidRequest means a request violates the intake contract.
 	ErrInvalidRequest = errors.New("workflow: invalid request")
 	// ErrUnsupportedAction means intake does not yet support the requested action or control.
 	ErrUnsupportedAction = errors.New("workflow: action intake is not implemented")
 	// ErrRequestConflict means a request ID already identifies different intent.
 	// Job and control requests share the workflow request-ID namespace.
-	ErrRequestConflict = errors.New("workflow: request ID already has different intent")
+	ErrRequestConflict = state.ErrConflict
 	// ErrStaleRevision means a modifying or publication request selected
 	// a revision that is no longer the change's current revision.
 	ErrStaleRevision = errors.New("workflow: selected revision is stale")
 	// ErrNotFound means a requested job or referenced record does not exist.
-	ErrNotFound = errors.New("workflow: record not found")
+	ErrNotFound = state.ErrNotFound
 	// ErrClaimLost means an action can no longer adopt its result because
 	// its claim expired, was replaced, or no longer matches the current state.
 	// Cycle reports this as a problem and continues with independent work.
@@ -38,12 +38,13 @@ var (
 	ErrInvalidScope = errors.New("workflow: select all jobs or explicit job IDs")
 )
 
-// Engine owns request intake, workflow advancement, and ledger projections.
+// Engine owns request intake, workflow advancement, and state projections.
 // Configure it before use. Concurrent callers must leave its fields unchanged
 // and provide dependencies and a clock that support concurrent calls.
 type Engine struct {
-	// Ledger is required by every public operation.
-	Ledger *ledger.Store
+	// State is required by every public operation.
+	State      state.Store
+	Repository record.RepositoryID
 	// Preparer is reserved for the source-preparation execution path.
 	Preparer *prepare.Service
 	// Planner is reserved for broader coverage planning. The current cycle
@@ -73,7 +74,7 @@ type Engine struct {
 
 // Scope selects all jobs or a nonempty list of explicit job IDs. Those forms
 // are mutually exclusive. Status and Cycle collapse duplicate IDs and reject
-// unknown jobs. All also exposes resources without an owning attempt.
+// unknown jobs. All is limited to the engine's registered repository.
 type Scope struct {
 	All  bool
 	Jobs []record.JobID
@@ -82,7 +83,7 @@ type Scope struct {
 // now supplies a UTC timestamp without modifying the configured clock.
 func (e *Engine) now() time.Time {
 	if e.Now != nil {
-		return e.Now().UTC()
+		return e.Now().UTC().Truncate(time.Millisecond)
 	}
-	return time.Now().UTC()
+	return time.Now().UTC().Truncate(time.Millisecond)
 }

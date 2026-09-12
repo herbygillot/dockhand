@@ -21,14 +21,10 @@ func (r *runtime) statusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show recorded workflow status",
-		Long:  "Show a ledger snapshot, including recorded jobs, verification, publication, and resource cleanup. This command does not advance work or refresh provider or pull request state.",
+		Long:  "Show a repository state snapshot, including recorded jobs, verification, publication, and resource cleanup. This command does not advance work or refresh provider or pull request state.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			services, err := app.Build(cmd.Context(), r.config)
-			if err != nil {
-				return err
-			}
-			status, err := services.Workflow.Status(cmd.Context(), workflow.Scope{All: true})
+			status, err := app.Status(cmd.Context(), r.config)
 			if err != nil {
 				return err
 			}
@@ -50,14 +46,13 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		fmt.Fprintf(&buffer, format+"\n", values...)
 	}
 	line("Snapshot read at %s", statusTime(status.ReadAt))
-	if status.LedgerVersion == "" {
-		line("No recorded jobs.")
-	} else {
-		line("Ledger: %s", status.LedgerVersion)
-		if len(status.Jobs) == 0 {
-			line("No recorded jobs.")
-		}
+	if status.Repository != "" {
+		line("Repository: %s", status.Repository)
 	}
+	if len(status.Jobs) == 0 {
+		line("No recorded jobs.")
+	}
+
 	for _, entry := range status.Jobs {
 		job := entry.Job
 		line("\n%s  %s  %s -> %s", job.ID, job.State, job.Spec.Action, job.Spec.Destination)

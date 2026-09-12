@@ -45,7 +45,7 @@ type Revision struct {
 }
 
 // Artifact identifies externally stored build output, input, or logs.
-// The ledger retains this reference rather than the artifact's contents.
+// The state store retains this reference rather than the artifact's contents.
 type Artifact struct {
 	// Name identifies the artifact within its producer's outputs.
 	Name string

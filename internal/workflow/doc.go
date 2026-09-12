@@ -4,19 +4,19 @@
 // [Engine.Submit] records a queued job and returns an idempotent acceptance
 // receipt. [Engine.Control] records cancellation intent. Neither starts a
 // provider operation. [Engine.Cycle] applies controls, advances eligible work,
-// and processes cleanup. [Engine.Status] projects one ledger snapshot without
+// and processes cleanup. [Engine.Status] projects one consistent state view without
 // polling providers or changing records.
 //
-// The ledger is the handoff between request intake and driver execution. Action
+// The state store is the handoff between request intake and driver execution. Action
 // invocations and persistent drivers can use the same engine. Callers own
 // process lifetime, repeated cycles, waiting, and presentation; this package
 // owns progression and bookkeeping after acceptance.
 //
-// External actions follow a claim, call, and record sequence. Short ledger
+// External actions follow a claim, call, and record sequence. Short state
 // transactions establish intent and ownership, provider calls run outside the
-// writer lock, and a later transaction checks the claim before adopting results.
+// write transaction, and a later transaction checks the claim before adopting results.
 // Provider idempotency and reconciliation are still required: rejecting a stale
-// ledger write cannot prevent a paused driver from making a late external call.
+// state write cannot prevent a paused driver from making a late external call.
 // Cleanup has its own claims and remains eligible after a job finishes.
 //
 // The current execution path verifies one resolved target against an existing

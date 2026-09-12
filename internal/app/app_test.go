@@ -7,62 +7,68 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
-	"github.com/herbygillot/dockhand/v2/internal/lock"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildSharesWriterAcrossWorktreesAndSeparatesRepositories(t *testing.T) {
+func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
 	repository := t.TempDir()
 	runGit(t, repository, "init", "--quiet")
 	runGit(t, repository, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath="+os.DevNull, "commit", "--quiet", "--allow-empty", "-m", "fixture")
 	worktree := filepath.Join(t.TempDir(), "linked")
 	runGit(t, repository, "worktree", "add", "--quiet", "--detach", worktree)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, repository, "clone", "--quiet", repository, clone)
+	clone2 := filepath.Join(t.TempDir(), "clone-again")
+	runGit(t, repository, "clone", "--quiet", repository, clone2)
 	unrelated := t.TempDir()
 	runGit(t, unrelated, "init", "--quiet")
-	lockDir := filepath.Join(t.TempDir(), "lock")
-	repo, err := git.Open(t.Context(), repository, "")
-	require.NoError(t, err)
-	first, err := app.Build(t.Context(), app.Config{Repository: repository, LockDir: lockDir})
-	require.NoError(t, err)
-	locks, err := lock.NewDirectory(lockDir)
-	require.NoError(t, err)
-	writer, err := locks.File("repositories", repo.CommonDir, "ledger")
-	require.NoError(t, err)
-	holder, err := writer.Acquire(t.Context())
-	require.NoError(t, err)
-	defer holder.Close()
-
-	second, err := app.Build(t.Context(), app.Config{Repository: worktree, LockDir: lockDir})
-	require.NoError(t, err, "initialization must not acquire the writer lock")
-	other, err := app.Build(t.Context(), app.Config{Repository: unrelated, LockDir: lockDir})
-	require.NoError(t, err)
-	write := func(_ context.Context, tx *ledger.Transaction) error {
-		tx.State.Changes["accepted"] = record.Change{ID: "accepted", Disposition: record.ChangeOpen}
-		return nil
+	db := filepath.Join(t.TempDir(), "state.db")
+	services := []*app.Services{}
+	for _, path := range []string{repository, worktree, clone, clone2, unrelated} {
+		s, err := app.Build(t.Context(), app.Config{Repository: path, DBPath: db})
+		require.NoError(t, err)
+		t.Cleanup(func() { s.Close() })
+		services = append(services, s)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 75*time.Millisecond)
-	err = second.Workflow.Ledger.Update(ctx, write)
-	cancel()
-	require.ErrorIs(t, err, ledger.ErrLockTimeout)
-	_, err = second.Workflow.Ledger.Read(t.Context())
-	require.ErrorIs(t, err, ledger.ErrNoState, "reads must not acquire the writer lock")
-	ctx, cancel = context.WithTimeout(t.Context(), 5*time.Second)
-	err = other.Workflow.Ledger.Update(ctx, write)
-	cancel()
-	require.NoError(t, err, "an unrelated repository must not wait for this writer")
-	require.NoError(t, holder.Close())
-	require.NoError(t, second.Workflow.Ledger.Update(t.Context(), write))
-	snapshot, err := first.Workflow.Ledger.Read(t.Context())
+	require.Equal(t, services[0].Workflow.Repository, services[1].Workflow.Repository)
+	require.NotEqual(t, services[0].Workflow.Repository, services[2].Workflow.Repository)
+	require.NotEqual(t, services[2].Workflow.Repository, services[3].Workflow.Repository)
+	require.NotEqual(t, services[0].Workflow.Repository, services[4].Workflow.Repository)
+	for i, s := range services {
+		if i == 1 {
+			continue
+		}
+		require.NoError(t, s.Workflow.State.Update(t.Context(), s.Workflow.Repository, func(ctx context.Context, tx state.Tx) error {
+			return tx.PutChange(ctx, record.Change{ID: record.ChangeID(s.Workflow.Repository), Branch: "same-branch", Disposition: record.ChangeOpen})
+		}))
+	}
+	status, err := app.Status(t.Context(), app.Config{Repository: worktree, DBPath: db})
 	require.NoError(t, err)
-	require.Contains(t, snapshot.State.Changes, record.ChangeID("accepted"))
+	require.Len(t, status.Changes, 1)
 }
-
+func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "--quiet")
+	db := filepath.Join(t.TempDir(), "missing", "state.db")
+	status, err := app.Status(t.Context(), app.Config{Repository: root, DBPath: db})
+	require.NoError(t, err)
+	require.Empty(t, status.Jobs)
+	require.NoDirExists(t, filepath.Dir(db))
+	existing, err := app.Build(t.Context(), app.Config{Repository: root, DBPath: db})
+	require.NoError(t, err)
+	defer existing.Close()
+	other := t.TempDir()
+	runGit(t, other, "init", "--quiet")
+	status, err = app.Status(t.Context(), app.Config{Repository: other, DBPath: db})
+	require.NoError(t, err)
+	require.Empty(t, status.Repository)
+	_, err = existing.Workflow.State.FindRepository(t.Context(), filepath.Join(other, ".git"))
+	require.ErrorIs(t, err, state.ErrNotFound)
+}
 func runGit(t *testing.T, root string, args ...string) {
 	t.Helper()
 	command := exec.CommandContext(t.Context(), "git", args...)

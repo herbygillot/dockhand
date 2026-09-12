@@ -2,10 +2,10 @@ package workflow_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
@@ -19,7 +19,7 @@ func TestIdleCycleDoesNotAcquireWriterOrCallProvider(t *testing.T) {
 			id := f.submit(t, "build")
 			f.run(t, id)
 			later := f.now().Add(time.Minute)
-			require.NoError(t, f.store.Update(t.Context(), func(_ context.Context, tx *ledger.Transaction) error {
+			require.NoError(t, f.mutate(t.Context(), func(_ context.Context, tx *fixtureTx) error {
 				job := tx.State.Jobs[id]
 				for key, attempt := range tx.State.Attempts {
 					attempt.RetryAt = nil
@@ -47,6 +47,7 @@ func TestIdleCycleDoesNotAcquireWriterOrCallProvider(t *testing.T) {
 						resource.State, resource.RetainUntil = record.ResourceRetained, &later
 					case "cleanup claimed":
 						resource.State = record.ResourceReleaseRequested
+						resource.ClaimGeneration++
 						resource.Claim = &record.Claim{Owner: "other", Generation: resource.ClaimGeneration, ExpiresAt: later}
 					case "cleanup delayed":
 						resource.State, resource.RetryAt = record.ResourceReleaseRequested, &later
@@ -55,11 +56,10 @@ func TestIdleCycleDoesNotAcquireWriterOrCallProvider(t *testing.T) {
 				}
 				return nil
 			}))
-			before, err := f.store.Read(t.Context())
+			before, err := f.snapshot(t.Context())
 			require.NoError(t, err)
 			calls := f.provider.count("capabilities")
-			holder, err := f.writer.Acquire(t.Context())
-			require.NoError(t, err)
+			holder := f.holdWriter(t)
 			defer holder.Close()
 			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 			defer cancel()
@@ -68,7 +68,7 @@ func TestIdleCycleDoesNotAcquireWriterOrCallProvider(t *testing.T) {
 			require.Empty(t, result.Advanced)
 			require.Empty(t, result.Problems)
 			require.Equal(t, calls, f.provider.count("capabilities"))
-			after, err := f.store.Read(t.Context())
+			after, err := f.snapshot(t.Context())
 			require.NoError(t, err)
 			require.Equal(t, before, after)
 		})
@@ -95,11 +95,10 @@ func TestPartiallyAppliedControlDoesNotWriteForUnselectedJobs(t *testing.T) {
 	a, b := f.submit(t, "first"), f.submit(t, "second")
 	require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-both", Kind: record.Cancel, Jobs: []record.JobID{a, b}}))
 	f.run(t, a)
-	before, err := f.store.Read(t.Context())
+	before, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.Nil(t, before.State.Controls["cancel-both"].AppliedAt)
-	holder, err := f.writer.Acquire(t.Context())
-	require.NoError(t, err)
+	holder := f.holdWriter(t)
 	defer holder.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	_, err = f.engine.Cycle(ctx, workflow.Scope{Jobs: []record.JobID{a}})
@@ -107,7 +106,7 @@ func TestPartiallyAppliedControlDoesNotWriteForUnselectedJobs(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, holder.Close())
 	f.run(t, b)
-	after, err := f.store.Read(t.Context())
+	after, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, after.State.Controls["cancel-both"].AppliedAt)
 	require.Equal(t, record.JobCanceled, after.State.Jobs[b].State)
@@ -145,4 +144,50 @@ func TestCandidateIsRecheckedAfterAnotherDriverAdvancesIt(t *testing.T) {
 	require.Empty(t, result.result.Problems)
 	require.Equal(t, 1, f.provider.count("submit"))
 	require.Equal(t, record.AttemptRunning, f.attempt(t, id).State)
+}
+
+func TestCycleBoundsCandidateBatches(t *testing.T) {
+	f := newFixture(t)
+	f.provider.submit = func(context.Context, verify.Request) (verify.Submission, error) {
+		return verify.Submission{State: verify.AtCapacity}, nil
+	}
+	for i := range 70 {
+		f.submit(t, fmt.Sprint("job-", i))
+	}
+	first, err := f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Len(t, first.Advanced, 64)
+	second, err := f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Len(t, second.Advanced, 6)
+	third, err := f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Empty(t, third.Advanced)
+	require.Equal(t, 70, f.provider.count("submit"))
+	status, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Len(t, status.Jobs, 70)
+}
+
+func TestUnsupportedExecutorsCannotStarveOtherJobs(t *testing.T) {
+	f := newFixture(t)
+	for i := range 65 {
+		request := f.request(fmt.Sprint("bump-", i))
+		request.Spec.Action = record.Bump
+		_, err := f.engine.Submit(t.Context(), request)
+		require.NoError(t, err)
+	}
+	good := f.submit(t, "verify")
+	for range 2 {
+		_, err := f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+		require.NoError(t, err)
+	}
+	all, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	for _, v := range all.Jobs {
+		if v.Job.ID != good {
+			require.Equal(t, record.JobNeedsAttention, v.Job.State)
+		}
+	}
+	require.Equal(t, record.AttemptRunning, f.attempt(t, good).State)
 }

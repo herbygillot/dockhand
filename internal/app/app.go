@@ -8,12 +8,12 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
 	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
-	"github.com/herbygillot/dockhand/v2/internal/lock"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/proc"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
+	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/v2/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
@@ -23,7 +23,7 @@ import (
 var ErrNotImplemented = errors.New("app: setup is not implemented")
 
 type Config struct {
-	LockDir        string
+	DBPath         string
 	Repository     string
 	GitExecutable  string
 	TclExecutable  string
@@ -37,6 +37,7 @@ type Services struct {
 	Processes   *proc.Manager
 	Preparation *prepare.Service
 	Discovery   *upstream.Service
+	close       func() error
 }
 
 func Build(ctx context.Context, config Config) (*Services, error) {
@@ -47,38 +48,73 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if err != nil {
 		return nil, err
 	}
-	locks, err := lock.NewDirectory(config.LockDir)
+	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{})
 	if err != nil {
 		return nil, err
 	}
-	writer, err := locks.File("repositories", repo.CommonDir, "ledger")
+	repository, err := store.RegisterRepository(ctx, repo.CommonDir)
 	if err != nil {
+		store.Close()
 		return nil, err
 	}
-	store, err := ledger.New(repo, ledger.Options{WriterLock: writer})
-	if err != nil {
-		return nil, err
-	}
+
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	forge := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
 	discovery := &upstream.Service{Ports: ports, Releases: forge}
 	preparation := &prepare.Service{Ports: ports, Upstream: discovery}
 	engine := &workflow.Engine{
-		Ledger:    store,
-		Preparer:  preparation,
-		Planner:   &verify.Planner{Ports: ports},
-		Provider:  &tart.Provider{Config: config.Tart},
-		Publisher: &publish.Service{Repo: repo, Forge: forge},
-		Now:       time.Now,
+		State:      store,
+		Repository: repository.ID,
+		Preparer:   preparation,
+		Planner:    &verify.Planner{Ports: ports},
+		Provider:   &tart.Provider{Config: config.Tart},
+		Publisher:  &publish.Service{Repo: repo, Forge: forge},
+		Now:        time.Now,
 	}
 	return &Services{
 		Workflow:    engine,
 		Processes:   &proc.Manager{CommonDir: repo.CommonDir},
 		Preparation: preparation,
 		Discovery:   discovery,
+		close:       store.Close,
 	}, nil
 }
 
 func Setup(ctx context.Context, config Config) error {
 	return ErrNotImplemented
+}
+
+func (s *Services) Close() error {
+	if s != nil && s.close != nil {
+		return s.close()
+	}
+	return nil
+}
+
+func Status(ctx context.Context, config Config) (workflow.Status, error) {
+	root := config.Repository
+	if root == "" {
+		root = "."
+	}
+	repo, err := git.Open(ctx, root, config.GitExecutable)
+	if err != nil {
+		return workflow.Status{}, err
+	}
+	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: true})
+	if errors.Is(err, state.ErrNoDatabase) {
+		return workflow.EmptyStatus(time.Now()), nil
+	}
+	if err != nil {
+		return workflow.Status{}, err
+	}
+	defer store.Close()
+	repository, err := store.FindRepository(ctx, repo.CommonDir)
+	if errors.Is(err, state.ErrNotFound) {
+		return workflow.EmptyStatus(time.Now()), nil
+	}
+	if err != nil {
+		return workflow.Status{}, err
+	}
+	engine := workflow.Engine{State: store, Repository: repository.ID}
+	return engine.Status(ctx, workflow.Scope{All: true})
 }

@@ -15,13 +15,13 @@ type RequestID string
 // AttemptID identifies one execution of a concrete verification specification.
 type AttemptID string
 
-// ResourceID identifies a resource ownership and cleanup record in the ledger.
+// ResourceID identifies a resource ownership and cleanup record in the state store.
 type ResourceID string
 
 // PublicationID identifies one action to create or update a pull request.
 type PublicationID string
 
-// PullRequestID identifies a tracked pull request within Dockhand's ledger.
+// PullRequestID identifies a tracked pull request within Dockhand's state.
 type PullRequestID string
 
 // TargetID identifies a target and configuration within a verification plan.

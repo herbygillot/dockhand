@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
-	"github.com/herbygillot/dockhand/v2/internal/lock"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/v2/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -24,13 +24,13 @@ import (
 var buildPlatform = record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 
 type fixture struct {
-	engine   *workflow.Engine
-	store    *ledger.Store
-	writer   *lock.File
-	repo     *git.Repository
-	provider *scriptedProvider
-	clock    atomic.Int64
-	source   record.Source
+	engine     *workflow.Engine
+	store      *sqlite.Store
+	repository record.RepositoryID
+	repo       *git.Repository
+	provider   *scriptedProvider
+	clock      atomic.Int64
+	source     record.Source
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -45,13 +45,13 @@ func newFixture(t *testing.T) *fixture {
 
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)
-	locks, err := lock.NewDirectory(filepath.Join(root, "locks"))
+	store, err := sqlite.Open(t.Context(), filepath.Join(root, "state.db"), sqlite.Options{})
 	require.NoError(t, err)
-	writer, err := locks.File("repositories", repo.CommonDir, "ledger")
+	t.Cleanup(func() { store.Close() })
+	repository, err := store.RegisterRepository(t.Context(), repo.CommonDir)
 	require.NoError(t, err)
-	store, err := ledger.New(repo, ledger.Options{WriterLock: writer, LockTimeout: time.Second})
-	require.NoError(t, err)
-	f := &fixture{repo: repo, store: store, writer: writer}
+	f := &fixture{repo: repo, store: store, repository: repository.ID}
+
 	f.clock.Store(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano())
 	blob, err := repo.WriteBlob(t.Context(), []byte("name fixture\nversion 1.0\n"))
 	require.NoError(t, err)
@@ -61,13 +61,15 @@ func newFixture(t *testing.T) *fixture {
 	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Message: "fixture", Author: signature, Committer: signature})
 	require.NoError(t, err)
 	f.source = record.Source{Tree: record.ObjectID(tree), Commit: record.ObjectID(commit), Base: record.ObjectID(commit)}
-	require.NoError(t, store.Update(t.Context(), func(_ context.Context, tx *ledger.Transaction) error {
-		tx.State.Changes["change"] = record.Change{ID: "change", CurrentRevision: "revision", Disposition: record.ChangeOpen}
-		tx.State.Revisions["revision"] = record.Revision{ID: "revision", ChangeID: "change", Source: f.source, CreatedAt: f.now()}
-		return nil
+	require.NoError(t, store.Update(t.Context(), repository.ID, func(ctx context.Context, tx state.Tx) error {
+		if err := tx.PutChange(ctx, record.Change{ID: "change", CurrentRevision: "revision", Disposition: record.ChangeOpen}); err != nil {
+			return err
+		}
+		return tx.PutRevision(ctx, record.Revision{ID: "revision", ChangeID: "change", Source: f.source, CreatedAt: f.now()})
 	}))
-	f.provider = &scriptedProvider{store: store, now: f.now, calls: make(map[string]int)}
-	f.engine = &workflow.Engine{Ledger: store, Provider: f.provider, Now: f.now, Owner: "driver", LeaseDuration: time.Minute, CallTimeout: 5 * time.Second, RetryDelay: time.Second}
+	f.provider = &scriptedProvider{store: store, repository: repository.ID, now: f.now, calls: make(map[string]int)}
+	f.engine = &workflow.Engine{State: store, Repository: repository.ID, Provider: f.provider, Now: f.now, Owner: "driver", LeaseDuration: time.Minute, CallTimeout: 5 * time.Second, RetryDelay: time.Second}
+
 	return f
 }
 
@@ -111,24 +113,25 @@ func (f *fixture) cancel(t *testing.T, id record.JobID) {
 }
 
 type scriptedProvider struct {
-	store     *ledger.Store
-	now       func() time.Time
-	mu        sync.Mutex
-	calls     map[string]int
-	submit    func(context.Context, verify.Request) (verify.Submission, error)
-	reconcile func(context.Context, record.RequestID) (verify.Reconciliation, error)
-	observe   func(context.Context, record.ProviderRun) (verify.Observation, error)
-	cancel    func(context.Context, record.ProviderRun) error
-	release   func(context.Context, record.ResourceHandle) (verify.ReleaseResult, error)
+	store      state.Store
+	repository record.RepositoryID
+	now        func() time.Time
+	mu         sync.Mutex
+	calls      map[string]int
+	submit     func(context.Context, verify.Request) (verify.Submission, error)
+	reconcile  func(context.Context, record.RequestID) (verify.Reconciliation, error)
+	observe    func(context.Context, record.ProviderRun) (verify.Observation, error)
+	cancel     func(context.Context, record.ProviderRun) error
+	release    func(context.Context, record.ResourceHandle) (verify.ReleaseResult, error)
 }
 
-// Every provider operation checks that the workflow has released the ledger lock.
+// Every provider operation checks that the workflow has released the state write transaction.
 func (p *scriptedProvider) begin(ctx context.Context, op string) error {
-	if _, err := p.store.Read(ctx); err != nil {
+	if err := p.store.View(ctx, p.repository, func(context.Context, state.Reader) error { return nil }); err != nil {
 		return err
 	}
-	if err := p.store.Update(ctx, func(context.Context, *ledger.Transaction) error { return nil }); err != nil {
-		return fmt.Errorf("provider %s could not access ledger: %w", op, err)
+	if err := p.store.Update(ctx, p.repository, func(context.Context, state.Tx) error { return nil }); err != nil {
+		return fmt.Errorf("provider %s could not access state: %w", op, err)
 	}
 	p.mu.Lock()
 	p.calls[op]++

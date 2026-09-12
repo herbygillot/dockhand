@@ -5,11 +5,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
@@ -31,7 +31,7 @@ type CycleResult struct {
 	Advanced []record.JobID
 	Problems []JobProblem
 	// PendingCleanup lists retained, uncertain, or release-requested resources
-	// in the last ledger snapshot. Some may not yet be eligible for release.
+	// in the last state view. Some may not yet be eligible for release.
 	PendingCleanup []record.ResourceID
 }
 
@@ -46,127 +46,107 @@ type cycle struct {
 	providerChecked       bool
 }
 
-// Cycle makes one reconciliation pass over the requested scope. It applies
-// cancellation controls, performs at most one attempt operation per selected job,
-// and separately processes eligible resource releases. It does not sleep or wait
-// for admission or completion; callers schedule subsequent passes.
-//
-// Execution currently supports Verify for one target, an existing committed
-// revision, and an explicit build configuration. Other action executors remain
-// unfinished. Resource cleanup continues independently after jobs are terminal.
-//
-// Provider and lost-claim problems are collected while independent work continues.
-// Invalid scope or configuration, ledger errors, and caller cancellation end the
-// pass. Earlier committed progress is not rolled back when a later action fails.
-// A caller whose commit outcome is uncertain should inspect [Engine.Status] and resume
-// through another cycle rather than repeating an external action directly.
 func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	result := CycleResult{Advanced: []record.JobID{}, Problems: []JobProblem{}, PendingCleanup: []record.ResourceID{}}
-	snapshot, selected, err := e.readScope(ctx, scope)
-	if err != nil {
+	if err := e.checkScope(scope); err != nil {
 		return result, err
 	}
 	c, err := e.newCycle()
 	if err != nil {
 		return result, err
 	}
-	var controls []record.RequestID
-	for _, id := range slices.Sorted(maps.Keys(snapshot.State.Controls)) {
-		if controlEligible(snapshot.State.Controls[id], snapshot.State, selected) {
-			controls = append(controls, id)
-		}
+	selection := scope.Jobs
+	if scope.All {
+		selection = nil
 	}
-	if len(controls) != 0 {
-		changed, err := e.applyControls(ctx, selected, controls)
-		if err != nil {
-			return result, err
+	var controls []record.ControlRequest
+	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		if err := checkJobs(ctx, r, scope); err != nil {
+			return err
 		}
-		if changed {
-			snapshot, err = e.Ledger.Read(ctx)
-			if err != nil {
-				return result, err
-			}
-		}
-	}
-	attempts := make(map[record.JobID][]record.Attempt)
-	for _, attempt := range snapshot.State.Attempts {
-		if selected[attempt.JobID] {
-			attempts[attempt.JobID] = append(attempts[attempt.JobID], attempt)
-		}
-	}
-	jobs := slices.Sorted(maps.Keys(selected))
-	slices.SortStableFunc(jobs, func(a, b record.JobID) int {
-		return snapshot.State.Jobs[a].AcceptedAt.Compare(snapshot.State.Jobs[b].AcceptedAt)
+		var err error
+		controls, err = r.Controls(ctx, state.Query{Jobs: selection, Pending: true, Limit: 64})
+		return err
 	})
-	handledJobs := false
-	for _, id := range jobs {
-		if !jobEligible(snapshot.State.Jobs[id], attempts[id], e.now()) {
-			continue
+	if err != nil {
+		return result, err
+	}
+	if err = e.applyControls(ctx, scope, controls); err != nil {
+		return result, err
+	}
+	var jobs []record.Job
+	now := e.now()
+	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		jobs, err = r.Jobs(ctx, state.Query{Jobs: selection, DueBefore: &now, Limit: 64})
+		return err
+	})
+	if err != nil {
+		return result, err
+	}
+	for _, job := range jobs {
+		if job.Spec.Action == record.Verify {
+			c.checkProvider(ctx)
 		}
-		c.checkProvider(ctx)
-		changed, detail, err := c.advanceJob(ctx, id)
-		handledJobs = true
+		changed, detail, err := c.advanceJob(ctx, job.ID)
 		if changed {
-			result.Advanced = append(result.Advanced, id)
+			result.Advanced = append(result.Advanced, job.ID)
 		}
-		if errors.Is(err, ErrClaimLost) {
+		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || errors.Is(err, ErrNotImplemented) {
 			detail, err = err.Error(), nil
 		}
 		if err != nil {
 			return result, err
 		}
 		if detail != "" {
-			result.Problems = append(result.Problems, JobProblem{JobID: id, Detail: detail})
+			result.Problems = append(result.Problems, JobProblem{JobID: job.ID, Detail: detail})
 		}
 	}
-	// Refresh after advancement so new resources and newly terminal attempts
-	// can participate in cleanup during this same pass.
-	if handledJobs {
-		snapshot, err = e.Ledger.Read(ctx)
-		if err != nil {
-			return result, err
-		}
+	var resources []record.Resource
+	now = e.now()
+	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		resources, err = r.Resources(ctx, state.Query{Jobs: selection, DueBefore: &now, Limit: 64})
+		return err
+	})
+	if err != nil {
+		return result, err
 	}
-	handledResources := false
-	for _, id := range slices.Sorted(maps.Keys(snapshot.State.Resources)) {
-		resource := snapshot.State.Resources[id]
-		if !resourceSelected(resource, snapshot.State, selected, scope.All) || !cleanupEligible(resource, snapshot.State.Attempts, e.now()) {
-			continue
-		}
+	for _, resource := range resources {
 		c.checkProvider(ctx)
-		detail, err := c.cleanup(ctx, id)
-		handledResources = true
-		if errors.Is(err, ErrClaimLost) {
+		detail, err := c.cleanup(ctx, resource.ID)
+		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || errors.Is(err, ErrNotImplemented) {
 			detail, err = err.Error(), nil
 		}
 		if err != nil {
 			return result, err
 		}
 		if detail != "" {
-			result.Problems = append(result.Problems, JobProblem{ResourceID: id, Detail: detail})
+			result.Problems = append(result.Problems, JobProblem{ResourceID: resource.ID, Detail: detail})
 		}
 	}
-	if handledResources {
-		snapshot, err = e.Ledger.Read(ctx)
-		if err != nil {
-			return result, err
+	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		q := state.Query{Jobs: selection, Pending: true, Limit: 64}
+		for {
+			rs, err := r.Resources(ctx, q)
+			if err != nil {
+				return err
+			}
+			for _, v := range rs {
+				result.PendingCleanup = append(result.PendingCleanup, v.ID)
+			}
+			if len(rs) < q.Limit {
+				break
+			}
+			q.After = string(rs[len(rs)-1].ID)
 		}
-	}
-	for _, id := range slices.Sorted(maps.Keys(snapshot.State.Resources)) {
-		resource := snapshot.State.Resources[id]
-		if !resourceSelected(resource, snapshot.State, selected, scope.All) {
-			continue
-		}
-		switch resource.State {
-		case record.ResourceReleaseRequested, record.ResourceUncertain, record.ResourceRetained:
-			result.PendingCleanup = append(result.PendingCleanup, id)
-		}
-	}
-	return result, ctx.Err()
+		return nil
+	})
+	return result, err
 }
 
 // checkProvider observes capabilities once, only when this pass has a candidate
-// action. It runs before the handler's transaction, outside the writer lock.
+// action. It runs before the handler's transaction, outside the write transaction.
 func (c *cycle) checkProvider(ctx context.Context) {
 	if c.providerChecked {
 		return

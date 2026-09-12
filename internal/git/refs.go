@@ -142,7 +142,7 @@ func (r *Repository) UpdateRefs(ctx context.Context, changes []RefChange) error 
 		}
 	}
 	input.WriteString("prepare\x00commit\x00")
-	_, err := r.run(ctx, input.Bytes(), []string{"GIT_COMMITTER_NAME=Dockhand", "GIT_COMMITTER_EMAIL=dockhand@localhost"}, "update-ref", "--stdin", "-z", "--create-reflog", "-m", "dockhand ledger transaction")
+	_, err := r.run(ctx, input.Bytes(), []string{"GIT_COMMITTER_NAME=Dockhand", "GIT_COMMITTER_EMAIL=dockhand@localhost"}, "update-ref", "--stdin", "-z", "--create-reflog", "-m", "dockhand ref transaction")
 	if err == nil {
 		return nil
 	}

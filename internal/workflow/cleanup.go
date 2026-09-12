@@ -6,15 +6,15 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state"
 )
 
 // recordResources records valid provider handles as uncertain ownership within
 // the caller's transaction. Identity combines provider namespace and resource
 // lifetime; existing ownership and released records are never overwritten.
 // Valid handles are still recorded when other handles produce a returned error.
-func recordResources(state *ledger.State, attempt record.Attempt, handles []record.ResourceHandle) error {
+func recordResources(work *execution, attempt record.Attempt, handles []record.ResourceHandle) error {
 	var problems []error
 	for _, handle := range handles {
 		if handle.Provider != attempt.Spec.Config.Provider || !validToken(handle.ID) {
@@ -22,7 +22,7 @@ func recordResources(state *ledger.State, attempt record.Attempt, handles []reco
 			continue
 		}
 		id := record.ResourceID(fmt.Sprintf("resource_%x", sha256.Sum256([]byte(handle.Provider+"\x00"+handle.ID))))
-		if previous, exists := state.Resources[id]; exists {
+		if previous, exists := work.Resources[id]; exists {
 			if previous.AttemptID != attempt.ID || previous.Handle != handle {
 				problems = append(problems, fmt.Errorf("workflow: resource %s is already owned by another attempt", id))
 			}
@@ -31,14 +31,14 @@ func recordResources(state *ledger.State, attempt record.Attempt, handles []reco
 			}
 			continue
 		}
-		state.Resources[id] = record.Resource{ID: id, AttemptID: attempt.ID, Handle: handle, State: record.ResourceUncertain}
+		work.Resources[id] = record.Resource{ID: id, AttemptID: attempt.ID, SubmissionID: attempt.SubmissionID, Handle: handle, State: record.ResourceUncertain}
 	}
 	return errors.Join(problems...)
 }
 
 // hasResources reports any ownership record for the attempt, including released resources.
-func hasResources(state ledger.State, id record.AttemptID) bool {
-	for _, resource := range state.Resources {
+func hasResources(work *execution, id record.AttemptID) bool {
+	for _, resource := range work.Resources {
 		if resource.AttemptID == id {
 			return true
 		}
@@ -49,13 +49,13 @@ func hasResources(state ledger.State, id record.AttemptID) bool {
 // dispositionResources updates an attempt's unreleased resources and clears
 // their retry delays within the caller's transaction. Released records retain
 // their confirmed state; this helper performs no external cleanup.
-func dispositionResources(state *ledger.State, id record.AttemptID, disposition record.ResourceState) {
-	for key, resource := range state.Resources {
+func dispositionResources(work *execution, id record.AttemptID, disposition record.ResourceState) {
+	for key, resource := range work.Resources {
 		if resource.AttemptID != id || resource.State == record.ResourceReleased {
 			continue
 		}
 		resource.State, resource.RetryAt = disposition, nil
-		state.Resources[key] = resource
+		work.Resources[key] = resource
 	}
 }
 
@@ -64,7 +64,7 @@ func dispositionResources(state *ledger.State, id record.AttemptID, disposition 
 // state. Missing ownership and other per-resource problems are returned as detail;
 // transaction failures and lost claims are returned as errors.
 //
-// The provider call runs outside the writer lock. An unconfirmed release remains
+// The provider call runs outside the write transaction. An unconfirmed release remains
 // uncertain with a retry time, and a stale result cannot replace newer confirmation.
 // The job's recorded outcome is unaffected by cleanup progress.
 func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, error) {
@@ -72,14 +72,18 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 	var resource record.Resource
 	var claimed bool
 	var detail string
-	err := e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
-		var exists bool
-		resource, exists = tx.State.Resources[id]
-		if !exists {
-			return fmt.Errorf("%w: resource %s", ErrNotFound, id)
+	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		var err error
+		resource, err = tx.Resource(ctx, id)
+		if err != nil {
+			return err
+		}
+		attempt, err := tx.Attempt(ctx, resource.AttemptID)
+		if err != nil {
+			return err
 		}
 		now := e.now()
-		if !cleanupEligible(resource, tx.State.Attempts, now) {
+		if !cleanupEligible(resource, attempt, now) {
 			return nil
 		}
 		switch resource.State {
@@ -88,11 +92,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			detail = "workflow: resource has an invalid cleanup state"
 			return nil
 		}
-		attempt, exists := tx.State.Attempts[resource.AttemptID]
-		if !exists {
-			detail = "workflow: resource has no owning attempt; cleanup requires reconciliation"
-			return nil
-		}
+
 		if !attemptTerminal(attempt.State) {
 			return nil
 		}
@@ -114,8 +114,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			retry := now.Add(c.retry)
 			resource.LastError, resource.RetryAt = detail, &retry
 		}
-		tx.State.Resources[id] = resource
-		return nil
+		return tx.PutResource(ctx, resource)
 	})
 	if err != nil || !claimed {
 		return detail, err
@@ -128,10 +127,13 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 		callErr = callCtx.Err()
 	}
 	cancel()
-	err = e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
-		current, exists := tx.State.Resources[id]
+	err = e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		current, err := tx.Resource(ctx, id)
+		if err != nil {
+			return err
+		}
 		now := e.now()
-		if !exists || !owns(current.Claim, resource.Claim, now) || current.State != record.ResourceReleaseRequested {
+		if !owns(current.Claim, resource.Claim, now) || current.State != record.ResourceReleaseRequested {
 			return ErrClaimLost
 		}
 		current.Claim, current.LastError, current.RetryAt = nil, "", nil
@@ -145,8 +147,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			retry := now.Add(c.retry)
 			current.State, current.LastError, current.RetryAt = record.ResourceUncertain, detail, &retry
 		}
-		tx.State.Resources[id] = current
-		return nil
+		return tx.PutResource(ctx, current)
 	})
 	return detail, err
 }

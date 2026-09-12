@@ -31,10 +31,11 @@ type ResourceHandle struct {
 // for an attempt's environment. A terminal job does not establish that its
 // resources have been released.
 type Resource struct {
-	ID        ResourceID
-	AttemptID AttemptID
-	Handle    ResourceHandle
-	State     ResourceState
+	ID           ResourceID
+	AttemptID    AttemptID
+	SubmissionID RequestID
+	Handle       ResourceHandle
+	State        ResourceState
 	// Claim grants ownership of a cleanup action separately from attempt work.
 	Claim *Claim
 	// ClaimGeneration retains the last issued generation after Claim is cleared.

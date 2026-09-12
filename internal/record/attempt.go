@@ -77,13 +77,11 @@ type Attempt struct {
 	Claim    *Claim
 	// ClaimGeneration retains the last issued generation when Claim is cleared.
 	ClaimGeneration uint64
-	// SubmissionID remains stable through capacity waiting and uncertainty.
-	// A fresh identity is assigned only after the provider closes the old one.
+	// SubmissionID and Run project the latest submission row. Persist changes
+	// through the submission record before updating an existing attempt.
+	// Submission identity remains stable through capacity waiting and uncertainty.
 	SubmissionID RequestID
-	// ClosedSubmissions records identities the provider has permanently barred
-	// from creating a run, including through a late call by a stale driver.
-	ClosedSubmissions []RequestID
-	// RetryAt is the earliest time for another action; nil imposes no delay.
+
 	RetryAt *time.Time
 	// CancelSentAt records a successful cancellation acknowledgement, which
 	// still requires observation to establish the run's outcome.
@@ -169,7 +167,7 @@ type StepResult struct {
 
 // Evidence retains an interpreted observation for an attempt's fixed inputs.
 // Running observations have an unknown verdict; a terminal outcome must be
-// explicit. Referenced artifacts and logs may be stored outside the ledger.
+// explicit. Referenced artifacts and logs may be stored outside the state store.
 type Evidence struct {
 	Verdict Verdict
 	// Failure provides diagnostic context when present.
@@ -177,6 +175,6 @@ type Evidence struct {
 	Steps     []StepResult
 	Artifacts []Artifact
 	Logs      []Artifact
-	// ObservedAt is the provider observation time, independent of ledger read time.
+	// ObservedAt is the provider observation time, independent of state read time.
 	ObservedAt time.Time
 }

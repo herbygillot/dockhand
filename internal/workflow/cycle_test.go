@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -48,20 +48,21 @@ func TestCycleCapacityAdmissionCompletionAndCleanup(t *testing.T) {
 	require.Len(t, result.PendingCleanup, 1, "completion lost pending cleanup")
 	require.Equal(t, record.ResourceUncertain, status.Resources[0].State, "completion lost pending cleanup")
 	finished := *status.Jobs[0].Job.FinishedAt
-	reopened, err := ledger.New(f.repo, ledger.Options{WriterLock: f.writer})
+	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
+	t.Cleanup(func() { reopened.Close() })
 	require.NoError(t, err)
 	fresh := *f.engine
-	fresh.Ledger = reopened
+	fresh.State = reopened
 	f.engine = &fresh
 	f.run(t, id)
 	status = f.status(t, id)
 	require.Equal(t, record.ResourceReleased, status.Resources[0].State, "cleanup changed outcome or did not recover")
 	require.NotNil(t, status.Jobs[0].Job.FinishedAt, "cleanup removed completion time")
 	require.WithinDuration(t, finished, *status.Jobs[0].Job.FinishedAt, 0, "cleanup changed outcome or did not recover")
-	before, err := f.store.Read(t.Context())
+	before, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	f.run(t, id)
-	after, err := f.store.Read(t.Context())
+	after, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, before.Version, after.Version, "settled job repeated external work")
 	require.Equal(t, 2, f.provider.count("submit"), "settled job repeated external work")
@@ -158,8 +159,8 @@ func TestCycleClosedSubmissionRetryOrPartialCleanup(t *testing.T) {
 			}
 			f.run(t, id)
 			attempt := f.attempt(t, id)
-			require.Len(t, attempt.ClosedSubmissions, 1, "closed identity lost")
-			require.Equal(t, old, attempt.ClosedSubmissions[0], "closed identity lost")
+			require.Len(t, f.closed(t, attempt.ID), 1, "closed identity lost")
+			require.Equal(t, old, f.closed(t, attempt.ID)[0], "closed identity lost")
 			if partial {
 				require.Equal(t, record.JobNeedsAttention, f.status(t, id).Jobs[0].Job.State, "partial resources not drained")
 				require.Equal(t, record.ResourceReleased, f.status(t, id).Resources[0].State, "partial resources not drained")

@@ -1,10 +1,10 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. This document includes the approved SQLite migration; current code still uses the Git ledger and `--lock-dir`, and has not implemented `--db` yet.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. Action-command execution and persistent residency remain unfinished.
 
 ## Global options
 
-`--db PATH` selects the state database, defaulting to `$HOME/.dockhand/state.db` across all checkouts. Both `--db PATH` and `--db=PATH` work before or after the command. The `--` separator ends option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty path is rejected. Accept a filesystem path, not SQLite URI options. No short alias is assigned. The migration removes `--lock-dir`, `-L`, and the earlier `--lockfile` spelling.
+`--db PATH` selects the state database, defaulting to `$HOME/.dockhand/state.db` across all checkouts. Both `--db PATH` and `--db=PATH` work before or after the command. The `--` separator ends option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty path is rejected. Accept a filesystem path, not SQLite URI options. No short alias is assigned. The old `--lock-dir`, `-L`, and `--lockfile` flags are rejected.
 
 ```sh
 dockhand --db /path/to/state.db status
@@ -17,11 +17,11 @@ One database can hold work for many repositories. Commands operate on the select
 
 ## Command parsing and help
 
-The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--db` and `--json` are the designed inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
+The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--db` and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
-The existing `status` handler calls shared workflow status and renders human-readable output or JSON. Its storage will migrate to the database behavior below. Other phase-one command names and flags are registered, but their handlers still return explicit not-implemented errors. Workflow request acceptance is available through the Go API; selector resolution, action-command submission, and resident execution remain to be connected.
+`status` calls the shared workflow projection through read-only SQLite access and renders human-readable output or JSON. Other phase-one command names and flags are registered, but their handlers still return explicit not-implemented errors. Request acceptance and verification cycles are available through the Go API; selector resolution, action-command submission, and resident execution remain to be connected.
 
 ## The flow
 

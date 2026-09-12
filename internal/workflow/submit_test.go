@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/ledger"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/stretchr/testify/require"
@@ -17,7 +16,7 @@ func TestSubmitCanonicalRetriesAndFrozenInputs(t *testing.T) {
 	request.Spec.Targets = append(request.Spec.Targets, record.Target{Name: "other", Portfile: "other/Portfile"})
 	receipt, err := f.engine.Submit(t.Context(), request)
 	require.NoError(t, err)
-	initial, err := f.store.Read(t.Context())
+	initial, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, record.JobQueued, initial.State.Jobs[receipt.JobID].State, "acceptance should only queue work")
 	require.Nil(t, initial.State.Jobs[receipt.JobID].AdmittedAt, "acceptance contacted provider or implied admission")
@@ -26,10 +25,10 @@ func TestSubmitCanonicalRetriesAndFrozenInputs(t *testing.T) {
 	request.Spec.Targets[0].Variants = map[string]bool{}
 	retry, err := f.engine.Submit(t.Context(), request)
 	require.NoError(t, err)
-	after, err := f.store.Read(t.Context())
+	after, err := f.snapshot(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, receipt, retry, "equivalent retry changed receipt or ledger")
-	require.Equal(t, initial.Version, after.Version, "equivalent retry changed receipt or ledger")
+	require.Equal(t, receipt, retry, "equivalent retry changed receipt or state")
+	require.Equal(t, initial.Version, after.Version, "equivalent retry changed receipt or state")
 	request.Spec.Build.EnvironmentDigest = "different"
 	request.Spec.Targets[1].Variants["debug"] = true
 	_, err = f.engine.Submit(t.Context(), request)
@@ -39,9 +38,9 @@ func TestSubmitCanonicalRetriesAndFrozenInputs(t *testing.T) {
 	require.False(t, stored.Targets[0].Variants["debug"], "caller mutated accepted inputs")
 	request = f.request("request")
 	request.Spec.Targets = append(request.Spec.Targets, record.Target{Name: "other", Portfile: "other/Portfile"})
-	require.NoError(t, f.store.Update(t.Context(), func(_ context.Context, tx *ledger.Transaction) error {
+	require.NoError(t, f.mutate(t.Context(), func(_ context.Context, tx *fixtureTx) error {
 		change := tx.State.Changes["change"]
-		change.CurrentRevision = "later"
+		change.CurrentRevision = "revision"
 		change.Disposition = record.ChangeClosed
 		tx.State.Changes[change.ID] = change
 		return nil
@@ -63,7 +62,7 @@ func TestSubmitRejectsInvalidIntentWithoutPersisting(t *testing.T) {
 		"missing provider":     func(r *workflow.Request) { r.Spec.Build.Provider = "" },
 		"missing tests policy": func(r *workflow.Request) { r.Spec.Build.Tests = "" },
 	}
-	before, err := f.store.Read(t.Context())
+	before, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -74,14 +73,14 @@ func TestSubmitRejectsInvalidIntentWithoutPersisting(t *testing.T) {
 			require.Equal(t, workflow.Receipt{}, receipt, "got receipt %+v, error %v", receipt, err)
 		})
 	}
-	after, err := f.store.Read(t.Context())
+	after, err := f.snapshot(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, before.Version, after.Version, "rejected request changed ledger")
+	require.Equal(t, before.Version, after.Version, "rejected request changed state")
 }
 
 func TestSubmitRevisionConstraints(t *testing.T) {
 	f := newFixture(t)
-	require.NoError(t, f.store.Update(t.Context(), func(_ context.Context, tx *ledger.Transaction) error {
+	require.NoError(t, f.mutate(t.Context(), func(_ context.Context, tx *fixtureTx) error {
 		r := tx.State.Revisions["revision"]
 		r.ID = "newer"
 		r.Previous = "revision"
@@ -122,7 +121,7 @@ func TestConcurrentEquivalentSubmissionsConverge(t *testing.T) {
 		require.NoError(t, errs[i])
 		require.Equal(t, receipts[0], receipts[i], "callers received different jobs")
 	}
-	state, err := f.store.Read(t.Context())
+	state, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.Len(t, state.State.Jobs, 1, "duplicate jobs persisted")
 	require.Len(t, state.State.Requests, 1, "duplicate jobs persisted")
@@ -134,20 +133,20 @@ func TestControlsAreIdempotentAndScoped(t *testing.T) {
 	request := record.ControlRequest{ID: "cancel-both", Kind: record.Cancel, Jobs: []record.JobID{b, a, b}, Reason: "stop"}
 	require.NoError(t, f.engine.Control(t.Context(), request))
 	f.run(t, a)
-	state, err := f.store.Read(t.Context())
+	state, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, record.JobCanceled, state.State.Jobs[a].State, "scope affected other job: %+v", state.State.Controls[request.ID])
 	require.Nil(t, state.State.Jobs[b].CancelRequestedAt, "scope affected other job: %+v", state.State.Controls[request.ID])
 	require.Nil(t, state.State.Controls[request.ID].AppliedAt, "scope affected other job: %+v", state.State.Controls[request.ID])
 	f.run(t, b)
-	state, err = f.store.Read(t.Context())
+	state, err = f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, state.State.Controls[request.ID].AppliedAt, "fully applied control remains pending")
 	request.Jobs = []record.JobID{a, b}
 	require.NoError(t, f.engine.Control(t.Context(), request))
-	after, err := f.store.Read(t.Context())
+	after, err := f.snapshot(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, state.Version, after.Version, "equivalent control retry rewrote ledger")
+	require.Equal(t, state.Version, after.Version, "equivalent control retry rewrote state")
 	request.Reason = "different"
 	require.ErrorIs(t, f.engine.Control(t.Context(), request), workflow.ErrRequestConflict, "conflicting control accepted")
 	collision := f.request(string(request.ID))
@@ -159,23 +158,22 @@ func TestStatusIsAnIndependentReadOnlyProjection(t *testing.T) {
 	f := newFixture(t)
 	id := f.submit(t, "status")
 	f.run(t, id)
-	require.NoError(t, f.store.Update(t.Context(), func(_ context.Context, tx *ledger.Transaction) error {
-		tx.State.Resources["orphan"] = record.Resource{ID: "orphan", AttemptID: "missing", State: record.ResourceUncertain}
-		tx.State.Changes["unrelated"] = record.Change{ID: "unrelated"}
+	require.NoError(t, f.mutate(t.Context(), func(_ context.Context, tx *fixtureTx) error {
+		tx.State.Changes["unrelated"] = record.Change{ID: "unrelated", Disposition: record.ChangeOpen}
 		return nil
 	}))
-	before, err := f.store.Read(t.Context())
+	before, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	scoped := f.status(t, id)
 	all, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
 	require.NoError(t, err)
 	require.Len(t, scoped.Resources, 1, "status associations are wrong")
-	require.Len(t, all.Resources, 2, "status associations are wrong")
+	require.Len(t, all.Resources, 1, "status associations are wrong")
 	require.Len(t, scoped.Changes, 1, "status associations are wrong")
 	require.Len(t, all.Changes, 2, "status associations are wrong")
 	scoped.Jobs[0].Job.Spec.Targets[0].Variants["debug"] = true
 	require.False(t, f.status(t, id).Jobs[0].Job.Spec.Targets[0].Variants["debug"], "status mutation escaped its snapshot")
-	after, err := f.store.Read(t.Context())
+	after, err := f.snapshot(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, before.Version, after.Version, "status changed state")
 	require.Equal(t, before.State, after.State, "status changed state")
@@ -186,4 +184,18 @@ func TestStatusIsAnIndependentReadOnlyProjection(t *testing.T) {
 	}
 	_, err = f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{"missing"}})
 	require.ErrorIs(t, err, workflow.ErrNotFound, "unknown job accepted: %v", err)
+}
+
+func TestRetryAcceptsRedundantMatchingChangeIdentity(t *testing.T) {
+	f := newFixture(t)
+	request := f.request("retry-change")
+	receipt, err := f.engine.Submit(t.Context(), request)
+	require.NoError(t, err)
+	request.Spec.ChangeID = "change"
+	again, err := f.engine.Submit(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, receipt, again)
+	request.Spec.ChangeID = "wrong"
+	_, err = f.engine.Submit(t.Context(), request)
+	require.ErrorIs(t, err, workflow.ErrRequestConflict)
 }

@@ -15,12 +15,12 @@ type runtime struct {
 }
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
-	if config.LockDir == "" {
+	if config.DBPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("cli: locating home directory for default lock directory: %w", err)
+			return nil, fmt.Errorf("cli: locating home directory for default state database: %w", err)
 		}
-		config.LockDir = filepath.Join(homeDir, ".dockhand", "lock")
+		config.DBPath = filepath.Join(homeDir, ".dockhand", "state.db")
 	}
 	runtime := &runtime{config: config}
 	root := &cobra.Command{
@@ -32,13 +32,13 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		SilenceUsage:  true,
 		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	lockDir := lockDirValue{target: &runtime.config.LockDir}
-	if err := lockDir.Set(runtime.config.LockDir); err != nil {
-		return nil, fmt.Errorf("cli: resolving lock directory: %w", err)
+	dbPath := dbPathValue{target: &runtime.config.DBPath}
+	if err := dbPath.Set(runtime.config.DBPath); err != nil {
+		return nil, fmt.Errorf("cli: resolving state database: %w", err)
 	}
-	root.PersistentFlags().VarP(lockDir, "lock-dir", "L", "Directory for Dockhand resource locks")
+	root.PersistentFlags().Var(dbPath, "db", "Path to the Dockhand state database")
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
-	if err := root.MarkPersistentFlagDirname("lock-dir"); err != nil {
+	if err := root.MarkPersistentFlagFilename("db"); err != nil {
 		return nil, err
 	}
 
@@ -59,7 +59,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		help(cmd, args)
-		fmt.Fprintf(cmd.OutOrStdout(), "\nLock directory: %s\n", runtime.config.LockDir)
+		fmt.Fprintf(cmd.OutOrStdout(), "\nState database: %s\n", runtime.config.DBPath)
 	})
 	return root, nil
 }

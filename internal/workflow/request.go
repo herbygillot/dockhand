@@ -16,7 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
-// normalizeSpec validates caller-supplied intent without consulting the ledger
+// normalizeSpec validates caller-supplied intent without consulting the state store
 // or external services. It copies mutable inputs and canonicalizes target order
 // and empty variant maps so equivalent requests have the same representation.
 func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
@@ -109,8 +109,8 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	return spec, nil
 }
 
-// validateSource checks object-ID syntax and consistent hash lengths. The ledger
-// separately verifies object existence, types, commit/tree agreement, and pins.
+// validateSource checks syntax. Executors check source availability when they
+// consume it; persistence does not inspect or pin Git objects.
 func validateSource(source record.Source) error {
 	if !git.ValidObjectID(string(source.Tree)) {
 		return fmt.Errorf("%w: an immutable source tree ID is required", ErrInvalidRequest)

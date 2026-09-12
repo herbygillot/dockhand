@@ -3,17 +3,21 @@ package cli
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-type lockDirValue struct{ target *string }
+type dbPathValue struct{ target *string }
 
-func (v lockDirValue) String() string { return *v.target }
-func (v lockDirValue) Type() string   { return "path" }
-func (v lockDirValue) Set(value string) error {
+func (v dbPathValue) String() string { return *v.target }
+func (v dbPathValue) Type() string   { return "path" }
+func (v dbPathValue) Set(value string) error {
+	if value == ":memory:" || strings.HasPrefix(value, "file:") {
+		return errors.New("database must be a filesystem path")
+	}
 	if value == "" {
-		return errors.New("lock directory path must not be empty")
+		return errors.New("database path must not be empty")
 	}
 	path, err := filepath.Abs(value)
 	if err != nil {

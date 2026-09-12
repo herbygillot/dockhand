@@ -1,0 +1,242 @@
+[
+  {
+    "history": 100,
+    "distinct": false,
+    "operation": "job-write",
+    "samples": 20,
+    "p50_ms": 0.1546045,
+    "p95_ms": 0.274208
+  },
+  {
+    "history": 100,
+    "distinct": false,
+    "operation": "idle-cycle",
+    "samples": 20,
+    "p50_ms": 0.1585,
+    "p95_ms": 0.330416
+  },
+  {
+    "history": 100,
+    "distinct": false,
+    "operation": "selected-status",
+    "samples": 20,
+    "p50_ms": 0.236271,
+    "p95_ms": 0.327625
+  },
+  {
+    "history": 100,
+    "distinct": false,
+    "operation": "active-cycle",
+    "samples": 20,
+    "p50_ms": 0.807541,
+    "p95_ms": 1.156292
+  },
+  {
+    "history": 100,
+    "distinct": false,
+    "operation": "concurrent-cycle",
+    "samples": 80,
+    "p50_ms": 0.7968755,
+    "p95_ms": 9.804708
+  },
+  {
+    "history": 100,
+    "distinct": true,
+    "operation": "job-write",
+    "samples": 20,
+    "p50_ms": 0.1318545,
+    "p95_ms": 0.215584
+  },
+  {
+    "history": 100,
+    "distinct": true,
+    "operation": "idle-cycle",
+    "samples": 20,
+    "p50_ms": 0.118729,
+    "p95_ms": 0.129791
+  },
+  {
+    "history": 100,
+    "distinct": true,
+    "operation": "selected-status",
+    "samples": 20,
+    "p50_ms": 0.2218955,
+    "p95_ms": 0.311875
+  },
+  {
+    "history": 100,
+    "distinct": true,
+    "operation": "active-cycle",
+    "samples": 20,
+    "p50_ms": 0.7273545,
+    "p95_ms": 1.135791
+  },
+  {
+    "history": 100,
+    "distinct": true,
+    "operation": "concurrent-cycle",
+    "samples": 80,
+    "p50_ms": 0.7462085,
+    "p95_ms": 1.785209
+  },
+  {
+    "history": 1000,
+    "distinct": false,
+    "operation": "job-write",
+    "samples": 20,
+    "p50_ms": 0.1260835,
+    "p95_ms": 0.253709
+  },
+  {
+    "history": 1000,
+    "distinct": false,
+    "operation": "idle-cycle",
+    "samples": 20,
+    "p50_ms": 0.121354,
+    "p95_ms": 0.218125
+  },
+  {
+    "history": 1000,
+    "distinct": false,
+    "operation": "selected-status",
+    "samples": 20,
+    "p50_ms": 0.2100835,
+    "p95_ms": 0.311584
+  },
+  {
+    "history": 1000,
+    "distinct": false,
+    "operation": "active-cycle",
+    "samples": 20,
+    "p50_ms": 0.7134165,
+    "p95_ms": 1.1045
+  },
+  {
+    "history": 1000,
+    "distinct": false,
+    "operation": "concurrent-cycle",
+    "samples": 80,
+    "p50_ms": 0.699312,
+    "p95_ms": 4.492625
+  },
+  {
+    "history": 1000,
+    "distinct": true,
+    "operation": "job-write",
+    "samples": 20,
+    "p50_ms": 0.112312,
+    "p95_ms": 0.199792
+  },
+  {
+    "history": 1000,
+    "distinct": true,
+    "operation": "idle-cycle",
+    "samples": 20,
+    "p50_ms": 0.125833,
+    "p95_ms": 0.171333
+  },
+  {
+    "history": 1000,
+    "distinct": true,
+    "operation": "selected-status",
+    "samples": 20,
+    "p50_ms": 0.2198125,
+    "p95_ms": 0.333708
+  },
+  {
+    "history": 1000,
+    "distinct": true,
+    "operation": "active-cycle",
+    "samples": 20,
+    "p50_ms": 0.6155415,
+    "p95_ms": 0.928708
+  },
+  {
+    "history": 1000,
+    "distinct": true,
+    "operation": "concurrent-cycle",
+    "samples": 80,
+    "p50_ms": 0.666667,
+    "p95_ms": 1.161375
+  },
+  {
+    "history": 10000,
+    "distinct": false,
+    "operation": "job-write",
+    "samples": 20,
+    "p50_ms": 0.1041045,
+    "p95_ms": 0.288041
+  },
+  {
+    "history": 10000,
+    "distinct": false,
+    "operation": "idle-cycle",
+    "samples": 20,
+    "p50_ms": 0.1243535,
+    "p95_ms": 0.276375
+  },
+  {
+    "history": 10000,
+    "distinct": false,
+    "operation": "selected-status",
+    "samples": 20,
+    "p50_ms": 0.2083745,
+    "p95_ms": 0.35225
+  },
+  {
+    "history": 10000,
+    "distinct": false,
+    "operation": "active-cycle",
+    "samples": 20,
+    "p50_ms": 0.6588335,
+    "p95_ms": 0.993083
+  },
+  {
+    "history": 10000,
+    "distinct": false,
+    "operation": "concurrent-cycle",
+    "samples": 80,
+    "p50_ms": 0.6923125,
+    "p95_ms": 4.326416
+  },
+  {
+    "history": 10000,
+    "distinct": true,
+    "operation": "job-write",
+    "samples": 20,
+    "p50_ms": 0.117229,
+    "p95_ms": 0.252125
+  },
+  {
+    "history": 10000,
+    "distinct": true,
+    "operation": "idle-cycle",
+    "samples": 20,
+    "p50_ms": 0.1236665,
+    "p95_ms": 0.201084
+  },
+  {
+    "history": 10000,
+    "distinct": true,
+    "operation": "selected-status",
+    "samples": 20,
+    "p50_ms": 0.2417495,
+    "p95_ms": 0.477334
+  },
+  {
+    "history": 10000,
+    "distinct": true,
+    "operation": "active-cycle",
+    "samples": 20,
+    "p50_ms": 0.6450835,
+    "p95_ms": 0.956208
+  },
+  {
+    "history": 10000,
+    "distinct": true,
+    "operation": "concurrent-cycle",
+    "samples": 80,
+    "p50_ms": 0.684917,
+    "p95_ms": 2.485125
+  }
+]
