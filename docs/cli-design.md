@@ -20,7 +20,7 @@ The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `-
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not initialize a ledger or require a Git repository or provider, and create no directories or files.
 
-The phase-one command names and flags are registered now, but their workflow handlers still return explicit not-implemented errors. Parsing `--json` does not yet implement JSON result rendering. Target resolution, revision-bound requests, and workflow execution will be connected through the shared workflow layer as those capabilities become available.
+`status` now calls the shared workflow status API and renders either human-readable output or JSON with `--json`. The other phase-one command names and flags are registered, but their handlers still return explicit not-implemented errors. Workflow request acceptance is available through the Go API; selector resolution, action-command submission, and driver execution remain to be connected.
 
 ## The flow
 
@@ -126,6 +126,8 @@ Missing verification tools must not silently authorize unverified publication. I
 **Observation, previews, and results**
 
 `status` reads driver-maintained state. It shows each target's revision, verification state, publication state, status of its associated pull request, and any blocker or setup requirement. Outstanding resource cleanup remains visible separately from the job outcome. Include the last observation time so stale information is visible. It does not take over bookkeeping when no driver is running. PR monitoring and forge-state refresh belong to the driver.
+
+The current `status` command selects the whole repository ledger. It displays jobs and targets, input/result revision IDs, verification attempts and evidence, publication actions, tracked changes and pull requests, and resource states. Snapshot-read time is separate from recorded evidence and PR observation times. Human output escapes embedded control characters. JSON is the typed `workflow.Status` projection, using its Go field names, with empty result collections represented as arrays. Reading a missing state ref produces an empty status; unreadable or malformed state is an error. Status does not create ledger records or acquire the writer lock, though constructing the ledger still initializes its configured lockfile.
 
 `--diff` performs only the preparation needed to show the proposed changes. It may evaluate Portfiles and fetch inputs needed to calculate checksums, but it does not edit the working tree, create a branch, persist a job, start a build, or publish a PR. Reject combinations with `--publish`, `--wait`, or `--trace` that ask a preview to execute the workflow.
 

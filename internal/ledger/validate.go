@@ -30,6 +30,14 @@ func validateState(state State) error {
 		if request == "" || job == "" {
 			return fmt.Errorf("%w: empty request or job ID", ErrInvalidState)
 		}
+		if record, exists := state.Jobs[job]; !exists || record.RequestID != request {
+			return fmt.Errorf("%w: request %s does not identify its job", ErrInvalidState, request)
+		}
+	}
+	for id, job := range state.Jobs {
+		if job.RequestID == "" || state.Requests[job.RequestID] != id {
+			return fmt.Errorf("%w: job %s has no matching request index", ErrInvalidState, id)
+		}
 	}
 	return nil
 }

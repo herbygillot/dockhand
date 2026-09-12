@@ -13,6 +13,7 @@ const PinsPrefix = "refs/dockhand/objects/"
 
 func (s *Store) sourcePins(ctx context.Context, state State) ([]git.RefChange, bool, error) {
 	objects := make(map[string]string)
+	commitTrees := make(map[string]string)
 	add := func(id model.ObjectID, kind string) error {
 		if id == "" {
 			return nil
@@ -28,6 +29,13 @@ func (s *Store) sourcePins(ctx context.Context, state State) ([]git.RefChange, b
 		return nil
 	}
 	addSource := func(source model.Source) error {
+		if source.Commit != "" && source.Tree != "" {
+			commit, tree := string(source.Commit), string(source.Tree)
+			if previous, exists := commitTrees[commit]; exists && previous != tree {
+				return fmt.Errorf("%w: commit %s has contradictory source trees", ErrInvalidState, commit)
+			}
+			commitTrees[commit] = tree
+		}
 		if err := add(source.Commit, "commit"); err != nil {
 			return err
 		}
@@ -67,6 +75,15 @@ func (s *Store) sourcePins(ctx context.Context, state State) ([]git.RefChange, b
 	types, err := s.repo.ObjectTypes(ctx, ids)
 	if err != nil {
 		return nil, false, err
+	}
+	for commit, expected := range commitTrees {
+		tree, err := s.repo.Resolve(ctx, commit+"^{tree}")
+		if err != nil {
+			return nil, false, err
+		}
+		if tree != expected {
+			return nil, false, fmt.Errorf("%w: commit %s does not contain source tree %s", ErrInvalidState, commit, expected)
+		}
 	}
 	currentRefs, err := s.repo.ReadRefs(ctx, PinsPrefix)
 	if err != nil {
