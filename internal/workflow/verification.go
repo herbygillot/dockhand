@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
+// attemptAction selects one provider operation after the attempt has been claimed.
 type attemptAction string
 
 const (
@@ -20,6 +21,8 @@ const (
 	cancelAttempt    attemptAction = "cancel"
 )
 
+// attemptResult carries one provider response back across the transaction
+// boundary. Only the response corresponding to the selected action is used.
 type attemptResult struct {
 	submission     verify.Submission
 	reconciliation verify.Reconciliation
@@ -27,6 +30,10 @@ type attemptResult struct {
 	err            error
 }
 
+// advanceJob settles local-only work or claims, calls, and records one attempt
+// action. It returns whether advancement was confirmed, a per-job problem,
+// and an error if the caller must handle a lost claim or stop the pass. A later
+// failure can leave the earlier claim transaction committed for recovery.
 func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, error) {
 	e := c.engine
 	var attempt record.Attempt
@@ -135,7 +142,11 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	if action == "" {
 		return changed, detail, nil
 	}
+	// The intent and claim are durable before any provider effect. Losing the
+	// response leaves enough identity for another cycle to reconcile the call.
 	response := c.callAttempt(ctx, action, attempt)
+	// Re-read after the external call; the snapshot that authorized it may
+	// have been superseded while this driver was waiting.
 	err = e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
 		current, ok := tx.State.Attempts[attempt.ID]
 		now := e.now()
@@ -161,6 +172,9 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	return changed, detail, err
 }
 
+// callAttempt performs exactly one provider operation outside the writer lock.
+// It reports a context error even when the provider returns nil after expiry,
+// so a late result is not accepted as timely confirmation.
 func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt record.Attempt) attemptResult {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -181,6 +195,9 @@ func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt r
 	return result
 }
 
+// recordAttempt applies a provider response within the caller's transaction
+// after claim validation. Its returned detail is stored on the attempt and
+// reported as a job problem. It performs no provider calls.
 func (c *cycle) recordAttempt(state *ledger.State, job *record.Job, attempt *record.Attempt, action attemptAction, result attemptResult, now time.Time) string {
 	switch action {
 	case submitAttempt:
@@ -197,6 +214,8 @@ func (c *cycle) recordAttempt(state *ledger.State, job *record.Job, attempt *rec
 			}
 			return recordSubmission(state, job, attempt, submission, nil, now)
 		case verify.RequestClosed:
+			// Closure must fence late submissions at the provider. An observation
+			// of temporary absence is insufficient to cancel or retry safely.
 			if result.reconciliation.Submission.Run != (record.ProviderRun{}) || attempt.Run != (record.ProviderRun{}) {
 				return "workflow: closed submission unexpectedly identifies a run"
 			}
@@ -223,6 +242,8 @@ func (c *cycle) recordAttempt(state *ledger.State, job *record.Job, attempt *rec
 			return "workflow: invalid provider reconciliation state"
 		}
 	case cancelAttempt:
+		// A successful call acknowledges intent. Observation must still
+		// establish the outcome, including when the cancellation call failed.
 		attempt.CancelPendingObservation = true
 		if result.err != nil {
 			return result.err.Error()
@@ -254,6 +275,11 @@ func (c *cycle) recordAttempt(state *ledger.State, job *record.Job, attempt *rec
 	return "workflow: invalid attempt action"
 }
 
+// recordSubmission validates run identity before retaining response resources.
+// It defaults to uncertainty, then adopts admission, a capacity refusal, or an
+// unsupported outcome only when the response is consistent. Valid handles may
+// be retained despite a call error so recovery does not lose cleanup obligations.
+// The caller must hold a ledger transaction and have validated the attempt claim.
 func recordSubmission(state *ledger.State, job *record.Job, attempt *record.Attempt, submission verify.Submission, callErr error, now time.Time) string {
 	attempt.State = record.AttemptUncertain
 	if run := submission.Run; run != (record.ProviderRun{}) {
@@ -300,6 +326,9 @@ func recordSubmission(state *ledger.State, job *record.Job, attempt *record.Atte
 	}
 }
 
+// finishAttempt records a terminal verdict and its job outcome in the caller's
+// transaction. Passed and canceled attempts request release; other outcomes
+// retain their resources for diagnosis. Actual release happens separately.
 func finishAttempt(state *ledger.State, job *record.Job, attempt *record.Attempt, evidence record.Evidence, detail string, now time.Time) {
 	attempt.Evidence, attempt.State, attempt.Claim, attempt.RetryAt = &evidence, record.AttemptFinished, nil, nil
 	resourceState := record.ResourceRetained

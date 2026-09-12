@@ -11,6 +11,14 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
+// Control durably records an idempotent cancellation request for explicit jobs.
+// Callers supply an ID, Cancel kind, job IDs, and optional reason; change/revision
+// selectors and timestamps must be unset. Other control kinds remain unsupported.
+//
+// Repeated job IDs and their order do not change intent. An equivalent retry is
+// a no-op; reuse of an ID for other intent returns ErrRequestConflict. A successful
+// call records intent only. A later Cycle applies it and reconciles any remote
+// cancellation. After an uncertain ledger commit, retry the original request.
 func (e *Engine) Control(ctx context.Context, request record.ControlRequest) error {
 	if e == nil || e.Ledger == nil {
 		return ErrNoLedger
@@ -55,6 +63,10 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 	})
 }
 
+// applyControls marks cancellation intent on selected nonterminal jobs. It marks
+// a control applied once all its jobs have received that intent or are terminal,
+// even when satisfying one control requires several differently scoped cycles.
+// This transaction never calls the provider or claims that a remote run stopped.
 func (e *Engine) applyControls(ctx context.Context, selected map[record.JobID]bool) error {
 	return e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
 		now := e.now()

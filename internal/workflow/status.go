@@ -12,22 +12,43 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
+// JobStatus groups a job with its recorded attempts and publication actions.
+// Resources remain separate in Status so their lifetime can outlast the job.
 type JobStatus struct {
 	Job          record.Job
 	Attempts     []record.Attempt
 	Publications []record.PublicationAction
 }
 
+// Status is a caller-owned projection of one immutable ledger snapshot.
+// Its timestamps distinguish snapshot reads from provider and forge observations.
+// Records may share maps or slices within the result; modifying them does not
+// modify the ledger or a later Status result.
 type Status struct {
+	// LedgerVersion identifies the state commit, or is empty before the ledger
+	// has any persisted state.
 	LedgerVersion record.ObjectID
-	ReadAt        time.Time
-	Jobs          []JobStatus
-	Changes       []record.Change
-	Revisions     []record.Revision
-	PullRequests  []record.PullRequest
-	Resources     []record.Resource
+	// ReadAt records this snapshot read, without refreshing external observations.
+	ReadAt time.Time
+	// Jobs are ordered by acceptance time, then job ID. Associated collections
+	// and the remaining top-level collections are ordered by their record IDs.
+	Jobs         []JobStatus
+	Changes      []record.Change
+	Revisions    []record.Revision
+	PullRequests []record.PullRequest
+	// Resources includes associated cleanup obligations, including after jobs
+	// finish. An all-jobs scope also includes orphan resource records.
+	Resources []record.Resource
 }
 
+// Status reads one ledger snapshot without acquiring the writer lock, contacting
+// providers, or advancing work. A selected-job scope includes associated changes,
+// revisions, pull requests, and resources. An all-jobs scope exposes all of those
+// records, including changes with no jobs and resources with no owning attempt.
+//
+// A missing state ref yields an empty all-jobs result; corrupt or unsupported
+// state remains an error. Explicit unknown job IDs return ErrNotFound. All result
+// collections are initialized on success, including when empty.
 func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 	if e == nil || e.Ledger == nil {
 		return Status{}, ErrNoLedger

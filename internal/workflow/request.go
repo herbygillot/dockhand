@@ -16,6 +16,9 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
+// normalizeSpec validates caller-supplied intent without consulting the ledger
+// or external services. It copies mutable inputs and canonicalizes target order
+// and empty variant maps so equivalent requests have the same representation.
 func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if !utf8.ValidString(spec.Reason) || (spec.ChangeID != "" && !validToken(string(spec.ChangeID))) || (spec.InputRevision != "" && !validToken(string(spec.InputRevision))) {
 		return record.JobSpec{}, fmt.Errorf("%w: invalid change ID, revision ID, or reason encoding", ErrInvalidRequest)
@@ -106,6 +109,8 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	return spec, nil
 }
 
+// validateSource checks object-ID syntax and consistent hash lengths. The ledger
+// separately verifies object existence, types, commit/tree agreement, and pins.
 func validateSource(source record.Source) error {
 	if !git.ValidObjectID(string(source.Tree)) {
 		return fmt.Errorf("%w: an immutable source tree ID is required", ErrInvalidRequest)
@@ -118,10 +123,13 @@ func validateSource(source record.Source) error {
 	return nil
 }
 
+// validToken accepts a nonempty UTF-8 identifier without whitespace or control characters.
 func validToken(value string) bool {
 	return value != "" && utf8.ValidString(value) && strings.IndexFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) == -1
 }
 
+// targetKey provides deterministic ordering and identity for the complete target,
+// including explicit variant choices. JSON encoding sorts the variant map keys.
 func targetKey(target record.Target) string {
 	data, _ := json.Marshal(target)
 	return string(data)
