@@ -15,8 +15,12 @@ The package tree compiles. Git-backed ledger persistence, workflow request accep
 - [Workflow intake and status report](docs/activity/2026-09-11-workflow-intake.md)
 - [Verification cycle report](docs/activity/2026-09-11-verification-cycle.md)
 - [Record package documentation report](docs/activity/2026-09-11-record-package.md)
+- [Behavioral test report](docs/activity/2026-09-11-behavior-tests.md)
+- [Testify conversion report](docs/activity/2026-09-12-testify.md)
 
-Compile the packages with `go build ./...`. No test suite has been imported or added; the activity reports describe temporary validation performed in disposable repositories.
+Compile the packages with `go build ./...`. Run the behavioral tests with `go test ./...`, or include concurrency checking with `go test -race ./...`. The initial suite covers `internal/workflow`, `internal/ledger`, and `internal/tcl/syntax`, using Testify assertions. Git must be available on `PATH`, with support for `show-ref --exists` and SHA-256 repositories; the ledger tests exercise both Git object formats. Git fixtures and lockfiles live in temporary directories. No MacPorts installation, Tcl interpreter, VM provider, credentials, or network access is required by the tests.
+
+The syntax package also has two fuzz targets. Run either with `go test ./internal/tcl/syntax -run '^$' -fuzz '^FuzzParse$' -fuzztime=20s` or substitute `FuzzSplitList`. Their seed cases run during ordinary `go test` executions.
 
 The ledger writer lock defaults to `$HOME/.dockhand/ledger.lock`; `--lockfile PATH` or `-L PATH` selects another path. The ledger creates the file and any missing parent directories when initialized, without acquiring the lock. There is no config-directory setting. Help and completion work outside a Git repository and create no directories or files.
 

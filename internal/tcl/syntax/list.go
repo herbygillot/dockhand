@@ -1,6 +1,10 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/v2/internal/text"
+import (
+	"unicode/utf8"
+
+	"github.com/herbygillot/dockhand/v2/internal/text"
+)
 
 func (b Braced) ListLens(src []byte) ([]text.Span, []Error) {
 	return SplitList(src, b.Body)
@@ -20,8 +24,6 @@ func SplitList(src []byte, window text.Span) ([]text.Span, []Error) {
 		for pos < end {
 			if isListSpace(src[pos]) {
 				pos++
-			} else if src[pos] == '\\' && pos+1 < end && src[pos+1] == '\n' {
-				pos += 2
 			} else {
 				break
 			}
@@ -74,8 +76,11 @@ func SplitList(src []byte, window text.Span) ([]text.Span, []Error) {
 			for pos < end && !isListSpace(src[pos]) {
 				if src[pos] == '\\' && pos+1 < end {
 					if src[pos+1] == '\n' {
-
-						break
+						pos += 2
+						for pos < end && (src[pos] == ' ' || src[pos] == '\t') {
+							pos++
+						}
+						continue
 					}
 					pos += 2
 					continue
@@ -102,12 +107,84 @@ func ListValue(raw string) string {
 	}
 	out := make([]byte, 0, len(raw))
 	for i := 0; i < len(raw); i++ {
-		if raw[i] == '\\' && i+1 < len(raw) {
-			i++
+		if raw[i] != '\\' || i+1 == len(raw) {
+			out = append(out, raw[i])
+			continue
 		}
-		out = append(out, raw[i])
+		i++
+		switch c := raw[i]; c {
+		case 'a':
+			out = append(out, '\a')
+		case 'b':
+			out = append(out, '\b')
+		case 'f':
+			out = append(out, '\f')
+		case 'n':
+			out = append(out, '\n')
+		case 'r':
+			out = append(out, '\r')
+		case 't':
+			out = append(out, '\t')
+		case 'v':
+			out = append(out, '\v')
+		case '\n':
+			for i+1 < len(raw) && (raw[i+1] == ' ' || raw[i+1] == '\t') {
+				i++
+			}
+			out = append(out, ' ')
+		case 'x', 'u', 'U':
+			limit := 2
+			if c == 'u' {
+				limit = 4
+			} else if c == 'U' {
+				limit = 8
+			}
+			value, count := rune(0), 0
+			for count < limit && i+1 < len(raw) {
+				digit := hexDigit(raw[i+1])
+				if digit < 0 || value*16+rune(digit) > utf8.MaxRune {
+					break
+				}
+				value = value*16 + rune(digit)
+				i++
+				count++
+			}
+			if count == 0 {
+				out = append(out, c)
+			} else {
+				out = utf8.AppendRune(out, value)
+			}
+		default:
+			if c < '0' || c > '7' {
+				out = append(out, c)
+				continue
+			}
+			value := rune(c - '0')
+			for count := 1; count < 3 && i+1 < len(raw); count++ {
+				digit := raw[i+1]
+				if digit < '0' || digit > '7' || value*8+rune(digit-'0') > 255 {
+					break
+				}
+				value = value*8 + rune(digit-'0')
+				i++
+			}
+			out = utf8.AppendRune(out, value)
+		}
 	}
 	return string(out)
+}
+
+func hexDigit(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	default:
+		return -1
+	}
 }
 
 func stringsContainsByte(s string, b byte) bool {
