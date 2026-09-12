@@ -1,0 +1,146 @@
+# State store design
+
+This is the approved next implementation, following the [architecture](architecture.md), [component structure](components.md), and [CLI design](cli-design.md). It replaces the Git ledger and lock-directory design. The current Go code still uses `internal/ledger`; this document does not claim that the SQLite migration or `--db` flag is implemented.
+
+## First slice
+
+Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
+
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Preparation, real provider execution, publication, and action-command wiring follow separately.
+
+## Packages and contracts
+
+```text
+internal/
+  record/                  Domain records and identities
+  state/
+    store.go               Store, Reader, Writer, Tx contracts
+    query.go               Bounded queries and cursor types
+    errors.go              Persistence errors
+    sqlite/
+      store.go             Opening, connections, closing
+      transaction.go       Snapshot and write transactions
+      jobs.go              Intake and job persistence
+      attempts.go          Attempts, submissions, evidence
+      resources.go         Ownership and cleanup persistence
+      migrations/          Ordered schema changes
+  workflow/                Intake and progression rules
+  app/                     Database selection and dependency wiring
+```
+
+Do not create an interface per table or a generic key/value API. Introduce methods for the records and queries actually consumed by the workflow. SQL, the selected Go SQLite driver, connection configuration, migrations, and SQLite error codes stay in `state/sqlite`. `state` imports neither Git nor the concrete backend. `app` owns the opened implementation's lifetime and injects a `state.Store` into the workflow.
+
+The interface shape is illustrated below; it is not a complete declaration of every method needed by the slice. `record.Repository` and `record.RepositoryID` are new domain records to add during implementation.
+
+```go
+type Store interface {
+    FindRepository(context.Context, string) (record.Repository, error)
+    RegisterRepository(context.Context, string) (record.Repository, error)
+    View(context.Context, record.RepositoryID, func(context.Context, Reader) error) error
+    Update(context.Context, record.RepositoryID, func(context.Context, Tx) error) error
+}
+
+type Reader interface {
+    Job(context.Context, record.JobID) (record.Job, error)
+    Attempt(context.Context, record.AttemptID) (record.Attempt, error)
+    AttemptsForJob(context.Context, record.JobID) ([]record.Attempt, error)
+    ReadyJobs(context.Context, time.Time, int) ([]record.Job, error)
+}
+
+type Writer interface {
+    PutJob(context.Context, record.Job) error
+    PutAttempt(context.Context, record.Attempt) error
+}
+
+type Tx interface {
+    Reader
+    Writer
+}
+```
+
+`View` exposes one consistent, read-only snapshot. It does not copy the database into memory. `Update` exposes a fresh view with read-your-writes and serializable decisions; its changes commit together or roll back together. Callbacks run once, synchronously, and use the supplied context. They perform no provider, forge, Git, or other external work. A view or transaction must not escape its callback. Nested store calls inside a callback are unsupported; use the supplied reader or transaction. Cancellation is cooperative, and the backend checks the deadline before committing. Never automatically replay a callback after a conflict or uncertain commit.
+
+Errors distinguish absent records, invalid records, conflicts, unavailable storage, unsupported schema, and uncertain commit outcomes. A receipt is returned only after confirmed commit. An interrupted caller retries using its original request identity. Repository registration is its own small atomic, idempotent operation, with a uniqueness constraint on canonical common directory. Read-only lookup never registers a repository.
+
+## One database, multiple repositories
+
+`--db PATH` selects the database independently of the invocation's checkout. Its default is `$HOME/.dockhand/state.db`. `app` uses Git to discover and canonicalize the selected checkout's common directory, looks up or registers it as appropriate, and passes the resulting repository ID to workflow operations. The state implementation receives ordinary paths and IDs; it does not discover Git repositories itself.
+
+Linked worktrees share a repository entry. Separate clones have distinct entries even when their remotes match. Worktree paths belong to the invocation; they are not repository identity. A moved common directory requires explicit reassociation in a later workflow, rather than matching it automatically by remote URL.
+
+A reader/transaction is bound to exactly one registered repository. Its lookups, joins, and mutations are scoped to that repository; an ID belonging to another repository is not accessible through that view. IDs are generated globally uniquely, and relationships use repository-qualified foreign keys so a job cannot accidentally acquire another repository's revision or attempt. Reusing a request ID for another repository conflicts with the original receipt.
+
+For this slice, a change has one local repository and one branch association, stored directly on the change row. Its stable ID is independent of that association. A missing or renamed branch is an actionable error; no automatic branch guessing or evidence reassignment occurs. Branch uniqueness applies to active changes within a repository. Tracking the same changeline concurrently in multiple clones, cross-repository moves, and automatic identity-note discovery are deferred. They do not require changing job IDs or the meaning of already accepted inputs.
+
+`status`, selectors, and `start` initially operate on the selected repository. An all-jobs scope means all jobs in that repository, not all repositories in the file. Several resident drivers can work on different repositories using the same database. Cross-repository listing and resident scheduling can be added through explicit scopes later; an omitted repository must never silently mean the whole database. The driver retains the repository context of each accepted job.
+
+## Minimal data model
+
+The following is a logical schema, not final DDL. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+
+| Table | Main data | Why it is needed now |
+| --- | --- | --- |
+| `repositories` | ID, unique canonical common directory, creation time | Multiple checkouts in one database |
+| `changes` | ID, repository, branch ref, current revision, disposition, creation time | Existing contribution identity and revision selection |
+| `sources` | ID, repository, commit/tree/base IDs, canonical identity fingerprint | One source description reused by related records |
+| `revisions` | ID, change, source, preceding revision, creation time | Immutable input revisions and their relationships |
+| `requests` | ID, repository, kind, canonical submitted input, digest, acceptance time, control completion time | Shared intake identity for jobs and cancellation |
+| `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, next action time, lifecycle times | Durable accepted work |
+| `control_jobs` | Request, job, applied time | Per-job cancellation progress |
+| `plans` | Job, revision, frozen single-target plan | Preserve requested verification coverage |
+| `attempts` | ID, job, target identity, immutable build choices and inputs, state, next action time, cancellation state, claim fields, last error | Current verification execution and scheduling |
+| `submissions` | Submission ID, attempt, sequence, provider, run ID, state, admission/closure times | Recoverable provider identities, including closed submissions |
+| `attempt_evidence` | Attempt, latest accepted verdict/observation time, diagnostic evidence and artifact/log references | Keep evidence separate from frequent claim updates |
+| `resources` | ID, submission, provider handle, state, retention/release times, next action time, claim fields, last error | Ownership and cleanup after job completion |
+
+Use ordinary columns for keys, relationships, lifecycle states, scheduling, claims, and fields used by current queries. Small nested targets, variants, build options, plan details, and evidence can use JSON checked on write. They belong to individual records; there is no whole-state document. Do not store a second authoritative copy of a source or relational key inside JSON. The backend reconstructs existing domain values from the authoritative columns and referenced records.
+
+The first plan contains one target, so normalized target graphs, separate artifact catalogues, per-port query tables, and event history are unnecessary now. Add those when dependent scheduling, artifact reuse, selector resolution, or a history consumer requires them. Preserve the existing negative and running evidence semantics; terminal results cannot be overwritten by a later poll, and retrying a build creates another attempt.
+
+`requests.kind` distinguishes job intake from cancellation. Cancellation's domain record is assembled from the request and `control_jobs`; a separate `controls` table would add no useful lifetime here. Matching request kinds and immutable payloads are checked within intake's transaction. Job creation and its receipt are atomic. Cancellation completion means every selected job received the intent or was already terminal; it does not mean the provider stopped.
+
+Give provider submissions their own rows instead of an array of closed IDs on an attempt. Introduce a submission record and store resource ownership against its ID when migrating the existing domain representation. Sequence identifies the current/latest submission, and at most one submission per attempt can remain unclosed. A capacity refusal keeps that identity. Only confirmed provider closure permits a replacement identity, created in the same transaction as recording closure. Resources remain associated with the submission that produced them, including partial provisioning discovered during reconciliation. Scope provider run/resource uniqueness to the stable provider namespace across the whole database, not merely one repository.
+
+Preserve foreign keys and useful uniqueness constraints: current/preceding revisions belong to their change; one job uses one request; control membership is unique; evidence belongs to one attempt; submissions have unique attempt/sequence and provider/run identities; resource handles are unique within their provider. Insert or adopt related records in one transaction. Reads of one job fetch only its related rows. SQL constraints supplement workflow validation; they do not implement publication or eligibility policy.
+
+## Queries and coordination
+
+Start with bounded queries for queued/due jobs, attempts by job, due attempts, unapplied controls, resources by owner, and due cleanup. Candidate queries exclude terminal work and use repository/state/time indexes. Selected-job queries use IDs directly. Index relationship keys and request identity. A status report may enumerate its selected repository; an individual write never requires that enumeration.
+
+Attempts and resources retain `claim_owner`, `claim_generation`, and `claim_until`. Claim owner and deadline are either both present or both absent. Generation remains after release. Eligibility, ownership, submission intent, and the relevant state transition are checked and written in one `state.Tx`. Recording an external result rechecks owner, generation, lease, expected state, and relevant job intent in a fresh transaction.
+
+Keep `next_action_at` nullable: NULL means no scheduled action. A live claim schedules reconsideration at lease expiry; a result schedules the next observation, retry, or cleanup deadline. Dependencies and cancellation update affected scheduling rows transactionally. An idle cycle reads indexed candidates, opens no write transaction, and calls no provider. A candidate can lose eligibility before claim; that is an ordinary no-op. Use deterministic ordering and bounded batches, with later cycles reconsidering work.
+
+Data locking belongs to the backend. Workflow claims belong to its transaction boundary. Do not inject an independent lock backend to authorize a state write: checking ownership in one system and writing in another would introduce a gap. An external resource lock can have a separate interface if an executor needs it, but no `lock`/`flock` replacement or configurable lock directory is part of this slice.
+
+Lease expiry does not prove an external action ended or that provider capacity is free. Provider submission/reconciliation retains its current idempotency and closure contract. Capacity reservations shared across repositories may be added when the real provider needs them; there is no speculative slot allocator now. Different DB files do not coordinate claims for shared external resources. Initially require cooperating drivers using those resources to use the same DB; Git/provider preconditions still apply to external tools and uncertain operations.
+
+## SQLite implementation
+
+Use a Go SQLite driver behind the contract, WAL on a local filesystem, foreign keys enabled on every connection, and STRICT tables. Begin short write transactions with `BEGIN IMMEDIATE`; keep snapshot reads short. Use full commit durability for accepted intent, a bounded busy wait, and context deadlines. Retain five-second contention and thirty-second operation limits as initial configurable backend defaults, subject to validation. Backend opening/closing owns connections; workflow never handles a SQL transaction.
+
+Use ordered migrations and SQLite's `user_version` for the installed schema number. Recognize a Dockhand database before applying migrations; reject an unrelated database rather than adding tables to it. Recheck the version under the migration write transaction so concurrent openers cannot apply the same migration twice. Report unsupported newer schemas and preserve failed migrations atomically. There is no application migration-history table initially.
+
+The CLI resolves the default home directory and relative path. `sqlite.Open` normalizes the file location so aliases do not accidentally split coordination, creates a missing parent directory for a writable open, and preserves an existing database. Create private directories/files with restrictive permissions. CLI `--db` accepts a file path, not SQLite URI parameters or in-memory database names. The backend's read-only opening mode does not create the database, register a repository, or migrate the schema.
+
+Help, completion generation, and previews do not open state. `status` reports empty results if the database or repository registration is absent, without creating either. Corrupt, unreadable, and unsupported databases are errors. A command that accepts or advances work opens writable state and initializes it lazily. Existing-schema read-only access may use SQLite's normal WAL machinery; it must not mutate workflow records.
+
+SQLite references: [isolation](https://www.sqlite.org/isolation.html), [transactions](https://www.sqlite.org/lang_transaction.html), [WAL](https://www.sqlite.org/wal.html), [foreign keys](https://www.sqlite.org/foreignkeys.html), [STRICT tables](https://www.sqlite.org/stricttables.html), and [schema version pragma](https://www.sqlite.org/pragma.html#pragma_user_version).
+
+## Git and later features
+
+State persistence makes no Git mutations and creates no source pins. Before consuming source, an executor checks the objects it needs. Missing source preserves identity and historical evidence but can leave the affected job needing attention. A permission/read failure is not confirmed absence. Existing provider runs and cleanup continue where they do not need the missing local source. Never replace a job's source with the current branch head to make it runnable.
+
+Preparation should use an isolated job-owned workspace and retry from recorded input. A changed branch after interruption is inspected; ambiguity requires attention. There is no `git_operations` table or promise of atomicity between SQLite and Git. Saving a candidate revision before branch integration remains an optional later checkpoint within normal job/revision records.
+
+Keep PRs and publication actions separate when publication is implemented. PR identity persists across repeated publication actions and revisions; intended publication and confirmed forge state remain distinct. Their tables, scheduling, and queries arrive with that executor. Discovery observations, review decisions, branch reassociation commands, and an optional identity-only notes namespace remain later work. No automatic notes configuration is required to open or use the database. Matching port name, version, and revision alone does not establish equivalent verification inputs.
+
+## Migration and validation
+
+Implement the state contracts and SQLite backend, then move intake, status, cancellation, and the existing cycle to repository-scoped queries. Wire `--db` through `app.Config.DBPath`; remove `--lock-dir`, `-L`, `--lockfile`, `LockDir`, and ledger-writer construction. Do not retain an ignored compatibility flag. Remove the Git ledger and its now-unused lock implementation only as their consumers migrate. Historic reports and benchmark results remain evidence of the previous implementation.
+
+No automatic import of the experimental Git ledger or deletion of its refs is required for this prerelease transition. Leave existing repositories and their old refs untouched unless an explicit cleanup/import is requested. New state is initialized in the selected database. Select the Go driver during implementation without exposing it in the contract.
+
+Validation should cover two processes claiming the same work, atomic claim/state rollback, stale results, uncertain submission reconciliation, cancellation, and cleanup independent of job completion. Add two unrelated repositories and two clones of the same remote to one database; prove same-named branches and scoped queries cannot collide, cross-repository relationships are rejected, and linked worktrees share registration. Exercise concurrent registration and schema initialization, context cancellation, read-only status on missing state, and flag/help behavior.
+
+Re-run representative history-size and multi-driver performance cases against SQLite. A claim or result write must access only its affected records and indexes, without whole-database decoding or source scans. A backend contract test suite should exercise real transactions; an in-memory fake alone cannot establish cross-process behavior. No source code or tests from v1 need to be copied for this migration.

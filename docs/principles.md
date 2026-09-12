@@ -38,15 +38,15 @@ Those lifetimes differ. Retrying a build preserves the earlier attempt. Completi
 
 ## Give the driver responsibility for accepted work
 
-The driver owns the durable progression of an accepted job, including waiting for capacity, submitting builds, recording evidence, making decisions, publishing when authorized, and cleaning up. The CLI submits requests to the ledger through shared workflow intake functions and observes recorded progress. Durable submission is distinct from driver pickup and provider admission. The ledger provides the handoff between processes; no separate request transport is needed. Waiting or tracing changes how long the CLI stays attached, not who owns the work or what publication is authorized.
+The driver owns the durable progression of an accepted job, including waiting for capacity, submitting builds, recording evidence, making decisions, publishing when authorized, and cleaning up. The CLI submits requests to the state store through shared workflow intake functions and observes recorded progress. Durable submission is distinct from driver pickup and provider admission. The state store provides the handoff between processes; no separate request transport is needed. Waiting or tracing changes how long the CLI stays attached, not who owns the work or what publication is authorized.
 
 Action invocations and explicit persistent mode (`dockhand start`) use the same workflow implementation in their current process. Commands do not spawn background drivers. A CLI exit or driver crash must leave enough durable information for a later driver cycle to resume or report what needs attention; durable records alone do not execute pending work.
 
-## Keep one authoritative ledger and recoverable effects
+## Keep authoritative state and recoverable effects
 
-Store durable workflow records in Git within the ports repository. Git notes are derived summaries for commit inspection. Linked worktrees share the ledger and its write coordination.
+Store durable workflow metadata in SQLite behind backend-independent state contracts. One database can hold multiple repositories, with explicit repository scope for reads, relationships, and claims. Linked worktrees share repository identity; separate clones remain distinct. Git stores source, while database records preserve source identity and evidence. Missing source requires an availability decision, never silent replacement with a moving branch tip. The [state design](state.md) defines the initial boundary.
 
-Record intended external actions before performing them. Use short transactions, durable claims, and checks against the current claim and state when committing results. Recovery reconciles uncertain actions with the provider or forge before retrying. Neither a local lock nor a recorded intention alone guarantees that an external action happens only once.
+Record accepted work and provider/publication intent before executing it. Use short transactions that acquire claims and update related state atomically, then check the current claim and state when recording results. Recovery reconciles uncertain provider or forge actions before retrying. Interrupted Git work is inspected or reported as needing attention; it does not require a generic operation journal or atomic Git/database commit. Neither a lock nor a recorded intention alone guarantees that an external action happens only once.
 
 ## Preserve failure attribution and independent progress
 

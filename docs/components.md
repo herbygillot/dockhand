@@ -1,6 +1,6 @@
 # Initial component structure
 
-This is a proposed implementation map for the [architecture](architecture.md), [principles](principles.md), and [CLI design](cli-design.md). Those documents and the v1 reviews are sufficient to establish these boundaries. The first working workflow should validate the exact APIs before they become fixed conventions.
+This implementation map follows the [architecture](architecture.md), [principles](principles.md), [CLI design](cli-design.md), and [state-store design](state.md). The state design replaces Git-ledger persistence with repository-scoped contracts and a SQLite backend. The package map describes the destination; the existing implementation still uses `ledger`, as detailed under groundwork status.
 
 Use one Go module and one executable. Start with a shared workflow engine, capability packages, and concrete integrations. Add files as behavior is implemented; this tree is not a request to create empty packages or implement phase two immediately.
 
@@ -14,8 +14,9 @@ dockhand2/
     app/                 # Configuration, setup, and dependency construction
     cli/                 # Command parsing, human/JSON output, attachment
     proc/                # Current-process driver lifetime and residency
-    record/               # Shared durable records, identities, and value types
-    ledger/              # Git transactions, record encoding, derived notes
+    record/              # Shared durable records, identities, and value types
+    state/               # Repository-scoped persistence and transaction contracts
+      sqlite/            # SQLite storage, connections, and schema migrations
     workflow/            # Request acceptance and all workflow advancement
     prepare/             # Source transformations and edit-fidelity checks
     upstream/            # Release discovery and version assessment
@@ -38,37 +39,39 @@ The initial internal files can be straightforward: `workflow/submit.go`, `cycle.
 
 ### Entry points and process lifetime
 
-`cmd/dockhand` contains executable startup and exit handling. `app` constructs dependencies, resolves configuration, and exposes setup services. Cobra owns the global `--lockfile` / `-L` flag and its `$HOME/.dockhand/ledger.lock` default. The selected path passes through `app.Config.Lockfile` to `ledger.Options.Lockfile`; `ledger.New` creates the file and any missing parent directories without acquiring the writer lock. There is no config-directory setting or startup directory creation. `app` must stay wiring and configuration; it must not acquire a second workflow sequence as commands grow. A preview or read-only status request should not require an available VM provider.
+`cmd/dockhand` contains executable startup and exit handling. `app` resolves configuration, discovers the selected repository, constructs dependencies, and owns their lifetime. Cobra passes global `--db PATH` through `app.Config.DBPath`, defaulting to `$HOME/.dockhand/state.db`. Open state lazily: writable operations initialize it and register a repository; status uses read-only lookup and does not create missing state. Help, completion generation, and previews do not open it. `app` injects a `state.Store`; it must not acquire a second workflow sequence as commands grow. No config-directory concept or lock-directory flag remains in this design.
 
 `cli` uses Cobra for the command tree, flag parsing, argument validation, generated help, and shell completion. It parses commands into typed requests and renders typed results. It owns human output, JSON output, exit-code mapping, and the choice to observe admission or completion. It submits requests through the shared workflow API rather than writing record shapes itself; it never settles an attempt or performs driver bookkeeping. Domain packages do not print terminal messages or decide exit codes.
 
-`proc` manages driver residency and persistent execution within the current `dockhand` process. Change commands run targeted workflow cycles in their own invocation; `dockhand start` explicitly runs persistent driver mode. No driver executable setting, executable-path discovery, or automatic child driver launch is needed. Repository identity resolves through the Git common directory. Ledger writer coordination uses the configured lockfile; linked worktree invocations share it when they select the same lockfile.
+`proc` manages residency and persistent execution within the current `dockhand` process. Change commands run targeted workflow cycles in their invocation; `dockhand start` explicitly runs persistent mode for the selected repository. No separate executable, executable-path discovery, or automatic child driver launch is needed. The database's repository ID comes from canonical Git common-directory registration. Linked worktrees share an entry; separate clones remain distinct. Database selection is independent of the checkout.
 
-The ledger is the request handoff and progress channel. The CLI calls `workflow.Submit` in its own process to validate and transactionally persist a queued job, then runs targeted workflow cycles in that invocation. A resident driver or targeted cycle reads eligible work from the ledger and claims it transactionally. There is no socket or separate request transport. Action invocations and explicit persistent mode execute the same `workflow.Engine`.
+The state store is the request handoff and progress channel. The CLI calls `workflow.Submit` in its own process to validate and transactionally persist a queued job, then runs targeted workflow cycles in that invocation. A resident driver or targeted cycle reads eligible work from the state store and claims it transactionally. There is no socket or separate request transport. Action invocations and explicit persistent mode execute the same `workflow.Engine`.
 
 Successful durable submission establishes acceptance and returns the job ID; it does not mean a driver has claimed the job or a provider has admitted a build. Request IDs allow an interrupted caller to find its recorded submission without duplicating it. If the invocation ends before finishing its work, the request remains recorded and recoverable without claiming admission or completion. Cancellation and review requests use the same workflow-owned intake path; the driver applies their consequences.
 
-The CLI observes progress by reading the ledger through a shared read-only status projection. While waiting, the invocation can also run targeted cycles through the workflow engine; those cycles retain all bookkeeping responsibility. `wait` repeatedly reads the selected jobs until their requested milestone is recorded; `status` works even when no driver is alive. Preserve observation timestamps and do not poll a provider or run bookkeeping to answer status. Trace output can follow log locations recorded by the driver without a process-to-process connection or a second verdict path.
+The CLI observes progress by reading state through a shared read-only status projection. While waiting, the invocation can also run targeted cycles through the workflow engine; those cycles retain all bookkeeping responsibility. `wait` repeatedly reads the selected jobs until their requested milestone is recorded; `status` works even when no driver is alive. Preserve observation timestamps and do not poll a provider or run bookkeeping to answer status. Trace output can follow log locations recorded by the driver without a process-to-process connection or a second verdict path.
 
 ### Shared state and storage
 
-`record` gives shared durable concepts one definition: `Change`, `Revision`, `Job`, `Attempt`, `Resource`, `PublicationAction`, and `PullRequest`, with explicit IDs and revision references. It also contains shared values required by those records, such as immutable build inputs and outcome evidence. These names identify different lifetimes; they do not imply a package or state machine for every struct.
+`record` gives shared durable concepts one definition: `Repository`, `Change`, `Revision`, `Job`, `Attempt`, `Resource`, `PublicationAction`, and `PullRequest`, with explicit IDs and revision references. It also contains shared values required by those records, such as immutable build inputs and outcome evidence. These names identify different lifetimes; they do not imply a package or state machine for every struct.
 
-Keep package-specific requests and intermediate results with their owning capability. `record` must not become a miscellaneous collection of services, provider SDK types, terminal strings, or duplicate versions of existing records. Serialization and schema checks belong in `ledger`.
+Keep package-specific requests and intermediate results with their owning capability. `record` must not become a miscellaneous collection of services, provider SDK types, terminal strings, or duplicate versions of existing records. Backend encoding, constraints, and schema migration belong in `state/sqlite`; domain invariants remain with their owning packages.
 
-`ledger` owns the authoritative state ref, short transactions, locking at the supplied path, expected-ref checks, source pins, and derived Git notes. Notes export is part of this component; do not expose another authoritative note writer. Business decisions stay out of storage. `workflow` owns request intake and progression writes, including cross-record updates. Intake can run in the CLI process; after submission, drivers own progression and bookkeeping. Capability packages return results for the workflow engine to record.
+`state` defines persistence contracts, record-specific reads/writes, bounded queries, transaction semantics, and backend-independent errors. Every view or transaction is bound to one repository. `state/sqlite` implements those contracts with SQLite transactions, constraints, indexes, and migrations. SQL and the Go database driver stay private to that package. Neither package invokes Git or decides workflow policy. There is no whole-state serialization API or interface per table.
 
-`git` provides concrete repository mechanics: immutable object creation, ref transactions, materialized snapshots, source reads, and guarded push operations. Temporary materializations and unreferenced prepared objects are distinct from adopting a revision into a tracked branch. The driver commits that adoption and its records through the ledger transaction. Future rebase and amend preparation must preserve this distinction.
+Claims stay in the same transaction as the state they protect. `workflow` owns request intake and progression decisions, including atomic cross-record updates; capabilities return results for it to record. An independently replaceable lock backend must not authorize workflow writes. If a concrete executor later needs an external-resource lock, define a separate small contract then. No generic lock service or new filesystem lock implementation is needed for the state migration.
+
+`git` provides repository mechanics: immutable object creation, ref transactions, materialized snapshots, source reads, and guarded pushes. Temporary materializations and prepared objects remain distinct from branch integration. Git operations and database writes cannot commit atomically together. Workflow inspects interrupted preparation and records completion or a need for attention. Storage does not pin source objects; operations validate the particular inputs they need.
 
 ### One workflow owner
 
-The driver is the running process; `workflow` implements request intake and the execution engine, and `proc` supplies current-process residency and persistent-loop lifetime. The ledger carries requests and recorded progress between processes. There is no separate `driver` package. Action invocations and `dockhand start` run the same Dockhand-specific engine.
+The driver is the running process; `workflow` implements request intake and the execution engine, and `proc` supplies current-process residency and persistent-loop lifetime. The state store carries requests and recorded progress between processes. There is no separate `driver` package. Action invocations and `dockhand start` run the same Dockhand-specific engine.
 
 Scheduling, claims, transitions, retries, and recovery stay together because they jointly determine whether work may advance. Pure verification judgment and publication policy remain in their capability packages. This engine manages Dockhand jobs; it is not a general-purpose workflow framework.
 
-`workflow` accepts requests, binds their inputs, records jobs, claims ready work, invokes capabilities, records outcomes, and advances the requested destination. It owns scheduling, retry decisions, cancellation, resource retention, cleanup, and publication continuation. Neither a synchronous command nor an adapter gets its own alternative progression loop.
+`workflow` accepts requests, binds their inputs, records jobs, claims ready work, invokes capabilities, records outcomes, and advances the requested destination. It owns scheduling, retry decisions, cancellation, resource retention, cleanup, and publication continuation. Workflow supplies candidate-selection criteria to bounded state queries; handlers recheck eligibility and acquire claims transactionally. Neither a synchronous command nor an adapter gets its own alternative progression loop.
 
-Use explicit handlers and typed results for the few kinds of work. A cycle claims a bounded action under the ledger lock, performs the work outside that lock, and records its result only if the claim and relevant revision remain current. Uncertain provider or forge effects go through reconciliation before another submission. Resource-release obligations survive job completion.
+Use explicit handlers and typed results for the few kinds of work. A cycle claims a bounded action in a short state transaction, performs the work after commit, and records its result only if the claim and relevant revision remain current. Uncertain provider or forge effects go through reconciliation before another submission. Resource-release obligations survive job completion.
 
 Observation and judgment remain separate within the capability packages. The driver consumes their results and commits the state transition. It does not reimplement version comparisons, Tcl semantics, failure classification, or publication eligibility.
 
@@ -78,7 +81,7 @@ Observation and judgment remain separate within the capability packages. The dri
 
 `tcl` supplies the proven process/RPC and syntax machinery. MacPorts remains the semantic authority. Reuse focused source editing and Tcl syntax code where it holds up independently; it does not need to be redesigned to fit a driver.
 
-`upstream` collects release evidence and assesses eligible versions. It returns structured update-available, current, and unknown results. It has no dependency on job submission, a ledger writer, or branch creation. Phase-one automatic bumps use it; phase-two `outdated` exposes the same service directly.
+`upstream` collects release evidence and assesses eligible versions. It returns structured update-available, current, and unknown results. It has no dependency on job submission, a state writer, or branch creation. Phase-one automatic bumps use it; phase-two `outdated` exposes the same service directly.
 
 `prepare` turns a requested source transformation into proposed tree-wide edits, per-file preconditions, commit intent, and fidelity evidence. It coordinates MacPorts evaluation, upstream discovery when needed, downloads/checksums, and any required auxiliary-file generation. Begin with version bump, revision bump, and checksum refresh in one package. Extract specialized download or vendoring helpers when porting working implementations makes a useful boundary clear.
 
@@ -88,7 +91,7 @@ Preparation can create temporary files and Git objects, but returns the result f
 
 `verify` owns the provider contract, immutable build specifications, verification coverage planning, evidence interpretation, and pure verdict logic. The driver owns attempt state transitions. The provider contract covers capabilities, submission, observation, reconciliation by durable submission identity, cancellation, and release; it returns serializable handles that another process can use.
 
-Distinguish admitted, temporarily at capacity, unsupported, and submission-uncertain outcomes. A preliminary capacity check is advisory: actual admission must coordinate at the provider's resource scope, including other repositories sharing the same host. The ledger lock covers record mutations; provider admission still needs provider-owned capacity coordination.
+Distinguish admitted, temporarily at capacity, unsupported, and submission-uncertain outcomes. A preliminary capacity check is advisory: actual admission must coordinate at the provider's resource scope, including other repositories sharing the same host. State transactions cover record mutations; provider admission still needs provider-owned capacity coordination.
 
 Dependent work has three distinct outputs: proposed revision-bump edits, a target/configuration coverage plan, and the dependency information needed to build each target. Keep dependency discovery in `macports`, dependent selection/impact analysis in `verify`, source edits in `prepare`, and readiness scheduling in `workflow`. The driver records any required review decision before applying additional edits. These can initially be files within the existing packages.
 
@@ -96,7 +99,7 @@ Use an isolated verification unit per target/configuration by default, schedulin
 
 Planned follow-up targets may refer to predecessor work, but freeze concrete artifact identities before submitting an attempt. Artifact reuse and baseline comparisons can be added later without changing the distinction between a coverage plan and an immutable attempt. Do not create a generic graph engine or another package resolver.
 
-`verify/tart` implements the provider contract and owns VM-specific admission, provisioning, guest execution, evidence extraction, and resource operations. It does not publish PRs or mutate the ledger. Large logs and build artifacts can stay outside Git, with stable references returned to the driver and explicit retention responsibilities.
+`verify/tart` implements the provider contract and owns VM-specific admission, provisioning, guest execution, evidence extraction, and resource operations. It does not publish PRs or mutate workflow records. Large logs and build artifacts can stay outside the database, with stable references returned to the driver and explicit retention responsibilities.
 
 ### Publication and later PR awareness
 
@@ -109,19 +112,20 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 ## Dependency rules
 
 - `record` has no dependency on CLI, proc, workflow, storage, or concrete integrations.
-- `ledger` depends on `record` and Git mechanics, not preparation, verification, or publication policy.
-- `workflow` depends on the ledger and capability APIs. Capabilities do not depend back on the workflow engine or write its records.
-- `proc` handles current-process residency and persistent-loop lifetime around `workflow.Engine`. Requests and observations pass through the ledger; `proc` does not judge evidence or choose the next business action.
-- `app` is the place concrete integrations are wired. Define interfaces at actual external or test boundaries; concrete structs and functions are sufficient elsewhere.
+- `state` depends on shared records and standard-library contracts, not Git, SQLite, or workflow policy.
+- `state/sqlite` depends on `state`, `record`, and the selected SQLite driver. It does not import workflow or Git.
+- `workflow` depends on `state` and capability APIs. Capabilities do not depend back on the engine or write its records.
+- `proc` supplies current-process residency around `workflow.Engine`. Requests and observations pass through state; `proc` does not judge evidence or choose the next business action.
+- `app` wires concrete integrations, including SQLite, and owns their lifetime. Define other interfaces at actual external or test boundaries.
 
-This permits action invocations and persistent driver mode to share behavior without introducing interfaces around every function. All of this fits in the existing Go module. The architecture itself requires no new external framework, database, broker, plugin loader, or general scheduling library.
+This fits in the existing Go module. The persistence migration needs a Go SQLite driver, selected during implementation; it does not need a database server, ORM, broker, plugin loader, or general scheduling library.
 
 ## A single execution path
 
 For `bump jq --publish --wait`:
 
-1. The CLI calls the shared workflow submission API, which transactionally records a queued job and returns its ID. The invoking process runs targeted workflow cycles; it or an already-running persistent driver claims the recorded work through the ledger.
-2. The driver invokes preparation, then atomically adopts the resulting revision and records the next required work.
+1. The CLI calls the shared workflow submission API, which transactionally records a queued job and returns its ID. The invoking process runs targeted workflow cycles; it or an already-running persistent driver claims the recorded work through state transactions.
+2. The driver prepares and integrates a revision using Git preconditions, then records it and the next work in state. Interrupted integration is inspected before retrying; this is not one atomic Git/database transaction.
 3. Verification constructs the build question; the driver claims an attempt and asks the provider to admit it. Capacity pressure leaves it waiting, with the CLI still attached.
 4. Later cycles observe the provider, judge and record evidence, and schedule required dependent work. Failure in one independent target does not prevent others progressing.
 5. Publication evaluates the recorded evidence and fresh forge facts. The driver records and executes the required publication actions, reconciling uncertain outcomes.
@@ -135,7 +139,7 @@ Without `--wait`, the same workflow runs and the CLI leaves after the applicable
 | --- | --- |
 | Tcl shell/RPC/syntax and bound MacPorts handles | Reuse implementation as appropriate; preserve complete source context and design tests separately. |
 | Upstream observations and pure judgment | Retain the separation; expose it independently of bump execution. |
-| `statestore` plus derived `ledger` notes | Keep Git durability and transactions behind one new ledger component. |
+| `statestore` plus derived `ledger` notes | Preserve durable identities and atomic workflow decisions behind `state`; replace Git persistence with SQLite and omit notes export. |
 | Preparation spread through planning, preparation, change, and CLI composition | Consolidate the public preparation boundary and tree-wide edit representation. |
 | `app`, `run`, `lease`, and cycle paths | Move workflow transitions into `workflow`; keep capability logic and provider mechanisms separate. |
 | Verification verdicts and provider adapters | Reuse isolated judgment and mechanics, adapting their contracts to explicit attempt and resource identity. |
@@ -144,18 +148,20 @@ Without `--wait`, the same workflow runs and the CLI leaves after the applicable
 
 Earlier reviews are evidence of failure modes, not a claim that every finding remains unfixed in current v1. For the initial groundwork, import neither v1 prose comments nor tests. Record reused code and newly authored components in the activity report. Later, design focused tests around the new boundaries and important workflow cases rather than copying the old suite.
 
-## First implementation slice
+## Next implementation slice
 
-The shared records, ledger, request intake, snapshot status projection, and first verification cycle are implemented. The cycle verifies one resolved target against an existing committed revision using the recorded build configuration and an injected provider. Permanent scripted-provider tests cover capacity, admission, completion, cancellation, recovery after claim expiry, competing cycles, and independent cleanup. Earlier temporary checks also exercised process death. Connect CLI submission and observation through the ledger, add current-process persistent execution through `proc`, and confirm that changing attachment does not change execution. Verify that a request survives submission before any driver starts, and that concurrent cycles cannot claim the same action.
+First migrate existing intake, status, cancellation, and the single-target verification cycle to `state` and `state/sqlite`, following [state.md](state.md). Add repository registration and isolation, preserve provider recovery and cleanup semantics, and wire `--db`. Validate real concurrent database transactions and representative history-size performance. Remove the old ledger and unused lock code as their consumers migrate. Historical Git refs and reports are left untouched.
 
-Next add real Tart verification, source preparation, and publication through the same driver. Use temporary Git repositories, representative Portfile fixtures, and scripted forge responses to cover source context, stale claims, uncertain submissions, and revision/metadata reconciliation. A dependent build scenario should prove that resource ownership and partial coverage are not limited to one build per change.
+Then connect CLI submission/observation and current-process residency. Add real Tart verification, preparation, and publication through the same engine. Their tables and queries arrive with their executors; the initial database does not need publication, review, discovery, or dependent-graph tables. Existing domain distinctions remain available for those features.
 
-Then add command handlers and capabilities incrementally. Phase-two discovery, rebase, amend, and ongoing PR monitoring should extend the existing packages. Exact record fields, request-intake validation, claim deadlines, edit-selection syntax, and provider-specific recovery limits can be resolved in these slices; they do not prevent choosing the component structure now.
+Human-edit adoption and its user-facing commands remain a separate design discussion. Discovery, rebase, amend, and PR monitoring extend the existing packages without a second execution path.
 
 ## Groundwork status
 
-The package skeleton, selected Tcl/source-editing helpers, and ledger persistence are present. The ledger implements snapshot reads, bounded writer locking, guarded transactions, structural document validation, and source pins. Lockfile selection, ledger initialization, and construction of the service objects are wired. Cobra supplies the phase-one command tree, global/local flags, argument and flag-conflict checks, help, and completion. Workflow intake validates and transactionally accepts queued requests with idempotent receipts; snapshot status reporting is wired to `dockhand status`, including JSON output.
+The package skeleton, selected Tcl/source-editing helpers, and Git-ledger implementation are present. That implementation currently provides snapshot reads, writer locking, guarded ref transactions, document validation, and source pins. The current CLI still wires `--lock-dir` / `-L`; `--db`, repository registration, and the SQLite backend are not implemented yet. This state design supersedes those storage and configuration choices.
 
-The first driver cycle, cancellation intake/application, single-target planning, and evidence judgment are present. Attempt and resource claims fence ledger writes; provider reconciliation must close an absent submission identity before a fresh identity can be tried. The cycle does not implement source preparation, publication, dependent scheduling, or evidence reuse. Tart operations, derived notes, review controls, persistent residency, and CLI action handlers remain explicit stubs. Provider calls are exercised through a scripted adapter in the permanent workflow suite; no real VM build has run.
+The first driver cycle, cancellation intake/application, single-target planning, and evidence judgment are present. Attempt and resource claims fence ledger writes; provider reconciliation must close an absent submission identity before a fresh identity can be tried. The cycle does not implement source preparation, publication, dependent scheduling, or evidence reuse. Tart operations, review controls, persistent residency, and CLI action handlers remain explicit stubs. The unused derived-notes placeholder is removed with the ledger migration. Provider calls are exercised through a scripted adapter in the permanent workflow suite; no real VM build has run.
 
-The [groundwork](activity/2026-09-10-groundwork.md), [ledger](activity/2026-09-10-ledger.md), [startup configuration](activity/2026-09-10-config-directory.md), [Cobra integration](activity/2026-09-10-cobra.md), [lockfile simplification](activity/2026-09-11-lockfile.md), [workflow intake/status](activity/2026-09-11-workflow-intake.md), and [verification cycle](activity/2026-09-11-verification-cycle.md) reports describe provenance, implementation, and validation. The lockfile report supersedes the earlier config-directory behavior. The [behavioral test report](activity/2026-09-11-behavior-tests.md) describes the first permanent tests for `workflow`, `ledger`, and `tcl/syntax`. All tests were authored for v2; none were copied from v1.
+The [groundwork](activity/2026-09-10-groundwork.md), [ledger](activity/2026-09-10-ledger.md), [startup configuration](activity/2026-09-10-config-directory.md), [Cobra integration](activity/2026-09-10-cobra.md), [lockfile simplification](activity/2026-09-11-lockfile.md), [workflow intake/status](activity/2026-09-11-workflow-intake.md), and [verification cycle](activity/2026-09-11-verification-cycle.md) reports describe provenance, implementation, and validation. The [lock-directory report](activity/2026-09-12-lock-directory.md) records the current code configuration; the [state design report](activity/2026-09-12-state-design.md) documents its planned replacement. Earlier reports remain historical records. The [behavioral test report](activity/2026-09-11-behavior-tests.md) describes the first permanent tests for `workflow`, `ledger`, and `tcl/syntax`. All tests were authored for v2; none were copied from v1.
+
+The [performance pass](activity/2026-09-12-performance-pass.md) batches Git source validation and avoids transactions for known ineligible cycle work. Its measurements motivate replacing whole-ledger writes with affected-row updates; the reports and benchmark inputs remain useful comparison evidence.

@@ -1,32 +1,33 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership, job milestones, and recovery, and [principles](principles.md) for the design commitments behind this flow.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. This document includes the approved SQLite migration; current code still uses the Git ledger and `--lock-dir`, and has not implemented `--db` yet.
 
 ## Global options
 
-`--lockfile PATH` (short alias `-L PATH`) selects the ledger writer lockfile, defaulting to `$HOME/.dockhand/ledger.lock`. Both `--lockfile PATH` and `--lockfile=PATH` work before or after the command, as does the short alias. The `--` separator ends global option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty lockfile is rejected.
+`--db PATH` selects the state database, defaulting to `$HOME/.dockhand/state.db` across all checkouts. Both `--db PATH` and `--db=PATH` work before or after the command. The `--` separator ends option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty path is rejected. Accept a filesystem path, not SQLite URI options. No short alias is assigned. The migration removes `--lock-dir`, `-L`, and the earlier `--lockfile` spelling.
 
 ```sh
-dockhand --lockfile /path/to/shared/ledger.lock status
-dockhand verify jq --lockfile=/path/to/shared/ledger.lock
-dockhand status -L /path/to/shared/ledger.lock
+dockhand --db /path/to/state.db status
+dockhand verify jq --db=/path/to/state.db
 ```
 
-Dockhand has no config-directory setting and does not consult `DOCKHAND_CONFIG_DIR`. The ledger creates the lockfile and any missing parent directories when it is initialized, without acquiring the writer lock. All invocations that should serialize their writes must select the same lockfile. Ledger records remain in the ports repository. Help displays the resolved lockfile path and creates no directories or files.
+Dockhand has no config-directory setting and does not consult `DOCKHAND_CONFIG_DIR`. A writable state operation creates a missing parent directory and database and registers the selected repository. Help, completion generation, and previews do not open state. Status uses read-only access: an absent database or unregistered repository yields empty results without creating either. Help displays the resolved file path; flag completion selects files.
+
+One database can hold work for many repositories. Commands operate on the selected checkout's registered repository; linked worktrees share that entry, while separate clones are distinct. `status` and `start` initially cover the selected repository, with no implicit all-database scope. Cooperating drivers must use the same database to coordinate shared work and resources.
 
 ## Command parsing and help
 
-The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--lockfile` / `-L` and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
+The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--db` and `--json` are the designed inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
 
-`dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not initialize a ledger or require a Git repository or provider, and create no directories or files.
+`dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
-`status` now calls the shared workflow status API and renders either human-readable output or JSON with `--json`. The other phase-one command names and flags are registered, but their handlers still return explicit not-implemented errors. Workflow request acceptance is available through the Go API; selector resolution, action-command submission, and driver execution remain to be connected.
+The existing `status` handler calls shared workflow status and renders human-readable output or JSON. Its storage will migrate to the database behavior below. Other phase-one command names and flags are registered, but their handlers still return explicit not-implemented errors. Workflow request acceptance is available through the Go API; selector resolution, action-command submission, and resident execution remain to be connected.
 
 ## The flow
 
 The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified. If `-P` / `--publish` is specified, the branch will ultimately be submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports).
 
-The driver owns each accepted job and its bookkeeping. The CLI submits the request transactionally to the ledger through the shared workflow API, runs targeted driver cycles in the same invocation, and observes recorded progress. A normal invocation remains attached until the verification provider accepts the build; `--wait` remains attached until the requested work completes. With `--wait`, the invocation keeps running the required cycles through completion. After it exits, further workflow advancement requires a running `dockhand start` process or a later driver cycle. Both modes use the same workflow implementation; commands do not launch background drivers.
+The driver owns each accepted job and its bookkeeping. The CLI submits the request transactionally to the state store through the shared workflow API, runs targeted driver cycles in the same invocation, and observes recorded progress. A normal invocation remains attached until the verification provider accepts the build; `--wait` remains attached until the requested work completes. With `--wait`, the invocation keeps running the required cycles through completion. After it exits, further workflow advancement requires a running `dockhand start` process or a later driver cycle. Both modes use the same workflow implementation; commands do not launch background drivers.
 
 ```text
 dockhand (bump | bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [-P|--publish] [--wait]
@@ -96,7 +97,7 @@ The examples using `bump` flags also apply to `bump-revision` and `refresh-check
 | Verification and publication, without `--wait` | After initial build admission; later settlement and publication require a persistent driver or another driver cycle. |
 | Verification and publication with `--wait` | After publication completes or verification/publication requires attention. |
 | `--no-verify`, without publication | After the driver records completion of branch creation. There is no provider-admission milestone. |
-| `--no-verify --publish`, without `--wait` | After publication work is durably accepted in the ledger and the prepared branch is recorded. |
+| `--no-verify --publish`, without `--wait` | After publication work is durably accepted in the database and the prepared branch is recorded. |
 | `--no-verify --publish --wait` | After publication completes or requires attention. |
 
 For an existing change, `publish` uses matching verification evidence, joins matching active verification, or requests missing verification as required by publication policy. If a build is required, its default return point is provider admission. If no build is required, its default return point is durable acceptance of the publication work. It does not repeatedly rebuild a known failed revision to avoid reporting the failure.
@@ -105,15 +106,15 @@ For a selector, the return condition applies to each selected target operation. 
 
 **Waiting, tracing, and cancellation**
 
-Requests and progress pass through the ledger. Attachment means observing the selected durable jobs, not opening a socket to a driver. Successful submission returns a job ID without waiting for driver pickup; ordinary verification commands still remain present until provider admission, and `--wait` follows completion. After this invocation exits, report pending work and its job ID without promising automatic advancement when no persistent driver is running.
+Requests and progress pass through the state store. Attachment means observing the selected durable jobs, not opening a socket to a driver. Successful submission returns a job ID without waiting for driver pickup; ordinary verification commands still remain present until provider admission, and `--wait` follows completion. After this invocation exits, report pending work and its job ID without promising automatic advancement when no persistent driver is running.
 
 `--wait` changes attachment, not the requested destination. It never enables publication by itself. With verification skipped and no publication requested, it waits only for branch creation.
 
 `--trace` has the completion behavior of `--wait` and also streams build logs. It is available for a single selected port when verification is enabled. With `--publish`, it stays attached through the publication result after the build logs end. Reject incompatible requests such as `--trace --no-verify`, or tracing a multi-port selector, with a clear usage error. Supplying both `--trace` and `--wait` is redundant and harmless.
 
-`wait` attaches to existing work; it does not submit a fresh verification or request publication. It can run targeted cycles in the current process to resume the selected durable jobs, sharing the same engine and ledger claims as `dockhand start`. It binds the jobs and revisions selected when the command starts rather than silently following future requests or new branch tips.
+`wait` attaches to existing work; it does not submit a fresh verification or request publication. It can run targeted cycles in the current process to resume the selected durable jobs, sharing the same engine and state claims as `dockhand start`. It binds the jobs and revisions selected when the command starts rather than silently following future requests or new branch tips.
 
-Once a job is durably accepted in the ledger, Ctrl-C stops the CLI's observation, including before driver pickup or while waiting for provider capacity. Accepted work remains in the ledger, and submitted provider builds may continue. Further workflow advancement requires a running persistent driver or another driver cycle. Use `cancel` to ask the driver to stop outstanding verification and any pending publication continuation. Cancellation preserves the branch and completed evidence; it does not undo an already-published PR. Cancellation and resource cleanup are recorded and performed by the driver.
+Once a job is durably accepted in the database, Ctrl-C stops the CLI's observation, including before driver pickup or while waiting for provider capacity. Accepted work remains in the database, and submitted provider builds may continue. Further workflow advancement requires a running persistent driver or another driver cycle. Use `cancel` to ask the driver to stop outstanding verification and any pending publication continuation. Cancellation preserves the branch and completed evidence; it does not undo an already-published PR. Cancellation and resource cleanup are recorded and performed by the driver.
 
 **Unavailable verification and explicit skipping**
 
@@ -127,15 +128,15 @@ Missing verification tools must not silently authorize unverified publication. I
 
 `status` reads driver-maintained state. It shows each target's revision, verification state, publication state, status of its associated pull request, and any blocker or setup requirement. Outstanding resource cleanup remains visible separately from the job outcome. Include the last observation time so stale information is visible. It does not take over bookkeeping when no driver is running. PR monitoring and forge-state refresh belong to the driver.
 
-The current `status` command selects the whole repository ledger. It displays jobs and targets, input/result revision IDs, verification attempts and evidence, publication actions, tracked changes and pull requests, and resource states. Snapshot-read time is separate from recorded evidence and PR observation times. Human output escapes embedded control characters. JSON is the typed `workflow.Status` projection, using its Go field names, with empty result collections represented as arrays. Reading a missing state ref produces an empty status; unreadable or malformed state is an error. Status does not create ledger records or acquire the writer lock, though constructing the ledger still initializes its configured lockfile.
+`status` selects the current repository within the chosen database and reads a consistent view of its jobs and related records. Outstanding cleanup is included even after jobs finish. Snapshot-read time is separate from evidence and PR observation times. Human output escapes embedded control characters. JSON uses the typed `workflow.Status` projection, with empty collections represented as arrays. Missing database or repository registration produces empty status; unreadable, corrupt, or unsupported state is an error. Status does not initialize or migrate the database, register repositories, or mutate workflow records. Publication and PR persistence arrive with that executor.
 
 `--diff` performs only the preparation needed to show the proposed changes. It may evaluate Portfiles and fetch inputs needed to calculate checksums, but it does not edit the working tree, create a branch, persist a job, start a build, or publish a PR. Reject combinations with `--publish`, `--wait`, or `--trace` that ask a preview to execute the workflow.
 
-Targets resolve consistently across commands. A job ID identifies exact accepted work. Branches and unique port names provide convenient access to tracked changes; ambiguous references produce a choice rather than silently selecting unrelated work. Selector results remain individually visible. Verification of an untracked port captures its source context so its result names what was actually tested.
+Targets resolve consistently within the selected repository across commands. A foreign-repository job ID is an error, even if it exists in the same database. A job ID identifies exact accepted work. Branches and unique port names provide convenient access to tracked changes; ambiguous references produce a choice rather than silently selecting unrelated work. Selector results remain individually visible. Verification of an untracked port captures its source context so its result names what was actually tested.
 
 The default command result says what was handed off, including the job ID and destination. It does not claim that a still-running verification has passed. Attached commands return the outcome of the work they awaited, with failure and needs-attention results distinguishable from successful completion. Keep final output and progress reporting based on the same driver-maintained state.
 
-Review actions use the `review` command family: `dockhand review accept <change>` and `dockhand review dismiss <change>`. Review decisions that alter accepted work are submitted to the ledger through the shared workflow API; the driver records and performs their consequences.
+Review actions use the `review` command family: `dockhand review accept <change>` and `dockhand review dismiss <change>`. Review decisions that alter accepted work are submitted to the state store through the shared workflow API; the driver records and performs their consequences.
 
 **JSON Output**
 
