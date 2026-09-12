@@ -14,6 +14,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/ledger"
+	"github.com/herbygillot/dockhand/v2/internal/lock"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
@@ -25,6 +26,7 @@ var buildPlatform = record.Platform{OS: "darwin", Version: "25", Architecture: "
 type fixture struct {
 	engine   *workflow.Engine
 	store    *ledger.Store
+	writer   *lock.File
 	repo     *git.Repository
 	provider *scriptedProvider
 	clock    atomic.Int64
@@ -43,9 +45,13 @@ func newFixture(t *testing.T) *fixture {
 
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)
-	store, err := ledger.New(repo, ledger.Options{Lockfile: filepath.Join(root, "locks", "ledger.lock"), LockTimeout: time.Second})
+	locks, err := lock.NewDirectory(filepath.Join(root, "locks"))
 	require.NoError(t, err)
-	f := &fixture{repo: repo, store: store}
+	writer, err := locks.File("repositories", repo.CommonDir, "ledger")
+	require.NoError(t, err)
+	store, err := ledger.New(repo, ledger.Options{WriterLock: writer, LockTimeout: time.Second})
+	require.NoError(t, err)
+	f := &fixture{repo: repo, store: store, writer: writer}
 	f.clock.Store(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano())
 	blob, err := repo.WriteBlob(t.Context(), []byte("name fixture\nversion 1.0\n"))
 	require.NoError(t, err)

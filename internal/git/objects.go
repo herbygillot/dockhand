@@ -87,6 +87,41 @@ func (r *Repository) ObjectTypes(ctx context.Context, objects []string) (map[str
 	return types, nil
 }
 
+// CommitTrees resolves immutable commit IDs in one Git invocation. Checking the
+// original object as well as its tree rejects tags and trees that Git can peel.
+func (r *Repository) CommitTrees(ctx context.Context, commits []string) (map[string]string, error) {
+	trees := make(map[string]string, len(commits))
+	if len(commits) == 0 {
+		return trees, nil
+	}
+	queries := make([]string, 0, 2*len(commits))
+	for _, commit := range commits {
+		if !ValidObjectID(commit) {
+			return nil, fmt.Errorf("git: invalid commit ID %q", commit)
+		}
+		queries = append(queries, commit, commit+"^{tree}")
+	}
+	out, err := r.run(ctx, []byte(strings.Join(queries, "\n")+"\n"), nil, "cat-file", "--batch-check=%(objectname) %(objecttype)")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) != len(queries) {
+		return nil, fmt.Errorf("git: incomplete commit/tree lookup")
+	}
+	for i, commit := range commits {
+		original, tree := strings.Fields(lines[2*i]), strings.Fields(lines[2*i+1])
+		if len(original) != 2 || original[0] != commit || original[1] != "commit" {
+			return nil, fmt.Errorf("git: cannot read commit %s: %q", commit, lines[2*i])
+		}
+		if len(tree) != 2 || !ValidObjectID(tree[0]) || tree[1] != "tree" {
+			return nil, fmt.Errorf("git: cannot resolve tree for %s: %q", commit, lines[2*i+1])
+		}
+		trees[commit] = tree[0]
+	}
+	return trees, nil
+}
+
 func (r *Repository) WriteBlob(ctx context.Context, data []byte) (string, error) {
 	out, err := r.run(ctx, data, nil, "hash-object", "-w", "--stdin")
 	return objectResult(out, err)

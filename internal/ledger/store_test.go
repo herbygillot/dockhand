@@ -15,6 +15,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/ledger"
+	"github.com/herbygillot/dockhand/v2/internal/lock"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/stretchr/testify/require"
 )
@@ -190,7 +191,7 @@ func TestWriterLockIsBoundedAndDoesNotBlockReadsOrInitialization(t *testing.T) {
 	f := newFixture(t, "sha1")
 	require.NoError(t, f.store.Update(t.Context(), addChange("original")))
 	before := f.snapshot(t)
-	holder, err := os.OpenFile(f.options.Lockfile, os.O_RDWR, 0)
+	holder, err := os.OpenFile(f.options.WriterLock.Path(), os.O_RDWR, 0)
 	require.NoError(t, err)
 	defer holder.Close()
 	require.NoError(t, syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB))
@@ -354,24 +355,24 @@ func TestUncertainCommitMustBeReadBackBeforeRetry(t *testing.T) {
 	require.Len(t, f.snapshot(t).State.Changes, 2, "recovery lost committed state or writer lock remained held")
 }
 
-func TestNewCreatesOnlyConfiguredLockAndPreservesExistingFile(t *testing.T) {
+func TestNewRequiresWriterLockAndLeavesFileAndLedgerUntouched(t *testing.T) {
 	f := newFixture(t, "sha1")
-	file, err := os.Stat(f.options.Lockfile)
+	file, err := os.Stat(f.options.WriterLock.Path())
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), file.Mode().Perm(), "lock permissions: %v", file.Mode())
 
-	dir, err := os.Stat(filepath.Dir(f.options.Lockfile))
+	dir, err := os.Stat(filepath.Dir(f.options.WriterLock.Path()))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), dir.Mode().Perm(), "lock directory permissions: %v", dir.Mode())
-	require.NoError(t, os.WriteFile(f.options.Lockfile, []byte("preserve"), 0o600))
+	require.NoError(t, os.WriteFile(f.options.WriterLock.Path(), []byte("preserve"), 0o600))
 	_, err = ledger.New(f.repo, f.options)
 	require.NoError(t, err)
-	content, err := os.ReadFile(f.options.Lockfile)
+	content, err := os.ReadFile(f.options.WriterLock.Path())
 	require.NoError(t, err)
 	require.Equal(t, "preserve", string(content), "initialization truncated lock or created state")
 	require.False(t, f.ref(t, ledger.StateRef).Exists, "initialization truncated lock or created state")
 
-	for _, options := range []ledger.Options{{}, {Lockfile: "relative"}, {Lockfile: f.options.Lockfile, LockTimeout: -1}, {Lockfile: f.options.Lockfile, OperationTimeout: -1}} {
+	for _, options := range []ledger.Options{{}, {WriterLock: &lock.File{}}, {WriterLock: f.options.WriterLock, LockTimeout: -1}, {WriterLock: f.options.WriterLock, OperationTimeout: -1}} {
 		_, err := ledger.New(f.repo, options)
 		require.Error(t, err, "accepted options %+v", options)
 	}

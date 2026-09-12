@@ -1,0 +1,26 @@
+{
+  "production_revision": "00a6b6b35dcb5764f9dcc911a5e3b4b4ba418619",
+  "cpu": "Apple M5 Max",
+  "logical_cpus": 18,
+  "memory_bytes": 137438953472,
+  "os": "macOS 26.6.2",
+  "os_build": "25G83",
+  "filesystem": "APFS",
+  "go": "go1.27.1 darwin/arm64",
+  "git": "2.55.0",
+  "experiment_count": 22,
+  "uninstrumented_samples": 486,
+  "diagnostic_samples": 35,
+  "measurement_scope": "Warm disposable local repositories; default production lock/operation timeouts and fsync settings; no actual MacPorts builds or network providers.",
+  "working_tree": "Uncommitted performance and lock-directory changes; exact source hashes are in final/source-sha256.json",
+  "measurement_seconds": 443.53094600000003,
+  "initial_experiment_count": 20,
+  "initial_samples": 471,
+  "initial_failed_samples": 7,
+  "binary_sha256": {
+    "dockhand-ledgerperf-final": "5f1fa0239ab6919bad494d8abb60f33a7833783b5b1adbed53d97845399c873b",
+    "dockhand-ledgerperf-final-diagnostic": "8d302e5a6f19635da714ea148d4ae358acbf72e8c8b19b6fb930c86cdac05abe",
+    "dockhand-ledgerperf-after": "6084ddf57a1d48262aff4faf87282eeb6922b8a55a06eece75a503af689ddec0",
+    "dockhand-ledgerperf-after-diagnostic": "2f7e9f7b2edf2d319fdc5d388028596f8a88575c2f0c7296ef44a1d2297058e3"
+  }
+}

@@ -50,35 +50,19 @@ type Status struct {
 // state remains an error. Explicit unknown job IDs return ErrNotFound. All result
 // collections are initialized on success, including when empty.
 func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
-	if e == nil || e.Ledger == nil {
-		return Status{}, ErrNoLedger
-	}
-	if (scope.All && len(scope.Jobs) != 0) || (!scope.All && len(scope.Jobs) == 0) {
-		return Status{}, ErrInvalidScope
-	}
-	selected := make(map[record.JobID]*JobStatus)
-	for _, id := range scope.Jobs {
-		if id == "" {
-			return Status{}, ErrInvalidScope
-		}
-		selected[id] = nil
-	}
-	snapshot, err := e.Ledger.Read(ctx)
-	if errors.Is(err, ledger.ErrNoState) {
-		snapshot = ledger.Snapshot{State: ledger.NewState()}
-	} else if err != nil {
+	snapshot, jobs, err := e.readScope(ctx, scope)
+	if err != nil {
 		return Status{}, err
+	}
+	selected := make(map[record.JobID]*JobStatus, len(jobs))
+	for id := range jobs {
+		selected[id] = nil
 	}
 	state := snapshot.State
 	result := Status{
 		LedgerVersion: snapshot.Version, ReadAt: e.now(),
 		Jobs: []JobStatus{}, Changes: []record.Change{}, Revisions: []record.Revision{},
 		PullRequests: []record.PullRequest{}, Resources: []record.Resource{},
-	}
-	if scope.All {
-		for id := range state.Jobs {
-			selected[id] = nil
-		}
 	}
 	changes := make(map[record.ChangeID]bool)
 	revisions := make(map[record.RevisionID]bool)
@@ -139,4 +123,40 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 		}
 	}
 	return result, nil
+}
+
+// readScope captures one immutable snapshot and validates job selection without
+// constructing the public status projection or acquiring the writer lock.
+func (e *Engine) readScope(ctx context.Context, scope Scope) (ledger.Snapshot, map[record.JobID]bool, error) {
+	if e == nil || e.Ledger == nil {
+		return ledger.Snapshot{}, nil, ErrNoLedger
+	}
+	if (scope.All && len(scope.Jobs) != 0) || (!scope.All && len(scope.Jobs) == 0) {
+		return ledger.Snapshot{}, nil, ErrInvalidScope
+	}
+	selected := make(map[record.JobID]bool, len(scope.Jobs))
+	for _, id := range scope.Jobs {
+		if id == "" {
+			return ledger.Snapshot{}, nil, ErrInvalidScope
+		}
+		selected[id] = true
+	}
+	snapshot, err := e.Ledger.Read(ctx)
+	if errors.Is(err, ledger.ErrNoState) {
+		snapshot = ledger.Snapshot{State: ledger.NewState()}
+	} else if err != nil {
+		return ledger.Snapshot{}, nil, err
+	}
+	if scope.All {
+		for id := range snapshot.State.Jobs {
+			selected[id] = true
+		}
+	} else {
+		for _, id := range slices.Sorted(maps.Keys(selected)) {
+			if _, exists := snapshot.State.Jobs[id]; !exists {
+				return ledger.Snapshot{}, nil, fmt.Errorf("%w: job %s", ErrNotFound, id)
+			}
+		}
+	}
+	return snapshot, selected, nil
 }

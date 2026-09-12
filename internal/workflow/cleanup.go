@@ -79,17 +79,11 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			return fmt.Errorf("%w: resource %s", ErrNotFound, id)
 		}
 		now := e.now()
-		if resource.State == record.ResourceReleased || live(resource.Claim, now) || !due(resource.RetryAt, now) {
+		if !cleanupEligible(resource, tx.State.Attempts, now) {
 			return nil
 		}
 		switch resource.State {
-		case record.ResourceActive:
-			return nil
-		case record.ResourceRetained:
-			if resource.RetainUntil == nil || resource.RetainUntil.After(now) {
-				return nil
-			}
-		case record.ResourceReleaseRequested, record.ResourceUncertain:
+		case record.ResourceRetained, record.ResourceReleaseRequested, record.ResourceUncertain:
 		default:
 			detail = "workflow: resource has an invalid cleanup state"
 			return nil

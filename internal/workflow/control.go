@@ -67,10 +67,15 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 // a control applied once all its jobs have received that intent or are terminal,
 // even when satisfying one control requires several differently scoped cycles.
 // This transaction never calls the provider or claims that a remote run stopped.
-func (e *Engine) applyControls(ctx context.Context, selected map[record.JobID]bool) error {
-	return e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
+func (e *Engine) applyControls(ctx context.Context, selected map[record.JobID]bool, controls []record.RequestID) (bool, error) {
+	changed := false
+	err := e.Ledger.Update(ctx, func(_ context.Context, tx *ledger.Transaction) error {
 		now := e.now()
-		for id, request := range tx.State.Controls {
+		for _, id := range controls {
+			request, exists := tx.State.Controls[id]
+			if !exists {
+				continue
+			}
 			if request.Kind != record.Cancel || request.AppliedAt != nil {
 				continue
 			}
@@ -84,6 +89,7 @@ func (e *Engine) applyControls(ctx context.Context, selected map[record.JobID]bo
 					if selected[jobID] {
 						job.CancelRequestedAt = &now
 						tx.State.Jobs[jobID] = job
+						changed = true
 					} else {
 						applied = false
 					}
@@ -92,8 +98,10 @@ func (e *Engine) applyControls(ctx context.Context, selected map[record.JobID]bo
 			if applied {
 				request.AppliedAt = &now
 				tx.State.Controls[id] = request
+				changed = true
 			}
 		}
 		return nil
 	})
+	return changed, err
 }

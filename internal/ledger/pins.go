@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
@@ -76,12 +77,12 @@ func (s *Store) sourcePins(ctx context.Context, state State) ([]git.RefChange, b
 	if err != nil {
 		return nil, false, err
 	}
+	trees, err := s.repo.CommitTrees(ctx, slices.Sorted(maps.Keys(commitTrees)))
+	if err != nil {
+		return nil, false, err
+	}
 	for commit, expected := range commitTrees {
-		tree, err := s.repo.Resolve(ctx, commit+"^{tree}")
-		if err != nil {
-			return nil, false, err
-		}
-		if tree != expected {
+		if trees[commit] != expected {
 			return nil, false, fmt.Errorf("%w: commit %s does not contain source tree %s", ErrInvalidState, commit, expected)
 		}
 	}

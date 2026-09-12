@@ -15,12 +15,12 @@ type runtime struct {
 }
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
-	if config.Lockfile == "" {
+	if config.LockDir == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("cli: locating home directory for default lockfile: %w", err)
+			return nil, fmt.Errorf("cli: locating home directory for default lock directory: %w", err)
 		}
-		config.Lockfile = filepath.Join(homeDir, ".dockhand", "ledger.lock")
+		config.LockDir = filepath.Join(homeDir, ".dockhand", "lock")
 	}
 	runtime := &runtime{config: config}
 	root := &cobra.Command{
@@ -32,13 +32,13 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		SilenceUsage:  true,
 		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	lockfile := lockfileValue{target: &runtime.config.Lockfile}
-	if err := lockfile.Set(runtime.config.Lockfile); err != nil {
-		return nil, fmt.Errorf("cli: resolving ledger lockfile: %w", err)
+	lockDir := lockDirValue{target: &runtime.config.LockDir}
+	if err := lockDir.Set(runtime.config.LockDir); err != nil {
+		return nil, fmt.Errorf("cli: resolving lock directory: %w", err)
 	}
-	root.PersistentFlags().VarP(lockfile, "lockfile", "L", "Ledger writer lockfile")
+	root.PersistentFlags().VarP(lockDir, "lock-dir", "L", "Directory for Dockhand resource locks")
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
-	if err := root.MarkPersistentFlagFilename("lockfile"); err != nil {
+	if err := root.MarkPersistentFlagDirname("lock-dir"); err != nil {
 		return nil, err
 	}
 
@@ -59,7 +59,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		help(cmd, args)
-		fmt.Fprintf(cmd.OutOrStdout(), "\nLedger lockfile: %s\n", runtime.config.Lockfile)
+		fmt.Fprintf(cmd.OutOrStdout(), "\nLock directory: %s\n", runtime.config.LockDir)
 	})
 	return root, nil
 }

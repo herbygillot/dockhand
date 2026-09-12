@@ -5,59 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"syscall"
-	"time"
+
+	"github.com/herbygillot/dockhand/v2/internal/lock"
 )
 
 var ErrLockTimeout = errors.New("ledger: timed out waiting for writer lock")
 
-func initializeLockfile(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("ledger: creating lockfile directory: %w", err)
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return fmt.Errorf("ledger: opening writer lock: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("ledger: closing writer lock: %w", err)
-	}
-	return nil
-}
-
 func (s *Store) lock(ctx context.Context) (*os.File, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.options.LockTimeout)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	file, err := s.options.WriterLock.Acquire(ctx)
+	if errors.Is(err, lock.ErrTimeout) {
+		return nil, fmt.Errorf("%w: %w", ErrLockTimeout, err)
 	}
-	path := s.options.Lockfile
-	file, err := os.OpenFile(path, os.O_RDWR, 0)
-	if err != nil {
-		return nil, fmt.Errorf("ledger: opening writer lock: %w", err)
-	}
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if err := ctx.Err(); err != nil {
-			file.Close()
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("%w: %s: %w", ErrLockTimeout, path, err)
-			}
-			return nil, err
-		}
-		err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return file, nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, syscall.EINTR) {
-			file.Close()
-			return nil, fmt.Errorf("ledger: locking %s: %w", path, err)
-		}
-		select {
-		case <-ctx.Done():
-		case <-ticker.C:
-		}
-	}
+	return file, err
 }

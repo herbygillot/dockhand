@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/ledger"
+	"github.com/herbygillot/dockhand/v2/internal/lock"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/proc"
@@ -22,7 +23,7 @@ import (
 var ErrNotImplemented = errors.New("app: setup is not implemented")
 
 type Config struct {
-	Lockfile       string
+	LockDir        string
 	Repository     string
 	GitExecutable  string
 	TclExecutable  string
@@ -46,7 +47,15 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := ledger.New(repo, ledger.Options{Lockfile: config.Lockfile})
+	locks, err := lock.NewDirectory(config.LockDir)
+	if err != nil {
+		return nil, err
+	}
+	writer, err := locks.File("repositories", repo.CommonDir, "ledger")
+	if err != nil {
+		return nil, err
+	}
+	store, err := ledger.New(repo, ledger.Options{WriterLock: writer})
 	if err != nil {
 		return nil, err
 	}

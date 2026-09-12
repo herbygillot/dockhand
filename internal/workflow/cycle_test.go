@@ -48,7 +48,7 @@ func TestCycleCapacityAdmissionCompletionAndCleanup(t *testing.T) {
 	require.Len(t, result.PendingCleanup, 1, "completion lost pending cleanup")
 	require.Equal(t, record.ResourceUncertain, status.Resources[0].State, "completion lost pending cleanup")
 	finished := *status.Jobs[0].Job.FinishedAt
-	reopened, err := ledger.New(f.repo, ledger.Options{Lockfile: f.repo.Root + "/locks/ledger.lock"})
+	reopened, err := ledger.New(f.repo, ledger.Options{WriterLock: f.writer})
 	require.NoError(t, err)
 	fresh := *f.engine
 	fresh.Ledger = reopened

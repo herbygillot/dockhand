@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -30,7 +31,7 @@ type CycleResult struct {
 	Advanced []record.JobID
 	Problems []JobProblem
 	// PendingCleanup lists retained, uncertain, or release-requested resources
-	// in the final status read. Some may not yet be eligible for release.
+	// in the last ledger snapshot. Some may not yet be eligible for release.
 	PendingCleanup []record.ResourceID
 }
 
@@ -42,6 +43,7 @@ type cycle struct {
 	lease, timeout, retry time.Duration
 	capabilities          verify.Capabilities
 	providerError         error
+	providerChecked       bool
 }
 
 // Cycle makes one reconciliation pass over the requested scope. It applies
@@ -60,7 +62,7 @@ type cycle struct {
 // through another cycle rather than repeating an external action directly.
 func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	result := CycleResult{Advanced: []record.JobID{}, Problems: []JobProblem{}, PendingCleanup: []record.ResourceID{}}
-	status, err := e.Status(ctx, scope)
+	snapshot, selected, err := e.readScope(ctx, scope)
 	if err != nil {
 		return result, err
 	}
@@ -68,30 +70,44 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	if err != nil {
 		return result, err
 	}
-	if len(status.Jobs) == 0 && len(status.Resources) == 0 {
-		return result, nil
-	}
-	selected := make(map[record.JobID]bool, len(status.Jobs))
-	for _, item := range status.Jobs {
-		selected[item.Job.ID] = true
-	}
-	if err := e.applyControls(ctx, selected); err != nil {
-		return result, err
-	}
-	if e.Provider == nil {
-		c.providerError = fmt.Errorf("workflow: verification provider is required")
-	} else {
-		callCtx, cancel := context.WithTimeout(ctx, c.timeout)
-		c.capabilities, c.providerError = e.Provider.Capabilities(callCtx)
-		if c.providerError == nil {
-			c.providerError = callCtx.Err()
+	var controls []record.RequestID
+	for _, id := range slices.Sorted(maps.Keys(snapshot.State.Controls)) {
+		if controlEligible(snapshot.State.Controls[id], snapshot.State, selected) {
+			controls = append(controls, id)
 		}
-		cancel()
 	}
-	for _, item := range status.Jobs {
-		changed, detail, err := c.advanceJob(ctx, item.Job.ID)
+	if len(controls) != 0 {
+		changed, err := e.applyControls(ctx, selected, controls)
+		if err != nil {
+			return result, err
+		}
 		if changed {
-			result.Advanced = append(result.Advanced, item.Job.ID)
+			snapshot, err = e.Ledger.Read(ctx)
+			if err != nil {
+				return result, err
+			}
+		}
+	}
+	attempts := make(map[record.JobID][]record.Attempt)
+	for _, attempt := range snapshot.State.Attempts {
+		if selected[attempt.JobID] {
+			attempts[attempt.JobID] = append(attempts[attempt.JobID], attempt)
+		}
+	}
+	jobs := slices.Sorted(maps.Keys(selected))
+	slices.SortStableFunc(jobs, func(a, b record.JobID) int {
+		return snapshot.State.Jobs[a].AcceptedAt.Compare(snapshot.State.Jobs[b].AcceptedAt)
+	})
+	handledJobs := false
+	for _, id := range jobs {
+		if !jobEligible(snapshot.State.Jobs[id], attempts[id], e.now()) {
+			continue
+		}
+		c.checkProvider(ctx)
+		changed, detail, err := c.advanceJob(ctx, id)
+		handledJobs = true
+		if changed {
+			result.Advanced = append(result.Advanced, id)
 		}
 		if errors.Is(err, ErrClaimLost) {
 			detail, err = err.Error(), nil
@@ -100,17 +116,26 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 			return result, err
 		}
 		if detail != "" {
-			result.Problems = append(result.Problems, JobProblem{JobID: item.Job.ID, Detail: detail})
+			result.Problems = append(result.Problems, JobProblem{JobID: id, Detail: detail})
 		}
 	}
-	// Read again so newly adopted resources and completed attempts participate
-	// in cleanup during this pass.
-	status, err = e.Status(ctx, scope)
-	if err != nil {
-		return result, err
+	// Refresh after advancement so new resources and newly terminal attempts
+	// can participate in cleanup during this same pass.
+	if handledJobs {
+		snapshot, err = e.Ledger.Read(ctx)
+		if err != nil {
+			return result, err
+		}
 	}
-	for _, resource := range status.Resources {
-		detail, err := c.cleanup(ctx, resource.ID)
+	handledResources := false
+	for _, id := range slices.Sorted(maps.Keys(snapshot.State.Resources)) {
+		resource := snapshot.State.Resources[id]
+		if !resourceSelected(resource, snapshot.State, selected, scope.All) || !cleanupEligible(resource, snapshot.State.Attempts, e.now()) {
+			continue
+		}
+		c.checkProvider(ctx)
+		detail, err := c.cleanup(ctx, id)
+		handledResources = true
 		if errors.Is(err, ErrClaimLost) {
 			detail, err = err.Error(), nil
 		}
@@ -118,20 +143,45 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 			return result, err
 		}
 		if detail != "" {
-			result.Problems = append(result.Problems, JobProblem{ResourceID: resource.ID, Detail: detail})
+			result.Problems = append(result.Problems, JobProblem{ResourceID: id, Detail: detail})
 		}
 	}
-	status, err = e.Status(ctx, scope)
-	if err != nil {
-		return result, err
+	if handledResources {
+		snapshot, err = e.Ledger.Read(ctx)
+		if err != nil {
+			return result, err
+		}
 	}
-	for _, resource := range status.Resources {
+	for _, id := range slices.Sorted(maps.Keys(snapshot.State.Resources)) {
+		resource := snapshot.State.Resources[id]
+		if !resourceSelected(resource, snapshot.State, selected, scope.All) {
+			continue
+		}
 		switch resource.State {
 		case record.ResourceReleaseRequested, record.ResourceUncertain, record.ResourceRetained:
-			result.PendingCleanup = append(result.PendingCleanup, resource.ID)
+			result.PendingCleanup = append(result.PendingCleanup, id)
 		}
 	}
 	return result, ctx.Err()
+}
+
+// checkProvider observes capabilities once, only when this pass has a candidate
+// action. It runs before the handler's transaction, outside the writer lock.
+func (c *cycle) checkProvider(ctx context.Context) {
+	if c.providerChecked {
+		return
+	}
+	c.providerChecked = true
+	if c.engine.Provider == nil {
+		c.providerError = fmt.Errorf("workflow: verification provider is required")
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	c.capabilities, c.providerError = c.engine.Provider.Capabilities(callCtx)
+	if c.providerError == nil {
+		c.providerError = callCtx.Err()
+	}
 }
 
 // newCycle resolves zero-value defaults and checks timing before any progression.

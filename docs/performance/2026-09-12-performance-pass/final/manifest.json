@@ -1,0 +1,422 @@
+[
+  {
+    "name": "driver-contention-100",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "100",
+      "-sources",
+      "distinct",
+      "-active",
+      "10",
+      "-worker-op",
+      "cycle-all",
+      "-writers",
+      "4",
+      "-readers",
+      "1",
+      "-samples",
+      "5"
+    ],
+    "start": "2026-09-12T17:35:05.053649+00:00",
+    "elapsed_seconds": 34.514857,
+    "exit_code": 0
+  },
+  {
+    "name": "driver-contention-1000",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "1000",
+      "-sources",
+      "distinct",
+      "-active",
+      "4",
+      "-worker-op",
+      "cycle-all",
+      "-writers",
+      "2",
+      "-readers",
+      "1",
+      "-samples",
+      "3"
+    ],
+    "start": "2026-09-12T17:35:39.569140+00:00",
+    "elapsed_seconds": 23.579477,
+    "exit_code": 0
+  },
+  {
+    "name": "ledger-shared",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "10,100,1000,10000",
+      "-sources",
+      "shared",
+      "-samples",
+      "5",
+      "-ops",
+      "read,noop,edit,new-revision,status,codec-encode,codec-decode"
+    ],
+    "start": "2026-09-12T17:37:25.840436+00:00",
+    "elapsed_seconds": 31.928202,
+    "exit_code": 0
+  },
+  {
+    "name": "ledger-distinct",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "10,100,1000,10000",
+      "-sources",
+      "distinct",
+      "-samples",
+      "3",
+      "-ops",
+      "read,noop,edit,new-revision"
+    ],
+    "start": "2026-09-12T17:37:57.769598+00:00",
+    "elapsed_seconds": 163.67137,
+    "exit_code": 0
+  },
+  {
+    "name": "workflow-shared",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "10,100,1000,10000",
+      "-sources",
+      "shared",
+      "-samples",
+      "3",
+      "-ops",
+      "submit,observe,complete"
+    ],
+    "start": "2026-09-12T17:40:41.442146+00:00",
+    "elapsed_seconds": 29.022892,
+    "exit_code": 0
+  },
+  {
+    "name": "workflow-distinct",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "10,100",
+      "-sources",
+      "distinct",
+      "-samples",
+      "5",
+      "-ops",
+      "submit,observe,complete"
+    ],
+    "start": "2026-09-12T17:41:10.466399+00:00",
+    "elapsed_seconds": 12.343771,
+    "exit_code": 0
+  },
+  {
+    "name": "workflow-distinct-1000",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "1000",
+      "-sources",
+      "distinct",
+      "-samples",
+      "1",
+      "-ops",
+      "submit,observe,complete"
+    ],
+    "start": "2026-09-12T17:41:22.810846+00:00",
+    "elapsed_seconds": 13.033313,
+    "exit_code": 0
+  },
+  {
+    "name": "idle-shared",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "10,100,1000,10000",
+      "-sources",
+      "shared",
+      "-active",
+      "0",
+      "-samples",
+      "3",
+      "-ops",
+      "cycle-all",
+      "-budget",
+      "10s"
+    ],
+    "start": "2026-09-12T17:41:35.845136+00:00",
+    "elapsed_seconds": 2.950607,
+    "exit_code": 0
+  },
+  {
+    "name": "idle-distinct",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "10,100",
+      "-sources",
+      "distinct",
+      "-active",
+      "0",
+      "-samples",
+      "3",
+      "-ops",
+      "cycle-all",
+      "-budget",
+      "10s"
+    ],
+    "start": "2026-09-12T17:41:38.796339+00:00",
+    "elapsed_seconds": 1.698956,
+    "exit_code": 0
+  },
+  {
+    "name": "active-all",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "10,100",
+      "-sources",
+      "shared",
+      "-samples",
+      "3",
+      "-ops",
+      "cycle-all",
+      "-budget",
+      "10s"
+    ],
+    "start": "2026-09-12T17:41:40.495962+00:00",
+    "elapsed_seconds": 2.011047,
+    "exit_code": 0
+  },
+  {
+    "name": "contention-1",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "100",
+      "-sources",
+      "distinct",
+      "-writers",
+      "1",
+      "-readers",
+      "1",
+      "-samples",
+      "10"
+    ],
+    "start": "2026-09-12T17:41:42.507856+00:00",
+    "elapsed_seconds": 2.420118,
+    "exit_code": 0
+  },
+  {
+    "name": "contention-2",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "100",
+      "-sources",
+      "distinct",
+      "-writers",
+      "2",
+      "-readers",
+      "1",
+      "-samples",
+      "10"
+    ],
+    "start": "2026-09-12T17:41:44.928702+00:00",
+    "elapsed_seconds": 4.075139,
+    "exit_code": 0
+  },
+  {
+    "name": "contention-4",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "100",
+      "-sources",
+      "distinct",
+      "-writers",
+      "4",
+      "-readers",
+      "1",
+      "-samples",
+      "10"
+    ],
+    "start": "2026-09-12T17:41:49.004565+00:00",
+    "elapsed_seconds": 7.230646,
+    "exit_code": 0
+  },
+  {
+    "name": "contention-1000",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "1000",
+      "-sources",
+      "distinct",
+      "-writers",
+      "2",
+      "-readers",
+      "1",
+      "-samples",
+      "4"
+    ],
+    "start": "2026-09-12T17:41:56.236286+00:00",
+    "elapsed_seconds": 13.872078,
+    "exit_code": 0
+  },
+  {
+    "name": "diagnostic-shared",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final-diagnostic",
+      "-budget",
+      "45s",
+      "-records",
+      "1000",
+      "-sources",
+      "shared",
+      "-samples",
+      "1",
+      "-ops",
+      "read,noop,edit,observe,complete"
+    ],
+    "start": "2026-09-12T17:42:10.109412+00:00",
+    "elapsed_seconds": 2.462834,
+    "exit_code": 0
+  },
+  {
+    "name": "diagnostic-distinct",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final-diagnostic",
+      "-budget",
+      "45s",
+      "-records",
+      "1000",
+      "-sources",
+      "distinct",
+      "-samples",
+      "1",
+      "-ops",
+      "noop,edit,observe"
+    ],
+    "start": "2026-09-12T17:42:12.573150+00:00",
+    "elapsed_seconds": 11.041213,
+    "exit_code": 0
+  },
+  {
+    "name": "diagnostic-contention",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final-diagnostic",
+      "-budget",
+      "45s",
+      "-records",
+      "100",
+      "-sources",
+      "distinct",
+      "-writers",
+      "4",
+      "-readers",
+      "1",
+      "-samples",
+      "5"
+    ],
+    "start": "2026-09-12T17:42:23.616019+00:00",
+    "elapsed_seconds": 4.325558,
+    "exit_code": 0
+  },
+  {
+    "name": "idle-shared-100-complete",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "100",
+      "-sources",
+      "shared",
+      "-active",
+      "0",
+      "-samples",
+      "3",
+      "-ops",
+      "cycle-all",
+      "-budget",
+      "45s"
+    ],
+    "start": "2026-09-12T17:42:27.942506+00:00",
+    "elapsed_seconds": 0.39267,
+    "exit_code": 0
+  },
+  {
+    "name": "active-ten",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final",
+      "-budget",
+      "45s",
+      "-records",
+      "100",
+      "-sources",
+      "shared,distinct",
+      "-active",
+      "10",
+      "-samples",
+      "3",
+      "-ops",
+      "observe"
+    ],
+    "start": "2026-09-12T17:42:28.335885+00:00",
+    "elapsed_seconds": 15.545605,
+    "exit_code": 0
+  },
+  {
+    "name": "diagnostic-idle",
+    "command": [
+      "/private/tmp/dockhand-ledgerperf-final-diagnostic",
+      "-budget",
+      "45s",
+      "-records",
+      "10",
+      "-sources",
+      "shared,distinct",
+      "-active",
+      "0",
+      "-samples",
+      "1",
+      "-ops",
+      "cycle-all"
+    ],
+    "start": "2026-09-12T17:42:43.882710+00:00",
+    "elapsed_seconds": 0.559452,
+    "exit_code": 0
+  }
+]

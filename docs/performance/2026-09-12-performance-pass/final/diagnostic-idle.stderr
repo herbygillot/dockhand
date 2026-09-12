@@ -1,0 +1,8 @@
+PERF {"pid":30792,"phase":"git:for-each-ref","start_ns":1789234964083918000,"ns":6012709}
+PERF {"pid":30792,"phase":"git:cat-file","start_ns":1789234964090073000,"ns":6550208}
+PERF {"pid":30792,"phase":"git:ls-tree","start_ns":1789234964096655000,"ns":6405833}
+PERF {"pid":30792,"phase":"git:cat-file","start_ns":1789234964103097000,"ns":6394000}
+PERF {"pid":30792,"phase":"git:for-each-ref","start_ns":1789234964373384000,"ns":6749750}
+PERF {"pid":30792,"phase":"git:cat-file","start_ns":1789234964380192000,"ns":7113500}
+PERF {"pid":30792,"phase":"git:ls-tree","start_ns":1789234964387337000,"ns":6933000}
+PERF {"pid":30792,"phase":"git:cat-file","start_ns":1789234964394327000,"ns":6700500}

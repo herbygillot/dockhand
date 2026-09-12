@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/ledger"
+	"github.com/herbygillot/dockhand/v2/internal/lock"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,11 @@ func newFixture(t *testing.T, format string) *fixture {
 	runGit(t, root, "init", "--quiet", "--object-format="+format)
 	repo, err := git.Open(t.Context(), root, "git")
 	require.NoError(t, err)
-	options := ledger.Options{Lockfile: filepath.Join(root, "locks", "ledger.lock"), LockTimeout: 5 * time.Second}
+	locks, err := lock.NewDirectory(filepath.Join(root, "locks"))
+	require.NoError(t, err)
+	writer, err := locks.File("repositories", repo.CommonDir, "ledger")
+	require.NoError(t, err)
+	options := ledger.Options{WriterLock: writer, LockTimeout: 5 * time.Second}
 	store, err := ledger.New(repo, options)
 	require.NoError(t, err)
 	return &fixture{repo, store, options}

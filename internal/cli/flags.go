@@ -7,13 +7,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type lockfileValue struct{ target *string }
+type lockDirValue struct{ target *string }
 
-func (v lockfileValue) String() string { return *v.target }
-func (v lockfileValue) Type() string   { return "path" }
-func (v lockfileValue) Set(value string) error {
+func (v lockDirValue) String() string { return *v.target }
+func (v lockDirValue) Type() string   { return "path" }
+func (v lockDirValue) Set(value string) error {
 	if value == "" {
-		return errors.New("lockfile path must not be empty")
+		return errors.New("lock directory path must not be empty")
 	}
 	path, err := filepath.Abs(value)
 	if err != nil {

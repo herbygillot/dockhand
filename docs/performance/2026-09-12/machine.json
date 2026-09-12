@@ -1,0 +1,17 @@
+{
+  "production_revision": "00a6b6b35dcb5764f9dcc911a5e3b4b4ba418619",
+  "cpu": "Apple M5 Max",
+  "logical_cpus": 18,
+  "memory_bytes": 137438953472,
+  "os": "macOS 26.6.2",
+  "os_build": "25G83",
+  "filesystem": "APFS",
+  "go": "go1.27.1 darwin/arm64",
+  "git": "2.55.0",
+  "plot_python": "3.13",
+  "matplotlib": "3.11.2",
+  "experiment_count": 24,
+  "uninstrumented_samples": 640,
+  "diagnostic_samples": 35,
+  "measurement_scope": "Warm disposable local repositories; default production lock/operation timeouts and fsync settings; no actual MacPorts builds or network providers."
+}
