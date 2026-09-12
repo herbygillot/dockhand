@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
@@ -24,16 +24,16 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.Submission, error) {
 	return verify.Submission{}, ErrNotImplemented
 }
-func (p *Provider) Lookup(ctx context.Context, id model.RequestID) (verify.Lookup, error) {
-	return verify.Lookup{State: verify.RunUnknown}, ErrNotImplemented
+func (p *Provider) Reconcile(ctx context.Context, id record.RequestID) (verify.Reconciliation, error) {
+	return verify.Reconciliation{State: verify.RunUnknown}, ErrNotImplemented
 }
-func (p *Provider) Observe(ctx context.Context, run model.ProviderRun) (verify.Observation, error) {
+func (p *Provider) Observe(ctx context.Context, run record.ProviderRun) (verify.Observation, error) {
 	return verify.Observation{}, ErrNotImplemented
 }
-func (p *Provider) Cancel(ctx context.Context, run model.ProviderRun) error {
+func (p *Provider) Cancel(ctx context.Context, run record.ProviderRun) error {
 	return ErrNotImplemented
 }
-func (p *Provider) Release(ctx context.Context, resource model.ResourceHandle) (verify.ReleaseResult, error) {
+func (p *Provider) Release(ctx context.Context, resource record.ResourceHandle) (verify.ReleaseResult, error) {
 	return verify.ReleaseResult{}, ErrNotImplemented
 }
 

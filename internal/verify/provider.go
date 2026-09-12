@@ -5,14 +5,14 @@ import (
 	"errors"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 var ErrNotImplemented = errors.New("verify: verification planning is not implemented")
 
 type Capabilities struct {
 	Name      string
-	Platforms []model.Platform
+	Platforms []record.Platform
 	Isolated  bool
 	Capacity  int
 }
@@ -27,38 +27,40 @@ const (
 )
 
 type Request struct {
-	ID        model.RequestID
-	AttemptID model.AttemptID
-	Spec      model.BuildSpec
+	ID        record.RequestID
+	AttemptID record.AttemptID
+	Spec      record.BuildSpec
 }
 
 type Submission struct {
 	State     SubmissionState
-	Run       model.ProviderRun
-	Resources []model.ResourceHandle
+	Run       record.ProviderRun
+	Resources []record.ResourceHandle
 	Detail    string
 }
 
 type Observation struct {
-	Run        model.ProviderRun
-	State      model.AttemptState
-	Steps      []model.StepResult
-	Artifacts  []model.Artifact
-	Logs       []model.Artifact
+	Run        record.ProviderRun
+	State      record.AttemptState
+	Steps      []record.StepResult
+	Artifacts  []record.Artifact
+	Logs       []record.Artifact
 	Detail     string
+	Verdict    record.Verdict
+	Failure    *record.Failure
 	ObservedAt time.Time
 }
 
-type LookupState string
+type ReconciliationState string
 
 const (
-	RunFound   LookupState = "found"
-	RunAbsent  LookupState = "absent"
-	RunUnknown LookupState = "unknown"
+	RunFound      ReconciliationState = "found"
+	RequestClosed ReconciliationState = "closed"
+	RunUnknown    ReconciliationState = "unknown"
 )
 
-type Lookup struct {
-	State      LookupState
+type Reconciliation struct {
+	State      ReconciliationState
 	Submission Submission
 }
 
@@ -69,9 +71,12 @@ type ReleaseResult struct {
 
 type Provider interface {
 	Capabilities(context.Context) (Capabilities, error)
+	// Submit enforces capacity and is idempotent by request ID across processes.
 	Submit(context.Context, Request) (Submission, error)
-	Lookup(context.Context, model.RequestID) (Lookup, error)
-	Observe(context.Context, model.ProviderRun) (Observation, error)
-	Cancel(context.Context, model.ProviderRun) error
-	Release(context.Context, model.ResourceHandle) (ReleaseResult, error)
+	// Reconcile returns an existing run, durably closes an unadmitted request, or reports uncertainty.
+	// A closed request must reject every later Submit, including calls from stale drivers.
+	Reconcile(context.Context, record.RequestID) (Reconciliation, error)
+	Observe(context.Context, record.ProviderRun) (Observation, error)
+	Cancel(context.Context, record.ProviderRun) error
+	Release(context.Context, record.ResourceHandle) (ReleaseResult, error)
 }

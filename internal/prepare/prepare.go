@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 )
 
@@ -13,7 +13,7 @@ var ErrNotImplemented = errors.New("prepare: source preparation is not implement
 
 type FilePrecondition struct {
 	Exists bool
-	Blob   model.ObjectID
+	Blob   record.ObjectID
 	Mode   uint32
 }
 
@@ -35,7 +35,7 @@ type CommitIntent struct {
 }
 
 type Request struct {
-	Action  model.Action
+	Action  record.Action
 	Context macports.Context
 	Version string
 	Reason  string
@@ -50,8 +50,8 @@ type Fidelity struct {
 }
 
 type Result struct {
-	Base         model.Source
-	PreparedTree model.ObjectID
+	Base         record.Source
+	PreparedTree record.ObjectID
 	Files        []FileEdit
 	Commits      []CommitIntent
 	Fidelity     []Fidelity

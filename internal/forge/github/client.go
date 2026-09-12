@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/herbygillot/dockhand/v2/internal/model"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 )
 
@@ -28,7 +28,7 @@ func (c *Client) Releases(ctx context.Context, repository string) ([]upstream.Re
 func (c *Client) Find(ctx context.Context, repository, branch string) (publish.Observation, error) {
 	return publish.Observation{}, ErrNotImplemented
 }
-func (c *Client) Observe(ctx context.Context, ref model.PullRequestRef) (publish.Observation, error) {
+func (c *Client) Observe(ctx context.Context, ref record.PullRequestRef) (publish.Observation, error) {
 	return publish.Observation{}, ErrNotImplemented
 }
 func (c *Client) Create(ctx context.Context, request publish.Request) (publish.Observation, error) {

@@ -14,7 +14,7 @@ dockhand2/
     app/                 # Configuration, setup, and dependency construction
     cli/                 # Command parsing, human/JSON output, attachment
     proc/                # Current-process driver lifetime and residency
-    model/               # Shared durable records, identities, and value types
+    record/               # Shared durable records, identities, and value types
     ledger/              # Git transactions, record encoding, derived notes
     workflow/            # Request acceptance and all workflow advancement
     prepare/             # Source transformations and edit-fidelity checks
@@ -32,7 +32,7 @@ dockhand2/
   go.mod
 ```
 
-The initial internal files can be straightforward: `workflow/submit.go`, `cycle.go`, `prepare.go`, `verify.go`, `publish.go`, `cleanup.go`, and `status.go`. They share the same workflow engine and transaction rules. A separate Go package is justified by a useful dependency boundary, not by every lifecycle noun or CLI verb.
+The initial internal files can be straightforward: `workflow/submit.go`, `cycle.go`, `prepare.go`, `verification.go`, `publish.go`, `cleanup.go`, and `status.go`. They share the same workflow engine and transaction rules. A separate Go package is justified by a useful dependency boundary, not by every lifecycle noun or CLI verb.
 
 ## Responsibilities
 
@@ -52,9 +52,9 @@ The CLI observes progress by reading the ledger through a shared read-only statu
 
 ### Shared state and storage
 
-`model` gives shared durable concepts one definition: `Change`, `Revision`, `Job`, `Attempt`, `Resource`, `PublicationAction`, and `PullRequest`, with explicit IDs and revision references. It also contains shared values required by those records, such as immutable build inputs and outcome evidence. These names identify different lifetimes; they do not imply a package or state machine for every struct.
+`record` gives shared durable concepts one definition: `Change`, `Revision`, `Job`, `Attempt`, `Resource`, `PublicationAction`, and `PullRequest`, with explicit IDs and revision references. It also contains shared values required by those records, such as immutable build inputs and outcome evidence. These names identify different lifetimes; they do not imply a package or state machine for every struct.
 
-Keep package-specific requests and intermediate results with their owning capability. `model` must not become a miscellaneous collection of services, provider SDK types, terminal strings, or duplicate versions of existing records. Serialization and schema checks belong in `ledger`.
+Keep package-specific requests and intermediate results with their owning capability. `record` must not become a miscellaneous collection of services, provider SDK types, terminal strings, or duplicate versions of existing records. Serialization and schema checks belong in `ledger`.
 
 `ledger` owns the authoritative state ref, short transactions, locking at the supplied path, expected-ref checks, source pins, and derived Git notes. Notes export is part of this component; do not expose another authoritative note writer. Business decisions stay out of storage. `workflow` owns request intake and progression writes, including cross-record updates. Intake can run in the CLI process; after submission, drivers own progression and bookkeeping. Capability packages return results for the workflow engine to record.
 
@@ -86,7 +86,7 @@ Preparation can create temporary files and Git objects, but returns the result f
 
 ### Verification and dependent work
 
-`verify` owns the provider contract, immutable build specifications, verification coverage planning, evidence interpretation, and pure verdict logic. The driver owns attempt state transitions. The provider contract covers capabilities, submission, observation, lookup by stable request identity, cancellation, and release; it returns serializable handles that another process can use.
+`verify` owns the provider contract, immutable build specifications, verification coverage planning, evidence interpretation, and pure verdict logic. The driver owns attempt state transitions. The provider contract covers capabilities, submission, observation, reconciliation by durable submission identity, cancellation, and release; it returns serializable handles that another process can use.
 
 Distinguish admitted, temporarily at capacity, unsupported, and submission-uncertain outcomes. A preliminary capacity check is advisory: actual admission must coordinate at the provider's resource scope, including other repositories sharing the same host. The ledger lock covers record mutations; provider admission still needs provider-owned capacity coordination.
 
@@ -108,8 +108,8 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 
 ## Dependency rules
 
-- `model` has no dependency on CLI, proc, workflow, storage, or concrete integrations.
-- `ledger` depends on `model` and Git mechanics, not preparation, verification, or publication policy.
+- `record` has no dependency on CLI, proc, workflow, storage, or concrete integrations.
+- `ledger` depends on `record` and Git mechanics, not preparation, verification, or publication policy.
 - `workflow` depends on the ledger and capability APIs. Capabilities do not depend back on the workflow engine or write its records.
 - `proc` handles current-process residency and persistent-loop lifetime around `workflow.Engine`. Requests and observations pass through the ledger; `proc` does not judge evidence or choose the next business action.
 - `app` is the place concrete integrations are wired. Define interfaces at actual external or test boundaries; concrete structs and functions are sufficient elsewhere.
@@ -146,7 +146,7 @@ Earlier reviews are evidence of failure modes, not a claim that every finding re
 
 ## First implementation slice
 
-The shared records, ledger, request intake, and snapshot status projection are implemented. Next build one workflow path for verifying an existing pinned branch with a scripted provider. Exercise acceptance, capacity, admission, completion, cancellation, crash recovery, and competing drivers through that path. Connect CLI submission and observation through the ledger, add current-process persistent execution through `proc`, and confirm that changing attachment does not change execution. Verify that a request survives submission before any driver starts, and that concurrent cycles cannot claim the same action.
+The shared records, ledger, request intake, snapshot status projection, and first verification cycle are implemented. The cycle verifies one resolved target against an existing committed revision using the recorded build configuration and an injected provider. Temporary scripted-provider checks exercise capacity, admission, completion, cancellation, process death, competing drivers, and independent cleanup. Connect CLI submission and observation through the ledger, add current-process persistent execution through `proc`, and confirm that changing attachment does not change execution. Verify that a request survives submission before any driver starts, and that concurrent cycles cannot claim the same action.
 
 Next add real Tart verification, source preparation, and publication through the same driver. Use temporary Git repositories, representative Portfile fixtures, and scripted forge responses to cover source context, stale claims, uncertain submissions, and revision/metadata reconciliation. A dependent build scenario should prove that resource ownership and partial coverage are not limited to one build per change.
 
@@ -156,6 +156,6 @@ Then add command handlers and capabilities incrementally. Phase-two discovery, r
 
 The package skeleton, selected Tcl/source-editing helpers, and ledger persistence are present. The ledger implements snapshot reads, bounded writer locking, guarded transactions, structural document validation, and source pins. Lockfile selection, ledger initialization, and construction of the service objects are wired. Cobra supplies the phase-one command tree, global/local flags, argument and flag-conflict checks, help, and completion. Workflow intake validates and transactionally accepts queued requests with idempotent receipts; snapshot status reporting is wired to `dockhand status`, including JSON output.
 
-Driver execution, provider operations, derived notes, control requests, and action command handlers remain unfinished. Their operational stubs return explicit errors. The broader workflow validation scenarios above remain future work.
+The first driver cycle, cancellation intake/application, single-target planning, and evidence judgment are present. Attempt and resource claims fence ledger writes; provider reconciliation must close an absent submission identity before a fresh identity can be tried. The cycle does not implement source preparation, publication, dependent scheduling, or evidence reuse. Tart operations, derived notes, review controls, persistent residency, and CLI action handlers remain explicit stubs. Provider calls were exercised through a temporary scripted adapter; no real VM build has run.
 
-The [groundwork](activity/2026-09-10-groundwork.md), [ledger](activity/2026-09-10-ledger.md), [startup configuration](activity/2026-09-10-config-directory.md), [Cobra integration](activity/2026-09-10-cobra.md), [lockfile simplification](activity/2026-09-11-lockfile.md), and [workflow intake/status](activity/2026-09-11-workflow-intake.md) reports describe provenance, implementation, and validation. The lockfile report supersedes the earlier config-directory behavior. No test suite has been copied or added.
+The [groundwork](activity/2026-09-10-groundwork.md), [ledger](activity/2026-09-10-ledger.md), [startup configuration](activity/2026-09-10-config-directory.md), [Cobra integration](activity/2026-09-10-cobra.md), [lockfile simplification](activity/2026-09-11-lockfile.md), [workflow intake/status](activity/2026-09-11-workflow-intake.md), and [verification cycle](activity/2026-09-11-verification-cycle.md) reports describe provenance, implementation, and validation. The lockfile report supersedes the earlier config-directory behavior. No test suite has been copied or added.

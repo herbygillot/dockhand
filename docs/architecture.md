@@ -50,6 +50,8 @@ Pins and ledger history are retained indefinitely in this implementation, includ
 
 ## Changes, revisions, and jobs
 
+The `record` package defines these shared records, their identities, and the value types they contain. Package and type documentation lives alongside the definitions in `internal/record`; workflow transitions and ledger persistence remain in their respective packages.
+
 A tracked change represents the logical contribution. Give it a stable identity independent of a branch name, commit SHA, job, or PR number. It relates the affected ports, current local revision, jobs, and any associated PR. Its lifetime extends beyond any individual execution job.
 
 A revision identifies an immutable source snapshot and its upstream base. Preparation records how a new revision relates to its predecessor. Rebasing or incorporating corrective edits produces a new revision of the same tracked change. Rewriting commits must preserve the change identity and PR association, along with the earlier revisions and evidence needed for history and recovery.
@@ -120,7 +122,23 @@ Under one ledger transaction, intake checks request identity and referenced reco
 
 `workflow.Status` reads one ledger snapshot and projects jobs, attempts, publication actions, changes, revisions, pull requests, and resources. The scope explicitly selects all jobs or a nonempty list of job IDs; combining both, providing neither, or requesting an unknown job is an error. Repeated IDs are collapsed. Scoped results include associated records; an all-ledger result also exposes changes without jobs and resources without a surviving attempt. Resources are a separate collection so retention and cleanup remain visible after jobs finish. Jobs sort by acceptance time and then ID; other collections sort by ID. Every result belongs to that one captured ledger version and owns its decoded data.
 
-A missing state ref is an empty all-ledger status, while corrupt or unsupported state remains an error. Snapshot-read time records when Dockhand read the ledger; it is not a new provider or forge observation. Status never runs a cycle, invokes a provider, or changes ledger records. Acceptance and status reporting now work independently of execution; driver cycles and control-request handling remain unimplemented.
+A missing state ref is an empty all-ledger status, while corrupt or unsupported state remains an error. Snapshot-read time records when Dockhand read the ledger; it is not a new provider or forge observation. Status never runs a cycle, invokes a provider, or changes ledger records. Acceptance and status reporting work independently of execution. The first verification cycle and cancellation controls are implemented as described below; CLI action handlers and persistent driver residency remain unfinished.
+
+### First verification cycle
+
+`workflow.Engine.Cycle` takes the same explicit all-jobs or selected-jobs scope as status. One pass applies pending cancellation controls, advances at most one external action per selected job, and processes eligible resource releases independently. It does not sleep or wait for a build. The caller supplies later passes. Per-job provider problems are recorded and returned without preventing other selected jobs from progressing; ledger errors or caller cancellation end the pass. `CycleResult.Advanced` lists jobs whose records advanced, not necessarily successful builds. `PendingCleanup` includes retained and uncertain resources as well as requested releases.
+
+This slice handles `verify` to `verification-complete` for one resolved target and an existing committed input revision. The accepted `JobSpec.Build` records a `BuildConfig`: provider identity, complete platform, immutable environment digest, source-build choice, and explicit test policy. `BuildSpec` combines that configuration with the selected revision, source, target, and concrete artifact inputs. `verify.PlanSingle` constructs this first coverage plan without calling MacPorts or the provider. A missing configuration, missing committed revision, or multiple targets produces a needs-attention outcome. Other action executors remain unimplemented. The broader planner and dependent coverage remain separate future work.
+
+`Submit` validates and copies a supplied build configuration but still accepts requests without one, allowing unfinished preparation paths and previously accepted requests to remain representable. A cycle never fills missing build inputs from current defaults. Admission creates neither a new source revision nor publication authority. Later changes to the tracked change's current revision do not retarget the recorded attempt.
+
+Before submission, the driver records the plan, immutable attempt inputs, submission identity, and an expiring action claim. Capabilities establish provider identity and platform compatibility; advertised capacity is advisory. Only `Submit` decides admission. A capacity response leaves the attempt queued without an admission timestamp. Confirmed admission records the provider run, owned resource handles, and first admission time. Submission errors, contradictory responses, and lost claims leave recoverable intent rather than authorizing an immediate duplicate submission.
+
+The first cycle uses two-minute action leases, thirty-second provider call deadlines, and a one-second retry delay by default, configurable on `Engine`. The lease must exceed the call timeout. A live claim excludes other cycles even when they use the same process identity. Each attempt and resource keeps a monotonically increasing claim generation after the active claim is cleared. Recording a result requires the matching owner/generation, a live lease, and the expected current state. Context deadlines are cooperative; a provider must honor cancellation to bound a call's duration. Expiry alone cannot stop a paused process from reaching a provider later.
+
+A canceled or finished observation needs an explicit verdict and observation timestamp. `verify.Judge` rejects contradictory evidence, including a passing summary with failed or unknown steps. The driver validates run identity and rejects observations older than those already recorded. Running evidence remains unknown. Passed verification completes the job; target failure fails it; blocked, errored, or unsupported outcomes need attention. Failed builds are not automatically retried. Transient polling and uncertain effects can be retried on later passes; classified retry budgets and backoff beyond the fixed delay remain future work.
+
+`workflow.Control` accepts idempotent cancellation requests for explicit job IDs. It records intent only. A cycle applies cancellation to its selected jobs; the control's `AppliedAt` means all requested jobs have received that intent or were already terminal, not that remote execution has stopped. A job with no admitted or uncertain submission can cancel locally. An uncertain submission must be reconciled first. For an admitted run, a successful provider `Cancel` acknowledges the request; only a later observation establishes the outcome. Failed cancellation calls alternate with observation so they cannot hide a run that has already finished. An already terminal build retains its factual outcome and diagnostic resources.
 
 ## Concurrent execution and external actions
 
@@ -129,6 +147,16 @@ Multiple driver processes may advance the same repository. All use the same ledg
 Claims identify their owner and generation and have explicit liveness and recovery rules. When recording an external result, the driver checks that its claim and the relevant state are still current. An expired or replaced claim cannot authorize a stale process to advance the job.
 
 Claim checks alone cannot undo an external action. Give submissions and publications stable action identities, use provider idempotency where available, and reconcile remote state after an uncertain response or process death. If the provider cannot establish whether an action occurred, retain the uncertainty and report what needs attention rather than blindly creating a duplicate. Apply the same discipline to cancellation and release.
+
+### Verification provider recovery contract
+
+`Submit` must be durable and idempotent by submission ID, enforce capacity at the provider's shared resource scope, and reject reuse of an ID with different build inputs. Its run and resource identities must be usable by another process. `Reconcile` replaces the original lookup-only placeholder: it returns a known run with all recoverable resource handles, durably closes an unadmitted submission, or reports uncertainty.
+
+A `RequestClosed` result is stronger than “not found.” The provider must serialize it against submission and permanently prevent that ID from creating a run, including when a stale driver submits after reconciliation. It must not close an admitted run. Closing may leave partially provisioned resources; return their handles for cleanup. If the provider cannot make this guarantee, it returns `RunUnknown` and the driver does not resubmit.
+
+After confirmed closure with no resources, the driver records the closed identity and allocates a fresh submission ID for the same immutable attempt inputs, unless cancellation is pending. A closure with partial resources ends the job needing attention and schedules those resources for release. Submission IDs remain stable through capacity waiting and uncertain outcomes; they change only after confirmed closure. This prevents an old driver from creating an untracked run after another driver cancels or retries the work. Lost closure acknowledgements are recoverable by reconciling the same ID again.
+
+Provider name identifies a stable recovery namespace. Reusing a provider name for an unrelated backend is invalid. Resource IDs identify unique lifetimes within that namespace and must not be recycled for another attempt. Cancel and release are idempotent operations against recorded identities. A terminal observation means the run has stopped; required evidence and artifact references must remain valid after any permitted environment release.
 
 ## Resource retention and cleanup
 
@@ -139,6 +167,8 @@ A dead driver does not prove that its build stopped. An unreachable builder does
 Retention expiry makes an eligible resource due for cleanup; it does not erase an active build or unresolved ownership. Preserve the diagnostic records and required logs before deleting a retained environment. Record release as complete only when the provider confirms release or absence.
 
 A driver retains responsibility for outstanding cleanup even after the requested job outcome is recorded. If cleanup cannot finish, leave a durable obligation with its last error and retry or attention state so another driver can resume it. Independent jobs continue meanwhile.
+
+The first cycle requests release after a passed or canceled attempt and retains failed, blocked, or errored environments indefinitely unless a retention deadline is explicitly recorded. Release uses a separate resource claim, and an unconfirmed release stays uncertain with its last error and next retry time. Provider release is never invoked for an active or unresolved attempt, a foreign handle, or an orphan resource without an owning attempt. Orphans remain visible for reconciliation. No automatic retention deadline, retention-management command, or artifact garbage collector is implemented yet.
 
 ## Implementation phases and extension boundaries
 

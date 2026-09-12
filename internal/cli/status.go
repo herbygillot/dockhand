@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +73,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		if job.ResultRevision != "" {
 			line("  result revision: %s", job.ResultRevision)
 		}
+		if job.CancelRequestedAt != nil {
+			line("  cancellation requested: %s", statusTime(*job.CancelRequestedAt))
+		}
 		if job.AdmittedAt != nil {
 			line("  admitted: %s", statusTime(*job.AdmittedAt))
 		}
@@ -86,7 +89,10 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			line("  verification: no recorded attempts")
 		}
 		for _, attempt := range entry.Attempts {
-			line("  attempt %s: %s; target: %s; platform: %s %s %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), attempt.Spec.Platform.OS, attempt.Spec.Platform.Version, attempt.Spec.Platform.Architecture)
+			line("  attempt %s: %s; target: %s; platform: %s %s %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), attempt.Spec.Config.Platform.OS, attempt.Spec.Config.Platform.Version, attempt.Spec.Config.Platform.Architecture)
+			if attempt.LastError != "" {
+				line("    detail: %s", attempt.LastError)
+			}
 			if attempt.Evidence != nil {
 				line("    verdict: %s; observed: %s", attempt.Evidence.Verdict, statusTime(attempt.Evidence.ObservedAt))
 				if failure := attempt.Evidence.Failure; failure != nil {
@@ -133,7 +139,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 	return err
 }
 
-func targetLabel(target model.Target) string {
+func targetLabel(target record.Target) string {
 	name := target.Name
 	if target.Subport != "" {
 		name += "/" + target.Subport

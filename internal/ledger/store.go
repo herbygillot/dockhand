@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 var (
@@ -57,7 +57,7 @@ func New(repo *git.Repository, options Options) (*Store, error) {
 }
 
 type Transaction struct {
-	Version model.ObjectID
+	Version record.ObjectID
 	State   State
 	Refs    []git.RefChange
 }
@@ -98,9 +98,9 @@ func (s *Store) read(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("ledger: reading %s: %w", ref.Object, err)
 	}
-	return Snapshot{Version: model.ObjectID(ref.Object), State: state}, nil
+	return Snapshot{Version: record.ObjectID(ref.Object), State: state}, nil
 }
 
-func (s *Store) ExportNote(ctx context.Context, revision model.RevisionID) error {
+func (s *Store) ExportNote(ctx context.Context, revision record.RevisionID) error {
 	return ErrNotImplemented
 }

@@ -1,0 +1,182 @@
+package record
+
+import "time"
+
+// TestPolicy specifies which port tests a verification attempt should run.
+type TestPolicy string
+
+const (
+	// TestDeclared requests the tests declared by the port, when available.
+	TestDeclared TestPolicy = "declared"
+	// TestSkip explicitly skips the port's test phase.
+	TestSkip TestPolicy = "skip"
+)
+
+// BuildConfig captures effective verification choices at request acceptance.
+// A resumed attempt uses these values rather than current application defaults.
+type BuildConfig struct {
+	// Provider identifies a stable provider recovery namespace.
+	Provider string
+	Platform Platform
+	// EnvironmentDigest identifies the immutable build environment.
+	EnvironmentDigest string
+	// FromSource requires a source build instead of satisfying the target from an archive.
+	FromSource bool
+	Tests      TestPolicy
+}
+
+// BuildSpec binds one verification attempt to concrete, immutable inputs.
+// Planned dependencies on future outputs must be resolved to Artifacts before
+// the specification is submitted to a provider.
+type BuildSpec struct {
+	RevisionID RevisionID
+	Source     Source
+	Target     Target
+	Config     BuildConfig
+	Inputs     []Artifact
+}
+
+// AttemptState describes provider submission and execution progress.
+// Evidence carries the verdict separately from this lifecycle state.
+type AttemptState string
+
+const (
+	// AttemptQueued is ready for admission, possibly after a capacity refusal.
+	AttemptQueued AttemptState = "queued"
+	// AttemptSubmitting records submission intent before the provider is called.
+	AttemptSubmitting AttemptState = "submitting"
+	// AttemptRunning identifies an admitted run awaiting a terminal observation.
+	AttemptRunning AttemptState = "running"
+	// AttemptFinished has a recorded terminal verdict other than cancellation.
+	AttemptFinished AttemptState = "finished"
+	// AttemptUncertain requires reconciliation of an unresolved submission outcome.
+	AttemptUncertain AttemptState = "uncertain"
+	// AttemptCanceled has confirmed cancellation, including cancellation before admission.
+	AttemptCanceled AttemptState = "canceled"
+)
+
+// ProviderRun identifies an admitted run in a provider's recovery namespace.
+// Its zero value means no run has been adopted into the attempt record.
+type ProviderRun struct {
+	Provider string
+	// RequestID is the submission identity that admitted this run.
+	RequestID RequestID
+	// RunID is the provider's identifier for the admitted execution.
+	RunID string
+}
+
+// Attempt tracks verification of one target and configuration for a job.
+// Its specification remains fixed while admission, observations, and cancellation
+// progress. Owned resources have separate records and can outlive the attempt.
+type Attempt struct {
+	ID       AttemptID
+	JobID    JobID
+	TargetID TargetID
+	Spec     BuildSpec
+	State    AttemptState
+	Claim    *Claim
+	// ClaimGeneration retains the last issued generation when Claim is cleared.
+	ClaimGeneration uint64
+	// SubmissionID remains stable through capacity waiting and uncertainty.
+	// A fresh identity is assigned only after the provider closes the old one.
+	SubmissionID RequestID
+	// ClosedSubmissions records identities the provider has permanently barred
+	// from creating a run, including through a late call by a stale driver.
+	ClosedSubmissions []RequestID
+	// RetryAt is the earliest time for another action; nil imposes no delay.
+	RetryAt *time.Time
+	// CancelSentAt records a successful cancellation acknowledgement, which
+	// still requires observation to establish the run's outcome.
+	CancelSentAt *time.Time
+	// CancelPendingObservation schedules observation after a cancellation call,
+	// including a failed call, before cancellation may be attempted again.
+	CancelPendingObservation bool
+	LastError                string
+	Run                      ProviderRun
+	// Evidence holds the latest accepted observation; nil means none is recorded.
+	Evidence  *Evidence
+	CreatedAt time.Time
+}
+
+// Verdict expresses the interpreted outcome of verification evidence.
+// A lifecycle state alone never establishes that verification passed.
+type Verdict string
+
+const (
+	// VerdictUnknown means no conclusive outcome is established, including while running.
+	VerdictUnknown Verdict = "unknown"
+	// VerdictPassed means the requested verification succeeded.
+	VerdictPassed Verdict = "passed"
+	// VerdictFailed means verification produced a conclusive build or test failure.
+	VerdictFailed Verdict = "failed"
+	// VerdictBlocked means a prerequisite prevented the requested verification.
+	VerdictBlocked Verdict = "blocked"
+	// VerdictUnsupported means the requested verification cannot be performed.
+	VerdictUnsupported Verdict = "unsupported"
+	// VerdictErrored means an operational error prevented a reliable verification outcome.
+	VerdictErrored Verdict = "errored"
+	// VerdictCanceled means the verification was conclusively canceled.
+	VerdictCanceled Verdict = "canceled"
+)
+
+// FailureKind identifies where verification failed, independently of whether
+// the proposed source change caused that failure.
+type FailureKind string
+
+const (
+	// TargetFailure locates the failure in the requested port.
+	TargetFailure FailureKind = "target"
+	// DependencyFailure locates the failure in a dependency of the requested port.
+	DependencyFailure FailureKind = "dependency"
+	// InfrastructureFailure locates the failure in the build environment or infrastructure.
+	InfrastructureFailure FailureKind = "infrastructure"
+	// DockhandFailure locates the failure in Dockhand's own execution mechanisms.
+	DockhandFailure FailureKind = "dockhand"
+)
+
+// Attribution describes the evidence relating a failure to the proposed change.
+// Identifying the failing package alone does not establish attribution.
+type Attribution string
+
+const (
+	// AttributionUnknown means the relationship to the change is unresolved.
+	AttributionUnknown Attribution = "unknown"
+	// Preexisting classifies a failure as present without the proposed change.
+	Preexisting Attribution = "preexisting"
+	// ChangeAssociated associates the failure with the proposed change.
+	ChangeAssociated Attribution = "change-associated"
+)
+
+// Failure records diagnostic context for a negative or errored outcome.
+type Failure struct {
+	Kind    FailureKind
+	Package string
+	Phase   string
+	// DependencyChain records the dependency path explaining why the failing
+	// package was needed, including packages outside the edited cohort.
+	DependencyChain []string
+	Attribution     Attribution
+	Detail          string
+}
+
+// StepResult records the outcome of one package phase within verification.
+type StepResult struct {
+	Package string
+	Phase   string
+	Verdict Verdict
+	Detail  string
+}
+
+// Evidence retains an interpreted observation for an attempt's fixed inputs.
+// Running observations have an unknown verdict; a terminal outcome must be
+// explicit. Referenced artifacts and logs may be stored outside the ledger.
+type Evidence struct {
+	Verdict Verdict
+	// Failure provides diagnostic context when present.
+	Failure   *Failure
+	Steps     []StepResult
+	Artifacts []Artifact
+	Logs      []Artifact
+	// ObservedAt is the provider observation time, independent of ledger read time.
+	ObservedAt time.Time
+}

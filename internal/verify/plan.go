@@ -4,29 +4,25 @@ import (
 	"context"
 
 	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 type RevisionBump struct {
-	Target model.Target
+	Target record.Target
 	Reason string
 }
 
 type Impact struct {
 	Bumps        []RevisionBump
-	Verification model.VerificationPlan
+	Verification record.VerificationPlan
 }
 
 type Planner struct{ Ports macports.Reader }
 
-func (p *Planner) Plan(ctx context.Context, revision model.Revision, targets []model.Target) (model.VerificationPlan, error) {
-	return model.VerificationPlan{}, ErrNotImplemented
+func (p *Planner) Plan(ctx context.Context, revision record.Revision, targets []record.Target) (record.VerificationPlan, error) {
+	return record.VerificationPlan{}, ErrNotImplemented
 }
 
-func (p *Planner) Dependents(ctx context.Context, revision model.Revision, evidence model.Evidence) (Impact, error) {
+func (p *Planner) Dependents(ctx context.Context, revision record.Revision, evidence record.Evidence) (Impact, error) {
 	return Impact{}, ErrNotImplemented
-}
-
-func Judge(observation Observation) (model.Evidence, error) {
-	return model.Evidence{Verdict: model.VerdictUnknown}, ErrNotImplemented
 }

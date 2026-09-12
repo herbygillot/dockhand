@@ -6,7 +6,7 @@ import (
 	"slices"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 const PinsPrefix = "refs/dockhand/objects/"
@@ -14,7 +14,7 @@ const PinsPrefix = "refs/dockhand/objects/"
 func (s *Store) sourcePins(ctx context.Context, state State) ([]git.RefChange, bool, error) {
 	objects := make(map[string]string)
 	commitTrees := make(map[string]string)
-	add := func(id model.ObjectID, kind string) error {
+	add := func(id record.ObjectID, kind string) error {
 		if id == "" {
 			return nil
 		}
@@ -28,7 +28,7 @@ func (s *Store) sourcePins(ctx context.Context, state State) ([]git.RefChange, b
 		objects[object] = kind
 		return nil
 	}
-	addSource := func(source model.Source) error {
+	addSource := func(source record.Source) error {
 		if source.Commit != "" && source.Tree != "" {
 			commit, tree := string(source.Commit), string(source.Tree)
 			if previous, exists := commitTrees[commit]; exists && previous != tree {

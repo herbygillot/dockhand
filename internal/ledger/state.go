@@ -1,7 +1,7 @@
 package ledger
 
 import (
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 const (
@@ -11,34 +11,34 @@ const (
 )
 
 type State struct {
-	Changes      map[model.ChangeID]model.Change
-	Revisions    map[model.RevisionID]model.Revision
-	Jobs         map[model.JobID]model.Job
-	Requests     map[model.RequestID]model.JobID
-	Controls     map[model.RequestID]model.ControlRequest
-	Plans        map[model.JobID]model.VerificationPlan
-	Attempts     map[model.AttemptID]model.Attempt
-	Resources    map[model.ResourceID]model.Resource
-	Publications map[model.PublicationID]model.PublicationAction
-	PullRequests map[model.PullRequestID]model.PullRequest
+	Changes      map[record.ChangeID]record.Change
+	Revisions    map[record.RevisionID]record.Revision
+	Jobs         map[record.JobID]record.Job
+	Requests     map[record.RequestID]record.JobID
+	Controls     map[record.RequestID]record.ControlRequest
+	Plans        map[record.JobID]record.VerificationPlan
+	Attempts     map[record.AttemptID]record.Attempt
+	Resources    map[record.ResourceID]record.Resource
+	Publications map[record.PublicationID]record.PublicationAction
+	PullRequests map[record.PullRequestID]record.PullRequest
 }
 
 func NewState() State {
 	return State{
-		Changes:      make(map[model.ChangeID]model.Change),
-		Revisions:    make(map[model.RevisionID]model.Revision),
-		Jobs:         make(map[model.JobID]model.Job),
-		Requests:     make(map[model.RequestID]model.JobID),
-		Controls:     make(map[model.RequestID]model.ControlRequest),
-		Plans:        make(map[model.JobID]model.VerificationPlan),
-		Attempts:     make(map[model.AttemptID]model.Attempt),
-		Resources:    make(map[model.ResourceID]model.Resource),
-		Publications: make(map[model.PublicationID]model.PublicationAction),
-		PullRequests: make(map[model.PullRequestID]model.PullRequest),
+		Changes:      make(map[record.ChangeID]record.Change),
+		Revisions:    make(map[record.RevisionID]record.Revision),
+		Jobs:         make(map[record.JobID]record.Job),
+		Requests:     make(map[record.RequestID]record.JobID),
+		Controls:     make(map[record.RequestID]record.ControlRequest),
+		Plans:        make(map[record.JobID]record.VerificationPlan),
+		Attempts:     make(map[record.AttemptID]record.Attempt),
+		Resources:    make(map[record.ResourceID]record.Resource),
+		Publications: make(map[record.PublicationID]record.PublicationAction),
+		PullRequests: make(map[record.PullRequestID]record.PullRequest),
 	}
 }
 
 type Snapshot struct {
-	Version model.ObjectID
+	Version record.ObjectID
 	State   State
 }

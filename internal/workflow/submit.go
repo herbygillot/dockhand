@@ -8,17 +8,17 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/ledger"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 type Request struct {
-	ID   model.RequestID
-	Spec model.JobSpec
+	ID   record.RequestID
+	Spec record.JobSpec
 }
 
 type Receipt struct {
-	RequestID  model.RequestID
-	JobID      model.JobID
+	RequestID  record.RequestID
+	JobID      record.JobID
 	AcceptedAt time.Time
 }
 
@@ -57,7 +57,7 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if err != nil {
 			return err
 		}
-		id := model.JobID("job_" + rand.Text())
+		id := record.JobID("job_" + rand.Text())
 		if _, exists := tx.State.Jobs[id]; exists {
 			return fmt.Errorf("workflow: generated job ID already exists: %s", id)
 		}
@@ -65,9 +65,9 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if now.IsZero() {
 			return fmt.Errorf("workflow: acceptance clock returned a zero time")
 		}
-		tx.State.Jobs[id] = model.Job{
+		tx.State.Jobs[id] = record.Job{
 			ID: id, RequestID: request.ID, Spec: accepted,
-			ChangeID: accepted.ChangeID, State: model.JobQueued, AcceptedAt: now,
+			ChangeID: accepted.ChangeID, State: record.JobQueued, AcceptedAt: now,
 		}
 		tx.State.Requests[request.ID] = id
 		receipt = Receipt{RequestID: request.ID, JobID: id, AcceptedAt: now}
@@ -79,38 +79,34 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 	return receipt, nil
 }
 
-func bindRevision(spec model.JobSpec, state ledger.State) (model.JobSpec, error) {
+func bindRevision(spec record.JobSpec, state ledger.State) (record.JobSpec, error) {
 	if spec.InputRevision == "" {
 		return spec, nil
 	}
 	revision, exists := state.Revisions[spec.InputRevision]
 	if !exists {
-		return model.JobSpec{}, fmt.Errorf("%w: revision %s", ErrNotFound, spec.InputRevision)
+		return record.JobSpec{}, fmt.Errorf("%w: revision %s", ErrNotFound, spec.InputRevision)
 	}
 	change, exists := state.Changes[revision.ChangeID]
 	if !exists {
-		return model.JobSpec{}, fmt.Errorf("%w: revision %s has no recorded change", ledger.ErrInvalidState, revision.ID)
+		return record.JobSpec{}, fmt.Errorf("%w: revision %s has no recorded change", ledger.ErrInvalidState, revision.ID)
 	}
 	if spec.ChangeID != "" && spec.ChangeID != change.ID {
-		return model.JobSpec{}, fmt.Errorf("%w: revision %s does not belong to change %s", ErrInvalidRequest, revision.ID, spec.ChangeID)
+		return record.JobSpec{}, fmt.Errorf("%w: revision %s does not belong to change %s", ErrInvalidRequest, revision.ID, spec.ChangeID)
 	}
-	if change.Disposition != model.ChangeOpen {
-		return model.JobSpec{}, fmt.Errorf("%w: change %s is %s", ErrInvalidRequest, change.ID, change.Disposition)
+	if change.Disposition != record.ChangeOpen {
+		return record.JobSpec{}, fmt.Errorf("%w: change %s is %s", ErrInvalidRequest, change.ID, change.Disposition)
 	}
-	if spec.Action != model.Verify && change.CurrentRevision != revision.ID {
-		return model.JobSpec{}, fmt.Errorf("%w: revision %s is no longer current for change %s", ErrStaleRevision, revision.ID, change.ID)
+	if spec.Action != record.Verify && change.CurrentRevision != revision.ID {
+		return record.JobSpec{}, fmt.Errorf("%w: revision %s is no longer current for change %s", ErrStaleRevision, revision.ID, change.ID)
 	}
 	if err := validateSource(revision.Source); err != nil {
-		return model.JobSpec{}, fmt.Errorf("%w: revision %s: %v", ledger.ErrInvalidState, revision.ID, err)
+		return record.JobSpec{}, fmt.Errorf("%w: revision %s: %v", ledger.ErrInvalidState, revision.ID, err)
 	}
-	if spec.Action == model.Publish && revision.Source.Commit == "" {
-		return model.JobSpec{}, fmt.Errorf("%w: publication requires a committed revision", ErrInvalidRequest)
+	if spec.Action == record.Publish && revision.Source.Commit == "" {
+		return record.JobSpec{}, fmt.Errorf("%w: publication requires a committed revision", ErrInvalidRequest)
 	}
 	spec.ChangeID = change.ID
 	spec.Source = revision.Source
 	return spec, nil
-}
-
-func (e *Engine) Control(ctx context.Context, request model.ControlRequest) error {
-	return ErrNotImplemented
 }

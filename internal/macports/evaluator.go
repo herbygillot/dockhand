@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 var ErrNotImplemented = errors.New("macports: evaluation is not implemented")
@@ -26,16 +26,16 @@ type PortInfo struct {
 }
 
 type Snapshot struct {
-	Source     model.Source
-	Target     model.Target
-	Platform   model.Platform
+	Source     record.Source
+	Target     record.Target
+	Platform   record.Platform
 	Ports      map[string]PortInfo
 	ObservedAt time.Time
 }
 
 type Reader interface {
 	Evaluate(context.Context, Context) (Snapshot, error)
-	Resolve(context.Context, model.Source, string) ([]model.Target, error)
+	Resolve(context.Context, record.Source, string) ([]record.Target, error)
 }
 
 type Evaluator struct {
@@ -47,7 +47,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, source Context) (Snapshot, err
 	return Snapshot{}, ErrNotImplemented
 }
 
-func (e *Evaluator) Resolve(ctx context.Context, source model.Source, selector string) ([]model.Target, error) {
+func (e *Evaluator) Resolve(ctx context.Context, source record.Source, selector string) ([]record.Target, error) {
 	return nil, ErrNotImplemented
 }
 

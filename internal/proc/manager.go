@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 )
 
@@ -16,7 +16,7 @@ type Manager struct {
 }
 
 type Process struct {
-	ID        model.ProcessID
+	ID        record.ProcessID
 	PID       int
 	Scope     workflow.Scope
 	StartedAt time.Time

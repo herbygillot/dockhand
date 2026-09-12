@@ -6,30 +6,30 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 var ErrNotImplemented = errors.New("publish: publication is not implemented")
 
 type Observation struct {
 	Found       bool
-	PullRequest model.PullRequest
+	PullRequest record.PullRequest
 	ObservedAt  time.Time
 }
 
 type Request struct {
-	ActionID           model.PublicationID
+	ActionID           record.PublicationID
 	Repository         string
 	BaseBranch         string
 	HeadBranch         string
-	ExistingPR         *model.PullRequestRef
-	ExpectedRemoteHead model.ExpectedHead
-	Desired            model.PublicationContent
+	ExistingPR         *record.PullRequestRef
+	ExpectedRemoteHead record.ExpectedHead
+	Desired            record.PublicationContent
 }
 
 type Forge interface {
 	Find(context.Context, string, string) (Observation, error)
-	Observe(context.Context, model.PullRequestRef) (Observation, error)
+	Observe(context.Context, record.PullRequestRef) (Observation, error)
 	Create(context.Context, Request) (Observation, error)
 	Update(context.Context, Request) (Observation, error)
 }
@@ -37,10 +37,10 @@ type Forge interface {
 type Decision struct {
 	Allowed bool
 	Reasons []string
-	Desired model.PublicationContent
+	Desired record.PublicationContent
 }
 
-func Decide(request Request, evidence []model.Evidence, observed Observation) (Decision, error) {
+func Decide(request Request, evidence []record.Evidence, observed Observation) (Decision, error) {
 	return Decision{}, ErrNotImplemented
 }
 
@@ -49,10 +49,10 @@ type Service struct {
 	Forge Forge
 }
 
-func (s *Service) Apply(ctx context.Context, action model.PublicationAction) (Observation, error) {
+func (s *Service) Apply(ctx context.Context, action record.PublicationAction) (Observation, error) {
 	return Observation{}, ErrNotImplemented
 }
 
-func (s *Service) Reconcile(ctx context.Context, action model.PublicationAction) (Observation, error) {
+func (s *Service) Reconcile(ctx context.Context, action record.PublicationAction) (Observation, error) {
 	return Observation{}, ErrNotImplemented
 }

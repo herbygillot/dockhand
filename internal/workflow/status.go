@@ -9,23 +9,23 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/ledger"
-	"github.com/herbygillot/dockhand/v2/internal/model"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 type JobStatus struct {
-	Job          model.Job
-	Attempts     []model.Attempt
-	Publications []model.PublicationAction
+	Job          record.Job
+	Attempts     []record.Attempt
+	Publications []record.PublicationAction
 }
 
 type Status struct {
-	LedgerVersion model.ObjectID
+	LedgerVersion record.ObjectID
 	ReadAt        time.Time
 	Jobs          []JobStatus
-	Changes       []model.Change
-	Revisions     []model.Revision
-	PullRequests  []model.PullRequest
-	Resources     []model.Resource
+	Changes       []record.Change
+	Revisions     []record.Revision
+	PullRequests  []record.PullRequest
+	Resources     []record.Resource
 }
 
 func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
@@ -35,7 +35,7 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 	if (scope.All && len(scope.Jobs) != 0) || (!scope.All && len(scope.Jobs) == 0) {
 		return Status{}, ErrInvalidScope
 	}
-	selected := make(map[model.JobID]*JobStatus)
+	selected := make(map[record.JobID]*JobStatus)
 	for _, id := range scope.Jobs {
 		if id == "" {
 			return Status{}, ErrInvalidScope
@@ -51,23 +51,23 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 	state := snapshot.State
 	result := Status{
 		LedgerVersion: snapshot.Version, ReadAt: e.now(),
-		Jobs: []JobStatus{}, Changes: []model.Change{}, Revisions: []model.Revision{},
-		PullRequests: []model.PullRequest{}, Resources: []model.Resource{},
+		Jobs: []JobStatus{}, Changes: []record.Change{}, Revisions: []record.Revision{},
+		PullRequests: []record.PullRequest{}, Resources: []record.Resource{},
 	}
 	if scope.All {
 		for id := range state.Jobs {
 			selected[id] = nil
 		}
 	}
-	changes := make(map[model.ChangeID]bool)
-	revisions := make(map[model.RevisionID]bool)
-	attempts := make(map[model.AttemptID]bool)
+	changes := make(map[record.ChangeID]bool)
+	revisions := make(map[record.RevisionID]bool)
+	attempts := make(map[record.AttemptID]bool)
 	for _, id := range slices.Sorted(maps.Keys(selected)) {
 		job, exists := state.Jobs[id]
 		if !exists {
 			return Status{}, fmt.Errorf("%w: job %s", ErrNotFound, id)
 		}
-		selected[id] = &JobStatus{Job: job, Attempts: []model.Attempt{}, Publications: []model.PublicationAction{}}
+		selected[id] = &JobStatus{Job: job, Attempts: []record.Attempt{}, Publications: []record.PublicationAction{}}
 		changes[job.ChangeID] = true
 		revisions[job.Spec.InputRevision] = true
 		revisions[job.ResultRevision] = true
