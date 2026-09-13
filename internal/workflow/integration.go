@@ -21,7 +21,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 	if e.Repo == nil {
 		return false, "", fmt.Errorf("workflow: Git repository required to reconcile preparation")
 	}
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	callCtx, cancel := context.WithTimeout(ctx, c.timeouts.Prepare)
 	defer cancel()
 	err = e.Repo.WithBranchLock(callCtx, candidate.Prepared.Branch, func(ctx context.Context) error {
 		var selected record.Job
@@ -46,7 +46,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			prepared := *job.Prepared
 			prepared.IntegrationStarted = true
 			job.Prepared = &prepared
-			job.Claim, err = c.claim(&job.ClaimGeneration, e.now())
+			job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), c.timeouts.Prepare)
 			if err != nil {
 				return err
 			}

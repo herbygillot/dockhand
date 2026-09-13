@@ -77,18 +77,16 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	}
 	provider := &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo}
 	engine := &workflow.Engine{
-		State:         store,
-		Repository:    repository.ID,
-		Repo:          repo,
-		Ports:         ports,
-		Preparer:      preparation,
-		Releases:      preparation,
-		Planner:       &verify.Planner{Ports: ports},
-		Provider:      provider,
-		Publisher:     &publish.Service{Repo: repo, Forge: githubClient, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
-		Now:           time.Now,
-		CallTimeout:   3 * time.Minute,
-		LeaseDuration: 5 * time.Minute,
+		State:      store,
+		Repository: repository.ID,
+		Repo:       repo,
+		Ports:      ports,
+		Preparer:   preparation,
+		Releases:   preparation,
+		Planner:    &verify.Planner{Ports: ports},
+		Provider:   provider,
+		Publisher:  &publish.Service{Repo: repo, Forge: githubClient, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
+		Now:        time.Now,
 	}
 	return &Services{
 		Workflow:     engine,

@@ -40,7 +40,8 @@ type CycleResult struct {
 type cycle struct {
 	engine                *Engine
 	owner                 record.ProcessID
-	lease, timeout, retry time.Duration
+	grace, retry, observe time.Duration
+	timeouts              Timeouts
 	capabilities          verify.Capabilities
 	providerError         error
 	providerChecked       bool
@@ -162,7 +163,7 @@ func (c *cycle) checkProvider(ctx context.Context) {
 		c.providerError = fmt.Errorf("workflow: verification provider is required")
 		return
 	}
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	callCtx, cancel := context.WithTimeout(ctx, c.timeouts.Observe)
 	defer cancel()
 	c.capabilities, c.providerError = c.engine.Provider.Capabilities(callCtx)
 	if c.providerError == nil {
@@ -173,18 +174,22 @@ func (c *cycle) checkProvider(ctx context.Context) {
 // newCycle resolves zero-value defaults and checks timing before any progression.
 // A generated owner belongs only to this pass and is not written back to Engine.
 func (e *Engine) newCycle() (*cycle, error) {
-	c := &cycle{engine: e, owner: e.Owner, lease: e.LeaseDuration, timeout: e.CallTimeout, retry: e.RetryDelay}
-	if c.lease == 0 {
-		c.lease = 2 * time.Minute
+	timeouts, err := e.Timeouts.defaults()
+	if err != nil {
+		return nil, err
 	}
-	if c.timeout == 0 {
-		c.timeout = 30 * time.Second
+	c := &cycle{engine: e, owner: e.Owner, grace: e.LeaseGrace, timeouts: timeouts, retry: e.RetryDelay, observe: e.ObserveInterval}
+	if c.grace == 0 {
+		c.grace = 30 * time.Second
 	}
 	if c.retry == 0 {
 		c.retry = time.Second
 	}
-	if c.timeout < 0 || c.retry < 0 || c.lease <= c.timeout || e.now().IsZero() {
-		return nil, fmt.Errorf("workflow: positive retry/timeout and a lease longer than the provider timeout are required")
+	if c.observe == 0 {
+		c.observe = 10 * time.Second
+	}
+	if c.grace < 0 || c.retry < 0 || c.observe < 0 || e.now().IsZero() {
+		return nil, fmt.Errorf("workflow: positive lease grace, retry, and observation intervals are required")
 	}
 	if c.owner == "" {
 		c.owner = record.ProcessID("cycle_" + rand.Text())
@@ -238,12 +243,12 @@ func owns(current, expected *record.Claim, now time.Time) bool {
 // claim advances a record's generation and creates a lease within the caller's
 // transaction. The record must retain that generation after its claim is cleared
 // so that a later claim by the same owner cannot accept an older result.
-func (c *cycle) claim(generation *uint64, now time.Time) (*record.Claim, error) {
+func (c *cycle) claim(generation *uint64, now time.Time, timeout time.Duration) (*record.Claim, error) {
 	if *generation == ^uint64(0) {
 		return nil, fmt.Errorf("workflow: claim generation exhausted")
 	}
 	(*generation)++
-	return &record.Claim{Owner: c.owner, Generation: *generation, ExpiresAt: now.Add(c.lease)}, nil
+	return &record.Claim{Owner: c.owner, Generation: *generation, ExpiresAt: now.Add(timeout).Add(c.grace)}, nil
 }
 
 func verificationJob(job record.Job) bool {

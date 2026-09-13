@@ -53,7 +53,7 @@ DOCKHAND_TEST_TART_IMAGE=dockhand-base-tahoe \
 go test -v ./internal/verify/tart -run '^TestRealTartBuildSurvivesSubmittingDriverExit$' -timeout 16m
 ```
 
-All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate that shared pool. Base images are hashed by contents; the first hash in each process can be expensive. Provisioning base images remains later work. `verify --image` selects the image; an optional `--capacity` establishes the shared pool limit. Subsequent `wait` and `start` invocations use the accepted job settings and recorded pool limit.
+All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate that shared pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. Provisioning base images remains later work. `verify --image` selects the image; an optional `--capacity` establishes the shared pool limit. Subsequent `wait` and `start` invocations use the accepted job settings and recorded pool limit.
 
 Verify current edits or committed branch contents, then reattach by the printed job ID:
 

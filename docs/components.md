@@ -241,3 +241,12 @@ Missing-ref classification happens only in exact-tag lookup. `go-github` preserv
 `workflow.BindPublication` selects a tracked committed source and its passing verification. `publish.Plan` owns contribution scope, destination selection, content, and remote preconditions; `publish` also owns PR observation validation and metadata policy. `forge/github` owns GitHub protocol and URL rules. `git` owns remote inspection, literal-ref pushes with explicit expected values, ancestry checks, and the local operation lock. `state` exposes only publication and PR methods required by this path; SQLite migration 6 supplies their storage.
 
 The shared cycle claims the job, takes a lock for its forge/head-repository/head-branch, rechecks ownership and cancellation, and records a checkpoint before each external effect. No state transaction spans Git or HTTP. PR uncertainty selects observation-only recovery; it never automatically reissues a create or update. Status joins the action and retained PR association. See the [publication report](activity/2026-09-13-publication.md) for boundaries and tests.
+
+
+## Verification performance and timing
+
+`verify/tart/image.go` owns prepared-image content identity and metadata checks. `state.ImageCache`, included in `ProviderStore`, keeps the storage boundary independent of SQLite. The backend adds a provider/path cache in schema 7; it does not introduce a new package, generic lock service, or alternate source of verification evidence.
+
+`workflow/timing.go` owns operation deadlines. Each preparation, provider, publication, or cleanup action uses the corresponding budget for both its call and its expiring claim. `ObserveInterval` determines the persisted next observation for a running build, while `RetryDelay` governs failures, capacity waiting, uncertain outcomes, and cancellation. Other drivers respect the recorded deadline. CLI status/log refresh has its own cadence and reads recorded progress without forcing a provider observation.
+
+CLI completion reports the verification outcome directly. Reuse explanations remain separate progress/status details, and detach output names the driver's remaining settlement and cleanup responsibility. See the [activity report](activity/2026-09-13-verification-performance.md) and [measurements](performance/2026-09-13-verification-overhead.md).

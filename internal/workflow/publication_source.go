@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -28,11 +27,11 @@ func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) 
 	if !validToken(string(input.ID)) {
 		return Request{}, ErrInvalidRequest
 	}
-	timeout := e.CallTimeout
-	if timeout == 0 {
-		timeout = 30 * time.Second
+	timeouts, err := e.Timeouts.defaults()
+	if err != nil {
+		return Request{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeouts.Publish)
 	defer cancel()
 	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
 	if err != nil {

@@ -68,7 +68,7 @@ func newFixture(t *testing.T) *fixture {
 		return tx.PutRevision(ctx, record.Revision{ID: "revision", ChangeID: "change", Source: f.source, CreatedAt: f.now()})
 	}))
 	f.provider = &scriptedProvider{store: store, repository: repository.ID, now: f.now, calls: make(map[string]int)}
-	f.engine = &workflow.Engine{State: store, Repository: repository.ID, Provider: f.provider, Now: f.now, Owner: "driver", LeaseDuration: time.Minute, CallTimeout: 5 * time.Second, RetryDelay: time.Second}
+	f.engine = &workflow.Engine{State: store, Repository: repository.ID, Provider: f.provider, Now: f.now, Owner: "driver", Timeouts: workflow.Timeouts{Resolve: 5 * time.Second, Prepare: 5 * time.Second, Provision: 5 * time.Second, Observe: 5 * time.Second, Publish: 5 * time.Second, Cleanup: 5 * time.Second}, LeaseGrace: 55 * time.Second, RetryDelay: time.Second, ObserveInterval: time.Second}
 
 	return f
 }

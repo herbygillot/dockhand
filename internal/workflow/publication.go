@@ -34,7 +34,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		job.Claim, err = c.claim(&job.ClaimGeneration, e.now())
+		job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), c.timeouts.Publish)
 		if err != nil {
 			return err
 		}
@@ -49,7 +49,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		err = c.publicationRetry(ctx, job, "Publication service is unavailable")
 		return true, "Publication service is unavailable", err
 	}
-	call, cancel := context.WithTimeout(ctx, c.timeout)
+	call, cancel := context.WithTimeout(ctx, c.timeouts.Publish)
 	defer cancel()
 	scope := action.Spec.Forge + ":" + strings.ToLower(action.Spec.HeadRepository) + ":" + action.Spec.HeadBranch
 	err = e.Publisher.Repo.WithPushLock(call, action.Spec.LockDirectory, scope, func(locked context.Context) error {

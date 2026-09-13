@@ -103,7 +103,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 		if err := c.providerReady(attempt.Spec.Config, false); err != nil {
 			detail = err.Error()
 		} else {
-			claim, err := c.claim(&resource.ClaimGeneration, now)
+			claim, err := c.claim(&resource.ClaimGeneration, now, c.timeouts.Cleanup)
 			if err != nil {
 				return err
 			}
@@ -121,7 +121,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 	}
 	// Release has its own durable claim and must be idempotent: another cycle
 	// may retry it if this process dies before recording confirmation.
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	callCtx, cancel := context.WithTimeout(ctx, c.timeouts.Cleanup)
 	result, callErr := e.Provider.Release(callCtx, resource.Handle)
 	if callErr == nil {
 		callErr = callCtx.Err()

@@ -72,3 +72,18 @@ func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
 	require.Equal(t, "job: active\nfirst\nsecond\n", output.String())
 	require.Equal(t, []int64{0, 3, 6, 9, 12}, provider.seen)
 }
+
+func TestCompletionEmphasizesPassedVerificationAndKeepsReuseDecisionEarlier(t *testing.T) {
+	var output bytes.Buffer
+	reporter := newReporter(&output, nil, false)
+	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, ReuseDetail: "Previous image differs; running a new build"}}}}
+	require.NoError(t, reporter.status(t.Context(), status))
+	status.Jobs[0].Job.State = record.JobCompleted
+	status.Jobs[0].Attempts = []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}
+	require.NoError(t, reporter.status(t.Context(), status))
+	require.Equal(t, "job: Previous image differs; running a new build\njob: active\njob: completed; verification passed\n", output.String())
+	status.Jobs[0].Attempts = nil
+	require.Empty(t, completedOutcome(status.Jobs[0]), "completion without a build must not claim verification passed")
+	status.Jobs[0].Reused = &record.Attempt{Evidence: &record.Evidence{Verdict: record.VerdictPassed}}
+	require.Equal(t, "verification passed (reused)", completedOutcome(status.Jobs[0]))
+}

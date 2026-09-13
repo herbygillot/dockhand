@@ -229,7 +229,7 @@ func (r *runtime) result(out io.Writer, result ActionResult) error {
 	}
 	for _, entry := range result.Status.Jobs {
 		if entry.Job.State == record.JobActive || entry.Job.State == record.JobQueued {
-			if _, err := fmt.Fprintf(out, "\nWork remains pending. Resume with dockhand wait %s or run dockhand start.\n", entry.Job.ID); err != nil {
+			if _, err := fmt.Fprintf(out, "\nWork remains pending. A running driver must settle the result and perform cleanup. Resume with dockhand wait %s or run dockhand start for this repository.\n", entry.Job.ID); err != nil {
 				return err
 			}
 		}

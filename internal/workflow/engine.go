@@ -69,16 +69,14 @@ type Engine struct {
 	// Owner identifies the claim owner. Empty generates an identity per cycle.
 	// Sharing an owner identity does not permit replacing a live claim.
 	Owner record.ProcessID
-	// LeaseDuration defaults to two minutes and must exceed the effective
-	// CallTimeout. Expiry permits recovery; it cannot stop an external call.
-	LeaseDuration time.Duration
-	// CallTimeout defaults to thirty seconds for each external action, including
-	// release resolution, preparation, and provider calls. Dependencies must honor
-	// the context deadline for it to bound their execution time.
-	CallTimeout time.Duration
-	// RetryDelay defaults to one second before another attempt or cleanup action.
-	// Cycle records eligibility times and leaves waiting to its caller.
+	// Timeouts bounds external operations independently of build execution time.
+	Timeouts Timeouts
+	// LeaseGrace leaves time to record a result after its operation deadline.
+	LeaseGrace time.Duration
+	// RetryDelay applies to admission, uncertain actions, errors, and cancellation.
 	RetryDelay time.Duration
+	// ObserveInterval schedules successful observations of running builds.
+	ObserveInterval time.Duration
 }
 
 // Scope selects all jobs or a nonempty list of explicit job IDs. Those forms

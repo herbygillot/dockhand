@@ -144,7 +144,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				changed, action = true, ""
 				return nil
 			}
-			claim, err := c.claim(&attempt.ClaimGeneration, now)
+			claim, err := c.claim(&attempt.ClaimGeneration, now, c.attemptTimeout(action))
 			if err != nil {
 				return err
 			}
@@ -188,7 +188,11 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		current.LastError, current.RetryAt = "", nil
 		detail = c.recordAttempt(work, &job, &current, action, response, now)
 		if !attemptTerminal(current.State) {
-			retry := now.Add(c.retry)
+			delay := c.retry
+			if current.State == record.AttemptRunning && detail == "" && job.CancelRequestedAt == nil {
+				delay = c.observe
+			}
+			retry := now.Add(delay)
 			current.RetryAt = &retry
 		}
 		current.LastError = detail
@@ -203,7 +207,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 // It reports a context error even when the provider returns nil after expiry,
 // so a late result is not accepted as timely confirmation.
 func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt record.Attempt) attemptResult {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.attemptTimeout(action))
 	defer cancel()
 	var result attemptResult
 	switch action {

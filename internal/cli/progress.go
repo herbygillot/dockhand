@@ -51,10 +51,15 @@ func (r *reporter) cycle(result workflow.CycleResult) error {
 func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 	for _, entry := range status.Jobs {
 		message := fmt.Sprintf("%s: %s", entry.Job.ID, entry.Job.State)
-		if entry.Job.ReuseDetail != "" && entry.Job.ReuseDetail != entry.Job.Detail {
-			message += "; " + entry.Job.ReuseDetail
+		if entry.Job.ReuseDetail != "" && entry.Job.State != record.JobCompleted {
+			if err := r.changed("reuse:"+string(entry.Job.ID), fmt.Sprintf("%s: %s", entry.Job.ID, entry.Job.ReuseDetail)); err != nil {
+				return err
+			}
 		}
-		if entry.Job.Detail != "" {
+		if outcome := completedOutcome(entry); outcome != "" {
+			message += "; " + outcome
+		}
+		if entry.Job.Detail != "" && entry.Job.Detail != entry.Job.ReuseDetail {
 			message += "; " + entry.Job.Detail
 		}
 		for _, attempt := range entry.Attempts {
@@ -114,4 +119,25 @@ func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 		}
 	}
 	return nil
+}
+
+func completedOutcome(entry workflow.JobStatus) string {
+	if entry.Job.State != record.JobCompleted {
+		return ""
+	}
+	if entry.Job.Spec.Action == record.Publish {
+		return "publication confirmed"
+	}
+	if entry.Reused != nil && entry.Reused.Evidence != nil && entry.Reused.Evidence.Verdict == record.VerdictPassed {
+		return "verification passed (reused)"
+	}
+	if len(entry.Attempts) == 0 {
+		return ""
+	}
+	for _, attempt := range entry.Attempts {
+		if attempt.State != record.AttemptFinished || attempt.Evidence == nil || attempt.Evidence.Verdict != record.VerdictPassed {
+			return ""
+		}
+	}
+	return "verification passed"
 }

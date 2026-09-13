@@ -78,7 +78,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 5. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 7. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |
@@ -88,6 +88,8 @@ The following summarizes the [initial schema](../internal/state/sqlite/migration
 | `revisions` | ID, change, source, preceding revision, creation time | Immutable input revisions and their relationships |
 | `requests` | ID, repository, kind, canonical submitted input, digest, acceptance time, control completion time | Shared intake identity for jobs and cancellation |
 | `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, resolved release, preparation claim/candidate, reused attempt and explanation, next action time, lifecycle times | Durable accepted work |
+| `publications` | Job, revision, evidence, publication intent, lifecycle and push/write checkpoints | Recoverable publication and remote branch coordination |
+| `pull_requests` | Change, forge/repository/number identity, latest observation | Match published revisions with pull requests |
 | `control_jobs` | Request, job, applied time | Per-job cancellation progress |
 | `plans` | Job, optional revision, frozen single-target plan | Preserve requested verification coverage |
 | `attempts` | ID, job, target identity, immutable build choices and inputs, state, next action time, cancellation state, claim fields, last error | Current verification execution and scheduling |
@@ -95,6 +97,7 @@ The following summarizes the [initial schema](../internal/state/sqlite/migration
 | `attempt_evidence` | Attempt, latest accepted verdict/observation time, diagnostic evidence and artifact/log references | Keep evidence separate from frequent claim updates |
 | `resources` | ID, submission, provider handle, state, retention/release times, next action time, claim fields, last error | Ownership and cleanup after job completion |
 | `provider_pools` | ID, unique resource scope, artifact directory, capacity | One Tart home shared across repository workflows |
+| `image_digests` | Provider, canonical image path, file stamp, content digest | Disposable cache shared across repositories |
 | `provider_executions` | Submission ID, pool, repository, attempt, resource identity, immutable provider request, lifecycle, occupancy, terminal result | Atomic admission, durable closure, and recovery before workflow adoption |
 
 Use ordinary columns for keys, relationships, lifecycle states, scheduling, claims, and fields used by current queries. Small nested targets, variants, build options, plan details, and evidence can use JSON checked on write. They belong to individual records; there is no whole-state document. Do not store a second authoritative copy of a source or relational key inside JSON. The backend reconstructs existing domain values from the authoritative columns and referenced records.
@@ -193,7 +196,7 @@ Schema 5 adds nullable `jobs.reused_attempt`, which references the original `att
 
 `VerificationCandidates` returns at most 32 original terminal attempts with evidence, ordered by attempt creation time descending and ID descending for ties. Tree and target indexes narrow the search within the selected repository; an optional tree-less lookup supplies one recent result for mismatch diagnostics. The limit bounds records materialized by the reader, not the number of matching index entries SQLite might visit. Negative outcomes are included so an older pass cannot hide a newer failed recheck. Reused jobs never become candidates themselves.
 
-`FreshVerification` fits immutable job options. `BuildConfig.VerifierDigest` fits existing build JSON; old records with an absent digest remain readable and executable but cannot supply reusable evidence. Tart binds the current digest at intake and refuses new submission if a recorded nonempty digest differs from the running verifier. Writable opening upgrades older schemas atomically; read-only opening requires schema 5. Migration failure rolls back the new columns and indexes together.
+`FreshVerification` fits immutable job options. `BuildConfig.VerifierDigest` fits existing build JSON; old records with an absent digest remain readable and executable but cannot supply reusable evidence. Tart binds the current digest at intake and refuses new submission if a recorded nonempty digest differs from the running verifier. Writable opening upgrades older schemas atomically; read-only opening requires the current schema. Migration failure rolls back the new columns and indexes together.
 
 ## Publication storage (schema 6)
 
@@ -202,3 +205,12 @@ Schema 5 adds nullable `jobs.reused_attempt`, which references the original `att
 `pull_requests` retains the latest observation and stable forge/repository/number identity for each change. `changes.published_revision` and `changes.pull_request_id` retain publication provenance and association; writers validate both within the scoped repository/change. Jobs retain their accepted publication choices in their options, and action writers enforce agreement and immutable intent. Small publication/PR JSON values are per record, not full-state snapshots. The adapter does not track unrelated Git commands.
 
 Migration 6 preserves existing source, revision, job, verification, and provider history. The reader adds point lookups by publication job and PR ID, used by consistent status snapshots. No broad action enumeration or second coordination interface is required by this slice.
+
+
+## Image digest cache (schema 7)
+
+`image_digests` has a composite primary key on provider and canonical image path. Each row stores one complete stamp/digest pair, replaced by an upsert. It has no repository foreign key: repositories using the same image and database share the observation. Cache loss merely requires rehashing and cannot erase accepted input digests or verification evidence.
+
+`state.ImageCache` supplies point lookup and replacement, implemented by the same SQLite store as provider coordination. The provider owns stamp interpretation, content hashing, and invalidation. Reads and writes each use a short transaction; hashing does not hold a transaction or reserve a provider slot. Concurrent cold readers can hash independently. A delayed writer can replace a newer row, but its old stamp will not match changed files on a later lookup. No cache row claims that a VM is available, stopped, or safe to delete.
+
+Migration 7 adds only the cache table and preserves workflow/publication/provider records. It participates in the existing transactional migration chain; a failed migration leaves the previous schema intact.

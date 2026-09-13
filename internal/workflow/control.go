@@ -97,6 +97,18 @@ func (e *Engine) applyControls(ctx context.Context, scope Scope, controls []reco
 					if err = tx.PutJob(ctx, job); err != nil {
 						return err
 					}
+					attempts, err := tx.AttemptsForJob(ctx, id)
+					if err != nil {
+						return err
+					}
+					for _, attempt := range attempts {
+						if !attemptTerminal(attempt.State) && attempt.RetryAt != nil {
+							attempt.RetryAt = nil
+							if err := tx.PutAttempt(ctx, attempt); err != nil {
+								return err
+							}
+						}
+					}
 				}
 				if err = tx.ApplyControl(ctx, current.ID, id, now); err != nil {
 					return err

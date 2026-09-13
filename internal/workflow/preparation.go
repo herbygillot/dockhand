@@ -22,6 +22,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 	var selected record.Job
 	var changed bool
 	var detail string
+	budget := c.timeouts.Prepare
 	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
 		job, err := tx.Job(ctx, id)
 		if err != nil {
@@ -48,7 +49,10 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 			changed = true
 			return tx.PutJob(ctx, job)
 		}
-		job.Claim, err = c.claim(&job.ClaimGeneration, e.now())
+		if job.Spec.Action == record.Bump && job.ResolvedRelease == nil {
+			budget = c.timeouts.Resolve
+		}
+		job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), budget)
 		if err != nil {
 			return err
 		}
@@ -62,7 +66,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 	if selected.Prepared != nil {
 		return c.integratePreparation(ctx, selected)
 	}
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	callCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	var candidate record.PreparedChange
 	var release record.Release

@@ -56,6 +56,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 	for _, entry := range status.Jobs {
 		job := entry.Job
 		line("\n%s  %s  %s -> %s", job.ID, job.State, job.Spec.Action, job.Spec.Destination)
+		if outcome := completedOutcome(entry); outcome != "" {
+			line("  outcome: %s", outcome)
+		}
 		line("  request: %s; accepted: %s", job.RequestID, statusTime(job.AcceptedAt))
 		line("  verification policy: %s", job.Spec.Verification)
 		for _, target := range job.Spec.Targets {

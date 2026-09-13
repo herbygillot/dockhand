@@ -286,3 +286,37 @@ func TestPublicationMigrationFailureRollsBackAdditions(t *testing.T) {
 	columns, _ := migrationRows(t, db, "changes", nil)
 	require.NotContains(t, columns, "pull_request_id")
 }
+
+func TestImageCacheMigrationPreservesSchemaSixAndRollsBackOnConflict(t *testing.T) {
+	for _, conflict := range []bool{false, true} {
+		t.Run(fmt.Sprint(conflict), func(t *testing.T) {
+			path, db := versionTwoWithWork(t)
+			_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + publicationSchema + "COMMIT;")
+			require.NoError(t, err)
+			_, before := migrationRows(t, db, "provider_executions", nil)
+			if conflict {
+				_, err = db.Exec("CREATE TABLE image_digests(unrelated TEXT)")
+				require.NoError(t, err)
+			}
+			store, err := Open(t.Context(), path, Options{})
+			if conflict {
+				require.Error(t, err)
+				var version int
+				require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+				require.Equal(t, 6, version)
+			} else {
+				require.NoError(t, err)
+				defer store.Close()
+				value := state.ImageDigest{Provider: "tart", Path: "/images/base", Stamp: "observed", Digest: "digest"}
+				require.NoError(t, store.PutImageDigest(t.Context(), value))
+				loaded, err := store.ImageDigest(t.Context(), "tart", "/images/base")
+				require.NoError(t, err)
+				require.Equal(t, value, loaded)
+				_, err = store.ImageDigest(t.Context(), "another-provider", "/images/base")
+				require.ErrorIs(t, err, state.ErrNotFound)
+			}
+			_, after := migrationRows(t, db, "provider_executions", nil)
+			require.Equal(t, before, after)
+		})
+	}
+}
