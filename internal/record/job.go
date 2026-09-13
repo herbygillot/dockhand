@@ -58,7 +58,9 @@ type JobSpec struct {
 	InputRevision RevisionID
 	// Source is frozen at acceptance. Requests selecting InputRevision omit
 	// this field; intake copies the referenced revision's source into it.
-	Source       Source
+	Source Source
+	// Checkout records provenance when verification captured working-tree contents.
+	Checkout     *Checkout `json:",omitempty"`
 	Targets      []Target
 	Destination  Destination
 	Verification VerificationPolicy

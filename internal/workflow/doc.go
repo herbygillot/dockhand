@@ -1,8 +1,9 @@
 // Package workflow accepts Dockhand requests and advances their durable records
 // toward the requested destination.
 //
-// [Engine.BindVerification] and [Engine.BindPreparation] evaluate a committed branch snapshot
-// without writing workflow records. Its returned request can be passed to Submit.
+// [Engine.BindVerification] freezes the current checkout or an explicit branch;
+// [Engine.BindPreparation] selects committed branch contents. Both evaluate an
+// isolated snapshot without writing workflow records and return requests for Submit.
 // [Engine.Submit] records a queued job and returns an idempotent acceptance
 // receipt. [Engine.Control] records cancellation intent. Neither starts a
 // provider operation. [Engine.Cycle] applies controls, advances eligible work,
@@ -26,7 +27,7 @@
 // prepare immutable objects, checkpoint their candidate, and
 // integrate a new branch under a branch-specific Git lock and ref preconditions.
 // Recovery adopts only the recorded candidate. Verification can then build that
-// result through the same attempt lifecycle as standalone committed-source jobs.
+// result through the same attempt lifecycle as standalone verification jobs, including tree-only working snapshots.
 // Standalone verification creates no contribution; tracked-branch verification
 // records successor revisions without redefining the contribution's edited targets.
 // Publication, dependent scheduling, and evidence reuse remain unfinished.

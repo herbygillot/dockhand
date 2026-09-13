@@ -110,12 +110,14 @@ type guestResult struct {
 }
 
 func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, directory string) (string, error) {
-	trees, err := repo.CommitTrees(ctx, []string{string(request.Spec.Source.Commit)})
-	if err != nil {
-		return "", err
-	}
-	if trees[string(request.Spec.Source.Commit)] != string(request.Spec.Source.Tree) {
-		return "", fmt.Errorf("tart: source commit and tree disagree")
+	if request.Spec.Source.Commit != "" {
+		trees, err := repo.CommitTrees(ctx, []string{string(request.Spec.Source.Commit)})
+		if err != nil {
+			return "", err
+		}
+		if trees[string(request.Spec.Source.Commit)] != string(request.Spec.Source.Tree) {
+			return "", fmt.Errorf("tart: source commit and tree disagree")
+		}
 	}
 	snapshot, err := repo.Materialize(ctx, string(request.Spec.Source.Tree))
 	if err != nil {

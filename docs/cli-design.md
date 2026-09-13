@@ -1,6 +1,6 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Publication, working-tree input, and broader target selection remain unfinished.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Working-tree verification is implemented. Publication and broader target selection remain unfinished.
 
 ## Global options
 
@@ -35,7 +35,7 @@ dockhand cancel <job_id> [--reason <text>] [--wait]
 dockhand start
 ```
 
-`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. The current literal local branch is the default; detached HEAD requires `--branch`. The input is committed source, and the accepted commit ID is reported. This does not adopt uncommitted edits. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Branch-only inference and multi-target selectors remain future work.
+`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. Omitting `--branch` captures current working-tree contents; detached HEAD is supported when a HEAD commit exists. Supplying `--branch`, even the current branch name, selects committed contents. Output identifies the input kind, branch or detached source, HEAD/commit, modified-file count, selected target, and accepted tree. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Branch-only inference and multi-target selectors remain future work.
 
 The prepared image is currently selected explicitly with `--image` (or through the Go application's configured default). General Git configuration loading remains separate work. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `--capacity` may establish another positive limit. An existing pool's limit and directory must agree. Omission reuses the recorded limit. Image availability and platform checks are distinct from admission capacity.
 
@@ -96,7 +96,7 @@ The source defaults to the current local branch; `--branch` selects another comm
 
 ## Approved source selection and human edits
 
-Working-tree capture and inferred target scope in this section remain future work. Standalone verification without an exclusive branch association is implemented; the commands above still select one port from committed source.
+Working-tree capture and standalone verification without an exclusive branch association are implemented. The commands above still require one explicit port selector; inferred target scope and the broader wait/cancel selectors below remain future work.
 
 The branch is the everyday handle for a tracked contribution; job IDs identify exact executions. Users can edit, commit, and rebase with ordinary Git commands, then ask Dockhand to verify or publish without a separate adoption step for every edit. A renamed or missing tracked branch requires an actionable error rather than silent reassociation.
 
@@ -112,7 +112,9 @@ The branch is the everyday handle for a tracked contribution; job IDs identify e
 
 Port selectors and branches occupy distinct argument positions: a positional verification target is never guessed to be a branch. An explicit job ID and `--branch` are alternative selectors. Omission is allowed only when context determines the work; otherwise report the ambiguity and the concrete targets or job IDs the user can choose. Wait/cancel selection binds the relevant existing jobs at invocation time and does not follow future submissions.
 
-Current-checkout verification captures the working-tree contents of tracked files, including deletions and staged additions, without altering the user's index or making a commit on their branch. Where a staged file has further unstaged edits, its working-tree contents are selected. Initially, new files must be staged to be included; report relevant untracked files with instructions to stage them rather than silently omitting a required patch. Explicit `--branch`, including the current branch's name, selects only committed contents.
+Current-checkout verification captures the working-tree contents of tracked files, including deletions and staged additions, without altering the user's index or making a commit on their branch. Where a staged file has further unstaged edits, its working-tree contents are selected. Initially, new files must be staged to be included; report relevant untracked files with instructions to stage them rather than silently omitting a required patch. Explicit `--branch`, including the current branch's name, selects only committed contents. Capture includes raw working bytes, symlink targets, and executable modes without running Git clean/smudge filters or rewriting the real index. Nonignored untracked files under the selected port, any modified port directory, or shared `_resources` require staging before submission. Other untracked files are excluded. Sparse/skip-worktree entries, unresolved conflicts, submodules, unsupported file types, and individual files larger than 128 MiB are refused by this initial capture path; committed `--branch` verification remains available where its existing materializer supports the source.
+
+Capture reads tracked contents twice and rechecks index entries and HEAD. A detected change requires a retry. This catches ordinary concurrent editing but is not an atomic filesystem snapshot. Once accepted, the Git tree is immutable; the driver never recaptures the checkout. Dirty inputs have no source commit, and the observed HEAD is recorded separately as provenance. Clean inputs retain their matching commit. No synthetic commit or hidden ref is created.
 
 Before expensive work, display the branch or detached source, whether input comes from the working tree or a commit, the number of modified files captured, and the verification targets. Freeze the accepted snapshot before submission. Subsequent edits, commits, or branch movement cannot change a queued or running build. Reattaching to its job continues the original accepted work.
 

@@ -58,8 +58,8 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 	} else if revision.ID != "" || job.ChangeID != "" {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: standalone verification cannot imply a contribution revision")
 	}
-	if source.Commit == "" {
-		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this provider path requires committed source")
+	if source.Tree == "" {
+		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: an immutable source tree is required")
 	}
 	if err := ValidateConfig(*job.Spec.Build); err != nil {
 		return record.VerificationPlan{}, record.BuildSpec{}, err

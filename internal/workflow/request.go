@@ -84,6 +84,13 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 		}
 		spec.Preparation = &choices
 	}
+	if spec.Checkout != nil {
+		c := *spec.Checkout
+		if spec.Action != record.Verify || spec.InputRevision != "" || !git.ValidObjectID(string(c.Head)) || c.ModifiedFiles < 0 || (c.Branch != "" && !git.ValidBranchName(c.Branch)) || (c.ModifiedFiles == 0 && spec.Source.Commit != c.Head) || (c.ModifiedFiles > 0 && spec.Source.Commit != "") {
+			return record.JobSpec{}, fmt.Errorf("%w: invalid checkout provenance", ErrInvalidRequest)
+		}
+		spec.Checkout = &c
+	}
 	if spec.InputRevision != "" {
 		if spec.Source != (record.Source{}) {
 			return record.JobSpec{}, fmt.Errorf("%w: omit source when selecting an existing revision", ErrInvalidRequest)

@@ -170,6 +170,7 @@ type jobOptions struct {
 	Build           *record.BuildConfig
 	Version, Reason string
 	Preparation     *record.PreparationSpec
+	Checkout        *record.Checkout `json:",omitempty"`
 }
 
 func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, error) {
@@ -192,6 +193,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	}
 	v.Spec.Targets, v.Spec.Build, v.Spec.Version, v.Spec.Reason = options.Targets, options.Build, options.Version, options.Reason
 	v.Spec.Preparation = options.Preparation
+	v.Spec.Checkout = options.Checkout
 	v.Claim = readClaim(owner, v.ClaimGeneration, until)
 	v.RetryAt = scanTime(retry)
 	if release.Valid {
@@ -310,7 +312,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{Targets: v.Spec.Targets, Build: v.Spec.Build, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation})
+	raw, err := encode(jobOptions{Targets: v.Spec.Targets, Build: v.Spec.Build, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout})
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
@@ -21,7 +23,8 @@ type BranchInput struct {
 }
 
 type VerificationRequest struct {
-	ID        record.RequestID
+	ID record.RequestID
+	// Empty Branch selects the current working tree, including uncommitted edits.
 	Branch    string
 	Selection macports.Selection
 	Build     record.BuildConfig
@@ -32,9 +35,9 @@ type BoundVerification struct {
 	Evaluation macports.Snapshot
 }
 
-// BindVerification reads a literal local branch and evaluates an isolated copy
-// of its commit. It writes no state. Reuse the returned Request when retrying
-// Submit; binding again deliberately selects the branch's latest contents.
+// BindVerification freezes the current checkout, or a literal branch commit
+// when Branch is supplied, and evaluates an isolated copy. It writes no state.
+// Reuse the returned Request when retrying Submit; binding again selects fresh input.
 func (e *Engine) BindVerification(ctx context.Context, request VerificationRequest) (_ BoundVerification, err error) {
 	if e == nil || e.State == nil || e.Repository == "" {
 		return BoundVerification{}, ErrNoState
@@ -42,7 +45,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if e.Repo == nil || e.Ports == nil {
 		return BoundVerification{}, fmt.Errorf("workflow: source binding requires Git and MacPorts")
 	}
-	if !validToken(string(request.ID)) || !git.ValidBranchName(request.Branch) {
+	if !validToken(string(request.ID)) || (request.Branch != "" && !git.ValidBranchName(request.Branch)) {
 		return BoundVerification{}, ErrInvalidRequest
 	}
 	if err := verify.ValidateConfig(request.Build); err != nil {
@@ -55,9 +58,29 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if registered.ID != e.Repository {
 		return BoundVerification{}, fmt.Errorf("%w: Git repository does not match workflow scope", ErrInvalidRequest)
 	}
+	var checkout *git.Checkout
+	if request.Branch == "" {
+		captured, captureErr := e.Repo.CaptureCheckout(ctx)
+		if captureErr != nil {
+			return BoundVerification{}, captureErr
+		}
+		for _, name := range captured.ModifiedPaths {
+			parts := strings.Split(name, "/")
+			if len(parts) >= 3 {
+				if err := checkUntracked(captured.Untracked, path.Join(parts[0], parts[1], "Portfile")); err != nil {
+					return BoundVerification{}, err
+				}
+			}
+		}
+		checkout = &captured
+		request.Branch = captured.Branch
+	}
 	branch := BranchInput{Name: request.Branch}
 	var base record.ObjectID
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
+		if request.Branch == "" {
+			return nil
+		}
 		change, err := reader.OpenChangeByBranch(ctx, request.Branch)
 		if errors.Is(err, state.ErrNotFound) {
 			return nil
@@ -79,23 +102,43 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if err != nil {
 		return BoundVerification{}, err
 	}
-	source, targets, evaluation, err := e.bindBranchSource(ctx, request.Branch, request.Selection, request.Build.Platform, base)
+	var source record.Source
+	var targets []record.Target
+	var evaluation macports.Snapshot
+	var provenance *record.Checkout
+	if checkout == nil {
+		source, targets, evaluation, err = e.bindBranchSource(ctx, request.Branch, request.Selection, request.Build.Platform, base)
+	} else {
+		source = record.Source{Tree: record.ObjectID(checkout.Tree), Base: base}
+		if checkout.ModifiedFiles == 0 {
+			source.Commit = record.ObjectID(checkout.Head)
+		}
+		provenance = &record.Checkout{Branch: checkout.Branch, Head: record.ObjectID(checkout.Head), ModifiedFiles: checkout.ModifiedFiles}
+		targets, evaluation, err = e.bindSnapshot(ctx, source, request.Selection, request.Build.Platform, checkout.Untracked)
+	}
 	if err != nil {
 		return BoundVerification{}, err
 	}
-	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build})
+	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance})
 	if err != nil {
 		return BoundVerification{}, err
 	}
-	return BoundVerification{Request: Request{ID: request.ID, Spec: spec, Branch: &branch}, Evaluation: evaluation}, nil
+	var binding *BranchInput
+	if branch.Name != "" {
+		binding = &branch
+	}
+	return BoundVerification{Request: Request{ID: request.ID, Spec: spec, Branch: binding}, Evaluation: evaluation}, nil
 }
 
 func validateBranchInput(branch *BranchInput, spec record.JobSpec) error {
 	if branch == nil {
 		return nil
 	}
-	if !git.ValidBranchName(branch.Name) || spec.Action != record.Verify || spec.InputRevision != "" || spec.ChangeID != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 || spec.Build == nil || (branch.ExpectedChange == "") != (branch.ExpectedRevision == "") {
-		return fmt.Errorf("%w: branch adoption requires one committed verification input and matching revision preconditions", ErrInvalidRequest)
+	if !git.ValidBranchName(branch.Name) || spec.Action != record.Verify || spec.InputRevision != "" || spec.ChangeID != "" || len(spec.Targets) != 1 || spec.Build == nil || (branch.ExpectedChange == "") != (branch.ExpectedRevision == "") {
+		return fmt.Errorf("%w: branch adoption requires one frozen verification input and matching revision preconditions", ErrInvalidRequest)
+	}
+	if spec.Checkout != nil && spec.Checkout.Branch != branch.Name {
+		return fmt.Errorf("%w: checkout branch disagrees with binding", ErrInvalidRequest)
 	}
 	if branch.ExpectedChange != "" && (!validToken(string(branch.ExpectedChange)) || !validToken(string(branch.ExpectedRevision))) {
 		return ErrInvalidRequest
@@ -139,32 +182,71 @@ func (e *Engine) bindBranchSource(ctx context.Context, branch string, selection 
 		return record.Source{}, nil, macports.Snapshot{}, err
 	}
 	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: base}
-	files, err := e.Repo.Materialize(ctx, tree)
+	targets, evaluation, err := e.bindSnapshot(ctx, source, selection, platform, nil)
+	return source, targets, evaluation, err
+}
+
+func (e *Engine) bindSnapshot(ctx context.Context, source record.Source, selection macports.Selection, platform record.Platform, untracked []string) (_ []record.Target, _ macports.Snapshot, err error) {
+	files, err := e.Repo.Materialize(ctx, string(source.Tree))
 	if err != nil {
-		return record.Source{}, nil, macports.Snapshot{}, err
+		return nil, macports.Snapshot{}, err
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
 	bound, err := macports.NewTree(source, files.Root, platform)
 	if err != nil {
-		return record.Source{}, nil, macports.Snapshot{}, err
+		return nil, macports.Snapshot{}, err
+	}
+	if err := checkUntrackedSelection(untracked, selection.Selector); err != nil {
+		return nil, macports.Snapshot{}, err
 	}
 	targets, err := e.Ports.Resolve(ctx, bound, selection)
 	if err != nil {
-		return record.Source{}, nil, macports.Snapshot{}, err
+		return nil, macports.Snapshot{}, err
 	}
 	if len(targets) != 1 {
-		return record.Source{}, nil, macports.Snapshot{}, fmt.Errorf("%w: branch verification currently requires one target", ErrInvalidRequest)
+		return nil, macports.Snapshot{}, fmt.Errorf("%w: branch verification currently requires one target", ErrInvalidRequest)
+	}
+	if err := checkUntracked(untracked, targets[0].Portfile); err != nil {
+		return nil, macports.Snapshot{}, err
 	}
 	target, err := bound.Select(targets[0])
 	if err != nil {
-		return record.Source{}, nil, macports.Snapshot{}, err
+		return nil, macports.Snapshot{}, err
 	}
 	evaluation, err := e.Ports.Evaluate(ctx, target)
 	if err != nil {
-		return record.Source{}, nil, macports.Snapshot{}, err
+		return nil, macports.Snapshot{}, err
 	}
 	if evaluation.Source != source || evaluation.Platform != platform || targetKey(evaluation.Target) != targetKey(targets[0]) {
-		return record.Source{}, nil, macports.Snapshot{}, fmt.Errorf("workflow: evaluation does not match the bound input")
+		return nil, macports.Snapshot{}, fmt.Errorf("workflow: evaluation does not match the bound input")
 	}
-	return source, targets, evaluation, nil
+	return targets, evaluation, nil
+}
+
+func checkUntracked(paths []string, portfile string) error {
+	var relevant []string
+	directory := path.Dir(portfile) + "/"
+	for _, name := range paths {
+		if strings.HasPrefix(name, directory) || strings.HasPrefix(name, "_resources/") {
+			relevant = append(relevant, fmt.Sprintf("%q", name))
+		}
+	}
+	if len(relevant) > 0 {
+		return fmt.Errorf("workflow: untracked source files are excluded; stage these files with git add before verification: %s", strings.Join(relevant, ", "))
+	}
+	return nil
+}
+
+func checkUntrackedSelection(paths []string, selector string) error {
+	directory := strings.TrimSuffix(selector, "/Portfile")
+	if strings.Contains(directory, "/") {
+		return checkUntracked(paths, directory+"/Portfile")
+	}
+	for _, name := range paths {
+		parts := strings.Split(name, "/")
+		if len(parts) >= 3 && strings.EqualFold(parts[1], selector) {
+			return checkUntracked(paths, parts[0]+"/"+parts[1]+"/Portfile")
+		}
+	}
+	return checkUntracked(paths, "./Portfile")
 }

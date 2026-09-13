@@ -567,8 +567,8 @@ func validateRequest(r verify.Request) error {
 	if err := verify.ValidateConfig(r.Spec.Config); err != nil {
 		return err
 	}
-	if !git.ValidObjectID(string(r.Spec.Source.Commit)) || !git.ValidObjectID(string(r.Spec.Source.Tree)) {
-		return fmt.Errorf("tart: immutable committed source is required")
+	if (r.Spec.Source.Commit != "" && !git.ValidObjectID(string(r.Spec.Source.Commit))) || !git.ValidObjectID(string(r.Spec.Source.Tree)) {
+		return fmt.Errorf("tart: immutable source tree and an optional valid commit are required")
 	}
 	target := r.Spec.Target
 	if !safeToken(target.Name) || (target.Subport != "" && !safeToken(target.Subport)) || !validPortfile(target.Portfile) {

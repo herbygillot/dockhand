@@ -55,3 +55,11 @@ type Artifact struct {
 	Location  string
 	MediaType string
 }
+
+// Checkout describes where a captured verification tree came from. Head is
+// provenance, not a claim that its commit contains the captured edits.
+type Checkout struct {
+	Branch        string
+	Head          ObjectID
+	ModifiedFiles int
+}

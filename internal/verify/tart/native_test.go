@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/verify"
 	"github.com/stretchr/testify/require"
 )
 
@@ -119,4 +121,44 @@ esac
 			require.Equal(t, "fixture", result.ID)
 		})
 	}
+}
+
+func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T) {
+	f, _ := singleRun(t)
+	before, data, err := f.provider.Repo.File(t.Context(), string(f.request.Spec.Source.Tree), "devel/fixture/Portfile")
+	require.NoError(t, err)
+	edited := append(data, []byte("revision 7\n")...)
+	tree, err := f.provider.Repo.EditTree(t.Context(), string(f.request.Spec.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: edited, Mode: before.Mode}})
+	require.NoError(t, err)
+	f.request.Spec.Source = record.Source{Tree: record.ObjectID(tree)}
+	require.NoError(t, validateRequest(f.request))
+	config, err := f.provider.settings()
+	require.NoError(t, err)
+	archive, err := makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir())
+	require.NoError(t, err)
+	file, err := os.Open(archive)
+	require.NoError(t, err)
+	defer file.Close()
+	reader := tar.NewReader(file)
+	found := false
+	for {
+		header, err := reader.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if header.Name == "ports/devel/fixture/Portfile" {
+			data, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			require.Equal(t, edited, data)
+			found = true
+		}
+	}
+	require.True(t, found)
+	result, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, result.State)
+	f.request.Spec.Source.Tree = record.ObjectID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir())
+	require.Error(t, err)
 }

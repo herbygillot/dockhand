@@ -17,13 +17,6 @@ type Verification struct {
 }
 
 func (s *Services) BindVerification(ctx context.Context, request Verification) (workflow.BoundVerification, error) {
-	if request.Branch == "" {
-		branch, err := s.Workflow.Repo.CurrentBranch(ctx)
-		if err != nil {
-			return workflow.BoundVerification{}, err
-		}
-		request.Branch = branch
-	}
 	platform, err := s.ports.NativePlatform(ctx)
 	if err != nil {
 		return workflow.BoundVerification{}, err
