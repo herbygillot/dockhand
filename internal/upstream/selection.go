@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/herbygillot/dockhand/v2/internal/forge"
 )
 
 var (
@@ -21,9 +23,15 @@ type TagPattern struct {
 	Suffix string
 }
 
+// Candidate pairs a possible Portfile version with the observed release it describes.
+type Candidate struct {
+	Version string
+	forge.Release
+}
+
 type Selection struct {
 	Requested string
-	Release   Release
+	Candidate Candidate
 	Inferred  bool
 }
 
@@ -47,28 +55,27 @@ func PatternFromCurrent(version, tag string) (TagPattern, error) {
 // MatchRelease judges already collected evidence; lookup failures must be
 // handled by the reader, not converted into an empty successful observation.
 // A nil pattern means unknown, while an empty pattern means bare version tags.
-func MatchRelease(requested string, pattern *TagPattern, releases []Release) (Selection, error) {
+func MatchRelease(requested string, pattern *TagPattern, releases []Candidate) (Selection, error) {
 	if err := ValidateVersion(requested); err != nil {
 		return Selection{}, err
 	}
 	var matches []Selection
-	explicitTag := pattern != nil && ((pattern.Prefix != "" && strings.HasPrefix(requested, pattern.Prefix)) || (pattern.Suffix != "" && strings.HasSuffix(requested, pattern.Suffix)))
+	explicitTag := pattern != nil && pattern.explicit(requested)
 	for _, release := range releases {
 		version := release.Version
 		if version == "" && pattern != nil {
-			value, prefix := strings.CutPrefix(release.Tag, pattern.Prefix)
-			value, suffix := strings.CutSuffix(value, pattern.Suffix)
-			if prefix && suffix {
+			value, matches := pattern.version(release.Tag)
+			if matches {
 				version = value
 			}
 		}
 		exact := release.Tag == requested || (!explicitTag && release.Version == requested)
-		inferred := !explicitTag && pattern != nil && release.Tag == pattern.Prefix+requested+pattern.Suffix
+		inferred := !explicitTag && pattern != nil && release.Tag == pattern.tag(requested)
 		if !exact && !inferred {
 			continue
 		}
 		release.Version = version
-		choice := Selection{Requested: requested, Release: release, Inferred: release.Tag != "" && release.Tag != requested}
+		choice := Selection{Requested: requested, Candidate: release, Inferred: release.Tag != "" && release.Tag != requested}
 		if !slices.Contains(matches, choice) {
 			matches = append(matches, choice)
 		}
@@ -79,21 +86,30 @@ func MatchRelease(requested string, pattern *TagPattern, releases []Release) (Se
 	if len(matches) != 1 {
 		tags := make([]string, 0, len(matches))
 		for _, match := range matches {
-			tags = append(tags, match.Release.Tag)
+			tags = append(tags, match.Candidate.Tag)
 		}
 		slices.Sort(tags)
 		return Selection{}, fmt.Errorf("%w: %q matches %v; specify the exact tag", ErrReleaseAmbiguous, requested, tags)
 	}
 	selected := matches[0]
-	if ValidateVersion(selected.Release.Version) != nil {
-		return Selection{}, fmt.Errorf("%w: cannot map tag %q to a Portfile version", ErrTagPattern, selected.Release.Tag)
+	if ValidateVersion(selected.Candidate.Version) != nil {
+		return Selection{}, fmt.Errorf("%w: cannot map tag %q to a Portfile version", ErrTagPattern, selected.Candidate.Tag)
 	}
-	if pattern != nil && selected.Release.Tag != "" {
-		value, prefix := strings.CutPrefix(selected.Release.Tag, pattern.Prefix)
-		value, suffix := strings.CutSuffix(value, pattern.Suffix)
-		if prefix && suffix && value != selected.Release.Version {
-			return Selection{}, fmt.Errorf("%w: inconsistent version metadata for %q", ErrTagPattern, selected.Release.Tag)
+	if pattern != nil && selected.Candidate.Tag != "" {
+		value, matches := pattern.version(selected.Candidate.Tag)
+		if matches && value != selected.Candidate.Version {
+			return Selection{}, fmt.Errorf("%w: inconsistent version metadata for %q", ErrTagPattern, selected.Candidate.Tag)
 		}
 	}
 	return selected, nil
+}
+
+func (p TagPattern) tag(version string) string { return p.Prefix + version + p.Suffix }
+func (p TagPattern) version(tag string) (string, bool) {
+	version, prefix := strings.CutPrefix(tag, p.Prefix)
+	version, suffix := strings.CutSuffix(version, p.Suffix)
+	return version, prefix && suffix
+}
+func (p TagPattern) explicit(value string) bool {
+	return p.Prefix != "" && strings.HasPrefix(value, p.Prefix) || p.Suffix != "" && strings.HasSuffix(value, p.Suffix)
 }

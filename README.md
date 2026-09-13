@@ -6,6 +6,7 @@ SQLite now holds workflow state behind `internal/state` contracts, with `interna
 
 Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including bounded automatic GitHub version selection. Publication remains unfinished. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
 
+- [Forge/upstream refactor report](docs/activity/2026-09-13-forge-upstream-boundaries.md)
 - [Verification reuse report](docs/activity/2026-09-13-verification-reuse.md)
 - [Working-tree verification report](docs/activity/2026-09-13-working-tree-verification.md)
 - [Automatic version selection report](docs/activity/2026-09-13-automatic-version-selection.md)

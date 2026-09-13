@@ -62,8 +62,8 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	}
 
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
-	forge := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
-	discovery := &upstream.Service{Ports: ports, Releases: forge, Tags: forge, Versions: ports}
+	githubClient := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
+	discovery := &upstream.Service{Ports: ports, Repositories: githubClient, Versions: ports}
 	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery}
 	if config.Tart.ArtifactDirectory == "" {
 		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
@@ -78,7 +78,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Releases:      preparation,
 		Planner:       &verify.Planner{Ports: ports},
 		Provider:      provider,
-		Publisher:     &publish.Service{Repo: repo, Forge: forge},
+		Publisher:     &publish.Service{Repo: repo, Forge: githubClient},
 		Now:           time.Now,
 		CallTimeout:   3 * time.Minute,
 		LeaseDuration: 5 * time.Minute,

@@ -1,16 +1,8 @@
+// Package github implements GitHub repository access and defines the PR adapter.
+// It owns protocol details and returns forge observations without applying version policy.
 package github
 
-import (
-	"context"
-	"errors"
-	"net/http"
-
-	"github.com/herbygillot/dockhand/v2/internal/publish"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/upstream"
-)
-
-var ErrNotImplemented = errors.New("github: forge adapter is not implemented")
+import "net/http"
 
 type Config struct {
 	BaseURL string
@@ -21,19 +13,3 @@ type Client struct {
 	HTTP   *http.Client
 	Config Config
 }
-
-func (c *Client) Find(ctx context.Context, repository, branch string) (publish.Observation, error) {
-	return publish.Observation{}, ErrNotImplemented
-}
-func (c *Client) Observe(ctx context.Context, ref record.PullRequestRef) (publish.Observation, error) {
-	return publish.Observation{}, ErrNotImplemented
-}
-func (c *Client) Create(ctx context.Context, request publish.Request) (publish.Observation, error) {
-	return publish.Observation{}, ErrNotImplemented
-}
-func (c *Client) Update(ctx context.Context, request publish.Request) (publish.Observation, error) {
-	return publish.Observation{}, ErrNotImplemented
-}
-
-var _ publish.Forge = (*Client)(nil)
-var _ upstream.ReleaseReader = (*Client)(nil)

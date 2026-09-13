@@ -5,15 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
-var ErrIncomplete = errors.New("upstream: incomplete release evidence")
 var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
 
 // Stable numeric versions include calendar and multi-component versions. Other
@@ -31,56 +30,47 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 			result.Detail = err.Error()
 		}
 	}()
-	if s == nil || s.Releases == nil || s.Tags == nil || s.Versions == nil {
-		return result, fmt.Errorf("upstream: release, tag, and version readers are required")
+	if s == nil || s.Repositories == nil || s.Versions == nil {
+		return result, fmt.Errorf("upstream: repository and version readers are required")
 	}
-	repository, pattern, err := githubSource(port)
+	repository, pattern, err := s.githubSource(port)
 	if err != nil {
 		return result, err
 	}
-	for _, key := range []string{"github.tarball_from", "livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version"} {
-		if port.OptionErrors[key] != "" {
-			return result, fmt.Errorf("%w: cannot evaluate %s", ErrAutomaticUnsupported, key)
-		}
-	}
-	base := "https://github.com/" + repository
-	if port.Options["livecheck.type"] != "regex" || strings.TrimRight(port.Options["livecheck.url"], "/") != base+"/tags" || port.Options["livecheck.regex"] == "" || port.Options["livecheck.version"] != port.Version || !stableVersion.MatchString(port.Version) {
-		return result, fmt.Errorf("%w: require a stable numeric version and a matching GitHub tags livecheck", ErrAutomaticUnsupported)
-	}
-	mode := port.Options["github.tarball_from"]
-	if mode != "releases" && mode != "archive" && mode != "tarball" {
-		return result, fmt.Errorf("%w: unknown GitHub archive mode", ErrAutomaticUnsupported)
+	mode, err := githubLivecheck(port, repository)
+	if err != nil {
+		return result, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	releases, err := s.Releases.Releases(ctx, repository)
+	releases, err := repository.Releases(ctx)
 	if err != nil {
 		return result, err
 	}
-	known := map[string]Release{}
+	known := map[string]forge.Release{}
 	for _, release := range releases {
 		if _, exists := known[release.Tag]; exists {
-			return result, fmt.Errorf("%w: repeated release tag", ErrIncomplete)
+			return result, fmt.Errorf("%w: repeated release tag", forge.ErrIncomplete)
 		}
 		known[release.Tag] = release
 	}
-	var observations []Release
+	var observations []forge.Release
 	if mode == "releases" {
 		observations = releases
 	} else {
-		tags, err := s.Releases.ListTags(ctx, repository)
+		tags, err := repository.ListTags(ctx)
 		if err != nil {
 			return result, err
 		}
 		seen := map[string]bool{}
 		for _, tag := range tags {
 			if seen[tag.Name] {
-				return result, fmt.Errorf("%w: repeated tag", ErrIncomplete)
+				return result, fmt.Errorf("%w: repeated tag", forge.ErrIncomplete)
 			}
 			seen[tag.Name] = true
 			release, exists := known[tag.Name]
 			if !exists {
-				release = Release{Tag: tag.Name}
+				release = forge.Release{Tag: tag.Name}
 			}
 			observations = append(observations, release)
 		}
@@ -91,12 +81,11 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		if release.Draft || release.Prerelease {
 			continue
 		}
-		version, prefix := strings.CutPrefix(release.Tag, pattern.Prefix)
-		version, suffix := strings.CutSuffix(version, pattern.Suffix)
-		if !prefix || !suffix || !stableVersion.MatchString(version) {
+		version, matches := pattern.version(release.Tag)
+		if !matches || !stableVersion.MatchString(version) {
 			continue
 		}
-		candidates = append(candidates, macports.VersionCandidate{Version: version, URL: base + "/archive/refs/tags/" + release.Tag + ".tar.gz"})
+		candidates = append(candidates, macports.VersionCandidate{Version: version, URL: repository.TagArchiveURL(release.Tag)})
 		tags = append(tags, release.Tag)
 	}
 	selection, err := s.Versions.SelectVersion(ctx, port.Version, port.Options["livecheck.regex"], candidates)
@@ -113,7 +102,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if index < 0 || index >= len(candidates) || selection.Comparison < -1 || selection.Comparison > 1 {
 		return result, fmt.Errorf("upstream: invalid version selection")
 	}
-	tag, err := s.Tags.Tag(ctx, repository, tags[index])
+	tag, err := repository.Tag(ctx, tags[index])
 	if err != nil {
 		return result, err
 	}
@@ -122,7 +111,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
 	result.CandidateVersion = candidates[index].Version
-	result.Release = &record.Release{CurrentVersion: port.Version, Version: result.CandidateVersion, Repository: repository, Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: selection.Comparison <= 0}
+	result.Release = &record.Release{CurrentVersion: port.Version, Version: result.CandidateVersion, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: selection.Comparison <= 0}
 	result.Evidence = []Observation{{Source: "github-" + mode, Version: result.CandidateVersion, URL: candidates[index].URL, ObservedAt: result.ObservedAt}}
 	if result.Release.NoUpdate {
 		result.Assessment = Current

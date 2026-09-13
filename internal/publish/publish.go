@@ -3,35 +3,19 @@ package publish
 import (
 	"context"
 	"errors"
-	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
 var ErrNotImplemented = errors.New("publish: publication is not implemented")
 
-type Observation struct {
-	Found       bool
-	PullRequest record.PullRequest
-	ObservedAt  time.Time
-}
-
-type Request struct {
-	ActionID           record.PublicationID
-	Repository         string
-	BaseBranch         string
-	HeadBranch         string
-	ExistingPR         *record.PullRequestRef
-	ExpectedRemoteHead record.ExpectedHead
-	Desired            record.PublicationContent
-}
-
 type Forge interface {
-	Find(context.Context, string, string) (Observation, error)
-	Observe(context.Context, record.PullRequestRef) (Observation, error)
-	Create(context.Context, Request) (Observation, error)
-	Update(context.Context, Request) (Observation, error)
+	Find(context.Context, string, string) (forge.PullRequestObservation, error)
+	Observe(context.Context, record.PullRequestRef) (forge.PullRequestObservation, error)
+	Create(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error)
+	Update(context.Context, forge.PullRequestInput) (forge.PullRequestObservation, error)
 }
 
 type Decision struct {
@@ -40,7 +24,7 @@ type Decision struct {
 	Desired record.PublicationContent
 }
 
-func Decide(request Request, evidence []record.Evidence, observed Observation) (Decision, error) {
+func Decide(request forge.PullRequestInput, evidence []record.Evidence, observed forge.PullRequestObservation) (Decision, error) {
 	return Decision{}, ErrNotImplemented
 }
 
@@ -49,10 +33,10 @@ type Service struct {
 	Forge Forge
 }
 
-func (s *Service) Apply(ctx context.Context, action record.PublicationAction) (Observation, error) {
-	return Observation{}, ErrNotImplemented
+func (s *Service) Apply(ctx context.Context, action record.PublicationAction) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, ErrNotImplemented
 }
 
-func (s *Service) Reconcile(ctx context.Context, action record.PublicationAction) (Observation, error) {
-	return Observation{}, ErrNotImplemented
+func (s *Service) Reconcile(ctx context.Context, action record.PublicationAction) (forge.PullRequestObservation, error) {
+	return forge.PullRequestObservation{}, ErrNotImplemented
 }

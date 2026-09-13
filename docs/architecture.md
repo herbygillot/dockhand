@@ -315,3 +315,14 @@ The decision, plan, completed job, explanation, and original-attempt reference c
 On a miss, the first eligible job can checkpoint its plan and queued attempt before checking provider capabilities outside the write transaction. It then rereads state, including ownership and cancellation, before claiming an external action. Capabilities remain cached once per cycle. A matching result or local cancellation can settle without a provider call. Source binding and prepared-image identity checks remain intake work. No database transaction spans an external operation.
 
 This first policy is deliberately conservative: all provider settings participate, and older history beyond the lookup bound may be missed. The result establishes what was tested for the recorded inputs; it does not claim that mutable upstream servers or binary archives remain unchanged. A fresh run is available when a current observation is needed. Publication will still need committed-source selection and applicability checks at its own boundary.
+
+
+## Forge observations and upstream policy
+
+`forge` holds shared remote facts and access contracts; `forge/github` translates GitHub names, URLs, HTTP responses, and errors into those facts. Its repository object binds tag lookup, release/tag catalogs, and public URLs to one validated name. A client may bind multiple independent repositories. Binding performs no HTTP, and `upstream.RepositoryReader` makes this boundary explicit without importing the GitHub adapter.
+
+`upstream` retains the interpretation of MacPorts source conventions, explicit version/tag mapping, stable-version eligibility, native MacPorts version selection, and changed-source detection. Its `Candidate` pairs a possible Portfile version with `forge.Release` facts. `record.Release` remains the durable selected source checkpoint; neither raw remote observations nor transport configuration belong in that record. PortGroup interpretation is isolated in `upstream/github.go`, with shared tag-pattern operations used by all selection paths.
+
+PR observations and write inputs also belong to `forge`; `publish` keeps authorization, content decisions, and reconciliation policy. GitHub's PR adapter remains unfinished. No adapter depends on upstream or publication policy, and neither policy package constructs a concrete client. `app` supplies the same client through those boundaries for previews and durable work.
+
+An absent requested tag ref is distinct from an unavailable annotation or catalog. GitHub classifies the first as `forge.ErrNotFound` while preserving its HTTP error; other HTTP failures remain failures. Completeness failures use `forge.ErrIncomplete`. These errors describe remote observations, separately from upstream selection errors such as an ambiguous version or changed source. The refactor changes internal Go contracts without changing CLI syntax or stored records.

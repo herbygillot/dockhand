@@ -7,23 +7,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
 
 type catalog struct {
-	releases []upstream.Release
-	tags     []upstream.Tag
+	releases []forge.Release
+	tags     []forge.Tag
 	err      error
 	tagReads int
+	tag      tagFunc
+	web      string
 }
 
-func (c *catalog) Releases(context.Context, string) ([]upstream.Release, error) {
+func (c *catalog) Releases(context.Context) ([]forge.Release, error) {
 	return c.releases, c.err
 }
 
-func (c *catalog) ListTags(context.Context, string) ([]upstream.Tag, error) {
+func (c *catalog) ListTags(context.Context) ([]forge.Tag, error) {
 	c.tagReads++
 	return c.tags, c.err
 }
@@ -44,13 +47,16 @@ func automaticService(t *testing.T, c *catalog) *upstream.Service {
 	if err != nil {
 		t.Skip("MacPorts is required")
 	}
-	return &upstream.Service{Releases: c, Versions: &macports.Evaluator{Executable: executable}, Tags: tagFunc(func(_ context.Context, _ string, name string) (upstream.Tag, error) {
-		return upstream.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
-	})}
+	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
+	})
+	c.web = "https://github.com/owner/project"
+	return &upstream.Service{Repositories: c, Versions: &macports.Evaluator{Executable: executable}}
+
 }
 
 func TestAutomaticSelectionHonorsArchiveModeVersionOrderingAndPrereleases(t *testing.T) {
-	c := &catalog{releases: []upstream.Release{{Tag: "v1.9"}, {Tag: "v1.10"}, {Tag: "v2.0", Prerelease: true}, {Tag: "v3.0", Draft: true}, {Tag: "v4.0-rc1"}, {Tag: "other-99.0"}}, tags: []upstream.Tag{{Name: "v1.9"}, {Name: "v1.10"}, {Name: "v1.11"}, {Name: "v2.0"}, {Name: "v4.0-rc1"}}}
+	c := &catalog{releases: []forge.Release{{Tag: "v1.9"}, {Tag: "v1.10"}, {Tag: "v2.0", Prerelease: true}, {Tag: "v3.0", Draft: true}, {Tag: "v4.0-rc1"}, {Tag: "other-99.0"}}, tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}, {Name: "v1.11"}, {Name: "v2.0"}, {Name: "v4.0-rc1"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
 	result, err := service.DiscoverPort(t.Context(), port)
@@ -72,7 +78,7 @@ func TestAutomaticSelectionHonorsArchiveModeVersionOrderingAndPrereleases(t *tes
 }
 
 func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *testing.T) {
-	c := &catalog{releases: []upstream.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}}
+	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
 	port.Options["livecheck.regex"] = `{archive/refs/tags/v(1\.[0-9]+)\.tar\.gz}`
@@ -94,7 +100,7 @@ func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *te
 func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
 	for _, mode := range []string{"network", "no matches", "prerelease only", "invalid regex", "ambiguous", "missing selected tag", "custom source", "prerelease current"} {
 		t.Run(mode, func(t *testing.T) {
-			c := &catalog{releases: []upstream.Release{{Tag: "v2.0"}}}
+			c := &catalog{releases: []forge.Release{{Tag: "v2.0"}}}
 			service := automaticService(t, c)
 			port := automaticPort()
 			switch mode {
@@ -107,10 +113,10 @@ func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
 			case "invalid regex":
 				port.Options["livecheck.regex"] = "("
 			case "ambiguous":
-				c.releases = append(c.releases, upstream.Release{Tag: "v2.00"})
+				c.releases = append(c.releases, forge.Release{Tag: "v2.00"})
 			case "missing selected tag":
-				service.Tags = tagFunc(func(context.Context, string, string) (upstream.Tag, error) {
-					return upstream.Tag{}, upstream.ErrTagMissing
+				c.tag = tagFunc(func(context.Context, string, string) (forge.Tag, error) {
+					return forge.Tag{}, forge.ErrNotFound
 				})
 			case "custom source":
 				port.Options["livecheck.url"] = "https://example.invalid/latest"
@@ -127,4 +133,27 @@ func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
 			require.NotEmpty(t, result.Detail)
 		})
 	}
+}
+
+func (c *catalog) Repository(name string) (forge.Repository, error) { return c, nil }
+func (c *catalog) Name() string                                     { return "owner/project" }
+func (c *catalog) TagsURL() string                                  { return c.web + "/tags" }
+func (c *catalog) TagArchiveURL(tag string) string {
+	return c.web + "/archive/refs/tags/" + tag + ".tar.gz"
+}
+func (c *catalog) Tag(ctx context.Context, name string) (forge.Tag, error) {
+	return c.tag(ctx, c.Name(), name)
+}
+
+func TestDiscoveryUsesRepositoryURLsFromTheAdapter(t *testing.T) {
+	c := &catalog{releases: []forge.Release{{Tag: "v2.0"}}}
+	service := automaticService(t, c)
+	c.web = "https://forge.example.invalid/project"
+	port := automaticPort()
+	port.Options["livecheck.url"] = c.TagsURL()
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.Equal(t, c.TagArchiveURL("v2.0"), result.Evidence[0].URL)
+	require.Equal(t, c.Name(), result.Release.Repository)
 }

@@ -1,0 +1,34 @@
+// Package forge defines remote repository facts shared by discovery and publication.
+// Adapters observe these facts; capability packages decide what they mean for a port.
+package forge
+
+import (
+	"context"
+	"errors"
+	"time"
+)
+
+var ErrNotFound = errors.New("forge: requested object was not found")
+var ErrIncomplete = errors.New("forge: incomplete repository evidence")
+
+type Tag struct{ Name, Commit string }
+
+type Release struct {
+	Tag         string
+	URL         string
+	Draft       bool
+	Prerelease  bool
+	PublishedAt time.Time
+}
+
+// Repository binds observations and public URLs to one validated repository.
+// Catalog methods return complete bounded observations or an error, never partial success.
+// Tag resolves an exact name to a commit; an absent ref reports ErrNotFound.
+type Repository interface {
+	Name() string
+	TagsURL() string
+	TagArchiveURL(string) string
+	Tag(context.Context, string) (Tag, error)
+	Releases(context.Context) ([]Release, error)
+	ListTags(context.Context) ([]Tag, error)
+}

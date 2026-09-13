@@ -3,14 +3,18 @@ package github
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+)
 
-	"github.com/herbygillot/dockhand/v2/internal/upstream"
+const (
+	defaultAPIURL   = "https://api.github.com"
+	apiVersion      = "2026-03-10"
+	acceptMediaType = "application/vnd.github+json"
+	userAgent       = "dockhand/2"
 )
 
 type HTTPError struct {
@@ -22,19 +26,10 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("github: GET %s returned HTTP %d", e.Resource, e.StatusCode)
 }
 
-func (c *Client) get(ctx context.Context, resource string, result any) error {
-	err := c.getJSON(ctx, resource, result, 1<<20)
-	var failure *HTTPError
-	if errors.As(err, &failure) && failure.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("%w: %s", upstream.ErrTagMissing, resource)
-	}
-	return err
-}
-
 func (c *Client) getJSON(ctx context.Context, resource string, result any, limit int64) error {
 	base := c.Config.BaseURL
 	if base == "" {
-		base = "https://api.github.com"
+		base = defaultAPIURL
 	}
 	origin, err := url.Parse(base)
 	if err != nil || origin.Host == "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || origin.Scheme != "http" && origin.Scheme != "https" {
@@ -44,9 +39,9 @@ func (c *Client) getJSON(ctx context.Context, resource string, result any, limit
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("X-GitHub-Api-Version", "2026-03-10")
-	request.Header.Set("User-Agent", "dockhand/2")
+	request.Header.Set("Accept", acceptMediaType)
+	request.Header.Set("X-GitHub-Api-Version", apiVersion)
+	request.Header.Set("User-Agent", userAgent)
 	if c.Config.Token != "" {
 		request.Header.Set("Authorization", "Bearer "+c.Config.Token)
 	}

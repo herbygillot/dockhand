@@ -1,3 +1,6 @@
+// Package upstream interprets evaluated port source conventions and selects versions.
+// Forge adapters supply repository facts; this package owns eligibility, tag/version
+// mapping, and the selected source returned to preparation.
 package upstream
 
 import (
@@ -5,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
@@ -17,18 +21,10 @@ const (
 	UpdateAvailable Assessment = "update-available"
 )
 
-type Release struct {
-	Version     string
-	Tag         string
-	URL         string
-	Draft       bool
-	Prerelease  bool
-	PublishedAt time.Time
-}
-
-type ReleaseReader interface {
-	Releases(context.Context, string) ([]Release, error)
-	ListTags(context.Context, string) ([]Tag, error)
+// RepositoryReader binds a validated remote name without performing network I/O.
+// Every observation for one selection then uses that same repository.
+type RepositoryReader interface {
+	Repository(string) (forge.Repository, error)
 }
 
 type Observation struct {
@@ -50,10 +46,9 @@ type Result struct {
 }
 
 type Service struct {
-	Ports    macports.Reader
-	Releases ReleaseReader
-	Tags     TagReader
-	Versions VersionSelector
+	Ports        macports.Reader
+	Repositories RepositoryReader
+	Versions     VersionSelector
 }
 
 func (s *Service) Discover(ctx context.Context, source macports.Context) (Result, error) {

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -17,10 +18,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type releaseTagFunc func(context.Context, string, string) (upstream.Tag, error)
+type releaseTagFunc func(context.Context, string, string) (forge.Tag, error)
 
-func (f releaseTagFunc) Tag(ctx context.Context, repo, name string) (upstream.Tag, error) {
-	return f(ctx, repo, name)
+func (f releaseTagFunc) Repository(name string) (forge.Repository, error) {
+	return &releaseRepository{name: name, tag: f}, nil
+}
+
+type releaseRepository struct {
+	forge.Repository
+	name string
+	tag  releaseTagFunc
+}
+
+func (r *releaseRepository) Name() string { return r.name }
+func (r *releaseRepository) Tag(ctx context.Context, name string) (forge.Tag, error) {
+	return r.tag(ctx, r.name, name)
 }
 
 func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc) (*prepare.Service, prepare.Request) {
@@ -56,11 +68,11 @@ proc github.setup {owner project value prefix} {
 	request.Source = record.Source{Tree: record.ObjectID(tree)}
 	request.Action = record.Bump
 	request.Version = "2.0"
-	service.Upstream = &upstream.Service{Tags: releaseTagFunc(func(_ context.Context, repo, name string) (upstream.Tag, error) {
+	service.Upstream = &upstream.Service{Repositories: releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
 		if name != "v2.0" {
-			return upstream.Tag{}, upstream.ErrTagMissing
+			return forge.Tag{}, forge.ErrNotFound
 		}
-		return upstream.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
+		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})}
 	release, err := service.ResolveRelease(t.Context(), request)
 	require.NoError(t, err)
@@ -122,12 +134,12 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 func TestVersionPreparationRejectsTagMutationDuringDownload(t *testing.T) {
 	var moved atomic.Bool
 	service, request := versionFixture(t, "setup", "", func(w http.ResponseWriter, r *http.Request) { moved.Store(true); fmt.Fprint(w, "archive") })
-	service.Upstream.Tags = releaseTagFunc(func(_ context.Context, _ string, name string) (upstream.Tag, error) {
+	service.Upstream.Repositories = releaseTagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
 		commit := strings.Repeat("a", 40)
 		if moved.Load() {
 			commit = strings.Repeat("b", 40)
 		}
-		return upstream.Tag{Name: name, Commit: commit}, nil
+		return forge.Tag{Name: name, Commit: commit}, nil
 	})
 	result, err := service.Prepare(t.Context(), request)
 	require.ErrorIs(t, err, upstream.ErrSourceChanged)

@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
-	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,7 +49,7 @@ func TestReleaseCatalogReadsEveryPageAndRetainsEligibilityMetadata(t *testing.T)
 	}))
 	defer server.Close()
 	client := github.Client{Config: github.Config{BaseURL: server.URL}}
-	rows, err := client.Releases(t.Context(), "owner/project")
+	rows, err := testRepository(t, &client).Releases(t.Context())
 	require.NoError(t, err)
 	require.Len(t, rows, 102)
 	require.True(t, rows[100].Prerelease)
@@ -86,13 +86,13 @@ func TestCatalogDoesNotReturnPartialEvidence(t *testing.T) {
 			}))
 			defer server.Close()
 			client := github.Client{Config: github.Config{BaseURL: server.URL}}
-			rows, err := client.Releases(t.Context(), "owner/project")
+			rows, err := testRepository(t, &client).Releases(t.Context())
 			require.Error(t, err)
 			require.Nil(t, rows)
 			if mode == "duplicate" || mode == "truncated" {
-				require.ErrorIs(t, err, upstream.ErrIncomplete)
+				require.ErrorIs(t, err, forge.ErrIncomplete)
 			}
-			require.NotErrorIs(t, err, upstream.ErrTagMissing)
+			require.NotErrorIs(t, err, forge.ErrNotFound)
 		})
 	}
 }
@@ -110,10 +110,10 @@ func TestRepositoryTagsIncludeProjectsWithoutReleases(t *testing.T) {
 	}))
 	defer server.Close()
 	client := github.Client{Config: github.Config{BaseURL: server.URL}}
-	releases, err := client.Releases(t.Context(), "owner/project")
+	releases, err := testRepository(t, &client).Releases(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, releases)
-	tags, err := client.ListTags(t.Context(), "owner/project")
+	tags, err := testRepository(t, &client).ListTags(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []upstream.Tag{{Name: "v2.0", Commit: strings.Repeat("a", 40)}}, tags)
+	require.Equal(t, []forge.Tag{{Name: "v2.0", Commit: strings.Repeat("a", 40)}}, tags)
 }

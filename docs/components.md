@@ -27,8 +27,8 @@ dockhand2/
     tcl/                 # Tcl process/RPC support and source syntax tools
     text/                # Byte spans and source-preserving edits
     git/                 # Git objects, refs, snapshots, guarded remote pushes
-    forge/
-      github/            # Release and PR API adapters
+    forge/               # Remote facts, repository access, and PR write inputs
+      github/            # GitHub naming, URLs, HTTP, tags/releases, PR adapter
   docs/
   go.mod
 ```
@@ -109,13 +109,16 @@ Planned follow-up targets may refer to predecessor work, but freeze concrete art
 
 Desired revision, expected remote head, PR title/body, and observed forge state are separate facts. A matching SHA does not establish that metadata is current, and an existing PR does not prove an attempted edit succeeded. Preserve a stable PR association across repeated publication jobs.
 
-`forge/github` supplies concrete release and PR observations and mutations. Define small interfaces where `upstream` and `publish` consume these capabilities, and wire the adapter in `app`. Neither capability imports the concrete GitHub adapter. Phase-two PR monitoring adds observation methods consumed by the same driver; it does not need a second publication controller. Remote CI evidence remains distinct from local verification.
+`forge` defines transient remote tag/release and PR observations, PR write inputs, repository access, and remote lookup/completeness errors. `forge/github` validates GitHub repository names and owns public URLs, HTTP configuration, pagination, and tag peeling; its PR operations remain explicit stubs. `upstream.RepositoryReader` binds one `forge.Repository`, which supplies all tag/release observations and public URLs used for that selection. `publish.Forge` consumes PR operations using the shared inputs and observations. `app` wires the concrete client; neither capability imports it, and the adapter imports neither capability. Phase-two PR monitoring adds observation methods consumed by the same driver; it does not need a second publication controller. Remote CI evidence remains distinct from local verification.
 
 ## Dependency rules
 
 - `record` has no dependency on CLI, proc, workflow, storage, or concrete integrations.
 - `state` depends on shared records and standard-library contracts, not Git, SQLite, or workflow policy.
 - `state/sqlite` depends on `state`, `record`, and the selected SQLite driver. It does not import workflow or Git.
+- `forge` defines remote facts and access contracts using shared records and the standard library. It imports no capability or concrete adapter.
+- `forge/github` depends on `forge`, `record`, and Git validation mechanics; it imports neither `upstream`, `publish`, nor `macports`.
+- `upstream` and `publish` consume forge contracts and observations. MacPorts source conventions and version/publication policy stay in the consuming capability.
 - `workflow` depends on `state` and capability APIs. Capabilities do not depend back on the engine or write its records.
 - `proc` supplies current-process residency around `workflow.Engine`. Requests and observations pass through state; `proc` does not judge evidence or choose the next business action.
 - `app` wires concrete integrations, including SQLite, and owns their lifetime. Define other interfaces at actual external or test boundaries.
@@ -182,7 +185,7 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 
 `app.PreviewPreparation` constructs only the capabilities a preview needs. `bump-revision --diff` renders the real result without state or a provider. Literal subport selection and sibling fidelity work through complete MacPorts evaluation. The driver uses the same capability for job progression, guarded branch integration, and verification continuation. Working-tree input is supported by verification; bump previews continue selecting committed source and do not adopt a branch association.
 
-`upstream.MatchRelease` separates deterministic explicit-version/tag selection from evidence collection. `upstream.Resolve` now collects exact tag observations through the consumer-owned `TagReader` interface; `forge/github` supplies its HTTP implementation, including annotated-tag peeling. `upstream.Check` validates the recorded source during preparation. `upstream.DiscoverPort` now selects an eligible stable numeric version from bounded GitHub release/tag catalogs. The [groundwork report](activity/2026-09-13-bump-groundwork.md) and [explicit-version report](activity/2026-09-13-explicit-version-bumps.md) record the two slices and their provenance.
+`upstream.MatchRelease` separates deterministic explicit-version/tag selection from evidence collection. `upstream.Resolve` now collects exact tag observations through a bound `forge.Repository`; `forge/github` supplies its HTTP implementation, including annotated-tag peeling. `upstream.Check` validates the recorded source during preparation. `upstream.DiscoverPort` now selects an eligible stable numeric version from bounded GitHub release/tag catalogs. The [groundwork report](activity/2026-09-13-bump-groundwork.md) and [explicit-version report](activity/2026-09-13-explicit-version-bumps.md) record the two slices and their provenance.
 
 ### Durable preparation and integration
 
@@ -193,13 +196,13 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 `app.Services.BindPreparation` captures source, platform, author, and verification configuration. Shared CLI build flags feed `verify`, `bump`, and `bump-revision`; attachment and progress rendering remain shared. The [revision-driver report](activity/2026-09-13-revision-driver.md) records behavior, recovery limits, and validation.
 
 
-`prepare/source.go` owns shared source loading and candidate evaluation. Version editing, checksum source edits, and HTTP stream hashing remain focused files in `prepare`; they do not need new packages yet. Version and revision transformations share the final metadata comparator. The workflow's small `ReleaseResolver` interface exposes the preparer's release-resolution capability separately so the driver can persist that result before preparation. `record.Release` describes the durable selected source; `upstream.Release` remains candidate evidence for explicit and automatic selection.
+`prepare/source.go` owns shared source loading and candidate evaluation. Version editing, checksum source edits, and HTTP stream hashing remain focused files in `prepare`; they do not need new packages yet. Version and revision transformations share the final metadata comparator. The workflow's small `ReleaseResolver` interface exposes the preparer's release-resolution capability separately so the driver can persist that result before preparation. `record.Release` describes the durable selected source; `forge.Release` describes a remote release observation, and `upstream.Candidate` adds a possible Portfile version without redefining those facts.
 
 Schema 4 adds one immutable-once-set JSON column to `jobs` for the selected release. It introduces no table, state interface, lock, or generic coordination abstraction. `golang.org/x/crypto` provides the legacy RIPEMD-160 checksum MacPorts Portfiles use. The existing HTTP client injection points support independent network tests. Production CLI calls currently use anonymous GitHub access; `app.Config.GitHub` accepts an explicit token for embedded callers, but CLI credential/configuration loading is separate work. Credentials are not persisted in the release checkpoint.
 
 ## Automatic version selection
 
-Automatic and explicit bumps share `upstream.Resolve`, the release checkpoint, preparation, integration, and verification. `upstream/latest.go` owns eligibility and current/update/unknown assessment. The consumer-owned `ReleaseReader` lists Releases and tags; `forge/github/releases.go` supplies bounded pagination through the HTTP helper also used by exact-tag lookup. `macports/versions.go` and its Tcl script implement `VersionSelector`, applying the port's evaluated list-encoded regex and native `vercmp` ordering. The evaluator preserves raw Tcl option values; list consumers interpret them at their own boundary.
+Automatic and explicit bumps share `upstream.Resolve`, the release checkpoint, preparation, integration, and verification. `upstream/latest.go` owns eligibility and current/update/unknown assessment. The bound `forge.Repository` lists releases and tags; `forge/github/catalog.go` supplies shared bounded pagination through the HTTP helper also used by exact-tag lookup. GitHub source/PortGroup conventions are isolated in `upstream/github.go`; the version-selection files contain no GitHub URL construction. `macports/versions.go` and its Tcl script implement `VersionSelector`, applying the port's evaluated list-encoded regex and native `vercmp` ordering. The evaluator preserves raw Tcl option values; list consumers interpret them at their own boundary.
 
 An automatic `record.Release` additionally retains `CurrentVersion` and `NoUpdate`. The workflow atomically records a current observation and completes the job without invoking preparation or verification. Existing JSON storage accommodates these optional fields without a schema migration. There are no new packages or dependencies. See the [implementation report](activity/2026-09-13-automatic-version-selection.md) for scope, tests, and live checks.
 
@@ -217,3 +220,12 @@ An automatic `record.Release` additionally retains `CurrentVersion` and `NoUpdat
 `verify/reuse.go` compares complete build inputs and judges recorded evidence, without querying storage or calling a provider. `workflow/reuse.go` selects from bounded original-attempt candidates and records the decision during initial planning. A newer matching negative result prevents reuse of an older pass. `state.Reader.VerificationCandidates` supplies repository-scoped history through indexed SQLite queries; schema 5 adds the job's original-attempt reference and diagnostic detail. No separate cache package or duplicated evidence record is needed.
 
 Tart records a verifier digest alongside the existing image digest and frozen settings. The digest includes guest code, its launch description, and an explicit host-protocol version marker. Changes to host execution semantics that are not represented in those inputs must advance that marker. Missing legacy identities disable reuse. The CLI exposes `verify --fresh` and projects the original attempt separately from a job's own executions. See the [reuse report](activity/2026-09-13-verification-reuse.md).
+
+
+## Forge and upstream boundaries
+
+`forge/github.Client.Repository(name)` validates and binds a name without HTTP. The returned repository owns URL construction and exact-tag/release/catalog access. This replaces independently supplied tag and release readers, which could accidentally address different adapters. Repository strings do not need to be revalidated or supplied on every request. HTTP API configuration remains on the client; the API origin and public GitHub web origin are separate concepts.
+
+`upstream/github.go` interprets evaluated GitHub PortGroup fields and recognizes the supported livecheck convention. `TagPattern` supplies one implementation of prefix/suffix mapping for explicit selection, automatic filtering, source checks, and pattern validation. Generic policy results and durable selected releases retain their existing meaning. Tcl option collection remains in `macports`; source edits to `github.setup` and fidelity checks remain in `prepare`. Those operations concern Portfiles, not GitHub's API.
+
+Missing-ref classification happens only in exact-tag lookup. Generic HTTP decoding preserves HTTP errors, so a 404 while peeling an annotation or reading a catalog cannot become evidence that the requested tag is absent. Catalog limits, body limits, and timeouts live with their owning GitHub operation. The upstream selection deadline remains a separate policy budget. See the [refactor report](activity/2026-09-13-forge-upstream-boundaries.md).
