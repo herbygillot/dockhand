@@ -6,7 +6,7 @@ This document describes the initial SQLite implementation, following the [archit
 
 Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
-Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Preparation, real provider execution, publication, and action-command wiring follow separately.
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; preparation, publication, and action-command wiring follow separately.
 
 ## Packages and contracts
 
@@ -16,6 +16,7 @@ internal/
   state/
     store.go               Store, Reader, Writer, Tx contracts
     query.go               Bounded queries and cursor types
+    provider.go            Pool-scoped provider transactions
     errors.go              Persistence errors
     sqlite/
       store.go             Opening, connections, closing
@@ -23,6 +24,7 @@ internal/
       jobs.go              Intake and job persistence
       attempts.go          Attempts, submissions, evidence
       resources.go         Ownership and cleanup persistence
+      provider.go          Shared pools and provider executions
       migrations/          Ordered schema changes
   workflow/                Intake and progression rules
   app/                     Database selection and dependency wiring
@@ -92,6 +94,8 @@ The following summarizes the [implemented schema](../internal/state/sqlite/migra
 | `submissions` | Submission ID, attempt, sequence, provider, run ID, state, admission/closure times | Recoverable provider identities, including closed submissions |
 | `attempt_evidence` | Attempt, latest accepted verdict/observation time, diagnostic evidence and artifact/log references | Keep evidence separate from frequent claim updates |
 | `resources` | ID, submission, provider handle, state, retention/release times, next action time, claim fields, last error | Ownership and cleanup after job completion |
+| `provider_pools` | ID, unique resource scope, artifact directory, capacity | One Tart home shared across repository workflows |
+| `provider_executions` | Submission ID, pool, repository, attempt, resource identity, immutable provider request, lifecycle, occupancy, terminal result | Atomic admission, durable closure, and recovery before workflow adoption |
 
 Use ordinary columns for keys, relationships, lifecycle states, scheduling, claims, and fields used by current queries. Small nested targets, variants, build options, plan details, and evidence can use JSON checked on write. They belong to individual records; there is no whole-state document. Do not store a second authoritative copy of a source or relational key inside JSON. The backend reconstructs existing domain values from the authoritative columns and referenced records.
 
@@ -113,7 +117,7 @@ Keep `next_action_at` nullable: NULL means no scheduled action. A live claim sch
 
 Data locking belongs to the backend. Workflow claims belong to its transaction boundary. Do not inject an independent lock backend to authorize a state write: checking ownership in one system and writing in another would introduce a gap. An external resource lock can have a separate interface if an executor needs it, but no `lock`/`flock` replacement or configurable lock directory is part of this slice.
 
-Lease expiry does not prove an external action ended or that provider capacity is free. Provider submission/reconciliation retains its current idempotency and closure contract. Capacity reservations shared across repositories may be added when the real provider needs them; there is no speculative slot allocator now. Different DB files do not coordinate claims for shared external resources. Initially require cooperating drivers using those resources to use the same DB; Git/provider preconditions still apply to external tools and uncertain operations.
+Lease expiry does not prove an external action ended or that provider capacity is free. Provider submission/reconciliation retains its current idempotency and closure contract. The Tart provider now reserves capacity through `ProviderStore` transactions scoped to one canonical Tart home. The occupied set includes reservations whose external effects have not yet been reconciled. Reservations have no lease expiry; only confirmed VM shutdown frees capacity. Pool capacity and artifact directory must agree across cooperating processes. Different DB files do not coordinate claims for shared external resources. Initially require cooperating drivers using those resources to use the same DB; Git/provider preconditions still apply to external tools and uncertain operations.
 
 ## SQLite implementation
 
@@ -146,3 +150,11 @@ No automatic import of the experimental Git ledger or deletion of its refs is re
 Validation should cover two processes claiming the same work, atomic claim/state rollback, stale results, uncertain submission reconciliation, cancellation, and cleanup independent of job completion. Add two unrelated repositories and two clones of the same remote to one database; prove same-named branches and scoped queries cannot collide, cross-repository relationships are rejected, and linked worktrees share registration. Exercise concurrent registration and schema initialization, context cancellation, read-only status on missing state, and flag/help behavior.
 
 The [SQLite performance report](performance/2026-09-12-sqlite-state.md) records representative history-size and multi-driver measurements. A claim or result write must access only its affected records and indexes, without whole-database decoding or source scans. A backend contract test suite should exercise real transactions; an in-memory fake alone cannot establish cross-process behavior. No source code or tests from v1 need to be copied for this migration.
+
+## Tart provider persistence
+
+Schema 2 adds `provider_pools` and `provider_executions`; schema-1 databases upgrade transactionally on writable open. Read-only opening requires the current schema. The pool interface is separate from repository-scoped workflow queries because admission must include every repository sharing the host resource pool. It uses the same backend and transaction rules, with no Tart or Git imports in `state`.
+
+Provider execution records describe effects that may exist before the workflow adopts a run. Their immutable payload freezes the submitted build and effective provider configuration for idempotency and recovery; it is not used to redefine the accepted workflow inputs. Request IDs are unique across pools. Reserved/admitted executions reference an attempt in the same repository. An unknown ID can be permanently closed without an attempt or VM. Terminal results are immutable, and closed/released identities cannot be revived. The occupied query uses a partial index, so admission reads current reservations rather than historical executions.
+
+SQLite capacity decisions do not fence a delayed external command. The Tart adapter also holds an OS lock per submission under the pool's artifact directory. Short Tart/launchctl subprocesses inherit its file descriptor, preserving exclusion if the driver dies while a command continues. Lock files are not unlinked, and no global lock flag or general filesystem-lock package is reintroduced. No database transaction spans cloning, booting, source transfer, guest work, stopping, or deletion.

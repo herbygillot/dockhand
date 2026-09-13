@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
@@ -62,16 +63,21 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	forge := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
 	discovery := &upstream.Service{Ports: ports, Releases: forge}
 	preparation := &prepare.Service{Ports: ports, Upstream: discovery}
+	if config.Tart.ArtifactDirectory == "" {
+		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
+	}
 	engine := &workflow.Engine{
-		State:      store,
-		Repository: repository.ID,
-		Repo:       repo,
-		Ports:      ports,
-		Preparer:   preparation,
-		Planner:    &verify.Planner{Ports: ports},
-		Provider:   &tart.Provider{Config: config.Tart},
-		Publisher:  &publish.Service{Repo: repo, Forge: forge},
-		Now:        time.Now,
+		State:         store,
+		Repository:    repository.ID,
+		Repo:          repo,
+		Ports:         ports,
+		Preparer:      preparation,
+		Planner:       &verify.Planner{Ports: ports},
+		Provider:      &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo},
+		Publisher:     &publish.Service{Repo: repo, Forge: forge},
+		Now:           time.Now,
+		CallTimeout:   3 * time.Minute,
+		LeaseDuration: 5 * time.Minute,
 	}
 	return &Services{
 		Workflow:    engine,

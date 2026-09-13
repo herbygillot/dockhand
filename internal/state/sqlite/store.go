@@ -21,7 +21,10 @@ import (
 //go:embed migrations/001.sql
 var initialSchema string
 
-const schemaVersion = 1
+//go:embed migrations/002.sql
+var providerSchema string
+
+const schemaVersion = 2
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -116,7 +119,7 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err := t.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&appID); err != nil {
 			return storageError(err)
 		}
-		if appID == applicationID && version == schemaVersion {
+		if appID == applicationID && (version == schemaVersion || version == 1 && !s.options.ReadOnly) {
 			return nil
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
@@ -135,12 +138,28 @@ func (s *Store) initialize(ctx context.Context) error {
 	}
 
 	if !s.options.ReadOnly {
-		var mode string
-		if err := s.db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&mode); err != nil {
-			return storageError(err)
-		}
-		if mode != "wal" {
-			return fmt.Errorf("%w: WAL mode required", state.ErrUnavailable)
+		deadline := time.Now().Add(s.options.BusyTimeout)
+		for {
+			var mode string
+			err := s.db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode)
+			if err == nil && mode != "wal" {
+				err = s.db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&mode)
+			}
+			if err == nil {
+				if mode != "wal" {
+					return fmt.Errorf("%w: WAL mode required", state.ErrUnavailable)
+				}
+				break
+			}
+			var busy interface{ Code() int }
+			if !errors.As(err, &busy) || (busy.Code()&255 != 5 && busy.Code()&255 != 6) || time.Now().After(deadline) {
+				return fmt.Errorf("WAL setup: %w", storageError(err))
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(10 * time.Millisecond):
+			}
 		}
 	}
 	return s.transaction(ctx, !s.options.ReadOnly, "", func(ctx context.Context, t *transaction) error {
@@ -154,6 +173,10 @@ func (s *Store) initialize(ctx context.Context) error {
 		if appID == applicationID && version == schemaVersion {
 			return nil
 		}
+		if appID == applicationID && version == 1 && !s.options.ReadOnly {
+			_, err := t.conn.ExecContext(ctx, providerSchema+"PRAGMA user_version=2;")
+			return storageError(err)
+		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
 			return state.ErrSchema
 		}
@@ -164,7 +187,7 @@ func (s *Store) initialize(ctx context.Context) error {
 		if count != 0 {
 			return fmt.Errorf("%w: not a Dockhand database", state.ErrSchema)
 		}
-		_, err := t.conn.ExecContext(ctx, initialSchema+fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=%d;", applicationID, schemaVersion))
+		_, err := t.conn.ExecContext(ctx, initialSchema+providerSchema+fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=%d;", applicationID, schemaVersion))
 		return storageError(err)
 	})
 }
