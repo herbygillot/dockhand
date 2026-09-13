@@ -289,3 +289,13 @@ The architecture must support these workflows from phase one, even though their 
 `status` distinguishes the local revision, evidence applicable to it, the last confirmed published revision, and the latest recorded PR observations. In phase two, `start` refreshes PR state, remote CI checks, review decisions, and conflict information. Before a field has been observed, it is unknown; an old observation is shown with its age. Observations do not automatically trigger corrective work.
 
 `--wait` and `wait` continue to follow the selected job's requested destination. Publishing still completes when the PR is opened or updated, even when the change remains under review. They do not become indefinite waits for PR approval or merge. Later rebase, correction, verification, and publication requests create new jobs associated with the same tracked change.
+
+## Implemented standalone publication (2026-09-13)
+
+`publish [--branch <branch>] [--remote <remote>] [--upstream <remote>] [--base <branch>] [--dry-run] [--wait]` is now connected to the shared driver. It takes no port argument. Omitted `--branch` uses the current tracked branch's committed contents, even if the checkout contains uncommitted edits. The command shows its bound commit and evidence. `--dry-run` performs local/remote preflight and renders the plan; it accepts no job and performs no remote write. It reads verification state through normal DB service initialization.
+
+The initial executable scope is one tracked contribution commit in one port directory, with passing evidence already recorded for its complete tree/target and selected configuration. The broader missing-verification and combined `bump --publish` behavior above remains the design target. This implementation instead tells the user to verify first when evidence is missing or not passing.
+
+The default push remote is `origin`. PR target discovery prefers a configured `upstream` remote, otherwise the push repository's fork parent, otherwise the push repository. The target's default branch supplies the base unless overridden. The commit supplies the PR title and initial body; an existing PR's body remains intact. The API uses `GH_TOKEN` or `GITHUB_TOKEN`, while Git authentication stays with Git.
+
+Without `--wait`, the command runs a driver cycle and returns after pickup or an earlier conclusive outcome. `--wait` stays through confirmation of the pushed head and PR metadata. `wait <job_id>`, `start`, cancellation, JSON output, and detachment use the existing workflow path. An uncertain issued PR request is observed without another write; it can remain pending when the remote outcome cannot be established. `status` shows that state and the retained PR URL after confirmation.

@@ -4,8 +4,9 @@ Initial groundwork for `github.com/herbygillot/dockhand/v2`.
 
 SQLite now holds workflow state behind `internal/state` contracts, with `internal/state/sqlite` as the implementation. One database can track multiple repositories; linked worktrees share an entry and separate clones remain distinct. Global `--db PATH` defaults to `$HOME/.dockhand/state.db`. The old lock-directory flags and Git ledger have been removed.
 
-Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including bounded automatic GitHub version selection. Publication remains unfinished. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
+Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including bounded automatic GitHub version selection. Standalone publication of verified, committed contribution branches to GitHub is implemented. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
 
+- [Publication report](docs/activity/2026-09-13-publication.md)
 - [Forge/upstream refactor report](docs/activity/2026-09-13-forge-upstream-boundaries.md)
 - [Verification reuse report](docs/activity/2026-09-13-verification-reuse.md)
 - [Working-tree verification report](docs/activity/2026-09-13-working-tree-verification.md)
@@ -36,7 +37,7 @@ Request intake, read-only status, cancellation, and the single-target verificati
 
 Run `make` (or `make build`) to build `./dh2`. Use `make test`, `make test-race`, and `make vet` for checks, and `make clean` to remove the binary. Override the output with `make BINARY=/path/to/dockhand` or the Go executable with `make GO=/path/to/go`. Tests cover workflow recovery, SQLite transactions, separate driver processes, repository isolation, CLI configuration, and Tcl syntax. Git is required by repository fixtures. MacPorts integration tests run when `port-tclsh` is available and otherwise skip; VM providers, credentials, and network access are not required. SQLite uses the pure-Go `modernc.org/sqlite` driver.
 
-Writable service construction creates the selected database and its parent directory when needed. `dockhand status --json` reads recorded state without initializing missing state or contacting providers. Help, completion generation, and previews do not open a database. No config-directory setting or lock-file flag is present.
+Writable service construction creates the selected database and its parent directory when needed. `dockhand status --json` reads recorded state without initializing missing state or contacting providers. Help, completion generation, and preparation previews do not open a database. Publication preflight reads recorded verification and initializes/migrates state through normal service construction. No config-directory setting or lock-file flag is present.
 
 Cobra v1.10.2 supplies command help and shell completion; `usage` remains an alias for `help`. Verification submission, attachment, cancellation, and driver residency are wired. Other action handlers remain under construction. Use `workflow.Engine.BindVerification` to capture the current checkout or resolve an explicitly named local branch, inspect the evaluated metadata, then pass its returned request to `Submit`. Binding evaluates an isolated immutable tree; subports are explicitly selectable, and the initial evaluator requires the native MacPorts platform. Configure `tart.Provider` with the shared state store, repository, prepared local image, platform, and artifact directory. `DescribeEnvironment` returns the image digest to include in the accepted build configuration. The existing cycle consumes that job through the provider. `app.Build` supplies these dependencies and defaults artifacts to `artifacts/tart` beside the database.
 
@@ -80,3 +81,16 @@ dockhand bump jq 1.8.1 --diff
 ```
 
 Omitting the version selects the newest eligible stable numeric GitHub version using supported evaluated livecheck metadata and native MacPorts ordering. Already-current ports complete without creating a branch or starting verification. Unknown or incomplete discovery requires attention. Explicit versions also support the evaluated upstream tag prefix. The first editor handles supported literal GitHub version sources and one direct archive with literal checksums; see the [CLI design](docs/cli-design.md) for limits. Verification uses available dependency binaries by default; `--from-source` opts into building the dependency stack from source.
+
+Publish a tracked contribution after verifying and committing its contents:
+
+```sh
+dockhand publish --branch update-jq --dry-run
+dockhand publish --branch update-jq --wait
+```
+
+Without `--branch`, publication selects the current local branch's committed contents. The first path requires one contribution commit, changes confined to its one tracked port directory, and passing evidence for its complete tree and target. It uses that result's recorded image, verifier, platform, variants, and build settings; no image flag or new build is needed. Missing or failed evidence requires an explicit `verify` first.
+
+The push remote defaults to `origin`; the PR target comes from `upstream` when configured, then the fork parent, then the push repository. `--remote`, `--upstream`, and `--base` override those choices. Git uses its credentials; the API reads `GH_TOKEN`, then `GITHUB_TOKEN`. Tokens are not persisted. The commit supplies the title and initial body; existing PR bodies are preserved.
+
+Publication without `--wait` returns after driver pickup or an earlier terminal outcome. `--wait` follows remote confirmation. Resume accepted work using its job ID with `wait`, or run `start`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Combined `bump --publish`, missing-verification scheduling, rebase/amend commands, and post-publication monitoring remain future work.

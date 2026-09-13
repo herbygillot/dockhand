@@ -33,7 +33,10 @@ var releaseSchema string
 //go:embed migrations/005.sql
 var verificationSchema string
 
-const schemaVersion = 5
+//go:embed migrations/006.sql
+var publicationSchema string
+
+const schemaVersion = 6
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -198,7 +201,12 @@ func (s *Store) initialize(ctx context.Context) error {
 					return storageError(err)
 				}
 			}
-			_, err := t.conn.ExecContext(ctx, verificationSchema)
+			if version < 5 {
+				if _, err := t.conn.ExecContext(ctx, verificationSchema); err != nil {
+					return storageError(err)
+				}
+			}
+			_, err := t.conn.ExecContext(ctx, publicationSchema)
 			return storageError(err)
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
@@ -217,7 +225,7 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err := migratePreparation(ctx, t); err != nil {
 			return err
 		}
-		_, err := t.conn.ExecContext(ctx, releaseSchema+verificationSchema)
+		_, err := t.conn.ExecContext(ctx, releaseSchema+verificationSchema+publicationSchema)
 		return storageError(err)
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"maps"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -52,8 +53,19 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if spec.Action == record.Verify && spec.Destination != record.VerificationComplete {
 		return record.JobSpec{}, fmt.Errorf("%w: verify must request verification-complete", ErrInvalidRequest)
 	}
-	if spec.Action == record.Publish && (spec.Destination != record.Published || spec.InputRevision == "") {
-		return record.JobSpec{}, fmt.Errorf("%w: publish requires an existing revision and the published destination", ErrInvalidRequest)
+	if spec.Action == record.Publish && (spec.Destination != record.Published || spec.Publication == nil || spec.Build == nil || spec.Verification != record.VerificationRequired) {
+		return record.JobSpec{}, fmt.Errorf("%w: publish requires publication intent, passing verification configuration, and the published destination", ErrInvalidRequest)
+	}
+	if spec.Publication != nil {
+		v := *spec.Publication
+		if spec.Action != record.Publish || v.Forge == "" || v.Repository == "" || v.HeadRepository == "" || !git.ValidBranchName(v.HeadBranch) || !git.ValidBranchName(v.BaseBranch) || v.PushURL == "" || v.BaseURL == "" || !filepath.IsAbs(v.LockDirectory) || !git.ValidObjectID(string(v.Desired.Head)) || v.Desired.Title == "" || !validToken(string(v.EvidenceAttempt)) || v.ExpectedRemoteHead.Exists != (v.ExpectedRemoteHead.Commit != "") || v.ExpectedRemoteHead.Exists && !git.ValidObjectID(string(v.ExpectedRemoteHead.Commit)) {
+			return record.JobSpec{}, ErrInvalidRequest
+		}
+		if v.ExpectedPR != nil {
+			pr := *v.ExpectedPR
+			v.ExpectedPR = &pr
+		}
+		spec.Publication = &v
 	}
 	if spec.Build != nil {
 		if spec.Verification != record.VerificationRequired {

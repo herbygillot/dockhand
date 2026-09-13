@@ -74,7 +74,7 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 	var current sql.NullString
 	var raw string
 	var created int64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,'') FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -83,14 +83,32 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 	return v, decode(raw, &v.Targets)
 }
 func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
-	if v.ID == "" || v.PublishedRevision != "" || v.PullRequestID != "" {
+	if v.ID == "" {
 		return state.ErrInvalid
+	}
+	if v.PublishedRevision != "" {
+		rev, err := t.Revision(ctx, v.PublishedRevision)
+		if err != nil {
+			return err
+		}
+		if rev.ChangeID != v.ID {
+			return state.ErrConflict
+		}
+	}
+	if v.PullRequestID != "" {
+		pr, err := t.PullRequest(ctx, v.PullRequestID)
+		if err != nil {
+			return err
+		}
+		if pr.ChangeID != v.ID {
+			return state.ErrConflict
+		}
 	}
 	old, err := t.Change(ctx, v.ID)
 	if err != nil && !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
-	if err == nil && (!old.CreatedAt.Equal(v.CreatedAt)) {
+	if err == nil && (!old.CreatedAt.Equal(v.CreatedAt) || old.PullRequestID != "" && old.PullRequestID != v.PullRequestID) {
 		return state.ErrConflict
 	}
 	raw, err := encode(v.Targets)
@@ -98,7 +116,7 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 		return err
 	}
 	if old.ID != "" {
-		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, t.repo, v.ID)
+		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=?,published_revision=?,pull_request_id=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, nullableID(v.PublishedRevision), nullableID(v.PullRequestID), t.repo, v.ID)
 	}
 	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at) VALUES(?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli())
 }
@@ -166,7 +184,8 @@ func (t *transaction) PutRequest(ctx context.Context, v record.AcceptedRequest) 
 }
 
 type jobOptions struct {
-	FreshVerification bool `json:",omitempty"`
+	Publication       *record.PublicationSpec `json:",omitempty"`
+	FreshVerification bool                    `json:",omitempty"`
 	Targets           []record.Target
 	Build             *record.BuildConfig
 	Version, Reason   string
@@ -193,6 +212,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 		return v, err
 	}
 	v.Spec.Targets, v.Spec.Build, v.Spec.Version, v.Spec.Reason = options.Targets, options.Build, options.Version, options.Reason
+	v.Spec.Publication = options.Publication
 	v.Spec.Preparation = options.Preparation
 	v.Spec.Checkout = options.Checkout
 	v.Spec.FreshVerification = options.FreshVerification
@@ -344,7 +364,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{Targets: v.Spec.Targets, Build: v.Spec.Build, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
+	raw, err := encode(jobOptions{Publication: v.Spec.Publication, Targets: v.Spec.Targets, Build: v.Spec.Build, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}

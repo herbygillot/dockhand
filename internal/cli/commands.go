@@ -41,12 +41,6 @@ func (r *runtime) setupCommand() *cobra.Command {
 	}
 }
 
-func (r *runtime) publishCommand() *cobra.Command {
-	command, options := r.workflowCommand("publish <target>", "Publish an existing change", cobra.ExactArgs(1))
-	command.Flags().BoolVar(&options.Wait, "wait", false, "Stay until the requested work completes")
-	return command
-}
-
 func (r *runtime) reviewCommand() *cobra.Command {
 	review := &cobra.Command{
 		Use:   "review",

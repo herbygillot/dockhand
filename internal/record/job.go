@@ -50,7 +50,8 @@ const (
 // JobSpec records immutable accepted intent, independently of CLI attachment.
 // Request intake validates combinations of action, destination, and policy.
 type JobSpec struct {
-	Action Action
+	Action      Action
+	Publication *PublicationSpec `json:",omitempty"`
 	// ChangeID is derived from InputRevision for an existing change. It is empty
 	// for standalone verification or new source for preparation to adopt.
 	ChangeID ChangeID
@@ -111,7 +112,7 @@ type Job struct {
 	// ReusedAttempt cites an original passing execution; this job created no attempt.
 	ReusedAttempt AttemptID `json:",omitempty"`
 	ReuseDetail   string    `json:",omitempty"`
-	// Claim covers preparation and branch integration; verification and cleanup
+	// Claim covers preparation, branch integration, and publication; verification and cleanup
 	// claim their own records.
 	Claim           *Claim
 	ClaimGeneration uint64

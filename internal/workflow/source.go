@@ -135,8 +135,11 @@ func validateBranchInput(branch *BranchInput, spec record.JobSpec) error {
 	if branch == nil {
 		return nil
 	}
-	if !git.ValidBranchName(branch.Name) || spec.Action != record.Verify || spec.InputRevision != "" || spec.ChangeID != "" || len(spec.Targets) != 1 || spec.Build == nil || (branch.ExpectedChange == "") != (branch.ExpectedRevision == "") {
+	if !git.ValidBranchName(branch.Name) || (spec.Action != record.Verify && spec.Action != record.Publish) || spec.InputRevision != "" || spec.ChangeID != "" || len(spec.Targets) != 1 || spec.Build == nil || (branch.ExpectedChange == "") != (branch.ExpectedRevision == "") {
 		return fmt.Errorf("%w: branch adoption requires one frozen verification input and matching revision preconditions", ErrInvalidRequest)
+	}
+	if spec.Action == record.Publish && (branch.ExpectedChange == "" || spec.Publication == nil || spec.Publication.HeadBranch != branch.Name) {
+		return ErrInvalidRequest
 	}
 	if spec.Checkout != nil && spec.Checkout.Branch != branch.Name {
 		return fmt.Errorf("%w: checkout branch disagrees with binding", ErrInvalidRequest)

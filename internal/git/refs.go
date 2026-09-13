@@ -10,8 +10,6 @@ import (
 	"unicode/utf8"
 )
 
-var ErrNotImplemented = errors.New("git: remote push is not implemented")
-
 var (
 	ErrRefConflict        = errors.New("git: ref precondition failed")
 	ErrRefUpdateUncertain = errors.New("git: ref update outcome is uncertain")
@@ -174,8 +172,4 @@ type Push struct {
 	Branch         string
 	Commit         string
 	ExpectedRemote RefValue
-}
-
-func (r *Repository) Push(ctx context.Context, request Push) error {
-	return ErrNotImplemented
 }

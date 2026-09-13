@@ -19,7 +19,11 @@ type PullRequestInput struct {
 	Repository         string
 	BaseBranch         string
 	HeadBranch         string
+	HeadRepository     string
 	ExistingPR         *record.PullRequestRef
 	ExpectedRemoteHead record.ExpectedHead
 	Desired            record.PublicationContent
 }
+
+type PullRequestQuery struct{ Repository, HeadRepository, HeadBranch, BaseBranch string }
+type RepositoryInfo struct{ Name, DefaultBranch, Parent, CloneURL string }

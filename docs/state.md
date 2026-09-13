@@ -6,7 +6,7 @@ This document describes the initial SQLite implementation, following the [archit
 
 Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
-Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; bounded automatic GitHub discovery is implemented; publication follows separately.
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; bounded automatic GitHub discovery is implemented; standalone publication is now implemented.
 
 ## Packages and contracts
 
@@ -194,3 +194,11 @@ Schema 5 adds nullable `jobs.reused_attempt`, which references the original `att
 `VerificationCandidates` returns at most 32 original terminal attempts with evidence, ordered by attempt creation time descending and ID descending for ties. Tree and target indexes narrow the search within the selected repository; an optional tree-less lookup supplies one recent result for mismatch diagnostics. The limit bounds records materialized by the reader, not the number of matching index entries SQLite might visit. Negative outcomes are included so an older pass cannot hide a newer failed recheck. Reused jobs never become candidates themselves.
 
 `FreshVerification` fits immutable job options. `BuildConfig.VerifierDigest` fits existing build JSON; old records with an absent digest remain readable and executable but cannot supply reusable evidence. Tart binds the current digest at intake and refuses new submission if a recorded nonempty digest differs from the running verifier. Writable opening upgrades older schemas atomically; read-only opening requires schema 5. Migration failure rolls back the new columns and indexes together.
+
+## Publication storage (schema 6)
+
+`publications` stores one immutable intent per job, tied by repository-qualified foreign keys to its job, contribution revision, and evidence attempt. Separate columns hold lifecycle state, irreversible push/write checkpoints, confirmation time, and diagnostics. A partial unique index on forge/head-repository/head-branch reserves active or uncertain work across all repository entries in the database. Confirmed and definitively rejected actions retain history without keeping that reservation. Recovery keeps using the job claim and eligibility columns.
+
+`pull_requests` retains the latest observation and stable forge/repository/number identity for each change. `changes.published_revision` and `changes.pull_request_id` retain publication provenance and association; writers validate both within the scoped repository/change. Jobs retain their accepted publication choices in their options, and action writers enforce agreement and immutable intent. Small publication/PR JSON values are per record, not full-state snapshots. The adapter does not track unrelated Git commands.
+
+Migration 6 preserves existing source, revision, job, verification, and provider history. The reader adds point lookups by publication job and PR ID, used by consistent status snapshots. No broad action enumeration or second coordination interface is required by this slice.

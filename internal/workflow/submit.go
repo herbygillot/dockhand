@@ -113,6 +113,29 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if err = tx.PutJob(ctx, record.Job{ID: id, RequestID: request.ID, Spec: accepted, ChangeID: accepted.ChangeID, State: record.JobQueued, AcceptedAt: now}); err != nil {
 			return err
 		}
+		if accepted.Action == record.Publish {
+			job, err := tx.Job(ctx, id)
+			if err != nil {
+				return err
+			}
+			if accepted.ChangeID == "" || accepted.Source.Commit != accepted.Publication.Desired.Head {
+				return ErrInvalidRequest
+			}
+			change, err := tx.Change(ctx, accepted.ChangeID)
+			if err != nil {
+				return err
+			}
+			if change.Branch != accepted.Publication.HeadBranch {
+				return ErrInvalidRequest
+			}
+			if err := publicationEvidence(ctx, tx, job); err != nil {
+				return err
+			}
+			action := record.PublicationAction{ID: record.PublicationID("publication_" + rand.Text()), JobID: id, ChangeID: accepted.ChangeID, RevisionID: accepted.InputRevision, Spec: *accepted.Publication, State: record.PublicationPending}
+			if err := tx.PutPublication(ctx, action); err != nil {
+				return fmt.Errorf("accept publication (another job may own this remote branch): %w", err)
+			}
+		}
 		receipt = Receipt{RequestID: request.ID, JobID: id, AcceptedAt: now}
 		return nil
 	})

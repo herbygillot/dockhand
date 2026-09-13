@@ -35,14 +35,24 @@ func (r *Repository) WithBranchLock(ctx context.Context, branch string, fn func(
 	if !ValidBranchName(branch) || !filepath.IsAbs(r.CommonDir) {
 		return fmt.Errorf("git: branch lock requires a repository and literal branch")
 	}
+	return withLock(ctx, filepath.Join(r.CommonDir, "dockhand", "branch-locks"), strings.ToLower(branch), fn)
+}
+
+func (r *Repository) WithPushLock(ctx context.Context, directory, scope string, fn func(context.Context) error) error {
+	if !filepath.IsAbs(directory) || scope == "" {
+		return fmt.Errorf("git: publication lock requires an absolute directory and scope")
+	}
+	return withLock(ctx, directory, scope, fn)
+}
+
+func withLock(ctx context.Context, directory, key string, fn func(context.Context) error) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	directory := filepath.Join(r.CommonDir, "dockhand", "branch-locks")
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
 	}
-	name := fmt.Sprintf("%x.lock", sha256.Sum256([]byte(strings.ToLower(branch))))
+	name := fmt.Sprintf("%x.lock", sha256.Sum256([]byte(key)))
 	fd, err := unix.Open(filepath.Join(directory, name), unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0600)
 	if err != nil {
 		return err

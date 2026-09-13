@@ -61,7 +61,7 @@ type Engine struct {
 	// Provider executes verification and resource operations during Cycle.
 	// Submit, Control, and Status do not call it.
 	Provider verify.Provider
-	// Publisher is reserved for the publication execution path.
+	// Publisher resolves and executes Git/forge operations outside state transactions.
 	Publisher *publish.Service
 	// Now supplies timestamps and lease comparisons, converted to UTC. Nil uses
 	// the system clock. Keep this callback nonblocking; transactions call it.

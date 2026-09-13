@@ -47,6 +47,8 @@ type VerificationQuery struct {
 }
 
 type Reader interface {
+	PublicationForJob(context.Context, record.JobID) (record.PublicationAction, error)
+	PullRequest(context.Context, record.PullRequestID) (record.PullRequest, error)
 	VerificationCandidates(context.Context, VerificationQuery) ([]record.Attempt, error)
 	Change(context.Context, record.ChangeID) (record.Change, error)
 	OpenChangeByBranch(context.Context, string) (record.Change, error)
@@ -70,6 +72,8 @@ type Reader interface {
 }
 
 type Writer interface {
+	PutPublication(context.Context, record.PublicationAction) error
+	PutPullRequest(context.Context, record.PullRequest) error
 	PutChange(context.Context, record.Change) error
 	PutRevision(context.Context, record.Revision) error
 	PutRequest(context.Context, record.AcceptedRequest) error

@@ -1,0 +1,264 @@
+package workflow
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/herbygillot/dockhand/v2/internal/forge"
+	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/publish"
+	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/state"
+)
+
+var errPublicationCanceled = errors.New("publication canceled; any pushed branch is preserved")
+
+func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, string, error) {
+	e := c.engine
+	var job record.Job
+	var action record.PublicationAction
+	claimed := false
+	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		var err error
+		job, err = tx.Job(ctx, id)
+		if err != nil {
+			return err
+		}
+		if jobTerminal(job.State) || live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
+			return nil
+		}
+		action, err = tx.PublicationForJob(ctx, id)
+		if err != nil {
+			return err
+		}
+		job.Claim, err = c.claim(&job.ClaimGeneration, e.now())
+		if err != nil {
+			return err
+		}
+		job.State, job.RetryAt = record.JobActive, nil
+		claimed = true
+		return tx.PutJob(ctx, job)
+	})
+	if err != nil || !claimed {
+		return false, "", err
+	}
+	if e.Publisher == nil || e.Publisher.Repo == nil || e.Publisher.Forge == nil {
+		err = c.publicationRetry(ctx, job, "Publication service is unavailable")
+		return true, "Publication service is unavailable", err
+	}
+	call, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	scope := action.Spec.Forge + ":" + strings.ToLower(action.Spec.HeadRepository) + ":" + action.Spec.HeadBranch
+	err = e.Publisher.Repo.WithPushLock(call, action.Spec.LockDirectory, scope, func(locked context.Context) error {
+		if err := c.publicationUpdate(locked, job, func(_ state.Tx, current *record.Job, stored *record.PublicationAction) error {
+			action = *stored
+			return nil
+		}); err != nil {
+			return err
+		}
+		return c.runPublication(locked, job, action)
+	})
+	if err == nil {
+		return true, "", nil
+	}
+	if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || ctx.Err() != nil {
+		return true, "", err
+	}
+	// Only failures known to precede a PR request can release this head for a new job.
+	var current record.PublicationAction
+	readErr := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		current, err = r.PublicationForJob(ctx, id)
+		return err
+	})
+	if readErr != nil {
+		return true, "", errors.Join(err, readErr)
+	}
+	if !current.WriteStarted && (errors.Is(err, publish.ErrPrecondition) || errors.Is(err, git.ErrRefConflict) || errors.Is(err, ErrStaleRevision) || errors.Is(err, errPublicationCanceled)) {
+		result := record.JobNeedsAttention
+		if errors.Is(err, ErrStaleRevision) {
+			result = record.JobSuperseded
+		}
+		if errors.Is(err, errPublicationCanceled) {
+			result = record.JobCanceled
+		}
+		return true, err.Error(), c.finishPublication(ctx, job, result, err.Error(), nil)
+	}
+	return true, err.Error(), c.publicationRetry(ctx, job, err.Error())
+}
+
+func (c *cycle) publicationUpdate(ctx context.Context, expected record.Job, fn func(state.Tx, *record.Job, *record.PublicationAction) error) error {
+	e := c.engine
+	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		job, err := tx.Job(ctx, expected.ID)
+		if err != nil {
+			return err
+		}
+		if jobTerminal(job.State) || !owns(job.Claim, expected.Claim, e.now()) {
+			return ErrClaimLost
+		}
+		action, err := tx.PublicationForJob(ctx, job.ID)
+		if err != nil {
+			return err
+		}
+		if err := fn(tx, &job, &action); err != nil {
+			return err
+		}
+		if err := tx.PutPublication(ctx, action); err != nil {
+			return err
+		}
+		return tx.PutJob(ctx, job)
+	})
+}
+
+func (c *cycle) authorizePublication(ctx context.Context, expected record.Job, write bool) error {
+	return c.publicationUpdate(ctx, expected, func(tx state.Tx, job *record.Job, action *record.PublicationAction) error {
+		if action.WriteStarted {
+			return fmt.Errorf("%w: PR request already started", state.ErrConflict)
+		}
+		if job.CancelRequestedAt != nil {
+			return errPublicationCanceled
+		}
+		change, err := tx.Change(ctx, job.ChangeID)
+		if err != nil {
+			return err
+		}
+		if change.Disposition != record.ChangeOpen || change.CurrentRevision != job.Spec.InputRevision || change.Branch != action.Spec.HeadBranch {
+			return ErrStaleRevision
+		}
+		if err := publicationEvidence(ctx, tx, *job); err != nil {
+			return err
+		}
+		action.State, action.PushStarted = record.PublicationApplying, true
+		if write {
+			action.WriteStarted = true
+		}
+		return nil
+	})
+}
+
+func (c *cycle) runPublication(ctx context.Context, job record.Job, action record.PublicationAction) error {
+	s := c.engine.Publisher
+	spec := action.Spec
+	if !action.WriteStarted {
+		if err := c.publicationUpdate(ctx, job, func(tx state.Tx, current *record.Job, _ *record.PublicationAction) error {
+			if current.CancelRequestedAt != nil {
+				return errPublicationCanceled
+			}
+			change, err := tx.Change(ctx, current.ChangeID)
+			if err != nil {
+				return err
+			}
+			if change.CurrentRevision != current.Spec.InputRevision || change.Disposition != record.ChangeOpen {
+				return ErrStaleRevision
+			}
+			return publicationEvidence(ctx, tx, *current)
+		}); err != nil {
+			return err
+		}
+		if _, err := s.SourceContent(ctx, job.Spec.Source, job.Spec.Targets); err != nil {
+			return err
+		}
+		// Validate accepted source again under the operation lock, outside the transaction.
+		commit, tree, err := s.Repo.Branch(ctx, spec.HeadBranch)
+		if err != nil {
+			return fmt.Errorf("%w: %v", publish.ErrPrecondition, err)
+		}
+		if record.ObjectID(commit) != job.Spec.Source.Commit || record.ObjectID(tree) != job.Spec.Source.Tree {
+			return ErrStaleRevision
+		}
+	}
+	observed, err := s.Observe(ctx, spec)
+	if err != nil {
+		return err
+	}
+	remote, err := s.Repo.RemoteHead(ctx, spec.PushURL, spec.HeadBranch)
+	if err != nil {
+		return err
+	}
+	desired := git.RefValue{Exists: true, Object: string(spec.Desired.Head)}
+	if remote == desired && publish.Matches(spec, observed) {
+		return c.finishPublication(ctx, job, record.JobCompleted, "Published "+observed.PullRequest.Ref.URL, &observed.PullRequest)
+	}
+	if action.WriteStarted {
+		return c.publicationRetry(ctx, job, "PR request outcome is unresolved; observing without repeating the write")
+	}
+	if err := s.Repo.CheckContributionBase(ctx, spec.BaseURL, spec.BaseBranch, string(job.Spec.Source.Base), string(job.Spec.Source.Commit)); err != nil {
+		return err
+	}
+	if err := publish.CheckMetadata(spec, observed); err != nil {
+		return err
+	}
+	if remote != desired {
+		expected := git.RefValue{Exists: spec.ExpectedRemoteHead.Exists, Object: string(spec.ExpectedRemoteHead.Commit)}
+		if remote != expected {
+			return &git.RefConflict{Name: spec.HeadBranch, Expected: expected, Actual: remote}
+		}
+		if err := c.authorizePublication(ctx, job, false); err != nil {
+			return err
+		}
+		if err := s.Repo.Push(ctx, git.Push{Remote: spec.PushURL, Branch: spec.HeadBranch, Commit: string(spec.Desired.Head), ExpectedRemote: expected}); err != nil {
+			return err
+		}
+		return c.publicationRetry(ctx, job, "Branch pushed; checking the remote before publishing")
+	}
+	if observed.Found && observed.PullRequest.RemoteHead != spec.Desired.Head {
+		return c.publicationRetry(ctx, job, "Waiting for the forge to observe the pushed branch")
+	}
+	if err := c.authorizePublication(ctx, job, true); err != nil {
+		return err
+	}
+	_, err = s.Write(ctx, action)
+	if errors.Is(err, forge.ErrRejected) {
+		return c.finishPublication(ctx, job, record.JobNeedsAttention, err.Error(), nil)
+	}
+	if err != nil {
+		return err
+	}
+	return c.publicationRetry(ctx, job, "PR request sent; awaiting confirmation of its head and metadata")
+}
+
+func (c *cycle) publicationRetry(ctx context.Context, expected record.Job, detail string) error {
+	return c.publicationUpdate(ctx, expected, func(_ state.Tx, job *record.Job, action *record.PublicationAction) error {
+		if action.WriteStarted {
+			action.State = record.PublicationUncertain
+		}
+		action.LastError = detail
+		retry := c.engine.now().Add(c.retry)
+		job.Claim, job.RetryAt, job.Detail = nil, &retry, detail
+		return nil
+	})
+}
+
+func (c *cycle) finishPublication(ctx context.Context, expected record.Job, outcome record.JobState, detail string, observed *record.PullRequest) error {
+	return c.publicationUpdate(ctx, expected, func(tx state.Tx, job *record.Job, action *record.PublicationAction) error {
+		now := c.engine.now()
+		action.State = record.PublicationNeedsAttention
+		action.LastError = detail
+		if observed != nil {
+			change, err := tx.Change(ctx, job.ChangeID)
+			if err != nil {
+				return err
+			}
+			pr := *observed
+			pr.ID, pr.ChangeID = change.PullRequestID, change.ID
+			if pr.ID == "" {
+				pr.ID = record.PullRequestID("pr_" + rand.Text())
+			}
+			if err := tx.PutPullRequest(ctx, pr); err != nil {
+				return err
+			}
+			change.PullRequestID, change.PublishedRevision = pr.ID, job.Spec.InputRevision
+			if err := tx.PutChange(ctx, change); err != nil {
+				return err
+			}
+			action.State, action.ConfirmedAt, action.LastError = record.PublicationConfirmed, &now, ""
+		}
+		job.State, job.FinishedAt, job.Detail = outcome, &now, detail
+		job.Claim, job.RetryAt = nil, nil
+		return nil
+	})
+}

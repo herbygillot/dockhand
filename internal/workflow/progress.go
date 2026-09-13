@@ -1,5 +1,7 @@
 package workflow
 
+import "github.com/herbygillot/dockhand/v2/internal/record"
+
 // Milestone describes attachment, independently of the accepted destination.
 type Milestone string
 
@@ -17,7 +19,7 @@ func Reached(status Status, milestone Milestone) bool {
 		if jobTerminal(entry.Job.State) {
 			continue
 		}
-		if milestone == Admission && entry.Job.AdmittedAt != nil {
+		if milestone == Admission && (entry.Job.AdmittedAt != nil || entry.Job.Spec.Action == record.Publish && entry.Job.State == record.JobActive) {
 			continue
 		}
 		return false

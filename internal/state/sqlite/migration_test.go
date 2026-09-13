@@ -206,7 +206,7 @@ func TestVerificationMigrationPreservesHistoryAndBuildsLookupIndexes(t *testing.
 	}
 	var version int
 	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
-	require.Equal(t, 5, version)
+	require.Equal(t, schemaVersion, version)
 	for _, query := range []struct {
 		sql     string
 		args    []any
@@ -247,4 +247,42 @@ func TestVerificationMigrationRollsBackWithoutDisturbingSchemaFour(t *testing.T)
 	columns, rows := migrationRows(t, db, "jobs", nil)
 	require.NotContains(t, columns, "reused_attempt")
 	require.Len(t, rows, 1)
+}
+
+func TestPublicationMigrationPreservesSchemaFiveHistory(t *testing.T) {
+	path, db := versionTwoWithWork(t)
+	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + "COMMIT;")
+	require.NoError(t, err)
+	tables := []string{"changes", "revisions", "jobs", "sources", "attempts", "attempt_evidence", "provider_executions"}
+	columns := map[string][]string{}
+	before := map[string][][]any{}
+	for _, table := range tables {
+		columns[table], before[table] = migrationRows(t, db, table, nil)
+	}
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	for _, table := range tables {
+		_, after := migrationRows(t, db, table, columns[table])
+		require.Equal(t, before[table], after, table)
+	}
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, schemaVersion, version)
+	var count int
+	require.NoError(t, db.QueryRow("SELECT count(*) FROM publications").Scan(&count))
+	require.Zero(t, count)
+}
+
+func TestPublicationMigrationFailureRollsBackAdditions(t *testing.T) {
+	path, db := versionTwoWithWork(t)
+	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + "COMMIT; CREATE TABLE publications(unrelated TEXT);")
+	require.NoError(t, err)
+	_, err = Open(t.Context(), path, Options{})
+	require.Error(t, err)
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 5, version)
+	columns, _ := migrationRows(t, db, "changes", nil)
+	require.NotContains(t, columns, "pull_request_id")
 }

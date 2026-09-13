@@ -28,10 +28,13 @@ type PullRequestRef struct {
 // PullRequest retains a change's forge association and latest recorded observation.
 // It can outlive several publication jobs as the same contribution is revised.
 type PullRequest struct {
-	ID       PullRequestID
-	ChangeID ChangeID
-	Ref      PullRequestRef
-	State    PullRequestState
+	HeadRepository string
+	HeadBranch     string
+	BaseBranch     string
+	ID             PullRequestID
+	ChangeID       ChangeID
+	Ref            PullRequestRef
+	State          PullRequestState
 	// RemoteHead is the last observed head commit. Recording it does not imply
 	// that the object is available in the local Git repository.
 	RemoteHead ObjectID
@@ -72,24 +75,32 @@ const (
 	PublicationNeedsAttention PublicationState = "needs-attention"
 )
 
-// PublicationAction records intent and recovery state for opening or updating
-// a pull request. It binds one revision to explicit remote preconditions and
-// desired content; publishing a later revision requires another action.
-type PublicationAction struct {
-	ID         PublicationID
-	JobID      JobID
-	ChangeID   ChangeID
-	RevisionID RevisionID
-	// PullRequestID links an existing tracked PR when one is already known.
-	PullRequestID      PullRequestID
+// PublicationSpec freezes the destination, verification, and remote preconditions.
+type PublicationSpec struct {
+	Forge              string
 	Repository         string
+	HeadRepository     string
 	BaseBranch         string
 	HeadBranch         string
+	PushURL            string
+	BaseURL            string
+	LockDirectory      string
 	ExpectedRemoteHead ExpectedHead
+	ExpectedPR         *PullRequest
+	EvidenceAttempt    AttemptID
 	Desired            PublicationContent
-	State              PublicationState
-	Claim              *Claim
-	// ConfirmedAt records successful publication, independently of eventual merge.
-	ConfirmedAt *time.Time
-	LastError   string
+}
+
+// PublicationAction retains the checkpoints needed to reconcile external writes.
+type PublicationAction struct {
+	ID           PublicationID
+	JobID        JobID
+	ChangeID     ChangeID
+	RevisionID   RevisionID
+	Spec         PublicationSpec
+	State        PublicationState
+	PushStarted  bool
+	WriteStarted bool
+	ConfirmedAt  *time.Time
+	LastError    string
 }

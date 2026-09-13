@@ -88,7 +88,9 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		var changed bool
 		var detail string
 		var err error
-		if preparationAction(job.Spec.Action) && job.ResultRevision == "" {
+		if job.Spec.Action == record.Publish {
+			changed, detail, err = c.advancePublication(ctx, job.ID)
+		} else if preparationAction(job.Spec.Action) && job.ResultRevision == "" {
 			changed, detail, err = c.advancePreparation(ctx, job.ID)
 		} else {
 			changed, detail, err = c.advanceJob(ctx, job.ID)

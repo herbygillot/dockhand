@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -99,6 +100,14 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 				return err
 			}
 			entry := JobStatus{Job: job, Attempts: attempts, Publications: []record.PublicationAction{}}
+			if job.Spec.Action == record.Publish {
+				publication, err := r.PublicationForJob(ctx, job.ID)
+				if err == nil {
+					entry.Publications = append(entry.Publications, publication)
+				} else if !errors.Is(err, state.ErrNotFound) {
+					return err
+				}
+			}
 			if job.ReusedAttempt != "" {
 				original, err := r.Attempt(ctx, job.ReusedAttempt)
 				if err != nil {
@@ -110,6 +119,15 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 		}
 		if result.Changes, err = collect(ctx, q, r.Changes, func(v record.Change) string { return string(v.ID) }); err != nil {
 			return err
+		}
+		for _, change := range result.Changes {
+			if change.PullRequestID != "" {
+				pr, err := r.PullRequest(ctx, change.PullRequestID)
+				if err != nil {
+					return err
+				}
+				result.PullRequests = append(result.PullRequests, pr)
+			}
 		}
 		if result.Revisions, err = collect(ctx, q, r.Revisions, func(v record.Revision) string { return string(v.ID) }); err != nil {
 			return err

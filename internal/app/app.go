@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -62,6 +63,12 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	}
 
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	if config.GitHub.Token == "" {
+		config.GitHub.Token = os.Getenv("GH_TOKEN")
+		if config.GitHub.Token == "" {
+			config.GitHub.Token = os.Getenv("GITHUB_TOKEN")
+		}
+	}
 	githubClient := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
 	discovery := &upstream.Service{Ports: ports, Repositories: githubClient, Versions: ports}
 	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery}
@@ -78,7 +85,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Releases:      preparation,
 		Planner:       &verify.Planner{Ports: ports},
 		Provider:      provider,
-		Publisher:     &publish.Service{Repo: repo, Forge: githubClient},
+		Publisher:     &publish.Service{Repo: repo, Forge: githubClient, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
 		Now:           time.Now,
 		CallTimeout:   3 * time.Minute,
 		LeaseDuration: 5 * time.Minute,
