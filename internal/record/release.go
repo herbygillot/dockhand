@@ -2,13 +2,17 @@ package record
 
 import "time"
 
-// Release identifies the upstream source selected for one explicit version bump.
+// Release identifies the upstream source selected for a version bump.
 // The requested spelling, Portfile version, tag, and resolved commit remain distinct.
 type Release struct {
-	Requested  string
-	Version    string
-	Repository string
-	Tag        string
-	Commit     string
-	ObservedAt time.Time
+	// Automatic selections retain the evaluated version and whether an update is needed.
+	// Requested is empty for those jobs; explicit selections never set NoUpdate.
+	CurrentVersion string `json:",omitempty"`
+	NoUpdate       bool   `json:",omitempty"`
+	Requested      string
+	Version        string
+	Repository     string
+	Tag            string
+	Commit         string
+	ObservedAt     time.Time
 }

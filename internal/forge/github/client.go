@@ -22,9 +22,6 @@ type Client struct {
 	Config Config
 }
 
-func (c *Client) Releases(ctx context.Context, repository string) ([]upstream.Release, error) {
-	return nil, ErrNotImplemented
-}
 func (c *Client) Find(ctx context.Context, repository, branch string) (publish.Observation, error) {
 	return publish.Observation{}, ErrNotImplemented
 }

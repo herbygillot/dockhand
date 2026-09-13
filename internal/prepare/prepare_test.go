@@ -145,7 +145,7 @@ func TestPreparationRejectsInconsistentSourceAndCancellation(t *testing.T) {
 	require.ErrorContains(t, err, "source commit and tree disagree")
 	request.Action = record.Bump
 	_, err = service.Prepare(t.Context(), request)
-	require.ErrorIs(t, err, prepare.ErrNotImplemented)
+	require.ErrorContains(t, err, "resolved release is required")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err = service.Prepare(ctx, request)

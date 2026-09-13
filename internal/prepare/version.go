@@ -17,11 +17,20 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 	if release == nil || release.Requested != request.Version {
 		return Result{}, fmt.Errorf("prepare: a matching resolved release is required")
 	}
+	if request.Version == "" && release.CurrentVersion != input.info.Version {
+		return Result{}, fmt.Errorf("prepare: automatic selection does not match the input version")
+	}
+	if release.NoUpdate && request.Version != "" {
+		return Result{}, fmt.Errorf("prepare: explicit selection cannot imply no update")
+	}
 	if input.target.Subport != "" {
 		return Result{}, fmt.Errorf("%w: version bumps currently select the primary port", ErrUnsupported)
 	}
 	if err := s.Upstream.Check(ctx, input.info, *release); err != nil {
 		return Result{}, err
+	}
+	if release.NoUpdate {
+		return Result{Base: request.Source, Target: input.target, Release: release, PreparedTree: request.Source.Tree}, nil
 	}
 	contents, err := versionEdits(input.data, input.info.Version, release.Version, input.info.Revision)
 	if err != nil {

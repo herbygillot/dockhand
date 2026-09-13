@@ -65,7 +65,7 @@ type JobSpec struct {
 	// Build records effective verification choices. A nil value leaves them
 	// unspecified; execution must not infer them from later configuration.
 	Build *BuildConfig
-	// Version is an optional explicit version for Bump.
+	// Version is an optional explicit version for Bump; empty requests automatic selection.
 	Version string
 	Reason  string
 	// Preparation freezes source-branch, platform, and author choices for a new contribution.

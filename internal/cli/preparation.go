@@ -36,7 +36,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command := &cobra.Command{
 			Use: use, Short: spec.short,
-			Long: spec.short + ".\n\nVersion and revision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. Explicit versions are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Latest-version selection and standalone checksum refresh are not implemented yet. A bump version may include its upstream tag prefix.",
+			Long: spec.short + ".\n\nVersion and revision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. Version updates are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Omitting the version selects the newest eligible stable numeric version using the port's GitHub tags livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Standalone checksum refresh is not implemented yet.",
 			Args: func(cmd *cobra.Command, args []string) error {
 				if err := cobra.RangeArgs(1, maximum)(cmd, args); err != nil {
 					return err
@@ -61,10 +61,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					return fmt.Errorf("%w: %w: checksum refresh", ErrNotImplemented, prepare.ErrNotImplemented)
 				}
 				var version string
-				if spec.action == record.Bump {
-					if len(args) < 2 {
-						return fmt.Errorf("%w: latest-version selection; provide an explicit version", ErrNotImplemented)
-					}
+				if spec.action == record.Bump && len(args) == 2 {
 					version = args[1]
 				}
 				if options.Publish {
@@ -116,7 +113,11 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				}
 				fmt.Fprintf(cmd.ErrOrStderr(), "Branch: %s\nCommit: %s\nTarget: %s\n", preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
 				if release := preview.Preparation.Release; release != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Release: %s (%s); upstream commit: %s\n", release.Tag, release.Version, release.Commit)
+					if release.NoUpdate {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Already current at %s; latest eligible version is %s.\n", release.CurrentVersion, release.Version)
+					} else {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Release: %s (%s); upstream commit: %s\n", release.Tag, release.Version, release.Commit)
+					}
 				}
 				_, err = fmt.Fprint(cmd.OutOrStdout(), preview.Diff)
 				return err

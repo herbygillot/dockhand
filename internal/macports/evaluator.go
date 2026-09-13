@@ -37,7 +37,7 @@ type PortInfo struct {
 	Version      string
 	Revision     int
 	Epoch        int
-	Options      map[string]string
+	Options      map[string]string // Evaluated Tcl values; list-valued options retain their list encoding.
 	OptionErrors map[string]string
 	Dependencies []Dependency
 }
@@ -182,13 +182,9 @@ func evaluateOne(ctx context.Context, session *rpc.Session, source Context, subp
 }
 
 func decodeMetadata(reply string) (PortInfo, []string, error) {
-	raw, errs := syntax.DictValues(reply)
+	values, errs := syntax.DictValues(reply)
 	if len(errs) != 0 {
 		return PortInfo{}, nil, fmt.Errorf("macports: invalid metadata: %v", errs)
-	}
-	values := make(map[string]string, len(raw))
-	for key, value := range raw {
-		values[key] = syntax.ListValue(value)
 	}
 	value := PortInfo{Name: values["name"], Version: values["version"], Options: values}
 	failures, errs := syntax.DictValues(values["option_errors"])
@@ -197,7 +193,7 @@ func decodeMetadata(reply string) (PortInfo, []string, error) {
 	}
 	value.OptionErrors = make(map[string]string, len(failures))
 	for name, failure := range failures {
-		value.OptionErrors[name] = syntax.ListValue(failure)
+		value.OptionErrors[name] = failure
 	}
 	delete(values, "option_errors")
 	if !token(value.Name) || value.Version == "" {

@@ -1,6 +1,6 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic latest-version selection, publication, working-tree input, and broader target selection remain unfinished.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Publication, working-tree input, and broader target selection remain unfinished.
 
 ## Global options
 
@@ -58,15 +58,23 @@ The revision preview selects committed source from the current local branch or e
 
 Successful previews render a Git diff to stdout and source/target information to stderr. JSON returns the selected branch, preparation result and evaluations, commit intent, and diff. Preview writes immutable Git objects as needed, but creates no branch, commit, job, database, or verification environment and leaves the user's checkout/index alone. The driver uses this same preparation service for accepted version- and revision-bump jobs.
 
-### Explicit version bumps
+### Version bumps
 
 ```sh
+dockhand bump jq --diff
+dockhand bump jq --image dockhand-base-tahoe --wait
 dockhand bump jq 1.8.1 --diff
 dockhand bump jq jq-1.8.1 --no-verify
 dockhand bump jq 1.8.1 --image dockhand-base-tahoe --wait
 ```
 
-An explicit version or tag is resolved against GitHub tags. The evaluated GitHub PortGroup prefix and suffix supply the inferred tag; no generic `v` is removed or added independently of that convention. Missing, ambiguous, and failed lookups are distinct errors. Explicit selection can choose an older version; an unchanged version is refused. Omitting the version still returns an explicit latest-selection-not-implemented error before opening state. Standalone checksum refresh remains unfinished.
+An explicit version or tag is resolved against GitHub tags. The evaluated GitHub PortGroup prefix and suffix supply the inferred tag; no generic `v` is removed or added independently of that convention. Missing, ambiguous, and failed lookups are distinct errors. Explicit selection can choose an older version; an unchanged version is refused. Omitting the version requests automatic selection. Standalone checksum refresh remains unfinished.
+
+Automatic selection initially requires a stable numeric current version and the evaluated GitHub tags `livecheck` convention: `livecheck.type regex`, the matching repository's `/tags` URL, and `livecheck.version` equal to the port version. For `github.tarball_from releases`, candidates come from published GitHub Releases; `archive` and `tarball` use repository tags, including projects without Releases. Drafts and marked prereleases are excluded, as are tag versions containing anything besides digits and dots. Explicit versions remain available for prereleases and other spellings.
+
+Dockhand applies the evaluated Tcl regex to candidate GitHub archive URLs and orders matching versions with MacPorts `vercmp`. This respects supported version-line filters; it does not execute arbitrary livecheck scripts or scrape HTML. Custom livecheck sources and expressions requiring surrounding page content are outside this first implementation. A complete bounded catalog and one unambiguous newest eligible tag are required. HTTP failures, incomplete pagination, no matches, and ambiguous candidates produce unknown/needs-attention, never an already-current result. Catalog reads allow at most 20 pages of 100 entries per endpoint; reaching the bound without an end page requires explicit selection.
+
+When the newest eligible version is equal to or older than the accepted source version, the job completes successfully with an already-current detail and a recorded release observation. It creates no branch, change, or verification attempt; an unavailable image does not prevent this no-op. A preview emits no diff and opens no database. `wait` reattaches to the completed job without rediscovering versions. This records the result of that invocation, not continuing proof that upstream is unchanged. See the [automatic-selection report](activity/2026-09-13-automatic-version-selection.md).
 
 The first editor supports a literal `version` or literal version argument in `github.setup`; a literal declaration feeding `$version` or `${version}` into `github.setup` also works. The evaluated GitHub version must match the port version. Preparation resets a matching literal revision to zero, downloads one archive from one direct HTTP(S) master site, and rewrites one literal unnamed checksum list with required sha256 and optional rmd160/size. The primary port is selected; sibling metadata and dependencies must remain unchanged. Calculated version sources, multiple or named distfiles/checksums, patchfiles, vendored sources, and customized fetch targets require additional preparers. Evaluation and fidelity apply to the selected platform and variants.
 

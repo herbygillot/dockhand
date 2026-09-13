@@ -240,6 +240,12 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 		if v.Spec.Action != record.Bump || r.Requested != v.Spec.Version || r.Version == "" || r.Repository == "" || r.Tag == "" || !objectID(record.ObjectID(r.Commit)) || r.ObservedAt.IsZero() {
 			return state.ErrInvalid
 		}
+		if r.Requested == "" && r.CurrentVersion == "" {
+			return state.ErrInvalid
+		}
+		if r.NoUpdate && (v.Spec.Version != "" || v.State != record.JobCompleted || v.Prepared != nil || v.ResultRevision != "") {
+			return state.ErrInvalid
+		}
 		release, err = encode(r)
 		if err != nil {
 			return err

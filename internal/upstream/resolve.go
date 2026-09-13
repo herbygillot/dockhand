@@ -47,7 +47,7 @@ func githubSource(port macports.PortInfo) (string, TagPattern, error) {
 	}
 	repository := port.Options["github.author"] + "/" + port.Options["github.project"]
 	if !RepositoryName(repository) || port.Options["github.version"] != port.Version {
-		return "", TagPattern{}, fmt.Errorf("upstream: explicit bumps currently require a GitHub PortGroup version matching the evaluated port version")
+		return "", TagPattern{}, fmt.Errorf("upstream: bumps currently require a GitHub PortGroup version matching the evaluated port version")
 	}
 	values := []string{}
 	for _, key := range []string{"github.tag_prefix", "github.tag_suffix"} {
@@ -69,6 +69,13 @@ func githubSource(port macports.PortInfo) (string, TagPattern, error) {
 }
 
 func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested string) (record.Release, error) {
+	if requested == "" {
+		result, err := s.DiscoverPort(ctx, port)
+		if err != nil {
+			return record.Release{}, err
+		}
+		return *result.Release, nil
+	}
 	if err := ValidateVersion(requested); err != nil {
 		return record.Release{}, err
 	}

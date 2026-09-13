@@ -112,8 +112,8 @@ func (s *Service) evaluateEdit(ctx context.Context, request Request, input *sour
 }
 
 func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record.Release, err error) {
-	if request.Action != record.Bump || request.Version == "" {
-		return record.Release{}, fmt.Errorf("%w: an explicit bump version is required", ErrNotImplemented)
+	if request.Action != record.Bump {
+		return record.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
 	}
 	input, err := s.load(ctx, request)
 	if err != nil {

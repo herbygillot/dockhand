@@ -29,11 +29,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 	for _, args := range [][]string{{"bump", "jq"}, {"bump", "jq", "v1.8.1"}, {"bump", "jq", "1.8.1"}} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
-		if len(args) == 2 {
-			require.ErrorIs(t, err, ErrNotImplemented)
-		} else {
-			require.ErrorContains(t, err, "git rev-parse")
-		}
+		require.ErrorContains(t, err, "git rev-parse")
 	}
 	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--wait"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}} {
 		var out bytes.Buffer

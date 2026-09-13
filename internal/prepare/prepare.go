@@ -67,8 +67,8 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if request.Action != record.BumpRevision && request.Action != record.Bump {
 		return Result{}, fmt.Errorf("%w: %s", ErrNotImplemented, request.Action)
 	}
-	if request.Action == record.Bump && request.Version == "" {
-		return Result{}, fmt.Errorf("%w: automatic latest-release selection", ErrNotImplemented)
+	if request.Action == record.Bump && request.Release == nil {
+		return Result{}, fmt.Errorf("prepare: a resolved release is required")
 	}
 	if request.Action == record.BumpRevision && request.Version != "" {
 		return Result{}, fmt.Errorf("prepare: an explicit version applies only to bump")

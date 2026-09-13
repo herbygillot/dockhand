@@ -97,7 +97,11 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 			finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
 		} else if resolving {
 			job.ResolvedRelease = &release
-			job.Detail = "Resolved " + release.Tag + "; awaiting source preparation"
+			if release.NoUpdate {
+				finishPreparation(&job, record.JobCompleted, fmt.Sprintf("Already current at %s; latest eligible version is %s", release.CurrentVersion, release.Version), e.now())
+			} else {
+				job.Detail = "Resolved " + release.Tag + "; awaiting source preparation"
+			}
 		} else {
 			job.Prepared = &candidate
 			job.Detail = "Prepared candidate; awaiting branch integration"

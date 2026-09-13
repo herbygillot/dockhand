@@ -75,7 +75,7 @@ func TestEvaluateSnapshotResourcesVariantsAndSubports(t *testing.T) {
 	require.Equal(t, "7.5.debug", snapshot.Ports["fixture"].Version)
 	require.Equal(t, 2, snapshot.Ports["fixture"].Revision)
 	require.Equal(t, "11.2.debug", snapshot.Ports["fixture-child"].Version)
-	require.Equal(t, "A fixture with spaces and [literal text]", snapshot.Ports["fixture"].Options["description"])
+	require.Equal(t, "{A fixture with spaces and [literal text]}", snapshot.Ports["fixture"].Options["description"])
 	require.Contains(t, snapshot.Ports["fixture"].Dependencies, Dependency{Port: "zlib", Phase: "lib", Spec: "path:lib/pkgconfig/zlib.pc:zlib"})
 	require.Equal(t, tree.Source(), snapshot.Source)
 	require.NotEmpty(t, snapshot.Platform.Version)
