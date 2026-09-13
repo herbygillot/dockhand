@@ -68,7 +68,7 @@ func (e *CommandError) Error() string {
 
 func (e *CommandError) Unwrap() error { return e.Cause }
 
-func (r *Repository) run(ctx context.Context, input []byte, env []string, args ...string) ([]byte, error) {
+func (r *Repository) command(ctx context.Context, env []string, args ...string) *exec.Cmd {
 	executable := r.Executable
 	if executable == "" {
 		executable = "git"
@@ -76,8 +76,13 @@ func (r *Repository) run(ctx context.Context, input []byte, env []string, args .
 	command := exec.CommandContext(ctx, executable, append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsync=committed,reference", "-c", "core.fsyncMethod=fsync", "-c", "commit.gpgSign=false"}, args...)...)
 	command.Dir = r.Root
 	command.Env = append(repositoryEnv(), env...)
-	command.Stdin = bytes.NewReader(input)
 	command.WaitDelay = time.Second
+	return command
+}
+
+func (r *Repository) run(ctx context.Context, input []byte, env []string, args ...string) ([]byte, error) {
+	command := r.command(ctx, env, args...)
+	command.Stdin = bytes.NewReader(input)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	out, err := command.Output()

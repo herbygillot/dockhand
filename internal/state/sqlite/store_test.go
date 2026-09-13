@@ -271,3 +271,34 @@ func TestResourceIdentityIsGlobalAndSubmissionHistoryPersists(t *testing.T) {
 		return nil
 	}))
 }
+
+func TestBranchLookupIsRepositoryScopedAndExcludesClosedChanges(t *testing.T) {
+	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
+	a, b := repository(t, s, "a"), repository(t, s, "b")
+	seed(t, s, a, "first")
+	seed(t, s, b, "second")
+	for _, test := range []struct {
+		repo record.RepositoryID
+		id   record.ChangeID
+	}{{a.ID, "first"}, {b.ID, "second"}} {
+		require.NoError(t, s.View(t.Context(), test.repo, func(ctx context.Context, r state.Reader) error {
+			change, err := r.OpenChangeByBranch(ctx, "shared-name")
+			require.NoError(t, err)
+			require.Equal(t, test.id, change.ID)
+			_, err = r.OpenChangeByBranch(ctx, "missing")
+			require.ErrorIs(t, err, state.ErrNotFound)
+			return nil
+		}))
+	}
+	require.NoError(t, s.Update(t.Context(), a.ID, func(ctx context.Context, tx state.Tx) error {
+		change, err := tx.OpenChangeByBranch(ctx, "shared-name")
+		require.NoError(t, err)
+		change.Disposition = record.ChangeClosed
+		return tx.PutChange(ctx, change)
+	}))
+	require.NoError(t, s.View(t.Context(), a.ID, func(ctx context.Context, r state.Reader) error {
+		_, err := r.OpenChangeByBranch(ctx, "shared-name")
+		require.ErrorIs(t, err, state.ErrNotFound)
+		return nil
+	}))
+}

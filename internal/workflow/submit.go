@@ -20,6 +20,8 @@ import (
 type Request struct {
 	ID   record.RequestID
 	Spec record.JobSpec
+	// Branch adopts the explicit source as a branch revision during acceptance.
+	Branch *BranchInput
 }
 
 // Receipt confirms durable acceptance of one job. It does not establish driver
@@ -32,6 +34,7 @@ type Receipt struct {
 }
 
 // Submit validates and durably accepts a request in one state transaction.
+// A Branch input adopts its frozen source as a revision in that transaction.
 // It copies and normalizes the requested inputs, binds an existing revision when
 // selected, and records a queued job. It performs no preparation or provider work.
 //
@@ -51,12 +54,23 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
+	if err := validateBranchInput(request.Branch, spec); err != nil {
+		return Receipt{}, err
+	}
 	var receipt Receipt
 	intent := spec
 	if intent.InputRevision != "" {
 		intent.ChangeID = ""
 	}
-	payload, err := json.Marshal(intent)
+	var payload []byte
+	if request.Branch == nil {
+		payload, err = json.Marshal(intent)
+	} else {
+		payload, err = json.Marshal(struct {
+			Spec   record.JobSpec
+			Branch BranchInput
+		}{intent, *request.Branch})
+	}
 	if err != nil {
 		return Receipt{}, err
 	}
@@ -79,15 +93,20 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if !errors.Is(err, state.ErrNotFound) {
 			return err
 		}
-		accepted, err := bindRevision(ctx, spec, tx)
-		if err != nil {
-			return err
-		}
-		id := record.JobID("job_" + rand.Text())
 		now := e.now()
 		if now.IsZero() {
 			return ErrInvalidRequest
 		}
+		var accepted record.JobSpec
+		if request.Branch == nil {
+			accepted, err = bindRevision(ctx, spec, tx)
+		} else {
+			accepted, err = adoptBranch(ctx, tx, spec, *request.Branch, now)
+		}
+		if err != nil {
+			return err
+		}
+		id := record.JobID("job_" + rand.Text())
 		if err = tx.PutRequest(ctx, record.AcceptedRequest{ID: request.ID, Kind: record.JobRequest, Payload: payload, AcceptedAt: now}); err != nil {
 			return err
 		}

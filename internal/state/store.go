@@ -39,6 +39,7 @@ type Query struct {
 
 type Reader interface {
 	Change(context.Context, record.ChangeID) (record.Change, error)
+	OpenChangeByBranch(context.Context, string) (record.Change, error)
 	Revision(context.Context, record.RevisionID) (record.Revision, error)
 	Request(context.Context, record.RequestID) (record.AcceptedRequest, error)
 	Job(context.Context, record.JobID) (record.Job, error)

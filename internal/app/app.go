@@ -65,6 +65,8 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	engine := &workflow.Engine{
 		State:      store,
 		Repository: repository.ID,
+		Repo:       repo,
+		Ports:      ports,
 		Preparer:   preparation,
 		Planner:    &verify.Planner{Ports: ports},
 		Provider:   &tart.Provider{Config: config.Tart},

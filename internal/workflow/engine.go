@@ -4,6 +4,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -45,6 +47,9 @@ type Engine struct {
 	// State is required by every public operation.
 	State      state.Store
 	Repository record.RepositoryID
+	// Repo and Ports support explicit branch binding before submission.
+	Repo  *git.Repository
+	Ports macports.Reader
 	// Preparer is reserved for the source-preparation execution path.
 	Preparer *prepare.Service
 	// Planner is reserved for broader coverage planning. The current cycle

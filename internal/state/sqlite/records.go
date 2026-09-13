@@ -320,3 +320,18 @@ func nextTime(claim *record.Claim, retry *time.Time) int64 {
 	}
 	return next
 }
+
+func (t *transaction) OpenChangeByBranch(ctx context.Context, branch string) (record.Change, error) {
+	if err := t.check(ctx, false); err != nil {
+		return record.Change{}, err
+	}
+	if branch == "" {
+		return record.Change{}, state.ErrInvalid
+	}
+	var id record.ChangeID
+	err := t.conn.QueryRowContext(ctx, "SELECT id FROM changes WHERE repository_id=? AND branch=? AND disposition='open'", t.repo, branch).Scan(&id)
+	if err != nil {
+		return record.Change{}, storageError(err)
+	}
+	return t.Change(ctx, id)
+}

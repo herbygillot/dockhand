@@ -1,6 +1,8 @@
 // Package workflow accepts Dockhand requests and advances their durable records
 // toward the requested destination.
 //
+// [Engine.BindVerification] resolves and evaluates a committed branch snapshot
+// without writing workflow records. Its returned request can be passed to Submit.
 // [Engine.Submit] records a queued job and returns an idempotent acceptance
 // receipt. [Engine.Control] records cancellation intent. Neither starts a
 // provider operation. [Engine.Cycle] applies controls, advances eligible work,

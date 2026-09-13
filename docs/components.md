@@ -152,9 +152,11 @@ Earlier reviews are evidence of failure modes, not a claim that every finding re
 
 The state migration is complete: intake, status, cancellation, and the single-target cycle use `state` and `state/sqlite`, with repository registration, scoped queries, and `--db`. Cross-process tests cover concurrent writers, abandoned transactions, and competing driver claims. The [implementation report](activity/2026-09-12-sqlite-state.md) and [measurements](performance/2026-09-12-sqlite-state.md) describe the result.
 
-Then connect CLI submission/observation and current-process residency. Add real Tart verification, preparation, and publication through the same engine. Their tables and queries arrive with their executors; the initial database does not need publication, review, discovery, or dependent-graph tables. Existing domain distinctions remain available for those features.
+Explicit branch binding and native MacPorts evaluation are now implemented. `workflow.BindVerification` uses Git snapshot mechanics and a bound `macports.Tree`; `Submit` atomically records the selected branch revision and job. Resolution initially supports a snapshot-relative port directory/Portfile or a unique directory name, plus an explicit subport. It does not use an installed PortIndex to resolve names in a different source snapshot. The [source-binding report](activity/2026-09-12-source-binding.md) describes the API, tests, and current limits.
 
-Human-edit adoption and its user-facing commands remain a separate design discussion. Discovery, rebase, amend, and PR monitoring extend the existing packages without a second execution path.
+Next, add a real Tart verification attempt, then connect CLI submission/observation and current-process residency to that path. Add preparation and publication through the same engine. Their tables and queries arrive with their executors; the initial database does not need publication, review, discovery, or dependent-graph tables. Existing domain distinctions remain available for those features.
+
+Committed changes to a tracked branch can now become another immutable revision when explicitly bound and submitted. Working-tree edit adoption and its user-facing commands remain a separate design discussion. Discovery, rebase, amend, and PR monitoring extend the existing packages without a second execution path.
 
 ## Groundwork status
 
