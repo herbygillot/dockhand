@@ -30,7 +30,9 @@
 // result through the same attempt lifecycle as standalone verification jobs, including tree-only working snapshots.
 // Standalone verification creates no contribution; tracked-branch verification
 // records successor revisions without redefining the contribution's edited targets.
-// Publication, dependent scheduling, and evidence reuse remain unfinished.
+// Matching passing evidence can settle a new job with a reference to its original
+// attempt before any provider call. Forced verification creates a new execution.
+// Publication and dependent scheduling remain unfinished.
 // Intake supports more actions than the cycle can currently execute; acceptance
 // alone establishes neither provider admission nor successful completion.
 package workflow

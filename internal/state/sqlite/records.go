@@ -166,11 +166,12 @@ func (t *transaction) PutRequest(ctx context.Context, v record.AcceptedRequest) 
 }
 
 type jobOptions struct {
-	Targets         []record.Target
-	Build           *record.BuildConfig
-	Version, Reason string
-	Preparation     *record.PreparationSpec
-	Checkout        *record.Checkout `json:",omitempty"`
+	FreshVerification bool `json:",omitempty"`
+	Targets           []record.Target
+	Build             *record.BuildConfig
+	Version, Reason   string
+	Preparation       *record.PreparationSpec
+	Checkout          *record.Checkout `json:",omitempty"`
 }
 
 func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, error) {
@@ -182,8 +183,8 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	var source, raw string
 	var accepted int64
 	var canceled, admitted, finished, until, retry sql.NullInt64
-	var owner, prepared, release sql.NullString
-	err := t.conn.QueryRowContext(ctx, `SELECT id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared,resolved_release FROM jobs WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.RequestID, &change, &specChange, &input, &result, &source, &v.Spec.Action, &v.Spec.Destination, &v.Spec.Verification, &raw, &v.State, &accepted, &canceled, &admitted, &finished, &v.Detail, &owner, &v.ClaimGeneration, &until, &retry, &prepared, &release)
+	var owner, prepared, release, reused sql.NullString
+	err := t.conn.QueryRowContext(ctx, `SELECT id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared,resolved_release,reused_attempt,reuse_detail FROM jobs WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.RequestID, &change, &specChange, &input, &result, &source, &v.Spec.Action, &v.Spec.Destination, &v.Spec.Verification, &raw, &v.State, &accepted, &canceled, &admitted, &finished, &v.Detail, &owner, &v.ClaimGeneration, &until, &retry, &prepared, &release, &reused, &v.ReuseDetail)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -194,6 +195,8 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	v.Spec.Targets, v.Spec.Build, v.Spec.Version, v.Spec.Reason = options.Targets, options.Build, options.Version, options.Reason
 	v.Spec.Preparation = options.Preparation
 	v.Spec.Checkout = options.Checkout
+	v.Spec.FreshVerification = options.FreshVerification
+	v.ReusedAttempt = record.AttemptID(reused.String)
 	v.Claim = readClaim(owner, v.ClaimGeneration, until)
 	v.RetryAt = scanTime(retry)
 	if release.Valid {
@@ -233,6 +236,32 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if v.ID == "" || v.RequestID == "" || v.AcceptedAt.IsZero() {
 		return state.ErrInvalid
 	}
+	if v.ReusedAttempt != "" {
+		if v.State != record.JobCompleted || v.FinishedAt == nil || v.AdmittedAt != nil || v.Spec.Build == nil || len(v.Spec.Targets) != 1 || v.Spec.FreshVerification || v.Spec.Verification != record.VerificationRequired {
+			return state.ErrInvalid
+		}
+		attempt, err := t.Attempt(ctx, v.ReusedAttempt)
+		if err != nil {
+			return err
+		}
+		if attempt.JobID == v.ID || attempt.State != record.AttemptFinished || attempt.Evidence == nil || attempt.Evidence.Verdict != record.VerdictPassed || attempt.Evidence.ObservedAt.IsZero() {
+			return state.ErrInvalid
+		}
+		source := v.Spec.Source
+		if v.ResultRevision != "" && v.Prepared != nil {
+			source = v.Prepared.Source
+		}
+		if attempt.Spec.Source.Tree != source.Tree {
+			return state.ErrInvalid
+		}
+		attempts, err := t.AttemptsForJob(ctx, v.ID)
+		if err != nil {
+			return err
+		}
+		if len(attempts) != 0 {
+			return state.ErrInvalid
+		}
+	}
 	owner, until, err := claimValues(v.Claim, v.ClaimGeneration)
 	if err != nil {
 		return err
@@ -271,6 +300,9 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 		if old.RequestID != v.RequestID || !old.AcceptedAt.Equal(v.AcceptedAt) || old.ClaimGeneration > v.ClaimGeneration {
 			return state.ErrConflict
 		}
+		if old.ReusedAttempt != "" && old.ReusedAttempt != v.ReusedAttempt {
+			return state.ErrConflict
+		}
 		if old.ResolvedRelease != nil {
 			if err = immutable(old.ResolvedRelease, v.ResolvedRelease); err != nil {
 				return err
@@ -284,7 +316,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 		if old.ResultRevision != "" && (v.ResultRevision != old.ResultRevision || v.ChangeID != old.ChangeID) {
 			return state.ErrConflict
 		}
-		if err = t.exec(ctx, "UPDATE jobs SET change_id=?,result_revision=?,state=?,cancel_at=?,admitted_at=?,finished_at=?,detail=?,claim_owner=?,claim_generation=?,claim_until=?,retry_at=?,prepared=?,resolved_release=? WHERE repository_id=? AND id=?", nullableID(v.ChangeID), nullableID(v.ResultRevision), v.State, nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared, release, t.repo, v.ID); err != nil {
+		if err = t.exec(ctx, "UPDATE jobs SET change_id=?,result_revision=?,state=?,cancel_at=?,admitted_at=?,finished_at=?,detail=?,claim_owner=?,claim_generation=?,claim_until=?,retry_at=?,prepared=?,resolved_release=?,reused_attempt=?,reuse_detail=? WHERE repository_id=? AND id=?", nullableID(v.ChangeID), nullableID(v.ResultRevision), v.State, nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared, release, nullableID(v.ReusedAttempt), v.ReuseDetail, t.repo, v.ID); err != nil {
 			return err
 		}
 		return t.scheduleJob(ctx, v.ID)
@@ -312,11 +344,11 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{Targets: v.Spec.Targets, Build: v.Spec.Build, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout})
+	raw, err := encode(jobOptions{Targets: v.Spec.Targets, Build: v.Spec.Build, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}
-	err = t.exec(ctx, `INSERT INTO jobs(id,repository_id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared,resolved_release) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.RequestID, nullableID(v.ChangeID), nullableID(v.Spec.ChangeID), nullableID(v.Spec.InputRevision), nullableID(v.ResultRevision), source, v.Spec.Action, v.Spec.Destination, v.Spec.Verification, raw, v.State, v.AcceptedAt.UnixMilli(), nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared, release)
+	err = t.exec(ctx, `INSERT INTO jobs(id,repository_id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared,resolved_release,reused_attempt,reuse_detail) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.RequestID, nullableID(v.ChangeID), nullableID(v.Spec.ChangeID), nullableID(v.Spec.InputRevision), nullableID(v.ResultRevision), source, v.Spec.Action, v.Spec.Destination, v.Spec.Verification, raw, v.State, v.AcceptedAt.UnixMilli(), nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared, release, nullableID(v.ReusedAttempt), v.ReuseDetail)
 	if err != nil {
 		return err
 	}

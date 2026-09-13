@@ -6,6 +6,7 @@ SQLite now holds workflow state behind `internal/state` contracts, with `interna
 
 Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including bounded automatic GitHub version selection. Publication remains unfinished. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
 
+- [Verification reuse report](docs/activity/2026-09-13-verification-reuse.md)
 - [Working-tree verification report](docs/activity/2026-09-13-working-tree-verification.md)
 - [Automatic version selection report](docs/activity/2026-09-13-automatic-version-selection.md)
 - [Explicit version bump report](docs/activity/2026-09-13-explicit-version-bumps.md)
@@ -63,6 +64,8 @@ dockhand start
 ```
 
 Omitting `--branch` captures tracked working-tree contents, including staged additions and deletions, without changing the index or branch. New files must be staged; explicit `--branch` uses committed contents. The accepted snapshot stays fixed while editing continues; each invocation selects one port directory or unique directory name, optionally `--subport` and repeated `--variant` choices. This first CLI uses job IDs for wait/cancel. General selectors and branch-only port inference remain later work. A tracked contribution retains its edited targets; verification may select a different target without redefining that contribution.
+
+Matching passing verification is reused when the complete source tree, target, variants, image, verifier implementation, and build settings agree. You can verify edits, commit the same contents, and verify that branch without another build. Status cites the original attempt. Use `verify --fresh` to require a new execution; reattaching with `wait` preserves the existing decision. Older results without a recorded verifier identity require a fresh build before they can be reused.
 
 Without `--wait`, verification remains attached while capacity is unavailable and returns at admission or a conclusive outcome. `--wait` and `--trace` follow completion. Ctrl-C detaches without canceling accepted work; `start` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job; it never submits another verification. JSON results go to stdout, progress and trace output to stderr. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
 

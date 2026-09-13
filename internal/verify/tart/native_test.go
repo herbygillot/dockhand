@@ -162,3 +162,21 @@ func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T
 	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir())
 	require.Error(t, err)
 }
+
+func TestRecordedVerifierIdentityRejectsChangedExecutionCode(t *testing.T) {
+	f, m := singleRun(t)
+	config, err := f.provider.BuildConfig(t.Context(), testPlatform, record.TestDeclared, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, config.VerifierDigest)
+	f.request.Spec.Config = config
+	f.request.Spec.Config.VerifierDigest = "sha256:older-verifier"
+	result, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Unsupported, result.State)
+	require.Contains(t, result.Detail, "verifier implementation changed")
+	require.Zero(t, m.calls["clone"])
+	f.request.Spec.Config = config
+	result, err = f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, result.State)
+}

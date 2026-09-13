@@ -78,7 +78,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 4. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 5. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ The following summarizes the [initial schema](../internal/state/sqlite/migration
 | `sources` | ID, repository, commit/tree/base IDs, canonical identity fingerprint | One source description reused by related records |
 | `revisions` | ID, change, source, preceding revision, creation time | Immutable input revisions and their relationships |
 | `requests` | ID, repository, kind, canonical submitted input, digest, acceptance time, control completion time | Shared intake identity for jobs and cancellation |
-| `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, resolved release, preparation claim/candidate, next action time, lifecycle times | Durable accepted work |
+| `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, resolved release, preparation claim/candidate, reused attempt and explanation, next action time, lifecycle times | Durable accepted work |
 | `control_jobs` | Request, job, applied time | Per-job cancellation progress |
 | `plans` | Job, optional revision, frozen single-target plan | Preserve requested verification coverage |
 | `attempts` | ID, job, target identity, immutable build choices and inputs, state, next action time, cancellation state, claim fields, last error | Current verification execution and scheduling |
@@ -185,3 +185,12 @@ Automatic selection adds optional `CurrentVersion` and `NoUpdate` fields inside 
 ## Checkout provenance
 
 Working-tree verification uses the existing nullable source commit and mandatory source tree. Optional `JobSpec.Checkout` records the selected checkout's branch (empty for detached HEAD), observed HEAD commit, and modified-file count in `jobs.options` JSON. This is immutable accepted-input provenance, distinct from `Source.Base` and from a claim that HEAD contains the tested edits. Clean captures retain the matching source commit; dirty captures leave it empty. No source or job table migration is needed. Reopening the database and repeated driver cycles preserve both provenance and exact source identity.
+
+
+## Verification reuse
+
+Schema 5 adds nullable `jobs.reused_attempt`, which references the original `attempts` row, and `jobs.reuse_detail`. The write API checks repository scope, a terminal passing attempt for the same tree, completed job state, and absence of this job's own executions. A recorded reference cannot be replaced or removed. Full input comparison belongs to `verify` and is applied by workflow in the same transaction as the reference, plan, and completion. No new evidence or provider execution is synthesized.
+
+`VerificationCandidates` returns at most 32 original terminal attempts with evidence, ordered by attempt creation time descending and ID descending for ties. Tree and target indexes narrow the search within the selected repository; an optional tree-less lookup supplies one recent result for mismatch diagnostics. The limit bounds records materialized by the reader, not the number of matching index entries SQLite might visit. Negative outcomes are included so an older pass cannot hide a newer failed recheck. Reused jobs never become candidates themselves.
+
+`FreshVerification` fits immutable job options. `BuildConfig.VerifierDigest` fits existing build JSON; old records with an absent digest remain readable and executable but cannot supply reusable evidence. Tart binds the current digest at intake and refuses new submission if a recorded nonempty digest differs from the running verifier. Writable opening upgrades older schemas atomically; read-only opening requires schema 5. Migration failure rolls back the new columns and indexes together.

@@ -65,6 +65,12 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			line("  input revision: %s", job.Spec.InputRevision)
 		}
 		line("  source tree: %s", job.Spec.Source.Tree)
+		if job.ReuseDetail != "" {
+			line("  verification reuse: %s", job.ReuseDetail)
+		}
+		if entry.Reused != nil {
+			line("  original attempt: %s; job: %s", entry.Reused.ID, entry.Reused.JobID)
+		}
 		if c := job.Spec.Checkout; c != nil {
 			label := c.Branch
 			if label == "" {

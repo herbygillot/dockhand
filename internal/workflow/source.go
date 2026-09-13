@@ -23,7 +23,8 @@ type BranchInput struct {
 }
 
 type VerificationRequest struct {
-	ID record.RequestID
+	Fresh bool
+	ID    record.RequestID
 	// Empty Branch selects the current working tree, including uncommitted edits.
 	Branch    string
 	Selection macports.Selection
@@ -119,7 +120,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if err != nil {
 		return BoundVerification{}, err
 	}
-	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance})
+	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
 		return BoundVerification{}, err
 	}

@@ -140,7 +140,7 @@ func TestCandidateIsRecheckedAfterAnotherDriverAdvancesIt(t *testing.T) {
 	close(paused.proceed)
 	result := receive(t, reply)
 	require.NoError(t, result.err)
-	require.Empty(t, result.result.Advanced)
+	require.Equal(t, []record.JobID{id}, result.result.Advanced) // The first driver recorded the plan before checking capabilities.
 	require.Empty(t, result.result.Problems)
 	require.Equal(t, 1, f.provider.count("submit"))
 	require.Equal(t, record.AttemptRunning, f.attempt(t, id).State)

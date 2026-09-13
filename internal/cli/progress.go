@@ -51,6 +51,9 @@ func (r *reporter) cycle(result workflow.CycleResult) error {
 func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 	for _, entry := range status.Jobs {
 		message := fmt.Sprintf("%s: %s", entry.Job.ID, entry.Job.State)
+		if entry.Job.ReuseDetail != "" && entry.Job.ReuseDetail != entry.Job.Detail {
+			message += "; " + entry.Job.ReuseDetail
+		}
 		if entry.Job.Detail != "" {
 			message += "; " + entry.Job.Detail
 		}
@@ -65,7 +68,7 @@ func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 		if err := r.changed("job:"+string(entry.Job.ID), message); err != nil {
 			return err
 		}
-		if !r.trace {
+		if !r.trace || entry.Job.ReusedAttempt != "" {
 			continue
 		}
 		if r.logs == nil {

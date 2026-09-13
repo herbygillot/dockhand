@@ -570,6 +570,9 @@ func validateRequest(r verify.Request) error {
 	if (r.Spec.Source.Commit != "" && !git.ValidObjectID(string(r.Spec.Source.Commit))) || !git.ValidObjectID(string(r.Spec.Source.Tree)) {
 		return fmt.Errorf("tart: immutable source tree and an optional valid commit are required")
 	}
+	if r.Spec.Config.VerifierDigest != "" && r.Spec.Config.VerifierDigest != verifierDigest() {
+		return fmt.Errorf("tart: verifier implementation changed; submit a new verification request")
+	}
 	target := r.Spec.Target
 	if !safeToken(target.Name) || (target.Subport != "" && !safeToken(target.Subport)) || !validPortfile(target.Portfile) {
 		return fmt.Errorf("tart: invalid target")
@@ -631,6 +634,6 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, te
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
-	config := record.BuildConfig{Provider: "tart", Platform: platform, EnvironmentDigest: environment.Digest, ProviderConfig: raw, Tests: tests, FromSource: fromSource}
+	config := record.BuildConfig{Provider: "tart", Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, Tests: tests, FromSource: fromSource}
 	return config, verify.ValidateConfig(config)
 }

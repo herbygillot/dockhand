@@ -109,6 +109,11 @@ type guestResult struct {
 	Detail   string
 }
 
+// verifierDigest changes with the guest program and its launch protocol.
+func verifierDigest() string {
+	return digest(append([]byte("tart-verification-v1\x00"+string(guestPlist("/prefix"))), guestScript...))
+}
+
 func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, directory string) (string, error) {
 	if request.Spec.Source.Commit != "" {
 		trees, err := repo.CommitTrees(ctx, []string{string(request.Spec.Source.Commit)})

@@ -15,6 +15,8 @@ type JobStatus struct {
 	Job          record.Job
 	Attempts     []record.Attempt
 	Publications []record.PublicationAction
+	// Reused is the original execution cited by a completed job, not a new attempt.
+	Reused *record.Attempt `json:",omitempty"`
 }
 type Status struct {
 	Repository   record.RepositoryID
@@ -96,7 +98,15 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 			if err != nil {
 				return err
 			}
-			result.Jobs = append(result.Jobs, JobStatus{Job: job, Attempts: attempts, Publications: []record.PublicationAction{}})
+			entry := JobStatus{Job: job, Attempts: attempts, Publications: []record.PublicationAction{}}
+			if job.ReusedAttempt != "" {
+				original, err := r.Attempt(ctx, job.ReusedAttempt)
+				if err != nil {
+					return err
+				}
+				entry.Reused = &original
+			}
+			result.Jobs = append(result.Jobs, entry)
 		}
 		if result.Changes, err = collect(ctx, q, r.Changes, func(v record.Change) string { return string(v.ID) }); err != nil {
 			return err

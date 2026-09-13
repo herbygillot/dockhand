@@ -9,6 +9,7 @@ import (
 )
 
 type Verification struct {
+	Fresh      bool
 	ID         record.RequestID
 	Branch     string
 	Selection  macports.Selection
@@ -25,5 +26,5 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 	if err != nil {
 		return workflow.BoundVerification{}, err
 	}
-	return s.Workflow.BindVerification(ctx, workflow.VerificationRequest{ID: request.ID, Branch: request.Branch, Selection: request.Selection, Build: config})
+	return s.Workflow.BindVerification(ctx, workflow.VerificationRequest{ID: request.ID, Branch: request.Branch, Selection: request.Selection, Build: config, Fresh: request.Fresh})
 }

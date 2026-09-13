@@ -61,7 +61,7 @@ func loadExecution(ctx context.Context, r state.Reader, id record.JobID) (execut
 	}
 	return work, nil
 }
-func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(*execution) error) error {
+func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(state.Tx, *execution) error) error {
 	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
 		before, err := loadExecution(ctx, tx, id)
 		if err != nil {
@@ -72,7 +72,7 @@ func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(*
 		for id, v := range before.Resources {
 			work.Resources[id] = v
 		}
-		if err = fn(&work); err != nil {
+		if err = fn(tx, &work); err != nil {
 			return err
 		}
 		if !reflect.DeepEqual(before.Job, work.Job) {

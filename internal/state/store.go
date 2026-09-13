@@ -37,7 +37,17 @@ type Query struct {
 	Pending   bool
 }
 
+// VerificationQuery bounds candidate lookup to a repository, target, and optional tree.
+// Tree omission is for a recent-result diagnostic, not proof of applicability.
+// Limit must be between 1 and 32. Results contain original terminal attempts with evidence, newest first.
+type VerificationQuery struct {
+	Target record.Target
+	Tree   record.ObjectID
+	Limit  int
+}
+
 type Reader interface {
+	VerificationCandidates(context.Context, VerificationQuery) ([]record.Attempt, error)
 	Change(context.Context, record.ChangeID) (record.Change, error)
 	OpenChangeByBranch(context.Context, string) (record.Change, error)
 	Revision(context.Context, record.RevisionID) (record.Revision, error)

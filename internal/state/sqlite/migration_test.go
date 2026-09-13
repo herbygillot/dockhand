@@ -184,3 +184,67 @@ func TestReleaseMigrationPreservesPreparedWork(t *testing.T) {
 	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
 	require.Equal(t, schemaVersion, version)
 }
+
+func TestVerificationMigrationPreservesHistoryAndBuildsLookupIndexes(t *testing.T) {
+	path, db := versionTwoWithWork(t)
+	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + "COMMIT;")
+	require.NoError(t, err)
+	tables := []string{"jobs", "sources", "attempts", "attempt_evidence", "submissions", "resources"}
+	columns := map[string][]string{}
+	before := map[string][][]any{}
+	for _, table := range tables {
+		columns[table], before[table] = migrationRows(t, db, table, nil)
+	}
+	_, err = Open(t.Context(), path, Options{ReadOnly: true})
+	require.ErrorIs(t, err, state.ErrSchema)
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	for _, table := range tables {
+		_, after := migrationRows(t, db, table, columns[table])
+		require.Equal(t, before[table], after, table)
+	}
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 5, version)
+	for _, query := range []struct {
+		sql     string
+		args    []any
+		indexes []string
+	}{
+		{verificationTreeSQL, []any{"preserved", strings.Repeat("b", 40), "fixture", "devel/fixture/Portfile", 32}, []string{"sources_reuse_tree", "attempts_reuse_source"}},
+		{verificationTargetSQL, []any{"preserved", "fixture", "devel/fixture/Portfile", 1}, []string{"attempts_reuse_target"}},
+	} {
+		rows, err := db.Query("EXPLAIN QUERY PLAN "+query.sql, query.args...)
+		require.NoError(t, err)
+		var plans []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			require.NoError(t, rows.Scan(&id, &parent, &unused, &detail))
+			plans = append(plans, detail)
+		}
+		require.NoError(t, rows.Err())
+		require.NoError(t, rows.Close())
+		plan := strings.Join(plans, "\n")
+		for _, index := range query.indexes {
+			require.Contains(t, plan, index)
+		}
+		require.NotContains(t, plan, "SCAN a")
+		require.NotContains(t, plan, "SCAN s")
+	}
+}
+
+func TestVerificationMigrationRollsBackWithoutDisturbingSchemaFour(t *testing.T) {
+	path, db := versionTwoWithWork(t)
+	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + "COMMIT; CREATE TABLE sources_reuse_tree(unrelated TEXT);")
+	require.NoError(t, err)
+	_, err = Open(t.Context(), path, Options{})
+	require.Error(t, err)
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 4, version)
+	columns, rows := migrationRows(t, db, "jobs", nil)
+	require.NotContains(t, columns, "reused_attempt")
+	require.Len(t, rows, 1)
+}

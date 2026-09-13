@@ -23,6 +23,8 @@ type BuildConfig struct {
 	Platform Platform
 	// EnvironmentDigest identifies the immutable build environment.
 	EnvironmentDigest string
+	// VerifierDigest identifies the verification implementation; missing identity disables reuse.
+	VerifierDigest string `json:",omitempty"`
 	// ProviderConfig freezes provider-specific execution choices at acceptance.
 	ProviderConfig json.RawMessage `json:",omitempty"`
 	// FromSource disables binary archives for the target and dependencies that need installing.

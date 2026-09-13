@@ -85,9 +85,6 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		return result, err
 	}
 	for _, job := range jobs {
-		if verificationJob(job) {
-			c.checkProvider(ctx)
-		}
 		var changed bool
 		var detail string
 		var err error
@@ -153,7 +150,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 }
 
 // checkProvider observes capabilities once, only when this pass has a candidate
-// action. It runs before the handler's transaction, outside the write transaction.
+// action. It always runs outside the write transaction.
 func (c *cycle) checkProvider(ctx context.Context) {
 	if c.providerChecked {
 		return

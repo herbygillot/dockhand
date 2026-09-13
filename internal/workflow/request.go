@@ -23,6 +23,9 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if !utf8.ValidString(spec.Reason) || (spec.ChangeID != "" && !validToken(string(spec.ChangeID))) || (spec.InputRevision != "" && !validToken(string(spec.InputRevision))) {
 		return record.JobSpec{}, fmt.Errorf("%w: invalid change ID, revision ID, or reason encoding", ErrInvalidRequest)
 	}
+	if spec.FreshVerification && (spec.Action != record.Verify || spec.Verification != record.VerificationRequired) {
+		return record.JobSpec{}, fmt.Errorf("%w: fresh verification requires verify", ErrInvalidRequest)
+	}
 	switch spec.Action {
 	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Verify, record.Publish:
 	case record.Rebase, record.Amend:

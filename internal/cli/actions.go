@@ -49,10 +49,10 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	var branch, subport string
 	var build buildOptions
 	var variants []string
-	var wait, trace bool
+	var wait, trace, fresh bool
 	command := &cobra.Command{
 		Use: "verify <port>", Short: "Verify a port from the current checkout or a committed branch",
-		Long: "Verify one snapshot-relative port directory or unique directory name. By default, capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. The captured snapshot stays fixed while you continue editing. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
+		Long: "Verify one snapshot-relative port directory or unique directory name. By default, capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
@@ -79,7 +79,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			} else {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Binding committed source from %s and checking the prepared image...\n", branch)
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource})
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
 				return err
 			}
@@ -102,6 +102,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.Flags().StringVar(&subport, "subport", "", "Select one subport from the Portfile")
 	command.Flags().StringArrayVar(&variants, "variant", nil, "Explicit variant choice, such as +ssl or -x11 (repeatable)")
 	build.flags(command, r.config)
+	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&wait, "wait", false, "Stay until verification completes")
 	command.Flags().BoolVar(&trace, "trace", false, "Stream build logs to stderr and wait for completion")
 	return command

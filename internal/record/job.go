@@ -67,6 +67,8 @@ type JobSpec struct {
 	// Build records effective verification choices. A nil value leaves them
 	// unspecified; execution must not infer them from later configuration.
 	Build *BuildConfig
+	// FreshVerification requests execution even when prior evidence applies.
+	FreshVerification bool `json:",omitempty"`
 	// Version is an optional explicit version for Bump; empty requests automatic selection.
 	Version string
 	Reason  string
@@ -106,6 +108,9 @@ type Job struct {
 	// ResultRevision identifies the revision produced by preparation, if any.
 	ResultRevision RevisionID
 	State          JobState
+	// ReusedAttempt cites an original passing execution; this job created no attempt.
+	ReusedAttempt AttemptID `json:",omitempty"`
+	ReuseDetail   string    `json:",omitempty"`
 	// Claim covers preparation and branch integration; verification and cleanup
 	// claim their own records.
 	Claim           *Claim

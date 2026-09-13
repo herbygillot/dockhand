@@ -38,107 +38,133 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	e := c.engine
 	var attempt record.Attempt
 	var action attemptAction
-	var changed bool
+	var changed, recorded bool
 	var detail string
-	err := e.updateExecution(ctx, id, func(work *execution) error {
-		job := work.Job
-		if jobTerminal(job.State) {
-			return nil
-		}
-		now := e.now()
-		attempt = work.Attempt
-		if work.Problem != "" {
-			detail = work.Problem
-			job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
-			work.Job = job
-			changed = true
-			return nil
-		}
+	var err error
+	for {
+		needsProvider := false
+		err = e.updateExecution(ctx, id, func(tx state.Tx, work *execution) error {
+			job := work.Job
+			if jobTerminal(job.State) {
+				return nil
+			}
+			now := e.now()
+			attempt = work.Attempt
+			if work.Problem != "" {
+				detail = work.Problem
+				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
+				work.Job = job
+				changed = true
+				return nil
+			}
 
-		if job.CancelRequestedAt != nil && (attempt.ID == "" || attempt.State == record.AttemptQueued) {
-			if live(attempt.Claim, now) {
-				return nil
-			}
-			if attempt.ID != "" {
-				if attempt.Run != (record.ProviderRun{}) || hasResources(work, attempt.ID) {
-					return fmt.Errorf("%w: queued attempt has external effects", state.ErrInvalid)
+			if job.CancelRequestedAt != nil && (attempt.ID == "" || attempt.State == record.AttemptQueued) {
+				if live(attempt.Claim, now) {
+					return nil
 				}
-				finishAttempt(work, &job, &attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, "Canceled before admission", now)
-			} else {
-				job.State, job.FinishedAt, job.Detail = record.JobCanceled, &now, "Canceled before admission"
-				work.Job = job
-			}
-			changed = true
-			return nil
-		}
-		if !verificationJob(job) {
-			detail = ErrNotImplemented.Error()
-			job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
-			work.Job = job
-			changed = true
-			return nil
-		}
-		if attempt.ID == "" {
-			plan, build, err := verify.PlanSingle(job, work.Revision)
-			if err != nil {
-				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, err.Error()
-				work.Job = job
-				changed, detail = true, err.Error()
+				if attempt.ID != "" {
+					if attempt.Run != (record.ProviderRun{}) || hasResources(work, attempt.ID) {
+						return fmt.Errorf("%w: queued attempt has external effects", state.ErrInvalid)
+					}
+					finishAttempt(work, &job, &attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, "Canceled before admission", now)
+				} else {
+					job.State, job.FinishedAt, job.Detail = record.JobCanceled, &now, "Canceled before admission"
+					work.Job = job
+				}
+				changed = true
 				return nil
 			}
-			attempt = record.Attempt{ID: record.AttemptID("attempt_" + rand.Text()), JobID: id, TargetID: plan.Targets[0].ID, Spec: build, State: record.AttemptQueued, CreatedAt: now}
-			attempt.SubmissionID = record.RequestID("submit_" + string(attempt.ID))
-			work.Submission = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: 1, Provider: build.Config.Provider, CreatedAt: now}
-			work.Plan = &plan
-			work.Attempt = attempt
-			job.State = record.JobActive
-			work.Job = job
-			changed = true
-		}
-		if attemptTerminal(attempt.State) {
-			return fmt.Errorf("%w: terminal attempt belongs to active job", state.ErrInvalid)
-		}
-		if live(attempt.Claim, now) || !due(attempt.RetryAt, now) {
-			return nil
-		}
-		switch attempt.State {
-		case record.AttemptQueued:
-			action = submitAttempt
-		case record.AttemptSubmitting, record.AttemptUncertain:
-			action = reconcileAttempt
-		case record.AttemptRunning:
-			action = observeAttempt
-			if job.CancelRequestedAt != nil && attempt.CancelSentAt == nil && !attempt.CancelPendingObservation {
-				action = cancelAttempt
+			if !verificationJob(job) {
+				detail = ErrNotImplemented.Error()
+				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
+				work.Job = job
+				changed = true
+				return nil
 			}
-		default:
-			return fmt.Errorf("%w: unsupported attempt state %q", state.ErrInvalid, attempt.State)
-		}
-		if attempt.SubmissionID == "" {
-			return fmt.Errorf("%w: attempt has no submission identity", state.ErrInvalid)
-		}
-		if err := c.providerReady(attempt.Spec.Config, action == submitAttempt); err != nil {
-			detail = err.Error()
-			retry := now.Add(c.retry)
-			attempt.LastError, attempt.RetryAt = detail, &retry
+			if attempt.ID == "" {
+				plan, build, err := verify.PlanSingle(job, work.Revision)
+				if err != nil {
+					job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, err.Error()
+					work.Job = job
+					changed, detail = true, err.Error()
+					return nil
+				}
+				reused, explanation, err := selectVerification(ctx, tx, job, build)
+				if err != nil {
+					return err
+				}
+				job.ReuseDetail = explanation
+				if reused.ID != "" {
+					job.ReusedAttempt = reused.ID
+					job.State, job.FinishedAt, job.Detail = record.JobCompleted, &now, explanation
+					work.Job, work.Plan = job, &plan
+					changed = true
+					return nil
+				}
+				attempt = record.Attempt{ID: record.AttemptID("attempt_" + rand.Text()), JobID: id, TargetID: plan.Targets[0].ID, Spec: build, State: record.AttemptQueued, CreatedAt: now}
+				attempt.SubmissionID = record.RequestID("submit_" + string(attempt.ID))
+				work.Submission = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: 1, Provider: build.Config.Provider, CreatedAt: now}
+				work.Plan = &plan
+				work.Attempt = attempt
+				job.State = record.JobActive
+				work.Job = job
+				changed = true
+			}
+			if attemptTerminal(attempt.State) {
+				return fmt.Errorf("%w: terminal attempt belongs to active job", state.ErrInvalid)
+			}
+			if live(attempt.Claim, now) || !due(attempt.RetryAt, now) {
+				return nil
+			}
+			switch attempt.State {
+			case record.AttemptQueued:
+				action = submitAttempt
+			case record.AttemptSubmitting, record.AttemptUncertain:
+				action = reconcileAttempt
+			case record.AttemptRunning:
+				action = observeAttempt
+				if job.CancelRequestedAt != nil && attempt.CancelSentAt == nil && !attempt.CancelPendingObservation {
+					action = cancelAttempt
+				}
+			default:
+				return fmt.Errorf("%w: unsupported attempt state %q", state.ErrInvalid, attempt.State)
+			}
+			if attempt.SubmissionID == "" {
+				return fmt.Errorf("%w: attempt has no submission identity", state.ErrInvalid)
+			}
+			if !c.providerChecked {
+				needsProvider, action = true, ""
+				return nil
+			}
+			if err := c.providerReady(attempt.Spec.Config, action == submitAttempt); err != nil {
+				detail = err.Error()
+				retry := now.Add(c.retry)
+				attempt.LastError, attempt.RetryAt = detail, &retry
+				work.Attempt = attempt
+				changed, action = true, ""
+				return nil
+			}
+			claim, err := c.claim(&attempt.ClaimGeneration, now)
+			if err != nil {
+				return err
+			}
+			attempt.Claim = claim
+			if action == submitAttempt {
+				attempt.State = record.AttemptSubmitting
+			}
 			work.Attempt = attempt
-			changed, action = true, ""
+			changed = true
 			return nil
-		}
-		claim, err := c.claim(&attempt.ClaimGeneration, now)
+		})
 		if err != nil {
-			return err
+			return recorded, detail, err
 		}
-		attempt.Claim = claim
-		if action == submitAttempt {
-			attempt.State = record.AttemptSubmitting
+		recorded = changed
+		if !needsProvider {
+			break
 		}
-		work.Attempt = attempt
-		changed = true
-		return nil
-	})
-	if err != nil {
-		return false, detail, err
+		// Resolve capabilities after local planning, then recheck ownership and intent.
+		c.checkProvider(ctx)
 	}
 	if action == "" {
 		return changed, detail, nil
@@ -148,7 +174,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	response := c.callAttempt(ctx, action, attempt)
 	// Re-read after the external call; the snapshot that authorized it may
 	// have been superseded while this driver was waiting.
-	err = e.updateExecution(ctx, id, func(work *execution) error {
+	err = e.updateExecution(ctx, id, func(tx state.Tx, work *execution) error {
 		current := work.Attempt
 		now := e.now()
 		if current.ID != attempt.ID || !owns(current.Claim, attempt.Claim, now) {
