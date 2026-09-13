@@ -3,36 +3,34 @@ package github
 import (
 	"context"
 	"fmt"
-	"time"
+	"strings"
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 )
 
 func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
-	type item struct {
-		Tag               string `json:"tag_name"`
-		URL               string `json:"html_url"`
-		Draft, Prerelease *bool
-		PublishedAt       *time.Time `json:"published_at"`
-	}
-	rows, err := collectPages[item](ctx, r.client, r.name, "releases")
+	client, err := r.client.api()
 	if err != nil {
 		return nil, err
 	}
-	releases := make([]forge.Release, 0, len(rows))
+	owner, repo, _ := strings.Cut(r.name, "/")
 	seen := map[string]bool{}
-	for _, row := range rows {
-		if !git.ValidRefName("refs/tags/"+row.Tag) || row.Draft == nil || row.Prerelease == nil || (!*row.Draft && (row.PublishedAt == nil || row.PublishedAt.IsZero())) {
+	var releases []forge.Release
+	for row, err := range client.Repositories.ListReleasesIter(ctx, owner, repo, nil) {
+		if err != nil {
+			return nil, err
+		}
+		if row == nil || !git.ValidRefName("refs/tags/"+row.TagName) || (!row.Draft && (row.PublishedAt == nil || row.PublishedAt.IsZero())) {
 			return nil, fmt.Errorf("github: invalid release observation")
 		}
-		if seen[row.Tag] {
-			return nil, fmt.Errorf("%w: duplicate release tag %s", forge.ErrIncomplete, row.Tag)
+		if seen[row.TagName] {
+			return nil, fmt.Errorf("%w: duplicate release tag %s", forge.ErrIncomplete, row.TagName)
 		}
-		seen[row.Tag] = true
-		release := forge.Release{Tag: row.Tag, URL: row.URL, Draft: *row.Draft, Prerelease: *row.Prerelease}
+		seen[row.TagName] = true
+		release := forge.Release{Tag: row.TagName, URL: row.HTMLURL, Draft: row.Draft, Prerelease: row.Prerelease}
 		if row.PublishedAt != nil {
-			release.PublishedAt = *row.PublishedAt
+			release.PublishedAt = row.PublishedAt.Time
 		}
 		releases = append(releases, release)
 	}

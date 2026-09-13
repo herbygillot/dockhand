@@ -41,39 +41,27 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if err != nil {
 		return result, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	releases, err := repository.Releases(ctx)
-	if err != nil {
-		return result, err
-	}
-	known := map[string]forge.Release{}
-	for _, release := range releases {
-		if _, exists := known[release.Tag]; exists {
-			return result, fmt.Errorf("%w: repeated release tag", forge.ErrIncomplete)
-		}
-		known[release.Tag] = release
-	}
 	var observations []forge.Release
 	if mode == "releases" {
-		observations = releases
+		observations, err = repository.Releases(ctx)
+		if err != nil {
+			return result, err
+		}
 	} else {
 		tags, err := repository.ListTags(ctx)
 		if err != nil {
 			return result, err
 		}
-		seen := map[string]bool{}
 		for _, tag := range tags {
-			if seen[tag.Name] {
-				return result, fmt.Errorf("%w: repeated tag", forge.ErrIncomplete)
-			}
-			seen[tag.Name] = true
-			release, exists := known[tag.Name]
-			if !exists {
-				release = forge.Release{Tag: tag.Name}
-			}
-			observations = append(observations, release)
+			observations = append(observations, forge.Release{Tag: tag.Name})
 		}
+	}
+	seen := map[string]bool{}
+	for _, observation := range observations {
+		if seen[observation.Tag] {
+			return result, fmt.Errorf("%w: repeated tag", forge.ErrIncomplete)
+		}
+		seen[observation.Tag] = true
 	}
 	var candidates []macports.VersionCandidate
 	var tags []string
@@ -85,7 +73,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		if !matches || !stableVersion.MatchString(version) {
 			continue
 		}
-		candidates = append(candidates, macports.VersionCandidate{Version: version, URL: repository.TagArchiveURL(release.Tag)})
+		candidates = append(candidates, macports.VersionCandidate{Version: version, URL: repository.TagLivecheckURL(release.Tag)})
 		tags = append(tags, release.Tag)
 	}
 	selection, err := s.Versions.SelectVersion(ctx, port.Version, port.Options["livecheck.regex"], candidates)

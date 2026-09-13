@@ -2,93 +2,79 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
-	"time"
+	"strings"
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 )
 
-const (
-	tagResponseLimit = 1 << 20
-	tagDepthLimit    = 8
-	tagLookupTimeout = 30 * time.Second
-)
-
-type gitObject struct{ Type, SHA string }
-
 func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
-	if !git.ValidRefName("refs/tags/" + name) {
+	refName := "refs/tags/" + name
+	if !git.ValidRefName(refName) {
 		return forge.Tag{}, fmt.Errorf("github: invalid tag")
 	}
-	ctx, cancel := context.WithTimeout(ctx, tagLookupTimeout)
-	defer cancel()
-	var ref struct {
-		Ref    string
-		Object gitObject
+	client, err := r.client.api()
+	if err != nil {
+		return forge.Tag{}, err
 	}
-	resource := "repos/" + r.name + "/git/ref/tags/" + url.PathEscape(name)
-	if err := r.client.getJSON(ctx, resource, &ref, tagResponseLimit); err != nil {
-		var failure *HTTPError
-		if errors.As(err, &failure) && failure.StatusCode == http.StatusNotFound {
+	owner, repo, _ := strings.Cut(r.name, "/")
+	ref, response, err := client.Git.GetRef(ctx, owner, repo, refName)
+	if err != nil {
+		if response != nil && response.StatusCode == http.StatusNotFound {
 			return forge.Tag{}, fmt.Errorf("%w: %w", forge.ErrNotFound, err)
 		}
 		return forge.Tag{}, err
 	}
-	if ref.Ref != "refs/tags/"+name {
+	if ref.GetRef() != refName {
 		return forge.Tag{}, fmt.Errorf("github: response identifies a different ref")
 	}
 	object := ref.Object
 	seen := map[string]bool{}
-	for depth := 0; depth < tagDepthLimit; depth++ {
-		if !git.ValidObjectID(object.SHA) || seen[object.SHA] {
+	for {
+		sha := object.GetSHA()
+		if !git.ValidObjectID(sha) || seen[sha] {
 			return forge.Tag{}, fmt.Errorf("github: invalid or cyclic tag object")
 		}
-		seen[object.SHA] = true
-		if object.Type == "commit" {
-			return forge.Tag{Name: name, Commit: object.SHA}, nil
+		seen[sha] = true
+		if object.GetType() == "commit" {
+			return forge.Tag{Name: name, Commit: sha}, nil
 		}
-		if object.Type != "tag" {
+		if object.GetType() != "tag" {
 			return forge.Tag{}, fmt.Errorf("github: tag does not identify a commit")
 		}
-		var annotated struct {
-			SHA    string
-			Object gitObject
-		}
-		if err := r.client.getJSON(ctx, "repos/"+r.name+"/git/tags/"+object.SHA, &annotated, tagResponseLimit); err != nil {
+		annotated, _, err := client.Git.GetTag(ctx, owner, repo, sha)
+		if err != nil {
 			return forge.Tag{}, err
 		}
-		if annotated.SHA != object.SHA {
+		if annotated.GetSHA() != sha {
 			return forge.Tag{}, fmt.Errorf("github: response identifies a different tag object")
 		}
 		object = annotated.Object
 	}
-	return forge.Tag{}, fmt.Errorf("github: annotated tag nesting exceeds supported depth")
 }
 
 func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
-	type item struct {
-		Name   string
-		Commit struct{ SHA string }
-	}
-	rows, err := collectPages[item](ctx, r.client, r.name, "tags")
+	client, err := r.client.api()
 	if err != nil {
 		return nil, err
 	}
-	tags := make([]forge.Tag, 0, len(rows))
+	owner, repo, _ := strings.Cut(r.name, "/")
 	seen := map[string]bool{}
-	for _, row := range rows {
-		if !git.ValidRefName("refs/tags/"+row.Name) || !git.ValidObjectID(row.Commit.SHA) {
+	var tags []forge.Tag
+	for row, err := range client.Repositories.ListTagsIter(ctx, owner, repo, nil) {
+		if err != nil {
+			return nil, err
+		}
+		if row == nil || !git.ValidRefName("refs/tags/"+row.GetName()) || !git.ValidObjectID(row.GetCommit().GetSHA()) {
 			return nil, fmt.Errorf("github: invalid repository tag")
 		}
-		if seen[row.Name] {
-			return nil, fmt.Errorf("%w: duplicate tag %s", forge.ErrIncomplete, row.Name)
+		if seen[row.GetName()] {
+			return nil, fmt.Errorf("%w: duplicate tag %s", forge.ErrIncomplete, row.GetName())
 		}
-		seen[row.Name] = true
-		tags = append(tags, forge.Tag{Name: row.Name, Commit: row.Commit.SHA})
+		seen[row.GetName()] = true
+		tags = append(tags, forge.Tag{Name: row.GetName(), Commit: row.GetCommit().GetSHA()})
 	}
 	return tags, nil
 }

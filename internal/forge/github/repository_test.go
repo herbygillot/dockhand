@@ -34,9 +34,9 @@ func TestRepositoryBindingValidatesNamesWithoutContactingGitHub(t *testing.T) {
 		require.Nil(t, repository)
 	}
 	repository := testRepository(t, client)
-	require.Equal(t, "https://github.com/owner/project/tags", repository.TagsURL())
-	require.Equal(t, "https://github.com/owner/project/archive/refs/tags/release/2.0.tar.gz", repository.TagArchiveURL("release/2.0"))
-	archive, err := url.Parse(repository.TagArchiveURL("release/2#meta%"))
+	require.Equal(t, "https://github.com/owner/project/tags", repository.TagsPageURL())
+	require.Equal(t, "https://github.com/owner/project/archive/refs/tags/release/2.0.tar.gz", repository.TagLivecheckURL("release/2.0"))
+	archive, err := url.Parse(repository.TagLivecheckURL("release/2#meta%"))
 	require.NoError(t, err)
 	require.Empty(t, archive.Fragment)
 	require.Empty(t, archive.RawQuery)
@@ -54,10 +54,6 @@ func TestRepositoriesSharingAClientKeepTheirOwnRequestScope(t *testing.T) {
 	paths := make(chan string, 3)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths <- r.URL.Path
-		if r.Header.Get("Accept") != "application/vnd.github+json" || r.Header.Get("X-GitHub-Api-Version") != "2026-03-10" || r.Header.Get("User-Agent") != "dockhand/2" {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
 		fmt.Fprintf(w, `{"ref":"refs/tags/v2","object":{"type":"commit","sha":%q}}`, strings.Repeat("a", 40))
 	}))
 	defer server.Close()

@@ -3,41 +3,22 @@ package github
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
-type pullRequestRow struct {
-	Number       int
-	URL          string `json:"html_url"`
-	State, Title string
-	Body         *string
-	MergedAt     *time.Time `json:"merged_at"`
-	Head, Base   struct {
-		Ref, SHA string
-		Repo     *struct {
-			Name string `json:"full_name"`
-		}
-	}
-}
-
-func (r pullRequestRow) observation(repository string) (forge.PullRequestObservation, error) {
+func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullRequestObservation, error) {
 	at := time.Now().UTC().Truncate(time.Millisecond)
-	if r.Number <= 0 || r.Head.Repo == nil || r.Base.Repo == nil || !strings.EqualFold(r.Base.Repo.Name, repository) || !validRepositoryName(r.Head.Repo.Name) || !git.ValidBranchName(r.Head.Ref) || !git.ValidBranchName(r.Base.Ref) || !git.ValidObjectID(r.Head.SHA) || (r.State != "open" && r.State != "closed") || r.Title == "" {
+	if r == nil || r.Head == nil || r.Base == nil || r.GetNumber() <= 0 || r.Head.Repo == nil || r.Base.Repo == nil || !strings.EqualFold(r.Base.Repo.GetFullName(), repository) || !validRepositoryName(r.Head.Repo.GetFullName()) || !git.ValidBranchName(r.Head.GetRef()) || !git.ValidBranchName(r.Base.GetRef()) || !git.ValidObjectID(r.Head.GetSHA()) || (r.GetState() != "open" && r.GetState() != "closed") || r.GetTitle() == "" || r.GetHTMLURL() == "" {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request observation")
 	}
-	expectedURL := fmt.Sprintf("%s/%s/pull/%d", webOrigin, repository, r.Number)
-	if !strings.EqualFold(r.URL, expectedURL) {
-		return forge.PullRequestObservation{}, fmt.Errorf("github: pull-request URL identifies another resource")
-	}
 	state := record.PullRequestOpen
-	if r.State == "closed" {
+	if r.GetState() == "closed" {
 		state = record.PullRequestClosed
 	}
 	if r.MergedAt != nil {
@@ -47,7 +28,7 @@ func (r pullRequestRow) observation(repository string) (forge.PullRequestObserva
 	if r.Body != nil {
 		body = *r.Body
 	}
-	return forge.PullRequestObservation{Found: true, ObservedAt: at, PullRequest: record.PullRequest{Ref: record.PullRequestRef{Forge: "github", Repository: repository, Number: r.Number, URL: r.URL}, HeadRepository: r.Head.Repo.Name, HeadBranch: r.Head.Ref, BaseBranch: r.Base.Ref, State: state, RemoteHead: record.ObjectID(r.Head.SHA), Title: r.Title, Body: body, ObservedAt: at}}, nil
+	return forge.PullRequestObservation{Found: true, ObservedAt: at, PullRequest: record.PullRequest{Ref: record.PullRequestRef{Forge: "github", Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: record.ObjectID(r.Head.GetSHA()), Title: r.GetTitle(), Body: body, ObservedAt: at}}, nil
 }
 
 func validQuery(q forge.PullRequestQuery) bool {
@@ -58,20 +39,23 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 	if !validQuery(q) {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request query")
 	}
-	owner, _, _ := strings.Cut(q.HeadRepository, "/")
-	query := url.Values{"state": {"all"}, "head": {owner + ":" + q.HeadBranch}, "base": {q.BaseBranch}, "per_page": {"100"}, "sort": {"created"}, "direction": {"desc"}}
-	var rows []pullRequestRow
-	if err := c.getJSON(ctx, "repos/"+q.Repository+"/pulls?"+query.Encode(), &rows, catalogResponseLimit); err != nil {
+	client, err := c.api()
+	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	if rows == nil || len(rows) >= 100 {
-		return forge.PullRequestObservation{}, fmt.Errorf("%w: pull-request lookup is incomplete", forge.ErrIncomplete)
+	owner, repo, _ := strings.Cut(q.Repository, "/")
+	headOwner, _, _ := strings.Cut(q.HeadRepository, "/")
+	options := &gh.PullRequestListOptions{
+		State: "all", Head: headOwner + ":" + q.HeadBranch, Base: q.BaseBranch,
 	}
 	found := forge.PullRequestObservation{ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
-	for _, row := range rows {
-		observation, err := row.observation(q.Repository)
+	for row, err := range client.PullRequests.ListIter(ctx, owner, repo, options) {
 		if err != nil {
-			return found, err
+			return forge.PullRequestObservation{}, err
+		}
+		observation, err := pullRequestObservation(row, q.Repository)
+		if err != nil {
+			return forge.PullRequestObservation{}, err
 		}
 		pr := observation.PullRequest
 		if !strings.EqualFold(pr.HeadRepository, q.HeadRepository) || pr.HeadBranch != q.HeadBranch || pr.BaseBranch != q.BaseBranch {
@@ -89,40 +73,58 @@ func (c *Client) Observe(ctx context.Context, ref record.PullRequestRef) (forge.
 	if ref.Forge != "github" || !validRepositoryName(ref.Repository) || ref.Number <= 0 {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request reference")
 	}
-	var row pullRequestRow
-	if err := c.getJSON(ctx, fmt.Sprintf("repos/%s/pulls/%d", ref.Repository, ref.Number), &row, catalogResponseLimit); err != nil {
+	client, err := c.api()
+	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	if row.Number != ref.Number {
+	owner, repo, _ := strings.Cut(ref.Repository, "/")
+	row, _, err := client.PullRequests.Get(ctx, owner, repo, ref.Number)
+	if err != nil {
+		return forge.PullRequestObservation{}, err
+	}
+	if row.GetNumber() != ref.Number {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: response identifies another pull request")
 	}
-	return row.observation(ref.Repository)
+	return pullRequestObservation(row, ref.Repository)
 }
 
 func (c *Client) Create(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	if !validQuery(forge.PullRequestQuery{Repository: input.Repository, HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch}) || input.Desired.Title == "" || input.ExistingPR != nil {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: invalid pull-request input", forge.ErrRejected)
 	}
-	owner, repo, _ := strings.Cut(input.HeadRepository, "/")
-	payload := map[string]any{"title": input.Desired.Title, "body": input.Desired.Body, "head": owner + ":" + input.HeadBranch, "head_repo": repo, "base": input.BaseBranch, "maintainer_can_modify": true}
-	var row pullRequestRow
-	if err := c.requestJSON(ctx, http.MethodPost, "repos/"+input.Repository+"/pulls", payload, &row, catalogResponseLimit); err != nil {
+	client, err := c.api()
+	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	return row.observation(input.Repository)
+	owner, repo, _ := strings.Cut(input.Repository, "/")
+	headOwner, headRepo, _ := strings.Cut(input.HeadRepository, "/")
+	row, response, err := client.PullRequests.Create(ctx, owner, repo, gh.CreatePullRequest{
+		Title: &input.Desired.Title, Body: &input.Desired.Body, Head: headOwner + ":" + input.HeadBranch,
+		HeadRepo: &headRepo, Base: input.BaseBranch, MaintainerCanModify: new(true),
+	})
+	if err := publicationError(response, err); err != nil {
+		return forge.PullRequestObservation{}, err
+	}
+	return pullRequestObservation(row, input.Repository)
 }
 
 func (c *Client) Update(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	if input.ExistingPR == nil || input.ExistingPR.Forge != "github" || input.ExistingPR.Repository != input.Repository || input.ExistingPR.Number <= 0 || !validQuery(forge.PullRequestQuery{Repository: input.Repository, HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch}) || input.Desired.Title == "" {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: invalid pull-request input", forge.ErrRejected)
 	}
-	var row pullRequestRow
-	resource := fmt.Sprintf("repos/%s/pulls/%d", input.Repository, input.ExistingPR.Number)
-	if err := c.requestJSON(ctx, http.MethodPatch, resource, map[string]string{"title": input.Desired.Title, "body": input.Desired.Body}, &row, catalogResponseLimit); err != nil {
+	client, err := c.api()
+	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}
-	if row.Number != input.ExistingPR.Number {
+	owner, repo, _ := strings.Cut(input.Repository, "/")
+	row, response, err := client.PullRequests.Edit(ctx, owner, repo, input.ExistingPR.Number, &gh.PullRequest{
+		Title: &input.Desired.Title, Body: &input.Desired.Body,
+	})
+	if err := publicationError(response, err); err != nil {
+		return forge.PullRequestObservation{}, err
+	}
+	if row.GetNumber() != input.ExistingPR.Number {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: response identifies another pull request")
 	}
-	return row.observation(input.Repository)
+	return pullRequestObservation(row, input.Repository)
 }

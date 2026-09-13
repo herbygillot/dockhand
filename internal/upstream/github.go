@@ -56,10 +56,13 @@ func githubLivecheck(port macports.PortInfo, repository forge.Repository) (strin
 			return "", fmt.Errorf("%w: cannot evaluate %s", ErrAutomaticUnsupported, key)
 		}
 	}
-	if port.Options["livecheck.type"] != "regex" || strings.TrimRight(port.Options["livecheck.url"], "/") != repository.TagsURL() || port.Options["livecheck.regex"] == "" || port.Options["livecheck.version"] != port.Version || !stableVersion.MatchString(port.Version) {
+	if port.Options["livecheck.type"] != "regex" || strings.TrimRight(port.Options["livecheck.url"], "/") != repository.TagsPageURL() || port.Options["livecheck.regex"] == "" || port.Options["livecheck.version"] != port.Version || !stableVersion.MatchString(port.Version) {
 		return "", fmt.Errorf("%w: require a stable numeric version and a matching GitHub tags livecheck", ErrAutomaticUnsupported)
 	}
 	mode := port.Options["github.tarball_from"]
+	if mode == "" {
+		mode = "archive"
+	}
 	if mode != "releases" && mode != "archive" && mode != "tarball" {
 		return "", fmt.Errorf("%w: unknown GitHub archive mode", ErrAutomaticUnsupported)
 	}

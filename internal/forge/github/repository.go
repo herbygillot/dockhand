@@ -23,9 +23,9 @@ func (c *Client) Repository(name string) (forge.Repository, error) {
 	return &repository{client: c, name: name}, nil
 }
 
-func (r *repository) Name() string    { return r.name }
-func (r *repository) TagsURL() string { return webOrigin + "/" + r.name + "/tags" }
-func (r *repository) TagArchiveURL(tag string) string {
+func (r *repository) Name() string        { return r.name }
+func (r *repository) TagsPageURL() string { return webOrigin + "/" + r.name + "/tags" }
+func (r *repository) TagLivecheckURL(tag string) string {
 	path := &url.URL{Path: "/" + r.name + "/archive/refs/tags/" + tag + ".tar.gz"}
 	return webOrigin + path.String()
 }

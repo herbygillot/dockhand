@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
@@ -19,89 +18,62 @@ func releaseRow(tag string) map[string]any {
 	return map[string]any{"tag_name": tag, "draft": false, "prerelease": false, "published_at": "2026-01-01T00:00:00Z"}
 }
 
-func TestReleaseCatalogReadsEveryPageAndRetainsEligibilityMetadata(t *testing.T) {
-	var calls atomic.Int64
+func TestReleaseCatalogPreservesReleaseMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		if r.URL.Query().Get("per_page") != "100" {
-			w.WriteHeader(400)
-			return
-		}
-		rows := []map[string]any{}
-		switch r.URL.Query().Get("page") {
-		case "1":
-			for n := range 100 {
-				rows = append(rows, releaseRow(fmt.Sprintf("v1.%d", n)))
-			}
-		case "2":
-			row := releaseRow("v2.0")
-			row["prerelease"] = true
-			rows = append(rows, row)
-			row = releaseRow("v3.0")
-			row["draft"] = true
-			row["published_at"] = nil
-			rows = append(rows, row)
-		default:
-			w.WriteHeader(500)
-			return
-		}
-		json.NewEncoder(w).Encode(rows)
+		published := releaseRow("v1")
+		published["html_url"] = "https://github.com/owner/project/releases/tag/v1"
+		prerelease := releaseRow("v2")
+		prerelease["prerelease"] = true
+		draft := releaseRow("v3")
+		draft["draft"], draft["published_at"] = true, nil
+		json.NewEncoder(w).Encode([]any{published, prerelease, draft})
 	}))
 	defer server.Close()
-	client := github.Client{Config: github.Config{BaseURL: server.URL}}
-	rows, err := testRepository(t, &client).Releases(t.Context())
+	rows, err := testRepository(t, &github.Client{Config: github.Config{BaseURL: server.URL}}).Releases(t.Context())
 	require.NoError(t, err)
-	require.Len(t, rows, 102)
-	require.True(t, rows[100].Prerelease)
-	require.True(t, rows[101].Draft)
-	require.Equal(t, int64(2), calls.Load())
+	publishedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.Equal(t, []forge.Release{
+		{Tag: "v1", URL: "https://github.com/owner/project/releases/tag/v1", PublishedAt: publishedAt},
+		{Tag: "v2", Prerelease: true, PublishedAt: publishedAt},
+		{Tag: "v3", Draft: true},
+	}, rows)
 }
 
 func TestCatalogDoesNotReturnPartialEvidence(t *testing.T) {
-	for _, mode := range []string{"later failure", "duplicate", "truncated", "null", "missing metadata"} {
+	for _, mode := range []string{"later failure", "duplicate", "null row", "missing metadata"} {
 		t.Run(mode, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-				if mode == "null" {
-					fmt.Fprint(w, "null")
+				if r.URL.Query().Get("page") == "" {
+					w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=2>; rel="next"`, r.Host, r.URL.Path))
+					json.NewEncoder(w).Encode([]any{releaseRow("v1")})
 					return
 				}
-				if mode == "missing metadata" {
-					fmt.Fprint(w, `[{"tag_name":"v1"}]`)
-					return
+				switch mode {
+				case "later failure":
+					w.WriteHeader(http.StatusServiceUnavailable)
+				case "duplicate":
+					json.NewEncoder(w).Encode([]any{releaseRow("v1")})
+				case "null row":
+					fmt.Fprint(w, "[null]")
+				case "missing metadata":
+					fmt.Fprint(w, `[{"tag_name":"v2"}]`)
 				}
-				if mode == "later failure" && page == 2 {
-					w.WriteHeader(503)
-					return
-				}
-				rows := []map[string]any{}
-				if mode == "duplicate" && page == 2 {
-					rows = append(rows, releaseRow("v1.0"))
-				} else {
-					for n := range 100 {
-						rows = append(rows, releaseRow(fmt.Sprintf("v%d.%d", page, n)))
-					}
-				}
-				json.NewEncoder(w).Encode(rows)
 			}))
 			defer server.Close()
-			client := github.Client{Config: github.Config{BaseURL: server.URL}}
-			rows, err := testRepository(t, &client).Releases(t.Context())
+			rows, err := testRepository(t, &github.Client{Config: github.Config{BaseURL: server.URL}}).Releases(t.Context())
 			require.Error(t, err)
 			require.Nil(t, rows)
-			if mode == "duplicate" || mode == "truncated" {
+			require.NotErrorIs(t, err, forge.ErrNotFound)
+			if mode == "duplicate" {
 				require.ErrorIs(t, err, forge.ErrIncomplete)
 			}
-			require.NotErrorIs(t, err, forge.ErrNotFound)
 		})
 	}
 }
 
-func TestRepositoryTagsIncludeProjectsWithoutReleases(t *testing.T) {
+func TestTagCatalogMapsTagNamesAndCommits(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/repos/owner/project/releases":
-			fmt.Fprint(w, "[]")
 		case "/repos/owner/project/tags":
 			json.NewEncoder(w).Encode([]any{map[string]any{"name": "v2.0", "commit": map[string]string{"sha": strings.Repeat("a", 40)}}})
 		default:
@@ -110,9 +82,6 @@ func TestRepositoryTagsIncludeProjectsWithoutReleases(t *testing.T) {
 	}))
 	defer server.Close()
 	client := github.Client{Config: github.Config{BaseURL: server.URL}}
-	releases, err := testRepository(t, &client).Releases(t.Context())
-	require.NoError(t, err)
-	require.Empty(t, releases)
 	tags, err := testRepository(t, &client).ListTags(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []forge.Tag{{Name: "v2.0", Commit: strings.Repeat("a", 40)}}, tags)

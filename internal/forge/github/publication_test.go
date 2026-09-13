@@ -1,6 +1,7 @@
 package github_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,12 +19,9 @@ import (
 func prJSON() map[string]any {
 	return map[string]any{"number": 3, "html_url": "https://github.com/upstream/ports/pull/3", "state": "open", "title": "port: update", "body": "details", "head": map[string]any{"ref": "candidate", "sha": strings.Repeat("a", 40), "repo": map[string]any{"full_name": "author/ports"}}, "base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "upstream/ports"}}}
 }
-func TestGitHubPublicationProtocol(t *testing.T) {
-	var methods []string
+func TestPullRequestsMapQueriesContentAndObservations(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		methods = append(methods, r.Method)
 		assert.Equal(t, "Bearer fixture-token", r.Header.Get("Authorization"))
-		assert.Equal(t, "2026-03-10", r.Header.Get("X-GitHub-Api-Version"))
 		if r.Method == http.MethodGet && r.URL.Path == "/repos/upstream/ports/pulls" {
 			assert.Equal(t, "author:candidate", r.URL.Query().Get("head"))
 			assert.Equal(t, "main", r.URL.Query().Get("base"))
@@ -57,17 +55,17 @@ func TestGitHubPublicationProtocol(t *testing.T) {
 	observed, err := client.Observe(t.Context(), found.PullRequest.Ref)
 	require.NoError(t, err)
 	require.Equal(t, record.PullRequestOpen, observed.PullRequest.State)
+	require.Equal(t, "https://github.com/upstream/ports/pull/3", observed.PullRequest.Ref.URL)
 	input := forge.PullRequestInput{Repository: query.Repository, HeadRepository: query.HeadRepository, HeadBranch: query.HeadBranch, BaseBranch: query.BaseBranch, Desired: record.PublicationContent{Head: record.ObjectID(strings.Repeat("a", 40)), Title: "port: update", Body: "details"}}
 	_, err = client.Create(t.Context(), input)
 	require.NoError(t, err)
 	input.ExistingPR = &found.PullRequest.Ref
 	_, err = client.Update(t.Context(), input)
 	require.NoError(t, err)
-	require.Equal(t, []string{"GET", "GET", "POST", "PATCH"}, methods)
 }
 
 func TestGitHubPRLookupRejectsAmbiguousAndIncompleteObservations(t *testing.T) {
-	for _, mode := range []string{"duplicate", "null", "wrong URL", "missing head", "closed", "merged", "none"} {
+	for _, mode := range []string{"duplicate", "null row", "missing URL", "wrong repository", "missing head", "closed", "merged", "none"} {
 		t.Run(mode, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				row := prJSON()
@@ -75,10 +73,12 @@ func TestGitHubPRLookupRejectsAmbiguousAndIncompleteObservations(t *testing.T) {
 				switch mode {
 				case "duplicate":
 					rows = append(rows, row)
-				case "null":
-					rows = nil
-				case "wrong URL":
-					row["html_url"] = "https://example.invalid/pr/3"
+				case "null row":
+					rows = []any{nil}
+				case "missing URL":
+					delete(row, "html_url")
+				case "wrong repository":
+					row["base"].(map[string]any)["repo"] = map[string]any{"full_name": "another/ports"}
 				case "missing head":
 					row["head"] = nil
 				case "closed":
@@ -112,7 +112,7 @@ func TestGitHubPRLookupRejectsAmbiguousAndIncompleteObservations(t *testing.T) {
 }
 
 func TestGitHubWritesDistinguishRejectionFromUnknownOutcomesAndDoNotRedirect(t *testing.T) {
-	for _, status := range []int{http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusTemporaryRedirect} {
+	for _, status := range []int{http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			calls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +146,7 @@ func TestGitHubRemoteNamesAndForkMetadata(t *testing.T) {
 		require.Error(t, err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"full_name":"author/ports","default_branch":"master","fork":true,"parent":{"full_name":"upstream/ports"}}`)
+		fmt.Fprint(w, `{"full_name":"author/ports","default_branch":"master","clone_url":"https://github.com/author/ports.git","fork":true,"parent":{"full_name":"upstream/ports"}}`)
 	}))
 	defer server.Close()
 	client.Config.BaseURL = server.URL
@@ -156,3 +156,78 @@ func TestGitHubRemoteNamesAndForkMetadata(t *testing.T) {
 	require.Equal(t, "master", info.DefaultBranch)
 	require.Equal(t, "https://github.com/author/ports.git", info.CloneURL)
 }
+
+func TestPullRequestLookupChecksEveryPageBeforeAcceptingAMatch(t *testing.T) {
+	for _, mode := range []string{"match", "ambiguous", "later failure"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if calls == 1 {
+					w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=2>; rel="next"`, r.Host, r.URL.Path))
+					json.NewEncoder(w).Encode([]any{prJSON()})
+					return
+				}
+				switch mode {
+				case "match":
+					fmt.Fprint(w, "[]")
+				case "ambiguous":
+					json.NewEncoder(w).Encode([]any{prJSON()})
+				case "later failure":
+					w.WriteHeader(http.StatusServiceUnavailable)
+				}
+			}))
+			defer server.Close()
+			client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+			found, err := client.Find(t.Context(), forge.PullRequestQuery{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main"})
+			require.Equal(t, 2, calls)
+			if mode == "match" {
+				require.NoError(t, err)
+				require.True(t, found.Found)
+			} else {
+				require.Error(t, err)
+				require.False(t, found.Found)
+			}
+		})
+	}
+}
+
+func TestRepositoryInfoUsesTheReturnedCloneURL(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		address   string
+		wantError bool
+	}{
+		{"returned spelling", "https://github.com/Author/ports", false},
+		{"missing", "", true},
+		{"different repository", "https://github.com/another/ports.git", true},
+		{"different host", "https://example.invalid/author/ports.git", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"full_name": "author/ports", "default_branch": "main", "clone_url": test.address})
+			}))
+			defer server.Close()
+			client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+			info, err := client.RepositoryInfo(t.Context(), "author/ports")
+			if test.wantError {
+				require.Error(t, err)
+				require.Empty(t, info.CloneURL)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.address, info.CloneURL)
+		})
+	}
+}
+
+func TestCanceledPublicationWriteRemainsUncertain(t *testing.T) {
+	client := &github.Client{HTTP: &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return nil, context.Canceled })}}
+	_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, forge.ErrRejected)
+}
+
+type transportFunc func(*http.Request) (*http.Response, error)
+
+func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

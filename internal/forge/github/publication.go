@@ -3,9 +3,11 @@ package github
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
+	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 )
@@ -35,29 +37,43 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 	if !validRepositoryName(name) {
 		return forge.RepositoryInfo{}, fmt.Errorf("github: invalid repository")
 	}
-	var row struct {
-		Name               string `json:"full_name"`
-		DefaultBranch      string `json:"default_branch"`
-		Fork               bool
-		Archived, Disabled bool
-		Parent             *struct {
-			Name string `json:"full_name"`
-		}
-	}
-	if err := c.getJSON(ctx, "repos/"+name, &row, 1<<20); err != nil {
+	client, err := c.api()
+	if err != nil {
 		return forge.RepositoryInfo{}, err
 	}
-	if !strings.EqualFold(row.Name, name) || !git.ValidBranchName(row.DefaultBranch) || row.Archived || row.Disabled {
+	owner, repo, _ := strings.Cut(name, "/")
+	row, _, err := client.Repositories.Get(ctx, owner, repo)
+	if err != nil {
+		return forge.RepositoryInfo{}, err
+	}
+	if !strings.EqualFold(row.GetFullName(), name) || !git.ValidBranchName(row.GetDefaultBranch()) || row.GetArchived() || row.GetDisabled() {
 		return forge.RepositoryInfo{}, fmt.Errorf("github: repository metadata is invalid or repository is archived/disabled")
 	}
-	result := forge.RepositoryInfo{Name: row.Name, DefaultBranch: row.DefaultBranch, CloneURL: webOrigin + "/" + row.Name + ".git"}
-	if row.Fork {
-		if row.Parent == nil || !validRepositoryName(row.Parent.Name) {
+	cloneName, err := c.NameFromRemote(row.GetCloneURL())
+	if err != nil || !strings.EqualFold(cloneName, name) {
+		return forge.RepositoryInfo{}, fmt.Errorf("github: clone URL does not identify the repository")
+	}
+	result := forge.RepositoryInfo{Name: row.GetFullName(), DefaultBranch: row.GetDefaultBranch(), CloneURL: row.GetCloneURL()}
+	if row.GetFork() {
+		if row.Parent == nil || !validRepositoryName(row.Parent.GetFullName()) {
 			return result, fmt.Errorf("github: fork parent is unknown")
 		}
-		result.Parent = row.Parent.Name
+		result.Parent = row.Parent.GetFullName()
 	}
 	return result, nil
 }
 
 func (c *Client) Name() string { return "github" }
+
+// A rejection settles a publication attempt; other errors require observation
+// before the workflow can decide whether a write took effect.
+func publicationError(response *gh.Response, err error) error {
+	if err != nil && response != nil {
+		switch response.StatusCode {
+		case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity:
+			return fmt.Errorf("%w: %w", forge.ErrRejected, err)
+		}
+	}
+	return err
+}

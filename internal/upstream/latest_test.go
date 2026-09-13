@@ -14,15 +14,21 @@ import (
 )
 
 type catalog struct {
-	releases []forge.Release
-	tags     []forge.Tag
-	err      error
-	tagReads int
-	tag      tagFunc
-	web      string
+	releases     []forge.Release
+	tags         []forge.Tag
+	err          error
+	tagReads     int
+	releaseReads int
+	releaseErr   error
+	tag          tagFunc
+	web          string
 }
 
 func (c *catalog) Releases(context.Context) ([]forge.Release, error) {
+	c.releaseReads++
+	if c.releaseErr != nil {
+		return nil, c.releaseErr
+	}
 	return c.releases, c.err
 }
 
@@ -69,7 +75,8 @@ func TestAutomaticSelectionHonorsArchiveModeVersionOrderingAndPrereleases(t *tes
 	port.Options["github.tarball_from"] = "archive"
 	result, err = service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
-	require.Equal(t, "1.11", result.CandidateVersion)
+	require.Equal(t, "2.0", result.CandidateVersion, "release flags must not veto Git tags")
+	require.Equal(t, 1, c.releaseReads)
 	require.Equal(t, 1, c.tagReads)
 	c.releases = nil
 	result, err = service.DiscoverPort(t.Context(), port)
@@ -137,8 +144,8 @@ func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
 
 func (c *catalog) Repository(name string) (forge.Repository, error) { return c, nil }
 func (c *catalog) Name() string                                     { return "owner/project" }
-func (c *catalog) TagsURL() string                                  { return c.web + "/tags" }
-func (c *catalog) TagArchiveURL(tag string) string {
+func (c *catalog) TagsPageURL() string                              { return c.web + "/tags" }
+func (c *catalog) TagLivecheckURL(tag string) string {
 	return c.web + "/archive/refs/tags/" + tag + ".tar.gz"
 }
 func (c *catalog) Tag(ctx context.Context, name string) (forge.Tag, error) {
@@ -150,10 +157,26 @@ func TestDiscoveryUsesRepositoryURLsFromTheAdapter(t *testing.T) {
 	service := automaticService(t, c)
 	c.web = "https://forge.example.invalid/project"
 	port := automaticPort()
-	port.Options["livecheck.url"] = c.TagsURL()
+	port.Options["livecheck.url"] = c.TagsPageURL()
 	result, err := service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
 	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
-	require.Equal(t, c.TagArchiveURL("v2.0"), result.Evidence[0].URL)
+	require.Equal(t, c.TagLivecheckURL("v2.0"), result.Evidence[0].URL)
 	require.Equal(t, c.Name(), result.Release.Repository)
+}
+
+func TestTagDiscoveryNeverConsultsReleases(t *testing.T) {
+	for _, mode := range []string{"", "archive", "tarball"} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			c := &catalog{tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}}, releaseErr: errors.New("release catalog must not be read")}
+			service := automaticService(t, c)
+			port := automaticPort()
+			port.Options["github.tarball_from"] = mode
+			result, err := service.DiscoverPort(t.Context(), port)
+			require.NoError(t, err)
+			require.Equal(t, "1.10", result.CandidateVersion)
+			require.Equal(t, 1, c.tagReads)
+			require.Zero(t, c.releaseReads)
+		})
+	}
 }

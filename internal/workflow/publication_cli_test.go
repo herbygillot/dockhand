@@ -42,7 +42,7 @@ func TestPublishCLIPlansAndCompletesWithoutAVerificationProvider(t *testing.T) {
 		defer mu.Unlock()
 		switch r.URL.Path {
 		case "/repos/author/ports":
-			fmt.Fprint(w, `{"full_name":"author/ports","default_branch":"main","fork":false}`)
+			fmt.Fprint(w, `{"full_name":"author/ports","default_branch":"main","clone_url":"https://github.com/author/ports.git","fork":false}`)
 		case "/repos/author/ports/pulls":
 			if r.Method == "POST" {
 				writes++

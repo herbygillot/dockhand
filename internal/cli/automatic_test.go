@@ -153,6 +153,7 @@ func TestFailedAutomaticDiscoveryCLIRequiresAttention(t *testing.T) {
 	require.Equal(t, record.JobNeedsAttention, job.State)
 	require.Nil(t, job.ResolvedRelease)
 	require.Nil(t, job.Prepared)
-	require.Contains(t, job.Detail, "HTTP 503")
+	require.Contains(t, job.Detail, "503")
+	require.Contains(t, job.Detail, "/repos/owner/project/releases")
 	require.Zero(t, downloads.Load())
 }
