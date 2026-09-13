@@ -164,3 +164,23 @@ func TestPreparationMigrationRollsBackAddedColumnsAndTableRebuild(t *testing.T) 
 	_, err = db.Exec("UPDATE plans SET revision_id=NULL")
 	require.Error(t, err, "the earlier plans rebuild must also roll back")
 }
+
+func TestReleaseMigrationPreservesPreparedWork(t *testing.T) {
+	path, db := versionTwoWithWork(t)
+	_, err := db.Exec("BEGIN;" + preparationSchema + `PRAGMA defer_foreign_keys=OFF; PRAGMA user_version=3;
+ UPDATE jobs SET prepared='{"Branch":"dockhand/revbump/fixture","Source":{"Commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"IntegrationStarted":true}'; COMMIT;`)
+	require.NoError(t, err)
+	var before string
+	require.NoError(t, db.QueryRow("SELECT prepared FROM jobs WHERE id='job'").Scan(&before))
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	var after string
+	var release sql.NullString
+	require.NoError(t, db.QueryRow("SELECT prepared,resolved_release FROM jobs WHERE id='job'").Scan(&after, &release))
+	require.Equal(t, before, after)
+	require.False(t, release.Valid)
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, schemaVersion, version)
+}

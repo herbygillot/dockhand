@@ -50,6 +50,7 @@ type Result struct {
 type Service struct {
 	Ports    macports.Reader
 	Releases ReleaseReader
+	Tags     TagReader
 }
 
 func (s *Service) Discover(ctx context.Context, source macports.Context) (Result, error) {

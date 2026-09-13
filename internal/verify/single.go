@@ -42,7 +42,7 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 	expected := job.Spec.InputRevision
 	switch job.Spec.Action {
 	case record.Verify:
-	case record.BumpRevision:
+	case record.Bump, record.BumpRevision:
 		if job.ResultRevision == "" || job.Prepared == nil {
 			return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: preparation has not produced a revision")
 		}

@@ -51,35 +51,7 @@ func revisionFidelity(before, after macports.Snapshot, selected, beforeRoot, aft
 		}
 		old = comparablePort(old, beforeRoot)
 		next = comparablePort(next, afterRoot)
-		if old.Name != next.Name {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+".name changed")
-		}
-		if old.Version != next.Version {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+".version changed")
-		}
-		if old.Epoch != next.Epoch {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+".epoch changed")
-		}
-		if !reflect.DeepEqual(old.Dependencies, next.Dependencies) {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+".dependencies changed")
-		}
-		keys := map[string]bool{}
-		for key := range old.Options {
-			keys[key] = true
-		}
-		for key := range next.Options {
-			keys[key] = true
-		}
-		for key := range keys {
-			a, aok := old.Options[key]
-			b, bok := next.Options[key]
-			if aok != bok || a != b {
-				result.UnexpectedChanges = append(result.UnexpectedChanges, name+"."+key+" changed")
-			}
-		}
-		if !maps.Equal(old.OptionErrors, next.OptionErrors) {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+".option-errors changed")
-		}
+		result.UnexpectedChanges = append(result.UnexpectedChanges, comparePortMetadata(name, old, next)...)
 	}
 	slices.Sort(result.UnexpectedChanges)
 	return result
@@ -96,4 +68,38 @@ func comparablePort(port macports.PortInfo, root string) macports.PortInfo {
 		port.OptionErrors[key] = strings.ReplaceAll(value, root, "<source>")
 	}
 	return port
+}
+
+func comparePortMetadata(name string, old, next macports.PortInfo) []string {
+	var differences []string
+	if old.Name != next.Name {
+		differences = append(differences, name+".name changed")
+	}
+	if old.Version != next.Version {
+		differences = append(differences, name+".version changed")
+	}
+	if old.Epoch != next.Epoch {
+		differences = append(differences, name+".epoch changed")
+	}
+	if !reflect.DeepEqual(old.Dependencies, next.Dependencies) {
+		differences = append(differences, name+".dependencies changed")
+	}
+	keys := map[string]bool{}
+	for key := range old.Options {
+		keys[key] = true
+	}
+	for key := range next.Options {
+		keys[key] = true
+	}
+	for key := range keys {
+		a, aok := old.Options[key]
+		b, bok := next.Options[key]
+		if aok != bok || a != b {
+			differences = append(differences, name+"."+key+" changed")
+		}
+	}
+	if !maps.Equal(old.OptionErrors, next.OptionErrors) {
+		differences = append(differences, name+".option-errors changed")
+	}
+	return differences
 }

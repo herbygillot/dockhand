@@ -27,7 +27,10 @@ var providerSchema string
 //go:embed migrations/003.sql
 var preparationSchema string
 
-const schemaVersion = 3
+//go:embed migrations/004.sql
+var releaseSchema string
+
+const schemaVersion = 4
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -182,7 +185,13 @@ func (s *Store) initialize(ctx context.Context) error {
 					return storageError(err)
 				}
 			}
-			return migratePreparation(ctx, t)
+			if version < 3 {
+				if err := migratePreparation(ctx, t); err != nil {
+					return err
+				}
+			}
+			_, err := t.conn.ExecContext(ctx, releaseSchema)
+			return storageError(err)
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
 			return state.ErrSchema
@@ -197,7 +206,11 @@ func (s *Store) initialize(ctx context.Context) error {
 		if _, err := t.conn.ExecContext(ctx, initialSchema+providerSchema+fmt.Sprintf("PRAGMA application_id=%d;", applicationID)); err != nil {
 			return storageError(err)
 		}
-		return migratePreparation(ctx, t)
+		if err := migratePreparation(ctx, t); err != nil {
+			return err
+		}
+		_, err := t.conn.ExecContext(ctx, releaseSchema)
+		return storageError(err)
 	})
 }
 

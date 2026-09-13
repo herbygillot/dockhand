@@ -53,6 +53,8 @@ type Engine struct {
 	Ports macports.Reader
 	// Preparer produces immutable candidate trees without adopting branches.
 	Preparer SourcePreparer
+	// Releases resolves version-bump input for a durable checkpoint before preparation.
+	Releases ReleaseResolver
 	// Planner is reserved for broader coverage planning. The current cycle
 	// uses verify.PlanSingle for its single-target plan.
 	Planner *verify.Planner
@@ -70,8 +72,9 @@ type Engine struct {
 	// LeaseDuration defaults to two minutes and must exceed the effective
 	// CallTimeout. Expiry permits recovery; it cannot stop an external call.
 	LeaseDuration time.Duration
-	// CallTimeout defaults to thirty seconds for each provider call. Providers
-	// must honor the context deadline for it to bound their execution time.
+	// CallTimeout defaults to thirty seconds for each external action, including
+	// release resolution, preparation, and provider calls. Dependencies must honor
+	// the context deadline for it to bound their execution time.
 	CallTimeout time.Duration
 	// RetryDelay defaults to one second before another attempt or cleanup action.
 	// Cycle records eligibility times and leaves waiting to its caller.
@@ -92,6 +95,10 @@ func (e *Engine) now() time.Time {
 		return e.Now().UTC().Truncate(time.Millisecond)
 	}
 	return time.Now().UTC().Truncate(time.Millisecond)
+}
+
+type ReleaseResolver interface {
+	ResolveRelease(context.Context, prepare.Request) (record.Release, error)
 }
 
 type SourcePreparer interface {

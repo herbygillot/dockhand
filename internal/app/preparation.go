@@ -3,11 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
 
+	"github.com/herbygillot/dockhand/v2/internal/forge/github"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 )
 
@@ -26,7 +29,7 @@ type Preview struct {
 }
 
 func PreviewPreparation(ctx context.Context, config Config, request PreviewRequest) (Preview, error) {
-	if request.Action != record.BumpRevision {
+	if request.Action != record.BumpRevision && request.Action != record.Bump {
 		return Preview{}, fmt.Errorf("%w: %s", prepare.ErrNotImplemented, request.Action)
 	}
 	root := config.Repository
@@ -49,11 +52,19 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 		return Preview{}, err
 	}
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
-	service := prepare.Service{Repo: repo, Ports: ports}
-	result, err := service.Prepare(ctx, prepare.Request{
+	service := prepare.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Tags: &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}}}
+	input := prepare.Request{
 		Action: request.Action, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)},
 		Selection: request.Selection, Version: request.Version, Reason: request.Reason,
-	})
+	}
+	if request.Action == record.Bump {
+		release, err := service.ResolveRelease(ctx, input)
+		if err != nil {
+			return Preview{}, err
+		}
+		input.Release = &release
+	}
+	result, err := service.Prepare(ctx, input)
 	if err != nil {
 		return Preview{Branch: branch, Preparation: result}, err
 	}
@@ -66,6 +77,8 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 
 // Preparation captures the choices needed to create a new contribution.
 type Preparation struct {
+	Action     record.Action
+	Version    string
 	ID         record.RequestID
 	Branch     string
 	Selection  macports.Selection
@@ -91,7 +104,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{ID: request.ID, Branch: request.Branch, Selection: request.Selection, Reason: request.Reason,
+	bound := workflow.PreparationRequest{Action: request.Action, Version: request.Version, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Reason: request.Reason,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.NoVerify {

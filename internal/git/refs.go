@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"unicode/utf8"
 )
 
 var ErrNotImplemented = errors.New("git: remote push is not implemented")
@@ -39,6 +40,9 @@ func (e *RefConflict) Error() string {
 }
 
 func (e *RefConflict) Unwrap() error { return ErrRefConflict }
+
+// ValidRefName accepts a complete literal Git ref, including its refs/ namespace.
+func ValidRefName(name string) bool { return utf8.ValidString(name) && validRefName(name) }
 
 func validRefName(name string) bool {
 	if !strings.HasPrefix(name, "refs/") || strings.ContainsAny(name, " ~^:?*[\\\x7f") || strings.Contains(name, "..") || strings.Contains(name, "@{") || strings.HasSuffix(name, ".") {

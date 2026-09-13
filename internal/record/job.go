@@ -109,6 +109,8 @@ type Job struct {
 	Claim           *Claim
 	ClaimGeneration uint64
 	RetryAt         *time.Time
+	// ResolvedRelease freezes the selected upstream tag and commit before preparation.
+	ResolvedRelease *Release
 	Prepared        *PreparedChange
 	AcceptedAt      time.Time
 	// CancelRequestedAt records when the driver applied cancellation intent.

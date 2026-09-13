@@ -2,16 +2,22 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
+	"github.com/herbygillot/dockhand/v2/internal/forge/github"
 	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
@@ -23,7 +29,11 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 	for _, args := range [][]string{{"bump", "jq"}, {"bump", "jq", "v1.8.1"}, {"bump", "jq", "1.8.1"}} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
-		require.ErrorIs(t, err, ErrNotImplemented)
+		if len(args) == 2 {
+			require.ErrorIs(t, err, ErrNotImplemented)
+		} else {
+			require.ErrorContains(t, err, "git rev-parse")
+		}
 	}
 	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--wait"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}} {
 		var out bytes.Buffer
@@ -34,7 +44,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 	}
 	var out bytes.Buffer
 	require.ErrorIs(t, Run(t.Context(), []string{"bump", "jq", ""}, Streams{Out: &out, Err: &out}, config), upstream.ErrVersionInput)
-	require.ErrorIs(t, Run(t.Context(), []string{"bump", "jq", "2", "--diff"}, Streams{Out: &out, Err: &out}, config), prepare.ErrNotImplemented)
+	require.ErrorContains(t, Run(t.Context(), []string{"bump", "jq", "2", "--diff"}, Streams{Out: &out, Err: &out}, config), "git rev-parse")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }
 
@@ -158,4 +168,90 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 			require.Equal(t, string(job.Prepared.Source.Commit), actual)
 		})
 	}
+}
+
+func TestExplicitVersionBumpCLIFromPreviewToTrackedBranch(t *testing.T) {
+	config, repo, original := preparationCLI(t)
+	body := "source archive fixture"
+	upstreamCommit := strings.Repeat("a", 40)
+	var downloads atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/owner/project/git/ref/tags/v2.0":
+			fmt.Fprintf(w, `{"ref":"refs/tags/v2.0","object":{"type":"commit","sha":%q}}`, upstreamCommit)
+		case "/dist/2.0/fixture-2.0.tar.gz":
+			downloads.Add(1)
+			fmt.Fprint(w, body)
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	config.GitHub = github.Config{BaseURL: server.URL}
+	config.Tart.Executable = "/missing/tart"
+	contents := fmt.Sprintf(`PortSystem 1.0
+name fixture
+version 1.2
+revision 3
+categories devel
+options github.author github.project github.version github.tag_prefix github.tag_suffix git.branch
+github.author owner
+github.project project
+github.version ${version}
+github.tag_prefix v
+github.tag_suffix ""
+git.branch v${version}
+master_sites %s/dist/${version}
+checksums rmd160 %s \
+    sha256 %s \
+    size 1
+`, server.URL, strings.Repeat("0", 40), strings.Repeat("0", 64))
+	_, tree, err := repo.Branch(t.Context(), "candidate")
+	require.NoError(t, err)
+	before, _, err := repo.File(t.Context(), tree, "devel/fixture/Portfile")
+	require.NoError(t, err)
+	tree, err = repo.EditTree(t.Context(), tree, []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}})
+	require.NoError(t, err)
+	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
+	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{original}, Message: "version fixture", Author: sig, Committer: sig})
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}}))
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "2.0", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	var preview app.Preview
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &preview))
+	require.Equal(t, "v2.0", preview.Preparation.Release.Tag)
+	require.Contains(t, preview.Diff, "-revision 3")
+	require.Contains(t, preview.Diff, "+revision 0")
+	require.NoDirExists(t, filepath.Dir(config.DBPath))
+	stdout.Reset()
+	stderr.Reset()
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "v2.0", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	var result ActionResult
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.Len(t, result.Status.Jobs, 1)
+	job := result.Status.Jobs[0].Job
+	require.Equal(t, record.Bump, job.Spec.Action)
+	require.Equal(t, record.JobCompleted, job.State)
+	require.Equal(t, "v2.0", job.Spec.Version)
+	require.Equal(t, "2.0", job.ResolvedRelease.Version)
+	require.Equal(t, upstreamCommit, job.ResolvedRelease.Commit)
+	require.True(t, strings.HasPrefix(job.Prepared.Branch, "dockhand/bump/fixture-"))
+	require.Empty(t, result.Status.Jobs[0].Attempts)
+	_, tree, err = repo.Branch(t.Context(), job.Prepared.Branch)
+	require.NoError(t, err)
+	_, data, err := repo.File(t.Context(), tree, "devel/fixture/Portfile")
+	require.NoError(t, err)
+	require.Contains(t, string(data), "version 2.0")
+	require.Contains(t, string(data), "revision 0")
+	require.Contains(t, string(data), fmt.Sprintf("%x", sha256.Sum256([]byte(body))))
+	current, _, err := repo.Branch(t.Context(), "candidate")
+	require.NoError(t, err)
+	require.Equal(t, commit, current)
+	require.NoFileExists(t, filepath.Join(repo.CommonDir, "index"))
+	require.Equal(t, int64(2), downloads.Load())
+	stdout.Reset()
+	stderr.Reset()
+	require.NoError(t, Run(t.Context(), []string{"wait", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.Equal(t, int64(2), downloads.Load(), "reattachment must not prepare or download again")
 }

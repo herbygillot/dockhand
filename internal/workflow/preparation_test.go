@@ -29,7 +29,7 @@ func (fn prepareFunc) Prepare(ctx context.Context, r prepare.Request) (prepare.R
 func preparationFixture(t *testing.T, verification bool) (*fixture, workflow.Request) {
 	t.Helper()
 	f, _ := bindingFixture(t)
-	req := workflow.PreparationRequest{ID: "prepare", Branch: "candidate", Selection: bindRequest(f, "").Selection,
+	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "prepare", Branch: "candidate", Selection: bindRequest(f, "").Selection,
 		Destination: record.BranchReady, Verification: record.VerificationSkipped,
 		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform, Reason: "Rebuild dependents"}
 	if verification {
@@ -47,7 +47,7 @@ func preparationFixture(t *testing.T, verification bool) (*fixture, workflow.Req
 			return prepare.Result{}, err
 		}
 		tree, err := f.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{{Path: r.Selection.Selector, Before: before, After: []byte("version 1\nrevision 1\n"), Mode: before.Mode}})
-		return prepare.Result{Base: r.Source, Target: bound.Request.Spec.Targets[0], PreparedTree: record.ObjectID(tree), Commits: []prepare.CommitIntent{{Subject: "fixture: revbump", Body: r.Reason}}}, err
+		return prepare.Result{Base: r.Source, Release: r.Release, Target: bound.Request.Spec.Targets[0], PreparedTree: record.ObjectID(tree), Commits: []prepare.CommitIntent{{Subject: "fixture: revbump", Body: r.Reason}}}, err
 	})
 	return f, bound.Request
 }

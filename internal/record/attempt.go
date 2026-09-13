@@ -25,7 +25,7 @@ type BuildConfig struct {
 	EnvironmentDigest string
 	// ProviderConfig freezes provider-specific execution choices at acceptance.
 	ProviderConfig json.RawMessage `json:",omitempty"`
-	// FromSource requires a source build instead of satisfying the target from an archive.
+	// FromSource disables binary archives for the target and dependencies that need installing.
 	FromSource bool
 	Tests      TestPolicy
 }

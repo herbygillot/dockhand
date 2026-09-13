@@ -6,7 +6,7 @@ This document describes the initial SQLite implementation, following the [archit
 
 Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
-Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; revision-bump preparation is implemented; version bumps and publication follow separately.
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; latest-version discovery and publication follow separately.
 
 ## Packages and contracts
 
@@ -78,7 +78,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 3. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 4. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ The following summarizes the [initial schema](../internal/state/sqlite/migration
 | `sources` | ID, repository, commit/tree/base IDs, canonical identity fingerprint | One source description reused by related records |
 | `revisions` | ID, change, source, preceding revision, creation time | Immutable input revisions and their relationships |
 | `requests` | ID, repository, kind, canonical submitted input, digest, acceptance time, control completion time | Shared intake identity for jobs and cancellation |
-| `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, preparation claim/candidate, next action time, lifecycle times | Durable accepted work |
+| `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, resolved release, preparation claim/candidate, next action time, lifecycle times | Durable accepted work |
 | `control_jobs` | Request, job, applied time | Per-job cancellation progress |
 | `plans` | Job, optional revision, frozen single-target plan | Preserve requested verification coverage |
 | `attempts` | ID, job, target identity, immutable build choices and inputs, state, next action time, cancellation state, claim fields, last error | Current verification execution and scheduling |
@@ -172,3 +172,10 @@ Schema 3 adds job claim owner/generation/expiry, retry time, and a small `prepar
 Plans and attempts allow a NULL revision reference for standalone verification. Their job and source references remain mandatory. The storage API checks revision selection against the owning job and checks standalone attempt source identity; removing a contribution requirement does not remove repository or build-input identity. Existing tracked jobs, attempts, submissions, evidence, resources, and provider executions survive migration. Foreign-key checks run before completing the transactional table rebuild.
 
 Job scheduling includes preparation claims and retries. Cancellation before any candidate exists can settle immediately because preparation only writes immutable objects; a later preparation result still has to prove ownership. Integration cancellation respects branch exclusion and uncertain effects. Git's branch lock is operation-specific and remains outside the state contract. Read-only opening does not migrate older databases; a writable command performs the upgrade.
+
+
+## Resolved release checkpoint
+
+Schema 4 adds nullable `jobs.resolved_release` JSON. It records one explicit bump's requested spelling, effective version, GitHub repository, exact tag, peeled commit, and observation time. The write API requires a matching bump request and valid commit identity, then forbids replacement or removal once present. This is a job result checkpoint, separate from immutable accepted intent and from the later prepared candidate.
+
+The driver records the release in one claimed pass and prepares the source in a later pass. No database transaction spans tag lookup, source evaluation, or downloading. Failed checkpoint writes cannot start preparation; expired or canceled lookup claims cannot overwrite a later result. Scheduling permits cancellation before preparation for both bump actions. Existing schema-3 candidates and integration intent remain unchanged on migration; writable opening upgrades older schemas transactionally, while read-only opening requires the current schema. Archive bytes, HTTP credentials, and full preparation diagnostics are not stored in this column.

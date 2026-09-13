@@ -36,7 +36,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command := &cobra.Command{
 			Use: use, Short: spec.short,
-			Long: spec.short + ".\n\nRevision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. Version preparation and checksum refresh are not implemented yet. An optional bump version may include its upstream tag prefix.",
+			Long: spec.short + ".\n\nVersion and revision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. Explicit versions are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Latest-version selection and standalone checksum refresh are not implemented yet. A bump version may include its upstream tag prefix.",
 			Args: func(cmd *cobra.Command, args []string) error {
 				if err := cobra.RangeArgs(1, maximum)(cmd, args); err != nil {
 					return err
@@ -57,8 +57,15 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				if spec.action != record.BumpRevision {
-					return fmt.Errorf("%w: %w: %s still needs release/download/checksum preparation", ErrNotImplemented, prepare.ErrNotImplemented, spec.action)
+				if spec.action == record.RefreshChecksums {
+					return fmt.Errorf("%w: %w: checksum refresh", ErrNotImplemented, prepare.ErrNotImplemented)
+				}
+				var version string
+				if spec.action == record.Bump {
+					if len(args) < 2 {
+						return fmt.Errorf("%w: latest-version selection; provide an explicit version", ErrNotImplemented)
+					}
+					version = args[1]
 				}
 				if options.Publish {
 					return fmt.Errorf("%w: publication is not connected", ErrNotImplemented)
@@ -75,7 +82,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					defer services.Close()
 					fmt.Fprintln(cmd.ErrOrStderr(), "Binding committed source; working-tree edits are excluded.")
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{
-						ID: record.RequestID("request_" + rand.Text()), Branch: branch,
+						Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()), Branch: branch,
 						Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices},
 						Reason:    reason, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
@@ -108,6 +115,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(preview)
 				}
 				fmt.Fprintf(cmd.ErrOrStderr(), "Branch: %s\nCommit: %s\nTarget: %s\n", preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
+				if release := preview.Preparation.Release; release != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Release: %s (%s); upstream commit: %s\n", release.Tag, release.Version, release.Commit)
+				}
 				_, err = fmt.Fprint(cmd.OutOrStdout(), preview.Diff)
 				return err
 			},
@@ -116,9 +126,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		command.Flags().StringVar(&branch, "branch", "", "Select committed source from a literal local branch")
 		command.Flags().StringVar(&subport, "subport", "", "Select a subport within the Portfile")
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")
-		if spec.action == record.BumpRevision {
+		if spec.action == record.BumpRevision || spec.action == record.Bump {
 			build.flags(command, r.config)
-			command.Flags().StringVar(&reason, "reason", "", "Reason for the revision bump")
+			command.Flags().StringVar(&reason, "reason", "", "Reason for the change")
 		}
 		commands = append(commands, command)
 	}

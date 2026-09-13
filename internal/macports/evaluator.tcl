@@ -20,10 +20,11 @@ namespace eval ::dockhand {
             set worker [ditem_key $handle workername]
             set failures [dict create]
             foreach field {
-                checksums distfiles worksrcdir filespath
+                checksums distfiles worksrcdir filespath master_sites fetch.type
+                fetch.user_agent fetch.ignore_sslcert
                 patchfiles patch.pre_args livecheck.type livecheck.url livecheck.regex
                 livecheck.version go.vendors cargo.crates cargo.crates_github
-                github.author github.project github.version github.tag_prefix github.tag_suffix
+                github.author github.project github.version github.tag_prefix github.tag_suffix github.tarball_from
                 git.url git.branch
             } {
                 if {[$worker eval [list exists $field]]} {
@@ -34,6 +35,28 @@ namespace eval ::dockhand {
                     }
                 }
             }
+            if {[catch {$worker eval {
+                set target ${org.macports.fetch}
+                expr {[ditem_key $target procedure] ne "portfetch::fetch_main" ||
+                      [llength [ditem_key $target pre]] != 0 ||
+                      [llength [ditem_key $target post]] != 0}
+            }} customized]} {
+                dict set failures fetch.customized "cannot inspect fetch target"
+            } else {
+                dict set out fetch.customized $customized
+            }
+            set credentials 0
+            foreach field {fetch.user fetch.password} {
+                if {[$worker eval [list exists $field]]} {
+                    if {[catch {$worker eval [list option $field]} value]} {
+                        dict set failures fetch.has_credentials "cannot evaluate fetch credentials"
+                    } elseif {$value ne ""} {
+                        set credentials 1
+                    }
+                }
+                dict unset out $field
+            }
+            dict set out fetch.has_credentials $credentials
             dict set out option_errors $failures
             return $out
         } finally {

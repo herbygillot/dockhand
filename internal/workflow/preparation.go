@@ -13,6 +13,10 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/state"
 )
 
+func preparationAction(action record.Action) bool {
+	return action == record.Bump || action == record.BumpRevision
+}
+
 func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, string, error) {
 	e := c.engine
 	var selected record.Job
@@ -48,7 +52,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		job.State, job.Detail, job.RetryAt = record.JobActive, "Preparing revision bump", nil
+		job.State, job.Detail, job.RetryAt = record.JobActive, "Preparing "+string(job.Spec.Action), nil
 		selected, changed = job, true
 		return tx.PutJob(ctx, job)
 	})
@@ -60,7 +64,19 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	candidate, operationErr := c.prepareCandidate(callCtx, selected)
+	var candidate record.PreparedChange
+	var release record.Release
+	var operationErr error
+	resolving := selected.Spec.Action == record.Bump && selected.ResolvedRelease == nil
+	if resolving {
+		if e.Releases == nil {
+			operationErr = fmt.Errorf("workflow: release resolver is required")
+		} else {
+			release, operationErr = e.Releases.ResolveRelease(callCtx, preparationRequest(selected))
+		}
+	} else {
+		candidate, operationErr = c.prepareCandidate(callCtx, selected)
+	}
 	if ctx.Err() != nil {
 		return changed, "", ctx.Err()
 	}
@@ -79,6 +95,9 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		} else if operationErr != nil {
 			detail = operationErr.Error()
 			finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
+		} else if resolving {
+			job.ResolvedRelease = &release
+			job.Detail = "Resolved " + release.Tag + "; awaiting source preparation"
 		} else {
 			job.Prepared = &candidate
 			job.Detail = "Prepared candidate; awaiting branch integration"
@@ -86,6 +105,13 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		return tx.PutJob(ctx, job)
 	})
 	return changed, detail, err
+}
+
+func preparationRequest(job record.Job) prepare.Request {
+	target := job.Spec.Targets[0]
+	return prepare.Request{Action: job.Spec.Action, Source: job.Spec.Source,
+		Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants},
+		Platform:  job.Spec.Preparation.Platform, Reason: job.Spec.Reason, Version: job.Spec.Version, Release: job.ResolvedRelease}
 }
 
 func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.PreparedChange, error) {
@@ -99,13 +125,11 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	}
 	target := job.Spec.Targets[0]
 	choices := job.Spec.Preparation
-	result, err := e.Preparer.Prepare(ctx, prepare.Request{
-		Action: job.Spec.Action, Source: job.Spec.Source, Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants}, Platform: choices.Platform, Reason: job.Spec.Reason,
-	})
+	result, err := e.Preparer.Prepare(ctx, preparationRequest(job))
 	if err != nil {
 		return record.PreparedChange{}, err
 	}
-	if result.Base != job.Spec.Source || targetKey(result.Target) != targetKey(target) || !git.ValidObjectID(string(result.PreparedTree)) || len(result.Commits) != 1 {
+	if (job.Spec.Action == record.Bump && (result.Release == nil || *result.Release != *job.ResolvedRelease)) || result.Base != job.Spec.Source || targetKey(result.Target) != targetKey(target) || !git.ValidObjectID(string(result.PreparedTree)) || len(result.Commits) != 1 {
 		return record.PreparedChange{}, fmt.Errorf("workflow: preparation result does not match accepted input")
 	}
 	intent := result.Commits[0]
@@ -131,6 +155,10 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	if name == "" {
 		name = "port"
 	}
-	branch := "dockhand/revbump/" + name + "-" + strings.ToLower(strings.TrimPrefix(string(job.ID), "job_"))
+	prefix := "dockhand/revbump/"
+	if job.Spec.Action == record.Bump {
+		prefix = "dockhand/bump/"
+	}
+	branch := prefix + name + "-" + strings.ToLower(strings.TrimPrefix(string(job.ID), "job_"))
 	return record.PreparedChange{Branch: branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}}, nil
 }

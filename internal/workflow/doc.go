@@ -21,13 +21,14 @@
 // state write cannot prevent a paused driver from making a late external call.
 // Cleanup has its own claims and remains eligible after a job finishes.
 //
-// Revision-bump jobs prepare immutable objects, checkpoint their candidate, and
+// Version-bump jobs first checkpoint their resolved release. Both bump actions
+// prepare immutable objects, checkpoint their candidate, and
 // integrate a new branch under a branch-specific Git lock and ref preconditions.
 // Recovery adopts only the recorded candidate. Verification can then build that
 // result through the same attempt lifecycle as standalone committed-source jobs.
 // Standalone verification creates no contribution; tracked-branch verification
 // records successor revisions without redefining the contribution's edited targets.
-// Version bumps, publication, dependent scheduling, and evidence reuse remain unfinished.
+// Latest-version selection, publication, dependent scheduling, and evidence reuse remain unfinished.
 // Intake supports more actions than the cycle can currently execute; acceptance
 // alone establishes neither provider admission nor successful completion.
 package workflow

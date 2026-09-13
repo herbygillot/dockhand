@@ -91,7 +91,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		var changed bool
 		var detail string
 		var err error
-		if job.Spec.Action == record.BumpRevision && job.ResultRevision == "" {
+		if preparationAction(job.Spec.Action) && job.ResultRevision == "" {
 			changed, detail, err = c.advancePreparation(ctx, job.ID)
 		} else {
 			changed, detail, err = c.advanceJob(ctx, job.ID)
@@ -248,5 +248,5 @@ func (c *cycle) claim(generation *uint64, now time.Time) (*record.Claim, error) 
 }
 
 func verificationJob(job record.Job) bool {
-	return job.Spec.Action == record.Verify || (job.Spec.Action == record.BumpRevision && job.ResultRevision != "" && job.Spec.Verification == record.VerificationRequired)
+	return job.Spec.Action == record.Verify || (preparationAction(job.Spec.Action) && job.ResultRevision != "" && job.Spec.Verification == record.VerificationRequired)
 }

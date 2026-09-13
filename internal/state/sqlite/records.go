@@ -181,8 +181,8 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	var source, raw string
 	var accepted int64
 	var canceled, admitted, finished, until, retry sql.NullInt64
-	var owner, prepared sql.NullString
-	err := t.conn.QueryRowContext(ctx, `SELECT id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared FROM jobs WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.RequestID, &change, &specChange, &input, &result, &source, &v.Spec.Action, &v.Spec.Destination, &v.Spec.Verification, &raw, &v.State, &accepted, &canceled, &admitted, &finished, &v.Detail, &owner, &v.ClaimGeneration, &until, &retry, &prepared)
+	var owner, prepared, release sql.NullString
+	err := t.conn.QueryRowContext(ctx, `SELECT id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared,resolved_release FROM jobs WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.RequestID, &change, &specChange, &input, &result, &source, &v.Spec.Action, &v.Spec.Destination, &v.Spec.Verification, &raw, &v.State, &accepted, &canceled, &admitted, &finished, &v.Detail, &owner, &v.ClaimGeneration, &until, &retry, &prepared, &release)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -194,6 +194,12 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	v.Spec.Preparation = options.Preparation
 	v.Claim = readClaim(owner, v.ClaimGeneration, until)
 	v.RetryAt = scanTime(retry)
+	if release.Valid {
+		v.ResolvedRelease = &record.Release{}
+		if err = decode(release.String, v.ResolvedRelease); err != nil {
+			return v, err
+		}
+	}
 	if prepared.Valid {
 		v.Prepared = &record.PreparedChange{}
 		if err = decode(prepared.String, v.Prepared); err != nil {
@@ -229,6 +235,16 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
+	var release any
+	if r := v.ResolvedRelease; r != nil {
+		if v.Spec.Action != record.Bump || r.Requested != v.Spec.Version || r.Version == "" || r.Repository == "" || r.Tag == "" || !objectID(record.ObjectID(r.Commit)) || r.ObservedAt.IsZero() {
+			return state.ErrInvalid
+		}
+		release, err = encode(r)
+		if err != nil {
+			return err
+		}
+	}
 	var prepared any
 	if v.Prepared != nil {
 		if v.Prepared.Branch == "" || !objectID(v.Prepared.Source.Commit) || !objectID(v.Prepared.Source.Tree) {
@@ -247,6 +263,11 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 		if old.RequestID != v.RequestID || !old.AcceptedAt.Equal(v.AcceptedAt) || old.ClaimGeneration > v.ClaimGeneration {
 			return state.ErrConflict
 		}
+		if old.ResolvedRelease != nil {
+			if err = immutable(old.ResolvedRelease, v.ResolvedRelease); err != nil {
+				return err
+			}
+		}
 		if old.Prepared != nil {
 			if v.Prepared == nil || old.Prepared.Branch != v.Prepared.Branch || old.Prepared.Source != v.Prepared.Source || (old.Prepared.IntegrationStarted && !v.Prepared.IntegrationStarted) {
 				return state.ErrConflict
@@ -255,7 +276,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 		if old.ResultRevision != "" && (v.ResultRevision != old.ResultRevision || v.ChangeID != old.ChangeID) {
 			return state.ErrConflict
 		}
-		if err = t.exec(ctx, "UPDATE jobs SET change_id=?,result_revision=?,state=?,cancel_at=?,admitted_at=?,finished_at=?,detail=?,claim_owner=?,claim_generation=?,claim_until=?,retry_at=?,prepared=? WHERE repository_id=? AND id=?", nullableID(v.ChangeID), nullableID(v.ResultRevision), v.State, nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared, t.repo, v.ID); err != nil {
+		if err = t.exec(ctx, "UPDATE jobs SET change_id=?,result_revision=?,state=?,cancel_at=?,admitted_at=?,finished_at=?,detail=?,claim_owner=?,claim_generation=?,claim_until=?,retry_at=?,prepared=?,resolved_release=? WHERE repository_id=? AND id=?", nullableID(v.ChangeID), nullableID(v.ResultRevision), v.State, nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared, release, t.repo, v.ID); err != nil {
 			return err
 		}
 		return t.scheduleJob(ctx, v.ID)
@@ -287,7 +308,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	err = t.exec(ctx, `INSERT INTO jobs(id,repository_id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.RequestID, nullableID(v.ChangeID), nullableID(v.Spec.ChangeID), nullableID(v.Spec.InputRevision), nullableID(v.ResultRevision), source, v.Spec.Action, v.Spec.Destination, v.Spec.Verification, raw, v.State, v.AcceptedAt.UnixMilli(), nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared)
+	err = t.exec(ctx, `INSERT INTO jobs(id,repository_id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared,resolved_release) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.RequestID, nullableID(v.ChangeID), nullableID(v.Spec.ChangeID), nullableID(v.Spec.InputRevision), nullableID(v.ResultRevision), source, v.Spec.Action, v.Spec.Destination, v.Spec.Verification, raw, v.State, v.AcceptedAt.UnixMilli(), nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), prepared, release)
 	if err != nil {
 		return err
 	}
@@ -295,7 +316,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 }
 func (t *transaction) scheduleJob(ctx context.Context, id record.JobID) error {
 	return t.exec(ctx, `UPDATE jobs SET next_action_at=CASE WHEN state NOT IN ('queued','active') THEN NULL
- WHEN action='bump-revision' AND cancel_at IS NOT NULL AND prepared IS NULL THEN 0
+ WHEN action IN ('bump','bump-revision') AND cancel_at IS NOT NULL AND prepared IS NULL THEN 0
  ELSE max(coalesce(claim_until,0),coalesce(retry_at,0),coalesce((SELECT min(CASE WHEN jobs.cancel_at IS NOT NULL AND a.state='queued' THEN coalesce(a.claim_until,0) ELSE a.next_action_at END) FROM attempts a WHERE a.repository_id=jobs.repository_id AND a.job_id=jobs.id),0)) END WHERE repository_id=? AND id=?`, t.repo, id)
 }
 func (t *transaction) Plan(ctx context.Context, id record.JobID) (record.VerificationPlan, error) {

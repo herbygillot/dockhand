@@ -68,7 +68,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	}
 	if spec.Preparation != nil {
 		choices := *spec.Preparation
-		if spec.Action != record.BumpRevision || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 || spec.Destination == record.Published {
+		if !preparationAction(spec.Action) || (spec.Action == record.Bump && spec.Version == "") || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 || spec.Destination == record.Published {
 			return record.JobSpec{}, fmt.Errorf("%w: preparation requires one committed source target and a branch-ready or verification destination", ErrInvalidRequest)
 		}
 		if !git.ValidBranchName(choices.SourceBranch) || choices.Author.Name == "" || choices.Author.Email == "" || strings.ContainsAny(choices.Author.Name+choices.Author.Email, "\x00\r\n<>") || !utf8.ValidString(choices.Author.Name+choices.Author.Email) {

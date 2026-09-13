@@ -12,7 +12,7 @@ func jobEligible(job record.Job, attempts []record.Attempt, now time.Time) bool 
 	if jobTerminal(job.State) {
 		return false
 	}
-	if job.Spec.Action == record.BumpRevision && job.CancelRequestedAt != nil && job.Prepared == nil {
+	if preparationAction(job.Spec.Action) && job.CancelRequestedAt != nil && job.Prepared == nil {
 		return true
 	}
 	if live(job.Claim, now) || !due(job.RetryAt, now) {
