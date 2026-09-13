@@ -23,6 +23,8 @@ namespace eval ::dockhand {
                 checksums distfiles worksrcdir filespath
                 patchfiles patch.pre_args livecheck.type livecheck.url livecheck.regex
                 livecheck.version go.vendors cargo.crates cargo.crates_github
+                github.author github.project github.version github.tag_prefix github.tag_suffix
+                git.url git.branch
             } {
                 if {[$worker eval [list exists $field]]} {
                     if {[catch {$worker eval [list option $field]} value]} {

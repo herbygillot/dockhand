@@ -187,3 +187,28 @@ func TestStartupErrorsAreNotSuccessfulHandshakes(t *testing.T) {
 	_, err = evaluator.NativePlatform(t.Context())
 	require.True(t, errors.Is(err, ErrStartup))
 }
+
+func TestEvaluationExposesComputedUpstreamTagMetadata(t *testing.T) {
+	evaluator := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.root, "devel/tagged/Portfile", `PortSystem 1.0
+name tagged
+version 1.8.1
+options github.version github.tag_prefix github.tag_suffix git.branch
+github.version ${version}
+github.tag_prefix release/
+github.tag_suffix -stable
+git.branch ${github.tag_prefix}${github.version}${github.tag_suffix}
+`)
+	targets, err := evaluator.Resolve(t.Context(), tree, Selection{Selector: "tagged"})
+	require.NoError(t, err)
+	source, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := evaluator.Evaluate(t.Context(), source)
+	require.NoError(t, err)
+	info := snapshot.Ports["tagged"]
+	require.Equal(t, "release/1.8.1-stable", info.Options["git.branch"])
+	require.Equal(t, "release/", info.Options["github.tag_prefix"])
+	require.Equal(t, "-stable", info.Options["github.tag_suffix"])
+	require.Equal(t, "1.8.1", info.Options["github.version"])
+}
