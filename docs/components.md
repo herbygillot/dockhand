@@ -81,9 +81,11 @@ Observation and judgment remain separate within the capability packages. The dri
 
 `tcl` supplies the proven process/RPC and syntax machinery. MacPorts remains the semantic authority. Reuse focused source editing and Tcl syntax code where it holds up independently; it does not need to be redesigned to fit a driver.
 
-`upstream` collects release evidence and assesses eligible versions. It returns structured update-available, current, and unknown results. It has no dependency on job submission, a state writer, or branch creation. Phase-one automatic bumps use it; phase-two `outdated` exposes the same service directly.
+`upstream` collects release evidence, assesses eligible versions, and resolves explicit version/reference requests. It keeps the requested spelling, MacPorts version, and upstream tag distinct. Prefix inference uses the current port's source convention supplied through bound MacPorts metadata and confirms the candidate against upstream evidence. It returns structured update-available, current, and unknown results. It has no dependency on job submission, a state writer, or branch creation. Phase-one automatic and explicit bumps use it; phase-two `outdated` exposes discovery directly.
 
 `prepare` turns a requested source transformation into proposed tree-wide edits, per-file preconditions, commit intent, and fidelity evidence. It coordinates MacPorts evaluation, upstream discovery when needed, downloads/checksums, and any required auxiliary-file generation. Begin with version bump, revision bump, and checksum refresh in one package. Extract specialized download or vendoring helpers when porting working implementations makes a useful boundary clear.
+
+For current-checkout verification, `git` supplies immutable working-tree snapshot capture, `macports` resolves targets against that snapshot, and `workflow` records its provenance and any contribution association. Standalone verification must not reserve a branch for one port. Edited ports and verification targets remain separate; `verify` judges evidence applicability across identical trees and matching build inputs, and `publish` requires committed source. These are approved boundaries for the next source-selection work, not implemented behavior.
 
 Preparation can create temporary files and Git objects, but returns the result for driver adoption. `--diff` calls the same preparation capability and renders its proposed changes without creating a job or moving tracked refs. Phase-two rebase and amend become additional preparation actions returning the same kind of result. Explicit user edits can be captured as immutable input without needing to rediscover an upstream version.
 
@@ -156,7 +158,7 @@ Explicit branch binding and native MacPorts evaluation are now implemented. `wor
 
 Real Tart execution is now implemented through this path. CLI verification submission/observation and current-process residency are now connected. Next, add preparation and publication through the same engine. Their tables and queries arrive with their executors; the initial database does not need publication, review, discovery, or dependent-graph tables. Existing domain distinctions remain available for those features.
 
-Committed changes to a tracked branch can now become another immutable revision when explicitly bound and submitted. Working-tree edit adoption and its user-facing commands remain a separate design discussion. Discovery, rebase, amend, and PR monitoring extend the existing packages without a second execution path.
+Committed changes to a tracked branch can now become another immutable revision when explicitly bound and submitted. The [approved source-selection design](cli-design.md#approved-source-selection-and-human-edits) now specifies working-tree verification, explicit committed-branch selection, inferred contribution scope, and standalone verification without an exclusive branch association. Implement those boundaries before building preparation on the current one-branch/one-target restriction. Optional bump versions and upstream-prefix inference are also approved; their execution remains part of the preparation work. Discovery, rebase, amend, and PR monitoring extend the existing packages without a second execution path.
 
 ## Groundwork status
 

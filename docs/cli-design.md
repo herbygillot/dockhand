@@ -43,6 +43,34 @@ Default verification waits for admission or a conclusive outcome; `--wait` follo
 
 JSON verification/attachment results contain the selected job ID, any acceptance receipt, the last status snapshot, and an interruption indicator. Progress and logs stay on stderr. `start --json` writes a stopped/interrupted result when it exits. Exit codes distinguish milestone success (0), failed work (2), needs-attention or superseded work (3), canceled work or process interruption (130), and other errors (1). Confirmed cancellation is success for `cancel --wait`; stopping attachment never submits a cancellation request.
 
+## Approved source selection and human edits
+
+This section specifies the next behavior to implement. The committed-source, one-port commands above remain the current implementation.
+
+The branch is the everyday handle for a tracked contribution; job IDs identify exact executions. Users can edit, commit, and rebase with ordinary Git commands, then ask Dockhand to verify or publish without a separate adoption step for every edit. A renamed or missing tracked branch requires an actionable error rather than silent reassociation.
+
+| Command | Source and target selection |
+| --- | --- |
+| `bump <port\|selector> [version]` | Prepare the requested update; omission of the version requests the latest eligible release. Explicit version resolution is specified below. |
+| `verify <port\|selector>` | Test the selected targets using a frozen snapshot of the current checkout, including working-tree edits. |
+| `verify` | Use the current checkout and infer intended verification targets from its tracked contribution when that scope is clear. |
+| `verify [<port\|selector>] --branch <branch>` | Test committed contents of the named branch; infer targets only when its tracked contribution supplies a clear scope. |
+| `publish [--branch <branch>]` | Publish committed contents of the selected tracked contribution, defaulting to the current branch. |
+| `wait [<job_id>] [--branch <branch>]` | Attach to existing work selected by job ID, branch, or the current contribution. |
+| `cancel [<job_id>] [--branch <branch>]` | Request cancellation of existing work selected the same way. |
+
+Port selectors and branches occupy distinct argument positions: a positional verification target is never guessed to be a branch. An explicit job ID and `--branch` are alternative selectors. Omission is allowed only when context determines the work; otherwise report the ambiguity and the concrete targets or job IDs the user can choose. Wait/cancel selection binds the relevant existing jobs at invocation time and does not follow future submissions.
+
+Current-checkout verification captures the working-tree contents of tracked files, including deletions and staged additions, without altering the user's index or making a commit on their branch. Where a staged file has further unstaged edits, its working-tree contents are selected. Initially, new files must be staged to be included; report relevant untracked files with instructions to stage them rather than silently omitting a required patch. Explicit `--branch`, including the current branch's name, selects only committed contents.
+
+Before expensive work, display the branch or detached source, whether input comes from the working tree or a commit, the number of modified files captured, and the verification targets. Freeze the accepted snapshot before submission. Subsequent edits, commits, or branch movement cannot change a queued or running build. Reattaching to its job continues the original accepted work.
+
+Verification evidence describes the tested source tree and build inputs. Committing an unchanged tested tree can preserve applicable evidence even though the commit ID changes. Publication selects committed source and checks the full tree, target/configuration coverage, environment, and other build inputs; matching just a Portfile, version, or commit message is insufficient. If the tested edits remain uncommitted, tell the user to commit them before publishing. Report when committed contents differ from the tested snapshot and need verification.
+
+A contribution may change several ports. The edited-port set and the verification-target set are distinct: dependents can need testing without edits, and edits can alter the required coverage. Remember the user's intent and reconcile later source changes with it. Additional unrelated ports or shared PortGroup edits can require an explicit scope decision rather than silent inclusion or exclusion.
+
+Standalone verification does not establish an exclusive contribution association for its branch. Running `verify jq` and then `verify terraform` on `master` must work independently. Both jobs retain exact source and target identities without turning `master` into a one-port contribution.
+
 ## The flow
 
 The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified. If `-P` / `--publish` is specified, the branch will ultimately be submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports).
@@ -50,7 +78,8 @@ The standard workflow for `dockhand` involves bumping a port's version to its la
 The driver owns each accepted job and its bookkeeping. The CLI submits the request transactionally to the state store through the shared workflow API, runs targeted driver cycles in the same invocation, and observes recorded progress. A normal invocation remains attached until the verification provider accepts the build; `--wait` remains attached until the requested work completes. With `--wait`, the invocation keeps running the required cycles through completion. After it exits, further workflow advancement requires a running `dockhand start` process or a later driver cycle. Both modes use the same workflow implementation; commands do not launch background drivers.
 
 ```text
-dockhand (bump | bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [-P|--publish] [--wait]
+dockhand bump <port|selector> [version] [-N|--no-verify] [-P|--publish] [--wait]
+dockhand (bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [-P|--publish] [--wait]
 ```
 
 ```sh
@@ -85,27 +114,49 @@ dockhand bump jq --no-verify
 # Explicitly request publication without verification, subject to publication policy.
 dockhand bump jq --no-verify --publish --wait
 
-# Request publication of an existing change.
-dockhand publish <port|selector|branch> [--wait]
+# Request publication of the current contribution, or select a branch.
+dockhand publish [--branch <branch>] [--wait]
 
-# Request verification of an existing target; optionally follow its build logs.
-dockhand verify <port|selector|branch> [--wait|--trace]
+# Verify current-checkout edits; omit targets when contribution scope is clear.
+dockhand verify [<port|selector>] [--wait|--trace]
+
+# Explicit branch selection verifies committed contents.
+dockhand verify [<port|selector>] --branch <branch> [--wait|--trace]
 
 # Read verification progress, publication state, and anything needing attention.
 dockhand status
 
 # Reattach until the selected job or jobs reach their requested destination.
-dockhand wait <port|selector|branch|job_id>
+dockhand wait [<job_id>] [--branch <branch>]
 
 # Explicitly cancel outstanding work while preserving the change branch.
-dockhand cancel <port|selector|branch>
+dockhand cancel [<job_id>] [--branch <branch>]
 
 # Run a resident driver that advances accepted work.
 # Ongoing PR monitoring is added in phase two.
 dockhand start
 ```
 
-The examples using `bump` flags also apply to `bump-revision` and `refresh-checksums` where meaningful. Command-specific arguments, such as a target version or revision-bump reason, are additional to the workflow options shown here.
+The examples using `bump` flags also apply to `bump-revision` and `refresh-checksums` where meaningful. The optional version immediately follows the `bump` target. Other command-specific arguments, such as a revision-bump reason, remain separate from workflow options.
+
+**Explicit versions and upstream tags**
+
+```sh
+# Omission requests the latest eligible release.
+dockhand bump jq
+
+# Supply the requested version with its upstream prefix.
+dockhand bump jq v1.8.1
+
+# Infer an omitted prefix from this port's current upstream reference.
+dockhand bump jq 1.8.1
+```
+
+The version argument expresses the requested release; it need not be the literal text eventually written to the Portfile's `version` field. Keep the user's input, the resolved MacPorts version, and the upstream tag/reference distinct. For example, if the port currently derives tags as `v${version}`, input `1.8.1` can resolve to tag `v1.8.1` while the Portfile version remains `1.8.1`. These examples illustrate the command syntax, not a claim about jq's actual upstream tag spelling.
+
+Preserve a prefix the user explicitly supplies. If the prefix is omitted, use the current Portfile's evaluated upstream reference and its version-to-tag convention to infer the candidate; do not hardcode `v` or derive the convention from the version field alone. Confirm the candidate against upstream release/tag evidence before applying edits. Do not double a prefix, strip arbitrary text, silently substitute another release, or treat failed upstream lookup as proof that a tag does not exist. If the convention is unclear, multiple candidates match, or no candidate can be confirmed, report the candidates or lookup failure and ask for an exact reference where that resolves the problem.
+
+Display the resolved version and tag when they differ, including in `--diff` output. Ports using release archives without Git tags resolve the requested version through their source convention without inventing a tag. Automatic latest-release selection and explicit-version resolution share this preparation path. Once resolved for accepted work, record the chosen source identity so retries do not rediscover a different release.
 
 **Return behavior and capacity**
 
@@ -152,7 +203,7 @@ Missing verification tools must not silently authorize unverified publication. I
 
 `--diff` performs only the preparation needed to show the proposed changes. It may evaluate Portfiles and fetch inputs needed to calculate checksums, but it does not edit the working tree, create a branch, persist a job, start a build, or publish a PR. Reject combinations with `--publish`, `--wait`, or `--trace` that ask a preview to execute the workflow.
 
-Targets resolve consistently within the selected repository across commands. A foreign-repository job ID is an error, even if it exists in the same database. A job ID identifies exact accepted work. Branches and unique port names provide convenient access to tracked changes; ambiguous references produce a choice rather than silently selecting unrelated work. Selector results remain individually visible. Verification of an untracked port captures its source context so its result names what was actually tested.
+Targets resolve consistently within the selected repository across commands. A foreign-repository job ID is an error, even if it exists in the same database. A job ID identifies exact accepted work. Port selectors identify targets, `--branch` selects committed branch source or its associated work, and job IDs select exact executions; ambiguous inferred scope produces a choice rather than silently selecting unrelated work. Selector results remain individually visible. Verification of an untracked port captures its source context so its result names what was actually tested.
 
 The default command result says what was handed off, including the job ID and destination. It does not claim that a still-running verification has passed. Attached commands return the outcome of the work they awaited, with failure and needs-attention results distinguishable from successful completion. Keep final output and progress reporting based on the same driver-maintained state.
 
@@ -171,8 +222,8 @@ The architecture must support these workflows from phase one, even though their 
 | `outdated <port\|selector>` | Report eligible upstream updates, current ports, and unknown results without creating branches or workflow jobs. |
 | `rebase <branch>` | Prepare a new revision of the tracked change on the latest fetched upstream base, then request verification by default. |
 | `amend <branch>` | Incorporate explicitly selected corrective edits into the appropriate logical commit, then request verification by default. |
-| `verify <branch>` | Use the existing verification workflow to test the selected local revision after corrections. |
-| `publish <branch>` | Use the existing publication workflow to update the associated PR with the selected revision and applicable evidence. |
+| `verify --branch <branch>` | Use the existing verification workflow to test the selected committed revision after corrections; plain `verify` includes current-checkout edits. |
+| `publish --branch <branch>` | Use the existing publication workflow to update the associated PR with the selected committed revision and applicable evidence. |
 
 `outdated` shares discovery and version assessment with `bump`. Automatic latest-version bumps already skip current ports, so no separate `--outdated` filter is needed. Unknown results remain visible and do not prevent independent known updates from proceeding.
 
