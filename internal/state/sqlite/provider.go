@@ -127,3 +127,11 @@ func bytesOrNil(b []byte) any {
 	}
 	return b
 }
+
+func (s *Store) ProviderPool(ctx context.Context, id string) (record.ProviderPool, error) {
+	var pool record.ProviderPool
+	err := s.transaction(ctx, false, "", func(ctx context.Context, t *transaction) error {
+		return storageError(t.conn.QueryRowContext(ctx, "SELECT id,scope,directory,capacity FROM provider_pools WHERE id=?", id).Scan(&pool.ID, &pool.Scope, &pool.Directory, &pool.Capacity))
+	})
+	return pool, err
+}

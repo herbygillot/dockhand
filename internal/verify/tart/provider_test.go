@@ -2,6 +2,7 @@ package tart
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -353,4 +354,35 @@ func TestCancellationPreservesAnAlreadyFinishedGuest(t *testing.T) {
 	require.Equal(t, record.VerdictPassed, observed.Verdict)
 	require.NotEmpty(t, observed.Logs)
 	require.Equal(t, 1, m.calls["stop"])
+}
+
+func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
+	f, m := singleRun(t)
+	config, err := f.provider.BuildConfig(t.Context(), testPlatform, record.TestSkip, true)
+	require.NoError(t, err)
+	f.request.Spec.Config = config
+	p := &Provider{State: f.store, Repository: f.provider.Repository, Repo: f.provider.Repo, Config: Config{Home: f.provider.Config.Home, ArtifactDirectory: f.provider.Config.ArtifactDirectory}, backend: m}
+	admitted, err := p.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, admitted.State)
+	again, err := p.Reconcile(t.Context(), f.request.ID)
+	require.NoError(t, err)
+	require.Equal(t, verify.RunFound, again.State)
+	require.NoError(t, p.Cancel(t.Context(), admitted.Run))
+	observed, err := p.Observe(t.Context(), admitted.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictCanceled, observed.Verdict)
+	var frozen Config
+	require.NoError(t, json.Unmarshal(config.ProviderConfig, &frozen))
+	require.Equal(t, "fixture", frozen.Image)
+	require.Equal(t, 1, frozen.Capacity)
+	chunk, err := p.ReadLog(t.Context(), admitted.Run, 0, 65536)
+	require.NoError(t, err)
+	require.Equal(t, "build log\n", string(chunk.Data))
+	require.True(t, chunk.Complete)
+	_, err = p.Release(t.Context(), admitted.Resources[0])
+	require.NoError(t, err)
+	chunk, err = p.ReadLog(t.Context(), admitted.Run, 6, 65536)
+	require.NoError(t, err)
+	require.Equal(t, "log\n", string(chunk.Data))
 }

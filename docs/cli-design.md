@@ -1,6 +1,6 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. Action-command execution and persistent residency remain unfinished.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Preparation, publication, and broader target selection remain unfinished.
 
 ## Global options
 
@@ -21,7 +21,27 @@ The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `-
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
-`status` calls the shared workflow projection through read-only SQLite access and renders human-readable output or JSON. Other phase-one command names and flags are registered, but their handlers still return explicit not-implemented errors. Request acceptance and verification cycles are available through the Go API; selector resolution, action-command submission, and resident execution remain to be connected.
+`status` calls the shared workflow projection through read-only SQLite access and renders human-readable output or JSON. Verification submission, job-ID attachment/cancellation, and resident execution now use the shared Go workflow API. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
+
+## Implemented verification commands
+
+```text
+dockhand verify <port> --image <prepared-local-image> [--branch <branch>]
+    [--subport <name>] [--variant +name|--variant=-name ...]
+    [--capacity <positive-limit>] [--tests declared|skip]
+    [--from-source=false] [--wait|--trace]
+dockhand wait <job_id> [--trace]
+dockhand cancel <job_id> [--reason <text>] [--wait]
+dockhand start
+```
+
+`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. The current literal local branch is the default; detached HEAD requires `--branch`. The input is committed source, and the accepted commit ID is reported. This does not adopt uncommitted edits. Explicit subports and variants use the existing snapshot evaluator. A tracked branch currently has an accepted target association; an unrelated target on the same branch is rejected. Branch-only inference and multi-target selectors remain future work.
+
+The prepared image is currently selected explicitly with `--image` (or through the Go application's configured default). General Git configuration loading remains separate work. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `--capacity` may establish another positive limit. An existing pool's limit and directory must agree. Omission reuses the recorded limit. Image availability and platform checks are distinct from admission capacity.
+
+Default verification waits for admission or a conclusive outcome; `--wait` follows completion, and `--trace` adds log streaming to stderr. `wait` and `cancel` initially take an exact job ID in the selected repository. `cancel` records intent and runs one cycle; `cancel --wait` continues until settlement. Canceling completed work preserves its existing evidence. `start` advances all eligible work in the selected repository until interrupted, without submitting new jobs or acquiring a singleton driver lock.
+
+JSON verification/attachment results contain the selected job ID, any acceptance receipt, the last status snapshot, and an interruption indicator. Progress and logs stay on stderr. `start --json` writes a stopped/interrupted result when it exits. Exit codes distinguish milestone success (0), failed work (2), needs-attention or superseded work (3), canceled work or process interruption (130), and other errors (1). Confirmed cancellation is success for `cancel --wait`; stopping attachment never submits a cancellation request.
 
 ## The flow
 

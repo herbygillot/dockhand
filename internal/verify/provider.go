@@ -11,7 +11,8 @@ import (
 var ErrNotImplemented = errors.New("verify: verification planning is not implemented")
 
 type Capabilities struct {
-	Name      string
+	Name string
+	// Empty Platforms defers platform validation to Submit.
 	Platforms []record.Platform
 	Isolated  bool
 	Capacity  int
@@ -79,4 +80,14 @@ type Provider interface {
 	Observe(context.Context, record.ProviderRun) (Observation, error)
 	Cancel(context.Context, record.ProviderRun) error
 	Release(context.Context, record.ResourceHandle) (ReleaseResult, error)
+}
+
+type LogChunk struct {
+	Data     []byte
+	Next     int64
+	Complete bool
+}
+
+type LogReader interface {
+	ReadLog(context.Context, record.ProviderRun, int64, int) (LogChunk, error)
 }

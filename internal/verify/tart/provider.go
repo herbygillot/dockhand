@@ -73,8 +73,9 @@ type machine interface {
 	Delete(context.Context, string) error
 }
 
-func (p *Provider) settings() (Config, error) {
-	c := p.Config
+func (p *Provider) settings() (Config, error) { return settings(p.Config) }
+
+func settings(c Config) (Config, error) {
 	if c.Executable == "" {
 		c.Executable = "tart"
 	}
@@ -134,13 +135,15 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 	if err != nil {
 		return verify.Capabilities{}, err
 	}
-	if c.Image == "" || c.Platform == (record.Platform{}) {
-		return verify.Capabilities{}, fmt.Errorf("tart: prepared image and platform are required")
-	}
+
 	if _, err = p.machineFor(c, nil).Running(ctx); err != nil {
 		return verify.Capabilities{}, err
 	}
-	return verify.Capabilities{Name: "tart", Platforms: []record.Platform{c.Platform}, Isolated: true, Capacity: c.Capacity}, nil
+	var platforms []record.Platform
+	if c.Platform != (record.Platform{}) {
+		platforms = []record.Platform{c.Platform}
+	}
+	return verify.Capabilities{Name: "tart", Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func requestID(id record.RequestID) bool {
@@ -148,14 +151,26 @@ func requestID(id record.RequestID) bool {
 }
 
 func (p *Provider) begin(ctx context.Context, id record.RequestID) (*operation, error) {
+	return p.beginWith(ctx, id, p.Config)
+}
+
+func (p *Provider) beginWith(ctx context.Context, id record.RequestID, config Config) (*operation, error) {
 	if p.State == nil || p.Repository == "" || !requestID(id) {
 		return nil, state.ErrInvalid
 	}
-	c, err := p.settings()
+	c, err := settings(config)
 	if err != nil {
 		return nil, err
 	}
 	pool := record.ProviderPool{ID: "tart_" + digest([]byte(c.Home)), Scope: "tart:" + c.Home, Directory: c.ArtifactDirectory, Capacity: c.Capacity}
+	if config.Capacity == 0 {
+		existing, e := p.State.ProviderPool(ctx, pool.ID)
+		if e == nil {
+			pool.Capacity, c.Capacity = existing.Capacity, existing.Capacity
+		} else if !errors.Is(e, state.ErrNotFound) {
+			return nil, e
+		}
+	}
 	pool, err = p.State.RegisterProviderPool(ctx, pool)
 	if err != nil {
 		return nil, err
@@ -212,7 +227,14 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err := validateRequest(request); err != nil {
 		return verify.Submission{State: verify.Unsupported, Detail: err.Error()}, nil
 	}
-	o, err := p.begin(ctx, request.ID)
+	config := p.Config
+	if len(request.Spec.Config.ProviderConfig) > 0 {
+		config = Config{}
+		if err := json.Unmarshal(request.Spec.Config.ProviderConfig, &config); err != nil {
+			return verify.Submission{State: verify.Unsupported, Detail: "invalid Tart configuration"}, nil
+		}
+	}
+	o, err := p.beginWith(ctx, request.ID, config)
 	if err != nil {
 		return verify.Submission{}, err
 	}
@@ -579,4 +601,36 @@ func (o *operation) saved(v record.ProviderExecution) (verify.Observation, bool,
 	}
 	_, err = verify.Judge(result)
 	return result, err == nil, err
+}
+
+func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, tests record.TestPolicy, fromSource bool) (record.BuildConfig, error) {
+	c, err := p.settings()
+	if err != nil {
+		return record.BuildConfig{}, err
+	}
+	if c.Image == "" {
+		return record.BuildConfig{}, fmt.Errorf("tart: select a prepared local image with --image")
+	}
+	c.Platform = platform
+	if p.State != nil {
+		pool, e := p.State.ProviderPool(ctx, "tart_"+digest([]byte(c.Home)))
+		if e == nil && (pool.Directory != c.ArtifactDirectory || p.Config.Capacity != 0 && pool.Capacity != p.Config.Capacity) {
+			return record.BuildConfig{}, fmt.Errorf("tart: configuration differs from the existing pool")
+		}
+		if e != nil && !errors.Is(e, state.ErrNotFound) {
+			return record.BuildConfig{}, e
+		}
+	}
+	environment, err := p.machineFor(c, nil).Environment(ctx)
+	if err != nil {
+		return record.BuildConfig{}, err
+	}
+	// Capacity is pool policy; zero permits an existing pool's recorded limit.
+	c.Capacity = p.Config.Capacity
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return record.BuildConfig{}, err
+	}
+	config := record.BuildConfig{Provider: "tart", Platform: platform, EnvironmentDigest: environment.Digest, ProviderConfig: raw, Tests: tests, FromSource: fromSource}
+	return config, verify.ValidateConfig(config)
 }

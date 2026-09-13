@@ -6,7 +6,7 @@ This document describes the initial SQLite implementation, following the [archit
 
 Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
-Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; preparation, publication, and action-command wiring follow separately.
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; preparation and publication follow separately.
 
 ## Packages and contracts
 
@@ -158,3 +158,9 @@ Schema 2 adds `provider_pools` and `provider_executions`; schema-1 databases upg
 Provider execution records describe effects that may exist before the workflow adopts a run. Their immutable payload freezes the submitted build and effective provider configuration for idempotency and recovery; it is not used to redefine the accepted workflow inputs. Request IDs are unique across pools. Reserved/admitted executions reference an attempt in the same repository. An unknown ID can be permanently closed without an attempt or VM. Terminal results are immutable, and closed/released identities cannot be revived. The occupied query uses a partial index, so admission reads current reservations rather than historical executions.
 
 SQLite capacity decisions do not fence a delayed external command. The Tart adapter also holds an OS lock per submission under the pool's artifact directory. Short Tart/launchctl subprocesses inherit its file descriptor, preserving exclusion if the driver dies while a command continues. Lock files are not unlinked, and no global lock flag or general filesystem-lock package is reintroduced. No database transaction spans cloning, booting, source transfer, guest work, stopping, or deletion.
+
+## Recorded CLI execution choices
+
+`BuildConfig.ProviderConfig` is an optional bounded JSON object containing the provider-specific execution choices captured before acceptance. Tart uses it to recover image, platform, guest prefix, executable, home, and artifact settings for queued work even in a fresh process. Existing admitted executions retain their original payload. Capacity omission uses the immutable registered pool limit. Intake copies the mutable JSON value and planning preserves it; settings are included in accepted request identity and cannot be silently replaced during retry.
+
+This field fits the existing per-job/per-attempt configuration columns, so this slice adds no table or schema version. `ProviderStore.ProviderPool` provides a read-only pool lookup for consistent defaults. Driver residency is a process lifetime, not a new durable entity; workflow state and claims already provide coordination. Credentials are not part of this configuration.

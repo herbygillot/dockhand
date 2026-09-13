@@ -196,7 +196,7 @@ func (c *cycle) providerReady(config record.BuildConfig, submitting bool) error 
 	if config.Provider != c.capabilities.Name {
 		return fmt.Errorf("workflow: request requires provider %q, configured provider is %q", config.Provider, c.capabilities.Name)
 	}
-	if submitting && !slices.Contains(c.capabilities.Platforms, config.Platform) {
+	if submitting && len(c.capabilities.Platforms) > 0 && !slices.Contains(c.capabilities.Platforms, config.Platform) {
 		return fmt.Errorf("workflow: provider does not support requested platform %+v", config.Platform)
 	}
 	return nil

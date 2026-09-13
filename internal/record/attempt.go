@@ -1,6 +1,9 @@
 package record
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // TestPolicy specifies which port tests a verification attempt should run.
 type TestPolicy string
@@ -20,6 +23,8 @@ type BuildConfig struct {
 	Platform Platform
 	// EnvironmentDigest identifies the immutable build environment.
 	EnvironmentDigest string
+	// ProviderConfig freezes provider-specific execution choices at acceptance.
+	ProviderConfig json.RawMessage `json:",omitempty"`
 	// FromSource requires a source build instead of satisfying the target from an archive.
 	FromSource bool
 	Tests      TestPolicy

@@ -26,7 +26,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Maintain MacPorts ports",
-		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nStatus reporting is available. Action commands are under construction.",
+		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nVerify committed ports, resume jobs, and run driver cycles. Preparation and publication are under construction.",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -45,10 +45,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	root.AddCommand(runtime.setupCommand())
 	root.AddCommand(runtime.changeCommands()...)
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
-	wait, _ := runtime.workflowCommand("wait <target>", "Wait for existing work to finish", cobra.ExactArgs(1))
-	cancel, _ := runtime.workflowCommand("cancel <target>", "Request cancellation of outstanding work", cobra.ExactArgs(1))
-	start, _ := runtime.workflowCommand("start", "Run the persistent driver in this process", cobra.NoArgs)
-	root.AddCommand(runtime.statusCommand(), wait, cancel, start, runtime.reviewCommand())
+	root.AddCommand(runtime.statusCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.startCommand(), runtime.reviewCommand())
 
 	root.InitDefaultHelpCmd()
 	for _, command := range root.Commands() {

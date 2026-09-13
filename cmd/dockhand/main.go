@@ -4,15 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
 	"github.com/herbygillot/dockhand/v2/internal/cli"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	streams := cli.Streams{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
-	if err := cli.Run(context.Background(), os.Args[1:], streams, app.Config{}); err != nil {
+	if err := cli.Run(ctx, os.Args[1:], streams, app.Config{}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		os.Exit(cli.ExitCode(err))
 	}
 }

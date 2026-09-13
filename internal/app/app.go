@@ -34,11 +34,13 @@ type Config struct {
 }
 
 type Services struct {
-	Workflow    *workflow.Engine
-	Processes   *proc.Manager
-	Preparation *prepare.Service
-	Discovery   *upstream.Service
-	close       func() error
+	Workflow     *workflow.Engine
+	Processes    *proc.Manager
+	Preparation  *prepare.Service
+	Discovery    *upstream.Service
+	close        func() error
+	verification *tart.Provider
+	ports        *macports.Evaluator
 }
 
 func Build(ctx context.Context, config Config) (*Services, error) {
@@ -66,6 +68,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if config.Tart.ArtifactDirectory == "" {
 		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
 	}
+	provider := &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo}
 	engine := &workflow.Engine{
 		State:         store,
 		Repository:    repository.ID,
@@ -73,18 +76,20 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Ports:         ports,
 		Preparer:      preparation,
 		Planner:       &verify.Planner{Ports: ports},
-		Provider:      &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo},
+		Provider:      provider,
 		Publisher:     &publish.Service{Repo: repo, Forge: forge},
 		Now:           time.Now,
 		CallTimeout:   3 * time.Minute,
 		LeaseDuration: 5 * time.Minute,
 	}
 	return &Services{
-		Workflow:    engine,
-		Processes:   &proc.Manager{CommonDir: repo.CommonDir},
-		Preparation: preparation,
-		Discovery:   discovery,
-		close:       store.Close,
+		Workflow:     engine,
+		Processes:    &proc.Manager{},
+		Preparation:  preparation,
+		Discovery:    discovery,
+		close:        store.Close,
+		verification: provider,
+		ports:        ports,
 	}, nil
 }
 

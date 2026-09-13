@@ -1,8 +1,11 @@
 package verify
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -15,6 +18,9 @@ func ValidateConfig(config record.BuildConfig) error {
 		if value == "" || !utf8.ValidString(value) || strings.IndexFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
 			return fmt.Errorf("verify: provider, platform, and immutable environment digest are required")
 		}
+	}
+	if len(config.ProviderConfig) > 0 && (!json.Valid(config.ProviderConfig) || len(config.ProviderConfig) > 65536 || bytes.TrimSpace(config.ProviderConfig)[0] != '{') {
+		return fmt.Errorf("verify: invalid provider configuration")
 	}
 	if config.Tests != record.TestDeclared && config.Tests != record.TestSkip {
 		return fmt.Errorf("verify: an explicit test policy is required")
@@ -36,5 +42,6 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 	target.Variants = maps.Clone(target.Variants)
 	plan := record.VerificationPlan{JobID: job.ID, RevisionID: revision.ID, Targets: []record.VerificationTarget{{ID: record.TargetID("target_" + string(job.ID)), Port: target, Platform: job.Spec.Build.Platform}}}
 	build := record.BuildSpec{RevisionID: revision.ID, Source: revision.Source, Target: target, Config: *job.Spec.Build, Inputs: []record.Artifact{}}
+	build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
 	return plan, build, nil
 }

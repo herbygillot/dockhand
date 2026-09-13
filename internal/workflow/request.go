@@ -60,6 +60,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 			return record.JobSpec{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 		}
 		build := *spec.Build
+		build.ProviderConfig = slices.Clone(build.ProviderConfig)
 		spec.Build = &build
 	}
 	if spec.Version != "" && (spec.Action != record.Bump || !validToken(spec.Version)) {

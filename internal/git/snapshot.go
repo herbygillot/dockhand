@@ -213,3 +213,16 @@ func extractBlobs(ctx context.Context, in *bufio.Reader, root string, entries []
 	}
 	return nil
 }
+
+func (r *Repository) CurrentBranch(ctx context.Context) (string, error) {
+	out, err := r.output(ctx, "symbolic-ref", "--quiet", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("git: select --branch when HEAD is detached or has no branch: %w", err)
+	}
+	ref := strings.TrimSpace(string(out))
+	branch, ok := strings.CutPrefix(ref, "refs/heads/")
+	if !ok || !ValidBranchName(branch) {
+		return "", fmt.Errorf("git: HEAD does not name a local branch")
+	}
+	return branch, nil
+}
