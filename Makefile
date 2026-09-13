@@ -1,5 +1,5 @@
 GO ?= go
-BINARY ?= dh2
+BINARY ?= dockhand
 
 .PHONY: build test test-race vet clean
 
