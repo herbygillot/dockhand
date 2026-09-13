@@ -14,7 +14,7 @@ import (
 )
 
 func archiveInfo(site string) macports.PortInfo {
-	return macports.PortInfo{Options: map[string]string{"master_sites": site, "distfiles": "source-2.tar.gz", "fetch.type": "standard", "fetch.has_credentials": "0", "fetch.customized": "0", "fetch.ignore_sslcert": "no"}}
+	return macports.PortInfo{Options: map[string]string{"master_sites": site, "distfiles": "source-2.tar.gz", "fetch.type": "standard", "fetch.has_credentials": "0", "fetch.archive_compatible": "1", "fetch.ignore_sslcert": "no"}}
 }
 func TestDownloadHashesExactBodyAndFollowsArchiveRedirect(t *testing.T) {
 	body := strings.Repeat("archive bytes\x00", 200)
@@ -73,7 +73,7 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 func TestDownloadSourceDeclinesUnsupportedFetchConventions(t *testing.T) {
-	for key, value := range map[string]string{"distfiles": "one.tar.gz two.tar.gz", "master_sites": "https://example.invalid/site:tag", "fetch.type": "git", "fetch.customized": "1", "patchfiles": "remote.patch", "fetch.has_credentials": "1", "cargo.crates_github": "vendor", "go.vendors": "vendor", "fetch.ignore_sslcert": "yes"} {
+	for key, value := range map[string]string{"distfiles": "one.tar.gz two.tar.gz", "master_sites": "https://example.invalid/site:tag", "fetch.type": "git", "fetch.archive_compatible": "0", "patchfiles": "remote.patch", "fetch.has_credentials": "1", "cargo.crates_github": "vendor", "go.vendors": "vendor", "fetch.ignore_sslcert": "yes"} {
 		info := archiveInfo("https://example.invalid")
 		info.Options[key] = value
 		_, _, err := downloadSource(info)

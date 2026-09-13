@@ -24,6 +24,17 @@ import (
 const guestDirectory = "/var/tmp/dockhand2"
 const guestLabel = "org.dockhand2.build"
 
+const guestExecScript = `set -eu
+limit=$(ulimit -S -n)
+ulimit -S -n "$(ulimit -H -n)"
+for fd in /dev/fd/*; do
+    fd=${fd##*/}
+    if [ "$fd" -gt 2 ]; then eval "exec $fd>&-"; fi
+done
+ulimit -S -n "$limit"
+exec "$@"
+`
+
 type imageCache struct {
 	mu            sync.Mutex
 	stamp, digest string
@@ -60,13 +71,17 @@ func (n *native) tart(ctx context.Context, input io.Reader, output io.Writer, ar
 	return n.command(ctx, n.config.Executable, input, output, args...)
 }
 func (n *native) guest(ctx context.Context, vm string, input io.Reader, args ...string) ([]byte, error) {
+	return n.execGuest(ctx, vm, input, nil, args...)
+}
+
+func (n *native) execGuest(ctx context.Context, vm string, input io.Reader, output io.Writer, args ...string) ([]byte, error) {
 	options := []string{"exec"}
 	if input != nil {
 		options = append(options, "-i")
 	}
-	options = append(options, vm)
+	options = append(options, vm, "/bin/sh", "-c", guestExecScript, "dockhand")
 	options = append(options, args...)
-	return n.tart(ctx, input, nil, options...)
+	return n.tart(ctx, input, output, options...)
 }
 func (n *native) localVM(ctx context.Context, name string) (exists, running bool, err error) {
 	out, err := n.tart(ctx, nil, nil, "list", "--format", "json")
@@ -359,7 +374,7 @@ func (n *native) Logs(ctx context.Context, vm, path string) error {
 		return err
 	}
 	defer os.Remove(file.Name())
-	_, err = n.tart(ctx, nil, file, "exec", vm, "sudo", "-n", "/bin/sh", "-c", "if [ -f /var/tmp/dockhand2/build.log ]; then cat /var/tmp/dockhand2/build.log; fi; cat /var/tmp/dockhand2/runner.log")
+	_, err = n.execGuest(ctx, vm, nil, file, "sudo", "-n", "/bin/sh", "-c", "if [ -f /var/tmp/dockhand2/build.log ]; then cat /var/tmp/dockhand2/build.log; fi; cat /var/tmp/dockhand2/runner.log")
 	if err == nil {
 		err = file.Sync()
 	}

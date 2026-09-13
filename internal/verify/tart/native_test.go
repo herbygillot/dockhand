@@ -2,10 +2,12 @@ package tart
 
 import (
 	"archive/tar"
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
@@ -84,7 +86,7 @@ func TestRunningMarkerDoesNotHideExitedGuestRunner(t *testing.T) {
 case "$1" in
 list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"running"}]' ;;
 exec)
- case "$5" in
+ case "$9" in
   /bin/launchctl) printf '%s\n' 'state = not running' ;;
   *) printf '%s\n' '{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
  esac ;;
@@ -105,7 +107,7 @@ func TestTerminalResultPublishedBetweenMarkerAndRunnerReadsWins(t *testing.T) {
 case "$1" in
 list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"running"}]' ;;
 exec)
- case "$5" in
+ case "$9" in
  /bin/launchctl) printf '%s\n' 'state = not running' ;;
  /bin/cat) printf '%s\n' '{"State":"finished","Verdict":"` + string(verdict) + `","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
  *) printf '%s\n' '{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
@@ -179,4 +181,28 @@ func TestRecordedVerifierIdentityRejectsChangedExecutionCode(t *testing.T) {
 	result, err = f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
 	require.Equal(t, verify.Admitted, result.State)
+}
+
+func TestGuestCommandsCloseInheritedDescriptorsAndPreserveInputAndArguments(t *testing.T) {
+	root := t.TempDir()
+	executable := filepath.Join(root, "tart")
+	require.NoError(t, os.WriteFile(executable, []byte(`#!/bin/sh
+set -eu
+[ "$1" = exec ]
+shift
+[ "$1" = -i ]
+shift 2
+exec 9>/dev/null
+exec "$@"
+`), 0700))
+	n := &native{config: Config{Home: root, Executable: executable}}
+	var output bytes.Buffer
+	argument := "spaces; $(do-not-execute) 'literal'"
+	_, err := n.execGuest(t.Context(), "vm", strings.NewReader("payload\n"), &output, "/bin/sh", "-c", `
+[ ! -e /dev/fd/9 ] || exit 42
+read -r input
+printf '%s\n%s\n' "$input" "$1"
+`, "check", argument)
+	require.NoError(t, err)
+	require.Equal(t, "payload\n"+argument+"\n", output.String())
 }

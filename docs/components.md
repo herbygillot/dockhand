@@ -177,6 +177,8 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 
 `app.Services.BindVerification` composes native platform discovery, Tart configuration capture, and workflow source binding. Cobra parses input, submits through the engine, renders recorded progress, and selects an attachment milestone. `workflow.Reached` evaluates admission/completion from records. `proc.Manager` owns the cancellable loop shared by targeted attachment and resident execution; it owns no workflow state and creates no driver discovery records. Resident passes use indexed cycle queries and do not build full historical status snapshots.
 
+The Tart guest runs lint, an explicit `port -d build`, declared tests when enabled, and installation in that order. Build debug output goes to the same retained log streamed by `--trace`; build failures stop the sequence and record a separate build step. Dependency binaries remain enabled unless `--from-source` is selected.
+
 `verify.LogReader` is an optional read-only diagnostic interface. Tart reads bounded guest log ranges while running and retained host logs after collection. CLI tracing keeps offsets, drains final logs, and writes to stderr without participating in workflow bookkeeping. The [CLI execution report](activity/2026-09-12-cli-execution.md) records scope and validation.
 
 ### Preparation previews and version-selection groundwork
@@ -186,6 +188,8 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 `app.PreviewPreparation` constructs only the capabilities a preview needs. `bump-revision --diff` renders the real result without state or a provider. Literal subport selection and sibling fidelity work through complete MacPorts evaluation. The driver uses the same capability for job progression, guarded branch integration, and verification continuation. Working-tree input is supported by verification; bump previews continue selecting committed source and do not adopt a branch association.
 
 `upstream.MatchRelease` separates deterministic explicit-version/tag selection from evidence collection. `upstream.Resolve` now collects exact tag observations through a bound `forge.Repository`; `forge/github` supplies its HTTP implementation, including annotated-tag peeling. `upstream.Check` validates the recorded source during preparation. `upstream.DiscoverPort` now selects an eligible stable numeric version from GitHub release/tag catalogs. The [groundwork report](activity/2026-09-13-bump-groundwork.md) and [explicit-version report](activity/2026-09-13-explicit-version-bumps.md) record the two slices and their provenance.
+
+GitHub-backed `go.setup` now shares the version editor and preparation pipeline with `github.setup`. `prepare` owns the version argument edit and checks the evaluated `go.version` change. `macports` inspects native fetch targets and reports `fetch.archive_compatible`: standard archive fetching and the structurally recognized Go toolchain pre-check are supported. Raw hook bodies stay within the adapter’s RPC/decoding boundary. Unknown hooks or changed hook structure require another preparer; no arbitrary hooks run during preview. MacPorts executes the normal hooks in the verification VM. See the [Go-port preparation report](activity/2026-09-13-go-port-preparation.md).
 
 ### Durable preparation and integration
 
@@ -219,7 +223,7 @@ An automatic `record.Release` additionally retains `CurrentVersion` and `NoUpdat
 
 `verify/reuse.go` compares complete build inputs and judges recorded evidence, without querying storage or calling a provider. `workflow/reuse.go` selects from bounded original-attempt candidates and records the decision during initial planning. A newer matching negative result prevents reuse of an older pass. `state.Reader.VerificationCandidates` supplies repository-scoped history through indexed SQLite queries; schema 5 adds the job's original-attempt reference and diagnostic detail. No separate cache package or duplicated evidence record is needed.
 
-Tart records a verifier digest alongside the existing image digest and frozen settings. The digest includes guest code, its launch description, and an explicit host-protocol version marker. Changes to host execution semantics that are not represented in those inputs must advance that marker. Missing legacy identities disable reuse. The CLI exposes `verify --fresh` and projects the original attempt separately from a job's own executions. See the [reuse report](activity/2026-09-13-verification-reuse.md).
+Tart records a verifier digest alongside the existing image digest and frozen settings. The digest includes guest code, the guest-command descriptor-isolation wrapper, its launch description, and an explicit host-protocol version marker. Changes to host execution semantics that are not represented in those inputs must advance that marker. Missing legacy identities disable reuse. The CLI exposes `verify --fresh` and projects the original attempt separately from a job's own executions. See the [reuse report](activity/2026-09-13-verification-reuse.md).
 
 
 ## Forge and upstream boundaries

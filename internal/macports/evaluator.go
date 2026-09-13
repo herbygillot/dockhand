@@ -196,6 +196,17 @@ func decodeMetadata(reply string) (PortInfo, []string, error) {
 		value.OptionErrors[name] = failure
 	}
 	delete(values, "option_errors")
+	if details, ok := values["fetch_details"]; ok {
+		fields, errs := syntax.ListValues(details)
+		if len(errs) != 0 || len(fields) != 3 {
+			return PortInfo{}, nil, fmt.Errorf("macports: invalid fetch metadata")
+		}
+		values["fetch.archive_compatible"] = "0"
+		if archiveFetchCompatible(value, fields[0], fields[1], fields[2]) {
+			values["fetch.archive_compatible"] = "1"
+		}
+		delete(values, "fetch_details")
+	}
 	if !token(value.Name) || value.Version == "" {
 		return PortInfo{}, nil, fmt.Errorf("macports: metadata lacks name or version")
 	}

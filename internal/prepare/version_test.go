@@ -44,6 +44,12 @@ func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc)
 	if style == "setup" {
 		declaration = "github.setup owner fixture 1.0 v\n"
 	}
+	if strings.HasPrefix(style, "go-") {
+		declaration = "PortGroup dockhand-go 1.0\ngo.setup github.com/owner/fixture 1.0 v\n"
+		if style == "go-version" {
+			declaration = "PortGroup dockhand-go 1.0\nversion 1.0\ngo.setup github.com/owner/fixture ${version} v\n"
+		}
+	}
 	if style == "calculated" {
 		declaration = "version [format %s 1.0]\ngithub.setup owner fixture $version v\n"
 	}
@@ -63,7 +69,36 @@ proc github.setup {owner project value prefix} {
 ` + declaration + fmt.Sprintf("revision 3\nmaster_sites %s/releases/${version}\nchecksums rmd160 %s \\\n    sha256 %s \\\n    size 1\n", server.URL, strings.Repeat("0", 40), strings.Repeat("0", 64)) + extra
 	before, _, err := service.Repo.File(t.Context(), string(request.Source.Tree), "devel/fixture/Portfile")
 	require.NoError(t, err)
-	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}})
+	edits := []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}}
+	if strings.HasPrefix(style, "go-") {
+		group := `options go.package go.domain go.version
+proc go.setup {package value {prefix ""} {suffix ""}} {
+ go.package $package
+ go.domain github.com
+ go.version $value
+ github.setup owner fixture $value $prefix
+}
+`
+		if style == "go-check" {
+			group += `proc go_toolchain.ceiling {} { return 1.27 }
+set go.toolchain_unmet ""
+pre-fetch {
+ global go.toolchain_unmet
+ set ceiling [go_toolchain.ceiling]
+ if {${ceiling} eq "none"} {
+  ui_error "No supported toolchain for ${subport}"
+  return -code error "unsupported platform"
+ }
+ if {${go.toolchain_unmet} ne ""} {
+  ui_error "Needs Go ${go.toolchain_unmet}; newest is ${ceiling}"
+  return -code error "unsupported toolchain"
+ }
+}
+`
+		}
+		edits = append(edits, git.FileEdit{Path: "_resources/port1.0/group/dockhand-go-1.0.tcl", After: []byte(group), Mode: 0o100644})
+	}
+	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), edits)
 	require.NoError(t, err)
 	request.Source = record.Source{Tree: record.ObjectID(tree)}
 	request.Action = record.Bump
@@ -80,7 +115,7 @@ proc github.setup {owner project value prefix} {
 	return service, request
 }
 func TestVersionPreparationUpdatesSourceAndChecksumsWithFidelity(t *testing.T) {
-	for _, style := range []string{"literal", "setup"} {
+	for _, style := range []string{"literal", "setup", "go-setup", "go-version", "go-check"} {
 		t.Run(style, func(t *testing.T) {
 			body := "fixture archive bytes"
 			var requests atomic.Int64
@@ -105,6 +140,12 @@ func TestVersionPreparationUpdatesSourceAndChecksumsWithFidelity(t *testing.T) {
 			require.Contains(t, string(result.Files[0].After), "size 21")
 			require.Empty(t, result.Fidelity[0].UnexpectedChanges)
 			require.Empty(t, result.Fidelity[1].UnexpectedChanges)
+			if strings.HasPrefix(style, "go-") {
+				info := result.Fidelity[1].After.Ports["fixture"]
+				require.Equal(t, "2.0", info.Options["go.version"])
+				require.Equal(t, "1", info.Options["fetch.archive_compatible"])
+				require.NotContains(t, info.Options, "fetch_details")
+			}
 		})
 	}
 }
@@ -118,6 +159,9 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 		{"sibling", "setup", "subport fixture-child {}\n", prepare.ErrFidelity},
 		{"fetch hook", "literal", "pre-fetch {error custom}\n", prepare.ErrUnsupported},
 		{"conditional hook", "literal", "if {1} { pre-fetch {error custom} }\n", prepare.ErrUnsupported},
+		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {error custom} }\n", prepare.ErrUnsupported},
+		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", prepare.ErrUnsupported},
+		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", prepare.ErrFidelity},
 		{"credentials", "literal", "fetch.password secret-test-value\n", prepare.ErrUnsupported},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -66,6 +66,7 @@ try {
     set phase index
     step index [list $prefix/bin/portindex -f]
     if {![file exists $root/ports/PortIndex]} {error "indexer produced no PortIndex"}
+    set phase setup
     set portdir [file dirname [file join $root ports [dict get $target Portfile]]]
     set variants {}
     if {[dict get $target Variants] ne "null"} {
@@ -77,7 +78,7 @@ try {
     set info [dict create {*}[mportinfo $handle]]
     if {[dict get $info name] ne $name} {error "resolved target does not match request"}
     set worker [ditem_key $handle workername]
-    set declared [$worker eval {option test.run}]
+    set declared [$worker eval {tbool test.run}]
     mportclose $handle
     set base [list $prefix/bin/port -N -D $portdir]
     if {[dict get $spec Config FromSource]} {lappend base -s}
@@ -85,6 +86,8 @@ try {
     foreach {variant sign} $variants {lappend selection $sign$variant}
     set phase lint
     step lint [concat $base lint $selection]
+    set phase build
+    step build [concat $base -d build $selection]
     if {[dict get $spec Config Tests] eq "declared" && [string is true -strict $declared]} {
         set phase test
         step test [concat $base test $selection]

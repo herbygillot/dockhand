@@ -40,14 +40,14 @@ func versionEdits(src []byte, current, next string, revision int) ([]byte, error
 			return nil, fmt.Errorf("%w: custom fetch commands require a dedicated preparer", ErrUnsupported)
 		case "version":
 			versions = append(versions, cmd)
-		case "github.setup":
+		case "github.setup", "go.setup":
 			setups = append(setups, cmd)
 		case "revision":
 			revisions = append(revisions, cmd)
 		}
 	}
 	if len(versions) > 1 || len(setups) > 1 || len(revisions) > 1 {
-		return nil, fmt.Errorf("%w: ambiguous version, github.setup, or revision commands", ErrUnsupported)
+		return nil, fmt.Errorf("%w: ambiguous version, setup, or revision commands", ErrUnsupported)
 	}
 	var value syntax.Word
 	switch {
@@ -57,20 +57,20 @@ func versionEdits(src []byte, current, next string, revision int) ([]byte, error
 		}
 		value = versions[0].Words[1]
 		if len(setups) == 1 {
-			words := setups[0].Words
-			if len(words) < 4 || len(words) > 6 {
-				return nil, fmt.Errorf("%w: github.setup arguments", ErrUnsupported)
+			argument, err := setupVersion(src, setups[0])
+			if err != nil {
+				return nil, err
 			}
-			if words[3].Span.Text(src) != "$version" && words[3].Span.Text(src) != "${version}" {
-				return nil, fmt.Errorf("%w: github.setup must use the literal version declaration", ErrUnsupported)
+			if argument.Span.Text(src) != "$version" && argument.Span.Text(src) != "${version}" {
+				return nil, fmt.Errorf("%w: setup must use the literal version declaration", ErrUnsupported)
 			}
 		}
 	case len(setups) == 1:
-		words := setups[0].Words
-		if len(words) < 4 || len(words) > 6 {
-			return nil, fmt.Errorf("%w: github.setup arguments", ErrUnsupported)
+		var err error
+		value, err = setupVersion(src, setups[0])
+		if err != nil {
+			return nil, err
 		}
-		value = words[3]
 	default:
 		return nil, fmt.Errorf("%w: no supported version declaration", ErrUnsupported)
 	}
@@ -94,4 +94,16 @@ func versionEdits(src []byte, current, next string, revision int) ([]byte, error
 		return nil, fmt.Errorf("%w: nonzero revision is set outside the supported scope", ErrUnsupported)
 	}
 	return text.Apply(src, edits)
+}
+
+func setupVersion(src []byte, command syntax.Command) (syntax.Word, error) {
+	name, _ := command.Name(src)
+	index := 3
+	if name == "go.setup" {
+		index = 2
+	}
+	if len(command.Words) < index+1 || len(command.Words) > index+3 {
+		return syntax.Word{}, fmt.Errorf("%w: %s arguments", ErrUnsupported, name)
+	}
+	return command.Words[index], nil
 }
