@@ -18,7 +18,8 @@ type VerificationTarget struct {
 	Inputs        []ArtifactRequirement
 }
 
-// VerificationPlan describes target and configuration coverage for one revision.
+// VerificationPlan describes target and configuration coverage for one job.
+// RevisionID is empty for standalone source verification.
 // Targets may refer to future outputs; an Attempt's BuildSpec holds only
 // resolved inputs. Planning coverage does not establish provider admission.
 type VerificationPlan struct {

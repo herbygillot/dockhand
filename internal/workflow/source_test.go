@@ -20,6 +20,7 @@ import (
 )
 
 type boundPorts struct {
+	targetName string
 	seenRoot   string
 	seenBytes  string
 	err        error
@@ -33,13 +34,17 @@ func (p *boundPorts) Resolve(ctx context.Context, tree macports.Tree, sel macpor
 		return nil, err
 	}
 	p.seenBytes = string(data)
-	return []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile", Variants: sel.Variants}}, p.err
+	name := p.targetName
+	if name == "" {
+		name = "fixture"
+	}
+	return []record.Target{{Name: name, Portfile: "devel/fixture/Portfile", Variants: sel.Variants}}, p.err
 }
 func (p *boundPorts) Evaluate(ctx context.Context, c macports.Context) (macports.Snapshot, error) {
 	if p.onEvaluate != nil {
 		p.onEvaluate()
 	}
-	return macports.Snapshot{Source: c.Source(), Target: c.Target(), Platform: c.Platform(), Ports: map[string]macports.PortInfo{"fixture": {Name: "fixture", Version: "1"}}}, p.err
+	return macports.Snapshot{Source: c.Source(), Target: c.Target(), Platform: c.Platform(), Ports: map[string]macports.PortInfo{c.Target().Name: {Name: c.Target().Name, Version: "1"}}}, p.err
 }
 
 func commitPort(t *testing.T, f *fixture, branch, contents string) record.Source {
@@ -99,8 +104,8 @@ func TestBindVerificationFreezesCommittedInputAndCreatesNoState(t *testing.T) {
 	require.NoError(t, err)
 	job := f.status(t, receipt.JobID).Jobs[0].Job
 	require.Equal(t, original, job.Spec.Source)
-	require.NotEmpty(t, job.Spec.InputRevision)
-	require.NotEmpty(t, job.ChangeID)
+	require.Empty(t, job.Spec.InputRevision)
+	require.Empty(t, job.ChangeID)
 	f.run(t, receipt.JobID)
 	require.Equal(t, original, f.attempt(t, receipt.JobID).Spec.Source)
 	retry, err := f.engine.Submit(t.Context(), bound.Request)
@@ -110,6 +115,7 @@ func TestBindVerificationFreezesCommittedInputAndCreatesNoState(t *testing.T) {
 
 func TestCorrectedBranchAddsRevisionAndSameSourceReusesIt(t *testing.T) {
 	f, _ := bindingFixture(t)
+	trackCandidate(t, f)
 	first, err := f.engine.BindVerification(t.Context(), bindRequest(f, "first"))
 	require.NoError(t, err)
 	receipt, err := f.engine.Submit(t.Context(), first.Request)
@@ -122,6 +128,7 @@ func TestCorrectedBranchAddsRevisionAndSameSourceReusesIt(t *testing.T) {
 	same := f.status(t, receipt.JobID).Jobs[0].Job
 	require.Equal(t, original.Spec.InputRevision, same.Spec.InputRevision)
 	changed := commitPort(t, f, "candidate", "version 2\n")
+	changed.Base = original.Spec.Source.Base
 	third, err := f.engine.BindVerification(t.Context(), bindRequest(f, "corrected"))
 	require.NoError(t, err)
 	receipt, err = f.engine.Submit(t.Context(), third.Request)
@@ -146,6 +153,7 @@ func TestCorrectedBranchAddsRevisionAndSameSourceReusesIt(t *testing.T) {
 
 func TestCompetingBranchBindingsHaveOneAtomicWinner(t *testing.T) {
 	f, _ := bindingFixture(t)
+	trackCandidate(t, f)
 	one, err := f.engine.BindVerification(t.Context(), bindRequest(f, "one"))
 	require.NoError(t, err)
 	two, err := f.engine.BindVerification(t.Context(), bindRequest(f, "two"))
@@ -219,16 +227,17 @@ func TestVerificationBindingAgainstPortsTree(t *testing.T) {
 			t.Logf("%s: version=%s revision=%d dependencies=%d optional-errors=%d", info.Name, info.Version, info.Revision, len(info.Dependencies), len(info.OptionErrors))
 		}
 		t.Logf("branch=%s commit=%s tree=%s platform=%+v", branch, bound.Request.Spec.Source.Commit, bound.Request.Spec.Source.Tree, platform)
-		// Only Terraform is accepted; jq exercises binding without state writes.
-		if selector == "terraform" {
-			_, err = engine.Submit(t.Context(), bound.Request)
-			require.NoError(t, err)
-		}
+		receipt, err := engine.Submit(t.Context(), bound.Request)
+		require.NoError(t, err)
+		status, err := engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{receipt.JobID}})
+		require.NoError(t, err)
+		require.Empty(t, status.Jobs[0].Job.ChangeID)
 	}
 }
 
 func TestBranchAdoptionRollsBackWhenRequestWriteFails(t *testing.T) {
 	f, _ := bindingFixture(t)
+	trackCandidate(t, f)
 	bound, err := f.engine.BindVerification(t.Context(), bindRequest(f, "collision"))
 	require.NoError(t, err)
 	other, err := f.store.RegisterRepository(t.Context(), t.TempDir())
@@ -239,8 +248,9 @@ func TestBranchAdoptionRollsBackWhenRequestWriteFails(t *testing.T) {
 	_, err = f.engine.Submit(t.Context(), bound.Request)
 	require.ErrorIs(t, err, state.ErrConflict)
 	require.NoError(t, f.store.View(t.Context(), f.repository, func(ctx context.Context, r state.Reader) error {
-		_, err := r.OpenChangeByBranch(ctx, "candidate")
-		require.ErrorIs(t, err, state.ErrNotFound)
+		change, err := r.OpenChangeByBranch(ctx, "candidate")
+		require.NoError(t, err)
+		require.Equal(t, record.RevisionID("revision"), change.CurrentRevision)
 		revisions, err := r.Revisions(ctx, state.Query{})
 		require.NoError(t, err)
 		require.Len(t, revisions, 1)
@@ -249,4 +259,65 @@ func TestBranchAdoptionRollsBackWhenRequestWriteFails(t *testing.T) {
 		require.Empty(t, jobs)
 		return nil
 	}))
+}
+
+func trackCandidate(t *testing.T, f *fixture) {
+	t.Helper()
+	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+		change, err := tx.Change(ctx, "change")
+		if err != nil {
+			return err
+		}
+		change.Branch = "candidate"
+		return tx.PutChange(ctx, change)
+	}))
+}
+
+func TestVerificationTargetsShareSourceWithoutClaimingContributionBranch(t *testing.T) {
+	f, p := bindingFixture(t)
+	first, err := f.engine.BindVerification(t.Context(), bindRequest(f, "first-port"))
+	require.NoError(t, err)
+	p.targetName = "other-port"
+	second, err := f.engine.BindVerification(t.Context(), bindRequest(f, "second-port"))
+	require.NoError(t, err)
+	var jobs []record.JobID
+	for _, bound := range []workflow.BoundVerification{first, second} {
+		receipt, err := f.engine.Submit(t.Context(), bound.Request)
+		require.NoError(t, err)
+		jobs = append(jobs, receipt.JobID)
+	}
+	f.run(t, jobs...)
+	for _, id := range jobs {
+		status := f.status(t, id)
+		require.Empty(t, status.Jobs[0].Job.ChangeID)
+		require.Empty(t, status.Changes)
+		attempt := f.attempt(t, id)
+		require.Empty(t, attempt.Spec.RevisionID)
+		require.Equal(t, first.Request.Spec.Source, attempt.Spec.Source)
+	}
+	require.NotEqual(t, f.attempt(t, jobs[0]).Spec.Target.Name, f.attempt(t, jobs[1]).Spec.Target.Name)
+}
+
+func TestTrackedVerificationPreservesEditedTargetsWhenTestingOtherPorts(t *testing.T) {
+	f, p := bindingFixture(t)
+	trackCandidate(t, f)
+	edited := []record.Target{{Name: "edited-port", Portfile: "devel/edited/Portfile"}}
+	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+		change, err := tx.Change(ctx, "change")
+		if err != nil {
+			return err
+		}
+		change.Targets = edited
+		return tx.PutChange(ctx, change)
+	}))
+	p.targetName = "downstream-port"
+	bound, err := f.engine.BindVerification(t.Context(), bindRequest(f, "downstream"))
+	require.NoError(t, err)
+	receipt, err := f.engine.Submit(t.Context(), bound.Request)
+	require.NoError(t, err)
+	f.run(t, receipt.JobID)
+	status := f.status(t, receipt.JobID)
+	require.Equal(t, edited, status.Changes[0].Targets)
+	require.Equal(t, "downstream-port", f.attempt(t, receipt.JobID).Spec.Target.Name)
+	require.NotEmpty(t, status.Jobs[0].Job.Spec.InputRevision)
 }

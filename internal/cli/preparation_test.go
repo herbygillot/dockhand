@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -11,7 +12,9 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/app"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
+	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
+	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,28 +39,8 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 }
 
 func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.T) {
-	executable, err := exec.LookPath("port-tclsh")
-	if err != nil {
-		t.Skip("MacPorts port-tclsh is required for preview integration test")
-	}
-	root := t.TempDir()
-	output, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", "-b", "candidate", root).CombinedOutput()
-	require.NoError(t, err, "%s", output)
-	repo, err := git.Open(t.Context(), root, "")
-	require.NoError(t, err)
-	blob, err := repo.WriteBlob(t.Context(), []byte("PortSystem 1.0\nname fixture\nversion 1.2\nrevision 0\ncategories devel\n"))
-	require.NoError(t, err)
-	tree, err := repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "Portfile", Mode: 0o100644, Type: "blob", Object: blob}})
-	require.NoError(t, err)
-	tree, err = repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "fixture", Mode: 0o40000, Type: "tree", Object: tree}})
-	require.NoError(t, err)
-	tree, err = repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "devel", Mode: 0o40000, Type: "tree", Object: tree}})
-	require.NoError(t, err)
-	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
-	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Message: "fixture", Author: sig, Committer: sig})
-	require.NoError(t, err)
-	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Desired: git.RefValue{Exists: true, Object: commit}}}))
-	config := app.Config{Repository: root, DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), TclExecutable: executable}
+	config, repo, commit := preparationCLI(t)
+	var err error
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--reason", "rebuild"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "-revision 0\n+revision 1")
@@ -77,4 +60,102 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	require.Contains(t, result.Diff, "+revision 1")
 	require.Empty(t, stderr.String())
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
+}
+
+func preparationCLI(t *testing.T) (app.Config, *git.Repository, string) {
+	t.Helper()
+	executable, err := exec.LookPath("port-tclsh")
+	if err != nil {
+		t.Skip("MacPorts port-tclsh is required for CLI integration test")
+	}
+	root := t.TempDir()
+	output, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", "-b", "candidate", root).CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	repo, err := git.Open(t.Context(), root, "")
+	require.NoError(t, err)
+	blob, err := repo.WriteBlob(t.Context(), []byte("PortSystem 1.0\nname fixture\nversion 1.2\nrevision 0\ncategories devel\n"))
+	require.NoError(t, err)
+	tree, err := repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "Portfile", Mode: 0o100644, Type: "blob", Object: blob}})
+	require.NoError(t, err)
+	tree, err = repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "fixture", Mode: 0o40000, Type: "tree", Object: tree}})
+	require.NoError(t, err)
+	tree, err = repo.WriteTree(t.Context(), []git.TreeEntry{{Name: "devel", Mode: 0o40000, Type: "tree", Object: tree}})
+	require.NoError(t, err)
+	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
+	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Message: "fixture", Author: sig, Committer: sig})
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Desired: git.RefValue{Exists: true, Object: commit}}}))
+	config := app.Config{Repository: root, DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), TclExecutable: executable}
+	for _, setting := range [][2]string{{"user.name", "Fixture"}, {"user.email", "fixture@example.invalid"}} {
+		output, err = exec.CommandContext(t.Context(), "git", "-C", root, "config", setting[0], setting[1]).CombinedOutput()
+		require.NoError(t, err, "%s", output)
+	}
+	return config, repo, commit
+}
+
+func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) {
+	config, repo, commit := preparationCLI(t)
+	out, err := exec.CommandContext(t.Context(), "git", "-C", repo.Root, "reset", "--hard", commit).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	portfile := filepath.Join(repo.Root, "devel/fixture/Portfile")
+	require.NoError(t, os.WriteFile(portfile, []byte("staged edits"), 0600))
+	out, err = exec.CommandContext(t.Context(), "git", "-C", repo.Root, "add", "devel/fixture/Portfile").CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	require.NoError(t, os.WriteFile(portfile, []byte("unstaged edits"), 0600))
+	index, err := os.ReadFile(filepath.Join(repo.CommonDir, "index"))
+	require.NoError(t, err)
+	config.Tart = tart.Config{Executable: "/missing/tart"}
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json", "--reason", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	var result ActionResult
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.Len(t, result.Status.Jobs, 1)
+	job := result.Status.Jobs[0].Job
+	require.Equal(t, record.JobCompleted, job.State)
+	require.Equal(t, record.VerificationSkipped, job.Spec.Verification)
+	require.Empty(t, result.Status.Jobs[0].Attempts)
+	require.Contains(t, stderr.String(), "working-tree edits are excluded")
+	require.Equal(t, record.ObjectID(commit), job.Spec.Source.Commit)
+	prepared, tree, err := repo.Branch(t.Context(), job.Prepared.Branch)
+	require.NoError(t, err)
+	require.Equal(t, string(job.Prepared.Source.Commit), prepared)
+	_, data, err := repo.File(t.Context(), tree, "devel/fixture/Portfile")
+	require.NoError(t, err)
+	require.Contains(t, string(data), "revision 1")
+	actual, _, err := repo.Branch(t.Context(), "candidate")
+	require.NoError(t, err)
+	require.Equal(t, commit, actual)
+	afterIndex, err := os.ReadFile(filepath.Join(repo.CommonDir, "index"))
+	require.NoError(t, err)
+	require.Equal(t, index, afterIndex)
+	afterFile, err := os.ReadFile(portfile)
+	require.NoError(t, err)
+	require.Equal(t, "unstaged edits", string(afterFile))
+	stdout.Reset()
+	stderr.Reset()
+	require.NoError(t, Run(t.Context(), []string{"wait", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.Equal(t, job.ResultRevision, result.Status.Jobs[0].Job.ResultRevision)
+}
+
+func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T) {
+	for _, image := range []string{"", "unavailable-image"} {
+		t.Run("image="+image, func(t *testing.T) {
+			config, repo, _ := preparationCLI(t)
+			config.Tart = tart.Config{Executable: "/missing/tart", Image: image}
+			var stdout, stderr bytes.Buffer
+			err := Run(t.Context(), []string{"bump-revision", "fixture", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+			require.ErrorIs(t, err, ErrNeedsAttention, "%s", stderr.String())
+			var result ActionResult
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			job := result.Status.Jobs[0].Job
+			require.Equal(t, record.VerificationRequired, job.Spec.Verification)
+			require.Equal(t, record.JobNeedsAttention, job.State)
+			require.NotEmpty(t, job.Spec.Preparation.VerificationProblem)
+			require.Contains(t, job.Detail, "prepared branch is preserved")
+			actual, _, err := repo.Branch(t.Context(), job.Prepared.Branch)
+			require.NoError(t, err)
+			require.Equal(t, string(job.Prepared.Source.Commit), actual)
+		})
+	}
 }

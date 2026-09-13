@@ -65,6 +65,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			line("  input revision: %s", job.Spec.InputRevision)
 		}
 		line("  source tree: %s", job.Spec.Source.Tree)
+		if job.Prepared != nil {
+			line("  prepared branch: %s; commit: %s", job.Prepared.Branch, job.Prepared.Source.Commit)
+		}
 		if job.ResultRevision != "" {
 			line("  result revision: %s", job.ResultRevision)
 		}

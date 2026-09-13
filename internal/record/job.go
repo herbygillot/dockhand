@@ -52,7 +52,7 @@ const (
 type JobSpec struct {
 	Action Action
 	// ChangeID is derived from InputRevision for an existing change. It is empty
-	// when a request supplies new source for preparation to adopt.
+	// for standalone verification or new source for preparation to adopt.
 	ChangeID ChangeID
 	// InputRevision selects an existing immutable revision when nonempty.
 	InputRevision RevisionID
@@ -68,6 +68,8 @@ type JobSpec struct {
 	// Version is an optional explicit version for Bump.
 	Version string
 	Reason  string
+	// Preparation freezes source-branch, platform, and author choices for a new contribution.
+	Preparation *PreparationSpec `json:",omitempty"`
 }
 
 // JobState describes progress toward a job's requested destination.
@@ -102,10 +104,13 @@ type Job struct {
 	// ResultRevision identifies the revision produced by preparation, if any.
 	ResultRevision RevisionID
 	State          JobState
-	// Claim is reserved for job-level work; verification and cleanup claim
-	// their Attempt and Resource records separately.
-	Claim      *Claim
-	AcceptedAt time.Time
+	// Claim covers preparation and branch integration; verification and cleanup
+	// claim their own records.
+	Claim           *Claim
+	ClaimGeneration uint64
+	RetryAt         *time.Time
+	Prepared        *PreparedChange
+	AcceptedAt      time.Time
 	// CancelRequestedAt records when the driver applied cancellation intent.
 	// It does not establish that a remote build has stopped.
 	CancelRequestedAt *time.Time

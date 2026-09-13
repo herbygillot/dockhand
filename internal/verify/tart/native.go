@@ -316,7 +316,9 @@ func (n *native) Inspect(ctx context.Context, vm string) (guestResult, error) {
 if [ -f /var/tmp/dockhand2/result.json ]; then exec cat /var/tmp/dockhand2/result.json; fi
 if status=$(/bin/launchctl print system/org.dockhand2.build 2>&1); then
   case "$status" in
-    *'state = not running'*) echo '{"State":"runner-exited"}' ;;
+    *'state = not running'*)
+      if [ -f /var/tmp/dockhand2/result.json ]; then cat /var/tmp/dockhand2/result.json
+      else echo '{"State":"runner-exited"}'; fi ;;
     *) echo '{"State":"starting"}' ;;
   esac
 else
@@ -336,7 +338,17 @@ fi`)
 			return guestResult{}, e
 		}
 		if strings.Contains(string(status), "state = not running") {
-			return guestResult{State: "runner-exited"}, nil
+			// The runner may have published its terminal result after our first read.
+			final, err := n.guest(ctx, vm, nil, "sudo", "-n", "/bin/cat", guestDirectory+"/result.json")
+			if err != nil {
+				return guestResult{}, err
+			}
+			if err := json.Unmarshal(final, &result); err != nil {
+				return guestResult{}, err
+			}
+			if result.State == "running" {
+				return guestResult{State: "runner-exited"}, nil
+			}
 		}
 	}
 	return result, nil

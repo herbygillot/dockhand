@@ -1,6 +1,6 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Revision-bump previews are implemented. Preparation jobs, version bumps, publication, and broader target selection remain unfinished.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Revision-bump previews and durable preparation jobs are implemented. Version bumps, publication, working-tree input, and broader target selection remain unfinished.
 
 ## Global options
 
@@ -21,7 +21,7 @@ The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `-
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
-`status` calls the shared workflow projection through read-only SQLite access and renders human-readable output or JSON. Verification submission, job-ID attachment/cancellation, and resident execution now use the shared Go workflow API. Revision-bump previews use the preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
+`status` calls the shared workflow projection through read-only SQLite access and renders human-readable output or JSON. Verification submission, job-ID attachment/cancellation, and resident execution now use the shared Go workflow API. Revision bumps use the shared driver; previews use the same preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
 
 ## Implemented verification commands
 
@@ -35,7 +35,7 @@ dockhand cancel <job_id> [--reason <text>] [--wait]
 dockhand start
 ```
 
-`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. The current literal local branch is the default; detached HEAD requires `--branch`. The input is committed source, and the accepted commit ID is reported. This does not adopt uncommitted edits. Explicit subports and variants use the existing snapshot evaluator. A tracked branch currently has an accepted target association; an unrelated target on the same branch is rejected. Branch-only inference and multi-target selectors remain future work.
+`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. The current literal local branch is the default; detached HEAD requires `--branch`. The input is committed source, and the accepted commit ID is reported. This does not adopt uncommitted edits. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Branch-only inference and multi-target selectors remain future work.
 
 The prepared image is currently selected explicitly with `--image` (or through the Go application's configured default). General Git configuration loading remains separate work. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `--capacity` may establish another positive limit. An existing pool's limit and directory must agree. Omission reuses the recorded limit. Image availability and platform checks are distinct from admission capacity.
 
@@ -54,13 +54,27 @@ dockhand bump <port> [version]
 
 The revision preview selects committed source from the current local branch or explicit `--branch`. It reports that working-tree edits are excluded. It materializes the complete tree, evaluates the original Portfile and all its subports, proposes a focused revision edit, and evaluates the candidate tree. A selected subport can change without its siblings changing. A shared revision edit that changes unselected siblings, changes other evaluated metadata, or fails evaluation is refused. Revision expressions and ambiguous or dynamically named scopes remain unsupported by this first editor; versions may still be calculated because MacPorts evaluates them.
 
-Successful previews render a Git diff to stdout and source/target information to stderr. JSON returns the selected branch, preparation result and evaluations, commit intent, and diff. Preview writes immutable Git objects as needed, but creates no branch, commit, job, database, or verification environment and leaves the user's checkout/index alone. The same preparation service is available to the later driver executor.
+Successful previews render a Git diff to stdout and source/target information to stderr. JSON returns the selected branch, preparation result and evaluations, commit intent, and diff. Preview writes immutable Git objects as needed, but creates no branch, commit, job, database, or verification environment and leaves the user's checkout/index alone. The driver uses this same preparation service for accepted revision-bump jobs.
 
-`bump` now accepts its optional version argument and validates it before constructing services. Version preparation, checksum refresh, and all non-preview preparation commands still return explicit not-implemented errors without initializing state. The upstream package can match an explicit version against supplied release evidence using a known or inferred tag convention, but release discovery and downloads are not connected to the command yet. See the [groundwork report](activity/2026-09-13-bump-groundwork.md).
+`bump` now accepts its optional version argument and validates it before constructing services. Version preparation and checksum refresh still return explicit not-implemented errors without initializing state. The upstream package can match an explicit version against supplied release evidence using a known or inferred tag convention, but release discovery and downloads are not connected to the command yet. See the [groundwork report](activity/2026-09-13-bump-groundwork.md).
+
+### Revision-bump jobs
+
+```sh
+dockhand bump-revision jq --no-verify
+dockhand bump-revision jq --image dockhand-base-tahoe
+dockhand bump-revision jq --image dockhand-base-tahoe --wait
+```
+
+The source defaults to the current local branch; `--branch` selects another committed source branch. Each request creates a new contribution branch named `dockhand/revbump/<port>-<job suffix>`. The source branch, checkout, and index stay in place. Git author identity, source commit/tree/base, target, platform, and any verification configuration are captured before acceptance. `--reason` becomes the commit body. The output reports the job, prepared branch, commit, and result revision.
+
+`--no-verify` completes once the branch is recorded. Otherwise the command prepares the branch and waits for verification admission; `--wait` follows completion and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. A missing image or failed provider setup is recorded as needs-attention after preserving the branch. A later `verify <port> --branch <prepared-branch> --image <image>` creates a new verification job. `--publish` remains unsupported and is rejected before submission.
+
+`wait <job_id>` and `start` resume recorded preparation and integration as well as verification. Cancellation before integration leaves no output branch. After integration may have started, the driver reconciles the recorded candidate and preserves any confirmed branch. An interrupted integration whose branch is absent or contains another commit requires attention; it never overwrites user work or guesses that a deleted branch should be recreated. See the [driver implementation report](activity/2026-09-13-revision-driver.md).
 
 ## Approved source selection and human edits
 
-This section specifies the next behavior to implement. The committed-source, one-port commands above remain the current implementation.
+Working-tree capture and inferred target scope in this section remain future work. Standalone verification without an exclusive branch association is implemented; the commands above still select one port from committed source.
 
 The branch is the everyday handle for a tracked contribution; job IDs identify exact executions. Users can edit, commit, and rebase with ordinary Git commands, then ask Dockhand to verify or publish without a separate adoption step for every edit. A renamed or missing tracked branch requires an actionable error rather than silent reassociation.
 

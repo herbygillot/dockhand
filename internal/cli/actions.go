@@ -46,10 +46,10 @@ type ActionResult struct {
 }
 
 func (r *runtime) verifyCommand() *cobra.Command {
-	var branch, subport, image, tests string
+	var branch, subport string
+	var build buildOptions
 	var variants []string
-	var wait, trace, fromSource bool
-	var capacity int
+	var wait, trace bool
 	command := &cobra.Command{
 		Use: "verify <port>", Short: "Verify a port from a committed local branch",
 		Long: "Verify one snapshot-relative port directory or unique directory name. The current local branch is used unless --branch is given. Only committed contents are selected. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
@@ -58,25 +58,13 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
 				return fmt.Errorf("branch must name a literal local branch")
 			}
-			if capacity < 0 {
-				return fmt.Errorf("capacity cannot be negative")
-			}
-			if tests != "declared" && tests != "skip" {
-				return fmt.Errorf("tests must be declared or skip")
-			}
 			choices, err := parseVariants(variants)
 			if err != nil {
 				return err
 			}
-			config := r.config
-			if cmd.Flags().Changed("image") {
-				config.Tart.Image = image
-			}
-			if cmd.Flags().Changed("capacity") {
-				if capacity == 0 {
-					return fmt.Errorf("capacity must be positive")
-				}
-				config.Tart.Capacity = capacity
+			config, err := build.config(cmd, r.config)
+			if err != nil {
+				return err
 			}
 			if config.Tart.Image == "" {
 				return fmt.Errorf("select a prepared local Tart image with --image")
@@ -87,7 +75,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			}
 			defer services.Close()
 			fmt.Fprintln(cmd.ErrOrStderr(), "Binding committed source and checking the prepared image...")
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Tests: record.TestPolicy(tests), FromSource: fromSource})
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource})
 			if err != nil {
 				return err
 			}
@@ -106,10 +94,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.Flags().StringVar(&branch, "branch", "", "Local branch to verify (defaults to the current branch)")
 	command.Flags().StringVar(&subport, "subport", "", "Select one subport from the Portfile")
 	command.Flags().StringArrayVar(&variants, "variant", nil, "Explicit variant choice, such as +ssl or -x11 (repeatable)")
-	command.Flags().StringVar(&image, "image", r.config.Tart.Image, "Prepared local Tart image")
-	command.Flags().IntVar(&capacity, "capacity", r.config.Tart.Capacity, "Shared Tart capacity (uses the recorded pool limit, initially 2)")
-	command.Flags().StringVar(&tests, "tests", "declared", "Test policy: declared or skip")
-	command.Flags().BoolVar(&fromSource, "from-source", true, "Build from source instead of using binary archives")
+	build.flags(command, r.config)
 	command.Flags().BoolVar(&wait, "wait", false, "Stay until verification completes")
 	command.Flags().BoolVar(&trace, "trace", false, "Stream build logs to stderr and wait for completion")
 	return command

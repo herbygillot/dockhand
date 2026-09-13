@@ -24,7 +24,10 @@ var initialSchema string
 //go:embed migrations/002.sql
 var providerSchema string
 
-const schemaVersion = 2
+//go:embed migrations/003.sql
+var preparationSchema string
+
+const schemaVersion = 3
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -119,7 +122,7 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err := t.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&appID); err != nil {
 			return storageError(err)
 		}
-		if appID == applicationID && (version == schemaVersion || version == 1 && !s.options.ReadOnly) {
+		if appID == applicationID && (version == schemaVersion || version >= 1 && version < schemaVersion && !s.options.ReadOnly) {
 			return nil
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
@@ -173,9 +176,13 @@ func (s *Store) initialize(ctx context.Context) error {
 		if appID == applicationID && version == schemaVersion {
 			return nil
 		}
-		if appID == applicationID && version == 1 && !s.options.ReadOnly {
-			_, err := t.conn.ExecContext(ctx, providerSchema+"PRAGMA user_version=2;")
-			return storageError(err)
+		if appID == applicationID && version >= 1 && version < schemaVersion && !s.options.ReadOnly {
+			if version == 1 {
+				if _, err := t.conn.ExecContext(ctx, providerSchema); err != nil {
+					return storageError(err)
+				}
+			}
+			return migratePreparation(ctx, t)
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
 			return state.ErrSchema
@@ -187,8 +194,10 @@ func (s *Store) initialize(ctx context.Context) error {
 		if count != 0 {
 			return fmt.Errorf("%w: not a Dockhand database", state.ErrSchema)
 		}
-		_, err := t.conn.ExecContext(ctx, initialSchema+providerSchema+fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=%d;", applicationID, schemaVersion))
-		return storageError(err)
+		if _, err := t.conn.ExecContext(ctx, initialSchema+providerSchema+fmt.Sprintf("PRAGMA application_id=%d;", applicationID)); err != nil {
+			return storageError(err)
+		}
+		return migratePreparation(ctx, t)
 	})
 }
 
@@ -218,4 +227,24 @@ func (s *Store) RegisterRepository(ctx context.Context, path string) (record.Rep
 		return storageError(err)
 	})
 	return result, err
+}
+
+func migratePreparation(ctx context.Context, t *transaction) error {
+	if _, err := t.conn.ExecContext(ctx, preparationSchema); err != nil {
+		return storageError(err)
+	}
+	rows, err := t.conn.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return storageError(err)
+	}
+	invalid := rows.Next()
+	err = errors.Join(rows.Err(), rows.Close())
+	if err != nil {
+		return storageError(err)
+	}
+	if invalid {
+		return fmt.Errorf("%w: migration left invalid references", state.ErrSchema)
+	}
+	_, err = t.conn.ExecContext(ctx, "PRAGMA defer_foreign_keys=OFF; PRAGMA user_version=3;")
+	return storageError(err)
 }

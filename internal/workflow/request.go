@@ -66,6 +66,24 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if spec.Version != "" && (spec.Action != record.Bump || !validToken(spec.Version)) {
 		return record.JobSpec{}, fmt.Errorf("%w: only bump accepts a nonempty version without whitespace or control characters", ErrInvalidRequest)
 	}
+	if spec.Preparation != nil {
+		choices := *spec.Preparation
+		if spec.Action != record.BumpRevision || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 || spec.Destination == record.Published {
+			return record.JobSpec{}, fmt.Errorf("%w: preparation requires one committed source target and a branch-ready or verification destination", ErrInvalidRequest)
+		}
+		if !git.ValidBranchName(choices.SourceBranch) || choices.Author.Name == "" || choices.Author.Email == "" || strings.ContainsAny(choices.Author.Name+choices.Author.Email, "\x00\r\n<>") || !utf8.ValidString(choices.Author.Name+choices.Author.Email) {
+			return record.JobSpec{}, fmt.Errorf("%w: preparation requires a source branch and valid author identity", ErrInvalidRequest)
+		}
+		for _, value := range []string{choices.Platform.OS, choices.Platform.Version, choices.Platform.Architecture} {
+			if !validToken(value) {
+				return record.JobSpec{}, fmt.Errorf("%w: preparation requires a complete platform", ErrInvalidRequest)
+			}
+		}
+		if spec.Build != nil && spec.Build.Platform != choices.Platform {
+			return record.JobSpec{}, fmt.Errorf("%w: preparation and build platforms disagree", ErrInvalidRequest)
+		}
+		spec.Preparation = &choices
+	}
 	if spec.InputRevision != "" {
 		if spec.Source != (record.Source{}) {
 			return record.JobSpec{}, fmt.Errorf("%w: omit source when selecting an existing revision", ErrInvalidRequest)

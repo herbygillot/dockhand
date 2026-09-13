@@ -12,6 +12,12 @@ func jobEligible(job record.Job, attempts []record.Attempt, now time.Time) bool 
 	if jobTerminal(job.State) {
 		return false
 	}
+	if job.Spec.Action == record.BumpRevision && job.CancelRequestedAt != nil && job.Prepared == nil {
+		return true
+	}
+	if live(job.Claim, now) || !due(job.RetryAt, now) {
+		return false
+	}
 	if len(attempts) != 1 {
 		return true
 	}
@@ -19,7 +25,7 @@ func jobEligible(job record.Job, attempts []record.Attempt, now time.Time) bool 
 	if job.CancelRequestedAt != nil && attempt.State == record.AttemptQueued {
 		return !live(attempt.Claim, now)
 	}
-	if job.Spec.Action != record.Verify || attemptTerminal(attempt.State) {
+	if !verificationJob(job) || attemptTerminal(attempt.State) {
 		return true
 	}
 	return !live(attempt.Claim, now) && due(attempt.RetryAt, now)

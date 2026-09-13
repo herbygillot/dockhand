@@ -25,7 +25,7 @@ func (t *transaction) Attempt(ctx context.Context, id record.AttemptID) (record.
 	var owner sql.NullString
 	var claimUntil, retry, cancel sql.NullInt64
 	var created int64
-	err := t.conn.QueryRowContext(ctx, `SELECT id,job_id,target_id,revision_id,source_id,build,state,claim_owner,claim_generation,claim_until,retry_at,cancel_sent_at,cancel_observe,last_error,created_at FROM attempts WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.JobID, &v.TargetID, &v.Spec.RevisionID, &source, &raw, &v.State, &owner, &v.ClaimGeneration, &claimUntil, &retry, &cancel, &v.CancelPendingObservation, &v.LastError, &created)
+	err := t.conn.QueryRowContext(ctx, `SELECT id,job_id,target_id,coalesce(revision_id,''),source_id,build,state,claim_owner,claim_generation,claim_until,retry_at,cancel_sent_at,cancel_observe,last_error,created_at FROM attempts WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.JobID, &v.TargetID, &v.Spec.RevisionID, &source, &raw, &v.State, &owner, &v.ClaimGeneration, &claimUntil, &retry, &cancel, &v.CancelPendingObservation, &v.LastError, &created)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -105,18 +105,20 @@ func (t *transaction) PutAttempt(ctx context.Context, v record.Attempt) error {
 	if found {
 		err = t.exec(ctx, `UPDATE attempts SET state=?,claim_owner=?,claim_generation=?,claim_until=?,retry_at=?,next_action_at=?,cancel_sent_at=?,cancel_observe=?,last_error=? WHERE repository_id=? AND id=?`, v.State, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), next, nullableTime(v.CancelSentAt), v.CancelPendingObservation, v.LastError, t.repo, v.ID)
 	} else {
-		revision, e := t.Revision(ctx, v.Spec.RevisionID)
-		if e != nil {
-			return e
-		}
-		if revision.Source != v.Spec.Source {
-			return state.ErrConflict
+		if v.Spec.RevisionID != "" {
+			revision, e := t.Revision(ctx, v.Spec.RevisionID)
+			if e != nil {
+				return e
+			}
+			if revision.Source != v.Spec.Source {
+				return state.ErrConflict
+			}
 		}
 		job, e := t.Job(ctx, v.JobID)
 		if e != nil {
 			return e
 		}
-		if job.Spec.InputRevision != v.Spec.RevisionID && job.ResultRevision != v.Spec.RevisionID {
+		if (v.Spec.RevisionID == "" && (job.Spec.Action != record.Verify || job.Spec.InputRevision != "" || job.ResultRevision != "" || job.Spec.Source != v.Spec.Source)) || (v.Spec.RevisionID != "" && job.Spec.InputRevision != v.Spec.RevisionID && job.ResultRevision != v.Spec.RevisionID) {
 			return state.ErrConflict
 		}
 		source, e := t.source(ctx, v.Spec.Source)
@@ -127,7 +129,7 @@ func (t *transaction) PutAttempt(ctx context.Context, v record.Attempt) error {
 		if e != nil {
 			return e
 		}
-		err = t.exec(ctx, `INSERT INTO attempts(id,repository_id,job_id,target_id,revision_id,source_id,build,state,claim_owner,claim_generation,claim_until,retry_at,next_action_at,cancel_sent_at,cancel_observe,last_error,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.JobID, v.TargetID, v.Spec.RevisionID, source, raw, v.State, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), next, nullableTime(v.CancelSentAt), v.CancelPendingObservation, v.LastError, v.CreatedAt.UnixMilli())
+		err = t.exec(ctx, `INSERT INTO attempts(id,repository_id,job_id,target_id,revision_id,source_id,build,state,claim_owner,claim_generation,claim_until,retry_at,next_action_at,cancel_sent_at,cancel_observe,last_error,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.JobID, v.TargetID, nullableID(v.Spec.RevisionID), source, raw, v.State, owner, v.ClaimGeneration, until, nullableTime(v.RetryAt), next, nullableTime(v.CancelSentAt), v.CancelPendingObservation, v.LastError, v.CreatedAt.UnixMilli())
 	}
 	if err != nil {
 		return err

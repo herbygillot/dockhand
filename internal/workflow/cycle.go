@@ -85,10 +85,17 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		return result, err
 	}
 	for _, job := range jobs {
-		if job.Spec.Action == record.Verify {
+		if verificationJob(job) {
 			c.checkProvider(ctx)
 		}
-		changed, detail, err := c.advanceJob(ctx, job.ID)
+		var changed bool
+		var detail string
+		var err error
+		if job.Spec.Action == record.BumpRevision && job.ResultRevision == "" {
+			changed, detail, err = c.advancePreparation(ctx, job.ID)
+		} else {
+			changed, detail, err = c.advanceJob(ctx, job.ID)
+		}
 		if changed {
 			result.Advanced = append(result.Advanced, job.ID)
 		}
@@ -238,4 +245,8 @@ func (c *cycle) claim(generation *uint64, now time.Time) (*record.Claim, error) 
 	}
 	(*generation)++
 	return &record.Claim{Owner: c.owner, Generation: *generation, ExpiresAt: now.Add(c.lease)}, nil
+}
+
+func verificationJob(job record.Job) bool {
+	return job.Spec.Action == record.Verify || (job.Spec.Action == record.BumpRevision && job.ResultRevision != "" && job.Spec.Verification == record.VerificationRequired)
 }

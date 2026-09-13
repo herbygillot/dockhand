@@ -1,0 +1,61 @@
+package workflow
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/macports"
+	"github.com/herbygillot/dockhand/v2/internal/record"
+)
+
+type PreparationRequest struct {
+	ID                  record.RequestID
+	Branch              string
+	Selection           macports.Selection
+	Destination         record.Destination
+	Verification        record.VerificationPolicy
+	Build               *record.BuildConfig
+	Author              record.CommitIdentity
+	Platform            record.Platform
+	Reason              string
+	VerificationProblem string
+}
+
+type BoundPreparation struct {
+	Request    Request
+	Evaluation macports.Snapshot
+}
+
+func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest) (BoundPreparation, error) {
+	if e == nil || e.State == nil || e.Repository == "" {
+		return BoundPreparation{}, ErrNoState
+	}
+	if e.Repo == nil || e.Ports == nil {
+		return BoundPreparation{}, fmt.Errorf("workflow: preparation binding requires Git and MacPorts")
+	}
+	if !validToken(string(request.ID)) || !git.ValidBranchName(request.Branch) {
+		return BoundPreparation{}, ErrInvalidRequest
+	}
+	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
+	if err != nil {
+		return BoundPreparation{}, err
+	}
+	if registered.ID != e.Repository {
+		return BoundPreparation{}, fmt.Errorf("%w: preparation repository does not match state scope", ErrInvalidRequest)
+	}
+	source, targets, evaluation, err := e.bindBranchSource(ctx, request.Branch, request.Selection, request.Platform, "")
+	if err != nil {
+		return BoundPreparation{}, err
+	}
+	source.Base = source.Commit
+	evaluation.Source = source
+	spec, err := normalizeSpec(record.JobSpec{
+		Action: record.BumpRevision, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, Reason: request.Reason,
+		Preparation: &record.PreparationSpec{SourceBranch: request.Branch, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
+	})
+	if err != nil {
+		return BoundPreparation{}, err
+	}
+	return BoundPreparation{Request: Request{ID: request.ID, Spec: spec}, Evaluation: evaluation}, nil
+}

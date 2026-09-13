@@ -79,37 +79,9 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if err != nil {
 		return BoundVerification{}, err
 	}
-	commit, tree, err := e.Repo.Branch(ctx, request.Branch)
+	source, targets, evaluation, err := e.bindBranchSource(ctx, request.Branch, request.Selection, request.Build.Platform, base)
 	if err != nil {
 		return BoundVerification{}, err
-	}
-	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: base}
-	files, err := e.Repo.Materialize(ctx, tree)
-	if err != nil {
-		return BoundVerification{}, err
-	}
-	defer func() { err = errors.Join(err, files.Close()) }()
-	bound, err := macports.NewTree(source, files.Root, request.Build.Platform)
-	if err != nil {
-		return BoundVerification{}, err
-	}
-	targets, err := e.Ports.Resolve(ctx, bound, request.Selection)
-	if err != nil {
-		return BoundVerification{}, err
-	}
-	if len(targets) != 1 {
-		return BoundVerification{}, fmt.Errorf("%w: branch verification currently requires one target", ErrInvalidRequest)
-	}
-	target, err := bound.Select(targets[0])
-	if err != nil {
-		return BoundVerification{}, err
-	}
-	evaluation, err := e.Ports.Evaluate(ctx, target)
-	if err != nil {
-		return BoundVerification{}, err
-	}
-	if evaluation.Source != source || evaluation.Platform != request.Build.Platform || targetKey(evaluation.Target) != targetKey(targets[0]) {
-		return BoundVerification{}, fmt.Errorf("workflow: evaluation does not match the bound input")
 	}
 	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build})
 	if err != nil {
@@ -139,28 +111,12 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 	if change.ID != input.ExpectedChange || change.CurrentRevision != input.ExpectedRevision {
 		return record.JobSpec{}, fmt.Errorf("%w: tracked branch %s changed while binding", ErrStaleRevision, input.Name)
 	}
-	var previous record.Revision
 	if change.ID == "" {
-		change = record.Change{ID: record.ChangeID("change_" + rand.Text()), Branch: input.Name, Targets: spec.Targets, Disposition: record.ChangeOpen, CreatedAt: now}
-		if err := tx.PutChange(ctx, change); err != nil {
-			return record.JobSpec{}, err
-		}
-	} else {
-		matches := false
-		for _, target := range change.Targets {
-			wanted := spec.Targets[0]
-			if target.Name == wanted.Name && target.Portfile == wanted.Portfile && target.Subport == wanted.Subport {
-				matches = true
-				break
-			}
-		}
-		if !matches {
-			return record.JobSpec{}, fmt.Errorf("%w: target does not belong to tracked branch %s", ErrInvalidRequest, input.Name)
-		}
-		previous, err = tx.Revision(ctx, change.CurrentRevision)
-		if err != nil {
-			return record.JobSpec{}, err
-		}
+		return spec, nil
+	}
+	previous, err := tx.Revision(ctx, change.CurrentRevision)
+	if err != nil {
+		return record.JobSpec{}, err
 	}
 	revision := previous
 	if revision.ID == "" || revision.Source != spec.Source {
@@ -175,4 +131,40 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 	}
 	spec.ChangeID, spec.InputRevision = change.ID, revision.ID
 	return spec, nil
+}
+
+func (e *Engine) bindBranchSource(ctx context.Context, branch string, selection macports.Selection, platform record.Platform, base record.ObjectID) (_ record.Source, _ []record.Target, _ macports.Snapshot, err error) {
+	commit, tree, err := e.Repo.Branch(ctx, branch)
+	if err != nil {
+		return record.Source{}, nil, macports.Snapshot{}, err
+	}
+	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: base}
+	files, err := e.Repo.Materialize(ctx, tree)
+	if err != nil {
+		return record.Source{}, nil, macports.Snapshot{}, err
+	}
+	defer func() { err = errors.Join(err, files.Close()) }()
+	bound, err := macports.NewTree(source, files.Root, platform)
+	if err != nil {
+		return record.Source{}, nil, macports.Snapshot{}, err
+	}
+	targets, err := e.Ports.Resolve(ctx, bound, selection)
+	if err != nil {
+		return record.Source{}, nil, macports.Snapshot{}, err
+	}
+	if len(targets) != 1 {
+		return record.Source{}, nil, macports.Snapshot{}, fmt.Errorf("%w: branch verification currently requires one target", ErrInvalidRequest)
+	}
+	target, err := bound.Select(targets[0])
+	if err != nil {
+		return record.Source{}, nil, macports.Snapshot{}, err
+	}
+	evaluation, err := e.Ports.Evaluate(ctx, target)
+	if err != nil {
+		return record.Source{}, nil, macports.Snapshot{}, err
+	}
+	if evaluation.Source != source || evaluation.Platform != platform || targetKey(evaluation.Target) != targetKey(targets[0]) {
+		return record.Source{}, nil, macports.Snapshot{}, fmt.Errorf("workflow: evaluation does not match the bound input")
+	}
+	return source, targets, evaluation, nil
 }

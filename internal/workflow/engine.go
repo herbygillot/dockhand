@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -50,8 +51,8 @@ type Engine struct {
 	// Repo and Ports support explicit branch binding before submission.
 	Repo  *git.Repository
 	Ports macports.Reader
-	// Preparer is reserved for the source-preparation execution path.
-	Preparer *prepare.Service
+	// Preparer produces immutable candidate trees without adopting branches.
+	Preparer SourcePreparer
 	// Planner is reserved for broader coverage planning. The current cycle
 	// uses verify.PlanSingle for its single-target plan.
 	Planner *verify.Planner
@@ -91,4 +92,8 @@ func (e *Engine) now() time.Time {
 		return e.Now().UTC().Truncate(time.Millisecond)
 	}
 	return time.Now().UTC().Truncate(time.Millisecond)
+}
+
+type SourcePreparer interface {
+	Prepare(context.Context, prepare.Request) (prepare.Result, error)
 }

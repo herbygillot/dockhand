@@ -27,8 +27,12 @@ func loadExecution(ctx context.Context, r state.Reader, id record.JobID) (execut
 	if work.Job, err = r.Job(ctx, id); err != nil {
 		return work, err
 	}
-	if work.Job.Spec.InputRevision != "" {
-		if work.Revision, err = r.Revision(ctx, work.Job.Spec.InputRevision); err != nil {
+	revisionID := work.Job.ResultRevision
+	if revisionID == "" {
+		revisionID = work.Job.Spec.InputRevision
+	}
+	if revisionID != "" {
+		if work.Revision, err = r.Revision(ctx, revisionID); err != nil {
 			return work, err
 		}
 	}

@@ -29,11 +29,37 @@ func ValidateConfig(config record.BuildConfig) error {
 }
 
 func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPlan, record.BuildSpec, error) {
-	if job.Spec.Action != record.Verify || job.Spec.Destination != record.VerificationComplete || job.Spec.Verification != record.VerificationRequired || len(job.Spec.Targets) != 1 || job.Spec.Build == nil {
+	if job.Spec.Build == nil {
+		if job.Spec.Preparation != nil && job.Spec.Preparation.VerificationProblem != "" {
+			return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: %s; prepared branch is preserved", job.Spec.Preparation.VerificationProblem)
+		}
+		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: no build configuration was selected")
+	}
+	if job.Spec.Destination != record.VerificationComplete || job.Spec.Verification != record.VerificationRequired || len(job.Spec.Targets) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
-	if revision.ID == "" || revision.ID != job.Spec.InputRevision || revision.ChangeID != job.ChangeID || revision.Source != job.Spec.Source || revision.Source.Commit == "" {
-		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: an existing committed input revision matching the accepted source is required")
+	source := job.Spec.Source
+	expected := job.Spec.InputRevision
+	switch job.Spec.Action {
+	case record.Verify:
+	case record.BumpRevision:
+		if job.ResultRevision == "" || job.Prepared == nil {
+			return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: preparation has not produced a revision")
+		}
+		expected = job.ResultRevision
+		source = job.Prepared.Source
+	default:
+		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: unsupported job action")
+	}
+	if expected != "" {
+		if revision.ID != expected || revision.ChangeID != job.ChangeID || revision.Source != source {
+			return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: revision does not match selected build source")
+		}
+	} else if revision.ID != "" || job.ChangeID != "" {
+		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: standalone verification cannot imply a contribution revision")
+	}
+	if source.Commit == "" {
+		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this provider path requires committed source")
 	}
 	if err := ValidateConfig(*job.Spec.Build); err != nil {
 		return record.VerificationPlan{}, record.BuildSpec{}, err
@@ -41,7 +67,7 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 	target := job.Spec.Targets[0]
 	target.Variants = maps.Clone(target.Variants)
 	plan := record.VerificationPlan{JobID: job.ID, RevisionID: revision.ID, Targets: []record.VerificationTarget{{ID: record.TargetID("target_" + string(job.ID)), Port: target, Platform: job.Spec.Build.Platform}}}
-	build := record.BuildSpec{RevisionID: revision.ID, Source: revision.Source, Target: target, Config: *job.Spec.Build, Inputs: []record.Artifact{}}
+	build := record.BuildSpec{RevisionID: revision.ID, Source: source, Target: target, Config: *job.Spec.Build, Inputs: []record.Artifact{}}
 	build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
 	return plan, build, nil
 }

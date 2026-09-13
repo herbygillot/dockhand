@@ -26,7 +26,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Maintain MacPorts ports",
-		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nVerify committed ports, resume jobs, and run driver cycles. Preparation and publication are under construction.",
+		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nPrepare revision bumps, verify committed ports, resume jobs, and run driver cycles. Version bumps and publication are under construction.",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,

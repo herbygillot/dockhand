@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
+	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +26,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		{record.RefreshChecksums, "Refresh a port's distfile checksums"},
 	} {
 		options := &Options{}
+		var build buildOptions
 		var branch, subport, reason string
 		var variants []string
 		use, maximum := string(spec.action)+" <port>", 1
@@ -33,7 +36,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command := &cobra.Command{
 			Use: use, Short: spec.short,
-			Long: spec.short + ".\n\nRevision-bump previews (--diff) use committed source from the current branch or --branch. Branch creation, version preparation, and checksum refresh are not implemented yet. An optional bump version may include its upstream tag prefix.",
+			Long: spec.short + ".\n\nRevision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. Version preparation and checksum refresh are not implemented yet. An optional bump version may include its upstream tag prefix.",
 			Args: func(cmd *cobra.Command, args []string) error {
 				if err := cobra.RangeArgs(1, maximum)(cmd, args); err != nil {
 					return err
@@ -54,11 +57,41 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				if !options.Diff {
-					return fmt.Errorf("%w: preparation job execution is not connected; bump-revision --diff can preview a revision edit", ErrNotImplemented)
-				}
 				if spec.action != record.BumpRevision {
-					return fmt.Errorf("%w: %s still needs release/download/checksum preparation", prepare.ErrNotImplemented, spec.action)
+					return fmt.Errorf("%w: %w: %s still needs release/download/checksum preparation", ErrNotImplemented, prepare.ErrNotImplemented, spec.action)
+				}
+				if options.Publish {
+					return fmt.Errorf("%w: publication is not connected", ErrNotImplemented)
+				}
+				if !options.Diff {
+					config, err := build.config(cmd, r.config)
+					if err != nil {
+						return err
+					}
+					services, err := app.Build(cmd.Context(), config)
+					if err != nil {
+						return err
+					}
+					defer services.Close()
+					fmt.Fprintln(cmd.ErrOrStderr(), "Binding committed source; working-tree edits are excluded.")
+					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{
+						ID: record.RequestID("request_" + rand.Text()), Branch: branch,
+						Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices},
+						Reason:    reason, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
+					})
+					if err != nil {
+						return err
+					}
+					receipt, err := services.Workflow.Submit(cmd.Context(), bound.Request)
+					if err != nil {
+						return fmt.Errorf("accepting request %s: %w", bound.Request.ID, err)
+					}
+					fmt.Fprintf(cmd.ErrOrStderr(), "Accepted job %s; source commit %s.\n", receipt.JobID, bound.Request.Spec.Source.Commit)
+					milestone := workflow.Admission
+					if options.Wait || options.Trace {
+						milestone = workflow.Completion
+					}
+					return r.attach(cmd, services, receipt.JobID, milestone, options.Trace, false, &receipt)
 				}
 				request := app.PreviewRequest{Action: spec.action, Branch: branch, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Reason: reason}
 				if len(args) == 2 {
@@ -84,6 +117,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		command.Flags().StringVar(&subport, "subport", "", "Select a subport within the Portfile")
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")
 		if spec.action == record.BumpRevision {
+			build.flags(command, r.config)
 			command.Flags().StringVar(&reason, "reason", "", "Reason for the revision bump")
 		}
 		commands = append(commands, command)

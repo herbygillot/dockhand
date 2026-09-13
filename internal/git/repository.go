@@ -76,6 +76,9 @@ func (r *Repository) command(ctx context.Context, env []string, args ...string) 
 	command := exec.CommandContext(ctx, executable, append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsync=committed,reference", "-c", "core.fsyncMethod=fsync", "-c", "commit.gpgSign=false"}, args...)...)
 	command.Dir = r.Root
 	command.Env = append(repositoryEnv(), env...)
+	if file, ok := ctx.Value(branchLockKey{}).(*os.File); ok {
+		command.ExtraFiles = []*os.File{file}
+	}
 	command.WaitDelay = time.Second
 	return command
 }

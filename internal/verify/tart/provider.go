@@ -561,7 +561,7 @@ func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (v
 }
 func buildDigest(spec record.BuildSpec) string { raw, _ := json.Marshal(spec); return digest(raw) }
 func validateRequest(r verify.Request) error {
-	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.RevisionID == "" || r.Spec.Config.Provider != "tart" || len(r.Spec.Inputs) != 0 {
+	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != "tart" || len(r.Spec.Inputs) != 0 {
 		return fmt.Errorf("tart: one concrete verification target without artifact inputs is required")
 	}
 	if err := verify.ValidateConfig(r.Spec.Config); err != nil {

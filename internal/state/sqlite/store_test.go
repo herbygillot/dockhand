@@ -208,7 +208,7 @@ func TestConcurrentInitializationRegistrationAndSchemaProtection(t *testing.T) {
 	raw, err := sql.Open("sqlite", path)
 	require.NoError(t, err)
 	defer raw.Close()
-	_, err = raw.Exec("PRAGMA user_version=3")
+	_, err = raw.Exec("PRAGMA user_version=999")
 	require.NoError(t, err)
 	_, err = sqlite.Open(t.Context(), path, sqlite.Options{})
 	require.ErrorIs(t, err, state.ErrSchema)

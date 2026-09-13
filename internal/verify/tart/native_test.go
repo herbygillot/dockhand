@@ -93,3 +93,30 @@ esac
 	require.NoError(t, err)
 	require.Equal(t, "runner-exited", result.State)
 }
+
+func TestTerminalResultPublishedBetweenMarkerAndRunnerReadsWins(t *testing.T) {
+	for _, verdict := range []record.Verdict{record.VerdictPassed, record.VerdictFailed} {
+		t.Run(string(verdict), func(t *testing.T) {
+			root := t.TempDir()
+			executable := filepath.Join(root, "tart")
+			script := `#!/bin/sh
+case "$1" in
+list) printf '%s\n' '[{"Name":"vm","Source":"local","State":"running"}]' ;;
+exec)
+ case "$5" in
+ /bin/launchctl) printf '%s\n' 'state = not running' ;;
+ /bin/cat) printf '%s\n' '{"State":"finished","Verdict":"` + string(verdict) + `","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
+ *) printf '%s\n' '{"State":"running","Protocol":1,"ID":"fixture","Digest":"fixture"}' ;;
+ esac ;;
+esac
+`
+			require.NoError(t, os.WriteFile(executable, []byte(script), 0700))
+			n := &native{config: Config{Home: root, Executable: executable}}
+			result, err := n.Inspect(t.Context(), "vm")
+			require.NoError(t, err)
+			require.Equal(t, "finished", result.State)
+			require.Equal(t, verdict, result.Verdict)
+			require.Equal(t, "fixture", result.ID)
+		})
+	}
+}

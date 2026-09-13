@@ -6,7 +6,7 @@ This document describes the initial SQLite implementation, following the [archit
 
 Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
-Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; preparation and publication follow separately.
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; revision-bump preparation is implemented; version bumps and publication follow separately.
 
 ## Packages and contracts
 
@@ -78,7 +78,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [implemented schema](../internal/state/sqlite/migrations/001.sql). Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 3. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |
@@ -87,9 +87,9 @@ The following summarizes the [implemented schema](../internal/state/sqlite/migra
 | `sources` | ID, repository, commit/tree/base IDs, canonical identity fingerprint | One source description reused by related records |
 | `revisions` | ID, change, source, preceding revision, creation time | Immutable input revisions and their relationships |
 | `requests` | ID, repository, kind, canonical submitted input, digest, acceptance time, control completion time | Shared intake identity for jobs and cancellation |
-| `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, next action time, lifecycle times | Durable accepted work |
+| `jobs` | ID, request, source/input/result revision references, change, action/destination/policy, state, effective configuration, requested targets, preparation claim/candidate, next action time, lifecycle times | Durable accepted work |
 | `control_jobs` | Request, job, applied time | Per-job cancellation progress |
-| `plans` | Job, revision, frozen single-target plan | Preserve requested verification coverage |
+| `plans` | Job, optional revision, frozen single-target plan | Preserve requested verification coverage |
 | `attempts` | ID, job, target identity, immutable build choices and inputs, state, next action time, cancellation state, claim fields, last error | Current verification execution and scheduling |
 | `submissions` | Submission ID, attempt, sequence, provider, run ID, state, admission/closure times | Recoverable provider identities, including closed submissions |
 | `attempt_evidence` | Attempt, latest accepted verdict/observation time, diagnostic evidence and artifact/log references | Keep evidence separate from frequent claim updates |
@@ -111,7 +111,7 @@ Preserve foreign keys and useful uniqueness constraints: current/preceding revis
 
 Start with bounded queries for queued/due jobs, attempts by job, due attempts, unapplied controls, resources by owner, and due cleanup. Candidate queries exclude terminal work and use repository/state/time indexes. Selected-job queries use IDs directly. Index relationship keys and request identity. A status report may enumerate its selected repository; an individual write never requires that enumeration.
 
-Attempts and resources retain `claim_owner`, `claim_generation`, and `claim_until`. Claim owner and deadline are either both present or both absent. Generation remains after release. Eligibility, ownership, submission intent, and the relevant state transition are checked and written in one `state.Tx`. Recording an external result rechecks owner, generation, lease, expected state, and relevant job intent in a fresh transaction.
+Preparation jobs, attempts, and resources retain `claim_owner`, `claim_generation`, and `claim_until`. Claim owner and deadline are either both present or both absent. Generation remains after release. Eligibility, ownership, submission intent, and the relevant state transition are checked and written in one `state.Tx`. Recording an external result rechecks owner, generation, lease, expected state, and relevant job intent in a fresh transaction.
 
 Keep `next_action_at` nullable: NULL means no scheduled action. A live claim schedules reconsideration at lease expiry; a result schedules the next observation, retry, or cleanup deadline. Dependencies and cancellation update affected scheduling rows transactionally. An idle cycle reads indexed candidates, opens no write transaction, and calls no provider. A pass selects at most 64 controls, jobs, and cleanup actions each; unsupported executors produce a recorded needs-attention outcome so they cannot occupy every future batch. Pending-cleanup reporting can still enumerate outstanding obligations. A candidate can lose eligibility before claim; that is an ordinary no-op. Use deterministic ordering and bounded batches, with later cycles reconsidering work.
 
@@ -135,9 +135,9 @@ SQLite references: [isolation](https://www.sqlite.org/isolation.html), [transact
 
 State persistence makes no Git mutations and creates no source pins. Before consuming source, an executor checks the objects it needs. Missing source preserves identity and historical evidence but can leave the affected job needing attention. A permission/read failure is not confirmed absence. Existing provider runs and cleanup continue where they do not need the missing local source. Never replace a job's source with the current branch head to make it runnable.
 
-Explicit branch verification now reads an isolated committed snapshot and adopts its revision during request acceptance. The open-change lookup uses the existing repository/branch index. Revision preconditions, change updates, request receipts, and jobs share one transaction; source binding performs no Git or Tcl work inside it. This adds no tables or schema migration.
+Explicit branch verification reads an isolated committed snapshot. Existing contributions adopt a revision during request acceptance; standalone verification creates no change/revision. The open-change lookup uses the existing repository/branch index. Revision preconditions, change updates, request receipts, and jobs share one transaction; source binding performs no Git or Tcl work inside it. This adds no tables or schema migration.
 
-Preparation should use an isolated job-owned workspace and retry from recorded input. A changed branch after interruption is inspected; ambiguity requires attention. There is no `git_operations` table or promise of atomicity between SQLite and Git. Saving a candidate revision before branch integration remains an optional later checkpoint within normal job/revision records.
+Revision preparation uses disposable materializations and retries immutable work from recorded input. The job checkpoints its candidate commit/tree/base and destination before integration, with a monotonic integration-started marker. A changed branch after interruption is inspected; ambiguity requires attention. There is no `git_operations` table or promise of atomicity between SQLite and Git.
 
 Keep PRs and publication actions separate when publication is implemented. PR identity persists across repeated publication actions and revisions; intended publication and confirmed forge state remain distinct. Their tables, scheduling, and queries arrive with that executor. Discovery observations, review decisions, branch reassociation commands, and an optional identity-only notes namespace remain later work. No automatic notes configuration is required to open or use the database. Matching port name, version, and revision alone does not establish equivalent verification inputs.
 
@@ -164,3 +164,11 @@ SQLite capacity decisions do not fence a delayed external command. The Tart adap
 `BuildConfig.ProviderConfig` is an optional bounded JSON object containing the provider-specific execution choices captured before acceptance. Tart uses it to recover image, platform, guest prefix, executable, home, and artifact settings for queued work even in a fresh process. Existing admitted executions retain their original payload. Capacity omission uses the immutable registered pool limit. Intake copies the mutable JSON value and planning preserves it; settings are included in accepted request identity and cannot be silently replaced during retry.
 
 This field fits the existing per-job/per-attempt configuration columns, so this slice adds no table or schema version. `ProviderStore.ProviderPool` provides a read-only pool lookup for consistent defaults. Driver residency is a process lifetime, not a new durable entity; workflow state and claims already provide coordination. Credentials are not part of this configuration.
+
+## Preparation checkpoints and standalone verification
+
+Schema 3 adds job claim owner/generation/expiry, retry time, and a small `prepared` JSON checkpoint. Job options also carry accepted preparation source-branch, author, platform, and any verification setup problem. The checkpoint's branch and source are immutable once present; integration-started cannot be cleared. Confirmed integration creates the change/revision and sets the job's result revision in one transaction. The candidate source is intentionally retained on the job for recovery and verified-result selection; it is copied into the immutable revision when adopted.
+
+Plans and attempts allow a NULL revision reference for standalone verification. Their job and source references remain mandatory. The storage API checks revision selection against the owning job and checks standalone attempt source identity; removing a contribution requirement does not remove repository or build-input identity. Existing tracked jobs, attempts, submissions, evidence, resources, and provider executions survive migration. Foreign-key checks run before completing the transactional table rebuild.
+
+Job scheduling includes preparation claims and retries. Cancellation before any candidate exists can settle immediately because preparation only writes immutable objects; a later preparation result still has to prove ownership. Integration cancellation respects branch exclusion and uncertain effects. Git's branch lock is operation-specific and remains outside the state contract. Read-only opening does not migrate older databases; a writable command performs the upgrade.

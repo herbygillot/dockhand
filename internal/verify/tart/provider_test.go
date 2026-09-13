@@ -386,3 +386,29 @@ func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "log\n", string(chunk.Data))
 }
+
+func TestStandaloneVerificationAdmissionRequiresNoContributionRevision(t *testing.T) {
+	f, m := singleRun(t)
+	engine := workflow.Engine{State: f.store, Repository: f.provider.Repository, Provider: capacityProvider{}}
+	receipt, err := engine.Submit(t.Context(), workflow.Request{ID: "standalone", Spec: record.JobSpec{
+		Action: record.Verify, Source: f.request.Spec.Source, Targets: []record.Target{f.request.Spec.Target},
+		Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &f.request.Spec.Config,
+	}})
+	require.NoError(t, err)
+	_, err = engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{receipt.JobID}})
+	require.NoError(t, err)
+	status, err := engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{receipt.JobID}})
+	require.NoError(t, err)
+	require.Empty(t, status.Changes)
+	attempt := status.Jobs[0].Attempts[0]
+	require.Empty(t, attempt.Spec.RevisionID)
+	request := verify.Request{ID: attempt.SubmissionID, AttemptID: attempt.ID, Spec: attempt.Spec}
+	result, err := f.provider.Submit(t.Context(), request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, result.State)
+	require.Equal(t, 1, m.calls["clone"])
+	recovered, err := f.provider.Reconcile(t.Context(), request.ID)
+	require.NoError(t, err)
+	require.Equal(t, verify.RunFound, recovered.State)
+	require.Equal(t, result.Run, recovered.Submission.Run)
+}

@@ -8,6 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/workflow"
 )
 
 type PreviewRequest struct {
@@ -61,4 +62,52 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 		return Preview{}, err
 	}
 	return Preview{Branch: branch, Preparation: result, Diff: string(diff)}, nil
+}
+
+// Preparation captures the choices needed to create a new contribution.
+type Preparation struct {
+	ID         record.RequestID
+	Branch     string
+	Selection  macports.Selection
+	Reason     string
+	NoVerify   bool
+	Tests      record.TestPolicy
+	FromSource bool
+}
+
+func (s *Services) BindPreparation(ctx context.Context, request Preparation) (workflow.BoundPreparation, error) {
+	if request.Branch == "" {
+		branch, err := s.Workflow.Repo.CurrentBranch(ctx)
+		if err != nil {
+			return workflow.BoundPreparation{}, err
+		}
+		request.Branch = branch
+	}
+	author, err := s.Workflow.Repo.Author(ctx)
+	if err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	platform, err := s.ports.NativePlatform(ctx)
+	if err != nil {
+		return workflow.BoundPreparation{}, err
+	}
+	bound := workflow.PreparationRequest{ID: request.ID, Branch: request.Branch, Selection: request.Selection, Reason: request.Reason,
+		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
+		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
+	if request.NoVerify {
+		bound.Destination, bound.Verification = record.BranchReady, record.VerificationSkipped
+	} else if s.verification.Config.Image != "" {
+		config, err := s.verification.BuildConfig(ctx, platform, request.Tests, request.FromSource)
+		if ctx.Err() != nil {
+			return workflow.BoundPreparation{}, ctx.Err()
+		}
+		if err != nil {
+			bound.VerificationProblem = err.Error()
+		} else {
+			bound.Build = &config
+		}
+	} else {
+		bound.VerificationProblem = "select a prepared local Tart image with --image"
+	}
+	return s.Workflow.BindPreparation(ctx, bound)
 }
