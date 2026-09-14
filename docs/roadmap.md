@@ -12,7 +12,7 @@ Last updated: 2026-09-14.
 
 Add downstream coverage without turning workflow into a generic graph engine.
 
-- `macports` discovers reverse dependents and the dependency closure for each selected target against the frozen source tree.
+- `macports` discovers reverse dependents and the dependency closure for each selected target against the frozen source tree. PortIndex lookup, direct reverse indexing, and transitive closure queries are implemented; workflow planning still needs to invoke them for the prepared source.
 - `prepare` proposes any required revision edits separately from the verification coverage plan.
 - `verify` records the concrete target/configuration questions that need answers.
 - `workflow` schedules an isolated attempt for each target/configuration and lets provider capacity determine parallel or sequential execution. The multi-attempt scheduler and aggregate outcomes are implemented; coverage discovery has not yet populated these plans.
