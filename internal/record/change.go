@@ -23,6 +23,9 @@ type Change struct {
 	ID      ChangeID
 	Branch  string
 	Targets []Target
+	// GeneratedCommit is the original fully generated commit, if known. Rewrites
+	// retain this identity so a trailer cannot masquerade as generation evidence.
+	GeneratedCommit ObjectID `json:",omitempty"`
 	// CurrentRevision identifies the current local revision.
 	CurrentRevision RevisionID
 	// PublishedRevision identifies the last confirmed published revision.

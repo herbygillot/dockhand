@@ -10,16 +10,6 @@ Last updated: 2026-09-14.
 
 This order prioritizes correct contribution inputs, attribution, and recovery before expanding automatic preparation and downstream coverage. Small independent items may land separately; do not combine them into a single architectural rewrite.
 
-### 2. Attribute fully generated contribution commits
-
-Append this exact Git trailer, separated from the subject/body by a blank line:
-
-```text
-Generated-by: [dockhand](https://github.com/herbygillot/dockhand)
-```
-
-Apply it whenever Dockhand authors a contribution commit completely itself, including automatic version and revision bumps. Put the policy in contribution commit generation, not the low-level Git object writer. Do not add it when merely capturing, verifying, adopting, or publishing human-authored work. Retried generation must be deterministic and produce exactly one trailer. Preserve the usual MacPorts commit subject format.
-
 ### 3. Generate useful, evidence-based pull-request bodies
 
 Use the relevant portions of `macports-ports/.github/PULL_REQUEST_TEMPLATE.md`, with v1's renderer as a behavioral reference rather than copying its assumptions. Start with `Submitted by [dockhand](https://github.com/herbygillot/dockhand)`, retain useful contribution description, and include `###### Tested on` and `###### Verification`. Show the complete body in publication previews. Keep this in the existing publication-content path, using the verification evidence selected for the exact published revision, including reused attempts.

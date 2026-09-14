@@ -310,3 +310,22 @@ func TestBranchLookupIsRepositoryScopedAndExcludesClosedChanges(t *testing.T) {
 		return nil
 	}))
 }
+
+func TestGeneratedCommitIsImmutableContributionProvenance(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	s := openStore(t, path)
+	repo := repository(t, s, "source")
+	change := record.Change{ID: "generated", Branch: "contribution", Disposition: record.ChangeOpen, GeneratedCommit: source().Commit, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	require.NoError(t, s.Update(t.Context(), repo.ID, func(ctx context.Context, tx state.Tx) error { return tx.PutChange(ctx, change) }))
+	reader := openStore(t, path)
+	require.NoError(t, reader.View(t.Context(), repo.ID, func(ctx context.Context, r state.Reader) error {
+		got, err := r.Change(ctx, change.ID)
+		require.NoError(t, err)
+		require.Equal(t, change, got)
+		return nil
+	}))
+	change.Branch = "renamed"
+	require.NoError(t, s.Update(t.Context(), repo.ID, func(ctx context.Context, tx state.Tx) error { return tx.PutChange(ctx, change) }))
+	change.GeneratedCommit = ""
+	require.ErrorIs(t, s.Update(t.Context(), repo.ID, func(ctx context.Context, tx state.Tx) error { return tx.PutChange(ctx, change) }), state.ErrConflict)
+}

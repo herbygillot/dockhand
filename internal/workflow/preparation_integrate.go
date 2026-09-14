@@ -82,7 +82,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 				return tx.PutJob(ctx, job)
 			}
 			if confirmed {
-				change := record.Change{ID: record.ChangeID("change_" + string(job.ID)), Branch: job.Prepared.Branch, Targets: job.Spec.Targets, Disposition: record.ChangeOpen, CreatedAt: job.AcceptedAt}
+				change := record.Change{ID: record.ChangeID("change_" + string(job.ID)), Branch: job.Prepared.Branch, Targets: job.Spec.Targets, GeneratedCommit: job.Prepared.Source.Commit, Disposition: record.ChangeOpen, CreatedAt: job.AcceptedAt}
 				revision := record.Revision{ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt}
 				if err := tx.PutChange(ctx, change); err != nil {
 					return err

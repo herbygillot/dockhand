@@ -138,10 +138,7 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	}
 	intent := result.Commits[0]
 	signature := git.Signature{Name: choices.Author.Name, Email: choices.Author.Email, When: job.AcceptedAt}
-	message := intent.Subject + "\n"
-	if intent.Body != "" {
-		message += "\n" + intent.Body + "\n"
-	}
+	message := intent.Message()
 	commit, err := e.Repo.WriteCommit(ctx, git.Commit{Tree: string(result.PreparedTree), Parents: []string{string(job.Spec.Source.Commit)}, Message: message, Author: signature, Committer: signature})
 	if err != nil {
 		return record.PreparedChange{}, err

@@ -74,7 +74,7 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 	var current sql.NullString
 	var raw string
 	var created int64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,'') FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,''),generated_commit FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID, &v.GeneratedCommit)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -108,7 +108,7 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 	if err != nil && !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
-	if err == nil && (!old.CreatedAt.Equal(v.CreatedAt) || old.PullRequestID != "" && old.PullRequestID != v.PullRequestID) {
+	if err == nil && (old.GeneratedCommit != v.GeneratedCommit || !old.CreatedAt.Equal(v.CreatedAt) || old.PullRequestID != "" && old.PullRequestID != v.PullRequestID) {
 		return state.ErrConflict
 	}
 	raw, err := encode(v.Targets)
@@ -118,7 +118,7 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 	if old.ID != "" {
 		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=?,published_revision=?,pull_request_id=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, nullableID(v.PublishedRevision), nullableID(v.PullRequestID), t.repo, v.ID)
 	}
-	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at) VALUES(?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli())
+	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at,generated_commit) VALUES(?,?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli(), v.GeneratedCommit)
 }
 func (t *transaction) Revision(ctx context.Context, id record.RevisionID) (record.Revision, error) {
 	var v record.Revision
