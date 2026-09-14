@@ -8,9 +8,9 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 // Control durably records an idempotent cancellation request for explicit jobs.

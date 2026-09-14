@@ -10,7 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 func ValidateConfig(config record.BuildConfig) error {

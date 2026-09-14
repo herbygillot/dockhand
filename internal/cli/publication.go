@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/publish"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/publish"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
 )
 

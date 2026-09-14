@@ -1,6 +1,6 @@
 package tart
 
-import "github.com/herbygillot/dockhand/v2/internal/record"
+import "github.com/herbygillot/dockhand/internal/record"
 
 // ImageManifestProtocol identifies the current setup manifest representation.
 const ImageManifestProtocol = 2

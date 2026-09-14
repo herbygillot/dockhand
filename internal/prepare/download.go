@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"golang.org/x/crypto/ripemd160"
 )
 

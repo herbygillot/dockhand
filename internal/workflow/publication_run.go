@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
-	"github.com/herbygillot/dockhand/v2/internal/publish"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/git/changeset"
+	"github.com/herbygillot/dockhand/internal/publish"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 var errPublicationCanceled = errors.New("publication canceled; any pushed branch is preserved")

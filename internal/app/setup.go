@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/tart/provision"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tart/provision"
 )
 
 type SetupOptions struct {

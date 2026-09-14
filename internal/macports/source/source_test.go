@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/stretchr/testify/require"
 )
 

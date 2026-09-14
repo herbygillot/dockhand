@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/tart"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/tart"
 )
 
 type native struct {

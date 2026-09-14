@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/v2/internal/text"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/text"
 )
 
 func checksumWords(src []byte, evaluated string) ([]syntax.Word, error) {

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	"github.com/herbygillot/dockhand/v2/internal/state/sqlite"
-	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
-	"github.com/herbygillot/dockhand/v2/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/verify/tart"
+	"github.com/herbygillot/dockhand/internal/workflow"
 )
 
 func BackupDatabase(ctx context.Context, config Config, destination string) (state.Backup, error) {

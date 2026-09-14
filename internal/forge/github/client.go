@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	gh "github.com/google/go-github/v91/github"
-	"github.com/herbygillot/dockhand/v2/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge"
 )
 
 type Config struct {

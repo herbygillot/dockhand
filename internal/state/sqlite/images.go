@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 func (s *Store) ImageDigest(ctx context.Context, provider, path string) (state.ImageDigest, error) {

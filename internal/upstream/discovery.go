@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type Assessment string

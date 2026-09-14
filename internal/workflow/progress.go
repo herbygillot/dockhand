@@ -1,6 +1,6 @@
 package workflow
 
-import "github.com/herbygillot/dockhand/v2/internal/record"
+import "github.com/herbygillot/dockhand/internal/record"
 
 // Milestone describes attachment, independently of the accepted destination.
 type Milestone string

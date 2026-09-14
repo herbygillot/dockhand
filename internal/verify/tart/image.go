@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
+	"github.com/herbygillot/dockhand/internal/state"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
 
 type imageCache struct {

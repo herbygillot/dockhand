@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 var ErrUnsupported = errors.New("macports source: unsupported convention")

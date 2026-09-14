@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type Snapshot struct {

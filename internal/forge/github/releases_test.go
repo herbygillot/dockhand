@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/forge/github"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/stretchr/testify/require"
 )
 

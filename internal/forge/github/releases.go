@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
 )
 
 func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {

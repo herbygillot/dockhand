@@ -8,8 +8,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/forge"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 )
 
 var (

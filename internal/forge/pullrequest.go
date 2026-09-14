@@ -3,7 +3,7 @@ package forge
 import (
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type PullRequestObservation struct {

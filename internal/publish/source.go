@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/git/changeset"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // UntrackedSource derives a single-commit contribution and its port directory.

@@ -3,8 +3,8 @@ package upstream_test
 import (
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/upstream"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
 

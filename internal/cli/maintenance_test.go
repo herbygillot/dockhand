@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/cli"
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	"github.com/herbygillot/dockhand/v2/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/cli"
+	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/stretchr/testify/require"
 )
 

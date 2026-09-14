@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/credential"
+	"github.com/herbygillot/dockhand/internal/credential"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/endpoints"
 )

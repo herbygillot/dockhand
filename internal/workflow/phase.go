@@ -1,7 +1,7 @@
 package workflow
 
 import (
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 func initialPhase(action record.Action) record.JobPhase {

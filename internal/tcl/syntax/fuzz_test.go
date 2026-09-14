@@ -3,8 +3,8 @@ package syntax_test
 import (
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
-	"github.com/herbygillot/dockhand/v2/internal/text"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/text"
 	"github.com/stretchr/testify/require"
 )
 

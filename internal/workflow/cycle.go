@@ -8,9 +8,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	"github.com/herbygillot/dockhand/v2/internal/verify"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 // JobProblem reports an issue with one job or resource during a cycle.

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // MacOSRelease connects MacPorts platform identity to Tart image conventions.

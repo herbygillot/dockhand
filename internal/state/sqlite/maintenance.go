@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 var _ state.Maintenance = (*Store)(nil)

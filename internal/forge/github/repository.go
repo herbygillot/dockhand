@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
+	"github.com/herbygillot/dockhand/internal/forge"
 )
 
 const publicInstance = "https://github.com"

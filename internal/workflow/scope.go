@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 // Scope selects all jobs or a nonempty list of explicit job IDs. Those forms

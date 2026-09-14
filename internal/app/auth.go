@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/herbygillot/dockhand/v2/internal/credential"
-	"github.com/herbygillot/dockhand/v2/internal/credential/keychain"
-	"github.com/herbygillot/dockhand/v2/internal/forge/github"
+	"github.com/herbygillot/dockhand/internal/credential"
+	"github.com/herbygillot/dockhand/internal/credential/keychain"
+	"github.com/herbygillot/dockhand/internal/forge/github"
 )
 
 var DefaultGitHubOAuthClientID string

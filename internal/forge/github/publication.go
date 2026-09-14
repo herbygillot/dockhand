@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	gh "github.com/google/go-github/v91/github"
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
 )
 
 func (c *Client) NameFromRemote(remote string) (string, error) {

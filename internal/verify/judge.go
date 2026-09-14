@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 func Judge(observation Observation) (record.Evidence, error) {

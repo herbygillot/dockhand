@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/credential"
-	"github.com/herbygillot/dockhand/v2/internal/forge"
+	"github.com/herbygillot/dockhand/internal/credential"
+	"github.com/herbygillot/dockhand/internal/forge"
 )
 
 var ErrAuthentication = forge.ErrAuthentication

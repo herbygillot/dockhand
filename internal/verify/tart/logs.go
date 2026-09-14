@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/verify"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 func (p *Provider) ReadLog(ctx context.Context, run record.ProviderRun, offset int64, limit int) (verify.LogChunk, error) {

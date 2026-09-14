@@ -10,8 +10,8 @@ import (
 	"maps"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 // Request supplies a caller-owned identity and the intent to accept.

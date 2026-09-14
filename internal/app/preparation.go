@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge/github"
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/prepare"
-	"github.com/herbygillot/dockhand/v2/internal/publish"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
-	"github.com/herbygillot/dockhand/v2/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/forge/github"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/prepare"
+	"github.com/herbygillot/dockhand/internal/publish"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verify/tart"
+	"github.com/herbygillot/dockhand/internal/workflow"
 )
 
 type PreviewRequest struct {

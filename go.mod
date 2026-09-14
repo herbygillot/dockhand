@@ -1,4 +1,4 @@
-module github.com/herbygillot/dockhand/v2
+module github.com/herbygillot/dockhand
 
 go 1.27.1
 

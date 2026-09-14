@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/herbygillot/dockhand/v2/internal/app"
+	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/spf13/cobra"
 )
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/herbygillot/dockhand/v2/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/stretchr/testify/require"
 )
 

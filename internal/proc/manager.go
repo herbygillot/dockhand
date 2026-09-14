@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow"
 )
 
 type Engine interface {

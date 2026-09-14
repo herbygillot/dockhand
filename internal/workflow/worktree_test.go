@@ -2,9 +2,9 @@ package workflow_test
 
 import (
 	"context"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state/sqlite"
-	"github.com/herbygillot/dockhand/v2/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"

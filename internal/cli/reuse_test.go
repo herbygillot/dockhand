@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	"github.com/herbygillot/dockhand/v2/internal/verify"
+	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
 )
 

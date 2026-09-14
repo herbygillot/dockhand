@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
+	"github.com/herbygillot/dockhand/internal/state"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
 
 const guestDirectory = "/var/tmp/dockhand2"

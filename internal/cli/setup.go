@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/tart/provision"
+	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/tart/provision"
 	"github.com/spf13/cobra"
 )
 

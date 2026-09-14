@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/herbygillot/dockhand/v2/internal/app"
+	"github.com/herbygillot/dockhand/internal/app"
 )
 
 var ErrNotImplemented = errors.New("dockhand v2: command workflows are not wired yet")

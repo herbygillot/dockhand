@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	"github.com/herbygillot/dockhand/v2/internal/verify"
+	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
 )
 

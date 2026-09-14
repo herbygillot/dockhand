@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/git/changeset"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // inferVerificationTarget selects recorded intent only when the full source

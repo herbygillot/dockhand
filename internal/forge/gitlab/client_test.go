@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	forgegitlab "github.com/herbygillot/dockhand/v2/internal/forge/gitlab"
+	"github.com/herbygillot/dockhand/internal/forge"
+	forgegitlab "github.com/herbygillot/dockhand/internal/forge/gitlab"
 	"github.com/stretchr/testify/require"
 )
 

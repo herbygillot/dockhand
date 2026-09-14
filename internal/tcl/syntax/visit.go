@@ -3,7 +3,7 @@ package syntax
 import (
 	"iter"
 
-	"github.com/herbygillot/dockhand/v2/internal/text"
+	"github.com/herbygillot/dockhand/internal/text"
 )
 
 func SpanOf(it Item) text.Span {

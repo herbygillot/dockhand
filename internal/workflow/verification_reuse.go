@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	"github.com/herbygillot/dockhand/v2/internal/verify"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 func selectVerification(ctx context.Context, reader state.Reader, job record.Job, build record.BuildSpec) (record.Attempt, string, error) {

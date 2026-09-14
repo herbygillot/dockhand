@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
-	"github.com/herbygillot/dockhand/v2/internal/upstream"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
 

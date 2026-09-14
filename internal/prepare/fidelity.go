@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports"
 )
 
 func checkSnapshot(snapshot macports.Snapshot, bound macports.Context) error {

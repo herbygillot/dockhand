@@ -3,7 +3,7 @@ package syntax
 import (
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/v2/internal/text"
+	"github.com/herbygillot/dockhand/internal/text"
 )
 
 func (b Braced) ListLens(src []byte) ([]text.Span, []Error) {

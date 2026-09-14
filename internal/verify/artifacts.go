@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 var ErrLogUnavailable = errors.New("verification log unavailable (it may have been pruned)")

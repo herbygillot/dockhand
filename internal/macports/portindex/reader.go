@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 var (

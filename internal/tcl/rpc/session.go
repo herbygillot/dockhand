@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/tcl/shell"
+	"github.com/herbygillot/dockhand/internal/tcl/shell"
 )
 
 //go:embed loop.tcl

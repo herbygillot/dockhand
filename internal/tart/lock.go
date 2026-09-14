@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/herbygillot/dockhand/v2/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/filelock"
 )
 
 // AcquireImageRead keeps an image available as an immutable clone source.

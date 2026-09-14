@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 // recordResources records valid provider handles as uncertain ownership within

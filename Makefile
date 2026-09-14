@@ -4,7 +4,7 @@ GITHUB_OAUTH_CLIENT_ID ?=
 GO_LDFLAGS ?=
 
 ifneq ($(strip $(GITHUB_OAUTH_CLIENT_ID)),)
-GO_LDFLAGS += -X github.com/herbygillot/dockhand/v2/internal/app.DefaultGitHubOAuthClientID=$(strip $(GITHUB_OAUTH_CLIENT_ID))
+GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/app.DefaultGitHubOAuthClientID=$(strip $(GITHUB_OAUTH_CLIENT_ID))
 endif
 
 .PHONY: build test test-race vet clean

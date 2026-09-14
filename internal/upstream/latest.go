@@ -7,11 +7,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/forge"
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/macports"
-	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")

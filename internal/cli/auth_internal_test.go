@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/credential"
+	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/stretchr/testify/require"
 )
 

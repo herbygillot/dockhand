@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/stretchr/testify/require"
 )
 

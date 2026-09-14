@@ -4,8 +4,8 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 // execution contains only the records needed for one job transition. It is

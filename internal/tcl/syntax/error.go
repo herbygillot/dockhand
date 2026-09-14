@@ -3,7 +3,7 @@ package syntax
 import (
 	"fmt"
 
-	"github.com/herbygillot/dockhand/v2/internal/text"
+	"github.com/herbygillot/dockhand/internal/text"
 )
 
 type ErrorType int

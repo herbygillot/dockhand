@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // ProviderStore supplies provider coordination and shared image observations.

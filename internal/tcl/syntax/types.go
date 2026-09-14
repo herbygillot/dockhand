@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/v2/internal/text"
+import "github.com/herbygillot/dockhand/internal/text"
 
 func span(start, end int) text.Span { return text.Span{Start: start, End: end} }
 

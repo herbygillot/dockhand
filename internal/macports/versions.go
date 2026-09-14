@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 type VersionCandidate struct{ Version, MatchText string }

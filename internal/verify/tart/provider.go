@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/filelock"
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/macports/portindex"
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
-	"github.com/herbygillot/dockhand/v2/internal/verify"
+	"github.com/herbygillot/dockhand/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 var ErrClosed = errors.New("tart: submission is permanently closed")

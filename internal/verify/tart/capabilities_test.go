@@ -3,9 +3,9 @@ package tart
 import (
 	"testing"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
-	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/stretchr/testify/require"
 )
 

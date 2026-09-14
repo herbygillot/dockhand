@@ -3,8 +3,8 @@ package sqlite
 import (
 	"context"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 func (t *transaction) VerificationCandidates(ctx context.Context, query state.VerificationQuery) ([]record.Attempt, error) {

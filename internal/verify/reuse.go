@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // Applicability explains whether a recorded execution covers the requested input.

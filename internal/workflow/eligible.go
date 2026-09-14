@@ -3,7 +3,7 @@ package workflow
 import (
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // cleanupEligible preserves invalid and missing-owner cases for the cleanup

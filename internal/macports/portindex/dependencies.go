@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 const (

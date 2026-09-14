@@ -3,8 +3,8 @@ package workflow
 import (
 	"context"
 
-	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 )
 
 func (e *Engine) applyControls(ctx context.Context, scope Scope, controls []record.ControlRequest) error {

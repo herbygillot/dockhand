@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/v2/internal/filelock"
-	"github.com/herbygillot/dockhand/v2/internal/git"
-	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 const portIndexName = "PortIndex"

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/herbygillot/dockhand/v2/internal/tart"
+	"github.com/herbygillot/dockhand/internal/tart"
 )
 
 type xcodeArchive struct {

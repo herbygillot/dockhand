@@ -1,6 +1,6 @@
 package syntax
 
-import "github.com/herbygillot/dockhand/v2/internal/text"
+import "github.com/herbygillot/dockhand/internal/text"
 
 func Parse(src []byte) (*Script, []Error) {
 	return ParseScript(src, span(0, len(src)))
