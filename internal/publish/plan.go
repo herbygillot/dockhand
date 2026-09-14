@@ -9,23 +9,16 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
-func (s *Service) Plan(ctx context.Context, change record.Change, source record.Source, evidence record.Attempt, associated *record.PullRequest, options Options) (record.PublicationSpec, error) {
-	var spec record.PublicationSpec
+// Destination resolves remote names now so later configuration changes cannot
+// redirect accepted work. It does not select a contribution or write remotely.
+func (s *Service) Destination(ctx context.Context, options Options) (record.PublicationDestination, error) {
+	var destination record.PublicationDestination
 	if s == nil || s.Repo == nil || s.Forge == nil || !filepath.IsAbs(s.LockDirectory) {
-		return spec, fmt.Errorf("publish: Git, forge, and absolute lock directory are required")
-	}
-	content, err := s.SourceContent(ctx, source, change.Targets)
-	if err != nil {
-		return spec, err
-	}
-	title, body := content.Title, content.Body
-	// Keep an existing review body intact; verification details remain in state.
-	if associated != nil {
-		body = associated.Body
+		return destination, fmt.Errorf("publish: Git, forge, and absolute lock directory are required")
 	}
 	remotes, err := s.Repo.Remotes(ctx)
 	if err != nil {
-		return spec, err
+		return destination, err
 	}
 	if options.Remote == "" {
 		options.Remote = "origin"
@@ -40,15 +33,15 @@ func (s *Service) Plan(ctx context.Context, change record.Change, source record.
 		}
 	}
 	if push.Name == "" || options.Upstream != "" && upstream.Name == "" {
-		return spec, fmt.Errorf("%w: selected remote does not exist", ErrPrecondition)
+		return destination, fmt.Errorf("%w: selected remote does not exist", ErrPrecondition)
 	}
 	headName, err := s.Forge.NameFromRemote(push.PushURL)
 	if err != nil {
-		return spec, err
+		return destination, err
 	}
 	head, err := s.Forge.RepositoryInfo(ctx, headName)
 	if err != nil {
-		return spec, err
+		return destination, err
 	}
 	targetName := head.Name
 	if head.Parent != "" {
@@ -57,23 +50,59 @@ func (s *Service) Plan(ctx context.Context, change record.Change, source record.
 	if upstream.Name != "" {
 		targetName, err = s.Forge.NameFromRemote(upstream.FetchURL)
 		if err != nil {
-			return spec, err
+			return destination, err
 		}
 	}
 	target, err := s.Forge.RepositoryInfo(ctx, targetName)
 	if err != nil {
-		return spec, err
+		return destination, err
 	}
 	if options.Base == "" {
 		options.Base = target.DefaultBranch
 	}
-	if !git.ValidBranchName(options.Base) || target.Name == head.Name && options.Base == change.Branch {
-		return spec, fmt.Errorf("%w: contribution must have a distinct, literal base branch", ErrPrecondition)
+
+	destination = record.PublicationDestination{Forge: s.Forge.Name(), Repository: target.Name, HeadRepository: head.Name, BaseBranch: options.Base, PushURL: push.PushURL, BaseURL: target.CloneURL, LockDirectory: s.LockDirectory}
+	return destination, ValidateDestination(destination)
+}
+
+func ValidateDestination(d record.PublicationDestination) error {
+	if d.Forge == "" || d.Repository == "" || d.HeadRepository == "" || !git.ValidBranchName(d.BaseBranch) || d.PushURL == "" || d.BaseURL == "" || !filepath.IsAbs(d.LockDirectory) {
+		return fmt.Errorf("%w: a concrete publication destination is required", ErrPrecondition)
 	}
-	if err := s.Repo.CheckContributionBase(ctx, target.CloneURL, options.Base, string(source.Base), string(source.Commit)); err != nil {
+	return nil
+}
+
+func (s *Service) Plan(ctx context.Context, change record.Change, source record.Source, evidence record.Attempt, associated *record.PullRequest, options Options) (record.PublicationSpec, error) {
+	destination, err := s.Destination(ctx, options)
+	if err != nil {
+		return record.PublicationSpec{}, err
+	}
+	return s.PlanTo(ctx, change, source, evidence, associated, destination)
+}
+
+// PlanTo freezes a publication for the verified source at an already accepted destination.
+func (s *Service) PlanTo(ctx context.Context, change record.Change, source record.Source, evidence record.Attempt, associated *record.PullRequest, destination record.PublicationDestination) (record.PublicationSpec, error) {
+	var spec record.PublicationSpec
+	if s == nil || s.Repo == nil || s.Forge == nil || s.Forge.Name() != destination.Forge {
+		return spec, fmt.Errorf("%w: matching publication service required", ErrPrecondition)
+	}
+	if err := ValidateDestination(destination); err != nil {
 		return spec, err
 	}
-	spec = record.PublicationSpec{BaseURL: target.CloneURL, Forge: s.Forge.Name(), Repository: target.Name, HeadRepository: head.Name, HeadBranch: change.Branch, BaseBranch: options.Base, PushURL: push.PushURL, LockDirectory: s.LockDirectory, EvidenceAttempt: evidence.ID, Desired: record.PublicationContent{Head: source.Commit, Title: title, Body: body}}
+	content, err := s.SourceContent(ctx, source, change.Targets)
+	if err != nil {
+		return spec, fmt.Errorf("%w: %v", ErrPrecondition, err)
+	}
+	if destination.Repository == destination.HeadRepository && destination.BaseBranch == change.Branch {
+		return spec, fmt.Errorf("%w: contribution must have a distinct base branch", ErrPrecondition)
+	}
+	if err := s.Repo.CheckContributionBase(ctx, destination.BaseURL, destination.BaseBranch, string(source.Base), string(source.Commit)); err != nil {
+		return spec, err
+	}
+	spec = record.PublicationSpec{Forge: destination.Forge, Repository: destination.Repository, HeadRepository: destination.HeadRepository, BaseBranch: destination.BaseBranch, PushURL: destination.PushURL, BaseURL: destination.BaseURL, LockDirectory: destination.LockDirectory, HeadBranch: change.Branch, EvidenceAttempt: evidence.ID, Desired: content}
+	if associated != nil {
+		spec.Desired.Body = associated.Body
+	}
 	observed, err := s.Observe(ctx, spec)
 	if err != nil {
 		return spec, err

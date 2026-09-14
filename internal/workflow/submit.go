@@ -129,7 +129,7 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 			if change.Branch != accepted.Publication.HeadBranch {
 				return ErrInvalidRequest
 			}
-			if err := publicationEvidence(ctx, tx, job); err != nil {
+			if err := publicationEvidence(ctx, tx, job, *job.Spec.Publication); err != nil {
 				return err
 			}
 			action := record.PublicationAction{ID: record.PublicationID("publication_" + rand.Text()), JobID: id, ChangeID: accepted.ChangeID, RevisionID: accepted.InputRevision, Spec: *accepted.Publication, State: record.PublicationPending}

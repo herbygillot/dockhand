@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
@@ -56,6 +57,19 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if spec.Action == record.Publish && (spec.Destination != record.Published || spec.Publication == nil || spec.Build == nil || spec.Verification != record.VerificationRequired) {
 		return record.JobSpec{}, fmt.Errorf("%w: publish requires publication intent, passing verification configuration, and the published destination", ErrInvalidRequest)
 	}
+	if spec.PublishTo != nil {
+		destination := *spec.PublishTo
+		if !preparationAction(spec.Action) || spec.Preparation == nil || spec.Destination != record.Published || spec.Verification != record.VerificationRequired || spec.Publication != nil {
+			return record.JobSpec{}, fmt.Errorf("%w: combined publication requires a verified preparation job", ErrInvalidRequest)
+		}
+		if err := publish.ValidateDestination(destination); err != nil {
+			return record.JobSpec{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+		spec.PublishTo = &destination
+	}
+	if preparationAction(spec.Action) && spec.Destination == record.Published && spec.PublishTo == nil {
+		return record.JobSpec{}, fmt.Errorf("%w: publication destination required", ErrInvalidRequest)
+	}
 	if spec.Publication != nil {
 		v := *spec.Publication
 		if spec.Action != record.Publish || v.Forge == "" || v.Repository == "" || v.HeadRepository == "" || !git.ValidBranchName(v.HeadBranch) || !git.ValidBranchName(v.BaseBranch) || v.PushURL == "" || v.BaseURL == "" || !filepath.IsAbs(v.LockDirectory) || !git.ValidObjectID(string(v.Desired.Head)) || v.Desired.Title == "" || !validToken(string(v.EvidenceAttempt)) || v.ExpectedRemoteHead.Exists != (v.ExpectedRemoteHead.Commit != "") || v.ExpectedRemoteHead.Exists && !git.ValidObjectID(string(v.ExpectedRemoteHead.Commit)) {
@@ -83,8 +97,8 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	}
 	if spec.Preparation != nil {
 		choices := *spec.Preparation
-		if !preparationAction(spec.Action) || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 || spec.Destination == record.Published {
-			return record.JobSpec{}, fmt.Errorf("%w: preparation requires one committed source target and a branch-ready or verification destination", ErrInvalidRequest)
+		if !preparationAction(spec.Action) || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 {
+			return record.JobSpec{}, fmt.Errorf("%w: preparation requires one committed source target and a branch-ready, verification, or publication destination", ErrInvalidRequest)
 		}
 		if !git.ValidBranchName(choices.SourceBranch) || choices.Author.Name == "" || choices.Author.Email == "" || strings.ContainsAny(choices.Author.Name+choices.Author.Email, "\x00\r\n<>") || !utf8.ValidString(choices.Author.Name+choices.Author.Email) {
 			return record.JobSpec{}, fmt.Errorf("%w: preparation requires a source branch and valid author identity", ErrInvalidRequest)

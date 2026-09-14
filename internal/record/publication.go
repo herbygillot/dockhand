@@ -104,3 +104,20 @@ type PublicationAction struct {
 	ConfirmedAt  *time.Time
 	LastError    string
 }
+
+// PublicationDestination freezes where a future prepared contribution may be
+// published. Its head commit, evidence, and remote preconditions arrive later.
+type PublicationDestination struct {
+	Forge          string
+	Repository     string
+	HeadRepository string
+	BaseBranch     string
+	PushURL        string
+	BaseURL        string
+	LockDirectory  string
+}
+
+// Destination separates the accepted destination from revision-specific preconditions.
+func (s PublicationSpec) Destination() PublicationDestination {
+	return PublicationDestination{Forge: s.Forge, Repository: s.Repository, HeadRepository: s.HeadRepository, BaseBranch: s.BaseBranch, PushURL: s.PushURL, BaseURL: s.BaseURL, LockDirectory: s.LockDirectory}
+}

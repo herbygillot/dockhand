@@ -35,7 +35,7 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 		}
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: no build configuration was selected")
 	}
-	if job.Spec.Destination != record.VerificationComplete || job.Spec.Verification != record.VerificationRequired || len(job.Spec.Targets) != 1 {
+	if (job.Spec.Destination != record.VerificationComplete && job.Spec.Destination != record.Published) || job.Spec.Verification != record.VerificationRequired || len(job.Spec.Targets) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
 	source := job.Spec.Source

@@ -136,8 +136,8 @@ func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) 
 	return Request{ID: input.ID, Spec: spec, Branch: &BranchInput{Name: input.Branch, ExpectedChange: change.ID, ExpectedRevision: revision.ID}}, nil
 }
 
-func publicationEvidence(ctx context.Context, r state.Reader, job record.Job) error {
-	if job.Spec.Publication == nil || job.Spec.Build == nil || len(job.Spec.Targets) != 1 {
+func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, spec record.PublicationSpec) error {
+	if job.Spec.Build == nil || len(job.Spec.Targets) != 1 {
 		return ErrInvalidRequest
 	}
 	change, err := r.Change(ctx, job.ChangeID)
@@ -147,11 +147,12 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job) er
 	if len(change.Targets) != 1 || targetKey(change.Targets[0]) != targetKey(job.Spec.Targets[0]) {
 		return fmt.Errorf("%w: publication must cover the tracked contribution target", publish.ErrPrecondition)
 	}
-	candidate, err := r.Attempt(ctx, job.Spec.Publication.EvidenceAttempt)
+	candidate, err := r.Attempt(ctx, spec.EvidenceAttempt)
 	if err != nil {
 		return err
 	}
-	build := record.BuildSpec{Source: job.Spec.Source, Target: job.Spec.Targets[0], Config: *job.Spec.Build}
+	_, source := publicationInput(job)
+	build := record.BuildSpec{Source: source, Target: job.Spec.Targets[0], Config: *job.Spec.Build}
 	if verdict := verify.Applicable(build, candidate); !verdict.Matches {
 		return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 	}
@@ -163,4 +164,11 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job) er
 		return fmt.Errorf("%w: recorded verification is no longer applicable; verify again", publish.ErrPrecondition)
 	}
 	return nil
+}
+
+func publicationInput(job record.Job) (record.RevisionID, record.Source) {
+	if job.ResultRevision != "" && job.Prepared != nil {
+		return job.ResultRevision, job.Prepared.Source
+	}
+	return job.Spec.InputRevision, job.Spec.Source
 }

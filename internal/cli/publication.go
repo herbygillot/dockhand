@@ -49,10 +49,14 @@ func (r *runtime) publishCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&branch, "branch", "", "Publish committed contents of this local branch")
-	cmd.Flags().StringVar(&options.Remote, "remote", "origin", "Git remote whose push URL receives the contribution")
-	cmd.Flags().StringVar(&options.Upstream, "upstream", "", "Upstream Git remote (defaults to upstream, then the fork parent)")
-	cmd.Flags().StringVar(&options.Base, "base", "", "PR base branch (defaults to the upstream default branch)")
+	publicationFlags(cmd, &options)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the publication plan without accepting a job or writing remotely")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Stay until the branch and PR are confirmed")
 	return cmd
+}
+
+func publicationFlags(cmd *cobra.Command, options *publish.Options) {
+	cmd.Flags().StringVar(&options.Remote, "remote", "origin", "Git remote whose push URL receives the contribution")
+	cmd.Flags().StringVar(&options.Upstream, "upstream", "", "Upstream Git remote (defaults to upstream, then the fork parent)")
+	cmd.Flags().StringVar(&options.Base, "base", "", "PR base branch (defaults to the upstream default branch)")
 }

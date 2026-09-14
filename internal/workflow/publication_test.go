@@ -51,7 +51,7 @@ func (p *publicationForge) Find(ctx context.Context, _ forge.PullRequestQuery) (
 	result := p.observation
 	result.ObservedAt = p.f.now()
 	if result.Found {
-		head, err := p.f.repo.RemoteHead(ctx, p.remote, "candidate")
+		head, err := p.f.repo.RemoteHead(ctx, p.remote, result.PullRequest.HeadBranch)
 		if err != nil {
 			return result, err
 		}

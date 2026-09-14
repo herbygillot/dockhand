@@ -52,6 +52,8 @@ const (
 type JobSpec struct {
 	Action      Action
 	Publication *PublicationSpec `json:",omitempty"`
+	// PublishTo authorizes publication after preparation and passing verification.
+	PublishTo *PublicationDestination `json:",omitempty"`
 	// ChangeID is derived from InputRevision for an existing change. It is empty
 	// for standalone verification or new source for preparation to adopt.
 	ChangeID ChangeID

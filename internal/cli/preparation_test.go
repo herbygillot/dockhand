@@ -31,7 +31,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.ErrorContains(t, err, "git rev-parse")
 	}
-	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--wait"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}} {
+	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--wait"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish", "--no-verify"}, {"bump-revision", "jq", "--publish", "--no-verify"}, {"bump", "jq", "--diff", "--publish"}, {"bump", "jq", "--remote", "origin"}, {"bump-revision", "jq", "--base", "main"}, {"bump", "jq", "--upstream", "upstream"}} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)

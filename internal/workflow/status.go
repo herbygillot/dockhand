@@ -100,7 +100,7 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 				return err
 			}
 			entry := JobStatus{Job: job, Attempts: attempts, Publications: []record.PublicationAction{}}
-			if job.Spec.Action == record.Publish {
+			if job.Spec.Destination == record.Published {
 				publication, err := r.PublicationForJob(ctx, job.ID)
 				if err == nil {
 					entry.Publications = append(entry.Publications, publication)

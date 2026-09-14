@@ -125,7 +125,7 @@ func completedOutcome(entry workflow.JobStatus) string {
 	if entry.Job.State != record.JobCompleted {
 		return ""
 	}
-	if entry.Job.Spec.Action == record.Publish {
+	if entry.Job.Spec.Destination == record.Published && len(entry.Publications) > 0 && entry.Publications[0].State == record.PublicationConfirmed {
 		return "publication confirmed"
 	}
 	if entry.Reused != nil && entry.Reused.Evidence != nil && entry.Reused.Evidence.Verdict == record.VerdictPassed {

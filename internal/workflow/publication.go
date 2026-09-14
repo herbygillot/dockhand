@@ -31,6 +31,9 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 			return nil
 		}
 		action, err = tx.PublicationForJob(ctx, id)
+		if errors.Is(err, state.ErrNotFound) && job.Spec.PublishTo != nil {
+			err = nil
+		}
 		if err != nil {
 			return err
 		}
@@ -44,6 +47,9 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 	})
 	if err != nil || !claimed {
 		return false, "", err
+	}
+	if action.ID == "" {
+		return c.planPublication(ctx, job)
 	}
 	if e.Publisher == nil || e.Publisher.Repo == nil || e.Publisher.Forge == nil {
 		err = c.publicationRetry(ctx, job, "Publication service is unavailable")
@@ -126,10 +132,11 @@ func (c *cycle) authorizePublication(ctx context.Context, expected record.Job, w
 		if err != nil {
 			return err
 		}
-		if change.Disposition != record.ChangeOpen || change.CurrentRevision != job.Spec.InputRevision || change.Branch != action.Spec.HeadBranch {
+		revisionID, _ := publicationInput(*job)
+		if change.Disposition != record.ChangeOpen || change.CurrentRevision != revisionID || change.Branch != action.Spec.HeadBranch {
 			return ErrStaleRevision
 		}
-		if err := publicationEvidence(ctx, tx, *job); err != nil {
+		if err := publicationEvidence(ctx, tx, *job, action.Spec); err != nil {
 			return err
 		}
 		action.State, action.PushStarted = record.PublicationApplying, true
@@ -143,6 +150,7 @@ func (c *cycle) authorizePublication(ctx context.Context, expected record.Job, w
 func (c *cycle) runPublication(ctx context.Context, job record.Job, action record.PublicationAction) error {
 	s := c.engine.Publisher
 	spec := action.Spec
+	_, source := publicationInput(job)
 	if !action.WriteStarted {
 		if err := c.publicationUpdate(ctx, job, func(tx state.Tx, current *record.Job, _ *record.PublicationAction) error {
 			if current.CancelRequestedAt != nil {
@@ -152,14 +160,15 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 			if err != nil {
 				return err
 			}
-			if change.CurrentRevision != current.Spec.InputRevision || change.Disposition != record.ChangeOpen {
+			revisionID, _ := publicationInput(*current)
+			if change.CurrentRevision != revisionID || change.Disposition != record.ChangeOpen {
 				return ErrStaleRevision
 			}
-			return publicationEvidence(ctx, tx, *current)
+			return publicationEvidence(ctx, tx, *current, action.Spec)
 		}); err != nil {
 			return err
 		}
-		if _, err := s.SourceContent(ctx, job.Spec.Source, job.Spec.Targets); err != nil {
+		if _, err := s.SourceContent(ctx, source, job.Spec.Targets); err != nil {
 			return err
 		}
 		// Validate accepted source again under the operation lock, outside the transaction.
@@ -167,7 +176,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		if err != nil {
 			return fmt.Errorf("%w: %v", publish.ErrPrecondition, err)
 		}
-		if record.ObjectID(commit) != job.Spec.Source.Commit || record.ObjectID(tree) != job.Spec.Source.Tree {
+		if record.ObjectID(commit) != source.Commit || record.ObjectID(tree) != source.Tree {
 			return ErrStaleRevision
 		}
 	}
@@ -186,7 +195,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 	if action.WriteStarted {
 		return c.publicationRetry(ctx, job, "PR request outcome is unresolved; observing without repeating the write")
 	}
-	if err := s.Repo.CheckContributionBase(ctx, spec.BaseURL, spec.BaseBranch, string(job.Spec.Source.Base), string(job.Spec.Source.Commit)); err != nil {
+	if err := s.Repo.CheckContributionBase(ctx, spec.BaseURL, spec.BaseBranch, string(source.Base), string(source.Commit)); err != nil {
 		return err
 	}
 	if err := publish.CheckMetadata(spec, observed); err != nil {
@@ -251,7 +260,7 @@ func (c *cycle) finishPublication(ctx context.Context, expected record.Job, outc
 			if err := tx.PutPullRequest(ctx, pr); err != nil {
 				return err
 			}
-			change.PullRequestID, change.PublishedRevision = pr.ID, job.Spec.InputRevision
+			change.PullRequestID, change.PublishedRevision = pr.ID, action.RevisionID
 			if err := tx.PutChange(ctx, change); err != nil {
 				return err
 			}

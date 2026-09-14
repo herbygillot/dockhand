@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
+	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
@@ -27,6 +28,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 	} {
 		options := &Options{}
 		var build buildOptions
+		var publication publish.Options
 		var branch, subport, reason string
 		var variants []string
 		use, maximum := string(spec.action)+" <port>", 1
@@ -36,7 +38,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command := &cobra.Command{
 			Use: use, Short: spec.short,
-			Long: spec.short + ".\n\nVersion and revision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. Version updates are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Omitting the version selects the newest eligible stable numeric version using the port's GitHub tags livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Standalone checksum refresh is not implemented yet.",
+			Long: spec.short + ".\n\nVersion and revision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification. Version updates are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Omitting the version selects the newest eligible stable numeric version using the port's GitHub tags livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Standalone checksum refresh is not implemented yet.",
 			Args: func(cmd *cobra.Command, args []string) error {
 				if err := cobra.RangeArgs(1, maximum)(cmd, args); err != nil {
 					return err
@@ -64,8 +66,11 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				if spec.action == record.Bump && len(args) == 2 {
 					version = args[1]
 				}
+				var destination *publish.Options
 				if options.Publish {
-					return fmt.Errorf("%w: publication is not connected", ErrNotImplemented)
+					destination = &publication
+				} else if cmd.Flags().Changed("remote") || cmd.Flags().Changed("upstream") || cmd.Flags().Changed("base") {
+					return fmt.Errorf("publication destination flags require --publish")
 				}
 				if !options.Diff {
 					config, err := build.config(cmd, r.config)
@@ -81,7 +86,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{
 						Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()), Branch: branch,
 						Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices},
-						Reason:    reason, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
+						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
 					if err != nil {
 						return err
@@ -129,6 +134,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")
 		if spec.action == record.BumpRevision || spec.action == record.Bump {
 			build.flags(command, r.config)
+			publicationFlags(command, &publication)
 			command.Flags().StringVar(&reason, "reason", "", "Reason for the change")
 		}
 		commands = append(commands, command)

@@ -61,6 +61,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		line("  request: %s; accepted: %s", job.RequestID, statusTime(job.AcceptedAt))
 		line("  verification policy: %s", job.Spec.Verification)
+		if d := job.Spec.PublishTo; d != nil {
+			line("  publication destination: %s -> %s:%s", d.HeadRepository, d.Repository, d.BaseBranch)
+		}
 		for _, target := range job.Spec.Targets {
 			line("  target: %s", targetLabel(target))
 		}

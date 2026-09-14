@@ -6,6 +6,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
+	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
@@ -22,6 +23,7 @@ type PreparationRequest struct {
 	Platform            record.Platform
 	Reason              string
 	VerificationProblem string
+	Publication         publish.Options
 }
 
 type BoundPreparation struct {
@@ -50,10 +52,27 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if err != nil {
 		return BoundPreparation{}, err
 	}
+	var destination *record.PublicationDestination
+	if request.Destination == record.Published {
+		if e.Publisher == nil {
+			return BoundPreparation{}, fmt.Errorf("workflow: publisher required")
+		}
+		timeouts, err := e.Timeouts.defaults()
+		if err != nil {
+			return BoundPreparation{}, err
+		}
+		call, cancel := context.WithTimeout(ctx, timeouts.Publish)
+		resolved, err := e.Publisher.Destination(call, request.Publication)
+		cancel()
+		if err != nil {
+			return BoundPreparation{}, err
+		}
+		destination = &resolved
+	}
 	source.Base = source.Commit
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{
-		Action: request.Action, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, Reason: request.Reason,
+		Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, Reason: request.Reason,
 		Preparation: &record.PreparationSpec{SourceBranch: request.Branch, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {

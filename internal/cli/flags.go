@@ -41,4 +41,5 @@ func changeFlags(command *cobra.Command, options *Options) {
 	command.MarkFlagsMutuallyExclusive("diff", "wait")
 	command.MarkFlagsMutuallyExclusive("diff", "trace")
 	command.MarkFlagsMutuallyExclusive("trace", "no-verify")
+	command.MarkFlagsMutuallyExclusive("publish", "no-verify")
 }

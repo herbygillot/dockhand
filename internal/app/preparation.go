@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
+	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
@@ -85,11 +86,15 @@ type Preparation struct {
 	Selection  macports.Selection
 	Reason     string
 	NoVerify   bool
+	Publish    *publish.Options
 	Tests      record.TestPolicy
 	FromSource bool
 }
 
 func (s *Services) BindPreparation(ctx context.Context, request Preparation) (workflow.BoundPreparation, error) {
+	if request.Publish != nil && request.NoVerify {
+		return workflow.BoundPreparation{}, fmt.Errorf("publication requires verification")
+	}
 	if request.Branch == "" {
 		branch, err := s.Workflow.Repo.CurrentBranch(ctx)
 		if err != nil {
@@ -122,6 +127,9 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		}
 	} else {
 		bound.VerificationProblem = "select a prepared local Tart image with --image"
+	}
+	if request.Publish != nil {
+		bound.Destination, bound.Publication = record.Published, *request.Publish
 	}
 	return s.Workflow.BindPreparation(ctx, bound)
 }

@@ -6,7 +6,7 @@ This document describes the initial SQLite implementation, following the [archit
 
 Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
-Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; bounded automatic GitHub discovery is implemented; standalone publication is now implemented.
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; automatic GitHub discovery and standalone/combined publication are implemented.
 
 ## Packages and contracts
 
@@ -201,7 +201,7 @@ Working-tree verification uses the existing nullable source commit and mandatory
 
 ## Verification reuse
 
-Schema 5 adds nullable `jobs.reused_attempt`, which references the original `attempts` row, and `jobs.reuse_detail`. The write API checks repository scope, a terminal passing attempt for the same tree, completed job state, and absence of this job's own executions. A recorded reference cannot be replaced or removed. Full input comparison belongs to `verify` and is applied by workflow in the same transaction as the reference, plan, and completion. No new evidence or provider execution is synthesized.
+Schema 5 adds nullable `jobs.reused_attempt`, which references the original `attempts` row, and `jobs.reuse_detail`. The write API checks repository scope, a terminal passing attempt for the same tree, valid job state, and absence of this job's own executions. Verification-only reuse completes the job. A combined publication job may remain active, or settle canceled, superseded, or needing attention; its original evidence reference is retained in every outcome. A recorded reference cannot be replaced or removed. Full input comparison belongs to `verify` and is applied by workflow in the same transaction as the reference, plan, and job-state update. No new evidence or provider execution is synthesized.
 
 `VerificationCandidates` returns at most 32 original terminal attempts with evidence, ordered by attempt creation time descending and ID descending for ties. Tree and target indexes narrow the search within the selected repository; an optional tree-less lookup supplies one recent result for mismatch diagnostics. The limit bounds records materialized by the reader, not the number of matching index entries SQLite might visit. Negative outcomes are included so an older pass cannot hide a newer failed recheck. Reused jobs never become candidates themselves.
 
@@ -225,3 +225,11 @@ Migration 6 preserves existing source, revision, job, verification, and provider
 `state.ImageCache` supplies point lookup and replacement, implemented by the same SQLite store as provider coordination. The provider owns stamp interpretation, content hashing, and invalidation. Reads and writes each use a short transaction; hashing does not hold a transaction or reserve a provider slot. Concurrent cold readers can hash independently. A delayed writer can replace a newer row, but its old stamp will not match changed files on a later lookup. No cache row claims that a VM is available, stopped, or safe to delete.
 
 Migration 7 adds only the cache table and preserves workflow/publication/provider records. It participates in the existing transactional migration chain; a failed migration leaves the previous schema intact.
+
+## Combined publication storage
+
+An optional `PublishTo` in immutable job-options JSON records the combined job's accepted publication destination. The original source remains input provenance; `result_revision` and the prepared candidate identify the commit to verify and publish. No schema migration is needed.
+
+After passing or reused verification, the job remains active without a finish time. A later claimed pass creates its `publications` row against the result revision and evidence. The store requires the action's destination, branch, and desired head to agree with the accepted destination and prepared candidate. Complete action intent stays immutable after creation. A reused attempt remains an original-attempt reference, with no local attempt or provider admission synthesized for that job.
+
+Publication confirmation records the action, job, PR association, and published result revision atomically through the existing path. The partial remote-head reservation begins when publication intent is checkpointed; preparation and verification do not reserve a remote head. These changes retain the existing repository scope, per-record writes, leases, and operation locks.

@@ -4,10 +4,11 @@ Initial groundwork for `github.com/herbygillot/dockhand/v2`.
 
 SQLite now holds workflow state behind `internal/state` contracts, with `internal/state/sqlite` as the implementation. One database can track multiple repositories; linked worktrees share an entry and separate clones remain distinct. Global `--db PATH` defaults to `$HOME/.dockhand/state.db`. The old lock-directory flags and Git ledger have been removed.
 
-Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including automatic GitHub version selection through the pure-Go `go-github` client. Standalone publication of verified, committed contribution branches to GitHub is implemented. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
+Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including automatic GitHub version selection through the pure-Go `go-github` client. Publication of verified, committed contribution branches to GitHub is implemented, either through `publish` or as part of `bump --publish` and `bump-revision --publish`. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
 
 Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released diagnostics, then `dockhand gc` to apply it. `dockhand db backup <file>` creates a consistent standalone snapshot of the shared database; `dockhand db check` checks its integrity. See [state operations and recovery](docs/operations.md) for retention rules and restoring a backup.
 
+- [Combined bump and publication report](docs/activity/2026-09-13-combined-publication.md)
 - [GitHub URL and resource audit](docs/activity/2026-09-13-github-resource-urls.md)
 - [GitHub SDK defaults report](docs/activity/2026-09-13-github-defaults.md)
 - [GitHub client migration report](docs/activity/2026-09-13-go-github.md)
@@ -87,6 +88,15 @@ dockhand bump jq 1.8.1 --diff
 
 Omitting the version selects the newest eligible stable numeric GitHub version using supported evaluated livecheck metadata and native MacPorts ordering. Discovery uses upstream repository tags by default; `github.tarball_from releases` selects published releases instead. Already-current ports complete without creating a branch or starting verification. Unknown or incomplete discovery requires attention. Explicit versions also support the evaluated upstream tag prefix. The editor handles supported literal `version`, `github.setup`, and GitHub-backed `go.setup` sources, including the Go PortGroup’s toolchain pre-check, and one direct archive with literal checksums; see the [CLI design](docs/cli-design.md) for limits. Verification uses available dependency binaries by default; `--from-source` opts into building the dependency stack from source.
 
+Prepare, verify, and publish as one durable job:
+
+```sh
+dockhand bump jq --publish --image dockhand-base-tahoe --wait
+dockhand bump-revision jq --publish --image dockhand-base-tahoe --trace
+```
+
+The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+
 Publish a contribution, including a branch created with ordinary Git commands, after verifying and committing its contents:
 
 ```sh
@@ -98,4 +108,4 @@ Without `--branch`, publication selects the current local branch's committed con
 
 The push remote defaults to `origin`; the PR target comes from `upstream` when configured, then the fork parent, then the push repository. `--remote`, `--upstream`, and `--base` override those choices. Git uses its credentials; the API reads `GH_TOKEN`, then `GITHUB_TOKEN`. Tokens are not persisted. The commit supplies the title and initial body; existing PR bodies are preserved.
 
-Publication without `--wait` returns after driver pickup or an earlier terminal outcome. `--wait` follows remote confirmation. Resume accepted work using its job ID with `wait`, or run `start`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Combined `bump --publish`, missing-verification scheduling, rebase/amend commands, and post-publication monitoring remain future work.
+Publication without `--wait` returns after driver pickup or an earlier terminal outcome. `--wait` follows remote confirmation. Resume accepted work using its job ID with `wait`, or run `start`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Missing-verification scheduling for standalone `publish`, rebase/amend commands, and post-publication monitoring remain future work.

@@ -38,7 +38,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	e := c.engine
 	var attempt record.Attempt
 	var action attemptAction
-	var changed, recorded bool
+	var changed, recorded, publishing bool
 	var detail string
 	var err error
 	for {
@@ -49,7 +49,14 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				return nil
 			}
 			now := e.now()
+			if live(job.Claim, now) || !due(job.RetryAt, now) {
+				return nil
+			}
 			attempt = work.Attempt
+			if job.Spec.PublishTo != nil && (job.ReusedAttempt != "" || attemptTerminal(attempt.State)) {
+				publishing = true
+				return nil
+			}
 			if work.Problem != "" {
 				detail = work.Problem
 				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
@@ -97,6 +104,9 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				if reused.ID != "" {
 					job.ReusedAttempt = reused.ID
 					job.State, job.FinishedAt, job.Detail = record.JobCompleted, &now, explanation
+					if job.Spec.PublishTo != nil {
+						job.State, job.FinishedAt, job.Detail = record.JobActive, nil, explanation+"; publication pending"
+					}
 					work.Job, work.Plan = job, &plan
 					changed = true
 					return nil
@@ -165,6 +175,9 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		}
 		// Resolve capabilities after local planning, then recheck ownership and intent.
 		c.checkProvider(ctx)
+	}
+	if publishing {
+		return c.advancePublication(ctx, id)
 	}
 	if action == "" {
 		return changed, detail, nil
@@ -379,6 +392,9 @@ func finishAttempt(work *execution, job *record.Job, attempt *record.Attempt, ev
 		job.State = record.JobNeedsAttention
 	}
 	job.FinishedAt, job.Detail = &now, detail
+	if evidence.Verdict == record.VerdictPassed && job.Spec.PublishTo != nil {
+		job.State, job.FinishedAt, job.Detail = record.JobActive, nil, "Verification passed; publication pending"
+	}
 	dispositionResources(work, attempt.ID, resourceState)
 	work.Attempt, work.Job = *attempt, *job
 }
