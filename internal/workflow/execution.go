@@ -106,10 +106,14 @@ func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(s
 				}
 			}
 		}
-		for id, value := range work.Submissions {
-			if !reflect.DeepEqual(before.Submissions[id], value) {
-				if err = tx.PutSubmission(ctx, value); err != nil {
-					return err
+		// SQLite permits one open submission per attempt. Close the old identity
+		// before inserting its replacement, independently of map iteration order.
+		for _, closed := range []bool{true, false} {
+			for id, value := range work.Submissions {
+				if (value.ClosedAt != nil) == closed && !reflect.DeepEqual(before.Submissions[id], value) {
+					if err = tx.PutSubmission(ctx, value); err != nil {
+						return err
+					}
 				}
 			}
 		}

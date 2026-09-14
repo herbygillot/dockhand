@@ -157,7 +157,10 @@ func TestCycleClosedSubmissionRetryOrPartialCleanup(t *testing.T) {
 			f.provider.reconcile = func(context.Context, record.RequestID) (verify.Reconciliation, error) {
 				return verify.Reconciliation{State: verify.RequestClosed}, nil
 			}
-			f.run(t, id)
+			recovered := f.run(t, id)
+			if !partial {
+				require.Empty(t, recovered.Problems)
+			}
 			attempt := f.attempt(t, id)
 			require.Len(t, f.closed(t, attempt.ID), 1, "closed identity lost")
 			require.Equal(t, old, f.closed(t, attempt.ID)[0], "closed identity lost")
@@ -169,7 +172,7 @@ func TestCycleClosedSubmissionRetryOrPartialCleanup(t *testing.T) {
 			require.NotEqual(t, old, attempt.SubmissionID, "closed identity reused")
 			require.Equal(t, record.AttemptQueued, attempt.State, "closed identity reused")
 			f.provider.submit = nil
-			f.run(t, id)
+			require.Empty(t, f.run(t, id).Problems)
 			require.Equal(t, record.AttemptRunning, f.attempt(t, id).State, "fresh identity was not admitted")
 		})
 	}
