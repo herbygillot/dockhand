@@ -195,7 +195,7 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 
 `app.Services.BindVerification` composes native platform discovery, Tart configuration capture, and workflow source binding. Cobra parses input, submits through the engine, renders recorded progress, and selects an attachment milestone. `workflow.Reached` evaluates admission/completion from records. `proc.Manager` owns the cancellable loop shared by targeted attachment and resident execution; it owns no workflow state and creates no driver discovery records. Resident passes use indexed cycle queries and do not build full historical status snapshots.
 
-The Tart guest runs lint, an explicit `port -d build`, declared tests when enabled, and installation in that order. Build debug output goes to the same retained log streamed by `--trace`; build failures stop the sequence and record a separate build step. Dependency binaries remain enabled unless `--from-source` is selected.
+The Tart guest runs lint, build, declared tests when enabled, and installation in that order, with debug output enabled for every `port` invocation. That output goes to the same retained log streamed by `--trace`; build failures stop the sequence and record a separate build step. Dependency binaries remain enabled unless `--from-source` is selected.
 
 `verify.LogReader` is an optional read-only diagnostic interface. Tart reads bounded guest log ranges while running and retained host logs after collection. CLI tracing keeps offsets, drains final logs, and writes to stderr without participating in workflow bookkeeping. The [CLI execution report](activity/2026-09-12-cli-execution.md) records scope and validation.
 

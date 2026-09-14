@@ -54,7 +54,7 @@ try {
     foreach foreign {/opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg} {
         if {[file exists $foreign]} {error "unexpected package-manager prefix $foreign"}
     }
-    set installed [exec $prefix/bin/port -q installed active]
+    set installed [exec $prefix/bin/port -d -q installed active 2>@$log]
     if {[string trim $installed] ne ""} {error "prepared image already has installed ports: $installed"}
     package require macports
     mportinit
@@ -80,14 +80,14 @@ try {
     set worker [ditem_key $handle workername]
     set declared [$worker eval {tbool test.run}]
     mportclose $handle
-    set base [list $prefix/bin/port -N -D $portdir]
+    set base [list $prefix/bin/port -d -N -D $portdir]
     if {[dict get $spec Config FromSource]} {lappend base -s}
     set selection [list subport=$name]
     foreach {variant sign} $variants {lappend selection $sign$variant}
     set phase lint
     step lint [concat $base lint $selection]
     set phase build
-    step build [concat $base -d build $selection]
+    step build [concat $base build $selection]
     if {[dict get $spec Config Tests] eq "declared" && [string is true -strict $declared]} {
         set phase test
         step test [concat $base test $selection]
