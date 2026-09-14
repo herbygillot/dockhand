@@ -115,6 +115,30 @@ func TestMigrationsAreContiguous(t *testing.T) {
 	}
 }
 
+func TestChangeJobsMigrationSupportsIndexedSelection(t *testing.T) {
+	path, db := versionEightWithWork(t)
+	_, err := db.Exec(phaseSchema)
+	require.NoError(t, err)
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, schemaVersion, version)
+	rows, err := db.Query("EXPLAIN QUERY PLAN SELECT j.id FROM jobs j INDEXED BY jobs_change WHERE j.repository_id=? AND j.id>? AND j.state IN ('queued','active') AND j.change_id=? ORDER BY j.id LIMIT ?", "preserved", "", "change", 256)
+	require.NoError(t, err)
+	defer rows.Close()
+	var plans []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		require.NoError(t, rows.Scan(&id, &parent, &unused, &detail))
+		plans = append(plans, detail)
+	}
+	require.NoError(t, rows.Err())
+	require.Contains(t, strings.Join(plans, "\n"), "jobs_change")
+}
+
 func migrationRows(t *testing.T, db *sql.DB, table string, columns []string) ([]string, [][]any) {
 	t.Helper()
 	selection := "*"

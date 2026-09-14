@@ -39,6 +39,9 @@ var (
 	// ErrInvalidScope means a scope selects both all jobs and explicit IDs,
 	// selects neither, or includes an empty job ID.
 	ErrInvalidScope = errors.New("workflow: select all jobs or explicit job IDs")
+	// ErrNoPendingJobs means a tracked contribution has no queued or active work
+	// to attach to or cancel.
+	ErrNoPendingJobs = errors.New("workflow: no pending jobs")
 )
 
 // Engine owns request intake, workflow advancement, and state projections.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,6 +58,22 @@ func TestWaitRecordsFailureWithoutSubmittingNewWork(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, status.Jobs, 1)
 }
+func TestWaitSelectsExplicitOrCurrentContributionBranch(t *testing.T) {
+	for _, args := range [][]string{{"wait", "--branch", "candidate", "--json"}, {"wait", "--json"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			config, id := queuedJob(t)
+			var stdout, stderr bytes.Buffer
+			err := Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config)
+			require.ErrorIs(t, err, ErrNeedsAttention)
+			var result ActionResult
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.Equal(t, "candidate", result.Branch)
+			require.Equal(t, []record.JobID{id}, result.JobIDs)
+			require.Equal(t, id, result.Status.Jobs[0].Job.ID)
+			require.Contains(t, stderr.String(), "Selected 1 pending job(s) for branch candidate")
+		})
+	}
+}
 func TestCancelBeforeAdmissionPreservesBranchAndDoesNotNeedTart(t *testing.T) {
 	config, id := queuedJob(t)
 	var stdout, stderr bytes.Buffer
@@ -71,6 +88,33 @@ func TestCancelBeforeAdmissionPreservesBranchAndDoesNotNeedTart(t *testing.T) {
 	commit, _, err := services.Workflow.Repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
 	require.Equal(t, string(result.Status.Jobs[0].Job.Spec.Source.Commit), commit)
+}
+func TestCancelSelectsContributionBranch(t *testing.T) {
+	config, id := queuedJob(t)
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, Run(t.Context(), []string{"cancel", "--branch", "candidate", "--wait", "--reason", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	var result ActionResult
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.Equal(t, "candidate", result.Branch)
+	require.Equal(t, []record.JobID{id}, result.JobIDs)
+	require.Equal(t, record.JobCanceled, result.Status.Jobs[0].Job.State)
+	require.Contains(t, stderr.String(), "Cancellation requested for 1 pending job(s) on branch candidate")
+}
+func TestWaitAndCancelRejectAmbiguousOrInvalidBranchSelectorsBeforeState(t *testing.T) {
+	config := app.Config{Repository: "/missing/repository", DBPath: filepath.Join(t.TempDir(), "absent", "state.db")}
+	for _, args := range [][]string{
+		{"wait", "job", "--branch", "candidate"},
+		{"cancel", "job", "--branch", "candidate"},
+		{"wait", "--branch", "bad..branch"},
+		{"cancel", "--branch="},
+	} {
+		var output bytes.Buffer
+		err := Run(t.Context(), args, Streams{Out: &output, Err: &output}, config)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "git ")
+	}
+	_, err := os.Stat(filepath.Dir(config.DBPath))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 func TestForeignRepositoryJobCannotBeWaitedOrCanceled(t *testing.T) {
 	config, id := queuedJob(t)

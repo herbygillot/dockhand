@@ -79,7 +79,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 9. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 10. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |
@@ -241,3 +241,9 @@ Publication confirmation records the action, job, PR association, and published 
 `jobs.phase` records whether preparation, verification, or publication owns the next transition. It is durable progression state rather than accepted intent. New jobs receive their initial phase during intake. A continuing preparation job advances to verification when branch integration and its result revision commit; a combined job advances to publication when passing or reused evidence commits. Phase movement is monotonic, and terminal jobs retain their last phase for diagnosis.
 
 Migration 9 derives existing phases from the immutable action and destination plus established checkpoints. Bump work without a result revision and branch-ready bump results remain in preparation. Standalone publication and combined jobs with established passing evidence or a publication action enter publication. Other existing jobs enter verification. The ordered migration registry requires contiguous versions and applies every missing migration inside the existing initialization transaction, preventing a new schema step from being omitted from one upgrade path.
+
+## Change-scoped job selection (schema 10)
+
+The `jobs_change` index supports bounded job lookup by repository, stable change identity, and job ID. Workflow first resolves an open contribution branch to its change, then uses this query to freeze queued and active jobs. Waiting performs that selection in one read snapshot. Cancellation performs selection and control insertion in one write transaction, so a concurrently accepted job cannot be partially included or silently join an existing cancellation.
+
+Branch names remain a workflow selector rather than a foreign key. The durable cancellation record contains the exact selected job IDs, and idempotent retries retain that original set. Status keeps its broader historical branch filter, including closed contributions; executable branch selection deliberately resolves one open change.

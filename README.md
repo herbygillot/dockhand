@@ -79,22 +79,27 @@ Verify current edits or committed branch contents, then reattach by the printed 
 dockhand verify jq --image dockhand-base-tahoe --wait
 dockhand verify jq --branch update-jq --image dockhand-base-tahoe
 dockhand wait <job_id> --trace
+# Or resume every pending job already associated with a contribution:
+dockhand wait --branch update-jq
+# From that branch, the selector may be omitted:
+dockhand wait
 # Or submit and stay attached in one invocation:
 dockhand verify jq --branch update-jq --image dockhand-base-tahoe --wait
 # A tracked contribution supplies the target when it is omitted:
 dockhand verify --branch update-jq --image dockhand-base-tahoe --wait
 
 dockhand cancel <job_id> --wait
+dockhand cancel --branch update-jq --wait
 dockhand start
 ```
 
-Omitting `--branch` captures tracked working-tree contents, including staged additions and deletions, without changing the index or branch. New files must be staged; explicit `--branch` uses committed contents. The accepted snapshot stays fixed while editing continues; each invocation selects one port directory or unique directory name, optionally `--subport` and repeated `--variant` choices. This first CLI uses job IDs for wait/cancel. General selectors remain later work. A tracked contribution retains its edited targets; verification may select a different target without redefining that contribution.
+Omitting `--branch` captures tracked working-tree contents, including staged additions and deletions, without changing the index or branch. New files must be staged; explicit `--branch` uses committed contents. The accepted snapshot stays fixed while editing continues; each invocation selects one port directory or unique directory name, optionally `--subport` and repeated `--variant` choices. `wait` and `cancel` accept a job ID, `--branch`, or the current branch when both are omitted. Branch selection freezes that open contribution's queued and active jobs; later submissions do not join. Broader port selectors remain later work. A tracked contribution retains its edited targets; verification may select a different target without redefining that contribution.
 
 Omit the port on an open tracked contribution to reuse its single target, subport, and variant choices. Explicit variant flags override the recorded choices; supplying a port starts from that port's defaults. Inference checks the selected tree against the recorded contribution base and asks for an explicit port if changes extend outside its directory. Untracked branches and detached checkouts require an explicit port. See the [inference report](docs/activity/2026-09-13-verification-target-inference.md).
 
 Matching passing verification is reused when the complete source tree, target, variants, image, verifier implementation, and build settings agree. You can verify edits, commit the same contents, and verify that branch without another build. Status cites the original attempt. Use `verify --fresh` to require a new execution; reattaching with `wait` preserves the existing decision. Older results without a recorded verifier identity require a fresh build before they can be reused.
 
-Without `--wait`, verification remains attached while capacity is unavailable and returns at admission or a conclusive outcome. `--wait` and `--trace` follow completion. Ctrl-C detaches without canceling accepted work; `start` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job; it never submits another verification. JSON results go to stdout, progress and trace output to stderr. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
+Without `--wait`, verification remains attached while capacity is unavailable and returns at admission or a conclusive outcome. `--wait` and `--trace` follow completion. Ctrl-C detaches without canceling accepted work; `start` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job selection; it never submits another verification. JSON results go to stdout, progress and trace output to stderr. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
 
 Preview or prepare a version update from committed source:
 

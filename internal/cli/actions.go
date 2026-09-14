@@ -41,7 +41,9 @@ func ExitCode(err error) int {
 }
 
 type ActionResult struct {
-	JobID       record.JobID `json:",omitempty"`
+	JobID       record.JobID   `json:",omitempty"`
+	JobIDs      []record.JobID `json:",omitempty"`
+	Branch      string         `json:",omitempty"`
 	Receipt     *workflow.Receipt
 	Status      workflow.Status
 	Interrupted bool
@@ -142,45 +144,114 @@ func parseVariants(values []string) (map[string]bool, error) {
 	return result, nil
 }
 func (r *runtime) waitCommand() *cobra.Command {
+	var branch string
 	var trace bool
-	command := &cobra.Command{Use: "wait <job_id>", Short: "Resume an existing job through completion", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: "wait [job_id]", Short: "Resume existing work through completion", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateWorkSelector(cmd, args, branch); err != nil {
+			return err
+		}
 		services, err := app.Build(cmd.Context(), r.config)
 		if err != nil {
 			return err
 		}
 		defer services.Close()
-		return r.attach(cmd, services, record.JobID(args[0]), workflow.Completion, trace, false, nil)
+		if len(args) == 1 {
+			return r.attach(cmd, services, record.JobID(args[0]), workflow.Completion, trace, false, nil)
+		}
+		branch, err = selectedWorkBranch(cmd.Context(), services, branch)
+		if err != nil {
+			return err
+		}
+		scope, err := services.Workflow.BranchScope(cmd.Context(), branch)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "Selected %d pending job(s) for branch %s: %s.\n", len(scope.Jobs), branch, joinJobIDs(scope.Jobs))
+		return r.attachScope(cmd, services, scope, workflow.Completion, trace, false, nil, ActionResult{JobIDs: slices.Clone(scope.Jobs), Branch: branch})
 	}}
+	command.Flags().StringVar(&branch, "branch", "", "Select pending work for this recorded contribution branch (defaults to the current branch)")
 	command.Flags().BoolVar(&trace, "trace", false, "Stream build logs to stderr")
 	return command
 }
 func (r *runtime) cancelCommand() *cobra.Command {
+	var branch string
 	var wait bool
 	var reason string
-	command := &cobra.Command{Use: "cancel <job_id>", Short: "Request cancellation while preserving the branch and evidence", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: "cancel [job_id]", Short: "Request cancellation while preserving branches and evidence", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateWorkSelector(cmd, args, branch); err != nil {
+			return err
+		}
 		services, err := app.Build(cmd.Context(), r.config)
 		if err != nil {
 			return err
 		}
 		defer services.Close()
-		id := record.JobID(args[0])
-		err = services.Workflow.Control(cmd.Context(), record.ControlRequest{ID: record.RequestID("control_" + rand.Text()), Kind: record.Cancel, Jobs: []record.JobID{id}, Reason: reason})
-		if err != nil {
-			return err
+		request := record.ControlRequest{ID: record.RequestID("control_" + rand.Text()), Kind: record.Cancel, Reason: reason}
+		var scope workflow.Scope
+		result := ActionResult{}
+		if len(args) == 1 {
+			id := record.JobID(args[0])
+			request.Jobs = []record.JobID{id}
+			if err = services.Workflow.Control(cmd.Context(), request); err != nil {
+				return err
+			}
+			scope = workflow.Scope{Jobs: []record.JobID{id}}
+			result.JobID = id
+			fmt.Fprintf(cmd.ErrOrStderr(), "Cancellation requested for %s.\n", id)
+		} else {
+			branch, err = selectedWorkBranch(cmd.Context(), services, branch)
+			if err != nil {
+				return err
+			}
+			scope, err = services.Workflow.ControlBranch(cmd.Context(), request, branch)
+			if err != nil {
+				return err
+			}
+			result.JobIDs, result.Branch = slices.Clone(scope.Jobs), branch
+			fmt.Fprintf(cmd.ErrOrStderr(), "Cancellation requested for %d pending job(s) on branch %s: %s.\n", len(scope.Jobs), branch, joinJobIDs(scope.Jobs))
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "Cancellation requested for %s.\n", id)
 		if wait {
-			return r.attach(cmd, services, id, workflow.Completion, false, true, nil)
+			return r.attachScope(cmd, services, scope, workflow.Completion, false, true, nil, result)
 		}
-		scope := workflow.Scope{Jobs: []record.JobID{id}}
 		_, cycleErr := services.Workflow.Cycle(cmd.Context(), scope)
 		status, statusErr := services.Workflow.Status(cmd.Context(), scope)
-		return errors.Join(cycleErr, statusErr, r.result(cmd.OutOrStdout(), ActionResult{JobID: id, Status: status, Interrupted: cmd.Context().Err() != nil}))
+		result.Status, result.Interrupted = status, cmd.Context().Err() != nil
+		return errors.Join(cycleErr, statusErr, r.result(cmd.OutOrStdout(), result))
 	}}
+	command.Flags().StringVar(&branch, "branch", "", "Select pending work for this recorded contribution branch (defaults to the current branch)")
 	command.Flags().BoolVar(&wait, "wait", false, "Remain attached until the job settles")
 	command.Flags().StringVar(&reason, "reason", "", "Record a cancellation reason")
 	return command
 }
+
+func validateWorkSelector(cmd *cobra.Command, args []string, branch string) error {
+	if len(args) == 1 && args[0] == "" {
+		return fmt.Errorf("job ID must not be empty")
+	}
+	if len(args) == 1 && cmd.Flags().Changed("branch") {
+		return fmt.Errorf("select a job ID or --branch, not both")
+	}
+	if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
+		return fmt.Errorf("branch must name a literal recorded contribution branch")
+	}
+	return nil
+}
+
+func selectedWorkBranch(ctx context.Context, services *app.Services, branch string) (string, error) {
+	if branch != "" {
+		return branch, nil
+	}
+	return services.Workflow.Repo.CurrentBranch(ctx)
+}
+
+func joinJobIDs(ids []record.JobID) string {
+	values := make([]string, len(ids))
+	for i, id := range ids {
+		values[i] = string(id)
+	}
+	return strings.Join(values, ", ")
+}
+
 func (r *runtime) startCommand() *cobra.Command {
 	return &cobra.Command{Use: "start", Short: "Advance this repository's work until interrupted", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		services, err := app.Build(cmd.Context(), r.config)
@@ -203,16 +274,20 @@ func (r *runtime) startCommand() *cobra.Command {
 	}}
 }
 func (r *runtime) attach(cmd *cobra.Command, services *app.Services, id record.JobID, milestone workflow.Milestone, trace, canceling bool, receipt *workflow.Receipt) error {
+	return r.attachScope(cmd, services, workflow.Scope{Jobs: []record.JobID{id}}, milestone, trace, canceling, receipt, ActionResult{JobID: id})
+}
+func (r *runtime) attachScope(cmd *cobra.Command, services *app.Services, scope workflow.Scope, milestone workflow.Milestone, trace, canceling bool, receipt *workflow.Receipt, result ActionResult) error {
 	reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, trace)
 	services.Processes.OnCycle = reporter.cycle
-	status, err := services.Processes.Attach(cmd.Context(), services.Workflow, workflow.Scope{Jobs: []record.JobID{id}}, milestone, func(status workflow.Status) error { return reporter.status(cmd.Context(), status) })
+	status, err := services.Processes.Attach(cmd.Context(), services.Workflow, scope, milestone, func(status workflow.Status) error { return reporter.status(cmd.Context(), status) })
 	if len(status.Jobs) == 0 {
 		if receipt == nil {
 			return err
 		}
 		status = workflow.EmptyStatus(time.Time{})
 	}
-	outputErr := r.result(cmd.OutOrStdout(), ActionResult{JobID: id, Receipt: receipt, Status: status, Interrupted: cmd.Context().Err() != nil})
+	result.Receipt, result.Status, result.Interrupted = receipt, status, cmd.Context().Err() != nil
+	outputErr := r.result(cmd.OutOrStdout(), result)
 	if err != nil {
 		return errors.Join(err, outputErr)
 	}
