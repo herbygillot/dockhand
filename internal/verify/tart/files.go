@@ -107,6 +107,9 @@ func makeInput(ctx context.Context, repo *git.Repository, request verify.Request
 	if err = portindex.Stage(ctx, repo, request.Spec.Source, request.Spec.Config.Platform, indexConfig, snapshot.Root, client); err != nil {
 		return "", err
 	}
+	if err = requireIndexedTarget(snapshot.Root, request.Spec.Target); err != nil {
+		return "", err
+	}
 	temp, err := os.CreateTemp(directory, ".input-")
 	if err != nil {
 		return "", err
@@ -193,4 +196,19 @@ func makeInput(ctx context.Context, repo *git.Repository, request verify.Request
 	}
 	path := filepath.Join(directory, "input.tar")
 	return path, os.Rename(temp.Name(), path)
+}
+
+func requireIndexedTarget(root string, target record.Target) error {
+	index, err := portindex.Open(root)
+	if err != nil {
+		return err
+	}
+	entry, err := index.Lookup(target.Name)
+	if err != nil {
+		return fmt.Errorf("tart: selected target %s is not indexed: %w", target.Name, err)
+	}
+	if entry.Portdir != filepath.ToSlash(filepath.Dir(target.Portfile)) {
+		return fmt.Errorf("tart: indexed target %s belongs to %s, expected %s", target.Name, entry.Portdir, target.Portfile)
+	}
+	return nil
 }

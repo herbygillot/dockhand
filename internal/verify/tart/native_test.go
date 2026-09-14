@@ -87,6 +87,7 @@ func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {
 
 func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	f, _ := singleRun(t)
+	f.request.Spec.Source.Base = f.request.Spec.Source.Commit
 	config, err := f.provider.settings()
 	require.NoError(t, err)
 	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir(), nil)

@@ -137,6 +137,18 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 }
 
 func ensurePortIndex(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, cacheRoot, targetRoot string, client *http.Client) (string, bool, error) {
+	if source.Base == "" {
+		// Standalone verification has no change baseline. Its index may expose
+		// gaps outside the requested target; callers validate their coverage.
+		// Keep it separate from indexes used to validate known changes.
+		target := filepath.Join(cacheRoot, "standalone", string(source.Tree))
+		if !validIndexEntry(target) {
+			if err := buildPortIndex(ctx, c, platform, targetRoot, target, "", nil, false); err != nil {
+				return "", false, err
+			}
+		}
+		return target, false, nil
+	}
 	target := filepath.Join(cacheRoot, string(source.Tree))
 	if validIndexEntry(target) {
 		return target, false, nil
