@@ -38,7 +38,7 @@ func newMachine() *fakeMachine {
 func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
 	home := t.TempDir()
 	provider := &Provider{
-		Config:  Config{Home: home, ArtifactDirectory: t.TempDir()},
+		Config:  Config{Home: home, ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)},
 		backend: newMachine(),
 	}
 	config, err := provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared})
@@ -47,10 +47,12 @@ func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
 	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
 	require.Equal(t, "dockhand-base-tahoe", settings.Image)
 	require.Equal(t, testPlatform, settings.Platform)
+	require.Equal(t, "https://ftp.fau.de/macports/release/tarballs/PortIndex_darwin_25_arm64/PortIndex", settings.PortIndexURL)
+	require.NotEmpty(t, settings.PortIndexDigest)
 }
 
 func TestBuildConfigSelectsXcodeImageForRequiredTargets(t *testing.T) {
-	provider := &Provider{Config: Config{Home: t.TempDir(), ArtifactDirectory: t.TempDir()}, backend: newMachine()}
+	provider := &Provider{Config: Config{Home: t.TempDir(), ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
 	config, err := provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared, NeedsXcode: true})
 	require.NoError(t, err)
 	require.True(t, config.NeedsXcode)
@@ -160,7 +162,7 @@ func fixtureRun(t *testing.T, db, home, artifacts, id string, m machine) *testRu
 		}
 		return tx.PutRevision(ctx, record.Revision{ID: record.RevisionID(id), ChangeID: record.ChangeID(id), Source: source, CreatedAt: time.Now()})
 	}))
-	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Config: Config{Home: home, Image: "fixture", ArtifactDirectory: artifacts, Capacity: 1, Platform: testPlatform}, backend: m}
+	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Config: Config{Home: home, Image: "fixture", ArtifactDirectory: artifacts, Capacity: 1, Platform: testPlatform, PortIndexExecutable: fakePortIndex(t)}, backend: m}
 	e := &workflow.Engine{State: store, Repository: repository.ID, Provider: p, RetryDelay: time.Millisecond}
 	config := record.BuildConfig{Provider: "tart", Platform: testPlatform, EnvironmentDigest: "sha256:fixture", FromSource: true, Tests: record.TestSkip}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: record.RequestID(id), Spec: record.JobSpec{Action: record.Verify, InputRevision: record.RevisionID(id), Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &config}})
@@ -174,6 +176,25 @@ func fixtureRun(t *testing.T, db, home, artifacts, id string, m machine) *testRu
 	a := status.Jobs[0].Attempts[0]
 	e.Provider = p
 	return &testRun{p, store, verify.Request{ID: a.SubmissionID, AttemptID: a.ID, Spec: a.Spec}}
+}
+
+func fakePortIndex(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "portindex")
+	script := `#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$0.calls"
+out=
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = -o ]; then out=$2; shift 2; else shift; fi
+done
+[ -n "$out" ]
+mkdir -p "$out"
+printf 'fixture 1\nx\n' > "$out/PortIndex"
+printf 'fixture 0\n' > "$out/PortIndex.quick"
+`
+	require.NoError(t, os.WriteFile(path, []byte(script), 0700))
+	return path
 }
 
 type capacityProvider struct{ verify.Provider }

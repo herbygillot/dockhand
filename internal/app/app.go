@@ -71,6 +71,9 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if config.Tart.ArtifactDirectory == "" {
 		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
 	}
+	if config.Tart.PortIndexExecutable == "" && config.MacPortsPrefix != "" {
+		config.Tart.PortIndexExecutable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
+	}
 	provider := &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo}
 	engine := &workflow.Engine{
 		State:      store,

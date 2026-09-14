@@ -200,6 +200,8 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 
 The Tart guest runs lint, build, declared tests when enabled, and installation in that order. Build, test, and install enable debug output, which goes to the same retained log streamed by `--trace`; lint remains quiet. Build failures stop the sequence and record a separate build step. Dependency binaries remain enabled unless `--from-source` is selected.
 
+The provider prepares a PortIndex before staging a frozen source. `--prefix` selects the host MacPorts `portindex`; its executable digest and the mirror URL participate in frozen provider settings. Following MacPorts CI, a cold cache downloads a platform index, reconciles the recent base history, and retains the result by immutable base tree. Candidate trees reuse that index and re-evaluate only port directories changed from the base. Download failure or changes under `_resources` cause a full pass because shared PortGroups can change unrelated entries. Candidate indexes remain temporary and the guest consumes the staged index without occupying build time with a full-tree index pass.
+
 `verify.LogReader` is an optional read-only diagnostic interface. Tart reads bounded guest log ranges while running and retained host logs after collection. CLI tracing keeps offsets, drains final logs, and writes to stderr without participating in workflow bookkeeping. The [CLI execution report](activity/2026-09-12-cli-execution.md) records scope and validation.
 
 ### Preparation previews and version-selection groundwork

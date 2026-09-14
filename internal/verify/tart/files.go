@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,7 +136,7 @@ func verifierDigest() string {
 	return digest(append([]byte("tart-verification-v2\x00"+guestExecScript+"\x00"+string(guestPlist("/prefix"))), guestScript...))
 }
 
-func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, directory string) (string, error) {
+func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, directory string, client *http.Client) (string, error) {
 	if request.Spec.Source.Commit != "" {
 		trees, err := repo.CommitTrees(ctx, []string{string(request.Spec.Source.Commit)})
 		if err != nil {
@@ -150,6 +151,9 @@ func makeInput(ctx context.Context, repo *git.Repository, request verify.Request
 		return "", err
 	}
 	defer snapshot.Close()
+	if err = stagePortIndex(ctx, repo, request.Spec.Source, request.Spec.Config.Platform, c, snapshot.Root, client); err != nil {
+		return "", err
+	}
 	temp, err := os.CreateTemp(directory, ".input-")
 	if err != nil {
 		return "", err

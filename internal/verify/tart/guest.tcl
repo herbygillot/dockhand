@@ -62,10 +62,7 @@ try {
     foreach {key actual} [list OS $::macports::os_platform Version $::macports::os_major Architecture $::macports::build_arch] {
         if {[dict get $expected $key] ne $actual} {error "guest $key is $actual; requested [dict get $expected $key]"}
     }
-    cd $root/ports
-    set phase index
-    step index [list $prefix/bin/portindex -f]
-    if {![file exists $root/ports/PortIndex]} {error "indexer produced no PortIndex"}
+    if {![file exists $root/ports/PortIndex] || ![file exists $root/ports/PortIndex.quick]} {error "staged source has no PortIndex"}
     set phase setup
     set portdir [file dirname [file join $root ports [dict get $target Portfile]]]
     set variants {}

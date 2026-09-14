@@ -9,6 +9,8 @@ Request intake, read-only status, cancellation, and the single-target verificati
 Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released diagnostics, then `dockhand gc` to apply it. `dockhand db backup <file>` creates a consistent standalone snapshot of the shared database; `dockhand db check` checks its integrity. See [state operations and recovery](docs/operations.md) for retention rules and restoring a backup.
 
 - [Combined bump and publication report](docs/activity/2026-09-13-combined-publication.md)
+- [PortIndex cache report](docs/activity/2026-09-14-portindex-cache.md)
+- [Automatic Xcode profile selection report](docs/activity/2026-09-14-xcode-profile-selection.md)
 - [Tart setup and provisioning report](docs/activity/2026-09-14-tart-setup.md)
 - [Full Xcode setup profile report](docs/activity/2026-09-14-xcode-setup.md)
 - [State and workflow policy boundary report](docs/activity/2026-09-14-state-policy-boundary.md)
@@ -113,6 +115,8 @@ Omitting `--branch` captures tracked working-tree contents, including staged add
 Omit the port on an open tracked contribution to reuse its single target, subport, and variant choices. Explicit variant flags override the recorded choices; supplying a port starts from that port's defaults. Inference checks the selected tree against the recorded contribution base and asks for an explicit port if changes extend outside its directory. Untracked branches and detached checkouts require an explicit port. See the [inference report](docs/activity/2026-09-13-verification-target-inference.md).
 
 Matching passing verification is reused when the complete source tree, target, variants, image, verifier implementation, and build settings agree. You can verify edits, commit the same contents, and verify that branch without another build. Status cites the original attempt. Use `verify --fresh` to require a new execution; reattaching with `wait` preserves the existing decision. Older results without a recorded verifier identity require a fresh build before they can be reused.
+
+Tart stages a platform-specific PortIndex generated from the frozen source instead of rebuilding the complete index inside every VM. Following MacPorts CI, a cold cache downloads the platform index from a MacPorts mirror, reconciles the recent base history, and then incrementally updates changed port directories for each candidate. The reconciled base index is retained; candidate indexes are temporary. Mirror failure and shared PortGroup changes fall back to a full pass. The local `portindex` is selected through `--prefix` / `MACPORTS_PREFIX`, or from `PATH`, and its content identity is frozen with the accepted provider settings.
 
 Without `--wait`, verification remains attached while capacity is unavailable and returns at admission or a conclusive outcome. `--wait` and `--trace` follow completion. Ctrl-C detaches without canceling accepted work; `start` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job selection; it never submits another verification. JSON results go to stdout, progress and trace output to stderr. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
 

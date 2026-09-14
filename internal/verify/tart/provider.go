@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,13 +26,16 @@ var errCapacity = errors.New("tart: pool is at capacity")
 const ProviderName = "tart"
 
 type Config struct {
-	Executable        string
-	Image             string
-	ArtifactDirectory string
-	Home              string
-	Capacity          int
-	Platform          record.Platform
-	GuestPrefix       string
+	Executable          string
+	Image               string
+	ArtifactDirectory   string
+	Home                string
+	Capacity            int
+	Platform            record.Platform
+	GuestPrefix         string
+	PortIndexExecutable string
+	PortIndexDigest     string
+	PortIndexURL        string
 }
 
 type Environment struct {
@@ -49,6 +53,7 @@ type Provider struct {
 	State      state.ProviderStore
 	Repository record.RepositoryID
 	Repo       *git.Repository
+	HTTP       *http.Client
 	backend    machine
 	images     imageCache
 }
@@ -341,7 +346,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if p.Repo == nil {
 		return uncertain, fmt.Errorf("tart: source repository is required")
 	}
-	archive, err := makeInput(ctx, p.Repo, request, o.config, directory)
+	archive, err := makeInput(ctx, p.Repo, request, o.config, directory, p.HTTP)
 	if err != nil {
 		return uncertain, err
 	}
@@ -630,6 +635,12 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		}
 	}
 	c.Platform = platform
+	if c.PortIndexURL == "" {
+		c.PortIndexURL, err = defaultPortIndexURL(platform)
+		if err != nil {
+			return record.BuildConfig{}, err
+		}
+	}
 	if p.State != nil {
 		pool, e := p.State.ProviderPool(ctx, "tart_"+digest([]byte(c.Home)))
 		if e == nil && (pool.Directory != c.ArtifactDirectory || p.Config.Capacity != 0 && pool.Capacity != p.Config.Capacity) {
@@ -648,6 +659,10 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 			}
 			return record.BuildConfig{}, fmt.Errorf("tart: default image %s is unavailable; %s or select --image: %w", c.Image, setup, err)
 		}
+		return record.BuildConfig{}, err
+	}
+	c, err = resolvePortIndexTool(ctx, c)
+	if err != nil {
 		return record.BuildConfig{}, err
 	}
 	// Capacity is pool policy; zero permits an existing pool's recorded limit.
