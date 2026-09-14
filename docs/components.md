@@ -164,9 +164,10 @@ Earlier reviews are evidence of failure modes, not a claim that every finding re
 
 The immediate implementation priorities are:
 
-1. **Setup diagnostics and reusable verification settings.** Make missing tools, image selection, and provider configuration easier to diagnose and reuse.
-2. **Review controls.** Connect revision-bound acceptance and dismissal to the same durable control and driver path.
-3. **Dependent verification planning.** Introduce explicit cohort and downstream coverage without turning workflow into a generic graph engine.
+1. **Tart image provisioning.** Provision reproducible local images from pinned sources, retain their source and recipe identity, recover interrupted work, and optionally adopt a validated image as a reusable verification default.
+2. **Setup diagnostics and reusable verification settings.** Make missing tools, image selection, and provider configuration easier to diagnose and reuse after the provisioning workflow is defined.
+3. **Review controls.** Connect revision-bound acceptance and dismissal to the same durable control and driver path.
+4. **Dependent verification planning.** Introduce explicit cohort and downstream coverage without turning workflow into a generic graph engine.
 
 Branch-based wait/cancel and continuous integration are implemented. Authentication discovery, preflight, native login, and image-free selection of matching recorded verification are implemented. Explicit and environment credentials, Dockhand's Keychain credential, and the active `gh` account are resolved for publication; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Device login stays outside repository state and uses a registered OAuth client ID supplied by the build, environment, or command line.
 
