@@ -27,6 +27,7 @@ type publicationForge struct {
 	observation forge.PullRequestObservation
 	writes      int
 	writeErr    error
+	onFind      func()
 }
 
 func (p *publicationForge) Name() string { return "fixture" }
@@ -40,6 +41,9 @@ func (p *publicationForge) RepositoryInfo(context.Context, string) (forge.Reposi
 	return forge.RepositoryInfo{Name: "author/ports", DefaultBranch: "main", CloneURL: p.remote}, nil
 }
 func (p *publicationForge) Find(ctx context.Context, _ forge.PullRequestQuery) (forge.PullRequestObservation, error) {
+	if p.onFind != nil {
+		p.onFind()
+	}
 	// An independent write proves external calls hold no state transaction.
 	if err := p.f.store.Update(ctx, p.f.repository, func(context.Context, state.Tx) error { return nil }); err != nil {
 		return forge.PullRequestObservation{}, err
@@ -73,6 +77,14 @@ func (p *publicationForge) Update(ctx context.Context, input forge.PullRequestIn
 
 func publicationFixture(t *testing.T) (*fixture, *publicationForge) {
 	t.Helper()
+	return publicationFixtureWithTracking(t, true)
+}
+func manualPublicationFixture(t *testing.T) (*fixture, *publicationForge) {
+	t.Helper()
+	return publicationFixtureWithTracking(t, false)
+}
+func publicationFixtureWithTracking(t *testing.T, tracked bool) (*fixture, *publicationForge) {
+	t.Helper()
 	f, _ := bindingFixture(t)
 	base, _, err := f.repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
@@ -84,19 +96,28 @@ func publicationFixture(t *testing.T) (*fixture, *publicationForge) {
 	require.NoError(t, err)
 	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: prior, Desired: git.RefValue{Exists: true, Object: commit}}}))
 	f.source = record.Source{Commit: record.ObjectID(commit), Tree: tree, Base: record.ObjectID(base)}
-	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
-		change, err := tx.Change(ctx, "change")
-		if err != nil {
-			return err
-		}
-		change.Branch, change.CurrentRevision, change.Targets = "candidate", "publication_revision", []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}
-		if err := tx.PutRevision(ctx, record.Revision{ID: change.CurrentRevision, ChangeID: change.ID, Previous: "revision", Source: f.source, CreatedAt: f.now()}); err != nil {
-			return err
-		}
-		return tx.PutChange(ctx, change)
-	}))
+	if tracked {
+		require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+			change, err := tx.Change(ctx, "change")
+			if err != nil {
+				return err
+			}
+			change.Branch, change.CurrentRevision, change.Targets = "candidate", "publication_revision", []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}
+			if err := tx.PutRevision(ctx, record.Revision{ID: change.CurrentRevision, ChangeID: change.ID, Previous: "revision", Source: f.source, CreatedAt: f.now()}); err != nil {
+				return err
+			}
+			return tx.PutChange(ctx, change)
+		}))
+	}
 	request := reuseRequest(f, "passed")
 	request.Spec.Targets = []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}
+	if !tracked {
+		input := bindRequest(f, "passed")
+		input.Build.VerifierDigest = "fixture:v1"
+		bound, err := f.engine.BindVerification(t.Context(), input)
+		require.NoError(t, err)
+		request = bound.Request
+	}
 	completeVerification(t, f, request, record.VerdictPassed)
 	remote := filepath.Join(t.TempDir(), "remote.git")
 	out, err := exec.CommandContext(t.Context(), "git", "init", "--bare", "-q", remote).CombinedOutput()

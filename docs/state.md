@@ -204,6 +204,8 @@ Schema 5 adds nullable `jobs.reused_attempt`, which references the original `att
 
 `pull_requests` retains the latest observation and stable forge/repository/number identity for each change. `changes.published_revision` and `changes.pull_request_id` retain publication provenance and association; writers validate both within the scoped repository/change. Jobs retain their accepted publication choices in their options, and action writers enforce agreement and immutable intent. Small publication/PR JSON values are per record, not full-state snapshots. The adapter does not track unrelated Git commands.
 
+Publishing a previously untracked branch uses the existing change/revision tables. The workflow creates those rows in the same transaction as the request, job, and publication intent; evidence failure, branch-association conflicts, or a remote-head reservation conflict roll back the entire adoption. Verification lookup permits an omitted target name only with an exact tree and Portfile, using the existing source-tree index to discover the latest terminal target/configuration. Repository scope and the query limit remain mandatory. No schema migration is required for branch adoption.
+
 Migration 6 preserves existing source, revision, job, verification, and provider history. The reader adds point lookups by publication job and PR ID, used by consistent status snapshots. No broad action enumeration or second coordination interface is required by this slice.
 
 

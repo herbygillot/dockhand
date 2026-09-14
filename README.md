@@ -85,14 +85,14 @@ dockhand bump jq 1.8.1 --diff
 
 Omitting the version selects the newest eligible stable numeric GitHub version using supported evaluated livecheck metadata and native MacPorts ordering. Discovery uses upstream repository tags by default; `github.tarball_from releases` selects published releases instead. Already-current ports complete without creating a branch or starting verification. Unknown or incomplete discovery requires attention. Explicit versions also support the evaluated upstream tag prefix. The editor handles supported literal `version`, `github.setup`, and GitHub-backed `go.setup` sources, including the Go PortGroup’s toolchain pre-check, and one direct archive with literal checksums; see the [CLI design](docs/cli-design.md) for limits. Verification uses available dependency binaries by default; `--from-source` opts into building the dependency stack from source.
 
-Publish a tracked contribution after verifying and committing its contents:
+Publish a contribution, including a branch created with ordinary Git commands, after verifying and committing its contents:
 
 ```sh
 dockhand publish --branch update-jq --dry-run
 dockhand publish --branch update-jq --wait
 ```
 
-Without `--branch`, publication selects the current local branch's committed contents. The first path requires one contribution commit, changes confined to its one tracked port directory, and passing evidence for its complete tree and target. It uses that result's recorded image, verifier, platform, variants, and build settings; no image flag or new build is needed. Missing or failed evidence requires an explicit `verify` first.
+Without `--branch`, publication selects the current local branch's committed contents. The first path requires one contribution commit, changes confined to one verified port directory, and passing evidence for its complete tree and target. It uses that result's recorded image, verifier, platform, variants, and build settings; no image flag or new build is needed. Missing or failed evidence requires an explicit `verify` first. A user-created branch is adopted only when publication is accepted; `--dry-run` accepts no job and creates no contribution.
 
 The push remote defaults to `origin`; the PR target comes from `upstream` when configured, then the fork parent, then the push repository. `--remote`, `--upstream`, and `--base` override those choices. Git uses its credentials; the API reads `GH_TOKEN`, then `GITHUB_TOKEN`. Tokens are not persisted. The commit supplies the title and initial body; existing PR bodies are preserved.
 

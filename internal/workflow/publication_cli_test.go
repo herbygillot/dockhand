@@ -17,12 +17,13 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/cli"
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestPublishCLIPlansAndCompletesWithoutAVerificationProvider(t *testing.T) {
-	f, hosting := publicationFixture(t)
+func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
+	f, hosting := manualPublicationFixture(t)
 	remoteURL := "https://github.com/author/ports.git"
 	command := exec.CommandContext(t.Context(), "git", "remote", "set-url", "origin", remoteURL)
 	command.Dir = f.repo.Root
@@ -70,6 +71,13 @@ func TestPublishCLIPlansAndCompletesWithoutAVerificationProvider(t *testing.T) {
 	require.NoError(t, json.Unmarshal(output.Bytes(), &plan))
 	require.Equal(t, f.source.Commit, plan.Publication.Desired.Head)
 	require.Zero(t, writes)
+	requireUntrackedPublication(t, f)
+	before, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Len(t, before.Jobs, 1, "dry run must not accept a publication job")
+	head, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+	require.NoError(t, err)
+	require.False(t, head.Exists)
 	output.Reset()
 	diagnostics.Reset()
 	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--wait", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)

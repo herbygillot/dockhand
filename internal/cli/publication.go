@@ -17,7 +17,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 	var options publish.Options
 	var dryRun, wait bool
 	cmd := &cobra.Command{Use: "publish", Short: "Publish a verified, committed contribution to GitHub", Args: cobra.NoArgs,
-		Long: "Publish the current tracked branch, or select one with --branch. Uses the latest passing verification for the complete committed tree and its recorded build configuration. The contribution must contain one commit in one tracked port directory. Existing PR bodies are preserved. Without --wait, return after driver pickup; --wait follows confirmation of the pushed head and PR metadata. Ctrl-C detaches, and wait or start resumes the durable job. GH_TOKEN or GITHUB_TOKEN supplies GitHub API authentication. Git uses its configured credentials.",
+		Long: "Publish the current branch, or select one with --branch. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. Without --wait, return after driver pickup; --wait follows confirmation of the pushed head and PR metadata. Ctrl-C detaches, and wait or start resumes the durable job. GH_TOKEN or GITHUB_TOKEN supplies GitHub API authentication. Git uses its configured credentials.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			services, err := app.Build(cmd.Context(), r.config)
 			if err != nil {
@@ -33,7 +33,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 				if r.json {
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(request.Spec)
 				}
-				_, err := fmt.Fprintf(cmd.OutOrStdout(), "Publish %s at %s\n  %s:%s -> %s:%s\n  title: %s\n  verification: %s (%s %s %s; tests %s; from source %t)\n", plain(spec.HeadBranch), spec.Desired.Head, plain(spec.HeadRepository), plain(spec.HeadBranch), plain(spec.Repository), plain(spec.BaseBranch), plain(spec.Desired.Title), spec.EvidenceAttempt, request.Spec.Build.Platform.OS, request.Spec.Build.Platform.Version, request.Spec.Build.Platform.Architecture, request.Spec.Build.Tests, request.Spec.Build.FromSource)
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "Publish %s at %s\n  %s:%s -> %s:%s\n  title: %s\n  target: %s\n  verification: %s (%s %s %s; tests %s; from source %t)\n", plain(spec.HeadBranch), spec.Desired.Head, plain(spec.HeadRepository), plain(spec.HeadBranch), plain(spec.Repository), plain(spec.BaseBranch), plain(spec.Desired.Title), plain(targetLabel(request.Spec.Targets[0])), spec.EvidenceAttempt, request.Spec.Build.Platform.OS, request.Spec.Build.Platform.Version, request.Spec.Build.Platform.Architecture, request.Spec.Build.Tests, request.Spec.Build.FromSource)
 				return err
 			}
 			receipt, err := services.Workflow.Submit(cmd.Context(), request)
@@ -48,7 +48,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 			return r.attach(cmd, services, receipt.JobID, milestone, false, false, &receipt)
 		},
 	}
-	cmd.Flags().StringVar(&branch, "branch", "", "Publish committed contents of this tracked local branch")
+	cmd.Flags().StringVar(&branch, "branch", "", "Publish committed contents of this local branch")
 	cmd.Flags().StringVar(&options.Remote, "remote", "origin", "Git remote whose push URL receives the contribution")
 	cmd.Flags().StringVar(&options.Upstream, "upstream", "", "Upstream Git remote (defaults to upstream, then the fork parent)")
 	cmd.Flags().StringVar(&options.Base, "base", "", "PR base branch (defaults to the upstream default branch)")

@@ -87,12 +87,11 @@ func (r *Repository) Contribution(ctx context.Context, base, commit string) (str
 	if !ValidObjectID(base) || !ValidObjectID(commit) {
 		return "", nil, fmt.Errorf("git: contribution requires base and commit objects")
 	}
-	parents, err := r.output(ctx, "rev-list", "--parents", "-n", "1", commit, "--")
+	parent, err := r.SingleParent(ctx, commit)
 	if err != nil {
 		return "", nil, err
 	}
-	fields := strings.Fields(string(parents))
-	if len(fields) != 2 || fields[0] != commit || fields[1] != base {
+	if parent != base {
 		return "", nil, fmt.Errorf("git: publication requires one commit above the recorded base; squash or rebind the contribution")
 	}
 	message, err := r.output(ctx, "show", "-s", "--format=%B", commit, "--")

@@ -48,6 +48,22 @@ func TestVerificationLookupIsBoundedScopedAndIncludesNegativeEvidence(t *testing
 		require.Equal(t, record.AttemptID("a-39"), attempts[0].ID)
 		require.Equal(t, record.VerdictFailed, attempts[0].Evidence.Verdict)
 		require.Equal(t, record.AttemptID("a-08"), attempts[31].ID)
+		query.Target.Name = ""
+		query.Limit = 1
+		attempts, err = r.VerificationCandidates(ctx, query)
+		require.NoError(t, err)
+		require.Len(t, attempts, 1)
+		require.Equal(t, record.AttemptID("a-39"), attempts[0].ID)
+		require.Equal(t, "fixture", attempts[0].Spec.Target.Name)
+		query.Target.Portfile = "other/Portfile"
+		attempts, err = r.VerificationCandidates(ctx, query)
+		require.NoError(t, err)
+		require.Empty(t, attempts)
+		query.Target.Portfile = "Portfile"
+		query.Tree = ""
+		_, err = r.VerificationCandidates(ctx, query)
+		require.ErrorIs(t, err, state.ErrInvalid, "port-only lookup requires an exact tree")
+		query.Target.Name = "fixture"
 		query.Tree = record.ObjectID(strings.Repeat("c", 40))
 		attempts, err = r.VerificationCandidates(ctx, query)
 		require.NoError(t, err)

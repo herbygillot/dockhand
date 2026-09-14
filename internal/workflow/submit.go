@@ -20,7 +20,8 @@ import (
 type Request struct {
 	ID   record.RequestID
 	Spec record.JobSpec
-	// Branch adopts the explicit source as a branch revision during acceptance.
+	// Branch adopts the explicit source as a revision of an existing change.
+	// Publish also creates the contribution when the branch is not yet tracked.
 	Branch *BranchInput
 }
 

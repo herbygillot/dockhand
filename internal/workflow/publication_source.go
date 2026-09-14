@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,8 @@ type PublicationRequest struct {
 	Options publish.Options
 }
 
+// BindPublication freezes committed source, applicable evidence, and remote
+// preconditions without adopting a branch. Submit owns durable adoption.
 func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) (Request, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
 		return Request{}, ErrNoState
@@ -58,8 +61,11 @@ func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) 
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.OpenChangeByBranch(ctx, input.Branch)
+		if errors.Is(err, state.ErrNotFound) {
+			return nil
+		}
 		if err != nil {
-			return fmt.Errorf("publish requires a tracked open contribution on %s: %w", input.Branch, err)
+			return err
 		}
 		revision, err = r.Revision(ctx, change.CurrentRevision)
 		if err != nil {
@@ -68,18 +74,6 @@ func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) 
 		source.Base = revision.Source.Base
 		if len(change.Targets) != 1 {
 			return fmt.Errorf("%w: publish currently requires one tracked target", ErrInvalidRequest)
-		}
-		candidates, err := r.VerificationCandidates(ctx, state.VerificationQuery{Target: change.Targets[0], Tree: source.Tree, Limit: 1})
-		if err != nil {
-			return err
-		}
-		if len(candidates) == 0 {
-			return fmt.Errorf("%w: verify the committed contribution before publishing", publish.ErrPrecondition)
-		}
-		evidence = candidates[0]
-		wanted := record.BuildSpec{Source: source, Target: change.Targets[0], Config: evidence.Spec.Config}
-		if verdict := verify.Applicable(wanted, evidence); !verdict.Matches {
-			return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 		}
 		if change.PullRequestID != "" {
 			pr, err := r.PullRequest(ctx, change.PullRequestID)
@@ -93,9 +87,47 @@ func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) 
 	if err != nil {
 		return Request{}, err
 	}
+	query := state.VerificationQuery{Tree: source.Tree, Limit: 1}
+	if change.ID == "" {
+		source, query.Target.Portfile, err = e.Publisher.UntrackedSource(ctx, source)
+		if err != nil {
+			return Request{}, err
+		}
+		change.Branch = input.Branch
+	} else {
+		query.Target = change.Targets[0]
+	}
+	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		candidates, err := r.VerificationCandidates(ctx, query)
+		if err != nil {
+			return err
+		}
+		if len(candidates) == 0 {
+			return fmt.Errorf("%w: verify the committed contribution before publishing", publish.ErrPrecondition)
+		}
+		evidence = candidates[0]
+		if change.ID == "" {
+			change.Targets = []record.Target{evidence.Spec.Target}
+		}
+		wanted := record.BuildSpec{Source: source, Target: change.Targets[0], Config: evidence.Spec.Config}
+		if verdict := verify.Applicable(wanted, evidence); !verdict.Matches {
+			return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
+		}
+		return nil
+	})
+	if err != nil {
+		return Request{}, err
+	}
 	publication, err := e.Publisher.Plan(ctx, change, source, evidence, associated, input.Options)
 	if err != nil {
 		return Request{}, err
+	}
+	currentCommit, currentTree, err := e.Repo.Branch(ctx, input.Branch)
+	if err != nil {
+		return Request{}, err
+	}
+	if currentCommit != commit || currentTree != tree {
+		return Request{}, fmt.Errorf("%w: branch %s changed while planning publication; run publish again", ErrStaleRevision, input.Branch)
 	}
 	spec, err := normalizeSpec(record.JobSpec{Action: record.Publish, Source: source, Targets: change.Targets, Build: &evidence.Spec.Config, Verification: record.VerificationRequired, Destination: record.Published, Publication: &publication})
 	if err != nil {

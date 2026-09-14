@@ -3,9 +3,7 @@ package publish
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -99,32 +97,4 @@ func (s *Service) Plan(ctx context.Context, change record.Change, source record.
 		return spec, fmt.Errorf("%w: PR head and push destination disagree", ErrPrecondition)
 	}
 	return spec, nil
-}
-
-func (s *Service) SourceContent(ctx context.Context, source record.Source, targets []record.Target) (record.PublicationContent, error) {
-	if len(targets) != 1 {
-		return record.PublicationContent{}, fmt.Errorf("%w: publication currently requires one tracked target", ErrPrecondition)
-	}
-	message, paths, err := s.Repo.Contribution(ctx, string(source.Base), string(source.Commit))
-	if err != nil {
-		return record.PublicationContent{}, fmt.Errorf("%w: %v", ErrPrecondition, err)
-	}
-	directory := path.Dir(targets[0].Portfile) + "/"
-	if len(paths) == 0 {
-		return record.PublicationContent{}, fmt.Errorf("%w: contribution is empty", ErrPrecondition)
-	}
-	for _, name := range paths {
-		if !strings.HasPrefix(name, directory) {
-			return record.PublicationContent{}, fmt.Errorf("%w: %s is outside the verified port directory", ErrPrecondition, name)
-		}
-	}
-	lines := strings.SplitN(strings.TrimSpace(message), "\n", 2)
-	title, body := strings.TrimSpace(lines[0]), ""
-	if len(lines) == 2 {
-		body = strings.TrimSpace(lines[1])
-	}
-	if title == "" {
-		return record.PublicationContent{}, fmt.Errorf("%w: commit title is empty", ErrPrecondition)
-	}
-	return record.PublicationContent{Head: source.Commit, Title: title, Body: body}, nil
 }
