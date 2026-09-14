@@ -33,6 +33,7 @@ Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released 
 - [State-store design](docs/state.md)
 - [SQLite implementation report](docs/activity/2026-09-12-sqlite-state.md)
 - [SQLite performance measurements](docs/performance/2026-09-12-sqlite-state.md)
+- [Implementation roadmap](docs/roadmap.md)
 - [State design activity report](docs/activity/2026-09-12-state-design.md)
 - [Component structure](docs/components.md)
 - [Architecture](docs/architecture.md)
