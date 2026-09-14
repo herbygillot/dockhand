@@ -27,7 +27,7 @@ func (m *Manager) interval() (time.Duration, error) {
 	}
 	return m.Interval, nil
 }
-func (m *Manager) drive(ctx context.Context, step func() (bool, error)) error {
+func (m *Manager) drive(ctx context.Context, step func() (done, progressed bool, err error)) error {
 	interval, err := m.interval()
 	if err != nil {
 		return err
@@ -36,9 +36,12 @@ func (m *Manager) drive(ctx context.Context, step func() (bool, error)) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		done, err := step()
+		done, progressed, err := step()
 		if err != nil || done {
 			return err
+		}
+		if progressed {
+			continue
 		}
 		timer := time.NewTimer(interval)
 		select {
@@ -49,24 +52,29 @@ func (m *Manager) drive(ctx context.Context, step func() (bool, error)) error {
 		}
 	}
 }
-func (m *Manager) cycle(ctx context.Context, e Engine, scope workflow.Scope) error {
+func (m *Manager) cycle(ctx context.Context, e Engine, scope workflow.Scope) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
 	result, err := e.Cycle(ctx, scope)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if m.OnCycle != nil {
-		return m.OnCycle(result)
+		if err = m.OnCycle(result); err != nil {
+			return false, err
+		}
 	}
-	return nil
+	return len(result.Advanced) > 0, nil
 }
 
 // Run advances work in the current process until its context is canceled.
 // Claims in state allow multiple callers; there is no resident singleton lock.
 func (m *Manager) Run(ctx context.Context, e Engine, scope workflow.Scope) error {
-	return m.drive(ctx, func() (bool, error) { return false, m.cycle(ctx, e, scope) })
+	return m.drive(ctx, func() (bool, bool, error) {
+		progressed, err := m.cycle(ctx, e, scope)
+		return false, progressed, err
+	})
 }
 
 // Attach resumes a fixed job selection and returns its last recorded snapshot.
@@ -76,21 +84,22 @@ func (m *Manager) Attach(ctx context.Context, e Engine, scope workflow.Scope, mi
 		return workflow.Status{}, fmt.Errorf("proc: attachment requires explicit jobs and a valid milestone")
 	}
 	var status workflow.Status
-	err := m.drive(ctx, func() (bool, error) {
+	err := m.drive(ctx, func() (bool, bool, error) {
 		current, err := e.Status(ctx, scope)
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 		status = current
 		if observe != nil {
 			if err = observe(status); err != nil {
-				return false, err
+				return false, false, err
 			}
 		}
 		if workflow.Reached(status, milestone) {
-			return true, nil
+			return true, false, nil
 		}
-		return false, m.cycle(ctx, e, scope)
+		progressed, err := m.cycle(ctx, e, scope)
+		return false, progressed, err
 	})
 	return status, err
 }

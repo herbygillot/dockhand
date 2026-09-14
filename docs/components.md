@@ -202,7 +202,7 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 
 ### CLI execution and attachment
 
-`app.Services.BindVerification` composes native platform discovery, Tart configuration capture, and workflow source binding. Cobra parses input, submits through the engine, renders recorded progress, and selects an attachment milestone. `workflow.Reached` evaluates admission/completion from records. `proc.Manager` owns the cancellable loop shared by targeted attachment and resident execution; it owns no workflow state and creates no driver discovery records. Resident passes use indexed cycle queries and do not build full historical status snapshots.
+`app.Services.BindVerification` composes native platform discovery, Tart configuration capture, and workflow source binding. Cobra parses input, submits through the engine, renders recorded progress, and selects an attachment milestone. `workflow.Reached` evaluates admission/completion from records. `proc.Manager` owns the cancellable loop shared by targeted attachment and resident execution; it owns no workflow state and creates no driver discovery records. A cycle that records job advancement runs again immediately so ready phase transitions do not inherit the idle polling interval. A pass without job progress waits before polling again. Resident passes use indexed cycle queries and do not build full historical status snapshots.
 
 The Tart guest runs lint, build, declared tests when enabled, and installation in that order. Build, test, and install enable debug output, which goes to the same retained log streamed by `--trace`; lint remains quiet. Build failures stop the sequence and record a separate build step. Dependency binaries remain enabled unless `--from-source` is selected.
 

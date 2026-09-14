@@ -37,10 +37,11 @@ func (e *scriptedEngine) Cycle(ctx context.Context, scope workflow.Scope) (workf
 	if e.index < len(e.stages)-1 {
 		e.index++
 	}
+	result := workflow.CycleResult{Advanced: []record.JobID{"job"}}
 	if e.problem {
-		return workflow.CycleResult{Problems: []workflow.JobProblem{{JobID: "job", Detail: "temporary"}}}, nil
+		result.Problems = []workflow.JobProblem{{JobID: "job", Detail: "temporary"}}
 	}
-	return workflow.CycleResult{}, nil
+	return result, nil
 }
 func stages() []record.Job {
 	now := time.Now()
@@ -56,7 +57,7 @@ func TestAttachmentMilestonesUseRecordedProgress(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			engine := &scriptedEngine{stages: stages(), problem: true}
 			problems := 0
-			manager := Manager{Interval: time.Millisecond, OnCycle: func(result workflow.CycleResult) error { problems += len(result.Problems); return nil }}
+			manager := Manager{Interval: time.Hour, OnCycle: func(result workflow.CycleResult) error { problems += len(result.Problems); return nil }}
 			result, err := manager.Attach(t.Context(), engine, workflow.Scope{Jobs: []record.JobID{"job"}}, test.milestone, nil)
 			require.NoError(t, err)
 			require.Equal(t, test.cycles, engine.cycles)
