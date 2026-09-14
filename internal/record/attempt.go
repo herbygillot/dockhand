@@ -69,9 +69,24 @@ type EnvironmentCapabilities struct {
 	GuestAgentVersion string `json:",omitempty"`
 }
 
-// EnvironmentEvidence binds a capability observation to the immutable
-// environment used by an attempt.
+// GuestEnvironment records diagnostic facts from the actual verification run.
+// These details do not participate in capability matching.
+type GuestEnvironment struct {
+	MacOSVersion             string
+	MacOSBuild               string
+	Architecture             string
+	DeveloperTools           DeveloperTools
+	DeveloperToolsVersion    string
+	MacPortsVersion          string
+	NoActivePorts            bool
+	NoForeignPackageManagers bool
+}
+
+// EnvironmentEvidence binds observed capabilities and run diagnostics to the image.
 type EnvironmentEvidence struct {
+	Image             string            `json:",omitempty"`
+	ProviderVersion   string            `json:",omitempty"`
+	Guest             *GuestEnvironment `json:",omitempty"`
 	Provider          string
 	EnvironmentDigest string
 	CapabilityDigest  string
@@ -217,6 +232,8 @@ type Failure struct {
 
 // StepResult records the outcome of one package phase within verification.
 type StepResult struct {
+	Command []string `json:",omitempty"`
+	User    string   `json:",omitempty"`
 	Package string
 	Phase   string
 	Verdict Verdict
@@ -227,7 +244,8 @@ type StepResult struct {
 // Running observations have an unknown verdict; a terminal outcome must be
 // explicit. Referenced artifacts and logs may be stored outside the state store.
 type Evidence struct {
-	Verdict Verdict
+	TestOmission string `json:",omitempty"`
+	Verdict      Verdict
 	// Environment identifies the observed build environment when the provider requires it.
 	Environment *EnvironmentEvidence `json:",omitempty"`
 	// Failure provides diagnostic context when present.

@@ -14,20 +14,42 @@ fconfigure $log -buffering line
 set steps {}
 set failure null
 set detail ""
+set testOmission ""
+set environment [dict create NoActivePorts false NoForeignPackageManagers false]
+set runUser ""
+
+proc diagnostic {args} {
+    if {[catch {exec {*}$args 2>/dev/null} value]} {return ""}
+    return [string trim $value]
+}
+proc jsonStrings {values} {
+    set encoded {}
+    foreach value $values {lappend encoded [json::write string $value]}
+    return [json::write array {*}$encoded]
+}
+proc environmentJSON {} {
+    global environment
+    set fields {}
+    dict for {key value} $environment {
+        if {$key ni {NoActivePorts NoForeignPackageManagers}} {set value [json::write string $value]}
+        lappend fields $key $value
+    }
+    return [json::write object {*}$fields]
+}
 
 proc save {state verdict} {
-    global root input steps failure detail
-    set data [json::write object Protocol 1 ID [json::write string [dict get $input ID]] Digest [json::write string [dict get $input Digest]] State [json::write string $state] Verdict [json::write string $verdict] Steps [json::write array {*}$steps] Failure $failure Detail [json::write string $detail]]
+    global root input steps failure detail testOmission
+    set data [json::write object Protocol 1 ID [json::write string [dict get $input ID]] Digest [json::write string [dict get $input Digest]] Environment [environmentJSON] TestOmission [json::write string $testOmission] State [json::write string $state] Verdict [json::write string $verdict] Steps [json::write array {*}$steps] Failure $failure Detail [json::write string $detail]]
     set fd [open $root/result.json.tmp w]
     puts $fd $data
     close $fd
     file rename -force $root/result.json.tmp $root/result.json
 }
 proc step {phase argv} {
-    global name log steps detail failure root
+    global name log steps detail failure root runUser
     puts $log "dockhand: $phase"
     if {[catch {exec {*}$argv >@$log 2>@$log} message]} {
-        lappend steps [json::write object Package [json::write string $name] Phase [json::write string $phase] Verdict [json::write string failed] Detail [json::write string $message]]
+        lappend steps [json::write object Package [json::write string $name] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $message]]
         set detail "$phase failed: $message"
         set fd [open $root/build.log r]
         set text [read $fd]
@@ -42,20 +64,36 @@ proc step {phase argv} {
         }
         return -code error $message
     }
-    lappend steps [json::write object Package [json::write string $name] Phase [json::write string $phase] Verdict [json::write string passed]]
+    lappend steps [json::write object Package [json::write string $name] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string passed]]
 }
 
 save running unknown
 set phase setup
 try {
+    set runUser [diagnostic /usr/bin/id -un]
+    dict set environment MacOSVersion [diagnostic /usr/bin/sw_vers -productVersion]
+    dict set environment MacOSBuild [diagnostic /usr/bin/sw_vers -buildVersion]
+    dict set environment Architecture [diagnostic /usr/bin/uname -m]
+    set tools [diagnostic /usr/bin/xcode-select -p]
+    if {[string match */CommandLineTools $tools]} {
+        dict set environment DeveloperTools command-line-tools
+        set version [diagnostic /usr/sbin/pkgutil --pkg-info=com.apple.pkg.CLTools_Executables]
+        if {[regexp -line {^version: (.+)$} $version -> value]} {dict set environment DeveloperToolsVersion $value}
+    } elseif {$tools ne ""} {
+        dict set environment DeveloperTools xcode
+        dict set environment DeveloperToolsVersion [diagnostic /usr/bin/xcodebuild -version]
+    }
+    dict set environment MacPortsVersion [diagnostic $prefix/bin/port version]
     set sources [open $prefix/etc/macports/sources.conf w]
     puts $sources "file://$root/ports \[default\]"
     close $sources
     foreach foreign {/opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg} {
         if {[file exists $foreign]} {error "unexpected package-manager prefix $foreign"}
     }
+    dict set environment NoForeignPackageManagers true
     set installed [exec $prefix/bin/port -q installed active]
     if {[string trim $installed] ne ""} {error "prepared image already has installed ports: $installed"}
+    dict set environment NoActivePorts true
     package require macports
     mportinit
     set expected [dict get $spec Config Platform]
@@ -88,6 +126,10 @@ try {
     if {[dict get $spec Config Tests] eq "declared" && [string is true -strict $declared]} {
         set phase test
         step test [concat $base -d test $selection]
+    } elseif {[dict get $spec Config Tests] eq "skip"} {
+        set testOmission "Skipped by request"
+    } else {
+        set testOmission "Port declares no test phase"
     }
     set phase install
     step install [concat $base -d install $selection]

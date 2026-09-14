@@ -183,7 +183,8 @@ func TestWorkflowRejectsPublicationActionOutsideAcceptedIntent(t *testing.T) {
 func TestPublicationPushesConfirmsAndRetainsAssociationAcrossRestart(t *testing.T) {
 	f, hosting := publicationFixture(t)
 	request := bindPublication(t, f, "publish")
-	require.Equal(t, "Contribution details", request.Spec.Publication.Desired.Body)
+	require.Contains(t, request.Spec.Publication.Desired.Body, "Contribution details")
+	require.Contains(t, request.Spec.Publication.Desired.Body, "Submitted by [dockhand]")
 	receipt, err := f.engine.Submit(t.Context(), request)
 	require.NoError(t, err)
 	retry, err := f.engine.Submit(t.Context(), request)

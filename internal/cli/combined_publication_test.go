@@ -113,6 +113,11 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			require.Equal(t, entry.Job.ResultRevision, result.Status.Changes[0].PublishedRevision)
 			require.Equal(t, "https://github.com/author/ports/pull/1", result.Status.PullRequests[0].Ref.URL)
 			require.Equal(t, record.AttemptID("original-attempt"), entry.Job.ReusedAttempt)
+			body := entry.Publications[0].Spec.Desired.Body
+			require.Contains(t, body, "original-attempt")
+			require.Contains(t, body, "[x] Squashed")
+			require.Contains(t, body, "[ ] Ran the port's tests")
+			require.Contains(t, body, "[ ] Completed a full install")
 			require.Nil(t, entry.Job.Spec.Build)
 			require.Equal(t, record.BuildRequirements{Provider: "tart", Platform: entry.Reused.Spec.Config.Platform, CapabilitiesRequired: true, Tests: record.TestDeclared}, *entry.Job.Spec.BuildRequirements)
 			require.Empty(t, entry.Attempts)
@@ -123,6 +128,13 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			all, err := app.Status(t.Context(), config)
 			require.NoError(t, err)
 			require.Len(t, all.Jobs, 3, "one preparation fixture, one evidence fixture, one combined job")
+			stdout.Reset()
+			stderr.Reset()
+			require.NoError(t, Run(t.Context(), []string{"publish", "--branch", entry.Job.Prepared.Branch, "--remote", "contribution", "--base", "main", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config))
+			require.Contains(t, stdout.String(), body)
+			mu.Lock()
+			assert.Equal(t, 1, writes)
+			mu.Unlock()
 		})
 	}
 }

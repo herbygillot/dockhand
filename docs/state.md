@@ -255,3 +255,9 @@ Branch names remain a workflow selector rather than a foreign key. The durable c
 Tart consults this cache after hashing the stopped source image. A compatible hit avoids another guest probe. An incompatible hit rejects submission before consuming capacity. On a miss, normal provider admission reserves capacity, clones and boots the image, then probes that same disposable VM before staging source. A compatible VM continues into the requested build. An incompatible VM produces a blocked setup result and is stopped immediately, while normal resource cleanup retains ownership of the clone.
 
 The setup manifest is a declaration checked against the observed guest. It is not trusted in place of the probe, and a custom image without a manifest remains eligible for observation. Verification evidence stores the provider, immutable environment digest, capability identity, and capabilities used by the run. Reuse requires that evidence to satisfy the accepted platform, developer-tools profile, and capability identity. Provider execution payloads remain immutable; admitted runs resolve the shared capability observation by their recorded environment digest.
+
+## Generated contribution identity (schema 12)
+
+`changes.generated_commit` retains the original fully generated contribution commit, or an empty value when provenance is unknown. It is immutable across amendments and branch renames. Publication compares the current single-commit head to this identity instead of treating a trailer as proof of generation. Migration leaves existing rows unknown.
+
+Verification evidence also retains optional per-run guest diagnostics, image/provider version, exact step argv and user, and test-omission reasons in its existing JSON payload. These diagnostics do not participate in capability identity and are never filled from a later publisher's host.

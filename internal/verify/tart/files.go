@@ -70,14 +70,16 @@ type guestInput struct {
 	Prefix   string
 }
 type guestResult struct {
-	Protocol int
-	ID       string
-	Digest   string
-	State    string
-	Verdict  record.Verdict
-	Steps    []record.StepResult
-	Failure  *record.Failure
-	Detail   string
+	Environment  *record.GuestEnvironment
+	TestOmission string
+	Protocol     int
+	ID           string
+	Digest       string
+	State        string
+	Verdict      record.Verdict
+	Steps        []record.StepResult
+	Failure      *record.Failure
+	Detail       string
 }
 
 // verifierDigest changes with the guest program and its launch protocol.

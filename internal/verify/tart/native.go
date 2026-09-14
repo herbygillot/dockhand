@@ -70,6 +70,14 @@ func (n *native) tartWithGuard(ctx context.Context, input io.Reader, output io.W
 	client := tartvm.Client{Executable: n.config.Executable, Home: n.config.Home}
 	return client.Run(ctx, tartvm.RunOptions{Input: input, Output: output, ExtraFiles: []*os.File{n.guard, imageGuard}}, args...)
 }
+func (n *native) Version(ctx context.Context) (string, error) {
+	out, err := n.tart(ctx, nil, nil, "--version")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func (n *native) guest(ctx context.Context, vm string, input io.Reader, args ...string) ([]byte, error) {
 	return n.execGuest(ctx, vm, input, nil, args...)
 }

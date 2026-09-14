@@ -10,21 +10,7 @@ Last updated: 2026-09-14.
 
 This order prioritizes correct contribution inputs, attribution, and recovery before expanding automatic preparation and downstream coverage. Small independent items may land separately; do not combine them into a single architectural rewrite.
 
-### 3. Generate useful, evidence-based pull-request bodies
-
-Use the relevant portions of `macports-ports/.github/PULL_REQUEST_TEMPLATE.md`, with v1's renderer as a behavioral reference rather than copying its assumptions. Start with `Submitted by [dockhand](https://github.com/herbygillot/dockhand)`, retain useful contribution description, and include `###### Tested on` and `###### Verification`. Show the complete body in publication previews. Keep this in the existing publication-content path, using the verification evidence selected for the exact published revision, including reused attempts.
-
-- **Tested on:** show observed guest macOS product version (and build/architecture when available), selected Xcode or Command Line Tools version, and provider details. For Tart, identify the Tart version and image/environment, and say pristine only when that property was established for the run. Add the missing environment metadata at observation time; do not infer macOS product versions from Darwin majors, substitute the publisher host's current configuration, or invent values for older evidence.
-- **Commit guidelines:** check only when all published contribution commits remain exactly as Dockhand generated them and the generation path has been checked against the guidelines. Existing subject templates have the expected port prefix, but current code does not validate the full message or arbitrary reason text. A Generated-by trailer alone is not proof. Check message formatting, body/trailer separation, and any applicable length/content rules before making the claim; otherwise leave the item unchecked or narrow its wording.
-- **Squashed/minimized:** check for the single unchanged Dockhand-generated contribution commit after confirming the actual published commit range.
-- **Lint:** check from a successful recorded lint step, not merely from the attempt's existence or policy.
-- **Tests:** check only if a test phase actually executed successfully. `Tests=declared` alone is insufficient. If the port declared no tests or testing was skipped, explain or omit the inapplicable item rather than claiming tests ran.
-- **Install:** check from a successful install step and show the command/options actually used, including `-d` and whether source-only mode was requested. Use a readable normalized command while retaining meaningful options and privilege context; do not claim the template's `-vst` invocation was used or that all dependencies were built from source when binary archives were allowed.
-- **Manual checks:** retain duplicate-PR, Trac-ticket, binary-functionality, and important-variant items unchecked unless the corresponding action and its scope are actually recorded. Finding the matching PR for publication recovery is not a search for all competing changes; a default-variant build is not broad variant coverage. This rendering task does not require implementing those additional checks.
-
-Preserve human edits to existing PR bodies when publishing again. Generate the initial body from frozen publication inputs; leave automatic refresh of previously generated sections for the post-publication design unless ownership is explicitly defined. Avoid making a generic template engine or new workflow layer. Test generated versus human/amended commits, executed versus skipped tests, reused evidence, missing environment metadata, meaningful command flags, and preservation of edited PR bodies.
-
-### 4. Finish the outstanding exercise corrections
+### 1. Finish the outstanding exercise corrections
 
 - Remove guest-agent release-tag assumptions from executable version checks. Use the verified installation artifact and required protocol/capabilities; keep version output diagnostic. A port executable's reported version must not be required to match its source tag.
 - Make rejected saved GitHub credentials easy to identify and replace or remove. Report the credential source without exposing its value; do not silently switch identities after authentication fails.
@@ -33,7 +19,7 @@ Preserve human edits to existing PR bodies when publishing again. Generate the i
 
 Keep live exercise results in activity reports. Add regressions for defects that remain, rather than re-queuing cancellation, recovery, or provisioning work that has already passed its exercise.
 
-### 5. Broaden source and checksum preparation
+### 2. Broaden source and checksum preparation
 
 Support explicitly named checksums for a single distfile, retaining the distfile name and its Tcl expression. Then define safe handling for multiple source distfiles and their independent checksum groups. Preserve unrelated Portfile content and reject ambiguous associations.
 
@@ -41,7 +27,7 @@ Investigate the GitLab preparation pattern rejected by the `zix` exercise. Disti
 
 These checksum and source-editing boundaries should be shared by the dependency preparation below and by standalone checksum refresh.
 
-### 6. Regenerate Go and Rust dependency declarations during bumps
+### 3. Regenerate Go and Rust dependency declarations during bumps
 
 Add explicit preparation support for `go2port`/`go.vendors` and `cargo2port`/`cargo.crates`, including `cargo.crates_github` where applicable. Derive dependency declarations and checksums from the selected new source release, using the appropriate MacPorts helpers rather than treating these declarations as ordinary single-archive checksums.
 
@@ -49,7 +35,7 @@ Account for added, removed, and changed dependencies, relevant module/lock files
 
 Implement and validate Go and Rust independently through the existing preparation contract. Neither needs a separate workflow engine or a new general-purpose plugin framework.
 
-### 7. Plan and execute dependent verification
+### 4. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 

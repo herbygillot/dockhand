@@ -62,9 +62,10 @@ type Provider struct {
 }
 
 type payload struct {
-	Request verify.Request
-	Config  Config
-	Digest  string
+	ProviderVersion string `json:",omitempty"`
+	Request         verify.Request
+	Config          Config
+	Digest          string
 }
 
 type operation struct {
@@ -76,6 +77,7 @@ type operation struct {
 }
 
 type machine interface {
+	Version(context.Context) (string, error)
 	Environment(context.Context) (Environment, error)
 	InspectCapabilities(context.Context, string, string) (capabilityInspection, error)
 	Running(context.Context) ([]string, error)
@@ -306,6 +308,11 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		}
 	}
 	data := payload{Request: request, Config: o.config, Digest: buildDigest(request.Spec)}
+	// Freeze diagnostic metadata with the immutable submission payload.
+	data.ProviderVersion, _ = o.machine.Version(ctx)
+	if err := ctx.Err(); err != nil {
+		return verify.Submission{}, err
+	}
 	raw, _ := json.Marshal(data)
 	v := record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, AttemptID: request.AttemptID, Resource: "dockhand2-" + digest([]byte(o.pool.ID + "/" + string(request.ID)))[:24], Payload: raw, State: record.ExecutionReserved, Occupied: true, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	running, err := o.machine.Running(ctx)
@@ -501,6 +508,8 @@ func (o *operation) observe(ctx context.Context, v record.ProviderExecution, dat
 	result.State = record.AttemptFinished
 	result.Verdict = status.Verdict
 	result.Steps = status.Steps
+	result.TestOmission = status.TestOmission
+	result.Environment.Guest = status.Environment
 	result.Failure = status.Failure
 	result.Detail = status.Detail
 	if _, err = verify.Judge(result); err != nil {
@@ -545,7 +554,9 @@ func (o *operation) environment(ctx context.Context, data payload) (*record.Envi
 	if problem := capabilityProblem(capabilities, data.Config, data.Request.Spec.Config); problem != "" {
 		return nil, fmt.Errorf("tart: admitted image capability conflict: %s", problem)
 	}
-	return environmentEvidence(capabilities), nil
+	observed := environmentEvidence(capabilities)
+	observed.Image, observed.ProviderVersion = data.Config.Image, data.ProviderVersion
+	return observed, nil
 }
 func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operation, record.ProviderExecution, payload, error) {
 	if run.Provider != ProviderName {

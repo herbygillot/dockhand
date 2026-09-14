@@ -62,6 +62,8 @@ func TestBuildConfigSelectsXcodeImageForRequiredTargets(t *testing.T) {
 	require.Equal(t, "dockhand-xcode-tahoe", settings.Image)
 }
 
+func (m *fakeMachine) Version(context.Context) (string, error) { return "2.30.0", nil }
+
 func (m *fakeMachine) Environment(context.Context) (Environment, error) {
 	return Environment{Digest: "sha256:fixture", Platform: testPlatform}, nil
 }
@@ -373,7 +375,8 @@ func TestRecoveryCompletesAdmittedLaunchAndPreservesResultsAcrossStopFailure(t *
 	observed, err := recovered.Observe(t.Context(), run)
 	require.NoError(t, err)
 	require.Equal(t, record.AttemptRunning, observed.State)
-	m.results[run.RunID] = guestResult{Protocol: 1, ID: string(run.RequestID), Digest: buildDigest(f.request.Spec), State: "finished", Verdict: record.VerdictPassed, Steps: []record.StepResult{{Package: "fixture", Phase: "install", Verdict: record.VerdictPassed}}}
+	guest := &record.GuestEnvironment{MacOSVersion: "26.0.1", MacOSBuild: "25A11", Architecture: "arm64", DeveloperTools: record.DeveloperToolsCommandLine, DeveloperToolsVersion: "26.0.0", NoActivePorts: true}
+	m.results[run.RunID] = guestResult{Environment: guest, TestOmission: "Port declares no test phase", Protocol: 1, ID: string(run.RequestID), Digest: buildDigest(f.request.Spec), State: "finished", Verdict: record.VerdictPassed, Steps: []record.StepResult{{Package: "fixture", Phase: "install", Verdict: record.VerdictPassed, Command: []string{"/opt/local/bin/port", "-d", "install", "fixture"}, User: "root"}}}
 	m.stopError = errors.New("lost shutdown reply")
 	_, err = recovered.Observe(t.Context(), run)
 	require.Error(t, err)
@@ -382,6 +385,11 @@ func TestRecoveryCompletesAdmittedLaunchAndPreservesResultsAcrossStopFailure(t *
 	observed, err = recovered.Observe(t.Context(), run)
 	require.NoError(t, err)
 	require.Equal(t, record.VerdictPassed, observed.Verdict)
+	require.Equal(t, guest, observed.Environment.Guest)
+	require.Equal(t, "2.30.0", observed.Environment.ProviderVersion)
+	require.Equal(t, f.provider.Config.Image, observed.Environment.Image)
+	require.Equal(t, "Port declares no test phase", observed.TestOmission)
+	require.Equal(t, []string{"/opt/local/bin/port", "-d", "install", "fixture"}, observed.Steps[0].Command)
 	require.FileExists(t, observed.Logs[0].Location)
 	released, err := recovered.Release(t.Context(), reconciliation.Submission.Resources[0])
 	require.NoError(t, err)

@@ -99,6 +99,7 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 	if err := s.Repo.CheckContributionBase(ctx, destination.BaseURL, destination.BaseBranch, string(source.Base), string(source.Commit)); err != nil {
 		return spec, err
 	}
+	content.Body = publicationBody(content, change, source, evidence)
 	spec = record.PublicationSpec{Forge: destination.Forge, Repository: destination.Repository, HeadRepository: destination.HeadRepository, BaseBranch: destination.BaseBranch, PushURL: destination.PushURL, BaseURL: destination.BaseURL, LockDirectory: destination.LockDirectory, HeadBranch: change.Branch, EvidenceAttempt: evidence.ID, Desired: content}
 	if associated != nil {
 		spec.Desired.Body = associated.Body

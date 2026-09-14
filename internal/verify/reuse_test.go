@@ -106,16 +106,24 @@ func TestApplicabilityRequiresCapabilitiesObservedInTheAcceptedEnvironment(t *te
 }
 
 func TestJudgeRetainsEnvironmentEvidence(t *testing.T) {
+	commands := []string{"port", "-d", "install"}
 	environment := &record.EnvironmentEvidence{
 		Provider: "tart", EnvironmentDigest: "sha256:image", CapabilityDigest: "sha256:capabilities",
+		Guest:        &record.GuestEnvironment{MacOSVersion: "26.0"},
 		Capabilities: record.EnvironmentCapabilities{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}},
 	}
 	evidence, err := verify.Judge(verify.Observation{
 		Run: record.ProviderRun{Provider: "tart", RequestID: "request", RunID: "run"}, State: record.AttemptFinished,
-		Environment: environment, Verdict: record.VerdictPassed, ObservedAt: time.Now(),
+		Environment: environment, Verdict: record.VerdictPassed, ObservedAt: time.Now(), TestOmission: "Skipped by request",
+		Steps: []record.StepResult{{Package: "fixture", Phase: "install", Verdict: record.VerdictPassed, Command: commands}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, environment, evidence.Environment)
+	environment.Guest.MacOSVersion = "changed"
+	commands[1] = "changed"
+	require.Equal(t, "26.0", evidence.Environment.Guest.MacOSVersion)
+	require.Equal(t, "-d", evidence.Steps[0].Command[1])
+	require.Equal(t, "Skipped by request", evidence.TestOmission)
 	environment.CapabilityDigest = "changed"
 	require.Equal(t, "sha256:capabilities", evidence.Environment.CapabilityDigest)
 

@@ -41,16 +41,17 @@ type Submission struct {
 }
 
 type Observation struct {
-	Run         record.ProviderRun
-	State       record.AttemptState
-	Environment *record.EnvironmentEvidence `json:",omitempty"`
-	Steps       []record.StepResult
-	Artifacts   []record.Artifact
-	Logs        []record.Artifact
-	Detail      string
-	Verdict     record.Verdict
-	Failure     *record.Failure
-	ObservedAt  time.Time
+	TestOmission string `json:",omitempty"`
+	Run          record.ProviderRun
+	State        record.AttemptState
+	Environment  *record.EnvironmentEvidence `json:",omitempty"`
+	Steps        []record.StepResult
+	Artifacts    []record.Artifact
+	Logs         []record.Artifact
+	Detail       string
+	Verdict      record.Verdict
+	Failure      *record.Failure
+	ObservedAt   time.Time
 }
 
 type ReconciliationState string

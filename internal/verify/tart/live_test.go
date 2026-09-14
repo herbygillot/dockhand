@@ -196,5 +196,27 @@ destroot {
 	require.NotNil(t, status.Jobs[0].Attempts[0].Evidence.Environment)
 	require.Equal(t, environment.Digest, status.Jobs[0].Attempts[0].Evidence.Environment.EnvironmentDigest)
 	require.NotEmpty(t, status.Jobs[0].Attempts[0].Evidence.Logs)
+	evidence := status.Jobs[0].Attempts[0].Evidence
+	require.NotNil(t, evidence.Environment.Guest)
+	require.NotEmpty(t, evidence.Environment.Guest.MacOSVersion)
+	require.NotEmpty(t, evidence.Environment.Guest.MacOSBuild)
+	require.NotEmpty(t, evidence.Environment.Guest.DeveloperToolsVersion)
+	require.NotEmpty(t, evidence.Environment.ProviderVersion)
+	require.Equal(t, image, evidence.Environment.Image)
+	require.True(t, evidence.Environment.Guest.NoActivePorts)
+	require.True(t, evidence.Environment.Guest.NoForeignPackageManagers)
+	require.Empty(t, evidence.TestOmission)
+	require.Len(t, evidence.Steps, 4)
+	for _, step := range evidence.Steps {
+		require.Equal(t, "root", step.User)
+		require.Contains(t, step.Command, "-s")
+		if step.Phase == "lint" {
+			require.NotContains(t, step.Command, "-d")
+		} else {
+			require.Contains(t, step.Command, "-d")
+		}
+	}
+	metadata, _ := json.Marshal(evidence.Environment)
+	t.Logf("observed environment: %s", metadata)
 	fmt.Fprintf(os.Stdout, "LIVE_TART_RESULT=%s run=%s\n", directory, firstRun.RunID)
 }

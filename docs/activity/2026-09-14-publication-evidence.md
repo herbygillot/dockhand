@@ -1,0 +1,15 @@
+# Evidence-based pull-request descriptions
+
+Authored PR body rendering in publish, using the frozen contribution and selected verification attempt, including reused attempts. New bodies identify Dockhand, retain the contribution description, report observed environment details, and include the relevant MacPorts review checklist. Publication previews now print the entire body. Existing PR bodies remain preserved.
+
+Lint, tests, and install are checked only for recorded successful target steps. Record actual argv and execution user, normalize only the staged ports-tree path for display, and retain debug/source/variant/subport options. Record why tests were omitted. The single-commit check also requires the recorded generated commit identity to equal the actual contribution head; copied trailers and human amendments provide no such proof. Commit guidelines, duplicate-PR review, Trac references, binary functionality, and important variants remain manual checks.
+
+The Tart runner now observes guest macOS product/build/architecture, selected Xcode or CLT version, MacPorts version, and pre-build absence of active ports/recognized foreign package managers. Submission records the provider version, and evidence retains the image name. Diagnostic metadata does not change capability matching or substitute current publisher-host facts for older results. Missing historical metadata is reported as unrecorded; no broad pristine-image claim is made. Updated deep-copy handling for the additional evidence fields.
+
+Regression coverage includes generated/manual/amended provenance, observed and absent test phases, older/reused evidence, command flags, environment details, full-body previews, preservation of edited PR bodies, and durable metadata recovery after a stop failure.
+
+Validation passed: full `go test ./... -count=1`, `go vet ./...`, focused publication/evidence tests after final formatting changes, and `make build`. The opt-in real Tart test passed lint/build/declared tests/install through two driver processes in 107 seconds; it confirmed root execution, source-only flags, debug flags on build/test/install and no debug flag on lint. Observed guest macOS was 26.6.2 (25G83), arm64, CLT 27.0.0.0.1788430756, MacPorts 2.12.6, and Tart 2.36.0 using `dockhand-base-tahoe`. The disposable VM was released and removed; no VMs remained running. The completed database passed integrity_check. Live log: `/private/tmp/dockhand-evidence-live.log`.
+
+Also exercised the rebuilt binary's fresh-upstream path with `bump-revision croc --diff` against the real MacPorts checkout. It fetched master at `87ff2b89b11d1666d39a51929499c5787bebecdf`, evaluated croc 11.5.3, and proposed only revision 0 to 1. HEAD, all refs, index changes, working changes, and status matched their pre-preview values. This was a preview only: no contribution branch or PR was created. Results: `/private/tmp/dockhand-upstream-preview/`.
+
+The roadmap now starts with the remaining guest-agent, authentication, progress, and migration-guidance exercise corrections. The local starting-branch escape hatch remains deferred; verify/publish continue to accept existing local branches.
