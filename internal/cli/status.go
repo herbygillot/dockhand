@@ -61,6 +61,18 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		fmt.Fprintf(&buffer, format+"\n", values...)
 	}
+	environment := func(indent string, evidence *record.Evidence) {
+		if evidence == nil || evidence.Environment == nil {
+			return
+		}
+		observed := evidence.Environment
+		tools := string(observed.Capabilities.DeveloperTools)
+		if observed.Capabilities.XcodeVersion != "" {
+			tools += " " + observed.Capabilities.XcodeVersion
+		}
+		line("%senvironment: %s %s; capabilities: %s", indent, observed.Provider, observed.EnvironmentDigest, observed.CapabilityDigest)
+		line("%sMacPorts: %s at %s; developer tools: %s", indent, observed.Capabilities.MacPortsVersion, observed.Capabilities.MacPortsPrefix, tools)
+	}
 	line("Snapshot read at %s", statusTime(status.ReadAt))
 	if status.Repository != "" {
 		line("Repository: %s", status.Repository)
@@ -108,6 +120,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		if entry.Reused != nil {
 			line("  original attempt: %s; job: %s", entry.Reused.ID, entry.Reused.JobID)
+			environment("  ", entry.Reused.Evidence)
 		}
 		if c := job.Spec.Checkout; c != nil {
 			label := c.Branch
@@ -147,6 +160,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			}
 			if attempt.Evidence != nil {
 				line("    verdict: %s; observed: %s", attempt.Evidence.Verdict, statusTime(attempt.Evidence.ObservedAt))
+				environment("    ", attempt.Evidence)
 				if failure := attempt.Evidence.Failure; failure != nil {
 					line("    failure: %s; package: %s; phase: %s; %s", failure.Kind, failure.Package, failure.Phase, failure.Detail)
 				}

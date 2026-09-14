@@ -78,9 +78,20 @@ func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
 			Source:       record.Source{Tree: "fixture"},
 			Checkout:     &record.Checkout{Branch: "main", Head: "fixture", ModifiedFiles: 2},
 		},
-	}}}
+	}, Attempts: []record.Attempt{{
+		ID: "attempt", State: record.AttemptFinished,
+		Spec: record.BuildSpec{Target: record.Target{Name: "fixture"}, Config: record.BuildConfig{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}}},
+		Evidence: &record.Evidence{
+			Verdict: record.VerdictPassed, ObservedAt: time.Now(), Environment: &record.EnvironmentEvidence{
+				Provider: "tart", EnvironmentDigest: "sha256:image", CapabilityDigest: "sha256:capabilities",
+				Capabilities: record.EnvironmentCapabilities{MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsXcode, XcodeVersion: "26.6"},
+			},
+		},
+	}}}}
 	var output bytes.Buffer
 	require.NoError(t, renderStatus(&output, status))
 	require.Contains(t, output.String(), "2 modified files")
+	require.Contains(t, output.String(), "environment: tart sha256:image; capabilities: sha256:capabilities")
+	require.Contains(t, output.String(), "MacPorts: 2.12.6 at /opt/local; developer tools: xcode 26.6")
 	require.NotContains(t, output.String(), "%!")
 }

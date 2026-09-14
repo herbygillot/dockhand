@@ -25,6 +25,11 @@ type BuildConfig struct {
 	EnvironmentDigest string
 	// VerifierDigest identifies the verification implementation; missing identity disables reuse.
 	VerifierDigest string `json:",omitempty"`
+	// CapabilityDigest identifies a provider observation of the immutable environment.
+	// It may be empty when accepted work must observe the environment after admission.
+	CapabilityDigest string `json:",omitempty"`
+	// CapabilitiesRequired makes matching environment evidence mandatory for reuse.
+	CapabilitiesRequired bool
 	// ProviderConfig freezes provider-specific execution choices at acceptance.
 	ProviderConfig json.RawMessage `json:",omitempty"`
 	// NeedsXcode records that the evaluated target requires a full Xcode image.
@@ -37,11 +42,40 @@ type BuildConfig struct {
 // BuildRequirements are accepted choices used to select existing verification
 // evidence when no configuration for a new execution was supplied.
 type BuildRequirements struct {
-	Provider   string
-	Platform   Platform
-	NeedsXcode bool
-	FromSource bool
-	Tests      TestPolicy
+	Provider             string
+	Platform             Platform
+	NeedsXcode           bool
+	CapabilitiesRequired bool
+	FromSource           bool
+	Tests                TestPolicy
+}
+
+// DeveloperTools identifies the selected compiler and SDK profile in a build environment.
+type DeveloperTools string
+
+const (
+	DeveloperToolsCommandLine DeveloperTools = "command-line-tools"
+	DeveloperToolsXcode       DeveloperTools = "xcode"
+)
+
+// EnvironmentCapabilities records the properties observed inside an admitted
+// build environment before source staging or build execution.
+type EnvironmentCapabilities struct {
+	Platform          Platform
+	MacPortsPrefix    string
+	MacPortsVersion   string
+	DeveloperTools    DeveloperTools
+	XcodeVersion      string `json:",omitempty"`
+	GuestAgentVersion string `json:",omitempty"`
+}
+
+// EnvironmentEvidence binds a capability observation to the immutable
+// environment used by an attempt.
+type EnvironmentEvidence struct {
+	Provider          string
+	EnvironmentDigest string
+	CapabilityDigest  string
+	Capabilities      EnvironmentCapabilities
 }
 
 // BuildSpec binds one verification attempt to concrete, immutable inputs.
@@ -194,6 +228,8 @@ type StepResult struct {
 // explicit. Referenced artifacts and logs may be stored outside the state store.
 type Evidence struct {
 	Verdict Verdict
+	// Environment identifies the observed build environment when the provider requires it.
+	Environment *EnvironmentEvidence `json:",omitempty"`
 	// Failure provides diagnostic context when present.
 	Failure   *Failure
 	Steps     []StepResult

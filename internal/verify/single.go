@@ -22,6 +22,9 @@ func ValidateConfig(config record.BuildConfig) error {
 	if len(config.ProviderConfig) > 0 && (!json.Valid(config.ProviderConfig) || len(config.ProviderConfig) > 65536 || bytes.TrimSpace(config.ProviderConfig)[0] != '{') {
 		return fmt.Errorf("verify: invalid provider configuration")
 	}
+	if config.CapabilityDigest != "" && (!config.CapabilitiesRequired || !utf8.ValidString(config.CapabilityDigest) || strings.IndexFunc(config.CapabilityDigest, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0) {
+		return fmt.Errorf("verify: invalid environment capability identity")
+	}
 	if config.Tests != record.TestDeclared && config.Tests != record.TestSkip {
 		return fmt.Errorf("verify: an explicit test policy is required")
 	}

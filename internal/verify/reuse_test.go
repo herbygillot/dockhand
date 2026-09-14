@@ -65,6 +65,67 @@ func TestApplicabilityRejectsIncompleteOrNonPassingEvidence(t *testing.T) {
 	require.False(t, verify.Applicable(reusableBuild(), attempt).Matches)
 }
 
+func TestApplicabilityRequiresCapabilitiesObservedInTheAcceptedEnvironment(t *testing.T) {
+	wanted := reusableBuild()
+	wanted.Config.CapabilitiesRequired = true
+	wanted.Config.CapabilityDigest = "sha256:capabilities"
+	previous := record.Attempt{
+		ID: "attempt", Spec: wanted, State: record.AttemptFinished,
+		Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now(), Environment: &record.EnvironmentEvidence{
+			Provider: wanted.Config.Provider, EnvironmentDigest: wanted.Config.EnvironmentDigest, CapabilityDigest: wanted.Config.CapabilityDigest,
+			Capabilities: record.EnvironmentCapabilities{Platform: wanted.Config.Platform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine},
+		}},
+	}
+	require.True(t, verify.Applicable(wanted, previous).Matches)
+
+	for name, edit := range map[string]func(*record.Attempt){
+		"missing evidence":  func(v *record.Attempt) { v.Evidence.Environment = nil },
+		"other image":       func(v *record.Attempt) { v.Evidence.Environment.EnvironmentDigest = "image:other" },
+		"other observation": func(v *record.Attempt) { v.Evidence.Environment.CapabilityDigest = "sha256:other" },
+		"other platform":    func(v *record.Attempt) { v.Evidence.Environment.Capabilities.Platform.Version = "24" },
+		"missing MacPorts":  func(v *record.Attempt) { v.Evidence.Environment.Capabilities.MacPortsVersion = "" },
+		"missing tools":     func(v *record.Attempt) { v.Evidence.Environment.Capabilities.DeveloperTools = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := previous
+			environment := *previous.Evidence.Environment
+			changed.Evidence = &record.Evidence{Verdict: previous.Evidence.Verdict, ObservedAt: previous.Evidence.ObservedAt, Environment: &environment}
+			edit(&changed)
+			result := verify.Applicable(wanted, changed)
+			require.False(t, result.Matches)
+			require.NotEmpty(t, result.Reasons)
+		})
+	}
+
+	wanted.Config.NeedsXcode = true
+	require.False(t, verify.Applicable(wanted, previous).Matches)
+	previous.Spec.Config.NeedsXcode = true
+	previous.Evidence.Environment.Capabilities.DeveloperTools = record.DeveloperToolsXcode
+	previous.Evidence.Environment.Capabilities.XcodeVersion = "26.0.1"
+	require.True(t, verify.Applicable(wanted, previous).Matches)
+}
+
+func TestJudgeRetainsEnvironmentEvidence(t *testing.T) {
+	environment := &record.EnvironmentEvidence{
+		Provider: "tart", EnvironmentDigest: "sha256:image", CapabilityDigest: "sha256:capabilities",
+		Capabilities: record.EnvironmentCapabilities{Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}},
+	}
+	evidence, err := verify.Judge(verify.Observation{
+		Run: record.ProviderRun{Provider: "tart", RequestID: "request", RunID: "run"}, State: record.AttemptFinished,
+		Environment: environment, Verdict: record.VerdictPassed, ObservedAt: time.Now(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, environment, evidence.Environment)
+	environment.CapabilityDigest = "changed"
+	require.Equal(t, "sha256:capabilities", evidence.Environment.CapabilityDigest)
+
+	_, err = verify.Judge(verify.Observation{
+		Run: record.ProviderRun{Provider: "other"}, State: record.AttemptFinished, Environment: evidence.Environment,
+		Verdict: record.VerdictPassed, ObservedAt: time.Now(),
+	})
+	require.ErrorContains(t, err, "invalid environment evidence")
+}
+
 func TestBuildRequirementsPreserveAcceptedChoices(t *testing.T) {
 	config := reusableBuild().Config
 	requirements := record.BuildRequirements{Provider: config.Provider, Platform: config.Platform, FromSource: config.FromSource, Tests: config.Tests}

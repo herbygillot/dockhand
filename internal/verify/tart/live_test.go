@@ -142,7 +142,7 @@ destroot {
 	require.NoError(t, err)
 	t.Logf("environment %s", environment.Digest)
 	engine := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Ports: ports, Provider: provider}
-	bound, err := engine.BindVerification(ctx, workflow.VerificationRequest{ID: "live", Branch: "candidate", Selection: macports.Selection{Selector: "dockhand-fixture"}, Build: record.BuildConfig{Provider: "tart", Platform: platform, EnvironmentDigest: environment.Digest, FromSource: true, Tests: record.TestDeclared}})
+	bound, err := engine.BindVerification(ctx, workflow.VerificationRequest{ID: "live", Branch: "candidate", Selection: macports.Selection{Selector: "dockhand-fixture"}, Build: record.BuildConfig{Provider: "tart", Platform: platform, EnvironmentDigest: environment.Digest, CapabilitiesRequired: true, FromSource: true, Tests: record.TestDeclared}})
 	require.NoError(t, err)
 	receipt, err := engine.Submit(ctx, bound.Request)
 	require.NoError(t, err)
@@ -193,6 +193,8 @@ destroot {
 	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State)
 	require.Equal(t, firstRun, status.Jobs[0].Attempts[0].Run)
 	require.Equal(t, record.VerdictPassed, status.Jobs[0].Attempts[0].Evidence.Verdict)
+	require.NotNil(t, status.Jobs[0].Attempts[0].Evidence.Environment)
+	require.Equal(t, environment.Digest, status.Jobs[0].Attempts[0].Evidence.Environment.EnvironmentDigest)
 	require.NotEmpty(t, status.Jobs[0].Attempts[0].Evidence.Logs)
 	fmt.Fprintf(os.Stdout, "LIVE_TART_RESULT=%s run=%s\n", directory, firstRun.RunID)
 }

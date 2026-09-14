@@ -294,14 +294,11 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.InstallMacPorts(ctx, next, config, release); err != nil {
 		return Result{}, err
 	}
-	manifest, err := json.Marshal(struct {
-		Protocol          int             `json:"protocol"`
-		Source            string          `json:"source"`
-		Platform          record.Platform `json:"platform"`
-		MacPortsVersion   string          `json:"macports_version"`
-		GuestAgentVersion string          `json:"guest_agent_version"`
-		XcodeVersion      string          `json:"xcode_version,omitempty"`
-	}{1, config.Source, config.Platform, config.MacPortsVersion, AgentVersion, config.XcodeVersion})
+	manifest, err := json.Marshal(tart.ImageManifest{
+		Protocol: tart.ImageManifestProtocol, Source: config.Source, Platform: config.Platform,
+		MacPortsPrefix: config.GuestPrefix, MacPortsVersion: config.MacPortsVersion,
+		GuestAgentVersion: AgentVersion, XcodeVersion: config.XcodeVersion,
+	})
 	if err != nil {
 		return Result{}, err
 	}

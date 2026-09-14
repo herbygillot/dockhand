@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"io"
@@ -20,6 +21,7 @@ type fakeMachine struct {
 	events     []string
 	fail       string
 	validation validation
+	manifest   []byte
 }
 
 type nopCloser struct{}
@@ -72,7 +74,8 @@ func (f *fakeMachine) InstallXcode(_ context.Context, _ string, config Config) e
 func (f *fakeMachine) InstallMacPorts(context.Context, string, Config, tart.MacOSRelease) error {
 	return f.event("macports")
 }
-func (f *fakeMachine) WriteManifest(context.Context, string, []byte) error {
+func (f *fakeMachine) WriteManifest(_ context.Context, _ string, value []byte) error {
+	f.manifest = append([]byte(nil), value...)
 	return f.event("manifest")
 }
 func (f *fakeMachine) Validate(context.Context, string, Config) (validation, error) {
@@ -135,6 +138,11 @@ func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 	require.NotContains(t, machine.images, "dockhand-base-tahoe-next")
 	require.NotContains(t, machine.images, "dockhand-golden-tahoe-next")
 	require.Less(t, index(machine.events, "validate"), index(machine.events, "adopt:dockhand-base-tahoe-next:dockhand-base-tahoe"))
+	var manifest tart.ImageManifest
+	require.NoError(t, json.Unmarshal(machine.manifest, &manifest))
+	require.Equal(t, tart.ImageManifestProtocol, manifest.Protocol)
+	require.Equal(t, "/opt/local", manifest.MacPortsPrefix)
+	require.Equal(t, testPlatform, manifest.Platform)
 }
 
 func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {

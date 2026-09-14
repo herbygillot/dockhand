@@ -32,6 +32,9 @@ func Applicable(wanted record.BuildSpec, previous record.Attempt) Applicability 
 			}
 		}
 	}
+	if wanted.Config.CapabilitiesRequired {
+		result.Reasons = append(result.Reasons, environmentEvidenceDifferences(wanted.Config, previous.Spec.Config, evidence)...)
+	}
 	result.Reasons = append(result.Reasons, InputDifferences(wanted, previous.Spec)...)
 	result.Matches = len(result.Reasons) == 0
 	return result
@@ -61,6 +64,12 @@ func InputDifferences(wanted, old record.BuildSpec) []string {
 	}
 	if wanted.Config.EnvironmentDigest != old.Config.EnvironmentDigest {
 		reject("build environment differs")
+	}
+	if wanted.Config.CapabilitiesRequired != old.Config.CapabilitiesRequired {
+		reject("environment capability policy differs")
+	}
+	if wanted.Config.CapabilityDigest != "" && old.Config.CapabilityDigest != "" && wanted.Config.CapabilityDigest != old.Config.CapabilityDigest {
+		reject("environment capability identity differs")
 	}
 	if wanted.Config.VerifierDigest == "" || old.Config.VerifierDigest == "" {
 		reject("verifier identity was not recorded")
@@ -98,11 +107,39 @@ func RequirementDifferences(wanted record.BuildRequirements, old record.BuildCon
 	if wanted.NeedsXcode != old.NeedsXcode {
 		reasons = append(reasons, "Xcode requirement differs")
 	}
+	if wanted.CapabilitiesRequired != old.CapabilitiesRequired {
+		reasons = append(reasons, "environment capability policy differs")
+	}
 	if wanted.FromSource != old.FromSource {
 		reasons = append(reasons, "source-build policy differs")
 	}
 	if wanted.Tests != old.Tests {
 		reasons = append(reasons, "test policy differs")
+	}
+	return reasons
+}
+
+func environmentEvidenceDifferences(wanted, old record.BuildConfig, evidence *record.Evidence) []string {
+	if evidence == nil || evidence.Environment == nil {
+		return []string{"environment capability evidence is missing"}
+	}
+	observed := evidence.Environment
+	reasons := []string{}
+	if observed.Provider != wanted.Provider || observed.EnvironmentDigest != wanted.EnvironmentDigest {
+		reasons = append(reasons, "environment capability evidence identifies a different build environment")
+	}
+	if observed.CapabilityDigest == "" || wanted.CapabilityDigest != "" && observed.CapabilityDigest != wanted.CapabilityDigest || old.CapabilityDigest != "" && observed.CapabilityDigest != old.CapabilityDigest {
+		reasons = append(reasons, "environment capability identity differs")
+	}
+	capabilities := observed.Capabilities
+	if capabilities.Platform != wanted.Platform {
+		reasons = append(reasons, "observed environment platform differs")
+	}
+	if capabilities.MacPortsPrefix == "" || capabilities.MacPortsVersion == "" {
+		reasons = append(reasons, "observed MacPorts environment is incomplete")
+	}
+	if capabilities.DeveloperTools != record.DeveloperToolsCommandLine && capabilities.DeveloperTools != record.DeveloperToolsXcode || wanted.NeedsXcode && capabilities.DeveloperTools != record.DeveloperToolsXcode {
+		reasons = append(reasons, "observed developer tools do not satisfy the build")
 	}
 	return reasons
 }

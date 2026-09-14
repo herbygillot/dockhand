@@ -92,7 +92,15 @@ func seedCLIVerification(t *testing.T, config app.Config, branch string) time.Ti
 		if err := tx.PutPlan(ctx, plan); err != nil {
 			return err
 		}
-		if err := tx.PutAttempt(ctx, record.Attempt{ID: "original-attempt", JobID: job.ID, TargetID: plan.Targets[0].ID, Spec: build, State: record.AttemptFinished, CreatedAt: job.AcceptedAt, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: observed}}); err != nil {
+		tools := record.DeveloperToolsCommandLine
+		if build.Config.NeedsXcode {
+			tools = record.DeveloperToolsXcode
+		}
+		environment := &record.EnvironmentEvidence{
+			Provider: build.Config.Provider, EnvironmentDigest: build.Config.EnvironmentDigest, CapabilityDigest: "sha256:fixture-capabilities",
+			Capabilities: record.EnvironmentCapabilities{Platform: build.Config.Platform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: tools},
+		}
+		if err := tx.PutAttempt(ctx, record.Attempt{ID: "original-attempt", JobID: job.ID, TargetID: plan.Targets[0].ID, Spec: build, State: record.AttemptFinished, CreatedAt: job.AcceptedAt, Evidence: &record.Evidence{Verdict: record.VerdictPassed, Environment: environment, ObservedAt: observed}}); err != nil {
 			return err
 		}
 		job.State = record.JobCompleted

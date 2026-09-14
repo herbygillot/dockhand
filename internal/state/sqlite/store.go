@@ -48,7 +48,10 @@ var phaseSchema string
 //go:embed migrations/010.sql
 var changeJobsSchema string
 
-const schemaVersion = 10
+//go:embed migrations/011.sql
+var imageCapabilitiesSchema string
+
+const schemaVersion = 11
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -237,6 +240,7 @@ func migrations() []schemaMigration {
 		{version: 8, schema: retentionSchema},
 		{version: 9, schema: phaseSchema},
 		{version: 10, schema: changeJobsSchema},
+		{version: 11, schema: imageCapabilitiesSchema},
 	}
 }
 

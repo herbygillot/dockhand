@@ -74,6 +74,7 @@ type operation struct {
 
 type machine interface {
 	Environment(context.Context) (Environment, error)
+	InspectCapabilities(context.Context, string, string) (capabilityInspection, error)
 	Running(context.Context) ([]string, error)
 	Clone(context.Context, string, string) error
 	Start(context.Context, string, string) error
@@ -292,7 +293,17 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if env.Digest != request.Spec.Config.EnvironmentDigest || env.Platform != request.Spec.Config.Platform {
 		return verify.Submission{State: verify.Unsupported, Detail: "prepared image does not match the accepted build environment"}, nil
 	}
-	raw, _ := json.Marshal(payload{Request: request, Config: o.config, Digest: buildDigest(request.Spec)})
+	capabilities, observed, err := p.cachedImageCapabilities(ctx, env.Digest)
+	if err != nil {
+		return verify.Submission{}, err
+	}
+	if observed {
+		if problem := capabilityProblem(capabilities, o.config, request.Spec.Config); problem != "" {
+			return verify.Submission{State: verify.Unsupported, Detail: problem}, nil
+		}
+	}
+	data := payload{Request: request, Config: o.config, Digest: buildDigest(request.Spec)}
+	raw, _ := json.Marshal(data)
 	v := record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, AttemptID: request.AttemptID, Resource: "dockhand2-" + digest([]byte(o.pool.ID + "/" + string(request.ID)))[:24], Payload: raw, State: record.ExecutionReserved, Occupied: true, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	running, err := o.machine.Running(ctx)
 	if err != nil {
@@ -343,6 +354,28 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err = o.machine.Ready(ctx, v.Resource); err != nil {
 		return uncertain, err
 	}
+	if !observed {
+		inspection, inspectErr := o.machine.InspectCapabilities(ctx, v.Resource, o.config.GuestPrefix)
+		if inspectErr != nil {
+			return uncertain, inspectErr
+		}
+		capabilities = newImageCapabilities(env.Digest, inspection)
+		if err = p.State.PutImageCapabilities(ctx, capabilities); err != nil {
+			return uncertain, err
+		}
+		if problem := capabilityProblem(capabilities, o.config, request.Spec.Config); problem != "" {
+			v.State = record.ExecutionAdmitted
+			result := verify.Observation{
+				Run: submission(v, verify.Admitted).Run, State: record.AttemptFinished, Environment: environmentEvidence(capabilities),
+				Verdict: record.VerdictBlocked, Detail: problem, ObservedAt: time.Now().UTC(),
+				Failure: &record.Failure{Kind: record.InfrastructureFailure, Package: request.Spec.Target.Name, Phase: "setup", Attribution: record.AttributionUnknown, Detail: problem},
+			}
+			if _, err = o.finish(ctx, v, result); err != nil {
+				return uncertain, err
+			}
+			return submission(v, verify.Admitted), nil
+		}
+	}
 	if p.Repo == nil {
 		return uncertain, fmt.Errorf("tart: source repository is required")
 	}
@@ -386,6 +419,15 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID) (verify.R
 		if _, err = o.restore(v); err != nil {
 			return verify.Reconciliation{}, err
 		}
+		if result, ok, savedErr := o.saved(v); savedErr != nil {
+			return verify.Reconciliation{State: verify.RunUnknown}, savedErr
+		} else if ok {
+			v.State = record.ExecutionAdmitted
+			if _, err = o.finish(ctx, v, result); err != nil {
+				return verify.Reconciliation{State: verify.RunUnknown}, err
+			}
+			return verify.Reconciliation{State: verify.RunFound, Submission: submission(v, verify.Admitted)}, nil
+		}
 		if err = o.machine.Stop(ctx, v.Resource); err != nil {
 			return verify.Reconciliation{State: verify.RunUnknown}, err
 		}
@@ -418,21 +460,25 @@ func (o *operation) observe(ctx context.Context, v record.ProviderExecution, dat
 	} else if ok {
 		return o.finish(ctx, v, result)
 	}
+	environment, err := o.environment(ctx, data)
+	if err != nil {
+		return verify.Observation{}, err
+	}
 	status, err := o.machine.Inspect(ctx, v.Resource)
 	if err != nil {
 		return verify.Observation{}, err
 	}
 	if status.State == "starting" {
-		return verify.Observation{Run: run, State: record.AttemptRunning, Verdict: record.VerdictUnknown, ObservedAt: time.Now().UTC()}, nil
+		return verify.Observation{Run: run, State: record.AttemptRunning, Environment: environment, Verdict: record.VerdictUnknown, ObservedAt: time.Now().UTC()}, nil
 	}
 	if status.State == "not-started" {
 		if err = o.machine.Launch(ctx, v.Resource); err != nil {
 			return verify.Observation{}, err
 		}
-		return verify.Observation{Run: run, State: record.AttemptRunning, Verdict: record.VerdictUnknown, ObservedAt: time.Now().UTC()}, nil
+		return verify.Observation{Run: run, State: record.AttemptRunning, Environment: environment, Verdict: record.VerdictUnknown, ObservedAt: time.Now().UTC()}, nil
 	}
 	if status.State == "stopped" || status.State == "runner-exited" {
-		result := verify.Observation{Run: run, State: record.AttemptFinished, Verdict: record.VerdictErrored, Detail: "VM or guest runner stopped before a terminal result could be collected", ObservedAt: time.Now().UTC()}
+		result := verify.Observation{Run: run, State: record.AttemptFinished, Environment: environment, Verdict: record.VerdictErrored, Detail: "VM or guest runner stopped before a terminal result could be collected", ObservedAt: time.Now().UTC()}
 		log := filepath.Join(o.directory(v), "build.log")
 		if err := o.machine.Logs(ctx, v.Resource, log); err == nil {
 			result.Logs = []record.Artifact{{Name: "build.log", Location: log, MediaType: "text/plain"}}
@@ -442,7 +488,7 @@ func (o *operation) observe(ctx context.Context, v record.ProviderExecution, dat
 	if status.ID != string(v.ID) || status.Digest != data.Digest || status.Protocol != 1 {
 		return verify.Observation{}, fmt.Errorf("tart: guest result identifies different inputs")
 	}
-	result := verify.Observation{Run: run, State: record.AttemptRunning, Verdict: record.VerdictUnknown, ObservedAt: time.Now().UTC()}
+	result := verify.Observation{Run: run, State: record.AttemptRunning, Environment: environment, Verdict: record.VerdictUnknown, ObservedAt: time.Now().UTC()}
 	if status.State == "running" {
 		return result, nil
 	}
@@ -483,6 +529,20 @@ func (o *operation) finish(ctx context.Context, v record.ProviderExecution, resu
 		return verify.Observation{}, err
 	}
 	return result, nil
+}
+
+func (o *operation) environment(ctx context.Context, data payload) (*record.EnvironmentEvidence, error) {
+	capabilities, found, err := o.provider.cachedImageCapabilities(ctx, data.Request.Spec.Config.EnvironmentDigest)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("tart: admitted image has no capability observation")
+	}
+	if problem := capabilityProblem(capabilities, data.Config, data.Request.Spec.Config); problem != "" {
+		return nil, fmt.Errorf("tart: admitted image capability conflict: %s", problem)
+	}
+	return environmentEvidence(capabilities), nil
 }
 func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operation, record.ProviderExecution, payload, error) {
 	if run.Provider != ProviderName {
@@ -525,8 +585,12 @@ func (p *Provider) Cancel(ctx context.Context, run record.ProviderRun) error {
 		_, err = o.observe(ctx, v, data)
 		return err
 	}
+	environment, err := o.environment(ctx, data)
+	if err != nil {
+		return err
+	}
 	log := filepath.Join(o.directory(v), "build.log")
-	result := verify.Observation{Run: run, State: record.AttemptCanceled, Verdict: record.VerdictCanceled, Detail: "VM stopped by cancellation", ObservedAt: time.Now().UTC()}
+	result := verify.Observation{Run: run, State: record.AttemptCanceled, Environment: environment, Verdict: record.VerdictCanceled, Detail: "VM stopped by cancellation", ObservedAt: time.Now().UTC()}
 	if err = o.machine.Logs(ctx, v.Resource, log); err == nil {
 		result.Logs = []record.Artifact{{Name: "build.log", Location: log, MediaType: "text/plain"}}
 	}
@@ -574,7 +638,7 @@ func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (v
 }
 func buildDigest(spec record.BuildSpec) string { raw, _ := json.Marshal(spec); return digest(raw) }
 func validateRequest(r verify.Request) error {
-	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != ProviderName || len(r.Spec.Inputs) != 0 {
+	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != ProviderName || !r.Spec.Config.CapabilitiesRequired || len(r.Spec.Inputs) != 0 {
 		return fmt.Errorf("tart: one concrete verification target without artifact inputs is required")
 	}
 	if err := verify.ValidateConfig(r.Spec.Config); err != nil {
@@ -661,6 +725,16 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		}
 		return record.BuildConfig{}, err
 	}
+	capabilities, observed, err := p.cachedImageCapabilities(ctx, environment.Digest)
+	if err != nil {
+		return record.BuildConfig{}, err
+	}
+	if observed {
+		accepted := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true}
+		if problem := capabilityProblem(capabilities, c, accepted); problem != "" {
+			return record.BuildConfig{}, fmt.Errorf("tart: image %s is incompatible: %s", c.Image, problem)
+		}
+	}
 	c, err = resolvePortIndexTool(ctx, c)
 	if err != nil {
 		return record.BuildConfig{}, err
@@ -671,6 +745,9 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
-	config := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, NeedsXcode: options.NeedsXcode, Tests: options.Tests, FromSource: options.FromSource}
+	config := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true, Tests: options.Tests, FromSource: options.FromSource}
+	if observed {
+		config.CapabilityDigest = capabilities.CapabilityDigest
+	}
 	return config, verify.ValidateConfig(config)
 }

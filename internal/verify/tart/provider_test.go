@@ -27,6 +27,7 @@ type fakeMachine struct {
 	calls                              map[string]int
 	running                            map[string]bool
 	results                            map[string]guestResult
+	inspection                         capabilityInspection
 	stageError, launchError, stopError error
 	stageHook                          func()
 }
@@ -64,6 +65,17 @@ func TestBuildConfigSelectsXcodeImageForRequiredTargets(t *testing.T) {
 func (m *fakeMachine) Environment(context.Context) (Environment, error) {
 	return Environment{Digest: "sha256:fixture", Platform: testPlatform}, nil
 }
+func (m *fakeMachine) InspectCapabilities(context.Context, string, string) (capabilityInspection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls["capabilities"]++
+	if m.inspection.Capabilities == (record.EnvironmentCapabilities{}) {
+		m.inspection.Capabilities = record.EnvironmentCapabilities{
+			Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
+		}
+	}
+	return m.inspection, nil
+}
 func (m *fakeMachine) Running(context.Context) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -90,10 +102,14 @@ func (m *fakeMachine) Start(ctx context.Context, vm, directory string) error {
 }
 func (m *fakeMachine) Ready(context.Context, string) error { return nil }
 func (m *fakeMachine) Stage(ctx context.Context, vm, path string) error {
-	if m.stageHook != nil {
-		m.stageHook()
+	m.mu.Lock()
+	m.calls["stage"]++
+	hook, err := m.stageHook, m.stageError
+	m.mu.Unlock()
+	if hook != nil {
+		hook()
 	}
-	return m.stageError
+	return err
 }
 func (m *fakeMachine) Launch(ctx context.Context, vm string) error {
 	m.mu.Lock()
@@ -164,7 +180,7 @@ func fixtureRun(t *testing.T, db, home, artifacts, id string, m machine) *testRu
 	}))
 	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Config: Config{Home: home, Image: "fixture", ArtifactDirectory: artifacts, Capacity: 1, Platform: testPlatform, PortIndexExecutable: fakePortIndex(t)}, backend: m}
 	e := &workflow.Engine{State: store, Repository: repository.ID, Provider: p, RetryDelay: time.Millisecond}
-	config := record.BuildConfig{Provider: "tart", Platform: testPlatform, EnvironmentDigest: "sha256:fixture", FromSource: true, Tests: record.TestSkip}
+	config := record.BuildConfig{Provider: "tart", Platform: testPlatform, EnvironmentDigest: "sha256:fixture", CapabilitiesRequired: true, FromSource: true, Tests: record.TestSkip}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: record.RequestID(id), Spec: record.JobSpec{Action: record.Verify, InputRevision: record.RevisionID(id), Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &config}})
 	require.NoError(t, err)
 	// Create the attempt through the engine, refusing admission while assembling the fixture.
@@ -234,6 +250,83 @@ func TestAdmissionIsIdempotentAndClosesUnknownIDs(t *testing.T) {
 	_, err = f.provider.Submit(t.Context(), late)
 	require.ErrorIs(t, err, ErrClosed)
 	require.Equal(t, 1, m.calls["clone"])
+}
+
+func TestImageCapabilitiesAreProbedOncePerImmutableImage(t *testing.T) {
+	root := t.TempDir()
+	machine := newMachine()
+	a := fixtureRun(t, filepath.Join(root, "state.db"), root, filepath.Join(root, "artifacts"), "a", machine)
+	b := fixtureRun(t, filepath.Join(root, "state.db"), root, filepath.Join(root, "artifacts"), "b", machine)
+
+	first, err := a.provider.Submit(t.Context(), a.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, first.State)
+	require.Equal(t, 1, machine.calls["capabilities"])
+	require.NoError(t, a.provider.Cancel(t.Context(), first.Run))
+	observed, err := a.provider.Observe(t.Context(), first.Run)
+	require.NoError(t, err)
+	require.NotNil(t, observed.Environment)
+	require.Equal(t, "sha256:fixture", observed.Environment.EnvironmentDigest)
+	require.Equal(t, capabilityIdentity(machine.inspection.Capabilities), observed.Environment.CapabilityDigest)
+	_, err = a.provider.Release(t.Context(), first.Resources[0])
+	require.NoError(t, err)
+
+	second, err := b.provider.Submit(t.Context(), b.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, second.State)
+	require.Equal(t, 1, machine.calls["capabilities"], "the shared cache should avoid another guest probe")
+	require.Equal(t, 2, machine.calls["stage"])
+}
+
+func TestIncompatibleImageIsRecordedAndReleasedBeforeStaging(t *testing.T) {
+	f, machine := singleRun(t)
+	machine.inspection = capabilityInspection{Capabilities: record.EnvironmentCapabilities{
+		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
+	}, Problem: "image has active ports: fixture @1_0"}
+
+	submitted, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Admitted, submitted.State)
+	require.Equal(t, 1, machine.calls["capabilities"])
+	require.Zero(t, machine.calls["stage"])
+	require.Zero(t, machine.calls["launch"])
+	require.Equal(t, 1, machine.calls["stop"])
+
+	observed, err := f.provider.Observe(t.Context(), submitted.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.AttemptFinished, observed.State)
+	require.Equal(t, record.VerdictBlocked, observed.Verdict)
+	require.Contains(t, observed.Detail, "active ports")
+	require.NotNil(t, observed.Environment)
+	_, err = f.provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestSkip})
+	require.ErrorContains(t, err, "image fixture is incompatible")
+	require.Equal(t, 1, machine.calls["capabilities"], "configuration should use the cached rejection")
+
+	o, err := f.provider.begin(t.Context(), f.request.ID)
+	require.NoError(t, err)
+	execution, err := o.read(t.Context(), f.request.ID)
+	o.close()
+	require.NoError(t, err)
+	require.False(t, execution.Occupied)
+}
+
+func TestReconcileAdoptsAnIncompatibleImageResultAfterStopFailure(t *testing.T) {
+	f, machine := singleRun(t)
+	machine.inspection = capabilityInspection{Capabilities: record.EnvironmentCapabilities{
+		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
+	}, Problem: "image has active ports"}
+	machine.stopError = errors.New("lost shutdown reply")
+
+	_, err := f.provider.Submit(t.Context(), f.request)
+	require.Error(t, err)
+	machine.stopError = nil
+	reconciled, err := f.provider.Reconcile(t.Context(), f.request.ID)
+	require.NoError(t, err)
+	require.Equal(t, verify.RunFound, reconciled.State)
+	observed, err := f.provider.Observe(t.Context(), reconciled.Submission.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictBlocked, observed.Verdict)
+	require.Contains(t, observed.Detail, "active ports")
 }
 func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T) {
 	root := t.TempDir()

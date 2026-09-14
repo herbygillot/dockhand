@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
@@ -10,6 +11,7 @@ import (
 // It is implemented by the same backend as Store, not an independent lock service.
 type ProviderStore interface {
 	ImageCache
+	ImageCapabilityCache
 	ProviderPool(context.Context, string) (record.ProviderPool, error)
 	RegisterProviderPool(context.Context, record.ProviderPool) (record.ProviderPool, error)
 	ProviderView(context.Context, string, func(context.Context, ProviderReader) error) error
@@ -33,4 +35,20 @@ type ImageDigest struct {
 type ImageCache interface {
 	ImageDigest(context.Context, string, string) (ImageDigest, error)
 	PutImageDigest(context.Context, ImageDigest) error
+}
+
+type ImageCapabilityCache interface {
+	ImageCapabilities(context.Context, string, string) (ImageCapabilities, error)
+	PutImageCapabilities(context.Context, ImageCapabilities) error
+}
+
+// ImageCapabilities is a disposable observation shared by repositories using
+// the same provider and immutable environment content.
+type ImageCapabilities struct {
+	Provider          string
+	EnvironmentDigest string
+	CapabilityDigest  string
+	Capabilities      record.EnvironmentCapabilities
+	Problem           string
+	ObservedAt        time.Time
 }

@@ -41,7 +41,15 @@ func Judge(observation Observation) (record.Evidence, error) {
 			}
 		}
 	}
-	evidence := record.Evidence{Verdict: verdict, Steps: slices.Clone(observation.Steps), Artifacts: slices.Clone(observation.Artifacts), Logs: slices.Clone(observation.Logs), ObservedAt: observation.ObservedAt}
+	var environment *record.EnvironmentEvidence
+	if observation.Environment != nil {
+		value := *observation.Environment
+		if value.Provider == "" || value.EnvironmentDigest == "" || value.CapabilityDigest == "" || observation.Run.Provider != "" && value.Provider != observation.Run.Provider {
+			return record.Evidence{}, fmt.Errorf("verify: invalid environment evidence")
+		}
+		environment = &value
+	}
+	evidence := record.Evidence{Verdict: verdict, Environment: environment, Steps: slices.Clone(observation.Steps), Artifacts: slices.Clone(observation.Artifacts), Logs: slices.Clone(observation.Logs), ObservedAt: observation.ObservedAt}
 	if observation.Failure != nil {
 		failure := *observation.Failure
 		failure.DependencyChain = slices.Clone(failure.DependencyChain)

@@ -8,22 +8,7 @@ Last updated: 2026-09-14.
 
 ## Next
 
-### 1. Validate explicitly selected Tart images
-
-Automatic image selection follows the evaluated `use_xcode` requirement, and setup writes a manifest into every image it provisions. An explicit `--image` still bypasses capability selection.
-
-The next slice should:
-
-- hash the source image without starting or changing it, then consult a capability cache keyed by provider and immutable image digest;
-- record the selected digest and required macOS release, architecture, MacPorts prefix, and developer-tools profile in accepted build intent;
-- let an uncached image wait for the same provider-capacity admission as ordinary verification rather than starting a separate preflight VM;
-- inspect the actual attempt's disposable clone after it starts and before source staging or build commands run;
-- cache that observation in SQLite, continue the build in the same VM when it satisfies the accepted requirements, and release the attempt with a prerequisite failure when it does not; and
-- include the observed capability identity in verification evidence and reuse comparison.
-
-A provisioned manifest is declared evidence that the in-guest probe must confirm. A custom image without a manifest can still be observed. A changed image digest requires another observation, while a cached incompatible observation can reject later work before provider admission. An image name alone is neither capability evidence nor verification identity. A waiting driver continues reconciling already admitted attempts; image inspection does not create a second capacity path.
-
-### 2. Plan and execute dependent verification
+### 1. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 
@@ -117,3 +102,4 @@ The following capabilities are established and should be extended through their 
 - immutable committed and working-tree source capture with native MacPorts evaluation;
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;
+- capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;

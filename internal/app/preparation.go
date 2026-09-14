@@ -131,7 +131,7 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 		if err != nil {
 			return workflow.BuildResolution{}, err
 		}
-		requirements := &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, NeedsXcode: needsXcode, Tests: tests, FromSource: fromSource}
+		requirements := &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, NeedsXcode: needsXcode, CapabilitiesRequired: true, Tests: tests, FromSource: fromSource}
 		config, err := s.verification.BuildConfig(ctx, platform, tart.BuildOptions{Tests: tests, FromSource: fromSource, NeedsXcode: needsXcode})
 		if err == nil {
 			return workflow.BuildResolution{Build: &config}, nil

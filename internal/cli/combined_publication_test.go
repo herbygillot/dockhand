@@ -114,7 +114,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			require.Equal(t, "https://github.com/author/ports/pull/1", result.Status.PullRequests[0].Ref.URL)
 			require.Equal(t, record.AttemptID("original-attempt"), entry.Job.ReusedAttempt)
 			require.Nil(t, entry.Job.Spec.Build)
-			require.Equal(t, record.BuildRequirements{Provider: "tart", Platform: entry.Reused.Spec.Config.Platform, Tests: record.TestDeclared}, *entry.Job.Spec.BuildRequirements)
+			require.Equal(t, record.BuildRequirements{Provider: "tart", Platform: entry.Reused.Spec.Config.Platform, CapabilitiesRequired: true, Tests: record.TestDeclared}, *entry.Job.Spec.BuildRequirements)
 			require.Empty(t, entry.Attempts)
 			require.Contains(t, stderr.String(), "publication confirmed")
 			mu.Lock()

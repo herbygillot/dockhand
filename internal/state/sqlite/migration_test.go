@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
 	"github.com/stretchr/testify/require"
 )
@@ -106,6 +108,14 @@ func versionEightWithWork(t *testing.T) (string, *sql.DB) {
 	return path, db
 }
 
+func versionTenWithWork(t *testing.T) (string, *sql.DB) {
+	t.Helper()
+	path, db := versionEightWithWork(t)
+	_, err := db.Exec(phaseSchema + changeJobsSchema)
+	require.NoError(t, err)
+	return path, db
+}
+
 func TestMigrationsAreContiguous(t *testing.T) {
 	migrations := migrations()
 	require.Len(t, migrations, schemaVersion-1)
@@ -137,6 +147,29 @@ func TestChangeJobsMigrationSupportsIndexedSelection(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	require.Contains(t, strings.Join(plans, "\n"), "jobs_change")
+}
+
+func TestImageCapabilitiesMigrationPreservesProviderExecutions(t *testing.T) {
+	path, db := versionTenWithWork(t)
+	columns, before := migrationRows(t, db, "provider_executions", nil)
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	_, after := migrationRows(t, db, "provider_executions", columns)
+	require.Equal(t, before, after)
+
+	value := state.ImageCapabilities{
+		Provider: "tart", EnvironmentDigest: "sha256:image", CapabilityDigest: "sha256:capabilities",
+		Capabilities: record.EnvironmentCapabilities{
+			Platform:       record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"},
+			MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
+		},
+		ObservedAt: time.UnixMilli(123).UTC(),
+	}
+	require.NoError(t, store.PutImageCapabilities(t.Context(), value))
+	loaded, err := store.ImageCapabilities(t.Context(), value.Provider, value.EnvironmentDigest)
+	require.NoError(t, err)
+	require.Equal(t, value, loaded)
 }
 
 func migrationRows(t *testing.T, db *sql.DB, table string, columns []string) ([]string, [][]any) {
