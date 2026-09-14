@@ -6,7 +6,7 @@ This document describes the initial SQLite implementation, following the [archit
 
 Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
-Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; automatic GitHub discovery and standalone/combined publication are implemented.
+Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; automatic GitHub and GitLab discovery and standalone/combined GitHub publication are implemented.
 
 ## Packages and contracts
 
@@ -190,7 +190,7 @@ Job scheduling includes preparation claims and retries. Cancellation before any 
 
 ## Resolved release checkpoint
 
-Schema 4 adds nullable `jobs.resolved_release` JSON. It records one bump's requested spelling (empty for automatic selection), effective version, GitHub repository, exact tag, peeled commit, and observation time. The write API requires a matching bump request and valid commit identity, then forbids replacement or removal once present. This is a job result checkpoint, separate from immutable accepted intent and from the later prepared candidate.
+Schema 4 adds nullable `jobs.resolved_release` JSON. It records one bump's requested spelling (empty for automatic selection), effective version, forge, normalized instance, repository, exact tag, resolved commit, and observation time. The write API requires a matching bump request and complete source identity, then forbids replacement or removal once present. This is a job result checkpoint, separate from immutable accepted intent and from the later prepared candidate. The JSON shape can evolve during prerelease development without a relational migration; old rows lacking forge identity are rejected when rewritten or resumed.
 
 The driver records the release in one claimed pass and prepares the source in a later pass. No database transaction spans tag lookup, source evaluation, or downloading. Failed checkpoint writes cannot start preparation; expired or canceled lookup claims cannot overwrite a later result. Scheduling permits cancellation before preparation for both bump actions. Existing schema-3 candidates and integration intent remain unchanged on migration; writable opening upgrades older schemas transactionally, while read-only workflow access requires the current schema. Archive bytes, HTTP credentials, and full preparation diagnostics are not stored in this column.
 
