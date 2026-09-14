@@ -24,7 +24,7 @@ func TestClientCanBeSharedByConcurrentRepositories(t *testing.T) {
 	results := make(chan error, 8)
 	var workers sync.WaitGroup
 	for n := range 8 {
-		repository, err := client.Repository(fmt.Sprintf("owner/project-%d", n))
+		repository, err := client.Repository("https://github.com", fmt.Sprintf("owner/project-%d", n))
 		require.NoError(t, err)
 		workers.Go(func() { _, err := repository.Tag(t.Context(), "v2"); results <- err })
 	}

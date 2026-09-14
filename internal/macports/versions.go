@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
 )
 
-type VersionCandidate struct{ Version, URL string }
+type VersionCandidate struct{ Version, MatchText string }
 type VersionSelection struct {
 	Indices    []int
 	Comparison int
@@ -32,7 +32,7 @@ func (e *Evaluator) SelectVersion(ctx context.Context, current, expression strin
 	}
 	args := []string{current, expression}
 	for _, candidate := range candidates {
-		args = append(args, candidate.Version, candidate.URL)
+		args = append(args, candidate.Version, candidate.MatchText)
 	}
 	reply, err := session.Call(ctx, "select-version", args...)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
+	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,8 @@ type catalog struct {
 	releaseReads int
 	releaseErr   error
 	tag          tagFunc
-	web          string
+	name         string
+	instance     string
 }
 
 func (c *catalog) Releases(context.Context) ([]forge.Release, error) {
@@ -56,8 +58,7 @@ func automaticService(t *testing.T, c *catalog) *upstream.Service {
 	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})
-	c.web = "https://github.com/owner/project"
-	return &upstream.Service{Repositories: c, Versions: &macports.Evaluator{Executable: executable}}
+	return &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c}, Versions: &macports.Evaluator{Executable: executable}}
 
 }
 
@@ -142,26 +143,26 @@ func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
 	}
 }
 
-func (c *catalog) Repository(name string) (forge.Repository, error) { return c, nil }
-func (c *catalog) Name() string                                     { return "owner/project" }
-func (c *catalog) TagsPageURL() string                              { return c.web + "/tags" }
-func (c *catalog) TagLivecheckURL(tag string) string {
-	return c.web + "/archive/refs/tags/" + tag + ".tar.gz"
+func (c *catalog) Repository(instance, name string) (forge.Repository, error) {
+	c.instance = instance
+	c.name = name
+	return c, nil
 }
+func (c *catalog) Name() string { return c.name }
 func (c *catalog) Tag(ctx context.Context, name string) (forge.Tag, error) {
 	return c.tag(ctx, c.Name(), name)
 }
 
-func TestDiscoveryUsesRepositoryURLsFromTheAdapter(t *testing.T) {
+func TestDiscoveryRecordsMacPortsSourceIdentityAndURL(t *testing.T) {
 	c := &catalog{releases: []forge.Release{{Tag: "v2.0"}}}
 	service := automaticService(t, c)
-	c.web = "https://forge.example.invalid/project"
 	port := automaticPort()
-	port.Options["livecheck.url"] = c.TagsPageURL()
 	result, err := service.DiscoverPort(t.Context(), port)
 	require.NoError(t, err)
 	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
-	require.Equal(t, c.TagLivecheckURL("v2.0"), result.Evidence[0].URL)
+	require.Equal(t, "https://github.com/owner/project/archive/refs/tags/v2.0.tar.gz", result.Evidence[0].URL)
+	require.Equal(t, string(portsource.GitHub), result.Release.Forge)
+	require.Equal(t, "https://github.com", result.Release.Instance)
 	require.Equal(t, c.Name(), result.Release.Repository)
 }
 

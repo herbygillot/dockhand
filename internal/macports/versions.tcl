@@ -6,9 +6,9 @@ proc ::dockhand::select_version {current expression args} {
     set indices {}
     set latest ""
     set index 0
-    foreach {version url} $args {
+    foreach {version subject} $args {
         set captured ""
-        if {[regexp -nocase -- $regex $url matched captured]} {
+        if {[regexp -nocase -- $regex $subject matched captured]} {
             if {$captured ne $version} {error "livecheck capture does not match the tag version"}
             if {$latest eq "" || [vercmp $version $latest] > 0} {
                 set latest $version

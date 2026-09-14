@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
+	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
@@ -30,20 +31,23 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 			result.Detail = err.Error()
 		}
 	}()
-	if s == nil || s.Repositories == nil || s.Versions == nil {
-		return result, fmt.Errorf("upstream: repository and version readers are required")
+	if s == nil || s.Versions == nil {
+		return result, fmt.Errorf("upstream: version reader is required")
 	}
-	repository, pattern, err := s.githubSource(port)
+	spec, repository, err := s.repository(port, true)
 	if err != nil {
 		return result, err
 	}
-	mode, err := githubLivecheck(port, repository)
-	if err != nil {
-		return result, err
+	if !stableVersion.MatchString(port.Version) {
+		return result, fmt.Errorf("%w: require a stable numeric version", ErrAutomaticUnsupported)
 	}
 	var observations []forge.Release
-	if mode == "releases" {
-		observations, err = repository.Releases(ctx)
+	if spec.Catalog == portsource.Releases {
+		releases, ok := repository.(forge.ReleaseRepository)
+		if !ok {
+			return result, fmt.Errorf("upstream: %s catalog does not expose releases", spec.Forge)
+		}
+		observations, err = releases.Releases(ctx)
 		if err != nil {
 			return result, err
 		}
@@ -69,14 +73,18 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		if release.Draft || release.Prerelease {
 			continue
 		}
-		version, matches := pattern.version(release.Tag)
+		version, matches := spec.Pattern.Version(release.Tag)
 		if !matches || !stableVersion.MatchString(version) {
 			continue
 		}
-		candidates = append(candidates, macports.VersionCandidate{Version: version, URL: repository.TagLivecheckURL(release.Tag)})
+		subject, err := spec.MatchText(release.Tag)
+		if err != nil {
+			return result, err
+		}
+		candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: subject})
 		tags = append(tags, release.Tag)
 	}
-	selection, err := s.Versions.SelectVersion(ctx, port.Version, port.Options["livecheck.regex"], candidates)
+	selection, err := s.Versions.SelectVersion(ctx, port.Version, spec.Livecheck.Regex, candidates)
 	if err != nil {
 		return result, err
 	}
@@ -99,8 +107,12 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
 	result.CandidateVersion = candidates[index].Version
-	result.Release = &record.Release{CurrentVersion: port.Version, Version: result.CandidateVersion, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: selection.Comparison <= 0}
-	result.Evidence = []Observation{{Source: "github-" + mode, Version: result.CandidateVersion, URL: candidates[index].URL, ObservedAt: result.ObservedAt}}
+	result.Release = &record.Release{CurrentVersion: port.Version, Version: result.CandidateVersion, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: selection.Comparison <= 0}
+	evidenceURL, err := spec.EvidenceURL(tag.Name)
+	if err != nil {
+		return result, err
+	}
+	result.Evidence = []Observation{{Source: string(spec.Forge) + "-" + string(spec.Catalog), Version: result.CandidateVersion, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 	if result.Release.NoUpdate {
 		result.Assessment = Current
 		result.Detail = fmt.Sprintf("Already current at %s; latest eligible version is %s", port.Version, result.CandidateVersion)

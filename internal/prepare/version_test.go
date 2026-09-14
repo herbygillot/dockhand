@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
+	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
@@ -20,7 +21,7 @@ import (
 
 type releaseTagFunc func(context.Context, string, string) (forge.Tag, error)
 
-func (f releaseTagFunc) Repository(name string) (forge.Repository, error) {
+func (f releaseTagFunc) Repository(_ string, name string) (forge.Repository, error) {
 	return &releaseRepository{name: name, tag: f}, nil
 }
 
@@ -103,12 +104,12 @@ pre-fetch {
 	request.Source = record.Source{Tree: record.ObjectID(tree)}
 	request.Action = record.Bump
 	request.Version = "2.0"
-	service.Upstream = &upstream.Service{Repositories: releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
+	service.Upstream = &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
 		if name != "v2.0" {
 			return forge.Tag{}, forge.ErrNotFound
 		}
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
-	})}
+	})}}
 	release, err := service.ResolveRelease(t.Context(), request)
 	require.NoError(t, err)
 	request.Release = &release
@@ -178,7 +179,7 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 func TestVersionPreparationRejectsTagMutationDuringDownload(t *testing.T) {
 	var moved atomic.Bool
 	service, request := versionFixture(t, "setup", "", func(w http.ResponseWriter, r *http.Request) { moved.Store(true); fmt.Fprint(w, "archive") })
-	service.Upstream.Repositories = releaseTagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+	service.Upstream.Catalogs[portsource.GitHub] = releaseTagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
 		commit := strings.Repeat("a", 40)
 		if moved.Load() {
 			commit = strings.Repeat("b", 40)

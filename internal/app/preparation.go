@@ -11,7 +11,6 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/prepare"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 )
@@ -55,7 +54,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	}
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	githubClient := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
-	service := prepare.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Repositories: githubClient, Versions: ports}}
+	service := prepare.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient)}
 	input := prepare.Request{
 		Action: request.Action, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)},
 		Selection: request.Selection, Version: request.Version, Reason: request.Reason,

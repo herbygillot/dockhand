@@ -24,16 +24,15 @@ type Release struct {
 	PublishedAt time.Time
 }
 
-// Repository binds observations and public URLs to one validated repository.
+// Repository binds tag observations to one validated repository.
 // Catalog methods return complete observations or an error, never partial success.
 // Tag resolves an exact name to a commit; an absent ref reports ErrNotFound.
 type Repository interface {
 	Name() string
-	// TagsPageURL and TagLivecheckURL describe the web links used by livecheck
-	// regexes. They are not API endpoints or resolved download locations.
-	TagsPageURL() string
-	TagLivecheckURL(string) string
 	Tag(context.Context, string) (Tag, error)
-	Releases(context.Context) ([]Release, error)
 	ListTags(context.Context) ([]Tag, error)
+}
+
+type ReleaseRepository interface {
+	Releases(context.Context) ([]Release, error)
 }

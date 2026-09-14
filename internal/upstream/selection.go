@@ -9,19 +9,17 @@ import (
 	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
+	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
 )
 
 var (
 	ErrVersionInput     = errors.New("upstream: invalid explicit version")
-	ErrTagPattern       = errors.New("upstream: tag convention is unknown")
+	ErrTagPattern       = portsource.ErrTagPattern
 	ErrReleaseMissing   = errors.New("upstream: requested release was not found in the supplied evidence")
 	ErrReleaseAmbiguous = errors.New("upstream: requested version matches multiple releases")
 )
 
-type TagPattern struct {
-	Prefix string
-	Suffix string
-}
+type TagPattern = portsource.TagPattern
 
 // Candidate pairs a possible Portfile version with the observed release it describes.
 type Candidate struct {
@@ -49,7 +47,7 @@ func PatternFromCurrent(version, tag string) (TagPattern, error) {
 		return TagPattern{}, ErrTagPattern
 	}
 	prefix, suffix, _ := strings.Cut(tag, version)
-	return TagPattern{Prefix: prefix, Suffix: suffix}, nil
+	return portsource.TagPattern{Prefix: prefix, Suffix: suffix}, nil
 }
 
 // MatchRelease judges already collected evidence; lookup failures must be
@@ -60,17 +58,17 @@ func MatchRelease(requested string, pattern *TagPattern, releases []Candidate) (
 		return Selection{}, err
 	}
 	var matches []Selection
-	explicitTag := pattern != nil && pattern.explicit(requested)
+	explicitTag := pattern != nil && pattern.Explicit(requested)
 	for _, release := range releases {
 		version := release.Version
 		if version == "" && pattern != nil {
-			value, matches := pattern.version(release.Tag)
+			value, matches := pattern.Version(release.Tag)
 			if matches {
 				version = value
 			}
 		}
 		exact := release.Tag == requested || (!explicitTag && release.Version == requested)
-		inferred := !explicitTag && pattern != nil && release.Tag == pattern.tag(requested)
+		inferred := !explicitTag && pattern != nil && release.Tag == pattern.Tag(requested)
 		if !exact && !inferred {
 			continue
 		}
@@ -96,20 +94,10 @@ func MatchRelease(requested string, pattern *TagPattern, releases []Candidate) (
 		return Selection{}, fmt.Errorf("%w: cannot map tag %q to a Portfile version", ErrTagPattern, selected.Candidate.Tag)
 	}
 	if pattern != nil && selected.Candidate.Tag != "" {
-		value, matches := pattern.version(selected.Candidate.Tag)
+		value, matches := pattern.Version(selected.Candidate.Tag)
 		if matches && value != selected.Candidate.Version {
 			return Selection{}, fmt.Errorf("%w: inconsistent version metadata for %q", ErrTagPattern, selected.Candidate.Tag)
 		}
 	}
 	return selected, nil
-}
-
-func (p TagPattern) tag(version string) string { return p.Prefix + version + p.Suffix }
-func (p TagPattern) version(tag string) (string, bool) {
-	version, prefix := strings.CutPrefix(tag, p.Prefix)
-	version, suffix := strings.CutSuffix(version, p.Suffix)
-	return version, prefix && suffix
-}
-func (p TagPattern) explicit(value string) bool {
-	return p.Prefix != "" && strings.HasPrefix(value, p.Prefix) || p.Suffix != "" && strings.HasSuffix(value, p.Suffix)
 }

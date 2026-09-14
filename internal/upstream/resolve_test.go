@@ -8,14 +8,19 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
+	portsource "github.com/herbygillot/dockhand/v2/internal/macports/source"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
 
 type tagFunc func(context.Context, string, string) (forge.Tag, error)
 
-func (f tagFunc) Repository(name string) (forge.Repository, error) {
+func (f tagFunc) Repository(_ string, name string) (forge.Repository, error) {
 	return &tagRepository{name: name, tag: f}, nil
+}
+
+func serviceWithCatalog(c upstream.Catalog) upstream.Service {
+	return upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c}}
 }
 
 type tagRepository struct {
@@ -38,14 +43,14 @@ func TestResolveUsesObservedTagsAndChecksRecordedCommit(t *testing.T) {
 		t.Run(request, func(t *testing.T) {
 			var calls []string
 			commit := strings.Repeat("a", 40)
-			service := upstream.Service{Repositories: tagFunc(func(_ context.Context, repo, tag string) (forge.Tag, error) {
+			service := serviceWithCatalog(tagFunc(func(_ context.Context, repo, tag string) (forge.Tag, error) {
 				require.Equal(t, "owner/project", repo)
 				calls = append(calls, tag)
 				if tag != "v2.0" {
 					return forge.Tag{}, forge.ErrNotFound
 				}
 				return forge.Tag{Name: tag, Commit: commit}, nil
-			})}
+			}))
 			release, err := service.Resolve(t.Context(), githubPort(), request)
 			require.NoError(t, err)
 			require.Equal(t, "2.0", release.Version)
@@ -64,6 +69,7 @@ func TestResolveUsesObservedTagsAndChecksRecordedCommit(t *testing.T) {
 		})
 	}
 }
+
 func TestResolveDoesNotHideFailuresOrAmbiguity(t *testing.T) {
 	outage := errors.New("rate limited")
 	for _, test := range []struct {
@@ -80,14 +86,14 @@ func TestResolveDoesNotHideFailuresOrAmbiguity(t *testing.T) {
 		}, upstream.ErrReleaseAmbiguous},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			service := upstream.Service{Repositories: test.lookup}
+			service := serviceWithCatalog(test.lookup)
 			_, err := service.Resolve(t.Context(), githubPort(), "2.0")
 			require.ErrorIs(t, err, test.expected)
 		})
 	}
-	service := upstream.Service{Repositories: tagFunc(func(_ context.Context, _ string, tag string) (forge.Tag, error) {
+	service := serviceWithCatalog(tagFunc(func(_ context.Context, _ string, tag string) (forge.Tag, error) {
 		return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
-	})}
+	}))
 	_, err := service.Resolve(t.Context(), githubPort(), "v1.0")
 	require.ErrorContains(t, err, "already at version")
 	port := githubPort()
@@ -102,7 +108,9 @@ func TestResolveDoesNotHideFailuresOrAmbiguity(t *testing.T) {
 
 type repositoryFunc func(string) (forge.Repository, error)
 
-func (f repositoryFunc) Repository(name string) (forge.Repository, error) { return f(name) }
+func (f repositoryFunc) Repository(_ string, name string) (forge.Repository, error) {
+	return f(name)
+}
 
 func TestResolutionRejectsFailedOrMismatchedRepositoryBinding(t *testing.T) {
 	unavailable := errors.New("repository unavailable")
@@ -116,10 +124,10 @@ func TestResolutionRejectsFailedOrMismatchedRepositoryBinding(t *testing.T) {
 		{name: "wrong source", repository: &tagRepository{name: "someone/else"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			service := upstream.Service{Repositories: repositoryFunc(func(name string) (forge.Repository, error) {
+			service := serviceWithCatalog(repositoryFunc(func(name string) (forge.Repository, error) {
 				require.Equal(t, "owner/project", name)
 				return test.repository, test.err
-			})}
+			}))
 			_, err := service.Resolve(t.Context(), githubPort(), "2.0")
 			require.Error(t, err)
 			if test.err != nil {

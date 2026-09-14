@@ -66,7 +66,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if config.GitHub.BaseURL == "" {
 		githubClient.Credentials = github.SystemCredentials{Store: keychain.Store{}, Key: githubCredentialKey}
 	}
-	discovery := &upstream.Service{Ports: ports, Repositories: githubClient, Versions: ports}
+	discovery := releaseDiscovery(ports, githubClient)
 	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery}
 	if config.Tart.ArtifactDirectory == "" {
 		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")

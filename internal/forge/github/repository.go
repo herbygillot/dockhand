@@ -2,13 +2,12 @@ package github
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 )
 
-const webOrigin = "https://github.com"
+const publicInstance = "https://github.com"
 
 type repository struct {
 	client *Client
@@ -16,19 +15,14 @@ type repository struct {
 }
 
 // Repository validates a GitHub owner/name without making a network request.
-func (c *Client) Repository(name string) (forge.Repository, error) {
-	if c == nil || !validRepositoryName(name) {
+func (c *Client) Repository(instance, name string) (forge.Repository, error) {
+	if c == nil || instance != publicInstance || !validRepositoryName(name) {
 		return nil, fmt.Errorf("github: invalid repository %q", name)
 	}
 	return &repository{client: c, name: name}, nil
 }
 
-func (r *repository) Name() string        { return r.name }
-func (r *repository) TagsPageURL() string { return webOrigin + "/" + r.name + "/tags" }
-func (r *repository) TagLivecheckURL(tag string) string {
-	path := &url.URL{Path: "/" + r.name + "/archive/refs/tags/" + tag + ".tar.gz"}
-	return webOrigin + path.String()
-}
+func (r *repository) Name() string { return r.name }
 
 func validRepositoryName(value string) bool {
 	parts := strings.Split(value, "/")

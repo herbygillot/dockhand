@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -14,33 +13,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testRepository(t *testing.T, client *github.Client) forge.Repository {
+type githubRepository interface {
+	forge.Repository
+	forge.ReleaseRepository
+}
+
+func testRepository(t *testing.T, client *github.Client) githubRepository {
 	t.Helper()
-	repository, err := client.Repository("owner/project")
+	repository, err := client.Repository("https://github.com", "owner/project")
 	require.NoError(t, err)
-	return repository
+	result, ok := repository.(githubRepository)
+	require.True(t, ok)
+	return result
 }
 
 func TestRepositoryBindingValidatesNamesWithoutContactingGitHub(t *testing.T) {
 	client := &github.Client{HTTP: &http.Client{Transport: rejectTransport{t}}}
 	for _, name := range []string{"owner/project", "Owner-1/project.name", "owner/project_name"} {
-		repository, err := client.Repository(name)
+		repository, err := client.Repository("https://github.com", name)
 		require.NoError(t, err)
 		require.Equal(t, name, repository.Name())
 	}
 	for _, name := range []string{"", "owner", "owner/", "/project", "owner/project/more", "../project", "owner/..", "owner/proj%2fect", "owner/project?x=y", "owner/project#ref", "owner/project name", "https://github.com/owner/project"} {
-		repository, err := client.Repository(name)
+		repository, err := client.Repository("https://github.com", name)
 		require.Error(t, err, name)
 		require.Nil(t, repository)
 	}
-	repository := testRepository(t, client)
-	require.Equal(t, "https://github.com/owner/project/tags", repository.TagsPageURL())
-	require.Equal(t, "https://github.com/owner/project/archive/refs/tags/release/2.0.tar.gz", repository.TagLivecheckURL("release/2.0"))
-	archive, err := url.Parse(repository.TagLivecheckURL("release/2#meta%"))
-	require.NoError(t, err)
-	require.Empty(t, archive.Fragment)
-	require.Empty(t, archive.RawQuery)
-	require.Equal(t, "/owner/project/archive/refs/tags/release/2#meta%.tar.gz", archive.Path)
+	repository, err := client.Repository("https://example.invalid", "owner/project")
+	require.Error(t, err)
+	require.Nil(t, repository)
 }
 
 type rejectTransport struct{ t *testing.T }
@@ -58,9 +59,9 @@ func TestRepositoriesSharingAClientKeepTheirOwnRequestScope(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &github.Client{Config: github.Config{BaseURL: server.URL}}
-	one, err := client.Repository("owner/one")
+	one, err := client.Repository("https://github.com", "owner/one")
 	require.NoError(t, err)
-	two, err := client.Repository("owner/two")
+	two, err := client.Repository("https://github.com", "owner/two")
 	require.NoError(t, err)
 	for _, repository := range []forge.Repository{one, two, one} {
 		tag, err := repository.Tag(t.Context(), "v2")

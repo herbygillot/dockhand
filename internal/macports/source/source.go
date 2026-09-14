@@ -1,0 +1,223 @@
+// Package source interprets the upstream source conventions of evaluated Portfiles.
+package source
+
+import (
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+	"unicode"
+
+	"github.com/herbygillot/dockhand/v2/internal/macports"
+	"github.com/herbygillot/dockhand/v2/internal/tcl/syntax"
+)
+
+var ErrUnsupported = errors.New("macports source: unsupported convention")
+var ErrTagPattern = errors.New("macports source: tag convention is unknown")
+
+type Forge string
+
+const (
+	GitHub Forge = "github"
+)
+
+type Catalog string
+
+const (
+	Tags     Catalog = "tags"
+	Releases Catalog = "releases"
+)
+
+type TagPattern struct {
+	Prefix string
+	Suffix string
+}
+
+func (p TagPattern) Tag(version string) string { return p.Prefix + version + p.Suffix }
+func (p TagPattern) Version(tag string) (string, bool) {
+	version, prefix := strings.CutPrefix(tag, p.Prefix)
+	version, suffix := strings.CutSuffix(version, p.Suffix)
+	return version, prefix && suffix
+}
+func (p TagPattern) Explicit(value string) bool {
+	return p.Prefix != "" && strings.HasPrefix(value, p.Prefix) || p.Suffix != "" && strings.HasSuffix(value, p.Suffix)
+}
+
+type Livecheck struct {
+	Type    string
+	URL     string
+	Regex   string
+	Version string
+}
+
+type Spec struct {
+	Forge          Forge
+	Instance       string
+	Repository     string
+	CurrentVersion string
+	Pattern        TagPattern
+	Catalog        Catalog
+	Livecheck      Livecheck
+}
+
+func Interpret(port macports.PortInfo) (Spec, error) {
+	if !present(port, "github.author") {
+		return Spec{}, fmt.Errorf("%w: require a GitHub source PortGroup", ErrUnsupported)
+	}
+	return interpret(port)
+}
+
+func Discover(port macports.PortInfo) (Spec, error) {
+	spec, err := Interpret(port)
+	if err != nil {
+		return Spec{}, err
+	}
+	for _, key := range []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version"} {
+		if err := evaluated(port, key); err != nil {
+			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		}
+	}
+	spec.Livecheck = Livecheck{
+		Type: port.Options["livecheck.type"], URL: port.Options["livecheck.url"],
+		Regex: port.Options["livecheck.regex"], Version: port.Options["livecheck.version"],
+	}
+	if spec.Livecheck.Type != "regex" || spec.Livecheck.Regex == "" || spec.Livecheck.Version != spec.CurrentVersion {
+		return Spec{}, fmt.Errorf("%w: require a regex livecheck for the evaluated port version", ErrUnsupported)
+	}
+	if err := evaluated(port, "github.tarball_from"); err != nil {
+		return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+	}
+	mode := port.Options["github.tarball_from"]
+	if mode == "" {
+		mode = "archive"
+	}
+	if mode != "releases" && mode != "archive" && mode != "tarball" {
+		return Spec{}, fmt.Errorf("%w: unknown GitHub archive mode", ErrUnsupported)
+	}
+	if mode == "releases" {
+		spec.Catalog = Releases
+	}
+	expected, err := spec.tagsURL()
+	if err != nil {
+		return Spec{}, err
+	}
+	if trimURL(spec.Livecheck.URL) != trimURL(expected) {
+		return Spec{}, fmt.Errorf("%w: livecheck does not inspect the GitHub tags page", ErrUnsupported)
+	}
+	return spec, nil
+}
+
+func (s Spec) MatchText(tag string) (string, error) {
+	web, err := s.webURL()
+	if err != nil {
+		return "", err
+	}
+	if s.Forge != GitHub {
+		return "", fmt.Errorf("%w: %s", ErrUnsupported, s.Forge)
+	}
+	return appendPath(web, "archive", "refs", "tags", tag+".tar.gz")
+}
+
+func (s Spec) EvidenceURL(tag string) (string, error) {
+	web, err := s.webURL()
+	if err != nil {
+		return "", err
+	}
+	return appendPath(web, "archive", "refs", "tags", tag+".tar.gz")
+}
+
+func interpret(port macports.PortInfo) (Spec, error) {
+	prefix := "github"
+	keys := []string{prefix + ".author", prefix + ".project", prefix + ".version", prefix + ".tag_prefix", prefix + ".tag_suffix", "git.branch"}
+	for _, key := range keys {
+		if err := evaluated(port, key); err != nil {
+			return Spec{}, err
+		}
+	}
+	if port.Options[prefix+".version"] != port.Version {
+		return Spec{}, fmt.Errorf("macports source: %s PortGroup version differs from the evaluated port version", prefix)
+	}
+	values := make([]string, 0, 2)
+	for _, key := range []string{prefix + ".tag_prefix", prefix + ".tag_suffix"} {
+		parts, errs := syntax.ListValues(port.Options[key])
+		if len(errs) != 0 {
+			return Spec{}, ErrTagPattern
+		}
+		values = append(values, strings.Join(parts, " "))
+	}
+	pattern := TagPattern{Prefix: values[0], Suffix: values[1]}
+	if port.Options["git.branch"] != pattern.Tag(port.Version) {
+		return Spec{}, ErrTagPattern
+	}
+	instance, err := normalizeInstance("https://github.com")
+	if err != nil {
+		return Spec{}, err
+	}
+	repository := port.Options[prefix+".author"] + "/" + port.Options[prefix+".project"]
+	if !validPath(repository, 2) {
+		return Spec{}, fmt.Errorf("macports source: invalid %s repository %q", prefix, repository)
+	}
+	return Spec{Forge: GitHub, Instance: instance, Repository: repository, CurrentVersion: port.Version, Pattern: pattern, Catalog: Tags}, nil
+}
+
+func evaluated(port macports.PortInfo, key string) error {
+	if failure := port.OptionErrors[key]; failure != "" {
+		return fmt.Errorf("macports source: cannot evaluate %s", key)
+	}
+	if _, ok := port.Options[key]; !ok {
+		return fmt.Errorf("macports source: missing %s", key)
+	}
+	return nil
+}
+
+func present(port macports.PortInfo, key string) bool {
+	_, value := port.Options[key]
+	_, failure := port.OptionErrors[key]
+	return value || failure
+}
+
+func normalizeInstance(value string) (string, error) {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("macports source: invalid forge instance %q", value)
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	parsed.RawPath = ""
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func validPath(value string, exact int) bool {
+	parts := strings.Split(value, "/")
+	if len(parts) < 2 || exact > 0 && len(parts) != exact {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." || strings.IndexFunc(part, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("?#%\\", r)
+		}) >= 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (s Spec) webURL() (string, error) {
+	return appendPath(s.Instance, strings.Split(s.Repository, "/")...)
+}
+func (s Spec) tagsURL() (string, error) {
+	web, err := s.webURL()
+	if err != nil {
+		return "", err
+	}
+	return appendPath(web, "tags")
+}
+func appendPath(base string, elements ...string) (string, error) {
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/" + strings.Join(elements, "/")
+	parsed.RawPath = ""
+	return parsed.String(), nil
+}
+func trimURL(value string) string { return strings.TrimRight(value, "/") }
