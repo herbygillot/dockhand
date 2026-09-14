@@ -8,7 +8,66 @@ Last updated: 2026-09-14.
 
 ## Next
 
-### 1. Plan and execute dependent verification
+This order prioritizes correct contribution inputs, attribution, and recovery before expanding automatic preparation and downstream coverage. Small independent items may land separately; do not combine them into a single architectural rewrite.
+
+### 1. Start new bumps from freshly fetched MacPorts master
+
+Resolve the authoritative `macports/macports-ports` upstream independently of remote names: `origin` may be a contributor's fork. Fetch its `master`, freeze the fetched commit at acceptance, and use that snapshot for target evaluation, release selection, preparation, and the new branch's parent. A fetch failure must not silently select stale local contents. Do not move the user's checkout or local `master`.
+
+Share this base-selection path with `bump --diff` so previews and actual bumps follow the same rule. Report the selected upstream and commit. A new invocation fetches again; retries and resumed jobs retain their accepted base. Update the current branch-selection CLI contract and README examples so `--branch` cannot accidentally bypass the rule for a new bump. Continuing an existing contribution remains a distinct operation.
+
+Validate fork/upstream remote layouts, stale local branches, fetch failure, concurrent fetches, and upstream movement after acceptance.
+
+### 2. Attribute fully generated contribution commits
+
+Append this exact Git trailer, separated from the subject/body by a blank line:
+
+```text
+Generated-by: [dockhand](https://github.com/herbygillot/dockhand)
+```
+
+Apply it whenever Dockhand authors a contribution commit completely itself, including automatic version and revision bumps. Put the policy in contribution commit generation, not the low-level Git object writer. Do not add it when merely capturing, verifying, adopting, or publishing human-authored work. Retried generation must be deterministic and produce exactly one trailer. Preserve the usual MacPorts commit subject format.
+
+### 3. Generate useful, evidence-based pull-request bodies
+
+Use the relevant portions of `macports-ports/.github/PULL_REQUEST_TEMPLATE.md`, with v1's renderer as a behavioral reference rather than copying its assumptions. Start with `Submitted by [dockhand](https://github.com/herbygillot/dockhand)`, retain useful contribution description, and include `###### Tested on` and `###### Verification`. Show the complete body in publication previews. Keep this in the existing publication-content path, using the verification evidence selected for the exact published revision, including reused attempts.
+
+- **Tested on:** show observed guest macOS product version (and build/architecture when available), selected Xcode or Command Line Tools version, and provider details. For Tart, identify the Tart version and image/environment, and say pristine only when that property was established for the run. Add the missing environment metadata at observation time; do not infer macOS product versions from Darwin majors, substitute the publisher host's current configuration, or invent values for older evidence.
+- **Commit guidelines:** check only when all published contribution commits remain exactly as Dockhand generated them and the generation path has been checked against the guidelines. Existing subject templates have the expected port prefix, but current code does not validate the full message or arbitrary reason text. A Generated-by trailer alone is not proof. Check message formatting, body/trailer separation, and any applicable length/content rules before making the claim; otherwise leave the item unchecked or narrow its wording.
+- **Squashed/minimized:** check for the single unchanged Dockhand-generated contribution commit after confirming the actual published commit range.
+- **Lint:** check from a successful recorded lint step, not merely from the attempt's existence or policy.
+- **Tests:** check only if a test phase actually executed successfully. `Tests=declared` alone is insufficient. If the port declared no tests or testing was skipped, explain or omit the inapplicable item rather than claiming tests ran.
+- **Install:** check from a successful install step and show the command/options actually used, including `-d` and whether source-only mode was requested. Use a readable normalized command while retaining meaningful options and privilege context; do not claim the template's `-vst` invocation was used or that all dependencies were built from source when binary archives were allowed.
+- **Manual checks:** retain duplicate-PR, Trac-ticket, binary-functionality, and important-variant items unchecked unless the corresponding action and its scope are actually recorded. Finding the matching PR for publication recovery is not a search for all competing changes; a default-variant build is not broad variant coverage. This rendering task does not require implementing those additional checks.
+
+Preserve human edits to existing PR bodies when publishing again. Generate the initial body from frozen publication inputs; leave automatic refresh of previously generated sections for the post-publication design unless ownership is explicitly defined. Avoid making a generic template engine or new workflow layer. Test generated versus human/amended commits, executed versus skipped tests, reused evidence, missing environment metadata, meaningful command flags, and preservation of edited PR bodies.
+
+### 4. Finish the outstanding exercise corrections
+
+- Remove guest-agent release-tag assumptions from executable version checks. Use the verified installation artifact and required protocol/capabilities; keep version output diagnostic. A port executable's reported version must not be required to match its source tag.
+- Make rejected saved GitHub credentials easy to identify and replace or remove. Report the credential source without exposing its value; do not silently switch identities after authentication fails.
+- Show progress during initial image inspection, provider admission/source staging, and full PortIndex generation rather than leaving a stale `queued` line while work proceeds.
+- Make read-only status errors on an older database schema explain the supported migration path.
+
+Keep live exercise results in activity reports. Add regressions for defects that remain, rather than re-queuing cancellation, recovery, or provisioning work that has already passed its exercise.
+
+### 5. Broaden source and checksum preparation
+
+Support explicitly named checksums for a single distfile, retaining the distfile name and its Tcl expression. Then define safe handling for multiple source distfiles and their independent checksum groups. Preserve unrelated Portfile content and reject ambiguous associations.
+
+Investigate the GitLab preparation pattern rejected by the `zix` exercise. Distinguish supported PortGroup-generated fetch behavior from custom fetch/patch logic that actually requires a dedicated preparer; do not remove the existing rejection checks wholesale. Keep host/repository/tag interpretation in `macports/source` and forge access in its adapters.
+
+These checksum and source-editing boundaries should be shared by the dependency preparation below and by standalone checksum refresh.
+
+### 6. Regenerate Go and Rust dependency declarations during bumps
+
+Add explicit preparation support for `go2port`/`go.vendors` and `cargo2port`/`cargo.crates`, including `cargo.crates_github` where applicable. Derive dependency declarations and checksums from the selected new source release, using the appropriate MacPorts helpers rather than treating these declarations as ordinary single-archive checksums.
+
+Account for added, removed, and changed dependencies, relevant module/lock files, Git-sourced dependencies, and helper failures. Keep helper execution outside database write transactions and changes in isolated preparation workspaces. Review the generated diff, reevaluate the Portfile in its frozen context, and run normal verification before publication. Preserve human-maintained options and overrides; report cases that cannot be regenerated safely.
+
+Implement and validate Go and Rust independently through the existing preparation contract. Neither needs a separate workflow engine or a new general-purpose plugin framework.
+
+### 7. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 
@@ -43,21 +102,20 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 
 ### Engineering follow-up
 
-- Remove guest-agent release-tag assumptions from executable version checks. Use the verified installation artifact and required protocol/capabilities; keep version output diagnostic.
-- Review support for explicitly named single-distfile checksums and GitLab preparation patterns rejected by the git-toolbelt and zix exercises.
-- Improve progress reporting during initial image inspection and full PortIndex generation; both can be slow before the first useful status line.
 - Reduce repeated whole-tree indexing for small standalone edits, and consider staging indexes before occupying VM capacity. The concurrent exercise left a ready guest waiting on host indexing and its shared cache lock.
-- Make read-only status errors on an older database schema explain how to trigger the supported migration.
-- Make rejected saved GitHub credentials easier to diagnose and replace, including their source, without silently switching identities after an authentication failure.
-- Add focused tests for the Tcl shell and RPC boundaries.
-- Continue the coherent-comment pass in packages whose contracts or recovery behavior are difficult to infer.
-- Revisit a shared download package only when common policy and lifecycle emerge across the current download callers.
-- Add a project license before distribution.
-- Reduce duplication among current design documents without rewriting the append-only activity history.
+- Add focused tests for Tcl shell and RPC behavior, especially process exit, malformed replies, cancellation, and error propagation.
+- Measure the current CLI suite, then move duplicated lifecycle/composition scenarios to app or integration tests where useful. Keep focused CLI coverage for parsing, rendering, exit codes, and representative end-to-end wiring; retain existing recovery assertions. Do not impose the old review's timing target without current measurements.
+- Add a lightweight automated check of the dependency rules in `components.md`; enforce meaningful package boundaries rather than a broad stylistic lint regime.
+- Audit unused exported Tcl/upstream APIs and reserved scaffolding against current callers and protocol use. Unexport, remove, or test deliberately; do not delete functioning planning code based on an older review's inventory.
+- Continue the coherent-comment pass, prioritizing package responsibilities and recovery contracts over comment-count targets.
+- Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
+- Record the existing `status` contract explicitly in the principles: it reads durable observations; driver cycles perform reconciliation and external refreshes. Distinguish snapshot time from observation time.
+- Revisit a shared download package only when common policy and lifecycle emerge across current callers.
+- Add a project license before distribution; this remains a release prerequisite even though it is independent of the implementation order above.
 
 ## Needs design
 
-These items should not be implemented from their existing command placeholders alone.
+These items should not be implemented from their existing command placeholders alone. Settle human corrections and publication behavior before expanding post-publication commands; settle review authority and requester provenance before unattended discovery can originate publishable work.
 
 ### Review controls
 
@@ -109,3 +167,9 @@ The following capabilities are established and should be extended through their 
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;
 - capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;
+
+## Review triage
+
+This ordering incorporates the findings that remain useful from Claude's four project reviews and workflow review. Earlier findings about whole-state Git-ledger writes, the SQLite migration ladder, repeated phase inference, state/workflow policy ownership, missing CI, workflow file organization, shared Tart mechanics, PortIndex placement, and the unused placeholder planner have already been addressed; they are not new pending work.
+
+The remaining test-placement, mechanism-documentation, exported-surface, dependency-checking, and status-contract suggestions are represented above. Cross-repository evidence reuse, requester provenance, review controls, and PR observation retain their existing design/planning slots. Do not split workflow merely because it is large, reintroduce the discarded Git ledger, rename the user-selected environment variables, or require v1 feature parity as a prerequisite for this queue.
