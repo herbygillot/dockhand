@@ -34,6 +34,21 @@ type fakeMachine struct {
 func newMachine() *fakeMachine {
 	return &fakeMachine{calls: map[string]int{}, running: map[string]bool{}, results: map[string]guestResult{}}
 }
+
+func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
+	home := t.TempDir()
+	provider := &Provider{
+		Config:  Config{Home: home, ArtifactDirectory: t.TempDir()},
+		backend: newMachine(),
+	}
+	config, err := provider.BuildConfig(t.Context(), testPlatform, record.TestDeclared, false)
+	require.NoError(t, err)
+	var settings Config
+	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
+	require.Equal(t, "dockhand-base-tahoe", settings.Image)
+	require.Equal(t, testPlatform, settings.Platform)
+}
+
 func (m *fakeMachine) Environment(context.Context) (Environment, error) {
 	return Environment{Digest: "sha256:fixture", Platform: testPlatform}, nil
 }

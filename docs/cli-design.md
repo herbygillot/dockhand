@@ -1,6 +1,6 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job- and contribution-selected `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Working-tree verification and matching-evidence reuse are implemented. Standalone and combined bump/publication of verified branches, resource retention, and database backup/check commands are implemented. Broader target selection remains unfinished.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `setup`, `verify`, job- and contribution-selected `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Working-tree verification and matching-evidence reuse are implemented. Standalone and combined bump/publication of verified branches, resource retention, and database backup/check commands are implemented. Broader target selection remains unfinished.
 
 ## Global options
 
@@ -10,7 +10,9 @@ See [architecture](architecture.md) for driver ownership and recovery, [principl
 
 `--git PATH` selects the Git executable used for all source-repository operations. It defaults to `GIT_BIN` when nonempty, then to `git` on the executable search path. A path supplied by the flag overrides the environment and an embedding caller's configured executable. Relative paths containing a directory component resolve against the invocation's working directory; a bare executable name remains eligible for `PATH` lookup.
 
-Explicit flags override the environment. Both flags are inherited by subcommands, accept relative directories resolved against the invocation's working directory, reject explicitly empty values, and offer directory completion. Parsing and help do not check that the selected directories exist or create them.
+`--tart PATH` selects the Tart executable used for image setup and verification. It defaults to `TART_BIN` when nonempty, then to `tart` on the executable search path. It follows the same flag precedence and path-resolution rules as `--git`.
+
+Explicit flags override the environment. The global path flags are inherited by subcommands, resolve relative values against the invocation's working directory, reject explicitly empty values, and offer the appropriate file or directory completion. Parsing and help do not check that the selected paths exist or create them.
 
 ```sh
 dockhand -T ~/Source/macports-ports -P /opt/local status
@@ -30,7 +32,7 @@ One database can hold work for many repositories. Workflow commands operate on t
 
 ## Command parsing and help
 
-The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-T`, `--prefix` / `-P`, `--git`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
+The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-T`, `--prefix` / `-P`, `--git`, `--tart`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
@@ -60,10 +62,25 @@ dockhand db check
 
 `db backup` and `db check` have an explicit whole-database scope and require no checkout or provider configuration. Backup creates a checked standalone snapshot including committed WAL contents; an existing destination is refused. Check is read-only and covers SQLite integrity and foreign keys. These two commands accept older supported schemas without migration. Missing databases are errors. They do not repair or restore a live database or resume work. See [operations and recovery](operations.md) for examples and external-state limitations.
 
+## Tart setup
+
+```text
+dockhand setup [--check|--rebuild] [--image <local-name>]
+    [--source <oci-image>] [--macports-version <version>]
+```
+
+`setup` prepares the local Tart image used by native verification. It determines the native Darwin version and architecture through the selected local MacPorts installation, chooses a conventional image name and matching vanilla macOS source, and provisions only when that image is missing. An existing image is started only as a disposable clone and must pass the same checks. `--check` refuses a missing image and performs no pull or installation. `--rebuild` always prepares and validates a replacement before attempting to adopt it.
+
+The base profile installs the pinned Tart guest agent from its release archive after verifying its SHA-256 digest, installs Apple's Command Line Tools when the vanilla source lacks a working compiler, then installs the selected official MacPorts package. Validation requires the requested platform and MacPorts version, the pinned guest-agent version, a working compiler, passwordless sudo, MacPorts Tcl packages, no active ports, and no recognized foreign package-manager prefix. The first implementation supports arm64 Darwin 21 through 25, MacPorts under `/opt/local`, and the Command Line Tools profile. Full Xcode images and custom provisioning recipes remain future extensions.
+
+Provisioning uses temporary `-next` images. A failed build leaves the current base and golden images unchanged. Adoption takes a per-image write lock; verification takes the corresponding read lock while hashing or cloning the base. The lock descriptor is inherited by Tart clone children, so process death cannot expose a still-running clone to replacement. Another per-image lock serializes setup commands even when their processes use different state databases. A failed final adoption retains the proven `-next` candidate, and a retained golden image restores a missing base during a later ordinary setup. These locks live under the selected Tart home and protect external VM operations; they do not authorize workflow state writes.
+
+`setup` creates no workflow job and does not open SQLite or require a ports checkout. It reports progress on stderr and a human or JSON result on stdout. The Tart executable follows global `--tart` / `TART_BIN` selection. The default image follows the native release, such as `dockhand-base-tahoe`, and verification selects that conventional image when `--image` is omitted.
+
 ## Implemented verification commands
 
 ```text
-dockhand verify [port] --image <prepared-local-image> [--branch <branch>]
+dockhand verify [port] [--image <prepared-local-image>] [--branch <branch>]
     [--subport <name>] [--variant +name|--variant=-name ...]
     [--capacity <positive-limit>] [--tests declared|skip]
     [--from-source] [--fresh] [--wait|--trace]
@@ -74,11 +91,11 @@ dockhand start
 
 `verify` resolves one snapshot-relative port directory/Portfile or unique directory name. Omitting `--branch` captures current working-tree contents; detached HEAD is supported when a HEAD commit exists. Supplying `--branch`, even the current branch name, selects committed contents. Output identifies the input kind, branch or detached source, HEAD/commit, modified-file count, selected target, and accepted tree. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Omitting the port infers the single target of an open tracked contribution, as specified below. Multi-target selectors remain future work.
 
-The prepared image is currently selected explicitly with `--image` (or through the Go application's configured default). General Git configuration loading remains separate work. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `--capacity` may establish another positive limit. An existing pool's limit and directory must agree. Omission reuses the recorded limit. Image availability and platform checks are distinct from admission capacity.
+The prepared image can be selected explicitly with `--image` or through the Go application's configured default. Otherwise Dockhand selects the conventional image for the native MacPorts platform; `setup` prepares and checks that image. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `--capacity` may establish another positive limit. An existing pool's limit and directory must agree. Omission reuses the recorded limit. Image availability and platform checks are distinct from admission capacity.
 
 At initial planning, the driver looks for reusable evidence in the selected repository. A conclusive pass must cover the same complete tree, target/subport, variants, platform, image digest, verifier implementation, source-build/test policy, provider settings, and artifact inputs. A commit or revision ID can change while the tested tree stays identical. A match settles verification with an original-attempt reference, without consuming VM capacity or creating another attempt. Status and JSON retain that reference and original evidence; `--trace` reports reuse without replaying an old build log.
 
-Standalone `verify` still requires an image because a miss must be executable. A bump without `--image` records an evidence-selection request instead: Tart, the native platform, and the requested test and source-build policies. Once preparation produces the exact tree, the driver may select the newest matching recorded configuration and reuse its passing evidence. A matching negative result prevents fallback to an older pass. If no pass applies, the prepared branch is preserved and the job requests an image. An explicitly selected image that fails setup is never replaced from history.
+Standalone `verify` requires a usable prepared image because a reuse miss must be executable; omission selects the conventional native image rather than omitting the provider configuration. A bump without an available image records an evidence-selection request instead: Tart, the native platform, and the requested test and source-build policies. Once preparation produces the exact tree, the driver may select the newest matching recorded configuration and reuse its passing evidence. A matching negative result prevents fallback to an older pass. If no pass applies, the prepared branch is preserved and the job directs the user to run setup or select an image. An explicitly selected image that fails setup is never replaced from history.
 
 `verify --fresh` requires a new execution even when a pass applies. This choice is recorded at acceptance and survives detachment. `wait` and `start` continue the recorded choice. A newer terminal attempt with matching inputs and a negative or inconclusive result prevents fallback to an older pass. Lookup checks the latest 32 terminal attempts for the tree and target, so older applicable evidence can conservatively be missed. A miss reports the relevant differences and runs a build. Legacy results without a verifier identity are not reused. Image selection and source binding still run before acceptance; reuse skips driver provider calls and admission, not intake validation. Prepared bumps use this same reuse policy when they reach verification. For a combined publication job, reuse satisfies the admission milestone and leaves publication pending; only confirmation completes the job.
 

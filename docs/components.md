@@ -23,7 +23,8 @@ dockhand2/
     prepare/             # Source transformations and edit-fidelity checks
     upstream/            # Release discovery and version assessment
     verify/              # Build specifications, coverage plans, verdicts
-      tart/              # Concrete VM verification provider
+      tart/              # Concrete VM verification provider and image coordination
+        provision/       # Tart base-image construction and validation
     publish/             # Publication policy, desired state, reconciliation
     macports/            # Bound source contexts, evaluation, dependencies
     tcl/                 # Tcl process/RPC support and source syntax tools
@@ -107,7 +108,7 @@ Use an isolated verification unit per target/configuration by default, schedulin
 
 Planned follow-up targets may refer to predecessor work, but freeze concrete artifact identities before submitting an attempt. Artifact reuse and baseline comparisons can be added later without changing the distinction between a coverage plan and an immutable attempt. Do not create a generic graph engine or another package resolver.
 
-`verify/tart` implements the provider contract and owns VM-specific admission, provisioning, guest execution, evidence extraction, and resource operations. It does not publish PRs or mutate workflow records. Its lifecycle logic, native Tart/launchd adapter, exact-source archive mechanics, and guest runner remain inside `verify/tart`. A narrow `state.ProviderStore` interface supplies pool-scoped transactions on the same SQLite backend; provider-owned executions and workflow adoption are separate records. Per-submission OS locks serialize external VM mutations, while SQLite owns shared reservations and durable closure. Large logs and build artifacts can stay outside the database, with stable references returned to the driver and explicit retention responsibilities. `verify.ArtifactPruner` is an optional provider capability for idempotent deletion of released diagnostics under the same operation lock. `workflow.Collect` owns age selection and records confirmed pruning; it reuses ordinary claimed cleanup for VM release. No second job progression loop or general garbage-collector package is introduced.
+`verify/tart` implements the provider contract and owns VM-specific admission, guest execution, evidence extraction, resource operations, and base-image coordination. `verify/tart/provision` owns the setup recipe and native construction mechanics without joining the attempt lifecycle. Neither publishes PRs or mutates workflow records. The provider lifecycle, native Tart/launchd adapter, exact-source archive mechanics, and guest runner remain inside `verify/tart`. A narrow `state.ProviderStore` interface supplies pool-scoped transactions on the same SQLite backend; provider-owned executions and workflow adoption are separate records. Per-submission OS locks serialize external VM mutations, while SQLite owns shared reservations and durable closure. Per-image read/write locks coordinate verification with base replacement, and a setup lock serializes provisioning independently of database selection. Large logs and build artifacts can stay outside the database, with stable references returned to the driver and explicit retention responsibilities. `verify.ArtifactPruner` is an optional provider capability for idempotent deletion of released diagnostics under the same operation lock. `workflow.Collect` owns age selection and records confirmed pruning; it reuses ordinary claimed cleanup for VM release. No second job progression loop or general garbage-collector package is introduced.
 
 ### Publication and later PR awareness
 
@@ -162,14 +163,15 @@ Earlier reviews are evidence of failure modes, not a claim that every finding re
 
 ## Next implementation slice
 
-The immediate implementation priorities are:
+The next implementation priorities are:
 
-1. **Tart image provisioning.** Provision reproducible local images from pinned sources, retain their source and recipe identity, recover interrupted work, and optionally adopt a validated image as a reusable verification default.
-2. **Setup diagnostics and reusable verification settings.** Make missing tools, image selection, and provider configuration easier to diagnose and reuse after the provisioning workflow is defined.
-3. **Review controls.** Connect revision-bound acceptance and dismissal to the same durable control and driver path.
-4. **Dependent verification planning.** Introduce explicit cohort and downstream coverage without turning workflow into a generic graph engine.
+1. **Review controls.** Connect revision-bound acceptance and dismissal to the same durable control and driver path.
+2. **Dependent verification planning.** Introduce explicit cohort and downstream coverage without turning workflow into a generic graph engine.
+3. **Setup profiles.** Add full-Xcode and other explicitly named image recipes when real ports require them; preserve the minimal base profile as a stable contract.
 
 Branch-based wait/cancel and continuous integration are implemented. Authentication discovery, preflight, native login, and image-free selection of matching recorded verification are implemented. Explicit and environment credentials, Dockhand's Keychain credential, and the active `gh` account are resolved for publication; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Device login stays outside repository state and uses a registered OAuth client ID supplied by the build, environment, or command line.
+
+Tart image setup is implemented as a state-independent application operation. It validates existing images in disposable clones and provisions a missing or explicitly rebuilt native base from a pinned guest-agent asset and an explicit MacPorts version. Conventional release-based names allow verification to select the prepared image when `--image` is omitted. A golden copy and candidate-first replacement order provide bounded recovery, while per-image external locks coordinate setup with concurrent verification even across different database selections.
 
 ### Implemented foundations
 

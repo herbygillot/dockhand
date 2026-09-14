@@ -21,6 +21,10 @@ import (
 )
 
 func acquire(ctx context.Context, path string) (*os.File, error) {
+	return acquireMode(ctx, path, syscall.LOCK_EX)
+}
+
+func acquireMode(ctx context.Context, path string, mode int) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
@@ -33,7 +37,7 @@ func acquire(ctx context.Context, path string) (*os.File, error) {
 			file.Close()
 			return nil, err
 		}
-		err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err = syscall.Flock(int(file.Fd()), mode|syscall.LOCK_NB)
 		if err == nil {
 			return file, nil
 		}
@@ -49,6 +53,23 @@ func acquire(ctx context.Context, path string) (*os.File, error) {
 		}
 	}
 }
+
+func imageLockPath(home, kind, image string) string {
+	return filepath.Join(home, "dockhand", "locks", kind+"-"+digest([]byte(image))+".lock")
+}
+
+func AcquireImageRead(ctx context.Context, home, image string) (*os.File, error) {
+	return acquireMode(ctx, imageLockPath(home, "image", image), syscall.LOCK_SH)
+}
+
+func AcquireImageWrite(ctx context.Context, home, image string) (*os.File, error) {
+	return acquireMode(ctx, imageLockPath(home, "image", image), syscall.LOCK_EX)
+}
+
+func AcquireProvisioning(ctx context.Context, home, image string) (*os.File, error) {
+	return acquireMode(ctx, imageLockPath(home, "setup", image), syscall.LOCK_EX)
+}
+
 func atomicFile(path string, data []byte, mode fs.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err

@@ -41,13 +41,20 @@ type native struct {
 }
 
 func (n *native) command(ctx context.Context, bin string, input io.Reader, output io.Writer, args ...string) ([]byte, error) {
+	return n.commandWithGuard(ctx, bin, input, output, nil, args...)
+}
+
+func (n *native) commandWithGuard(ctx context.Context, bin string, input io.Reader, output io.Writer, imageGuard *os.File, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), "TART_HOME="+n.config.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
 	cmd.Stdin = input
 	cmd.WaitDelay = 2 * time.Second
 	// Close-only locks remain held by unfinished commands after driver death.
 	if n.guard != nil {
-		cmd.ExtraFiles = []*os.File{n.guard}
+		cmd.ExtraFiles = append(cmd.ExtraFiles, n.guard)
+	}
+	if imageGuard != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, imageGuard)
 	}
 	var out, stderr bytes.Buffer
 	if output == nil {
@@ -126,6 +133,11 @@ func (n *native) Running(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 func (n *native) Clone(ctx context.Context, image, vm string) error {
+	guard, err := AcquireImageRead(ctx, n.config.Home, image)
+	if err != nil {
+		return err
+	}
+	defer guard.Close()
 	exists, _, err := n.localVM(ctx, vm)
 	if err != nil {
 		return err
@@ -133,7 +145,7 @@ func (n *native) Clone(ctx context.Context, image, vm string) error {
 	if exists {
 		return fmt.Errorf("tart: refusing to overwrite existing VM %s", vm)
 	}
-	_, err = n.tart(ctx, nil, nil, "clone", image, vm)
+	_, err = n.commandWithGuard(ctx, n.config.Executable, nil, nil, guard, "clone", image, vm)
 	return err
 }
 func xmlString(s string) string {

@@ -116,7 +116,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.NoVerify {
 		bound.Destination, bound.Verification = record.BranchReady, record.VerificationSkipped
-	} else if s.verification.Config.Image != "" {
+	} else {
 		config, err := s.verification.BuildConfig(ctx, platform, request.Tests, request.FromSource)
 		if ctx.Err() != nil {
 			return workflow.BoundPreparation{}, ctx.Err()
@@ -126,9 +126,9 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		} else {
 			bound.Build = &config
 		}
-	} else {
+	}
+	if bound.Build == nil && !request.NoVerify {
 		bound.BuildRequirements = &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, Tests: request.Tests, FromSource: request.FromSource}
-		bound.VerificationProblem = "select a prepared local Tart image with --image"
 	}
 	if request.Publish != nil {
 		bound.Destination, bound.Publication = record.Published, *request.Publish

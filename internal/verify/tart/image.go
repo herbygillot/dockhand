@@ -34,6 +34,11 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 	if !safeToken(n.config.Image) || strings.Contains(n.config.Image, ":") {
 		return Environment{}, fmt.Errorf("tart: a prepared local image is required")
 	}
+	guard, err := AcquireImageRead(ctx, n.config.Home, n.config.Image)
+	if err != nil {
+		return Environment{}, err
+	}
+	defer guard.Close()
 	exists, running, err := n.localVM(ctx, n.config.Image)
 	if err != nil {
 		return Environment{}, err

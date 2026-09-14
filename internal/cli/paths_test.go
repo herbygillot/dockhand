@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
 	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -94,6 +95,21 @@ func TestGlobalGitReachesRepositoryOperations(t *testing.T) {
 	require.Len(t, result.Jobs, 1)
 }
 
+func TestGlobalTartPathDefaultsAndPrecedence(t *testing.T) {
+	working := t.TempDir()
+	t.Chdir(working)
+	t.Setenv("TART_BIN", "environment/tart")
+	root, err := NewRoot(app.Config{DBPath: filepath.Join(t.TempDir(), "state.db"), Tart: tart.Config{Executable: "configured/tart"}})
+	require.NoError(t, err)
+	root.SetArgs([]string{"setup", "--tart", "flag/tart", "--help"})
+	require.NoError(t, root.ExecuteContext(t.Context()))
+	require.Equal(t, filepath.Join(working, "flag/tart"), root.PersistentFlags().Lookup("tart").Value.String())
+
+	root, err = NewRoot(app.Config{DBPath: filepath.Join(t.TempDir(), "state.db")})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(working, "environment/tart"), root.PersistentFlags().Lookup("tart").Value.String())
+}
+
 func TestGlobalTreeSelectsRecordedWorkFromOutsideCheckout(t *testing.T) {
 	config, id := queuedJob(t)
 	tree := config.Repository
@@ -163,5 +179,7 @@ func TestGlobalPathsRejectExplicitEmptyValues(t *testing.T) {
 	}
 	var out bytes.Buffer
 	require.ErrorContains(t, Run(t.Context(), []string{"status", "--git="}, Streams{Out: &out, Err: &out}, config), "executable path must not be empty")
+	out.Reset()
+	require.ErrorContains(t, Run(t.Context(), []string{"status", "--tart="}, Streams{Out: &out, Err: &out}, config), "executable path must not be empty")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }

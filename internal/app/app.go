@@ -23,8 +23,6 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 )
 
-var ErrNotImplemented = errors.New("app: setup is not implemented")
-
 type Config struct {
 	DBPath         string
 	Repository     string
@@ -95,10 +93,6 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		verification: provider,
 		ports:        ports,
 	}, nil
-}
-
-func Setup(ctx context.Context, config Config) error {
-	return ErrNotImplemented
 }
 
 func (s *Services) Close() error {

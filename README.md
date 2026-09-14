@@ -9,6 +9,7 @@ Request intake, read-only status, cancellation, and the single-target verificati
 Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released diagnostics, then `dockhand gc` to apply it. `dockhand db backup <file>` creates a consistent standalone snapshot of the shared database; `dockhand db check` checks its integrity. See [state operations and recovery](docs/operations.md) for retention rules and restoring a backup.
 
 - [Combined bump and publication report](docs/activity/2026-09-13-combined-publication.md)
+- [Tart setup and provisioning report](docs/activity/2026-09-14-tart-setup.md)
 - [State and workflow policy boundary report](docs/activity/2026-09-14-state-policy-boundary.md)
 - [Explicit job phases report](docs/activity/2026-09-14-explicit-job-phases.md)
 - [Prepared verification selection report](docs/activity/2026-09-14-prepared-verification-selection.md)
@@ -56,7 +57,7 @@ DOCKHAND_GITHUB_CLIENT_ID=<registered-oauth-client-id> dockhand auth login
 
 The OAuth application must have GitHub's device flow enabled. Build with `make GITHUB_OAUTH_CLIENT_ID=<id>` to embed its registered client ID; the client ID is public application metadata, not a secret. Login opens GitHub's device page, requests `public_repo`, validates the selected account, and stores the token in macOS Keychain. `--client-id` overrides the configured ID and `--no-browser` prints the URL for manual opening. Login uses neither the ports tree nor the workflow database.
 
-Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Select the local MacPorts installation with `--prefix` / `-P` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. Select Git with `--git` or `GIT_BIN`; otherwise Dockhand finds `git` on `PATH`. Flags override the environment. `--publish` has no shorthand.
+Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Select the local MacPorts installation with `--prefix` / `-P` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. Select Git with `--git` or `GIT_BIN`, and Tart with `--tart` or `TART_BIN`; otherwise Dockhand finds each executable on `PATH`. Flags override the environment. `--publish` has no shorthand.
 
 Writable service construction creates the selected database and its parent directory when needed. `dockhand status [job_id]` reads recorded state without initializing missing state or contacting providers. Use `--active` for queued/active work, `--branch <branch>` for a recorded contribution, and `--json` for structured output. `--active` may combine with either selector. Help, completion generation, and preparation previews do not open a database. Publication preflight reads recorded verification and initializes/migrates state through normal service construction. No config-directory setting or lock-file flag is present.
 
@@ -71,7 +72,19 @@ DOCKHAND_TEST_TART_IMAGE=dockhand-base-tahoe \
 go test -v ./internal/verify/tart -run '^TestRealTartBuildSurvivesSubmittingDriverExit$' -timeout 16m
 ```
 
-All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate that shared pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. Provisioning base images remains later work. `verify --image` selects the image; an optional `--capacity` establishes the shared pool limit. Subsequent `wait` and `start` invocations use the accepted job settings and recorded pool limit.
+Prepare the native host's conventional verification image before the first build:
+
+```sh
+dockhand setup
+dockhand setup --check
+dockhand setup --rebuild
+```
+
+Setup pulls the matching vanilla Cirrus Labs macOS image, installs the pinned Tart guest agent, Apple's Command Line Tools when needed, and MacPorts, validates the result, and adopts it only after the checks pass. An existing image is validated in a disposable clone. `--rebuild` prepares a replacement while the current base remains available. A retained golden image can restore a missing base. This first profile supports arm64 macOS hosts from Monterey through Tahoe, `/opt/local`, and the Command Line Tools rather than full Xcode. Setup uses neither the ports checkout nor SQLite, but it uses the local MacPorts installation to determine the native platform.
+
+The default local image name follows the native release, such as `dockhand-base-tahoe`. Verification and bump commands select that image when `--image` is omitted; `--image` remains available for another prepared image. `--source` and `--macports-version` override setup inputs. Per-image read/write locks under the Tart home allow concurrent verification clones while preventing setup from replacing their source image. A separate per-image setup lock prevents competing provisioners, including processes that selected different SQLite databases.
+
+All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate the shared execution pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. An optional `--capacity` establishes the shared pool limit. Subsequent `wait` and `start` invocations use the accepted job settings and recorded pool limit.
 
 Verify current edits or committed branch contents, then reattach by the printed job ID:
 

@@ -614,7 +614,10 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, te
 		return record.BuildConfig{}, err
 	}
 	if c.Image == "" {
-		return record.BuildConfig{}, fmt.Errorf("tart: select a prepared local image with --image")
+		c.Image, err = DefaultImageName(platform)
+		if err != nil {
+			return record.BuildConfig{}, err
+		}
 	}
 	c.Platform = platform
 	if p.State != nil {
@@ -628,6 +631,9 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, te
 	}
 	environment, err := p.machineFor(c, nil).Environment(ctx)
 	if err != nil {
+		if p.Config.Image == "" {
+			return record.BuildConfig{}, fmt.Errorf("tart: default image %s is unavailable; run dockhand setup or select --image: %w", c.Image, err)
+		}
 		return record.BuildConfig{}, err
 	}
 	// Capacity is pool policy; zero permits an existing pool's recorded limit.

@@ -31,16 +31,6 @@ func (r *runtime) workflowCommand(use, short string, args cobra.PositionalArgs) 
 	return command, options
 }
 
-func (r *runtime) setupCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "setup",
-		Short: "Check tools and prepare verification environments",
-		Long:  "Check tools and prepare verification environments.\n\nSetup is not implemented yet.",
-		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, _ []string) error { return app.Setup(cmd.Context(), r.config) },
-	}
-}
-
 func (r *runtime) reviewCommand() *cobra.Command {
 	review := &cobra.Command{
 		Use:   "review",

@@ -31,6 +31,9 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	if config.GitExecutable == "" {
 		config.GitExecutable = os.Getenv("GIT_BIN")
 	}
+	if config.Tart.Executable == "" {
+		config.Tart.Executable = os.Getenv("TART_BIN")
+	}
 	if config.DBPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
@@ -78,11 +81,21 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		}
 	}
 	root.PersistentFlags().Var(gitPath, "git", "Git executable (GIT_BIN; otherwise find git on PATH)")
+	tartPath := executablePathValue{target: &runtime.config.Tart.Executable}
+	if runtime.config.Tart.Executable != "" {
+		if err := tartPath.Set(runtime.config.Tart.Executable); err != nil {
+			return nil, fmt.Errorf("cli: resolving --tart: %w", err)
+		}
+	}
+	root.PersistentFlags().Var(tartPath, "tart", "Tart executable (TART_BIN; otherwise find tart on PATH)")
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
 	if err := root.MarkPersistentFlagFilename("db"); err != nil {
 		return nil, err
 	}
 	if err := root.MarkPersistentFlagFilename("git"); err != nil {
+		return nil, err
+	}
+	if err := root.MarkPersistentFlagFilename("tart"); err != nil {
 		return nil, err
 	}
 
