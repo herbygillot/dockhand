@@ -155,6 +155,18 @@ Earlier reviews are evidence of failure modes, not a claim that every finding re
 
 ## Next implementation slice
 
+The immediate priorities reflect the two publication gaps found during the chezmoi run:
+
+1. **Authentication discovery and preflight.** Reuse explicit/environment credentials and optionally the active `gh` account. Keep GitHub credential handling and authenticated API checks at the GitHub adapter boundary; publication requests and driver execution invoke those checks before remote effects. Do not persist secrets as workflow intent or treat successful public reads as proof of authentication.
+2. **Verification reuse before requiring an image.** Let combined bump/publication use applicable recorded evidence through a policy consistent with standalone publication. Preserve source/target/configuration applicability checks and record the selected evidence and its configuration explicitly; do not silently rewrite accepted build choices or pick an arbitrary historical pass. Require a build image when new verification is actually needed.
+3. **Branch-based wait/cancel.** Resolve existing work from a tracked contribution and freeze the selected job IDs. Record cancellation selection and intent atomically; later submissions never join an existing attachment or cancellation.
+4. **Setup diagnostics and reusable verification settings.** Make missing tools, image selection, and provider configuration easier to diagnose and reuse.
+5. **Native authentication login.** Add the approved `dockhand auth login` workflow using browser device authorization and macOS Keychain, without requiring `gh`. Keep it independent of repository state and driver jobs. Application registration is required before implementing the browser flow; see the [authentication roadmap](cli-design.md#authentication-roadmap).
+
+These are planned changes. Authentication fallback/preflight, image-free combined evidence selection, and native login are not yet implemented.
+
+### Implemented foundations
+
 The state migration is complete: intake, status, cancellation, and the single-target cycle use `state` and `state/sqlite`, with repository registration, scoped queries, and `--db`. Cross-process tests cover concurrent writers, abandoned transactions, and competing driver claims. The [implementation report](activity/2026-09-12-sqlite-state.md) and [measurements](performance/2026-09-12-sqlite-state.md) describe the result.
 
 Explicit branch binding and native MacPorts evaluation are now implemented. `workflow.BindVerification` uses Git snapshot mechanics and a bound `macports.Tree`; `Submit` atomically records the job and, for an existing tracked contribution, its selected revision. Standalone verification creates no contribution. Resolution initially supports a snapshot-relative port directory/Portfile or a unique directory name, plus an explicit subport. It does not use an installed PortIndex to resolve names in a different source snapshot. The [source-binding report](activity/2026-09-12-source-binding.md) describes the API, tests, and current limits.

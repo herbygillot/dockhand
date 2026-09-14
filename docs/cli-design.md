@@ -34,6 +34,14 @@ The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `-
 
 `status [job_id]`, `status --active`, and `status --branch <branch>` call the shared workflow projection through read-only SQLite access and render human-readable output or JSON. Verification submission, job-ID attachment/cancellation, and resident execution now use the shared Go workflow API. Version and revision bumps use the shared driver; previews use the same preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
 
+## Authentication roadmap
+
+`dockhand auth login` is planned, not implemented. It will let a user authorize Dockhand through GitHub's device flow in a browser without installing `gh` or manually copying a token. Store the resulting credential in macOS Keychain, outside the workflow database. Login does not require a ports checkout or create a workflow job. Environment tokens remain available for automation. This requires a registered Dockhand application with device flow enabled; application registration and credential lifecycle are implementation prerequisites. See [GitHub's device-flow documentation](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow).
+
+The current implementation reads `GH_TOKEN`, then `GITHUB_TOKEN`, and does not use the active GitHub CLI login. Git pushes use Git's separate credentials. Public API reads and the current publication dry run can succeed without authenticating, so they do not prove that a PR write will succeed.
+
+The immediate authentication slice is shared credential resolution with optional reuse of an existing `gh` login, plus authenticated publication preflight before acceptance and before the driver performs remote writes. Keep API operations in `go-github`. Missing or invalid credentials should produce an actionable error before a push. A successful authentication check does not guarantee every repository permission or prevent later revocation; rejected writes and uncertain outcomes still require the existing publication recovery rules. Credentials must not enter accepted job records, logs, or JSON results.
+
 ## Maintenance commands
 
 ```text
