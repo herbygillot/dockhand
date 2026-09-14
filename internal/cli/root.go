@@ -28,6 +28,9 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	if config.MacPortsPrefix == "" {
 		config.MacPortsPrefix = os.Getenv("MACPORTS_PREFIX")
 	}
+	if config.GitExecutable == "" {
+		config.GitExecutable = os.Getenv("GIT_BIN")
+	}
 	if config.DBPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
@@ -68,8 +71,18 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 			return nil, err
 		}
 	}
+	gitPath := executablePathValue{target: &runtime.config.GitExecutable}
+	if runtime.config.GitExecutable != "" {
+		if err := gitPath.Set(runtime.config.GitExecutable); err != nil {
+			return nil, fmt.Errorf("cli: resolving --git: %w", err)
+		}
+	}
+	root.PersistentFlags().Var(gitPath, "git", "Git executable (GIT_BIN; otherwise find git on PATH)")
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
 	if err := root.MarkPersistentFlagFilename("db"); err != nil {
+		return nil, err
+	}
+	if err := root.MarkPersistentFlagFilename("git"); err != nil {
 		return nil, err
 	}
 

@@ -8,11 +8,13 @@ See [architecture](architecture.md) for driver ownership and recovery, [principl
 
 `--prefix PATH` / `-P PATH` selects the local MacPorts installation used for evaluation, through `<prefix>/bin/port-tclsh`. It defaults to `MACPORTS_PREFIX` when nonempty; otherwise Dockhand finds `port-tclsh` on the executable search path. The VM's MacPorts prefix remains a separate provider setting tied to its image. `--publish` has no short alias now that `-P` selects the prefix.
 
+`--git PATH` selects the Git executable used for all source-repository operations. It defaults to `GIT_BIN` when nonempty, then to `git` on the executable search path. A path supplied by the flag overrides the environment and an embedding caller's configured executable. Relative paths containing a directory component resolve against the invocation's working directory; a bare executable name remains eligible for `PATH` lookup.
+
 Explicit flags override the environment. Both flags are inherited by subcommands, accept relative directories resolved against the invocation's working directory, reject explicitly empty values, and offer directory completion. Parsing and help do not check that the selected directories exist or create them.
 
 ```sh
 dockhand -T ~/Source/macports-ports -P /opt/local status
-MACPORTS_TREE=~/Source/macports-ports MACPORTS_PREFIX=/opt/local dockhand bump jq
+MACPORTS_TREE=~/Source/macports-ports MACPORTS_PREFIX=/opt/local GIT_BIN=/opt/local/bin/git dockhand bump jq
 ```
 
 `--db PATH` selects the state database, defaulting to `$HOME/.dockhand/state.db` across all checkouts. Both `--db PATH` and `--db=PATH` work before or after the command. The `--` separator ends option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty path is rejected. Accept a filesystem path, not SQLite URI options. No short alias is assigned. The old `--lock-dir`, `-L`, and `--lockfile` flags are rejected.
@@ -28,7 +30,7 @@ One database can hold work for many repositories. Workflow commands operate on t
 
 ## Command parsing and help
 
-The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-T`, `--prefix` / `-P`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
+The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-T`, `--prefix` / `-P`, `--git`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 

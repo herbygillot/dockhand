@@ -43,6 +43,26 @@ func (v directoryPathValue) Set(value string) error {
 	return nil
 }
 
+type executablePathValue struct{ target *string }
+
+func (v executablePathValue) String() string { return *v.target }
+func (v executablePathValue) Type() string   { return "path" }
+func (v executablePathValue) Set(value string) error {
+	if value == "" {
+		return errors.New("executable path must not be empty")
+	}
+	if !filepath.IsAbs(value) && !strings.ContainsAny(value, `/\`) {
+		*v.target = value
+		return nil
+	}
+	path, err := filepath.Abs(value)
+	if err != nil {
+		return err
+	}
+	*v.target = path
+	return nil
+}
+
 func verificationFlags(command *cobra.Command, options *Options) {
 	command.Flags().BoolVar(&options.Wait, "wait", false, "Stay until the requested work completes")
 	command.Flags().BoolVar(&options.Trace, "trace", false, "Follow build logs and wait for completion")

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
@@ -14,26 +16,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGlobalMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
+func TestGlobalToolAndMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
 	working := t.TempDir()
 	t.Chdir(working)
 	working, err := os.Getwd()
 	require.NoError(t, err)
 	for _, tc := range []struct {
-		name, envTree, envPrefix, configTree, configPrefix, wantTree, wantPrefix string
-		flags                                                                    []string
+		name, envTree, envPrefix, envGit    string
+		configTree, configPrefix, configGit string
+		wantTree, wantPrefix, wantGit       string
+		flags                               []string
 	}{
 		{name: "defaults", wantTree: "."},
-		{name: "environment", envTree: "env tree", envPrefix: "env prefix", wantTree: "env tree", wantPrefix: "env prefix"},
-		{name: "configured caller", envTree: "env tree", envPrefix: "env prefix", configTree: "configured tree", configPrefix: "configured prefix", wantTree: "configured tree", wantPrefix: "configured prefix"},
-		{name: "long flags", envTree: "env tree", envPrefix: "env prefix", configTree: "configured tree", configPrefix: "configured prefix", flags: []string{"--tree", "flag tree", "--prefix", "flag prefix"}, wantTree: "flag tree", wantPrefix: "flag prefix"},
-		{name: "short flags", envTree: "env tree", envPrefix: "env prefix", flags: []string{"-T", "flag tree", "-P", "flag prefix"}, wantTree: "flag tree", wantPrefix: "flag prefix"},
+		{name: "bare executable", envGit: "custom-git", wantTree: ".", wantGit: "custom-git"},
+		{name: "environment", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", wantTree: "env tree", wantPrefix: "env prefix", wantGit: "env/git"},
+		{name: "configured caller", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", configTree: "configured tree", configPrefix: "configured prefix", configGit: "configured/git", wantTree: "configured tree", wantPrefix: "configured prefix", wantGit: "configured/git"},
+		{name: "long flags", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", configTree: "configured tree", configPrefix: "configured prefix", configGit: "configured/git", flags: []string{"--tree", "flag tree", "--prefix", "flag prefix", "--git", "flag/git"}, wantTree: "flag tree", wantPrefix: "flag prefix", wantGit: "flag/git"},
+		{name: "short flags", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", flags: []string{"-T", "flag tree", "-P", "flag prefix"}, wantTree: "flag tree", wantPrefix: "flag prefix", wantGit: "env/git"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("MACPORTS_TREE", tc.envTree)
 			t.Setenv("MACPORTS_PREFIX", tc.envPrefix)
+			t.Setenv("GIT_BIN", tc.envGit)
 			db := filepath.Join(t.TempDir(), "missing", "state.db")
-			root, err := NewRoot(app.Config{DBPath: db, Repository: tc.configTree, MacPortsPrefix: tc.configPrefix})
+			root, err := NewRoot(app.Config{DBPath: db, Repository: tc.configTree, MacPortsPrefix: tc.configPrefix, GitExecutable: tc.configGit})
 			require.NoError(t, err)
 			var out bytes.Buffer
 			root.SetOut(&out)
@@ -44,19 +50,48 @@ func TestGlobalMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
 			if tc.wantPrefix != "" {
 				wantPrefix = filepath.Join(working, tc.wantPrefix)
 			}
+			wantGit := ""
+			if tc.wantGit != "" {
+				wantGit = tc.wantGit
+				if strings.ContainsAny(wantGit, `/\`) {
+					wantGit = filepath.Join(working, wantGit)
+				}
+			}
 			require.Equal(t, filepath.Join(working, tc.wantTree), root.PersistentFlags().Lookup("tree").Value.String())
 			require.Equal(t, wantPrefix, root.PersistentFlags().Lookup("prefix").Value.String())
+			require.Equal(t, wantGit, root.PersistentFlags().Lookup("git").Value.String())
 			for _, name := range []string{"tree", "prefix"} {
 				require.Contains(t, root.PersistentFlags().Lookup(name).Annotations, cobra.BashCompSubdirsInDir)
 			}
 			require.Contains(t, out.String(), "-T, --tree")
 			require.Contains(t, out.String(), "-P, --prefix")
+			require.Contains(t, out.String(), "--git")
 			bump, _, err := root.Find([]string{"bump"})
 			require.NoError(t, err)
 			require.Empty(t, bump.Flags().Lookup("publish").Shorthand)
 			require.NoDirExists(t, filepath.Dir(db))
 		})
 	}
+}
+
+func TestGlobalGitReachesRepositoryOperations(t *testing.T) {
+	config, id := queuedJob(t)
+	config.GitExecutable = ""
+	t.Setenv("GIT_BIN", "/missing/environment/git")
+	var output bytes.Buffer
+	err := Run(t.Context(), []string{"status", string(id), "--json"}, Streams{Out: &output, Err: &output}, config)
+	require.ErrorContains(t, err, "/missing/environment/git")
+
+	gitPath, err := exec.LookPath("git")
+	require.NoError(t, err)
+	working := t.TempDir()
+	require.NoError(t, os.Symlink(gitPath, filepath.Join(working, "selected-git")))
+	t.Chdir(working)
+	output.Reset()
+	require.NoError(t, Run(t.Context(), []string{"status", string(id), "--git", "./selected-git", "--json"}, Streams{Out: &output, Err: &output}, config))
+	var result workflow.Status
+	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	require.Len(t, result.Jobs, 1)
 }
 
 func TestGlobalTreeSelectsRecordedWorkFromOutsideCheckout(t *testing.T) {
@@ -126,5 +161,7 @@ func TestGlobalPathsRejectExplicitEmptyValues(t *testing.T) {
 		var out bytes.Buffer
 		require.ErrorContains(t, Run(t.Context(), args, Streams{Out: &out, Err: &out}, config), "directory path must not be empty")
 	}
+	var out bytes.Buffer
+	require.ErrorContains(t, Run(t.Context(), []string{"status", "--git="}, Streams{Out: &out, Err: &out}, config), "executable path must not be empty")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }
