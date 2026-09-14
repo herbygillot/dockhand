@@ -360,7 +360,17 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	command.Env = append(command.Env, "PORTSRC="+configuration, "LC_ALL=C")
 	output, runErr := command.CombinedOutput()
 	if runErr != nil {
-		return fmt.Errorf("portindex: %w: %s", errors.Join(ctx.Err(), runErr), strings.TrimSpace(string(output)))
+		var exit *exec.ExitError
+		if ctx.Err() == nil && strict && seed != "" && errors.As(runErr, &exit) && exit.ExitCode() == 2 {
+			if coverageErr := validateIncrementalCoverage(seed, temp, sourceRoot, changed); coverageErr == nil {
+				runErr = nil
+			} else {
+				runErr = errors.Join(runErr, coverageErr)
+			}
+		}
+		if runErr != nil {
+			return fmt.Errorf("portindex: %w: %s", errors.Join(ctx.Err(), runErr), strings.TrimSpace(string(output)))
+		}
 	}
 	if !validIndexEntry(temp) {
 		return fmt.Errorf("portindex: executable produced an incomplete index")

@@ -63,3 +63,45 @@ func TestSharedPortGroupChangesRequireFullIndex(t *testing.T) {
 	require.True(t, requiresFullIndex([]string{"_resources/port1.0/group/github-1.0.tcl"}))
 	require.False(t, requiresFullIndex([]string{"devel/fixture/files/metadata.tcl"}))
 }
+
+func TestIncrementalIndexAllowsOnlyExistingUnrelatedOmissions(t *testing.T) {
+	executable, err := exec.LookPath("portindex")
+	if err != nil {
+		t.Skip("MacPorts portindex is required")
+	}
+	root := t.TempDir()
+	put := func(name, contents string) {
+		file := filepath.Join(root, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(file), 0700))
+		require.NoError(t, os.WriteFile(file, []byte(contents), 0600))
+	}
+	good := "PortSystem 1.0\nname working\nversion 1\ncategories devel\n"
+	put("devel/working/Portfile", good)
+	put("devel/spare/Portfile", "PortSystem 1.0\nname spare\nversion 1\ncategories devel\n")
+	put("devel/broken/Portfile", "PortSystem 1.0\nerror {unrelated existing failure}\n")
+	config, err := ResolveTool(t.Context(), Config{Executable: executable})
+	require.NoError(t, err)
+	seed := filepath.Join(t.TempDir(), "seed")
+	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, seed, "", nil, false))
+
+	put("devel/working/Portfile", good+"revision 1\n")
+	candidate := filepath.Join(t.TempDir(), "candidate")
+	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, candidate, seed, []string{"devel/working/Portfile"}, true))
+	indexed, err := Open(candidate)
+	require.NoError(t, err)
+	value, err := indexed.Lookup("working")
+	require.NoError(t, err)
+	require.Equal(t, "1", value.Fields["revision"])
+	_, err = indexed.Lookup("broken")
+	require.ErrorIs(t, err, ErrNotIndexed)
+
+	put("devel/broken/Portfile", "PortSystem 1.0\nerror {changed port failure}\n")
+	require.Error(t, buildPortIndex(t.Context(), config, testPlatform, root, filepath.Join(t.TempDir(), "changed-broken"), seed, []string{"devel/broken/Portfile"}, true))
+	put("devel/working/Portfile", good+"subport child { error {new subport failure} }\n")
+	require.Error(t, buildPortIndex(t.Context(), config, testPlatform, root, filepath.Join(t.TempDir(), "broken-subport"), seed, []string{"devel/working/Portfile"}, true))
+
+	require.NoError(t, os.Remove(filepath.Join(root, "devel/working/Portfile")))
+	require.Error(t, buildPortIndex(t.Context(), config, testPlatform, root, filepath.Join(t.TempDir(), "lost-unchanged"), seed, nil, true))
+	require.NoError(t, buildPortIndex(t.Context(), config, testPlatform, root, filepath.Join(t.TempDir(), "removed"), seed, []string{"devel/working/Portfile"}, true))
+	require.Error(t, buildPortIndex(t.Context(), config, testPlatform, root, filepath.Join(t.TempDir(), "full-strict"), "", nil, true))
+}
