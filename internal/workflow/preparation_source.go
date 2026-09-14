@@ -19,6 +19,7 @@ type PreparationRequest struct {
 	Destination         record.Destination
 	Verification        record.VerificationPolicy
 	Build               *record.BuildConfig
+	BuildRequirements   *record.BuildRequirements
 	Author              record.CommitIdentity
 	Platform            record.Platform
 	Reason              string
@@ -76,7 +77,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	source.Base = source.Commit
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{
-		Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, Reason: request.Reason,
+		Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
 		Preparation: &record.PreparationSpec{SourceBranch: request.Branch, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {

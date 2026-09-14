@@ -64,3 +64,23 @@ func TestApplicabilityRejectsIncompleteOrNonPassingEvidence(t *testing.T) {
 	attempt.Evidence.Steps = []record.StepResult{{Verdict: record.VerdictFailed}}
 	require.False(t, verify.Applicable(reusableBuild(), attempt).Matches)
 }
+
+func TestBuildRequirementsPreserveAcceptedChoices(t *testing.T) {
+	config := reusableBuild().Config
+	requirements := record.BuildRequirements{Provider: config.Provider, Platform: config.Platform, FromSource: config.FromSource, Tests: config.Tests}
+	require.NoError(t, verify.ValidateRequirements(requirements))
+	require.Empty(t, verify.RequirementDifferences(requirements, config))
+	for name, edit := range map[string]func(*record.BuildConfig){
+		"provider":    func(v *record.BuildConfig) { v.Provider = "other" },
+		"platform":    func(v *record.BuildConfig) { v.Platform.Version = "24" },
+		"from source": func(v *record.BuildConfig) { v.FromSource = !v.FromSource },
+		"tests":       func(v *record.BuildConfig) { v.Tests = record.TestSkip },
+		"incomplete":  func(v *record.BuildConfig) { v.EnvironmentDigest = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := config
+			edit(&changed)
+			require.NotEmpty(t, verify.RequirementDifferences(requirements, changed))
+		})
+	}
+}

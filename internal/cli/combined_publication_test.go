@@ -32,6 +32,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			var prior ActionResult
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &prior))
 			seedCLIVerification(t, config, prior.Status.Jobs[0].Job.Prepared.Branch)
+			config.Tart.Image = ""
 			remote := filepath.Join(t.TempDir(), "remote.git")
 			out, err := exec.CommandContext(t.Context(), "git", "init", "--bare", "-q", remote).CombinedOutput()
 			require.NoError(t, err, "%s", out)
@@ -112,6 +113,8 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			require.Equal(t, entry.Job.ResultRevision, result.Status.Changes[0].PublishedRevision)
 			require.Equal(t, "https://github.com/author/ports/pull/1", result.Status.PullRequests[0].Ref.URL)
 			require.Equal(t, record.AttemptID("original-attempt"), entry.Job.ReusedAttempt)
+			require.Nil(t, entry.Job.Spec.Build)
+			require.Equal(t, record.BuildRequirements{Provider: "tart", Platform: entry.Reused.Spec.Config.Platform, Tests: record.TestDeclared}, *entry.Job.Spec.BuildRequirements)
 			require.Empty(t, entry.Attempts)
 			require.Contains(t, stderr.String(), "publication confirmed")
 			mu.Lock()

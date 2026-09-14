@@ -76,6 +76,8 @@ The prepared image is currently selected explicitly with `--image` (or through t
 
 At initial planning, the driver looks for reusable evidence in the selected repository. A conclusive pass must cover the same complete tree, target/subport, variants, platform, image digest, verifier implementation, source-build/test policy, provider settings, and artifact inputs. A commit or revision ID can change while the tested tree stays identical. A match settles verification with an original-attempt reference, without consuming VM capacity or creating another attempt. Status and JSON retain that reference and original evidence; `--trace` reports reuse without replaying an old build log.
 
+Standalone `verify` still requires an image because a miss must be executable. A bump without `--image` records an evidence-selection request instead: Tart, the native platform, and the requested test and source-build policies. Once preparation produces the exact tree, the driver may select the newest matching recorded configuration and reuse its passing evidence. A matching negative result prevents fallback to an older pass. If no pass applies, the prepared branch is preserved and the job requests an image. An explicitly selected image that fails setup is never replaced from history.
+
 `verify --fresh` requires a new execution even when a pass applies. This choice is recorded at acceptance and survives detachment. `wait` and `start` continue the recorded choice. A newer terminal attempt with matching inputs and a negative or inconclusive result prevents fallback to an older pass. Lookup checks the latest 32 terminal attempts for the tree and target, so older applicable evidence can conservatively be missed. A miss reports the relevant differences and runs a build. Legacy results without a verifier identity are not reused. Image selection and source binding still run before acceptance; reuse skips driver provider calls and admission, not intake validation. Prepared bumps use this same reuse policy when they reach verification. For a combined publication job, reuse satisfies the admission milestone and leaves publication pending; only confirmation completes the job.
 
 `--from-source` defaults to false for `verify`, `bump`, and `bump-revision`. MacPorts may use available binary archives for the target and its dependencies. Explicit `--from-source` passes MacPorts’ global `-s` option, requiring source builds for ports that need installing; it does not rebuild dependencies already installed in the VM image. The effective choice is recorded at acceptance, so a changed CLI default does not alter existing jobs.
@@ -101,6 +103,7 @@ Successful previews render a Git diff to stdout and source/target information to
 
 ```sh
 dockhand bump jq --diff
+dockhand bump jq --wait                    # reuse applicable evidence if present
 dockhand bump jq --image dockhand-base-tahoe --wait
 dockhand bump jq 1.8.1 --diff
 dockhand bump jq jq-1.8.1 --no-verify
@@ -129,7 +132,7 @@ dockhand bump-revision jq --image dockhand-base-tahoe --wait
 
 The source defaults to the current local branch; `--branch` selects another committed source branch. Each request creates a new contribution branch named `dockhand/revbump/<port>-<job suffix>`. The source branch, checkout, and index stay in place. Git author identity, source commit/tree/base, target, platform, and any verification configuration are captured before acceptance. `--reason` becomes the commit body. The output reports the job, prepared branch, commit, and result revision.
 
-`--no-verify` completes once the branch is recorded. Otherwise the command prepares the branch and waits for verification admission; `--wait` follows completion and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. A missing image or failed provider setup is recorded as needs-attention after preserving the branch. A later `verify <port> --branch <prepared-branch> --image <image>` creates a new verification job. `--publish` continues the same job through publication of the verified prepared revision, using the destination options of standalone `publish`. It requires verification; `--no-verify --publish` is rejected before submission.
+`--no-verify` completes once the branch is recorded. Otherwise the command prepares the branch and waits for verification admission or evidence reuse; `--wait` follows completion and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. When no image is selected, an applicable recorded pass can satisfy verification after the prepared tree is known. A reuse miss or failed explicit provider setup is recorded as needs-attention after preserving the branch. A later `verify <port> --branch <prepared-branch> --image <image>` creates a new verification job. `--publish` continues the same job through publication of the verified prepared revision, using the destination options of standalone `publish`. It requires verification; `--no-verify --publish` is rejected before submission.
 
 `wait <job_id>` and `start` resume recorded preparation and integration as well as verification. Cancellation before integration leaves no output branch. After integration may have started, the driver reconciles the recorded candidate and preserves any confirmed branch. An interrupted integration whose branch is absent or contains another commit requires attention; it never overwrites user work or guesses that a deleted branch should be recreated. See the [driver implementation report](activity/2026-09-13-revision-driver.md).
 
@@ -346,13 +349,13 @@ Without `--wait`, the command runs a driver cycle and returns after pickup or an
 ## Implemented combined bump and publication
 
 ```sh
-dockhand bump jq [version] --publish --image dockhand-base-tahoe [--wait|--trace]
-dockhand bump-revision jq --publish --image dockhand-base-tahoe [--wait|--trace]
+dockhand bump jq [version] --publish [--image dockhand-base-tahoe] [--wait|--trace]
+dockhand bump-revision jq --publish [--image dockhand-base-tahoe] [--wait|--trace]
 ```
 
 Both accept `--remote`, `--upstream`, and `--base` with the same defaults as `publish`. On bump commands those flags require `--publish`. Destination repositories, URLs, base branch, and the operation-lock directory are frozen before acceptance. No remote ref or PR is written during intake.
 
-One job owns preparation, verification, and publication. Its accepted input source remains the original commit; its result revision identifies the prepared commit that is built and published. A passing build or applicable reuse leaves the job active for publication. The driver then records remote preconditions and content before any push, using the same executor and uncertainty handling as standalone publication. Status shows the requested destination before that publication checkpoint exists.
+One job owns preparation, verification, and publication. Its accepted input source remains the original commit; its result revision identifies the prepared commit that is built and published. A passing build or applicable reuse leaves the job active for publication. When `--image` is omitted, the exact configuration comes from the selected evidence while accepted provider, platform, test, and source-build requirements remain fixed. The driver then records remote preconditions and content before any push, using the same executor and uncertainty handling as standalone publication. Status shows the requested destination before that publication checkpoint exists.
 
 Without `--wait` or `--trace`, the command waits through capacity pressure and returns at build admission, evidence reuse, or an earlier terminal outcome. `wait <job_id>` and `start` resume the exact accepted destination without repeating flags. With `--wait` or `--trace`, completion means PR confirmation. An automatic no-update result needs no branch, verification, or PR.
 

@@ -98,6 +98,7 @@ Preview or prepare a version update from committed source:
 ```sh
 dockhand bump jq --diff
 dockhand bump jq --no-verify
+dockhand bump jq --wait
 dockhand bump jq --image dockhand-base-tahoe --wait
 dockhand bump jq 1.8.1 --diff
 ```
@@ -111,7 +112,7 @@ dockhand bump jq --publish --image dockhand-base-tahoe --wait
 dockhand bump-revision jq --publish --image dockhand-base-tahoe --trace
 ```
 
-The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted when a passing recorded verification applies to the prepared tree and the accepted platform, tests, and source-build policy; otherwise the preserved branch needs an explicit verification run. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
 
 Publish a contribution, including a branch created with ordinary Git commands, after verifying and committing its contents:
 

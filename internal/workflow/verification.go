@@ -89,16 +89,39 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				return nil
 			}
 			if attempt.ID == "" {
-				plan, build, err := verify.PlanSingle(job, work.Revision)
-				if err != nil {
-					job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, err.Error()
-					work.Job = job
-					changed, detail = true, err.Error()
-					return nil
-				}
-				reused, explanation, err := selectVerification(ctx, tx, job, build)
-				if err != nil {
-					return err
+				var plan record.VerificationPlan
+				var build record.BuildSpec
+				var reused record.Attempt
+				var explanation string
+				if job.Spec.Build == nil && job.Spec.BuildRequirements != nil {
+					reused, plan, explanation, err = selectRecordedVerification(ctx, tx, job, work.Revision)
+					if err != nil {
+						return err
+					}
+					if reused.ID == "" {
+						_, _, planningErr := verify.PlanSingle(job, work.Revision)
+						detail = explanation
+						if planningErr != nil {
+							detail += "; " + planningErr.Error()
+						}
+						job.ReuseDetail = explanation
+						job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
+						work.Job = job
+						changed = true
+						return nil
+					}
+				} else {
+					plan, build, err = verify.PlanSingle(job, work.Revision)
+					if err != nil {
+						job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, err.Error()
+						work.Job = job
+						changed, detail = true, err.Error()
+						return nil
+					}
+					reused, explanation, err = selectVerification(ctx, tx, job, build)
+					if err != nil {
+						return err
+					}
 				}
 				job.ReuseDetail = explanation
 				if reused.ID != "" {

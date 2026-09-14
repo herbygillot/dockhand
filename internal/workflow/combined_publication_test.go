@@ -267,6 +267,10 @@ func TestCombinedPublicationRequiresVerifiedPreparationAndImmutableDestination(t
 		func(s *record.JobSpec) { s.Action = record.Verify },
 		func(s *record.JobSpec) { s.Publication = &record.PublicationSpec{} },
 		func(s *record.JobSpec) { s.PublishTo = &record.PublicationDestination{} },
+		func(s *record.JobSpec) {
+			s.BuildRequirements = &record.BuildRequirements{Provider: s.Build.Provider, Platform: s.Build.Platform, FromSource: s.Build.FromSource, Tests: s.Build.Tests}
+		},
+		func(s *record.JobSpec) { s.Build, s.BuildRequirements = nil, &record.BuildRequirements{} },
 	} {
 		invalid := request
 		mutate(&invalid.Spec)

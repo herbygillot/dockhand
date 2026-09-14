@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
+	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 )
 
@@ -126,6 +127,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 			bound.Build = &config
 		}
 	} else {
+		bound.BuildRequirements = &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, Tests: request.Tests, FromSource: request.FromSource}
 		bound.VerificationProblem = "select a prepared local Tart image with --image"
 	}
 	if request.Publish != nil {

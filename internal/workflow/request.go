@@ -82,6 +82,9 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 		spec.Publication = &v
 	}
 	if spec.Build != nil {
+		if spec.BuildRequirements != nil {
+			return record.JobSpec{}, fmt.Errorf("%w: select a build configuration or recorded-evidence requirements, not both", ErrInvalidRequest)
+		}
 		if spec.Verification != record.VerificationRequired {
 			return record.JobSpec{}, fmt.Errorf("%w: build configuration requires verification", ErrInvalidRequest)
 		}
@@ -91,6 +94,16 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 		build := *spec.Build
 		build.ProviderConfig = slices.Clone(build.ProviderConfig)
 		spec.Build = &build
+	}
+	if spec.BuildRequirements != nil {
+		if !preparationAction(spec.Action) || spec.Verification != record.VerificationRequired || spec.Destination == record.BranchReady {
+			return record.JobSpec{}, fmt.Errorf("%w: recorded-evidence requirements require a verified preparation job", ErrInvalidRequest)
+		}
+		if err := verify.ValidateRequirements(*spec.BuildRequirements); err != nil {
+			return record.JobSpec{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+		requirements := *spec.BuildRequirements
+		spec.BuildRequirements = &requirements
 	}
 	if spec.Version != "" && (spec.Action != record.Bump || !validToken(spec.Version)) {
 		return record.JobSpec{}, fmt.Errorf("%w: only bump accepts a nonempty version without whitespace or control characters", ErrInvalidRequest)
@@ -110,6 +123,9 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 		}
 		if spec.Build != nil && spec.Build.Platform != choices.Platform {
 			return record.JobSpec{}, fmt.Errorf("%w: preparation and build platforms disagree", ErrInvalidRequest)
+		}
+		if spec.BuildRequirements != nil && spec.BuildRequirements.Platform != choices.Platform {
+			return record.JobSpec{}, fmt.Errorf("%w: preparation and recorded-evidence platforms disagree", ErrInvalidRequest)
 		}
 		spec.Preparation = &choices
 	}

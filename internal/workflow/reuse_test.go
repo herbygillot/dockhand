@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
@@ -233,4 +234,54 @@ func TestPreparedBumpReusesEvidenceForItsResultTree(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, string(candidate.Prepared.Source.Commit), commit)
 	require.Equal(t, string(original.Spec.Source.Tree), tree)
+}
+
+func TestPreparedBumpSelectsExactConfigurationFromRecordedEvidence(t *testing.T) {
+	f, request := preparationFixture(t, true)
+	config := *request.Spec.Build
+	config.VerifierDigest = "fixture:v1"
+	request.Spec.Build = nil
+	request.Spec.BuildRequirements = &record.BuildRequirements{Provider: config.Provider, Platform: config.Platform, FromSource: config.FromSource, Tests: config.Tests}
+	request.Spec.Preparation.VerificationProblem = "select a prepared image"
+	id := prepareCombined(t, f, request)
+	job := f.status(t, id).Jobs[0].Job
+	verified := reuseRequest(f, "recorded-configuration")
+	verified.Spec.Source, verified.Spec.Targets, verified.Spec.Build = job.Prepared.Source, job.Spec.Targets, &config
+	original := completeVerification(t, f, verified, record.VerdictPassed)
+	f.engine.Provider = nil
+	f.run(t, id)
+	status := f.status(t, id).Jobs[0]
+	require.Equal(t, record.JobCompleted, status.Job.State)
+	require.Nil(t, status.Job.Spec.Build)
+	require.Equal(t, original.ID, status.Job.ReusedAttempt)
+	require.Equal(t, config, status.Reused.Spec.Config)
+	require.Empty(t, status.Attempts)
+}
+
+func TestPreparedBumpRecordedSelectionStopsAtNewerNegativeEvidence(t *testing.T) {
+	f, request := preparationFixture(t, true)
+	config := *request.Spec.Build
+	config.VerifierDigest = "fixture:v1"
+	request.Spec.Build = nil
+	request.Spec.BuildRequirements = &record.BuildRequirements{Provider: config.Provider, Platform: config.Platform, FromSource: config.FromSource, Tests: config.Tests}
+	request.Spec.Preparation.VerificationProblem = "select a prepared image"
+	id := prepareCombined(t, f, request)
+	job := f.status(t, id).Jobs[0].Job
+	verification := func(id string, verdict record.Verdict) record.Attempt {
+		candidate := reuseRequest(f, id)
+		candidate.Spec.Source, candidate.Spec.Targets, candidate.Spec.Build = job.Prepared.Source, job.Spec.Targets, &config
+		candidate.Spec.FreshVerification = verdict != record.VerdictPassed
+		return completeVerification(t, f, candidate, verdict)
+	}
+	verification("older-pass", record.VerdictPassed)
+	f.advance(time.Second)
+	negative := verification("newer-failure", record.VerdictFailed)
+	f.engine.Provider = nil
+	f.run(t, id)
+	status := f.status(t, id).Jobs[0]
+	require.Equal(t, record.JobNeedsAttention, status.Job.State)
+	require.Empty(t, status.Job.ReusedAttempt)
+	require.Empty(t, status.Attempts)
+	require.Contains(t, status.Job.ReuseDetail, string(negative.ID))
+	require.Contains(t, status.Job.Detail, "select a prepared image")
 }

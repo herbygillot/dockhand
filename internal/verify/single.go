@@ -28,6 +28,18 @@ func ValidateConfig(config record.BuildConfig) error {
 	return nil
 }
 
+func ValidateRequirements(requirements record.BuildRequirements) error {
+	for _, value := range []string{requirements.Provider, requirements.Platform.OS, requirements.Platform.Version, requirements.Platform.Architecture} {
+		if value == "" || !utf8.ValidString(value) || strings.IndexFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+			return fmt.Errorf("verify: provider and platform requirements are required")
+		}
+	}
+	if requirements.Tests != record.TestDeclared && requirements.Tests != record.TestSkip {
+		return fmt.Errorf("verify: an explicit test policy is required")
+	}
+	return nil
+}
+
 func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPlan, record.BuildSpec, error) {
 	if job.Spec.Build == nil {
 		if job.Spec.Preparation != nil && job.Spec.Preparation.VerificationProblem != "" {
@@ -35,6 +47,12 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 		}
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: no build configuration was selected")
 	}
+	return PlanSingleWithConfig(job, revision, *job.Spec.Build)
+}
+
+// PlanSingleWithConfig creates a plan from an exact configuration selected by
+// accepted requirements and recorded evidence.
+func PlanSingleWithConfig(job record.Job, revision record.Revision, config record.BuildConfig) (record.VerificationPlan, record.BuildSpec, error) {
 	if (job.Spec.Destination != record.VerificationComplete && job.Spec.Destination != record.Published) || job.Spec.Verification != record.VerificationRequired || len(job.Spec.Targets) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
@@ -61,13 +79,18 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 	if source.Tree == "" {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: an immutable source tree is required")
 	}
-	if err := ValidateConfig(*job.Spec.Build); err != nil {
+	if err := ValidateConfig(config); err != nil {
 		return record.VerificationPlan{}, record.BuildSpec{}, err
+	}
+	if job.Spec.BuildRequirements != nil {
+		if differences := RequirementDifferences(*job.Spec.BuildRequirements, config); len(differences) != 0 {
+			return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: selected evidence does not satisfy accepted requirements: %s", strings.Join(differences, "; "))
+		}
 	}
 	target := job.Spec.Targets[0]
 	target.Variants = maps.Clone(target.Variants)
-	plan := record.VerificationPlan{JobID: job.ID, RevisionID: revision.ID, Targets: []record.VerificationTarget{{ID: record.TargetID("target_" + string(job.ID)), Port: target, Platform: job.Spec.Build.Platform}}}
-	build := record.BuildSpec{RevisionID: revision.ID, Source: source, Target: target, Config: *job.Spec.Build, Inputs: []record.Artifact{}}
+	plan := record.VerificationPlan{JobID: job.ID, RevisionID: revision.ID, Targets: []record.VerificationTarget{{ID: record.TargetID("target_" + string(job.ID)), Port: target, Platform: config.Platform}}}
+	build := record.BuildSpec{RevisionID: revision.ID, Source: source, Target: target, Config: config, Inputs: []record.Artifact{}}
 	build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
 	return plan, build, nil
 }

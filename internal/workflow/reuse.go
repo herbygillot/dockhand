@@ -39,3 +39,30 @@ func selectVerification(ctx context.Context, reader state.Reader, job record.Job
 	reason := strings.Join(verify.Applicable(build, candidates[0]).Reasons, "; ")
 	return record.Attempt{}, fmt.Sprintf("No applicable result among the latest 32 terminal attempts for this tree and target; compared with %s: %s", candidates[0].ID, reason), nil
 }
+
+func selectRecordedVerification(ctx context.Context, reader state.Reader, job record.Job, revision record.Revision) (record.Attempt, record.VerificationPlan, string, error) {
+	if job.Spec.BuildRequirements == nil || len(job.Spec.Targets) != 1 || job.Prepared == nil {
+		return record.Attempt{}, record.VerificationPlan{}, "", ErrInvalidRequest
+	}
+	candidates, err := reader.VerificationCandidates(ctx, state.VerificationQuery{Target: job.Spec.Targets[0], Tree: job.Prepared.Source.Tree, Limit: 32})
+	if err != nil {
+		return record.Attempt{}, record.VerificationPlan{}, "", err
+	}
+	for _, candidate := range candidates {
+		if len(verify.RequirementDifferences(*job.Spec.BuildRequirements, candidate.Spec.Config)) != 0 {
+			continue
+		}
+		plan, build, err := verify.PlanSingleWithConfig(job, revision, candidate.Spec.Config)
+		if err != nil {
+			return record.Attempt{}, record.VerificationPlan{}, "", err
+		}
+		if len(verify.InputDifferences(build, candidate.Spec)) != 0 {
+			continue
+		}
+		if verdict := verify.Applicable(build, candidate); verdict.Matches {
+			return candidate, plan, fmt.Sprintf("Reused passing verification from attempt %s (job %s), observed %s; exact configuration selected from recorded evidence", candidate.ID, candidate.JobID, candidate.Evidence.ObservedAt.Format("2006-01-02T15:04:05Z")), nil
+		}
+		return record.Attempt{}, record.VerificationPlan{}, fmt.Sprintf("Latest recorded verification satisfying the requested build policy is %s and is not passing", candidate.ID), nil
+	}
+	return record.Attempt{}, record.VerificationPlan{}, "No passing recorded verification matches the prepared tree, target, and requested build policy", nil
+}

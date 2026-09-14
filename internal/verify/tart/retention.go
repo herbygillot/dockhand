@@ -15,7 +15,7 @@ import (
 var _ verify.ArtifactPruner = (*Provider)(nil)
 
 func (p *Provider) PruneArtifacts(ctx context.Context, handle record.ResourceHandle) error {
-	if handle.Provider != "tart" {
+	if handle.Provider != ProviderName {
 		return state.ErrInvalid
 	}
 	o, err := p.begin(ctx, record.RequestID(handle.ID))

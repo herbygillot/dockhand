@@ -82,6 +82,28 @@ func InputDifferences(wanted, old record.BuildSpec) []string {
 	return reasons
 }
 
+// RequirementDifferences compares accepted evidence-selection requirements
+// with the exact configuration retained by an earlier attempt.
+func RequirementDifferences(wanted record.BuildRequirements, old record.BuildConfig) []string {
+	reasons := []string{}
+	if ValidateRequirements(wanted) != nil || ValidateConfig(old) != nil {
+		reasons = append(reasons, "build requirements or configuration are incomplete")
+	}
+	if wanted.Provider != old.Provider {
+		reasons = append(reasons, "verification provider differs")
+	}
+	if wanted.Platform != old.Platform {
+		reasons = append(reasons, "platform differs")
+	}
+	if wanted.FromSource != old.FromSource {
+		reasons = append(reasons, "source-build policy differs")
+	}
+	if wanted.Tests != old.Tests {
+		reasons = append(reasons, "test policy differs")
+	}
+	return reasons
+}
+
 func sameJSON(a, b json.RawMessage) bool {
 	if len(a) == 0 || len(b) == 0 {
 		return len(a) == 0 && len(b) == 0

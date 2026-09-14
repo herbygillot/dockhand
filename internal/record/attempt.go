@@ -32,6 +32,15 @@ type BuildConfig struct {
 	Tests      TestPolicy
 }
 
+// BuildRequirements are accepted choices used to select existing verification
+// evidence when no configuration for a new execution was supplied.
+type BuildRequirements struct {
+	Provider   string
+	Platform   Platform
+	FromSource bool
+	Tests      TestPolicy
+}
+
 // BuildSpec binds one verification attempt to concrete, immutable inputs.
 // Planned dependencies on future outputs must be resolved to Artifacts before
 // the specification is submitted to a provider.

@@ -189,6 +189,7 @@ type jobOptions struct {
 	FreshVerification bool                           `json:",omitempty"`
 	Targets           []record.Target
 	Build             *record.BuildConfig
+	BuildRequirements *record.BuildRequirements `json:",omitempty"`
 	Version, Reason   string
 	Preparation       *record.PreparationSpec
 	Checkout          *record.Checkout `json:",omitempty"`
@@ -212,7 +213,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	if err = decode(raw, &options); err != nil {
 		return v, err
 	}
-	v.Spec.Targets, v.Spec.Build, v.Spec.Version, v.Spec.Reason = options.Targets, options.Build, options.Version, options.Reason
+	v.Spec.Targets, v.Spec.Build, v.Spec.BuildRequirements, v.Spec.Version, v.Spec.Reason = options.Targets, options.Build, options.BuildRequirements, options.Version, options.Reason
 	v.Spec.Publication = options.Publication
 	v.Spec.PublishTo = options.PublishTo
 	v.Spec.Preparation = options.Preparation
@@ -261,7 +262,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if v.ReusedAttempt != "" {
 		combined := v.Spec.PublishTo != nil && v.Spec.Destination == record.Published && v.ResultRevision != ""
 		validState := v.State == record.JobCompleted || combined && (v.State == record.JobActive || v.State == record.JobCanceled || v.State == record.JobNeedsAttention || v.State == record.JobSuperseded)
-		if !validState || (v.State == record.JobActive) != (v.FinishedAt == nil) || v.AdmittedAt != nil || v.Spec.Build == nil || len(v.Spec.Targets) != 1 || v.Spec.FreshVerification || v.Spec.Verification != record.VerificationRequired {
+		if !validState || (v.State == record.JobActive) != (v.FinishedAt == nil) || v.AdmittedAt != nil || (v.Spec.Build == nil) == (v.Spec.BuildRequirements == nil) || len(v.Spec.Targets) != 1 || v.Spec.FreshVerification || v.Spec.Verification != record.VerificationRequired {
 			return state.ErrInvalid
 		}
 		attempt, err := t.Attempt(ctx, v.ReusedAttempt)
@@ -368,7 +369,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
+	raw, err := encode(jobOptions{Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}

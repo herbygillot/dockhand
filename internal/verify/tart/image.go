@@ -81,7 +81,7 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 	if err != nil {
 		return Environment{}, err
 	}
-	cached := state.ImageDigest{Provider: "tart", Path: filepath.Join(n.config.Home, "vms", n.config.Image)}
+	cached := state.ImageDigest{Provider: ProviderName, Path: filepath.Join(n.config.Home, "vms", n.config.Image)}
 	if n.images.stamp == before {
 		cached.Stamp, cached.Digest = before, n.images.digest
 	} else if n.cache != nil {

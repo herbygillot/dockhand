@@ -152,7 +152,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 }
 
 func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, spec record.PublicationSpec) error {
-	if job.Spec.Build == nil || len(job.Spec.Targets) != 1 {
+	if len(job.Spec.Targets) != 1 {
 		return ErrInvalidRequest
 	}
 	change, err := r.Change(ctx, job.ChangeID)
@@ -166,8 +166,14 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	if err != nil {
 		return err
 	}
+	config := candidate.Spec.Config
+	if job.Spec.Build != nil {
+		config = *job.Spec.Build
+	} else if job.Spec.BuildRequirements == nil || job.ReusedAttempt != candidate.ID || len(verify.RequirementDifferences(*job.Spec.BuildRequirements, config)) != 0 {
+		return ErrInvalidRequest
+	}
 	_, source := publicationInput(job)
-	build := record.BuildSpec{Source: source, Target: job.Spec.Targets[0], Config: *job.Spec.Build}
+	build := record.BuildSpec{Source: source, Target: job.Spec.Targets[0], Config: config}
 	if verdict := verify.Applicable(build, candidate); !verdict.Matches {
 		return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 	}

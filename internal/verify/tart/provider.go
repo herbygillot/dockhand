@@ -22,6 +22,8 @@ import (
 var ErrClosed = errors.New("tart: submission is permanently closed")
 var errCapacity = errors.New("tart: pool is at capacity")
 
+const ProviderName = "tart"
+
 type Config struct {
 	Executable        string
 	Image             string
@@ -143,7 +145,7 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 	if c.Platform != (record.Platform{}) {
 		platforms = []record.Platform{c.Platform}
 	}
-	return verify.Capabilities{Name: "tart", Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
+	return verify.Capabilities{Name: ProviderName, Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func requestID(id record.RequestID) bool {
@@ -215,10 +217,10 @@ func (o *operation) directory(v record.ProviderExecution) string {
 func submission(v record.ProviderExecution, status verify.SubmissionState) verify.Submission {
 	result := verify.Submission{State: status}
 	if v.Resource != "" {
-		result.Resources = []record.ResourceHandle{{Provider: "tart", ID: string(v.ID)}}
+		result.Resources = []record.ResourceHandle{{Provider: ProviderName, ID: string(v.ID)}}
 	}
 	if status == verify.Admitted {
-		result.Run = record.ProviderRun{Provider: "tart", RequestID: v.ID, RunID: v.Resource}
+		result.Run = record.ProviderRun{Provider: ProviderName, RequestID: v.ID, RunID: v.Resource}
 	}
 	return result
 }
@@ -472,7 +474,7 @@ func (o *operation) finish(ctx context.Context, v record.ProviderExecution, resu
 	return result, nil
 }
 func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operation, record.ProviderExecution, payload, error) {
-	if run.Provider != "tart" {
+	if run.Provider != ProviderName {
 		return nil, record.ProviderExecution{}, payload{}, state.ErrInvalid
 	}
 	o, err := p.begin(ctx, run.RequestID)
@@ -521,7 +523,7 @@ func (p *Provider) Cancel(ctx context.Context, run record.ProviderRun) error {
 	return err
 }
 func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (verify.ReleaseResult, error) {
-	if handle.Provider != "tart" {
+	if handle.Provider != ProviderName {
 		return verify.ReleaseResult{}, state.ErrInvalid
 	}
 	o, err := p.begin(ctx, record.RequestID(handle.ID))
@@ -561,7 +563,7 @@ func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (v
 }
 func buildDigest(spec record.BuildSpec) string { raw, _ := json.Marshal(spec); return digest(raw) }
 func validateRequest(r verify.Request) error {
-	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != "tart" || len(r.Spec.Inputs) != 0 {
+	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != ProviderName || len(r.Spec.Inputs) != 0 {
 		return fmt.Errorf("tart: one concrete verification target without artifact inputs is required")
 	}
 	if err := verify.ValidateConfig(r.Spec.Config); err != nil {
@@ -599,7 +601,7 @@ func (o *operation) saved(v record.ProviderExecution) (verify.Observation, bool,
 	if err = json.Unmarshal(raw, &result); err != nil {
 		return result, false, err
 	}
-	if result.Run != (record.ProviderRun{Provider: "tart", RequestID: v.ID, RunID: v.Resource}) {
+	if result.Run != (record.ProviderRun{Provider: ProviderName, RequestID: v.ID, RunID: v.Resource}) {
 		return result, false, state.ErrConflict
 	}
 	_, err = verify.Judge(result)
@@ -634,6 +636,6 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, te
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
-	config := record.BuildConfig{Provider: "tart", Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, Tests: tests, FromSource: fromSource}
+	config := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, Tests: tests, FromSource: fromSource}
 	return config, verify.ValidateConfig(config)
 }

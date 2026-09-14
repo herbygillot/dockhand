@@ -68,8 +68,11 @@ type JobSpec struct {
 	Destination  Destination
 	Verification VerificationPolicy
 	// Build records effective verification choices. A nil value leaves them
-	// unspecified; execution must not infer them from later configuration.
+	// unspecified; execution must not infer them from later application configuration.
 	Build *BuildConfig
+	// BuildRequirements authorize selection of recorded evidence satisfying
+	// these choices. They do not authorize a new verification execution.
+	BuildRequirements *BuildRequirements `json:",omitempty"`
 	// FreshVerification requests execution even when prior evidence applies.
 	FreshVerification bool `json:",omitempty"`
 	// Version is an optional explicit version for Bump; empty requests automatic selection.
