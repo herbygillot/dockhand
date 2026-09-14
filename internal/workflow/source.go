@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
@@ -81,21 +82,22 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if registered.ID != e.Repository {
 		return BoundVerification{}, fmt.Errorf("%w: Git repository does not match workflow scope", ErrInvalidRequest)
 	}
-	var checkout *git.Checkout
-	if request.Branch == "" {
-		captured, captureErr := e.Repo.CaptureCheckout(ctx)
+	working := request.Branch == ""
+	var snapshot changeset.Snapshot
+	if working {
+		captured, captureErr := changeset.CaptureCheckout(ctx, e.Repo)
 		if captureErr != nil {
 			return BoundVerification{}, captureErr
 		}
 		for _, name := range captured.ModifiedPaths {
 			parts := strings.Split(name, "/")
 			if len(parts) >= 3 {
-				if err := checkUntracked(captured.Untracked, path.Join(parts[0], parts[1], "Portfile")); err != nil {
+				if err := checkUntracked(captured.UntrackedPaths, path.Join(parts[0], parts[1], "Portfile")); err != nil {
 					return BoundVerification{}, err
 				}
 			}
 		}
-		checkout = &captured
+		snapshot = captured
 		request.Branch = captured.Branch
 	}
 	branch := BranchInput{Name: request.Branch}
@@ -127,23 +129,16 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if err != nil {
 		return BoundVerification{}, err
 	}
-	var source record.Source
+	if !working {
+		snapshot, err = changeset.CaptureBranch(ctx, e.Repo, request.Branch)
+		if err != nil {
+			return BoundVerification{}, err
+		}
+	}
+	source := snapshot.Source(base)
+	provenance := snapshot.Provenance()
 	var targets []record.Target
 	var evaluation macports.Snapshot
-	var provenance *record.Checkout
-	if checkout == nil {
-		commit, tree, branchErr := e.Repo.Branch(ctx, request.Branch)
-		if branchErr != nil {
-			return BoundVerification{}, branchErr
-		}
-		source = record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: base}
-	} else {
-		source = record.Source{Tree: record.ObjectID(checkout.Tree), Base: base}
-		if checkout.ModifiedFiles == 0 {
-			source.Commit = record.ObjectID(checkout.Head)
-		}
-		provenance = &record.Checkout{Branch: checkout.Branch, Head: record.ObjectID(checkout.Head), ModifiedFiles: checkout.ModifiedFiles}
-	}
 	var inferred *record.Target
 	if request.Selection.Selector == "" {
 		target, inferErr := e.inferVerificationTarget(ctx, source, contribution, request.Selection)
@@ -156,10 +151,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		branch.InferredTarget = &original
 		request.Selection = macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants}
 	}
-	var untracked []string
-	if checkout != nil {
-		untracked = checkout.Untracked
-	}
+	untracked := snapshot.UntrackedPaths
 	targets, evaluation, err = e.bindSnapshot(ctx, source, request.Selection, platform, untracked)
 	if err != nil {
 		return BoundVerification{}, err
@@ -258,11 +250,11 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 }
 
 func (e *Engine) bindBranchSource(ctx context.Context, branch string, selection macports.Selection, platform record.Platform, base record.ObjectID) (_ record.Source, _ []record.Target, _ macports.Snapshot, err error) {
-	commit, tree, err := e.Repo.Branch(ctx, branch)
+	snapshot, err := changeset.CaptureBranch(ctx, e.Repo, branch)
 	if err != nil {
 		return record.Source{}, nil, macports.Snapshot{}, err
 	}
-	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: base}
+	source := snapshot.Source(base)
 	targets, evaluation, err := e.bindSnapshot(ctx, source, selection, platform, nil)
 	return source, targets, evaluation, err
 }

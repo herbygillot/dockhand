@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
@@ -16,17 +17,13 @@ func (s *Service) UntrackedSource(ctx context.Context, source record.Source) (re
 	if s == nil || s.Repo == nil {
 		return record.Source{}, "", fmt.Errorf("publish: Git is required")
 	}
-	base, err := s.Repo.SingleParent(ctx, string(source.Commit))
+	commit, err := changeset.DeriveSingleCommit(ctx, s.Repo, source)
 	if err != nil {
 		return record.Source{}, "", fmt.Errorf("%w: %v", ErrPrecondition, err)
 	}
-	source.Base = record.ObjectID(base)
-	_, paths, err := s.Repo.Contribution(ctx, base, string(source.Commit))
-	if err != nil {
-		return record.Source{}, "", fmt.Errorf("%w: %v", ErrPrecondition, err)
-	}
+	source = commit.Source
 	var directory string
-	for _, name := range paths {
+	for _, name := range commit.Paths {
 		parts := strings.Split(name, "/")
 		if !fs.ValidPath(name) || len(parts) < 3 {
 			return record.Source{}, "", fmt.Errorf("%w: %s is outside a port directory", ErrPrecondition, name)
@@ -47,20 +44,20 @@ func (s *Service) SourceContent(ctx context.Context, source record.Source, targe
 	if len(targets) != 1 {
 		return record.PublicationContent{}, fmt.Errorf("%w: publication currently requires one verified target", ErrPrecondition)
 	}
-	message, paths, err := s.Repo.Contribution(ctx, string(source.Base), string(source.Commit))
+	commit, err := changeset.ReadSingleCommit(ctx, s.Repo, source)
 	if err != nil {
 		return record.PublicationContent{}, fmt.Errorf("%w: %v", ErrPrecondition, err)
 	}
 	directory := path.Dir(targets[0].Portfile) + "/"
-	if len(paths) == 0 {
+	if len(commit.Paths) == 0 {
 		return record.PublicationContent{}, fmt.Errorf("%w: contribution is empty", ErrPrecondition)
 	}
-	for _, name := range paths {
+	for _, name := range commit.Paths {
 		if !strings.HasPrefix(name, directory) {
 			return record.PublicationContent{}, fmt.Errorf("%w: %s is outside the verified port directory", ErrPrecondition, name)
 		}
 	}
-	lines := strings.SplitN(strings.TrimSpace(message), "\n", 2)
+	lines := strings.SplitN(strings.TrimSpace(commit.Message), "\n", 2)
 	title, body := strings.TrimSpace(lines[0]), ""
 	if len(lines) == 2 {
 		body = strings.TrimSpace(lines[1])

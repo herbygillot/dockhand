@@ -83,25 +83,6 @@ func (r *Repository) Push(ctx context.Context, request Push) error {
 	return err
 }
 
-func (r *Repository) Contribution(ctx context.Context, base, commit string) (string, []string, error) {
-	if !ValidObjectID(base) || !ValidObjectID(commit) {
-		return "", nil, fmt.Errorf("git: contribution requires base and commit objects")
-	}
-	parent, err := r.SingleParent(ctx, commit)
-	if err != nil {
-		return "", nil, err
-	}
-	if parent != base {
-		return "", nil, fmt.Errorf("git: publication requires one commit above the recorded base; squash or rebind the contribution")
-	}
-	message, err := r.output(ctx, "show", "-s", "--format=%B", commit, "--")
-	if err != nil {
-		return "", nil, err
-	}
-	paths, err := r.ChangedPaths(ctx, base, commit)
-	return strings.TrimSpace(string(message)), paths, err
-}
-
 // CheckContributionBase obtains the selected base without writing FETCH_HEAD
 // or remote-tracking refs, then checks the contribution's ancestry.
 func (r *Repository) CheckContributionBase(ctx context.Context, remote, branch, base, commit string) error {

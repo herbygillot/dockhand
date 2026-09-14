@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
@@ -105,11 +106,11 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 	if err != nil {
 		return fail(err)
 	}
-	commit, tree, err := e.Publisher.Repo.Branch(call, change.Branch)
+	snapshot, err := changeset.CaptureBranch(call, e.Publisher.Repo, change.Branch)
 	if err != nil {
 		return fail(fmt.Errorf("%w: %v", publish.ErrPrecondition, err))
 	}
-	if record.ObjectID(commit) != source.Commit || record.ObjectID(tree) != source.Tree {
+	if snapshot.Commit != source.Commit || snapshot.Tree != source.Tree {
 		return fail(ErrStaleRevision)
 	}
 	spec, err := e.Publisher.PlanTo(call, change, source, evidence, associated, *job.Spec.PublishTo)
@@ -117,11 +118,11 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		return fail(err)
 	}
 	// Observe the branch again after remote reads; never adopt human edits implicitly.
-	commit, tree, err = e.Publisher.Repo.Branch(call, change.Branch)
+	snapshot, err = changeset.CaptureBranch(call, e.Publisher.Repo, change.Branch)
 	if err != nil {
 		return fail(fmt.Errorf("%w: %v", publish.ErrPrecondition, err))
 	}
-	if record.ObjectID(commit) != source.Commit || record.ObjectID(tree) != source.Tree {
+	if snapshot.Commit != source.Commit || snapshot.Tree != source.Tree {
 		return fail(ErrStaleRevision)
 	}
 	if err = call.Err(); err != nil {

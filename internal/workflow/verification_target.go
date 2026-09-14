@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
@@ -30,12 +31,12 @@ func (e *Engine) inferVerificationTarget(ctx context.Context, source record.Sour
 		return record.Target{}, fmt.Errorf("%w: tracked contribution has no recorded base for scope checks; specify a port explicitly", ErrInvalidRequest)
 	}
 	target := change.Targets[0]
-	paths, err := e.Repo.ChangedPaths(ctx, string(source.Base), string(source.Tree))
+	delta, err := changeset.Between(ctx, e.Repo, source.Base, source.Tree)
 	if err != nil {
 		return record.Target{}, fmt.Errorf("cannot inspect the tracked contribution's scope; specify a port explicitly: %w", err)
 	}
 	directory := path.Dir(target.Portfile) + "/"
-	for _, name := range paths {
+	for _, name := range delta.Paths {
 		if !strings.HasPrefix(name, directory) {
 			return record.Target{}, fmt.Errorf("%w: %q is outside tracked port %s relative to its recorded base; specify a port explicitly", ErrInvalidRequest, name, target.Portfile)
 		}

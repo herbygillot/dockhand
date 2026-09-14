@@ -59,7 +59,7 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 
 - Add focused tests for the Tcl shell and RPC boundaries.
 - Continue the coherent-comment pass in packages whose contracts or recovery behavior are difficult to infer.
-- Revisit `workflow` package size when implemented behavior exposes a stable dependency boundary.
+- Reassess the remaining workflow-only seams after the Git changeset extraction; keep state-machine phase handlers together unless another dependency boundary emerges.
 - Revisit a shared download package only when common policy and lifecycle emerge across the current download callers.
 - Add a project license before distribution.
 - Reduce duplication among current design documents without rewriting the append-only activity history.

@@ -33,19 +33,14 @@ func TestPushUsesExplicitExpectedHeadAndNeverPushesTags(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "refs/heads/candidate\n", string(out))
 }
-func TestContributionChecksOneCommitAndActualUpstreamAncestry(t *testing.T) {
+
+func TestCheckContributionBaseUsesActualUpstreamAncestry(t *testing.T) {
 	repo := snapshotRepo(t)
 	base := snapshotCommit(t, repo, snapshotTree(t, repo, snapshotBlob(t, repo, "Portfile", "one", 0100644)))
 	tree := snapshotTree(t, repo, snapshotBlob(t, repo, "Portfile", "two", 0100644))
 	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
 	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{base}, Message: "port: update\n\nDetails", Author: sig, Committer: sig})
 	require.NoError(t, err)
-	message, paths, err := repo.Contribution(t.Context(), base, commit)
-	require.NoError(t, err)
-	require.Equal(t, "port: update\n\nDetails", message)
-	require.Equal(t, []string{"Portfile"}, paths)
-	_, _, err = repo.Contribution(t.Context(), base, base)
-	require.Error(t, err)
 	remote := filepath.Join(t.TempDir(), "remote.git")
 	out, err := exec.CommandContext(t.Context(), "git", "init", "--bare", "-q", remote).CombinedOutput()
 	require.NoError(t, err, "%s", out)

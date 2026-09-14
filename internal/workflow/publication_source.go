@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
@@ -65,7 +66,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 			return Request{}, err
 		}
 	}
-	commit, tree, err := e.Repo.Branch(ctx, input.Branch)
+	snapshot, err := changeset.CaptureBranch(ctx, e.Repo, input.Branch)
 	if err != nil {
 		return Request{}, err
 	}
@@ -73,7 +74,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	var revision record.Revision
 	var evidence record.Attempt
 	var associated *record.PullRequest
-	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}
+	source := snapshot.Source("")
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.OpenChangeByBranch(ctx, input.Branch)
@@ -138,11 +139,11 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	if err != nil {
 		return Request{}, err
 	}
-	currentCommit, currentTree, err := e.Repo.Branch(ctx, input.Branch)
+	current, err := changeset.CaptureBranch(ctx, e.Repo, input.Branch)
 	if err != nil {
 		return Request{}, err
 	}
-	if currentCommit != commit || currentTree != tree {
+	if current.Commit != snapshot.Commit || current.Tree != snapshot.Tree {
 		return Request{}, fmt.Errorf("%w: branch %s changed while planning publication; run publish again", ErrStaleRevision, input.Branch)
 	}
 	spec, err := normalizeSpec(record.JobSpec{Action: record.Publish, Source: source, Targets: change.Targets, Build: &evidence.Spec.Config, Verification: record.VerificationRequired, Destination: record.Published, Publication: &publication})

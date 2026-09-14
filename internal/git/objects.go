@@ -211,6 +211,17 @@ func objectResult(out []byte, err error) (string, error) {
 	return object, nil
 }
 
+func (r *Repository) CommitMessage(ctx context.Context, commit string) (string, error) {
+	if !ValidObjectID(commit) {
+		return "", fmt.Errorf("git: a literal commit object is required")
+	}
+	message, err := r.output(ctx, "show", "-s", "--format=%B", commit, "--")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(message)), nil
+}
+
 // SingleParent returns the parent of a non-root, non-merge commit.
 func (r *Repository) SingleParent(ctx context.Context, commit string) (string, error) {
 	if !ValidObjectID(commit) {

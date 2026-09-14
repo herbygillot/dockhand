@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
 	"github.com/herbygillot/dockhand/v2/internal/publish"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
@@ -192,11 +193,11 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 			return err
 		}
 		// Validate accepted source again under the operation lock, outside the transaction.
-		commit, tree, err := s.Repo.Branch(ctx, spec.HeadBranch)
+		snapshot, err := changeset.CaptureBranch(ctx, s.Repo, spec.HeadBranch)
 		if err != nil {
 			return fmt.Errorf("%w: %v", publish.ErrPrecondition, err)
 		}
-		if record.ObjectID(commit) != source.Commit || record.ObjectID(tree) != source.Tree {
+		if snapshot.Commit != source.Commit || snapshot.Tree != source.Tree {
 			return ErrStaleRevision
 		}
 	}
