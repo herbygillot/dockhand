@@ -29,6 +29,7 @@ dockhand2/
       provision/         # Tart base-image construction and validation
     publish/             # Publication policy, desired state, reconciliation
     macports/            # Bound source contexts, evaluation, dependencies
+      dependents/        # Frozen-source downstream coverage discovery
       source/            # Evaluated PortGroup source conventions
       portindex/         # Frozen-source PortIndex construction and caching
     tcl/                 # Tcl process/RPC support and source syntax tools
@@ -289,3 +290,5 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 `publish.Destination` resolves immutable destination choices at intake; `publish.PlanTo` combines that destination with a verified prepared revision and current remote preconditions. Standalone `publish.Plan` composes both. `workflow/publication_plan.go` owns the durable transition between verification and publication; the existing publication executor owns push, PR writes, confirmation, and recovery for both command paths. No new package, dependency, schema, or child job is introduced.
 
 `record.JobSpec.PublishTo` holds a combined job's destination. `record.PublicationSpec` remains the complete external-action intent, populated only once the prepared revision passes verification. Workflow checks the action against the accepted destination and prepared revision before persisting it and before claiming it for execution; SQLite preserves the resulting intent and its relationships. Verification and publication read the result source without replacing the accepted source. See the [combined publication report](activity/2026-09-13-combined-publication.md).
+
+`macports/dependents` stages a source-matched PortIndex, selects direct build/library/runtime dependents, and evaluates independent target configurations. It preserves selection reasons, evaluation failures, and indexed closure gaps. Its closures are default-variant estimates, not guest dependency resolutions. This discovery boundary performs no state writes, revision edits, or provider operations; workflow adoption and configuration selection remain the next integration step.
