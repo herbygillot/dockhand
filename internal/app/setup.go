@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/herbygillot/dockhand/v2/internal/macports"
-	"github.com/herbygillot/dockhand/v2/internal/verify/tart/provision"
+	"github.com/herbygillot/dockhand/v2/internal/tart/provision"
 )
 
 type SetupOptions struct {

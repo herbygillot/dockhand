@@ -16,6 +16,7 @@ dockhand2/
     proc/                # Current-process driver lifetime and residency
     credential/          # Device authorization and secret-store contracts
       keychain/          # macOS Keychain implementation
+    filelock/            # Context-aware locks for shared external resources
     record/              # Shared durable records, identities, and value types
     state/               # Repository-scoped persistence and transaction contracts
       sqlite/            # SQLite storage, connections, and schema migrations
@@ -23,11 +24,13 @@ dockhand2/
     prepare/             # Source transformations and edit-fidelity checks
     upstream/            # Release discovery and version assessment
     verify/              # Build specifications, coverage plans, verdicts
-      tart/              # Concrete VM verification provider and image coordination
-        provision/       # Tart base-image construction and validation
+      tart/              # Concrete Tart verification provider
+    tart/                # Shared local Tart commands, images, and coordination
+      provision/         # Tart base-image construction and validation
     publish/             # Publication policy, desired state, reconciliation
     macports/            # Bound source contexts, evaluation, dependencies
       source/            # Evaluated PortGroup source conventions
+      portindex/         # Frozen-source PortIndex construction and caching
     tcl/                 # Tcl process/RPC support and source syntax tools
     text/                # Byte spans and source-preserving edits
     git/                 # Git objects, refs, snapshots, guarded remote pushes
@@ -111,7 +114,7 @@ Use an isolated verification unit per target/configuration by default, schedulin
 
 Planned follow-up targets may refer to predecessor work, but freeze concrete artifact identities before submitting an attempt. Artifact reuse and baseline comparisons can be added later without changing the distinction between a coverage plan and an immutable attempt. Do not create a generic graph engine or another package resolver.
 
-`verify/tart` implements the provider contract and owns VM-specific admission, guest execution, image capability inspection, evidence extraction, resource operations, and base-image coordination. `verify/tart/provision` owns the setup recipe and native construction mechanics without joining the attempt lifecycle. Neither publishes PRs or mutates workflow records. The provider lifecycle, native Tart/launchd adapter, exact-source archive mechanics, and guest runner remain inside `verify/tart`. A narrow `state.ProviderStore` interface supplies pool-scoped transactions and provider-wide image observations on the same SQLite backend; provider-owned executions and workflow adoption are separate records. An uncached image is inspected inside the admitted disposable clone before source staging, so inspection uses ordinary capacity and never changes the source image. The immutable image digest keys cached capabilities across repositories, while terminal evidence retains the observed capability identity for reuse decisions. Per-submission OS locks serialize external VM mutations, while SQLite owns shared reservations and durable closure. Per-image read/write locks coordinate verification with base replacement, and a setup lock serializes provisioning independently of database selection. Large logs and build artifacts can stay outside the database, with stable references returned to the driver and explicit retention responsibilities. `verify.ArtifactPruner` is an optional provider capability for idempotent deletion of released diagnostics under the same operation lock. `workflow.Collect` owns age selection and records confirmed pruning; it reuses ordinary claimed cleanup for VM release. No second job progression loop or general garbage-collector package is introduced.
+`tart` owns mechanics shared by image construction and verification: local command execution, conventional release profiles, image manifests, and per-image coordination. `tart/provision` owns the setup recipe and native construction mechanics without joining the attempt lifecycle. `verify/tart` implements the provider contract and owns VM-specific admission, guest execution, image capability inspection, evidence extraction, and resource operations. Neither publishes PRs nor mutates workflow records. The provider lifecycle, launchd adapter, exact-source archive mechanics, and guest runner remain inside `verify/tart`. A narrow `state.ProviderStore` interface supplies pool-scoped transactions and provider-wide image observations on the same SQLite backend; provider-owned executions and workflow adoption are separate records. An uncached image is inspected inside the admitted disposable clone before source staging, so inspection uses ordinary capacity and never changes the source image. The immutable image digest keys cached capabilities across repositories, while terminal evidence retains the observed capability identity for reuse decisions. `filelock` supplies context-aware advisory locks for external files and resources. Per-submission locks serialize external VM mutations, while SQLite owns shared reservations and durable closure. Per-image read/write locks coordinate verification with base replacement, and a setup lock serializes provisioning independently of database selection. Large logs and build artifacts can stay outside the database, with stable references returned to the driver and explicit retention responsibilities. `verify.ArtifactPruner` is an optional provider capability for idempotent deletion of released diagnostics under the same operation lock. `workflow.Collect` owns age selection and records confirmed pruning; it reuses ordinary claimed cleanup for VM release. No second job progression loop or general garbage-collector package is introduced.
 
 ### Publication and later PR awareness
 
@@ -127,9 +130,13 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 - `state` depends on shared records and standard-library contracts, not Git, SQLite, or workflow policy.
 - `state/sqlite` depends on `state`, `record`, and the selected SQLite driver. It does not import workflow or Git.
 - `credential` defines authorization and storage contracts without depending on a concrete forge, Keychain, CLI, or workflow. `credential/keychain` implements only its storage contract.
+- `filelock` depends only on the standard library and coordinates external resources without authorizing state changes.
+- `tart` depends on shared records and `filelock`; `tart/provision` consumes that shared Tart boundary. Neither imports verification or workflow.
 - `forge` defines remote facts and access contracts using shared records and the standard library. It imports no capability or concrete adapter.
 - `forge/github` depends on `credential`, `forge`, `record`, OAuth transport, and Git validation mechanics; `forge/gitlab` depends on `forge`, Git validation mechanics, and the GitLab SDK. Neither adapter imports `upstream`, `publish`, nor `macports`.
 - `macports/source` depends on evaluated MacPorts metadata and Tcl value decoding. It imports no forge adapter or upstream policy.
+- `macports/portindex` depends on Git object mechanics, shared records, and `filelock`. It imports neither Tart provider nor workflow policy.
+- `verify/tart` consumes the shared Tart and PortIndex boundaries; those packages do not import the provider.
 - `upstream` consumes `macports/source` specifications and forge observations. `publish` consumes forge PR contracts. Neither constructs a concrete client.
 - `workflow` depends on `state` and capability APIs. Capabilities do not depend back on the engine or write its records.
 - `proc` supplies current-process residency around `workflow.Engine`. Requests and observations pass through state; `proc` does not judge evidence or choose the next business action.
@@ -199,7 +206,7 @@ The [performance pass](activity/2026-09-12-performance-pass.md) batches Git sour
 
 The Tart guest runs lint, build, declared tests when enabled, and installation in that order. Build, test, and install enable debug output, which goes to the same retained log streamed by `--trace`; lint remains quiet. Build failures stop the sequence and record a separate build step. Dependency binaries remain enabled unless `--from-source` is selected.
 
-The provider prepares a PortIndex before staging a frozen source. `--prefix` selects the host MacPorts `portindex`; its executable digest and the mirror URL participate in frozen provider settings. Following MacPorts CI, a cold cache downloads a platform index, reconciles the recent base history, and retains the result by immutable base tree. Candidate trees reuse that index and re-evaluate only port directories changed from the base. Download failure or changes under `_resources` cause a full pass because shared PortGroups can change unrelated entries. Candidate indexes remain temporary and the guest consumes the staged index without occupying build time with a full-tree index pass.
+`macports/portindex` prepares a PortIndex before the provider stages a frozen source. `--prefix` selects the host MacPorts `portindex`; its executable digest and the mirror URL participate in frozen provider settings. Following MacPorts CI, a cold cache downloads a platform index, reconciles the recent base history, and retains the result by immutable base tree. Candidate trees reuse that index and re-evaluate only port directories changed from the base. Download failure or changes under `_resources` cause a full pass because shared PortGroups can change unrelated entries. Candidate indexes remain temporary and the guest consumes the staged index without occupying build time with a full-tree index pass.
 
 `verify.LogReader` is an optional read-only diagnostic interface. Tart reads bounded guest log ranges while running and retained host logs after collection. CLI tracing keeps offsets, drains final logs, and writes to stderr without participating in workflow bookkeeping. The [CLI execution report](activity/2026-09-12-cli-execution.md) records scope and validation.
 

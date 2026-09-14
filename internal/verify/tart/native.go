@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/state"
+	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
 )
 
 const guestDirectory = "/var/tmp/dockhand2"
@@ -41,10 +42,6 @@ type native struct {
 }
 
 func (n *native) command(ctx context.Context, bin string, input io.Reader, output io.Writer, args ...string) ([]byte, error) {
-	return n.commandWithGuard(ctx, bin, input, output, nil, args...)
-}
-
-func (n *native) commandWithGuard(ctx context.Context, bin string, input io.Reader, output io.Writer, imageGuard *os.File, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = append(os.Environ(), "TART_HOME="+n.config.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
 	cmd.Stdin = input
@@ -52,9 +49,6 @@ func (n *native) commandWithGuard(ctx context.Context, bin string, input io.Read
 	// Close-only locks remain held by unfinished commands after driver death.
 	if n.guard != nil {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, n.guard)
-	}
-	if imageGuard != nil {
-		cmd.ExtraFiles = append(cmd.ExtraFiles, imageGuard)
 	}
 	var out, stderr bytes.Buffer
 	if output == nil {
@@ -70,7 +64,11 @@ func (n *native) commandWithGuard(ctx context.Context, bin string, input io.Read
 	return out.Bytes(), nil
 }
 func (n *native) tart(ctx context.Context, input io.Reader, output io.Writer, args ...string) ([]byte, error) {
-	return n.command(ctx, n.config.Executable, input, output, args...)
+	return n.tartWithGuard(ctx, input, output, nil, args...)
+}
+func (n *native) tartWithGuard(ctx context.Context, input io.Reader, output io.Writer, imageGuard *os.File, args ...string) ([]byte, error) {
+	client := tartvm.Client{Executable: n.config.Executable, Home: n.config.Home}
+	return client.Run(ctx, tartvm.RunOptions{Input: input, Output: output, ExtraFiles: []*os.File{n.guard, imageGuard}}, args...)
 }
 func (n *native) guest(ctx context.Context, vm string, input io.Reader, args ...string) ([]byte, error) {
 	return n.execGuest(ctx, vm, input, nil, args...)
@@ -133,7 +131,7 @@ func (n *native) Running(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 func (n *native) Clone(ctx context.Context, image, vm string) error {
-	guard, err := AcquireImageRead(ctx, n.config.Home, image)
+	guard, err := tartvm.AcquireImageRead(ctx, n.config.Home, image)
 	if err != nil {
 		return err
 	}
@@ -145,7 +143,7 @@ func (n *native) Clone(ctx context.Context, image, vm string) error {
 	if exists {
 		return fmt.Errorf("tart: refusing to overwrite existing VM %s", vm)
 	}
-	_, err = n.commandWithGuard(ctx, n.config.Executable, nil, nil, guard, "clone", image, vm)
+	_, err = n.tartWithGuard(ctx, nil, nil, guard, "clone", image, vm)
 	return err
 }
 func xmlString(s string) string {

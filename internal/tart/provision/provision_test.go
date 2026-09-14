@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
+	"github.com/herbygillot/dockhand/v2/internal/tart"
 	"github.com/stretchr/testify/require"
 )
 

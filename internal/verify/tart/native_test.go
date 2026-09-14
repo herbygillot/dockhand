@@ -144,7 +144,7 @@ func TestConcurrentPortIndexPreparationBuildsOneCacheEntry(t *testing.T) {
 func TestPortIndexMirrorSeedsBaseBeforeCandidateUpdate(t *testing.T) {
 	f, _ := singleRun(t)
 	commit := string(f.request.Spec.Source.Commit)
-	for range portIndexReconciliationCommits {
+	for range 10 {
 		signature := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
 		var err error
 		commit, err = f.provider.Repo.WriteCommit(t.Context(), git.Commit{Tree: string(f.request.Spec.Source.Tree), Parents: []string{commit}, Message: "advance", Author: signature, Committer: signature})

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
-	"github.com/herbygillot/dockhand/v2/internal/verify/tart/provision"
+	"github.com/herbygillot/dockhand/v2/internal/tart/provision"
 	"github.com/spf13/cobra"
 )
 

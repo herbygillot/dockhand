@@ -431,28 +431,6 @@ func TestResultIdentityMustMatchAcceptedInputs(t *testing.T) {
 	_, err = f.provider.Release(t.Context(), result.Resources[0])
 	require.ErrorContains(t, err, "no confirmed terminal")
 }
-func TestExecutionLockIsHeldBySurvivingChild(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "operation.lock")
-	file, err := acquire(t.Context(), path)
-	require.NoError(t, err)
-	cmd := exec.Command("/bin/sh", "-c", "read line || true")
-	cmd.ExtraFiles = []*os.File{file}
-	stdin, err := cmd.StdinPipe()
-	require.NoError(t, err)
-	require.NoError(t, cmd.Start())
-	require.NoError(t, file.Close())
-	t.Cleanup(func() { stdin.Close(); cmd.Wait() })
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	_, err = acquire(ctx, path)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.NoError(t, stdin.Close())
-	require.NoError(t, cmd.Wait())
-	next, err := acquire(t.Context(), path)
-	require.NoError(t, err)
-	next.Close()
-}
-
 func TestConcurrentAdmissionHonorsPoolCapacity(t *testing.T) {
 	root := t.TempDir()
 	machine := newMachine()

@@ -13,22 +13,10 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
+	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
 )
 
-const ImageManifestProtocol = 2
 const capabilityObservationProtocol = 1
-
-// ImageManifest describes the environment declared by images created through setup.
-// Runtime verification observes the same properties independently.
-type ImageManifest struct {
-	Protocol          int             `json:"protocol"`
-	Source            string          `json:"source"`
-	Platform          record.Platform `json:"platform"`
-	MacPortsPrefix    string          `json:"macports_prefix,omitempty"`
-	MacPortsVersion   string          `json:"macports_version"`
-	GuestAgentVersion string          `json:"guest_agent_version"`
-	XcodeVersion      string          `json:"xcode_version,omitempty"`
-}
 
 type capabilityInspection struct {
 	Capabilities record.EnvironmentCapabilities
@@ -116,16 +104,16 @@ func (n *native) InspectCapabilities(ctx context.Context, vm, prefix string) (ca
 	if err != nil {
 		return result, err
 	}
-	var manifest *ImageManifest
+	var manifest *tartvm.ImageManifest
 	if len(strings.TrimSpace(string(manifestRaw))) > 0 {
-		value := ImageManifest{}
+		value := tartvm.ImageManifest{}
 		if err := json.Unmarshal(manifestRaw, &value); err != nil {
 			problems = append(problems, "image manifest is invalid: "+err.Error())
 		} else {
 			manifest = &value
 		}
 	}
-	if manifest != nil && (manifest.Protocol == 1 || manifest.Protocol == ImageManifestProtocol) {
+	if manifest != nil && (manifest.Protocol == 1 || manifest.Protocol == tartvm.ImageManifestProtocol) {
 		manifestPrefix := manifest.MacPortsPrefix
 		if manifest.Protocol == 1 && manifestPrefix == "" {
 			manifestPrefix = "/opt/local"
@@ -221,9 +209,9 @@ puts "$::macports::os_platform $::macports::os_major $::macports::build_arch"
 	return result, nil
 }
 
-func manifestProblems(manifest ImageManifest, capabilities record.EnvironmentCapabilities) []string {
+func manifestProblems(manifest tartvm.ImageManifest, capabilities record.EnvironmentCapabilities) []string {
 	problems := []string{}
-	if manifest.Protocol != 1 && manifest.Protocol != ImageManifestProtocol {
+	if manifest.Protocol != 1 && manifest.Protocol != tartvm.ImageManifestProtocol {
 		return []string{fmt.Sprintf("image manifest uses unsupported protocol %d", manifest.Protocol)}
 	}
 	prefix := manifest.MacPortsPrefix

@@ -8,6 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/record"
 )
 
+// MacOSRelease connects MacPorts platform identity to Tart image conventions.
 type MacOSRelease struct {
 	Darwin  int
 	Product string
@@ -15,6 +16,7 @@ type MacOSRelease struct {
 	Slug    string
 }
 
+// ReleaseForPlatform returns the supported native release for a platform.
 func ReleaseForPlatform(platform record.Platform) (MacOSRelease, error) {
 	if platform.OS != "darwin" || platform.Architecture != "arm64" {
 		return MacOSRelease{}, fmt.Errorf("tart: unsupported setup platform %s %s", platform.OS, platform.Architecture)
@@ -37,6 +39,7 @@ func ReleaseForPlatform(platform record.Platform) (MacOSRelease, error) {
 	return release, nil
 }
 
+// DefaultImageName returns the conventional command-line-tools image name.
 func DefaultImageName(platform record.Platform) (string, error) {
 	release, err := ReleaseForPlatform(platform)
 	if err != nil {
@@ -45,6 +48,7 @@ func DefaultImageName(platform record.Platform) (string, error) {
 	return "dockhand-base-" + release.Slug, nil
 }
 
+// DefaultXcodeImageName returns the conventional full-Xcode image name.
 func DefaultXcodeImageName(platform record.Platform) (string, error) {
 	release, err := ReleaseForPlatform(platform)
 	if err != nil {
@@ -53,6 +57,7 @@ func DefaultXcodeImageName(platform record.Platform) (string, error) {
 	return "dockhand-xcode-" + release.Slug, nil
 }
 
+// DefaultSource returns the vanilla OCI image used to provision a platform.
 func DefaultSource(platform record.Platform) (string, error) {
 	release, err := ReleaseForPlatform(platform)
 	if err != nil {

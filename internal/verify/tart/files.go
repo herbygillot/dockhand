@@ -12,64 +12,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
-	"time"
 	"unicode"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
-
-func acquire(ctx context.Context, path string) (*os.File, error) {
-	return acquireMode(ctx, path, syscall.LOCK_EX)
-}
-
-func acquireMode(ctx context.Context, path string, mode int) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return nil, err
-	}
-	for {
-		if err = ctx.Err(); err != nil {
-			file.Close()
-			return nil, err
-		}
-		err = syscall.Flock(int(file.Fd()), mode|syscall.LOCK_NB)
-		if err == nil {
-			return file, nil
-		}
-		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
-			file.Close()
-			return nil, err
-		}
-		select {
-		case <-ctx.Done():
-			file.Close()
-			return nil, ctx.Err()
-		case <-time.After(25 * time.Millisecond):
-		}
-	}
-}
-
-func imageLockPath(home, kind, image string) string {
-	return filepath.Join(home, "dockhand", "locks", kind+"-"+digest([]byte(image))+".lock")
-}
-
-func AcquireImageRead(ctx context.Context, home, image string) (*os.File, error) {
-	return acquireMode(ctx, imageLockPath(home, "image", image), syscall.LOCK_SH)
-}
-
-func AcquireImageWrite(ctx context.Context, home, image string) (*os.File, error) {
-	return acquireMode(ctx, imageLockPath(home, "image", image), syscall.LOCK_EX)
-}
-
-func AcquireProvisioning(ctx context.Context, home, image string) (*os.File, error) {
-	return acquireMode(ctx, imageLockPath(home, "setup", image), syscall.LOCK_EX)
-}
 
 func atomicFile(path string, data []byte, mode fs.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -151,7 +100,11 @@ func makeInput(ctx context.Context, repo *git.Repository, request verify.Request
 		return "", err
 	}
 	defer snapshot.Close()
-	if err = stagePortIndex(ctx, repo, request.Spec.Source, request.Spec.Config.Platform, c, snapshot.Root, client); err != nil {
+	indexConfig := portindex.Config{
+		Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest,
+		MirrorURL: c.PortIndexURL, CacheDirectory: filepath.Join(c.ArtifactDirectory, "indexes"),
+	}
+	if err = portindex.Stage(ctx, repo, request.Spec.Source, request.Spec.Config.Platform, indexConfig, snapshot.Root, client); err != nil {
 		return "", err
 	}
 	temp, err := os.CreateTemp(directory, ".input-")

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
+	"github.com/herbygillot/dockhand/v2/internal/tart"
 )
 
 const DefaultMacPortsVersion = "2.12.6"

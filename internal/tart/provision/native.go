@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,7 +16,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
-	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
+	"github.com/herbygillot/dockhand/v2/internal/tart"
 )
 
 type native struct {
@@ -36,24 +35,12 @@ func (n *native) command(ctx context.Context, input io.Reader, stream bool, args
 }
 
 func (n *native) commandWithGuard(ctx context.Context, input io.Reader, stream bool, guard *os.File, args ...string) ([]byte, error) {
-	command := exec.CommandContext(ctx, n.config.Executable, args...)
-	command.Env = append(os.Environ(), "TART_HOME="+n.config.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
-	command.Stdin = input
-	command.WaitDelay = 2 * time.Second
-	if guard != nil {
-		command.ExtraFiles = []*os.File{guard}
-	}
-	var output bytes.Buffer
-	writer := io.Writer(&output)
+	var output io.Writer
 	if stream && n.progress != nil {
-		writer = io.MultiWriter(n.progress, &output)
+		output = n.progress
 	}
-	command.Stdout, command.Stderr = writer, writer
-	err := command.Run()
-	if err != nil {
-		return output.Bytes(), fmt.Errorf("tart: %s: %w: %s", args[0], errors.Join(ctx.Err(), err), strings.TrimSpace(output.String()))
-	}
-	return output.Bytes(), nil
+	client := tart.Client{Executable: n.config.Executable, Home: n.config.Home}
+	return client.Run(ctx, tart.RunOptions{Input: input, Output: output, Combined: true, ExtraFiles: []*os.File{guard}}, args...)
 }
 
 func (n *native) LockSetup(ctx context.Context, image string) (io.Closer, error) {

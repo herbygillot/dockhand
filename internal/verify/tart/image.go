@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/herbygillot/dockhand/v2/internal/state"
+	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
 )
 
 type imageCache struct {
@@ -34,7 +35,7 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 	if !safeToken(n.config.Image) || strings.Contains(n.config.Image, ":") {
 		return Environment{}, fmt.Errorf("tart: a prepared local image is required")
 	}
-	guard, err := AcquireImageRead(ctx, n.config.Home, n.config.Image)
+	guard, err := tartvm.AcquireImageRead(ctx, n.config.Home, n.config.Image)
 	if err != nil {
 		return Environment{}, err
 	}

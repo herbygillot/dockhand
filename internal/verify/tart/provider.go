@@ -14,9 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/filelock"
 	"github.com/herbygillot/dockhand/v2/internal/git"
+	"github.com/herbygillot/dockhand/v2/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
+	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
@@ -189,7 +192,7 @@ func (p *Provider) beginWith(ctx context.Context, id record.RequestID, config Co
 	if err != nil {
 		return nil, err
 	}
-	lock, err := acquire(ctx, filepath.Join(pool.Directory, "locks", digest([]byte(string(id)))+".lock"))
+	lock, err := filelock.Acquire(ctx, filepath.Join(pool.Directory, "locks", digest([]byte(string(id)))+".lock"), filelock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
@@ -690,9 +693,9 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	}
 	if c.Image == "" {
 		if options.NeedsXcode {
-			c.Image, err = DefaultXcodeImageName(platform)
+			c.Image, err = tartvm.DefaultXcodeImageName(platform)
 		} else {
-			c.Image, err = DefaultImageName(platform)
+			c.Image, err = tartvm.DefaultImageName(platform)
 		}
 		if err != nil {
 			return record.BuildConfig{}, err
@@ -700,7 +703,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	}
 	c.Platform = platform
 	if c.PortIndexURL == "" {
-		c.PortIndexURL, err = defaultPortIndexURL(platform)
+		c.PortIndexURL, err = portindex.DefaultMirrorURL(platform)
 		if err != nil {
 			return record.BuildConfig{}, err
 		}
@@ -735,10 +738,11 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 			return record.BuildConfig{}, fmt.Errorf("tart: image %s is incompatible: %s", c.Image, problem)
 		}
 	}
-	c, err = resolvePortIndexTool(ctx, c)
+	resolvedIndex, err := portindex.ResolveTool(ctx, portindex.Config{Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest})
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
+	c.PortIndexExecutable, c.PortIndexDigest = resolvedIndex.Executable, resolvedIndex.Digest
 	// Capacity is pool policy; zero permits an existing pool's recorded limit.
 	c.Capacity = p.Config.Capacity
 	raw, err := json.Marshal(c)

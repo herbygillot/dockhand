@@ -5,6 +5,7 @@ import (
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
+	tartvm "github.com/herbygillot/dockhand/v2/internal/tart"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,13 +32,13 @@ func TestManifestComparisonSupportsTheOriginalProvisionedFormat(t *testing.T) {
 		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6",
 		DeveloperTools: record.DeveloperToolsCommandLine, GuestAgentVersion: "0.14.1",
 	}
-	legacy := ImageManifest{
+	legacy := tartvm.ImageManifest{
 		Protocol: 1, Source: "ghcr.io/cirruslabs/macos-tahoe-base:latest", Platform: testPlatform,
 		MacPortsVersion: "2.12.6", GuestAgentVersion: "0.14.1",
 	}
 	require.Empty(t, manifestProblems(legacy, capabilities))
 	current := legacy
-	current.Protocol = ImageManifestProtocol
+	current.Protocol = tartvm.ImageManifestProtocol
 	require.NotEmpty(t, manifestProblems(current, capabilities), "the current manifest records its prefix explicitly")
 	current.MacPortsPrefix = "/opt/local"
 	require.Empty(t, manifestProblems(current, capabilities))
