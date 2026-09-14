@@ -4,6 +4,17 @@ See [architecture](architecture.md) for driver ownership and recovery, [principl
 
 ## Global options
 
+`--tree PATH` / `-T PATH` selects the ports checkout. It defaults to `MACPORTS_TREE` when nonempty, otherwise the current directory. The selection applies to repository-scoped commands without changing the process working directory. Database-only commands still do not need a ports tree.
+
+`--prefix PATH` / `-P PATH` selects the local MacPorts installation used for evaluation, through `<prefix>/bin/port-tclsh`. It defaults to `MACPORTS_PREFIX` when nonempty; otherwise Dockhand finds `port-tclsh` on the executable search path. The VM's MacPorts prefix remains a separate provider setting tied to its image. `--publish` has no short alias now that `-P` selects the prefix.
+
+Explicit flags override the environment. Both flags are inherited by subcommands, accept relative directories resolved against the invocation's working directory, reject explicitly empty values, and offer directory completion. Parsing and help do not check that the selected directories exist or create them.
+
+```sh
+dockhand -T ~/Source/macports-ports -P /opt/local status
+MACPORTS_TREE=~/Source/macports-ports MACPORTS_PREFIX=/opt/local dockhand bump jq
+```
+
 `--db PATH` selects the state database, defaulting to `$HOME/.dockhand/state.db` across all checkouts. Both `--db PATH` and `--db=PATH` work before or after the command. The `--` separator ends option parsing. Relative paths resolve against the invocation's working directory, and an explicitly empty path is rejected. Accept a filesystem path, not SQLite URI options. No short alias is assigned. The old `--lock-dir`, `-L`, and `--lockfile` flags are rejected.
 
 ```sh
@@ -17,7 +28,7 @@ One database can hold work for many repositories. Workflow commands operate on t
 
 ## Command parsing and help
 
-The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--db` and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
+The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-T`, `--prefix` / `-P`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
@@ -148,13 +159,13 @@ Standalone verification does not establish an exclusive contribution association
 
 ## The flow
 
-The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified. If `-P` / `--publish` is specified, the branch will ultimately be submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports).
+The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified. If `--publish` is specified, the branch will ultimately be submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports).
 
 The driver owns each accepted job and its bookkeeping. The CLI submits the request transactionally to the state store through the shared workflow API, runs targeted driver cycles in the same invocation, and observes recorded progress. A normal invocation remains attached until the verification provider accepts the build; `--wait` remains attached until the requested work completes. With `--wait`, the invocation keeps running the required cycles through completion. After it exits, further workflow advancement requires a running `dockhand start` process or a later driver cycle. Both modes use the same workflow implementation; commands do not launch background drivers.
 
 ```text
-dockhand bump <port|selector> [version] [-N|--no-verify] [-P|--publish] [--wait]
-dockhand (bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [-P|--publish] [--wait]
+dockhand bump <port|selector> [version] [-N|--no-verify] [--publish] [--wait]
+dockhand (bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [--publish] [--wait]
 ```
 
 ```sh

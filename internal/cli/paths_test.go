@@ -1,0 +1,130 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/herbygillot/dockhand/v2/internal/app"
+	"github.com/herbygillot/dockhand/v2/internal/record"
+	"github.com/herbygillot/dockhand/v2/internal/workflow"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
+)
+
+func TestGlobalMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
+	working := t.TempDir()
+	t.Chdir(working)
+	working, err := os.Getwd()
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name, envTree, envPrefix, configTree, configPrefix, wantTree, wantPrefix string
+		flags                                                                    []string
+	}{
+		{name: "defaults", wantTree: "."},
+		{name: "environment", envTree: "env tree", envPrefix: "env prefix", wantTree: "env tree", wantPrefix: "env prefix"},
+		{name: "configured caller", envTree: "env tree", envPrefix: "env prefix", configTree: "configured tree", configPrefix: "configured prefix", wantTree: "configured tree", wantPrefix: "configured prefix"},
+		{name: "long flags", envTree: "env tree", envPrefix: "env prefix", configTree: "configured tree", configPrefix: "configured prefix", flags: []string{"--tree", "flag tree", "--prefix", "flag prefix"}, wantTree: "flag tree", wantPrefix: "flag prefix"},
+		{name: "short flags", envTree: "env tree", envPrefix: "env prefix", flags: []string{"-T", "flag tree", "-P", "flag prefix"}, wantTree: "flag tree", wantPrefix: "flag prefix"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("MACPORTS_TREE", tc.envTree)
+			t.Setenv("MACPORTS_PREFIX", tc.envPrefix)
+			db := filepath.Join(t.TempDir(), "missing", "state.db")
+			root, err := NewRoot(app.Config{DBPath: db, Repository: tc.configTree, MacPortsPrefix: tc.configPrefix})
+			require.NoError(t, err)
+			var out bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&out)
+			root.SetArgs(append([]string{"bump", "--help"}, tc.flags...))
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			wantPrefix := ""
+			if tc.wantPrefix != "" {
+				wantPrefix = filepath.Join(working, tc.wantPrefix)
+			}
+			require.Equal(t, filepath.Join(working, tc.wantTree), root.PersistentFlags().Lookup("tree").Value.String())
+			require.Equal(t, wantPrefix, root.PersistentFlags().Lookup("prefix").Value.String())
+			for _, name := range []string{"tree", "prefix"} {
+				require.Contains(t, root.PersistentFlags().Lookup(name).Annotations, cobra.BashCompSubdirsInDir)
+			}
+			require.Contains(t, out.String(), "-T, --tree")
+			require.Contains(t, out.String(), "-P, --prefix")
+			bump, _, err := root.Find([]string{"bump"})
+			require.NoError(t, err)
+			require.Empty(t, bump.Flags().Lookup("publish").Shorthand)
+			require.NoDirExists(t, filepath.Dir(db))
+		})
+	}
+}
+
+func TestGlobalTreeSelectsRecordedWorkFromOutsideCheckout(t *testing.T) {
+	config, id := queuedJob(t)
+	tree := config.Repository
+	config.Repository = ""
+	t.Chdir(t.TempDir())
+	t.Setenv("MACPORTS_PREFIX", "/missing/macports")
+	for _, args := range [][]string{
+		{"status", string(id), "--json"},
+		{"--tree", tree, "status", string(id), "--json"},
+		{"status", string(id), "-T", tree, "--json"},
+	} {
+		t.Setenv("MACPORTS_TREE", tree)
+		if len(args) > 3 {
+			t.Setenv("MACPORTS_TREE", "/missing/ports")
+		}
+		var stdout, stderr bytes.Buffer
+		require.NoError(t, Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config))
+		var result workflow.Status
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+		require.Len(t, result.Jobs, 1)
+		require.Equal(t, id, result.Jobs[0].Job.ID)
+		require.Equal(t, record.JobQueued, result.Jobs[0].Job.State)
+		require.Empty(t, stderr.String())
+	}
+}
+
+func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
+	config, repo, _ := preparationCLI(t)
+	working := t.TempDir()
+	prefix := filepath.Join(working, "MacPorts prefix")
+	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0700))
+	require.NoError(t, os.Symlink(config.TclExecutable, filepath.Join(prefix, "bin", "port-tclsh")))
+	config.Repository, config.TclExecutable = "", ""
+	t.Chdir(working)
+	t.Setenv("MACPORTS_TREE", repo.Root)
+	t.Setenv("MACPORTS_PREFIX", "MacPorts prefix")
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.Contains(t, stdout.String(), "+revision 1")
+	require.NoDirExists(t, filepath.Dir(config.DBPath))
+
+	stdout.Reset()
+	stderr.Reset()
+	err := Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
+	require.ErrorContains(t, err, filepath.Join(working, "missing prefix", "bin", "port-tclsh"))
+	require.NoDirExists(t, filepath.Dir(config.DBPath))
+
+	stdout.Reset()
+	stderr.Reset()
+	t.Setenv("MACPORTS_TREE", "/missing/ports")
+	t.Setenv("MACPORTS_PREFIX", "/missing/macports")
+	require.NoError(t, Run(t.Context(), []string{"-T", repo.Root, "-P", "MacPorts prefix", "bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	var result ActionResult
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.Len(t, result.Status.Jobs, 1)
+	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)
+	require.Equal(t, record.BranchReady, result.Status.Jobs[0].Job.Spec.Destination)
+}
+
+func TestGlobalPathsRejectExplicitEmptyValues(t *testing.T) {
+	t.Setenv("MACPORTS_TREE", "")
+	t.Setenv("MACPORTS_PREFIX", "")
+	config := app.Config{DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), Repository: "/missing/ports"}
+	for _, args := range [][]string{{"--tree=", "status"}, {"status", "--prefix="}, {"status", "-T", ""}, {"status", "-P", ""}} {
+		var out bytes.Buffer
+		require.ErrorContains(t, Run(t.Context(), args, Streams{Out: &out, Err: &out}, config), "directory path must not be empty")
+	}
+	require.NoDirExists(t, filepath.Dir(config.DBPath))
+}

@@ -15,6 +15,15 @@ type runtime struct {
 }
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
+	if config.Repository == "" {
+		config.Repository = os.Getenv("MACPORTS_TREE")
+		if config.Repository == "" {
+			config.Repository = "."
+		}
+	}
+	if config.MacPortsPrefix == "" {
+		config.MacPortsPrefix = os.Getenv("MACPORTS_PREFIX")
+	}
 	if config.DBPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
@@ -37,6 +46,24 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		return nil, fmt.Errorf("cli: resolving state database: %w", err)
 	}
 	root.PersistentFlags().Var(dbPath, "db", "Path to the Dockhand state database")
+	for _, flag := range []struct {
+		name, shorthand, usage string
+		target                 *string
+	}{
+		{"tree", "T", "Ports tree directory (MACPORTS_TREE; defaults to the current directory)", &runtime.config.Repository},
+		{"prefix", "P", "Local MacPorts installation prefix (MACPORTS_PREFIX; otherwise find port-tclsh on PATH)", &runtime.config.MacPortsPrefix},
+	} {
+		value := directoryPathValue{target: flag.target}
+		if *flag.target != "" {
+			if err := value.Set(*flag.target); err != nil {
+				return nil, fmt.Errorf("cli: resolving --%s: %w", flag.name, err)
+			}
+		}
+		root.PersistentFlags().VarP(value, flag.name, flag.shorthand, flag.usage)
+		if err := root.MarkPersistentFlagDirname(flag.name); err != nil {
+			return nil, err
+		}
+	}
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
 	if err := root.MarkPersistentFlagFilename("db"); err != nil {
 		return nil, err
