@@ -78,6 +78,8 @@ Provisioning uses temporary `-next` images. A failed build leaves the current ba
 
 `setup` creates no workflow job and does not open SQLite or require a ports checkout. It reports progress on stderr and a human or JSON result on stdout. The Tart executable follows global `--tart` / `TART_BIN` selection. The default image follows the native release, such as `dockhand-base-tahoe`; supplying `--xcode` changes that default to `dockhand-xcode-tahoe`. Verification still selects the smaller base image when `--image` is omitted, so a full-Xcode image is an explicit verification choice in this phase.
 
+Planned with Go/Rust dependency preparation: `setup` will report `go2port` and `cargo2port` as optional host tools. Their absence will not fail setup. A bump or preview that needs one of them to regenerate a dependency/checksum block will stop with a clear missing-tool error; unrelated updates will not require either executable. README instructions will accompany the implemented support.
+
 ## Implemented verification commands
 
 ```text

@@ -31,6 +31,10 @@ These checksum and source-editing boundaries should be shared by the dependency 
 
 Add explicit preparation support for `go2port`/`go.vendors` and `cargo2port`/`cargo.crates`, including `cargo.crates_github` where applicable. Derive dependency declarations and checksums from the selected new source release, using the appropriate MacPorts helpers rather than treating these declarations as ordinary single-archive checksums.
 
+Treat `go2port` and `cargo2port` as optional preparation tools. Determine whether the selected port's dependency/checksum block requires the corresponding helper; require only that helper for that update. If it is missing, stop with an actionable error naming the port, missing executable, and dependency block that cannot be regenerated. Do not silently retain stale declarations or require either tool for unrelated ports. Check availability before invoking the helper or applying its dependent edits, including previews.
+
+Alongside each helper's preparation support, have `setup` report whether the executable is available without making its absence a setup failure or automatically installing it. These are host preparation tools, not blanket verification-image prerequisites. Add README guidance when the corresponding support lands; do not advertise it as available beforehand. Validate missing-tool behavior separately from tool execution failure and successful regeneration.
+
 Account for added, removed, and changed dependencies, relevant module/lock files, Git-sourced dependencies, and helper failures. Keep helper execution outside database write transactions and changes in isolated preparation workspaces. Review the generated diff, reevaluate the Portfile in its frozen context, and run normal verification before publication. Preserve human-maintained options and overrides; report cases that cannot be regenerated safely.
 
 Implement and validate Go and Rust independently through the existing preparation contract. Neither needs a separate workflow engine or a new general-purpose plugin framework.
@@ -79,7 +83,6 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 - Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
 - Record the existing `status` contract explicitly in the principles: it reads durable observations; driver cycles perform reconciliation and external refreshes. Distinguish snapshot time from observation time.
 - Revisit a shared download package only when common policy and lifecycle emerge across current callers.
-- Add a project license before distribution; this remains a release prerequisite even though it is independent of the implementation order above.
 
 ## Needs design
 
