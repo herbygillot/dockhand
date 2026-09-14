@@ -6,6 +6,8 @@ SQLite now holds workflow state behind `internal/state` contracts, with `interna
 
 Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including automatic GitHub version selection through the pure-Go `go-github` client. Standalone publication of verified, committed contribution branches to GitHub is implemented. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
 
+Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released diagnostics, then `dockhand gc` to apply it. `dockhand db backup <file>` creates a consistent standalone snapshot of the shared database; `dockhand db check` checks its integrity. See [state operations and recovery](docs/operations.md) for retention rules and restoring a backup.
+
 - [GitHub URL and resource audit](docs/activity/2026-09-13-github-resource-urls.md)
 - [GitHub SDK defaults report](docs/activity/2026-09-13-github-defaults.md)
 - [GitHub client migration report](docs/activity/2026-09-13-go-github.md)

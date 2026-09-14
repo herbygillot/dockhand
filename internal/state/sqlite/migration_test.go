@@ -320,3 +320,43 @@ func TestImageCacheMigrationPreservesSchemaSixAndRollsBackOnConflict(t *testing.
 		})
 	}
 }
+
+func TestRetentionMigrationPreservesReleasedResources(t *testing.T) {
+	path, db := versionTwoWithWork(t)
+	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + publicationSchema + imageSchema + "COMMIT;")
+	require.NoError(t, err)
+	_, err = db.Exec("UPDATE resources SET state='released',released_at=123,next_action_at=NULL")
+	require.NoError(t, err)
+	columns, before := migrationRows(t, db, "resources", nil)
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	_, after := migrationRows(t, db, "resources", columns)
+	require.Equal(t, before, after)
+	var pruned sql.NullInt64
+	require.NoError(t, db.QueryRow("SELECT artifacts_pruned_at FROM resources").Scan(&pruned))
+	require.False(t, pruned.Valid)
+	require.NoError(t, store.Check(t.Context()))
+}
+
+func TestMaintenanceCanBackUpOlderSchemaWithoutMigrating(t *testing.T) {
+	path, db := versionOne(t)
+	store, err := Open(t.Context(), path, Options{ReadOnly: true, AllowOlderSchema: true})
+	require.NoError(t, err)
+	defer store.Close()
+	require.NoError(t, store.Check(t.Context()))
+	result, err := store.Backup(t.Context(), filepath.Join(t.TempDir(), "old.db"))
+	require.NoError(t, err)
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 1, version)
+	restored, err := sql.Open("sqlite", result.Path)
+	require.NoError(t, err)
+	defer restored.Close()
+	require.NoError(t, restored.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 1, version)
+	_, err = Open(t.Context(), path, Options{ReadOnly: true})
+	require.ErrorIs(t, err, state.ErrSchema)
+	_, err = Open(t.Context(), path, Options{AllowOlderSchema: true})
+	require.ErrorIs(t, err, state.ErrInvalid)
+}

@@ -192,16 +192,20 @@ func (t *transaction) Resource(ctx context.Context, id record.ResourceID) (recor
 		return v, err
 	}
 	var owner sql.NullString
-	var until, retry, retain, released sql.NullInt64
-	err := t.conn.QueryRowContext(ctx, `SELECT id,attempt_id,submission_id,provider,handle,state,claim_owner,claim_generation,claim_until,retry_at,retain_until,released_at,last_error FROM resources WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.AttemptID, &v.SubmissionID, &v.Handle.Provider, &v.Handle.ID, &v.State, &owner, &v.ClaimGeneration, &until, &retry, &retain, &released, &v.LastError)
+	var until, retry, retain, released, pruned sql.NullInt64
+	err := t.conn.QueryRowContext(ctx, `SELECT id,attempt_id,submission_id,provider,handle,state,claim_owner,claim_generation,claim_until,retry_at,retain_until,released_at,artifacts_pruned_at,last_error FROM resources WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.AttemptID, &v.SubmissionID, &v.Handle.Provider, &v.Handle.ID, &v.State, &owner, &v.ClaimGeneration, &until, &retry, &retain, &released, &pruned, &v.LastError)
 	v.Claim = readClaim(owner, v.ClaimGeneration, until)
 	v.RetryAt = scanTime(retry)
 	v.RetainUntil = scanTime(retain)
 	v.ReleasedAt = scanTime(released)
+	v.ArtifactsPrunedAt = scanTime(pruned)
 	return v, storageError(err)
 }
 func (t *transaction) PutResource(ctx context.Context, v record.Resource) error {
 	if v.ID == "" || v.AttemptID == "" || v.SubmissionID == "" || v.Handle.Provider == "" || v.Handle.ID == "" {
+		return state.ErrInvalid
+	}
+	if v.ArtifactsPrunedAt != nil && (v.State != record.ResourceReleased || v.ReleasedAt == nil || v.ArtifactsPrunedAt.Before(*v.ReleasedAt)) {
 		return state.ErrInvalid
 	}
 	owner, until, err := claimValues(v.Claim, v.ClaimGeneration)
@@ -218,7 +222,15 @@ func (t *transaction) PutResource(ctx context.Context, v record.Resource) error 
 			return state.ErrConflict
 		}
 		if old.State == record.ResourceReleased {
-			return immutable(old, v)
+			compared := v
+			compared.ArtifactsPrunedAt = old.ArtifactsPrunedAt
+			if err := immutable(old, compared); err != nil {
+				return err
+			}
+			if old.ArtifactsPrunedAt != nil || v.ArtifactsPrunedAt == nil {
+				return immutable(old, v)
+			}
+			return t.exec(ctx, "UPDATE resources SET artifacts_pruned_at=? WHERE repository_id=? AND id=?", nullableTime(v.ArtifactsPrunedAt), t.repo, v.ID)
 		}
 	} else {
 		submission, e := t.Submission(ctx, v.SubmissionID)
@@ -228,6 +240,9 @@ func (t *transaction) PutResource(ctx context.Context, v record.Resource) error 
 		if submission.AttemptID != v.AttemptID || submission.Provider != v.Handle.Provider {
 			return state.ErrConflict
 		}
+	}
+	if v.ArtifactsPrunedAt != nil {
+		return state.ErrInvalid
 	}
 	var next any = nextTime(v.Claim, v.RetryAt)
 	switch v.State {

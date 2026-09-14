@@ -42,7 +42,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		return nil, err
 	}
 
-	root.AddCommand(runtime.setupCommand())
+	root.AddCommand(runtime.setupCommand(), runtime.databaseCommand(), runtime.gcCommand())
 	root.AddCommand(runtime.changeCommands()...)
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
 	root.AddCommand(runtime.statusCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.startCommand(), runtime.reviewCommand())

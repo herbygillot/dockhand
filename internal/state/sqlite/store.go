@@ -39,11 +39,17 @@ var publicationSchema string
 //go:embed migrations/007.sql
 var imageSchema string
 
-const schemaVersion = 7
+//go:embed migrations/008.sql
+var retentionSchema string
+
+const schemaVersion = 8
 const applicationID = 0x44484e44
 
 type Options struct {
-	ReadOnly         bool
+	ReadOnly bool
+	// AllowOlderSchema is for schema-independent backup and integrity checks.
+	// It requires ReadOnly. Do not use older schemas with normal record queries.
+	AllowOlderSchema bool
 	BusyTimeout      time.Duration
 	OperationTimeout time.Duration
 }
@@ -57,7 +63,7 @@ type Store struct {
 var _ state.Store = (*Store)(nil)
 
 func Open(ctx context.Context, path string, options Options) (*Store, error) {
-	if path == "" || path == ":memory:" || strings.HasPrefix(path, "file:") || options.BusyTimeout < 0 || options.OperationTimeout < 0 {
+	if options.AllowOlderSchema && !options.ReadOnly || path == "" || path == ":memory:" || strings.HasPrefix(path, "file:") || options.BusyTimeout < 0 || options.OperationTimeout < 0 {
 		return nil, state.ErrInvalid
 	}
 	if options.BusyTimeout == 0 {
@@ -134,7 +140,7 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err := t.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&appID); err != nil {
 			return storageError(err)
 		}
-		if appID == applicationID && (version == schemaVersion || version >= 1 && version < schemaVersion && !s.options.ReadOnly) {
+		if appID == applicationID && (version == schemaVersion || version >= 1 && version < schemaVersion && (!s.options.ReadOnly || s.options.AllowOlderSchema)) {
 			return nil
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
@@ -185,7 +191,7 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err := t.conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&appID); err != nil {
 			return storageError(err)
 		}
-		if appID == applicationID && version == schemaVersion {
+		if appID == applicationID && (version == schemaVersion || s.options.AllowOlderSchema && version >= 1 && version < schemaVersion) {
 			return nil
 		}
 		if appID == applicationID && version >= 1 && version < schemaVersion && !s.options.ReadOnly {
@@ -214,7 +220,12 @@ func (s *Store) initialize(ctx context.Context) error {
 					return storageError(err)
 				}
 			}
-			_, err := t.conn.ExecContext(ctx, imageSchema)
+			if version < 7 {
+				if _, err := t.conn.ExecContext(ctx, imageSchema); err != nil {
+					return storageError(err)
+				}
+			}
+			_, err := t.conn.ExecContext(ctx, retentionSchema)
 			return storageError(err)
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
@@ -233,7 +244,7 @@ func (s *Store) initialize(ctx context.Context) error {
 		if err := migratePreparation(ctx, t); err != nil {
 			return err
 		}
-		_, err := t.conn.ExecContext(ctx, releaseSchema+verificationSchema+publicationSchema+imageSchema)
+		_, err := t.conn.ExecContext(ctx, releaseSchema+verificationSchema+publicationSchema+imageSchema+retentionSchema)
 		return storageError(err)
 	})
 }

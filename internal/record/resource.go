@@ -47,5 +47,8 @@ type Resource struct {
 	RetainUntil *time.Time
 	// ReleasedAt records when release was confirmed, if it has been confirmed.
 	ReleasedAt *time.Time
-	LastError  string
+	// ArtifactsPrunedAt records confirmed removal of released diagnostic files.
+	// Evidence and historical file references remain in the attempt.
+	ArtifactsPrunedAt *time.Time
+	LastError         string
 }

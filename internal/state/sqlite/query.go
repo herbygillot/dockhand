@@ -161,6 +161,10 @@ func (t *transaction) Resources(ctx context.Context, q state.Query) ([]record.Re
 		base = append(base, q.DueBefore.UnixMilli())
 		order = "r.next_action_at,r.id"
 	}
+	if q.CleanupBefore != nil {
+		sql += " AND r.artifacts_pruned_at IS NULL AND a.state IN ('finished','canceled') AND EXISTS(SELECT 1 FROM jobs j WHERE j.repository_id=a.repository_id AND j.id=a.job_id AND j.state IN ('completed','failed','needs-attention','canceled','superseded') AND j.finished_at<=?) AND ((r.state='released' AND r.released_at<=?) OR r.state IN ('retained','release-requested','uncertain'))"
+		base = append(base, q.CleanupBefore.UnixMilli(), q.CleanupBefore.UnixMilli())
+	}
 	if q.Pending {
 		sql += " AND r.state IN ('retained','uncertain','release-requested')"
 	}

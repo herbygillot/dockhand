@@ -35,6 +35,9 @@ type Query struct {
 	After     string
 	Limit     int
 	Pending   bool
+	// CleanupBefore selects old terminal resources for explicit maintenance.
+	// Only Resources uses this field.
+	CleanupBefore *time.Time
 }
 
 // VerificationQuery bounds candidate lookup to a repository, target, and optional tree.

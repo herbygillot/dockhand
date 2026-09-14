@@ -35,7 +35,7 @@ func (p *Provider) ReadLog(ctx context.Context, run record.ProviderRun, offset i
 		return verify.LogChunk{}, err
 	}
 	if len(v.Result) > 0 {
-		return verify.LogChunk{Next: offset, Complete: true}, nil
+		return verify.LogChunk{}, verify.ErrLogUnavailable
 	}
 	reader, ok := o.machine.(interface {
 		ReadLog(context.Context, string, int64, int) ([]byte, error)

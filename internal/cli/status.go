@@ -148,6 +148,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		if resource.ReleasedAt != nil {
 			line("    released: %s", statusTime(*resource.ReleasedAt))
 		}
+		if resource.ArtifactsPrunedAt != nil {
+			line("    diagnostic files pruned: %s", statusTime(*resource.ArtifactsPrunedAt))
+		}
 		if resource.LastError != "" {
 			line("    error: %s", resource.LastError)
 		}

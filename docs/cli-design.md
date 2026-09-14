@@ -1,6 +1,6 @@
 # dockhand CLI design
 
-See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Working-tree verification and matching-evidence reuse are implemented. Publication and broader target selection remain unfinished.
+See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, and [state.md](state.md) for the shared database contract. The SQLite migration and `--db` flag are implemented. `verify`, job-ID `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Working-tree verification and matching-evidence reuse are implemented. Standalone publication of verified branches, resource retention, and database backup/check commands are implemented. Broader target selection remains unfinished.
 
 ## Global options
 
@@ -13,7 +13,7 @@ dockhand verify jq --db=/path/to/state.db
 
 Dockhand has no config-directory setting and does not consult `DOCKHAND_CONFIG_DIR`. A writable state operation creates a missing parent directory and database and registers the selected repository. Help, completion generation, and previews do not open state. Status uses read-only access: an absent database or unregistered repository yields empty results without creating either. Help displays the resolved file path; flag completion selects files.
 
-One database can hold work for many repositories. Commands operate on the selected checkout's registered repository; linked worktrees share that entry, while separate clones are distinct. `status` and `start` initially cover the selected repository, with no implicit all-database scope. Cooperating drivers must use the same database to coordinate shared work and resources.
+One database can hold work for many repositories. Workflow commands operate on the selected checkout's registered repository; linked worktrees share that entry, while separate clones are distinct. `status` and `start` initially cover the selected repository, with no implicit all-database scope. Cooperating drivers must use the same database to coordinate shared work and resources.
 
 ## Command parsing and help
 
@@ -22,6 +22,18 @@ The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `-
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
 `status` calls the shared workflow projection through read-only SQLite access and renders human-readable output or JSON. Verification submission, job-ID attachment/cancellation, and resident execution now use the shared Go workflow API. Version and revision bumps use the shared driver; previews use the same preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
+
+## Maintenance commands
+
+```text
+dockhand gc [--older-than 168h] [--dry-run]
+dockhand db backup <file>
+dockhand db check
+```
+
+`gc` selects the current repository's terminal resources, releases old retained VMs, and removes diagnostic files whose confirmed release is also old. Future retention deadlines and live claims are respected; active or unresolved attempts are excluded. Dry-run performs no writes or provider calls. History, evidence, build outputs, provider identities, and lockfiles survive cleanup. Action reports support `--json`; incomplete selected actions return an error. An absent database or unregistered repository yields no eligible cleanup.
+
+`db backup` and `db check` have an explicit whole-database scope and require no checkout or provider configuration. Backup creates a checked standalone snapshot including committed WAL contents; an existing destination is refused. Check is read-only and covers SQLite integrity and foreign keys. These two commands accept older supported schemas without migration. Missing databases are errors. They do not repair or restore a live database or resume work. See [operations and recovery](operations.md) for examples and external-state limitations.
 
 ## Implemented verification commands
 

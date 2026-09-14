@@ -17,6 +17,7 @@ internal/
     store.go               Store, Reader, Writer, Tx contracts
     query.go               Bounded queries and cursor types
     provider.go            Pool-scoped provider transactions
+    maintenance.go         Whole-database backup and integrity-check contract
     errors.go              Persistence errors
     sqlite/
       store.go             Opening, connections, closing
@@ -144,6 +145,14 @@ Revision preparation uses disposable materializations and retries immutable work
 
 Keep PRs and publication actions separate when publication is implemented. PR identity persists across repeated publication actions and revisions; intended publication and confirmed forge state remain distinct. Their tables, scheduling, and queries arrive with that executor. Discovery observations, review decisions, branch reassociation commands, and an optional identity-only notes namespace remain later work. No automatic notes configuration is required to open or use the database. Matching port name, version, and revision alone does not establish equivalent verification inputs.
 
+## Maintenance and recovery
+
+`state.Maintenance` is a separate whole-database contract for backup and integrity checks. SQLite implements it without repository registration or provider construction. Backup uses SQLite's consistent snapshot operation, validates the temporary output, syncs it, and installs it without replacing existing files. It includes every repository and committed WAL data. Integrity checks use one read transaction for pages, constraints, and foreign keys. Backup/check can open older supported schemas read-only; ordinary record queries still require the current schema. Neither operation repairs or resumes work.
+
+Schema 8 adds `resources.artifacts_pruned_at` and a maintenance index. Released resource identity and release facts remain immutable; an initially absent pruning timestamp can be set once after confirmed file removal. `Resources` accepts `Query.CleanupBefore` for bounded, repository-scoped selection of old terminal resources. The workflow rechecks lifecycle, ownership, claims, retention deadlines, and output preservation before acting. It retains all database history and provider tombstones.
+
+Database backups exclude external files and effects. A restored snapshot can predate VM admissions or PR writes, so database integrity does not prove that resuming it is safe. [Operations and recovery](operations.md) describes preservation, read-only inspection, external reconciliation, and choosing one replacement coordinator. No automatic live-file replacement or Git-ledger reconstruction is provided.
+
 ## Migration and validation
 
 The migration has moved intake, status, cancellation, and the existing cycle to repository-scoped state queries. `--db` passes through `app.Config.DBPath`; the old lock flags and Git ledger/lock packages are removed. Historical reports and raw results remain available. The former executable harness can be reproduced from commit `ec812d2`; `tools/stateperf` measures the SQLite implementation.
@@ -156,7 +165,7 @@ The [SQLite performance report](performance/2026-09-12-sqlite-state.md) records 
 
 ## Tart provider persistence
 
-Schema 2 adds `provider_pools` and `provider_executions`; schema-1 databases upgrade transactionally on writable open. Read-only opening requires the current schema. The pool interface is separate from repository-scoped workflow queries because admission must include every repository sharing the host resource pool. It uses the same backend and transaction rules, with no Tart or Git imports in `state`.
+Schema 2 adds `provider_pools` and `provider_executions`; schema-1 databases upgrade transactionally on writable open. Read-only workflow access requires the current schema; backup/check also accept older supported schemas. The pool interface is separate from repository-scoped workflow queries because admission must include every repository sharing the host resource pool. It uses the same backend and transaction rules, with no Tart or Git imports in `state`.
 
 Provider execution records describe effects that may exist before the workflow adopts a run. Their immutable payload freezes the submitted build and effective provider configuration for idempotency and recovery; it is not used to redefine the accepted workflow inputs. Request IDs are unique across pools. Reserved/admitted executions reference an attempt in the same repository. An unknown ID can be permanently closed without an attempt or VM. Terminal results are immutable, and closed/released identities cannot be revived. The occupied query uses a partial index, so admission reads current reservations rather than historical executions.
 
@@ -181,7 +190,7 @@ Job scheduling includes preparation claims and retries. Cancellation before any 
 
 Schema 4 adds nullable `jobs.resolved_release` JSON. It records one bump's requested spelling (empty for automatic selection), effective version, GitHub repository, exact tag, peeled commit, and observation time. The write API requires a matching bump request and valid commit identity, then forbids replacement or removal once present. This is a job result checkpoint, separate from immutable accepted intent and from the later prepared candidate.
 
-The driver records the release in one claimed pass and prepares the source in a later pass. No database transaction spans tag lookup, source evaluation, or downloading. Failed checkpoint writes cannot start preparation; expired or canceled lookup claims cannot overwrite a later result. Scheduling permits cancellation before preparation for both bump actions. Existing schema-3 candidates and integration intent remain unchanged on migration; writable opening upgrades older schemas transactionally, while read-only opening requires the current schema. Archive bytes, HTTP credentials, and full preparation diagnostics are not stored in this column.
+The driver records the release in one claimed pass and prepares the source in a later pass. No database transaction spans tag lookup, source evaluation, or downloading. Failed checkpoint writes cannot start preparation; expired or canceled lookup claims cannot overwrite a later result. Scheduling permits cancellation before preparation for both bump actions. Existing schema-3 candidates and integration intent remain unchanged on migration; writable opening upgrades older schemas transactionally, while read-only workflow access requires the current schema. Archive bytes, HTTP credentials, and full preparation diagnostics are not stored in this column.
 
 Automatic selection adds optional `CurrentVersion` and `NoUpdate` fields inside the same JSON column; schema 4 and existing explicit-release rows remain valid. The store requires an input version for automatic selections. A `NoUpdate` checkpoint is valid only for an automatic bump completed without a prepared candidate or result revision. The driver writes the release and completion atomically, so checkpoint failure cannot appear as successful completion. No branch or attempt is created for this outcome; verification was unnecessary for the requested no-op, not recorded as passed.
 
@@ -196,7 +205,7 @@ Schema 5 adds nullable `jobs.reused_attempt`, which references the original `att
 
 `VerificationCandidates` returns at most 32 original terminal attempts with evidence, ordered by attempt creation time descending and ID descending for ties. Tree and target indexes narrow the search within the selected repository; an optional tree-less lookup supplies one recent result for mismatch diagnostics. The limit bounds records materialized by the reader, not the number of matching index entries SQLite might visit. Negative outcomes are included so an older pass cannot hide a newer failed recheck. Reused jobs never become candidates themselves.
 
-`FreshVerification` fits immutable job options. `BuildConfig.VerifierDigest` fits existing build JSON; old records with an absent digest remain readable and executable but cannot supply reusable evidence. Tart binds the current digest at intake and refuses new submission if a recorded nonempty digest differs from the running verifier. Writable opening upgrades older schemas atomically; read-only opening requires the current schema. Migration failure rolls back the new columns and indexes together.
+`FreshVerification` fits immutable job options. `BuildConfig.VerifierDigest` fits existing build JSON; old records with an absent digest remain readable and executable but cannot supply reusable evidence. Tart binds the current digest at intake and refuses new submission if a recorded nonempty digest differs from the running verifier. Writable opening upgrades older schemas atomically; read-only workflow access requires the current schema. Migration failure rolls back the new columns and indexes together.
 
 ## Publication storage (schema 6)
 
