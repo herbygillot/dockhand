@@ -16,7 +16,7 @@ import (
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
 
-const capabilityObservationProtocol = 1
+const capabilityObservationProtocol = 2
 
 type capabilityInspection struct {
 	Capabilities record.EnvironmentCapabilities
@@ -24,10 +24,21 @@ type capabilityInspection struct {
 }
 
 func capabilityIdentity(capabilities record.EnvironmentCapabilities) string {
+	capabilities.GuestAgentVersion = ""
+	return observedCapabilityIdentity(capabilityObservationProtocol, capabilities)
+}
+
+// Preserve valid historical fingerprints so running jobs can still collect
+// their results. New observations exclude diagnostic agent version strings.
+func legacyCapabilityIdentity(capabilities record.EnvironmentCapabilities) string {
+	return observedCapabilityIdentity(1, capabilities)
+}
+
+func observedCapabilityIdentity(protocol int, capabilities record.EnvironmentCapabilities) string {
 	raw, _ := json.Marshal(struct {
 		Protocol     int
 		Capabilities record.EnvironmentCapabilities
-	}{capabilityObservationProtocol, capabilities})
+	}{protocol, capabilities})
 	return "sha256:" + digest(raw)
 }
 
@@ -46,14 +57,21 @@ func (p *Provider) cachedImageCapabilities(ctx context.Context, environmentDiges
 	if errors.Is(err, state.ErrNotFound) {
 		return state.ImageCapabilities{}, false, nil
 	}
-	if err == nil && value.CapabilityDigest != capabilityIdentity(value.Capabilities) {
+	if err == nil && !validCapabilityIdentity(value) {
+		return state.ImageCapabilities{}, false, nil
+	}
+	if err == nil && value.Problem != "" && value.CapabilityDigest != capabilityIdentity(value.Capabilities) {
 		return state.ImageCapabilities{}, false, nil
 	}
 	return value, err == nil, err
 }
 
+func validCapabilityIdentity(value state.ImageCapabilities) bool {
+	return value.CapabilityDigest == capabilityIdentity(value.Capabilities) || value.CapabilityDigest == legacyCapabilityIdentity(value.Capabilities)
+}
+
 func capabilityProblem(value state.ImageCapabilities, config Config, accepted record.BuildConfig) string {
-	if value.Provider != ProviderName || value.EnvironmentDigest != accepted.EnvironmentDigest || value.CapabilityDigest != capabilityIdentity(value.Capabilities) {
+	if value.Provider != ProviderName || value.EnvironmentDigest != accepted.EnvironmentDigest || !validCapabilityIdentity(value) {
 		return "environment capability observation has invalid identity"
 	}
 	if accepted.CapabilityDigest != "" && accepted.CapabilityDigest != value.CapabilityDigest {
@@ -193,16 +211,6 @@ puts "$::macports::os_platform $::macports::os_major $::macports::build_arch"
 		return result, err
 	}
 	if manifest != nil {
-		agent, err := run(nil, "declared guest agent is unavailable", "/opt/dockhand/bin/tart-guest-agent", "--version")
-		if err != nil {
-			return result, err
-		}
-		agentFields := strings.Fields(string(agent))
-		if len(agentFields) == 3 && agentFields[0] == "tart-guest-agent" && agentFields[1] == "version" {
-			result.Capabilities.GuestAgentVersion = agentFields[2]
-		} else if agent != nil {
-			problems = append(problems, "guest agent returned an unrecognized version: "+strings.TrimSpace(string(agent)))
-		}
 		problems = append(problems, manifestProblems(*manifest, result.Capabilities)...)
 	}
 	result.Problem = strings.Join(problems, "; ")
@@ -218,7 +226,7 @@ func manifestProblems(manifest tartvm.ImageManifest, capabilities record.Environ
 	if manifest.Protocol == 1 && prefix == "" {
 		prefix = "/opt/local"
 	}
-	if manifest.Source == "" || manifest.Platform != capabilities.Platform || prefix != capabilities.MacPortsPrefix || manifest.MacPortsVersion != capabilities.MacPortsVersion || manifest.XcodeVersion != capabilities.XcodeVersion || manifest.GuestAgentVersion != capabilities.GuestAgentVersion {
+	if manifest.Source == "" || manifest.Platform != capabilities.Platform || prefix != capabilities.MacPortsPrefix || manifest.MacPortsVersion != capabilities.MacPortsVersion || manifest.XcodeVersion != capabilities.XcodeVersion {
 		problems = append(problems, "image manifest does not match observed capabilities")
 	}
 	return problems

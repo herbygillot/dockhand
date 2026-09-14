@@ -71,6 +71,7 @@ save running unknown
 set phase setup
 try {
     set runUser [diagnostic /usr/bin/id -un]
+    dict set environment GuestAgentVersion [diagnostic /opt/dockhand/bin/tart-guest-agent --version]
     dict set environment MacOSVersion [diagnostic /usr/bin/sw_vers -productVersion]
     dict set environment MacOSBuild [diagnostic /usr/bin/sw_vers -buildVersion]
     dict set environment Architecture [diagnostic /usr/bin/uname -m]

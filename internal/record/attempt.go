@@ -61,17 +61,19 @@ const (
 // EnvironmentCapabilities records the properties observed inside an admitted
 // build environment before source staging or build execution.
 type EnvironmentCapabilities struct {
-	Platform          Platform
-	MacPortsPrefix    string
-	MacPortsVersion   string
-	DeveloperTools    DeveloperTools
-	XcodeVersion      string `json:",omitempty"`
+	Platform        Platform
+	MacPortsPrefix  string
+	MacPortsVersion string
+	DeveloperTools  DeveloperTools
+	XcodeVersion    string `json:",omitempty"`
+	// GuestAgentVersion is retained for historical observations; new run diagnostics live in GuestEnvironment.
 	GuestAgentVersion string `json:",omitempty"`
 }
 
 // GuestEnvironment records diagnostic facts from the actual verification run.
 // These details do not participate in capability matching.
 type GuestEnvironment struct {
+	GuestAgentVersion        string `json:",omitempty"`
 	MacOSVersion             string
 	MacOSBuild               string
 	Architecture             string

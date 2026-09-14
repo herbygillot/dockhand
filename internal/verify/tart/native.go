@@ -217,7 +217,9 @@ func (n *native) Ready(ctx context.Context, vm string) error {
 		_, err := n.guest(call, vm, nil, "/usr/bin/true")
 		cancel()
 		if err == nil {
-			return nil
+			return tartvm.CheckGuestTransport(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+				return n.guest(ctx, vm, input, args...)
+			})
 		}
 		select {
 		case <-ctx.Done():

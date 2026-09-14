@@ -2,12 +2,12 @@ package provision
 
 import "fmt"
 
-const AgentVersion = "0.14.1"
+const AgentRelease = "0.14.1"
 const agentDigest = "96596675452c8a4eed6f93c86a05b6a1e0c4bd2b0e381931b19ddeee3220eb23"
 const agentPath = "/opt/dockhand/bin/tart-guest-agent"
 
 func agentURL() string {
-	return "https://github.com/openai/tart-guest-agent/releases/download/v" + AgentVersion + "/tart-guest-agent-darwin-all.tar.gz"
+	return "https://github.com/openai/tart-guest-agent/releases/download/v" + AgentRelease + "/tart-guest-agent-darwin-all.tar.gz"
 }
 
 func agentPlist(label, mode, directory string) string {

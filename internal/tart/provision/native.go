@@ -159,7 +159,9 @@ func (n *native) ReadyAgent(ctx context.Context, name string) error {
 		_, err := n.guest(call, name, nil, "/usr/bin/true")
 		cancel()
 		if err == nil {
-			return nil
+			return tart.CheckGuestTransport(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+				return n.guest(ctx, name, input, args...)
+			})
 		}
 		if done := n.runError(name); done != nil {
 			select {
@@ -408,15 +410,13 @@ done`
 	if err != nil {
 		return validation{}, err
 	}
-	agentOutput, err := n.guest(ctx, name, nil, "/opt/dockhand/bin/tart-guest-agent", "--version")
+	agentVersion, err := tart.ObserveGuestAgentVersion(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+		return n.guest(ctx, name, input, args...)
+	})
 	if err != nil {
 		return validation{}, err
 	}
-	agentFields := strings.Fields(string(agentOutput))
-	if len(agentFields) != 3 || agentFields[0] != "tart-guest-agent" || agentFields[1] != "version" || strings.SplitN(agentFields[2], "-", 2)[0] != AgentVersion {
-		return validation{}, fmt.Errorf("guest agent returned an unrecognized or incompatible version: %s", strings.TrimSpace(string(agentOutput)))
-	}
-	return validation{Platform: record.Platform{OS: platformFields[0], Version: platformFields[1], Architecture: platformFields[2]}, MacPortsVersion: fields[1], GuestAgentVersion: agentFields[2], XcodeVersion: xcodeVersion}, nil
+	return validation{Platform: record.Platform{OS: platformFields[0], Version: platformFields[1], Architecture: platformFields[2]}, MacPortsVersion: fields[1], GuestAgentVersion: agentVersion, XcodeVersion: xcodeVersion}, nil
 }
 
 func (n *native) guestStream(ctx context.Context, name string, input io.Reader, args ...string) ([]byte, error) {

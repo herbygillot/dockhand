@@ -33,7 +33,7 @@ func newFakeMachine(names ...string) *fakeMachine {
 	for _, name := range names {
 		images[name] = image{Name: name}
 	}
-	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: DefaultMacPortsVersion, GuestAgentVersion: AgentVersion}}
+	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: DefaultMacPortsVersion, GuestAgentVersion: "development snapshot"}}
 }
 
 func (f *fakeMachine) event(name string) error {
@@ -147,7 +147,7 @@ func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 
 func TestManifestRecordsObservedGuestAgentVersion(t *testing.T) {
 	machine := newFakeMachine()
-	machine.validation.GuestAgentVersion = AgentVersion + "-cb39b12"
+	machine.validation.GuestAgentVersion = AgentRelease + "-cb39b12"
 	result, err := testProvisioner(machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	var manifest tart.ImageManifest
@@ -220,7 +220,7 @@ func index(values []string, value string) int {
 
 func TestAgentBootstrapPinsAndChecksTheReleaseAsset(t *testing.T) {
 	script := agentInstallScript()
-	require.Contains(t, script, "/v"+AgentVersion+"/")
+	require.Contains(t, script, "/v"+AgentRelease+"/")
 	require.Contains(t, script, agentDigest)
 	require.Contains(t, script, "shasum -a 256 -c")
 	require.NotContains(t, script, "homebrew")
