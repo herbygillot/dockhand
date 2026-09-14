@@ -103,6 +103,17 @@ const (
 	JobSuperseded JobState = "superseded"
 )
 
+// Terminal reports whether the driver has settled the job's requested work.
+// Resources associated with a terminal job may still require cleanup.
+func (s JobState) Terminal() bool {
+	switch s {
+	case JobCompleted, JobFailed, JobNeedsAttention, JobCanceled, JobSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
 // JobPhase identifies the workflow handler that owns a nonterminal job.
 // Terminal jobs retain the phase in which they settled.
 type JobPhase string
@@ -158,6 +169,16 @@ type Claim struct {
 	// Generation distinguishes successive claims, including claims by the same owner.
 	Generation uint64
 	ExpiresAt  time.Time
+}
+
+// Live reports whether the claim exists and expires strictly after now.
+func (c *Claim) Live(now time.Time) bool {
+	return c != nil && c.ExpiresAt.After(now)
+}
+
+// Owns reports whether c is live and has the same owner and generation as expected.
+func (c *Claim) Owns(expected *Claim, now time.Time) bool {
+	return c.Live(now) && expected != nil && c.Owner == expected.Owner && c.Generation == expected.Generation
 }
 
 // ControlKind identifies a requested change to workflow control or review state.

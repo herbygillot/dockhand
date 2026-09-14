@@ -24,7 +24,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		if jobTerminal(job.State) || job.Phase != record.PhasePreparation {
+		if job.State.Terminal() || job.Phase != record.PhasePreparation {
 			return nil
 		}
 		if job.Prepared != nil {
@@ -36,7 +36,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 			changed = true
 			return tx.PutJob(ctx, job)
 		}
-		if live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
+		if job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
 			return nil
 		}
 		if job.Spec.Preparation == nil || e.Repo == nil || e.Preparer == nil {
@@ -86,7 +86,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		if jobTerminal(job.State) || job.Prepared != nil || !owns(job.Claim, selected.Claim, e.now()) {
+		if job.State.Terminal() || job.Prepared != nil || !job.Claim.Owns(selected.Claim, e.now()) {
 			return ErrClaimLost
 		}
 		job.Claim, job.RetryAt = nil, nil
@@ -133,7 +133,7 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	if err != nil {
 		return record.PreparedChange{}, err
 	}
-	if (job.Spec.Action == record.Bump && (result.Release == nil || *result.Release != *job.ResolvedRelease)) || result.Base != job.Spec.Source || targetKey(result.Target) != targetKey(target) || !git.ValidObjectID(string(result.PreparedTree)) || len(result.Commits) != 1 {
+	if (job.Spec.Action == record.Bump && (result.Release == nil || *result.Release != *job.ResolvedRelease)) || result.Base != job.Spec.Source || record.CompareTargets(result.Target, target) != 0 || !git.ValidObjectID(string(result.PreparedTree)) || len(result.Commits) != 1 {
 		return record.PreparedChange{}, fmt.Errorf("workflow: preparation result does not match accepted input")
 	}
 	intent := result.Commits[0]

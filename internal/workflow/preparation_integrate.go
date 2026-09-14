@@ -31,7 +31,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if err != nil {
 				return err
 			}
-			if jobTerminal(job.State) || job.Phase != record.PhasePreparation || job.ResultRevision != "" || live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
+			if job.State.Terminal() || job.Phase != record.PhasePreparation || job.ResultRevision != "" || job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
 				return nil
 			}
 			if job.Prepared == nil || job.Prepared.Branch != candidate.Prepared.Branch || job.Spec.Preparation == nil {
@@ -67,7 +67,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if err != nil {
 				return err
 			}
-			if jobTerminal(job.State) || job.Phase != record.PhasePreparation || job.ResultRevision != "" || !owns(job.Claim, selected.Claim, e.now()) {
+			if job.State.Terminal() || job.Phase != record.PhasePreparation || job.ResultRevision != "" || !job.Claim.Owns(selected.Claim, e.now()) {
 				return ErrClaimLost
 			}
 			job.Claim, job.RetryAt = nil, nil

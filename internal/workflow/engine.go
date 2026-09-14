@@ -82,14 +82,6 @@ type Engine struct {
 	ObserveInterval time.Duration
 }
 
-// Scope selects all jobs or a nonempty list of explicit job IDs. Those forms
-// are mutually exclusive. Status and Cycle collapse duplicate IDs and reject
-// unknown jobs. All is limited to the engine's registered repository.
-type Scope struct {
-	All  bool
-	Jobs []record.JobID
-}
-
 // now supplies a UTC timestamp without modifying the configured clock.
 func (e *Engine) now() time.Time {
 	if e.Now != nil {

@@ -41,7 +41,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 			if err != nil {
 				return err
 			}
-			if jobTerminal(current.State) || !owns(current.Claim, job.Claim, e.now()) {
+			if current.State.Terminal() || !current.Claim.Owns(job.Claim, e.now()) {
 				return ErrClaimLost
 			}
 			if current.CancelRequestedAt != nil {
@@ -133,7 +133,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		if err != nil {
 			return err
 		}
-		if jobTerminal(current.State) || !owns(current.Claim, job.Claim, e.now()) {
+		if current.State.Terminal() || !current.Claim.Owns(job.Claim, e.now()) {
 			return ErrClaimLost
 		}
 		if current.CancelRequestedAt != nil {

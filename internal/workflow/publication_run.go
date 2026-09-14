@@ -29,7 +29,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		if jobTerminal(job.State) || job.Phase != record.PhasePublication || live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
+		if job.State.Terminal() || job.Phase != record.PhasePublication || job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
 			return nil
 		}
 		action, err = tx.PublicationForJob(ctx, id)
@@ -124,7 +124,7 @@ func (c *cycle) publicationUpdate(ctx context.Context, expected record.Job, fn f
 		if err != nil {
 			return err
 		}
-		if jobTerminal(job.State) || !owns(job.Claim, expected.Claim, e.now()) {
+		if job.State.Terminal() || !job.Claim.Owns(expected.Claim, e.now()) {
 			return ErrClaimLost
 		}
 		action, err := tx.PublicationForJob(ctx, job.ID)

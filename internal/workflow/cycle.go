@@ -216,32 +216,8 @@ func (c *cycle) providerReady(config record.BuildConfig, submitting bool) error 
 	return nil
 }
 
-// jobTerminal identifies states that the current driver will not advance further.
-func jobTerminal(state record.JobState) bool {
-	switch state {
-	case record.JobCompleted, record.JobFailed, record.JobNeedsAttention, record.JobCanceled, record.JobSuperseded:
-		return true
-	default:
-		return false
-	}
-}
-
-// attemptTerminal identifies settled attempts whose resource disposition can be considered for cleanup.
-func attemptTerminal(state record.AttemptState) bool {
-	return state == record.AttemptFinished || state == record.AttemptCanceled
-}
-
-// live requires a nonnil claim whose expiry is strictly later than now.
-func live(claim *record.Claim, now time.Time) bool { return claim != nil && claim.ExpiresAt.After(now) }
-
 // due treats a missing retry time as immediately eligible.
 func due(retry *time.Time, now time.Time) bool { return retry == nil || !retry.After(now) }
-
-// owns checks the live claim's owner and generation. Callers separately check
-// the record's lifecycle state before adopting an external result.
-func owns(current, expected *record.Claim, now time.Time) bool {
-	return live(current, now) && expected != nil && current.Owner == expected.Owner && current.Generation == expected.Generation
-}
 
 // claim advances a record's generation and creates a lease within the caller's
 // transaction. The record must retain that generation after its claim is cleared

@@ -2,13 +2,11 @@ package workflow
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/git/changeset"
@@ -17,15 +15,6 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/state"
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
-
-type BranchInput struct {
-	Name             string
-	ExpectedChange   record.ChangeID
-	ExpectedRevision record.RevisionID
-	// InferredTarget is the recorded contribution target used for inference.
-	// Acceptance rechecks it even if the contribution revision has not changed.
-	InferredTarget *record.Target `json:",omitempty"`
-}
 
 type VerificationRequest struct {
 	Fresh bool
@@ -172,7 +161,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 			return BoundVerification{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 		}
 	}
-	if inferred != nil && targetKey(targets[0]) != targetKey(*inferred) {
+	if inferred != nil && record.CompareTargets(targets[0], *inferred) != 0 {
 		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)
 	}
 	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
@@ -184,69 +173,6 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		binding = &branch
 	}
 	return BoundVerification{Request: Request{ID: request.ID, Spec: spec, Branch: binding}, Evaluation: evaluation}, nil
-}
-
-func validateBranchInput(branch *BranchInput, spec record.JobSpec) error {
-	if branch == nil {
-		return nil
-	}
-	if !git.ValidBranchName(branch.Name) || (spec.Action != record.Verify && spec.Action != record.Publish) || spec.InputRevision != "" || spec.ChangeID != "" || len(spec.Targets) != 1 || spec.Build == nil || (branch.ExpectedChange == "") != (branch.ExpectedRevision == "") {
-		return fmt.Errorf("%w: branch adoption requires one frozen verification input and matching revision preconditions", ErrInvalidRequest)
-	}
-	if branch.InferredTarget != nil && (spec.Action != record.Verify || branch.ExpectedChange == "" || branch.InferredTarget.Portfile != spec.Targets[0].Portfile) {
-		return fmt.Errorf("%w: inferred verification requires a tracked contribution target", ErrInvalidRequest)
-	}
-	if spec.Action == record.Publish && (spec.Source.Commit == "" || spec.Source.Base == "" || spec.Publication == nil || spec.Publication.HeadBranch != branch.Name) {
-		return ErrInvalidRequest
-	}
-	if spec.Checkout != nil && spec.Checkout.Branch != branch.Name {
-		return fmt.Errorf("%w: checkout branch disagrees with binding", ErrInvalidRequest)
-	}
-	if branch.ExpectedChange != "" && (!validToken(string(branch.ExpectedChange)) || !validToken(string(branch.ExpectedRevision))) {
-		return ErrInvalidRequest
-	}
-	return nil
-}
-
-func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input BranchInput, now time.Time) (record.JobSpec, error) {
-	change, err := tx.OpenChangeByBranch(ctx, input.Name)
-	if err != nil && !errors.Is(err, state.ErrNotFound) {
-		return record.JobSpec{}, err
-	}
-	if change.ID != input.ExpectedChange || change.CurrentRevision != input.ExpectedRevision {
-		return record.JobSpec{}, fmt.Errorf("%w: tracked branch %s changed while binding", ErrStaleRevision, input.Name)
-	}
-	if input.InferredTarget != nil && (len(change.Targets) != 1 || targetKey(change.Targets[0]) != targetKey(*input.InferredTarget)) {
-		return record.JobSpec{}, fmt.Errorf("%w: tracked targets changed while binding; run verify again", ErrStaleRevision)
-	}
-	if change.ID == "" && spec.Action != record.Publish {
-		return spec, nil
-	}
-	var previous record.Revision
-	if change.ID == "" {
-		change = record.Change{ID: record.ChangeID("change_" + rand.Text()), Branch: input.Name, Targets: spec.Targets, Disposition: record.ChangeOpen, CreatedAt: now}
-		if err := tx.PutChange(ctx, change); err != nil {
-			return record.JobSpec{}, err
-		}
-	} else {
-		previous, err = tx.Revision(ctx, change.CurrentRevision)
-		if err != nil {
-			return record.JobSpec{}, err
-		}
-	}
-	revision := previous
-	if revision.ID == "" || revision.Source != spec.Source {
-		revision = record.Revision{ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Previous: change.CurrentRevision, Source: spec.Source, CreatedAt: now}
-		if err := tx.PutRevision(ctx, revision); err != nil {
-			return record.JobSpec{}, err
-		}
-		change.CurrentRevision = revision.ID
-		if err := tx.PutChange(ctx, change); err != nil {
-			return record.JobSpec{}, err
-		}
-	}
-	spec.ChangeID, spec.InputRevision = change.ID, revision.ID
-	return spec, nil
 }
 
 func (e *Engine) bindBranchSource(ctx context.Context, branch string, selection macports.Selection, platform record.Platform, base record.ObjectID) (_ record.Source, _ []record.Target, _ macports.Snapshot, err error) {
@@ -290,7 +216,7 @@ func (e *Engine) bindSnapshot(ctx context.Context, source record.Source, selecti
 	if err != nil {
 		return nil, macports.Snapshot{}, err
 	}
-	if evaluation.Source != source || evaluation.Platform != platform || targetKey(evaluation.Target) != targetKey(targets[0]) {
+	if evaluation.Source != source || evaluation.Platform != platform || record.CompareTargets(evaluation.Target, targets[0]) != 0 {
 		return nil, macports.Snapshot{}, fmt.Errorf("workflow: evaluation does not match the bound input")
 	}
 	return targets, evaluation, nil

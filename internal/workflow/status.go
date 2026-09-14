@@ -56,34 +56,6 @@ type Status struct {
 func EmptyStatus(at time.Time) Status {
 	return Status{ReadAt: at.UTC(), Jobs: []JobStatus{}, Changes: []record.Change{}, Revisions: []record.Revision{}, PullRequests: []record.PullRequest{}, Resources: []record.Resource{}}
 }
-func validateScope(scope Scope) error {
-	if scope.All == (len(scope.Jobs) > 0) {
-		return ErrInvalidScope
-	}
-	for _, id := range scope.Jobs {
-		if id == "" {
-			return ErrInvalidScope
-		}
-	}
-	return nil
-}
-func (e *Engine) checkScope(scope Scope) error {
-	if err := validateScope(scope); err != nil {
-		return err
-	}
-	if e == nil || e.State == nil || e.Repository == "" {
-		return ErrNoState
-	}
-	return nil
-}
-func checkJobs(ctx context.Context, r state.Reader, scope Scope) error {
-	for _, id := range scope.Jobs {
-		if _, err := r.Job(ctx, id); err != nil {
-			return fmt.Errorf("job %s: %w", id, err)
-		}
-	}
-	return nil
-}
 func collect[T any](ctx context.Context, q state.Query, get func(context.Context, state.Query) ([]T, error), id func(T) string) ([]T, error) {
 	result := []T{}
 	q.Limit = 256

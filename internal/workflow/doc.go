@@ -1,15 +1,13 @@
-// Package workflow accepts Dockhand requests and advances their durable records
-// toward the requested destination.
+// Package workflow accepts Dockhand requests and advances durable records toward
+// their requested destinations.
 //
-// [Engine.BindVerification] freezes the current checkout or an explicit branch;
-// [Engine.BindPreparation] selects committed branch contents. Both evaluate an
-// isolated snapshot without writing workflow records and return requests for Submit.
-// [Engine.Submit] records a queued job and returns an idempotent acceptance
-// receipt. [Engine.Control] records cancellation intent. Neither starts a
-// provider operation. [Engine.Cycle] applies controls, advances eligible work,
-// and processes cleanup. [Engine.Status] and [Engine.FilteredStatus] project one
-// consistent state view without polling providers or changing records. Status
-// filters select recorded jobs; they do not expand driver execution scopes.
+// Binding methods freeze source, target, verification, and publication inputs
+// without writing workflow state. Their implementations use the _bind.go suffix.
+// [Engine.Submit], branch adoption, and control intake establish durable intent.
+// [Engine.Cycle] applies controls, claims eligible work, runs phase executors,
+// and reconciles cleanup. Phase executors use the _run.go suffix; shared phase
+// invariants use _policy.go. Status and progress functions are read-only
+// projections of one consistent state view.
 //
 // The state store is the handoff between request intake and driver execution. Action
 // invocations and persistent drivers can use the same engine. Callers own
@@ -23,17 +21,19 @@
 // state write cannot prevent a paused driver from making a late external call.
 // Cleanup has its own claims and remains eligible after a job finishes.
 //
-// Version-bump jobs first checkpoint their resolved release; an automatic selection
-// that needs no update completes there without preparation or verification. Both bump actions
-// prepare immutable objects, checkpoint their candidate, and
-// integrate a new branch under a branch-specific Git lock and ref preconditions.
-// Recovery adopts only the recorded candidate. Verification can then build that
-// result through the same attempt lifecycle as standalone verification jobs, including tree-only working snapshots.
+// Version-bump jobs first checkpoint their resolved release; an automatic
+// selection that needs no update completes there without preparation or
+// verification. Both bump actions prepare immutable objects, checkpoint their
+// candidate, and integrate a new branch under a branch-specific Git lock and ref
+// preconditions. Recovery adopts only the recorded candidate. Verification can
+// then build that result through the same attempt lifecycle as standalone
+// verification jobs, including tree-only working snapshots.
 // Standalone verification creates no contribution; tracked-branch verification
 // records successor revisions without redefining the contribution's edited targets.
 // Matching passing evidence can settle a new job with a reference to its original
 // attempt before any provider call. Forced verification creates a new execution.
-// Publication and dependent scheduling remain unfinished.
-// Intake supports more actions than the cycle can currently execute; acceptance
-// alone establishes neither provider admission nor successful completion.
+// Publication plans and reconciles a prepared or adopted revision with its remote
+// destination. Verification currently plans one target per job; dependent
+// coverage scheduling remains unfinished. Acceptance alone establishes neither
+// provider admission nor successful completion.
 package workflow

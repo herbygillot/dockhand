@@ -60,7 +60,6 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 
 - Add focused tests for the Tcl shell and RPC boundaries.
 - Continue the coherent-comment pass in packages whose contracts or recovery behavior are difficult to infer.
-- Reassess the remaining workflow-only seams after the Git changeset extraction; keep state-machine phase handlers together unless another dependency boundary emerges.
 - Revisit a shared download package only when common policy and lifecycle emerge across the current download callers.
 - Add a project license before distribution.
 - Reduce duplication among current design documents without rewriting the append-only activity history.
@@ -114,6 +113,7 @@ The following capabilities are established and should be extended through their 
 
 - repository-scoped SQLite state shared safely by concurrent driver processes;
 - explicit job phases, transactional claims, recovery, cancellation, and resource cleanup;
+- workflow lifecycle organization that keeps binding, intake, policy, execution, and projection roles visible without exporting driver internals;
 - immutable committed and working-tree source capture with native MacPorts evaluation;
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;

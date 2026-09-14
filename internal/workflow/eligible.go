@@ -9,7 +9,7 @@ import (
 // cleanupEligible preserves invalid and missing-owner cases for the cleanup
 // handler to report; only known ineligible resources can be skipped.
 func cleanupEligible(resource record.Resource, attempt record.Attempt, now time.Time) bool {
-	if resource.State == record.ResourceReleased || resource.State == record.ResourceActive || live(resource.Claim, now) || !due(resource.RetryAt, now) {
+	if resource.State == record.ResourceReleased || resource.State == record.ResourceActive || resource.Claim.Live(now) || !due(resource.RetryAt, now) {
 		return false
 	}
 	switch resource.State {
@@ -21,5 +21,5 @@ func cleanupEligible(resource record.Resource, attempt record.Attempt, now time.
 	default:
 		return true
 	}
-	return attemptTerminal(attempt.State)
+	return attempt.State.Terminal()
 }

@@ -45,11 +45,11 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		needsProvider := false
 		err = e.updateExecution(ctx, id, func(tx state.Tx, work *execution) error {
 			job := work.Job
-			if jobTerminal(job.State) {
+			if job.State.Terminal() {
 				return nil
 			}
 			now := e.now()
-			if live(job.Claim, now) || !due(job.RetryAt, now) {
+			if job.Claim.Live(now) || !due(job.RetryAt, now) {
 				return nil
 			}
 			attempt = work.Attempt
@@ -62,7 +62,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			}
 
 			if job.CancelRequestedAt != nil && (attempt.ID == "" || attempt.State == record.AttemptQueued) {
-				if live(attempt.Claim, now) {
+				if attempt.Claim.Live(now) {
 					return nil
 				}
 				if attempt.ID != "" {
@@ -140,10 +140,10 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				work.Job = job
 				changed = true
 			}
-			if attemptTerminal(attempt.State) {
+			if attempt.State.Terminal() {
 				return fmt.Errorf("%w: terminal attempt belongs to active job", state.ErrInvalid)
 			}
-			if live(attempt.Claim, now) || !due(attempt.RetryAt, now) {
+			if attempt.Claim.Live(now) || !due(attempt.RetryAt, now) {
 				return nil
 			}
 			switch attempt.State {
@@ -207,17 +207,17 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	err = e.updateExecution(ctx, id, func(tx state.Tx, work *execution) error {
 		current := work.Attempt
 		now := e.now()
-		if current.ID != attempt.ID || !owns(current.Claim, attempt.Claim, now) {
+		if current.ID != attempt.ID || !current.Claim.Owns(attempt.Claim, now) {
 			return ErrClaimLost
 		}
 		job := work.Job
-		if jobTerminal(job.State) || current.State != attempt.State {
+		if job.State.Terminal() || current.State != attempt.State {
 			return ErrClaimLost
 		}
 		current.Claim = nil
 		current.LastError, current.RetryAt = "", nil
 		detail = c.recordAttempt(work, &job, &current, action, response, now)
-		if !attemptTerminal(current.State) {
+		if !current.State.Terminal() {
 			delay := c.retry
 			if current.State == record.AttemptRunning && detail == "" && job.CancelRequestedAt == nil {
 				delay = c.observe

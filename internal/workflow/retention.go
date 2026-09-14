@@ -74,7 +74,7 @@ func (e *Engine) Collect(ctx context.Context, options RetentionOptions) (Retenti
 }
 
 func retentionAction(r record.Resource, a record.Attempt, j record.Job, before, now time.Time) string {
-	if !attemptTerminal(a.State) || !jobTerminal(j.State) || j.FinishedAt == nil || j.FinishedAt.After(before) || live(r.Claim, now) || live(a.Claim, now) || live(j.Claim, now) {
+	if !a.State.Terminal() || !j.State.Terminal() || j.FinishedAt == nil || j.FinishedAt.After(before) || r.Claim.Live(now) || a.Claim.Live(now) || j.Claim.Live(now) {
 		return ""
 	}
 	if r.Handle.Provider != a.Spec.Config.Provider || !validToken(r.Handle.ID) {

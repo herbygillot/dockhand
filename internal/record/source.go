@@ -1,6 +1,10 @@
 package record
 
-import "time"
+import (
+	"cmp"
+	"slices"
+	"time"
+)
 
 // Source identifies the complete ports-tree snapshot used by an operation.
 // The selected port and execution platform are supplied separately.
@@ -23,6 +27,38 @@ type Target struct {
 	// Variants records explicit choices: true enables a variant and false
 	// disables it. An absent key leaves that variant unspecified.
 	Variants map[string]bool
+}
+
+// CompareTargets orders targets by their complete selection. Empty and nil
+// variant maps represent the same selection.
+func CompareTargets(a, b Target) int {
+	for _, fields := range [][2]string{{a.Name, b.Name}, {a.Portfile, b.Portfile}, {a.Subport, b.Subport}} {
+		if order := cmp.Compare(fields[0], fields[1]); order != 0 {
+			return order
+		}
+	}
+	aVariants := make([]string, 0, len(a.Variants))
+	for name := range a.Variants {
+		aVariants = append(aVariants, name)
+	}
+	bVariants := make([]string, 0, len(b.Variants))
+	for name := range b.Variants {
+		bVariants = append(bVariants, name)
+	}
+	slices.Sort(aVariants)
+	slices.Sort(bVariants)
+	for i := range min(len(aVariants), len(bVariants)) {
+		if order := cmp.Compare(aVariants[i], bVariants[i]); order != 0 {
+			return order
+		}
+		if a.Variants[aVariants[i]] != b.Variants[bVariants[i]] {
+			if !a.Variants[aVariants[i]] {
+				return -1
+			}
+			return 1
+		}
+	}
+	return cmp.Compare(len(aVariants), len(bVariants))
 }
 
 // Platform identifies the operating system, release, and CPU architecture

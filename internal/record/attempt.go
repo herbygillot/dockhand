@@ -74,6 +74,11 @@ const (
 	AttemptCanceled AttemptState = "canceled"
 )
 
+// Terminal reports whether the attempt has a settled provider lifecycle.
+func (s AttemptState) Terminal() bool {
+	return s == AttemptFinished || s == AttemptCanceled
+}
+
 // ProviderRun identifies an admitted run in a provider's recovery namespace.
 // Its zero value means no run has been adopted into the attempt record.
 type ProviderRun struct {

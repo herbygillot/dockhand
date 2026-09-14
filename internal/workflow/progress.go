@@ -16,7 +16,7 @@ func Reached(status Status, milestone Milestone) bool {
 		return false
 	}
 	for _, entry := range status.Jobs {
-		if jobTerminal(entry.Job.State) {
+		if entry.Job.State.Terminal() {
 			continue
 		}
 		if milestone == Admission && (entry.Job.AdmittedAt != nil || entry.Job.ReusedAttempt != "" || entry.Job.Phase == record.PhasePublication && entry.Job.State == record.JobActive) {

@@ -1,7 +1,6 @@
 package workflow
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -171,9 +170,9 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 		}
 		spec.Targets[i] = target
 	}
-	slices.SortFunc(spec.Targets, func(a, b record.Target) int { return strings.Compare(targetKey(a), targetKey(b)) })
+	slices.SortFunc(spec.Targets, record.CompareTargets)
 	for i := 1; i < len(spec.Targets); i++ {
-		if targetKey(spec.Targets[i-1]) == targetKey(spec.Targets[i]) {
+		if record.CompareTargets(spec.Targets[i-1], spec.Targets[i]) == 0 {
 			return record.JobSpec{}, fmt.Errorf("%w: duplicate target %q", ErrInvalidRequest, spec.Targets[i].Name)
 		}
 	}
@@ -197,11 +196,4 @@ func validateSource(source record.Source) error {
 // validToken accepts a nonempty UTF-8 identifier without whitespace or control characters.
 func validToken(value string) bool {
 	return value != "" && utf8.ValidString(value) && strings.IndexFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) == -1
-}
-
-// targetKey provides deterministic ordering and identity for the complete target,
-// including explicit variant choices. JSON encoding sorts the variant map keys.
-func targetKey(target record.Target) string {
-	data, _ := json.Marshal(target)
-	return string(data)
 }

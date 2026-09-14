@@ -93,7 +93,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			return nil
 		}
 
-		if !attemptTerminal(attempt.State) {
+		if !attempt.State.Terminal() {
 			return nil
 		}
 		if resource.Handle.Provider != attempt.Spec.Config.Provider || !validToken(resource.Handle.ID) {
@@ -133,7 +133,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			return err
 		}
 		now := e.now()
-		if !owns(current.Claim, resource.Claim, now) || current.State != record.ResourceReleaseRequested {
+		if !current.Claim.Owns(resource.Claim, now) || current.State != record.ResourceReleaseRequested {
 			return ErrClaimLost
 		}
 		current.Claim, current.LastError, current.RetryAt = nil, "", nil
