@@ -294,23 +294,23 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.InstallMacPorts(ctx, next, config, release); err != nil {
 		return Result{}, err
 	}
-	manifest, err := json.Marshal(tart.ImageManifest{
-		Protocol: tart.ImageManifestProtocol, Source: config.Source, Platform: config.Platform,
-		MacPortsPrefix: config.GuestPrefix, MacPortsVersion: config.MacPortsVersion,
-		GuestAgentVersion: AgentVersion, XcodeVersion: config.XcodeVersion,
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	if err := machine.WriteManifest(ctx, next, manifest); err != nil {
-		return Result{}, err
-	}
 	checked, err := machine.Validate(ctx, next, config)
 	if err != nil {
 		return Result{}, err
 	}
 	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || checked.XcodeVersion != config.XcodeVersion {
 		return Result{}, fmt.Errorf("setup: provisioned image does not match its requested platform, MacPorts, or Xcode version")
+	}
+	manifest, err := json.Marshal(tart.ImageManifest{
+		Protocol: tart.ImageManifestProtocol, Source: config.Source, Platform: config.Platform,
+		MacPortsPrefix: config.GuestPrefix, MacPortsVersion: config.MacPortsVersion,
+		GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion,
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	if err := machine.WriteManifest(ctx, next, manifest); err != nil {
+		return Result{}, err
 	}
 	if err := machine.Stop(ctx, next); err != nil {
 		return Result{}, err

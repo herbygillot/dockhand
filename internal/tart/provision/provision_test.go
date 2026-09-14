@@ -145,6 +145,18 @@ func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 	require.Equal(t, testPlatform, manifest.Platform)
 }
 
+func TestManifestRecordsObservedGuestAgentVersion(t *testing.T) {
+	machine := newFakeMachine()
+	machine.validation.GuestAgentVersion = AgentVersion + "-cb39b12"
+	result, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.NoError(t, err)
+	var manifest tart.ImageManifest
+	require.NoError(t, json.Unmarshal(machine.manifest, &manifest))
+	require.Equal(t, machine.validation.GuestAgentVersion, manifest.GuestAgentVersion)
+	require.Equal(t, result.GuestAgentVersion, manifest.GuestAgentVersion)
+	require.Less(t, index(machine.events, "validate"), index(machine.events, "manifest"))
+}
+
 func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {
 	directory := t.TempDir()
 	archive := directory + "/Xcode_26.6_Apple_silicon.xip"
