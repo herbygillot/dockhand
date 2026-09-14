@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -63,4 +64,23 @@ func TestStatusRejectsInvalidSelectorsBeforeOpeningRepository(t *testing.T) {
 	}
 	_, err := os.Stat(filepath.Dir(config.DBPath))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
+	status := workflow.EmptyStatus(time.Now())
+	status.Jobs = []workflow.JobStatus{{Job: record.Job{
+		ID:    "job_fixture",
+		State: record.JobCompleted,
+		Spec: record.JobSpec{
+			Action:       record.Verify,
+			Destination:  record.VerificationComplete,
+			Verification: record.VerificationRequired,
+			Source:       record.Source{Tree: "fixture"},
+			Checkout:     &record.Checkout{Branch: "main", Head: "fixture", ModifiedFiles: 2},
+		},
+	}}}
+	var output bytes.Buffer
+	require.NoError(t, renderStatus(&output, status))
+	require.Contains(t, output.String(), "2 modified files")
+	require.NotContains(t, output.String(), "%!")
 }

@@ -103,8 +103,21 @@ func (n *native) Clone(ctx context.Context, source, destination string) error {
 func (n *native) Configure(ctx context.Context, name string) error {
 	cpus := max(1, runtime.NumCPU()/4)
 	memory := max(8192, cpus*2048)
-	_, err := n.command(ctx, nil, false, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memory), "--disk-size", "100")
-	return err
+	if _, err := n.command(ctx, nil, false, "set", name, "--cpu", strconv.Itoa(cpus), "--memory", strconv.Itoa(memory), "--disk-size", "100"); err != nil {
+		return err
+	}
+	if n.config.XcodeArchive == "" {
+		return nil
+	}
+	path := filepath.Join(n.config.Home, "vms", name, "disk.img")
+	removed, err := removeRecoveryPartition(path)
+	if err != nil {
+		return fmt.Errorf("setup: preparing Xcode image storage: %w", err)
+	}
+	if removed && n.progress != nil {
+		_, _ = fmt.Fprintln(n.progress, "Freed the guest recovery partition so Xcode can use the enlarged disk.")
+	}
+	return nil
 }
 
 func (n *native) Start(ctx context.Context, name string) error {
@@ -292,6 +305,55 @@ sudo -n /usr/sbin/softwareupdate --install "$label"`
 	return n.assertToolchain(ctx, name)
 }
 
+func (n *native) InstallXcode(ctx context.Context, name string, config Config) error {
+	resize := `set -eu
+sudo -n /bin/sh -c 'yes | /usr/sbin/diskutil repairDisk disk0' >/dev/null
+sudo -n /usr/sbin/diskutil apfs resizeContainer disk0s2 0 >/dev/null 2>&1 || true
+available=$(/bin/df -g /private/tmp | /usr/bin/awk 'NR==2 {print $4}')
+[ "$available" -ge 60 ] || { echo "only ${available} GB free; Xcode needs at least 60 GB to expand"; exit 1; }`
+	if output, err := n.guest(ctx, name, nil, "/bin/sh", "-c", resize); err != nil {
+		return fmt.Errorf("setup: expanding the Xcode image filesystem: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	output, err := n.command(ctx, nil, false, "ip", name, "--wait", "300")
+	if err != nil {
+		return err
+	}
+	host := strings.TrimSpace(string(output))
+	if host == "" {
+		return fmt.Errorf("tart: VM %s has no IP address", name)
+	}
+	if err := waitSSH(ctx, host); err != nil {
+		return err
+	}
+	info, err := os.Stat(config.XcodeArchive)
+	if err != nil {
+		return err
+	}
+	if n.progress != nil {
+		_, _ = fmt.Fprintf(n.progress, "Copying Xcode %s into the guest (%.1f GiB)...\n", config.XcodeVersion, float64(info.Size())/(1<<30))
+	}
+	const guestArchive = "/private/tmp/Xcode.xip"
+	if err := sshPush(ctx, host, config.XcodeArchive, guestArchive); err != nil {
+		return fmt.Errorf("setup: copying Xcode archive: %w", err)
+	}
+	if n.progress != nil {
+		_, _ = fmt.Fprintf(n.progress, "Expanding and installing Xcode %s...\n", config.XcodeVersion)
+	}
+	install := `set -eu
+cd /private/tmp
+/usr/bin/xip --expand Xcode.xip
+/bin/rm -f Xcode.xip
+sudo -n /bin/rm -rf /Applications/Xcode.app
+sudo -n /bin/mv Xcode.app /Applications/Xcode.app
+sudo -n /usr/bin/xcode-select -s /Applications/Xcode.app/Contents/Developer
+sudo -n /usr/bin/xcodebuild -license accept
+sudo -n /usr/bin/xcodebuild -runFirstLaunch`
+	if output, err := n.guestStream(ctx, name, nil, "/bin/sh", "-c", install); err != nil {
+		return fmt.Errorf("setup: installing Xcode %s: %w: %s", config.XcodeVersion, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 func installerName(version string, release tart.MacOSRelease) string {
 	return fmt.Sprintf("MacPorts-%s-%s-%s.pkg", version, release.Product, strings.ReplaceAll(release.Name, " ", ""))
 }
@@ -355,6 +417,10 @@ done`
 	if err := n.assertToolchain(ctx, name); err != nil {
 		return validation{}, err
 	}
+	xcodeVersion, err := n.validateXcode(ctx, name, config)
+	if err != nil {
+		return validation{}, err
+	}
 	agentOutput, err := n.guest(ctx, name, nil, "/opt/dockhand/bin/tart-guest-agent", "--version")
 	if err != nil {
 		return validation{}, err
@@ -363,5 +429,45 @@ done`
 	if len(agentFields) != 3 || agentFields[0] != "tart-guest-agent" || agentFields[1] != "version" || strings.SplitN(agentFields[2], "-", 2)[0] != AgentVersion {
 		return validation{}, fmt.Errorf("guest agent returned an unrecognized or incompatible version: %s", strings.TrimSpace(string(agentOutput)))
 	}
-	return validation{Platform: record.Platform{OS: platformFields[0], Version: platformFields[1], Architecture: platformFields[2]}, MacPortsVersion: fields[1], GuestAgentVersion: agentFields[2]}, nil
+	return validation{Platform: record.Platform{OS: platformFields[0], Version: platformFields[1], Architecture: platformFields[2]}, MacPortsVersion: fields[1], GuestAgentVersion: agentFields[2], XcodeVersion: xcodeVersion}, nil
+}
+
+func (n *native) guestStream(ctx context.Context, name string, input io.Reader, args ...string) ([]byte, error) {
+	options := []string{"exec"}
+	if input != nil {
+		options = append(options, "-i")
+	}
+	options = append(options, name)
+	options = append(options, args...)
+	return n.command(ctx, input, true, options...)
+}
+
+func (n *native) validateXcode(ctx context.Context, name string, config Config) (string, error) {
+	selected, err := n.guest(ctx, name, nil, "/usr/bin/xcode-select", "-p")
+	if err != nil {
+		return "", err
+	}
+	developerDirectory := strings.TrimSpace(string(selected))
+	if config.XcodeVersion == "" {
+		if developerDirectory != "/Library/Developer/CommandLineTools" {
+			return "", fmt.Errorf("base image selects unexpected developer directory %s", developerDirectory)
+		}
+		return "", nil
+	}
+	if developerDirectory != "/Applications/Xcode.app/Contents/Developer" {
+		return "", fmt.Errorf("Xcode image selects unexpected developer directory %s", developerDirectory)
+	}
+	output, err := n.guest(ctx, name, nil, "/usr/bin/xcodebuild", "-version")
+	if err != nil {
+		return "", err
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(string(output)), "\n")
+	version, ok := strings.CutPrefix(first, "Xcode ")
+	if !ok || version == "" {
+		return "", fmt.Errorf("xcodebuild returned an unrecognized version: %s", strings.TrimSpace(string(output)))
+	}
+	if version != config.XcodeVersion {
+		return "", fmt.Errorf("image has Xcode %s; expected %s", version, config.XcodeVersion)
+	}
+	return version, nil
 }

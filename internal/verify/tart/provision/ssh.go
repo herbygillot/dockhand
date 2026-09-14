@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -44,10 +46,68 @@ func sshRun(ctx context.Context, host, script string) (string, error) {
 	defer session.Close()
 	var output bytes.Buffer
 	session.Stdout, session.Stderr = &output, &output
+	stop := closeSSHOnCancellation(ctx, client)
+	defer stop()
 	if err := session.Run(script); err != nil {
+		if ctx.Err() != nil {
+			return output.String(), ctx.Err()
+		}
 		return output.String(), fmt.Errorf("guest script failed: %w", err)
 	}
 	return output.String(), nil
+}
+
+func sshPush(ctx context.Context, host, local, remote string) error {
+	if remote != "/private/tmp/Xcode.xip" {
+		return fmt.Errorf("unsupported guest upload path %q", remote)
+	}
+	file, err := os.Open(local)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", local)
+	}
+	client, err := sshClient(ctx, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	session, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	session.Stdin = file
+	session.Stdout = io.Discard
+	var output bytes.Buffer
+	session.Stderr = &output
+	stop := closeSSHOnCancellation(ctx, client)
+	defer stop()
+	if err := session.Run("/bin/cat > /private/tmp/Xcode.xip"); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("writing Xcode archive in the guest: %w: %s", err, strings.TrimSpace(output.String()))
+	}
+	return nil
+}
+
+func closeSSHOnCancellation(ctx context.Context, client *ssh.Client) func() {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = client.Close()
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
 }
 
 func waitSSH(ctx context.Context, host string) error {

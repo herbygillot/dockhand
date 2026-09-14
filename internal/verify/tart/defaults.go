@@ -45,6 +45,14 @@ func DefaultImageName(platform record.Platform) (string, error) {
 	return "dockhand-base-" + release.Slug, nil
 }
 
+func DefaultXcodeImageName(platform record.Platform) (string, error) {
+	release, err := ReleaseForPlatform(platform)
+	if err != nil {
+		return "", err
+	}
+	return "dockhand-xcode-" + release.Slug, nil
+}
+
 func DefaultSource(platform record.Platform) (string, error) {
 	release, err := ReleaseForPlatform(platform)
 	if err != nil {

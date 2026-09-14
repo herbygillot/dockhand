@@ -10,6 +10,7 @@ Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released 
 
 - [Combined bump and publication report](docs/activity/2026-09-13-combined-publication.md)
 - [Tart setup and provisioning report](docs/activity/2026-09-14-tart-setup.md)
+- [Full Xcode setup profile report](docs/activity/2026-09-14-xcode-setup.md)
 - [State and workflow policy boundary report](docs/activity/2026-09-14-state-policy-boundary.md)
 - [Explicit job phases report](docs/activity/2026-09-14-explicit-job-phases.md)
 - [Prepared verification selection report](docs/activity/2026-09-14-prepared-verification-selection.md)
@@ -78,11 +79,12 @@ Prepare the native host's conventional verification image before the first build
 dockhand setup
 dockhand setup --check
 dockhand setup --rebuild
+dockhand setup --xcode ~/Downloads/xcode_archives
 ```
 
-Setup pulls the matching vanilla Cirrus Labs macOS image, installs the pinned Tart guest agent, Apple's Command Line Tools when needed, and MacPorts, validates the result, and adopts it only after the checks pass. An existing image is validated in a disposable clone. `--rebuild` prepares a replacement while the current base remains available. A retained golden image can restore a missing base. This first profile supports arm64 macOS hosts from Monterey through Tahoe, `/opt/local`, and the Command Line Tools rather than full Xcode. Setup uses neither the ports checkout nor SQLite, but it uses the local MacPorts installation to determine the native platform.
+Setup pulls the matching vanilla Cirrus Labs macOS image, installs the pinned Tart guest agent, Apple's Command Line Tools when needed, and MacPorts, validates the result, and adopts it only after the checks pass. An existing image is validated in a disposable clone. `--rebuild` prepares a replacement while the current image remains available. A retained golden image can restore a missing image. The default profile supports arm64 macOS hosts from Monterey through Tahoe, `/opt/local`, and the Command Line Tools. `--xcode` selects the newest compatible release archive from a directory, or accepts one explicit `.xip`, and provisions a separate full-Xcode image such as `dockhand-xcode-tahoe`. Setup uses neither the ports checkout nor SQLite, but it uses the local MacPorts installation to determine the native platform.
 
-The default local image name follows the native release, such as `dockhand-base-tahoe`. Verification and bump commands select that image when `--image` is omitted; `--image` remains available for another prepared image. `--source` and `--macports-version` override setup inputs. Per-image read/write locks under the Tart home allow concurrent verification clones while preventing setup from replacing their source image. A separate per-image setup lock prevents competing provisioners, including processes that selected different SQLite databases.
+The default local image name follows the native release, such as `dockhand-base-tahoe`; an Xcode profile uses `dockhand-xcode-tahoe` and its own golden image. Verification and bump commands continue to select the base image when `--image` is omitted, so select the Xcode image explicitly for a `use_xcode` port. `--source` and `--macports-version` override setup inputs. Per-image read/write locks under the Tart home allow concurrent verification clones while preventing setup from replacing their source image. A separate per-image setup lock prevents competing provisioners, including processes that selected different SQLite databases.
 
 All cooperating drivers using the same Tart home must use the same DB, capacity, and artifact directory. A separate DB does not coordinate the shared execution pool. Base images are hashed by contents. Digests persist in SQLite across invocations and repositories; unchanged file metadata permits reuse. A new or changed image still needs a full hash. An optional `--capacity` establishes the shared pool limit. Subsequent `wait` and `start` invocations use the accepted job settings and recorded pool limit.
 

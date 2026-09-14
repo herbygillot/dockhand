@@ -14,6 +14,7 @@ type SetupOptions struct {
 	Image           string
 	Source          string
 	MacPortsVersion string
+	Xcode           string
 }
 
 type SetupResult = provision.Result
@@ -37,6 +38,7 @@ func Setup(ctx context.Context, config Config, options SetupOptions, progress io
 			MacPortsVersion: options.MacPortsVersion,
 			GuestPrefix:     config.Tart.GuestPrefix,
 			Platform:        platform,
+			Xcode:           options.Xcode,
 		},
 		Progress: progress,
 	}

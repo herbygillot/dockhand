@@ -167,11 +167,12 @@ The next implementation priorities are:
 
 1. **Review controls.** Connect revision-bound acceptance and dismissal to the same durable control and driver path.
 2. **Dependent verification planning.** Introduce explicit cohort and downstream coverage without turning workflow into a generic graph engine.
-3. **Setup profiles.** Add full-Xcode and other explicitly named image recipes when real ports require them; preserve the minimal base profile as a stable contract.
+3. **Verification profile selection.** Use evaluated `use_xcode` requirements and recorded image capabilities to select or request an appropriate prepared profile without changing the smaller base profile.
+4. **Ports index reuse.** Avoid rebuilding and tracing the complete ports-tree index for every clean single-target VM while preserving exact-snapshot evaluation.
 
 Branch-based wait/cancel and continuous integration are implemented. Authentication discovery, preflight, native login, and image-free selection of matching recorded verification are implemented. Explicit and environment credentials, Dockhand's Keychain credential, and the active `gh` account are resolved for publication; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Device login stays outside repository state and uses a registered OAuth client ID supplied by the build, environment, or command line.
 
-Tart image setup is implemented as a state-independent application operation. It validates existing images in disposable clones and provisions a missing or explicitly rebuilt native base from a pinned guest-agent asset and an explicit MacPorts version. Conventional release-based names allow verification to select the prepared image when `--image` is omitted. A golden copy and candidate-first replacement order provide bounded recovery, while per-image external locks coordinate setup with concurrent verification even across different database selections.
+Tart image setup is implemented as a state-independent application operation. It validates existing images in disposable clones and provisions a missing or explicitly rebuilt native base from a pinned guest-agent asset and an explicit MacPorts version. An explicit Xcode archive or directory creates a separate full-Xcode profile with exact version validation. Conventional release-based names allow verification to select the prepared base image when `--image` is omitted. A golden copy and candidate-first replacement order provide bounded recovery, while per-image external locks coordinate setup with concurrent verification even across different database selections.
 
 ### Implemented foundations
 

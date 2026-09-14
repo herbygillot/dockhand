@@ -114,7 +114,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			if label == "" {
 				label = "detached HEAD"
 			}
-			line("  input: working tree (%s); HEAD %s; %d modified files", label, c.Head, c.ModifiedFiles)
+			line("  input: working tree (%s); HEAD %s; %s modified files", label, c.Head, c.ModifiedFiles)
 		}
 		if release := job.ResolvedRelease; release != nil {
 			line("  release: %s %s; commit: %s", release.Repository, release.Tag, release.Commit)

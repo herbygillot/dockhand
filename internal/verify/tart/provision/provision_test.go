@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -63,6 +64,10 @@ func (f *fakeMachine) BootstrapAgent(context.Context, string) error { return f.e
 func (f *fakeMachine) ReadyAgent(context.Context, string) error     { return f.event("ready") }
 func (f *fakeMachine) EnsureToolchain(context.Context, string) error {
 	return f.event("toolchain")
+}
+func (f *fakeMachine) InstallXcode(_ context.Context, _ string, config Config) error {
+	f.validation.XcodeVersion = config.XcodeVersion
+	return f.event("xcode")
 }
 func (f *fakeMachine) InstallMacPorts(context.Context, string, Config, tart.MacOSRelease) error {
 	return f.event("macports")
@@ -130,6 +135,32 @@ func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 	require.NotContains(t, machine.images, "dockhand-base-tahoe-next")
 	require.NotContains(t, machine.images, "dockhand-golden-tahoe-next")
 	require.Less(t, index(machine.events, "validate"), index(machine.events, "adopt:dockhand-base-tahoe-next:dockhand-base-tahoe"))
+}
+
+func TestXcodeProfileInstallsXcodeBeforeMacPorts(t *testing.T) {
+	directory := t.TempDir()
+	archive := directory + "/Xcode_26.6_Apple_silicon.xip"
+	require.NoError(t, os.WriteFile(archive, nil, 0o600))
+	machine := newFakeMachine()
+	provisioner := testProvisioner(machine)
+	provisioner.Config.Xcode = directory
+	result, err := provisioner.Run(t.Context(), Options{})
+	require.NoError(t, err)
+	require.Equal(t, "dockhand-xcode-tahoe", result.Image)
+	require.Equal(t, "dockhand-golden-xcode-tahoe", result.GoldenImage)
+	require.Equal(t, "26.6", result.XcodeVersion)
+	require.Less(t, index(machine.events, "toolchain"), index(machine.events, "xcode"))
+	require.Less(t, index(machine.events, "xcode"), index(machine.events, "macports"))
+}
+
+func TestConventionalImageNamesRequireTheirMatchingProfile(t *testing.T) {
+	directory := t.TempDir()
+	archive := directory + "/Xcode_26.6.xip"
+	require.NoError(t, os.WriteFile(archive, nil, 0o600))
+	_, _, err := normalize(Config{Platform: testPlatform, Image: "dockhand-base-tahoe", Xcode: archive})
+	require.ErrorContains(t, err, "cannot replace the conventional base image")
+	_, _, err = normalize(Config{Platform: testPlatform, Image: "dockhand-xcode-tahoe"})
+	require.ErrorContains(t, err, "requires --xcode")
 }
 
 func TestFailedRebuildPreservesExistingImages(t *testing.T) {

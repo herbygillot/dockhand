@@ -25,6 +25,9 @@ type Config struct {
 	MacPortsVersion string
 	GuestPrefix     string
 	Platform        record.Platform
+	Xcode           string
+	XcodeArchive    string
+	XcodeVersion    string
 }
 
 type Options struct {
@@ -39,6 +42,7 @@ type Result struct {
 	Platform          record.Platform `json:"platform"`
 	MacPortsVersion   string          `json:"macports_version"`
 	GuestAgentVersion string          `json:"guest_agent_version"`
+	XcodeVersion      string          `json:"xcode_version,omitempty"`
 	Reused            bool            `json:"reused"`
 }
 
@@ -51,6 +55,7 @@ type validation struct {
 	Platform          record.Platform
 	MacPortsVersion   string
 	GuestAgentVersion string
+	XcodeVersion      string
 }
 
 type machine interface {
@@ -63,6 +68,7 @@ type machine interface {
 	BootstrapAgent(context.Context, string) error
 	ReadyAgent(context.Context, string) error
 	EnsureToolchain(context.Context, string) error
+	InstallXcode(context.Context, string, Config) error
 	InstallMacPorts(context.Context, string, Config, tart.MacOSRelease) error
 	WriteManifest(context.Context, string, []byte) error
 	Validate(context.Context, string, Config) (validation, error)
@@ -142,8 +148,18 @@ func normalize(config Config) (Config, tart.MacOSRelease, error) {
 	if err != nil {
 		return config, release, err
 	}
+	if config.Xcode != "" {
+		config.XcodeArchive, config.XcodeVersion, err = selectXcode(config.Xcode, release)
+		if err != nil {
+			return config, release, err
+		}
+	}
 	if config.Image == "" {
-		config.Image, err = tart.DefaultImageName(config.Platform)
+		if config.XcodeArchive != "" {
+			config.Image, err = tart.DefaultXcodeImageName(config.Platform)
+		} else {
+			config.Image, err = tart.DefaultImageName(config.Platform)
+		}
 		if err != nil {
 			return config, release, err
 		}
@@ -166,6 +182,12 @@ func normalize(config Config) (Config, tart.MacOSRelease, error) {
 	if config.GuestPrefix != "/opt/local" {
 		return config, release, fmt.Errorf("setup: the MacPorts package installer requires guest prefix /opt/local")
 	}
+	if config.XcodeArchive != "" && strings.HasPrefix(config.Image, "dockhand-base-") {
+		return config, release, fmt.Errorf("setup: Xcode profiles cannot replace the conventional base image; omit --image or select a distinct image")
+	}
+	if config.XcodeArchive == "" && strings.HasPrefix(config.Image, "dockhand-xcode-") {
+		return config, release, fmt.Errorf("setup: Xcode image %s requires --xcode", config.Image)
+	}
 	return config, release, nil
 }
 
@@ -178,6 +200,9 @@ func safeName(value string) bool {
 func goldenName(image string) string {
 	if suffix, ok := strings.CutPrefix(image, "dockhand-base-"); ok {
 		return "dockhand-golden-" + suffix
+	}
+	if suffix, ok := strings.CutPrefix(image, "dockhand-xcode-"); ok {
+		return "dockhand-golden-xcode-" + suffix
 	}
 	return image + "-golden"
 }
@@ -208,13 +233,16 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	if checked.MacPortsVersion != config.MacPortsVersion {
 		return Result{}, fmt.Errorf("setup: image has MacPorts %s; expected %s; rerun with --rebuild", checked.MacPortsVersion, config.MacPortsVersion)
 	}
+	if checked.XcodeVersion != config.XcodeVersion {
+		return Result{}, fmt.Errorf("setup: image has Xcode %s; expected %s; rerun with --rebuild", checked.XcodeVersion, config.XcodeVersion)
+	}
 	if err := machine.Stop(ctx, name); err != nil {
 		return Result{}, err
 	}
 	if err := machine.Delete(ctx, name); err != nil {
 		return Result{}, err
 	}
-	return Result{Image: config.Image, GoldenImage: golden, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, Reused: reused}, nil
+	return Result{Image: config.Image, GoldenImage: golden, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, Reused: reused}, nil
 }
 
 func (p *Provisioner) provision(ctx context.Context, machine machine, config Config, release tart.MacOSRelease, golden string, replacing bool) (Result, error) {
@@ -256,6 +284,12 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err := machine.EnsureToolchain(ctx, next); err != nil {
 		return Result{}, err
 	}
+	if config.XcodeArchive != "" {
+		p.say("Installing Xcode %s...", config.XcodeVersion)
+		if err := machine.InstallXcode(ctx, next, config); err != nil {
+			return Result{}, err
+		}
+	}
 	p.say("Installing MacPorts %s...", config.MacPortsVersion)
 	if err := machine.InstallMacPorts(ctx, next, config, release); err != nil {
 		return Result{}, err
@@ -266,7 +300,8 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 		Platform          record.Platform `json:"platform"`
 		MacPortsVersion   string          `json:"macports_version"`
 		GuestAgentVersion string          `json:"guest_agent_version"`
-	}{1, config.Source, config.Platform, config.MacPortsVersion, AgentVersion})
+		XcodeVersion      string          `json:"xcode_version,omitempty"`
+	}{1, config.Source, config.Platform, config.MacPortsVersion, AgentVersion, config.XcodeVersion})
 	if err != nil {
 		return Result{}, err
 	}
@@ -277,8 +312,8 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 	if err != nil {
 		return Result{}, err
 	}
-	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion {
-		return Result{}, fmt.Errorf("setup: provisioned image does not match its requested platform or MacPorts version")
+	if checked.Platform != config.Platform || checked.MacPortsVersion != config.MacPortsVersion || checked.XcodeVersion != config.XcodeVersion {
+		return Result{}, fmt.Errorf("setup: provisioned image does not match its requested platform, MacPorts, or Xcode version")
 	}
 	if err := machine.Stop(ctx, next); err != nil {
 		return Result{}, err
@@ -300,7 +335,7 @@ func (p *Provisioner) provision(ctx context.Context, machine machine, config Con
 		return Result{}, err
 	}
 	keepNext = false
-	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion}, nil
+	return Result{Image: config.Image, GoldenImage: golden, Source: config.Source, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion}, nil
 }
 
 func discard(ctx context.Context, machine machine, name string) error {
