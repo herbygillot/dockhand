@@ -27,7 +27,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		if jobTerminal(job.State) || live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
+		if jobTerminal(job.State) || job.Phase != record.PhasePublication || live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
 			return nil
 		}
 		action, err = tx.PublicationForJob(ctx, id)

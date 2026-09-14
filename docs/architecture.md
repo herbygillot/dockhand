@@ -92,6 +92,8 @@ Failure in one job or an error polling one provider must not abort unrelated wor
 
 Commands such as `bump`, `verify`, and `publish` submit requests through the shared workflow API and run targeted driver cycles within that invocation. One invocation may run multiple cycles: waiting for capacity, observing a build, and completing publication require later passes. With `--wait`, it continues through the requested destination or a conclusive outcome.
 
+Each job records an explicit workflow phase: preparation, verification, or publication. Intake assigns the first phase from the accepted action. Successful branch integration advances a continuing job from preparation to verification in the same transaction that records its result revision. Passing or reused evidence advances a combined job from verification to publication in the same transaction that records the evidence outcome. The cycle dispatches by this field rather than reconstructing ownership from action, destination, checkpoints, and related rows. Terminal jobs retain the phase in which they settled.
+
 The user explicitly starts persistent mode with `dockhand start`. It repeatedly processes eligible repository work through the same workflow implementation. Ongoing PR monitoring is a phase-two extension of this mode. State transactions and claims coordinate concurrent action invocations and persistent execution; starting a driver grants no additional publication authority.
 
 Once an action invocation exits, further workflow advancement requires an already-running persistent driver or another invocation that runs driver cycles. Submitted provider builds may continue independently, while settlement, publication, and cleanup remain durable obligations for later cycles.

@@ -98,6 +98,23 @@ COMMIT;`)
 	return path, db
 }
 
+func versionEightWithWork(t *testing.T) (string, *sql.DB) {
+	t.Helper()
+	path, db := versionTwoWithWork(t)
+	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + publicationSchema + imageSchema + retentionSchema + "COMMIT;")
+	require.NoError(t, err)
+	return path, db
+}
+
+func TestMigrationsAreContiguous(t *testing.T) {
+	migrations := migrations()
+	require.Len(t, migrations, schemaVersion-1)
+	for i, migration := range migrations {
+		require.Equal(t, i+2, migration.version)
+		require.NotEqual(t, migration.schema == "", migration.apply == nil, "migration %d must have exactly one implementation", migration.version)
+	}
+}
+
 func migrationRows(t *testing.T, db *sql.DB, table string, columns []string) ([]string, [][]any) {
 	t.Helper()
 	selection := "*"
@@ -337,6 +354,50 @@ func TestRetentionMigrationPreservesReleasedResources(t *testing.T) {
 	require.NoError(t, db.QueryRow("SELECT artifacts_pruned_at FROM resources").Scan(&pruned))
 	require.False(t, pruned.Valid)
 	require.NoError(t, store.Check(t.Context()))
+}
+
+func TestPhaseMigrationBackfillsWorkflowOwnership(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		setup string
+		want  string
+	}{
+		{name: "standalone verification", want: "verification"},
+		{name: "standalone publication", setup: "UPDATE jobs SET action='publish';", want: "publication"},
+		{name: "branch ready result", setup: "UPDATE jobs SET action='bump-revision',destination='branch-ready',result_revision='revision';", want: "preparation"},
+		{name: "preparation pending", setup: "UPDATE jobs SET action='bump-revision',destination='published',result_revision=NULL;", want: "preparation"},
+		{name: "verification pending", setup: "UPDATE jobs SET action='bump-revision',destination='published',result_revision='revision';", want: "verification"},
+		{name: "verification passed", setup: `UPDATE jobs SET action='bump-revision',destination='published',result_revision='revision'; UPDATE attempts SET state='finished'; UPDATE attempt_evidence SET evidence='{"Verdict":"passed"}';`, want: "publication"},
+		{name: "verification reused", setup: "UPDATE jobs SET action='bump-revision',destination='published',result_revision='revision',reused_attempt='attempt';", want: "publication"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path, db := versionEightWithWork(t)
+			if test.setup != "" {
+				_, err := db.Exec(test.setup)
+				require.NoError(t, err)
+			}
+			store, err := Open(t.Context(), path, Options{})
+			require.NoError(t, err)
+			defer store.Close()
+			var phase string
+			require.NoError(t, db.QueryRow("SELECT phase FROM jobs WHERE id='job'").Scan(&phase))
+			require.Equal(t, test.want, phase)
+			var version int
+			require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+			require.Equal(t, schemaVersion, version)
+		})
+	}
+}
+
+func TestPhaseMigrationFailureLeavesSchemaEightVersion(t *testing.T) {
+	path, db := versionEightWithWork(t)
+	_, err := db.Exec("ALTER TABLE jobs ADD COLUMN phase TEXT")
+	require.NoError(t, err)
+	_, err = Open(t.Context(), path, Options{})
+	require.Error(t, err)
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 8, version)
 }
 
 func TestMaintenanceCanBackUpOlderSchemaWithoutMigrating(t *testing.T) {

@@ -152,7 +152,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 }
 
 func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, spec record.PublicationSpec) error {
-	if len(job.Spec.Targets) != 1 {
+	if job.Phase != record.PhasePublication || len(job.Spec.Targets) != 1 {
 		return ErrInvalidRequest
 	}
 	change, err := r.Change(ctx, job.ChangeID)

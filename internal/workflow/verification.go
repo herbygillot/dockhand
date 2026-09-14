@@ -38,7 +38,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	e := c.engine
 	var attempt record.Attempt
 	var action attemptAction
-	var changed, recorded, publishing bool
+	var changed, recorded bool
 	var detail string
 	var err error
 	for {
@@ -53,10 +53,6 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				return nil
 			}
 			attempt = work.Attempt
-			if job.Spec.PublishTo != nil && (job.ReusedAttempt != "" || attemptTerminal(attempt.State)) {
-				publishing = true
-				return nil
-			}
 			if work.Problem != "" {
 				detail = work.Problem
 				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
@@ -81,7 +77,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				changed = true
 				return nil
 			}
-			if !verificationJob(job) {
+			if job.Phase != record.PhaseVerification {
 				detail = ErrNotImplemented.Error()
 				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
 				work.Job = job
@@ -128,6 +124,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 					job.ReusedAttempt = reused.ID
 					job.State, job.FinishedAt, job.Detail = record.JobCompleted, &now, explanation
 					if job.Spec.PublishTo != nil {
+						job.Phase = record.PhasePublication
 						job.State, job.FinishedAt, job.Detail = record.JobActive, nil, explanation+"; publication pending"
 					}
 					work.Job, work.Plan = job, &plan
@@ -198,9 +195,6 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		}
 		// Resolve capabilities after local planning, then recheck ownership and intent.
 		c.checkProvider(ctx)
-	}
-	if publishing {
-		return c.advancePublication(ctx, id)
 	}
 	if action == "" {
 		return changed, detail, nil
@@ -416,6 +410,7 @@ func finishAttempt(work *execution, job *record.Job, attempt *record.Attempt, ev
 	}
 	job.FinishedAt, job.Detail = &now, detail
 	if evidence.Verdict == record.VerdictPassed && job.Spec.PublishTo != nil {
+		job.Phase = record.PhasePublication
 		job.State, job.FinishedAt, job.Detail = record.JobActive, nil, "Verification passed; publication pending"
 	}
 	dispositionResources(work, attempt.ID, resourceState)

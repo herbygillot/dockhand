@@ -148,6 +148,7 @@ func submitPublication(t *testing.T, f *fixture, id string) record.JobID {
 	t.Helper()
 	receipt, err := f.engine.Submit(t.Context(), bindPublication(t, f, id))
 	require.NoError(t, err)
+	require.Equal(t, record.PhasePublication, f.status(t, receipt.JobID).Jobs[0].Job.Phase)
 	return receipt.JobID
 }
 

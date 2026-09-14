@@ -17,6 +17,9 @@ import (
 // config. External reads run outside transactions; pushing starts in a later pass.
 func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, string, error) {
 	e := c.engine
+	if job.Phase != record.PhasePublication {
+		return false, "", ErrInvalidRequest
+	}
 	call, cancel := context.WithTimeout(ctx, c.timeouts.Publish)
 	defer cancel()
 	fail := func(problem error) (bool, string, error) {

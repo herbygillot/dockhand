@@ -61,6 +61,7 @@ func candidateJob(t *testing.T, f *fixture, id record.JobID) record.Job {
 	t.Helper()
 	f.run(t, id)
 	job := f.status(t, id).Jobs[0].Job
+	require.Equal(t, record.PhasePreparation, job.Phase)
 	require.NotNil(t, job.Prepared)
 	require.False(t, job.Prepared.IntegrationStarted)
 	require.Empty(t, job.ResultRevision)
@@ -80,6 +81,7 @@ func TestRevisionPreparationCreatesSeparateContributionWithoutProvider(t *testin
 	status := f.status(t, id)
 	job := status.Jobs[0].Job
 	require.Equal(t, record.JobCompleted, job.State)
+	require.Equal(t, record.PhasePreparation, job.Phase)
 	require.Equal(t, req.Spec.Source, job.Spec.Source)
 	require.Equal(t, candidate.Prepared.Source, job.Prepared.Source)
 	require.NotEmpty(t, job.ResultRevision)
@@ -112,6 +114,7 @@ func TestPreparedRevisionUsesExistingVerificationLifecycle(t *testing.T) {
 	id := submitPreparation(t, f, req)
 	candidate := candidateJob(t, f, id)
 	f.run(t, id)
+	require.Equal(t, record.PhaseVerification, f.status(t, id).Jobs[0].Job.Phase)
 	f.provider.submit = func(_ context.Context, request verify.Request) (verify.Submission, error) {
 		require.Equal(t, candidate.Prepared.Source, request.Spec.Source)
 		require.NotEmpty(t, request.Spec.RevisionID)
@@ -124,7 +127,9 @@ func TestPreparedRevisionUsesExistingVerificationLifecycle(t *testing.T) {
 	require.Equal(t, req.Spec.Source, f.status(t, id).Jobs[0].Job.Spec.Source)
 	f.provider.observe = terminal(f, record.VerdictPassed)
 	f.run(t, id)
-	require.Equal(t, record.JobCompleted, f.status(t, id).Jobs[0].Job.State)
+	job := f.status(t, id).Jobs[0].Job
+	require.Equal(t, record.JobCompleted, job.State)
+	require.Equal(t, record.PhaseVerification, job.Phase)
 	require.Equal(t, 1, f.provider.count("submit"))
 	require.Equal(t, 1, f.provider.count("release"))
 }

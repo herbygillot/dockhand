@@ -89,12 +89,15 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		var changed bool
 		var detail string
 		var err error
-		if job.Spec.Action == record.Publish {
-			changed, detail, err = c.advancePublication(ctx, job.ID)
-		} else if preparationAction(job.Spec.Action) && job.ResultRevision == "" {
+		switch job.Phase {
+		case record.PhasePreparation:
 			changed, detail, err = c.advancePreparation(ctx, job.ID)
-		} else {
+		case record.PhaseVerification:
 			changed, detail, err = c.advanceJob(ctx, job.ID)
+		case record.PhasePublication:
+			changed, detail, err = c.advancePublication(ctx, job.ID)
+		default:
+			detail = fmt.Sprintf("workflow: job %s has invalid phase %q", job.ID, job.Phase)
 		}
 		if changed {
 			result.Advanced = append(result.Advanced, job.ID)
@@ -249,8 +252,4 @@ func (c *cycle) claim(generation *uint64, now time.Time, timeout time.Duration) 
 	}
 	(*generation)++
 	return &record.Claim{Owner: c.owner, Generation: *generation, ExpiresAt: now.Add(timeout).Add(c.grace)}, nil
-}
-
-func verificationJob(job record.Job) bool {
-	return job.Spec.Action == record.Verify || (preparationAction(job.Spec.Action) && job.ResultRevision != "" && job.Spec.Verification == record.VerificationRequired)
 }

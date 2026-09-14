@@ -42,7 +42,10 @@ var imageSchema string
 //go:embed migrations/008.sql
 var retentionSchema string
 
-const schemaVersion = 8
+//go:embed migrations/009.sql
+var phaseSchema string
+
+const schemaVersion = 9
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -195,38 +198,7 @@ func (s *Store) initialize(ctx context.Context) error {
 			return nil
 		}
 		if appID == applicationID && version >= 1 && version < schemaVersion && !s.options.ReadOnly {
-			if version == 1 {
-				if _, err := t.conn.ExecContext(ctx, providerSchema); err != nil {
-					return storageError(err)
-				}
-			}
-			if version < 3 {
-				if err := migratePreparation(ctx, t); err != nil {
-					return err
-				}
-			}
-			if version < 4 {
-				if _, err := t.conn.ExecContext(ctx, releaseSchema); err != nil {
-					return storageError(err)
-				}
-			}
-			if version < 5 {
-				if _, err := t.conn.ExecContext(ctx, verificationSchema); err != nil {
-					return storageError(err)
-				}
-			}
-			if version < 6 {
-				if _, err := t.conn.ExecContext(ctx, publicationSchema); err != nil {
-					return storageError(err)
-				}
-			}
-			if version < 7 {
-				if _, err := t.conn.ExecContext(ctx, imageSchema); err != nil {
-					return storageError(err)
-				}
-			}
-			_, err := t.conn.ExecContext(ctx, retentionSchema)
-			return storageError(err)
+			return migrateSchema(ctx, t, version)
 		}
 		if appID != 0 || version != 0 || s.options.ReadOnly {
 			return state.ErrSchema
@@ -238,15 +210,59 @@ func (s *Store) initialize(ctx context.Context) error {
 		if count != 0 {
 			return fmt.Errorf("%w: not a Dockhand database", state.ErrSchema)
 		}
-		if _, err := t.conn.ExecContext(ctx, initialSchema+providerSchema+fmt.Sprintf("PRAGMA application_id=%d;", applicationID)); err != nil {
+		if _, err := t.conn.ExecContext(ctx, initialSchema+fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=1;", applicationID)); err != nil {
 			return storageError(err)
 		}
-		if err := migratePreparation(ctx, t); err != nil {
+		return migrateSchema(ctx, t, 1)
+	})
+}
+
+type schemaMigration struct {
+	version int
+	schema  string
+	apply   func(context.Context, *transaction) error
+}
+
+func migrations() []schemaMigration {
+	return []schemaMigration{
+		{version: 2, schema: providerSchema},
+		{version: 3, apply: migratePreparation},
+		{version: 4, schema: releaseSchema},
+		{version: 5, schema: verificationSchema},
+		{version: 6, schema: publicationSchema},
+		{version: 7, schema: imageSchema},
+		{version: 8, schema: retentionSchema},
+		{version: 9, schema: phaseSchema},
+	}
+}
+
+func migrateSchema(ctx context.Context, t *transaction, current int) error {
+	for _, migration := range migrations() {
+		if migration.version <= current {
+			continue
+		}
+		if migration.version != current+1 {
+			return fmt.Errorf("%w: missing migration after schema %d", state.ErrSchema, current)
+		}
+		var err error
+		if migration.apply != nil {
+			err = migration.apply(ctx, t)
+		} else {
+			_, err = t.conn.ExecContext(ctx, migration.schema)
+			err = storageError(err)
+		}
+		if err != nil {
 			return err
 		}
-		_, err := t.conn.ExecContext(ctx, releaseSchema+verificationSchema+publicationSchema+imageSchema+retentionSchema)
-		return storageError(err)
-	})
+		if _, err = t.conn.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d;", migration.version)); err != nil {
+			return storageError(err)
+		}
+		current = migration.version
+	}
+	if current != schemaVersion {
+		return fmt.Errorf("%w: incomplete migration at schema %d", state.ErrSchema, current)
+	}
+	return nil
 }
 
 func (s *Store) FindRepository(ctx context.Context, path string) (record.Repository, error) {

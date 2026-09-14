@@ -75,6 +75,8 @@ Scheduling, claims, transitions, retries, and recovery stay together because the
 
 `workflow` accepts requests, binds their inputs, records jobs, claims ready work, invokes capabilities, records outcomes, and advances the requested destination. It owns scheduling, retry decisions, cancellation, resource retention, cleanup, and publication continuation. Workflow supplies candidate-selection criteria to bounded state queries; handlers recheck eligibility and acquire claims transactionally. Neither a synchronous command nor an adapter gets its own alternative progression loop.
 
+The job's recorded phase selects the responsible handler directly. Intake chooses the initial phase, and a handler advances it only in the transaction that records the checkpoint completing its own phase. Preparation, verification, and publication may remain focused files in this package; sharing one engine does not require each cycle to infer which file owns a job from the incidental presence of other records.
+
 Use explicit handlers and typed results for the few kinds of work. A cycle claims a bounded action in a short state transaction, performs the work after commit, and records its result only if the claim and relevant revision remain current. Uncertain provider or forge effects go through reconciliation before another submission. Resource-release obligations survive job completion.
 
 Observation and judgment remain separate within the capability packages. The driver consumes their results and commits the state transition. It does not reimplement version comparisons, Tcl semantics, failure classification, or publication eligibility.

@@ -34,7 +34,7 @@ func (t *transaction) PutPublication(ctx context.Context, v record.PublicationAc
 	if err != nil {
 		return err
 	}
-	if job.ChangeID != v.ChangeID {
+	if job.ChangeID != v.ChangeID || job.Phase != record.PhasePublication {
 		return state.ErrConflict
 	}
 	if job.Spec.Action == record.Publish {

@@ -33,11 +33,15 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 		require.Len(t, result.Jobs, 1)
 		require.Equal(t, id, result.Jobs[0].Job.ID)
 		require.Equal(t, record.JobQueued, result.Jobs[0].Job.State)
+		require.Equal(t, record.PhaseVerification, result.Jobs[0].Job.Phase)
 		require.Empty(t, result.Jobs[0].Attempts)
 		require.Len(t, result.Changes, 1)
 		require.Empty(t, stderr.String())
 	}
 	var outbuf bytes.Buffer
+	require.NoError(t, Run(t.Context(), []string{"status", string(id)}, Streams{Out: &outbuf, Err: &outbuf}, config))
+	require.Contains(t, outbuf.String(), "phase: verification")
+	outbuf.Reset()
 	require.NoError(t, Run(t.Context(), []string{"status", "--branch", "missing", "--active"}, Streams{Out: &outbuf, Err: &outbuf}, config))
 	require.Contains(t, outbuf.String(), "Contribution branch: missing")
 	require.Contains(t, outbuf.String(), "Showing queued and active jobs.")

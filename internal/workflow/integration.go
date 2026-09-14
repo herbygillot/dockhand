@@ -31,7 +31,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if err != nil {
 				return err
 			}
-			if jobTerminal(job.State) || job.ResultRevision != "" || live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
+			if jobTerminal(job.State) || job.Phase != record.PhasePreparation || job.ResultRevision != "" || live(job.Claim, e.now()) || !due(job.RetryAt, e.now()) {
 				return nil
 			}
 			if job.Prepared == nil || job.Prepared.Branch != candidate.Prepared.Branch || job.Spec.Preparation == nil {
@@ -67,7 +67,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if err != nil {
 				return err
 			}
-			if jobTerminal(job.State) || job.ResultRevision != "" || !owns(job.Claim, selected.Claim, e.now()) {
+			if jobTerminal(job.State) || job.Phase != record.PhasePreparation || job.ResultRevision != "" || !owns(job.Claim, selected.Claim, e.now()) {
 				return ErrClaimLost
 			}
 			job.Claim, job.RetryAt = nil, nil
@@ -103,6 +103,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			} else if job.Spec.Destination == record.BranchReady {
 				finishPreparation(&job, record.JobCompleted, "Prepared branch "+job.Prepared.Branch, e.now())
 			} else {
+				job.Phase = record.PhaseVerification
 				job.State, job.Detail = record.JobActive, "Prepared branch "+job.Prepared.Branch+"; verification pending"
 			}
 			return tx.PutJob(ctx, job)

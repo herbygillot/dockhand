@@ -51,6 +51,7 @@ func prepareCombined(t *testing.T, f *fixture, request workflow.Request) record.
 	}
 	candidateJob(t, f, id)
 	f.run(t, id)
+	require.Equal(t, record.PhaseVerification, f.status(t, id).Jobs[0].Job.Phase)
 	return id
 }
 
@@ -63,6 +64,7 @@ func passCombined(t *testing.T, f *fixture, id record.JobID) {
 	f.run(t, id)
 	status := f.status(t, id)
 	require.Equal(t, record.JobActive, status.Jobs[0].Job.State)
+	require.Equal(t, record.PhasePublication, status.Jobs[0].Job.Phase)
 	require.Nil(t, status.Jobs[0].Job.FinishedAt)
 	require.Empty(t, status.Jobs[0].Publications)
 	require.Equal(t, record.ResourceReleased, status.Resources[0].State)

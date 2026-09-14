@@ -121,7 +121,7 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if err = tx.PutRequest(ctx, record.AcceptedRequest{ID: request.ID, Kind: record.JobRequest, Payload: payload, AcceptedAt: now}); err != nil {
 			return err
 		}
-		if err = tx.PutJob(ctx, record.Job{ID: id, RequestID: request.ID, Spec: accepted, ChangeID: accepted.ChangeID, State: record.JobQueued, AcceptedAt: now}); err != nil {
+		if err = tx.PutJob(ctx, record.Job{ID: id, RequestID: request.ID, Spec: accepted, ChangeID: accepted.ChangeID, State: record.JobQueued, Phase: initialPhase(accepted.Action), AcceptedAt: now}); err != nil {
 			return err
 		}
 		if accepted.Action == record.Publish {

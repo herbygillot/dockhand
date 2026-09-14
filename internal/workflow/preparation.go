@@ -13,10 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/state"
 )
 
-func preparationAction(action record.Action) bool {
-	return action == record.Bump || action == record.BumpRevision
-}
-
 func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, string, error) {
 	e := c.engine
 	var selected record.Job
@@ -28,7 +24,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		if jobTerminal(job.State) || job.ResultRevision != "" {
+		if jobTerminal(job.State) || job.Phase != record.PhasePreparation {
 			return nil
 		}
 		if job.Prepared != nil {

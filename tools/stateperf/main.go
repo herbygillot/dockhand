@@ -138,7 +138,7 @@ func run(ctx context.Context, n int, distinct bool, iterations int) {
 			if err = tx.PutRequest(ctx, record.AcceptedRequest{ID: record.RequestID(id), Kind: record.JobRequest, Payload: payload, AcceptedAt: now}); err != nil {
 				return err
 			}
-			if err = tx.PutJob(ctx, record.Job{ID: record.JobID(id), RequestID: record.RequestID(id), Spec: question, ChangeID: "change", State: record.JobCompleted, AcceptedAt: now, FinishedAt: &now}); err != nil {
+			if err = tx.PutJob(ctx, record.Job{ID: record.JobID(id), RequestID: record.RequestID(id), Spec: question, ChangeID: "change", State: record.JobCompleted, Phase: record.PhaseVerification, AcceptedAt: now, FinishedAt: &now}); err != nil {
 				return err
 			}
 			build := record.BuildSpec{RevisionID: question.InputRevision, Source: question.Source, Target: question.Targets[0], Config: *question.Build}
@@ -180,7 +180,7 @@ func run(ctx context.Context, n int, distinct bool, iterations int) {
 		if err = tx.PutRequest(ctx, record.AcceptedRequest{ID: "active", Kind: record.JobRequest, Payload: payload, AcceptedAt: now}); err != nil {
 			return err
 		}
-		return tx.PutJob(ctx, record.Job{ID: "active", RequestID: "active", Spec: spec, ChangeID: "change", State: record.JobQueued, AcceptedAt: now})
+		return tx.PutJob(ctx, record.Job{ID: "active", RequestID: "active", Spec: spec, ChangeID: "change", State: record.JobQueued, Phase: record.PhaseVerification, AcceptedAt: now})
 	}))
 	e.Now = func() time.Time { now = now.Add(2 * time.Second); return now }
 	measure(ctx, n, distinct, "active-cycle", iterations, func() (int, error) {

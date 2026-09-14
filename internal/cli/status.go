@@ -91,6 +91,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			line("  outcome: %s", outcome)
 		}
 		line("  request: %s; accepted: %s", job.RequestID, statusTime(job.AcceptedAt))
+		line("  phase: %s", job.Phase)
 		line("  verification policy: %s", job.Spec.Verification)
 		if d := job.Spec.PublishTo; d != nil {
 			line("  publication destination: %s -> %s:%s", d.HeadRepository, d.Repository, d.BaseBranch)

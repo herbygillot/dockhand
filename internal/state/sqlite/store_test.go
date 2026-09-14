@@ -90,6 +90,14 @@ func TestRepositoryScopeAndImmutableReferences(t *testing.T) {
 		job.Spec.Build.EnvironmentDigest = "changed"
 		return tx.PutJob(ctx, job)
 	}), state.ErrConflict)
+	require.ErrorIs(t, s.Update(t.Context(), a.ID, func(ctx context.Context, tx state.Tx) error {
+		job, err := tx.Job(ctx, first.JobID)
+		if err != nil {
+			return err
+		}
+		job.Phase = record.PhasePublication
+		return tx.PutJob(ctx, job)
+	}), state.ErrConflict)
 }
 func TestRollbackSnapshotAndReadOnlyContract(t *testing.T) {
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))

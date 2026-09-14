@@ -103,6 +103,19 @@ const (
 	JobSuperseded JobState = "superseded"
 )
 
+// JobPhase identifies the workflow handler that owns a nonterminal job.
+// Terminal jobs retain the phase in which they settled.
+type JobPhase string
+
+const (
+	// PhasePreparation creates and integrates a local contribution revision.
+	PhasePreparation JobPhase = "preparation"
+	// PhaseVerification selects or produces evidence for the chosen revision.
+	PhaseVerification JobPhase = "verification"
+	// PhasePublication reconciles the verified revision with its remote destination.
+	PhasePublication JobPhase = "publication"
+)
+
 // Job tracks one accepted request. The driver owns its progress after intake;
 // follow-up requests receive their own jobs rather than reopening this one.
 type Job struct {
@@ -114,6 +127,7 @@ type Job struct {
 	// ResultRevision identifies the revision produced by preparation, if any.
 	ResultRevision RevisionID
 	State          JobState
+	Phase          JobPhase
 	// ReusedAttempt cites an original passing execution; this job created no attempt.
 	ReusedAttempt AttemptID `json:",omitempty"`
 	ReuseDetail   string    `json:",omitempty"`
