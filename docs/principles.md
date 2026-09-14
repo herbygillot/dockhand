@@ -24,6 +24,8 @@ Every verification attempt names the immutable source and build configuration it
 
 A branch is a convenient reference to work, but its name is not evidence identity. Advancing a branch must not silently transfer an earlier verdict to new contents. Record the effective configuration needed to explain and reproduce accepted work.
 
+An executable’s reported version does not establish which source release produced it. Version text can differ from a tag, be stale, or be absent. Bind release identity to source and artifact identities; judge verification through the requested build, test, and installation behavior. Reported version text alone must not reject a port update.
+
 ## Track the contribution beyond individual jobs
 
 A logical change has a stable identity across rebases, corrective edits, rewritten commits, and repeated verification. Its revisions and evidence retain their own identities. Opening or updating a PR completes a publication job, while the contribution remains available for later review and follow-up work. A PR association survives revision changes.

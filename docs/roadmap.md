@@ -43,7 +43,10 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 
 ### Engineering follow-up
 
+- Remove guest-agent release-tag assumptions from executable version checks. Use the verified installation artifact and required protocol/capabilities; keep version output diagnostic.
+- Review support for explicitly named single-distfile checksums and GitLab preparation patterns rejected by the git-toolbelt and zix exercises.
 - Improve progress reporting during initial image inspection and full PortIndex generation; both can be slow before the first useful status line.
+- Reduce repeated whole-tree indexing for small standalone edits, and consider staging indexes before occupying VM capacity. The concurrent exercise left a ready guest waiting on host indexing and its shared cache lock.
 - Make read-only status errors on an older database schema explain how to trigger the supported migration.
 - Make rejected saved GitHub credentials easier to diagnose and replace, including their source, without silently switching identities after an authentication failure.
 - Add focused tests for the Tcl shell and RPC boundaries.
