@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/app"
@@ -51,9 +53,17 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	var variants []string
 	var wait, trace, fresh bool
 	command := &cobra.Command{
-		Use: "verify <port>", Short: "Verify a port from the current checkout or a committed branch",
-		Long: "Verify one snapshot-relative port directory or unique directory name. By default, capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
-		Args: cobra.ExactArgs(1),
+		Use: "verify [port]", Short: "Verify a port from the current checkout or a committed branch",
+		Long: "Verify one snapshot-relative port directory or unique directory name. By default, capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices; an explicit port starts from its own defaults. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+				return err
+			}
+			if len(args) == 1 && args[0] == "" {
+				return fmt.Errorf("port must not be empty")
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
 				return fmt.Errorf("branch must name a literal local branch")
@@ -79,7 +89,11 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			} else {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Binding committed source from %s and checking the prepared image...\n", branch)
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
+			var selector string
+			if len(args) == 1 {
+				selector = args[0]
+			}
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
 				return err
 			}
@@ -253,8 +267,26 @@ func renderVerificationSource(out io.Writer, bound workflow.BoundVerification) e
 		}
 	}
 	for _, target := range spec.Targets {
-		if _, err := fmt.Fprintf(out, "Target: %s (%s)\n", target.Name, target.Portfile); err != nil {
+		origin := ""
+		if bound.Request.Branch != nil && bound.Request.Branch.InferredTarget != nil {
+			origin = "; inferred from tracked contribution"
+		}
+		var variants []string
+		for name, enabled := range target.Variants {
+			prefix := "-"
+			if enabled {
+				prefix = "+"
+			}
+			variants = append(variants, prefix+name)
+		}
+		slices.Sort(variants)
+		if _, err := fmt.Fprintf(out, "Target: %s (%s)%s\n", target.Name, target.Portfile, origin); err != nil {
 			return err
+		}
+		if len(variants) > 0 {
+			if _, err := fmt.Fprintf(out, "Variants: %s\n", strings.Join(variants, " ")); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

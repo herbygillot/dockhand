@@ -21,6 +21,7 @@ import (
 
 type boundPorts struct {
 	targetName string
+	selection  macports.Selection
 	seenRoot   string
 	seenBytes  string
 	err        error
@@ -29,6 +30,7 @@ type boundPorts struct {
 
 func (p *boundPorts) Resolve(ctx context.Context, tree macports.Tree, sel macports.Selection) ([]record.Target, error) {
 	p.seenRoot = tree.Root()
+	p.selection = sel
 	data, err := os.ReadFile(filepath.Join(tree.Root(), "devel/fixture/Portfile"))
 	if err != nil {
 		return nil, err
@@ -36,9 +38,12 @@ func (p *boundPorts) Resolve(ctx context.Context, tree macports.Tree, sel macpor
 	p.seenBytes = string(data)
 	name := p.targetName
 	if name == "" {
-		name = "fixture"
+		name = sel.Subport
+		if name == "" {
+			name = "fixture"
+		}
 	}
-	return []record.Target{{Name: name, Portfile: "devel/fixture/Portfile", Variants: sel.Variants}}, p.err
+	return []record.Target{{Name: name, Portfile: "devel/fixture/Portfile", Subport: sel.Subport, Variants: sel.Variants}}, p.err
 }
 func (p *boundPorts) Evaluate(ctx context.Context, c macports.Context) (macports.Snapshot, error) {
 	if p.onEvaluate != nil {

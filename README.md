@@ -66,12 +66,16 @@ dockhand verify jq --branch update-jq --image dockhand-base-tahoe
 dockhand wait <job_id> --trace
 # Or submit and stay attached in one invocation:
 dockhand verify jq --branch update-jq --image dockhand-base-tahoe --wait
+# A tracked contribution supplies the target when it is omitted:
+dockhand verify --branch update-jq --image dockhand-base-tahoe --wait
 
 dockhand cancel <job_id> --wait
 dockhand start
 ```
 
-Omitting `--branch` captures tracked working-tree contents, including staged additions and deletions, without changing the index or branch. New files must be staged; explicit `--branch` uses committed contents. The accepted snapshot stays fixed while editing continues; each invocation selects one port directory or unique directory name, optionally `--subport` and repeated `--variant` choices. This first CLI uses job IDs for wait/cancel. General selectors and branch-only port inference remain later work. A tracked contribution retains its edited targets; verification may select a different target without redefining that contribution.
+Omitting `--branch` captures tracked working-tree contents, including staged additions and deletions, without changing the index or branch. New files must be staged; explicit `--branch` uses committed contents. The accepted snapshot stays fixed while editing continues; each invocation selects one port directory or unique directory name, optionally `--subport` and repeated `--variant` choices. This first CLI uses job IDs for wait/cancel. General selectors remain later work. A tracked contribution retains its edited targets; verification may select a different target without redefining that contribution.
+
+Omit the port on an open tracked contribution to reuse its single target, subport, and variant choices. Explicit variant flags override the recorded choices; supplying a port starts from that port's defaults. Inference checks the selected tree against the recorded contribution base and asks for an explicit port if changes extend outside its directory. Untracked branches and detached checkouts require an explicit port. See the [inference report](docs/activity/2026-09-13-verification-target-inference.md).
 
 Matching passing verification is reused when the complete source tree, target, variants, image, verifier implementation, and build settings agree. You can verify edits, commit the same contents, and verify that branch without another build. Status cites the original attempt. Use `verify --fresh` to require a new execution; reattaching with `wait` preserves the existing decision. Older results without a recorded verifier identity require a fresh build before they can be reused.
 

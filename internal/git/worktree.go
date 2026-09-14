@@ -82,14 +82,11 @@ func (r *Repository) CaptureCheckout(ctx context.Context) (Checkout, error) {
 		return Checkout{}, err
 	}
 	result := Checkout{Branch: branch, Head: head, Tree: strings.TrimSpace(string(tree))}
-	changes, err := r.output(ctx, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", original[head], result.Tree, "--")
+	result.ModifiedPaths, err = r.ChangedPaths(ctx, original[head], result.Tree)
 	if err != nil {
 		return Checkout{}, err
 	}
-	result.ModifiedFiles = bytes.Count(changes, []byte{0})
-	if len(changes) > 0 {
-		result.ModifiedPaths = strings.Split(strings.TrimSuffix(string(changes), "\x00"), "\x00")
-	}
+	result.ModifiedFiles = len(result.ModifiedPaths)
 	if len(untracked) > 0 {
 		result.Untracked = strings.Split(strings.TrimSuffix(string(untracked), "\x00"), "\x00")
 	}

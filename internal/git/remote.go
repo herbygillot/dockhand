@@ -98,17 +98,8 @@ func (r *Repository) Contribution(ctx context.Context, base, commit string) (str
 	if err != nil {
 		return "", nil, err
 	}
-	diff, err := r.output(ctx, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", base, commit, "--")
-	if err != nil {
-		return "", nil, err
-	}
-	var paths []string
-	for _, name := range bytes.Split(diff, []byte{0}) {
-		if len(name) > 0 {
-			paths = append(paths, string(name))
-		}
-	}
-	return strings.TrimSpace(string(message)), paths, nil
+	paths, err := r.ChangedPaths(ctx, base, commit)
+	return strings.TrimSpace(string(message)), paths, err
 }
 
 // CheckContributionBase obtains the selected base without writing FETCH_HEAD

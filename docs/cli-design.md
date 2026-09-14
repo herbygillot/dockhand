@@ -38,7 +38,7 @@ dockhand db check
 ## Implemented verification commands
 
 ```text
-dockhand verify <port> --image <prepared-local-image> [--branch <branch>]
+dockhand verify [port] --image <prepared-local-image> [--branch <branch>]
     [--subport <name>] [--variant +name|--variant=-name ...]
     [--capacity <positive-limit>] [--tests declared|skip]
     [--from-source] [--fresh] [--wait|--trace]
@@ -47,7 +47,7 @@ dockhand cancel <job_id> [--reason <text>] [--wait]
 dockhand start
 ```
 
-`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. Omitting `--branch` captures current working-tree contents; detached HEAD is supported when a HEAD commit exists. Supplying `--branch`, even the current branch name, selects committed contents. Output identifies the input kind, branch or detached source, HEAD/commit, modified-file count, selected target, and accepted tree. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Branch-only inference and multi-target selectors remain future work.
+`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. Omitting `--branch` captures current working-tree contents; detached HEAD is supported when a HEAD commit exists. Supplying `--branch`, even the current branch name, selects committed contents. Output identifies the input kind, branch or detached source, HEAD/commit, modified-file count, selected target, and accepted tree. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Omitting the port infers the single target of an open tracked contribution, as specified below. Multi-target selectors remain future work.
 
 The prepared image is currently selected explicitly with `--image` (or through the Go application's configured default). General Git configuration loading remains separate work. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `--capacity` may establish another positive limit. An existing pool's limit and directory must agree. Omission reuses the recorded limit. Image availability and platform checks are distinct from admission capacity.
 
@@ -112,7 +112,13 @@ The source defaults to the current local branch; `--branch` selects another comm
 
 ## Approved source selection and human edits
 
-Working-tree capture and standalone verification without an exclusive branch association are implemented. The commands above still require one explicit port selector; inferred target scope and the broader wait/cancel selectors below remain future work.
+Working-tree capture, standalone verification, and single-target inference from a tracked contribution are implemented. Broader target selectors and the wait/cancel branch selectors below remain future work.
+
+When the port is omitted, the selected branch must belong to an open contribution with one recorded target. Its Portfile, evaluated name, subport, and variant choices supply the default. `--subport` selects another subport in that Portfile; explicit `--variant` choices override matching recorded choices while preserving the rest. Supplying a port explicitly starts from its defaults and supplied flags, without inheriting the contribution target's choices.
+
+Inference compares the whole selected source tree with the recorded contribution base. Every changed path must stay within that port directory; another port, shared resources, or unrelated repository edits require an explicit port. Rename detection is disabled so both sides of a move count. An unavailable base or changed evaluated target identity also requires explicit selection. This conservative first rule can require an explicit port after a rebase introduces upstream changes elsewhere. Untracked branches, detached checkouts, and zero/multiple recorded targets never guess from HEAD or the latest job.
+
+The CLI identifies inferred selection and displays effective variants before acceptance. Binding freezes the source and resolved target; acceptance rechecks contribution/revision identity and the recorded target used for inference. If another process changes the target without changing its revision, acceptance still fails rather than silently adopting a different scope. The driver receives an explicit target and uses ordinary verification/reuse.
 
 The branch is the everyday handle for a tracked contribution; job IDs identify exact executions. Users can edit, commit, and rebase with ordinary Git commands, then ask Dockhand to verify or publish without a separate adoption step for every edit. A renamed or missing tracked branch requires an actionable error rather than silent reassociation.
 

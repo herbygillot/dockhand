@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"strings"
 	"time"
@@ -20,6 +21,9 @@ type BranchInput struct {
 	Name             string
 	ExpectedChange   record.ChangeID
 	ExpectedRevision record.RevisionID
+	// InferredTarget is the recorded contribution target used for inference.
+	// Acceptance rechecks it even if the contribution revision has not changed.
+	InferredTarget *record.Target `json:",omitempty"`
 }
 
 type VerificationRequest struct {
@@ -78,6 +82,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	}
 	branch := BranchInput{Name: request.Branch}
 	var base record.ObjectID
+	var contribution record.Change
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
 		if request.Branch == "" {
 			return nil
@@ -98,6 +103,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		}
 		branch.ExpectedChange, branch.ExpectedRevision = change.ID, revision.ID
 		base = revision.Source.Base
+		contribution = change
 		return nil
 	})
 	if err != nil {
@@ -108,17 +114,40 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	var evaluation macports.Snapshot
 	var provenance *record.Checkout
 	if checkout == nil {
-		source, targets, evaluation, err = e.bindBranchSource(ctx, request.Branch, request.Selection, request.Build.Platform, base)
+		commit, tree, branchErr := e.Repo.Branch(ctx, request.Branch)
+		if branchErr != nil {
+			return BoundVerification{}, branchErr
+		}
+		source = record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: base}
 	} else {
 		source = record.Source{Tree: record.ObjectID(checkout.Tree), Base: base}
 		if checkout.ModifiedFiles == 0 {
 			source.Commit = record.ObjectID(checkout.Head)
 		}
 		provenance = &record.Checkout{Branch: checkout.Branch, Head: record.ObjectID(checkout.Head), ModifiedFiles: checkout.ModifiedFiles}
-		targets, evaluation, err = e.bindSnapshot(ctx, source, request.Selection, request.Build.Platform, checkout.Untracked)
 	}
+	var inferred *record.Target
+	if request.Selection.Selector == "" {
+		target, inferErr := e.inferVerificationTarget(ctx, source, contribution, request.Selection)
+		if inferErr != nil {
+			return BoundVerification{}, inferErr
+		}
+		inferred = &target
+		original := contribution.Targets[0]
+		original.Variants = maps.Clone(original.Variants)
+		branch.InferredTarget = &original
+		request.Selection = macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants}
+	}
+	var untracked []string
+	if checkout != nil {
+		untracked = checkout.Untracked
+	}
+	targets, evaluation, err = e.bindSnapshot(ctx, source, request.Selection, request.Build.Platform, untracked)
 	if err != nil {
 		return BoundVerification{}, err
+	}
+	if inferred != nil && targetKey(targets[0]) != targetKey(*inferred) {
+		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)
 	}
 	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
@@ -137,6 +166,9 @@ func validateBranchInput(branch *BranchInput, spec record.JobSpec) error {
 	}
 	if !git.ValidBranchName(branch.Name) || (spec.Action != record.Verify && spec.Action != record.Publish) || spec.InputRevision != "" || spec.ChangeID != "" || len(spec.Targets) != 1 || spec.Build == nil || (branch.ExpectedChange == "") != (branch.ExpectedRevision == "") {
 		return fmt.Errorf("%w: branch adoption requires one frozen verification input and matching revision preconditions", ErrInvalidRequest)
+	}
+	if branch.InferredTarget != nil && (spec.Action != record.Verify || branch.ExpectedChange == "" || branch.InferredTarget.Portfile != spec.Targets[0].Portfile) {
+		return fmt.Errorf("%w: inferred verification requires a tracked contribution target", ErrInvalidRequest)
 	}
 	if spec.Action == record.Publish && (spec.Source.Commit == "" || spec.Source.Base == "" || spec.Publication == nil || spec.Publication.HeadBranch != branch.Name) {
 		return ErrInvalidRequest
@@ -157,6 +189,9 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 	}
 	if change.ID != input.ExpectedChange || change.CurrentRevision != input.ExpectedRevision {
 		return record.JobSpec{}, fmt.Errorf("%w: tracked branch %s changed while binding", ErrStaleRevision, input.Name)
+	}
+	if input.InferredTarget != nil && (len(change.Targets) != 1 || targetKey(change.Targets[0]) != targetKey(*input.InferredTarget)) {
+		return record.JobSpec{}, fmt.Errorf("%w: tracked targets changed while binding; run verify again", ErrStaleRevision)
 	}
 	if change.ID == "" && spec.Action != record.Publish {
 		return spec, nil

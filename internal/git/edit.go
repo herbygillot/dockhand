@@ -194,3 +194,19 @@ func (r *Repository) DiffTrees(ctx context.Context, before, after string) ([]byt
 	}
 	return r.output(ctx, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--binary", "--src-prefix=a/", "--dst-prefix=b/", before, after, "--")
 }
+
+// ChangedPaths compares immutable commits or trees without rename folding, so
+// moving a file exposes both its original and new paths to scope decisions.
+func (r *Repository) ChangedPaths(ctx context.Context, before, after string) ([]string, error) {
+	if !ValidObjectID(before) || !ValidObjectID(after) {
+		return nil, fmt.Errorf("git: changed paths require literal object IDs")
+	}
+	out, err := r.output(ctx, "diff-tree", "--no-commit-id", "--name-only", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-relative", "--ignore-submodules=none", "-r", "-z", before, after, "--")
+	if err != nil || len(out) == 0 {
+		return nil, err
+	}
+	if out[len(out)-1] != 0 {
+		return nil, fmt.Errorf("git: unterminated changed path")
+	}
+	return strings.Split(string(out[:len(out)-1]), "\x00"), nil
+}

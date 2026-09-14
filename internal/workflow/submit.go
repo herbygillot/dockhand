@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -54,6 +55,15 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 	spec, err := normalizeSpec(request.Spec)
 	if err != nil {
 		return Receipt{}, err
+	}
+	if request.Branch != nil {
+		branch := *request.Branch
+		if branch.InferredTarget != nil {
+			target := *branch.InferredTarget
+			target.Variants = maps.Clone(target.Variants)
+			branch.InferredTarget = &target
+		}
+		request.Branch = &branch
 	}
 	if err := validateBranchInput(request.Branch, spec); err != nil {
 		return Receipt{}, err
