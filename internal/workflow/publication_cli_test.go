@@ -42,6 +42,9 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch r.URL.Path {
+		case "/user":
+			assert.Equal(t, "Bearer fixture", r.Header.Get("Authorization"))
+			fmt.Fprint(w, `{"login":"author"}`)
 		case "/repos/author/ports":
 			fmt.Fprint(w, `{"full_name":"author/ports","default_branch":"main","clone_url":"https://github.com/author/ports.git","fork":false}`)
 		case "/repos/author/ports/pulls":
@@ -63,7 +66,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	config := app.Config{DBPath: f.store.Path(), Repository: f.repo.Root, GitExecutable: wrapper, GitHub: github.Config{BaseURL: server.URL, Token: "fixture"}}
+	config := app.Config{DBPath: f.store.Path(), Repository: f.repo.Root, GitExecutable: wrapper, GitHub: github.Config{BaseURL: server.URL}}
 	var output, diagnostics bytes.Buffer
 	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--dry-run", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.NoError(t, err, "%s", diagnostics.String())
@@ -78,6 +81,17 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	head, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
 	require.NoError(t, err)
 	require.False(t, head.Exists)
+	output.Reset()
+	diagnostics.Reset()
+	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
+	require.ErrorIs(t, err, github.ErrAuthentication)
+	afterRejected, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Len(t, afterRejected.Jobs, 1, "failed authentication must not accept a publication job")
+	head, err = f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+	require.NoError(t, err)
+	require.False(t, head.Exists)
+	config.GitHub.Token = "fixture"
 	output.Reset()
 	diagnostics.Reset()
 	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--wait", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)

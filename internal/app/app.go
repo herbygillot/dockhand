@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -64,12 +63,6 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	}
 
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
-	if config.GitHub.Token == "" {
-		config.GitHub.Token = os.Getenv("GH_TOKEN")
-		if config.GitHub.Token == "" {
-			config.GitHub.Token = os.Getenv("GITHUB_TOKEN")
-		}
-	}
 	githubClient := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
 	discovery := &upstream.Service{Ports: ports, Repositories: githubClient, Versions: ports}
 	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery}

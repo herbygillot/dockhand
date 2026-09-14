@@ -21,6 +21,16 @@ type PublicationRequest struct {
 // BindPublication freezes committed source, applicable evidence, and remote
 // preconditions without adopting a branch. Submit owns durable adoption.
 func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) (Request, error) {
+	return e.bindPublication(ctx, input, true)
+}
+
+// PlanPublication produces the same publication intent without requiring a
+// write credential. It is used only for previews that are never submitted.
+func (e *Engine) PlanPublication(ctx context.Context, input PublicationRequest) (Request, error) {
+	return e.bindPublication(ctx, input, false)
+}
+
+func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, authenticate bool) (Request, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
 		return Request{}, ErrNoState
 	}
@@ -42,6 +52,11 @@ func (e *Engine) BindPublication(ctx context.Context, input PublicationRequest) 
 	}
 	if registered.ID != e.Repository {
 		return Request{}, ErrInvalidRequest
+	}
+	if authenticate {
+		if err := e.Publisher.Preflight(ctx); err != nil {
+			return Request{}, err
+		}
 	}
 	if input.Branch == "" {
 		input.Branch, err = e.Repo.CurrentBranch(ctx)

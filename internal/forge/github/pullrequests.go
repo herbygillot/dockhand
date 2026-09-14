@@ -92,7 +92,7 @@ func (c *Client) Create(ctx context.Context, input forge.PullRequestInput) (forg
 	if !validQuery(forge.PullRequestQuery{Repository: input.Repository, HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch}) || input.Desired.Title == "" || input.ExistingPR != nil {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: invalid pull-request input", forge.ErrRejected)
 	}
-	client, err := c.api()
+	client, err := c.authenticatedAPI(ctx)
 	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}
@@ -112,7 +112,7 @@ func (c *Client) Update(ctx context.Context, input forge.PullRequestInput) (forg
 	if input.ExistingPR == nil || input.ExistingPR.Forge != "github" || input.ExistingPR.Repository != input.Repository || input.ExistingPR.Number <= 0 || !validQuery(forge.PullRequestQuery{Repository: input.Repository, HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch}) || input.Desired.Title == "" {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: invalid pull-request input", forge.ErrRejected)
 	}
-	client, err := c.api()
+	client, err := c.authenticatedAPI(ctx)
 	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}

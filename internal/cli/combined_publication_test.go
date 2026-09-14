@@ -52,6 +52,9 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				switch r.URL.Path {
+				case "/user":
+					assert.Equal(t, "Bearer fixture", r.Header.Get("Authorization"))
+					fmt.Fprint(w, `{"login":"author"}`)
 				case "/repos/author/ports":
 					fmt.Fprint(w, `{"full_name":"author/ports","default_branch":"main","clone_url":"https://github.com/author/ports.git","fork":false}`)
 				case "/repos/author/ports/pulls":

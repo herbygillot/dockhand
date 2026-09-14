@@ -206,6 +206,9 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		if remote != expected {
 			return &git.RefConflict{Name: spec.HeadBranch, Expected: expected, Actual: remote}
 		}
+		if err := s.Preflight(ctx); err != nil {
+			return err
+		}
 		if err := c.authorizePublication(ctx, job, false); err != nil {
 			return err
 		}
@@ -216,6 +219,9 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 	}
 	if observed.Found && observed.PullRequest.RemoteHead != spec.Desired.Head {
 		return c.publicationRetry(ctx, job, "Waiting for the forge to observe the pushed branch")
+	}
+	if err := s.Preflight(ctx); err != nil {
+		return err
 	}
 	if err := c.authorizePublication(ctx, job, true); err != nil {
 		return err

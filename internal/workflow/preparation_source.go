@@ -62,6 +62,10 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 			return BoundPreparation{}, err
 		}
 		call, cancel := context.WithTimeout(ctx, timeouts.Publish)
+		if err := e.Publisher.Preflight(call); err != nil {
+			cancel()
+			return BoundPreparation{}, err
+		}
 		resolved, err := e.Publisher.Destination(call, request.Publication)
 		cancel()
 		if err != nil {

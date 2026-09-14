@@ -28,9 +28,15 @@ type publicationForge struct {
 	writes      int
 	writeErr    error
 	onFind      func()
+	authErr     error
+	authCalls   int
 }
 
 func (p *publicationForge) Name() string { return "fixture" }
+func (p *publicationForge) Authenticate(context.Context) error {
+	p.authCalls++
+	return p.authErr
+}
 func (p *publicationForge) NameFromRemote(remote string) (string, error) {
 	if remote != p.remote {
 		return "", fmt.Errorf("unexpected remote")
@@ -190,10 +196,52 @@ func TestPublicationRecoversLostPRResponseWithoutAnotherWrite(t *testing.T) {
 	f.run(t, id)
 	f.run(t, id)
 	require.Equal(t, record.PublicationUncertain, f.status(t, id).Jobs[0].Publications[0].State)
+	hosting.authErr = errors.New("credential removed")
 	f.cancel(t, id)
 	f.run(t, id)
 	require.Equal(t, record.JobCompleted, f.status(t, id).Jobs[0].Job.State)
 	require.Equal(t, 1, hosting.writes)
+}
+
+func TestPublicationAuthenticationPrecedesAcceptanceAndRemoteEffects(t *testing.T) {
+	t.Run("acceptance", func(t *testing.T) {
+		f, hosting := publicationFixture(t)
+		hosting.authErr = fmt.Errorf("%w: credential missing", forge.ErrAuthentication)
+		_, err := f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "denied", Branch: "candidate"})
+		require.ErrorIs(t, err, publish.ErrPrecondition)
+		require.Equal(t, 1, hosting.authCalls)
+		remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+		require.NoError(t, err)
+		require.False(t, remote.Exists)
+		require.Zero(t, hosting.writes)
+	})
+	t.Run("push", func(t *testing.T) {
+		f, hosting := publicationFixture(t)
+		request := bindPublication(t, f, "publish")
+		hosting.authErr = fmt.Errorf("%w: credential removed", forge.ErrAuthentication)
+		receipt, err := f.engine.Submit(t.Context(), request)
+		require.NoError(t, err)
+		f.run(t, receipt.JobID)
+		status := f.status(t, receipt.JobID)
+		require.Equal(t, record.JobNeedsAttention, status.Jobs[0].Job.State)
+		require.False(t, status.Jobs[0].Publications[0].PushStarted)
+		remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+		require.NoError(t, err)
+		require.False(t, remote.Exists)
+		require.Zero(t, hosting.writes)
+	})
+	t.Run("pull request", func(t *testing.T) {
+		f, hosting := publicationFixture(t)
+		id := submitPublication(t, f, "publish")
+		f.run(t, id)
+		hosting.authErr = fmt.Errorf("%w: credential removed", forge.ErrAuthentication)
+		f.run(t, id)
+		status := f.status(t, id)
+		require.Equal(t, record.JobNeedsAttention, status.Jobs[0].Job.State)
+		require.True(t, status.Jobs[0].Publications[0].PushStarted)
+		require.False(t, status.Jobs[0].Publications[0].WriteStarted)
+		require.Zero(t, hosting.writes)
+	})
 }
 
 func TestPublicationUnknownRequestIsObservationOnlyEvenAfterCancellation(t *testing.T) {

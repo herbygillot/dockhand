@@ -9,6 +9,7 @@ import (
 )
 
 var ErrRejected = errors.New("forge: remote write was rejected")
+var ErrAuthentication = errors.New("forge: authentication is required")
 
 var ErrNotFound = errors.New("forge: requested object was not found")
 var ErrIncomplete = errors.New("forge: incomplete repository evidence")

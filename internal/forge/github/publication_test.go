@@ -121,7 +121,7 @@ func TestGitHubWritesDistinguishRejectionFromUnknownOutcomesAndDoNotRedirect(t *
 				w.WriteHeader(status)
 			}))
 			defer server.Close()
-			client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+			client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
 			_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
 			require.Error(t, err)
 			require.Equal(t, 1, calls)
@@ -222,7 +222,7 @@ func TestRepositoryInfoUsesTheReturnedCloneURL(t *testing.T) {
 }
 
 func TestCanceledPublicationWriteRemainsUncertain(t *testing.T) {
-	client := &github.Client{HTTP: &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return nil, context.Canceled })}}
+	client := &github.Client{HTTP: &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return nil, context.Canceled })}, Config: github.Config{Token: "fixture-token"}}
 	_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
 	require.ErrorIs(t, err, context.Canceled)
 	require.NotErrorIs(t, err, forge.ErrRejected)
