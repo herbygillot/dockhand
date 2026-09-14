@@ -54,7 +54,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	}
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	githubClient := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
-	service := prepare.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient)}
+	service := prepare.Service{Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
 	input := prepare.Request{
 		Action: request.Action, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)},
 		Selection: request.Selection, Version: request.Version, Reason: request.Reason,

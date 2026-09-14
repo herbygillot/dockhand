@@ -26,6 +26,7 @@ namespace eval ::dockhand {
                 livecheck.version go.vendors go.version go.package go.domain go.offline_build go.toolchain_min
                 cargo.crates cargo.crates_github
                 github.author github.project github.version github.tag_prefix github.tag_suffix github.tarball_from
+                gitlab.author gitlab.project gitlab.version gitlab.tag_prefix gitlab.tag_suffix gitlab.instance
                 git.url git.branch
                 use_xcode
             } {

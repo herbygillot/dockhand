@@ -19,6 +19,7 @@ type Forge string
 
 const (
 	GitHub Forge = "github"
+	GitLab Forge = "gitlab"
 )
 
 type Catalog string
@@ -61,10 +62,15 @@ type Spec struct {
 }
 
 func Interpret(port macports.PortInfo) (Spec, error) {
-	if !present(port, "github.author") {
-		return Spec{}, fmt.Errorf("%w: require a GitHub source PortGroup", ErrUnsupported)
+	github := present(port, "github.author")
+	gitlab := present(port, "gitlab.author")
+	if github == gitlab {
+		return Spec{}, fmt.Errorf("%w: require exactly one recognized source PortGroup", ErrUnsupported)
 	}
-	return interpret(port)
+	if github {
+		return interpret(port, GitHub, "github", "https://github.com")
+	}
+	return interpret(port, GitLab, "gitlab", port.Options["gitlab.instance"])
 }
 
 func Discover(port macports.PortInfo) (Spec, error) {
@@ -84,25 +90,36 @@ func Discover(port macports.PortInfo) (Spec, error) {
 	if spec.Livecheck.Type != "regex" || spec.Livecheck.Regex == "" || spec.Livecheck.Version != spec.CurrentVersion {
 		return Spec{}, fmt.Errorf("%w: require a regex livecheck for the evaluated port version", ErrUnsupported)
 	}
-	if err := evaluated(port, "github.tarball_from"); err != nil {
-		return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
-	}
-	mode := port.Options["github.tarball_from"]
-	if mode == "" {
-		mode = "archive"
-	}
-	if mode != "releases" && mode != "archive" && mode != "tarball" {
-		return Spec{}, fmt.Errorf("%w: unknown GitHub archive mode", ErrUnsupported)
-	}
-	if mode == "releases" {
-		spec.Catalog = Releases
-	}
-	expected, err := spec.tagsURL()
-	if err != nil {
-		return Spec{}, err
-	}
-	if trimURL(spec.Livecheck.URL) != trimURL(expected) {
-		return Spec{}, fmt.Errorf("%w: livecheck does not inspect the GitHub tags page", ErrUnsupported)
+	switch spec.Forge {
+	case GitHub:
+		if err := evaluated(port, "github.tarball_from"); err != nil {
+			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		}
+		mode := port.Options["github.tarball_from"]
+		if mode == "" {
+			mode = "archive"
+		}
+		if mode != "releases" && mode != "archive" && mode != "tarball" {
+			return Spec{}, fmt.Errorf("%w: unknown GitHub archive mode", ErrUnsupported)
+		}
+		if mode == "releases" {
+			spec.Catalog = Releases
+		}
+		expected, err := spec.tagsURL()
+		if err != nil {
+			return Spec{}, err
+		}
+		if trimURL(spec.Livecheck.URL) != trimURL(expected) {
+			return Spec{}, fmt.Errorf("%w: livecheck does not inspect the GitHub tags page", ErrUnsupported)
+		}
+	case GitLab:
+		expected, err := spec.tagsURL()
+		if err != nil {
+			return Spec{}, err
+		}
+		if trimURL(spec.Livecheck.URL) != trimURL(expected) {
+			return Spec{}, fmt.Errorf("%w: livecheck does not inspect the GitLab tags feed", ErrUnsupported)
+		}
 	}
 	return spec, nil
 }
@@ -112,10 +129,15 @@ func (s Spec) MatchText(tag string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if s.Forge != GitHub {
+	switch s.Forge {
+	case GitHub:
+		return appendPath(web, "archive", "refs", "tags", tag+".tar.gz")
+	case GitLab:
+		value, err := appendPath(web, "-", "tags", tag)
+		return value + "</id>", err
+	default:
 		return "", fmt.Errorf("%w: %s", ErrUnsupported, s.Forge)
 	}
-	return appendPath(web, "archive", "refs", "tags", tag+".tar.gz")
 }
 
 func (s Spec) EvidenceURL(tag string) (string, error) {
@@ -123,12 +145,17 @@ func (s Spec) EvidenceURL(tag string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if s.Forge == GitLab {
+		return appendPath(web, "-", "tags", tag)
+	}
 	return appendPath(web, "archive", "refs", "tags", tag+".tar.gz")
 }
 
-func interpret(port macports.PortInfo) (Spec, error) {
-	prefix := "github"
+func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Spec, error) {
 	keys := []string{prefix + ".author", prefix + ".project", prefix + ".version", prefix + ".tag_prefix", prefix + ".tag_suffix", "git.branch"}
+	if forge == GitLab {
+		keys = append(keys, "gitlab.instance")
+	}
 	for _, key := range keys {
 		if err := evaluated(port, key); err != nil {
 			return Spec{}, err
@@ -149,15 +176,19 @@ func interpret(port macports.PortInfo) (Spec, error) {
 	if port.Options["git.branch"] != pattern.Tag(port.Version) {
 		return Spec{}, ErrTagPattern
 	}
-	instance, err := normalizeInstance("https://github.com")
+	instance, err := normalizeInstance(instance)
 	if err != nil {
 		return Spec{}, err
 	}
 	repository := port.Options[prefix+".author"] + "/" + port.Options[prefix+".project"]
-	if !validPath(repository, 2) {
+	segments := 2
+	if forge == GitLab {
+		segments = 0
+	}
+	if !validPath(repository, segments) {
 		return Spec{}, fmt.Errorf("macports source: invalid %s repository %q", prefix, repository)
 	}
-	return Spec{Forge: GitHub, Instance: instance, Repository: repository, CurrentVersion: port.Version, Pattern: pattern, Catalog: Tags}, nil
+	return Spec{Forge: forge, Instance: instance, Repository: repository, CurrentVersion: port.Version, Pattern: pattern, Catalog: Tags}, nil
 }
 
 func evaluated(port macports.PortInfo, key string) error {
@@ -208,6 +239,10 @@ func (s Spec) tagsURL() (string, error) {
 	web, err := s.webURL()
 	if err != nil {
 		return "", err
+	}
+	if s.Forge == GitLab {
+		value, err := appendPath(web, "-", "tags")
+		return value + "?format=atom", err
 	}
 	return appendPath(web, "tags")
 }

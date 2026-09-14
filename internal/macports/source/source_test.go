@@ -18,6 +18,15 @@ func githubPort() macports.PortInfo {
 	}}
 }
 
+func gitlabPort() macports.PortInfo {
+	return macports.PortInfo{Name: "fixture", Version: "2.0", Options: map[string]string{
+		"gitlab.author": "group/subgroup", "gitlab.project": "project", "gitlab.version": "2.0",
+		"gitlab.tag_prefix": "v", "gitlab.tag_suffix": "", "gitlab.instance": "https://gitlab.example.com/root/",
+		"git.branch": "v2.0", "livecheck.type": "regex", "livecheck.url": "https://gitlab.example.com/root/group/subgroup/project/-/tags?format=atom",
+		"livecheck.regex": `{tags/v([^<]+)</id>}`, "livecheck.version": "2.0",
+	}}
+}
+
 func TestGitHubSourceSeparatesPortfileConventionFromRemoteAccess(t *testing.T) {
 	spec, err := source.Discover(githubPort())
 	require.NoError(t, err)
@@ -34,6 +43,21 @@ func TestGitHubSourceSeparatesPortfileConventionFromRemoteAccess(t *testing.T) {
 	require.Equal(t, "https://github.com/owner/project/archive/refs/tags/release/3.0-stable.tar.gz", match)
 }
 
+func TestGitLabSourceRetainsInstanceNamespaceAndAtomMatchText(t *testing.T) {
+	spec, err := source.Discover(gitlabPort())
+	require.NoError(t, err)
+	require.Equal(t, source.GitLab, spec.Forge)
+	require.Equal(t, source.Tags, spec.Catalog)
+	require.Equal(t, "https://gitlab.example.com/root", spec.Instance)
+	require.Equal(t, "group/subgroup/project", spec.Repository)
+	match, err := spec.MatchText("v3.0")
+	require.NoError(t, err)
+	require.Equal(t, "https://gitlab.example.com/root/group/subgroup/project/-/tags/v3.0</id>", match)
+	evidence, err := spec.EvidenceURL("v3.0")
+	require.NoError(t, err)
+	require.Equal(t, "https://gitlab.example.com/root/group/subgroup/project/-/tags/v3.0", evidence)
+}
+
 func TestSourceURLsEscapeTagData(t *testing.T) {
 	spec, err := source.Interpret(githubPort())
 	require.NoError(t, err)
@@ -48,6 +72,7 @@ func TestSourceURLsEscapeTagData(t *testing.T) {
 func TestSourceInterpretationRejectsAmbiguousOrInconsistentMetadata(t *testing.T) {
 	for _, mutate := range []func(*macports.PortInfo){
 		func(port *macports.PortInfo) { delete(port.Options, "github.author") },
+		func(port *macports.PortInfo) { port.Options["gitlab.author"] = "other" },
 		func(port *macports.PortInfo) { port.Options["git.branch"] = "other" },
 		func(port *macports.PortInfo) { port.OptionErrors = map[string]string{"github.version": "failed"} },
 	} {

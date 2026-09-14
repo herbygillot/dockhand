@@ -40,7 +40,7 @@ func versionEdits(src []byte, current, next string, revision int) ([]byte, error
 			return nil, fmt.Errorf("%w: custom fetch commands require a dedicated preparer", ErrUnsupported)
 		case "version":
 			versions = append(versions, cmd)
-		case "github.setup", "go.setup":
+		case "github.setup", "gitlab.setup", "go.setup":
 			setups = append(setups, cmd)
 		case "revision":
 			revisions = append(revisions, cmd)

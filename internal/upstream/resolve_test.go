@@ -20,7 +20,7 @@ func (f tagFunc) Repository(_ string, name string) (forge.Repository, error) {
 }
 
 func serviceWithCatalog(c upstream.Catalog) upstream.Service {
-	return upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c}}
+	return upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}}
 }
 
 type tagRepository struct {
@@ -68,6 +68,30 @@ func TestResolveUsesObservedTagsAndChecksRecordedCommit(t *testing.T) {
 			require.ErrorIs(t, service.Check(t.Context(), githubPort(), release), upstream.ErrSourceChanged)
 		})
 	}
+}
+
+func TestResolveRecordsGitLabSourceIdentity(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	service := serviceWithCatalog(tagFunc(func(_ context.Context, repository, tag string) (forge.Tag, error) {
+		require.Equal(t, "group/project", repository)
+		if tag != "v2.0" {
+			return forge.Tag{}, forge.ErrNotFound
+		}
+		return forge.Tag{Name: tag, Commit: commit}, nil
+	}))
+	port := macports.PortInfo{Name: "fixture", Version: "1.0", Options: map[string]string{
+		"gitlab.author": "group", "gitlab.project": "project", "gitlab.version": "1.0",
+		"gitlab.tag_prefix": "v", "gitlab.tag_suffix": "", "gitlab.instance": "https://gitlab.example",
+		"git.branch": "v1.0",
+	}}
+	release, err := service.Resolve(t.Context(), port, "2.0")
+	require.NoError(t, err)
+	require.Equal(t, "gitlab", release.Forge)
+	require.Equal(t, "https://gitlab.example", release.Instance)
+	require.Equal(t, "group/project", release.Repository)
+	require.Equal(t, "v2.0", release.Tag)
+	require.Equal(t, commit, release.Commit)
+	require.NoError(t, service.Check(t.Context(), port, release))
 }
 
 func TestResolveDoesNotHideFailuresOrAmbiguity(t *testing.T) {

@@ -45,6 +45,9 @@ func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc)
 	if style == "setup" {
 		declaration = "github.setup owner fixture 1.0 v\n"
 	}
+	if style == "gitlab-setup" {
+		declaration = "gitlab.setup group/subgroup fixture 1.0 v\n"
+	}
 	if strings.HasPrefix(style, "go-") {
 		declaration = "PortGroup dockhand-go 1.0\ngo.setup github.com/owner/fixture 1.0 v\n"
 		if style == "go-version" {
@@ -57,13 +60,25 @@ func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc)
 	contents := `PortSystem 1.0
 name fixture
 categories devel
-options github.author github.project github.version github.tag_prefix github.tag_suffix git.branch
+options github.author github.project github.version github.tag_prefix github.tag_suffix
+options gitlab.author gitlab.project gitlab.version gitlab.tag_prefix gitlab.tag_suffix gitlab.instance
+options git.branch
 proc github.setup {owner project value prefix} {
  github.author $owner
  github.project $project
  github.version $value
  github.tag_prefix $prefix
  github.tag_suffix ""
+ version $value
+	git.branch ${prefix}${value}
+}
+proc gitlab.setup {owner project value prefix} {
+ gitlab.author $owner
+ gitlab.project $project
+ gitlab.version $value
+ gitlab.tag_prefix $prefix
+ gitlab.tag_suffix ""
+ gitlab.instance https://gitlab.example
  version $value
  git.branch ${prefix}${value}
 }
@@ -104,19 +119,20 @@ pre-fetch {
 	request.Source = record.Source{Tree: record.ObjectID(tree)}
 	request.Action = record.Bump
 	request.Version = "2.0"
-	service.Upstream = &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
+	resolver := releaseTagFunc(func(_ context.Context, repo, name string) (forge.Tag, error) {
 		if name != "v2.0" {
 			return forge.Tag{}, forge.ErrNotFound
 		}
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
-	})}}
+	})
+	service.Upstream = &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: resolver, portsource.GitLab: resolver}}
 	release, err := service.ResolveRelease(t.Context(), request)
 	require.NoError(t, err)
 	request.Release = &release
 	return service, request
 }
 func TestVersionPreparationUpdatesSourceAndChecksumsWithFidelity(t *testing.T) {
-	for _, style := range []string{"literal", "setup", "go-setup", "go-version", "go-check"} {
+	for _, style := range []string{"literal", "setup", "gitlab-setup", "go-setup", "go-version", "go-check"} {
 		t.Run(style, func(t *testing.T) {
 			body := "fixture archive bytes"
 			var requests atomic.Int64

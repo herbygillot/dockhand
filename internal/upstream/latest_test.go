@@ -58,7 +58,7 @@ func automaticService(t *testing.T, c *catalog) *upstream.Service {
 	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})
-	return &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c}, Versions: &macports.Evaluator{Executable: executable}}
+	return &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}, Versions: &macports.Evaluator{Executable: executable}}
 
 }
 
@@ -164,6 +164,25 @@ func TestDiscoveryRecordsMacPortsSourceIdentityAndURL(t *testing.T) {
 	require.Equal(t, string(portsource.GitHub), result.Release.Forge)
 	require.Equal(t, "https://github.com", result.Release.Instance)
 	require.Equal(t, c.Name(), result.Release.Repository)
+}
+
+func TestAutomaticGitLabSelectionUsesTagFeedConvention(t *testing.T) {
+	c := &catalog{tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}}}
+	service := automaticService(t, c)
+	port := macports.PortInfo{Name: "fixture", Version: "1.9", Options: map[string]string{
+		"gitlab.author": "group/subgroup", "gitlab.project": "project", "gitlab.version": "1.9",
+		"gitlab.tag_prefix": "v", "gitlab.tag_suffix": "", "gitlab.instance": "https://gitlab.example.com/root",
+		"git.branch": "v1.9", "livecheck.type": "regex", "livecheck.url": "https://gitlab.example.com/root/group/subgroup/project/-/tags?format=atom",
+		"livecheck.regex": `{tags/v([^<]+)</id>}`, "livecheck.version": "1.9",
+	}}
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, "1.10", result.CandidateVersion)
+	require.Equal(t, "gitlab-tags", result.Evidence[0].Source)
+	require.Equal(t, "https://gitlab.example.com/root/group/subgroup/project/-/tags/v1.10", result.Evidence[0].URL)
+	require.Equal(t, "https://gitlab.example.com/root", c.instance)
+	require.Equal(t, "group/subgroup/project", result.Release.Repository)
+	require.Equal(t, "https://gitlab.example.com/root", result.Release.Instance)
 }
 
 func TestTagDiscoveryNeverConsultsReleases(t *testing.T) {
