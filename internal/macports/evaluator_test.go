@@ -101,6 +101,7 @@ proc releaseSeries {} { global subport; return [lindex [split $subport -] 1] }
 subport terraform-1.4 {
     set patch [expr {2 + 1}]
     version [join [list [releaseSeries] $patch] .]
+    use_xcode yes
 }
 `)
 	targets, err := evaluator.Resolve(t.Context(), tree, Selection{Selector: "sysutils/terraform", Subport: "terraform-1.4"})
@@ -110,6 +111,9 @@ subport terraform-1.4 {
 	snapshot, err := evaluator.Evaluate(t.Context(), source)
 	require.NoError(t, err)
 	require.Equal(t, "1.4.3", snapshot.Ports["terraform-1.4"].Version)
+	requiresXcode, err := snapshot.RequiresXcode()
+	require.NoError(t, err)
+	require.True(t, requiresXcode)
 	require.Contains(t, snapshot.Ports["terraform-1.4"].OptionErrors, "livecheck.url")
 }
 
@@ -178,6 +182,28 @@ func TestDecodeMetadataPreservesTclValuesAndDependencySyntax(t *testing.T) {
 		_, _, err := decodeMetadata(reply)
 		require.Error(t, err)
 	}
+}
+
+func TestSnapshotRequiresXcode(t *testing.T) {
+	makeSnapshot := func(value string) Snapshot {
+		return Snapshot{Target: record.Target{Name: "fixture"}, Ports: map[string]PortInfo{"fixture": {Name: "fixture", Options: map[string]string{"use_xcode": value}}}}
+	}
+	for _, value := range []string{"yes", "true", "1", "on"} {
+		required, err := makeSnapshot(value).RequiresXcode()
+		require.NoError(t, err)
+		require.True(t, required)
+	}
+	for _, value := range []string{"", "no", "false", "0", "off"} {
+		required, err := makeSnapshot(value).RequiresXcode()
+		require.NoError(t, err)
+		require.False(t, required)
+	}
+	_, err := makeSnapshot("perhaps").RequiresXcode()
+	require.ErrorContains(t, err, "invalid use_xcode")
+	snapshot := makeSnapshot("no")
+	snapshot.Ports["fixture"] = PortInfo{Name: "fixture", Options: map[string]string{"use_xcode": "no"}, OptionErrors: map[string]string{"use_xcode": "failed"}}
+	_, err = snapshot.RequiresXcode()
+	require.ErrorContains(t, err, "failed")
 }
 
 func TestStartupErrorsAreNotSuccessfulHandshakes(t *testing.T) {

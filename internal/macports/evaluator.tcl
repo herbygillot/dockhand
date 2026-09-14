@@ -27,6 +27,7 @@ namespace eval ::dockhand {
                 cargo.crates cargo.crates_github
                 github.author github.project github.version github.tag_prefix github.tag_suffix github.tarball_from
                 git.url git.branch
+                use_xcode
             } {
                 if {[$worker eval [list exists $field]]} {
                     if {[catch {$worker eval [list option $field]} value]} {

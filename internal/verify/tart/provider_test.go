@@ -41,12 +41,22 @@ func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
 		Config:  Config{Home: home, ArtifactDirectory: t.TempDir()},
 		backend: newMachine(),
 	}
-	config, err := provider.BuildConfig(t.Context(), testPlatform, record.TestDeclared, false)
+	config, err := provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared})
 	require.NoError(t, err)
 	var settings Config
 	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
 	require.Equal(t, "dockhand-base-tahoe", settings.Image)
 	require.Equal(t, testPlatform, settings.Platform)
+}
+
+func TestBuildConfigSelectsXcodeImageForRequiredTargets(t *testing.T) {
+	provider := &Provider{Config: Config{Home: t.TempDir(), ArtifactDirectory: t.TempDir()}, backend: newMachine()}
+	config, err := provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared, NeedsXcode: true})
+	require.NoError(t, err)
+	require.True(t, config.NeedsXcode)
+	var settings Config
+	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
+	require.Equal(t, "dockhand-xcode-tahoe", settings.Image)
 }
 
 func (m *fakeMachine) Environment(context.Context) (Environment, error) {
@@ -373,7 +383,7 @@ func TestCancellationPreservesAnAlreadyFinishedGuest(t *testing.T) {
 
 func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
 	f, m := singleRun(t)
-	config, err := f.provider.BuildConfig(t.Context(), testPlatform, record.TestSkip, true)
+	config, err := f.provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestSkip, FromSource: true})
 	require.NoError(t, err)
 	f.request.Spec.Config = config
 	p := &Provider{State: f.store, Repository: f.provider.Repository, Repo: f.provider.Repo, Config: Config{Home: f.provider.Config.Home, ArtifactDirectory: f.provider.Config.ArtifactDirectory}, backend: m}

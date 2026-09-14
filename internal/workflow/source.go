@@ -30,10 +30,20 @@ type VerificationRequest struct {
 	Fresh bool
 	ID    record.RequestID
 	// Empty Branch selects the current working tree, including uncommitted edits.
-	Branch    string
-	Selection macports.Selection
-	Build     record.BuildConfig
+	Branch       string
+	Selection    macports.Selection
+	Platform     record.Platform
+	Build        record.BuildConfig
+	ResolveBuild BuildResolver
 }
+
+type BuildResolution struct {
+	Build        *record.BuildConfig
+	Requirements *record.BuildRequirements
+	Problem      string
+}
+
+type BuildResolver func(context.Context, macports.Snapshot) (BuildResolution, error)
 
 type BoundVerification struct {
 	Request    Request
@@ -53,8 +63,16 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if !validToken(string(request.ID)) || (request.Branch != "" && !git.ValidBranchName(request.Branch)) {
 		return BoundVerification{}, ErrInvalidRequest
 	}
-	if err := verify.ValidateConfig(request.Build); err != nil {
-		return BoundVerification{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	if request.ResolveBuild == nil {
+		if err := verify.ValidateConfig(request.Build); err != nil {
+			return BoundVerification{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
+	} else if request.Build.Provider != "" || len(request.Build.ProviderConfig) != 0 {
+		return BoundVerification{}, fmt.Errorf("%w: build configuration and resolver are mutually exclusive", ErrInvalidRequest)
+	}
+	platform := request.Build.Platform
+	if request.ResolveBuild != nil {
+		platform = request.Platform
 	}
 	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
 	if err != nil {
@@ -142,9 +160,25 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if checkout != nil {
 		untracked = checkout.Untracked
 	}
-	targets, evaluation, err = e.bindSnapshot(ctx, source, request.Selection, request.Build.Platform, untracked)
+	targets, evaluation, err = e.bindSnapshot(ctx, source, request.Selection, platform, untracked)
 	if err != nil {
 		return BoundVerification{}, err
+	}
+	if request.ResolveBuild != nil {
+		resolved, resolveErr := request.ResolveBuild(ctx, evaluation)
+		if resolveErr != nil {
+			return BoundVerification{}, resolveErr
+		}
+		if resolved.Build == nil || resolved.Requirements != nil || resolved.Problem != "" {
+			return BoundVerification{}, fmt.Errorf("%w: verification requires a concrete build configuration", ErrInvalidRequest)
+		}
+		request.Build = *resolved.Build
+		if request.Build.Platform != platform {
+			return BoundVerification{}, fmt.Errorf("%w: resolved build platform differs from the evaluated platform", ErrInvalidRequest)
+		}
+		if err := verify.ValidateConfig(request.Build); err != nil {
+			return BoundVerification{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
 	}
 	if inferred != nil && targetKey(targets[0]) != targetKey(*inferred) {
 		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)

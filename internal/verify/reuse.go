@@ -95,6 +95,9 @@ func RequirementDifferences(wanted record.BuildRequirements, old record.BuildCon
 	if wanted.Platform != old.Platform {
 		reasons = append(reasons, "platform differs")
 	}
+	if wanted.NeedsXcode != old.NeedsXcode {
+		reasons = append(reasons, "Xcode requirement differs")
+	}
 	if wanted.FromSource != old.FromSource {
 		reasons = append(reasons, "source-build policy differs")
 	}

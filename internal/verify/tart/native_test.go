@@ -167,7 +167,7 @@ func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T
 
 func TestRecordedVerifierIdentityRejectsChangedExecutionCode(t *testing.T) {
 	f, m := singleRun(t)
-	config, err := f.provider.BuildConfig(t.Context(), testPlatform, record.TestDeclared, false)
+	config, err := f.provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared})
 	require.NoError(t, err)
 	require.NotEmpty(t, config.VerifierDigest)
 	f.request.Spec.Config = config

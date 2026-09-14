@@ -27,6 +27,8 @@ type BuildConfig struct {
 	VerifierDigest string `json:",omitempty"`
 	// ProviderConfig freezes provider-specific execution choices at acceptance.
 	ProviderConfig json.RawMessage `json:",omitempty"`
+	// NeedsXcode records that the evaluated target requires a full Xcode image.
+	NeedsXcode bool
 	// FromSource disables binary archives for the target and dependencies that need installing.
 	FromSource bool
 	Tests      TestPolicy
@@ -37,6 +39,7 @@ type BuildConfig struct {
 type BuildRequirements struct {
 	Provider   string
 	Platform   Platform
+	NeedsXcode bool
 	FromSource bool
 	Tests      TestPolicy
 }

@@ -70,6 +70,7 @@ func TestBuildRequirementsPreserveAcceptedChoices(t *testing.T) {
 	requirements := record.BuildRequirements{Provider: config.Provider, Platform: config.Platform, FromSource: config.FromSource, Tests: config.Tests}
 	require.NoError(t, verify.ValidateRequirements(requirements))
 	require.Empty(t, verify.RequirementDifferences(requirements, config))
+	require.Contains(t, verify.RequirementDifferences(record.BuildRequirements{Provider: config.Provider, Platform: config.Platform, NeedsXcode: true, FromSource: config.FromSource, Tests: config.Tests}, config), "Xcode requirement differs")
 	for name, edit := range map[string]func(*record.BuildConfig){
 		"provider":    func(v *record.BuildConfig) { v.Provider = "other" },
 		"platform":    func(v *record.BuildConfig) { v.Platform.Version = "24" },

@@ -25,6 +25,7 @@ type PreparationRequest struct {
 	Reason              string
 	VerificationProblem string
 	Publication         publish.Options
+	ResolveBuild        BuildResolver
 }
 
 type BoundPreparation struct {
@@ -52,6 +53,16 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	source, targets, evaluation, err := e.bindBranchSource(ctx, request.Branch, request.Selection, request.Platform, "")
 	if err != nil {
 		return BoundPreparation{}, err
+	}
+	if request.ResolveBuild != nil {
+		if request.Build != nil || request.BuildRequirements != nil || request.VerificationProblem != "" || request.Verification != record.VerificationRequired {
+			return BoundPreparation{}, fmt.Errorf("%w: build selection is inconsistent", ErrInvalidRequest)
+		}
+		resolved, resolveErr := request.ResolveBuild(ctx, evaluation)
+		if resolveErr != nil {
+			return BoundPreparation{}, resolveErr
+		}
+		request.Build, request.BuildRequirements, request.VerificationProblem = resolved.Build, resolved.Requirements, resolved.Problem
 	}
 	var destination *record.PublicationDestination
 	if request.Destination == record.Published {

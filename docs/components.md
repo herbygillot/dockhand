@@ -167,7 +167,7 @@ The next implementation priorities are:
 
 1. **Review controls.** Connect revision-bound acceptance and dismissal to the same durable control and driver path.
 2. **Dependent verification planning.** Introduce explicit cohort and downstream coverage without turning workflow into a generic graph engine.
-3. **Verification profile selection.** Use evaluated `use_xcode` requirements and recorded image capabilities to select or request an appropriate prepared profile without changing the smaller base profile.
+3. **Verification image capabilities.** Profile selection now follows the evaluated `use_xcode` requirement. A later pass should inspect and record capabilities of explicitly selected images rather than relying on the user's selection.
 4. **Ports index reuse.** Avoid rebuilding and tracing the complete ports-tree index for every clean single-target VM while preserving exact-snapshot evaluation.
 
 Branch-based wait/cancel and continuous integration are implemented. Authentication discovery, preflight, native login, and image-free selection of matching recorded verification are implemented. Explicit and environment credentials, Dockhand's Keychain credential, and the active `gh` account are resolved for publication; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Device login stays outside repository state and uses a registered OAuth client ID supplied by the build, environment, or command line.

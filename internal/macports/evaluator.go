@@ -50,6 +50,24 @@ type Snapshot struct {
 	ObservedAt time.Time
 }
 
+func (s Snapshot) RequiresXcode() (bool, error) {
+	port, ok := s.Ports[s.Target.Name]
+	if !ok {
+		return false, fmt.Errorf("%w: evaluated target %s is missing", ErrTarget, s.Target.Name)
+	}
+	if failure, ok := port.OptionErrors["use_xcode"]; ok {
+		return false, fmt.Errorf("macports: evaluating use_xcode for %s: %s", s.Target.Name, failure)
+	}
+	switch strings.ToLower(strings.TrimSpace(port.Options["use_xcode"])) {
+	case "", "0", "false", "no", "off":
+		return false, nil
+	case "1", "true", "yes", "on":
+		return true, nil
+	default:
+		return false, fmt.Errorf("macports: invalid use_xcode value %q for %s", port.Options["use_xcode"], s.Target.Name)
+	}
+}
+
 type Selection struct {
 	Selector string
 	Subport  string

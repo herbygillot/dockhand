@@ -38,6 +38,12 @@ type Environment struct {
 	Digest   string
 	Platform record.Platform
 }
+
+type BuildOptions struct {
+	Tests      record.TestPolicy
+	FromSource bool
+	NeedsXcode bool
+}
 type Provider struct {
 	Config     Config
 	State      state.ProviderStore
@@ -608,13 +614,17 @@ func (o *operation) saved(v record.ProviderExecution) (verify.Observation, bool,
 	return result, err == nil, err
 }
 
-func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, tests record.TestPolicy, fromSource bool) (record.BuildConfig, error) {
+func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, options BuildOptions) (record.BuildConfig, error) {
 	c, err := p.settings()
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
 	if c.Image == "" {
-		c.Image, err = DefaultImageName(platform)
+		if options.NeedsXcode {
+			c.Image, err = DefaultXcodeImageName(platform)
+		} else {
+			c.Image, err = DefaultImageName(platform)
+		}
 		if err != nil {
 			return record.BuildConfig{}, err
 		}
@@ -632,7 +642,11 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, te
 	environment, err := p.machineFor(c, nil).Environment(ctx)
 	if err != nil {
 		if p.Config.Image == "" {
-			return record.BuildConfig{}, fmt.Errorf("tart: default image %s is unavailable; run dockhand setup or select --image: %w", c.Image, err)
+			setup := "run dockhand setup"
+			if options.NeedsXcode {
+				setup = "run dockhand setup --xcode <archive-or-directory>"
+			}
+			return record.BuildConfig{}, fmt.Errorf("tart: default image %s is unavailable; %s or select --image: %w", c.Image, setup, err)
 		}
 		return record.BuildConfig{}, err
 	}
@@ -642,6 +656,6 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, te
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
-	config := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, Tests: tests, FromSource: fromSource}
+	config := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, NeedsXcode: options.NeedsXcode, Tests: options.Tests, FromSource: options.FromSource}
 	return config, verify.ValidateConfig(config)
 }

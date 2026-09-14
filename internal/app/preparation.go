@@ -117,21 +117,31 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if request.NoVerify {
 		bound.Destination, bound.Verification = record.BranchReady, record.VerificationSkipped
 	} else {
-		config, err := s.verification.BuildConfig(ctx, platform, request.Tests, request.FromSource)
-		if ctx.Err() != nil {
-			return workflow.BoundPreparation{}, ctx.Err()
-		}
-		if err != nil {
-			bound.VerificationProblem = err.Error()
-		} else {
-			bound.Build = &config
-		}
-	}
-	if bound.Build == nil && !request.NoVerify {
-		bound.BuildRequirements = &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, Tests: request.Tests, FromSource: request.FromSource}
+		bound.ResolveBuild = s.buildResolver(platform, request.Tests, request.FromSource, true)
 	}
 	if request.Publish != nil {
 		bound.Destination, bound.Publication = record.Published, *request.Publish
 	}
 	return s.Workflow.BindPreparation(ctx, bound)
+}
+
+func (s *Services) buildResolver(platform record.Platform, tests record.TestPolicy, fromSource, preserve bool) workflow.BuildResolver {
+	return func(ctx context.Context, evaluation macports.Snapshot) (workflow.BuildResolution, error) {
+		needsXcode, err := evaluation.RequiresXcode()
+		if err != nil {
+			return workflow.BuildResolution{}, err
+		}
+		requirements := &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, NeedsXcode: needsXcode, Tests: tests, FromSource: fromSource}
+		config, err := s.verification.BuildConfig(ctx, platform, tart.BuildOptions{Tests: tests, FromSource: fromSource, NeedsXcode: needsXcode})
+		if err == nil {
+			return workflow.BuildResolution{Build: &config}, nil
+		}
+		if ctx.Err() != nil {
+			return workflow.BuildResolution{}, ctx.Err()
+		}
+		if preserve {
+			return workflow.BuildResolution{Requirements: requirements, Problem: err.Error()}, nil
+		}
+		return workflow.BuildResolution{}, err
+	}
 }
