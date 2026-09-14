@@ -175,16 +175,6 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	return BoundVerification{Request: Request{ID: request.ID, Spec: spec, Branch: binding}, Evaluation: evaluation}, nil
 }
 
-func (e *Engine) bindBranchSource(ctx context.Context, branch string, selection macports.Selection, platform record.Platform, base record.ObjectID) (_ record.Source, _ []record.Target, _ macports.Snapshot, err error) {
-	snapshot, err := changeset.CaptureBranch(ctx, e.Repo, branch)
-	if err != nil {
-		return record.Source{}, nil, macports.Snapshot{}, err
-	}
-	source := snapshot.Source(base)
-	targets, evaluation, err := e.bindSnapshot(ctx, source, selection, platform, nil)
-	return source, targets, evaluation, err
-}
-
 func (e *Engine) bindSnapshot(ctx context.Context, source record.Source, selection macports.Selection, platform record.Platform, untracked []string) (_ []record.Target, _ macports.Snapshot, err error) {
 	files, err := e.Repo.Materialize(ctx, string(source.Tree))
 	if err != nil {

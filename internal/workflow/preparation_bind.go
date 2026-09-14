@@ -14,7 +14,9 @@ type PreparationRequest struct {
 	Action              record.Action
 	Version             string
 	ID                  record.RequestID
-	Branch              string
+	Source              record.Source
+	SourceBranch        string
+	SourceURL           string
 	Selection           macports.Selection
 	Destination         record.Destination
 	Verification        record.VerificationPolicy
@@ -40,7 +42,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if e.Repo == nil || e.Ports == nil {
 		return BoundPreparation{}, fmt.Errorf("workflow: preparation binding requires Git and MacPorts")
 	}
-	if !validToken(string(request.ID)) || !git.ValidBranchName(request.Branch) {
+	if !validToken(string(request.ID)) || !git.ValidBranchName(request.SourceBranch) {
 		return BoundPreparation{}, ErrInvalidRequest
 	}
 	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
@@ -50,7 +52,18 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if registered.ID != e.Repository {
 		return BoundPreparation{}, fmt.Errorf("%w: preparation repository does not match state scope", ErrInvalidRequest)
 	}
-	source, targets, evaluation, err := e.bindBranchSource(ctx, request.Branch, request.Selection, request.Platform, "")
+	source := request.Source
+	if source.Base != source.Commit {
+		return BoundPreparation{}, ErrInvalidRequest
+	}
+	trees, err := e.Repo.CommitTrees(ctx, []string{string(source.Commit)})
+	if err != nil {
+		return BoundPreparation{}, err
+	}
+	if trees[string(source.Commit)] != string(source.Tree) {
+		return BoundPreparation{}, fmt.Errorf("%w: preparation commit/tree mismatch", ErrInvalidRequest)
+	}
+	targets, evaluation, err := e.bindSnapshot(ctx, source, request.Selection, request.Platform, nil)
 	if err != nil {
 		return BoundPreparation{}, err
 	}
@@ -89,7 +102,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{
 		Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
-		Preparation: &record.PreparationSpec{SourceBranch: request.Branch, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
+		Preparation: &record.PreparationSpec{SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {
 		return BoundPreparation{}, err

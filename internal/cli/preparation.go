@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/app"
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/publish"
@@ -29,7 +28,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		options := &Options{}
 		var build buildOptions
 		var publication publish.Options
-		var branch, subport, reason string
+		var subport, reason string
 		var variants []string
 		use, maximum := string(spec.action)+" <port>", 1
 		if spec.action == record.Bump {
@@ -38,7 +37,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command := &cobra.Command{
 			Use: use, Short: spec.short,
-			Long: spec.short + ".\n\nVersion and revision bumps use committed source from the current branch or --branch, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification. Version updates are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Omitting the version selects the newest eligible stable numeric version using the port's GitHub tags livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Standalone checksum refresh is not implemented yet.",
+			Long: spec.short + ".\n\nVersion and revision bumps use freshly fetched master from macports/macports-ports, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification. Version updates are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Omitting the version selects the newest eligible stable numeric version using the port's GitHub tags livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Standalone checksum refresh is not implemented yet.",
 			Args: func(cmd *cobra.Command, args []string) error {
 				if err := cobra.RangeArgs(1, maximum)(cmd, args); err != nil {
 					return err
@@ -52,9 +51,6 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				return nil
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
-				if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
-					return fmt.Errorf("branch must name a literal local branch")
-				}
 				choices, err := parseVariants(variants)
 				if err != nil {
 					return err
@@ -82,9 +78,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						return err
 					}
 					defer services.Close()
-					fmt.Fprintln(cmd.ErrOrStderr(), "Binding committed source; working-tree edits are excluded.")
+					fmt.Fprintln(cmd.ErrOrStderr(), "Fetching MacPorts master; local commits and working-tree edits are excluded.")
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{
-						Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()), Branch: branch,
+						Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices},
 						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
@@ -102,12 +98,12 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					return r.attach(cmd, services, receipt.JobID, milestone, options.Trace, false, &receipt)
 				}
-				request := app.PreviewRequest{Action: spec.action, Branch: branch, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Reason: reason}
+				request := app.PreviewRequest{Action: spec.action, Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices}, Reason: reason}
 				if len(args) == 2 {
 					request.Version = args[1]
 				}
 				if !r.json {
-					fmt.Fprintln(cmd.ErrOrStderr(), "Preparing preview from committed source; working-tree edits are excluded.")
+					fmt.Fprintln(cmd.ErrOrStderr(), "Fetching MacPorts master for preview; local commits and working-tree edits are excluded.")
 				}
 				preview, err := app.PreviewPreparation(cmd.Context(), r.config, request)
 				if err != nil {
@@ -116,7 +112,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				if r.json {
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(preview)
 				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "Branch: %s\nCommit: %s\nTarget: %s\n", preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
+				fmt.Fprintf(cmd.ErrOrStderr(), "Repository: %s\nBranch: %s\nCommit: %s\nTarget: %s\n", preview.Repository, preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
 				if release := preview.Preparation.Release; release != nil {
 					if release.NoUpdate {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Already current at %s; latest eligible version is %s.\n", release.CurrentVersion, release.Version)
@@ -129,7 +125,6 @@ func (r *runtime) changeCommands() []*cobra.Command {
 			},
 		}
 		changeFlags(command, options)
-		command.Flags().StringVar(&branch, "branch", "", "Select committed source from a literal local branch")
 		command.Flags().StringVar(&subport, "subport", "", "Select a subport within the Portfile")
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")
 		if spec.action == record.BumpRevision || spec.action == record.Bump {

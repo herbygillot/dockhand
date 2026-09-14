@@ -81,7 +81,7 @@ An upstream tag prefix such as `v` can be included; if omitted, Dockhand uses th
 dockhand bump jq --wait
 ```
 
-Dockhand starts from the current branch's **committed contents**, creates an update branch, and verifies it using the image prepared by `setup`. It prints the branch name for inspection. Your current checkout stays in place.
+Dockhand starts from freshly fetched **MacPorts `master`**, creates an update branch, and verifies it using the image prepared by `setup`. It prints the branch name for inspection. Your current checkout stays in place.
 
 Use `--trace` instead of `--wait` to follow the build logs. Available dependency binaries are used by default. To prepare only the branch for manual work, use `--no-verify`.
 

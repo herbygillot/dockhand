@@ -50,7 +50,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--reason", "rebuild"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "-revision 0\n+revision 1")
-	require.Contains(t, stderr.String(), "Branch: candidate")
+	require.Contains(t, stderr.String(), "Branch: master")
 	require.Contains(t, stderr.String(), "working-tree edits are excluded")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 	require.NoFileExists(t, filepath.Join(repo.CommonDir, "index"))
@@ -59,10 +59,10 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	require.Equal(t, commit, actual)
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--branch", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result app.Preview
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-	require.Equal(t, "candidate", result.Branch)
+	require.Equal(t, "master", result.Branch)
 	require.Contains(t, result.Diff, "+revision 1")
 	require.Empty(t, stderr.String())
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
@@ -92,7 +92,8 @@ func preparationCLI(t *testing.T) (app.Config, *git.Repository, string) {
 	require.NoError(t, err)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Desired: git.RefValue{Exists: true, Object: commit}}}))
 	config := app.Config{Repository: root, DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), TclExecutable: executable}
-	for _, setting := range [][2]string{{"user.name", "Fixture"}, {"user.email", "fixture@example.invalid"}} {
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Desired: git.RefValue{Exists: true, Object: commit}}}))
+	for _, setting := range [][2]string{{"user.name", "Fixture"}, {"user.email", "fixture@example.invalid"}, {"url." + root + ".insteadOf", "https://github.com/macports/macports-ports.git"}} {
 		output, err = exec.CommandContext(t.Context(), "git", "-C", root, "config", setting[0], setting[1]).CombinedOutput()
 		require.NoError(t, err, "%s", output)
 	}
@@ -211,7 +212,7 @@ checksums rmd160 %s \
 	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
 	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{original}, Message: "version fixture", Author: sig, Committer: sig})
 	require.NoError(t, err)
-	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}}))
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}, {Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}}))
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "2.0", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var preview app.Preview
@@ -250,4 +251,33 @@ checksums rmd160 %s \
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"wait", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Equal(t, int64(2), downloads.Load(), "reattachment must not prepare or download again")
+}
+
+func TestPreparationIgnoresLocalBranchAndRefusesFailedFetch(t *testing.T) {
+	config, repo, upstream := preparationCLI(t)
+	_, tree, err := repo.Branch(t.Context(), "candidate")
+	require.NoError(t, err)
+	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
+	local, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{upstream}, Message: "unpublished local work", Author: sig, Committer: sig})
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: upstream}, Desired: git.RefValue{Exists: true, Object: local}}}))
+	// Naming a fork origin or using a different upstream remote cannot redirect intake.
+	for _, name := range []string{"origin", "upstream"} {
+		out, err := exec.CommandContext(t.Context(), "git", "-C", repo.Root, "remote", "add", name, "/missing/fork").CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	var preview app.Preview
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &preview))
+	require.Equal(t, record.ObjectID(upstream), preview.Preparation.Base.Commit)
+	require.Equal(t, "https://github.com/macports/macports-ports.git", preview.Repository)
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: upstream}}}))
+	for _, mode := range []string{"--diff", "--no-verify"} {
+		err := Run(t.Context(), []string{"bump-revision", "fixture", mode}, Streams{Out: &stdout, Err: &stderr}, config)
+		require.ErrorContains(t, err, "fetching authoritative MacPorts master")
+	}
+	current, _, err := repo.Branch(t.Context(), "candidate")
+	require.NoError(t, err)
+	require.Equal(t, local, current)
 }

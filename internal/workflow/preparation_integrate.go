@@ -150,9 +150,7 @@ func (c *cycle) integrateBranch(ctx context.Context, job record.Job, recovering 
 	if recovering {
 		return false, fmt.Errorf("workflow: interrupted integration has no branch %s; refusing to recreate a possibly deleted branch", prepared.Branch)
 	}
-	source := git.RefValue{Exists: true, Object: string(job.Spec.Source.Commit)}
 	err = e.Repo.UpdateRefs(ctx, []git.RefChange{
-		{Name: "refs/heads/" + job.Spec.Preparation.SourceBranch, Expected: source, Desired: source},
 		{Name: refName, Desired: wanted},
 	})
 	if err != nil {

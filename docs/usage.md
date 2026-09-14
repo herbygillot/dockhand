@@ -69,7 +69,7 @@ Without `--wait`, verification remains attached while capacity is unavailable an
 
 ## Prepare version updates
 
-Preview or prepare a version update from committed source:
+Preview or prepare a version update from freshly fetched `master` in `macports/macports-ports`. Local branches and uncommitted edits are excluded; a failed fetch stops the request without falling back to stale source:
 
 ```sh
 dockhand bump jq --diff

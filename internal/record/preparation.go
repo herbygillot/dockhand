@@ -8,6 +8,7 @@ type CommitIdentity struct {
 
 // PreparationSpec records the inputs a later driver needs to create a contribution.
 type PreparationSpec struct {
+	SourceURL    string `json:",omitempty"`
 	SourceBranch string
 	Platform     Platform
 	Author       CommitIdentity

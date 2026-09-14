@@ -109,13 +109,13 @@ JSON verification/attachment results contain the selected job ID or branch and f
 ## Implemented preparation groundwork
 
 ```text
-dockhand bump-revision <port> --diff [--branch <branch>]
+dockhand bump-revision <port> --diff
     [--subport <name>] [--variant +name|--variant=-name ...]
     [--reason <text>] [--json]
 dockhand bump <port> [version]
 ```
 
-The revision preview selects committed source from the current local branch or explicit `--branch`. It reports that working-tree edits are excluded. It materializes the complete tree, evaluates the original Portfile and all its subports, proposes a focused revision edit, and evaluates the candidate tree. A selected subport can change without its siblings changing. A shared revision edit that changes unselected siblings, changes other evaluated metadata, or fails evaluation is refused. Revision expressions and ambiguous or dynamically named scopes remain unsupported by this first editor; versions may still be calculated because MacPorts evaluates them.
+New version and revision bumps, including previews, fetch `master` directly from `https://github.com/macports/macports-ports.git`, independent of local remote names. They freeze its commit before evaluation and acceptance. Fetch failure stops the request; there is no stale fallback or local starting-branch option. Existing contributions use `verify --branch` and `publish --branch`. Local branches, remote-tracking refs, FETCH_HEAD, the checkout, and index are preserved. The accepted source stays fixed across retries and later upstream movement. It materializes the complete tree, evaluates the original Portfile and all its subports, proposes a focused revision edit, and evaluates the candidate tree. A selected subport can change without its siblings changing. A shared revision edit that changes unselected siblings, changes other evaluated metadata, or fails evaluation is refused. Revision expressions and ambiguous or dynamically named scopes remain unsupported by this first editor; versions may still be calculated because MacPorts evaluates them.
 
 Successful previews render a Git diff to stdout and source/target information to stderr. JSON returns the selected branch, preparation result and evaluations, commit intent, and diff. Preview writes immutable Git objects as needed, but creates no branch, commit, job, database, or verification environment and leaves the user's checkout/index alone. The driver uses this same preparation service for accepted version- and revision-bump jobs.
 

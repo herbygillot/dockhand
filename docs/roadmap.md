@@ -10,14 +10,6 @@ Last updated: 2026-09-14.
 
 This order prioritizes correct contribution inputs, attribution, and recovery before expanding automatic preparation and downstream coverage. Small independent items may land separately; do not combine them into a single architectural rewrite.
 
-### 1. Start new bumps from freshly fetched MacPorts master
-
-Resolve the authoritative `macports/macports-ports` upstream independently of remote names: `origin` may be a contributor's fork. Fetch its `master`, freeze the fetched commit at acceptance, and use that snapshot for target evaluation, release selection, preparation, and the new branch's parent. A fetch failure must not silently select stale local contents. Do not move the user's checkout or local `master`.
-
-Share this base-selection path with `bump --diff` so previews and actual bumps follow the same rule. Report the selected upstream and commit. A new invocation fetches again; retries and resumed jobs retain their accepted base. Update the current branch-selection CLI contract and README examples so `--branch` cannot accidentally bypass the rule for a new bump. Continuing an existing contribution remains a distinct operation.
-
-Validate fork/upstream remote layouts, stale local branches, fetch failure, concurrent fetches, and upstream movement after acceptance.
-
 ### 2. Attribute fully generated contribution commits
 
 Append this exact Git trailer, separated from the subject/body by a blank line:

@@ -29,7 +29,9 @@ func (fn prepareFunc) Prepare(ctx context.Context, r prepare.Request) (prepare.R
 func preparationFixture(t *testing.T, verification bool) (*fixture, workflow.Request) {
 	t.Helper()
 	f, _ := bindingFixture(t)
-	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "prepare", Branch: "candidate", Selection: bindRequest(f, "").Selection,
+	commit, tree, err := f.repo.Branch(t.Context(), "candidate")
+	require.NoError(t, err)
+	req := workflow.PreparationRequest{Action: record.BumpRevision, ID: "prepare", SourceBranch: "master", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}, Selection: bindRequest(f, "").Selection,
 		Destination: record.BranchReady, Verification: record.VerificationSkipped,
 		Author: record.CommitIdentity{Name: "Accepted Author", Email: "accepted@example.invalid"}, Platform: buildPlatform, Reason: "Rebuild dependents"}
 	if verification {
@@ -290,12 +292,24 @@ func TestIntegrationDoesNotOverwriteMovedBranchesOrRecreateMissingOnRecovery(t *
 			if actual.CancelRequestedAt != nil {
 				expected = record.JobCanceled
 			}
+			if scenario == "source-moved" {
+				expected = record.JobCompleted
+			}
 			require.Equal(t, expected, actual.State)
-			require.Empty(t, actual.ResultRevision)
+			if scenario == "source-moved" {
+				require.NotEmpty(t, actual.ResultRevision)
+			} else {
+				require.Empty(t, actual.ResultRevision)
+			}
 			ref, err := f.repo.ReadRef(t.Context(), "refs/heads/"+job.Prepared.Branch)
 			require.NoError(t, err)
 			if scenario == "destination-moved" {
 				require.Equal(t, string(preserved.Commit), ref.Object)
+			} else if scenario == "source-moved" {
+				require.Equal(t, string(job.Prepared.Source.Commit), ref.Object)
+				parent, err := f.repo.SingleParent(t.Context(), ref.Object)
+				require.NoError(t, err)
+				require.Equal(t, string(req.Spec.Source.Commit), parent)
 			} else {
 				require.False(t, ref.Exists)
 			}

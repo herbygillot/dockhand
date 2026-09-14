@@ -69,7 +69,7 @@ checksums sha256 %s size 1
 	sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
 	commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{original}, Message: "automatic fixture", Author: sig, Committer: sig})
 	require.NoError(t, err)
-	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}}))
+	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}, {Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: original}, Desired: git.RefValue{Exists: true, Object: commit}}}))
 	return config, repo, downloads, catalogs
 }
 
