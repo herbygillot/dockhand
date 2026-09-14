@@ -14,13 +14,14 @@ Automatic image selection follows the evaluated `use_xcode` requirement, and set
 
 The next slice should:
 
-- inspect the image manifest when an image digest is first encountered;
-- validate the macOS release, architecture, MacPorts prefix, and developer-tools profile;
-- reject an image without full Xcode when the evaluated target requires it;
-- cache the observed capabilities by immutable image digest in SQLite; and
-- include the capability identity in accepted build configuration and evidence-reuse comparison.
+- hash the source image without starting or changing it, then consult a capability cache keyed by provider and immutable image digest;
+- record the selected digest and required macOS release, architecture, MacPorts prefix, and developer-tools profile in accepted build intent;
+- let an uncached image wait for the same provider-capacity admission as ordinary verification rather than starting a separate preflight VM;
+- inspect the actual attempt's disposable clone after it starts and before source staging or build commands run;
+- cache that observation in SQLite, continue the build in the same VM when it satisfies the accepted requirements, and release the attempt with a prerequisite failure when it does not; and
+- include the observed capability identity in verification evidence and reuse comparison.
 
-A changed image digest requires another observation. An image name alone is neither capability evidence nor verification identity.
+A provisioned manifest is declared evidence that the in-guest probe must confirm. A custom image without a manifest can still be observed. A changed image digest requires another observation, while a cached incompatible observation can reject later work before provider admission. An image name alone is neither capability evidence nor verification identity. A waiting driver continues reconciling already admitted attempts; image inspection does not create a second capacity path.
 
 ### 2. Plan and execute dependent verification
 
