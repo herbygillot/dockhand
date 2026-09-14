@@ -43,6 +43,9 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 
 ### Engineering follow-up
 
+- Improve progress reporting during initial image inspection and full PortIndex generation; both can be slow before the first useful status line.
+- Make read-only status errors on an older database schema explain how to trigger the supported migration.
+- Make rejected saved GitHub credentials easier to diagnose and replace, including their source, without silently switching identities after an authentication failure.
 - Add focused tests for the Tcl shell and RPC boundaries.
 - Continue the coherent-comment pass in packages whose contracts or recovery behavior are difficult to infer.
 - Revisit a shared download package only when common policy and lifecycle emerge across the current download callers.
