@@ -130,3 +130,5 @@ dockhand cancel <job-id> --wait
 ```
 
 `status` reads recorded progress; `wait` resumes processing and follows the job through completion. Use `dockhand --help` or a command's `--help` for more options. Detailed project logs and further documentation are available in `docs/`.
+
+Licensed under the [MIT License](LICENSE).
