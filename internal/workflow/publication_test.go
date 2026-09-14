@@ -152,6 +152,34 @@ func submitPublication(t *testing.T, f *fixture, id string) record.JobID {
 	return receipt.JobID
 }
 
+type alteredPublicationStore struct{ state.Store }
+type alteredPublicationTx struct{ state.Tx }
+
+func (s alteredPublicationStore) Update(ctx context.Context, repository record.RepositoryID, fn func(context.Context, state.Tx) error) error {
+	return s.Store.Update(ctx, repository, func(ctx context.Context, tx state.Tx) error {
+		return fn(ctx, alteredPublicationTx{Tx: tx})
+	})
+}
+func (tx alteredPublicationTx) PutPublication(ctx context.Context, action record.PublicationAction) error {
+	action.Spec.BaseBranch = "altered-after-validation"
+	return tx.Tx.PutPublication(ctx, action)
+}
+
+func TestWorkflowRejectsPublicationActionOutsideAcceptedIntent(t *testing.T) {
+	f, hosting := publicationFixture(t)
+	f.engine.State = alteredPublicationStore{Store: f.store}
+	id := submitPublication(t, f, "altered-publication")
+	f.run(t, id)
+	status := f.status(t, id)
+	require.Equal(t, record.JobNeedsAttention, status.Jobs[0].Job.State)
+	require.Contains(t, status.Jobs[0].Job.Detail, "does not match the accepted publication intent")
+	require.Equal(t, record.PublicationNeedsAttention, status.Jobs[0].Publications[0].State)
+	require.Zero(t, hosting.writes)
+	remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+	require.NoError(t, err)
+	require.False(t, remote.Exists)
+}
+
 func TestPublicationPushesConfirmsAndRetainsAssociationAcrossRestart(t *testing.T) {
 	f, hosting := publicationFixture(t)
 	request := bindPublication(t, f, "publish")

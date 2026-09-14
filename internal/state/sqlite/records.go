@@ -260,31 +260,8 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 		return state.ErrInvalid
 	}
 	if v.ReusedAttempt != "" {
-		combined := v.Phase == record.PhasePublication && v.Spec.PublishTo != nil && v.Spec.Destination == record.Published && v.ResultRevision != ""
-		validState := v.State == record.JobCompleted || combined && (v.State == record.JobActive || v.State == record.JobCanceled || v.State == record.JobNeedsAttention || v.State == record.JobSuperseded)
-		if !validState || (v.State == record.JobActive) != (v.FinishedAt == nil) || v.AdmittedAt != nil || (v.Spec.Build == nil) == (v.Spec.BuildRequirements == nil) || len(v.Spec.Targets) != 1 || v.Spec.FreshVerification || v.Spec.Verification != record.VerificationRequired {
-			return state.ErrInvalid
-		}
-		attempt, err := t.Attempt(ctx, v.ReusedAttempt)
-		if err != nil {
+		if _, err := t.Attempt(ctx, v.ReusedAttempt); err != nil {
 			return err
-		}
-		if attempt.JobID == v.ID || attempt.State != record.AttemptFinished || attempt.Evidence == nil || attempt.Evidence.Verdict != record.VerdictPassed || attempt.Evidence.ObservedAt.IsZero() {
-			return state.ErrInvalid
-		}
-		source := v.Spec.Source
-		if v.ResultRevision != "" && v.Prepared != nil {
-			source = v.Prepared.Source
-		}
-		if attempt.Spec.Source.Tree != source.Tree {
-			return state.ErrInvalid
-		}
-		attempts, err := t.AttemptsForJob(ctx, v.ID)
-		if err != nil {
-			return err
-		}
-		if len(attempts) != 0 {
-			return state.ErrInvalid
 		}
 	}
 	owner, until, err := claimValues(v.Claim, v.ClaimGeneration)

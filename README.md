@@ -1,6 +1,6 @@
 # Dockhand v2
 
-Initial groundwork for `github.com/herbygillot/dockhand/v2`.
+Dockhand v2 is a prerelease implementation of MacPorts update preparation, local verification, and pull-request publication.
 
 SQLite now holds workflow state behind `internal/state` contracts, with `internal/state/sqlite` as the implementation. One database can track multiple repositories; linked worktrees share an entry and separate clones remain distinct. Global `--db PATH` defaults to `$HOME/.dockhand/state.db`. The old lock-directory flags and Git ledger have been removed.
 
@@ -9,6 +9,9 @@ Request intake, read-only status, cancellation, and the single-target verificati
 Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released diagnostics, then `dockhand gc` to apply it. `dockhand db backup <file>` creates a consistent standalone snapshot of the shared database; `dockhand db check` checks its integrity. See [state operations and recovery](docs/operations.md) for retention rules and restoring a backup.
 
 - [Combined bump and publication report](docs/activity/2026-09-13-combined-publication.md)
+- [State and workflow policy boundary report](docs/activity/2026-09-14-state-policy-boundary.md)
+- [Explicit job phases report](docs/activity/2026-09-14-explicit-job-phases.md)
+- [Prepared verification selection report](docs/activity/2026-09-14-prepared-verification-selection.md)
 - [Native GitHub login report](docs/activity/2026-09-14-native-github-login.md)
 - [Publication authentication report](docs/activity/2026-09-14-publication-authentication.md)
 - [GitHub URL and resource audit](docs/activity/2026-09-13-github-resource-urls.md)

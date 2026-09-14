@@ -164,11 +164,11 @@ Earlier reviews are evidence of failure modes, not a claim that every finding re
 
 The immediate priorities reflect the two publication gaps found during the chezmoi run:
 
-1. **Verification reuse before requiring an image.** Let combined bump/publication use applicable recorded evidence through a policy consistent with standalone publication. Preserve source/target/configuration applicability checks and record the selected evidence and its configuration explicitly; do not silently rewrite accepted build choices or pick an arbitrary historical pass. Require a build image when new verification is actually needed.
-2. **Branch-based wait/cancel.** Resolve existing work from a tracked contribution and freeze the selected job IDs. Record cancellation selection and intent atomically; later submissions never join an existing attachment or cancellation.
-3. **Setup diagnostics and reusable verification settings.** Make missing tools, image selection, and provider configuration easier to diagnose and reuse.
+1. **Branch-based wait/cancel.** Resolve existing work from a tracked contribution and freeze the selected job IDs. Record cancellation selection and intent atomically; later submissions never join an existing attachment or cancellation.
+2. **Setup diagnostics and reusable verification settings.** Make missing tools, image selection, and provider configuration easier to diagnose and reuse.
+3. **Continuous integration.** Run the full suite and static checks automatically now that local validation takes more than a minute.
 
-Authentication discovery, preflight, and native login are implemented. Explicit and environment credentials, Dockhand's Keychain credential, and the active `gh` account are resolved for publication; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Device login stays outside repository state and uses a registered OAuth client ID supplied by the build, environment, or command line. Image-free combined evidence selection remains planned.
+Authentication discovery, preflight, native login, and image-free selection of matching recorded verification are implemented. Explicit and environment credentials, Dockhand's Keychain credential, and the active `gh` account are resolved for publication; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Device login stays outside repository state and uses a registered OAuth client ID supplied by the build, environment, or command line.
 
 ### Implemented foundations
 
@@ -272,4 +272,4 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 
 `publish.Destination` resolves immutable destination choices at intake; `publish.PlanTo` combines that destination with a verified prepared revision and current remote preconditions. Standalone `publish.Plan` composes both. `workflow/publication_plan.go` owns the durable transition between verification and publication; the existing publication executor owns push, PR writes, confirmation, and recovery for both command paths. No new package, dependency, schema, or child job is introduced.
 
-`record.JobSpec.PublishTo` holds a combined job's destination. `record.PublicationSpec` remains the complete external-action intent, populated only once the prepared revision passes verification. SQLite checks the action against the accepted destination and prepared revision. Verification and publication read the result source without replacing the accepted source. See the [combined publication report](activity/2026-09-13-combined-publication.md).
+`record.JobSpec.PublishTo` holds a combined job's destination. `record.PublicationSpec` remains the complete external-action intent, populated only once the prepared revision passes verification. Workflow checks the action against the accepted destination and prepared revision before persisting it and before claiming it for execution; SQLite preserves the resulting intent and its relationships. Verification and publication read the result source without replacing the accepted source. See the [combined publication report](activity/2026-09-13-combined-publication.md).

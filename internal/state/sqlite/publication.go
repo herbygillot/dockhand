@@ -37,13 +37,6 @@ func (t *transaction) PutPublication(ctx context.Context, v record.PublicationAc
 	if job.ChangeID != v.ChangeID || job.Phase != record.PhasePublication {
 		return state.ErrConflict
 	}
-	if job.Spec.Action == record.Publish {
-		if job.Spec.Publication == nil || job.Spec.InputRevision != v.RevisionID || !reflect.DeepEqual(*job.Spec.Publication, v.Spec) {
-			return state.ErrConflict
-		}
-	} else if (job.Spec.Action != record.Bump && job.Spec.Action != record.BumpRevision) || job.Spec.Destination != record.Published || job.Spec.PublishTo == nil || job.ResultRevision != v.RevisionID || job.Prepared == nil || job.Prepared.Source.Commit != v.Spec.Desired.Head || job.Prepared.Branch != v.Spec.HeadBranch || *job.Spec.PublishTo != v.Spec.Destination() {
-		return state.ErrConflict
-	}
 	old, err := t.PublicationForJob(ctx, v.JobID)
 	if err == nil {
 		if old.ID != v.ID || old.ChangeID != v.ChangeID || old.RevisionID != v.RevisionID || !reflect.DeepEqual(old.Spec, v.Spec) || old.PushStarted && !v.PushStarted || old.WriteStarted && !v.WriteStarted {

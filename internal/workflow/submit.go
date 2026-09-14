@@ -143,6 +143,9 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 				return err
 			}
 			action := record.PublicationAction{ID: record.PublicationID("publication_" + rand.Text()), JobID: id, ChangeID: accepted.ChangeID, RevisionID: accepted.InputRevision, Spec: *accepted.Publication, State: record.PublicationPending}
+			if err := validatePublicationAction(job, action); err != nil {
+				return err
+			}
 			if err := tx.PutPublication(ctx, action); err != nil {
 				return fmt.Errorf("accept publication (another job may own this remote branch): %w", err)
 			}

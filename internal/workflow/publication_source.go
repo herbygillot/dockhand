@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/herbygillot/dockhand/v2/internal/publish"
@@ -183,6 +184,25 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	}
 	if latest.ID == "" {
 		return fmt.Errorf("%w: recorded verification is no longer applicable; verify again", publish.ErrPrecondition)
+	}
+	return nil
+}
+
+func validatePublicationAction(job record.Job, action record.PublicationAction) error {
+	invalid := func(detail string) error {
+		return fmt.Errorf("%w: publication action %s", ErrInvalidRequest, detail)
+	}
+	if action.JobID != job.ID || action.ChangeID != job.ChangeID || job.Phase != record.PhasePublication {
+		return invalid("does not belong to the job's publication phase")
+	}
+	if job.Spec.Action == record.Publish {
+		if job.Spec.Publication == nil || job.Spec.InputRevision != action.RevisionID || !reflect.DeepEqual(*job.Spec.Publication, action.Spec) {
+			return invalid("does not match the accepted publication intent")
+		}
+		return nil
+	}
+	if (job.Spec.Action != record.Bump && job.Spec.Action != record.BumpRevision) || job.Spec.Destination != record.Published || job.Spec.PublishTo == nil || job.ResultRevision != action.RevisionID || job.Prepared == nil || job.Prepared.Source.Commit != action.Spec.Desired.Head || job.Prepared.Branch != action.Spec.HeadBranch || *job.Spec.PublishTo != action.Spec.Destination() {
+		return invalid("does not match the accepted prepared destination")
 	}
 	return nil
 }

@@ -149,6 +149,9 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 			return err
 		}
 		action := record.PublicationAction{ID: record.PublicationID("publication_" + rand.Text()), JobID: job.ID, ChangeID: job.ChangeID, RevisionID: revisionID, Spec: spec, State: record.PublicationPending}
+		if err := validatePublicationAction(current, action); err != nil {
+			return err
+		}
 		if err := tx.PutPublication(ctx, action); err != nil {
 			return err
 		}

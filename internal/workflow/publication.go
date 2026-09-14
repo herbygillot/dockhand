@@ -21,6 +21,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 	var job record.Job
 	var action record.PublicationAction
 	claimed := false
+	rejected := ""
 	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
 		var err error
 		job, err = tx.Job(ctx, id)
@@ -37,6 +38,19 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
+		if action.ID != "" {
+			if policyErr := validatePublicationAction(job, action); policyErr != nil {
+				rejected = policyErr.Error()
+				now := e.now()
+				action.State, action.LastError = record.PublicationNeedsAttention, rejected
+				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, rejected
+				job.Claim, job.RetryAt = nil, nil
+				if err := tx.PutPublication(ctx, action); err != nil {
+					return err
+				}
+				return tx.PutJob(ctx, job)
+			}
+		}
 		job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), c.timeouts.Publish)
 		if err != nil {
 			return err
@@ -45,8 +59,14 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		claimed = true
 		return tx.PutJob(ctx, job)
 	})
-	if err != nil || !claimed {
+	if err != nil {
 		return false, "", err
+	}
+	if rejected != "" {
+		return true, rejected, nil
+	}
+	if !claimed {
+		return false, "", nil
 	}
 	if action.ID == "" {
 		return c.planPublication(ctx, job)
