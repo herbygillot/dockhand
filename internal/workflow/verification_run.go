@@ -203,7 +203,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			return ErrClaimLost
 		}
 		current.Claim = nil
-		current.LastError, current.RetryAt = "", nil
+		current.RetryAt = nil
 		detail = c.recordAttempt(work, &job, &current, action, response, now)
 		if !current.State.Terminal() {
 			delay := c.retry
@@ -306,7 +306,11 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			current.ClosedAt = &now
 			work.Submissions[current.ID] = current
 			if hasResources(work, attempt.ID) {
-				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictErrored, ObservedAt: now}, "Submission closed after partial provisioning", now)
+				detail := "Submission closed after partial provisioning"
+				if attempt.LastError != "" {
+					detail += ": " + attempt.LastError
+				}
+				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictErrored, ObservedAt: now}, detail, now)
 				dispositionResources(work, attempt.ID, record.ResourceReleaseRequested)
 				return job.Detail
 			}

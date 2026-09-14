@@ -425,3 +425,21 @@ func TestCycleCancelsEveryVerificationTarget(t *testing.T) {
 		require.Equal(t, record.VerdictCanceled, attempt.Evidence.Verdict)
 	}
 }
+
+func TestPartialSubmissionCleanupPreservesItsFailure(t *testing.T) {
+	f := newFixture(t)
+	id := f.submit(t, "failed-staging")
+	f.provider.submit = func(_ context.Context, request verify.Request) (verify.Submission, error) {
+		return verify.Submission{State: verify.SubmissionUncertain, Resources: admitted(request.ID).Resources}, errors.New("indexing selected source failed")
+	}
+	f.run(t, id)
+	f.provider.reconcile = func(context.Context, record.RequestID) (verify.Reconciliation, error) {
+		return verify.Reconciliation{State: verify.RequestClosed}, nil
+	}
+	f.run(t, id)
+	status := f.status(t, id)
+	require.Equal(t, record.JobNeedsAttention, status.Jobs[0].Job.State)
+	require.Contains(t, status.Jobs[0].Job.Detail, "indexing selected source failed")
+	require.Contains(t, status.Jobs[0].Attempts[0].LastError, "indexing selected source failed")
+	require.Equal(t, record.ResourceReleased, status.Resources[0].State)
+}
