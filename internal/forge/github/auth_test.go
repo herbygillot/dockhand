@@ -9,12 +9,21 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/v2/internal/credential"
 	"github.com/herbygillot/dockhand/v2/internal/forge"
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type savedCredential struct {
+	secret string
+	err    error
+}
+
+func (s savedCredential) Get(context.Context, credential.Key) (string, error) { return s.secret, s.err }
+func (savedCredential) Put(context.Context, credential.Key, string) error     { return nil }
 
 func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 	t.Run("GH_TOKEN", func(t *testing.T) {
@@ -41,6 +50,18 @@ func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 		token, err := (github.SystemCredentials{}).Token(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, "fixture-from-gh", token)
+	})
+	t.Run("saved credential before gh", func(t *testing.T) {
+		t.Setenv("GH_TOKEN", "")
+		t.Setenv("GITHUB_TOKEN", "")
+		dir := t.TempDir()
+		executable := filepath.Join(dir, "gh")
+		require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nprintf credential-from-gh\n"), 0700))
+		t.Setenv("PATH", dir)
+		source := github.SystemCredentials{Store: savedCredential{secret: "credential-from-keychain"}, Key: credential.Key{Service: "fixture", Account: "github.com"}}
+		token, err := source.Token(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "credential-from-keychain", token)
 	})
 	t.Run("missing", func(t *testing.T) {
 		t.Setenv("GH_TOKEN", "")

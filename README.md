@@ -4,11 +4,13 @@ Initial groundwork for `github.com/herbygillot/dockhand/v2`.
 
 SQLite now holds workflow state behind `internal/state` contracts, with `internal/state/sqlite` as the implementation. One database can track multiple repositories; linked worktrees share an entry and separate clones remain distinct. Global `--db PATH` defaults to `$HOME/.dockhand/state.db`. The old lock-directory flags and Git ledger have been removed.
 
-Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including automatic GitHub version selection through the pure-Go `go-github` client. Publication of verified, committed contribution branches to GitHub is implemented, either through `publish` or as part of `bump --publish` and `bump-revision --publish`. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
+Request intake, read-only status, cancellation, and the single-target verification cycle are implemented. The cycle uses recorded claims and submission identities for capacity waiting, recovery, and cleanup. Explicit branch binding and native MacPorts evaluation are implemented through the workflow Go API. Tart now executes a real single-target verification against a prepared local VM image, with shared capacity, recovery, cancellation, and cleanup. `verify`, `wait`, `cancel`, and the current-process resident `start` command now use that cycle. Version- and revision-bump preparation are implemented, including automatic GitHub version selection through the pure-Go `go-github` client. Publication of verified, committed contribution branches to GitHub is implemented, either through `publish` or as part of `bump --publish` and `bump-revision --publish`. Native GitHub device login and macOS Keychain storage are implemented through `auth login`. Unimplemented operations return explicit errors or recorded needs-attention outcomes.
 
 Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released diagnostics, then `dockhand gc` to apply it. `dockhand db backup <file>` creates a consistent standalone snapshot of the shared database; `dockhand db check` checks its integrity. See [state operations and recovery](docs/operations.md) for retention rules and restoring a backup.
 
 - [Combined bump and publication report](docs/activity/2026-09-13-combined-publication.md)
+- [Native GitHub login report](docs/activity/2026-09-14-native-github-login.md)
+- [Publication authentication report](docs/activity/2026-09-14-publication-authentication.md)
 - [GitHub URL and resource audit](docs/activity/2026-09-13-github-resource-urls.md)
 - [GitHub SDK defaults report](docs/activity/2026-09-13-github-defaults.md)
 - [GitHub client migration report](docs/activity/2026-09-13-go-github.md)
@@ -42,6 +44,14 @@ Use `dockhand gc --dry-run` to preview cleanup of old retained VMs and released 
 - [Ledger and driver-cycle performance report](docs/performance/2026-09-12-performance-pass.md)
 
 Run `make` (or `make build`) to build `./dockhand`. Use `make test`, `make test-race`, and `make vet` for checks, and `make clean` to remove the binary. Override the output with `make BINARY=/path/to/dockhand` or the Go executable with `make GO=/path/to/go`. Tests cover workflow recovery, SQLite transactions, separate driver processes, repository isolation, CLI configuration, and Tcl syntax. Git is required by repository fixtures. MacPorts integration tests run when `port-tclsh` is available and otherwise skip; VM providers, credentials, and network access are not required. SQLite uses the pure-Go `modernc.org/sqlite` driver.
+
+Authorize Dockhand for GitHub publication without installing `gh`:
+
+```sh
+DOCKHAND_GITHUB_CLIENT_ID=<registered-oauth-client-id> dockhand auth login
+```
+
+The OAuth application must have GitHub's device flow enabled. Build with `make GITHUB_OAUTH_CLIENT_ID=<id>` to embed its registered client ID; the client ID is public application metadata, not a secret. Login opens GitHub's device page, requests `public_repo`, validates the selected account, and stores the token in macOS Keychain. `--client-id` overrides the configured ID and `--no-browser` prints the URL for manual opening. Login uses neither the ports tree nor the workflow database.
 
 Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Select the local MacPorts installation with `--prefix` / `-P` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. Flags override the environment. `--publish` has no shorthand.
 
@@ -112,6 +122,6 @@ dockhand publish --branch update-jq --wait
 
 Without `--branch`, publication selects the current local branch's committed contents. The first path requires one contribution commit, changes confined to one verified port directory, and passing evidence for its complete tree and target. It uses that result's recorded image, verifier, platform, variants, and build settings; no image flag or new build is needed. Missing or failed evidence requires an explicit `verify` first. A user-created branch is adopted only when publication is accepted; `--dry-run` accepts no job and creates no contribution.
 
-The push remote defaults to `origin`; the PR target comes from `upstream` when configured, then the fork parent, then the push repository. `--remote`, `--upstream`, and `--base` override those choices. Git uses its credentials; the API reads `GH_TOKEN`, then `GITHUB_TOKEN`, then the active `gh` login. Tokens stay in process memory. Dockhand verifies the authenticated GitHub identity before accepting publication and checks again before each remote effect. The commit supplies the title and initial body; existing PR bodies are preserved.
+The push remote defaults to `origin`; the PR target comes from `upstream` when configured, then the fork parent, then the push repository. `--remote`, `--upstream`, and `--base` override those choices. Git uses its credentials; the API reads `GH_TOKEN`, then `GITHUB_TOKEN`, Dockhand's Keychain credential, and finally the active `gh` login. Tokens never enter the workflow database or command output. Dockhand verifies the authenticated GitHub identity before accepting publication and checks again before each remote effect. The commit supplies the title and initial body; existing PR bodies are preserved.
 
 Publication without `--wait` returns after driver pickup or an earlier terminal outcome. `--wait` follows remote confirmation. Resume accepted work using its job ID with `wait`, or run `start`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Missing-verification scheduling for standalone `publish`, rebase/amend commands, and post-publication monitoring remain future work.

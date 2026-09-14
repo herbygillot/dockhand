@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/credential/keychain"
 	"github.com/herbygillot/dockhand/v2/internal/forge/github"
 	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/macports"
@@ -64,6 +65,9 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	githubClient := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
+	if config.GitHub.BaseURL == "" {
+		githubClient.Credentials = github.SystemCredentials{Store: keychain.Store{}, Key: githubCredentialKey}
+	}
 	discovery := &upstream.Service{Ports: ports, Repositories: githubClient, Versions: ports}
 	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery}
 	if config.Tart.ArtifactDirectory == "" {

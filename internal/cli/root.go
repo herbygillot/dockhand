@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,9 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const stateIndependentHelp = "dockhand.state-independent"
+
 type runtime struct {
-	config app.Config
-	json   bool
+	config      app.Config
+	json        bool
+	loginGitHub func(context.Context, app.GitHubLoginOptions) (app.GitHubLoginResult, error)
 }
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
@@ -31,7 +35,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		}
 		config.DBPath = filepath.Join(homeDir, ".dockhand", "state.db")
 	}
-	runtime := &runtime{config: config}
+	runtime := &runtime{config: config, loginGitHub: app.LoginGitHub}
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Maintain MacPorts ports",
@@ -70,6 +74,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	}
 
 	root.AddCommand(runtime.setupCommand(), runtime.databaseCommand(), runtime.gcCommand())
+	root.AddCommand(runtime.authCommand())
 	root.AddCommand(runtime.changeCommands()...)
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
 	root.AddCommand(runtime.statusCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.startCommand(), runtime.reviewCommand())
@@ -83,7 +88,9 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 	help := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		help(cmd, args)
-		fmt.Fprintf(cmd.OutOrStdout(), "\nState database: %s\n", runtime.config.DBPath)
+		if cmd.Annotations[stateIndependentHelp] != "true" {
+			fmt.Fprintf(cmd.OutOrStdout(), "\nState database: %s\n", runtime.config.DBPath)
+		}
 	})
 	return root, nil
 }

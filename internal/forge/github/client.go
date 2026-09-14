@@ -80,21 +80,26 @@ func (c *Client) authenticatedAPI(ctx context.Context) (*gh.Client, error) {
 }
 
 func (c *Client) Authenticate(ctx context.Context) error {
+	_, err := c.AuthenticatedUser(ctx)
+	return err
+}
+
+func (c *Client) AuthenticatedUser(ctx context.Context) (string, error) {
 	client, err := c.authenticatedAPI(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	user, response, err := client.Users.Get(ctx, "")
 	if err != nil {
 		if response != nil && response.StatusCode == http.StatusUnauthorized {
-			return fmt.Errorf("%w: GitHub rejected the configured credential: %w", forge.ErrAuthentication, err)
+			return "", fmt.Errorf("%w: GitHub rejected the configured credential: %w", forge.ErrAuthentication, err)
 		}
-		return fmt.Errorf("github: checking authenticated user: %w", err)
+		return "", fmt.Errorf("github: checking authenticated user: %w", err)
 	}
 	if user == nil || user.GetLogin() == "" {
-		return fmt.Errorf("%w: GitHub returned no authenticated user", ErrAuthentication)
+		return "", fmt.Errorf("%w: GitHub returned no authenticated user", ErrAuthentication)
 	}
-	return nil
+	return user.GetLogin(), nil
 }
 
 func (c *Client) newAPI(token string) (*gh.Client, error) {

@@ -14,6 +14,8 @@ dockhand2/
     app/                 # Configuration, setup, and dependency construction
     cli/                 # Command parsing, human/JSON output, attachment
     proc/                # Current-process driver lifetime and residency
+    credential/          # Device authorization and secret-store contracts
+      keychain/          # macOS Keychain implementation
     record/              # Shared durable records, identities, and value types
     state/               # Repository-scoped persistence and transaction contracts
       sqlite/            # SQLite storage, connections, and schema migrations
@@ -44,6 +46,8 @@ The initial internal files can be straightforward: `workflow/submit.go`, `cycle.
 `cli` uses Cobra for the command tree, flag parsing, argument validation, generated help, and shell completion. It parses commands into typed requests and renders typed results. It owns human output, JSON output, exit-code mapping, and the choice to observe admission or completion. It submits requests through the shared workflow API rather than writing record shapes itself; it never settles an attempt or performs driver bookkeeping. Domain packages do not print terminal messages or decide exit codes.
 
 `proc` manages residency and persistent execution within the current `dockhand` process. Change commands run targeted workflow cycles in their invocation; `dockhand start` explicitly runs persistent mode for the selected repository. No separate executable, executable-path discovery, or automatic child driver launch is needed. The database's repository ID comes from canonical Git common-directory registration. Linked worktrees share an entry; separate clones remain distinct. Database selection is independent of the checkout.
+
+`credential` defines the small device-authorization and secret-store boundaries used by repository-independent login. `credential/keychain` stores the native GitHub token through macOS Keychain without placing it in process arguments. `forge/github` implements the OAuth device endpoint and identity check. `app` wires those mechanics, while `cli` owns the browser prompt and human or JSON result. Login neither constructs repository services nor opens state.
 
 The state store is the request handoff and progress channel. The CLI calls `workflow.Submit` in its own process to validate and transactionally persist a queued job, then runs targeted workflow cycles in that invocation. A resident driver or targeted cycle reads eligible work from the state store and claims it transactionally. There is no socket or separate request transport. Action invocations and explicit persistent mode execute the same `workflow.Engine`.
 
@@ -116,8 +120,9 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 - `record` has no dependency on CLI, proc, workflow, storage, or concrete integrations.
 - `state` depends on shared records and standard-library contracts, not Git, SQLite, or workflow policy.
 - `state/sqlite` depends on `state`, `record`, and the selected SQLite driver. It does not import workflow or Git.
+- `credential` defines authorization and storage contracts without depending on a concrete forge, Keychain, CLI, or workflow. `credential/keychain` implements only its storage contract.
 - `forge` defines remote facts and access contracts using shared records and the standard library. It imports no capability or concrete adapter.
-- `forge/github` depends on `forge`, `record`, and Git validation mechanics; it imports neither `upstream`, `publish`, nor `macports`.
+- `forge/github` depends on `credential`, `forge`, `record`, OAuth transport, and Git validation mechanics; it imports neither `upstream`, `publish`, nor `macports`.
 - `upstream` and `publish` consume forge contracts and observations. MacPorts source conventions and version/publication policy stay in the consuming capability.
 - `workflow` depends on `state` and capability APIs. Capabilities do not depend back on the engine or write its records.
 - `proc` supplies current-process residency around `workflow.Engine`. Requests and observations pass through state; `proc` does not judge evidence or choose the next business action.
@@ -160,9 +165,8 @@ The immediate priorities reflect the two publication gaps found during the chezm
 1. **Verification reuse before requiring an image.** Let combined bump/publication use applicable recorded evidence through a policy consistent with standalone publication. Preserve source/target/configuration applicability checks and record the selected evidence and its configuration explicitly; do not silently rewrite accepted build choices or pick an arbitrary historical pass. Require a build image when new verification is actually needed.
 2. **Branch-based wait/cancel.** Resolve existing work from a tracked contribution and freeze the selected job IDs. Record cancellation selection and intent atomically; later submissions never join an existing attachment or cancellation.
 3. **Setup diagnostics and reusable verification settings.** Make missing tools, image selection, and provider configuration easier to diagnose and reuse.
-4. **Native authentication login.** Add the approved `dockhand auth login` workflow using browser device authorization and macOS Keychain, without requiring `gh`. Keep it independent of repository state and driver jobs. Application registration is required before implementing the browser flow; see the [authentication roadmap](cli-design.md#authentication-roadmap).
 
-Authentication discovery and preflight are implemented. Explicit and environment credentials plus the active `gh` account are resolved inside `forge/github`; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Image-free combined evidence selection and native login remain planned.
+Authentication discovery, preflight, and native login are implemented. Explicit and environment credentials, Dockhand's Keychain credential, and the active `gh` account are resolved for publication; standalone and combined publication binders check identity before acceptance, and the driver repeats the check immediately before each remote effect. Device login stays outside repository state and uses a registered OAuth client ID supplied by the build, environment, or command line. Image-free combined evidence selection remains planned.
 
 ### Implemented foundations
 
@@ -213,7 +217,7 @@ GitHub-backed `go.setup` now shares the version editor and preparation pipeline 
 
 `prepare/source.go` owns shared source loading and candidate evaluation. Version editing, checksum source edits, and HTTP stream hashing remain focused files in `prepare`; they do not need new packages yet. Version and revision transformations share the final metadata comparator. The workflow's small `ReleaseResolver` interface exposes the preparer's release-resolution capability separately so the driver can persist that result before preparation. `record.Release` describes the durable selected source; `forge.Release` describes a remote release observation, and `upstream.Candidate` adds a possible Portfile version without redefining those facts.
 
-Schema 4 adds one immutable-once-set JSON column to `jobs` for the selected release. It introduces no table, state interface, lock, or generic coordination abstraction. `golang.org/x/crypto` provides the legacy RIPEMD-160 checksum MacPorts Portfiles use. The existing HTTP client injection points support independent network tests. Production CLI calls currently use anonymous GitHub access; `app.Config.GitHub` accepts an explicit token for embedded callers, but CLI credential/configuration loading is separate work. Credentials are not persisted in the release checkpoint.
+Schema 4 adds one immutable-once-set JSON column to `jobs` for the selected release. It introduces no table, state interface, lock, or generic coordination abstraction. `golang.org/x/crypto` provides the legacy RIPEMD-160 checksum MacPorts Portfiles use. The existing HTTP client injection points support independent network tests. GitHub discovery can use public access; publication resolves an explicit token, environment token, Dockhand Keychain entry, or `gh` credential. Credentials are not persisted in the release checkpoint or workflow database.
 
 ## Automatic version selection
 
