@@ -1,6 +1,7 @@
 package macports
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"errors"
@@ -43,10 +44,11 @@ func (e *Evaluator) SelectVersion(ctx context.Context, current, expression strin
 		return VersionSelection{}, fmt.Errorf("macports: invalid version selection response")
 	}
 	comparison, err := strconv.Atoi(fields[0])
-	if err != nil || comparison < -1 || comparison > 1 {
+	if err != nil {
 		return VersionSelection{}, fmt.Errorf("macports: invalid version comparison")
 	}
-	result := VersionSelection{Comparison: comparison}
+	// MacPorts vercmp may return a character difference, not just -1 or 1.
+	result := VersionSelection{Comparison: cmp.Compare(comparison, 0)}
 	seen := map[int]bool{}
 	for _, field := range fields[1:] {
 		index, err := strconv.Atoi(field)

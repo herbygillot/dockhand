@@ -35,3 +35,23 @@ func TestVersionSelectionUsesTclFiltersAndMacPortsOrdering(t *testing.T) {
 	_, err = evaluator.SelectVersion(t.Context(), "1.9", `{v([0-9]+)}`, candidates)
 	require.ErrorContains(t, err, "capture does not match")
 }
+
+func TestVersionSelectionNormalizesMacPortsComparison(t *testing.T) {
+	executable, err := exec.LookPath("port-tclsh")
+	if err != nil {
+		t.Skip("MacPorts is required")
+	}
+	evaluator := macports.Evaluator{Executable: executable}
+	candidates := []macports.VersionCandidate{{Version: "11.5.3", MatchText: "v11.5.3"}}
+	for _, test := range []struct {
+		current string
+		want    int
+	}{{"11.5.1", 1}, {"11.5.3", 0}, {"11.5.9", -1}} {
+		t.Run(test.current, func(t *testing.T) {
+			result, err := evaluator.SelectVersion(t.Context(), test.current, `{v([0-9.]+)}`, candidates)
+			require.NoError(t, err)
+			require.Equal(t, []int{0}, result.Indices)
+			require.Equal(t, test.want, result.Comparison)
+		})
+	}
+}
