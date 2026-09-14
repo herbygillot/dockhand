@@ -11,18 +11,20 @@ import (
 // execution contains only the records needed for one job transition. It is
 // private to workflow; persistence still reads and writes individual records.
 type execution struct {
-	Problem        string
-	Job            record.Job
-	Revision       record.Revision
-	Plan           *record.VerificationPlan
-	Attempt        record.Attempt
-	Submission     record.Submission
-	NextSubmission *record.Submission
-	Resources      map[record.ResourceID]record.Resource
+	Job         record.Job
+	Revision    record.Revision
+	Plan        *record.VerificationPlan
+	Attempts    map[record.AttemptID]record.Attempt
+	Submissions map[record.RequestID]record.Submission
+	Resources   map[record.ResourceID]record.Resource
 }
 
 func loadExecution(ctx context.Context, r state.Reader, id record.JobID) (execution, error) {
-	work := execution{Resources: map[record.ResourceID]record.Resource{}}
+	work := execution{
+		Attempts:    map[record.AttemptID]record.Attempt{},
+		Submissions: map[record.RequestID]record.Submission{},
+		Resources:   map[record.ResourceID]record.Resource{},
+	}
 	var err error
 	if work.Job, err = r.Job(ctx, id); err != nil {
 		return work, err
@@ -40,18 +42,16 @@ func loadExecution(ctx context.Context, r state.Reader, id record.JobID) (execut
 	if err != nil {
 		return work, err
 	}
-	if len(attempts) > 1 {
-		work.Problem = "workflow: single-target cycle cannot select multiple attempts"
-		return work, nil
-	}
-	if len(attempts) == 1 {
-		work.Attempt = attempts[0]
-		if work.Attempt.SubmissionID != "" {
-			if work.Submission, err = r.Submission(ctx, work.Attempt.SubmissionID); err != nil {
+	for _, attempt := range attempts {
+		work.Attempts[attempt.ID] = attempt
+		if attempt.SubmissionID != "" {
+			submission, err := r.Submission(ctx, attempt.SubmissionID)
+			if err != nil {
 				return work, err
 			}
+			work.Submissions[submission.ID] = submission
 		}
-		resources, err := r.ResourcesForAttempt(ctx, work.Attempt.ID)
+		resources, err := r.ResourcesForAttempt(ctx, attempt.ID)
 		if err != nil {
 			return work, err
 		}
@@ -61,17 +61,31 @@ func loadExecution(ctx context.Context, r state.Reader, id record.JobID) (execut
 	}
 	return work, nil
 }
+
+func cloneExecution(before execution) execution {
+	work := before
+	work.Attempts = make(map[record.AttemptID]record.Attempt, len(before.Attempts))
+	for id, value := range before.Attempts {
+		work.Attempts[id] = value
+	}
+	work.Submissions = make(map[record.RequestID]record.Submission, len(before.Submissions))
+	for id, value := range before.Submissions {
+		work.Submissions[id] = value
+	}
+	work.Resources = make(map[record.ResourceID]record.Resource, len(before.Resources))
+	for id, value := range before.Resources {
+		work.Resources[id] = value
+	}
+	return work
+}
+
 func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(state.Tx, *execution) error) error {
 	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
 		before, err := loadExecution(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		work := before
-		work.Resources = map[record.ResourceID]record.Resource{}
-		for id, v := range before.Resources {
-			work.Resources[id] = v
-		}
+		work := cloneExecution(before)
 		if err = fn(tx, &work); err != nil {
 			return err
 		}
@@ -85,29 +99,30 @@ func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(s
 				return err
 			}
 		}
-		if before.Attempt.ID == "" && work.Attempt.ID != "" {
-			if err = tx.PutAttempt(ctx, work.Attempt); err != nil {
-				return err
+		for id, value := range work.Attempts {
+			if _, exists := before.Attempts[id]; !exists {
+				if err = tx.PutAttempt(ctx, value); err != nil {
+					return err
+				}
 			}
 		}
-		if !reflect.DeepEqual(before.Submission, work.Submission) {
-			if err = tx.PutSubmission(ctx, work.Submission); err != nil {
-				return err
+		for id, value := range work.Submissions {
+			if !reflect.DeepEqual(before.Submissions[id], value) {
+				if err = tx.PutSubmission(ctx, value); err != nil {
+					return err
+				}
 			}
 		}
-		if work.NextSubmission != nil {
-			if err = tx.PutSubmission(ctx, *work.NextSubmission); err != nil {
-				return err
+		for id, value := range work.Attempts {
+			if old, exists := before.Attempts[id]; exists && !reflect.DeepEqual(old, value) {
+				if err = tx.PutAttempt(ctx, value); err != nil {
+					return err
+				}
 			}
 		}
-		if before.Attempt.ID != "" && !reflect.DeepEqual(before.Attempt, work.Attempt) {
-			if err = tx.PutAttempt(ctx, work.Attempt); err != nil {
-				return err
-			}
-		}
-		for id, v := range work.Resources {
-			if !reflect.DeepEqual(before.Resources[id], v) {
-				if err = tx.PutResource(ctx, v); err != nil {
+		for id, value := range work.Resources {
+			if !reflect.DeepEqual(before.Resources[id], value) {
+				if err = tx.PutResource(ctx, value); err != nil {
 					return err
 				}
 			}

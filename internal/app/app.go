@@ -18,7 +18,6 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/state"
 	"github.com/herbygillot/dockhand/v2/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/v2/internal/upstream"
-	"github.com/herbygillot/dockhand/v2/internal/verify"
 	"github.com/herbygillot/dockhand/v2/internal/verify/tart"
 	"github.com/herbygillot/dockhand/v2/internal/workflow"
 )
@@ -82,7 +81,6 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Ports:      ports,
 		Preparer:   preparation,
 		Releases:   preparation,
-		Planner:    &verify.Planner{Ports: ports},
 		Provider:   provider,
 		Publisher:  &publish.Service{Repo: repo, Forge: githubClient, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
 		Now:        time.Now,

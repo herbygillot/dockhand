@@ -335,3 +335,93 @@ func TestCycleCleanupHasIndependentClaims(t *testing.T) {
 	require.Len(t, reply.result.Problems, 1, "stale cleanup undid confirmation")
 	require.Equal(t, record.ResourceReleased, f.status(t, id).Resources[0].State, "stale cleanup undid confirmation")
 }
+
+func TestCycleRunsEveryVerificationTargetAfterOneFails(t *testing.T) {
+	f := newFixture(t)
+	request := f.request("multiple-targets")
+	request.Spec.Targets = append(request.Spec.Targets, record.Target{Name: "dependent", Portfile: "devel/dependent/Portfile"})
+	receipt, err := f.engine.Submit(t.Context(), request)
+	require.NoError(t, err)
+
+	var observations atomic.Int32
+	f.provider.observe = func(_ context.Context, run record.ProviderRun) (verify.Observation, error) {
+		verdict := record.VerdictPassed
+		if observations.Add(1) == 1 {
+			verdict = record.VerdictFailed
+		}
+		return verify.Observation{Run: run, State: record.AttemptFinished, Verdict: verdict, ObservedAt: f.now()}, nil
+	}
+
+	sawPartialFailure := false
+	for range 8 {
+		f.run(t, receipt.JobID)
+		status := f.status(t, receipt.JobID).Jobs[0]
+		failed, unfinished := 0, 0
+		for _, attempt := range status.Attempts {
+			if !attempt.State.Terminal() {
+				unfinished++
+			}
+			if attempt.Evidence != nil && attempt.Evidence.Verdict == record.VerdictFailed {
+				failed++
+			}
+		}
+		if failed == 1 && unfinished > 0 {
+			sawPartialFailure = true
+			require.Equal(t, record.JobActive, status.Job.State)
+		}
+		if status.Job.State.Terminal() {
+			break
+		}
+	}
+
+	status := f.status(t, receipt.JobID).Jobs[0]
+	require.True(t, sawPartialFailure, "the first failed target ended the job before independent work ran")
+	require.Equal(t, record.JobFailed, status.Job.State)
+	require.Len(t, status.Attempts, 2)
+	require.Equal(t, 2, f.provider.count("submit"))
+	verdicts := map[record.Verdict]int{}
+	targets := map[string]bool{}
+	for _, attempt := range status.Attempts {
+		require.True(t, attempt.State.Terminal())
+		require.NotNil(t, attempt.Evidence)
+		verdicts[attempt.Evidence.Verdict]++
+		targets[attempt.Spec.Target.Name] = true
+	}
+	require.Equal(t, map[record.Verdict]int{record.VerdictFailed: 1, record.VerdictPassed: 1}, verdicts)
+	require.Equal(t, map[string]bool{"dependent": true, "fixture": true}, targets)
+	require.Contains(t, status.Job.Detail, "1 failed")
+	require.Contains(t, status.Job.Detail, "1 passed")
+}
+
+func TestCycleCancelsEveryVerificationTarget(t *testing.T) {
+	f := newFixture(t)
+	request := f.request("cancel-multiple")
+	request.Spec.Targets = append(request.Spec.Targets, record.Target{Name: "dependent", Portfile: "devel/dependent/Portfile"})
+	receipt, err := f.engine.Submit(t.Context(), request)
+	require.NoError(t, err)
+
+	f.run(t, receipt.JobID)
+	f.run(t, receipt.JobID)
+	status := f.status(t, receipt.JobID).Jobs[0]
+	require.Len(t, status.Attempts, 2)
+	for _, attempt := range status.Attempts {
+		require.Equal(t, record.AttemptRunning, attempt.State)
+	}
+
+	f.cancel(t, receipt.JobID)
+	f.provider.observe = terminal(f, record.VerdictCanceled)
+	for range 6 {
+		f.run(t, receipt.JobID)
+		if f.status(t, receipt.JobID).Jobs[0].Job.State.Terminal() {
+			break
+		}
+	}
+
+	status = f.status(t, receipt.JobID).Jobs[0]
+	require.Equal(t, record.JobCanceled, status.Job.State)
+	require.Equal(t, 2, f.provider.count("cancel"))
+	for _, attempt := range status.Attempts {
+		require.Equal(t, record.AttemptCanceled, attempt.State)
+		require.Equal(t, record.VerdictCanceled, attempt.Evidence.Verdict)
+	}
+}

@@ -15,7 +15,7 @@ Add downstream coverage without turning workflow into a generic graph engine.
 - `macports` discovers reverse dependents and the dependency closure for each selected target against the frozen source tree.
 - `prepare` proposes any required revision edits separately from the verification coverage plan.
 - `verify` records the concrete target/configuration questions that need answers.
-- `workflow` schedules an isolated attempt for each target/configuration and lets provider capacity determine parallel or sequential execution.
+- `workflow` schedules an isolated attempt for each target/configuration and lets provider capacity determine parallel or sequential execution. The multi-attempt scheduler and aggregate outcomes are implemented; coverage discovery has not yet populated these plans.
 - Each attempt owns its VM and artifacts. Conflicting dependents therefore do not need to coexist in one guest.
 - Results distinguish a failure in the selected downstream port from a failure caused by another dependency in its resolved build closure.
 

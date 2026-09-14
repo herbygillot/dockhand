@@ -1,10 +1,10 @@
 # State store design
 
-This document describes the initial SQLite implementation, following the [architecture](architecture.md), [component structure](components.md), and [CLI design](cli-design.md). The Git ledger and lock-directory implementation have been removed. `internal/state` and `internal/state/sqlite` now serve intake, status, cancellation, and the single-target verification cycle. Global `--db` is wired; see the [implementation report](activity/2026-09-12-sqlite-state.md) for scope and validation.
+This document describes the initial SQLite implementation, following the [architecture](architecture.md), [component structure](components.md), and [CLI design](cli-design.md). The Git ledger and lock-directory implementation have been removed. `internal/state` and `internal/state/sqlite` now serve intake, status, cancellation, and multi-target verification cycles. Global `--db` is wired; see the [implementation report](activity/2026-09-12-sqlite-state.md) for scope and validation.
 
 ## First slice
 
-Implement a shared database, repository registration, request acceptance, status, and the existing single-target verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
+Implement a shared database, repository registration, request acceptance, status, and the verification cycle: capacity waiting, submission reconciliation, cancellation, results, and independent resource cleanup. Keep current driver attachment and provider recovery semantics.
 
 Use `internal/state` for backend-independent contracts and `internal/state/sqlite` for the first implementation. Preserve `record` for domain data and `workflow` for decisions. There is no Git ledger, source-pin manager, Git operation journal, notes exporter, generic lock service, or event-sourced workflow in this slice. Prepared-image Tart execution is now implemented; verification command wiring and current-process residency are implemented; explicit version- and revision-bump preparation are implemented; automatic GitHub and GitLab discovery and standalone/combined GitHub publication are implemented.
 
@@ -92,7 +92,7 @@ The following summarizes the [initial schema](../internal/state/sqlite/migration
 | `publications` | Job, revision, evidence, publication intent, lifecycle and push/write checkpoints | Recoverable publication and remote branch coordination |
 | `pull_requests` | Change, forge/repository/number identity, latest observation | Match published revisions with pull requests |
 | `control_jobs` | Request, job, applied time | Per-job cancellation progress |
-| `plans` | Job, optional revision, frozen single-target plan | Preserve requested verification coverage |
+| `plans` | Job, optional revision, frozen target plan | Preserve requested verification coverage |
 | `attempts` | ID, job, target identity, immutable build choices and inputs, state, next action time, cancellation state, claim fields, last error | Current verification execution and scheduling |
 | `submissions` | Submission ID, attempt, sequence, provider, run ID, state, admission/closure times | Recoverable provider identities, including closed submissions |
 | `attempt_evidence` | Attempt, latest accepted verdict/observation time, diagnostic evidence and artifact/log references | Keep evidence separate from frequent claim updates |
@@ -103,7 +103,7 @@ The following summarizes the [initial schema](../internal/state/sqlite/migration
 
 Use ordinary columns for keys, relationships, lifecycle states, scheduling, claims, and fields used by current queries. Small nested targets, variants, build options, plan details, and evidence can use JSON checked on write. They belong to individual records; there is no whole-state document. Do not store a second authoritative copy of a source or relational key inside JSON. The backend reconstructs existing domain values from the authoritative columns and referenced records.
 
-The first plan contains one target, so normalized target graphs, separate artifact catalogues, per-port query tables, and event history are unnecessary now. Add those when dependent scheduling, artifact reuse, selector resolution, or a history consumer requires them. Preserve the existing negative and running evidence semantics; terminal results cannot be overwritten by a later poll, and retrying a build creates another attempt.
+Plans store their target roster as one immutable value. Attempts remain separate rows so drivers can claim and progress targets independently. Normalized target graphs, separate artifact catalogues, per-port query tables, and event history remain unnecessary until dependency ordering, artifact reuse, selector resolution, or a history consumer requires them. Preserve the existing negative and running evidence semantics; terminal results cannot be overwritten by a later poll, and retrying a build creates another attempt.
 
 `requests.kind` distinguishes job intake from cancellation. Cancellation's domain record is assembled from the request and `control_jobs`; a separate `controls` table would add no useful lifetime here. Matching request kinds and immutable payloads are checked within intake's transaction. Job creation and its receipt are atomic. Cancellation completion means every selected job received the intent or was already terminal; it does not mean the provider stopped.
 

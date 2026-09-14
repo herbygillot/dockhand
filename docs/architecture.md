@@ -236,7 +236,7 @@ No CLI branch-versus-port disambiguation, dirty-worktree policy, branch reassoci
 
 ## Prepared-image Tart execution
 
-`verify/tart` implements the single-target provider contract. Shared local Tart execution, image manifests, release profiles, and image locks live in `tart`, below both verification and provisioning. SQLite reserves a slot at the canonical Tart-home scope across repositories. Observed external running VMs count toward the configured capacity, although tools outside Dockhand do not participate in its admission transaction. Cooperating drivers must share the database and pool configuration.
+`verify/tart` implements the provider contract for one isolated attempt. Shared local Tart execution, image manifests, release profiles, and image locks live in `tart`, below both verification and provisioning. SQLite reserves a slot at the canonical Tart-home scope across repositories. Observed external running VMs count toward the configured capacity, although tools outside Dockhand do not participate in its admission transaction. Cooperating drivers must share the database and pool configuration.
 
 Submission records a reservation before cloning a uniquely named VM. An interruption during provisioning is reconciled by stopping and permanently closing that submission, returning any resource for cleanup. After source staging, the provider records admission intent before launching the guest. A later observer can complete that same idempotent launch. Closed IDs permanently reject late submissions; lease expiry is never evidence that capacity is free.
 

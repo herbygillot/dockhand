@@ -392,7 +392,7 @@ func (t *transaction) Plan(ctx context.Context, id record.JobID) (record.Verific
 	return v, decode(raw, &v.Targets)
 }
 func (t *transaction) PutPlan(ctx context.Context, v record.VerificationPlan) error {
-	if v.JobID == "" || len(v.Targets) != 1 {
+	if v.JobID == "" || len(v.Targets) == 0 {
 		return state.ErrInvalid
 	}
 	if old, err := t.Plan(ctx, v.JobID); err == nil {

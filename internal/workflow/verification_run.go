@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/v2/internal/record"
@@ -11,7 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/verify"
 )
 
-// attemptAction selects one provider operation after the attempt has been claimed.
+// attemptAction selects one provider operation after an attempt has been claimed.
 type attemptAction string
 
 const (
@@ -21,8 +23,7 @@ const (
 	cancelAttempt    attemptAction = "cancel"
 )
 
-// attemptResult carries one provider response back across the transaction
-// boundary. Only the response corresponding to the selected action is used.
+// attemptResult carries one provider response back across the transaction boundary.
 type attemptResult struct {
 	submission     verify.Submission
 	reconciliation verify.Reconciliation
@@ -30,10 +31,8 @@ type attemptResult struct {
 	err            error
 }
 
-// advanceJob settles local-only work or claims, calls, and records one attempt
-// action. It returns whether advancement was confirmed, a per-job problem,
-// and an error if the caller must handle a lost claim or stop the pass. A later
-// failure can leave the earlier claim transaction committed for recovery.
+// advanceJob persists planning or performs one claimed provider action for a job.
+// Provider calls occur outside the state transaction.
 func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, error) {
 	e := c.engine
 	var attempt record.Attempt
@@ -52,28 +51,9 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			if job.Claim.Live(now) || !due(job.RetryAt, now) {
 				return nil
 			}
-			attempt = work.Attempt
-			if work.Problem != "" {
-				detail = work.Problem
-				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
+			if job.CancelRequestedAt != nil && len(work.Attempts) == 0 {
+				job.State, job.FinishedAt, job.Detail = record.JobCanceled, &now, "Canceled before admission"
 				work.Job = job
-				changed = true
-				return nil
-			}
-
-			if job.CancelRequestedAt != nil && (attempt.ID == "" || attempt.State == record.AttemptQueued) {
-				if attempt.Claim.Live(now) {
-					return nil
-				}
-				if attempt.ID != "" {
-					if attempt.Run != (record.ProviderRun{}) || hasResources(work, attempt.ID) {
-						return fmt.Errorf("%w: queued attempt has external effects", state.ErrInvalid)
-					}
-					finishAttempt(work, &job, &attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, "Canceled before admission", now)
-				} else {
-					job.State, job.FinishedAt, job.Detail = record.JobCanceled, &now, "Canceled before admission"
-					work.Job = job
-				}
 				changed = true
 				return nil
 			}
@@ -84,9 +64,9 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				changed = true
 				return nil
 			}
-			if attempt.ID == "" {
+			if len(work.Attempts) == 0 {
 				var plan record.VerificationPlan
-				var build record.BuildSpec
+				var builds []record.BuildSpec
 				var reused record.Attempt
 				var explanation string
 				if job.Spec.Build == nil && job.Spec.BuildRequirements != nil {
@@ -95,7 +75,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 						return err
 					}
 					if reused.ID == "" {
-						_, _, planningErr := verify.PlanSingle(job, work.Revision)
+						_, _, planningErr := verify.Plan(job, work.Revision)
 						detail = explanation
 						if planningErr != nil {
 							detail += "; " + planningErr.Error()
@@ -107,16 +87,18 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 						return nil
 					}
 				} else {
-					plan, build, err = verify.PlanSingle(job, work.Revision)
+					plan, builds, err = verify.Plan(job, work.Revision)
 					if err != nil {
 						job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, err.Error()
 						work.Job = job
 						changed, detail = true, err.Error()
 						return nil
 					}
-					reused, explanation, err = selectVerification(ctx, tx, job, build)
-					if err != nil {
-						return err
+					if len(builds) == 1 {
+						reused, explanation, err = selectVerification(ctx, tx, job, builds[0])
+						if err != nil {
+							return err
+						}
 					}
 				}
 				job.ReuseDetail = explanation
@@ -131,19 +113,30 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 					changed = true
 					return nil
 				}
-				attempt = record.Attempt{ID: record.AttemptID("attempt_" + rand.Text()), JobID: id, TargetID: plan.Targets[0].ID, Spec: build, State: record.AttemptQueued, CreatedAt: now}
-				attempt.SubmissionID = record.RequestID("submit_" + string(attempt.ID))
-				work.Submission = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: 1, Provider: build.Config.Provider, CreatedAt: now}
+				for i, build := range builds {
+					candidate := record.Attempt{ID: record.AttemptID("attempt_" + rand.Text()), JobID: id, TargetID: plan.Targets[i].ID, Spec: build, State: record.AttemptQueued, CreatedAt: now}
+					candidate.SubmissionID = record.RequestID("submit_" + string(candidate.ID))
+					work.Attempts[candidate.ID] = candidate
+					work.Submissions[candidate.SubmissionID] = record.Submission{ID: candidate.SubmissionID, AttemptID: candidate.ID, Sequence: 1, Provider: build.Config.Provider, CreatedAt: now}
+				}
 				work.Plan = &plan
-				work.Attempt = attempt
 				job.State = record.JobActive
 				work.Job = job
 				changed = true
 			}
-			if attempt.State.Terminal() {
-				return fmt.Errorf("%w: terminal attempt belongs to active job", state.ErrInvalid)
+
+			var ok bool
+			attempt, ok = selectAttempt(work, now, job.CancelRequestedAt != nil)
+			if !ok {
+				return nil
 			}
-			if attempt.Claim.Live(now) || !due(attempt.RetryAt, now) {
+			if job.CancelRequestedAt != nil && attempt.State == record.AttemptQueued {
+				if attempt.Run != (record.ProviderRun{}) || hasResources(work, attempt.ID) {
+					return fmt.Errorf("%w: queued attempt has external effects", state.ErrInvalid)
+				}
+				finishAttempt(work, &job, &attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, "Canceled before admission", now)
+				work.Job = job
+				changed = true
 				return nil
 			}
 			switch attempt.State {
@@ -170,7 +163,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				detail = err.Error()
 				retry := now.Add(c.retry)
 				attempt.LastError, attempt.RetryAt = detail, &retry
-				work.Attempt = attempt
+				work.Attempts[attempt.ID] = attempt
 				changed, action = true, ""
 				return nil
 			}
@@ -182,7 +175,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			if action == submitAttempt {
 				attempt.State = record.AttemptSubmitting
 			}
-			work.Attempt = attempt
+			work.Attempts[attempt.ID] = attempt
 			changed = true
 			return nil
 		})
@@ -193,21 +186,16 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		if !needsProvider {
 			break
 		}
-		// Resolve capabilities after local planning, then recheck ownership and intent.
 		c.checkProvider(ctx)
 	}
 	if action == "" {
 		return changed, detail, nil
 	}
-	// The intent and claim are durable before any provider effect. Losing the
-	// response leaves enough identity for another cycle to reconcile the call.
 	response := c.callAttempt(ctx, action, attempt)
-	// Re-read after the external call; the snapshot that authorized it may
-	// have been superseded while this driver was waiting.
 	err = e.updateExecution(ctx, id, func(tx state.Tx, work *execution) error {
-		current := work.Attempt
+		current, exists := work.Attempts[attempt.ID]
 		now := e.now()
-		if current.ID != attempt.ID || !current.Claim.Owns(attempt.Claim, now) {
+		if !exists || !current.Claim.Owns(attempt.Claim, now) {
 			return ErrClaimLost
 		}
 		job := work.Job
@@ -226,16 +214,51 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			current.RetryAt = &retry
 		}
 		current.LastError = detail
-		work.Attempt = current
+		work.Attempts[current.ID] = current
 		work.Job = job
 		return nil
 	})
 	return changed, detail, err
 }
 
+// selectAttempt chooses one due, unclaimed attempt. Ordering by due time lets new
+// targets fill available capacity before routine observations become due.
+func selectAttempt(work *execution, now time.Time, canceling bool) (record.Attempt, bool) {
+	ids := make([]string, 0, len(work.Attempts))
+	for id, attempt := range work.Attempts {
+		if attempt.State.Terminal() || attempt.Claim.Live(now) || !due(attempt.RetryAt, now) {
+			continue
+		}
+		ids = append(ids, string(id))
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		a := work.Attempts[record.AttemptID(ids[i])]
+		b := work.Attempts[record.AttemptID(ids[j])]
+		if canceling {
+			aQueued, bQueued := a.State == record.AttemptQueued, b.State == record.AttemptQueued
+			if aQueued != bQueued {
+				return aQueued
+			}
+		}
+		aDue, bDue := time.Time{}, time.Time{}
+		if a.RetryAt != nil {
+			aDue = *a.RetryAt
+		}
+		if b.RetryAt != nil {
+			bDue = *b.RetryAt
+		}
+		if compared := aDue.Compare(bDue); compared != 0 {
+			return compared < 0
+		}
+		return ids[i] < ids[j]
+	})
+	if len(ids) == 0 {
+		return record.Attempt{}, false
+	}
+	return work.Attempts[record.AttemptID(ids[0])], true
+}
+
 // callAttempt performs exactly one provider operation outside the write transaction.
-// It reports a context error even when the provider returns nil after expiry,
-// so a late result is not accepted as timely confirmation.
 func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt record.Attempt) attemptResult {
 	ctx, cancel := context.WithTimeout(ctx, c.attemptTimeout(action))
 	defer cancel()
@@ -256,9 +279,7 @@ func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt r
 	return result
 }
 
-// recordAttempt applies a provider response within the caller's transaction
-// after claim validation. Its returned detail is stored on the attempt and
-// reported as a job problem. It performs no provider calls.
+// recordAttempt applies a provider response after the caller revalidates its claim.
 func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.Attempt, action attemptAction, result attemptResult, now time.Time) string {
 	switch action {
 	case submitAttempt:
@@ -275,15 +296,15 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			}
 			return recordSubmission(work, job, attempt, submission, nil, now)
 		case verify.RequestClosed:
-			// Closure must fence late submissions at the provider. An observation
-			// of temporary absence is insufficient to cancel or retry safely.
 			if result.reconciliation.Submission.Run != (record.ProviderRun{}) || attempt.Run != (record.ProviderRun{}) {
 				return "workflow: closed submission unexpectedly identifies a run"
 			}
 			if err := recordResources(work, *attempt, result.reconciliation.Submission.Resources); err != nil {
 				return err.Error()
 			}
-			work.Submission.ClosedAt = &now
+			current := work.Submissions[attempt.SubmissionID]
+			current.ClosedAt = &now
+			work.Submissions[current.ID] = current
 			if hasResources(work, attempt.ID) {
 				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictErrored, ObservedAt: now}, "Submission closed after partial provisioning", now)
 				dispositionResources(work, attempt.ID, record.ResourceReleaseRequested)
@@ -293,7 +314,7 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, "Canceled before admission", now)
 			} else {
 				attempt.SubmissionID = record.RequestID("submit_" + rand.Text())
-				work.NextSubmission = &record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: work.Submission.Sequence + 1, Provider: attempt.Spec.Config.Provider, CreatedAt: now}
+				work.Submissions[attempt.SubmissionID] = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: current.Sequence + 1, Provider: attempt.Spec.Config.Provider, CreatedAt: now}
 				attempt.State = record.AttemptQueued
 			}
 			return ""
@@ -304,8 +325,6 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			return "workflow: invalid provider reconciliation state"
 		}
 	case cancelAttempt:
-		// A successful call acknowledges intent. Observation must still
-		// establish the outcome, including when the cancellation call failed.
 		attempt.CancelPendingObservation = true
 		if result.err != nil {
 			return result.err.Error()
@@ -337,11 +356,7 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 	return "workflow: invalid attempt action"
 }
 
-// recordSubmission validates run identity before retaining response resources.
-// It defaults to uncertainty, then adopts admission, a capacity refusal, or an
-// unsupported outcome only when the response is consistent. Valid handles may
-// be retained despite a call error so recovery does not lose cleanup obligations.
-// The caller must hold a state transaction and have validated the attempt claim.
+// recordSubmission validates a submission response and retains its recoverable identity.
 func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt, submission verify.Submission, callErr error, now time.Time) string {
 	attempt.State = record.AttemptUncertain
 	if run := submission.Run; run != (record.ProviderRun{}) {
@@ -366,10 +381,12 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 			return "workflow: admission does not identify the requested run"
 		}
 		attempt.Run, attempt.State = run, record.AttemptRunning
-		work.Submission.RunID = run.RunID
-		if work.Submission.AdmittedAt == nil {
-			work.Submission.AdmittedAt = &now
+		current := work.Submissions[attempt.SubmissionID]
+		current.RunID = run.RunID
+		if current.AdmittedAt == nil {
+			current.AdmittedAt = &now
 		}
+		work.Submissions[current.ID] = current
 		if job.AdmittedAt == nil {
 			job.AdmittedAt = &now
 		}
@@ -392,27 +409,59 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 	}
 }
 
-// finishAttempt records a terminal verdict and its job outcome in the caller's
-// transaction. Passed and canceled attempts request release; other outcomes
-// retain their resources for diagnosis. Actual release happens separately.
+// finishAttempt records one terminal result and then reevaluates the whole job.
 func finishAttempt(work *execution, job *record.Job, attempt *record.Attempt, evidence record.Evidence, detail string, now time.Time) {
 	attempt.Evidence, attempt.State, attempt.Claim, attempt.RetryAt = &evidence, record.AttemptFinished, nil, nil
 	resourceState := record.ResourceRetained
-	switch evidence.Verdict {
-	case record.VerdictPassed:
-		job.State, resourceState = record.JobCompleted, record.ResourceReleaseRequested
-	case record.VerdictFailed:
-		job.State = record.JobFailed
-	case record.VerdictCanceled:
-		job.State, attempt.State, resourceState = record.JobCanceled, record.AttemptCanceled, record.ResourceReleaseRequested
-	default:
-		job.State = record.JobNeedsAttention
+	if evidence.Verdict == record.VerdictPassed || evidence.Verdict == record.VerdictCanceled {
+		resourceState = record.ResourceReleaseRequested
 	}
-	job.FinishedAt, job.Detail = &now, detail
-	if evidence.Verdict == record.VerdictPassed && job.Spec.PublishTo != nil {
+	if evidence.Verdict == record.VerdictCanceled {
+		attempt.State = record.AttemptCanceled
+	}
+	dispositionResources(work, attempt.ID, resourceState)
+	work.Attempts[attempt.ID] = *attempt
+	settleVerification(work, job, detail, now)
+}
+
+// settleVerification leaves partial cohorts active and derives a terminal job outcome
+// only after every planned attempt has conclusive evidence.
+func settleVerification(work *execution, job *record.Job, detail string, now time.Time) {
+	counts := map[record.Verdict]int{}
+	for _, attempt := range work.Attempts {
+		if !attempt.State.Terminal() || attempt.Evidence == nil {
+			job.State, job.FinishedAt = record.JobActive, nil
+			return
+		}
+		counts[attempt.Evidence.Verdict]++
+	}
+	if len(work.Attempts) == 0 {
+		return
+	}
+	switch {
+	case counts[record.VerdictFailed] > 0:
+		job.State = record.JobFailed
+	case counts[record.VerdictErrored]+counts[record.VerdictBlocked]+counts[record.VerdictUnsupported]+counts[record.VerdictUnknown] > 0:
+		job.State = record.JobNeedsAttention
+	case counts[record.VerdictCanceled] > 0:
+		job.State = record.JobCanceled
+	default:
+		job.State = record.JobCompleted
+	}
+	job.FinishedAt = &now
+	if len(work.Attempts) == 1 {
+		job.Detail = detail
+	} else {
+		parts := make([]string, 0, 5)
+		for _, verdict := range []record.Verdict{record.VerdictPassed, record.VerdictFailed, record.VerdictBlocked, record.VerdictUnsupported, record.VerdictErrored, record.VerdictCanceled} {
+			if counts[verdict] > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", counts[verdict], verdict))
+			}
+		}
+		job.Detail = "Verification completed: " + strings.Join(parts, ", ")
+	}
+	if job.State == record.JobCompleted && job.Spec.PublishTo != nil {
 		job.Phase = record.PhasePublication
 		job.State, job.FinishedAt, job.Detail = record.JobActive, nil, "Verification passed; publication pending"
 	}
-	dispositionResources(work, attempt.ID, resourceState)
-	work.Attempt, work.Job = *attempt, *job
 }

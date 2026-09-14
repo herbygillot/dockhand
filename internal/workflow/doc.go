@@ -33,7 +33,7 @@
 // Matching passing evidence can settle a new job with a reference to its original
 // attempt before any provider call. Forced verification creates a new execution.
 // Publication plans and reconciles a prepared or adopted revision with its remote
-// destination. Verification currently plans one target per job; dependent
-// coverage scheduling remains unfinished. Acceptance alone establishes neither
+// destination. Verification plans one isolated attempt for each target and
+// settles the job after every target reaches a terminal outcome. Acceptance alone establishes neither
 // provider admission nor successful completion.
 package workflow

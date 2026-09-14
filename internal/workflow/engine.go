@@ -58,9 +58,6 @@ type Engine struct {
 	Preparer SourcePreparer
 	// Releases resolves version-bump input for a durable checkpoint before preparation.
 	Releases ReleaseResolver
-	// Planner is reserved for broader coverage planning. The current cycle
-	// uses verify.PlanSingle for its single-target plan.
-	Planner *verify.Planner
 	// Provider executes verification and resource operations during Cycle.
 	// Submit, Control, and Status do not call it.
 	Provider verify.Provider
