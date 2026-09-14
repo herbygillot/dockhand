@@ -78,9 +78,6 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if config.Tart.Image == "" {
-				return fmt.Errorf("select a prepared local Tart image with --image")
-			}
 			services, err := app.Build(cmd.Context(), config)
 			if err != nil {
 				return err

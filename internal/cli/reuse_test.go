@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	tartvm "github.com/herbygillot/dockhand/internal/tart"
 	"github.com/herbygillot/dockhand/internal/verify"
+	providertart "github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,4 +112,29 @@ func seedCLIVerification(t *testing.T, config app.Config, branch string) time.Ti
 	}))
 	require.NoError(t, services.Close())
 	return observed
+}
+
+func TestVerifyCLISelectsSetupImageWhenImageIsOmitted(t *testing.T) {
+	config, _, _ := preparationCLI(t)
+	configureReuseImage(t, &config)
+	evaluator := macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	platform, err := evaluator.NativePlatform(t.Context())
+	require.NoError(t, err)
+	name, err := tartvm.DefaultImageName(platform)
+	require.NoError(t, err)
+	require.NoError(t, os.Rename(filepath.Join(config.Tart.Home, "vms", "base"), filepath.Join(config.Tart.Home, "vms", name)))
+	script, err := os.ReadFile(config.Tart.Executable)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(config.Tart.Executable, []byte(strings.ReplaceAll(string(script), "base", name)), 0700))
+	config.Tart.Image = ""
+	seedCLIVerification(t, config, "candidate")
+	var stdout, stderr bytes.Buffer
+	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--branch", "candidate", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	var result ActionResult
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)
+	require.Equal(t, record.AttemptID("original-attempt"), result.Status.Jobs[0].Job.ReusedAttempt)
+	var providerConfig providertart.Config
+	require.NoError(t, json.Unmarshal(result.Status.Jobs[0].Job.Spec.Build.ProviderConfig, &providerConfig))
+	require.Equal(t, name, providerConfig.Image)
 }
