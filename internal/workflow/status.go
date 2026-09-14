@@ -8,9 +8,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/v2/internal/git"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
 )
+
+// StatusFilter narrows a recorded snapshot without selecting work for execution.
+// Active includes queued jobs and jobs waiting for capacity or a retry.
+// Branch matches the contribution's recorded branch, including closed contributions.
+type StatusFilter struct {
+	JobID  record.JobID `json:",omitempty"`
+	Branch string       `json:",omitempty"`
+	Active bool         `json:",omitempty"`
+}
+
+func (f StatusFilter) Validate() error {
+	if f.JobID != "" && f.Branch != "" {
+		return fmt.Errorf("workflow: status accepts a job ID or a branch, not both")
+	}
+	if f.JobID != "" && !validToken(string(f.JobID)) {
+		return fmt.Errorf("workflow: invalid status job ID")
+	}
+	if f.Branch != "" && !git.ValidBranchName(f.Branch) {
+		return fmt.Errorf("workflow: invalid status branch")
+	}
+	return nil
+}
 
 type JobStatus struct {
 	Job          record.Job
@@ -20,6 +43,7 @@ type JobStatus struct {
 	Reused *record.Attempt `json:",omitempty"`
 }
 type Status struct {
+	Filter       *StatusFilter `json:",omitempty"`
 	Repository   record.RepositoryID
 	ReadAt       time.Time
 	Jobs         []JobStatus
@@ -76,11 +100,29 @@ func collect[T any](ctx context.Context, q state.Query, get func(context.Context
 	}
 }
 func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
+	return e.status(ctx, scope, StatusFilter{})
+}
+
+func (e *Engine) FilteredStatus(ctx context.Context, filter StatusFilter) (Status, error) {
+	if err := filter.Validate(); err != nil {
+		return Status{}, err
+	}
+	scope := Scope{All: true}
+	if filter.JobID != "" {
+		scope = Scope{Jobs: []record.JobID{filter.JobID}}
+	}
+	return e.status(ctx, scope, filter)
+}
+
+func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (Status, error) {
 	if err := e.checkScope(scope); err != nil {
 		return Status{}, err
 	}
 	result := EmptyStatus(e.now())
 	result.Repository = e.Repository
+	if filter != (StatusFilter{}) {
+		result.Filter = &filter
+	}
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		if err := checkJobs(ctx, r, scope); err != nil {
 			return err
@@ -89,10 +131,16 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 		if scope.All {
 			selection = nil
 		}
-		q := state.Query{Jobs: selection}
+		q := state.Query{Jobs: selection, Pending: filter.Active, Branch: filter.Branch}
 		jobs, err := collect(ctx, q, r.Jobs, func(v record.Job) string { return string(v.ID) })
 		if err != nil {
 			return err
+		}
+		if filter.Active || filter.Branch != "" {
+			selection = make([]record.JobID, 0, len(jobs))
+			for _, job := range jobs {
+				selection = append(selection, job.ID)
+			}
 		}
 		for _, job := range jobs {
 			attempts, err := r.AttemptsForJob(ctx, job.ID)
@@ -117,7 +165,7 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 			}
 			result.Jobs = append(result.Jobs, entry)
 		}
-		if result.Changes, err = collect(ctx, q, r.Changes, func(v record.Change) string { return string(v.ID) }); err != nil {
+		if result.Changes, err = collectRelated(ctx, selection, r.Changes, func(v record.Change) string { return string(v.ID) }); err != nil {
 			return err
 		}
 		for _, change := range result.Changes {
@@ -129,10 +177,10 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 				result.PullRequests = append(result.PullRequests, pr)
 			}
 		}
-		if result.Revisions, err = collect(ctx, q, r.Revisions, func(v record.Revision) string { return string(v.ID) }); err != nil {
+		if result.Revisions, err = collectRelated(ctx, selection, r.Revisions, func(v record.Revision) string { return string(v.ID) }); err != nil {
 			return err
 		}
-		result.Resources, err = collect(ctx, q, r.Resources, func(v record.Resource) string { return string(v.ID) })
+		result.Resources, err = collectRelated(ctx, selection, r.Resources, func(v record.Resource) string { return string(v.ID) })
 		return err
 	})
 	if err != nil {
@@ -144,5 +192,30 @@ func (e *Engine) Status(ctx context.Context, scope Scope) (Status, error) {
 		}
 		return strings.Compare(string(a.Job.ID), string(b.Job.ID))
 	})
+	return result, nil
+}
+
+// Read related records in bounded batches so a large selection does not create
+// an unbounded SQL parameter list. Shared contributions and revisions appear once.
+func collectRelated[T any](ctx context.Context, jobs []record.JobID, get func(context.Context, state.Query) ([]T, error), id func(T) string) ([]T, error) {
+	if jobs == nil {
+		return collect(ctx, state.Query{}, get, id)
+	}
+	result := []T{}
+	seen := make(map[string]bool)
+	for batch := range slices.Chunk(jobs, 256) {
+		values, err := collect(ctx, state.Query{Jobs: batch}, get, id)
+		if err != nil {
+			return nil, err
+		}
+		for _, value := range values {
+			key := id(value)
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, value)
+			}
+		}
+	}
+	slices.SortFunc(result, func(a, b T) int { return strings.Compare(id(a), id(b)) })
 	return result, nil
 }

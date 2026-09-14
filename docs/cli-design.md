@@ -11,7 +11,7 @@ dockhand --db /path/to/state.db status
 dockhand verify jq --db=/path/to/state.db
 ```
 
-Dockhand has no config-directory setting and does not consult `DOCKHAND_CONFIG_DIR`. A writable state operation creates a missing parent directory and database and registers the selected repository. Help, completion generation, and previews do not open state. Status uses read-only access: an absent database or unregistered repository yields empty results without creating either. Help displays the resolved file path; flag completion selects files.
+Dockhand has no config-directory setting and does not consult `DOCKHAND_CONFIG_DIR`. A writable state operation creates a missing parent directory and database and registers the selected repository. Help, completion generation, and previews do not open state. Status uses read-only access: an absent database or unregistered repository yields empty results without creating either, unless a specific job ID was requested, which returns not-found. Help displays the resolved file path; flag completion selects files.
 
 One database can hold work for many repositories. Workflow commands operate on the selected checkout's registered repository; linked worktrees share that entry, while separate clones are distinct. `status` and `start` initially cover the selected repository, with no implicit all-database scope. Cooperating drivers must use the same database to coordinate shared work and resources.
 
@@ -21,7 +21,7 @@ The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `-
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
-`status` calls the shared workflow projection through read-only SQLite access and renders human-readable output or JSON. Verification submission, job-ID attachment/cancellation, and resident execution now use the shared Go workflow API. Version and revision bumps use the shared driver; previews use the same preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
+`status [job_id]`, `status --active`, and `status --branch <branch>` call the shared workflow projection through read-only SQLite access and render human-readable output or JSON. Verification submission, job-ID attachment/cancellation, and resident execution now use the shared Go workflow API. Version and revision bumps use the shared driver; previews use the same preparation capability without opening state. Other phase-one command handlers still return explicit not-implemented errors. The broader selector syntax below remains the intended design; the concrete first slice is specified next.
 
 ## Maintenance commands
 
@@ -195,8 +195,10 @@ dockhand verify [<port|selector>] [--wait|--trace]
 # Explicit branch selection verifies committed contents.
 dockhand verify [<port|selector>] --branch <branch> [--wait|--trace]
 
-# Read verification progress, publication state, and anything needing attention.
-dockhand status
+# Read all recorded work, one exact job, or a contribution branch.
+# --active narrows any view to queued and active jobs.
+dockhand status [<job_id>] [--active]
+dockhand status --branch <branch> [--active]
 
 # Reattach until the selected job or jobs reach their requested destination.
 dockhand wait [<job_id>] [--branch <branch>]
@@ -270,7 +272,11 @@ Publication requires passing verification. If verification is unavailable, the j
 
 `status` reads driver-maintained state. It shows each target's revision, verification state, publication state, status of its associated pull request, and any blocker or setup requirement. Outstanding resource cleanup remains visible separately from the job outcome. Include the last observation time so stale information is visible. It does not take over bookkeeping when no driver is running. PR monitoring and forge-state refresh belong to the driver.
 
-`status` selects the current repository within the chosen database and reads a consistent view of its jobs and related records. Outstanding cleanup is included even after jobs finish. Snapshot-read time is separate from evidence and PR observation times. Human output escapes embedded control characters. JSON uses the typed `workflow.Status` projection, with empty collections represented as arrays. Missing database or repository registration produces empty status; unreadable, corrupt, or unsupported state is an error. Status does not initialize or migrate the database, register repositories, or mutate workflow records. Publication and PR persistence arrive with that executor.
+`status` selects the current repository within the chosen database and reads a consistent view of its jobs and related records. Without filters it includes all recorded work and outstanding cleanup, including cleanup after jobs finish. `status <job_id>` selects one exact job. `--branch <branch>` selects jobs linked to contributions with that recorded branch name, including closed contributions and branches whose Git ref no longer exists. It does not match the source branch from which a bump began or standalone verification's checkout provenance. Job ID and branch selection are mutually exclusive.
+
+`--active` can combine with either selector and includes queued or active jobs, including capacity waits and future retries. Terminal failures and needs-attention jobs are excluded; their retained resources remain visible in unfiltered status or a view selecting those jobs. Filtered views include only the selected jobs' contributions, input/result/current revisions, PRs, and resources. Reused verification cites its original attempt without including that original job's resources. Selection happens in SQLite before decoding job details; related reads use bounded batches in the same snapshot.
+
+Snapshot-read time is separate from evidence and PR observation times. Human output escapes embedded control characters. JSON uses the typed `workflow.Status` projection, with empty collections represented as arrays and an optional `Filter` describing the requested selection. Missing database or repository registration produces empty status; an explicit unknown or foreign-repository job ID returns not-found, even with `--active`. A known terminal job with `--active` produces an empty matching set. Unreadable, corrupt, or unsupported state is an error. Status does not initialize or migrate the database, register repositories, or mutate workflow records.
 
 `--diff` performs only the preparation needed to show the proposed changes. It may evaluate Portfiles and fetch inputs needed to calculate checksums, but it does not edit the working tree, create a branch, persist a job, start a build, or publish a PR. Reject combinations with `--publish`, `--wait`, or `--trace` that ask a preview to execute the workflow.
 

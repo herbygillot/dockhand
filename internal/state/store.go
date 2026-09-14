@@ -34,7 +34,10 @@ type Query struct {
 	DueBefore *time.Time
 	After     string
 	Limit     int
-	Pending   bool
+	// Pending selects queued/active jobs, outstanding resources, or pending controls.
+	Pending bool
+	// Branch selects jobs by their contribution's recorded branch. Only Jobs uses it.
+	Branch string
 	// CleanupBefore selects old terminal resources for explicit maintenance.
 	// Only Resources uses this field.
 	CleanupBefore *time.Time

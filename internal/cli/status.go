@@ -18,13 +18,26 @@ import (
 )
 
 func (r *runtime) statusCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
+	var filter workflow.StatusFilter
+	cmd := &cobra.Command{
+		Use:   "status [job_id]",
 		Short: "Show recorded workflow status",
 		Long:  "Show a repository state snapshot, including recorded jobs, verification, publication, and resource cleanup. This command does not advance work or refresh provider or pull request state.",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			status, err := app.Status(cmd.Context(), r.config)
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				if cmd.Flags().Changed("branch") {
+					return fmt.Errorf("status accepts a job ID or --branch, not both")
+				}
+				filter.JobID = record.JobID(args[0])
+				if filter.JobID == "" {
+					return fmt.Errorf("status requires a nonempty job ID")
+				}
+			}
+			if cmd.Flags().Changed("branch") && filter.Branch == "" {
+				return fmt.Errorf("--branch requires a nonempty branch name")
+			}
+			status, err := app.FilteredStatus(cmd.Context(), r.config, filter)
 			if err != nil {
 				return err
 			}
@@ -34,6 +47,9 @@ func (r *runtime) statusCommand() *cobra.Command {
 			return renderStatus(cmd.OutOrStdout(), status)
 		},
 	}
+	cmd.Flags().BoolVar(&filter.Active, "active", false, "Show queued and active jobs, including capacity and retry waits")
+	cmd.Flags().StringVar(&filter.Branch, "branch", "", "Show jobs for a recorded contribution branch")
+	return cmd
 }
 
 func renderStatus(out io.Writer, status workflow.Status) error {
@@ -49,8 +65,23 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 	if status.Repository != "" {
 		line("Repository: %s", status.Repository)
 	}
+	if f := status.Filter; f != nil {
+		if f.JobID != "" {
+			line("Job: %s", f.JobID)
+		}
+		if f.Branch != "" {
+			line("Contribution branch: %s", f.Branch)
+		}
+		if f.Active {
+			line("Showing queued and active jobs.")
+		}
+	}
 	if len(status.Jobs) == 0 {
-		line("No recorded jobs.")
+		if status.Filter != nil {
+			line("No matching jobs.")
+		} else {
+			line("No recorded jobs.")
+		}
 	}
 
 	for _, entry := range status.Jobs {

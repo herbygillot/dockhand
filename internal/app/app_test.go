@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/v2/internal/app"
 	"github.com/herbygillot/dockhand/v2/internal/record"
 	"github.com/herbygillot/dockhand/v2/internal/state"
+	"github.com/herbygillot/dockhand/v2/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,6 +58,16 @@ func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
 	status, err := app.Status(t.Context(), app.Config{Repository: root, DBPath: db})
 	require.NoError(t, err)
 	require.Empty(t, status.Jobs)
+	for _, filter := range []workflow.StatusFilter{{Active: true}, {Branch: "candidate"}, {JobID: "unknown"}} {
+		filtered, err := app.FilteredStatus(t.Context(), app.Config{Repository: root, DBPath: db}, filter)
+		if filter.JobID != "" {
+			require.ErrorIs(t, err, state.ErrNotFound)
+		} else {
+			require.NoError(t, err)
+			require.Equal(t, &filter, filtered.Filter)
+			require.Empty(t, filtered.Jobs)
+		}
+	}
 	require.NoDirExists(t, filepath.Dir(db))
 	existing, err := app.Build(t.Context(), app.Config{Repository: root, DBPath: db})
 	require.NoError(t, err)
@@ -66,6 +77,12 @@ func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
 	status, err = app.Status(t.Context(), app.Config{Repository: other, DBPath: db})
 	require.NoError(t, err)
 	require.Empty(t, status.Repository)
+	_, err = app.FilteredStatus(t.Context(), app.Config{Repository: other, DBPath: db}, workflow.StatusFilter{JobID: "unknown"})
+	require.ErrorIs(t, err, state.ErrNotFound)
+	filtered, err := app.FilteredStatus(t.Context(), app.Config{Repository: other, DBPath: db}, workflow.StatusFilter{Branch: "candidate", Active: true})
+	require.NoError(t, err)
+	require.Empty(t, filtered.Jobs)
+	require.Empty(t, filtered.Repository)
 	_, err = existing.Workflow.State.FindRepository(t.Context(), filepath.Join(other, ".git"))
 	require.ErrorIs(t, err, state.ErrNotFound)
 }

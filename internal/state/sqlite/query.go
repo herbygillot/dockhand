@@ -71,6 +71,13 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 	clause, args := jobFilter("j.id", q.Jobs)
 	args = append([]any{t.repo, q.After}, args...)
 	sql := "SELECT j.id FROM jobs j WHERE j.repository_id=? AND j.id>?" + clause
+	if q.Pending {
+		sql += " AND j.state IN ('queued','active')"
+	}
+	if q.Branch != "" {
+		sql += " AND j.change_id IN (SELECT id FROM changes WHERE repository_id=? AND branch=?)"
+		args = append(args, t.repo, q.Branch)
+	}
 	order := "j.id"
 	if q.DueBefore != nil {
 		sql += " AND j.next_action_at IS NOT NULL AND j.next_action_at<=?"

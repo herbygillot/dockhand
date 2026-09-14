@@ -7,8 +7,9 @@
 // [Engine.Submit] records a queued job and returns an idempotent acceptance
 // receipt. [Engine.Control] records cancellation intent. Neither starts a
 // provider operation. [Engine.Cycle] applies controls, advances eligible work,
-// and processes cleanup. [Engine.Status] projects one consistent state view without
-// polling providers or changing records.
+// and processes cleanup. [Engine.Status] and [Engine.FilteredStatus] project one
+// consistent state view without polling providers or changing records. Status
+// filters select recorded jobs; they do not expand driver execution scopes.
 //
 // The state store is the handoff between request intake and driver execution. Action
 // invocations and persistent drivers can use the same engine. Callers own

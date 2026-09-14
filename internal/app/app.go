@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,6 +112,23 @@ func (s *Services) Close() error {
 }
 
 func Status(ctx context.Context, config Config) (workflow.Status, error) {
+	return FilteredStatus(ctx, config, workflow.StatusFilter{})
+}
+
+func FilteredStatus(ctx context.Context, config Config, filter workflow.StatusFilter) (workflow.Status, error) {
+	if err := filter.Validate(); err != nil {
+		return workflow.Status{}, err
+	}
+	empty := func() (workflow.Status, error) {
+		if filter.JobID != "" {
+			return workflow.Status{}, fmt.Errorf("job %s: %w", filter.JobID, state.ErrNotFound)
+		}
+		result := workflow.EmptyStatus(time.Now())
+		if filter != (workflow.StatusFilter{}) {
+			result.Filter = &filter
+		}
+		return result, nil
+	}
 	root := config.Repository
 	if root == "" {
 		root = "."
@@ -121,7 +139,7 @@ func Status(ctx context.Context, config Config) (workflow.Status, error) {
 	}
 	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{ReadOnly: true})
 	if errors.Is(err, state.ErrNoDatabase) {
-		return workflow.EmptyStatus(time.Now()), nil
+		return empty()
 	}
 	if err != nil {
 		return workflow.Status{}, err
@@ -129,11 +147,11 @@ func Status(ctx context.Context, config Config) (workflow.Status, error) {
 	defer store.Close()
 	repository, err := store.FindRepository(ctx, repo.CommonDir)
 	if errors.Is(err, state.ErrNotFound) {
-		return workflow.EmptyStatus(time.Now()), nil
+		return empty()
 	}
 	if err != nil {
 		return workflow.Status{}, err
 	}
 	engine := workflow.Engine{State: store, Repository: repository.ID}
-	return engine.Status(ctx, workflow.Scope{All: true})
+	return engine.FilteredStatus(ctx, filter)
 }
