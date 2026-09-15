@@ -331,6 +331,10 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			return ""
 		case verify.RunUnknown:
 			attempt.State = record.AttemptUncertain
+			if detail := result.reconciliation.Submission.Detail; detail != "" {
+				recordVerificationProgress(work, job, detail)
+				return ""
+			}
 			return "workflow: provider cannot yet determine whether submission exists"
 		default:
 			return "workflow: invalid provider reconciliation state"
@@ -359,6 +363,7 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			return err.Error()
 		}
 		attempt.Evidence = &evidence
+		recordVerificationProgress(work, job, observation.Detail)
 		if observation.State != record.AttemptRunning {
 			finishAttempt(work, job, attempt, evidence, observation.Detail, now)
 		}
@@ -392,6 +397,7 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 			return "workflow: admission does not identify the requested run"
 		}
 		attempt.Run, attempt.State = run, record.AttemptRunning
+		recordVerificationProgress(work, job, submission.Detail)
 		current := work.Submissions[attempt.SubmissionID]
 		current.RunID = run.RunID
 		if current.AdmittedAt == nil {
@@ -414,7 +420,11 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 		finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictUnsupported, ObservedAt: now}, submission.Detail, now)
 		return "workflow: provider rejected the build as unsupported"
 	case verify.SubmissionUncertain:
-		return "workflow: submission outcome is uncertain: " + submission.Detail
+		if submission.Detail != "" {
+			recordVerificationProgress(work, job, submission.Detail)
+			return ""
+		}
+		return "workflow: submission outcome is uncertain"
 	default:
 		return "workflow: invalid provider submission state"
 	}
@@ -474,5 +484,11 @@ func settleVerification(work *execution, job *record.Job, detail string, now tim
 	if job.State == record.JobCompleted && job.Spec.PublishTo != nil {
 		job.Phase = record.PhasePublication
 		job.State, job.FinishedAt, job.Detail = record.JobActive, nil, "Verification passed; publication pending"
+	}
+}
+
+func recordVerificationProgress(work *execution, job *record.Job, detail string) {
+	if len(work.Attempts) == 1 && detail != "" {
+		job.Detail = detail
 	}
 }

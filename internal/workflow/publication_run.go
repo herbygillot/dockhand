@@ -209,7 +209,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 	}
 	desired := git.RefValue{Exists: true, Object: string(spec.Desired.Head)}
 	if remote == desired && publish.Matches(spec, observed) {
-		return c.finishPublication(ctx, job, record.JobCompleted, "Published "+observed.PullRequest.Ref.URL, &observed.PullRequest)
+		return c.finishPublication(ctx, job, record.JobCompleted, fmt.Sprintf("Published %s from verified branch %s:%s at %s", observed.PullRequest.Ref.URL, spec.HeadRepository, spec.HeadBranch, spec.Desired.Head), &observed.PullRequest)
 	}
 	if action.WriteStarted {
 		return c.publicationRetry(ctx, job, "PR request outcome is unresolved; observing without repeating the write")
@@ -234,7 +234,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		if err := s.Repo.Push(ctx, git.Push{Remote: spec.PushURL, Branch: spec.HeadBranch, Commit: string(spec.Desired.Head), ExpectedRemote: expected}); err != nil {
 			return err
 		}
-		return c.publicationRetry(ctx, job, "Branch pushed; checking the remote before publishing")
+		return c.publicationRetry(ctx, job, fmt.Sprintf("Pushed verified branch %s:%s at %s; checking the remote before publishing", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head))
 	}
 	if observed.Found && observed.PullRequest.RemoteHead != spec.Desired.Head {
 		return c.publicationRetry(ctx, job, "Waiting for the forge to observe the pushed branch")
@@ -252,7 +252,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 	if err != nil {
 		return err
 	}
-	return c.publicationRetry(ctx, job, "PR request sent; awaiting confirmation of its head and metadata")
+	return c.publicationRetry(ctx, job, fmt.Sprintf("PR request sent for verified branch %s:%s at %s; awaiting confirmation", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head))
 }
 
 func (c *cycle) publicationRetry(ctx context.Context, expected record.Job, detail string) error {

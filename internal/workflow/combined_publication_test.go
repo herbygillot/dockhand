@@ -346,4 +346,9 @@ func TestWorkflowPolicyEvidenceCanContinueThroughPublication(t *testing.T) {
 	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State, status.Jobs[0].Job.Detail)
 	require.Equal(t, 1, hosting.writes)
 	require.Contains(t, status.Jobs[0].Publications[0].Spec.Desired.Body, "workflow run")
+	spec := status.Jobs[0].Publications[0].Spec
+	require.Contains(t, status.Jobs[0].Job.Detail, "from verified branch "+spec.HeadRepository+":"+spec.HeadBranch)
+	require.Contains(t, status.Jobs[0].Job.Detail, string(spec.Desired.Head))
+	require.Equal(t, status.Jobs[0].Job.Prepared.Branch, spec.HeadBranch)
+	require.Equal(t, status.Jobs[0].Job.Prepared.Source.Commit, spec.Desired.Head)
 }

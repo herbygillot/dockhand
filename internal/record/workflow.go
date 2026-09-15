@@ -9,6 +9,7 @@ type WorkflowEvidence struct {
 	RunID      int64
 	RunAttempt int
 	URL        string
+	Status     string `json:",omitempty"`
 	Conclusion string
 	Jobs       []WorkflowJob
 }

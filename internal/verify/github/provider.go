@@ -42,6 +42,7 @@ type rejection struct {
 type executionRun struct {
 	ID      int64
 	Attempt int
+	URL     string `json:",omitempty"`
 }
 
 func (p *Provider) Capabilities(context.Context) (verify.Capabilities, error) {
@@ -212,6 +213,7 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 		return result, err
 	}
 	spec, d := saved.Request.Spec, saved.Config.Destination
+	result.Detail = fmt.Sprintf("Waiting for GitHub Actions on %s:%s at %s", d.HeadRepository, spec.Branch, spec.Source.Commit)
 	api, err := p.Actions(ctx, d.HeadRepository)
 	if err != nil {
 		return result, err
@@ -235,7 +237,7 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 		if selected.GetRunAttempt() <= 0 || selected.GetID() <= 0 {
 			return result, fmt.Errorf("github verification: incomplete workflow run identity")
 		}
-		row.Result, err = json.Marshal(executionRun{ID: selected.GetID(), Attempt: selected.GetRunAttempt()})
+		row.Result, err = json.Marshal(executionRun{ID: selected.GetID(), Attempt: selected.GetRunAttempt(), URL: selected.GetHTMLURL()})
 		if err != nil {
 			return result, err
 		}
@@ -260,7 +262,11 @@ func admitted(row record.ProviderExecution) (verify.Submission, error) {
 	if run.ID <= 0 || run.Attempt <= 0 {
 		return verify.Submission{}, fmt.Errorf("github verification: invalid stored run identity")
 	}
-	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: ProviderName, RequestID: row.ID, RunID: fmt.Sprintf("%d:%d", run.ID, run.Attempt)}}, nil
+	var saved payload
+	if err := json.Unmarshal(row.Payload, &saved); err != nil {
+		return verify.Submission{}, err
+	}
+	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: ProviderName, RequestID: row.ID, RunID: fmt.Sprintf("%d:%d", run.ID, run.Attempt)}, Detail: runDetail(saved, run, "tracking")}, nil
 }
 
 func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, options verify.ReconcileOptions) (verify.Reconciliation, error) {
@@ -318,4 +324,12 @@ func rejectedSubmission(row record.ProviderExecution) (verify.Submission, error)
 		return verify.Submission{}, fmt.Errorf("github verification: missing rejection reason")
 	}
 	return verify.Submission{State: verify.Unsupported, Detail: saved.Detail}, nil
+}
+
+func runDetail(saved payload, run executionRun, status string) string {
+	detail := fmt.Sprintf("GitHub Actions %s: %s:%s at %s; run %d attempt %d", status, saved.Config.Destination.HeadRepository, saved.Request.Spec.Branch, saved.Request.Spec.Source.Commit, run.ID, run.Attempt)
+	if run.URL != "" {
+		detail += "; " + run.URL
+	}
+	return detail
 }

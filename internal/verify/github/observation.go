@@ -67,7 +67,7 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 	if err != nil {
 		return result, err
 	}
-	evidence := &record.WorkflowEvidence{Repository: saved.Config.Destination.HeadRepository, Branch: saved.Request.Spec.Branch, Commit: saved.Request.Spec.Source.Commit, Path: WorkflowPath, RunID: selected.ID, RunAttempt: selected.Attempt, URL: run.GetHTMLURL(), Conclusion: run.GetConclusion()}
+	evidence := &record.WorkflowEvidence{Repository: saved.Config.Destination.HeadRepository, Branch: saved.Request.Spec.Branch, Commit: saved.Request.Spec.Source.Commit, Path: WorkflowPath, RunID: selected.ID, RunAttempt: selected.Attempt, URL: run.GetHTMLURL(), Status: run.GetStatus(), Conclusion: run.GetConclusion()}
 	seen := map[string]bool{}
 	complete := len(jobs) == len(saved.Matrix)
 	for _, job := range jobs {
@@ -91,7 +91,8 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 	}
 	result.Workflow = evidence
 	result.TestOmission = "GitHub workflow policy permits port test failures; individual test success is not established"
-	result.Detail = "GitHub Actions: " + run.GetStatus() + "; " + run.GetHTMLURL()
+	selected.URL = run.GetHTMLURL()
+	result.Detail = runDetail(saved, selected, run.GetStatus())
 	if run.GetStatus() != "completed" {
 		return result, nil
 	}

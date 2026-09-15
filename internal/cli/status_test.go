@@ -107,3 +107,14 @@ func TestStatusRendersGitHubRunIdentity(t *testing.T) {
 	require.Contains(t, output.String(), "run 34989358751 attempt 2")
 	require.NotContains(t, output.String(), "%!")
 }
+
+func TestStatusShowsQueuedGitHubRunAndForkBranch(t *testing.T) {
+	status := workflow.EmptyStatus(time.Now())
+	status.Jobs = []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{
+		State: record.AttemptRunning, Evidence: &record.Evidence{Workflow: &record.WorkflowEvidence{Repository: "owner/ports", Branch: "update", Commit: "abc", RunID: 10, RunAttempt: 2, Status: "queued", URL: "https://github.com/owner/ports/actions/runs/10"}},
+	}}}}
+	var output bytes.Buffer
+	require.NoError(t, renderStatus(&output, status))
+	require.Contains(t, output.String(), "GitHub Actions: queued; run 10 attempt 2")
+	require.Contains(t, output.String(), "Fork branch: owner/ports:update at abc")
+}

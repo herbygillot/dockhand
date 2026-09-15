@@ -156,7 +156,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		if err := tx.PutPublication(ctx, action); err != nil {
 			return err
 		}
-		current.Claim, current.RetryAt, current.Detail = nil, nil, "Verification passed; publication planned"
+		current.Claim, current.RetryAt, current.Detail = nil, nil, fmt.Sprintf("Preparing PR from verified branch %s:%s at %s", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)
 		return tx.PutJob(ctx, current)
 	})
 	if errors.Is(err, errPublicationCanceled) || errors.Is(err, ErrStaleRevision) || errors.Is(err, publish.ErrPrecondition) || errors.Is(err, state.ErrConflict) {

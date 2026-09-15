@@ -593,3 +593,36 @@ func TestTemporaryPreflightFailureCanRecover(t *testing.T) {
 		})
 	}
 }
+
+func TestDriverProgressFollowsGitHubRun(t *testing.T) {
+	f := setup(t)
+	scope := workflow.Scope{Jobs: []record.JobID{f.job}}
+	require.Eventually(t, func() bool {
+		_, err := f.engine.Cycle(t.Context(), scope)
+		require.NoError(t, err)
+		status, err := f.engine.Status(t.Context(), scope)
+		require.NoError(t, err)
+		return strings.Contains(status.Jobs[0].Job.Detail, "Waiting for GitHub Actions on contributor/macports-ports:candidate")
+	}, 5*time.Second, 10*time.Millisecond)
+	f.ready()
+	f.api.run.Conclusion = nil
+	for _, phase := range []string{"queued", "in_progress"} {
+		f.api.run.Status = gh.Ptr(phase)
+		require.Eventually(t, func() bool {
+			_, err := f.engine.Cycle(t.Context(), scope)
+			require.NoError(t, err)
+			status, err := f.engine.Status(t.Context(), scope)
+			require.NoError(t, err)
+			job := status.Jobs[0]
+			if !strings.Contains(job.Job.Detail, "GitHub Actions "+phase) {
+				return false
+			}
+			require.Contains(t, job.Job.Detail, "run 10 attempt 1")
+			require.Contains(t, job.Job.Detail, f.api.run.GetHTMLURL())
+			require.Contains(t, job.Job.Detail, string(f.request.Spec.Source.Commit))
+			require.Equal(t, phase, job.Attempts[0].Evidence.Workflow.Status)
+			require.Empty(t, job.Attempts[0].LastError)
+			return true
+		}, 5*time.Second, 10*time.Millisecond)
+	}
+}
