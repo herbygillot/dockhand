@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
@@ -182,34 +183,20 @@ puts "$::macports::os_platform $::macports::os_major $::macports::build_arch"
 	} else if platform != nil {
 		problems = append(problems, "MacPorts returned an unrecognized platform: "+strings.TrimSpace(string(platform)))
 	}
-	selected, err := run(nil, "developer tools are unavailable", "/usr/bin/xcode-select", "-p")
+	tools, err := macos.InspectDeveloperTools(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+		return n.guest(ctx, vm, input, args...)
+	})
 	if err != nil {
 		return result, err
 	}
-	developerDirectory := strings.TrimSpace(string(selected))
-	switch {
-	case developerDirectory == "/Library/Developer/CommandLineTools":
+	problems = append(problems, tools.Problems...)
+	if tools.CommandLineTools() {
 		result.Capabilities.DeveloperTools = record.DeveloperToolsCommandLine
-	case strings.HasSuffix(developerDirectory, ".app/Contents/Developer") && filepath.IsAbs(developerDirectory):
+	}
+	if tools.Xcode() {
 		result.Capabilities.DeveloperTools = record.DeveloperToolsXcode
-		xcode, err := run(nil, "Xcode is unavailable", "/usr/bin/xcodebuild", "-version")
-		if err != nil {
-			return result, err
-		}
-		first, _, _ := strings.Cut(strings.TrimSpace(string(xcode)), "\n")
-		if version, ok := strings.CutPrefix(first, "Xcode "); ok && version != "" {
-			result.Capabilities.XcodeVersion = version
-		} else if xcode != nil {
-			problems = append(problems, "xcodebuild returned an unrecognized version: "+strings.TrimSpace(string(xcode)))
-		}
-	default:
-		if selected != nil {
-			problems = append(problems, "unexpected developer directory: "+developerDirectory)
-		}
 	}
-	if _, err = run(nil, "compiler is unavailable", "/usr/bin/xcrun", "--find", "clang"); err != nil {
-		return result, err
-	}
+	result.Capabilities.XcodeVersion = tools.XcodeVersion
 	if manifest != nil {
 		problems = append(problems, manifestProblems(*manifest, result.Capabilities)...)
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart"
 )
@@ -69,7 +70,7 @@ type machine interface {
 	ReadyAgent(context.Context, string) error
 	EnsureToolchain(context.Context, string) error
 	InstallXcode(context.Context, string, Config) error
-	InstallMacPorts(context.Context, string, Config, tart.MacOSRelease) error
+	InstallMacPorts(context.Context, string, Config, macos.Release) error
 	WriteManifest(context.Context, string, []byte) error
 	Validate(context.Context, string, Config) (validation, error)
 	Stop(context.Context, string) error
@@ -126,7 +127,7 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 	return p.provision(ctx, machine, config, release, golden, images[config.Image].Name != "")
 }
 
-func normalize(config Config) (Config, tart.MacOSRelease, error) {
+func normalize(config Config) (Config, macos.Release, error) {
 	release, err := tart.ReleaseForPlatform(config.Platform)
 	if err != nil {
 		return config, release, err
@@ -149,7 +150,7 @@ func normalize(config Config) (Config, tart.MacOSRelease, error) {
 		return config, release, err
 	}
 	if config.Xcode != "" {
-		config.XcodeArchive, config.XcodeVersion, err = selectXcode(config.Xcode, release)
+		config.XcodeArchive, config.XcodeVersion, err = macos.SelectXcode(config.Xcode, release)
 		if err != nil {
 			return config, release, err
 		}
@@ -245,7 +246,7 @@ func (p *Provisioner) check(ctx context.Context, machine machine, config Config,
 	return Result{Image: config.Image, GoldenImage: golden, Platform: checked.Platform, MacPortsVersion: checked.MacPortsVersion, GuestAgentVersion: checked.GuestAgentVersion, XcodeVersion: checked.XcodeVersion, Reused: reused}, nil
 }
 
-func (p *Provisioner) provision(ctx context.Context, machine machine, config Config, release tart.MacOSRelease, golden string, replacing bool) (Result, error) {
+func (p *Provisioner) provision(ctx context.Context, machine machine, config Config, release macos.Release, golden string, replacing bool) (Result, error) {
 	next, goldenNext := config.Image+"-next", golden+"-next"
 	if err := discard(ctx, machine, next); err != nil {
 		return Result{}, err

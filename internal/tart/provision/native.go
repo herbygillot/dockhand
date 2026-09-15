@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart"
 )
@@ -257,41 +258,18 @@ func (n *native) BootstrapAgent(ctx context.Context, name string) error {
 	return nil
 }
 
-func (n *native) assertToolchain(ctx context.Context, name string) error {
-	if _, err := n.guest(ctx, name, nil, "/usr/bin/xcode-select", "-p"); err != nil {
-		return fmt.Errorf("guest has no selected command line tools: %w", err)
+func (n *native) target(name string) macos.Command {
+	return func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+		return n.guest(ctx, name, input, args...)
 	}
-	script := `set -eu
-file=/tmp/dockhand-setup-compiler
-printf 'int main(void) { return 0; }\n' | /usr/bin/clang -x c - -o "$file"
-"$file"
-rm -f "$file"`
-	_, err := n.guest(ctx, name, nil, "/bin/sh", "-c", script)
-	return err
 }
-
+func (n *native) streamTarget(name string) macos.Command {
+	return func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+		return n.guestStream(ctx, name, input, args...)
+	}
+}
 func (n *native) EnsureToolchain(ctx context.Context, name string) error {
-	if err := n.assertToolchain(ctx, name); err == nil {
-		return nil
-	}
-	script := `set -eu
-marker=/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-sudo -n touch "$marker"
-trap 'sudo -n rm -f "$marker"' EXIT
-label=''
-attempt=1
-while [ "$attempt" -le 6 ]; do
-  label=$(/usr/sbin/softwareupdate --list 2>/dev/null | /usr/bin/sed -n 's/^\* Label: \(.*Command Line Tools.*\)$/\1/p' | /usr/bin/sort | /usr/bin/tail -1)
-  [ -n "$label" ] && break
-  /bin/sleep 15
-  attempt=$((attempt + 1))
-done
-[ -n "$label" ]
-sudo -n /usr/sbin/softwareupdate --install "$label"`
-	if _, err := n.guest(ctx, name, nil, "/bin/sh", "-c", script); err != nil {
-		return fmt.Errorf("guest command line tools installation failed: %w", err)
-	}
-	return n.assertToolchain(ctx, name)
+	return macos.EnsureCommandLineTools(ctx, n.target(name))
 }
 
 func (n *native) InstallXcode(ctx context.Context, name string, config Config) error {
@@ -328,26 +306,14 @@ available=$(/bin/df -g /private/tmp | /usr/bin/awk 'NR==2 {print $4}')
 	if n.progress != nil {
 		_, _ = fmt.Fprintf(n.progress, "Expanding and installing Xcode %s...\n", config.XcodeVersion)
 	}
-	install := `set -eu
-cd /private/tmp
-/usr/bin/xip --expand Xcode.xip
-/bin/rm -f Xcode.xip
-sudo -n /bin/rm -rf /Applications/Xcode.app
-sudo -n /bin/mv Xcode.app /Applications/Xcode.app
-sudo -n /usr/bin/xcode-select -s /Applications/Xcode.app/Contents/Developer
-sudo -n /usr/bin/xcodebuild -license accept
-sudo -n /usr/bin/xcodebuild -runFirstLaunch`
-	if output, err := n.guestStream(ctx, name, nil, "/bin/sh", "-c", install); err != nil {
-		return fmt.Errorf("setup: installing Xcode %s: %w: %s", config.XcodeVersion, err, strings.TrimSpace(string(output)))
-	}
-	return nil
+	return macos.InstallXcode(ctx, n.streamTarget(name), guestArchive)
 }
 
-func installerName(version string, release tart.MacOSRelease) string {
+func installerName(version string, release macos.Release) string {
 	return fmt.Sprintf("MacPorts-%s-%s-%s.pkg", version, release.Product, strings.ReplaceAll(release.Name, " ", ""))
 }
 
-func (n *native) InstallMacPorts(ctx context.Context, name string, config Config, release tart.MacOSRelease) error {
+func (n *native) InstallMacPorts(ctx context.Context, name string, config Config, release macos.Release) error {
 	filename := installerName(config.MacPortsVersion, release)
 	url := "https://distfiles.macports.org/MacPorts/" + filename
 	script := `set -eu
@@ -403,7 +369,7 @@ done`
 	if len(platformFields) != 3 {
 		return validation{}, fmt.Errorf("MacPorts returned an unrecognized platform: %s", strings.TrimSpace(string(platformOutput)))
 	}
-	if err := n.assertToolchain(ctx, name); err != nil {
+	if err := macos.CheckCompiler(ctx, n.target(name)); err != nil {
 		return validation{}, err
 	}
 	xcodeVersion, err := n.validateXcode(ctx, name, config)
@@ -430,31 +396,24 @@ func (n *native) guestStream(ctx context.Context, name string, input io.Reader, 
 }
 
 func (n *native) validateXcode(ctx context.Context, name string, config Config) (string, error) {
-	selected, err := n.guest(ctx, name, nil, "/usr/bin/xcode-select", "-p")
+	tools, err := macos.InspectDeveloperTools(ctx, n.target(name))
 	if err != nil {
 		return "", err
 	}
-	developerDirectory := strings.TrimSpace(string(selected))
+	if len(tools.Problems) != 0 {
+		return "", fmt.Errorf("developer tools: %s", strings.Join(tools.Problems, "; "))
+	}
 	if config.XcodeVersion == "" {
-		if developerDirectory != "/Library/Developer/CommandLineTools" {
-			return "", fmt.Errorf("base image selects unexpected developer directory %s", developerDirectory)
+		if !tools.CommandLineTools() {
+			return "", fmt.Errorf("base image selects unexpected developer directory %s", tools.Directory)
 		}
 		return "", nil
 	}
-	if developerDirectory != "/Applications/Xcode.app/Contents/Developer" {
-		return "", fmt.Errorf("Xcode image selects unexpected developer directory %s", developerDirectory)
+	if tools.Directory != "/Applications/Xcode.app/Contents/Developer" {
+		return "", fmt.Errorf("Xcode image selects unexpected developer directory %s", tools.Directory)
 	}
-	output, err := n.guest(ctx, name, nil, "/usr/bin/xcodebuild", "-version")
-	if err != nil {
-		return "", err
+	if tools.XcodeVersion != config.XcodeVersion {
+		return "", fmt.Errorf("image has Xcode %s; expected %s", tools.XcodeVersion, config.XcodeVersion)
 	}
-	first, _, _ := strings.Cut(strings.TrimSpace(string(output)), "\n")
-	version, ok := strings.CutPrefix(first, "Xcode ")
-	if !ok || version == "" {
-		return "", fmt.Errorf("xcodebuild returned an unrecognized version: %s", strings.TrimSpace(string(output)))
-	}
-	if version != config.XcodeVersion {
-		return "", fmt.Errorf("image has Xcode %s; expected %s", version, config.XcodeVersion)
-	}
-	return version, nil
+	return tools.XcodeVersion, nil
 }

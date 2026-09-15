@@ -1,4 +1,4 @@
-package provision
+package macos
 
 import (
 	"fmt"
@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/herbygillot/dockhand/internal/tart"
 )
 
 type xcodeArchive struct {
@@ -16,18 +14,18 @@ type xcodeArchive struct {
 	Preference int
 }
 
-func selectXcode(path string, release tart.MacOSRelease) (string, string, error) {
+func SelectXcode(path string, release Release) (string, string, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return "", "", err
 	}
 	path, err = filepath.EvalSymlinks(path)
 	if err != nil {
-		return "", "", fmt.Errorf("setup: Xcode archive path: %w", err)
+		return "", "", fmt.Errorf("macos: Xcode archive path: %w", err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", "", fmt.Errorf("setup: Xcode archive path: %w", err)
+		return "", "", fmt.Errorf("macos: Xcode archive path: %w", err)
 	}
 	var candidates []xcodeArchive
 	if info.IsDir() {
@@ -47,10 +45,10 @@ func selectXcode(path string, release tart.MacOSRelease) (string, string, error)
 			candidates = append(candidates, candidate)
 		}
 	} else {
-		return "", "", fmt.Errorf("setup: Xcode path must be a regular .xip file or directory")
+		return "", "", fmt.Errorf("macos: Xcode path must be a regular .xip file or directory")
 	}
 	if len(candidates) == 0 {
-		return "", "", fmt.Errorf("setup: no release Xcode archives found in %s", path)
+		return "", "", fmt.Errorf("macos: no release Xcode archives found in %s", path)
 	}
 	bound := xcodeUpperBound(release.Darwin)
 	var selected xcodeArchive
@@ -64,7 +62,7 @@ func selectXcode(path string, release tart.MacOSRelease) (string, string, error)
 		}
 	}
 	if selected.Path == "" {
-		return "", "", fmt.Errorf("setup: no Xcode archive can run on %s; Xcode must be below %s", release.Name, bound)
+		return "", "", fmt.Errorf("macos: no Xcode archive can run on %s; Xcode must be below %s", release.Name, bound)
 	}
 	return selected.Path, selected.Version, nil
 }

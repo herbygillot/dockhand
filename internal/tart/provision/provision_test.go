@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/stretchr/testify/require"
@@ -71,7 +72,7 @@ func (f *fakeMachine) InstallXcode(_ context.Context, _ string, config Config) e
 	f.validation.XcodeVersion = config.XcodeVersion
 	return f.event("xcode")
 }
-func (f *fakeMachine) InstallMacPorts(context.Context, string, Config, tart.MacOSRelease) error {
+func (f *fakeMachine) InstallMacPorts(context.Context, string, Config, macos.Release) error {
 	return f.event("macports")
 }
 func (f *fakeMachine) WriteManifest(_ context.Context, _ string, value []byte) error {

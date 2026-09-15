@@ -1,11 +1,10 @@
-package provision
+package macos
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/tart"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +34,7 @@ func TestSelectXcodeChoosesNewestCompatibleArchive(t *testing.T) {
 		{25, "26.6", "Xcode_26.6_Apple_silicon.xip"},
 	}
 	for _, test := range tests {
-		path, version, err := selectXcode(directory, tart.MacOSRelease{Darwin: test.darwin, Name: "fixture"})
+		path, version, err := SelectXcode(directory, Release{Darwin: test.darwin, Name: "fixture"})
 		require.NoError(t, err)
 		require.Equal(t, test.version, version)
 		require.Equal(t, test.name, filepath.Base(path))
@@ -45,13 +44,13 @@ func TestSelectXcodeChoosesNewestCompatibleArchive(t *testing.T) {
 func TestSelectXcodeChecksAnExplicitArchiveForCompatibility(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "Xcode_16.2.xip")
 	require.NoError(t, os.WriteFile(archive, nil, 0o600))
-	path, version, err := selectXcode(archive, tart.MacOSRelease{Darwin: 23, Name: "Sonoma"})
+	path, version, err := SelectXcode(archive, Release{Darwin: 23, Name: "Sonoma"})
 	require.NoError(t, err)
 	expected, err := filepath.EvalSymlinks(archive)
 	require.NoError(t, err)
 	require.Equal(t, expected, path)
 	require.Equal(t, "16.2", version)
-	_, _, err = selectXcode(archive, tart.MacOSRelease{Darwin: 21, Name: "Monterey"})
+	_, _, err = SelectXcode(archive, Release{Darwin: 21, Name: "Monterey"})
 	require.ErrorContains(t, err, "Xcode must be below 14.3")
 }
 
