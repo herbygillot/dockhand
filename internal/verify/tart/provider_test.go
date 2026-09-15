@@ -377,7 +377,7 @@ func TestRecoveryCompletesAdmittedLaunchAndPreservesResultsAcrossStopFailure(t *
 	observed, err := recovered.Observe(t.Context(), run)
 	require.NoError(t, err)
 	require.Equal(t, record.AttemptRunning, observed.State)
-	guest := &record.GuestEnvironment{MacOSVersion: "26.0.1", MacOSBuild: "25A11", Architecture: "arm64", DeveloperTools: record.DeveloperToolsCommandLine, DeveloperToolsVersion: "26.0.0", NoActivePorts: true}
+	guest := &record.GuestEnvironment{MacOSVersion: "26.0.1", MacOSBuild: "25A11", Architecture: "arm64", DeveloperTools: record.DeveloperToolsCommandLine, DeveloperToolsVersion: "26.0.0", CommandLineToolsVersion: "26.0.0", NoActivePorts: true}
 	m.results[run.RunID] = guestResult{Environment: guest, TestOmission: "Port declares no test phase", Protocol: 1, ID: string(run.RequestID), Digest: buildDigest(f.request.Spec), State: "finished", Verdict: record.VerdictPassed, Steps: []record.StepResult{{Package: "fixture", Phase: "install", Verdict: record.VerdictPassed, Command: []string{"/opt/local/bin/port", "-d", "install", "fixture"}, User: "root"}}}
 	m.stopError = errors.New("lost shutdown reply")
 	_, err = recovered.Observe(t.Context(), run)

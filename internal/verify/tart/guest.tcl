@@ -75,11 +75,15 @@ try {
     dict set environment MacOSVersion [diagnostic /usr/bin/sw_vers -productVersion]
     dict set environment MacOSBuild [diagnostic /usr/bin/sw_vers -buildVersion]
     dict set environment Architecture [diagnostic /usr/bin/uname -m]
+    set cltVersion ""
+    set version [diagnostic /usr/sbin/pkgutil --pkg-info=com.apple.pkg.CLTools_Executables]
+    if {[regexp -line {^version: (.+)$} $version -> cltVersion]} {
+        dict set environment CommandLineToolsVersion $cltVersion
+    }
     set tools [diagnostic /usr/bin/xcode-select -p]
     if {[string match */CommandLineTools $tools]} {
         dict set environment DeveloperTools command-line-tools
-        set version [diagnostic /usr/sbin/pkgutil --pkg-info=com.apple.pkg.CLTools_Executables]
-        if {[regexp -line {^version: (.+)$} $version -> value]} {dict set environment DeveloperToolsVersion $value}
+        dict set environment DeveloperToolsVersion $cltVersion
     } elseif {$tools ne ""} {
         dict set environment DeveloperTools xcode
         dict set environment DeveloperToolsVersion [diagnostic /usr/bin/xcodebuild -version]

@@ -79,6 +79,7 @@ type GuestEnvironment struct {
 	Architecture             string
 	DeveloperTools           DeveloperTools
 	DeveloperToolsVersion    string
+	CommandLineToolsVersion  string `json:",omitempty"`
 	MacPortsVersion          string
 	NoActivePorts            bool
 	NoForeignPackageManagers bool

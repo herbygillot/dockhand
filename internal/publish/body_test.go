@@ -12,7 +12,7 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 	source := record.Source{Commit: record.ObjectID(strings.Repeat("a", 40))}
 	change := record.Change{GeneratedCommit: source.Commit}
 	content := record.PublicationContent{Title: "fixture: update to 2", Body: "Useful explanation\n\nGenerated-by: [dockhand](https://github.com/herbygillot/dockhand)"}
-	attempt := record.Attempt{ID: "earlier-reused-attempt", Spec: record.BuildSpec{Target: record.Target{Name: "fixture-subport", Portfile: "devel/fixture/Portfile"}, Config: record.BuildConfig{FromSource: false, Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC), Environment: &record.EnvironmentEvidence{Provider: "tart", ProviderVersion: "2.30", Image: "recorded-image", EnvironmentDigest: "sha256:recorded", Guest: &record.GuestEnvironment{MacOSVersion: "26.1", MacOSBuild: "25B77", Architecture: "arm64", DeveloperTools: record.DeveloperToolsXcode, DeveloperToolsVersion: "Xcode 26.1\nBuild version 17B12", NoActivePorts: true, NoForeignPackageManagers: true}}}}
+	attempt := record.Attempt{ID: "earlier-reused-attempt", Spec: record.BuildSpec{Target: record.Target{Name: "fixture-subport", Portfile: "devel/fixture/Portfile"}, Config: record.BuildConfig{FromSource: false, Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC), Environment: &record.EnvironmentEvidence{Provider: "tart", ProviderVersion: "2.30", Image: "recorded-image", EnvironmentDigest: "sha256:recorded", Guest: &record.GuestEnvironment{MacOSVersion: "26.1", MacOSBuild: "25B77", Architecture: "arm64", DeveloperTools: record.DeveloperToolsXcode, DeveloperToolsVersion: "Xcode 26.1\nBuild version 17B12", CommandLineToolsVersion: "26.1.0.0.1", NoActivePorts: true, NoForeignPackageManagers: true}}}}
 	for _, phase := range []string{"lint", "test", "install"} {
 		args := []string{"/opt/local/bin/port", "-N", "-D", "/var/tmp/dockhand2/ports/devel/fixture"}
 		if phase != "lint" {
@@ -22,12 +22,13 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 		attempt.Evidence.Steps = append(attempt.Evidence.Steps, record.StepResult{Package: "fixture-subport", Phase: phase, Verdict: record.VerdictPassed, Command: args, User: "root"})
 	}
 	body := publicationBody(content, change, source, attempt)
-	for _, want := range []string{"Submitted by [dockhand]", "Useful explanation", "macOS 26.1; build 25B77; arm64", "Xcode 26.1 Build version 17B12", "version: 2.30; image: recorded-image", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
+	for _, want := range []string{"Submitted by [dockhand]", "Useful explanation", "macOS 26.1; build 25B77; arm64", "Xcode 26.1 Build version 17B12", "Provider: tart; version: 2.30; image: recorded-image (pristine)", "Command Line Tools: 26.1.0.0.1", "Unchecked manual items require contributor review.", "earlier-reused-attempt", "2025-01-02 03:04:05 UTC", "[x] Squashed", "[x] Checked the Portfile", "[x] Ran the port's tests", "[x] Completed a full install", "-N -D devel/fixture -d install subport=fixture-subport +debug -universal", "run as root", "[ ] Followed", "[ ] Checked for other open", "[ ] Referenced", "[ ] Tested basic functionality", "[ ] Checked the port's most important"} {
 		require.Contains(t, body, want)
 	}
 	require.NotContains(t, body, "Generated-by:")
 	require.NotContains(t, body, " -s ")
-	require.NotContains(t, body, "pristine")
+	require.NotContains(t, body, "Before verification:")
+	require.NotContains(t, body, "Command paths above")
 	// Only recorded argv can establish source-only installation, not current flags.
 	attempt.Spec.Config.FromSource = true
 	require.NotContains(t, publicationBody(content, change, source, attempt), " -s ")
@@ -55,4 +56,9 @@ func TestBodyDoesNotInventTestsOrEnvironmentForOlderEvidence(t *testing.T) {
 	require.Contains(t, body, "macOS not recorded")
 	require.Contains(t, body, "Command Line Tools: 26.0.0.0.1")
 	require.NotContains(t, body, "no active MacPorts ports")
+	for _, guest := range []*record.GuestEnvironment{nil, {}, {NoActivePorts: true}, {NoForeignPackageManagers: true}} {
+		attempt.Evidence.Environment.Image = "recorded-image"
+		attempt.Evidence.Environment.Guest = guest
+		require.NotContains(t, publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt), "(pristine)")
+	}
 }

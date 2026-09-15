@@ -46,14 +46,18 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 					tools = "Command Line Tools"
 				}
 				fmt.Fprintf(&b, "\n%s: %s\n", tools, known(guest.DeveloperToolsVersion))
+				if guest.DeveloperTools != record.DeveloperToolsCommandLine && guest.CommandLineToolsVersion != "" {
+					fmt.Fprintf(&b, "\nCommand Line Tools: %s\n", known(guest.CommandLineToolsVersion))
+				}
 				if guest.MacPortsVersion != "" {
 					fmt.Fprintf(&b, "\nMacPorts: %s\n", oneLine(strings.TrimPrefix(guest.MacPortsVersion, "Version: ")))
 				}
-				if guest.NoActivePorts && guest.NoForeignPackageManagers {
-					fmt.Fprintln(&b, "\nBefore verification: no active MacPorts ports or detected foreign package-manager prefixes.")
-				}
 			}
-			fmt.Fprintf(&b, "\nProvider: %s; version: %s; image: %s\n", known(environment.Provider), known(environment.ProviderVersion), known(environment.Image))
+			image := known(environment.Image)
+			if strings.TrimSpace(environment.Image) != "" && guest != nil && guest.NoActivePorts && guest.NoForeignPackageManagers {
+				image += " (pristine)"
+			}
+			fmt.Fprintf(&b, "\nProvider: %s; version: %s; image: %s\n", known(environment.Provider), known(environment.ProviderVersion), image)
 			fmt.Fprintf(&b, "\nEnvironment identity: `%s`\n", oneLine(environment.EnvironmentDigest))
 		}
 		fmt.Fprintf(&b, "\nVerification attempt: `%s`; observed %s.\n", attempt.ID, evidence.ObservedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
@@ -95,7 +99,7 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 	}
 	check(false, "Tested basic functionality of all binary files.")
 	check(false, "Checked the port's most important [variants](https://trac.macports.org/wiki/Variants).")
-	fmt.Fprintln(&b, "\nCommand paths above are relative to the verified ports tree where possible. Unchecked manual items require contributor review.")
+	fmt.Fprintln(&b, "\nUnchecked manual items require contributor review.")
 	return b.String()
 }
 
