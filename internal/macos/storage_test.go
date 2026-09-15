@@ -1,6 +1,8 @@
-package provision
+package macos
 
 import (
+	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestXcodeStorageChecksCapacityAndPreservesResizeErrors(t *testing.T) {
+func TestAPFSSpaceChecksCapacityAndPreservesResizeErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name, initial, after        string
 		fail, wantError, wantResize bool
@@ -35,27 +37,34 @@ if [ "$1" = apfs ]; then
  if [ "$TEST_FAIL" = yes ]; then echo 'fixture: resize unavailable' >&2; exit 1; fi
 fi
 `), 0700))
-			script := strings.ReplaceAll(xcodeStorageScript, "/bin/df", `"$TEST_DF"`)
-			script = strings.ReplaceAll(script, "/usr/sbin/diskutil", `"$TEST_DISK"`)
-			script = strings.ReplaceAll(script, "sudo -n ", "")
-			command := exec.CommandContext(t.Context(), "/bin/sh", "-c", script)
-			fail := "no"
-			if tc.fail {
-				fail = "yes"
-			}
-			command.Env = append(os.Environ(), "TEST_SPACE="+state, "TEST_CALLS="+calls, "TEST_DF="+df, "TEST_DISK="+disk, "TEST_AFTER="+tc.after, "TEST_FAIL="+fail)
-			output, err := command.CombinedOutput()
+			var output []byte
+			err := EnsureAPFSSpace(t.Context(), func(ctx context.Context, _ io.Reader, args ...string) ([]byte, error) {
+				script := strings.ReplaceAll(args[2], "/bin/df", `"$TEST_DF"`)
+				script = strings.ReplaceAll(script, "/usr/sbin/diskutil", `"$TEST_DISK"`)
+				script = strings.ReplaceAll(script, "sudo -n ", "")
+				commandArgs := append([]string{"-c", script}, args[3:]...)
+				command := exec.CommandContext(ctx, "/bin/sh", commandArgs...)
+				fail := "no"
+				if tc.fail {
+					fail = "yes"
+				}
+				command.Env = append(os.Environ(), "TEST_SPACE="+state, "TEST_CALLS="+calls, "TEST_DF="+df, "TEST_DISK="+disk, "TEST_AFTER="+tc.after, "TEST_FAIL="+fail)
+				var err error
+				output, err = command.CombinedOutput()
+				return output, err
+			}, "/volume with spaces", "disk7", "disk7s2", 70)
 			if tc.wantError {
 				require.Error(t, err)
-				require.Contains(t, string(output), "only 20 GB free")
+				require.ErrorContains(t, err, "only 20 GB free; need at least 70 GB")
+				require.ErrorContains(t, err, "fixture: resize unavailable")
 			} else {
 				require.NoError(t, err, string(output))
 			}
 			if tc.wantResize {
 				data, err := os.ReadFile(calls)
 				require.NoError(t, err)
-				require.Contains(t, string(data), "repairDisk disk0")
-				require.Contains(t, string(data), "apfs resizeContainer disk0s2 0")
+				require.Contains(t, string(data), "repairDisk disk7")
+				require.Contains(t, string(data), "apfs resizeContainer disk7s2 0")
 				if tc.fail {
 					require.Contains(t, string(output), "fixture: resize unavailable")
 				}

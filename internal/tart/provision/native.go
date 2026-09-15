@@ -272,20 +272,9 @@ func (n *native) EnsureToolchain(ctx context.Context, name string) error {
 	return macos.EnsureCommandLineTools(ctx, n.target(name))
 }
 
-const xcodeStorageScript = `set -eu
-available_space() { /bin/df -g /private/tmp | /usr/bin/awk 'NR==2 {print $4}'; }
-available=$(available_space)
-[ "$available" -lt 60 ] || exit 0
-sudo -n /bin/sh -c 'yes | /usr/sbin/diskutil repairDisk disk0'
-if ! sudo -n /usr/sbin/diskutil apfs resizeContainer disk0s2 0; then
-  echo "APFS resize failed; checking whether enough space is available" >&2
-fi
-available=$(available_space)
-[ "$available" -ge 60 ] || { echo "only ${available} GB free; Xcode needs at least 60 GB to expand"; exit 1; }`
-
 func (n *native) InstallXcode(ctx context.Context, name string, config Config) error {
-	if output, err := n.guest(ctx, name, nil, "/bin/sh", "-c", xcodeStorageScript); err != nil {
-		return fmt.Errorf("setup: expanding the Xcode image filesystem: %w: %s", err, strings.TrimSpace(string(output)))
+	if err := macos.EnsureAPFSSpace(ctx, n.target(name), "/private/tmp", "disk0", "disk0s2", macos.XcodeExpansionSpaceGiB); err != nil {
+		return fmt.Errorf("setup: expanding the Xcode image filesystem: %w", err)
 	}
 	output, err := n.command(ctx, nil, false, "ip", name, "--wait", "300")
 	if err != nil {

@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// XcodeExpansionSpaceGiB is the free space required before staging an Xcode archive.
+const XcodeExpansionSpaceGiB = 60
+
 func CheckCompiler(ctx context.Context, run Command) error {
 	if _, err := run(ctx, nil, "/usr/bin/xcode-select", "-p"); err != nil {
 		return fmt.Errorf("guest has no selected command line tools: %w", err)
