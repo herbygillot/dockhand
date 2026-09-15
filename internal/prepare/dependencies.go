@@ -191,7 +191,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	contents, err := dependency.Apply(result.Files[0].After, values)
+	contents, err := plan.Apply(result.Files[0].After, values)
 	if err != nil {
 		return Result{}, err
 	}

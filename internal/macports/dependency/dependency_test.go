@@ -200,3 +200,16 @@ func TestEmptyDependencyBlocksAndUnrelatedPorts(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, plan)
 }
+
+func TestUnchangedDependencyBlockKeepsOriginalFormatting(t *testing.T) {
+	sha := strings.Repeat("a", 64)
+	src := []byte("version 1\ncargo.crates \\\n    first      1.0.0   " + sha + " \\\n    second     2.0.0   " + sha + "\n")
+	values := []string{"first", "1.0.0", sha, "second", "2.0.0", sha}
+	plan, err := Inspect(src, map[string]string{Cargo: strings.Join(values, " ")})
+	require.NoError(t, err)
+	stripped, err := plan.Strip(src)
+	require.NoError(t, err)
+	updated, err := plan.Apply([]byte(strings.Replace(string(stripped), "version 1", "version 2", 1)), map[string][]string{Cargo: values})
+	require.NoError(t, err)
+	require.Equal(t, strings.Replace(string(src), "version 1", "version 2", 1), string(updated))
+}

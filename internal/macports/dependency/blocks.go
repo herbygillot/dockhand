@@ -52,6 +52,7 @@ func (t Tools) Resolve(kind string) (string, error) {
 }
 
 type Plan struct {
+	source []byte
 	Kind   string
 	Values map[string][]string
 }
@@ -98,7 +99,7 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 		}
 		values[name] = expected
 	}
-	return &Plan{Kind: kind, Values: values}, nil
+	return &Plan{Kind: kind, Values: values, source: slices.Clone(src)}, nil
 }
 func names(kind string) []string {
 	if kind == Go {
@@ -157,6 +158,32 @@ func (p *Plan) Strip(src []byte) ([]byte, error) {
 	}
 	return Apply(src, replacements)
 }
+
+// Apply retains the original spelling of dependency blocks whose values did not change.
+func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
+	out, err := Apply(src, values)
+	if err != nil {
+		return nil, err
+	}
+	original, err := blocks(p.source)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := blocks(out)
+	if err != nil {
+		return nil, err
+	}
+	var edits []text.Edit
+	for name, tokens := range values {
+		before, existed := original[name]
+		after, present := updated[name]
+		if existed && present && Equivalent(name, p.Values[name], tokens) {
+			edits = append(edits, text.Edit{Span: after.Span, New: []byte(before.Span.Text(p.source))})
+		}
+	}
+	return text.Apply(out, edits)
+}
+
 func Apply(src []byte, values map[string][]string) ([]byte, error) {
 	commands, err := blocks(src)
 	if err != nil {

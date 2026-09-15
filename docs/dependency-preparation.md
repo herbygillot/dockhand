@@ -13,7 +13,7 @@ Flags override environment variables; absent a configured path, Dockhand searche
 
 Dockhand first checks that evaluated declarations correspond to a single literal declaration per block. It temporarily removes those declarations in a frozen tree to separate the main archive from dependencies appended by PortGroups. This path currently requires one main source archive; ordinary source preparation supports multiple archives separately.
 
-Before changing a block, Dockhand regenerates the old source's dependencies and compares them to the existing declaration. Differences stop preparation so maintained overrides are not silently replaced. Ordering and Go field ordering may differ; changed repository choices, versions, or hashes are treated as overrides.
+Before changing a block, Dockhand regenerates the old source's dependencies and compares them to the existing declaration. Differences stop preparation so maintained overrides are not silently replaced. Unchanged dependency blocks retain their original formatting. Ordering and Go field ordering may differ; changed repository choices, versions, or hashes are treated as overrides.
 
 The selected new main archive is downloaded and hashed once, with the same bytes retained temporarily for reading its manifest. Manifest reading supports tar, gzip, bzip2, and zip without extracting source files or executing source code. It rejects ambiguous, duplicate, oversized, or nonregular manifest members. A declared source subdirectory can select a nested manifest. Temporary archives and helper directories are removed when preparation returns.
 
