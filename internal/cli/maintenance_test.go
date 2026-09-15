@@ -8,12 +8,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/cli"
+	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
 
@@ -178,4 +182,50 @@ func TestMigrationRefusesMissingEmptyForeignAndNewerDatabases(t *testing.T) {
 			require.Equal(t, before, after, fmt.Sprintf("must not mutate %s database", name))
 		})
 	}
+}
+
+func TestGCPrunesSharedIndexCacheWithoutProviderSetup(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	repo, err := git.Open(t.Context(), root, "")
+	require.NoError(t, err)
+	config := app.Config{Repository: root, DBPath: filepath.Join(root, "state.db"), TclExecutable: "/missing/tcl"}
+	config.Tart.Executable = "/missing/tart"
+	store, err := sqlite.Open(t.Context(), config.DBPath, sqlite.Options{})
+	require.NoError(t, err)
+	_, err = store.RegisterRepository(t.Context(), repo.CommonDir)
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	cache, err := os.UserCacheDir()
+	require.NoError(t, err)
+	profile := filepath.Join(cache, "dockhand", "indexes", strings.Repeat("a", 64))
+	entry := filepath.Join(profile, "complete", strings.Repeat("b", 40))
+	require.NoError(t, os.MkdirAll(entry, 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(profile, "index.lock"), nil, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(entry, "PortIndex"), []byte("obsolete cache"), 0600))
+	old := time.Now().Add(-30 * 24 * time.Hour)
+	require.NoError(t, os.Chtimes(entry, old, old))
+	for _, dry := range []bool{true, false} {
+		args := []string{"gc", "--json"}
+		if dry {
+			args = append(args, "--dry-run")
+		}
+		var output bytes.Buffer
+		require.NoError(t, cli.Run(t.Context(), args, cli.Streams{Out: &output, Err: &output}, config))
+		var result workflow.RetentionResult
+		require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+		require.Len(t, result.Items, 1)
+		require.Equal(t, "prune-index-cache", result.Items[0].Action)
+		require.Equal(t, entry, result.Items[0].Path)
+		require.Equal(t, !dry, result.Items[0].Completed)
+		if dry {
+			require.DirExists(t, entry)
+		} else {
+			require.NoDirExists(t, entry)
+		}
+	}
+	require.FileExists(t, filepath.Join(profile, "index.lock"))
+	require.NoDirExists(t, filepath.Join(root, "artifacts"))
 }

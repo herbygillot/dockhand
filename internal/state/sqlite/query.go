@@ -81,6 +81,10 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 	if q.Pending {
 		sql += " AND j.state IN ('queued','active')"
 	}
+	if q.CleanupBefore != nil {
+		sql += " AND j.state NOT IN ('queued','active') AND j.finished_at IS NOT NULL AND j.finished_at<=?"
+		args = append(args, q.CleanupBefore.UnixMilli())
+	}
 	if q.Branch != "" {
 		sql += " AND j.change_id IN (SELECT id FROM changes WHERE repository_id=? AND branch=?)"
 		args = append(args, t.repo, q.Branch)

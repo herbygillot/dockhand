@@ -18,6 +18,8 @@ type RetentionOptions struct {
 
 type CleanupItem struct {
 	ResourceID record.ResourceID
+	AttemptID  record.AttemptID
+	Path       string
 	Action     string
 	Completed  bool
 	Detail     string
@@ -67,7 +69,8 @@ func (e *Engine) Collect(ctx context.Context, options RetentionOptions) (Retenti
 			}
 		}
 		if len(resources) < q.Limit {
-			return result, nil
+			err := c.collectLogCaches(ctx, &result)
+			return result, err
 		}
 		q.After = string(resources[len(resources)-1].ID)
 	}

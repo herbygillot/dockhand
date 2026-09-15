@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -40,6 +41,10 @@ func (p *Provider) ReadLog(ctx context.Context, handle record.ProviderRun, offse
 			return err
 		}
 		result, err = readLogChunk(name, offset, limit)
+		if err == nil {
+			now := time.Now()
+			err = os.Chtimes(name, now, now)
+		}
 		return err
 	})
 	return result, err

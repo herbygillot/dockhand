@@ -55,7 +55,7 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 - Audit unused exported Tcl/upstream APIs and reserved scaffolding against current callers and protocol use. Unexport, remove, or test deliberately; do not delete functioning planning code based on an older review's inventory.
 - Continue the coherent-comment pass, prioritizing package responsibilities and recovery contracts over comment-count targets.
 - Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
-- Add retention for obsolete PortIndex cache entries and GitHub job logs through their owning lifecycle; preserve evidence and active work.
+- PortIndex and GitHub log-cache retention is implemented in `gc`, with last-use thresholds, existing operation locks, read-only previews, and retained database evidence. Consider orphaned temporary-file cleanup separately; unidentified/incomplete temporaries are currently preserved.
 - Consider account-wide GitHub cooldown coordination only if measurements show concurrent jobs continue causing rate-limit pressure despite their persisted per-record deadlines.
 - The shared `fetch` package now serves bounded source-archive and PortIndex transfers; keep cache/storage ownership in callers.
 

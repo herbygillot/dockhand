@@ -2,6 +2,7 @@ package filelock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,4 +51,30 @@ func Acquire(ctx context.Context, path string, mode Mode) (*os.File, error) {
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
+}
+
+// ErrBusy means another process currently owns an incompatible lock.
+var ErrBusy = errors.New("filelock: busy")
+
+// TryExisting acquires an existing lock without waiting or creating paths.
+// This lets maintenance skip active work and keep previews read-only.
+func TryExisting(ctx context.Context, path string, mode Mode) (*os.File, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if mode != Shared && mode != Exclusive {
+		return nil, fmt.Errorf("filelock: invalid mode %d", mode)
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	if err = syscall.Flock(int(file.Fd()), int(mode)|syscall.LOCK_NB); err != nil {
+		file.Close()
+		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+			return nil, ErrBusy
+		}
+		return nil, err
+	}
+	return file, nil
 }

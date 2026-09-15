@@ -35,6 +35,7 @@ func digest(data []byte) string {
 
 // Config freezes the indexer, mirror, and cache inputs used for staging.
 type Config struct {
+	guard          *os.File
 	Executable     string
 	Digest         string
 	MirrorURL      string
@@ -124,9 +125,13 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 		return err
 	}
 	defer guard.Close()
+	resolved.guard = guard
 	progress.Report(ctx, "Checking cached PortIndex")
 	entry, err := ensurePortIndex(ctx, repo, source, platform, resolved, cacheRoot, root, client)
 	if err != nil {
+		return err
+	}
+	if err := touchEntry(entry); err != nil {
 		return err
 	}
 	progress.Report(ctx, "PortIndex ready; installing into staged source")
@@ -322,6 +327,9 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return statErr
 		}
+		if err = touchEntry(seed); err != nil {
+			return err
+		}
 		indexInfo, err := os.Stat(filepath.Join(temp, portIndexName))
 		if err != nil {
 			return err
@@ -353,6 +361,9 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	}
 	command := exec.CommandContext(ctx, c.Executable, args...)
 	command.Dir = sourceRoot
+	if c.guard != nil {
+		command.ExtraFiles = []*os.File{c.guard}
+	}
 	for _, entry := range os.Environ() {
 		if !strings.HasPrefix(entry, "PORTSRC=") && !strings.HasPrefix(entry, "LC_ALL=") {
 			command.Env = append(command.Env, entry)

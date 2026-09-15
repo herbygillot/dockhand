@@ -65,8 +65,8 @@ func (r *runtime) databaseCommand() *cobra.Command {
 func (r *runtime) gcCommand() *cobra.Command {
 	options := workflow.RetentionOptions{}
 	command := &cobra.Command{
-		Use: "gc", Short: "Release old retained environments and prune released diagnostics", Args: cobra.NoArgs,
-		Long: "Clean up terminal work in the current repository. Release retained environments whose jobs finished before the age threshold; prune diagnostic files only when confirmed release is also that old. Future explicit retention deadlines are honored. History, evidence, submission identities, and lockfiles remain. Active or unresolved attempts are never cleaned up. This command does not advance jobs.",
+		Use: "gc", Short: "Release old environments and prune old diagnostics and caches", Args: cobra.NoArgs,
+		Long: "Clean up terminal work in the current repository. Release retained environments whose jobs finished before the age threshold; prune diagnostic files only when confirmed release is also that old. Future explicit retention deadlines are honored. History, evidence, submission identities, and lockfiles remain. Active or unresolved attempts are never cleaned up. Old local GitHub log caches are removed only for terminal jobs; remote logs and database evidence remain. Shared PortIndex caches are removed by last-use age, across repositories, under their existing locks. Busy caches are skipped. This command does not advance jobs.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, callErr := app.Collect(cmd.Context(), r.config, options)
 			if r.json {
@@ -86,7 +86,14 @@ func (r *runtime) gcCommand() *cobra.Command {
 					if options.DryRun {
 						status = "preview"
 					}
-					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s%s %s: %s\n", prefix, item.Action, item.ResourceID, status); err != nil {
+					target := string(item.ResourceID)
+					if item.AttemptID != "" {
+						target = string(item.AttemptID)
+					}
+					if item.Path != "" {
+						target = item.Path
+					}
+					if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s%s %s: %s\n", prefix, item.Action, target, status); err != nil {
 						return err
 					}
 					if item.Detail != "" {
@@ -114,8 +121,8 @@ func (r *runtime) gcCommand() *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().DurationVar(&options.OlderThan, "older-than", 7*24*time.Hour, "Minimum age since job completion and, for artifacts, resource release (0 includes recent work)")
-	command.Flags().BoolVar(&options.DryRun, "dry-run", false, "Show eligible cleanup without changing state or contacting providers")
+	command.Flags().DurationVar(&options.OlderThan, "older-than", 7*24*time.Hour, "Minimum age since job completion, resource release, or cache use (0 includes recent work)")
+	command.Flags().BoolVar(&options.DryRun, "dry-run", false, "Show eligible cleanup without changing files/state or contacting remote services")
 	return command
 }
 

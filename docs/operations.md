@@ -56,3 +56,13 @@ Release failures remain durable cleanup obligations and can be retried by `gc` o
 Status records the time diagnostics were pruned. Historical log paths remain in immutable evidence, and reading a missing terminal log reports that it is unavailable. Verification verdicts, input identities, job/request history, PR associations, provider results, and closed submission identities are retained. Pruning logs does not invalidate a verification result.
 
 Per-submission and publication lockfiles remain in place. Unlinking a lock while another process holds or awaits its inode can create two independent locks for the same operation. Closed provider identities also prevent delayed submissions from creating a second run. Reclaiming these small records would require a separate retirement protocol; deleting the large released directories provides the useful space savings now.
+
+## Index and GitHub log cache retention
+
+`dockhand gc --dry-run` previews shared PortIndex entries and local GitHub log caches alongside retained environments and released Tart diagnostics. `--older-than` defaults to seven days. Cache entries must be older than that threshold since their last use; GitHub logs also require an old terminal job and terminal attempt without a live claim or retained build outputs.
+
+Index cleanup covers the selected Tart artifact directory's `indexes` cache and the user's `dockhand/indexes` cache used by discovery. These disposable caches are shared across repositories. Collection uses each profile's existing index lock, skips busy profiles, preserves lockfiles and unknown paths, and never removes the staged index already copied into a build. Cache entries are regenerated when needed. A queued request does not pin a disposable index.
+
+GitHub log cleanup covers the current registered repository's aggregate logs and completed per-job download parts. It uses each request's existing lock and skips active downloads. It preserves database results, evidence, run identities, and remote log URLs; it does not delete anything on GitHub or require authentication. An explicit later log read may download the cache again if GitHub still retains the logs. Previews do not create directories/lockfiles or contact remote services. As with other repository garbage collection, an absent database or unregistered checkout has no eligible cleanup.
+
+Use the preview to see exact cache paths and attempt IDs. A concurrent run may make an entry busy or refresh its last-use time between preview and collection, so the actual set can differ. Incomplete cache build directories and orphaned unidentified GitHub download temporaries are left alone in this initial retention pass.

@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/verify"
+	githubverify "github.com/herbygillot/dockhand/internal/verify/github"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow"
 )
@@ -70,12 +73,40 @@ func Collect(ctx context.Context, config Config, options workflow.RetentionOptio
 	if err != nil {
 		return empty, err
 	}
-	engine := workflow.Engine{State: store, Repository: repository.ID}
+	if config.Tart.ArtifactDirectory == "" {
+		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
+	}
+	engine := workflow.Engine{State: store, Repository: repository.ID, Providers: map[string]verify.Provider{}}
 	if !options.DryRun {
-		if config.Tart.ArtifactDirectory == "" {
-			config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
-		}
 		engine.Provider = &tart.Provider{State: store, Repository: repository.ID, Config: config.Tart}
 	}
-	return engine.Collect(ctx, options)
+	engine.Providers["github"] = &githubverify.Provider{State: store, Repository: repository.ID, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification")}
+	result, err := engine.Collect(ctx, options)
+	if err != nil {
+		return result, err
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return result, err
+	}
+	roots := []string{filepath.Join(config.Tart.ArtifactDirectory, "indexes"), filepath.Join(cache, "dockhand", "indexes")}
+	seen := map[string]bool{}
+	for _, root := range roots {
+		root, err = filepath.Abs(root)
+		if err != nil {
+			return result, err
+		}
+		if seen[root] {
+			continue
+		}
+		seen[root] = true
+		items, err := portindex.Collect(ctx, root, result.Before, options.DryRun)
+		for _, item := range items {
+			result.Items = append(result.Items, workflow.CleanupItem{Action: "prune-index-cache", Path: item.Path, Completed: item.Completed})
+		}
+		if err != nil {
+			return result, err
+		}
+	}
+	return result, nil
 }

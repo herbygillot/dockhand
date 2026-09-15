@@ -40,3 +40,19 @@ func TestAcquireRejectsUnknownModeBeforeCreatingPath(t *testing.T) {
 	_, err = os.Stat(filepath.Dir(path))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+func TestTryExistingDoesNotCreatePathsAndSkipsBusyLocks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "new", "lock")
+	_, err := TryExisting(t.Context(), path, Exclusive)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.NoDirExists(t, filepath.Dir(path))
+	held, err := Acquire(t.Context(), path, Exclusive)
+	require.NoError(t, err)
+	defer held.Close()
+	_, err = TryExisting(t.Context(), path, Exclusive)
+	require.ErrorIs(t, err, ErrBusy)
+	require.NoError(t, held.Close())
+	next, err := TryExisting(t.Context(), path, Exclusive)
+	require.NoError(t, err)
+	require.NoError(t, next.Close())
+}

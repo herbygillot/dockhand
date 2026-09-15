@@ -52,8 +52,8 @@ type Query struct {
 	Pending bool
 	// Branch selects jobs by their contribution's recorded branch. Only Jobs uses it.
 	Branch string
-	// CleanupBefore selects old terminal resources for explicit maintenance.
-	// Only Resources uses this field.
+	// CleanupBefore selects old terminal jobs or resources for explicit maintenance.
+	// Jobs and Resources use this field.
 	CleanupBefore *time.Time
 }
 
