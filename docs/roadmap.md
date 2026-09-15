@@ -10,19 +10,15 @@ Last updated: 2026-09-15.
 
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
-### 1. GitHub missing-run diagnostics and recovery
-
-A confirmed push can remain without an observable Actions run. Preserve uncertainty, identify the exact branch/commit and workflow condition, and explain how to keep observing or explicitly stop tracking. Never infer absence from elapsed time, automatically dispatch a duplicate run, or turn missing evidence into a pass. Reuse existing wait/cancel mechanisms before adding commands.
-
-### 2. Standalone checksum refresh
+### 1. Standalone checksum refresh
 
 Implement `refresh-checksums` through the existing preparation, download, evaluation, branch integration, verification, and publication path. Share checksum mechanics with version bumps rather than creating a second workflow.
 
-### 3. Human corrections and publication design
+### 2. Human corrections and publication design
 
 Settle the design items below together: ordinary Git edits, branch reassociation, rebase/squash, verification of a replacement revision, and updating the existing PR. Decide standalone publication's missing-verification behavior before implementing more post-publication commands.
 
-### 4. Plan and execute dependent verification
+### 3. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 
@@ -154,7 +150,7 @@ The remaining test-placement, mechanism-documentation, exported-surface, and dep
 
 The [xplr exercise](activity/2026-09-15-xplr-github-exercise.md) completed fork verification through PR, driver recovery, shared-run tracking cancellation, and a user-triggered rerun.
 
-- Missing-run diagnostics and recovery are in the immediate queue above.
+- Missing-run observations now identify the accepted source, submission time, push condition, and current workflow settings; wait/cancel guidance and delayed-run/offline-cancellation regressions are implemented. See the [recovery guide](github-verification.md#when-a-pushed-branch-has-no-visible-run). Automatic reruns and managed branch updates remain below.
 - Consider controlled rerun support, safe updates to previously pushed branches, and broader cohort/workflow coverage after the initial committed single-port path.
 - Log-cache retention is tracked with engineering storage follow-up above.
 

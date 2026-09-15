@@ -618,7 +618,7 @@ func TestDriverProgressFollowsGitHubRun(t *testing.T) {
 		require.NoError(t, err)
 		status, err := f.engine.Status(t.Context(), scope)
 		require.NoError(t, err)
-		return strings.Contains(status.Jobs[0].Job.Detail, "Waiting for GitHub Actions on contributor/macports-ports:candidate")
+		return strings.Contains(status.Jobs[0].Job.Detail, "No matching GitHub Actions run observed for contributor/macports-ports:candidate")
 	}, 5*time.Second, 10*time.Millisecond)
 	f.ready()
 	f.api.run.Conclusion = nil

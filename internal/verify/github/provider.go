@@ -248,10 +248,15 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 		return admitted(row)
 	}
 	// Repeating a confirmed push is a no-op. Never dispatch an uncorrelated second run.
+	push := "push confirmed"
 	if err := p.Repo.Push(ctx, git.Push{Remote: d.PushURL, Branch: spec.Branch, Commit: string(spec.Source.Commit), ExpectedRemote: saved.Expected}); err != nil {
-		return result, err
+		if ctx.Err() != nil || !errors.Is(err, git.ErrRefConflict) {
+			return result, err
+		}
+		push = "remote branch differs from the accepted push precondition; no replacement push was made; reconcile it with Git before requesting verification of new contents"
 	}
-	return result, nil
+	result.Detail, err = missingRunDetail(ctx, api, row, saved, push)
+	return result, err
 }
 
 func admitted(row record.ProviderExecution) (verify.Submission, error) {

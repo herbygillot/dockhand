@@ -41,6 +41,22 @@ Known pre-push failures such as a missing local branch, unsuitable or already-me
 
 A missing run remains uncertain because a successful Git push does not prove whether a delayed Actions event will execute. This includes pushes that did not trigger a workflow. Dockhand does not repeatedly manufacture new branches or mutate commits. Canceling an uncertain submission closes its local tracking and prevents later submission calls from pushing; a push already sent may still trigger Actions. Inspect the fork's Actions settings and event history when a run does not appear. Canceling an admitted job durably stops Dockhand tracking that request; it does not cancel the remote Actions run, which may be shared by other requests or have been started independently. Subsequent observation reports a local cancellation without inventing a remote conclusion. Cancel the remote workflow in GitHub if that is also desired. No branch or workflow run is deleted during cleanup. Cancellation can wait for a provider operation already holding the request lock; a push already in flight cannot be undone.
 
+## When a pushed branch has no visible run
+
+Status identifies the accepted fork, branch, commit, and submission timestamp, then distinguishes a confirmed push from a remote-branch conflict. When no matching run is found, the driver also reads the current `main.yml` reference: active, disabled, replaced, or missing/inaccessible. A workflow URL comes from GitHub when available. These observations do not change the accepted workflow ID or establish that an earlier event cannot still execute. Transient API errors continue through the normal retry/backoff path.
+
+Use the exact job ID shown by status:
+
+```sh
+dockhand wait <job-id> --trace
+# Or explicitly stop tracking this job, including when GitHub is offline:
+dockhand cancel <job-id> --wait
+```
+
+A delayed matching run can still be adopted after a restart or workflow-settings change. There is no elapsed-time failure cutoff. If the remote branch has moved, Dockhand keeps looking for the accepted commit's run without replacing the unexpected remote head. Cancellation closes only this request's tracking; the branch remains and remote Actions may still execute. A late run cannot revive canceled tracking.
+
+Inspect the fork's Actions page and correct workflow access/settings or the push setup before requesting new work. Enabling a workflow alone does not cause Dockhand to replay the earlier push. If a run exists, rerun it deliberately on GitHub before submitting a new verification request; otherwise reconcile and push an eligible contribution revision with Git, then use `verify --branch <branch> --provider github`. `wait` resumes observation; it does not dispatch or rerun a workflow. Automatic reruns and managed branch replacement remain separate design work.
+
 ## Logs
 
 `--trace` waits for completion and retrieves the pinned attempt's completed job logs through GitHub's API. It does not stream a running job's output. Logs are cached beside the database in `github-verification`. Completed caches can be read without resolving credentials or contacting GitHub. Each completed job download is retained if a later download fails; retrying resumes with the missing jobs, then assembles the log in a stable order and removes the individual caches. Partial job downloads are discarded and retried. Status retains links to the jobs even if log retrieval fails or GitHub later expires its logs. These caches currently require manual removal when no trace reader is using them; VM resource pruning does not manage them.
