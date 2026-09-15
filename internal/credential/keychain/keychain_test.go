@@ -28,6 +28,11 @@ find-generic-password)
   IFS= read -r command
   printf '%s' "${command##* -w }" > "$KEYCHAIN_SECRET_FILE"
   ;;
+delete-generic-password)
+  [ "$2 $3 $4 $5" = "-a github.com -s fixture.service" ] || exit 2
+  [ -f "$KEYCHAIN_SECRET_FILE" ] || exit 44
+  /bin/rm "$KEYCHAIN_SECRET_FILE"
+  ;;
 *) exit 2 ;;
 esac
 `
@@ -46,12 +51,19 @@ esac
 	require.NotContains(t, string(arguments), secret)
 	require.NotContains(t, string(arguments), "fixture.service")
 	require.Equal(t, "-i", lastLine(string(arguments)))
+	require.NoError(t, store.Delete(t.Context(), key))
+	_, err = store.Get(t.Context(), key)
+	require.ErrorIs(t, err, credential.ErrNotFound)
+	require.ErrorIs(t, store.Delete(t.Context(), key), credential.ErrNotFound)
 }
 
 func TestStoreDistinguishesKeychainFailuresFromMissingItems(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "security")
 	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nexit 2\n"), 0700))
 	_, err := (keychain.Store{Executable: executable}).Get(t.Context(), credential.Key{Service: "fixture", Account: "github.com"})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, credential.ErrNotFound)
+	err = (keychain.Store{Executable: executable}).Delete(t.Context(), credential.Key{Service: "fixture", Account: "github.com"})
 	require.Error(t, err)
 	require.NotErrorIs(t, err, credential.ErrNotFound)
 }

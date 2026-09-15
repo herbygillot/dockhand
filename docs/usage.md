@@ -18,6 +18,11 @@ The OAuth application must have GitHub's device flow enabled. Build with `make G
 
 For an ordinary build without an embedded OAuth client ID, use an existing authenticated GitHub CLI login, or provide `GH_TOKEN` or `GITHUB_TOKEN`. Git push authentication is configured separately through Git. The publication section below describes credential precedence and remote selection.
 
+`dockhand auth status` checks the selected credential against GitHub and reports its source and account. Rejections name the source and how to replace it; Dockhand does not try another identity after rejection. `dockhand auth login` replaces the saved Keychain credential. If `GH_TOKEN` or `GITHUB_TOKEN` is set, login explains that the environment credential still takes precedence.
+
+`dockhand auth logout` removes only Dockhand's Keychain entry; an absent entry is already logged out. It does not revoke the token on GitHub or modify environment variables or `gh` credentials. A later invocation may therefore select an environment token or the GitHub CLI login. Run `dockhand auth status` to check. Both commands work without a ports checkout or database; `--json` reports source/account/status or removal outcome without a token.
+
+
 ## Prepare verification images
 
 Prepare the native host's conventional verification image before the first build:

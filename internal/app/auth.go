@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -51,4 +52,41 @@ func LoginGitHub(ctx context.Context, options GitHubLoginOptions) (GitHubLoginRe
 		return GitHubLoginResult{}, err
 	}
 	return GitHubLoginResult{Host: "github.com", Account: value.Account, Storage: "macOS Keychain"}, nil
+}
+
+type GitHubAuthStatus struct {
+	Host          string                  `json:"host"`
+	Account       string                  `json:"account,omitempty"`
+	Source        github.CredentialSource `json:"source,omitempty"`
+	Authenticated bool                    `json:"authenticated"`
+}
+
+func StatusGitHub(ctx context.Context, client *github.Client) (GitHubAuthStatus, error) {
+	if client == nil {
+		client = &github.Client{Credentials: github.SystemCredentials{Store: keychain.Store{}, Key: githubCredentialKey}}
+	}
+	account, err := client.AuthenticatedUser(ctx)
+	return GitHubAuthStatus{Host: "github.com", Account: account, Source: client.CredentialSource(), Authenticated: err == nil}, err
+}
+
+type GitHubLogoutResult struct {
+	Host    string `json:"host"`
+	Storage string `json:"storage"`
+	Removed bool   `json:"removed"`
+}
+
+func LogoutGitHub(ctx context.Context, store credential.Remover) (GitHubLogoutResult, error) {
+	if store == nil {
+		store = keychain.Store{}
+	}
+	result := GitHubLogoutResult{Host: "github.com", Storage: "macOS Keychain"}
+	err := store.Delete(ctx, githubCredentialKey)
+	if errors.Is(err, credential.ErrNotFound) {
+		return result, nil
+	}
+	if err != nil {
+		return result, err
+	}
+	result.Removed = true
+	return result, nil
 }

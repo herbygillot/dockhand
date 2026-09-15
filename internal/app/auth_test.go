@@ -3,6 +3,10 @@ package app_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/herbygillot/dockhand/internal/forge/github"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/app"
@@ -63,4 +67,44 @@ func TestGitHubLoginRequiresConfigurationAndPropagatesStorageFailure(t *testing.
 	_, err = app.LoginGitHub(t.Context(), app.GitHubLoginOptions{ClientID: "fixture", Flow: flow, Store: store, Present: func(credential.DeviceAuthorization) error { return nil }})
 	require.ErrorContains(t, err, "keychain locked")
 	assert.NotContains(t, err.Error(), "fixture-secret")
+}
+
+func (s *loginStore) Delete(_ context.Context, key credential.Key) error { s.key = key; return s.err }
+
+func TestGitHubLogoutRemovesOnlyDockhandEntry(t *testing.T) {
+	for _, failure := range []error{nil, credential.ErrNotFound, errors.New("keychain locked")} {
+		store := &loginStore{err: failure}
+		result, err := app.LogoutGitHub(t.Context(), store)
+		require.Equal(t, credential.Key{Service: "github.com/herbygillot/dockhand", Account: "github.com"}, store.key)
+		if failure == nil || errors.Is(failure, credential.ErrNotFound) {
+			require.NoError(t, err)
+		} else {
+			require.ErrorIs(t, err, failure)
+		}
+		require.Equal(t, failure == nil, result.Removed)
+	}
+}
+
+func TestGitHubStatusReturnsSourceOnRejection(t *testing.T) {
+	for _, accepted := range []bool{true, false} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if accepted {
+				fmt.Fprint(w, `{"login":"fixture-user"}`)
+			} else {
+				w.WriteHeader(http.StatusUnauthorized)
+			}
+		}))
+		client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-secret"}}
+		result, err := app.StatusGitHub(t.Context(), client)
+		require.Equal(t, accepted, result.Authenticated)
+		require.Equal(t, github.SourceExplicit, result.Source)
+		if accepted {
+			require.NoError(t, err)
+			require.Equal(t, "fixture-user", result.Account)
+		} else {
+			require.ErrorIs(t, err, github.ErrAuthentication)
+			require.Empty(t, result.Account)
+		}
+		server.Close()
+	}
 }

@@ -7,7 +7,11 @@ import (
 
 // Leave redirect handling to the HTTP client, but do not replay writes or send
 // API credentials outside the original origin.
-type redirectTransport struct{ next http.RoundTripper }
+type redirectTransport struct {
+	next          http.RoundTripper
+	source        CredentialSource
+	authenticated bool
+}
 
 func (t redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if previous := req.Response; previous != nil {
@@ -19,5 +23,10 @@ func (t redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			return nil, fmt.Errorf("github: redirect left configured API origin")
 		}
 	}
-	return t.next.RoundTrip(req)
+	response, err := t.next.RoundTrip(req)
+	if err == nil && t.authenticated && response.StatusCode == http.StatusUnauthorized {
+		response.Body.Close()
+		return nil, t.source.rejected()
+	}
+	return response, err
 }

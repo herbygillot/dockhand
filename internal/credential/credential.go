@@ -33,3 +33,7 @@ type DeviceAuthorization struct {
 type DeviceFlow interface {
 	Authorize(context.Context, string, func(DeviceAuthorization) error) (Value, error)
 }
+
+type Remover interface {
+	Delete(context.Context, Key) error
+}

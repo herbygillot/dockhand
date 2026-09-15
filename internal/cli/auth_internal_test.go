@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"github.com/herbygillot/dockhand/internal/forge/github"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/app"
@@ -36,4 +37,44 @@ func TestAuthLoginCommandPresentsDeviceCodeAndRendersResult(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAuthStatusJSONIncludesRejectedSource(t *testing.T) {
+	r := &runtime{json: true, statusGitHub: func(context.Context, *github.Client) (app.GitHubAuthStatus, error) {
+		return app.GitHubAuthStatus{Host: "github.com", Source: github.SourceKeychain}, github.ErrAuthentication
+	}}
+	command := r.authStatusCommand()
+	command.SilenceErrors = true
+	command.SilenceUsage = true
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	require.ErrorIs(t, command.ExecuteContext(t.Context()), github.ErrAuthentication)
+	require.JSONEq(t, `{"host":"github.com","source":"Dockhand macOS Keychain","authenticated":false}`, output.String())
+}
+
+func TestAuthLogoutJSONReportsRemoval(t *testing.T) {
+	r := &runtime{json: true, logoutGitHub: func(context.Context, credential.Remover) (app.GitHubLogoutResult, error) {
+		return app.GitHubLogoutResult{Host: "github.com", Storage: "macOS Keychain", Removed: true}, nil
+	}}
+	command := r.authLogoutCommand()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.JSONEq(t, `{"host":"github.com","storage":"macOS Keychain","removed":true}`, output.String())
+}
+
+func TestLoginWarnsAboutEnvironmentOverrideWithoutPrintingValue(t *testing.T) {
+	t.Setenv("GH_TOKEN", "a-secret-environment-token")
+	r := &runtime{json: true, loginGitHub: func(context.Context, app.GitHubLoginOptions) (app.GitHubLoginResult, error) {
+		return app.GitHubLoginResult{Host: "github.com", Account: "fixture", Storage: "macOS Keychain"}, nil
+	}}
+	command := r.authLoginCommand()
+	var output, diagnostics bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&diagnostics)
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.Contains(t, diagnostics.String(), "GH_TOKEN takes precedence")
+	require.NotContains(t, diagnostics.String(), "a-secret-environment-token")
+	require.JSONEq(t, `{"host":"github.com","account":"fixture","storage":"macOS Keychain"}`, output.String())
 }

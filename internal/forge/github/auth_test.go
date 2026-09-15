@@ -31,14 +31,14 @@ func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 		t.Setenv("GITHUB_TOKEN", "second")
 		token, err := (github.SystemCredentials{}).Token(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "first", token)
+		require.Equal(t, "first", token.Secret)
 	})
 	t.Run("GITHUB_TOKEN", func(t *testing.T) {
 		t.Setenv("GH_TOKEN", "")
 		t.Setenv("GITHUB_TOKEN", "second")
 		token, err := (github.SystemCredentials{}).Token(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "second", token)
+		require.Equal(t, "second", token.Secret)
 	})
 	t.Run("gh", func(t *testing.T) {
 		t.Setenv("GH_TOKEN", "")
@@ -49,7 +49,7 @@ func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 		t.Setenv("PATH", dir)
 		token, err := (github.SystemCredentials{}).Token(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "fixture-from-gh", token)
+		require.Equal(t, "fixture-from-gh", token.Secret)
 	})
 	t.Run("saved credential before gh", func(t *testing.T) {
 		t.Setenv("GH_TOKEN", "")
@@ -61,7 +61,7 @@ func TestSystemCredentialsPreferEnvironmentAndReuseGitHubCLI(t *testing.T) {
 		source := github.SystemCredentials{Store: savedCredential{secret: "credential-from-keychain"}, Key: credential.Key{Service: "fixture", Account: "github.com"}}
 		token, err := source.Token(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "credential-from-keychain", token)
+		require.Equal(t, "credential-from-keychain", token.Secret)
 	})
 	t.Run("missing", func(t *testing.T) {
 		t.Setenv("GH_TOKEN", "")
@@ -84,9 +84,9 @@ func TestAuthenticationChecksIdentityAndCachesOnlyTheCredential(t *testing.T) {
 	}))
 	defer server.Close()
 	sourceCalls := 0
-	client := &github.Client{Config: github.Config{BaseURL: server.URL}, Credentials: github.TokenSourceFunc(func(context.Context) (string, error) {
+	client := &github.Client{Config: github.Config{BaseURL: server.URL}, Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) {
 		sourceCalls++
-		return "fixture-token", nil
+		return github.Token{Secret: "fixture-token"}, nil
 	})}
 	require.NoError(t, client.Authenticate(t.Context()))
 	require.NoError(t, client.Authenticate(t.Context()))
@@ -100,8 +100,8 @@ func TestExplicitCredentialTakesPriority(t *testing.T) {
 		fmt.Fprint(w, `{"login":"fixture"}`)
 	}))
 	defer server.Close()
-	client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "explicit"}, Credentials: github.TokenSourceFunc(func(context.Context) (string, error) {
-		return "", assert.AnError
+	client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "explicit"}, Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) {
+		return github.Token{}, assert.AnError
 	})}
 	require.NoError(t, client.Authenticate(t.Context()))
 }
@@ -123,7 +123,7 @@ func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) 
 		const token = "secret-never-print-this"
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprint(w, `{"message":"Bad credentials"}`)
+			fmt.Fprintf(w, `{"message":%q}`, token)
 		}))
 		defer server.Close()
 		client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: token}}
@@ -141,4 +141,51 @@ func TestAuthenticationFailsBeforeWritesAndDoesNotLeakCredentials(t *testing.T) 
 		require.Error(t, err)
 		require.NotErrorIs(t, err, github.ErrAuthentication)
 	})
+}
+
+func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
+	for _, source := range []github.CredentialSource{github.SourceGHEnvironment, github.SourceGitHubEnvironment, github.SourceKeychain, github.SourceGitHubCLI} {
+		t.Run(string(source), func(t *testing.T) {
+			t.Setenv("GH_TOKEN", "")
+			t.Setenv("GITHUB_TOKEN", "")
+			const secret = "private-token"
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "gh-called")
+			t.Setenv("GH_MARKER", marker)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nprintf called > \"$GH_MARKER\"\nprintf private-token\n"), 0700))
+			t.Setenv("PATH", dir)
+			saved := savedCredential{secret: secret}
+			switch source {
+			case github.SourceGHEnvironment, github.SourceGitHubEnvironment:
+				t.Setenv(string(source), secret)
+			case github.SourceGitHubCLI:
+				saved.err = credential.ErrNotFound
+			}
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				assert.Equal(t, "Bearer "+secret, r.Header.Get("Authorization"))
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprintf(w, `{"message":%q}`, secret)
+			}))
+			defer server.Close()
+			client := &github.Client{Config: github.Config{BaseURL: server.URL}, Credentials: github.SystemCredentials{Store: saved}}
+			for i := 0; i < 2; i++ {
+				err := client.Authenticate(t.Context())
+				require.ErrorIs(t, err, forge.ErrAuthentication)
+				require.Contains(t, err.Error(), string(source))
+				require.Contains(t, err.Error(), "no alternative credential was tried")
+				require.NotContains(t, err.Error(), secret)
+			}
+			require.Equal(t, source, client.CredentialSource())
+			require.Equal(t, 2, requests)
+			if source == github.SourceKeychain {
+				require.NoFileExists(t, marker)
+			}
+			_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+			require.ErrorIs(t, err, forge.ErrRejected)
+			require.ErrorIs(t, err, forge.ErrAuthentication)
+			require.NotContains(t, err.Error(), secret)
+		})
+	}
 }

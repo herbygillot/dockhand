@@ -101,3 +101,25 @@ func safeName(value string) bool {
 	}
 	return true
 }
+
+func (s Store) Delete(ctx context.Context, key credential.Key) error {
+	if err := validKey(key); err != nil {
+		return err
+	}
+	path, err := s.executable()
+	if err != nil {
+		return err
+	}
+	err = exec.CommandContext(ctx, path, "delete-generic-password", "-a", key.Account, "-s", key.Service).Run()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 44 {
+		return credential.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("keychain: removing credential: %w", err)
+	}
+	return nil
+}

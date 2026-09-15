@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -68,6 +69,9 @@ func (c *Client) Name() string { return "github" }
 // A rejection settles a publication attempt; other errors require observation
 // before the workflow can decide whether a write took effect.
 func publicationError(response *gh.Response, err error) error {
+	if errors.Is(err, ErrAuthentication) {
+		return fmt.Errorf("%w: %w", forge.ErrRejected, err)
+	}
 	if err != nil && response != nil {
 		switch response.StatusCode {
 		case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	gh "github.com/google/go-github/v91/github"
-	"github.com/herbygillot/dockhand/internal/forge"
 )
 
 type Config struct {
@@ -22,11 +21,12 @@ type Client struct {
 	Config      Config
 	Credentials TokenSource
 
-	once    sync.Once
-	sdk     *gh.Client
-	initErr error
-	authMu  sync.Mutex
-	authSDK *gh.Client
+	once       sync.Once
+	sdk        *gh.Client
+	initErr    error
+	authMu     sync.Mutex
+	authSDK    *gh.Client
+	authSource CredentialSource
 }
 
 func (c *Client) api() (*gh.Client, error) {
@@ -39,7 +39,7 @@ func (c *Client) api() (*gh.Client, error) {
 	if authenticated != nil {
 		return authenticated, nil
 	}
-	c.once.Do(func() { c.sdk, c.initErr = c.newAPI(c.Config.Token) })
+	c.once.Do(func() { c.sdk, c.initErr = c.newAPI(c.Config.Token, SourceExplicit) })
 	return c.sdk, c.initErr
 }
 
@@ -53,6 +53,7 @@ func (c *Client) authenticatedAPI(ctx context.Context) (*gh.Client, error) {
 		return c.authSDK, nil
 	}
 	token := c.Config.Token
+	origin := SourceExplicit
 	if token == "" {
 		source := c.Credentials
 		if source == nil && c.Config.BaseURL == "" {
@@ -61,21 +62,24 @@ func (c *Client) authenticatedAPI(ctx context.Context) (*gh.Client, error) {
 		if source == nil {
 			return nil, fmt.Errorf("%w: configure an explicit credential for this GitHub API", ErrAuthentication)
 		}
-		var err error
-		token, err = source.Token(ctx)
+		resolved, err := source.Token(ctx)
 		if err != nil {
 			return nil, err
+		}
+		token, origin = resolved.Secret, resolved.Source
+		if origin == "" {
+			origin = SourceExplicit
 		}
 	}
 	token, err := validToken(token)
 	if err != nil {
 		return nil, err
 	}
-	api, err := c.newAPI(token)
+	api, err := c.newAPI(token, origin)
 	if err != nil {
 		return nil, err
 	}
-	c.authSDK = api
+	c.authSDK, c.authSource = api, origin
 	return c.authSDK, nil
 }
 
@@ -89,11 +93,8 @@ func (c *Client) AuthenticatedUser(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	user, response, err := client.Users.Get(ctx, "")
+	user, _, err := client.Users.Get(ctx, "")
 	if err != nil {
-		if response != nil && response.StatusCode == http.StatusUnauthorized {
-			return "", fmt.Errorf("%w: GitHub rejected the configured credential: %w", forge.ErrAuthentication, err)
-		}
 		return "", fmt.Errorf("github: checking authenticated user: %w", err)
 	}
 	if user == nil || user.GetLogin() == "" {
@@ -102,7 +103,7 @@ func (c *Client) AuthenticatedUser(ctx context.Context) (string, error) {
 	return user.GetLogin(), nil
 }
 
-func (c *Client) newAPI(token string) (*gh.Client, error) {
+func (c *Client) newAPI(token string, source CredentialSource) (*gh.Client, error) {
 	client := http.Client{}
 	if c.HTTP != nil {
 		client = *c.HTTP
@@ -111,7 +112,7 @@ func (c *Client) newAPI(token string) (*gh.Client, error) {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	client.Transport = redirectTransport{next: transport}
+	client.Transport = redirectTransport{next: transport, source: source, authenticated: token != ""}
 	options := []gh.ClientOptionsFunc{gh.WithHTTPClient(&client)}
 	if c.Config.BaseURL != "" {
 		options = append(options, gh.WithURLs(&c.Config.BaseURL, nil))
@@ -120,4 +121,10 @@ func (c *Client) newAPI(token string) (*gh.Client, error) {
 		options = append(options, gh.WithAuthToken(token))
 	}
 	return gh.NewClient(options...)
+}
+
+func (c *Client) CredentialSource() CredentialSource {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+	return c.authSource
 }

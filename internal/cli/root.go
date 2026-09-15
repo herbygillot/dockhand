@@ -7,15 +7,19 @@ import (
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/credential"
+	"github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/spf13/cobra"
 )
 
 const stateIndependentHelp = "dockhand.state-independent"
 
 type runtime struct {
-	config      app.Config
-	json        bool
-	loginGitHub func(context.Context, app.GitHubLoginOptions) (app.GitHubLoginResult, error)
+	statusGitHub func(context.Context, *github.Client) (app.GitHubAuthStatus, error)
+	logoutGitHub func(context.Context, credential.Remover) (app.GitHubLogoutResult, error)
+	config       app.Config
+	json         bool
+	loginGitHub  func(context.Context, app.GitHubLoginOptions) (app.GitHubLoginResult, error)
 }
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
@@ -41,7 +45,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		}
 		config.DBPath = filepath.Join(homeDir, ".dockhand", "state.db")
 	}
-	runtime := &runtime{config: config, loginGitHub: app.LoginGitHub}
+	runtime := &runtime{config: config, loginGitHub: app.LoginGitHub, statusGitHub: app.StatusGitHub, logoutGitHub: app.LogoutGitHub}
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Maintain MacPorts ports",

@@ -12,7 +12,6 @@ This order prioritizes correct contribution inputs, attribution, and recovery be
 
 ### 1. Finish the outstanding exercise corrections
 
-- Make rejected saved GitHub credentials easy to identify and replace or remove. Report the credential source without exposing its value; do not silently switch identities after authentication fails.
 - Show progress during initial image inspection, provider admission/source staging, and full PortIndex generation rather than leaving a stale `queued` line while work proceeds.
 - Make read-only status errors on an older database schema explain the supported migration path.
 
