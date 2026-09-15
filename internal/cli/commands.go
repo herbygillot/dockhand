@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +15,7 @@ func (r *runtime) workflowCommand(use, short string, args cobra.PositionalArgs) 
 			if options.Diff {
 				return execute(cmd.Context(), cmd.CommandPath(), args, *options, Streams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}, nil)
 			}
-			services, err := app.Build(cmd.Context(), r.config)
+			services, err := r.build(cmd.Context(), r.config)
 			if err != nil {
 				return err
 			}

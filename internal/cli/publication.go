@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -19,7 +18,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "publish", Short: "Publish a verified, committed contribution to GitHub", Args: cobra.NoArgs,
 		Long: "Publish the current branch, or select one with --branch. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. Without --wait, return after driver pickup; --wait follows confirmation of the pushed head and PR metadata. Ctrl-C detaches, and wait or start resumes the durable job. GH_TOKEN, GITHUB_TOKEN, or an authenticated GitHub CLI supplies GitHub API authentication. Git uses its configured credentials.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			services, err := app.Build(cmd.Context(), r.config)
+			services, err := r.build(cmd.Context(), r.config)
 			if err != nil {
 				return err
 			}

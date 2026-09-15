@@ -26,7 +26,11 @@ type Options struct {
 }
 
 func Run(ctx context.Context, args []string, streams Streams, config app.Config) error {
-	root, err := NewRoot(config)
+	return run(ctx, args, streams, config, app.Build)
+}
+
+func run(ctx context.Context, args []string, streams Streams, config app.Config, build serviceBuilder) error {
+	root, err := newRoot(config, build)
 	if err != nil {
 		return err
 	}

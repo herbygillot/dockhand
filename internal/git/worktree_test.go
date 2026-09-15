@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -135,8 +136,15 @@ func TestCheckoutRejectsEditsObservedDuringCapture(t *testing.T) {
 	workGit(t, repo, "add", ".")
 	workGit(t, repo, "commit", "-qm", "fixture")
 	workFile(t, repo, "z", "dirty")
+	executable := repo.Executable
+	if executable == "" {
+		var err error
+		executable, err = exec.LookPath("git")
+		require.NoError(t, err)
+	}
+	quoted := "'" + strings.ReplaceAll(executable, "'", "'\\''") + "'"
 	wrapper := filepath.Join(t.TempDir(), "git")
-	require.NoError(t, os.WriteFile(wrapper, []byte("#!/bin/sh\nfor arg do\n if [ \"$arg\" = hash-object ]; then printf 'concurrent edit' > a; fi\ndone\nexec /usr/bin/git \"$@\"\n"), 0700))
+	require.NoError(t, os.WriteFile(wrapper, []byte("#!/bin/sh\nfor arg do\n if [ \"$arg\" = hash-object ]; then printf 'concurrent edit' > a; fi\ndone\nexec "+quoted+" \"$@\"\n"), 0700))
 	repo.Executable = wrapper
 	_, err := repo.CaptureCheckout(t.Context())
 	require.ErrorIs(t, err, git.ErrCheckoutChanged)

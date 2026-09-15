@@ -81,7 +81,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if config.VerificationProvider == "github" && (branch == "" || fresh) {
 				return fmt.Errorf("GitHub verification requires --branch; --fresh is unsupported, rerun the workflow on GitHub and verify again")
 			}
-			services, err := app.Build(cmd.Context(), config)
+			services, err := r.build(cmd.Context(), config)
 			if err != nil {
 				return err
 			}
@@ -151,7 +151,7 @@ func (r *runtime) waitCommand() *cobra.Command {
 		if err := validateWorkSelector(cmd, args, branch); err != nil {
 			return err
 		}
-		services, err := app.Build(cmd.Context(), r.config)
+		services, err := r.build(cmd.Context(), r.config)
 		if err != nil {
 			return err
 		}
@@ -182,7 +182,7 @@ func (r *runtime) cancelCommand() *cobra.Command {
 		if err := validateWorkSelector(cmd, args, branch); err != nil {
 			return err
 		}
-		services, err := app.Build(cmd.Context(), r.config)
+		services, err := r.build(cmd.Context(), r.config)
 		if err != nil {
 			return err
 		}
@@ -255,7 +255,7 @@ func joinJobIDs(ids []record.JobID) string {
 
 func (r *runtime) startCommand() *cobra.Command {
 	return &cobra.Command{Use: "start", Short: "Advance this repository's work until interrupted", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		services, err := app.Build(cmd.Context(), r.config)
+		services, err := r.build(cmd.Context(), r.config)
 		if err != nil {
 			return err
 		}

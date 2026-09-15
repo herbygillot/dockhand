@@ -73,7 +73,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					if err != nil {
 						return err
 					}
-					services, err := app.Build(cmd.Context(), config)
+					services, err := r.build(cmd.Context(), config)
 					if err != nil {
 						return err
 					}

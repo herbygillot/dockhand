@@ -28,7 +28,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			config, repo, source := preparationCLI(t)
 			configureReuseImage(t, &config)
 			var stdout, stderr bytes.Buffer
-			require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+			require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 			var prior ActionResult
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &prior))
 			seedCLIVerification(t, config, prior.Status.Jobs[0].Job.Prepared.Branch)
@@ -88,7 +88,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			if wait {
 				args = append(args, "--wait")
 			}
-			require.NoError(t, Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+			require.NoError(t, runFixture(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 			var result ActionResult
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 			id := result.Status.Jobs[0].Job.ID
@@ -102,7 +102,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 				mu.Unlock()
 				stdout.Reset()
 				stderr.Reset()
-				require.NoError(t, Run(t.Context(), []string{"wait", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+				require.NoError(t, runFixture(t.Context(), []string{"wait", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 			}
 			entry := result.Status.Jobs[0]
@@ -131,7 +131,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			require.Len(t, all.Jobs, 3, "one preparation fixture, one evidence fixture, one combined job")
 			stdout.Reset()
 			stderr.Reset()
-			require.NoError(t, Run(t.Context(), []string{"publish", "--branch", entry.Job.Prepared.Branch, "--remote", "contribution", "--base", "main", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config))
+			require.NoError(t, runFixture(t.Context(), []string{"publish", "--branch", entry.Job.Prepared.Branch, "--remote", "contribution", "--base", "main", "--dry-run"}, Streams{Out: &stdout, Err: &stderr}, config))
 			require.Contains(t, stdout.String(), body)
 			mu.Lock()
 			assert.Equal(t, 1, writes)

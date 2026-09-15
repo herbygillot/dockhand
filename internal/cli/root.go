@@ -14,7 +14,10 @@ import (
 
 const stateIndependentHelp = "dockhand.state-independent"
 
+type serviceBuilder func(context.Context, app.Config) (*app.Services, error)
+
 type runtime struct {
+	build        serviceBuilder
 	statusGitHub func(context.Context, *github.Client) (app.GitHubAuthStatus, error)
 	logoutGitHub func(context.Context, credential.Remover) (app.GitHubLogoutResult, error)
 	config       app.Config
@@ -23,6 +26,10 @@ type runtime struct {
 }
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
+	return newRoot(config, app.Build)
+}
+
+func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	if config.DependencyTools.Go2Port == "" {
 		config.DependencyTools.Go2Port = os.Getenv("GO2PORT_BIN")
 	}
@@ -51,7 +58,7 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		}
 		config.DBPath = filepath.Join(homeDir, ".dockhand", "state.db")
 	}
-	runtime := &runtime{config: config, loginGitHub: app.LoginGitHub, statusGitHub: app.StatusGitHub, logoutGitHub: app.LogoutGitHub}
+	runtime := &runtime{build: build, config: config, loginGitHub: app.LoginGitHub, statusGitHub: app.StatusGitHub, logoutGitHub: app.LogoutGitHub}
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Maintain MacPorts ports",
