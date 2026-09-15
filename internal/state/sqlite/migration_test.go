@@ -502,3 +502,36 @@ func TestReadOnlySchemaErrorDistinguishesSupportedUpgrade(t *testing.T) {
 		}
 	}
 }
+
+func TestSharedRunMigrationPreservesReferencesAndAttemptExclusivity(t *testing.T) {
+	path, db := versionTenWithWork(t)
+	_, err := db.Exec(imageCapabilitiesSchema + generationSchema + "PRAGMA user_version=12;")
+	require.NoError(t, err)
+	cols, before := migrationRows(t, db, "submissions", nil)
+	resourceCols, resources := migrationRows(t, db, "resources", nil)
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	_, after := migrationRows(t, db, "submissions", cols)
+	require.Equal(t, before, after)
+	_, afterResources := migrationRows(t, db, "resources", resourceCols)
+	require.Equal(t, resources, afterResources)
+	attemptCols, _ := migrationRows(t, db, "attempts", nil)
+	selection := append([]string(nil), attemptCols...)
+	for i, column := range selection {
+		if column == "id" {
+			selection[i] = "'observer'"
+		}
+	}
+	_, err = db.Exec("INSERT INTO attempts (" + strings.Join(attemptCols, ",") + ") SELECT " + strings.Join(selection, ",") + " FROM attempts WHERE id='attempt'")
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO submissions VALUES('observer-submission','preserved','observer',1,'tart','run',1,2,NULL)")
+	require.NoError(t, err, "a provider run may have independent observers")
+	_, err = db.Exec("INSERT INTO submissions VALUES('duplicate','preserved','observer',2,'tart','different-run',1,2,NULL)")
+	require.Error(t, err, "each attempt still has at most one live submission")
+	rows, err := db.Query("PRAGMA foreign_key_check")
+	require.NoError(t, err)
+	defer rows.Close()
+	require.False(t, rows.Next())
+	require.NoError(t, rows.Err())
+}

@@ -455,3 +455,53 @@ func TestSourceRequiresWorkflowDetectableChanges(t *testing.T) {
 		})
 	}
 }
+
+func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
+	f := setup(t)
+	f.ready()
+	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+	status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+	require.NoError(t, err)
+	spec := status.Jobs[0].Job.Spec
+	spec.FreshVerification = true
+	second, err := f.engine.Submit(t.Context(), workflow.Request{ID: "independent-observer", Spec: spec})
+	require.NoError(t, err)
+	scope := workflow.Scope{Jobs: []record.JobID{f.job, second.JobID}}
+	require.Eventually(t, func() bool {
+		_, err := f.engine.Cycle(t.Context(), scope)
+		require.NoError(t, err)
+		status, err := f.engine.Status(t.Context(), scope)
+		require.NoError(t, err)
+		for _, job := range status.Jobs {
+			if len(job.Attempts) != 1 || job.Attempts[0].State != record.AttemptRunning {
+				return false
+			}
+			require.Equal(t, "10:1", job.Attempts[0].Run.RunID)
+		}
+		return true
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-second", Kind: record.Cancel, Jobs: []record.JobID{second.JobID}}))
+	require.Eventually(t, func() bool {
+		_, err := f.engine.Cycle(t.Context(), scope)
+		require.NoError(t, err)
+		status, err := f.engine.Status(t.Context(), scope)
+		require.NoError(t, err)
+		canceled := false
+		for _, job := range status.Jobs {
+			if job.Job.ID == second.JobID {
+				canceled = job.Job.State == record.JobCanceled
+			} else {
+				require.Equal(t, record.JobActive, job.Job.State)
+			}
+		}
+		return canceled
+	}, 5*time.Second, 10*time.Millisecond)
+	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("completed"), gh.Ptr("success")
+	require.Eventually(t, func() bool {
+		_, err := f.engine.Cycle(t.Context(), scope)
+		require.NoError(t, err)
+		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+		require.NoError(t, err)
+		return status.Jobs[0].Job.State == record.JobCompleted
+	}, 5*time.Second, 10*time.Millisecond)
+}

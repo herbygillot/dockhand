@@ -79,7 +79,7 @@ For this slice, a change has one local repository and one branch association, st
 
 ## Minimal data model
 
-The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 10. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
+The following summarizes the [initial schema](../internal/state/sqlite/migrations/001.sql) and its ordered migrations, currently through schema 13. Domain IDs are text, timestamps are UTC integer milliseconds, missing values are NULL, and state values have explicit constraints. Each repository-owned table carries `repository_id`; composite foreign keys preserve that scope. Sources, revisions, accepted inputs, and submission identities are immutable through the write API. Lifecycle fields are updated explicitly.
 
 | Table | Main data | Why it is needed now |
 | --- | --- | --- |
@@ -265,3 +265,7 @@ Verification evidence also retains optional per-run guest diagnostics, image/pro
 ### Explicit schema maintenance
 
 `dockhand db migrate` opens only an existing recognized Dockhand database for a writable schema upgrade, using the same migration registry and transactions as normal writable opens. It does not register a repository or construct workflow/provider services. Current databases succeed without another schema upgrade. Missing and unrecognized databases are not initialized; newer schema versions require a newer Dockhand build. `state.MigrationRequiredError` preserves `ErrSchema` classification while exposing current and required versions for supported older schemas. Read-only status remains read-only and gives CLI recovery guidance; backup/check continue to accept supported older versions without migration.
+
+### Shared provider runs
+
+Multiple submissions may observe the same `(provider, run ID)`, including submissions from different registered repositories. Each attempt still has at most one live submission. A remote run identity does not confer resource ownership or cancellation authority: resource handles retain their global uniqueness, and providers own their admission and cancellation policy. Schema 13 removes the old submission/run uniqueness constraint while preserving records and foreign keys.

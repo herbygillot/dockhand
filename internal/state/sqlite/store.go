@@ -54,7 +54,10 @@ var imageCapabilitiesSchema string
 //go:embed migrations/012.sql
 var generationSchema string
 
-const schemaVersion = 12
+//go:embed migrations/013.sql
+var sharedRunsSchema string
+
+const schemaVersion = 13
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -260,6 +263,7 @@ func migrations() []schemaMigration {
 		{version: 10, schema: changeJobsSchema},
 		{version: 11, schema: imageCapabilitiesSchema},
 		{version: 12, schema: generationSchema},
+		{version: 13, apply: migrateSharedRuns},
 	}
 }
 
@@ -321,7 +325,15 @@ func (s *Store) RegisterRepository(ctx context.Context, path string) (record.Rep
 }
 
 func migratePreparation(ctx context.Context, t *transaction) error {
-	if _, err := t.conn.ExecContext(ctx, preparationSchema); err != nil {
+	return migrateRebuiltTables(ctx, t, preparationSchema)
+}
+
+func migrateSharedRuns(ctx context.Context, t *transaction) error {
+	return migrateRebuiltTables(ctx, t, sharedRunsSchema)
+}
+
+func migrateRebuiltTables(ctx context.Context, t *transaction, schema string) error {
+	if _, err := t.conn.ExecContext(ctx, schema); err != nil {
 		return storageError(err)
 	}
 	rows, err := t.conn.QueryContext(ctx, "PRAGMA foreign_key_check")
@@ -336,6 +348,6 @@ func migratePreparation(ctx context.Context, t *transaction) error {
 	if invalid {
 		return fmt.Errorf("%w: migration left invalid references", state.ErrSchema)
 	}
-	_, err = t.conn.ExecContext(ctx, "PRAGMA defer_foreign_keys=OFF; PRAGMA user_version=3;")
+	_, err = t.conn.ExecContext(ctx, "PRAGMA defer_foreign_keys=OFF;")
 	return storageError(err)
 }
