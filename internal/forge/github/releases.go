@@ -12,14 +12,14 @@ import (
 func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
 	client, err := r.client.api(ctx)
 	if err != nil {
-		return nil, err
+		return nil, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(r.name, "/")
 	seen := map[string]bool{}
 	var releases []forge.Release
 	for row, err := range client.Repositories.ListReleasesIter(ctx, owner, repo, nil) {
 		if err != nil {
-			return nil, err
+			return nil, rateLimitError(err)
 		}
 		if row == nil || !git.ValidRefName("refs/tags/"+row.TagName) || (!row.Draft && (row.PublishedAt == nil || row.PublishedAt.IsZero())) {
 			return nil, fmt.Errorf("github: invalid release observation")

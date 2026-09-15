@@ -75,8 +75,10 @@ type Engine struct {
 	Timeouts Timeouts
 	// LeaseGrace leaves time to record a result after its operation deadline.
 	LeaseGrace time.Duration
-	// RetryDelay applies to admission, uncertain actions, errors, and cancellation.
+	// RetryDelay is the initial failure backoff and cancellation retry delay.
 	RetryDelay time.Duration
+	// WaitInterval controls expected capacity, discovery and publication waiting.
+	WaitInterval time.Duration
 	// ObserveInterval schedules successful observations of running builds.
 	ObserveInterval time.Duration
 }
@@ -98,9 +100,10 @@ type SourcePreparer interface {
 }
 
 // VerificationProvider resolves persisted work independently of CLI defaults.
+// A configured registry is authoritative; Provider supports single-provider engines.
 func (e *Engine) VerificationProvider(name string) verify.Provider {
-	if p := e.Providers[name]; p != nil {
-		return p
+	if e.Providers != nil {
+		return e.Providers[name]
 	}
 	return e.Provider
 }

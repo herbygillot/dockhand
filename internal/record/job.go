@@ -146,9 +146,10 @@ type Job struct {
 	ReuseDetail   string    `json:",omitempty"`
 	// Claim covers preparation, branch integration, and publication; verification and cleanup
 	// claim their own records.
-	Claim           *Claim
-	ClaimGeneration uint64
-	RetryAt         *time.Time
+	Claim               *Claim
+	ClaimGeneration     uint64
+	ConsecutiveFailures uint32 `json:",omitempty"`
+	RetryAt             *time.Time
 	// ResolvedRelease freezes the selected upstream tag and commit before preparation.
 	ResolvedRelease *Release
 	Prepared        *PreparedChange

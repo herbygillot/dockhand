@@ -535,3 +535,29 @@ func TestSharedRunMigrationPreservesReferencesAndAttemptExclusivity(t *testing.T
 	require.False(t, rows.Next())
 	require.NoError(t, rows.Err())
 }
+
+func TestRetryMigrationPreservesHistoryAndDefaultsCounters(t *testing.T) {
+	path, db := versionTenWithWork(t)
+	_, err := db.Exec("BEGIN;" + imageCapabilitiesSchema + generationSchema + sharedRunsSchema + "PRAGMA defer_foreign_keys=OFF; PRAGMA user_version=13; COMMIT;")
+	require.NoError(t, err)
+	tables := []string{"jobs", "attempts", "resources", "publications"}
+	columns := map[string][]string{}
+	before := map[string][][]any{}
+	for _, table := range tables {
+		columns[table], before[table] = migrationRows(t, db, table, nil)
+	}
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	for _, table := range tables {
+		_, after := migrationRows(t, db, table, columns[table])
+		require.Equal(t, before[table], after, table)
+		column := "consecutive_failures"
+		if table == "publications" {
+			column = "write_refusals"
+		}
+		var nonzero int
+		require.NoError(t, db.QueryRow("SELECT count(*) FROM "+table+" WHERE "+column+" != 0").Scan(&nonzero))
+		require.Zero(t, nonzero)
+	}
+}

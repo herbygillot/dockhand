@@ -101,8 +101,10 @@ type PublicationAction struct {
 	State        PublicationState
 	PushStarted  bool
 	WriteStarted bool
-	ConfirmedAt  *time.Time
-	LastError    string
+	// WriteRefusals counts confirmed retryable refusals that cleared the current write intent.
+	WriteRefusals uint32
+	ConfirmedAt   *time.Time
+	LastError     string
 }
 
 // PublicationDestination freezes where a future prepared contribution may be

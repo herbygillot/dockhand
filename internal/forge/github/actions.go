@@ -17,7 +17,7 @@ func (c *Client) Actions(ctx context.Context, repository string) (*Actions, erro
 	}
 	api, err := c.authenticatedAPI(ctx)
 	if err != nil {
-		return nil, err
+		return nil, rateLimitError(err)
 	}
 	owner, name, _ := strings.Cut(repository, "/")
 	return &Actions{service: api.Actions, owner: owner, repository: name}, nil
@@ -30,7 +30,7 @@ type Actions struct {
 
 func (a *Actions) Workflow(ctx context.Context, filename string) (*gh.Workflow, error) {
 	value, _, err := a.service.GetWorkflowByFileName(ctx, a.owner, a.repository, filename)
-	return value, err
+	return value, rateLimitError(err)
 }
 
 func (a *Actions) Runs(ctx context.Context, workflow int64, branch, commit string) ([]*gh.WorkflowRun, error) {
@@ -39,7 +39,7 @@ func (a *Actions) Runs(ctx context.Context, workflow int64, branch, commit strin
 	for {
 		page, response, err := a.service.ListWorkflowRunsByID(ctx, a.owner, a.repository, workflow, options)
 		if err != nil {
-			return nil, err
+			return nil, rateLimitError(err)
 		}
 		runs = append(runs, page.WorkflowRuns...)
 		if response.NextPage == 0 {
@@ -52,10 +52,10 @@ func (a *Actions) Runs(ctx context.Context, workflow int64, branch, commit strin
 func (a *Actions) Run(ctx context.Context, id int64, attempt int) (*gh.WorkflowRun, error) {
 	if attempt == 0 {
 		value, _, err := a.service.GetWorkflowRunByID(ctx, a.owner, a.repository, id)
-		return value, err
+		return value, rateLimitError(err)
 	}
 	value, _, err := a.service.GetWorkflowRunAttempt(ctx, a.owner, a.repository, id, attempt, nil)
-	return value, err
+	return value, rateLimitError(err)
 }
 
 func (a *Actions) Jobs(ctx context.Context, id int64, attempt int) ([]*gh.WorkflowJob, error) {
@@ -64,7 +64,7 @@ func (a *Actions) Jobs(ctx context.Context, id int64, attempt int) ([]*gh.Workfl
 	for {
 		page, response, err := a.service.ListWorkflowJobsAttempt(ctx, a.owner, a.repository, id, int64(attempt), options)
 		if err != nil {
-			return nil, err
+			return nil, rateLimitError(err)
 		}
 		jobs = append(jobs, page.Jobs...)
 		if response.NextPage == 0 {
@@ -78,18 +78,18 @@ func (a *Actions) Jobs(ctx context.Context, id int64, attempt int) ([]*gh.Workfl
 func (a *Actions) JobLog(ctx context.Context, id int64) (io.ReadCloser, error) {
 	location, _, err := a.service.GetWorkflowJobLogs(ctx, a.owner, a.repository, id, 0)
 	if err != nil {
-		return nil, err
+		return nil, rateLimitError(err)
 	}
 	if location == nil || location.Scheme != "https" || location.Host == "" || location.User != nil {
 		return nil, fmt.Errorf("github: invalid job log download URL")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, location.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, rateLimitError(err)
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, rateLimitError(err)
 	}
 	if response.StatusCode != http.StatusOK {
 		response.Body.Close()

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
@@ -231,3 +232,30 @@ func TestCanceledPublicationWriteRemainsUncertain(t *testing.T) {
 type transportFunc func(*http.Request) (*http.Response, error)
 
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRateLimitedWritesRemainDistinctFromPermissionRejections(t *testing.T) {
+	for _, status := range []int{403, 429} {
+		for _, kind := range []string{"primary", "secondary"} {
+			t.Run(fmt.Sprintf("%d/%s", status, kind), func(t *testing.T) {
+				reset := time.Now().Add(2 * time.Minute).Truncate(time.Second)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if kind == "primary" {
+						w.Header().Set("X-RateLimit-Remaining", "0")
+						w.Header().Set("X-RateLimit-Reset", fmt.Sprint(reset.Unix()))
+					} else {
+						w.Header().Set("Retry-After", "120")
+					}
+					w.WriteHeader(status)
+					fmt.Fprint(w, `{"message":"rate limited","documentation_url":"https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`)
+				}))
+				defer server.Close()
+				client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
+				_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
+				var limited *forge.RateLimitError
+				require.ErrorAs(t, err, &limited)
+				require.NotErrorIs(t, err, forge.ErrRejected)
+				require.WithinDuration(t, reset, limited.RetryAt, 2*time.Second)
+			})
+		}
+	}
+}

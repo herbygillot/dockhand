@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -99,4 +100,77 @@ func TestOperationDeadlinesHaveMatchingClaimsAndTimeoutsRemainRetryable(t *testi
 	}
 	f.run(t, id)
 	require.Equal(t, record.JobCompleted, f.status(t, id).Jobs[0].Job.State)
+}
+
+func TestFailureBackoffSurvivesDriverRestartAndResetsOnSuccess(t *testing.T) {
+	f := newFixture(t)
+	id := f.submit(t, "backoff")
+	f.run(t, id)
+	f.provider.observe = func(context.Context, record.ProviderRun) (verify.Observation, error) {
+		return verify.Observation{}, fmt.Errorf("temporary outage")
+	}
+	f.run(t, id)
+	first := f.attempt(t, id)
+	require.EqualValues(t, 1, first.ConsecutiveFailures)
+	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
+	require.NoError(t, err)
+	defer reopened.Close()
+	other := *f.engine
+	other.State, other.Owner = reopened, "restarted-driver"
+	f.advance(time.Second)
+	_, err = other.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
+	require.NoError(t, err)
+	second := f.attempt(t, id)
+	require.EqualValues(t, 2, second.ConsecutiveFailures)
+	require.GreaterOrEqual(t, second.RetryAt.Sub(f.now()), 2*time.Second)
+	calls := f.provider.count("observe")
+	f.advance(time.Second)
+	_, err = other.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
+	require.NoError(t, err)
+	require.Equal(t, calls, f.provider.count("observe"), "another driver must respect the stored deadline")
+	f.advance(second.RetryAt.Sub(f.now()))
+	f.provider.observe = func(_ context.Context, run record.ProviderRun) (verify.Observation, error) {
+		return verify.Observation{Run: run, State: record.AttemptRunning, Verdict: record.VerdictUnknown, ObservedAt: f.now()}, nil
+	}
+	_, err = other.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
+	require.NoError(t, err)
+	require.Zero(t, f.attempt(t, id).ConsecutiveFailures)
+}
+
+func TestCapacityUsesWaitingScheduleWithoutFailureCount(t *testing.T) {
+	f := newFixture(t)
+	f.engine.WaitInterval = time.Minute
+	f.provider.submit = func(context.Context, verify.Request) (verify.Submission, error) {
+		return verify.Submission{State: verify.AtCapacity}, nil
+	}
+	id := f.submit(t, "capacity-schedule")
+	f.run(t, id)
+	attempt := f.attempt(t, id)
+	require.Equal(t, f.now().Add(time.Minute), *attempt.RetryAt)
+	require.Zero(t, attempt.ConsecutiveFailures)
+	require.Empty(t, attempt.LastError)
+	f.run(t, id)
+	require.Equal(t, 1, f.provider.count("submit"))
+	f.cancel(t, id)
+	f.run(t, id)
+	require.Equal(t, record.JobCanceled, f.status(t, id).Jobs[0].Job.State)
+}
+
+func TestMissingRegisteredProviderDoesNotUseFallbackOrTerminateWork(t *testing.T) {
+	f := newFixture(t)
+	id := f.submit(t, "missing-provider")
+	f.engine.Providers = map[string]verify.Provider{}
+	f.run(t, id)
+	attempt := f.attempt(t, id)
+	require.Contains(t, attempt.LastError, `provider "scripted" is unavailable in this driver`)
+	require.Zero(t, f.provider.count("capabilities"))
+	require.Zero(t, f.provider.count("submit"))
+	require.Equal(t, record.JobActive, f.status(t, id).Jobs[0].Job.State)
+	require.EqualValues(t, 1, attempt.ConsecutiveFailures)
+	other := *f.engine
+	other.Providers = map[string]verify.Provider{"scripted": f.provider}
+	f.advance(time.Second)
+	_, err := other.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
+	require.NoError(t, err)
+	require.Equal(t, record.AttemptRunning, f.attempt(t, id).State)
 }

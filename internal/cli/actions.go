@@ -320,7 +320,11 @@ func (r *runtime) result(out io.Writer, result ActionResult) error {
 	}
 	for _, entry := range result.Status.Jobs {
 		if entry.Job.State == record.JobActive || entry.Job.State == record.JobQueued {
-			if _, err := fmt.Fprintf(out, "\nWork remains pending. A running driver must settle the result and perform cleanup. Resume with dockhand wait %s or run dockhand start for this repository.\n", entry.Job.ID); err != nil {
+			pending := "Work remains pending."
+			if entry.Job.Spec.Destination == record.Published {
+				pending = "PR publication remains pending."
+			}
+			if _, err := fmt.Fprintf(out, "\n%s A running driver must settle the result and perform cleanup. Resume with dockhand wait %s or run dockhand start for this repository.\n", pending, entry.Job.ID); err != nil {
 				return err
 			}
 		}

@@ -38,16 +38,16 @@ type CycleResult struct {
 // cycle holds one pass's effective timing, claim owner, and provider capability
 // observation. It carries no durable state between calls to Engine.Cycle.
 type cycle struct {
-	engine                *Engine
-	owner                 record.ProcessID
-	grace, retry, observe time.Duration
-	timeouts              Timeouts
-	capabilities          verify.Capabilities
-	providerError         error
-	providerChecked       bool
-	providerName          string
-	provider              verify.Provider
-	providerResults       map[string]providerCheck
+	engine                      *Engine
+	owner                       record.ProcessID
+	grace, retry, observe, wait time.Duration
+	timeouts                    Timeouts
+	capabilities                verify.Capabilities
+	providerError               error
+	providerChecked             bool
+	providerName                string
+	provider                    verify.Provider
+	providerResults             map[string]providerCheck
 }
 
 func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
@@ -183,7 +183,7 @@ func (c *cycle) checkProvider(ctx context.Context, name string) {
 	c.providerError = nil
 	c.provider = c.engine.VerificationProvider(name)
 	if c.provider == nil {
-		c.providerError = fmt.Errorf("workflow: verification provider is required")
+		c.providerError = fmt.Errorf("workflow: verification provider %q is unavailable in this driver", name)
 		return
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeouts.Observe)
@@ -201,17 +201,20 @@ func (e *Engine) newCycle() (*cycle, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &cycle{engine: e, owner: e.Owner, grace: e.LeaseGrace, timeouts: timeouts, retry: e.RetryDelay, observe: e.ObserveInterval}
+	c := &cycle{engine: e, owner: e.Owner, grace: e.LeaseGrace, timeouts: timeouts, retry: e.RetryDelay, observe: e.ObserveInterval, wait: e.WaitInterval}
 	if c.grace == 0 {
 		c.grace = 30 * time.Second
 	}
 	if c.retry == 0 {
 		c.retry = time.Second
 	}
+	if c.wait == 0 {
+		c.wait = 10 * time.Second
+	}
 	if c.observe == 0 {
 		c.observe = 10 * time.Second
 	}
-	if c.grace < 0 || c.retry < 0 || c.observe < 0 || e.now().IsZero() {
+	if c.grace < 0 || c.retry < 0 || c.observe < 0 || c.wait < 0 || e.now().IsZero() {
 		return nil, fmt.Errorf("workflow: positive lease grace, retry, and observation intervals are required")
 	}
 	if c.owner == "" {

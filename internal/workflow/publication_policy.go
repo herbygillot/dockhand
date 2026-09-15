@@ -13,8 +13,11 @@ import (
 )
 
 func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, spec record.PublicationSpec) error {
-	if job.Phase != record.PhasePublication || len(job.Spec.Targets) != 1 {
-		return ErrInvalidRequest
+	if job.Phase != record.PhasePublication {
+		return fmt.Errorf("%w: evidence check requires publication phase", ErrInvalidRequest)
+	}
+	if len(job.Spec.Targets) != 1 {
+		return fmt.Errorf("%w: publication currently requires one target; found %d", ErrInvalidRequest, len(job.Spec.Targets))
 	}
 	change, err := r.Change(ctx, job.ChangeID)
 	if err != nil {

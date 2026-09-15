@@ -161,7 +161,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			}
 			if err := c.providerReady(attempt.Spec.Config, action == submitAttempt); err != nil {
 				detail = err.Error()
-				retry := now.Add(c.retry)
+				retry := c.failureDeadline(string(attempt.ID), &attempt.ConsecutiveFailures, err)
 				attempt.LastError, attempt.RetryAt = detail, &retry
 				work.Attempts[attempt.ID] = attempt
 				changed, action = true, ""
@@ -206,12 +206,22 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		current.Claim = nil
 		current.RetryAt = nil
 		detail = c.recordAttempt(work, &job, &current, action, response, now)
+		if detail == "" {
+			current.ConsecutiveFailures = 0
+		}
 		if !current.State.Terminal() {
-			delay := c.retry
-			if current.State == record.AttemptRunning && detail == "" && job.CancelRequestedAt == nil {
-				delay = c.observe
+			var retry time.Time
+			if detail != "" {
+				retry = c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, response.err)
+			} else {
+				retry = c.waitingDeadline(&current.ConsecutiveFailures)
+				if current.State == record.AttemptRunning {
+					retry = now.Add(c.observe)
+				}
 			}
-			retry := now.Add(delay)
+			if job.CancelRequestedAt != nil && detail == "" {
+				retry = now.Add(c.retry)
+			}
 			current.RetryAt = &retry
 		}
 		current.LastError = detail

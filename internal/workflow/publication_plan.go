@@ -50,7 +50,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 			current.State, current.Claim, current.Detail = outcome, nil, problem.Error()
 			current.RetryAt = nil
 			if outcome == record.JobActive {
-				retry := e.now().Add(c.retry)
+				retry := c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, problem)
 				current.RetryAt = &retry
 			} else {
 				now := e.now()
@@ -85,7 +85,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 			var attempts []record.Attempt
 			attempts, err = r.AttemptsForJob(ctx, job.ID)
 			if err == nil && len(attempts) != 1 {
-				return ErrInvalidRequest
+				return fmt.Errorf("%w: publication requires exactly one verification attempt; found %d", ErrInvalidRequest, len(attempts))
 			}
 			if err == nil {
 				evidence = attempts[0]
@@ -156,6 +156,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		if err := tx.PutPublication(ctx, action); err != nil {
 			return err
 		}
+		current.ConsecutiveFailures = 0
 		current.Claim, current.RetryAt, current.Detail = nil, nil, fmt.Sprintf("Preparing PR from verified branch %s:%s at %s", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)
 		return tx.PutJob(ctx, current)
 	})

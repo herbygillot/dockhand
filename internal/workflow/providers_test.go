@@ -36,7 +36,7 @@ func TestCycleRoutesRecordedProvidersAndResourceCleanup(t *testing.T) {
 	f := newFixture(t)
 	f.provider.observe = terminal(f, record.VerdictPassed)
 	other := &secondProvider{f: f, calls: map[string]int{}}
-	f.engine.Providers = map[string]verify.Provider{"second": other}
+	f.engine.Providers = map[string]verify.Provider{"scripted": f.provider, "second": other}
 	first := f.submit(t, "first")
 	request := f.request("second")
 	request.Spec.Build.Provider = "second"

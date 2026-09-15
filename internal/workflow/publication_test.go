@@ -71,7 +71,8 @@ func (p *publicationForge) Observe(ctx context.Context, _ record.PullRequestRef)
 }
 func (p *publicationForge) Create(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	p.writes++
-	if errors.Is(p.writeErr, forge.ErrRejected) {
+	var limited *forge.RateLimitError
+	if errors.Is(p.writeErr, forge.ErrRejected) || errors.As(p.writeErr, &limited) {
 		return forge.PullRequestObservation{}, p.writeErr
 	}
 	p.observation = forge.PullRequestObservation{Found: true, ObservedAt: p.f.now(), PullRequest: record.PullRequest{Ref: record.PullRequestRef{Forge: "fixture", Repository: input.Repository, Number: 1, URL: "https://example.invalid/pr/1"}, HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch, State: record.PullRequestOpen, RemoteHead: input.Desired.Head, Title: input.Desired.Title, Body: input.Desired.Body, ObservedAt: p.f.now()}}
@@ -457,4 +458,54 @@ func TestCompetingPublicationDriversUseOneWrite(t *testing.T) {
 	}
 	require.Equal(t, record.JobCompleted, f.status(t, id).Jobs[0].Job.State)
 	require.Equal(t, 1, hosting.writes)
+}
+
+func TestRateLimitedPublicationResumesAfterDurableRefusal(t *testing.T) {
+	f, hosting := publicationFixture(t)
+	id := submitPublication(t, f, "limited")
+	f.run(t, id)
+	deadline := f.now().Add(time.Minute)
+	hosting.writeErr = &forge.RateLimitError{RetryAt: deadline, Err: errors.New("rate limited")}
+	f.run(t, id)
+	snapshot := f.status(t, id).Jobs[0]
+	require.Equal(t, record.JobActive, snapshot.Job.State)
+	require.Equal(t, deadline, *snapshot.Job.RetryAt)
+	require.False(t, snapshot.Publications[0].WriteStarted)
+	require.EqualValues(t, 1, snapshot.Publications[0].WriteRefusals)
+	require.EqualValues(t, 1, snapshot.Job.ConsecutiveFailures)
+	require.False(t, hosting.observation.Found)
+	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
+	require.NoError(t, err)
+	defer reopened.Close()
+	other := *f.engine
+	other.State, other.Owner, other.RetryDelay = reopened, "other-driver", time.Millisecond
+	scope := workflow.Scope{Jobs: []record.JobID{id}}
+	_, err = other.Cycle(t.Context(), scope)
+	require.NoError(t, err)
+	require.Equal(t, 1, hosting.writes)
+	f.advance(time.Minute)
+	hosting.writeErr = nil
+	_, err = other.Cycle(t.Context(), scope)
+	require.NoError(t, err)
+	require.Equal(t, 2, hosting.writes)
+	f.run(t, id)
+	require.Equal(t, record.JobCompleted, f.status(t, id).Jobs[0].Job.State)
+}
+
+func TestUnknownPublicationCannotClearWriteIntentWithoutRecordedRefusal(t *testing.T) {
+	f, _ := publicationFixture(t)
+	id := submitPublication(t, f, "guarded-intent")
+	f.run(t, id)
+	f.run(t, id)
+	err := f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
+		action, err := tx.PublicationForJob(ctx, id)
+		if err != nil {
+			return err
+		}
+		require.True(t, action.WriteStarted)
+		action.WriteStarted = false
+		action.State = record.PublicationPending
+		return tx.PutPublication(ctx, action)
+	})
+	require.ErrorIs(t, err, state.ErrConflict)
 }

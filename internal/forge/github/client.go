@@ -105,7 +105,7 @@ func (c *Client) AuthenticatedUser(ctx context.Context) (string, error) {
 	}
 	user, _, err := client.Users.Get(ctx, "")
 	if err != nil {
-		return "", fmt.Errorf("github: checking authenticated user: %w", err)
+		return "", fmt.Errorf("github: checking authenticated user: %w", rateLimitError(err))
 	}
 	if user == nil || user.GetLogin() == "" {
 		return "", fmt.Errorf("%w: GitHub returned no authenticated user", ErrAuthentication)

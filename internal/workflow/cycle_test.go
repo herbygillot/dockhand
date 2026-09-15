@@ -72,7 +72,7 @@ func TestCycleCapacityAdmissionCompletionAndCleanup(t *testing.T) {
 func TestCycleRejectsInvalidEvidenceAndRetainsFailure(t *testing.T) {
 	f := newFixture(t)
 	id := f.submit(t, "evidence")
-	f.run(t, id)
+	f.runAttemptDue(t, id)
 	for _, kind := range []string{"wrong run", "missing verdict", "missing time", "contradictory pass", "older observation"} {
 		t.Run(kind, func(t *testing.T) {
 			f.provider.observe = func(_ context.Context, r record.ProviderRun) (verify.Observation, error) {
@@ -93,12 +93,12 @@ func TestCycleRejectsInvalidEvidenceAndRetainsFailure(t *testing.T) {
 			}
 			if kind == "older observation" {
 				f.provider.observe = nil
-				f.run(t, id)
+				f.runAttemptDue(t, id)
 				f.provider.observe = func(_ context.Context, r record.ProviderRun) (verify.Observation, error) {
 					return verify.Observation{Run: r, State: record.AttemptFinished, Verdict: record.VerdictPassed, ObservedAt: f.now().Add(-time.Hour)}, nil
 				}
 			}
-			result := f.run(t, id)
+			result := f.runAttemptDue(t, id)
 			require.Len(t, result.Problems, 1, "invalid evidence completed job: %+v", result)
 			require.Equal(t, record.JobActive, f.status(t, id).Jobs[0].Job.State, "invalid evidence completed job: %+v", result)
 		})
@@ -106,9 +106,9 @@ func TestCycleRejectsInvalidEvidenceAndRetainsFailure(t *testing.T) {
 	f.provider.observe = func(_ context.Context, r record.ProviderRun) (verify.Observation, error) {
 		return verify.Observation{Run: r, State: record.AttemptFinished, Verdict: record.VerdictFailed, ObservedAt: f.now(), Failure: &record.Failure{Kind: record.DependencyFailure, Package: "outside-cohort", DependencyChain: []string{"fixture", "outside-cohort"}, Attribution: record.AttributionUnknown}}, nil
 	}
-	f.run(t, id)
+	f.runAttemptDue(t, id)
 	f.cancel(t, id)
-	f.run(t, id)
+	f.runAttemptDue(t, id)
 	status := f.status(t, id)
 	require.Equal(t, record.JobFailed, status.Jobs[0].Job.State, "failure diagnosis was lost")
 	require.Equal(t, record.ResourceRetained, status.Resources[0].State, "failure diagnosis was lost")
@@ -123,17 +123,17 @@ func TestCycleReconcilesUncertainSubmission(t *testing.T) {
 	f.provider.submit = func(_ context.Context, r verify.Request) (verify.Submission, error) {
 		return admitted(r.ID), errors.New("lost acknowledgement")
 	}
-	f.run(t, id)
+	f.runAttemptDue(t, id)
 	attempt := f.attempt(t, id)
 	require.Equal(t, record.AttemptUncertain, attempt.State, "uncertain submission was admitted")
 	require.Nil(t, f.status(t, id).Jobs[0].Job.AdmittedAt, "uncertain submission was admitted")
-	f.run(t, id)
+	f.runAttemptDue(t, id)
 	require.Equal(t, 1, f.provider.count("submit"), "unknown outcome was resubmitted")
 	require.Equal(t, 1, f.provider.count("reconcile"), "unknown outcome was resubmitted")
 	f.provider.reconcile = func(_ context.Context, request record.RequestID) (verify.Reconciliation, error) {
 		return verify.Reconciliation{State: verify.RunFound, Submission: admitted(request)}, nil
 	}
-	f.run(t, id)
+	f.runAttemptDue(t, id)
 	recovered := f.attempt(t, id)
 	require.Equal(t, record.AttemptRunning, recovered.State, "recovery duplicated the original run")
 	require.Equal(t, attempt.SubmissionID, recovered.SubmissionID, "recovery duplicated the original run")

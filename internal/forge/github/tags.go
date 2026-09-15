@@ -17,7 +17,7 @@ func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 	}
 	client, err := r.client.api(ctx)
 	if err != nil {
-		return forge.Tag{}, err
+		return forge.Tag{}, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(r.name, "/")
 	ref, response, err := client.Git.GetRef(ctx, owner, repo, refName)
@@ -25,7 +25,7 @@ func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 		if response != nil && response.StatusCode == http.StatusNotFound {
 			return forge.Tag{}, fmt.Errorf("%w: %w", forge.ErrNotFound, err)
 		}
-		return forge.Tag{}, err
+		return forge.Tag{}, rateLimitError(err)
 	}
 	if ref.GetRef() != refName {
 		return forge.Tag{}, fmt.Errorf("github: response identifies a different ref")
@@ -46,7 +46,7 @@ func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 		}
 		annotated, _, err := client.Git.GetTag(ctx, owner, repo, sha)
 		if err != nil {
-			return forge.Tag{}, err
+			return forge.Tag{}, rateLimitError(err)
 		}
 		if annotated.GetSHA() != sha {
 			return forge.Tag{}, fmt.Errorf("github: response identifies a different tag object")
@@ -58,14 +58,14 @@ func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 	client, err := r.client.api(ctx)
 	if err != nil {
-		return nil, err
+		return nil, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(r.name, "/")
 	seen := map[string]bool{}
 	var tags []forge.Tag
 	for row, err := range client.Repositories.ListTagsIter(ctx, owner, repo, nil) {
 		if err != nil {
-			return nil, err
+			return nil, rateLimitError(err)
 		}
 		if row == nil || !git.ValidRefName("refs/tags/"+row.GetName()) || !git.ValidObjectID(row.GetCommit().GetSHA()) {
 			return nil, fmt.Errorf("github: invalid repository tag")

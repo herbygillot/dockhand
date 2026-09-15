@@ -40,12 +40,12 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 	}
 	client, err := c.api(ctx)
 	if err != nil {
-		return forge.RepositoryInfo{}, err
+		return forge.RepositoryInfo{}, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(name, "/")
 	row, _, err := client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
-		return forge.RepositoryInfo{}, err
+		return forge.RepositoryInfo{}, rateLimitError(err)
 	}
 	if !strings.EqualFold(row.GetFullName(), name) || !git.ValidBranchName(row.GetDefaultBranch()) || row.GetArchived() || row.GetDisabled() {
 		return forge.RepositoryInfo{}, fmt.Errorf("github: repository metadata is invalid or repository is archived/disabled")
@@ -66,9 +66,13 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 
 func (c *Client) Name() string { return "github" }
 
-// A rejection settles a publication attempt; other errors require observation
-// before the workflow can decide whether a write took effect.
+// A permanent rejection settles publication. A rate-limit refusal permits a
+// later write; other failures require observation to determine the outcome.
 func publicationError(response *gh.Response, err error) error {
+	var limited *forge.RateLimitError
+	if converted := rateLimitError(err); errors.As(converted, &limited) {
+		return converted
+	}
 	if errors.Is(err, ErrAuthentication) {
 		return fmt.Errorf("%w: %w", forge.ErrRejected, err)
 	}

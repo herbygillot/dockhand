@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -94,8 +95,15 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 			finishPreparation(&job, record.JobCanceled, "Canceled before branch integration", e.now())
 		} else if operationErr != nil {
 			detail = operationErr.Error()
-			finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
+			var limited *forge.RateLimitError
+			if errors.As(operationErr, &limited) {
+				retry := c.failureDeadline(string(job.ID), &job.ConsecutiveFailures, operationErr)
+				job.RetryAt, job.Detail = &retry, detail
+			} else {
+				finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
+			}
 		} else if resolving {
+			job.ConsecutiveFailures = 0
 			job.ResolvedRelease = &release
 			if release.NoUpdate {
 				finishPreparation(&job, record.JobCompleted, fmt.Sprintf("Already current at %s; latest eligible version is %s", release.CurrentVersion, release.Version), e.now())
@@ -103,6 +111,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 				job.Detail = "Resolved " + release.Tag + "; awaiting source preparation"
 			}
 		} else {
+			job.ConsecutiveFailures = 0
 			job.Prepared = &candidate
 			job.Detail = "Prepared candidate; awaiting branch integration"
 		}

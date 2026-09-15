@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -352,4 +353,24 @@ func TestIntegrationWaiterRechecksStateUnderBranchLock(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(f.repo.CommonDir, "index"))
 	_, err = os.Stat(filepath.Join(f.repo.CommonDir, "dockhand", "branch-locks"))
 	require.NoError(t, err)
+}
+
+func TestRateLimitedPreparationRetainsAcceptedWork(t *testing.T) {
+	f, request := preparationFixture(t, false)
+	original := f.engine.Preparer
+	deadline := f.now().Add(time.Minute)
+	f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
+		return preparation.Result{}, &forge.RateLimitError{RetryAt: deadline, Err: errors.New("rate limited")}
+	})
+	id := submitPreparation(t, f, request)
+	f.run(t, id)
+	job := f.status(t, id).Jobs[0].Job
+	require.Equal(t, record.JobActive, job.State)
+	require.Equal(t, deadline, *job.RetryAt)
+	require.EqualValues(t, 1, job.ConsecutiveFailures)
+	f.engine.Preparer = original
+	f.advance(time.Minute)
+	f.run(t, id)
+	require.NotNil(t, f.status(t, id).Jobs[0].Job.Prepared)
+	require.Zero(t, f.status(t, id).Jobs[0].Job.ConsecutiveFailures)
 }

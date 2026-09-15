@@ -111,7 +111,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			claimed = true
 		}
 		if detail != "" {
-			retry := now.Add(c.retry)
+			retry := c.failureDeadline(string(resource.ID), &resource.ConsecutiveFailures, fmt.Errorf("%s", detail))
 			resource.LastError, resource.RetryAt = detail, &retry
 		}
 		return tx.PutResource(ctx, resource)
@@ -138,13 +138,19 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 		}
 		current.Claim, current.LastError, current.RetryAt = nil, "", nil
 		if callErr == nil && result.Confirmed {
+			current.ConsecutiveFailures = 0
 			current.State, current.ReleasedAt = record.ResourceReleased, &now
 		} else {
 			detail = "workflow: resource release is unconfirmed: " + result.Detail
 			if callErr != nil {
 				detail = callErr.Error()
 			}
-			retry := now.Add(c.retry)
+			retry := c.engine.now().Add(c.wait)
+			if callErr != nil {
+				retry = c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, callErr)
+			} else {
+				current.ConsecutiveFailures = 0
+			}
 			current.State, current.LastError, current.RetryAt = record.ResourceUncertain, detail, &retry
 		}
 		return tx.PutResource(ctx, current)

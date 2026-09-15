@@ -41,7 +41,7 @@ func TestTartDriverProcess(t *testing.T) {
 	repo, err := git.Open(t.Context(), f.Repo, "")
 	require.NoError(t, err)
 	p := &Provider{Config: f.Config, State: store, Repository: f.Repository, Repo: repo}
-	engine := &workflow.Engine{State: store, Repository: f.Repository, Provider: p, RetryDelay: 100 * time.Millisecond}
+	engine := &workflow.Engine{State: store, Repository: f.Repository, Provider: p, WaitInterval: 100 * time.Millisecond, RetryDelay: 100 * time.Millisecond}
 	scope := workflow.Scope{Jobs: []record.JobID{f.Job}}
 	deadline := time.Now().Add(8 * time.Minute)
 	for time.Now().Before(deadline) {

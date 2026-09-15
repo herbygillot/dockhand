@@ -31,7 +31,7 @@ func (s *Services) githubBuild(ctx context.Context, platform record.Platform, ne
 	}
 	flow, err := api.Workflow(ctx, "main.yml")
 	if err != nil {
-		return record.BuildConfig{}, fmt.Errorf("github verification: enable main.yml in your fork's Actions settings: %w", err)
+		return record.BuildConfig{}, fmt.Errorf("github verification: reading main.yml in your fork: %w", err)
 	}
 	if flow.GetState() != "active" || flow.GetPath() != githubverify.WorkflowPath {
 		return record.BuildConfig{}, fmt.Errorf("github verification: enable main.yml in your fork's Actions settings")

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -72,7 +73,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		return c.planPublication(ctx, job)
 	}
 	if e.Publisher == nil || e.Publisher.Repo == nil || e.Publisher.Forge == nil {
-		err = c.publicationRetry(ctx, job, "Publication service is unavailable")
+		err = c.publicationRetry(ctx, job, "Publication service is unavailable", fmt.Errorf("publication service is unavailable"))
 		return true, "Publication service is unavailable", err
 	}
 	call, cancel := context.WithTimeout(ctx, c.timeouts.Publish)
@@ -112,7 +113,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		}
 		return true, err.Error(), c.finishPublication(ctx, job, result, err.Error(), nil)
 	}
-	return true, err.Error(), c.publicationRetry(ctx, job, err.Error())
+	return true, err.Error(), c.publicationRetry(ctx, job, err.Error(), err)
 }
 
 func (c *cycle) publicationUpdate(ctx context.Context, expected record.Job, fn func(state.Tx, *record.Job, *record.PublicationAction) error) error {
@@ -246,6 +247,20 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		return err
 	}
 	_, err = s.Write(ctx, action)
+	var limited *forge.RateLimitError
+	if errors.As(err, &limited) {
+		return c.publicationUpdate(ctx, job, func(_ state.Tx, current *record.Job, stored *record.PublicationAction) error {
+			if !stored.WriteStarted || stored.WriteRefusals == ^uint32(0) {
+				return state.ErrConflict
+			}
+			stored.WriteStarted = false
+			stored.WriteRefusals++
+			stored.State, stored.LastError = record.PublicationPending, err.Error()
+			retry := c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, err)
+			current.Claim, current.RetryAt, current.Detail = nil, &retry, err.Error()
+			return nil
+		})
+	}
 	if errors.Is(err, forge.ErrRejected) {
 		return c.finishPublication(ctx, job, record.JobNeedsAttention, err.Error(), nil)
 	}
@@ -255,13 +270,19 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 	return c.publicationRetry(ctx, job, fmt.Sprintf("PR request sent for verified branch %s:%s at %s; awaiting confirmation", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head))
 }
 
-func (c *cycle) publicationRetry(ctx context.Context, expected record.Job, detail string) error {
+func (c *cycle) publicationRetry(ctx context.Context, expected record.Job, detail string, problems ...error) error {
 	return c.publicationUpdate(ctx, expected, func(_ state.Tx, job *record.Job, action *record.PublicationAction) error {
 		if action.WriteStarted {
 			action.State = record.PublicationUncertain
 		}
-		action.LastError = detail
-		retry := c.engine.now().Add(c.retry)
+		action.LastError = ""
+		var retry time.Time
+		if len(problems) != 0 {
+			action.LastError = detail
+			retry = c.failureDeadline(string(job.ID), &job.ConsecutiveFailures, problems[0])
+		} else {
+			retry = c.waitingDeadline(&job.ConsecutiveFailures)
+		}
 		job.Claim, job.RetryAt, job.Detail = nil, &retry, detail
 		return nil
 	})

@@ -87,3 +87,13 @@ func TestCompletionEmphasizesPassedVerificationAndKeepsReuseDecisionEarlier(t *t
 	status.Jobs[0].Reused = &record.Attempt{Evidence: &record.Evidence{Verdict: record.VerdictPassed}}
 	require.Equal(t, "verification passed (reused)", completedOutcome(status.Jobs[0]))
 }
+
+func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
+	var out bytes.Buffer
+	r := runtime{}
+	status := workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, Spec: record.JobSpec{Destination: record.Published}}}}}
+	require.NoError(t, r.result(&out, ActionResult{Status: status}))
+	require.Contains(t, out.String(), "PR publication remains pending.")
+	require.Contains(t, out.String(), "dockhand wait job")
+	require.Contains(t, out.String(), "dockhand start")
+}

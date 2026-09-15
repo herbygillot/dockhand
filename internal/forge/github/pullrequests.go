@@ -41,7 +41,7 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 	}
 	client, err := c.api(ctx)
 	if err != nil {
-		return forge.PullRequestObservation{}, err
+		return forge.PullRequestObservation{}, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(q.Repository, "/")
 	headOwner, _, _ := strings.Cut(q.HeadRepository, "/")
@@ -51,11 +51,11 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 	found := forge.PullRequestObservation{ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	for row, err := range client.PullRequests.ListIter(ctx, owner, repo, options) {
 		if err != nil {
-			return forge.PullRequestObservation{}, err
+			return forge.PullRequestObservation{}, rateLimitError(err)
 		}
 		observation, err := pullRequestObservation(row, q.Repository)
 		if err != nil {
-			return forge.PullRequestObservation{}, err
+			return forge.PullRequestObservation{}, rateLimitError(err)
 		}
 		pr := observation.PullRequest
 		if !strings.EqualFold(pr.HeadRepository, q.HeadRepository) || pr.HeadBranch != q.HeadBranch || pr.BaseBranch != q.BaseBranch {
@@ -75,12 +75,12 @@ func (c *Client) Observe(ctx context.Context, ref record.PullRequestRef) (forge.
 	}
 	client, err := c.api(ctx)
 	if err != nil {
-		return forge.PullRequestObservation{}, err
+		return forge.PullRequestObservation{}, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(ref.Repository, "/")
 	row, _, err := client.PullRequests.Get(ctx, owner, repo, ref.Number)
 	if err != nil {
-		return forge.PullRequestObservation{}, err
+		return forge.PullRequestObservation{}, rateLimitError(err)
 	}
 	if row.GetNumber() != ref.Number {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: response identifies another pull request")
@@ -94,7 +94,7 @@ func (c *Client) Create(ctx context.Context, input forge.PullRequestInput) (forg
 	}
 	client, err := c.authenticatedAPI(ctx)
 	if err != nil {
-		return forge.PullRequestObservation{}, err
+		return forge.PullRequestObservation{}, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(input.Repository, "/")
 	headOwner, headRepo, _ := strings.Cut(input.HeadRepository, "/")
@@ -103,7 +103,7 @@ func (c *Client) Create(ctx context.Context, input forge.PullRequestInput) (forg
 		HeadRepo: &headRepo, Base: input.BaseBranch, MaintainerCanModify: new(true),
 	})
 	if err := publicationError(response, err); err != nil {
-		return forge.PullRequestObservation{}, err
+		return forge.PullRequestObservation{}, rateLimitError(err)
 	}
 	return pullRequestObservation(row, input.Repository)
 }
@@ -114,14 +114,14 @@ func (c *Client) Update(ctx context.Context, input forge.PullRequestInput) (forg
 	}
 	client, err := c.authenticatedAPI(ctx)
 	if err != nil {
-		return forge.PullRequestObservation{}, err
+		return forge.PullRequestObservation{}, rateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(input.Repository, "/")
 	row, response, err := client.PullRequests.Edit(ctx, owner, repo, input.ExistingPR.Number, &gh.PullRequest{
 		Title: &input.Desired.Title, Body: &input.Desired.Body,
 	})
 	if err := publicationError(response, err); err != nil {
-		return forge.PullRequestObservation{}, err
+		return forge.PullRequestObservation{}, rateLimitError(err)
 	}
 	if row.GetNumber() != input.ExistingPR.Number {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: response identifies another pull request")

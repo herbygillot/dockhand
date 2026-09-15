@@ -159,7 +159,8 @@ type Attempt struct {
 	// SubmissionID and Run project the latest submission row. Persist changes
 	// through the submission record before updating an existing attempt.
 	// Submission identity remains stable through capacity waiting and uncertainty.
-	SubmissionID RequestID
+	SubmissionID        RequestID
+	ConsecutiveFailures uint32 `json:",omitempty"`
 
 	RetryAt *time.Time
 	// CancelSentAt records a successful cancellation acknowledgement, which

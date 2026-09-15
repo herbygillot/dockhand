@@ -183,7 +183,7 @@ func fixtureRun(t *testing.T, db, home, artifacts, id string, m machine) *testRu
 		return tx.PutRevision(ctx, record.Revision{ID: record.RevisionID(id), ChangeID: record.ChangeID(id), Source: source, CreatedAt: time.Now()})
 	}))
 	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Config: Config{Home: home, Image: "fixture", ArtifactDirectory: artifacts, Capacity: 1, Platform: testPlatform, PortIndexExecutable: fakePortIndex(t)}, backend: m}
-	e := &workflow.Engine{State: store, Repository: repository.ID, Provider: p, RetryDelay: time.Millisecond}
+	e := &workflow.Engine{State: store, Repository: repository.ID, Provider: p, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond}
 	config := record.BuildConfig{Provider: "tart", Platform: testPlatform, EnvironmentDigest: "sha256:fixture", CapabilitiesRequired: true, FromSource: true, Tests: record.TestSkip}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: record.RequestID(id), Spec: record.JobSpec{Action: record.Verify, InputRevision: record.RevisionID(id), Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &config}})
 	require.NoError(t, err)

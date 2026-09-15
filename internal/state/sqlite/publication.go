@@ -18,7 +18,7 @@ func (t *transaction) PublicationForJob(ctx context.Context, id record.JobID) (r
 	}
 	var raw string
 	var confirmed sql.NullInt64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,job_id,change_id,revision_id,spec,state,push_started,write_started,confirmed_at,last_error FROM publications WHERE repository_id=? AND job_id=?", t.repo, id).Scan(&v.ID, &v.JobID, &v.ChangeID, &v.RevisionID, &raw, &v.State, &v.PushStarted, &v.WriteStarted, &confirmed, &v.LastError)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,job_id,change_id,revision_id,spec,state,push_started,write_started,confirmed_at,last_error,write_refusals FROM publications WHERE repository_id=? AND job_id=?", t.repo, id).Scan(&v.ID, &v.JobID, &v.ChangeID, &v.RevisionID, &raw, &v.State, &v.PushStarted, &v.WriteStarted, &confirmed, &v.LastError, &v.WriteRefusals)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -39,18 +39,26 @@ func (t *transaction) PutPublication(ctx context.Context, v record.PublicationAc
 	}
 	old, err := t.PublicationForJob(ctx, v.JobID)
 	if err == nil {
-		if old.ID != v.ID || old.ChangeID != v.ChangeID || old.RevisionID != v.RevisionID || !reflect.DeepEqual(old.Spec, v.Spec) || old.PushStarted && !v.PushStarted || old.WriteStarted && !v.WriteStarted {
+		if old.ID != v.ID || old.ChangeID != v.ChangeID || old.RevisionID != v.RevisionID || !reflect.DeepEqual(old.Spec, v.Spec) || old.PushStarted && !v.PushStarted {
+			return state.ErrConflict
+		}
+		cleared := old.WriteStarted && !v.WriteStarted
+		if cleared {
+			if old.WriteRefusals == ^uint32(0) || v.WriteRefusals != old.WriteRefusals+1 || v.State != record.PublicationPending || v.LastError == "" {
+				return state.ErrConflict
+			}
+		} else if old.WriteRefusals != v.WriteRefusals {
 			return state.ErrConflict
 		}
 		if old.State == record.PublicationConfirmed || old.State == record.PublicationNeedsAttention {
 			return immutable(old, v)
 		}
-		return t.exec(ctx, "UPDATE publications SET state=?,push_started=?,write_started=?,confirmed_at=?,last_error=? WHERE repository_id=? AND id=?", v.State, v.PushStarted, v.WriteStarted, nullableTime(v.ConfirmedAt), v.LastError, t.repo, v.ID)
+		return t.exec(ctx, "UPDATE publications SET state=?,push_started=?,write_started=?,confirmed_at=?,last_error=?,write_refusals=? WHERE repository_id=? AND id=?", v.State, v.PushStarted, v.WriteStarted, nullableTime(v.ConfirmedAt), v.LastError, v.WriteRefusals, t.repo, v.ID)
 	}
 	if !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
-	if v.State != record.PublicationPending || v.PushStarted || v.WriteStarted {
+	if v.State != record.PublicationPending || v.PushStarted || v.WriteStarted || v.WriteRefusals != 0 {
 		return state.ErrInvalid
 	}
 	raw, err := encode(v.Spec)

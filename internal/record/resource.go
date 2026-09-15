@@ -41,7 +41,8 @@ type Resource struct {
 	// ClaimGeneration retains the last issued generation after Claim is cleared.
 	ClaimGeneration uint64
 	// RetryAt is the earliest cleanup retry time; nil imposes no delay.
-	RetryAt *time.Time
+	RetryAt             *time.Time
+	ConsecutiveFailures uint32 `json:",omitempty"`
 	// RetainUntil makes a retained resource eligible for cleanup at this time.
 	// Nil retains it indefinitely. Expiry does not authorize releasing an active run.
 	RetainUntil *time.Time

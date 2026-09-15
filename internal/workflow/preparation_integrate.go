@@ -74,13 +74,14 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if operationErr != nil {
 				detail = operationErr.Error()
 				if errors.Is(operationErr, git.ErrRefUpdateUncertain) {
-					retry := e.now().Add(c.retry)
+					retry := c.failureDeadline(string(job.ID), &job.ConsecutiveFailures, operationErr)
 					job.RetryAt, job.Detail = &retry, detail
 				} else {
 					finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
 				}
 				return tx.PutJob(ctx, job)
 			}
+			job.ConsecutiveFailures = 0
 			if confirmed {
 				change := record.Change{ID: record.ChangeID("change_" + string(job.ID)), Branch: job.Prepared.Branch, Targets: job.Spec.Targets, GeneratedCommit: job.Prepared.Source.Commit, Disposition: record.ChangeOpen, CreatedAt: job.AcceptedAt}
 				revision := record.Revision{ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt}
