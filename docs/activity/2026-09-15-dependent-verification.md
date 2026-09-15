@@ -1,0 +1,13 @@
+# Source-bound dependent verification
+
+Implemented `--dependents` for bump, revision bump, checksum refresh, and standalone verification. It selects local Tart and records the coverage request at intake. Existing source discovery runs under a job claim outside SQLite writes, then records an immutable plan against the prepared or captured tree. Resuming a recorded plan does not need a new scan. Stale discovery claims cannot adopt results.
+
+New code: pure dependent-plan conversion, the claimed workflow planner, a small application composition adapter, the Tart recorded-index accessor, full-coverage publication checks, and PR coverage formatting. Extended existing records/SQLite JSON to retain target plans and root preinstall inputs; no dependency or schema changes. Existing attempt scheduling, capacity, cancellation, and resource cleanup remain the execution path.
+
+Each downstream guest builds and installs the requested roots before its own lint/build/test/install phases. The root is rebuilt from the frozen source, while ordinary dependency binaries remain usable by default. Each target retains its own Xcode requirement; the accepted image is shared for this first implementation. Insufficient tools remain a verification problem, not an implicit environment/provider change. Discovery errors and index gaps remain recorded and block publication. Failure evidence identifies target/dependency packages when available, without claiming causality or implementing baseline comparison.
+
+Both combined and standalone publication require all coverage behind the selected root attempt to pass, and recheck it before external writes. New PR bodies include a coverage summary; existing PR text remains preserved. No downstream Portfile revisions are changed by this option.
+
+Validation: workflow regressions exercise capacity waits, independent failures, missing metadata, all-unbuildable plans, restart from a saved plan, writer availability during discovery, stale-claim replacement, and publication gating. An executed Tcl harness tests the shipped guest script with isolated external-command mocks, including root build/install order, debug flags, and failures in the root or an external dependency. Source-binding and CLI rejection tests cover invalid requests. A discovered SQLite omission of preinstall inputs was fixed and covered by the restart/attempt assertions. No live PR or full provisioning matrix is required for this pass; live cohort exercise remains a follow-up.
+
+Final checks passed: `go test ./... -count=1`, `go vet ./...`, `gmake build`, targeted workflow race tests, and full race tests for verify, verify/tart, and workflow/preparation. The rebuilt CLI help exposes checksum refresh and dependent verification.

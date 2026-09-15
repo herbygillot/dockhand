@@ -11,6 +11,7 @@ import (
 )
 
 type PreparationRequest struct {
+	IncludeDependents   bool
 	Action              record.Action
 	Version             string
 	ID                  record.RequestID
@@ -101,7 +102,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	source.Base = source.Commit
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{
-		Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
+		IncludeDependents: request.IncludeDependents, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
 		Preparation: &record.PreparationSpec{SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {

@@ -84,6 +84,9 @@ func InputDifferences(wanted, old record.BuildSpec) []string {
 	} else if wanted.Config.VerifierDigest != old.Config.VerifierDigest {
 		reject("verifier implementation differs")
 	}
+	if wanted.Config.NeedsXcode != old.Config.NeedsXcode {
+		reject("Xcode requirement differs")
+	}
 	if wanted.Config.FromSource != old.Config.FromSource {
 		reject("source-build policy differs")
 	}
@@ -92,6 +95,9 @@ func InputDifferences(wanted, old record.BuildSpec) []string {
 	}
 	if !sameJSON(wanted.Config.ProviderConfig, old.Config.ProviderConfig) {
 		reject("provider settings differ")
+	}
+	if !reflect.DeepEqual(wanted.Preinstall, old.Preinstall) {
+		reject("preinstalled source roots differ")
 	}
 	if !slices.Equal(wanted.Inputs, old.Inputs) {
 		reject("artifact inputs differ")

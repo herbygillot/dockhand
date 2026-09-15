@@ -9,6 +9,7 @@ import (
 )
 
 type buildOptions struct {
+	dependents bool
 	provider   string
 	image      string
 	capacity   int
@@ -17,6 +18,7 @@ type buildOptions struct {
 }
 
 func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
+	cmd.Flags().BoolVar(&o.dependents, "dependents", false, "Verify direct dependents in isolated Tart guests")
 	provider := config.VerificationProvider
 	if provider == "" {
 		provider = "tart"
@@ -47,6 +49,14 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	}
 	if o.provider == "auto" && cmd.Name() != "bump" && cmd.Name() != "bump-revision" && cmd.Name() != "refresh-checksums" {
 		return config, fmt.Errorf("automatic provider selection is supported for preparation commands; choose --provider tart or github")
+	}
+	if o.dependents {
+		if o.provider == "github" {
+			return config, fmt.Errorf("dependent verification requires Tart")
+		}
+		if o.provider == "auto" {
+			o.provider = "tart"
+		}
 	}
 	if o.provider == "auto" {
 		if cmd.Flags().Changed("image") || config.Tart.Image != "" || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("variant") {

@@ -89,6 +89,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Repo:       repo,
 		Ports:      ports,
 		Preparer:   preparation,
+		Dependents: dependentDiscovery{repo: repo, ports: ports},
 		Releases:   preparation,
 		Provider:   provider,
 		Providers:  map[string]verify.Provider{"tart": provider, "github": githubProvider},

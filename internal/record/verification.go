@@ -10,9 +10,16 @@ type ArtifactRequirement struct {
 // VerificationTarget describes one unit of requested coverage and the work
 // or outputs that must be available before it can execute.
 type VerificationTarget struct {
-	ID       TargetID
-	Port     Target
-	Platform Platform
+	// Coverage fields are populated by source-bound dependent planning.
+	Root                bool       `json:",omitempty"`
+	Build               *BuildSpec `json:",omitempty"`
+	Problem             string     `json:",omitempty"`
+	CoverageProblems    []string   `json:",omitempty"`
+	Reasons             []string   `json:",omitempty"`
+	IndexedDependencies []string   `json:",omitempty"`
+	ID                  TargetID
+	Port                Target
+	Platform            Platform
 	// Prerequisites lists predecessor targets in the same plan.
 	Prerequisites []TargetID
 	Inputs        []ArtifactRequirement

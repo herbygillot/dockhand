@@ -124,6 +124,20 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		for _, target := range job.Spec.Targets {
 			line("  target: %s", targetLabel(target))
 		}
+		if entry.Plan != nil {
+			for _, target := range entry.Plan.Targets {
+				line("  coverage target: %s", targetLabel(target.Port))
+				for _, reason := range target.Reasons {
+					line("    selected by: %s", reason)
+				}
+				if target.Problem != "" {
+					line("    blocked: %s", target.Problem)
+				}
+				for _, problem := range target.CoverageProblems {
+					line("    coverage gap: %s", problem)
+				}
+			}
+		}
 		if job.Spec.InputRevision != "" {
 			line("  input revision: %s", job.Spec.InputRevision)
 		}

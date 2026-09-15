@@ -178,13 +178,14 @@ func validateRequest(r verify.Request) error {
 	if r.Spec.Config.VerifierDigest != "" && r.Spec.Config.VerifierDigest != verifierDigest() {
 		return fmt.Errorf("tart: verifier implementation changed; submit a new verification request")
 	}
-	target := r.Spec.Target
-	if !safeToken(target.Name) || (target.Subport != "" && !safeToken(target.Subport)) || !validPortfile(target.Portfile) {
-		return fmt.Errorf("tart: invalid target")
-	}
-	for variant := range target.Variants {
-		if !safeToken(variant) || strings.HasPrefix(variant, "+") || strings.HasPrefix(variant, "-") {
-			return fmt.Errorf("tart: invalid variant")
+	for _, target := range append([]record.Target{r.Spec.Target}, r.Spec.Preinstall...) {
+		if !safeToken(target.Name) || (target.Subport != "" && !safeToken(target.Subport)) || !validPortfile(target.Portfile) {
+			return fmt.Errorf("tart: invalid target")
+		}
+		for variant := range target.Variants {
+			if !safeToken(variant) || strings.HasPrefix(variant, "+") || strings.HasPrefix(variant, "-") {
+				return fmt.Errorf("tart: invalid variant")
+			}
 		}
 	}
 	return nil

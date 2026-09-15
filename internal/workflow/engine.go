@@ -55,7 +55,8 @@ type Engine struct {
 	Repo  *git.Repository
 	Ports macports.Reader
 	// Preparer produces immutable candidate trees without adopting branches.
-	Preparer SourcePreparer
+	Preparer   SourcePreparer
+	Dependents DependentDiscoverer
 	// Releases resolves version-bump input for a durable checkpoint before preparation.
 	Releases ReleaseResolver
 	// Provider executes verification and resource operations during Cycle.

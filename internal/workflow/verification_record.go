@@ -185,10 +185,16 @@ func settleVerification(work *execution, job *record.Job, detail string, now tim
 		}
 		counts[attempt.Evidence.Verdict]++
 	}
-	if len(work.Attempts) == 0 {
+	var coverageProblems []string
+	if work.Plan != nil {
+		coverageProblems = verify.CoverageProblems(*work.Plan)
+	}
+	if len(work.Attempts) == 0 && len(coverageProblems) == 0 {
 		return
 	}
 	switch {
+	case len(coverageProblems) > 0:
+		job.State = record.JobNeedsAttention
 	case counts[record.VerdictFailed] > 0:
 		job.State = record.JobFailed
 	case counts[record.VerdictErrored]+counts[record.VerdictBlocked]+counts[record.VerdictUnsupported]+counts[record.VerdictUnknown] > 0:
@@ -209,6 +215,9 @@ func settleVerification(work *execution, job *record.Job, detail string, now tim
 			}
 		}
 		job.Detail = "Verification completed: " + strings.Join(parts, ", ")
+	}
+	if len(coverageProblems) > 0 {
+		job.Detail += "; incomplete coverage: " + strings.Join(coverageProblems, "; ")
 	}
 	if job.State == record.JobCompleted && job.Spec.PublishTo != nil {
 		job.Phase = record.PhasePublication

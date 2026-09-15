@@ -19,10 +19,11 @@ import (
 )
 
 type Request struct {
-	Source   record.Source
-	Target   record.Target
-	Platform record.Platform
-	Index    portindex.Config
+	AdditionalTargets []record.Target
+	Source            record.Source
+	Target            record.Target
+	Platform          record.Platform
+	Index             portindex.Config
 }
 
 // Archive stages the frozen tree and index, then atomically installs the archive.
@@ -58,8 +59,10 @@ func Archive(ctx context.Context, repo *git.Repository, request Request, destina
 	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, snapshot.Root, client); err != nil {
 		return err
 	}
-	if err = requireIndexedTarget(snapshot.Root, request.Target); err != nil {
-		return err
+	for _, target := range append([]record.Target{request.Target}, request.AdditionalTargets...) {
+		if err = requireIndexedTarget(snapshot.Root, target); err != nil {
+			return err
+		}
 	}
 	progress.Report(ctx, "Packing source and verification inputs")
 	temp, err := os.CreateTemp(filepath.Dir(destination), ".input-")

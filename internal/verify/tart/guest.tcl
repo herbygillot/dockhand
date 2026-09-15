@@ -45,11 +45,12 @@ proc save {state verdict} {
     close $fd
     file rename -force $root/result.json.tmp $root/result.json
 }
-proc step {phase argv} {
+proc step {phase argv {stepPackage ""}} {
     global name log steps detail failure root runUser
-    puts $log "dockhand: $phase"
+    if {$stepPackage eq ""} {set stepPackage $name}
+    puts $log "dockhand: $stepPackage $phase"
     if {[catch {exec {*}$argv >@$log 2>@$log} message]} {
-        lappend steps [json::write object Package [json::write string $name] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $message]]
+        lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string failed] Detail [json::write string $message]]
         set detail "$phase failed: $message"
         set fd [open $root/build.log r]
         set text [read $fd]
@@ -64,7 +65,7 @@ proc step {phase argv} {
         }
         return -code error $message
     }
-    lappend steps [json::write object Package [json::write string $name] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string passed]]
+    lappend steps [json::write object Package [json::write string $stepPackage] Phase [json::write string $phase] Command [jsonStrings $argv] User [json::write string $runUser] Verdict [json::write string passed]]
 }
 
 save running unknown
@@ -124,6 +125,25 @@ try {
     if {[dict get $spec Config FromSource]} {lappend base -s}
     set selection [list subport=$name]
     foreach {variant sign} $variants {lappend selection $sign$variant}
+    # Each dependent gets its own guest with the edited roots built first.
+    if {[dict exists $spec Preinstall]} {
+        foreach sourceTarget [dict get $spec Preinstall] {
+            set sourceName [dict get $sourceTarget Name]
+            set sourceDir [file dirname [file join $root ports [dict get $sourceTarget Portfile]]]
+            set sourceBase [list $prefix/bin/port -N -D $sourceDir]
+            if {[dict get $spec Config FromSource]} {lappend sourceBase -s}
+            set sourceSelection [list subport=$sourceName]
+            if {[dict get $sourceTarget Variants] ne "null"} {
+                dict for {variant enabled} [dict get $sourceTarget Variants] {
+                    lappend sourceSelection [expr {$enabled ? "+" : "-"}]$variant
+                }
+            }
+            set phase build
+            step build [concat $sourceBase -d build $sourceSelection] $sourceName
+            set phase install
+            step install [concat $sourceBase -d install $sourceSelection] $sourceName
+        }
+    }
     set phase lint
     step lint [concat $base lint $selection]
     set phase build

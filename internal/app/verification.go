@@ -10,12 +10,13 @@ import (
 )
 
 type Verification struct {
-	Fresh      bool
-	ID         record.RequestID
-	Branch     string
-	Selection  macports.Selection
-	Tests      record.TestPolicy
-	FromSource bool
+	IncludeDependents bool
+	Fresh             bool
+	ID                record.RequestID
+	Branch            string
+	Selection         macports.Selection
+	Tests             record.TestPolicy
+	FromSource        bool
 }
 
 func (s *Services) BindVerification(ctx context.Context, request Verification) (workflow.BoundVerification, error) {
@@ -33,7 +34,7 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 		return workflow.BoundVerification{}, err
 	}
 	return s.Workflow.BindVerification(ctx, workflow.VerificationRequest{
-		ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
+		IncludeDependents: request.IncludeDependents, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
 		ResolveBuild: s.buildResolver(platform, request.Tests, request.FromSource, false),
 	})
 }

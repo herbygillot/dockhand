@@ -339,3 +339,9 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 ### Human corrections
 
 The [human-correction design](human-corrections.md) defines ordinary Git editing, managed amendment/rebase, explicit branch reassociation, and conditional updates to an existing PR. These extend the same capture, revision, verification, and publication boundaries. Proposed commands in that document are not yet implemented.
+
+### Dependent verification
+
+`macports/dependents` discovers the source-bound cohort and index gaps. `verify.PlanDependents` converts those observations into immutable target questions and per-target requirements, including roots to build/install in downstream guests. `workflow` claims discovery outside the writer, records the complete plan once, and uses the existing attempt scheduler and capacity handling. SQLite stores the additional intent and build inputs in existing JSON fields; there is no schema migration or graph scheduler.
+
+Tart supplies the recorded index recipe and executes preinstalled roots in each isolated guest. `verify/staging` checks that roots and the main target are indexed. The application adapter only composes that frozen recipe with source discovery. Publication follows the root attempt's immutable plan and requires applicable passing results for the entire cohort; `publish` formats the resulting evidence. The current accepted image is shared across the cohort, with stricter target tool requirements enforced rather than silently changing environments.

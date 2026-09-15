@@ -30,6 +30,9 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if spec.FreshVerification && (spec.Action != record.Verify || spec.Verification != record.VerificationRequired) {
 		return record.JobSpec{}, fmt.Errorf("%w: fresh verification requires verify", ErrInvalidRequest)
 	}
+	if spec.IncludeDependents && (spec.Verification != record.VerificationRequired || spec.Build == nil || spec.Build.Provider == "github" || spec.Action != record.Verify && !preparationAction(spec.Action)) {
+		return record.JobSpec{}, fmt.Errorf("%w: dependent verification requires a local build configuration and verification", ErrInvalidRequest)
+	}
 	switch spec.Action {
 	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Verify, record.Publish:
 	case record.Rebase, record.Amend:

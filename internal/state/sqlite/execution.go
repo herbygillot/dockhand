@@ -11,10 +11,11 @@ import (
 )
 
 type buildOptions struct {
-	Branch string `json:",omitempty"`
-	Target record.Target
-	Config record.BuildConfig
-	Inputs []record.Artifact
+	Preinstall []record.Target `json:",omitempty"`
+	Branch     string          `json:",omitempty"`
+	Target     record.Target
+	Config     record.BuildConfig
+	Inputs     []record.Artifact
 }
 
 func (t *transaction) Attempt(ctx context.Context, id record.AttemptID) (record.Attempt, error) {
@@ -36,6 +37,7 @@ func (t *transaction) Attempt(ctx context.Context, id record.AttemptID) (record.
 	}
 	v.Spec.Branch = build.Branch
 	v.Spec.Target, v.Spec.Config, v.Spec.Inputs = build.Target, build.Config, build.Inputs
+	v.Spec.Preinstall = build.Preinstall
 	if v.Spec.Source, err = t.readSource(ctx, source); err != nil {
 		return v, err
 	}
@@ -127,7 +129,7 @@ func (t *transaction) PutAttempt(ctx context.Context, v record.Attempt) error {
 		if e != nil {
 			return e
 		}
-		raw, e := encode(buildOptions{Branch: v.Spec.Branch, Target: v.Spec.Target, Config: v.Spec.Config, Inputs: v.Spec.Inputs})
+		raw, e := encode(buildOptions{Preinstall: v.Spec.Preinstall, Branch: v.Spec.Branch, Target: v.Spec.Target, Config: v.Spec.Config, Inputs: v.Spec.Inputs})
 		if e != nil {
 			return e
 		}

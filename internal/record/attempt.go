@@ -107,6 +107,8 @@ type BuildSpec struct {
 	Source     Source
 	Target     Target
 	Config     BuildConfig
+	// Preinstall builds and installs these roots from the same tree in this isolated guest.
+	Preinstall []Target `json:",omitempty"`
 	Inputs     []Artifact
 }
 

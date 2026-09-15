@@ -134,3 +134,20 @@ Use the same `--db PATH` on both commands when selecting a nondefault database. 
 `dockhand refresh-checksums jq --diff` previews checksum changes for the current MacPorts master without changing the port's version or revision. Omit `--diff` to prepare and verify a branch; `--publish --wait` uses the normal verified publication path. `--no-verify` stops at the prepared branch. If the checksums already match, the job completes without creating a branch or PR.
 
 The command uses the same direct archive association, HTTP transfer, checksum replacement, and evaluation checks as version updates. Named and multiple archives are supported. Customized fetch hooks, authenticated downloads, and generated Go/Cargo dependency blocks require manual preparation; this command does not regenerate those blocks or turn a changed upstream archive into a trusted release automatically.
+
+## Verify direct dependents
+
+```sh
+dockhand bump jq --dependents --wait
+dockhand verify jq --branch my-update --dependents --trace
+```
+
+`--dependents` also works with `bump-revision` and `refresh-checksums`. It requires local Tart verification and cannot be combined with `--provider github`, `--no-verify`, or `--diff`. Discovery selects the roots plus their direct build, library, and runtime dependents from the frozen source index. Reverse dependencies are not expanded transitively. The reverse index uses default-variant metadata, so it is not exhaustive coverage of every possible variant combination. Root variants are retained; downstream ports use their default variants.
+
+Each target has an isolated guest. Before a downstream build, Dockhand builds and installs the requested roots from the same frozen tree. Ordinary dependency binaries remain available unless `--from-source` was requested. Conflicts between downstream targets therefore do not require them to coexist in one guest. Root/dependent conflicts remain real build failures and are reported.
+
+The accepted image is retained for the entire cohort. Each target's full-Xcode requirement is checked; choose `--image dockhand-xcode-tahoe` (or the corresponding prepared OS image) if the cohort needs Xcode. Missing tooling does not trigger an unrequested GitHub build or disappear from coverage.
+
+`status` and `--json` retain each planned target, selection reasons, discovery problems, and attempts. Missing index entries or unread dependency fields mean incomplete coverage even if runnable targets pass. A build log can identify a failing dependency outside the cohort, but Dockhand does not call it unrelated without a baseline comparison.
+
+`--publish` requires every requested target to pass and no discovery gaps. A later standalone `publish` using the cohort's root result enforces the same requirement. New PR bodies list the isolated coverage. This option does not authorize edits or revision bumps to downstream ports. Artifact sharing and per-target image selection are not implemented; each guest builds its own root prerequisite.

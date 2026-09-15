@@ -70,15 +70,16 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 
 // Preparation captures the choices needed to create a new contribution.
 type Preparation struct {
-	Action     record.Action
-	Version    string
-	ID         record.RequestID
-	Selection  macports.Selection
-	Reason     string
-	NoVerify   bool
-	Publish    *publish.Options
-	Tests      record.TestPolicy
-	FromSource bool
+	IncludeDependents bool
+	Action            record.Action
+	Version           string
+	ID                record.RequestID
+	Selection         macports.Selection
+	Reason            string
+	NoVerify          bool
+	Publish           *publish.Options
+	Tests             record.TestPolicy
+	FromSource        bool
 }
 
 func (s *Services) BindPreparation(ctx context.Context, request Preparation) (workflow.BoundPreparation, error) {
@@ -97,7 +98,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
+	bound := workflow.PreparationRequest{IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.NoVerify {

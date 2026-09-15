@@ -50,6 +50,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				return nil
 			},
 			RunE: func(cmd *cobra.Command, args []string) error {
+				if build.dependents && (options.NoVerify || options.Diff) {
+					return fmt.Errorf("--dependents requires verification; omit --no-verify or --diff")
+				}
 				choices, err := parseVariants(variants)
 				if err != nil {
 					return err
@@ -76,7 +79,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					defer services.Close()
 					fmt.Fprintln(cmd.ErrOrStderr(), "Fetching MacPorts master; local commits and working-tree edits are excluded.")
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{
-						Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
+						IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Subport: subport, Variants: choices},
 						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})

@@ -129,13 +129,16 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 		if verdict := verify.Applicable(wanted, evidence); !verdict.Matches {
 			return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 		}
-		return nil
+		return publicationCoverage(ctx, r, evidence)
 	})
 	if err != nil {
 		return Request{}, err
 	}
 	publication, err := e.Publisher.Plan(ctx, change, source, evidence, associated, input.Options)
 	if err != nil {
+		return Request{}, err
+	}
+	if err := e.describePublicationCoverage(ctx, &publication); err != nil {
 		return Request{}, err
 	}
 	current, err := changeset.CaptureBranch(ctx, e.Repo, input.Branch)

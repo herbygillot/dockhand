@@ -95,7 +95,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if len(args) == 1 {
 				selector = args[0]
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
 				return err
 			}

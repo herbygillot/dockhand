@@ -84,11 +84,18 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		} else {
 			var attempts []record.Attempt
 			attempts, err = r.AttemptsForJob(ctx, job.ID)
-			if err == nil && len(attempts) != 1 {
-				return fmt.Errorf("%w: publication requires exactly one verification attempt; found %d", ErrInvalidRequest, len(attempts))
-			}
 			if err == nil {
-				evidence = attempts[0]
+				for _, attempt := range attempts {
+					if record.CompareTargets(attempt.Spec.Target, job.Spec.Targets[0]) == 0 {
+						if evidence.ID != "" {
+							return ErrInvalidRequest
+						}
+						evidence = attempt
+					}
+				}
+				if evidence.ID == "" {
+					return fmt.Errorf("%w: publication requires root verification", ErrInvalidRequest)
+				}
 			}
 		}
 		if err != nil {
@@ -115,6 +122,9 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 	}
 	spec, err := e.Publisher.PlanTo(call, change, source, evidence, associated, *job.Spec.PublishTo)
 	if err != nil {
+		return fail(err)
+	}
+	if err := e.describePublicationCoverage(call, &spec); err != nil {
 		return fail(err)
 	}
 	// Observe the branch again after remote reads; never adopt human edits implicitly.

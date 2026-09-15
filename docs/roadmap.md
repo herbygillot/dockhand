@@ -10,26 +10,17 @@ Last updated: 2026-09-15.
 
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
-### 1. Standalone checksum refresh
+### 1. Implement the human-correction design
 
-Implement `refresh-checksums` through the existing preparation, download, evaluation, branch integration, verification, and publication path. Share checksum mechanics with version bumps rather than creating a second workflow.
+The [human-correction design](human-corrections.md) now settles ordinary Git edits, managed amendment/rebase, explicit branch reassociation, source applicability, and updating an existing PR. Implement those managed operations with the documented preconditions and recovery tests. Standalone publication continues to require explicit verification when evidence is missing.
 
-### 2. Human corrections and publication design
+### 2. Exercise and extend dependent coverage
 
-Settle the design items below together: ordinary Git edits, branch reassociation, rebase/squash, verification of a replacement revision, and updating the existing PR. Decide standalone publication's missing-verification behavior before implementing more post-publication commands.
+`--dependents` now connects frozen-source discovery to durable verification plans for preparation and standalone verification. Each direct dependent runs in its own Tart guest, with the root built and installed first. Per-target failures and index gaps remain visible, and publication requires complete passing coverage. Discovery runs outside state write transactions; a recorded plan survives restart.
 
-### 3. Plan and execute dependent verification
+The first implementation uses one accepted image for the cohort and enforces each target's Xcode requirement. Use an appropriate full-Xcode image when needed. It does not silently pick a new image or provider during recovery. Extend to separately accepted per-target image choices after the initial behavior is exercised.
 
-Add downstream coverage without turning workflow into a generic graph engine.
-
-- `macports` discovers reverse dependents and the dependency closure for each selected target against the frozen source tree. PortIndex lookup, direct reverse indexing, and transitive closure queries are implemented. `macports/dependents` now stages that index against frozen source and evaluates a deterministic coverage cohort, retaining per-target failures and index gaps; workflow still needs to invoke discovery for the prepared source outside a write transaction and persist the result.
-- `macports/portedit` proposes any required revision edits separately from the verification coverage plan.
-- `verify` records the concrete target/configuration questions that need answers.
-- `workflow` schedules an isolated attempt for each target/configuration and lets provider capacity determine parallel or sequential execution. The multi-attempt scheduler and aggregate outcomes are implemented; the source-bound discovery result still needs to populate these plans with per-target environment requirements.
-- Each attempt owns its VM and artifacts. Conflicting dependents therefore do not need to coexist in one guest.
-- Results distinguish a failure in the selected downstream port from a failure caused by another dependency in its resolved build closure.
-
-Start with Tart; GitHub retains its current single-port workflow restrictions. Publication must assess all required coverage rather than relying on its current single-attempt contract. The first implementation should favor explicit per-target results and conservative coverage. Artifact reuse, baseline comparison, and more aggressive scheduling can follow after the basic model is measured.
+Follow up with automatic downstream revision edits under explicit user authority, baseline comparison for dependency failures, artifact reuse, and broader selector intake. Keep GitHub's current single-port workflow restriction. A dependency failure is reported with its package and phase when known; causality remains unknown without a comparison build.
 
 ## Planned
 
@@ -74,7 +65,7 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 - Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
 - Add retention for obsolete PortIndex cache entries and GitHub job logs through their owning lifecycle; preserve evidence and active work.
 - Consider account-wide GitHub cooldown coordination only if measurements show concurrent jobs continue causing rate-limit pressure despite their persisted per-record deadlines.
-- Revisit a shared download package only when common policy and lifecycle emerge across current callers.
+- The shared `fetch` package now serves bounded source-archive and PortIndex transfers; keep cache/storage ownership in callers.
 
 ## Needs design
 
@@ -94,13 +85,11 @@ At minimum, the design must settle:
 
 ### Human corrections and post-publication work
 
-Define the user-facing relationship among ordinary Git edits and the proposed `amend`, `rebase`, `verify`, and `publish` commands. The flow must preserve the stable contribution identity, create a new immutable revision, invalidate evidence that no longer applies, and update the existing PR only after applicable verification.
-
-The design should also cover branch reassociation after a user renames a branch and MacPorts' preference for corrective changes squashed into the original contribution commit.
+The accepted [human-correction design](human-corrections.md) defines these operations and their recovery contracts. Managed commands and conditional existing-PR updates remain to be implemented.
 
 ### Standalone publication with missing verification
 
-Decide whether `publish` should schedule missing verification, join an applicable active attempt, or continue requiring a separate explicit `verify`. Any automatic continuation must preserve the publication authority expressed by the original command.
+Decision: standalone `publish` keeps requiring explicit `verify` when evidence is missing. Combined correction-and-publish commands express authority for both steps.
 
 ### Requester and unattended-publication policy
 
@@ -134,7 +123,8 @@ The following capabilities are established and should be extended through their 
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;
 - capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;
 - tested Tcl subprocess/RPC failure contracts, strict reply framing, pre-dispatch cancellation, and handshake deadlines covering script loading;
-- evaluator-guided calculated-version probing through `macports/portedit`;
+- evaluator-guided calculated-version probing and standalone checksum refresh through `macports/portedit`;
+- claimed direct-dependent discovery, durable isolated coverage plans, and full-cohort publication checks;
 - GitHub fork verification through publication, shared-run tracking cancellation, durable progress, and resumable/offline log reads;
 - consistent public-read authentication, publication rate-limit recovery, and durable failure backoff distinct from expected waiting;
 - automatic bump selection of a suitable prepared Tart image, with GitHub fallback only for availability conditions; explicit choices remain authoritative;

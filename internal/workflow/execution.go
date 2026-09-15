@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"reflect"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -36,6 +37,15 @@ func loadExecution(ctx context.Context, r state.Reader, id record.JobID) (execut
 	if revisionID != "" {
 		if work.Revision, err = r.Revision(ctx, revisionID); err != nil {
 			return work, err
+		}
+	}
+	if work.Job.Spec.IncludeDependents {
+		plan, err := r.Plan(ctx, id)
+		if err != nil && !errors.Is(err, state.ErrNotFound) {
+			return work, err
+		}
+		if err == nil {
+			work.Plan = &plan
 		}
 	}
 	attempts, err := r.AttemptsForJob(ctx, id)
@@ -94,7 +104,7 @@ func (e *Engine) updateExecution(ctx context.Context, id record.JobID, fn func(s
 				return err
 			}
 		}
-		if work.Plan != nil {
+		if work.Plan != nil && !reflect.DeepEqual(before.Plan, work.Plan) {
 			if err = tx.PutPlan(ctx, *work.Plan); err != nil {
 				return err
 			}

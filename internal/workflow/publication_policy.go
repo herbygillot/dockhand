@@ -30,9 +30,14 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	if err != nil {
 		return err
 	}
+	if err := publicationCoverage(ctx, r, candidate); err != nil {
+		return err
+	}
 	config := candidate.Spec.Config
 	if job.Spec.Build != nil {
-		config = *job.Spec.Build
+		if !job.Spec.IncludeDependents {
+			config = *job.Spec.Build
+		}
 	} else if job.Spec.BuildRequirements == nil || job.ReusedAttempt != candidate.ID || len(verify.RequirementDifferences(*job.Spec.BuildRequirements, config)) != 0 {
 		return ErrInvalidRequest
 	}

@@ -96,7 +96,11 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		case record.PhasePreparation:
 			changed, detail, err = c.advancePreparation(ctx, job.ID)
 		case record.PhaseVerification:
-			changed, detail, err = c.advanceJob(ctx, job.ID)
+			if job.Spec.IncludeDependents {
+				changed, detail, err = c.planDependents(ctx, job.ID)
+			} else {
+				changed, detail, err = c.advanceJob(ctx, job.ID)
+			}
 		case record.PhasePublication:
 			changed, detail, err = c.advancePublication(ctx, job.ID)
 		default:
