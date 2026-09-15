@@ -1,6 +1,7 @@
-package portedit
+package portfile
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -81,12 +82,12 @@ func checksumGroups(src []byte, evaluated string) ([]checksumGroup, error) {
 	return groups, nil
 }
 
-func replaceChecksums(src []byte, evaluated string, downloads ...Download) ([]byte, string, error) {
+func ReplaceChecksums(src []byte, evaluated string, downloads ...Checksum) ([]byte, string, error) {
 	groups, err := checksumGroups(src, evaluated)
 	if err != nil {
 		return nil, "", err
 	}
-	byName := map[string]Download{}
+	byName := map[string]Checksum{}
 	for _, d := range downloads {
 		if _, ok := byName[d.Name]; ok {
 			return nil, "", fmt.Errorf("%w: duplicate distfile %s", ErrUnsupported, d.Name)
@@ -117,4 +118,16 @@ func replaceChecksums(src []byte, evaluated string, downloads ...Download) ([]by
 	}
 	out, err := text.Apply(src, edits)
 	return out, strings.Join(expected, " "), err
+}
+
+var ErrUnsupported = errors.New("portfile: unsupported source edit")
+
+type Checksum struct {
+	Name, SHA256, RMD160 string
+	Size                 int64
+}
+
+func ChecksumCount(src []byte, evaluated string) (int, error) {
+	groups, err := checksumGroups(src, evaluated)
+	return len(groups), err
 }

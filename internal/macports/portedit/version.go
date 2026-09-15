@@ -61,7 +61,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return Result{}, err
 	}
-	oldGroups, err := checksumGroups(input.data, input.info.Options["checksums"])
+	oldGroups, err := portfile.ChecksumCount(input.data, input.info.Options["checksums"])
 	if err != nil {
 		return Result{}, err
 	}
@@ -74,11 +74,11 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return Result{}, err
 	}
-	groups, err := checksumGroups(contents, info.Options["checksums"])
+	groups, err := portfile.ChecksumCount(contents, info.Options["checksums"])
 	if err != nil {
 		return Result{}, err
 	}
-	if len(groups) != len(oldGroups) || len(sources) != len(oldSources) {
+	if groups != oldGroups || len(sources) != len(oldSources) {
 		return Result{}, fmt.Errorf("%w: source/checksum group count changed", ErrUnsupported)
 	}
 	changed := false
@@ -96,11 +96,11 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 	}
 	// Check source associations before starting downloads, including unchanged auxiliary archives.
-	placeholders := make([]Download, len(sources))
+	placeholders := make([]portfile.Checksum, len(sources))
 	for i, source := range sources {
-		placeholders[i] = Download{Name: source.Name}
+		placeholders[i] = portfile.Checksum{Name: source.Name}
 	}
-	if _, _, err = replaceChecksums(contents, info.Options["checksums"], placeholders...); err != nil {
+	if _, _, err = portfile.ReplaceChecksums(contents, info.Options["checksums"], placeholders...); err != nil {
 		return result, err
 	}
 	downloads := make([]Download, 0, len(sources))
@@ -127,7 +127,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		}
 		downloads = append(downloads, download)
 	}
-	contents, checksums, err := replaceChecksums(contents, info.Options["checksums"], downloads...)
+	contents, checksums, err := portfile.ReplaceChecksums(contents, info.Options["checksums"], checksumValues(downloads)...)
 	if err != nil {
 		return result, err
 	}
@@ -217,4 +217,12 @@ func checksumFidelity(before, after macports.Snapshot, selected, beforeRoot, aft
 		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
 	}
 	return result
+}
+
+func checksumValues(downloads []Download) []portfile.Checksum {
+	values := make([]portfile.Checksum, len(downloads))
+	for i, d := range downloads {
+		values[i] = portfile.Checksum{Name: d.Name, SHA256: d.SHA256, RMD160: d.RMD160, Size: d.Size}
+	}
+	return values
 }

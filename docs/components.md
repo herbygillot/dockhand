@@ -18,6 +18,7 @@ dockhand2/
     credential/          # Device authorization and secret-store contracts
       keychain/          # macOS Keychain implementation
     github/              # Shared GitHub credentials, SDK client, and transport
+    fetch/               # Bounded HTTP transfers with caller-owned content policy
     filelock/            # Context-aware locks for shared external resources
     record/              # Shared durable records, identities, and value types
     state/               # Repository-scoped persistence and transaction contracts
@@ -325,3 +326,7 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 ### GitHub client and adapter boundary
 
 `github.Client` owns configuration, credential selection, OAuth device login, lazy SDK construction, redirect policy, and rate-limit translation. `app` shares one instance with `forge/github` and `verify/github`. Repository/tag/release/PR mapping stays in the forge adapter. Actions requests, workflow configuration, matrix interpretation, and run recovery stay in the verification adapter. Its SDK-typed Actions interface is private; configuration returns a recorded build configuration, so application wiring does not inspect SDK objects. Neither adapter imports the other, and `workflow` imports neither adapter nor the SDK.
+
+### Editing and transfer boundaries
+
+`macports/portfile` owns syntax-aware revision/checksum replacement, accepting evaluated values and checksum data without knowing downloads or releases. `portedit` owns evaluation and fidelity around those operations. `fetch.Open` supplies bounded HTTP response bodies to source-archive and PortIndex consumers. Callers supply their own byte limits and deadlines and retain content checks, hashes, file commit semantics, and cache ownership. GitHub log retrieval continues through its SDK adapter rather than adopting archive download policy.

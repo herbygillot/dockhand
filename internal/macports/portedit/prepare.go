@@ -15,7 +15,7 @@ import (
 
 var (
 	ErrNotImplemented = errors.New("portedit: requested transformation is not implemented")
-	ErrUnsupported    = errors.New("portedit: source cannot be edited with the supported transformations")
+	ErrUnsupported    = portfile.ErrUnsupported
 	ErrFidelity       = errors.New("portedit: evaluation does not match the intended change")
 )
 
@@ -77,7 +77,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if request.Action == record.Bump {
 		return s.prepareVersion(ctx, request, input)
 	}
-	revised, err := bumpRevision(input.data, input.target.Subport, input.info.Revision)
+	revised, err := portfile.BumpRevision(input.data, input.target.Subport, input.info.Revision)
 	if err != nil {
 		return Result{}, err
 	}

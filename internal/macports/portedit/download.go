@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -160,45 +161,22 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 		agent = "dockhand/2"
 	}
 	request.Header.Set("User-Agent", agent)
-	client := http.DefaultClient
-	if s.HTTP != nil {
-		client = s.HTTP
+	limit := s.MaxDownloadBytes
+	if limit <= 0 {
+		limit = 512 << 20
 	}
-	configured := *client
-	configured.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if req.URL.User != nil || req.URL.Scheme != "https" && req.URL.Scheme != "http" || len(via) >= 10 {
-			return fmt.Errorf("portedit: unsupported download redirect")
-		}
-		if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-			return fmt.Errorf("portedit: download redirect downgraded HTTPS")
-		}
-		if client.CheckRedirect != nil {
-			return client.CheckRedirect(req, via)
-		}
-		return nil
-	}
-	response, err := configured.Do(request)
+	response, err := fetch.Open(s.HTTP, request, limit)
 	if err != nil {
-		return Download{}, err
+		return Download{}, fmt.Errorf("portedit: downloading %s: %w", name, err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return Download{}, fmt.Errorf("portedit: downloading %s returned HTTP %d", name, response.StatusCode)
-	}
 	if encoding := response.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
 		return Download{}, fmt.Errorf("portedit: download returned encoded content")
 	}
 	if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/html") {
 		return Download{}, fmt.Errorf("portedit: download returned HTML for %s", name)
 	}
-	limit := s.MaxDownloadBytes
-	if limit <= 0 {
-		limit = 512 << 20
-	}
-	if response.ContentLength > limit {
-		return Download{}, fmt.Errorf("portedit: distfile exceeds download limit (%d bytes)", limit)
-	}
-	reader := io.LimitReader(response.Body, limit+1)
+	reader := response.Body
 	prefix := make([]byte, 512)
 	n, err := io.ReadFull(reader, prefix)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {

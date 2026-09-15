@@ -1,4 +1,4 @@
-package portedit
+package portfile
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
-func bumpRevision(src []byte, subport string, current int) ([]byte, error) {
+func BumpRevision(src []byte, subport string, current int) ([]byte, error) {
 	if current < 0 || current == int(^uint(0)>>1) {
 		return nil, fmt.Errorf("%w: revision cannot be incremented", ErrUnsupported)
 	}

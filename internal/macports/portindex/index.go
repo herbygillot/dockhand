@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/fetch"
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -247,28 +248,16 @@ func downloadPortIndex(ctx context.Context, client *http.Client, address, destin
 	if err != nil {
 		return err
 	}
-	if client == nil {
-		client = http.DefaultClient
-	}
-	response, err := client.Do(request)
+	response, err := fetch.Open(client, request, maxPortIndexBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("portindex: mirrored index: %w", err)
 	}
 	defer response.Body.Close()
-	if response.Request.URL.Scheme != "https" {
-		return fmt.Errorf("portindex: mirror redirected to an insecure URL")
-	}
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("portindex: mirror returned HTTP %d", response.StatusCode)
-	}
-	if response.ContentLength > maxPortIndexBytes {
-		return fmt.Errorf("portindex: mirrored index exceeds %d bytes", maxPortIndexBytes)
-	}
 	file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	written, copyErr := io.Copy(file, io.LimitReader(response.Body, maxPortIndexBytes+1))
+	written, copyErr := io.Copy(file, response.Body)
 	closeErr := file.Close()
 	if copyErr != nil {
 		return copyErr
