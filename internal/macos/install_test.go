@@ -1,0 +1,37 @@
+package macos
+
+import (
+	"context"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestXcodeExpansionStagesArchiveBesideItsOutput(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "Xcode archive.xip")
+	require.NoError(t, os.WriteFile(archive, []byte("fixture"), 0600))
+	xip := filepath.Join(root, "xip")
+	// xip expands beside its input archive, which need not be the caller's cwd.
+	require.NoError(t, os.WriteFile(xip, []byte("#!/bin/sh\nset -eu\nmkdir -p \"$(dirname \"$2\")/Xcode.app\"\n"), 0700))
+	err := InstallXcode(t.Context(), func(ctx context.Context, _ io.Reader, args ...string) ([]byte, error) {
+		script, _, ok := strings.Cut(args[2], "sudo -n /bin/rm -rf /Applications/Xcode.app")
+		require.True(t, ok)
+		script = strings.ReplaceAll(script, "/usr/bin/xip", "\""+xip+"\"")
+		script = strings.ReplaceAll(script, "/private/tmp/dockhand-xcode.XXXXXX", "\""+filepath.Join(root, "work.XXXXXX")+"\"")
+		// Exercise actual shell staging and cleanup, stopping before host installation.
+		script += "test -d Xcode.app\n"
+		return exec.CommandContext(ctx, "/bin/sh", "-c", script, "dockhand", args[len(args)-1]).CombinedOutput()
+	}, archive)
+	require.NoError(t, err)
+	require.NoFileExists(t, archive)
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the temporary expansion workspace must be cleaned")
+	require.Equal(t, "xip", entries[0].Name())
+}

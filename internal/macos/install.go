@@ -57,9 +57,10 @@ func InstallXcode(ctx context.Context, run Command, archive string) error {
 archive=$1
 work=$(/usr/bin/mktemp -d /private/tmp/dockhand-xcode.XXXXXX)
 trap '/bin/rm -rf "$work"' EXIT
+/bin/mv "$archive" "$work/Xcode.xip"
 cd "$work"
-/usr/bin/xip --expand "$archive"
-/bin/rm -f "$archive"
+/usr/bin/xip --expand Xcode.xip
+/bin/rm -f Xcode.xip
 sudo -n /bin/rm -rf /Applications/Xcode.app
 sudo -n /bin/mv Xcode.app /Applications/Xcode.app
 sudo -n /usr/bin/xcode-select -s /Applications/Xcode.app/Contents/Developer
