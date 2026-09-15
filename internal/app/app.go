@@ -17,7 +17,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
-	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/verify"
 	githubverify "github.com/herbygillot/dockhand/internal/verify/github"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
@@ -42,7 +41,6 @@ type Services struct {
 	Workflow          *workflow.Engine
 	Processes         *proc.Manager
 	Preparation       *preparation.Service
-	Discovery         *upstream.Service
 	close             func() error
 	tartVerification  tartBuildConfigurator
 	ports             *macports.Evaluator
@@ -101,7 +99,6 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Workflow:          engine,
 		Processes:         &proc.Manager{},
 		Preparation:       preparation,
-		Discovery:         discovery,
 		close:             store.Close,
 		tartVerification:  provider,
 		ports:             ports,

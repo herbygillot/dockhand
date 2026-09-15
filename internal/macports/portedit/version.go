@@ -30,9 +30,6 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if input.target.Subport != "" {
 		return Result{}, fmt.Errorf("%w: version bumps currently select the primary port", ErrUnsupported)
 	}
-	if err := s.Upstream.Check(ctx, input.info, *release); err != nil {
-		return Result{}, err
-	}
 	if release.NoUpdate {
 		return Result{Base: request.Source, Target: input.target, Release: release}, nil
 	}
@@ -139,9 +136,6 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	result.Files, result.Downloads, result.Fidelity = []portfile.Edit{edit}, downloads, append(result.Fidelity, final)
 	if len(final.UnexpectedChanges) > 0 {
 		return result, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
-	}
-	if err := s.Upstream.Check(ctx, input.info, *release); err != nil {
-		return result, err
 	}
 	result.Commits = []CommitIntent{{Subject: input.target.Name + ": update to " + release.Version, Body: request.Reason, Paths: []string{input.target.Portfile}}}
 	return result, nil

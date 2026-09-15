@@ -227,9 +227,6 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if len(final.UnexpectedChanges) > 0 {
 		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
 	}
-	if err := s.Upstream.Check(ctx, input.info, *request.Release); err != nil {
-		return Result{}, err
-	}
 	result.Base = request.Source
 	result.Files = []portfile.Edit{edit}
 	result.Fidelity = append(result.Fidelity, final)

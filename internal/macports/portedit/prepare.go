@@ -10,7 +10,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 var (
@@ -58,7 +57,6 @@ type Service struct {
 	DependencyTools  dependency.Tools
 	archiveDirectory string
 	Ports            macports.Reader
-	Upstream         *upstream.Service
 	HTTP             *http.Client
 	MaxDownloadBytes int64
 }

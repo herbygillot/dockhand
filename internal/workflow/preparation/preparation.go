@@ -5,13 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
-	"net/http"
 )
 
 type Request = portedit.Request
@@ -43,7 +44,7 @@ type Service struct {
 }
 
 func (s *Service) editor() *portedit.Service {
-	return &portedit.Service{Ports: s.Ports, Upstream: s.Upstream, DependencyTools: s.DependencyTools, HTTP: s.HTTP, MaxDownloadBytes: s.MaxDownloadBytes}
+	return &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, HTTP: s.HTTP, MaxDownloadBytes: s.MaxDownloadBytes}
 }
 func (s *Service) open(ctx context.Context, request Request) (*git.Snapshot, error) {
 	if s == nil || s.Repo == nil {
@@ -72,7 +73,22 @@ func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
 	request.Root = files.Root
-	return s.editor().ResolveRelease(ctx, request)
+	if request.Action != record.Bump {
+		return record.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
+	}
+	probe, err := s.editor().Probe(ctx, probeSource(request))
+	if err != nil {
+		return record.Release{}, err
+	}
+	discovery, err := s.Upstream.Bind(probe)
+	if err != nil {
+		return record.Release{}, err
+	}
+	release, err := discovery.Resolve(ctx, request.Version)
+	if err != nil {
+		return record.Release{}, err
+	}
+	return release, probe.CheckRelease(ctx, release)
 }
 func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err error) {
 	if err := ctx.Err(); err != nil {
@@ -87,11 +103,31 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	}
 	defer func() { err = errors.Join(err, files.Close()) }()
 	request.Root = files.Root
+	var original macports.PortInfo
+	if request.Action == record.Bump {
+		if s.Upstream == nil {
+			return Result{}, fmt.Errorf("preparation: upstream source checker required")
+		}
+		probe, err := s.editor().Probe(ctx, probeSource(request))
+		if err != nil {
+			return Result{}, err
+		}
+		original = probe.Port()
+		if err := s.Upstream.Check(ctx, original, *request.Release); err != nil {
+			return Result{}, err
+		}
+	}
 	edited, err := s.editor().Prepare(ctx, request)
-	result := Result{Base: edited.Base, Target: edited.Target, Commits: edited.Commits, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads}
+	result := Result{Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads}
 	if err != nil {
 		return result, err
 	}
+	if request.Action == record.Bump {
+		if err := s.Upstream.Check(ctx, original, *request.Release); err != nil {
+			return result, err
+		}
+	}
+	result.Commits = edited.Commits
 	for _, edit := range edited.Files {
 		before, _, err := s.Repo.File(ctx, string(request.Source.Tree), edit.Path)
 		if err != nil {
@@ -131,4 +167,8 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	result.Fidelity[len(result.Fidelity)-1].After = snapshot
 	result.PreparedTree = record.ObjectID(tree)
 	return result, nil
+}
+
+func probeSource(request Request) portedit.ProbeSource {
+	return portedit.ProbeSource{Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform}
 }

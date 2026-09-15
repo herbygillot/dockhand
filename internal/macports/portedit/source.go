@@ -90,17 +90,3 @@ func (s *Service) evaluateEdit(ctx context.Context, request Request, input *sour
 	after.Source = record.Source{}
 	return edit, after, input.files.Root, err
 }
-
-func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record.Release, err error) {
-	if request.Action != record.Bump {
-		return record.Release{}, fmt.Errorf("%w: release resolution requires a bump action", ErrNotImplemented)
-	}
-	input, err := s.load(ctx, request)
-	if err != nil {
-		return record.Release{}, err
-	}
-	if input.target.Subport != "" {
-		return record.Release{}, fmt.Errorf("%w: version bumps currently select the primary port", ErrUnsupported)
-	}
-	return s.resolveVersion(ctx, request, input)
-}

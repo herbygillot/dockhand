@@ -41,7 +41,7 @@ Extend the current single-port selector deliberately. A multi-target request sho
 
 ### Upstream discovery
 
-Expose the existing discovery and version-assessment boundary through `outdated`. Unknown or incomplete observations remain visible. Discovery does not create branches, jobs, or publication authority.
+Expose the existing discovery and version-assessment boundary through `outdated`. The source-bound probe and discovery composition are now independent of bump requests; the command still needs CLI orchestration and output. Unknown or incomplete observations remain visible. Discovery does not create branches, jobs, or publication authority.
 
 ### Pull-request observation
 

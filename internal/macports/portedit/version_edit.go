@@ -6,7 +6,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"strings"
 )
@@ -149,43 +148,4 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 		return nil, snapshot, fmt.Errorf("%w: %d version inputs can select %s; edit the Portfile manually", ErrUnsupported, matches, sourceVersion)
 	}
 	return selected, snapshot, nil
-}
-
-func (s *Service) resolveVersion(ctx context.Context, request Request, input *sourceInput) (record.Release, error) {
-	if s.Upstream == nil {
-		return record.Release{}, fmt.Errorf("portedit: upstream discovery is required")
-	}
-	progress.Report(ctx, "Probing editable version inputs for %s", input.target.Name)
-	carriers, err := s.versionCarriers(ctx, request, input)
-	if err != nil {
-		return record.Release{}, err
-	}
-	discovery := *s.Upstream
-	discovery.EvaluateVersion = func(ctx context.Context, value string) (string, error) {
-		_, snapshot, err := s.evaluateVersion(ctx, request, input, carriers, value, false)
-		if err != nil {
-			return "", err
-		}
-		return snapshot.Ports[input.target.Name].Version, nil
-	}
-	release, err := discovery.Resolve(ctx, input.info, request.Version)
-	if err != nil || release.NoUpdate {
-		return release, err
-	}
-	spec, err := portsource.Interpret(input.info)
-	if err != nil {
-		return record.Release{}, err
-	}
-	raw, ok := spec.Pattern.Version(release.Tag)
-	if !ok {
-		return record.Release{}, fmt.Errorf("%w: selected tag no longer matches source convention", ErrFidelity)
-	}
-	_, snapshot, err := s.probeVersion(ctx, request, input, carriers, raw)
-	if err != nil {
-		return record.Release{}, err
-	}
-	if snapshot.Ports[input.target.Name].Version != release.Version {
-		return record.Release{}, fmt.Errorf("%w: selected version changed during evaluation", ErrFidelity)
-	}
-	return release, nil
 }
