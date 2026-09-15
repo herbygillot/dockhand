@@ -70,6 +70,8 @@ type ReconcileOptions struct {
 	CancelRequested bool
 }
 
+// A closed request with an Unsupported submission records a definitive rejection,
+// rather than permission to retry admission with a new request identity.
 type Reconciliation struct {
 	State      ReconciliationState
 	Submission Submission

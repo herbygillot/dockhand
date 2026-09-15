@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -504,4 +506,90 @@ func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
 		require.NoError(t, err)
 		return status.Jobs[0].Job.State == record.JobCompleted
 	}, 5*time.Second, 10*time.Millisecond)
+}
+
+type lostRejectionReply struct{ verify.Provider }
+
+func (p lostRejectionReply) Submit(ctx context.Context, request verify.Request) (verify.Submission, error) {
+	result, err := p.Provider.Submit(ctx, request)
+	if err == nil && result.State == verify.Unsupported {
+		return verify.Submission{}, context.DeadlineExceeded
+	}
+	return result, err
+}
+
+func TestPermanentAdmissionFailureSurvivesLostReply(t *testing.T) {
+	for _, kind := range []string{"merged", "missing base", "missing local branch", "unrelated base", "authentication", "missing workflow"} {
+		t.Run(kind, func(t *testing.T) {
+			f := setup(t)
+			switch kind {
+			case "merged":
+				require.NoError(t, f.provider.Repo.Push(t.Context(), git.Push{Remote: f.remote, Branch: "master", Commit: string(f.request.Spec.Source.Commit), ExpectedRemote: git.RefValue{Exists: true, Object: string(f.request.Spec.Source.Base)}}))
+			case "missing local branch":
+				require.NoError(t, f.provider.Repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: string(f.request.Spec.Source.Commit)}}}))
+			case "missing base":
+				out, err := exec.CommandContext(t.Context(), "git", "--git-dir", f.remote, "update-ref", "-d", "refs/heads/master").CombinedOutput()
+				require.NoError(t, err, string(out))
+			case "unrelated base":
+				sig := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
+				unrelated, err := f.provider.Repo.WriteCommit(t.Context(), git.Commit{Tree: string(f.request.Spec.Source.Tree), Message: "unrelated", Author: sig, Committer: sig})
+				require.NoError(t, err)
+				require.NoError(t, f.provider.Repo.Push(t.Context(), git.Push{Remote: f.remote, Branch: "master", Commit: unrelated, ExpectedRemote: git.RefValue{Exists: true, Object: string(f.request.Spec.Source.Base)}}))
+			case "authentication":
+				f.api.err = &gh.ErrorResponse{Response: &http.Response{StatusCode: 401}, Message: "credential rejected"}
+			case "missing workflow":
+				f.api.err = &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "workflow missing"}
+			}
+			f.engine.Providers[ProviderName] = lostRejectionReply{f.provider}
+			require.Eventually(t, func() bool {
+				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				return status.Jobs[0].Job.State == record.JobNeedsAttention
+			}, 5*time.Second, 10*time.Millisecond)
+			restarted := *f.provider
+			recovered, err := restarted.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
+			require.NoError(t, err)
+			require.Equal(t, verify.Unsupported, recovered.Submission.State)
+			require.NotEmpty(t, recovered.Submission.Detail)
+			repeat, err := restarted.Submit(t.Context(), f.request)
+			require.NoError(t, err)
+			require.Equal(t, recovered.Submission, repeat)
+			require.NoError(t, f.engine.State.View(t.Context(), f.engine.Repository, func(ctx context.Context, r state.Reader) error {
+				submissions, err := r.SubmissionsForAttempt(ctx, f.request.AttemptID)
+				require.NoError(t, err)
+				require.Len(t, submissions, 1)
+				return nil
+			}))
+			head, err := f.provider.Repo.RemoteHead(t.Context(), f.remote, "candidate")
+			require.NoError(t, err)
+			require.False(t, head.Exists)
+		})
+	}
+}
+
+func TestTemporaryPreflightFailureCanRecover(t *testing.T) {
+	for _, code := range []int{403, 429, 503} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			f := setup(t)
+			f.api.err = &gh.ErrorResponse{Response: &http.Response{StatusCode: code}, Message: "temporarily unavailable"}
+			require.Eventually(t, func() bool {
+				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				return status.Jobs[0].Attempts[0].State == record.AttemptUncertain
+			}, 5*time.Second, 10*time.Millisecond)
+			f.api.err = nil
+			f.ready()
+			require.Eventually(t, func() bool {
+				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				return status.Jobs[0].Job.State == record.JobCompleted
+			}, 5*time.Second, 10*time.Millisecond)
+		})
+	}
 }

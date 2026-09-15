@@ -321,6 +321,8 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 					detail = "Canceled before admission"
 				}
 				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, detail, now)
+			} else if result.reconciliation.Submission.State == verify.Unsupported {
+				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictUnsupported, ObservedAt: now}, result.reconciliation.Submission.Detail, now)
 			} else {
 				attempt.SubmissionID = record.RequestID("submit_" + rand.Text())
 				work.Submissions[attempt.SubmissionID] = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: current.Sequence + 1, Provider: attempt.Spec.Config.Provider, CreatedAt: now}

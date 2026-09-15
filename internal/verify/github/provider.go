@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"time"
 
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/filelock"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -31,6 +33,10 @@ type payload struct {
 	Config   Config
 	Expected git.RefValue
 	Matrix   []string
+}
+
+type rejection struct {
+	Detail string
 }
 
 type executionRun struct {
@@ -80,8 +86,11 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		row, err := p.read(ctx, request.ID)
 		if err == nil {
 			if row.State == record.ExecutionClosed || row.State == record.ExecutionReleased {
-				result = verify.Submission{State: verify.Unsupported, Detail: "GitHub submission is permanently closed"}
-				return nil
+				result, err = rejectedSubmission(row)
+				if result.State == "" {
+					result = verify.Submission{State: verify.Unsupported, Detail: "GitHub submission is permanently closed"}
+				}
+				return err
 			}
 			var saved payload
 			if err := json.Unmarshal(row.Payload, &saved); err != nil {
@@ -98,7 +107,22 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		}
 		reject := func(detail string) error {
 			result = verify.Submission{State: verify.Unsupported, Detail: detail}
-			return p.put(ctx, record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, State: record.ExecutionClosed, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)})
+			raw, err := json.Marshal(rejection{Detail: detail})
+			if err != nil {
+				return err
+			}
+			return p.put(ctx, record.ProviderExecution{ID: request.ID, RepositoryID: p.Repository, State: record.ExecutionClosed, Result: raw, CreatedAt: time.Now().UTC().Truncate(time.Millisecond)})
+		}
+		preflightError := func(err error) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			var response *gh.ErrorResponse
+			if errors.Is(err, git.ErrRefConflict) || errors.Is(err, git.ErrBranchMissing) || errors.Is(err, forge.ErrAuthentication) ||
+				errors.As(err, &response) && response.Response != nil && (response.Response.StatusCode == http.StatusUnauthorized || response.Response.StatusCode == http.StatusNotFound) {
+				return reject(err.Error())
+			}
+			return err
 		}
 		matrix, err := p.source(ctx, request)
 		var config Config
@@ -109,38 +133,41 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			err = config.validate()
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return reject(err.Error())
 		}
 		d := config.Destination
 		return p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, ProviderName, d.HeadRepository, request.Spec.Branch, func(ctx context.Context) error {
 			snapshot, err := changeset.CaptureBranch(ctx, p.Repo, request.Spec.Branch)
 			if err != nil {
-				return err
+				return preflightError(err)
 			}
 			if snapshot.Commit != request.Spec.Source.Commit || snapshot.Tree != request.Spec.Source.Tree {
 				return reject("github verification: local branch changed after acceptance; verify the new committed branch")
 			}
 			source, err := changeset.DeriveSingleCommit(ctx, p.Repo, request.Spec.Source)
 			if err != nil {
-				return err
+				return preflightError(err)
 			}
 			if err := p.Repo.CheckContributionBase(ctx, d.BaseURL, d.BaseBranch, string(source.Source.Base), string(source.Source.Commit)); err != nil {
-				return err
+				return preflightError(err)
 			}
 			api, err := p.Actions(ctx, d.HeadRepository)
 			if err != nil {
-				return err
+				return preflightError(err)
 			}
 			workflow, err := api.Workflow(ctx, "main.yml")
 			if err != nil {
-				return err
+				return preflightError(err)
 			}
 			if workflow.GetID() != config.WorkflowID || workflow.GetPath() != WorkflowPath || workflow.GetState() != "active" {
 				return reject("github verification: enable the expected main.yml workflow in your fork's Actions settings")
 			}
 			expected, err := p.Repo.RemoteHead(ctx, d.PushURL, request.Spec.Branch)
 			if err != nil {
-				return err
+				return preflightError(err)
 			}
 			if expected.Exists && expected.Object != string(request.Spec.Source.Commit) && expected.Object != string(source.Source.Base) {
 				return reject("github verification: remote branch already has another commit; reconcile and push it with Git before verifying")
@@ -249,6 +276,10 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, options v
 			return err
 		}
 		if row.State == record.ExecutionClosed {
+			result.Submission, err = rejectedSubmission(row)
+			if err != nil {
+				return err
+			}
 			result.State = verify.RequestClosed
 			if len(row.Payload) > 0 {
 				result.Submission.Detail = "Stopped GitHub submission tracking; any push already sent may still run in Actions"
@@ -273,4 +304,18 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, options v
 		return err
 	})
 	return result, err
+}
+
+func rejectedSubmission(row record.ProviderExecution) (verify.Submission, error) {
+	if row.State != record.ExecutionClosed || len(row.Result) == 0 {
+		return verify.Submission{}, nil
+	}
+	var saved rejection
+	if err := json.Unmarshal(row.Result, &saved); err != nil {
+		return verify.Submission{}, err
+	}
+	if saved.Detail == "" {
+		return verify.Submission{}, fmt.Errorf("github verification: missing rejection reason")
+	}
+	return verify.Submission{State: verify.Unsupported, Detail: saved.Detail}, nil
 }
