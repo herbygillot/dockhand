@@ -8,16 +8,11 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
 func (n *native) guest(ctx context.Context, name string, input io.Reader, args ...string) ([]byte, error) {
-	options := []string{"exec"}
-	if input != nil {
-		options = append(options, "-i")
-	}
-	options = append(options, name)
-	options = append(options, args...)
-	return n.command(ctx, input, false, options...)
+	return n.vm().Exec(ctx, name, tart.RunOptions{Input: input, Combined: true}, args...)
 }
 
 func (n *native) ReadyAgent(ctx context.Context, name string) error {
@@ -29,7 +24,7 @@ func (n *native) ReadyAgent(ctx context.Context, name string) error {
 		_, err := n.guest(call, name, nil, "/usr/bin/true")
 		cancel()
 		if err == nil {
-			return tart.CheckGuestTransport(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+			return host.CheckGuestTransport(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
 				return n.guest(ctx, name, input, args...)
 			})
 		}
@@ -63,11 +58,5 @@ func (n *native) streamTarget(name string) macos.Command {
 	}
 }
 func (n *native) guestStream(ctx context.Context, name string, input io.Reader, args ...string) ([]byte, error) {
-	options := []string{"exec"}
-	if input != nil {
-		options = append(options, "-i")
-	}
-	options = append(options, name)
-	options = append(options, args...)
-	return n.command(ctx, input, true, options...)
+	return n.vm().Exec(ctx, name, tart.RunOptions{Input: input, Output: n.progress, Combined: true}, args...)
 }

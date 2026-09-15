@@ -1,16 +1,13 @@
 package provision
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -75,25 +72,13 @@ func (n *native) Configure(ctx context.Context, name string) error {
 }
 
 func (n *native) Start(ctx context.Context, name string) error {
-	command := exec.Command(n.config.Executable, "run", "--no-graphics", "--no-audio", "--no-clipboard", name)
-	command.Env = append(os.Environ(), "TART_HOME="+n.config.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
-	if err := command.Start(); err != nil {
+	done, err := n.vm().StartForeground(name)
+	if err != nil {
 		return err
 	}
-	done := make(chan error, 1)
 	n.mu.Lock()
 	n.runs[name] = done
 	n.mu.Unlock()
-	go func() {
-		err := command.Wait()
-		if err != nil {
-			err = fmt.Errorf("tart: VM %s exited: %w: %s", name, err, strings.TrimSpace(output.String()))
-		}
-		done <- err
-		close(done)
-	}()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -133,18 +118,7 @@ func (n *native) Stop(ctx context.Context, name string) error {
 }
 
 func (n *native) Delete(ctx context.Context, name string) error {
-	images, err := n.Images(ctx)
-	if err != nil {
-		return err
-	}
-	if images[name].Name == "" {
-		return nil
-	}
-	if images[name].Running {
-		return fmt.Errorf("tart: refusing to delete running image %s", name)
-	}
-	_, err = n.command(ctx, nil, false, "delete", name)
-	return err
+	return n.vm().Delete(ctx, name)
 }
 
 func (n *native) Rename(ctx context.Context, from, to string) error {

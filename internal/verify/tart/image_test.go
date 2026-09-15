@@ -188,7 +188,7 @@ func TestInterruptedOrChangedImageDoesNotPublishDigest(t *testing.T) {
 					require.NoError(t, os.WriteFile(filepath.Join(root, "vms", "base", "disk.img"), []byte("different image"), 0600))
 				}
 			}}
-			n := &native{config: imageFixtureProvider(root).Config, images: &imageCache{}, cache: cache}
+			n := newNative(imageFixtureProvider(root).Config, nil, &imageCache{}, cache)
 			_, err := n.Environment(ctx)
 			require.Error(t, err)
 			if mode == "canceled" {

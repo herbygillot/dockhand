@@ -33,7 +33,7 @@ func (c Client) Run(ctx context.Context, options RunOptions, args ...string) ([]
 		return nil, fmt.Errorf("tart: executable and command are required")
 	}
 	command := exec.CommandContext(ctx, c.Executable, args...)
-	command.Env = append(os.Environ(), "TART_HOME="+c.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
+	command.Env = c.Environment()
 	command.Stdin = options.Input
 	command.WaitDelay = 2 * time.Second
 	for _, file := range options.ExtraFiles {
@@ -64,4 +64,9 @@ func (c Client) Run(ctx context.Context, options RunOptions, args ...string) ([]
 		detail = output.String()
 	}
 	return output.Bytes(), fmt.Errorf("tart: %s: %w: %s", args[0], errors.Join(ctx.Err(), err), strings.TrimSpace(detail))
+}
+
+// Environment supplies the host process environment used for this Tart home.
+func (c Client) Environment() []string {
+	return append(os.Environ(), "TART_HOME="+c.Home, "TART_NO_AUTO_PRUNE=1", "LC_ALL=C")
 }

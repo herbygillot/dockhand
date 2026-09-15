@@ -9,7 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports/installation"
-	"github.com/herbygillot/dockhand/internal/tart"
+	"github.com/herbygillot/dockhand/internal/tart/host"
 )
 
 func (n *native) WriteManifest(ctx context.Context, name string, manifest []byte) error {
@@ -51,7 +51,7 @@ func (n *native) Validate(ctx context.Context, name string, config Config) (vali
 	if err != nil {
 		return validation{}, err
 	}
-	agentVersion, err := tart.ObserveGuestAgentVersion(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+	agentVersion, err := host.ObserveGuestAgentVersion(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
 		return n.guest(ctx, name, input, args...)
 	})
 	if err != nil {

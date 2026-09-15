@@ -30,8 +30,10 @@ dockhand2/
       staging/           # Immutable indexed source archives
       tart/              # Concrete Tart verification provider
       github/            # Fork Actions verification and SDK adapter
-    macos/               # Release metadata and explicit developer-tool operations
-    tart/                # Shared local Tart commands, images, and coordination
+    atomicfile/          # Durable replacement of small local files
+    macos/               # OS/toolchain facts, operations, and launchd plist rendering
+    tart/                # Shared local Tart commands, runtime paths, images, and coordination
+      host/              # VM lifecycle, launchd, foreground boot, and guest transport
       provision/         # Tart base-image construction and validation
     publish/             # Publication policy, desired state, reconciliation
     macports/            # Bound source contexts, evaluation, dependencies
@@ -147,12 +149,13 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 - `state/sqlite` depends on `state`, `record`, and the selected SQLite driver. It does not import workflow or Git.
 - `credential` defines authorization and storage contracts without depending on a concrete forge, Keychain, CLI, or workflow. `credential/keychain` implements only its storage contract.
 - `filelock` depends only on the standard library and coordinates external resources without authorizing state changes.
-- `tart` depends on shared records and `filelock`; `tart/provision` consumes that shared Tart boundary. Neither imports verification or workflow.
+- `tart` owns runtime resolution, CLI invocation, image metadata, naming, and coordination. `tart/host` consumes it for concrete VM lifecycle and guest transport, with macOS launchd rendering and atomic file replacement. `tart/provision` owns recipes, SSH bootstrap, readiness deadlines, and validation. None imports verification, workflow, or state.
+- `atomicfile` depends only on the standard library. It replaces small files durably; callers retain naming, cache policy, and lifecycle ownership.
 - `forge` defines remote facts and access contracts using shared records and the standard library. It imports no capability or concrete adapter.
 - `github` owns shared authentication and SDK transport, depending on `credential` and `forge` errors. `forge/github` depends on that client, `forge`, `record`, and Git validation mechanics; `forge/gitlab` depends on `forge`, Git validation mechanics, and the GitLab SDK. Neither adapter imports `upstream`, `publish`, nor `macports`.
 - `macports/source` depends on evaluated MacPorts metadata and Tcl value decoding. It imports no forge adapter or upstream policy.
 - `macports/portindex` depends on Git object mechanics, shared records, and `filelock`. It imports neither Tart provider nor workflow policy.
-- `verify/tart` consumes the shared Tart and PortIndex boundaries; those packages do not import the provider.
+- `verify/tart` consumes `tart/host`, shared Tart image coordination, and PortIndex. It retains request/state lifecycle, capacity, image identity/capability evidence, guest request/result protocol, staging, and cleanup policy; mechanics do not import the provider.
 - `upstream` consumes `macports/source` specifications and forge observations. `publish` consumes forge PR contracts. Neither constructs a concrete client.
 - `workflow` depends on `state` and capability APIs. Capabilities do not depend back on the engine or write its records.
 - `proc` supplies current-process residency around `workflow.Engine`. Requests and observations pass through state; `proc` does not judge evidence or choose the next business action.
@@ -355,3 +358,11 @@ Tart supplies the recorded index recipe and executes preinstalled roots in each 
 ### MacPorts runtime diagnostics
 
 `macports/compatibility.go` describes the observed Base/Tcl/platform and historical source-review coverage. Its Tcl companion checks startup interfaces, worker option access, and native fetch-target registration before interpreting actual fetch hooks. `Evaluator.Inspect` supplies setup diagnostics; snapshots retain the runtime observation. `macports/portedit` preserves specific fetch-compatibility failures when refusing preparation. There is no version-selected adapter or new package; [compatibility evidence](macports-compatibility.md) distinguishes runtime tests from source review.
+
+### Tart runtime and VM control
+
+`Client.Resolve` canonicalizes existing directory ancestors without initialization, so missing final paths and symlink aliases retain a stable Tart-home identity. Configuration inspection does not create the verification artifact root; a request operation initializes it.
+
+`host.Machine` supplies guarded clone/delete, launchd-backed VM lifetime for verification, foreground process startup for provisioning, and guest execution with argument/stdin preservation and inherited guest-descriptor cleanup. Provisioning owns its foreground process bookkeeping and recipe-specific readiness/stop deadlines. Verification owns the build runner's paths, launch conditions, results, and evidence. Its accepted guest protocol digest is unchanged by the extraction.
+
+`macos.LaunchdPlist` renders launchd XML for both host VM services and guest build services. `atomicfile.Write` preserves the existing synced temporary-file/rename/directory-sync sequence for VM plists and retained verification results. These are concrete shared mechanics, not a general executor or VM framework. See the [VM-control activity report](activity/2026-09-15-tart-host.md).

@@ -40,7 +40,7 @@ func (p *Provider) machineFor(c Config, guard *os.File) machine {
 	if p.backend != nil {
 		return p.backend
 	}
-	return &native{config: c, guard: guard, images: &p.images, cache: p.State}
+	return newNative(c, guard, &p.images, p.State)
 }
 func (p *Provider) DescribeEnvironment(ctx context.Context) (Environment, error) {
 	c, err := settings(p.Config)

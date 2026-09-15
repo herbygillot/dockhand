@@ -4,51 +4,20 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/portindex"
-	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/verify"
-	"github.com/herbygillot/dockhand/internal/verify/staging"
 	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/tart/host"
+	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/staging"
 )
 
-func atomicFile(path string, data []byte, mode fs.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".dockhand-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if err = file.Chmod(mode); err == nil {
-		_, err = file.Write(data)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	closeErr := file.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if err = os.Rename(file.Name(), path); err != nil {
-		return err
-	}
-	directory, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
-}
 func safeToken(s string) bool {
 	return s != "" && !strings.HasPrefix(s, "-") && !strings.ContainsAny(s, "/\\") && strings.IndexFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) < 0
 }
@@ -81,7 +50,7 @@ type guestResult struct {
 
 // verifierDigest changes with the guest program and its launch protocol.
 func verifierDigest() string {
-	return digest(append([]byte("tart-verification-v2\x00"+guestExecScript+"\x00"+string(guestPlist("/prefix"))), guestScript...))
+	return digest(append([]byte("tart-verification-v2\x00"+host.ExecScript+"\x00"+string(guestPlist("/prefix"))), guestScript...))
 }
 
 func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, directory string, client *http.Client) (string, error) {

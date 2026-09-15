@@ -2,7 +2,6 @@ package tart
 
 import (
 	"archive/tar"
-	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -206,7 +205,7 @@ exec)
  esac ;;
 esac
 `), 0700))
-	n := &native{config: Config{Home: root, Executable: executable}}
+	n := newNative(Config{Home: root, Executable: executable}, nil, nil, nil)
 	result, err := n.Inspect(t.Context(), "vm")
 	require.NoError(t, err)
 	require.Equal(t, "runner-exited", result.State)
@@ -229,7 +228,7 @@ exec)
 esac
 `
 			require.NoError(t, os.WriteFile(executable, []byte(script), 0700))
-			n := &native{config: Config{Home: root, Executable: executable}}
+			n := newNative(Config{Home: root, Executable: executable}, nil, nil, nil)
 			result, err := n.Inspect(t.Context(), "vm")
 			require.NoError(t, err)
 			require.Equal(t, "finished", result.State)
@@ -295,28 +294,4 @@ func TestRecordedVerifierIdentityRejectsChangedExecutionCode(t *testing.T) {
 	result, err = f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
 	require.Equal(t, verify.Admitted, result.State)
-}
-
-func TestGuestCommandsCloseInheritedDescriptorsAndPreserveInputAndArguments(t *testing.T) {
-	root := t.TempDir()
-	executable := filepath.Join(root, "tart")
-	require.NoError(t, os.WriteFile(executable, []byte(`#!/bin/sh
-set -eu
-[ "$1" = exec ]
-shift
-[ "$1" = -i ]
-shift 2
-exec 9>/dev/null
-exec "$@"
-`), 0700))
-	n := &native{config: Config{Home: root, Executable: executable}}
-	var output bytes.Buffer
-	argument := "spaces; $(do-not-execute) 'literal'"
-	_, err := n.execGuest(t.Context(), "vm", strings.NewReader("payload\n"), &output, "/bin/sh", "-c", `
-[ ! -e /dev/fd/9 ] || exit 42
-read -r input
-printf '%s\n%s\n' "$input" "$1"
-`, "check", argument)
-	require.NoError(t, err)
-	require.Equal(t, "payload\n"+argument+"\n", output.String())
 }

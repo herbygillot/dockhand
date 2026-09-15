@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -94,7 +95,7 @@ func (o *operation) finish(ctx context.Context, v record.ProviderExecution, resu
 		return verify.Observation{}, err
 	}
 	path := filepath.Join(o.directory(v), "result.json")
-	if err = atomicFile(path, data, 0600); err != nil {
+	if err = atomicfile.Write(path, data, 0600); err != nil {
 		return verify.Observation{}, err
 	}
 	if err = o.machine.Stop(ctx, v.Resource); err != nil {

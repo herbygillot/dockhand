@@ -43,7 +43,7 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 		return Environment{}, err
 	}
 	defer guard.Close()
-	exists, running, err := n.localVM(ctx, n.config.Image)
+	exists, running, err := n.LocalVM(ctx, n.config.Image)
 	if err != nil {
 		var path *os.PathError
 		if errors.Is(err, exec.ErrNotFound) || errors.As(err, &path) && path.Op == "fork/exec" && errors.Is(path.Err, os.ErrNotExist) {
