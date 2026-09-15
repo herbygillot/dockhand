@@ -399,3 +399,59 @@ func TestDriverCancellationDetachesGitHubRun(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, "in_progress", f.api.run.GetStatus())
 }
+
+func TestSourceRequiresWorkflowDetectableChanges(t *testing.T) {
+	for _, kind := range []string{"deleted patch", "renamed patch", "added patch", "modified patch", "modified Portfile with deleted patch", "outside deletion"} {
+		t.Run(kind, func(t *testing.T) {
+			f := setup(t)
+			repo := f.provider.Repo
+			trees, err := repo.CommitTrees(t.Context(), []string{string(f.request.Spec.Source.Base)})
+			require.NoError(t, err)
+			baseTree, err := repo.EditTree(t.Context(), trees[string(f.request.Spec.Source.Base)], []git.FileEdit{
+				{Path: "devel/fixture/files/old.patch", After: []byte("patch bytes"), Mode: 0o100644},
+				{Path: "other/port/Portfile", After: []byte("unrelated"), Mode: 0o100644},
+			})
+			require.NoError(t, err)
+			signature := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
+			base, err := repo.WriteCommit(t.Context(), git.Commit{Tree: baseTree, Message: "base", Author: signature, Committer: signature})
+			require.NoError(t, err)
+			old, _, err := repo.File(t.Context(), baseTree, "devel/fixture/files/old.patch")
+			require.NoError(t, err)
+			edits := []git.FileEdit{{Path: "devel/fixture/files/old.patch", Before: old, Delete: true}}
+			switch kind {
+			case "renamed patch":
+				edits = append(edits, git.FileEdit{Path: "devel/fixture/files/new.patch", After: []byte("patch bytes"), Mode: 0o100644})
+			case "added patch":
+				edits = []git.FileEdit{{Path: "devel/fixture/files/new.patch", After: []byte("new bytes"), Mode: 0o100644}}
+			case "modified patch":
+				edits = []git.FileEdit{{Path: "devel/fixture/files/old.patch", Before: old, After: []byte("updated bytes"), Mode: 0o100644}}
+			case "modified Portfile with deleted patch", "outside deletion":
+				port, _, err := repo.File(t.Context(), baseTree, "devel/fixture/Portfile")
+				require.NoError(t, err)
+				edits = append(edits, git.FileEdit{Path: "devel/fixture/Portfile", Before: port, After: []byte("version 2\n"), Mode: 0o100644})
+				if kind == "outside deletion" {
+					outside, _, err := repo.File(t.Context(), baseTree, "other/port/Portfile")
+					require.NoError(t, err)
+					edits = append(edits, git.FileEdit{Path: "other/port/Portfile", Before: outside, Delete: true})
+				}
+			}
+			tree, err := repo.EditTree(t.Context(), baseTree, edits)
+			require.NoError(t, err)
+			commit, err := repo.WriteCommit(t.Context(), git.Commit{Tree: tree, Parents: []string{base}, Message: "fixture change", Author: signature, Committer: signature})
+			require.NoError(t, err)
+			f.request.Spec.Source = record.Source{Base: record.ObjectID(base), Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}
+			_, err = f.provider.source(t.Context(), f.request)
+			if kind == "deleted patch" || kind == "renamed patch" || kind == "outside deletion" {
+				require.Error(t, err)
+				refused, err := f.provider.Submit(t.Context(), f.request)
+				require.NoError(t, err)
+				require.Equal(t, verify.Unsupported, refused.State)
+				head, err := repo.RemoteHead(t.Context(), f.remote, "candidate")
+				require.NoError(t, err)
+				require.False(t, head.Exists)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

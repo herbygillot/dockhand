@@ -46,11 +46,17 @@ func (p *Provider) source(ctx context.Context, request verify.Request) ([]string
 	if len(strings.Split(directory, "/")) != 2 || strings.HasPrefix(directory, ".") || strings.HasPrefix(directory, "_") || path.Base(spec.Target.Portfile) != "Portfile" || len(commit.Paths) == 0 {
 		return nil, fmt.Errorf("github verification: one changed port directory is required")
 	}
-	detected := false
 	for _, name := range commit.Paths {
 		if !strings.HasPrefix(name, directory+"/") {
 			return nil, fmt.Errorf("github verification: change outside the selected port: %s", name)
 		}
+	}
+	paths, err := p.Repo.AddedOrModifiedPaths(ctx, string(commit.Source.Base), string(spec.Source.Commit))
+	if err != nil {
+		return nil, err
+	}
+	detected := false
+	for _, name := range paths {
 		if name == spec.Target.Portfile || strings.HasPrefix(name, directory+"/files/") {
 			detected = true
 		}

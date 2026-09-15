@@ -40,7 +40,7 @@ func BuildConfig(platform record.Platform, config Config, needsXcode bool) (reco
 		return record.BuildConfig{}, err
 	}
 	// The workflow controls mutable hosted runners. This identifies the recipe, not a VM image.
-	return record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: "workflow:" + digest(raw), VerifierDigest: "github-workflow-v1", ProviderConfig: raw, Tests: record.TestWorkflow, NeedsXcode: needsXcode}, nil
+	return record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: "workflow:" + digest(raw), VerifierDigest: "github-workflow-v2", ProviderConfig: raw, Tests: record.TestWorkflow, NeedsXcode: needsXcode}, nil
 }
 
 func (c Config) validate() error {
