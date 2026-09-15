@@ -1,9 +1,10 @@
 package app
 
 import (
-	"github.com/herbygillot/dockhand/internal/credential/keychain"
-	"github.com/herbygillot/dockhand/internal/forge/github"
 	"net/http"
+
+	"github.com/herbygillot/dockhand/internal/credential/keychain"
+	"github.com/herbygillot/dockhand/internal/github"
 )
 
 func newGitHubClient(config github.Config) *github.Client {

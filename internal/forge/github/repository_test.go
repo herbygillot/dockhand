@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +29,7 @@ func testRepository(t *testing.T, client *github.Client) githubRepository {
 }
 
 func TestRepositoryBindingValidatesNamesWithoutContactingGitHub(t *testing.T) {
-	client := &github.Client{HTTP: &http.Client{Transport: rejectTransport{t}}}
+	client := &github.Client{Client: &githubapi.Client{HTTP: &http.Client{Transport: rejectTransport{t}}}}
 	for _, name := range []string{"owner/project", "Owner-1/project.name", "owner/project_name"} {
 		repository, err := client.Repository("https://github.com", name)
 		require.NoError(t, err)
@@ -58,7 +59,7 @@ func TestRepositoriesSharingAClientKeepTheirOwnRequestScope(t *testing.T) {
 		fmt.Fprintf(w, `{"ref":"refs/tags/v2","object":{"type":"commit","sha":%q}}`, strings.Repeat("a", 40))
 	}))
 	defer server.Close()
-	client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
 	one, err := client.Repository("https://github.com", "owner/one")
 	require.NoError(t, err)
 	two, err := client.Repository("https://github.com", "owner/two")

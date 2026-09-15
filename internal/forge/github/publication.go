@@ -11,6 +11,7 @@ import (
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 )
 
 func (c *Client) NameFromRemote(remote string) (string, error) {
@@ -28,24 +29,24 @@ func (c *Client) NameFromRemote(remote string) (string, error) {
 		name = strings.TrimPrefix(u.Path, "/")
 	}
 	name = strings.TrimSuffix(name, ".git")
-	if !validRepositoryName(name) {
+	if !githubapi.ValidRepositoryName(name) {
 		return "", fmt.Errorf("github: invalid remote repository")
 	}
 	return name, nil
 }
 
 func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.RepositoryInfo, error) {
-	if !validRepositoryName(name) {
+	if !githubapi.ValidRepositoryName(name) {
 		return forge.RepositoryInfo{}, fmt.Errorf("github: invalid repository")
 	}
-	client, err := c.api(ctx)
+	client, err := c.API(ctx)
 	if err != nil {
-		return forge.RepositoryInfo{}, rateLimitError(err)
+		return forge.RepositoryInfo{}, githubapi.RateLimitError(err)
 	}
 	owner, repo, _ := strings.Cut(name, "/")
 	row, _, err := client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
-		return forge.RepositoryInfo{}, rateLimitError(err)
+		return forge.RepositoryInfo{}, githubapi.RateLimitError(err)
 	}
 	if !strings.EqualFold(row.GetFullName(), name) || !git.ValidBranchName(row.GetDefaultBranch()) || row.GetArchived() || row.GetDisabled() {
 		return forge.RepositoryInfo{}, fmt.Errorf("github: repository metadata is invalid or repository is archived/disabled")
@@ -56,7 +57,7 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 	}
 	result := forge.RepositoryInfo{Name: row.GetFullName(), DefaultBranch: row.GetDefaultBranch(), CloneURL: row.GetCloneURL()}
 	if row.GetFork() {
-		if row.Parent == nil || !validRepositoryName(row.Parent.GetFullName()) {
+		if row.Parent == nil || !githubapi.ValidRepositoryName(row.Parent.GetFullName()) {
 			return result, fmt.Errorf("github: fork parent is unknown")
 		}
 		result.Parent = row.Parent.GetFullName()
@@ -70,10 +71,10 @@ func (c *Client) Name() string { return "github" }
 // later write; other failures require observation to determine the outcome.
 func publicationError(response *gh.Response, err error) error {
 	var limited *forge.RateLimitError
-	if converted := rateLimitError(err); errors.As(converted, &limited) {
+	if converted := githubapi.RateLimitError(err); errors.As(converted, &limited) {
 		return converted
 	}
-	if errors.Is(err, ErrAuthentication) {
+	if errors.Is(err, forge.ErrAuthentication) {
 		return fmt.Errorf("%w: %w", forge.ErrRejected, err)
 	}
 	if err != nil && response != nil {

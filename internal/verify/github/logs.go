@@ -46,7 +46,7 @@ func (p *Provider) ReadLog(ctx context.Context, handle record.ProviderRun, offse
 }
 
 func (p *Provider) cacheLogs(ctx context.Context, saved payload, selected executionRun, name string) (bool, error) {
-	api, err := p.Actions(ctx, saved.Config.Destination.HeadRepository)
+	api, err := p.actions(ctx, saved.Config.Destination.HeadRepository)
 	if err != nil {
 		return false, err
 	}
@@ -111,7 +111,7 @@ func (p *Provider) cacheLogs(ctx context.Context, saved payload, selected execut
 
 func jobLogPath(aggregate string, id int64) string { return fmt.Sprintf("%s.job-%d", aggregate, id) }
 
-func cacheJobLog(ctx context.Context, api Actions, job *gh.WorkflowJob, path string) error {
+func cacheJobLog(ctx context.Context, api actionsAPI, job *gh.WorkflowJob, path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {

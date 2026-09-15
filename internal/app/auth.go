@@ -8,7 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/credential"
 	"github.com/herbygillot/dockhand/internal/credential/keychain"
-	"github.com/herbygillot/dockhand/internal/forge/github"
+	"github.com/herbygillot/dockhand/internal/github"
 )
 
 var DefaultGitHubOAuthClientID string

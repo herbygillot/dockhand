@@ -13,7 +13,7 @@ import (
 
 // Missing runs remain uncertain: current workflow settings cannot prove whether
 // an earlier push triggered execution. Recovery keeps the accepted workflow ID.
-func missingRunDetail(ctx context.Context, api Actions, row record.ProviderExecution, saved payload, push string) (string, error) {
+func missingRunDetail(ctx context.Context, api actionsAPI, row record.ProviderExecution, saved payload, push string) (string, error) {
 	spec := saved.Request.Spec
 	detail := fmt.Sprintf("No matching GitHub Actions run observed for %s:%s at %s; submission recorded at %s; %s",
 		saved.Config.Destination.HeadRepository, spec.Branch, spec.Source.Commit, row.CreatedAt.UTC().Format(time.RFC3339), push)

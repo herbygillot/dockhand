@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
-	"github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 )

@@ -17,6 +17,7 @@ dockhand2/
     progress/            # Optional transient operation observations
     credential/          # Device authorization and secret-store contracts
       keychain/          # macOS Keychain implementation
+    github/              # Shared GitHub credentials, SDK client, and transport
     filelock/            # Context-aware locks for shared external resources
     record/              # Shared durable records, identities, and value types
     state/               # Repository-scoped persistence and transaction contracts
@@ -26,11 +27,13 @@ dockhand2/
     upstream/            # Release discovery and version assessment
     verify/              # Build specifications, coverage plans, verdicts
       tart/              # Concrete Tart verification provider
+      github/            # Fork Actions verification and SDK adapter
     macos/               # Release metadata and explicit developer-tool operations
     tart/                # Shared local Tart commands, images, and coordination
       provision/         # Tart base-image construction and validation
     publish/             # Publication policy, desired state, reconciliation
     macports/            # Bound source contexts, evaluation, dependencies
+      installation/      # MacPorts installation and observed installation facts
       portedit/          # Evaluator-driven source edits and fidelity checks
       portfile/          # Tcl literal candidates and precise source edits
       dependents/        # Frozen-source downstream coverage discovery
@@ -41,7 +44,7 @@ dockhand2/
     git/                 # Git objects, refs, snapshots, guarded remote pushes
       changeset/         # Captured sources, explicit-base deltas, commit facts
     forge/               # Remote facts, repository access, and PR write inputs
-      github/            # GitHub tags/releases, authentication, and PR adapter
+      github/            # GitHub tags/releases and PR adapter
       gitlab/            # GitLab tag observations
   docs/
   go.mod
@@ -59,7 +62,7 @@ The initial internal files can be straightforward: `workflow/submit.go`, `cycle.
 
 `proc` manages residency and persistent execution within the current `dockhand` process. Change commands run targeted workflow cycles in their invocation; `dockhand start` explicitly runs persistent mode for the selected repository. No separate executable, executable-path discovery, or automatic child driver launch is needed. The database's repository ID comes from canonical Git common-directory registration. Linked worktrees share an entry; separate clones remain distinct. Database selection is independent of the checkout.
 
-`credential` defines the small device-authorization and secret-store boundaries used by repository-independent login. `credential/keychain` stores the native GitHub token through macOS Keychain without placing it in process arguments. `forge/github` implements the OAuth device endpoint and identity check. `app` wires those mechanics, while `cli` owns the browser prompt and human or JSON result. Login neither constructs repository services nor opens state.
+`credential` defines the small device-authorization and secret-store boundaries used by repository-independent login. `credential/keychain` stores the native GitHub token through macOS Keychain without placing it in process arguments. `github` implements the OAuth device endpoint and identity check. `app` wires those mechanics, while `cli` owns the browser prompt and human or JSON result. Login neither constructs repository services nor opens state.
 
 The state store is the request handoff and progress channel. The CLI calls `workflow.Submit` in its own process to validate and transactionally persist a queued job, then runs targeted workflow cycles in that invocation. A resident driver or targeted cycle reads eligible work from the state store and claims it transactionally. There is no socket or separate request transport. Action invocations and explicit persistent mode execute the same `workflow.Engine`.
 
@@ -144,7 +147,7 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 - `filelock` depends only on the standard library and coordinates external resources without authorizing state changes.
 - `tart` depends on shared records and `filelock`; `tart/provision` consumes that shared Tart boundary. Neither imports verification or workflow.
 - `forge` defines remote facts and access contracts using shared records and the standard library. It imports no capability or concrete adapter.
-- `forge/github` depends on `credential`, `forge`, `record`, OAuth transport, and Git validation mechanics; `forge/gitlab` depends on `forge`, Git validation mechanics, and the GitLab SDK. Neither adapter imports `upstream`, `publish`, nor `macports`.
+- `github` owns shared authentication and SDK transport, depending on `credential` and `forge` errors. `forge/github` depends on that client, `forge`, `record`, and Git validation mechanics; `forge/gitlab` depends on `forge`, Git validation mechanics, and the GitLab SDK. Neither adapter imports `upstream`, `publish`, nor `macports`.
 - `macports/source` depends on evaluated MacPorts metadata and Tcl value decoding. It imports no forge adapter or upstream policy.
 - `macports/portindex` depends on Git object mechanics, shared records, and `filelock`. It imports neither Tart provider nor workflow policy.
 - `verify/tart` consumes the shared Tart and PortIndex boundaries; those packages do not import the provider.
@@ -272,7 +275,7 @@ Tart records a verifier digest alongside the existing image digest and frozen se
 
 `upstream.Catalog` accepts the interpreted forge instance and repository name and returns a bound `forge.Repository` without performing an observation. Both concrete clients satisfy that small consumer-owned interface directly. The repository always supplies exact-tag and tag-catalog access; GitHub additionally supplies the optional release catalog. This prevents tag and release readers for one selection from addressing different repositories.
 
-`forge/github` uses the pure-Go `go-github` library for typed API operations, request construction, authentication, API headers, JSON, and pagination metadata. SDK types stay inside the adapter; callers continue to use `forge` contracts. The adapter retains credential discovery, authenticated-user checks, observation validation, same-origin read redirects, disabled write redirects, and publication-outcome classification. It initializes public and authenticated SDK clients lazily and shares them across bound repositories without persisting credentials. The source interpreter admits only the public GitHub PortGroup instance; GitHub's configurable API origin remains a transport and test setting.
+`forge/github` uses the pure-Go `go-github` library for typed API operations, request construction, authentication, API headers, JSON, and pagination metadata. SDK types stay within `github`, `forge/github`, and `verify/github`; other capabilities use domain contracts. The shared `github.Client` owns credential discovery, authenticated-user checks, same-origin read redirects, disabled write redirects, and lazy SDK initialization. The forge adapter retains observation validation and publication-outcome classification. Both adapters share the client without persisting credentials. The source interpreter admits only the public GitHub PortGroup instance; GitHub's configurable API origin remains a transport and test setting.
 
 `forge/gitlab` uses the official GitLab Go SDK for exact tags and complete tag catalogs, including self-hosted instances. A path in `gitlab.instance` is the PortGroup's leading project namespace, so the adapter adds it to the encoded API project identifier while using the URL origin as the API base. This matches existing MacPorts conventions such as `https://gitlab.torproject.org/tpo`. GitLab releases and publication remain outside this slice.
 
@@ -311,10 +314,14 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 
 ### GitHub verification
 
-`internal/verify/github` owns committed-source eligibility, the supported MacPorts workflow shape, durable submission and recovery, matrix outcome interpretation, per-request tracking cancellation, and completed-job log caching. Canceling tracking does not cancel a shared Actions run. `internal/forge/github` binds the existing authenticated go-github SDK to Actions operations. `internal/app` resolves the personal fork through publication's destination logic before acceptance.
+`internal/verify/github` owns committed-source eligibility, the supported MacPorts workflow shape, durable submission and recovery, matrix outcome interpretation, per-request tracking cancellation, and completed-job log caching. Canceling tracking does not cancel a shared Actions run. `internal/verify/github` binds the shared authenticated SDK to Actions operations through its private Actions interface. `internal/app` resolves the personal fork through publication's destination logic before acceptance.
 
 `internal/workflow` selects providers by the names recorded on attempts and resource handles, independent of CLI defaults. Both publication and GitHub verification use `internal/git`'s remote-branch lock and conditional push. `record.WorkflowEvidence` records remote run attempts and matrix jobs separately from locally observed environment and port-phase evidence. SQLite persists the selected branch in job/attempt JSON options; no schema migration is required.
 
 ### Shared installation inspection
 
 `macports/installation` owns MacPorts installer selection and installation facts through an explicit command target. It reports version, platform, active ports, and probe diagnostics. `macos` supplies OS/toolchain and foreign-package-manager observations. Provisioning applies its requested image profile and explicitly runs compiler/package checks; verification applies accepted build requirements. These consumers do not duplicate installation probing or move their policy into the observer. `tart.Client.Images` owns the CLI image-list representation, while callers own filtering and lifecycle decisions.
+
+### GitHub client and adapter boundary
+
+`github.Client` owns configuration, credential selection, OAuth device login, lazy SDK construction, redirect policy, and rate-limit translation. `app` shares one instance with `forge/github` and `verify/github`. Repository/tag/release/PR mapping stays in the forge adapter. Actions requests, workflow configuration, matrix interpretation, and run recovery stay in the verification adapter. Its SDK-typed Actions interface is private; configuration returns a recorded build configuration, so application wiring does not inspect SDK objects. Neither adapter imports the other, and `workflow` imports neither adapter nor the SDK.

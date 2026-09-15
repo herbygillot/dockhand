@@ -11,6 +11,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +30,7 @@ func TestReleaseCatalogPreservesReleaseMetadata(t *testing.T) {
 		json.NewEncoder(w).Encode([]any{published, prerelease, draft})
 	}))
 	defer server.Close()
-	rows, err := testRepository(t, &github.Client{Config: github.Config{BaseURL: server.URL}}).Releases(t.Context())
+	rows, err := testRepository(t, &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}).Releases(t.Context())
 	require.NoError(t, err)
 	publishedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	require.Equal(t, []forge.Release{
@@ -60,7 +61,7 @@ func TestCatalogDoesNotReturnPartialEvidence(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			rows, err := testRepository(t, &github.Client{Config: github.Config{BaseURL: server.URL}}).Releases(t.Context())
+			rows, err := testRepository(t, &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}).Releases(t.Context())
 			require.Error(t, err)
 			require.Nil(t, rows)
 			require.NotErrorIs(t, err, forge.ErrNotFound)
@@ -81,7 +82,7 @@ func TestTagCatalogMapsTagNamesAndCommits(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client := github.Client{Config: github.Config{BaseURL: server.URL}}
+	client := github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
 	tags, err := testRepository(t, &client).ListTags(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []forge.Tag{{Name: "v2.0", Commit: strings.Repeat("a", 40)}}, tags)

@@ -38,12 +38,12 @@ func TestMissingRunWorkflowDiagnostics(t *testing.T) {
 			if tc.replaced {
 				f.api.flow.ID = gh.Ptr(int64(8))
 			}
-			var api Actions = f.api
+			var api actionsAPI = f.api
 			if tc.missing {
-				api = workflowFailure{Actions: f.api, err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}}}
+				api = workflowFailure{actionsAPI: f.api, err: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}}}
 			}
 			restarted := *f.provider
-			restarted.Actions = func(context.Context, string) (Actions, error) { return api, nil }
+			restarted.backend = func(context.Context, string) (actionsAPI, error) { return api, nil }
 			result, err := restarted.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 			require.NoError(t, err)
 			require.Equal(t, verify.RunUnknown, result.State)
@@ -63,7 +63,7 @@ func TestMissingRunWorkflowDiagnostics(t *testing.T) {
 }
 
 type workflowFailure struct {
-	Actions
+	actionsAPI
 	err error
 }
 
@@ -74,8 +74,8 @@ func TestMissingRunRetainsTransientErrors(t *testing.T) {
 	_, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
 	unavailable := errors.New("temporary Actions failure")
-	f.provider.Actions = func(context.Context, string) (Actions, error) {
-		return workflowFailure{Actions: f.api, err: unavailable}, nil
+	f.provider.backend = func(context.Context, string) (actionsAPI, error) {
+		return workflowFailure{actionsAPI: f.api, err: unavailable}, nil
 	}
 	_, err = f.provider.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 	require.ErrorIs(t, err, unavailable)

@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/forge/github"
+	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
@@ -83,7 +84,7 @@ func TestAutomaticProviderSelection(t *testing.T) {
 			defer server.Close()
 			client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
 			local := &localBuild{err: test.localError}
-			services := &Services{providerName: test.provider, tartVerification: local, githubClient: client, Workflow: &workflow.Engine{Publisher: &publish.Service{Repo: repo, Forge: client, LockDirectory: filepath.Join(root, "locks")}}}
+			services := &Services{providerName: test.provider, tartVerification: local, githubClient: client, Workflow: &workflow.Engine{Publisher: &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: client}, LockDirectory: filepath.Join(root, "locks")}}}
 			snapshot := macports.Snapshot{Target: record.Target{Name: "fixture"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": fmt.Sprint(test.xcode)}}}}
 			var messages []string
 			ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })

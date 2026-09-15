@@ -8,7 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/credential"
-	"github.com/herbygillot/dockhand/internal/forge/github"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/spf13/cobra"
 )
 

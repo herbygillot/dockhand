@@ -15,17 +15,19 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 type Provider struct {
+	Client     *githubapi.Client
 	State      state.ProviderStore
 	Repository record.RepositoryID
 	Repo       *git.Repository
 	Directory  string
-	Actions    func(context.Context, string) (Actions, error)
+	backend    func(context.Context, string) (actionsAPI, error)
 }
 
 type payload struct {
@@ -50,7 +52,7 @@ func (p *Provider) Capabilities(context.Context) (verify.Capabilities, error) {
 }
 
 func (p *Provider) locked(ctx context.Context, id record.RequestID, fn func(context.Context) error) error {
-	if p.State == nil || p.Repo == nil || p.Repository == "" || !filepath.IsAbs(p.Directory) || id == "" || p.Actions == nil {
+	if p.State == nil || p.Repo == nil || p.Repository == "" || !filepath.IsAbs(p.Directory) || id == "" || p.backend == nil && p.Client == nil {
 		return fmt.Errorf("github verification: state, repository, Actions client, and absolute coordination directory are required")
 	}
 	_, err := p.State.RegisterProviderPool(ctx, record.ProviderPool{ID: ProviderName, Scope: ProviderName, Directory: p.Directory, Capacity: 1})
@@ -155,7 +157,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			if err := p.Repo.CheckContributionBase(ctx, d.BaseURL, d.BaseBranch, string(source.Source.Base), string(source.Source.Commit)); err != nil {
 				return preflightError(err)
 			}
-			api, err := p.Actions(ctx, d.HeadRepository)
+			api, err := p.actions(ctx, d.HeadRepository)
 			if err != nil {
 				return preflightError(err)
 			}
@@ -214,7 +216,7 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 	}
 	spec, d := saved.Request.Spec, saved.Config.Destination
 	result.Detail = fmt.Sprintf("Waiting for GitHub Actions on %s:%s at %s", d.HeadRepository, spec.Branch, spec.Source.Commit)
-	api, err := p.Actions(ctx, d.HeadRepository)
+	api, err := p.actions(ctx, d.HeadRepository)
 	if err != nil {
 		return result, err
 	}

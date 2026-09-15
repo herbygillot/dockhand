@@ -3,14 +3,15 @@ package github
 import (
 	"context"
 	"fmt"
+	"path"
+	"slices"
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"go.yaml.in/yaml/v3"
-	"path"
-	"slices"
-	"strings"
 )
 
 // source checks the immutable contribution and reads its own workflow matrix.

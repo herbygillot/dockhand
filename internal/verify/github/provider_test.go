@@ -127,7 +127,7 @@ func setup(t *testing.T) *fixture {
 	repository, err := store.RegisterRepository(t.Context(), repo.CommonDir)
 	require.NoError(t, err)
 	api := &fakeActions{flow: &gh.Workflow{ID: gh.Ptr(int64(7)), Path: gh.Ptr(WorkflowPath), State: gh.Ptr("active")}}
-	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(t.TempDir(), "coordination"), Actions: func(context.Context, string) (Actions, error) { return api, nil }}
+	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(t.TempDir(), "coordination"), backend: func(context.Context, string) (actionsAPI, error) { return api, nil }}
 	config, err := BuildConfig(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Config{WorkflowID: 7, Destination: record.PublicationDestination{Forge: ProviderName, Repository: "macports/macports-ports", HeadRepository: "contributor/macports-ports", BaseBranch: "master", PushURL: remote, BaseURL: remote, LockDirectory: filepath.Join(t.TempDir(), "push-locks")}}, false)
 	require.NoError(t, err)
 	e := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Provider: atCapacity{}, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond, ObserveInterval: time.Millisecond}
@@ -277,7 +277,7 @@ func TestCompletedLogsArePinnedAndCached(t *testing.T) {
 	require.Equal(t, 2, f.api.logCalls)
 	restarted := *f.provider
 	credentialReads := 0
-	restarted.Actions = func(context.Context, string) (Actions, error) {
+	restarted.backend = func(context.Context, string) (actionsAPI, error) {
 		credentialReads++
 		return nil, errors.New("credentials unavailable")
 	}

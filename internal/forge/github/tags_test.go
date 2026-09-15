@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,7 +33,7 @@ func TestExactTagAndAnnotatedTagResolution(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			client := github.Client{Config: github.Config{BaseURL: server.URL + "/api"}}
+			client := github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL + "/api"}}}
 			tag, err := testRepository(t, &client).Tag(t.Context(), "release/2.0")
 			require.NoError(t, err)
 			require.Equal(t, forge.Tag{Name: "release/2.0", Commit: commit}, tag)
@@ -53,7 +54,7 @@ func TestTagFailuresStayDistinctAndUntrustedResponsesAreRejected(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(test.status); fmt.Fprint(w, test.body) }))
 			defer server.Close()
-			c := github.Client{Config: github.Config{BaseURL: server.URL}}
+			c := github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
 			_, err := testRepository(t, &c).Tag(t.Context(), "v2")
 			require.Error(t, err)
 			if test.missing {
@@ -70,7 +71,7 @@ func TestTagReaderRejectsRedirectsBeforeCredentialsLeaveOrigin(t *testing.T) {
 	defer other.Close()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, other.URL, 302) }))
 	defer server.Close()
-	c := github.Client{Config: github.Config{BaseURL: server.URL, Token: "test-token"}}
+	c := github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "test-token"}}}
 	_, err := testRepository(t, &c).Tag(t.Context(), "v2")
 	require.ErrorContains(t, err, "left configured API origin")
 	require.Zero(t, requests.Load())
@@ -86,7 +87,7 @@ func TestMissingAnnotationAndCatalogAreNotMissingTagEvidence(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
-	repository := testRepository(t, &github.Client{Config: github.Config{BaseURL: server.URL}})
+	repository := testRepository(t, &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}})
 	_, err := repository.Tag(t.Context(), "missing")
 	require.ErrorIs(t, err, forge.ErrNotFound)
 	for _, call := range []func() error{
@@ -122,7 +123,7 @@ func TestNestedAnnotatedTagsResolveAndCyclesFail(t *testing.T) {
 				fmt.Fprintf(w, `{"sha":%q,"object":{"type":%q,"sha":%q}}`, sha, kind, next)
 			}))
 			defer server.Close()
-			tag, err := testRepository(t, &github.Client{Config: github.Config{BaseURL: server.URL}}).Tag(t.Context(), "v2")
+			tag, err := testRepository(t, &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}).Tag(t.Context(), "v2")
 			if cycle {
 				require.ErrorContains(t, err, "cyclic")
 				return

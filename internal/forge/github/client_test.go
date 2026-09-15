@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/forge/github"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +21,7 @@ func TestClientCanBeSharedByConcurrentRepositories(t *testing.T) {
 		fmt.Fprintf(w, `{"ref":"refs/tags/v2","object":{"type":"commit","sha":%q}}`, strings.Repeat("a", 40))
 	}))
 	defer server.Close()
-	client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
 	results := make(chan error, 8)
 	var workers sync.WaitGroup
 	for n := range 8 {

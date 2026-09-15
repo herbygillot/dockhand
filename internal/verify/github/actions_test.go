@@ -1,13 +1,16 @@
-package github_test
+package github
 
 import (
+	"context"
 	"fmt"
+	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
-	"github.com/herbygillot/dockhand/internal/forge/github"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,8 +42,8 @@ func TestActionsUseAuthenticatedSDKPaginationAndPinnedAttempt(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	c := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
-	api, err := c.Actions(t.Context(), "author/ports")
+	c := &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}
+	api, err := newActions(t.Context(), c, "author/ports")
 	require.NoError(t, err)
 	flow, err := api.Workflow(t.Context(), "main.yml")
 	require.NoError(t, err)
@@ -55,4 +58,39 @@ func TestActionsUseAuthenticatedSDKPaginationAndPinnedAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	require.Equal(t, int64(3), jobs[0].GetRunAttempt())
+}
+
+func TestRepositoryAndActionsShareCredentialInitialization(t *testing.T) {
+	var credentials atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer shared-token", r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/repos/owner/ports/git/ref/tags/v2":
+			fmt.Fprintf(w, `{"ref":"refs/tags/v2","object":{"type":"commit","sha":%q}}`, strings.Repeat("a", 40))
+		case "/repos/owner/ports/actions/workflows/main.yml":
+			fmt.Fprint(w, `{"id":7,"path":".github/workflows/main.yml","state":"active"}`)
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}, Credentials: githubapi.TokenSourceFunc(func(context.Context) (githubapi.Token, error) {
+		credentials.Add(1)
+		return githubapi.Token{Secret: "shared-token", Source: githubapi.SourceKeychain}, nil
+	})}
+	repository, err := (&forgegithub.Client{Client: client}).Repository("https://github.com", "owner/ports")
+	require.NoError(t, err)
+	done := make(chan error, 2)
+	go func() { _, err := repository.Tag(t.Context(), "v2"); done <- err }()
+	go func() {
+		api, err := newActions(t.Context(), client, "owner/ports")
+		if err == nil {
+			_, err = api.Workflow(t.Context(), "main.yml")
+		}
+		done <- err
+	}()
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
+	require.Equal(t, int64(1), credentials.Load())
 }

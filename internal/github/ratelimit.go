@@ -8,7 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 )
 
-func rateLimitError(err error) error {
+func RateLimitError(err error) error {
 	var known *forge.RateLimitError
 	if errors.As(err, &known) {
 		return err

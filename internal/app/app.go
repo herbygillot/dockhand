@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/forge/github"
+	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/proc"
@@ -82,9 +83,8 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		config.Tart.PortIndexExecutable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
 	}
 	provider := &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo}
-	githubProvider := &githubverify.Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification"), Actions: func(ctx context.Context, repository string) (githubverify.Actions, error) {
-		return githubClient.Actions(ctx, repository)
-	}}
+	githubProvider := &githubverify.Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification"), Client: githubClient}
+
 	engine := &workflow.Engine{
 		State:      store,
 		Repository: repository.ID,
@@ -94,7 +94,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Releases:   preparation,
 		Provider:   provider,
 		Providers:  map[string]verify.Provider{"tart": provider, "github": githubProvider},
-		Publisher:  &publish.Service{Repo: repo, Forge: githubClient, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
+		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
 		Now:        time.Now,
 	}
 	return &Services{

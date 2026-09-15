@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/forge/github"
+	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +49,7 @@ func TestPullRequestsMapQueriesContentAndObservations(t *testing.T) {
 		json.NewEncoder(w).Encode(prJSON())
 	}))
 	defer server.Close()
-	client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
+	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
 	query := forge.PullRequestQuery{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main"}
 	found, err := client.Find(t.Context(), query)
 	require.NoError(t, err)
@@ -93,7 +94,7 @@ func TestGitHubPRLookupRejectsAmbiguousAndIncompleteObservations(t *testing.T) {
 				json.NewEncoder(w).Encode(rows)
 			}))
 			defer server.Close()
-			client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
 			observed, err := client.Find(t.Context(), forge.PullRequestQuery{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main"})
 			switch mode {
 			case "none":
@@ -122,7 +123,7 @@ func TestGitHubWritesDistinguishRejectionFromUnknownOutcomesAndDoNotRedirect(t *
 				w.WriteHeader(status)
 			}))
 			defer server.Close()
-			client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
+			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
 			_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
 			require.Error(t, err)
 			require.Equal(t, 1, calls)
@@ -136,7 +137,7 @@ func TestGitHubWritesDistinguishRejectionFromUnknownOutcomesAndDoNotRedirect(t *
 }
 
 func TestGitHubRemoteNamesAndForkMetadata(t *testing.T) {
-	client := &github.Client{}
+	client := &github.Client{Client: &githubapi.Client{}}
 	for _, remote := range []string{"git@github.com:Owner/ports.git", "https://github.com/Owner/ports", "ssh://git@github.com/Owner/ports.git"} {
 		name, err := client.NameFromRemote(remote)
 		require.NoError(t, err)
@@ -179,7 +180,7 @@ func TestPullRequestLookupChecksEveryPageBeforeAcceptingAMatch(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
 			found, err := client.Find(t.Context(), forge.PullRequestQuery{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main"})
 			require.Equal(t, 2, calls)
 			if mode == "match" {
@@ -209,7 +210,7 @@ func TestRepositoryInfoUsesTheReturnedCloneURL(t *testing.T) {
 				json.NewEncoder(w).Encode(map[string]any{"full_name": "author/ports", "default_branch": "main", "clone_url": test.address})
 			}))
 			defer server.Close()
-			client := &github.Client{Config: github.Config{BaseURL: server.URL}}
+			client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
 			info, err := client.RepositoryInfo(t.Context(), "author/ports")
 			if test.wantError {
 				require.Error(t, err)
@@ -223,7 +224,7 @@ func TestRepositoryInfoUsesTheReturnedCloneURL(t *testing.T) {
 }
 
 func TestCanceledPublicationWriteRemainsUncertain(t *testing.T) {
-	client := &github.Client{HTTP: &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return nil, context.Canceled })}, Config: github.Config{Token: "fixture-token"}}
+	client := &github.Client{Client: &githubapi.Client{HTTP: &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return nil, context.Canceled })}, Config: githubapi.Config{Token: "fixture-token"}}}
 	_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
 	require.ErrorIs(t, err, context.Canceled)
 	require.NotErrorIs(t, err, forge.ErrRejected)
@@ -249,7 +250,7 @@ func TestRateLimitedWritesRemainDistinctFromPermissionRejections(t *testing.T) {
 					fmt.Fprint(w, `{"message":"rate limited","documentation_url":"https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`)
 				}))
 				defer server.Close()
-				client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
+				client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
 				_, err := client.Create(t.Context(), forge.PullRequestInput{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main", Desired: record.PublicationContent{Title: "update"}})
 				var limited *forge.RateLimitError
 				require.ErrorAs(t, err, &limited)

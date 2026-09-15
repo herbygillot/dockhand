@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+
 	gh "github.com/google/go-github/v91/github"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
-	"strings"
-	"time"
 )
 
 func matches(saved payload, run *gh.WorkflowRun) bool {
@@ -52,7 +53,7 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 		result.Detail = "Stopped tracking GitHub Actions run; the remote run was not canceled"
 		return result, nil
 	}
-	api, err := p.Actions(ctx, saved.Config.Destination.HeadRepository)
+	api, err := p.actions(ctx, saved.Config.Destination.HeadRepository)
 	if err != nil {
 		return result, err
 	}

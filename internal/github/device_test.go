@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/credential"
-	"github.com/herbygillot/dockhand/internal/forge/github"
+	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
