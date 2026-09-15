@@ -1,4 +1,4 @@
-package provision
+package macos
 
 import (
 	"encoding/binary"
@@ -11,10 +11,10 @@ import (
 
 func TestRemoveRecoveryPartitionUpdatesBothGPTCopies(t *testing.T) {
 	path := writeGPTFixture(t, true)
-	removed, err := removeRecoveryPartition(path)
+	removed, err := RemoveRecoveryPartition(path)
 	require.NoError(t, err)
 	require.True(t, removed)
-	removed, err = removeRecoveryPartition(path)
+	removed, err = RemoveRecoveryPartition(path)
 	require.NoError(t, err)
 	require.False(t, removed)
 
@@ -41,7 +41,7 @@ func TestRemoveRecoveryPartitionDoesNothingWithoutRecoveryEntry(t *testing.T) {
 	path := writeGPTFixture(t, false)
 	before, err := os.ReadFile(path)
 	require.NoError(t, err)
-	removed, err := removeRecoveryPartition(path)
+	removed, err := RemoveRecoveryPartition(path)
 	require.NoError(t, err)
 	require.False(t, removed)
 	after, err := os.ReadFile(path)
@@ -58,7 +58,7 @@ func TestRemoveRecoveryPartitionRefusesDisagreeingTables(t *testing.T) {
 	require.NoError(t, file.Close())
 	before, err := os.ReadFile(path)
 	require.NoError(t, err)
-	_, err = removeRecoveryPartition(path)
+	_, err = RemoveRecoveryPartition(path)
 	require.ErrorContains(t, err, "backup GPT entry checksum is invalid")
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)

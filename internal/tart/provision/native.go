@@ -98,7 +98,7 @@ func (n *native) Configure(ctx context.Context, name string) error {
 		return nil
 	}
 	path := filepath.Join(n.config.Home, "vms", name, "disk.img")
-	removed, err := removeRecoveryPartition(path)
+	removed, err := macos.RemoveRecoveryPartition(path)
 	if err != nil {
 		return fmt.Errorf("setup: preparing Xcode image storage: %w", err)
 	}

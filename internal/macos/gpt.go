@@ -1,4 +1,4 @@
-package provision
+package macos
 
 import (
 	"bytes"
@@ -27,7 +27,9 @@ type gptHeader struct {
 	sector       []byte
 }
 
-func removeRecoveryPartition(path string) (bool, error) {
+// RemoveRecoveryPartition removes the APFS recovery entry from a raw disk image.
+// The caller must ensure the image is offline and exclusively held during modification.
+func RemoveRecoveryPartition(path string) (bool, error) {
 	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return false, err
