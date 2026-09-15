@@ -59,6 +59,8 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 					fmt.Fprint(w, `{"login":"author"}`)
 				case "/repos/author/ports":
 					fmt.Fprint(w, `{"full_name":"author/ports","default_branch":"main","clone_url":"https://github.com/author/ports.git","fork":false}`)
+				case "/repos/author/ports/pulls/1":
+					json.NewEncoder(w).Encode(pr)
 				case "/repos/author/ports/pulls":
 					if r.Method == "POST" {
 						writes++

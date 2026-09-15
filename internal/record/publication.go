@@ -77,6 +77,7 @@ const (
 
 // PublicationSpec freezes the destination, verification, and remote preconditions.
 type PublicationSpec struct {
+	LocalBranch        string `json:",omitempty"`
 	Forge              string
 	Repository         string
 	HeadRepository     string
@@ -122,4 +123,12 @@ type PublicationDestination struct {
 // Destination separates the accepted destination from revision-specific preconditions.
 func (s PublicationSpec) Destination() PublicationDestination {
 	return PublicationDestination{Forge: s.Forge, Repository: s.Repository, HeadRepository: s.HeadRepository, BaseBranch: s.BaseBranch, PushURL: s.PushURL, BaseURL: s.BaseURL, LockDirectory: s.LockDirectory}
+}
+
+// SourceBranch is the accepted local locator, distinct from an existing PR head.
+func (s PublicationSpec) SourceBranch() string {
+	if s.LocalBranch != "" {
+		return s.LocalBranch
+	}
+	return s.HeadBranch
 }

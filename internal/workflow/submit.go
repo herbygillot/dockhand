@@ -117,6 +117,16 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		if err != nil {
 			return err
 		}
+		if accepted.Preparation != nil && accepted.Preparation.Correction != nil {
+			correction := *accepted.Preparation.Correction
+			if _, err := correctionCurrent(ctx, tx, correction); err != nil {
+				return err
+			}
+			if err := correctionIdle(ctx, tx, correction.ChangeID, ""); err != nil {
+				return err
+			}
+			accepted.ChangeID = correction.ChangeID
+		}
 		id := record.JobID("job_" + rand.Text())
 		if err = tx.PutRequest(ctx, record.AcceptedRequest{ID: request.ID, Kind: record.JobRequest, Payload: payload, AcceptedAt: now}); err != nil {
 			return err
@@ -136,7 +146,7 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 			if err != nil {
 				return err
 			}
-			if change.Branch != accepted.Publication.HeadBranch {
+			if change.Branch != accepted.Publication.SourceBranch() {
 				return ErrInvalidRequest
 			}
 			if err := publicationEvidence(ctx, tx, job, *job.Spec.Publication); err != nil {
@@ -190,6 +200,9 @@ func bindRevision(ctx context.Context, spec record.JobSpec, reader state.Reader)
 	}
 	if spec.Action == record.Publish && revision.Source.Commit == "" {
 		return record.JobSpec{}, fmt.Errorf("%w: publication requires a committed revision", ErrInvalidRequest)
+	}
+	if err := correctionNotPending(ctx, reader, change.ID); err != nil {
+		return record.JobSpec{}, err
 	}
 	spec.ChangeID = change.ID
 	spec.Source = revision.Source

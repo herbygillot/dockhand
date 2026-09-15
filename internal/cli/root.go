@@ -137,6 +137,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	root.AddCommand(runtime.setupCommand(), runtime.databaseCommand(), runtime.gcCommand())
 	root.AddCommand(runtime.authCommand())
 	root.AddCommand(runtime.changeCommands()...)
+	root.AddCommand(runtime.correctionCommands()...)
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
 	root.AddCommand(runtime.statusCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.startCommand(), runtime.reviewCommand())
 

@@ -1,6 +1,6 @@
 # Human corrections and publication
 
-This is the agreed implementation direction. Ordinary Git edits, source capture, verification, and initial publication already exist. The managed amendment, rebase, reassociation, and existing-PR update operations below are design work, not newly implemented commands.
+This is the agreed implementation direction. Ordinary Git edits, source capture, verification, and initial publication already exist. Managed amendment, rebase, reassociation, and existing-PR updates are now implemented through the shared workflow lifecycle.
 
 ## Ordinary Git is the primary editing surface
 
@@ -12,9 +12,9 @@ Existing commands should report the selected branch, commit/tree, revision, evid
 
 ## Managed amendment
 
-Proposed interface: `dockhand amend [--branch NAME] [--diff] [--publish] [--wait|--trace]`.
+Interface: `dockhand amend [--branch NAME] [--diff] [--publish] [--wait|--trace]`.
 
-The default branch is the current tracked contribution. Amendment captures tracked edits and staged new files using the same capture boundary as verification, preserves the original contribution base, and constructs one replacement contribution commit. It preserves the title unless the user explicitly supplies a replacement. Changes outside the expected port directory or ambiguous untracked files require the user to resolve them first. It does not absorb unrelated commits or silently stage new files.
+The default branch is the current tracked contribution. For this first implementation, stage the intended contents before adopting a checked-out amendment; Dockhand does not automatically stage edits. `--branch` selects committed contents. Amendment captures tracked edits and staged new files using the same capture boundary as verification, preserves the original contribution base, and constructs one replacement contribution commit. It preserves the title unless the user explicitly supplies a replacement. Changes outside the expected port directory or ambiguous untracked files require the user to resolve them first. It does not absorb unrelated commits or silently stage new files.
 
 `--diff` shows the difference from the current recorded revision without moving refs or accepting work. An accepted amendment follows preparation, guarded branch replacement, verification, and optional publication. Without `--publish`, it stops after verification. It uses the existing state/claim lifecycle rather than spawning a separate controller.
 
@@ -22,9 +22,9 @@ Updating a checked-out branch requires a clean index/worktree after the captured
 
 ## Rebase and squash
 
-Proposed interface: `dockhand rebase [--branch NAME] [--diff] [--publish] [--wait|--trace]`.
+Interface: `dockhand rebase [--branch NAME] [--diff] [--publish] [--wait|--trace]`.
 
-Fetch and freeze the intended upstream base. Reapply the contribution in a disposable Git workspace and retain one contribution commit relative to that base. The source, previous branch head, and intended base are recorded before replacement. A successful rebase produces a new revision and requires applicable verification before publication.
+Switch away from the contribution branch before running a managed rebase, including in linked worktrees. Fetch and freeze the intended upstream base. Reapply the contribution in a disposable Git workspace and retain one contribution commit relative to that base. The source, previous branch head, and intended base are recorded before replacement. A successful rebase produces a new revision and requires applicable verification before publication.
 
 Conflicts stop the operation and preserve the disposable workspace with instructions for inspection or manual resolution. The user's checkout is not left in the middle of a rebase. A generic Git-operation journal in SQLite is unnecessary: recovery compares the original head, candidate head, and actual branch head. Original means adoption can retry; candidate means adoption happened and can be recorded; another head requires attention. An interrupted operation never overwrites the third case.
 
@@ -32,7 +32,7 @@ Conflicts stop the operation and preserve the disposable workspace with instruct
 
 A missing recorded branch is an actionable error, not evidence that the contribution was deleted or that a similarly named branch should replace it.
 
-Proposed interface: `dockhand reassociate CHANGE_ID --branch NEW_NAME`.
+Interface: `dockhand reassociate CHANGE_ID --branch NEW_NAME`.
 
 This changes the local branch locator after verifying repository identity, expected contribution scope, base, and current revision. Refuse a branch already owned by another open change. Matching source can retain applicable evidence; different source becomes a new revision and must be checked normally. Perform the metadata adoption transaction with the previously observed change/revision as preconditions. Active branch-mutating or publishing operations must settle or be canceled first.
 
@@ -56,3 +56,9 @@ Requested dependent coverage is part of verification authority. A passing root b
 - CLI commands bind user intent and render results; they do not create a second progression loop.
 
 Before shipping these commands, exercise edits during binding, a branch move during verification, a rename during publication, stale claims, index/worktree changes during adoption, rebase conflicts, a lost push response, concurrent PR text edits, and recovery after branch replacement but before state adoption. Confirm that same-tree amendments can reuse evidence and changed-tree amendments cannot. Confirm that a failed dependent blocks PR updates even when the root passed.
+
+## First implementation boundaries
+
+The implementation preserves the recorded contribution message unless `--title` supplies a replacement subject. It requires staged matching contents for a checked-out amendment and refuses a checkout-changing rebase or a branch occupied by another worktree. These conservative limits replace the proposed automatic checkout adoption until that can preserve both index and worktree intent across crashes. Rebase preparation happens before durable job acceptance; a conflict reports its retained worktree directly. Accepted candidates use the ordinary durable preparation/integration checkpoints.
+
+GitHub verification continues to require exact commit/branch evidence; tree-only reuse applies to local verification. After a local branch rename, GitHub verification may use the new local name while publication retains the original PR head branch. Reuse of that remote branch for verification is a later refinement. No baseline build or causal inference is added for dependency failures.

@@ -153,7 +153,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		if err != nil {
 			return err
 		}
-		if change.CurrentRevision != revisionID || change.Disposition != record.ChangeOpen || change.Branch != spec.HeadBranch {
+		if change.CurrentRevision != revisionID || change.Disposition != record.ChangeOpen || change.Branch != spec.SourceBranch() {
 			return ErrStaleRevision
 		}
 		if err := publicationEvidence(ctx, tx, current, spec); err != nil {

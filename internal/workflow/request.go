@@ -36,7 +36,9 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	switch spec.Action {
 	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Verify, record.Publish:
 	case record.Rebase, record.Amend:
-		return record.JobSpec{}, fmt.Errorf("%w: %s", ErrUnsupportedAction, spec.Action)
+		if spec.Preparation == nil || spec.Preparation.Correction == nil {
+			return record.JobSpec{}, ErrInvalidRequest
+		}
 	default:
 		return record.JobSpec{}, fmt.Errorf("%w: unknown action %q", ErrInvalidRequest, spec.Action)
 	}
@@ -77,6 +79,9 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	}
 	if spec.Publication != nil {
 		v := *spec.Publication
+		if v.LocalBranch != "" && !git.ValidBranchName(v.LocalBranch) {
+			return record.JobSpec{}, ErrInvalidRequest
+		}
 		if spec.Action != record.Publish || v.Forge == "" || v.Repository == "" || v.HeadRepository == "" || !git.ValidBranchName(v.HeadBranch) || !git.ValidBranchName(v.BaseBranch) || v.PushURL == "" || v.BaseURL == "" || !filepath.IsAbs(v.LockDirectory) || !git.ValidObjectID(string(v.Desired.Head)) || v.Desired.Title == "" || !validToken(string(v.EvidenceAttempt)) || v.ExpectedRemoteHead.Exists != (v.ExpectedRemoteHead.Commit != "") || v.ExpectedRemoteHead.Exists && !git.ValidObjectID(string(v.ExpectedRemoteHead.Commit)) {
 			return record.JobSpec{}, ErrInvalidRequest
 		}
@@ -115,6 +120,13 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	}
 	if spec.Preparation != nil {
 		choices := *spec.Preparation
+		if correction := choices.Correction; correction != nil {
+			copy := *correction
+			choices.Correction = &copy
+			if spec.Action != record.Amend && spec.Action != record.Rebase || !validToken(string(copy.ChangeID)) || !validToken(string(copy.RevisionID)) || !git.ValidBranchName(copy.Branch) || !git.ValidObjectID(string(copy.PreviousHead)) || copy.RemoteHead != "" && !git.ValidObjectID(string(copy.RemoteHead)) || validateSource(copy.Candidate) != nil || copy.Candidate.Commit == "" || copy.Candidate.Base == "" {
+				return record.JobSpec{}, ErrInvalidRequest
+			}
+		}
 		if !preparationAction(spec.Action) || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 {
 			return record.JobSpec{}, fmt.Errorf("%w: preparation requires one committed source target and a branch-ready, verification, or publication destination", ErrInvalidRequest)
 		}

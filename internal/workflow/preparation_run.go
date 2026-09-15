@@ -42,7 +42,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
 			return nil
 		}
-		if job.Spec.Preparation == nil || e.Repo == nil || e.Preparer == nil {
+		if job.Spec.Preparation == nil || e.Repo == nil || e.Preparer == nil && job.Spec.Preparation.Correction == nil {
 			detail = "workflow: preparation requires bound source, author, platform, Git, and a preparer"
 			finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
 			changed = true
@@ -142,6 +142,9 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	}
 	target := job.Spec.Targets[0]
 	choices := job.Spec.Preparation
+	if correction := choices.Correction; correction != nil {
+		return record.PreparedChange{Branch: correction.Branch, Source: correction.Candidate}, nil
+	}
 	result, err := e.Preparer.Prepare(ctx, preparationRequest(job))
 	if err != nil {
 		return record.PreparedChange{}, err

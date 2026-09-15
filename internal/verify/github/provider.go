@@ -172,7 +172,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			if err != nil {
 				return preflightError(err)
 			}
-			if expected.Exists && expected.Object != string(request.Spec.Source.Commit) && expected.Object != string(source.Source.Base) {
+			if expected.Exists && expected.Object != string(request.Spec.Source.Commit) && expected.Object != string(source.Source.Base) && expected.Object != string(request.Spec.ReplaceRemoteHead) {
 				return reject("github verification: remote branch already has another commit; reconcile and push it with Git before verifying")
 			}
 			raw, err := json.Marshal(payload{Request: request, Config: config, Expected: expected, Matrix: matrix})

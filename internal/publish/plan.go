@@ -100,8 +100,13 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 		return spec, err
 	}
 	content.Body = publicationBody(content, change, source, evidence)
-	spec = record.PublicationSpec{Forge: destination.Forge, Repository: destination.Repository, HeadRepository: destination.HeadRepository, BaseBranch: destination.BaseBranch, PushURL: destination.PushURL, BaseURL: destination.BaseURL, LockDirectory: destination.LockDirectory, HeadBranch: change.Branch, EvidenceAttempt: evidence.ID, Desired: content}
+	spec = record.PublicationSpec{Forge: destination.Forge, Repository: destination.Repository, HeadRepository: destination.HeadRepository, BaseBranch: destination.BaseBranch, PushURL: destination.PushURL, BaseURL: destination.BaseURL, LockDirectory: destination.LockDirectory, LocalBranch: change.Branch, HeadBranch: change.Branch, EvidenceAttempt: evidence.ID, Desired: content}
 	if associated != nil {
+		if associated.Ref.Forge != spec.Forge || associated.Ref.Repository != spec.Repository || associated.HeadRepository != spec.HeadRepository || associated.BaseBranch != spec.BaseBranch {
+			return spec, fmt.Errorf("%w: existing PR destination cannot change", ErrPrecondition)
+		}
+		spec.HeadBranch = associated.HeadBranch
+		spec.ExpectedPR = associated
 		spec.Desired.Body = associated.Body
 	}
 	observed, err := s.Observe(ctx, spec)
@@ -110,6 +115,9 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 	}
 	if associated != nil && (!observed.Found || observed.PullRequest.Ref != associated.Ref) {
 		return spec, fmt.Errorf("%w: tracked PR no longer matches the selected destination", ErrPrecondition)
+	}
+	if associated != nil && observed.Found && observed.PullRequest.RemoteHead != associated.RemoteHead && observed.PullRequest.RemoteHead != spec.Desired.Head {
+		return spec, fmt.Errorf("%w: tracked PR head changed remotely; reconcile it with Git before publishing", ErrPrecondition)
 	}
 	if observed.Found {
 		if observed.PullRequest.State != record.PullRequestOpen {

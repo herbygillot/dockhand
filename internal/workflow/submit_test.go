@@ -103,7 +103,7 @@ func TestSubmitRevisionConstraints(t *testing.T) {
 	request = f.request("future-action")
 	request.Spec.Action = record.Rebase
 	_, err = f.engine.Submit(t.Context(), request)
-	require.ErrorIs(t, err, workflow.ErrUnsupportedAction, "unimplemented intake accepted: %v", err)
+	require.ErrorIs(t, err, workflow.ErrInvalidRequest, "correction without bound intent accepted: %v", err)
 }
 
 func TestConcurrentEquivalentSubmissionsConverge(t *testing.T) {

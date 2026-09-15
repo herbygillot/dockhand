@@ -63,7 +63,7 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 	expected := job.Spec.InputRevision
 	switch job.Spec.Action {
 	case record.Verify:
-	case record.Bump, record.BumpRevision, record.RefreshChecksums:
+	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Amend, record.Rebase:
 		if job.ResultRevision == "" || job.Prepared == nil {
 			return record.VerificationPlan{}, nil, fmt.Errorf("verify: preparation has not produced a revision")
 		}
@@ -108,6 +108,9 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 			branch = job.Prepared.Branch
 		}
 		build := record.BuildSpec{Branch: branch, RevisionID: revision.ID, Source: source, Target: target, Config: config, Inputs: []record.Artifact{}}
+		if job.Spec.Preparation != nil && job.Spec.Preparation.Correction != nil {
+			build.ReplaceRemoteHead = job.Spec.Preparation.Correction.RemoteHead
+		}
 		build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
 		builds = append(builds, build)
 	}

@@ -17,6 +17,9 @@ import (
 // source checks the immutable contribution and reads its own workflow matrix.
 func (p *Provider) source(ctx context.Context, request verify.Request) ([]string, error) {
 	spec := request.Spec
+	if spec.ReplaceRemoteHead != "" && !git.ValidObjectID(string(spec.ReplaceRemoteHead)) {
+		return nil, fmt.Errorf("github verification: invalid replacement precondition")
+	}
 	if request.AttemptID == "" {
 		return nil, fmt.Errorf("github verification: attempt identity is required")
 	}

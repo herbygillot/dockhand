@@ -151,3 +151,26 @@ The accepted image is retained for the entire cohort. Each target's full-Xcode r
 `status` and `--json` retain each planned target, selection reasons, discovery problems, and attempts. Missing index entries or unread dependency fields mean incomplete coverage even if runnable targets pass. A build log can identify a failing dependency outside the cohort, but Dockhand does not call it unrelated without a baseline comparison.
 
 `--publish` requires every requested target to pass and no discovery gaps. A later standalone `publish` using the cohort's root result enforces the same requirement. New PR bodies list the isolated coverage. This option does not authorize edits or revision bumps to downstream ports. Artifact sharing and per-target image selection are not implemented; each guest builds its own root prerequisite.
+
+## Correct an existing contribution
+
+Ordinary Git edits remain supported. The managed commands squash the contribution to one commit and use the existing verification/publication lifecycle:
+
+```sh
+git switch dockhand/bump/example-...
+# Edit the Portfile or patches, then stage the intended contents.
+git add path/to/port/Portfile
+dockhand amend --diff
+dockhand amend --publish --wait
+
+# Rebase without changing files in an occupied contribution checkout.
+git switch master
+dockhand rebase --branch dockhand/bump/example-... --publish --wait
+
+# After explicitly renaming a local branch:
+dockhand reassociate change_... --branch new-local-name
+```
+
+`amend` defaults to the current tracked checkout; `--branch` selects committed contents instead. Checked-out amendments require matching staged and working contents; Dockhand does not stage files or reset the checkout. Switch away before rebasing, including in linked worktrees. Rebase fetches MacPorts master, preserves one contribution commit, and leaves a conflict workspace for inspection if replay fails. Both commands retain the original contribution message (`--title` replaces its subject), verify the replacement, and accept the usual provider and `--dependents` options. Without `--publish`, they stop after verification.
+
+An existing PR retains its remote branch and body after local reassociation. Unexpected remote changes require reconciliation. `publish` still requires applicable verification; managed `amend --publish` and `rebase --publish` authorize both steps.

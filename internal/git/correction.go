@@ -1,0 +1,101 @@
+package git
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// Transplant replays one contribution in a detached workspace. Failed workspaces
+// are retained for inspection; the caller's checkout is never rebased.
+func (r *Repository) Transplant(ctx context.Context, commit, base string) (string, error) {
+	if !ValidObjectID(commit) || !ValidObjectID(base) {
+		return "", fmt.Errorf("git: literal contribution and base required")
+	}
+	directory, err := os.MkdirTemp("", "dockhand-rebase-")
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Join(directory, "work")
+	if _, err := r.output(ctx, "worktree", "add", "--detach", root, base); err != nil {
+		os.RemoveAll(directory)
+		return "", err
+	}
+	workspace := &Repository{Root: root, CommonDir: r.CommonDir, Executable: r.Executable}
+	if _, err := workspace.output(ctx, "cherry-pick", "--no-commit", commit); err != nil {
+		return "", fmt.Errorf("git: rebase stopped; inspect retained workspace %s (original branch is unchanged): %w", root, err)
+	}
+	tree, err := workspace.output(ctx, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("git: retained rebase workspace %s: %w", root, err)
+	}
+	if _, err := r.output(ctx, "worktree", "remove", "--force", root); err != nil {
+		return "", err
+	}
+	os.Remove(directory)
+	return strings.TrimSpace(string(tree)), nil
+}
+
+// ReplaceContribution updates a literal ref only when its checkout can remain
+// intact. A checked-out amendment requires the captured tree already in the
+// index; a rebase with different contents must target an unchecked-out branch.
+func (r *Repository) ReplaceContribution(ctx context.Context, branch, previous, candidate, tree string) error {
+	if !ValidBranchName(branch) || !ValidObjectID(previous) || !ValidObjectID(candidate) || !ValidObjectID(tree) {
+		return fmt.Errorf("git: invalid branch replacement")
+	}
+	out, err := r.output(ctx, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return err
+	}
+	var checkout string
+	for _, field := range strings.Split(string(out), "\x00") {
+		if strings.HasPrefix(field, "worktree ") {
+			checkout = strings.TrimPrefix(field, "worktree ")
+		}
+		if field == "branch refs/heads/"+branch {
+			if checkout != r.Root {
+				return fmt.Errorf("git: branch %s is checked out at %s; switch that checkout away before retrying", branch, checkout)
+			}
+			indexPath, err := r.output(ctx, "rev-parse", "--git-path", "index")
+			if err != nil {
+				return err
+			}
+			name := strings.TrimSpace(string(indexPath))
+			if !filepath.IsAbs(name) {
+				name = filepath.Join(r.Root, name)
+			}
+			lock, err := os.OpenFile(name+".lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+			if err != nil {
+				return fmt.Errorf("git: cannot guard checkout index: %w", err)
+			}
+			defer func() { lock.Close(); os.Remove(name + ".lock") }()
+			captured, err := r.CaptureCheckout(ctx)
+			if err != nil {
+				return err
+			}
+			indexBytes, err := os.ReadFile(name)
+			if err != nil {
+				return err
+			}
+			directory, err := os.MkdirTemp("", "dockhand-correction-index-")
+			if err != nil {
+				return err
+			}
+			defer os.RemoveAll(directory)
+			privateIndex := filepath.Join(directory, "index")
+			if err := os.WriteFile(privateIndex, indexBytes, 0600); err != nil {
+				return err
+			}
+			index, err := r.run(ctx, nil, []string{"GIT_INDEX_FILE=" + privateIndex}, "write-tree")
+			if err != nil {
+				return err
+			}
+			if captured.Branch != branch || captured.Head != previous || captured.Tree != tree || strings.TrimSpace(string(index)) != tree {
+				return fmt.Errorf("git: checkout/index changed or edits are unstaged; stage the intended amendment, or switch away before rebasing; candidate %s is preserved", candidate)
+			}
+		}
+	}
+	return r.UpdateRefs(ctx, []RefChange{{Name: "refs/heads/" + branch, Expected: RefValue{Exists: true, Object: previous}, Desired: RefValue{Exists: true, Object: candidate}}})
+}

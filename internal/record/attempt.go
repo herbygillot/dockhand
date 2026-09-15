@@ -102,11 +102,13 @@ type EnvironmentEvidence struct {
 // Planned dependencies on future outputs must be resolved to Artifacts before
 // the specification is submitted to a provider.
 type BuildSpec struct {
-	Branch     string `json:",omitempty"`
-	RevisionID RevisionID
-	Source     Source
-	Target     Target
-	Config     BuildConfig
+	// ReplaceRemoteHead authorizes a conditional replacement for a managed correction.
+	ReplaceRemoteHead ObjectID `json:",omitempty"`
+	Branch            string   `json:",omitempty"`
+	RevisionID        RevisionID
+	Source            Source
+	Target            Target
+	Config            BuildConfig
 	// Preinstall builds and installs these roots from the same tree in this isolated guest.
 	Preinstall []Target `json:",omitempty"`
 	Inputs     []Artifact

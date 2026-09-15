@@ -42,6 +42,13 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 				changed = true
 				return tx.PutJob(ctx, job)
 			}
+			if correction := job.Spec.Preparation.Correction; correction != nil {
+				if _, err := correctionCurrent(ctx, tx, *correction); err != nil {
+					finishPreparation(&job, record.JobNeedsAttention, err.Error(), e.now())
+					changed = true
+					return tx.PutJob(ctx, job)
+				}
+			}
 			recovering = job.Prepared.IntegrationStarted
 			prepared := *job.Prepared
 			prepared.IntegrationStarted = true
@@ -85,6 +92,15 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if confirmed {
 				change := record.Change{ID: record.ChangeID("change_" + string(job.ID)), Branch: job.Prepared.Branch, Targets: job.Spec.Targets, GeneratedCommit: job.Prepared.Source.Commit, Disposition: record.ChangeOpen, CreatedAt: job.AcceptedAt}
 				revision := record.Revision{ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt}
+				if correction := job.Spec.Preparation.Correction; correction != nil {
+					existing, err := correctionCurrent(ctx, tx, *correction)
+					if err != nil {
+						return err
+					}
+					change = existing
+					revision.ChangeID = change.ID
+					revision.Previous = change.CurrentRevision
+				}
 				if err := tx.PutChange(ctx, change); err != nil {
 					return err
 				}
@@ -141,6 +157,16 @@ func (c *cycle) integrateBranch(ctx context.Context, job record.Job, recovering 
 	wanted := git.RefValue{Exists: true, Object: string(prepared.Source.Commit)}
 	if actual == wanted {
 		return true, nil
+	}
+	if correction := job.Spec.Preparation.Correction; correction != nil {
+		if !actual.Exists || actual.Object != string(correction.PreviousHead) {
+			return false, fmt.Errorf("%w: correction branch moved or disappeared", git.ErrRefConflict)
+		}
+		if job.CancelRequestedAt != nil {
+			return false, nil
+		}
+		err := e.Repo.ReplaceContribution(ctx, prepared.Branch, actual.Object, wanted.Object, string(prepared.Source.Tree))
+		return err == nil, err
 	}
 	if actual.Exists {
 		return false, fmt.Errorf("%w: destination branch %s contains a different commit", git.ErrRefConflict, prepared.Branch)

@@ -338,7 +338,7 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 
 ### Human corrections
 
-The [human-correction design](human-corrections.md) defines ordinary Git editing, managed amendment/rebase, explicit branch reassociation, and conditional updates to an existing PR. These extend the same capture, revision, verification, and publication boundaries. Proposed commands in that document are not yet implemented.
+The [human-correction design](human-corrections.md) defines ordinary Git editing, managed amendment/rebase, explicit branch reassociation, and conditional updates to an existing PR. These extend the same capture, revision, verification, and publication boundaries. Managed commands now use the existing preparation lifecycle, with private Git candidates, guarded ref adoption, and immutable replacement revisions. `git/changeset` composes correction commits; workflow retains change identity and SQLite authority. Publication records separate local and PR head branches.
 
 ### Dependent verification
 

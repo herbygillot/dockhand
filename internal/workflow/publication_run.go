@@ -153,7 +153,7 @@ func (c *cycle) authorizePublication(ctx context.Context, expected record.Job, w
 			return err
 		}
 		revisionID, _ := publicationInput(*job)
-		if change.Disposition != record.ChangeOpen || change.CurrentRevision != revisionID || change.Branch != action.Spec.HeadBranch {
+		if change.Disposition != record.ChangeOpen || change.CurrentRevision != revisionID || change.Branch != action.Spec.SourceBranch() {
 			return ErrStaleRevision
 		}
 		if err := publicationEvidence(ctx, tx, *job, action.Spec); err != nil {
@@ -192,7 +192,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 			return err
 		}
 		// Validate accepted source again under the operation lock, outside the transaction.
-		snapshot, err := changeset.CaptureBranch(ctx, s.Repo, spec.HeadBranch)
+		snapshot, err := changeset.CaptureBranch(ctx, s.Repo, spec.SourceBranch())
 		if err != nil {
 			return fmt.Errorf("%w: %v", publish.ErrPrecondition, err)
 		}

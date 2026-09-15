@@ -31,7 +31,7 @@ func validateBranchInput(branch *BranchInput, spec record.JobSpec) error {
 	if branch.InferredTarget != nil && (spec.Action != record.Verify || branch.ExpectedChange == "" || branch.InferredTarget.Portfile != spec.Targets[0].Portfile) {
 		return fmt.Errorf("%w: inferred verification requires a tracked contribution target", ErrInvalidRequest)
 	}
-	if spec.Action == record.Publish && (spec.Source.Commit == "" || spec.Source.Base == "" || spec.Publication == nil || spec.Publication.HeadBranch != branch.Name) {
+	if spec.Action == record.Publish && (spec.Source.Commit == "" || spec.Source.Base == "" || spec.Publication == nil || spec.Publication.SourceBranch() != branch.Name) {
 		return ErrInvalidRequest
 	}
 	if spec.Checkout != nil && spec.Checkout.Branch != branch.Name {
@@ -66,6 +66,11 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 	} else {
 		previous, err = tx.Revision(ctx, change.CurrentRevision)
 		if err != nil {
+			return record.JobSpec{}, err
+		}
+	}
+	if change.ID != "" {
+		if err := correctionNotPending(ctx, tx, change.ID); err != nil {
 			return record.JobSpec{}, err
 		}
 	}

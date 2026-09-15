@@ -380,7 +380,7 @@ func jobPhaseOrder(phase record.JobPhase) int {
 }
 func (t *transaction) scheduleJob(ctx context.Context, id record.JobID) error {
 	return t.exec(ctx, `UPDATE jobs SET next_action_at=CASE WHEN state NOT IN ('queued','active') THEN NULL
- WHEN action IN ('bump','bump-revision','refresh-checksums') AND cancel_at IS NOT NULL AND prepared IS NULL THEN 0
+ WHEN action IN ('bump','bump-revision','refresh-checksums','amend','rebase') AND cancel_at IS NOT NULL AND prepared IS NULL THEN 0
  ELSE max(coalesce(claim_until,0),coalesce(retry_at,0),coalesce((SELECT min(CASE WHEN jobs.cancel_at IS NOT NULL AND a.state='queued' THEN coalesce(a.claim_until,0) ELSE a.next_action_at END) FROM attempts a WHERE a.repository_id=jobs.repository_id AND a.job_id=jobs.id),0)) END WHERE repository_id=? AND id=?`, t.repo, id)
 }
 func (t *transaction) Plan(ctx context.Context, id record.JobID) (record.VerificationPlan, error) {

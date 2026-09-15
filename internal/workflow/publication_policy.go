@@ -69,7 +69,7 @@ func validatePublicationAction(job record.Job, action record.PublicationAction) 
 		}
 		return nil
 	}
-	if !preparationAction(job.Spec.Action) || job.Spec.Destination != record.Published || job.Spec.PublishTo == nil || job.ResultRevision != action.RevisionID || job.Prepared == nil || job.Prepared.Source.Commit != action.Spec.Desired.Head || job.Prepared.Branch != action.Spec.HeadBranch || *job.Spec.PublishTo != action.Spec.Destination() {
+	if !preparationAction(job.Spec.Action) || job.Spec.Destination != record.Published || job.Spec.PublishTo == nil || job.ResultRevision != action.RevisionID || job.Prepared == nil || job.Prepared.Source.Commit != action.Spec.Desired.Head || job.Prepared.Branch != action.Spec.SourceBranch() || *job.Spec.PublishTo != action.Spec.Destination() {
 		return invalid("does not match the accepted prepared destination")
 	}
 	return nil

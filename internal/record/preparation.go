@@ -8,7 +8,8 @@ type CommitIdentity struct {
 
 // PreparationSpec records the inputs a later driver needs to create a contribution.
 type PreparationSpec struct {
-	SourceURL    string `json:",omitempty"`
+	Correction   *CorrectionSpec `json:",omitempty"`
+	SourceURL    string          `json:",omitempty"`
 	SourceBranch string
 	Platform     Platform
 	Author       CommitIdentity
@@ -22,4 +23,14 @@ type PreparedChange struct {
 	Branch             string
 	Source             Source
 	IntegrationStarted bool
+}
+
+// CorrectionSpec freezes branch adoption preconditions alongside its candidate.
+type CorrectionSpec struct {
+	ChangeID     ChangeID
+	RevisionID   RevisionID
+	Branch       string
+	PreviousHead ObjectID
+	RemoteHead   ObjectID
+	Candidate    Source
 }

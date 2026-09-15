@@ -6,7 +6,7 @@ import (
 
 func initialPhase(action record.Action) record.JobPhase {
 	switch action {
-	case record.Bump, record.BumpRevision, record.RefreshChecksums:
+	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Amend, record.Rebase:
 		return record.PhasePreparation
 	case record.Verify:
 		return record.PhaseVerification
@@ -18,5 +18,5 @@ func initialPhase(action record.Action) record.JobPhase {
 }
 
 func preparationAction(action record.Action) bool {
-	return action == record.Bump || action == record.BumpRevision || action == record.RefreshChecksums
+	return action == record.Amend || action == record.Rebase || action == record.Bump || action == record.BumpRevision || action == record.RefreshChecksums
 }
