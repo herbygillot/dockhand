@@ -174,3 +174,14 @@ dockhand reassociate change_... --branch new-local-name
 `amend` defaults to the current tracked checkout; `--branch` selects committed contents instead. Checked-out amendments require matching staged and working contents; Dockhand does not stage files or reset the checkout. Switch away before rebasing, including in linked worktrees. Rebase fetches MacPorts master, preserves one contribution commit, and leaves a conflict workspace for inspection if replay fails. Both commands retain the original contribution message (`--title` replaces its subject), verify the replacement, and accept the usual provider and `--dependents` options. Without `--publish`, they stop after verification.
 
 An existing PR retains its remote branch and body after local reassociation. Unexpected remote changes require reconciliation. `publish` still requires applicable verification; managed `amend --publish` and `rebase --publish` authorize both steps.
+
+## Discover upstream updates
+
+```sh
+dockhand outdated jq croc
+dockhand outdated category/port --json
+```
+
+This reads committed local `HEAD` and checks each explicit selector using the same GitHub/GitLab source conventions and calculated-version probing as bump. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
+
+Results distinguish `current`, `update-available`, and `unknown`. Unsupported ports and incomplete observations stay visible alongside successful results; any unknown result produces a nonzero exit status. An available update by itself is successful discovery. Broader selectors, automatic bump intake, and unattended publication policy remain separate work.

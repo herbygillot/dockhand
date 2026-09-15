@@ -10,17 +10,19 @@ Last updated: 2026-09-15.
 
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
-### 1. Implement the human-correction design
+### 1. Extend dependent coverage from the exercised foundation
 
-The [human-correction design](human-corrections.md) now settles ordinary Git edits, managed amendment/rebase, explicit branch reassociation, source applicability, and updating an existing PR. Implement those managed operations with the documented preconditions and recovery tests. Standalone publication continues to require explicit verification when evidence is missing.
+`--dependents` now has durable isolated plans and live evidence: `libmd`/`signing-party` passed, and a controlled cohort proved conflicting dependents can pass separately while an unrelated dependency failure fails the overall job. Restart/admission and cleanup were exercised. See the [exercise report](activity/2026-09-15-dependent-exercises.md).
 
-### 2. Exercise and extend dependent coverage
+Next, accept explicit per-target image choices before scheduling. The current cohort uses one accepted image and enforces each target's Xcode requirements. Baseline comparison for dependency failures and automatic downstream revision edits remain separate, explicitly authorized work. Keep GitHub's current single-port restriction.
 
-`--dependents` now connects frozen-source discovery to durable verification plans for preparation and standalone verification. Each direct dependent runs in its own Tart guest, with the root built and installed first. Per-target failures and index gaps remain visible, and publication requires complete passing coverage. Discovery runs outside state write transactions; a recorded plan survives restart.
+### 2. Broader discovery selectors
 
-The first implementation uses one accepted image for the cohort and enforces each target's Xcode requirement. Use an appropriate full-Xcode image when needed. It does not silently pick a new image or provider during recovery. Extend to separately accepted per-target image choices after the initial behavior is exercised.
+`outdated <port> [port...]` now reports current, update-available, and unknown assessments without accepting jobs or initializing state. Extend intake deliberately toward maintainer/group selection, preserving per-target failures and source binding. Read-only discovery must continue to grant no publication authority.
 
-Follow up with automatic downstream revision edits under explicit user authority, baseline comparison for dependency failures, artifact reuse, and broader selector intake. Keep GitHub's current single-port workflow restriction. A dependency failure is reported with its package and phase when known; causality remains unknown without a comparison build.
+### 3. Pull-request observation
+
+Refresh PR head, mergeability, review, CI, and conflict observations through resident cycles without automatically changing branches. Publication remains complete when the PR is opened or updated. Managed amendment, rebase, reassociation, and guarded existing-PR updates are implemented; observational follow-up should build on their retained PR identity.
 
 ## Planned
 
@@ -32,7 +34,7 @@ Extend the current single-port selector deliberately. A multi-target request sho
 
 ### Upstream discovery
 
-Expose the existing discovery and version-assessment boundary through `outdated`. The source-bound probe and discovery composition are now independent of bump requests; the command still needs CLI orchestration and output. Unknown or incomplete observations remain visible. Discovery does not create branches, jobs, or publication authority.
+`outdated` is implemented for explicit selectors, including GitHub/GitLab catalogs and calculated-version probing. Unknown or incomplete observations remain visible. Broader selector intake is next; discovery does not create branches, jobs, or publication authority.
 
 ### Pull-request observation
 
@@ -69,7 +71,7 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 
 ## Needs design
 
-These items should not be implemented from their existing command placeholders alone. Settle human corrections and publication behavior before expanding post-publication commands; settle review authority and requester provenance before unattended discovery can originate publishable work.
+These items should not be implemented from their existing command placeholders alone. Build post-publication commands on the implemented correction contracts; settle review authority and requester provenance before unattended discovery can originate publishable work.
 
 ### Review controls
 
@@ -85,7 +87,7 @@ At minimum, the design must settle:
 
 ### Human corrections and post-publication work
 
-The accepted [human-correction design](human-corrections.md) defines these operations and their recovery contracts. Managed commands and conditional existing-PR updates remain to be implemented.
+The accepted [human-correction design](human-corrections.md) is implemented with conservative checkout preconditions. A future extension may adopt unstaged tracked edits or update a checked-out rebase while preserving index/worktree intent across crashes. GitHub verification after a local rename currently uses the new local branch, while publication retains the original PR head; coordinating that remote branch directly is a later refinement.
 
 ### Standalone publication with missing verification
 
@@ -124,7 +126,9 @@ The following capabilities are established and should be extended through their 
 - capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;
 - tested Tcl subprocess/RPC failure contracts, strict reply framing, pre-dispatch cancellation, and handshake deadlines covering script loading;
 - evaluator-guided calculated-version probing and standalone checksum refresh through `macports/portedit`;
-- claimed direct-dependent discovery, durable isolated coverage plans, and full-cohort publication checks;
+- claimed direct-dependent discovery, durable isolated coverage plans, full-cohort publication checks, and live conflicting-dependent/failure exercises;
+- managed amend/rebase, explicit branch reassociation, and conditional existing-PR updates preserving local/remote identities;
+- read-only `outdated` discovery for explicit port selectors;
 - GitHub fork verification through publication, shared-run tracking cancellation, durable progress, and resumable/offline log reads;
 - consistent public-read authentication, publication rate-limit recovery, and durable failure backoff distinct from expected waiting;
 - automatic bump selection of a suitable prepared Tart image, with GitHub fallback only for availability conditions; explicit choices remain authoritative;
