@@ -335,3 +335,7 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 ### Verification execution boundaries
 
 `workflow` keeps planning/reuse, due-attempt selection, and result recording in focused files within the same package. `advanceJob` retains the transaction/claim/provider-call sequence; these helpers introduce neither a second scheduler nor a new state owner. Provider calls remain outside write transactions, and recording still checks the claim before adopting results.
+
+### Human corrections
+
+The [human-correction design](human-corrections.md) defines ordinary Git editing, managed amendment/rebase, explicit branch reassociation, and conditional updates to an existing PR. These extend the same capture, revision, verification, and publication boundaries. Proposed commands in that document are not yet implemented.
