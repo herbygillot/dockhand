@@ -27,6 +27,9 @@ func (p *Provider) beginWith(ctx context.Context, id record.RequestID, config Co
 	if err != nil {
 		return nil, err
 	}
+	if err := os.MkdirAll(c.ArtifactDirectory, 0700); err != nil {
+		return nil, err
+	}
 	pool := record.ProviderPool{ID: "tart_" + digest([]byte(c.Home)), Scope: "tart:" + c.Home, Directory: c.ArtifactDirectory, Capacity: c.Capacity}
 	if config.Capacity == 0 {
 		existing, e := p.State.ProviderPool(ctx, pool.ID)

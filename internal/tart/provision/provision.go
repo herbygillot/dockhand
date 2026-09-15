@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -135,23 +133,11 @@ func normalize(config Config) (Config, macos.Release, error) {
 	if err != nil {
 		return config, release, err
 	}
-	if config.Executable == "" {
-		config.Executable = "tart"
-	}
-	if config.Home == "" {
-		config.Home = os.Getenv("TART_HOME")
-	}
-	if config.Home == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return config, release, err
-		}
-		config.Home = filepath.Join(home, ".tart")
-	}
-	config.Home, err = filepath.Abs(config.Home)
+	runtime, err := (tart.Client{Executable: config.Executable, Home: config.Home}).Resolve()
 	if err != nil {
 		return config, release, err
 	}
+	config.Executable, config.Home = runtime.Executable, runtime.Home
 	if config.Xcode != "" {
 		config.XcodeArchive, config.XcodeVersion, err = macos.SelectXcode(config.Xcode, release)
 		if err != nil {

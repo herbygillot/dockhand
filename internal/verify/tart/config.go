@@ -19,45 +19,21 @@ import (
 )
 
 func settings(c Config) (Config, error) {
-	if c.Executable == "" {
-		c.Executable = "tart"
-	}
 	if c.Capacity == 0 {
 		c.Capacity = 2
 	}
 	if c.GuestPrefix == "" {
 		c.GuestPrefix = "/opt/local"
 	}
-	if c.Home == "" {
-		c.Home = os.Getenv("TART_HOME")
-	}
-	if c.Home == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return c, err
-		}
-		c.Home = filepath.Join(home, ".tart")
-	}
-	var err error
-	c.Home, err = filepath.Abs(c.Home)
+	runtime, err := (tartvm.Client{Executable: c.Executable, Home: c.Home}).Resolve()
 	if err != nil {
 		return c, err
 	}
-	c.Home, err = filepath.EvalSymlinks(c.Home)
-	if err != nil {
-		return c, err
-	}
+	c.Executable, c.Home = runtime.Executable, runtime.Home
 	if c.ArtifactDirectory == "" || !filepath.IsAbs(c.GuestPrefix) || c.Capacity < 1 || strings.ContainsAny(c.GuestPrefix, "\x00\r\n") {
 		return c, fmt.Errorf("tart: artifact directory, positive capacity, and an absolute guest prefix are required")
 	}
-	c.ArtifactDirectory, err = filepath.Abs(c.ArtifactDirectory)
-	if err != nil {
-		return c, err
-	}
-	if err = os.MkdirAll(c.ArtifactDirectory, 0700); err != nil {
-		return c, err
-	}
-	c.ArtifactDirectory, err = filepath.EvalSymlinks(c.ArtifactDirectory)
+	c.ArtifactDirectory, err = tartvm.CanonicalDirectory(c.ArtifactDirectory)
 	return c, err
 }
 func (p *Provider) machineFor(c Config, guard *os.File) machine {
