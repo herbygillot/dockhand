@@ -96,13 +96,15 @@ func New(ctx context.Context, proc *shell.Proc, opts ...Option) (*Session, error
 	}
 	hctx, cancel := context.WithTimeout(ctx, cfg.handshake)
 	defer cancel()
+	stop := context.AfterFunc(hctx, proc.Kill)
+	defer stop()
 	s, err := newSession(hctx, proc, cfg)
 	if err != nil {
 		proc.Kill()
 		if hctx.Err() != nil && ctx.Err() == nil {
-			return nil, fmt.Errorf("%w within %v: %w (the proc must be a fresh tclsh with an untouched stdin)", ErrHandshake, cfg.handshake, err)
+			return nil, fmt.Errorf("%w within %v: %w (the proc must be a fresh tclsh with an untouched stdin)", ErrHandshake, cfg.handshake, errors.Join(err, hctx.Err()))
 		}
-		return nil, err
+		return nil, errors.Join(err, hctx.Err())
 	}
 	return s, nil
 }
@@ -143,6 +145,9 @@ func (s *Session) Call(ctx context.Context, op string, args ...string) (string, 
 	defer s.mu.Unlock()
 	if s.broken != nil {
 		return "", s.broken
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 
 	type result struct {
@@ -223,6 +228,9 @@ func (s *Session) roundTrip(op string, args []string) (string, []byte, error) {
 		payload := make([]byte, n+1)
 		if _, err := io.ReadFull(s.r, payload); err != nil {
 			return "", noise.Bytes(), fmt.Errorf("rpc: short frame: %w", err)
+		}
+		if payload[n] != '\n' {
+			return "", noise.Bytes(), fmt.Errorf("rpc: malformed frame delimiter %q", payload[n])
 		}
 		body := string(payload[:n])
 		switch fields[1] {

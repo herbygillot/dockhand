@@ -10,23 +10,19 @@ Last updated: 2026-09-15.
 
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
-### 1. Tcl process and RPC contracts
-
-Add focused tests for process exit, bounded output, malformed replies, cancellation, and error propagation. Exercise the real Tcl loop as well as faulty peers. Fix demonstrated defects at the shell/RPC boundary without redesigning the evaluator.
-
-### 2. GitHub missing-run diagnostics and recovery
+### 1. GitHub missing-run diagnostics and recovery
 
 A confirmed push can remain without an observable Actions run. Preserve uncertainty, identify the exact branch/commit and workflow condition, and explain how to keep observing or explicitly stop tracking. Never infer absence from elapsed time, automatically dispatch a duplicate run, or turn missing evidence into a pass. Reuse existing wait/cancel mechanisms before adding commands.
 
-### 3. Standalone checksum refresh
+### 2. Standalone checksum refresh
 
 Implement `refresh-checksums` through the existing preparation, download, evaluation, branch integration, verification, and publication path. Share checksum mechanics with version bumps rather than creating a second workflow.
 
-### 4. Human corrections and publication design
+### 3. Human corrections and publication design
 
 Settle the design items below together: ordinary Git edits, branch reassociation, rebase/squash, verification of a replacement revision, and updating the existing PR. Decide standalone publication's missing-verification behavior before implementing more post-publication commands.
 
-### 5. Plan and execute dependent verification
+### 4. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 
@@ -141,6 +137,7 @@ The following capabilities are established and should be extended through their 
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;
 - capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;
+- tested Tcl subprocess/RPC failure contracts, strict reply framing, pre-dispatch cancellation, and handshake deadlines covering script loading;
 - evaluator-guided calculated-version probing through `macports/portedit`;
 - GitHub fork verification through publication, shared-run tracking cancellation, durable progress, and resumable/offline log reads;
 - consistent public-read authentication, publication rate-limit recovery, and durable failure backoff distinct from expected waiting;
