@@ -47,6 +47,10 @@ func TestDependentCoverageResumesAndGatesPublication(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			f, hosting, request := combinedFixture(t, record.BumpRevision)
 			request.Spec.IncludeDependents = true
+			override := *request.Spec.Build
+			override.EnvironmentDigest = "sha256:xcode-image"
+			override.ProviderConfig = []byte(`{"Image":"xcode-image"}`)
+			request.Spec.TargetBuilds = map[string]record.BuildConfig{"other": override}
 			var discovered atomic.Int64
 			f.engine.Dependents = discoverFunc(func(ctx context.Context, source record.Source, config record.BuildConfig, roots []record.Target) (dependents.Coverage, error) {
 				discovered.Add(1)
@@ -73,6 +77,7 @@ func TestDependentCoverageResumesAndGatesPublication(t *testing.T) {
 			before := f.status(t, id)
 			require.Empty(t, before.Jobs[0].Attempts)
 			require.Len(t, before.Jobs[0].Plan.Targets, 3)
+			require.Equal(t, override, before.Jobs[0].Job.Spec.TargetBuilds["other"])
 			reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
 			require.NoError(t, err)
 			defer reopened.Close()
@@ -120,6 +125,10 @@ func TestDependentCoverageResumesAndGatesPublication(t *testing.T) {
 				}
 				if r.Spec.Target.Name == "other" {
 					require.True(t, r.Spec.Config.NeedsXcode)
+					require.Equal(t, "sha256:xcode-image", r.Spec.Config.EnvironmentDigest)
+					require.JSONEq(t, `{"Image":"xcode-image"}`, string(r.Spec.Config.ProviderConfig))
+				} else {
+					require.Equal(t, request.Spec.Build.EnvironmentDigest, r.Spec.Config.EnvironmentDigest)
 				}
 			}
 			if scenario == "passed" {

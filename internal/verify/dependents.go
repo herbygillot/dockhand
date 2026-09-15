@@ -21,6 +21,17 @@ func PlanDependents(job record.Job, revision record.Revision, coverage dependent
 		return record.VerificationPlan{}, fmt.Errorf("verify: dependent discovery does not match accepted source and platform")
 	}
 	plan := record.VerificationPlan{JobID: job.ID, RevisionID: revision.ID}
+	for name := range job.Spec.TargetBuilds {
+		found := false
+		for _, candidate := range coverage.Targets {
+			if candidate.Target.Name == name && !candidate.Root {
+				found = true
+			}
+		}
+		if !found {
+			return plan, fmt.Errorf("verify: image override %s does not name a discovered dependent", name)
+		}
+	}
 	roots := make([]bool, len(job.Spec.Targets))
 	for i, candidate := range coverage.Targets {
 		for _, old := range plan.Targets {
@@ -64,8 +75,11 @@ func PlanDependents(job record.Job, revision record.Revision, coverage dependent
 				} else {
 					build := builds[0]
 					build.Target = target.Port
+					if override, ok := job.Spec.TargetBuilds[target.Port.Name]; ok {
+						build.Config = override
+					}
 					build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
-					build.Config.NeedsXcode = needsXcode || build.Config.NeedsXcode
+					build.Config.NeedsXcode = needsXcode || builds[0].Config.NeedsXcode || build.Config.NeedsXcode
 					if !candidate.Root {
 						for _, root := range job.Spec.Targets {
 							root.Variants = maps.Clone(root.Variants)

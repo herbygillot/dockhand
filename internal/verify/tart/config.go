@@ -89,6 +89,13 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 	}
 	return verify.Capabilities{Name: ProviderName, Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
 }
+func (p *Provider) BuildConfigForImage(ctx context.Context, platform record.Platform, options BuildOptions, image string) (record.BuildConfig, error) {
+	config := p.Config
+	config.Image = image
+	provider := &Provider{Config: config, State: p.State, Repository: p.Repository, Repo: p.Repo, HTTP: p.HTTP, backend: p.backend}
+	return provider.BuildConfig(ctx, platform, options)
+}
+
 func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, options BuildOptions) (record.BuildConfig, error) {
 	if options.Tests == record.TestWorkflow {
 		return record.BuildConfig{}, fmt.Errorf("tart: workflow test policy is unsupported")

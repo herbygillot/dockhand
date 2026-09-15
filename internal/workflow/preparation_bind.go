@@ -11,6 +11,7 @@ import (
 )
 
 type PreparationRequest struct {
+	TargetBuilds        map[string]record.BuildConfig
 	IncludeDependents   bool
 	Action              record.Action
 	Version             string
@@ -76,6 +77,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 		if resolveErr != nil {
 			return BoundPreparation{}, resolveErr
 		}
+		request.TargetBuilds = resolved.TargetBuilds
 		request.Build, request.BuildRequirements, request.VerificationProblem = resolved.Build, resolved.Requirements, resolved.Problem
 	}
 	var destination *record.PublicationDestination
@@ -102,7 +104,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	source.Base = source.Commit
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{
-		IncludeDependents: request.IncludeDependents, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
+		TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
 		Preparation: &record.PreparationSpec{SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {

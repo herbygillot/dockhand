@@ -41,6 +41,12 @@ func TestDependentPlanRejectsUnboundOrMissingRoots(t *testing.T) {
 			}
 		})
 	}
+	job.Spec.TargetBuilds = map[string]record.BuildConfig{"typo": *job.Spec.Build}
+	_, err := PlanDependents(job, record.Revision{}, coverage)
+	require.ErrorContains(t, err, "does not name a discovered dependent")
+	job.Spec.TargetBuilds = map[string]record.BuildConfig{"root": *job.Spec.Build}
+	_, err = PlanDependents(job, record.Revision{}, coverage)
+	require.Error(t, err)
 	wanted := record.BuildSpec{Source: source, Target: root, Config: *job.Spec.Build}
 	previous := wanted
 	previous.Preinstall = []record.Target{root}

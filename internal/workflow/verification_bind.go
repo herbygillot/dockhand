@@ -17,6 +17,7 @@ import (
 )
 
 type VerificationRequest struct {
+	TargetBuilds      map[string]record.BuildConfig
 	IncludeDependents bool
 	Fresh             bool
 	ID                record.RequestID
@@ -29,6 +30,7 @@ type VerificationRequest struct {
 }
 
 type BuildResolution struct {
+	TargetBuilds map[string]record.BuildConfig
 	Build        *record.BuildConfig
 	Requirements *record.BuildRequirements
 	Problem      string
@@ -154,6 +156,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		if resolved.Build == nil || resolved.Requirements != nil || resolved.Problem != "" {
 			return BoundVerification{}, fmt.Errorf("%w: verification requires a concrete build configuration", ErrInvalidRequest)
 		}
+		request.TargetBuilds = resolved.TargetBuilds
 		request.Build = *resolved.Build
 		if request.Build.Platform != platform {
 			return BoundVerification{}, fmt.Errorf("%w: resolved build platform differs from the evaluated platform", ErrInvalidRequest)
@@ -165,7 +168,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if inferred != nil && record.CompareTargets(targets[0], *inferred) != 0 {
 		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)
 	}
-	spec, err := normalizeSpec(record.JobSpec{IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
+	spec, err := normalizeSpec(record.JobSpec{TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
 		return BoundVerification{}, err
 	}

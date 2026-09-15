@@ -77,6 +77,7 @@ type JobSpec struct {
 	BuildRequirements *BuildRequirements `json:",omitempty"`
 	// FreshVerification requests execution even when prior evidence applies.
 	// IncludeDependents requests isolated direct-dependent coverage of the selected roots.
+	TargetBuilds      map[string]BuildConfig
 	IncludeDependents bool `json:",omitempty"`
 	FreshVerification bool `json:",omitempty"`
 	// Version is an optional explicit version for Bump; empty requests automatic selection.

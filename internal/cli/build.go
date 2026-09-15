@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -9,16 +10,18 @@ import (
 )
 
 type buildOptions struct {
-	dependents bool
-	provider   string
-	image      string
-	capacity   int
-	tests      string
-	fromSource bool
+	targetImages []string
+	dependents   bool
+	provider     string
+	image        string
+	capacity     int
+	tests        string
+	fromSource   bool
 }
 
 func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
 	cmd.Flags().BoolVar(&o.dependents, "dependents", false, "Verify direct dependents in isolated Tart guests")
+	cmd.Flags().StringArrayVar(&o.targetImages, "target-image", nil, "Dependent port=image override (repeatable; requires --dependents, same platform)")
 	provider := config.VerificationProvider
 	if provider == "" {
 		provider = "tart"
@@ -49,6 +52,22 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	}
 	if o.provider == "auto" && cmd.Name() != "bump" && cmd.Name() != "bump-revision" && cmd.Name() != "refresh-checksums" && cmd.Name() != "amend" && cmd.Name() != "rebase" {
 		return config, fmt.Errorf("automatic provider selection is supported for preparation commands; choose --provider tart or github")
+	}
+	if len(o.targetImages) > 0 {
+		if !o.dependents {
+			return config, fmt.Errorf("--target-image requires --dependents")
+		}
+		config.TargetImages = map[string]string{}
+		for _, value := range o.targetImages {
+			name, image, ok := strings.Cut(value, "=")
+			if !ok || name == "" || image == "" || strings.ContainsAny(name, " /\\\t\n\r") || strings.TrimSpace(image) != image {
+				return config, fmt.Errorf("--target-image requires port=image")
+			}
+			if _, exists := config.TargetImages[name]; exists {
+				return config, fmt.Errorf("duplicate image override for %s", name)
+			}
+			config.TargetImages[name] = image
+		}
 	}
 	if o.dependents {
 		if o.provider == "github" {

@@ -115,3 +115,28 @@ func TestAutomaticProviderSelection(t *testing.T) {
 		})
 	}
 }
+
+func (b *localBuild) BuildConfigForImage(ctx context.Context, platform record.Platform, options tart.BuildOptions, image string) (record.BuildConfig, error) {
+	value, err := b.BuildConfig(ctx, platform, options)
+	value.EnvironmentDigest = image
+	return value, err
+}
+
+func TestTargetImagesBoundAtIntake(t *testing.T) {
+	local := &localBuild{}
+	services := &Services{providerName: "tart", tartVerification: local, targetImages: map[string]string{"child": "xcode-image"}}
+	evaluation := macports.Snapshot{Target: record.Target{Name: "root"}, Ports: map[string]macports.PortInfo{"root": {Options: map[string]string{"use_xcode": "no"}}}}
+	resolve := services.buildResolver(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, record.TestSkip, false, true)
+	result, err := resolve(t.Context(), evaluation)
+	require.NoError(t, err)
+	require.Equal(t, "xcode-image", result.TargetBuilds["child"].EnvironmentDigest)
+	require.Equal(t, result.Build.Platform, result.TargetBuilds["child"].Platform)
+	require.Equal(t, record.TestSkip, result.TargetBuilds["child"].Tests)
+	services.targetImages = map[string]string{"root": "xcode-image"}
+	_, err = resolve(t.Context(), evaluation)
+	require.ErrorContains(t, err, "use --image")
+	services.targetImages = map[string]string{"child": "missing"}
+	local.err = tart.ErrImageUnavailable
+	_, err = resolve(t.Context(), evaluation)
+	require.Error(t, err, "explicit image choices cannot become unspecified evidence requirements")
+}

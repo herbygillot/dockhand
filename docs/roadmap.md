@@ -14,7 +14,7 @@ The immediate queue favors bounded reliability work before expanding workflow sc
 
 `--dependents` now has durable isolated plans and live evidence: `libmd`/`signing-party` passed, and a controlled cohort proved conflicting dependents can pass separately while an unrelated dependency failure fails the overall job. Restart/admission and cleanup were exercised. See the [exercise report](activity/2026-09-15-dependent-exercises.md).
 
-Next, accept explicit per-target image choices before scheduling. The current cohort uses one accepted image and enforces each target's Xcode requirements. Baseline comparison for dependency failures and automatic downstream revision edits remain separate, explicitly authorized work. Keep GitHub's current single-port restriction.
+Explicit per-target image choices are implemented through repeatable `--target-image port=image`. Configurations are frozen before scheduling and retained across recovery; overrides remain on the root platform and preserve each target's Xcode requirements. Baseline comparison for dependency failures and automatic downstream revision edits remain separate, explicitly authorized work. Keep GitHub's current single-port restriction.
 
 ### 2. Broader discovery selectors
 

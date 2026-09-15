@@ -12,6 +12,10 @@ import (
 func TestDependentOptionsRejectIncompatibleWorkBeforeState(t *testing.T) {
 	for _, args := range [][]string{
 		{"bump", "jq", "--dependents", "--provider", "github"},
+		{"verify", "jq", "--target-image", "child=image"},
+		{"verify", "jq", "--dependents", "--target-image", "child"},
+		{"verify", "jq", "--dependents", "--target-image", "child="},
+		{"verify", "jq", "--dependents", "--target-image", "child=a", "--target-image", "child=b"},
 		{"verify", "jq", "--dependents", "--provider", "github", "--branch", "candidate"},
 		{"bump-revision", "jq", "--dependents", "--no-verify"},
 		{"refresh-checksums", "jq", "--dependents", "--diff"},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -25,6 +26,7 @@ import (
 )
 
 type Config struct {
+	TargetImages            map[string]string
 	VerificationProvider    string
 	VerificationDestination publish.Options
 	DependencyTools         dependency.Tools
@@ -44,6 +46,7 @@ type Services struct {
 	close             func() error
 	tartVerification  tartBuildConfigurator
 	ports             *macports.Evaluator
+	targetImages      map[string]string
 	providerName      string
 	githubClient      *github.Client
 	githubDestination publish.Options
@@ -104,6 +107,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		tartVerification:  provider,
 		ports:             ports,
 		providerName:      config.VerificationProvider,
+		targetImages:      maps.Clone(config.TargetImages),
 		githubClient:      githubClient,
 		githubDestination: config.VerificationDestination,
 	}, nil

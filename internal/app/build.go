@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -49,8 +51,27 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 		}
 		config, err := s.tartVerification.BuildConfig(ctx, platform, tart.BuildOptions{Tests: policy, FromSource: fromSource, NeedsXcode: needsXcode})
 		if err == nil {
+			targets := map[string]record.BuildConfig{}
+			if len(s.targetImages) > 0 {
+				binder, ok := s.tartVerification.(interface {
+					BuildConfigForImage(context.Context, record.Platform, tart.BuildOptions, string) (record.BuildConfig, error)
+				})
+				if !ok {
+					return workflow.BuildResolution{}, fmt.Errorf("Tart image selection is unavailable")
+				}
+				for _, name := range slices.Sorted(maps.Keys(s.targetImages)) {
+					if name == evaluation.Target.Name {
+						return workflow.BuildResolution{}, fmt.Errorf("use --image for root target %s", name)
+					}
+					bound, err := binder.BuildConfigForImage(ctx, platform, tart.BuildOptions{Tests: policy, FromSource: fromSource, NeedsXcode: needsXcode}, s.targetImages[name])
+					if err != nil {
+						return workflow.BuildResolution{}, fmt.Errorf("image for %s: %w", name, err)
+					}
+					targets[name] = bound
+				}
+			}
 			progress.Report(ctx, "Verification provider: tart; no GitHub verification will be submitted")
-			return workflow.BuildResolution{Build: &config}, nil
+			return workflow.BuildResolution{Build: &config, TargetBuilds: targets}, nil
 		}
 		if ctx.Err() != nil {
 			return workflow.BuildResolution{}, ctx.Err()
@@ -72,6 +93,9 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 				return workflow.BuildResolution{Problem: "GitHub verification could not be configured: " + githubErr.Error()}, nil
 			}
 			return resolved, githubErr
+		}
+		if len(s.targetImages) > 0 {
+			return workflow.BuildResolution{}, err
 		}
 		if preserve {
 			requirements := &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, NeedsXcode: needsXcode, CapabilitiesRequired: true, Tests: policy, FromSource: fromSource}

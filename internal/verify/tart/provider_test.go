@@ -571,3 +571,16 @@ func TestAdmissionProgressPrecedesWorkAndStopsAtFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestNamedBuildConfigDoesNotChangeProviderDefault(t *testing.T) {
+	provider := &Provider{Config: Config{Image: "default-image", Home: t.TempDir(), ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
+	config, err := provider.BuildConfigForImage(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared}, "dependent-image")
+	require.NoError(t, err)
+	var settings Config
+	require.NoError(t, json.Unmarshal(config.ProviderConfig, &settings))
+	require.Equal(t, "dependent-image", settings.Image)
+	require.Equal(t, "default-image", provider.Config.Image)
+	directory, err := filepath.EvalSymlinks(provider.Config.ArtifactDirectory)
+	require.NoError(t, err)
+	require.Equal(t, directory, settings.ArtifactDirectory)
+}

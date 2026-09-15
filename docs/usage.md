@@ -146,11 +146,18 @@ dockhand verify jq --branch my-update --dependents --trace
 
 Each target has an isolated guest. Before a downstream build, Dockhand builds and installs the requested roots from the same frozen tree. Ordinary dependency binaries remain available unless `--from-source` was requested. Conflicts between downstream targets therefore do not require them to coexist in one guest. Root/dependent conflicts remain real build failures and are reported.
 
-The accepted image is retained for the entire cohort. Each target's full-Xcode requirement is checked; choose `--image dockhand-xcode-tahoe` (or the corresponding prepared OS image) if the cohort needs Xcode. Missing tooling does not trigger an unrequested GitHub build or disappear from coverage.
+The default image is retained for the cohort. Override individual dependent ports with repeatable `--target-image port=image`, for example:
+
+```sh
+dockhand verify root --dependents --image dockhand-base-tahoe \
+  --target-image downstream=dockhand-xcode-tahoe --wait
+```
+
+Use exact dependent names, including subport names; use `--image` for the root. Image identities and settings are frozen at intake and survive restart. Overrides must use the same OS/architecture and build policies as the root; this is not a platform matrix. A name outside the discovered cohort stops planning before builds start. Each target's full-Xcode requirement, including its root prerequisite, is checked. Missing tooling does not trigger an unrequested GitHub build or disappear from coverage.
 
 `status` and `--json` retain each planned target, selection reasons, discovery problems, and attempts. Missing index entries or unread dependency fields mean incomplete coverage even if runnable targets pass. A build log can identify a failing dependency outside the cohort, but Dockhand does not call it unrelated without a baseline comparison.
 
-`--publish` requires every requested target to pass and no discovery gaps. A later standalone `publish` using the cohort's root result enforces the same requirement. New PR bodies list the isolated coverage. This option does not authorize edits or revision bumps to downstream ports. Artifact sharing and per-target image selection are not implemented; each guest builds its own root prerequisite.
+`--publish` requires every requested target to pass and no discovery gaps. A later standalone `publish` using the cohort's root result enforces the same requirement. New PR bodies list the isolated coverage. This option does not authorize edits or revision bumps to downstream ports. Artifact sharing is not implemented; each guest builds its own root prerequisite.
 
 ## Correct an existing contribution
 

@@ -33,6 +33,27 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if spec.IncludeDependents && (spec.Verification != record.VerificationRequired || spec.Build == nil || spec.Build.Provider == "github" || spec.Action != record.Verify && !preparationAction(spec.Action)) {
 		return record.JobSpec{}, fmt.Errorf("%w: dependent verification requires a local build configuration and verification", ErrInvalidRequest)
 	}
+	if len(spec.TargetBuilds) > 0 {
+		if !spec.IncludeDependents || spec.Build == nil || spec.Build.Provider == "github" {
+			return record.JobSpec{}, fmt.Errorf("%w: target builds require a local dependent plan", ErrInvalidRequest)
+		}
+		spec.TargetBuilds = maps.Clone(spec.TargetBuilds)
+		for name, build := range spec.TargetBuilds {
+			if !validToken(name) || strings.ContainsAny(name, "/\\") || build.Provider != spec.Build.Provider || build.Platform != spec.Build.Platform || build.Tests != spec.Build.Tests || build.FromSource != spec.Build.FromSource {
+				return record.JobSpec{}, fmt.Errorf("%w: incompatible target build for %s", ErrInvalidRequest, name)
+			}
+			for _, root := range spec.Targets {
+				if root.Name == name {
+					return record.JobSpec{}, fmt.Errorf("%w: target image overrides a root", ErrInvalidRequest)
+				}
+			}
+			if err := verify.ValidateConfig(build); err != nil {
+				return record.JobSpec{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+			}
+			build.ProviderConfig = slices.Clone(build.ProviderConfig)
+			spec.TargetBuilds[name] = build
+		}
+	}
 	switch spec.Action {
 	case record.Bump, record.BumpRevision, record.RefreshChecksums, record.Verify, record.Publish:
 	case record.Rebase, record.Amend:
