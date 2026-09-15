@@ -10,17 +10,9 @@ Last updated: 2026-09-15.
 
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
-### 1. Extend dependent coverage from the exercised foundation
+Per-target dependent images and maintainer/category discovery are complete. See the [image-selection report](activity/2026-09-15-dependent-images.md) and [selector report](activity/2026-09-15-outdated-selectors.md). Baseline comparison for dependent failures and automatic downstream revision edits remain separate work; GitHub dependent verification remains unsupported.
 
-`--dependents` now has durable isolated plans and live evidence: `libmd`/`signing-party` passed, and a controlled cohort proved conflicting dependents can pass separately while an unrelated dependency failure fails the overall job. Restart/admission and cleanup were exercised. See the [exercise report](activity/2026-09-15-dependent-exercises.md).
-
-Explicit per-target image choices are implemented through repeatable `--target-image port=image`. Configurations are frozen before scheduling and retained across recovery; overrides remain on the root platform and preserve each target's Xcode requirements. Baseline comparison for dependency failures and automatic downstream revision edits remain separate, explicitly authorized work. Keep GitHub's current single-port restriction.
-
-### 2. Broader discovery selectors
-
-`outdated <port> [port...]` now reports current, update-available, and unknown assessments without accepting jobs or initializing state. Extend intake deliberately toward maintainer/group selection, preserving per-target failures and source binding. Read-only discovery must continue to grant no publication authority.
-
-### 3. Pull-request observation
+### 1. Pull-request observation
 
 Refresh PR head, mergeability, review, CI, and conflict observations through resident cycles without automatically changing branches. Publication remains complete when the PR is opened or updated. Managed amendment, rebase, reassociation, and guarded existing-PR updates are implemented; observational follow-up should build on their retained PR identity.
 
@@ -34,7 +26,7 @@ Extend the current single-port selector deliberately. A multi-target request sho
 
 ### Upstream discovery
 
-`outdated` is implemented for explicit selectors, including GitHub/GitLab catalogs and calculated-version probing. Unknown or incomplete observations remain visible. Broader selector intake is next; discovery does not create branches, jobs, or publication authority.
+`outdated` is implemented for explicit selectors, including GitHub/GitLab catalogs and calculated-version probing. Unknown or incomplete observations remain visible. Maintainer/category selection is implemented; discovery does not create branches, jobs, or publication authority.
 
 ### Pull-request observation
 

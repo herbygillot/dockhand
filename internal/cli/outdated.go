@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -11,18 +10,14 @@ import (
 )
 
 func (r *runtime) outdatedCommand() *cobra.Command {
-	return &cobra.Command{
-		Use: "outdated <port> [port...]", Short: "Check committed ports for upstream updates",
-		Long:        "Check explicitly selected ports from local HEAD using their GitHub or GitLab source conventions. Working-tree edits are excluded. Reports current, update-available, and unknown assessments; unsupported or failed observations remain visible. Does not fetch MacPorts master, open the state database, create jobs, or authorize publication.",
+	var selection app.OutdatedSelection
+	cmd := &cobra.Command{
+		Use: "outdated [port...]", Short: "Check committed ports for upstream updates",
+		Long:        "Check explicit ports, or select by --maintainer and --category, from local HEAD using their GitHub or GitLab source conventions. Working-tree edits are excluded. Reports current, update-available, and unknown assessments; unsupported or failed observations remain visible. Does not fetch MacPorts master, open the state database, create jobs, or authorize publication.",
 		Annotations: map[string]string{stateIndependentHelp: "true"},
-		Args:        cobra.MinimumNArgs(1),
+		Args:        func(_ *cobra.Command, args []string) error { selection.Ports = args; return selection.Validate() },
 		RunE: func(cmd *cobra.Command, args []string) error {
-			for _, arg := range args {
-				if strings.TrimSpace(arg) == "" {
-					return fmt.Errorf("port must not be empty")
-				}
-			}
-			result, err := app.Outdated(cmd.Context(), r.config, args)
+			result, err := app.Outdated(cmd.Context(), r.config, selection)
 			if err != nil {
 				return err
 			}
@@ -34,6 +29,9 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 				err = json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			} else {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Inspecting committed source %s; working-tree edits are excluded.\n", result.Source.Commit)
+				if len(result.Ports) == 0 {
+					fmt.Fprintln(cmd.OutOrStdout(), "No ports matched the selectors.")
+				}
 				for _, port := range result.Ports {
 					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), port.Assessment)
 					if port.CurrentVersion != "" {
@@ -57,4 +55,7 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringArrayVar(&selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email (repeatable)")
+	cmd.Flags().StringArrayVar(&selection.Categories, "category", nil, "Exact MacPorts category (repeatable; intersects maintainer selection)")
+	return cmd
 }

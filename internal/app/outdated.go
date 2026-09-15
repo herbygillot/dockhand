@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -23,7 +24,10 @@ type OutdatedPort struct {
 }
 
 // Outdated observes committed local source without accepting work or opening state.
-func Outdated(ctx context.Context, config Config, selectors []string) (_ OutdatedResult, err error) {
+func Outdated(ctx context.Context, config Config, selection OutdatedSelection) (_ OutdatedResult, err error) {
+	if err := selection.Validate(); err != nil {
+		return OutdatedResult{}, err
+	}
 	repo, err := git.Open(ctx, config.Repository, config.GitExecutable)
 	if err != nil {
 		return OutdatedResult{}, err
@@ -49,13 +53,22 @@ func Outdated(ctx context.Context, config Config, selectors []string) (_ Outdate
 	}
 	discovery := releaseDiscovery(ports, newGitHubClient(config.GitHub), http.DefaultClient)
 	editor := &portedit.Service{Ports: ports}
-	result := OutdatedResult{Source: source, Ports: make([]OutdatedPort, 0, len(selectors))}
-	for _, selector := range selectors {
+	result := OutdatedResult{Source: source}
+	selected, problems, err := selectOutdated(ctx, config, repo, source, platform, files.Root, selection)
+	if err != nil {
+		return result, err
+	}
+	result.Ports = append(result.Ports, problems...)
+	for _, selected := range selected {
+		selector := selected.label
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
 		item := OutdatedPort{Selector: selector, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
-		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: source, Root: files.Root, Selection: macports.Selection{Selector: selector}, Platform: platform})
+		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: source, Root: files.Root, Selection: selected.selection, Platform: platform})
+		if problem == nil && selected.name != "" && probe.Port().Name != selected.name {
+			problem = fmt.Errorf("indexed subport %s: upstream version probing currently supports the primary port %s", selected.name, probe.Port().Name)
+		}
 		if problem == nil {
 			var bound *upstream.Discovery
 			bound, problem = discovery.Bind(probe)

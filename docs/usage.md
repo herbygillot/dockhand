@@ -187,8 +187,16 @@ An existing PR retains its remote branch and body after local reassociation. Une
 ```sh
 dockhand outdated jq croc
 dockhand outdated category/port --json
+dockhand outdated --maintainer herbygillot@github
+dockhand outdated --maintainer @herbygillot --category devel --json
 ```
 
-This reads committed local `HEAD` and checks each explicit selector using the same GitHub/GitLab source conventions and calculated-version probing as bump. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
+This reads committed local `HEAD` and checks each selected port using the same GitHub/GitLab source conventions and calculated-version probing as bump. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
 
-Results distinguish `current`, `update-available`, and `unknown`. Unsupported ports and incomplete observations stay visible alongside successful results; any unknown result produces a nonzero exit status. An available update by itself is successful discovery. Broader selectors, automatic bump intake, and unattended publication policy remain separate work.
+Results distinguish `current`, `update-available`, and `unknown`. Unsupported ports and incomplete observations stay visible alongside successful results; any unknown result produces a nonzero exit status. An available update by itself is successful discovery. Automatic bump intake and unattended publication policy remain separate work.
+
+Use explicit port arguments or metadata selectors. Repeat `--maintainer` or `--category` for alternatives within that field; combining the two fields selects their intersection. Matching is exact and case-insensitive. Maintainers accept `@handle`, Repology's `handle@github`, email addresses, and MacPorts' `domain:user` form. Categories match every indexed category, not just the Portfile directory. These selectors do not expand workflow or publication authority.
+
+Metadata selection requires the host MacPorts `portindex` (`--prefix` selects its installation). Dockhand generates an index from the captured local HEAD and caches it by source tree, platform, and indexer identity in the system user cache under `dockhand/indexes`. The first pass on a full tree may take several minutes. It does not use the checkout's possibly stale PortIndex, fetch master, or initialize SQLite.
+
+Unindexed Portfiles, missing subports, and unread selection metadata remain explicit unknowns: their membership cannot be established. Selected subports currently report unknown because version probing supports primary ports only. Unsupported upstreams and individual catalog failures remain visible alongside successful results. Any unknown makes the command exit unsuccessfully after printing results; an empty, complete selection reports no matches successfully.
