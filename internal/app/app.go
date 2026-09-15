@@ -18,33 +18,43 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/upstream"
+	"github.com/herbygillot/dockhand/internal/verify"
+	githubverify "github.com/herbygillot/dockhand/internal/verify/github"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 )
 
 type Config struct {
-	DependencyTools dependency.Tools
-	DBPath          string
-	Repository      string
-	GitExecutable   string
-	TclExecutable   string
-	MacPortsPrefix  string
-	Tart            tart.Config
-	GitHub          github.Config
+	VerificationProvider    string
+	VerificationDestination publish.Options
+	DependencyTools         dependency.Tools
+	DBPath                  string
+	Repository              string
+	GitExecutable           string
+	TclExecutable           string
+	MacPortsPrefix          string
+	Tart                    tart.Config
+	GitHub                  github.Config
 }
 
 type Services struct {
-	Workflow     *workflow.Engine
-	Processes    *proc.Manager
-	Preparation  *preparation.Service
-	Discovery    *upstream.Service
-	close        func() error
-	verification *tart.Provider
-	ports        *macports.Evaluator
+	Workflow          *workflow.Engine
+	Processes         *proc.Manager
+	Preparation       *preparation.Service
+	Discovery         *upstream.Service
+	close             func() error
+	tartVerification  *tart.Provider
+	ports             *macports.Evaluator
+	providerName      string
+	githubClient      *github.Client
+	githubDestination publish.Options
 }
 
 func Build(ctx context.Context, config Config) (*Services, error) {
+	if config.VerificationProvider != "" && config.VerificationProvider != "tart" && config.VerificationProvider != "github" {
+		return nil, fmt.Errorf("unknown verification provider %q", config.VerificationProvider)
+	}
 	if config.Repository == "" {
 		config.Repository = "."
 	}
@@ -76,6 +86,9 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		config.Tart.PortIndexExecutable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
 	}
 	provider := &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo}
+	githubProvider := &githubverify.Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification"), Actions: func(ctx context.Context, repository string) (githubverify.Actions, error) {
+		return githubClient.Actions(ctx, repository)
+	}}
 	engine := &workflow.Engine{
 		State:      store,
 		Repository: repository.ID,
@@ -84,17 +97,21 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Preparer:   preparation,
 		Releases:   preparation,
 		Provider:   provider,
+		Providers:  map[string]verify.Provider{"tart": provider, "github": githubProvider},
 		Publisher:  &publish.Service{Repo: repo, Forge: githubClient, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
 		Now:        time.Now,
 	}
 	return &Services{
-		Workflow:     engine,
-		Processes:    &proc.Manager{},
-		Preparation:  preparation,
-		Discovery:    discovery,
-		close:        store.Close,
-		verification: provider,
-		ports:        ports,
+		Workflow:          engine,
+		Processes:         &proc.Manager{},
+		Preparation:       preparation,
+		Discovery:         discovery,
+		close:             store.Close,
+		tartVerification:  provider,
+		ports:             ports,
+		providerName:      config.VerificationProvider,
+		githubClient:      githubClient,
+		githubDestination: config.VerificationDestination,
 	}, nil
 }
 

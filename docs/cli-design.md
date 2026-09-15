@@ -398,3 +398,9 @@ Failed verification prevents publication. A changed or missing prepared branch o
 Upstream tags and evaluated MacPorts versions can differ. Dockhand discovers literal inputs, tests candidate edits with the native evaluator, and preserves the Portfile's Tcl calculations. For example, a source tag `2026-09-14` can evaluate to port version `20260914` without a calendar-specific rule. Automatic selection applies the livecheck filter to upstream source spelling and compares the evaluated versions with MacPorts `vercmp`.
 
 Specify an upstream tag or its source version with the usual optional prefix. Dockhand does not infer an arbitrary inverse from a calculated port version: use `2026-09-14`, rather than expecting `20260914` to reconstruct that tag. Ambiguous edits, inconclusive candidate evaluation, changed siblings, and unrelated metadata changes stop the selected update. Explicit selection may request an older version; automatic selection advances only when the newest eligible evaluated version is newer than the current one.
+
+## GitHub verification provider
+
+Build commands accept `--provider tart|github`; Tart remains the default. `github` pushes a committed contribution to a personal `macports-ports` fork and observes its existing `main.yml` workflow. `--remote` selects the fork's Git remote, defaulting to `origin`. `bump --provider github --publish` continues to publication after workflow success. Explicit `verify` requires `--branch`.
+
+GitHub selects `--tests workflow` by default, reflecting the workflow's tolerance of individual test failures. It refuses Tart image/capacity/source-build flags and variant overrides. A newly accepted GitHub verification observes the current remote run attempt rather than reusing old local evidence; `--fresh` does not dispatch a rerun. `--trace` retrieves completed-job logs. See [GitHub verification](github-verification.md) for coverage, credentials, recovery, and initial limits.

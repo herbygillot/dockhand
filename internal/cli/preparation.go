@@ -65,7 +65,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				var destination *publish.Options
 				if options.Publish {
 					destination = &publication
-				} else if cmd.Flags().Changed("remote") || cmd.Flags().Changed("upstream") || cmd.Flags().Changed("base") {
+				} else if (cmd.Flags().Changed("remote") || cmd.Flags().Changed("upstream") || cmd.Flags().Changed("base")) && build.provider != "github" {
 					return fmt.Errorf("publication destination flags require --publish")
 				}
 				if !options.Diff {

@@ -78,15 +78,18 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if config.VerificationProvider == "github" && (branch == "" || fresh) {
+				return fmt.Errorf("GitHub verification requires --branch; --fresh is unsupported, rerun the workflow on GitHub and verify again")
+			}
 			services, err := app.Build(cmd.Context(), config)
 			if err != nil {
 				return err
 			}
 			defer services.Close()
 			if branch == "" {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Capturing working-tree source and checking the prepared image...")
+				fmt.Fprintln(cmd.ErrOrStderr(), "Capturing working-tree source and checking verification settings...")
 			} else {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Binding committed source from %s and checking the prepared image...\n", branch)
+				fmt.Fprintf(cmd.ErrOrStderr(), "Binding committed source from %s and checking verification settings...\n", branch)
 			}
 			var selector string
 			if len(args) == 1 {
@@ -114,6 +117,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.Flags().StringVar(&branch, "branch", "", "Verify committed contents of this local branch instead of the working tree")
 	command.Flags().StringVar(&subport, "subport", "", "Select one subport from the Portfile")
 	command.Flags().StringArrayVar(&variants, "variant", nil, "Explicit variant choice, such as +ssl or -x11 (repeatable)")
+	command.Flags().String("remote", "origin", "Git remote receiving the branch for GitHub verification")
 	build.flags(command, r.config)
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&wait, "wait", false, "Stay until verification completes")
@@ -275,6 +279,7 @@ func (r *runtime) attach(cmd *cobra.Command, services *app.Services, id record.J
 }
 func (r *runtime) attachScope(cmd *cobra.Command, services *app.Services, scope workflow.Scope, milestone workflow.Milestone, trace, canceling bool, receipt *workflow.Receipt, result ActionResult) error {
 	reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, trace)
+	reporter.providers = services.Workflow.Providers
 	services.Processes.OnCycle = reporter.cycle
 	status, err := services.Processes.Attach(cmd.Context(), services.Workflow, scope, milestone, func(status workflow.Status) error { return reporter.status(cmd.Context(), status) })
 	if len(status.Jobs) == 0 {

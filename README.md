@@ -59,6 +59,14 @@ dockhand setup
 
 Setup provisions a macOS image with development tools and MacPorts. It defaults to the host release; use `dockhand setup --os sonoma` to prepare another supported macOS release. Each verification runs in a disposable clone. For ports that require full Xcode, provide a downloaded Xcode archive with `dockhand setup --xcode /path/to/Xcode.xip`.
 
+You can also verify through GitHub Actions on your personal MacPorts fork, with its existing Actions workflow enabled:
+
+```sh
+dockhand bump croc --provider github --publish --wait
+```
+
+This pushes the update to your fork (the `origin` remote by default) and opens the upstream PR after the workflow passes. The workflow controls its macOS matrix and test policy; a green run does not guarantee every port test passed.
+
 ## Preview an update
 
 Start by looking at the proposed change:

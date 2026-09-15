@@ -1,0 +1,15 @@
+# GitHub Actions verification provider
+
+Implemented `--provider github` for committed contribution branches on the authenticated user's personal MacPorts fork. The existing MacPorts workflow controls its runner matrix and build/test policy. Added the explicit `workflow` test policy and separate workflow/run/job evidence, so remote success does not imply individual port tests passed or fabricate local environment observations.
+
+The provider stores submission intent in the existing SQLite provider execution records before pushing. It serializes requests and shares publication's remote-branch lock and conditional Git push. Recovery observes exact commit/branch/workflow runs, pins the run attempt, and never dispatches an uncorrelated duplicate. Known pre-push refusals close the submission; uncertain pushes remain recoverable. The remote queue does not consume Tart capacity. The provider execution row's occupied flag marks unresolved submission coordination, not a GitHub runner limit.
+
+The driver now routes verification, cleanup, and pruning by the persisted provider and caches capability observations by provider per cycle. CLI defaults cannot redirect resumed work. Committed branch identity is persisted in job/attempt JSON options, with no schema migration. Both standalone and combined publication retain the exact workflow evidence. New GitHub verification requests inspect remote executions rather than automatically reusing older local passes.
+
+Added go-github Actions adapters, personal-fork preflight, matrix validation, cancellation acknowledgment handling, and completed-job log retrieval. Download requests do not forward GitHub API credentials to log storage. Logs are cached locally; status and PR bodies retain remote links and coverage limits. Existing authentication and destination resolution are reused. YAML parsing uses the already-present `go.yaml.in/yaml/v3` dependency.
+
+Authored the provider, SDK adapters, new record fields, CLI/application wiring, routing changes, and tests. Adapted the existing Git push lock to a shared remote-branch operation; no v1 code or comments were copied. Tests use real temporary Git remotes and SQLite, simulated Actions runs, and an HTTP server for SDK pagination and attempt-specific API calls. No live remote was changed during implementation.
+
+Initial limits and follow-ups are documented in `docs/github-verification.md` and the roadmap: committed single-port changes, existing static MacPorts workflow, workflow-controlled policies, manual Git reconciliation for an already-diverged remote branch, no automated rerun, delayed/missing-run uncertainty, and manual log-cache retention.
+
+Validation completed: `go test ./...`, `go vet ./...`, `make build`, and `git diff --check` passed. Focused race tests passed for the GitHub provider, SDK adapter, mixed-provider driver routing, and workflow publication. Final CLI policy/status tests and both `verify --help` and `bump --help` passed after rebuilding. Full test output is temporarily retained at `/tmp/dockhand-github-checked-tests.log`; race output is at `/tmp/dockhand-github-race.log`.

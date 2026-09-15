@@ -15,11 +15,12 @@ import (
 )
 
 type reporter struct {
-	out     io.Writer
-	logs    verify.LogReader
-	trace   bool
-	last    map[string]string
-	offsets map[record.ProviderRun]int64
+	providers map[string]verify.Provider
+	out       io.Writer
+	logs      verify.LogReader
+	trace     bool
+	last      map[string]string
+	offsets   map[record.ProviderRun]int64
 }
 
 func newReporter(out io.Writer, p verify.Provider, trace bool) *reporter {
@@ -77,17 +78,21 @@ func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 		if !r.trace || entry.Job.ReusedAttempt != "" {
 			continue
 		}
-		if r.logs == nil {
-			return fmt.Errorf("trace: provider does not support log reading")
-		}
 		for _, attempt := range entry.Attempts {
 			if attempt.Run.RunID == "" {
 				continue
 			}
+			logs := r.logs
+			if provider := r.providers[attempt.Run.Provider]; provider != nil {
+				logs, _ = provider.(verify.LogReader)
+			}
+			if logs == nil {
+				return fmt.Errorf("trace: provider %s does not support log reading", attempt.Run.Provider)
+			}
 			terminal := attempt.State == record.AttemptFinished || attempt.State == record.AttemptCanceled
 			for {
 				call, cancel := context.WithTimeout(ctx, 10*time.Second)
-				chunk, err := r.logs.ReadLog(call, attempt.Run, r.offsets[attempt.Run], 65536)
+				chunk, err := logs.ReadLog(call, attempt.Run, r.offsets[attempt.Run], 65536)
 				cancel()
 				if err != nil {
 					if ctx.Err() != nil {

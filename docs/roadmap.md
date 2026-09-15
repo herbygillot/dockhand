@@ -128,3 +128,10 @@ The following capabilities are established and should be extended through their 
 This ordering incorporates the findings that remain useful from Claude's four project reviews and workflow review. Earlier findings about whole-state Git-ledger writes, the SQLite migration ladder, repeated phase inference, state/workflow policy ownership, missing CI, workflow file organization, shared Tart mechanics, PortIndex placement, and the unused placeholder planner have already been addressed; they are not new pending work.
 
 The remaining test-placement, mechanism-documentation, exported-surface, dependency-checking, and status-contract suggestions are represented above. Cross-repository evidence reuse, requester provenance, review controls, and PR observation retain their existing design/planning slots. Do not split workflow merely because it is large, reintroduce the discarded Git ledger, rename the user-selected environment variables, or require v1 feature parity as a prerequisite for this queue.
+
+## GitHub provider follow-ups
+
+- Exercise `--provider github` against an authorized real fork, including a successful update through PR, cancellation, and a user-triggered rerun.
+- Improve resolution of accepted pushes whose Actions run never appears, without treating delayed events as conclusively absent.
+- Consider controlled rerun support, safe updates to previously pushed branches, and broader cohort/workflow coverage after the initial committed single-port path.
+- Add managed retention for GitHub job-log caches; currently they are separate from VM resource pruning.

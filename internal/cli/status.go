@@ -62,6 +62,14 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		fmt.Fprintf(&buffer, format+"\n", values...)
 	}
 	environment := func(indent string, evidence *record.Evidence) {
+		if evidence != nil && evidence.Workflow != nil {
+			flow := evidence.Workflow
+			line("%sGitHub Actions: %s; run %d attempt %d; %s", indent, flow.Conclusion, flow.RunID, flow.RunAttempt, flow.URL)
+			for _, job := range flow.Jobs {
+				line("%s  %s: %s %s; %s", indent, job.Name, job.Status, job.Conclusion, job.URL)
+			}
+			line("%sTest policy: workflow; individual port test success is not established", indent)
+		}
 		if evidence == nil || evidence.Environment == nil {
 			return
 		}
@@ -154,7 +162,11 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			line("  verification: no recorded attempts")
 		}
 		for _, attempt := range entry.Attempts {
-			line("  attempt %s: %s; target: %s; platform: %s %s %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), attempt.Spec.Config.Platform.OS, attempt.Spec.Config.Platform.Version, attempt.Spec.Config.Platform.Architecture)
+			platformLabel := "platform"
+			if attempt.Spec.Config.Tests == record.TestWorkflow {
+				platformLabel = "evaluation platform"
+			}
+			line("  attempt %s: %s; target: %s; %s: %s %s %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), platformLabel, attempt.Spec.Config.Platform.OS, attempt.Spec.Config.Platform.Version, attempt.Spec.Config.Platform.Architecture)
 			if attempt.LastError != "" {
 				line("    detail: %s", attempt.LastError)
 			}

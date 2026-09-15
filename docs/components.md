@@ -308,3 +308,9 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 ### Transient operation progress
 
 `progress` carries optional scoped messages through the active call context. The CLI installs a serialized observer that prints escaped stage messages on stderr, including with `--json`. Tart and PortIndex report actual work boundaries without importing the CLI or persisting display text. This does not change durable job states, provider capacity, or admission semantics. A different driver reports its own activity; status readers still use recorded state.
+
+### GitHub verification
+
+`internal/verify/github` owns committed-source eligibility, the supported MacPorts workflow shape, durable submission and recovery, matrix outcome interpretation, cancellation, and completed-job log caching. `internal/forge/github` binds the existing authenticated go-github SDK to Actions operations. `internal/app` resolves the personal fork through publication's destination logic before acceptance.
+
+`internal/workflow` selects providers by the names recorded on attempts and resource handles, independent of CLI defaults. Both publication and GitHub verification use `internal/git`'s remote-branch lock and conditional push. `record.WorkflowEvidence` records remote run attempts and matrix jobs separately from locally observed environment and port-phase evidence. SQLite persists the selected branch in job/attempt JSON options; no schema migration is required.

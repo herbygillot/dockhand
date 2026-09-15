@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
+	githubverify "github.com/herbygillot/dockhand/internal/verify/github"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
@@ -119,8 +120,18 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 		if err != nil {
 			return workflow.BuildResolution{}, err
 		}
+		if s.providerName == githubverify.ProviderName {
+			if tests != record.TestWorkflow || fromSource || len(evaluation.Target.Variants) != 0 {
+				return workflow.BuildResolution{}, fmt.Errorf("github verification uses --tests workflow and default variants and dependency policy")
+			}
+			config, err := s.githubBuild(ctx, platform, needsXcode)
+			if err != nil {
+				return workflow.BuildResolution{}, err
+			}
+			return workflow.BuildResolution{Build: &config}, nil
+		}
 		requirements := &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, NeedsXcode: needsXcode, CapabilitiesRequired: true, Tests: tests, FromSource: fromSource}
-		config, err := s.verification.BuildConfig(ctx, platform, tart.BuildOptions{Tests: tests, FromSource: fromSource, NeedsXcode: needsXcode})
+		config, err := s.tartVerification.BuildConfig(ctx, platform, tart.BuildOptions{Tests: tests, FromSource: fromSource, NeedsXcode: needsXcode})
 		if err == nil {
 			return workflow.BuildResolution{Build: &config}, nil
 		}

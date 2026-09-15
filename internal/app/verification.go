@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -18,6 +19,12 @@ type Verification struct {
 }
 
 func (s *Services) BindVerification(ctx context.Context, request Verification) (workflow.BoundVerification, error) {
+	if s.providerName == "github" && (request.Branch == "" || request.Fresh) {
+		return workflow.BoundVerification{}, fmt.Errorf("github verification requires --branch; --fresh is unsupported, rerun the workflow on GitHub and verify again")
+	}
+	if s.providerName == "github" {
+		request.Fresh = true
+	}
 	platform, err := s.ports.NativePlatform(ctx)
 	if err != nil {
 		return workflow.BoundVerification{}, err
