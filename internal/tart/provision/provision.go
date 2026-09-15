@@ -12,11 +12,10 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart"
 )
-
-const DefaultMacPortsVersion = "2.12.6"
 
 type Config struct {
 	Executable      string
@@ -176,7 +175,7 @@ func normalize(config Config) (Config, macos.Release, error) {
 		}
 	}
 	if config.MacPortsVersion == "" {
-		config.MacPortsVersion = DefaultMacPortsVersion
+		config.MacPortsVersion = installation.DefaultVersion
 	}
 	if config.GuestPrefix == "" {
 		config.GuestPrefix = "/opt/local"

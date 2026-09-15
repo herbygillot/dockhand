@@ -92,20 +92,13 @@ func (n *native) execGuest(ctx context.Context, vm string, input io.Reader, outp
 	return n.tart(ctx, input, output, options...)
 }
 func (n *native) localVM(ctx context.Context, name string) (exists, running bool, err error) {
-	out, err := n.tart(ctx, nil, nil, "list", "--format", "json")
+	vms, err := (tartvm.Client{Executable: n.config.Executable, Home: n.config.Home}).Images(ctx, tartvm.RunOptions{ExtraFiles: []*os.File{n.guard}})
 	if err != nil {
-		return false, false, err
-	}
-	var vms []struct {
-		Name, Source, State string
-		Running             bool
-	}
-	if err = json.Unmarshal(out, &vms); err != nil {
 		return false, false, err
 	}
 	for _, vm := range vms {
 		if vm.Name == name && vm.Source == "local" {
-			return true, vm.Running || vm.State == "running", nil
+			return true, vm.Running, nil
 		}
 	}
 	// An incomplete clone is an owned resource even if Tart cannot list it.
@@ -119,20 +112,13 @@ func (n *native) localVM(ctx context.Context, name string) (exists, running bool
 	return false, false, nil
 }
 func (n *native) Running(ctx context.Context) ([]string, error) {
-	out, err := n.tart(ctx, nil, nil, "list", "--format", "json")
+	vms, err := (tartvm.Client{Executable: n.config.Executable, Home: n.config.Home}).Images(ctx, tartvm.RunOptions{ExtraFiles: []*os.File{n.guard}})
 	if err != nil {
-		return nil, err
-	}
-	var vms []struct {
-		Name, State string
-		Running     bool
-	}
-	if err = json.Unmarshal(out, &vms); err != nil {
 		return nil, err
 	}
 	var result []string
 	for _, vm := range vms {
-		if vm.Running || vm.State == "running" {
+		if vm.Running {
 			result = append(result, vm.Name)
 		}
 	}

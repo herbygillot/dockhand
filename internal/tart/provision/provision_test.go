@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"io"
 	"os"
 	"testing"
@@ -34,7 +35,7 @@ func newFakeMachine(names ...string) *fakeMachine {
 	for _, name := range names {
 		images[name] = image{Name: name}
 	}
-	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: DefaultMacPortsVersion, GuestAgentVersion: "development snapshot"}}
+	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: installation.DefaultVersion, GuestAgentVersion: "development snapshot"}}
 }
 
 func (f *fakeMachine) event(name string) error {

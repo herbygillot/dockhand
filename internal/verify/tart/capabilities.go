@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macos"
+	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
@@ -144,44 +145,27 @@ func (n *native) InspectCapabilities(ctx context.Context, vm, prefix string) (ca
 	if _, err = run(nil, "passwordless sudo is unavailable", "sudo", "-n", "/usr/bin/true"); err != nil {
 		return result, err
 	}
-	foreign, err := run(nil, "checking foreign package managers", "/bin/sh", "-c", `for path in /opt/homebrew /usr/local/Homebrew /usr/local/Cellar /sw /opt/pkg /etc/paths.d/homebrew /etc/paths.d/fink; do [ ! -e "$path" ] || printf '%s\n' "$path"; done`)
+	command := macos.Command(func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
+		return n.guest(ctx, vm, input, args...)
+	})
+	foreign, err := macos.ForeignPackageManagers(ctx, func(_ context.Context, input io.Reader, args ...string) ([]byte, error) {
+		return run(input, "checking foreign package managers", args...)
+	})
 	if err != nil {
 		return result, err
 	}
-	if found := strings.TrimSpace(string(foreign)); found != "" {
-		problems = append(problems, "foreign package manager found: "+strings.ReplaceAll(found, "\n", ", "))
+	if len(foreign) > 0 {
+		problems = append(problems, "foreign package manager found: "+strings.Join(foreign, ", "))
 	}
-	port := filepath.Join(result.Capabilities.MacPortsPrefix, "bin", "port")
-	version, err := run(nil, "MacPorts is unavailable", port, "version")
+	facts, err := installation.Inspect(ctx, command, result.Capabilities.MacPortsPrefix)
 	if err != nil {
 		return result, err
 	}
-	fields := strings.Fields(string(version))
-	if len(fields) >= 2 && fields[0] == "Version:" {
-		result.Capabilities.MacPortsVersion = fields[1]
-	} else if version != nil {
-		problems = append(problems, "MacPorts returned an unrecognized version: "+strings.TrimSpace(string(version)))
-	}
-	installed, err := run(nil, "checking active ports", port, "-q", "installed", "active")
-	if err != nil {
-		return result, err
-	}
-	if active := strings.TrimSpace(string(installed)); active != "" {
-		problems = append(problems, "image has active ports: "+strings.ReplaceAll(active, "\n", ", "))
-	}
-	tcl := `package require macports
-mportinit
-puts "$::macports::os_platform $::macports::os_major $::macports::build_arch"
-`
-	platform, err := run(strings.NewReader(tcl), "MacPorts platform evaluation failed", filepath.Join(result.Capabilities.MacPortsPrefix, "bin", "port-tclsh"))
-	if err != nil {
-		return result, err
-	}
-	platformFields := strings.Fields(string(platform))
-	if len(platformFields) == 3 {
-		result.Capabilities.Platform = record.Platform{OS: platformFields[0], Version: platformFields[1], Architecture: platformFields[2]}
-	} else if platform != nil {
-		problems = append(problems, "MacPorts returned an unrecognized platform: "+strings.TrimSpace(string(platform)))
+	result.Capabilities.MacPortsVersion = facts.Version
+	result.Capabilities.Platform = facts.Platform
+	problems = append(problems, facts.Problems...)
+	if len(facts.ActivePorts) > 0 {
+		problems = append(problems, "image has active ports: "+strings.Join(facts.ActivePorts, ", "))
 	}
 	tools, err := macos.InspectDeveloperTools(ctx, func(ctx context.Context, input io.Reader, args ...string) ([]byte, error) {
 		return n.guest(ctx, vm, input, args...)
