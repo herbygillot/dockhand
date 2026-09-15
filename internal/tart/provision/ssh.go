@@ -44,17 +44,16 @@ func sshRun(ctx context.Context, host, script string) (string, error) {
 		return "", err
 	}
 	defer session.Close()
-	var output bytes.Buffer
-	session.Stdout, session.Stderr = &output, &output
 	stop := closeSSHOnCancellation(ctx, client)
 	defer stop()
-	if err := session.Run(script); err != nil {
+	output, err := session.CombinedOutput(script)
+	if err != nil {
 		if ctx.Err() != nil {
-			return output.String(), ctx.Err()
+			return string(output), ctx.Err()
 		}
-		return output.String(), fmt.Errorf("guest script failed: %w", err)
+		return string(output), fmt.Errorf("guest script failed: %w", err)
 	}
-	return output.String(), nil
+	return string(output), nil
 }
 
 func sshPush(ctx context.Context, host, local, remote string) error {
