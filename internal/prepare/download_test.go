@@ -80,3 +80,16 @@ func TestDownloadSourceDeclinesUnsupportedFetchConventions(t *testing.T) {
 		require.ErrorIs(t, err, ErrUnsupported, key)
 	}
 }
+
+func TestMultipleSourcesUseExplicitMasterSiteTags(t *testing.T) {
+	info := archiveInfo("https://example.invalid/main:source https://example.invalid/assets:extras")
+	info.Options["distfiles"] = "main.tar.gz:source extra.tar.gz:extras"
+	sources, err := downloadSources(info, "")
+	require.NoError(t, err)
+	require.Equal(t, []archiveSource{{Name: "main.tar.gz", URL: "https://example.invalid/main/main.tar.gz"}, {Name: "extra.tar.gz", URL: "https://example.invalid/assets/extra.tar.gz"}}, sources)
+	for _, files := range []string{"main.tar.gz:missing", "main.tar.gz:source main.tar.gz:extras", "../main.tar.gz:source", "main.tar.gz:source,extras"} {
+		info.Options["distfiles"] = files
+		_, err = downloadSources(info, "")
+		require.ErrorIs(t, err, ErrUnsupported)
+	}
+}

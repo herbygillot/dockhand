@@ -3,6 +3,8 @@ package prepare
 import (
 	"context"
 	"fmt"
+	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -36,10 +38,11 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 	if err != nil {
 		return Result{}, err
 	}
-	if _, err := checksumWords(input.data, input.info.Options["checksums"]); err != nil {
+	oldSources, err := downloadSources(input.info, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
+	if err != nil {
 		return Result{}, err
 	}
-	_, oldURL, err := downloadSource(input.info)
+	oldGroups, err := checksumGroups(input.data, input.info.Options["checksums"])
 	if err != nil {
 		return Result{}, err
 	}
@@ -47,24 +50,52 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 	if err != nil {
 		return Result{}, err
 	}
-	fidelity := versionFidelity(input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, input.info.Options["checksums"])
+	info := versioned.Ports[input.target.Name]
+	checked := info
+	checked.Options = maps.Clone(info.Options)
+	checked.Options["filespath"] = input.info.Options["filespath"]
+	sources, err := downloadSources(checked, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
+	if err != nil {
+		return Result{}, err
+	}
+	groups, err := checksumGroups(contents, info.Options["checksums"])
+	if err != nil {
+		return Result{}, err
+	}
+	if len(groups) != len(oldGroups) || len(sources) != len(oldSources) {
+		return Result{}, fmt.Errorf("%w: source/checksum group count changed", ErrUnsupported)
+	}
+	changed := false
+	for i, source := range sources {
+		if source.URL != oldSources[i].URL {
+			changed = true
+		}
+	}
+	if !changed {
+		return Result{}, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
+	}
+	fidelity := versionFidelity(input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, info.Options["checksums"])
 	result := Result{Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{fidelity}}
 	if len(fidelity.UnexpectedChanges) > 0 {
 		return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 	}
-	info := versioned.Ports[input.target.Name]
-	_, newURL, err := downloadSource(info)
-	if err != nil {
+	// Check source associations before starting downloads, including unchanged auxiliary archives.
+	placeholders := make([]Download, len(sources))
+	for i, source := range sources {
+		placeholders[i] = Download{Name: source.Name}
+	}
+	if _, _, err = replaceChecksums(contents, info.Options["checksums"], placeholders...); err != nil {
 		return result, err
 	}
-	if newURL == oldURL {
-		return result, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
+	downloads := make([]Download, 0, len(sources))
+	for _, source := range sources {
+		download, err := s.downloadArchive(ctx, info, source, nil)
+		if err != nil {
+			return result, err
+		}
+		downloads = append(downloads, download)
 	}
-	download, err := s.download(ctx, info)
-	if err != nil {
-		return result, err
-	}
-	contents, checksums, err := replaceChecksums(contents, info.Options["checksums"], download)
+	contents, checksums, err := replaceChecksums(contents, info.Options["checksums"], downloads...)
 	if err != nil {
 		return result, err
 	}
@@ -73,7 +104,7 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 		return result, err
 	}
 	final := versionFidelity(input.before, after, input.target.Name, input.files.Root, root, *release, checksums)
-	result.Files, result.Downloads, result.Fidelity = []git.FileEdit{edit}, []Download{download}, append(result.Fidelity, final)
+	result.Files, result.Downloads, result.Fidelity = []git.FileEdit{edit}, downloads, append(result.Fidelity, final)
 	if len(final.UnexpectedChanges) > 0 {
 		return result, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
 	}

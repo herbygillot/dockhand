@@ -207,3 +207,49 @@ func TestVersionPreparationRejectsTagMutationDuringDownload(t *testing.T) {
 	require.Empty(t, result.PreparedTree)
 	require.Empty(t, result.Commits)
 }
+
+func TestVersionPreparationNamedAndMultipleArchives(t *testing.T) {
+	for _, multiple := range []bool{false, true} {
+		t.Run(fmt.Sprint(multiple), func(t *testing.T) {
+			service, request := versionFixture(t, "literal", "", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, r.URL.Path) })
+			before, body, err := service.Repo.File(t.Context(), string(request.Source.Tree), "devel/fixture/Portfile")
+			require.NoError(t, err)
+			contents := strings.Replace(string(body), "checksums rmd160", "checksums ${distname}${extract.suffix} rmd160", 1)
+			if multiple {
+				contents += "distfiles ${distname}${extract.suffix} extra-${version}.tar.gz\n"
+				contents = strings.Replace(contents, "size 1\n", "size 1 \\\n extra-${version}.tar.gz sha256 "+strings.Repeat("0", 64)+" size 1\n", 1)
+			}
+			tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(contents), Mode: before.Mode}})
+			require.NoError(t, err)
+			request.Source = record.Source{Tree: record.ObjectID(tree)}
+			result, err := service.Prepare(t.Context(), request)
+			require.NoError(t, err)
+			count := 1
+			if multiple {
+				count = 2
+			}
+			require.Len(t, result.Downloads, count)
+			require.Contains(t, string(result.Files[0].After), "checksums ${distname}${extract.suffix}")
+			if multiple {
+				require.Contains(t, string(result.Files[0].After), "extra-${version}.tar.gz")
+			}
+			for _, d := range result.Downloads {
+				require.Contains(t, string(result.Files[0].After), d.SHA256)
+			}
+		})
+	}
+}
+
+func TestGitLabPreparationPreservesFrozenLocalPatch(t *testing.T) {
+	service, request := versionFixture(t, "gitlab-setup", "patchfiles fix.patch\n", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "source archive") })
+	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.patch", After: []byte("fixture local patch\n"), Mode: 0o100644}})
+	require.NoError(t, err)
+	request.Source = record.Source{Tree: record.ObjectID(tree)}
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.Len(t, result.Files, 1)
+	require.Contains(t, string(result.Files[0].After), "patchfiles fix.patch")
+	_, patch, err := service.Repo.File(t.Context(), string(result.PreparedTree), "devel/fixture/files/fix.patch")
+	require.NoError(t, err)
+	require.Equal(t, "fixture local patch\n", string(patch))
+}
