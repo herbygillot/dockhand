@@ -38,7 +38,7 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 	if !validRepositoryName(name) {
 		return forge.RepositoryInfo{}, fmt.Errorf("github: invalid repository")
 	}
-	client, err := c.api()
+	client, err := c.api(ctx)
 	if err != nil {
 		return forge.RepositoryInfo{}, err
 	}

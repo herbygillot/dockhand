@@ -39,7 +39,7 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 	if !validQuery(q) {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request query")
 	}
-	client, err := c.api()
+	client, err := c.api(ctx)
 	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}
@@ -73,7 +73,7 @@ func (c *Client) Observe(ctx context.Context, ref record.PullRequestRef) (forge.
 	if ref.Forge != "github" || !validRepositoryName(ref.Repository) || ref.Number <= 0 {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request reference")
 	}
-	client, err := c.api()
+	client, err := c.api(ctx)
 	if err != nil {
 		return forge.PullRequestObservation{}, err
 	}

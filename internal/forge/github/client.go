@@ -3,6 +3,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -29,7 +30,7 @@ type Client struct {
 	authSource CredentialSource
 }
 
-func (c *Client) api() (*gh.Client, error) {
+func (c *Client) api(ctx context.Context) (*gh.Client, error) {
 	if c == nil {
 		return nil, fmt.Errorf("github: client is required")
 	}
@@ -38,6 +39,15 @@ func (c *Client) api() (*gh.Client, error) {
 	c.authMu.Unlock()
 	if authenticated != nil {
 		return authenticated, nil
+	}
+	if c.Config.Token != "" || c.Credentials != nil || c.Config.BaseURL == "" {
+		api, err := c.authenticatedAPI(ctx)
+		if err == nil {
+			return api, nil
+		}
+		if !errors.Is(err, ErrNoCredentials) {
+			return nil, err
+		}
 	}
 	c.once.Do(func() { c.sdk, c.initErr = c.newAPI(c.Config.Token, SourceExplicit) })
 	return c.sdk, c.initErr

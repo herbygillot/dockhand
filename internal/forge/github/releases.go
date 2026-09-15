@@ -10,7 +10,7 @@ import (
 )
 
 func (r *repository) Releases(ctx context.Context) ([]forge.Release, error) {
-	client, err := r.client.api()
+	client, err := r.client.api(ctx)
 	if err != nil {
 		return nil, err
 	}

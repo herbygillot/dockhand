@@ -14,6 +14,9 @@ import (
 
 var ErrAuthentication = forge.ErrAuthentication
 
+// ErrNoCredentials permits anonymous public reads; invalid or inaccessible credentials do not.
+var ErrNoCredentials = fmt.Errorf("%w: no credential available", ErrAuthentication)
+
 type TokenSource interface {
 	Token(context.Context) (Token, error)
 }
@@ -45,14 +48,14 @@ func (s SystemCredentials) Token(ctx context.Context) (Token, error) {
 	}
 	path, err := exec.LookPath("gh")
 	if err != nil {
-		return Token{}, fmt.Errorf("%w: run dockhand auth login, set GH_TOKEN or GITHUB_TOKEN, or authenticate with the GitHub CLI", ErrAuthentication)
+		return Token{}, fmt.Errorf("%w: run dockhand auth login, set GH_TOKEN or GITHUB_TOKEN, or authenticate with the GitHub CLI", ErrNoCredentials)
 	}
 	output, err := exec.CommandContext(ctx, path, "auth", "token", "--hostname", "github.com").Output()
 	if err != nil {
 		if ctx.Err() != nil {
 			return Token{}, ctx.Err()
 		}
-		return Token{}, fmt.Errorf("%w: run dockhand auth login, set GH_TOKEN or GITHUB_TOKEN, or run gh auth login", ErrAuthentication)
+		return Token{}, fmt.Errorf("%w: run dockhand auth login, set GH_TOKEN or GITHUB_TOKEN, or run gh auth login", ErrNoCredentials)
 	}
 	return resolvedToken(strings.TrimSpace(string(output)), SourceGitHubCLI)
 }

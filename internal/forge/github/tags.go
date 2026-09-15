@@ -15,7 +15,7 @@ func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 	if !git.ValidRefName(refName) {
 		return forge.Tag{}, fmt.Errorf("github: invalid tag")
 	}
-	client, err := r.client.api()
+	client, err := r.client.api(ctx)
 	if err != nil {
 		return forge.Tag{}, err
 	}
@@ -56,7 +56,7 @@ func (r *repository) Tag(ctx context.Context, name string) (forge.Tag, error) {
 }
 
 func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
-	client, err := r.client.api()
+	client, err := r.client.api(ctx)
 	if err != nil {
 		return nil, err
 	}

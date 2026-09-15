@@ -189,3 +189,50 @@ func TestRejectedCredentialsIdentifySourceWithoutFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicReadsResolveCredentialsWithoutPriorAuthentication(t *testing.T) {
+	for _, mode := range []string{"saved", "missing", "locked", "malformed", "rejected", "canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				want := "Bearer fixture-token"
+				if mode == "missing" {
+					want = ""
+				}
+				assert.Equal(t, want, r.Header.Get("Authorization"))
+				if mode == "rejected" {
+					w.WriteHeader(401)
+					return
+				}
+				fmt.Fprint(w, `[]`)
+			}))
+			defer server.Close()
+			client := &github.Client{Config: github.Config{BaseURL: server.URL}, Credentials: github.TokenSourceFunc(func(context.Context) (github.Token, error) {
+				switch mode {
+				case "missing":
+					return github.Token{}, github.ErrNoCredentials
+				case "locked":
+					return github.Token{}, fmt.Errorf("keychain locked")
+				case "malformed":
+					return github.Token{Secret: "bad token"}, nil
+				case "canceled":
+					return github.Token{}, context.Canceled
+				}
+				return github.Token{Secret: "fixture-token", Source: github.SourceKeychain}, nil
+			})}
+			_, err := client.Find(t.Context(), forge.PullRequestQuery{Repository: "upstream/ports", HeadRepository: "author/ports", HeadBranch: "candidate", BaseBranch: "main"})
+			switch mode {
+			case "saved", "missing":
+				require.NoError(t, err)
+				require.Equal(t, 1, calls)
+			case "rejected":
+				require.ErrorIs(t, err, github.ErrAuthentication)
+				require.Equal(t, 1, calls)
+			default:
+				require.Error(t, err)
+				require.Zero(t, calls)
+			}
+		})
+	}
+}
