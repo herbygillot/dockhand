@@ -1,24 +1,20 @@
 package tart
 
 import (
-	"archive/tar"
 	"context"
 	_ "embed"
 	"encoding/json"
-	"fmt"
-	"io"
+	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/verify/staging"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
-
-	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/portindex"
-	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 func atomicFile(path string, data []byte, mode fs.FileMode) error {
@@ -89,131 +85,14 @@ func verifierDigest() string {
 }
 
 func makeInput(ctx context.Context, repo *git.Repository, request verify.Request, c Config, directory string, client *http.Client) (string, error) {
-	if request.Spec.Source.Commit != "" {
-		trees, err := repo.CommitTrees(ctx, []string{string(request.Spec.Source.Commit)})
-		if err != nil {
-			return "", err
-		}
-		if trees[string(request.Spec.Source.Commit)] != string(request.Spec.Source.Tree) {
-			return "", fmt.Errorf("tart: source commit and tree disagree")
-		}
-	}
-	progress.Report(ctx, "Materializing committed source for verification")
-	snapshot, err := repo.Materialize(ctx, string(request.Spec.Source.Tree))
+	input, err := json.Marshal(guestInput{Protocol: 1, ID: string(request.ID), Digest: buildDigest(request.Spec), Spec: request.Spec, Prefix: c.GuestPrefix})
 	if err != nil {
 		return "", err
 	}
-	defer snapshot.Close()
-	indexConfig := portindex.Config{
-		Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest,
-		MirrorURL: c.PortIndexURL, CacheDirectory: filepath.Join(c.ArtifactDirectory, "indexes"),
-	}
-	if err = portindex.Stage(ctx, repo, request.Spec.Source, request.Spec.Config.Platform, indexConfig, snapshot.Root, client); err != nil {
-		return "", err
-	}
-	if err = requireIndexedTarget(snapshot.Root, request.Spec.Target); err != nil {
-		return "", err
-	}
-	progress.Report(ctx, "Packing source and verification inputs")
-	temp, err := os.CreateTemp(directory, ".input-")
-	if err != nil {
-		return "", err
-	}
-	defer os.Remove(temp.Name())
-	output := tar.NewWriter(temp)
-	err = filepath.WalkDir(snapshot.Root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if err = ctx.Err(); err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(snapshot.Root, path)
-		if err != nil {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		link := ""
-		if info.Mode()&os.ModeSymlink != 0 {
-			link, err = os.Readlink(path)
-			if err != nil {
-				return err
-			}
-		}
-		header, err := tar.FileInfoHeader(info, link)
-		if err != nil {
-			return err
-		}
-		header.Name = filepath.ToSlash(filepath.Join("ports", rel))
-		header.Uid = 0
-		header.Gid = 0
-		header.Uname = "root"
-		header.Gname = "wheel"
-		if info.IsDir() || info.Mode()&0111 != 0 {
-			header.Mode = 0755
-		} else {
-			header.Mode = 0644
-		}
-		if err = output.WriteHeader(header); err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(output, file)
-		closeErr := file.Close()
-		if err != nil {
-			return err
-		}
-		return closeErr
-	})
-	if err == nil {
-		input, _ := json.Marshal(guestInput{Protocol: 1, ID: string(request.ID), Digest: buildDigest(request.Spec), Spec: request.Spec, Prefix: c.GuestPrefix})
-		for name, data := range map[string][]byte{"guest.tcl": guestScript, "input.json": input, "guest.plist": guestPlist(c.GuestPrefix)} {
-			if err = output.WriteHeader(&tar.Header{Name: name, Mode: 0644, Size: int64(len(data))}); err != nil {
-				break
-			}
-			if _, err = output.Write(data); err != nil {
-				break
-			}
-		}
-	}
-	closeErr := output.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = temp.Sync()
-	}
-	closeErr = temp.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return "", err
-	}
+	payload := map[string][]byte{"guest.tcl": guestScript, "input.json": input, "guest.plist": guestPlist(c.GuestPrefix)}
 	path := filepath.Join(directory, "input.tar")
-	return path, os.Rename(temp.Name(), path)
-}
-
-func requireIndexedTarget(root string, target record.Target) error {
-	index, err := portindex.Open(root)
-	if err != nil {
-		return err
-	}
-	entry, err := index.Lookup(target.Name)
-	if err != nil {
-		return fmt.Errorf("tart: selected target %s is not indexed: %w", target.Name, err)
-	}
-	if entry.Portdir != filepath.ToSlash(filepath.Dir(target.Portfile)) {
-		return fmt.Errorf("tart: indexed target %s belongs to %s, expected %s", target.Name, entry.Portdir, target.Portfile)
-	}
-	return nil
+	err = staging.Archive(ctx, repo, staging.Request{Source: request.Spec.Source, Target: request.Spec.Target, Platform: request.Spec.Config.Platform, Index: portindex.Config{
+		Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest, MirrorURL: c.PortIndexURL, CacheDirectory: filepath.Join(c.ArtifactDirectory, "indexes"),
+	}}, path, payload, client)
+	return path, err
 }
