@@ -19,7 +19,7 @@ dockhand verify croc --branch my-update --provider github --remote personal --wa
 dockhand wait --branch my-update
 ```
 
-The push destination defaults to `origin`. Dockhand uses publication's destination resolver, verifies that the authenticated GitHub user owns the fork, and requires its parent to be `macports/macports-ports`. The upstream base is `master`. Enable the fork's existing `.github/workflows/main.yml` in GitHub Actions before using this provider. Dockhand neither installs a workflow nor changes repository settings. Git uses its configured push credentials; Dockhand's existing authentication supplies the GitHub API credential. Reading runs requires access to Actions; Dockhand does not require Actions write access to stop tracking a job.
+The push destination defaults to `origin`. Dockhand uses publication's destination resolver, verifies that the authenticated GitHub user owns the fork, and requires its parent to be `macports/macports-ports`. The upstream base is `master`. Enable the fork's existing `.github/workflows/main.yml` in GitHub Actions before using this provider. Dockhand neither installs a workflow nor changes repository settings. Git uses its configured push credentials; Dockhand's existing authentication supplies the GitHub API credential. An existing Dockhand Keychain credential takes precedence over `gh`; if it is rejected, replace it with `dockhand auth login`, remove it with `dockhand auth logout` to use `gh`, or explicitly override it with `GH_TOKEN`. Dockhand does not silently try another credential after rejection. Reading runs requires access to Actions; Dockhand does not require Actions write access to stop tracking a job.
 
 ## Coverage
 
@@ -43,4 +43,4 @@ A missing run remains uncertain because a successful Git push does not prove whe
 
 `--trace` waits for completion and retrieves the pinned attempt's completed job logs through GitHub's API. It does not stream a running job's output. Logs are cached beside the database in `github-verification`; status retains links to the jobs even if log retrieval fails or GitHub later expires its logs. These caches currently require manual removal when no trace reader is using them; VM resource pruning does not manage them.
 
-No live fork push, Actions build, or PR creation was performed while implementing this provider. Automated coverage uses temporary Git repositories, SQLite, simulated workflow observations, and an HTTP test server for the GitHub SDK adapter.
+Automated coverage uses temporary Git repositories, SQLite, simulated workflow observations, and an HTTP test server for the GitHub SDK adapter. The [xplr live exercise](activity/2026-09-15-xplr-github-exercise.md) covers fork push, hosted builds, PR publication, driver recovery, shared-run tracking cancellation, and rerun identity.

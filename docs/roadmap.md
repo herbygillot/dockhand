@@ -131,7 +131,8 @@ The remaining test-placement, mechanism-documentation, exported-surface, depende
 
 ## GitHub provider follow-ups
 
-- Exercise `--provider github` against an authorized real fork, including a successful update through PR, tracking cancellation without stopping shared remote runs, and a user-triggered rerun.
+The [xplr exercise](activity/2026-09-15-xplr-github-exercise.md) completed fork verification through PR, driver recovery, shared-run tracking cancellation, and a user-triggered rerun.
+
 - Improve resolution of accepted pushes whose Actions run never appears, without treating delayed events as conclusively absent.
 - Consider controlled rerun support, safe updates to previously pushed branches, and broader cohort/workflow coverage after the initial committed single-port path.
 - Add managed retention for GitHub job-log caches; currently they are separate from VM resource pruning.
