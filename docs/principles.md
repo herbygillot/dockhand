@@ -44,6 +44,10 @@ The driver owns the durable progression of an accepted job, including waiting fo
 
 Action invocations and explicit persistent mode (`dockhand start`) use the same workflow implementation in their current process. Commands do not spawn background drivers. A CLI exit or driver crash must leave enough durable information for a later driver cycle to resume or report what needs attention; durable records alone do not execute pending work.
 
+## Report observations without silently refreshing them
+
+`status` reads durable observations. Driver cycles reconcile accepted work and refresh external facts. A snapshot timestamp describes when state was read, not when a provider or forge was last observed; expose observation age separately. Reading status does not authorize new external work.
+
 ## Keep authoritative state and recoverable effects
 
 Store durable workflow metadata in SQLite behind backend-independent state contracts. One database can hold multiple repositories, with explicit repository scope for reads, relationships, and claims. Linked worktrees share repository identity; separate clones remain distinct. Git stores source, while database records preserve source identity and evidence. Missing source requires an availability decision, never silent replacement with a moving branch tip. The [state design](state.md) defines the initial boundary.

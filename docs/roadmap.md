@@ -8,11 +8,25 @@ Last updated: 2026-09-15.
 
 ## Next
 
-Source archive and Go/Rust dependency preparation are implemented; the next priority connects downstream discovery to verification scheduling. Small independent items may land separately; do not combine them into a single architectural rewrite.
+The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
-Keep live exercise results in activity reports. Add regressions for defects that remain, rather than re-queuing cancellation, recovery, or provisioning work that has already passed its exercise.
+### 1. Tcl process and RPC contracts
 
-### 1. Plan and execute dependent verification
+Add focused tests for process exit, bounded output, malformed replies, cancellation, and error propagation. Exercise the real Tcl loop as well as faulty peers. Fix demonstrated defects at the shell/RPC boundary without redesigning the evaluator.
+
+### 2. GitHub missing-run diagnostics and recovery
+
+A confirmed push can remain without an observable Actions run. Preserve uncertainty, identify the exact branch/commit and workflow condition, and explain how to keep observing or explicitly stop tracking. Never infer absence from elapsed time, automatically dispatch a duplicate run, or turn missing evidence into a pass. Reuse existing wait/cancel mechanisms before adding commands.
+
+### 3. Standalone checksum refresh
+
+Implement `refresh-checksums` through the existing preparation, download, evaluation, branch integration, verification, and publication path. Share checksum mechanics with version bumps rather than creating a second workflow.
+
+### 4. Human corrections and publication design
+
+Settle the design items below together: ordinary Git edits, branch reassociation, rebase/squash, verification of a replacement revision, and updating the existing PR. Decide standalone publication's missing-verification behavior before implementing more post-publication commands.
+
+### 5. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 
@@ -23,15 +37,11 @@ Add downstream coverage without turning workflow into a generic graph engine.
 - Each attempt owns its VM and artifacts. Conflicting dependents therefore do not need to coexist in one guest.
 - Results distinguish a failure in the selected downstream port from a failure caused by another dependency in its resolved build closure.
 
-The first implementation should favor explicit per-target results and conservative coverage. Artifact reuse, baseline comparison, and more aggressive scheduling can follow after the basic model is measured.
+Start with Tart; GitHub retains its current single-port workflow restrictions. Publication must assess all required coverage rather than relying on its current single-attempt contract. The first implementation should favor explicit per-target results and conservative coverage. Artifact reuse, baseline comparison, and more aggressive scheduling can follow after the basic model is measured.
 
 ## Planned
 
 These items have a useful place in the current architecture but are not the immediate implementation queue.
-
-### Standalone checksum refresh
-
-Implement `refresh-checksums` through the existing preparation, download, evaluation, branch integration, verification, and publication path. Share checksum mechanics with version bumps rather than creating a second workflow.
 
 ### Broader selectors and multi-target intake
 
@@ -54,16 +64,24 @@ A read-only source review found no incompatible evaluator interfaces in Base 2.1
 - Validate the shared evaluator against representative Base versions on compatible hosts, covering source/resource binding, subports and variants, optional metadata, and fetch-hook inspection. Track PortGroup compatibility separately: Go hook recognition can change with the ports tree independently of Base. In particular, test the assumptions about target record keys, `user${hook}` procedure names, and the `global {*}[info globals]` body prefix.
 - Keep source binding, metadata access, and fetch-hook inspection identifiable within the MacPorts adapter. Retain one shared Tcl implementation while the contracts agree; introduce version-specific overrides when a demonstrated incompatibility requires them. V1's version selector currently has only one actual shim, `2.12.6.tcl`, so its presence alone is not evidence of historical coverage.
 
+### Provisioning follow-up
+
+The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) passed nine of ten profiles. Remaining work, in order:
+
+- Investigate first-boot agent registration failures (SSH exit 125) on Sonoma and Sequoia. Successful retries and the output-capture race fix do not establish their cause.
+- Show useful progress during CLT installation and Xcode expansion. Avoid expensive deletion of partial expansion when the entire failed disposable VM will be deleted.
+- Diagnose Monterey/Xcode 14.2's reproducible native extraction failure. Verified transfer and available space did not explain it. This profile is not validated.
+
 ### Engineering follow-up
 
 - Reduce repeated whole-tree indexing for small standalone edits, and consider staging indexes before occupying VM capacity. The concurrent exercise left a ready guest waiting on host indexing and its shared cache lock.
-- Add focused tests for Tcl shell and RPC behavior, especially process exit, malformed replies, cancellation, and error propagation.
 - Measure the current CLI suite, then move duplicated lifecycle/composition scenarios to app or integration tests where useful. Keep focused CLI coverage for parsing, rendering, exit codes, and representative end-to-end wiring; retain existing recovery assertions. Do not impose the old review's timing target without current measurements.
 - Add a lightweight automated check of the dependency rules in `components.md`; enforce meaningful package boundaries rather than a broad stylistic lint regime.
 - Audit unused exported Tcl/upstream APIs and reserved scaffolding against current callers and protocol use. Unexport, remove, or test deliberately; do not delete functioning planning code based on an older review's inventory.
 - Continue the coherent-comment pass, prioritizing package responsibilities and recovery contracts over comment-count targets.
 - Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
-- Record the existing `status` contract explicitly in the principles: it reads durable observations; driver cycles perform reconciliation and external refreshes. Distinguish snapshot time from observation time.
+- Add retention for obsolete PortIndex cache entries and GitHub job logs through their owning lifecycle; preserve evidence and active work.
+- Consider account-wide GitHub cooldown coordination only if measurements show concurrent jobs continue causing rate-limit pressure despite their persisted per-record deadlines.
 - Revisit a shared download package only when common policy and lifecycle emerge across current callers.
 
 ## Needs design
@@ -107,6 +125,7 @@ The shared database currently scopes verification evidence to one registered clo
 - A generic workflow DAG or generic package-build scheduler.
 - Automatic mutation in response to PR reviews, CI failures, or merge conflicts.
 - Broad provider matrices and an `all`-platform execution mode.
+- A QEMU provider without a concrete current use case; it remains an architectural thought experiment.
 - Supporting every command or internal mechanism from Dockhand v1 without a current v2 use case.
 
 ## Completed foundations
@@ -122,17 +141,26 @@ The following capabilities are established and should be extended through their 
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;
 - capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;
+- evaluator-guided calculated-version probing through `macports/portedit`;
+- GitHub fork verification through publication, shared-run tracking cancellation, durable progress, and resumable/offline log reads;
+- consistent public-read authentication, publication rate-limit recovery, and durable failure backoff distinct from expected waiting;
+- automatic bump selection of a suitable prepared Tart image, with GitHub fallback only for availability conditions; explicit choices remain authoritative;
+- status as a durable snapshot, distinct from driver reconciliation and external observation.
 
 ## Review triage
 
 This ordering incorporates the findings that remain useful from Claude's four project reviews and workflow review. Earlier findings about whole-state Git-ledger writes, the SQLite migration ladder, repeated phase inference, state/workflow policy ownership, missing CI, workflow file organization, shared Tart mechanics, PortIndex placement, and the unused placeholder planner have already been addressed; they are not new pending work.
 
-The remaining test-placement, mechanism-documentation, exported-surface, dependency-checking, and status-contract suggestions are represented above. Cross-repository evidence reuse, requester provenance, review controls, and PR observation retain their existing design/planning slots. Do not split workflow merely because it is large, reintroduce the discarded Git ledger, rename the user-selected environment variables, or require v1 feature parity as a prerequisite for this queue.
+The remaining test-placement, mechanism-documentation, exported-surface, and dependency-checking suggestions are represented above; the status contract is now explicit in the principles. Cross-repository evidence reuse, requester provenance, review controls, and PR observation retain their existing design/planning slots. Do not split workflow merely because it is large, reintroduce the discarded Git ledger, rename the user-selected environment variables, or require v1 feature parity as a prerequisite for this queue.
 
 ## GitHub provider follow-ups
 
 The [xplr exercise](activity/2026-09-15-xplr-github-exercise.md) completed fork verification through PR, driver recovery, shared-run tracking cancellation, and a user-triggered rerun.
 
-- Improve resolution of accepted pushes whose Actions run never appears, without treating delayed events as conclusively absent.
+- Missing-run diagnostics and recovery are in the immediate queue above.
 - Consider controlled rerun support, safe updates to previously pushed branches, and broader cohort/workflow coverage after the initial committed single-port path.
-- Add managed retention for GitHub job-log caches; currently they are separate from VM resource pruning.
+- Log-cache retention is tracked with engineering storage follow-up above.
+
+## Validation milestones
+
+End each meaningful milestone with a targeted user-path exercise or recovery regression. Repeat a full provisioning matrix or create live PRs only when the change warrants it. Historical exercise reports and reviews remain evidence, not additional queues.
