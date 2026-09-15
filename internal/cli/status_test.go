@@ -95,3 +95,15 @@ func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
 	require.Contains(t, output.String(), "MacPorts: 2.12.6 at /opt/local; developer tools: xcode 26.6")
 	require.NotContains(t, output.String(), "%!")
 }
+
+func TestStatusRendersGitHubRunIdentity(t *testing.T) {
+	status := workflow.EmptyStatus(time.Now())
+	status.Jobs = []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobCompleted}, Attempts: []record.Attempt{{
+		ID: "attempt", State: record.AttemptFinished,
+		Evidence: &record.Evidence{Verdict: record.VerdictPassed, Workflow: &record.WorkflowEvidence{RunID: 34989358751, RunAttempt: 2, Conclusion: "success", URL: "https://github.com/owner/ports/actions/runs/34989358751"}},
+	}}}}
+	var output bytes.Buffer
+	require.NoError(t, renderStatus(&output, status))
+	require.Contains(t, output.String(), "run 34989358751 attempt 2")
+	require.NotContains(t, output.String(), "%!")
+}

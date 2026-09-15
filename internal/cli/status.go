@@ -64,7 +64,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 	environment := func(indent string, evidence *record.Evidence) {
 		if evidence != nil && evidence.Workflow != nil {
 			flow := evidence.Workflow
-			line("%sGitHub Actions: %s; run %d attempt %d; %s", indent, flow.Conclusion, flow.RunID, flow.RunAttempt, flow.URL)
+			line("%sGitHub Actions: %s; run %s attempt %s; %s", indent, flow.Conclusion, flow.RunID, flow.RunAttempt, flow.URL)
 			for _, job := range flow.Jobs {
 				line("%s  %s: %s %s; %s", indent, job.Name, job.Status, job.Conclusion, job.URL)
 			}
