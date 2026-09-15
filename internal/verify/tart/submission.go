@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -81,6 +82,23 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			return verify.Submission{State: verify.Unsupported, Detail: problem}, nil
 		}
 	}
+	if err := o.checkCapacity(ctx); errors.Is(err, errCapacity) {
+		return verify.Submission{State: verify.AtCapacity}, nil
+	} else if err != nil {
+		return verify.Submission{}, err
+	}
+	if p.Repo == nil {
+		return verify.Submission{}, fmt.Errorf("tart: source repository is required")
+	}
+	prepared, err := os.MkdirTemp(o.pool.Directory, ".preparing-")
+	if err != nil {
+		return verify.Submission{}, err
+	}
+	defer os.RemoveAll(prepared)
+	archive, err := makeInput(ctx, p.Repo, request, o.config, prepared, p.HTTP)
+	if err != nil {
+		return verify.Submission{}, err
+	}
 	data := payload{Request: request, Config: o.config, Digest: buildDigest(request.Spec)}
 	// Freeze diagnostic metadata with the immutable submission payload.
 	data.ProviderVersion, _ = o.machine.Version(ctx)
@@ -94,19 +112,8 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return verify.Submission{}, err
 	}
 	err = p.State.ProviderUpdate(ctx, o.pool.ID, func(ctx context.Context, tx state.ProviderTx) error {
-		occupied, err := tx.Occupied(ctx)
-		if err != nil {
+		if err := capacityAvailable(ctx, tx, running, o.pool.Capacity); err != nil {
 			return err
-		}
-		names := make(map[string]bool)
-		for _, name := range running {
-			names[name] = true
-		}
-		for _, run := range occupied {
-			names[run.Resource] = true
-		}
-		if len(names) >= o.pool.Capacity {
-			return errCapacity
 		}
 		return tx.PutExecution(ctx, v)
 	})
@@ -133,6 +140,11 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err = os.MkdirAll(directory, 0700); err != nil {
 		return uncertain, err
 	}
+	inputPath := filepath.Join(directory, "input.tar")
+	if err = os.Rename(archive, inputPath); err != nil {
+		return uncertain, err
+	}
+	archive = inputPath
 	progress.Report(ctx, "Starting verification VM and waiting for the guest agent")
 	if err = o.machine.Start(ctx, v.Resource, directory); err != nil {
 		return uncertain, err
@@ -162,13 +174,6 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			}
 			return submission(v, verify.Admitted), nil
 		}
-	}
-	if p.Repo == nil {
-		return uncertain, fmt.Errorf("tart: source repository is required")
-	}
-	archive, err := makeInput(ctx, p.Repo, request, o.config, directory, p.HTTP)
-	if err != nil {
-		return uncertain, err
 	}
 	progress.Report(ctx, "Transferring prepared source to the verification VM")
 	if err = o.machine.Stage(ctx, v.Resource, archive); err != nil {

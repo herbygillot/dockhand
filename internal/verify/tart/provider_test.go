@@ -584,3 +584,58 @@ func TestNamedBuildConfigDoesNotChangeProviderDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, directory, settings.ArtifactDirectory)
 }
+
+func TestSourcePreparationBeforeReservation(t *testing.T) {
+	for _, scenario := range []string{"pass", "cancel", "index-failure", "capacity-race"} {
+		t.Run(scenario, func(t *testing.T) {
+			f, m := singleRun(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			prepared := false
+			ctx = progress.WithReporter(ctx, func(update progress.Update) {
+				if update.Message != "Packing source and verification inputs" {
+					return
+				}
+				prepared = true
+				require.Zero(t, m.calls["clone"])
+				require.Zero(t, m.calls["start"])
+				o, err := f.provider.settings()
+				require.NoError(t, err)
+				require.NoError(t, f.store.ProviderView(ctx, "tart_"+digest([]byte(o.Home)), func(ctx context.Context, r state.ProviderReader) error {
+					occupied, err := r.Occupied(ctx)
+					require.NoError(t, err)
+					require.Empty(t, occupied)
+					return nil
+				}))
+				if scenario == "cancel" {
+					cancel()
+				}
+				if scenario == "capacity-race" {
+					m.running["external-vm"] = true
+				}
+			})
+			if scenario == "index-failure" {
+				f.provider.Config.PortIndexExecutable = "/missing/portindex"
+			}
+			result, err := f.provider.Submit(ctx, f.request)
+			switch scenario {
+			case "pass":
+				require.NoError(t, err)
+				require.True(t, prepared)
+				require.Equal(t, verify.Admitted, result.State)
+			case "capacity-race":
+				require.NoError(t, err)
+				require.True(t, prepared)
+				require.Equal(t, verify.AtCapacity, result.State)
+				require.Zero(t, m.calls["clone"])
+			default:
+				require.Error(t, err)
+				require.Zero(t, m.calls["clone"])
+				require.Empty(t, result.Resources)
+			}
+			leftovers, err := filepath.Glob(filepath.Join(f.provider.Config.ArtifactDirectory, ".preparing-*"))
+			require.NoError(t, err)
+			require.Empty(t, leftovers)
+		})
+	}
+}

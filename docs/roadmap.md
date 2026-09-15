@@ -51,7 +51,7 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 
 ### Engineering follow-up
 
-- Reduce repeated whole-tree indexing for small standalone edits, and consider staging indexes before occupying VM capacity. The concurrent exercise left a ready guest waiting on host indexing and its shared cache lock.
+- Source archives are now prepared before Tart capacity reservation. Exact candidate indexes are retained, and standalone edits can seed from a cached tree using the complete Git diff. Further index-cache retention and large-tree timing work remain below.
 - Measure the current CLI suite, then move duplicated lifecycle/composition scenarios to app or integration tests where useful. Keep focused CLI coverage for parsing, rendering, exit codes, and representative end-to-end wiring; retain existing recovery assertions. Do not impose the old review's timing target without current measurements.
 - Add a lightweight automated check of the dependency rules in `components.md`; enforce meaningful package boundaries rather than a broad stylistic lint regime.
 - Audit unused exported Tcl/upstream APIs and reserved scaffolding against current callers and protocol use. Unexport, remove, or test deliberately; do not delete functioning planning code based on an older review's inventory.

@@ -125,14 +125,11 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 	}
 	defer guard.Close()
 	progress.Report(ctx, "Checking cached PortIndex")
-	entry, temporary, err := ensurePortIndex(ctx, repo, source, platform, resolved, cacheRoot, root, client)
+	entry, err := ensurePortIndex(ctx, repo, source, platform, resolved, cacheRoot, root, client)
 	if err != nil {
 		return err
 	}
 	progress.Report(ctx, "PortIndex ready; installing into staged source")
-	if temporary {
-		defer os.RemoveAll(filepath.Dir(entry))
-	}
 	for _, name := range []string{portIndexName, quickIndexName} {
 		if err := copyIndexFile(filepath.Join(entry, name), filepath.Join(root, name)); err != nil {
 			return err
@@ -141,38 +138,35 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 	return nil
 }
 
-func ensurePortIndex(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, cacheRoot, targetRoot string, client *http.Client) (string, bool, error) {
+func ensurePortIndex(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, cacheRoot, targetRoot string, client *http.Client) (string, error) {
 	if source.Base == "" {
-		// Standalone verification has no change baseline. Its index may expose
-		// gaps outside the requested target; callers validate their coverage.
-		// Keep it separate from indexes used to validate known changes.
-		target := filepath.Join(cacheRoot, "standalone", string(source.Tree))
-		if !validIndexEntry(target) {
-			if err := buildPortIndex(ctx, c, platform, targetRoot, target, "", nil, false); err != nil {
-				return "", false, err
-			}
-		}
-		return target, false, nil
-	}
-	target := filepath.Join(cacheRoot, string(source.Tree))
-	if validIndexEntry(target) {
-		return target, false, nil
+		return standaloneIndex(ctx, repo, source, platform, c, cacheRoot, targetRoot)
 	}
 	seedTree, err := sourceBaseTree(ctx, repo, source)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 	if seedTree == "" || seedTree == string(source.Tree) {
-		if err := buildPortIndex(ctx, c, platform, targetRoot, target, "", nil, true); err != nil {
-			return "", false, err
+		target := filepath.Join(cacheRoot, "complete", string(source.Tree))
+		if !validIndexEntry(target) {
+			if err := buildPortIndex(ctx, c, platform, targetRoot, target, "", nil, true); err != nil {
+				return "", err
+			}
 		}
-		return target, false, nil
+		return target, nil
+	}
+	target := filepath.Join(cacheRoot, "candidates", seedTree, string(source.Tree))
+	if validIndexEntry(target) {
+		return target, nil
 	}
 	seed := filepath.Join(cacheRoot, seedTree)
+	if complete := filepath.Join(cacheRoot, "complete", seedTree); validIndexEntry(complete) {
+		seed = complete
+	}
 	if !validIndexEntry(seed) {
 		snapshot, err := repo.Materialize(ctx, seedTree)
 		if err != nil {
-			return "", false, err
+			return "", err
 		}
 		if c.MirrorURL != "" {
 			progress.Report(ctx, "Fetching a mirrored PortIndex to seed the source index")
@@ -187,30 +181,25 @@ func ensurePortIndex(ctx context.Context, repo *git.Repository, source record.So
 		}
 		closeErr := snapshot.Close()
 		if err != nil {
-			return "", false, errors.Join(err, closeErr)
+			return "", errors.Join(err, closeErr)
 		}
 		if closeErr != nil {
-			return "", false, closeErr
+			return "", closeErr
 		}
 	}
 	paths, err := repo.ChangedPaths(ctx, seedTree, string(source.Tree))
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
-	candidateRoot, err := os.MkdirTemp(cacheRoot, ".candidate-")
-	if err != nil {
-		return "", false, err
-	}
-	target = filepath.Join(candidateRoot, "index")
 	if requiresFullIndex(paths) {
 		err = buildPortIndex(ctx, c, platform, targetRoot, target, "", nil, true)
 	} else {
 		err = buildPortIndex(ctx, c, platform, targetRoot, target, seed, paths, true)
 	}
 	if err != nil {
-		return "", false, errors.Join(err, os.RemoveAll(candidateRoot))
+		return "", err
 	}
-	return target, true, nil
+	return target, nil
 }
 
 func mirroredPortIndex(ctx context.Context, repo *git.Repository, source record.Source, baseTree, address, cacheRoot string, client *http.Client) (string, []string, error) {

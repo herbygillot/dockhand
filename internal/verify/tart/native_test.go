@@ -126,9 +126,14 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	require.Len(t, lines, 2)
 	require.Contains(t, lines[0], "-f")
 	require.NotContains(t, lines[1], "-f")
-	retained, err := filepath.Glob(filepath.Join(config.ArtifactDirectory, "indexes", "*", tree))
+	retained, err := filepath.Glob(filepath.Join(config.ArtifactDirectory, "indexes", "*", "candidates", string(f.request.Spec.Source.Tree), tree))
 	require.NoError(t, err)
-	require.Empty(t, retained, "candidate indexes should be regenerated incrementally rather than retained")
+	require.Len(t, retained, 1)
+	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, t.TempDir(), nil)
+	require.NoError(t, err)
+	after, err := os.ReadFile(calls)
+	require.NoError(t, err)
+	require.Equal(t, data, after, "an exact candidate index is reused")
 }
 
 func TestConcurrentPortIndexPreparationBuildsOneCacheEntry(t *testing.T) {
