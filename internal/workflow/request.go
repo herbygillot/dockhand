@@ -21,6 +21,9 @@ import (
 // or external services. It copies mutable inputs and canonicalizes target order
 // and empty variant maps so equivalent requests have the same representation.
 func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
+	if spec.SourceBranch != "" && !git.ValidBranchName(spec.SourceBranch) {
+		return record.JobSpec{}, fmt.Errorf("%w: invalid source branch", ErrInvalidRequest)
+	}
 	if !utf8.ValidString(spec.Reason) || (spec.ChangeID != "" && !validToken(string(spec.ChangeID))) || (spec.InputRevision != "" && !validToken(string(spec.InputRevision))) {
 		return record.JobSpec{}, fmt.Errorf("%w: invalid change ID, revision ID, or reason encoding", ErrInvalidRequest)
 	}

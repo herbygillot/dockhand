@@ -664,6 +664,9 @@ func validateRequest(r verify.Request) error {
 	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != ProviderName || !r.Spec.Config.CapabilitiesRequired || len(r.Spec.Inputs) != 0 {
 		return fmt.Errorf("tart: one concrete verification target without artifact inputs is required")
 	}
+	if r.Spec.Config.Tests == record.TestWorkflow {
+		return fmt.Errorf("tart: workflow test policy is unsupported")
+	}
 	if err := verify.ValidateConfig(r.Spec.Config); err != nil {
 		return err
 	}
@@ -707,6 +710,9 @@ func (o *operation) saved(v record.ProviderExecution) (verify.Observation, bool,
 }
 
 func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, options BuildOptions) (record.BuildConfig, error) {
+	if options.Tests == record.TestWorkflow {
+		return record.BuildConfig{}, fmt.Errorf("tart: workflow test policy is unsupported")
+	}
 	c, err := p.settings()
 	if err != nil {
 		return record.BuildConfig{}, err

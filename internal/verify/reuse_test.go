@@ -154,3 +154,20 @@ func TestBuildRequirementsPreserveAcceptedChoices(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowEvidenceRequiresTheExactCommitAndBranch(t *testing.T) {
+	wanted := reusableBuild()
+	wanted.Source.Commit = record.ObjectID(strings.Repeat("b", 40))
+	wanted.Branch = "candidate"
+	wanted.Config.Tests = record.TestWorkflow
+	previous := record.Attempt{ID: "previous", Spec: wanted, State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now(), Workflow: &record.WorkflowEvidence{Commit: wanted.Source.Commit, Branch: wanted.Branch, Conclusion: "success"}}}
+	require.True(t, verify.Applicable(wanted, previous).Matches)
+	changed := wanted
+	changed.Source.Commit = record.ObjectID(strings.Repeat("c", 40))
+	require.False(t, verify.Applicable(changed, previous).Matches, "same tree at a different commit must not reuse a workflow result")
+	changed = wanted
+	changed.Branch = "other"
+	require.False(t, verify.Applicable(changed, previous).Matches)
+	previous.Evidence.Workflow = nil
+	require.False(t, verify.Applicable(wanted, previous).Matches)
+}

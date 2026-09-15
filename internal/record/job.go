@@ -50,8 +50,10 @@ const (
 // JobSpec records immutable accepted intent, independently of CLI attachment.
 // Request intake validates combinations of action, destination, and policy.
 type JobSpec struct {
-	Action      Action
-	Publication *PublicationSpec `json:",omitempty"`
+	// SourceBranch identifies the explicitly selected committed branch for verification.
+	SourceBranch string `json:",omitempty"`
+	Action       Action
+	Publication  *PublicationSpec `json:",omitempty"`
 	// PublishTo authorizes publication after preparation and passing verification.
 	PublishTo *PublicationDestination `json:",omitempty"`
 	// ChangeID is derived from InputRevision for an existing change. It is empty

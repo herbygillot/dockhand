@@ -125,7 +125,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 		if change.ID == "" {
 			change.Targets = []record.Target{evidence.Spec.Target}
 		}
-		wanted := record.BuildSpec{Source: source, Target: change.Targets[0], Config: evidence.Spec.Config}
+		wanted := record.BuildSpec{Branch: change.Branch, Source: source, Target: change.Targets[0], Config: evidence.Spec.Config}
 		if verdict := verify.Applicable(wanted, evidence); !verdict.Matches {
 			return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 		}

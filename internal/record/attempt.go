@@ -13,6 +13,8 @@ const (
 	TestDeclared TestPolicy = "declared"
 	// TestSkip explicitly skips the port's test phase.
 	TestSkip TestPolicy = "skip"
+	// TestWorkflow accepts the remote workflow policy, which may tolerate test failures.
+	TestWorkflow TestPolicy = "workflow"
 )
 
 // BuildConfig captures effective verification choices at request acceptance.
@@ -21,7 +23,7 @@ type BuildConfig struct {
 	// Provider identifies a stable provider recovery namespace.
 	Provider string
 	Platform Platform
-	// EnvironmentDigest identifies the immutable build environment.
+	// EnvironmentDigest identifies the immutable environment, or the selected remote workflow recipe.
 	EnvironmentDigest string
 	// VerifierDigest identifies the verification implementation; missing identity disables reuse.
 	VerifierDigest string `json:",omitempty"`
@@ -100,6 +102,7 @@ type EnvironmentEvidence struct {
 // Planned dependencies on future outputs must be resolved to Artifacts before
 // the specification is submitted to a provider.
 type BuildSpec struct {
+	Branch     string `json:",omitempty"`
 	RevisionID RevisionID
 	Source     Source
 	Target     Target
@@ -247,7 +250,8 @@ type StepResult struct {
 // Running observations have an unknown verdict; a terminal outcome must be
 // explicit. Referenced artifacts and logs may be stored outside the state store.
 type Evidence struct {
-	TestOmission string `json:",omitempty"`
+	Workflow     *WorkflowEvidence `json:",omitempty"`
+	TestOmission string            `json:",omitempty"`
 	Verdict      Verdict
 	// Environment identifies the observed build environment when the provider requires it.
 	Environment *EnvironmentEvidence `json:",omitempty"`

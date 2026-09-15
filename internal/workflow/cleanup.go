@@ -122,7 +122,7 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 	// Release has its own durable claim and must be idempotent: another cycle
 	// may retry it if this process dies before recording confirmation.
 	callCtx, cancel := context.WithTimeout(ctx, c.timeouts.Cleanup)
-	result, callErr := e.Provider.Release(callCtx, resource.Handle)
+	result, callErr := c.provider.Release(callCtx, resource.Handle)
 	if callErr == nil {
 		callErr = callCtx.Err()
 	}

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -78,8 +77,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 	}
 	call, cancel := context.WithTimeout(ctx, c.timeouts.Publish)
 	defer cancel()
-	scope := action.Spec.Forge + ":" + strings.ToLower(action.Spec.HeadRepository) + ":" + action.Spec.HeadBranch
-	err = e.Publisher.Repo.WithPushLock(call, action.Spec.LockDirectory, scope, func(locked context.Context) error {
+	err = e.Publisher.Repo.WithRemoteBranchLock(call, action.Spec.LockDirectory, action.Spec.Forge, action.Spec.HeadRepository, action.Spec.HeadBranch, func(locked context.Context) error {
 		if err := c.publicationUpdate(locked, job, func(_ state.Tx, current *record.Job, stored *record.PublicationAction) error {
 			action = *stored
 			return nil

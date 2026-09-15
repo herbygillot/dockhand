@@ -184,6 +184,7 @@ func (t *transaction) PutRequest(ctx context.Context, v record.AcceptedRequest) 
 }
 
 type jobOptions struct {
+	SourceBranch      string                         `json:",omitempty"`
 	Publication       *record.PublicationSpec        `json:",omitempty"`
 	PublishTo         *record.PublicationDestination `json:",omitempty"`
 	FreshVerification bool                           `json:",omitempty"`
@@ -214,6 +215,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 		return v, err
 	}
 	v.Spec.Targets, v.Spec.Build, v.Spec.BuildRequirements, v.Spec.Version, v.Spec.Reason = options.Targets, options.Build, options.BuildRequirements, options.Version, options.Reason
+	v.Spec.SourceBranch = options.SourceBranch
 	v.Spec.Publication = options.Publication
 	v.Spec.PublishTo = options.PublishTo
 	v.Spec.Preparation = options.Preparation
@@ -351,7 +353,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
+	raw, err := encode(jobOptions{SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}

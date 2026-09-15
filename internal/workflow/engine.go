@@ -61,6 +61,8 @@ type Engine struct {
 	// Provider executes verification and resource operations during Cycle.
 	// Submit, Control, and Status do not call it.
 	Provider verify.Provider
+	// Providers routes persisted names; Provider remains the single-provider fallback.
+	Providers map[string]verify.Provider
 	// Publisher resolves and executes Git/forge operations outside state transactions.
 	Publisher *publish.Service
 	// Now supplies timestamps and lease comparisons, converted to UTC. Nil uses
@@ -93,4 +95,12 @@ type ReleaseResolver interface {
 
 type SourcePreparer interface {
 	Prepare(context.Context, preparation.Request) (preparation.Result, error)
+}
+
+// VerificationProvider resolves persisted work independently of CLI defaults.
+func (e *Engine) VerificationProvider(name string) verify.Provider {
+	if p := e.Providers[name]; p != nil {
+		return p
+	}
+	return e.Provider
 }

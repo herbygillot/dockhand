@@ -155,7 +155,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			if attempt.SubmissionID == "" {
 				return fmt.Errorf("%w: attempt has no submission identity", state.ErrInvalid)
 			}
-			if !c.providerChecked {
+			if !c.providerChecked || c.providerName != attempt.Spec.Config.Provider {
 				needsProvider, action = true, ""
 				return nil
 			}
@@ -186,7 +186,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		if !needsProvider {
 			break
 		}
-		c.checkProvider(ctx)
+		c.checkProvider(ctx, attempt.Spec.Config.Provider)
 	}
 	if action == "" {
 		return changed, detail, nil
@@ -265,13 +265,13 @@ func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt r
 	var result attemptResult
 	switch action {
 	case submitAttempt:
-		result.submission, result.err = c.engine.Provider.Submit(ctx, verify.Request{ID: attempt.SubmissionID, AttemptID: attempt.ID, Spec: attempt.Spec})
+		result.submission, result.err = c.provider.Submit(ctx, verify.Request{ID: attempt.SubmissionID, AttemptID: attempt.ID, Spec: attempt.Spec})
 	case reconcileAttempt:
-		result.reconciliation, result.err = c.engine.Provider.Reconcile(ctx, attempt.SubmissionID)
+		result.reconciliation, result.err = c.provider.Reconcile(ctx, attempt.SubmissionID)
 	case observeAttempt:
-		result.observation, result.err = c.engine.Provider.Observe(ctx, attempt.Run)
+		result.observation, result.err = c.provider.Observe(ctx, attempt.Run)
 	case cancelAttempt:
-		result.err = c.engine.Provider.Cancel(ctx, attempt.Run)
+		result.err = c.provider.Cancel(ctx, attempt.Run)
 	}
 	if result.err == nil {
 		result.err = ctx.Err()

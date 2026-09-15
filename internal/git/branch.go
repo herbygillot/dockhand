@@ -84,3 +84,11 @@ func withLock(ctx context.Context, directory, key string, fn func(context.Contex
 	}
 	return fn(context.WithValue(ctx, branchLockKey{}, file))
 }
+
+// WithRemoteBranchLock serializes cooperating pushes to one forge repository branch.
+func (r *Repository) WithRemoteBranchLock(ctx context.Context, directory, forge, repository, branch string, fn func(context.Context) error) error {
+	if !ValidBranchName(branch) || forge == "" || repository == "" {
+		return fmt.Errorf("git: remote branch identity required")
+	}
+	return r.WithPushLock(ctx, directory, forge+":"+strings.ToLower(repository)+":"+branch, fn)
+}

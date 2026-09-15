@@ -53,7 +53,29 @@ func Judge(observation Observation) (record.Evidence, error) {
 		}
 		environment = &value
 	}
-	evidence := record.Evidence{TestOmission: observation.TestOmission, Verdict: verdict, Environment: environment, Steps: slices.Clone(observation.Steps), Artifacts: slices.Clone(observation.Artifacts), Logs: slices.Clone(observation.Logs), ObservedAt: observation.ObservedAt}
+	var workflow *record.WorkflowEvidence
+	if observation.Workflow != nil {
+		value := *observation.Workflow
+		if value.Repository == "" || value.Branch == "" || value.Commit == "" || value.RunID <= 0 || value.RunAttempt <= 0 || value.URL == "" {
+			return record.Evidence{}, fmt.Errorf("verify: incomplete workflow evidence")
+		}
+		if verdict == record.VerdictPassed {
+			if value.Conclusion != "success" || len(value.Jobs) == 0 {
+				return record.Evidence{}, fmt.Errorf("verify: passing workflow evidence requires successful jobs")
+			}
+			for _, job := range value.Jobs {
+				if job.Status != "completed" || job.Conclusion != "success" {
+					return record.Evidence{}, fmt.Errorf("verify: passing workflow evidence contains an unsuccessful job")
+				}
+			}
+		}
+		value.Jobs = slices.Clone(value.Jobs)
+		for i := range value.Jobs {
+			value.Jobs[i].Labels = slices.Clone(value.Jobs[i].Labels)
+		}
+		workflow = &value
+	}
+	evidence := record.Evidence{Workflow: workflow, TestOmission: observation.TestOmission, Verdict: verdict, Environment: environment, Steps: slices.Clone(observation.Steps), Artifacts: slices.Clone(observation.Artifacts), Logs: slices.Clone(observation.Logs), ObservedAt: observation.ObservedAt}
 	for i := range evidence.Steps {
 		evidence.Steps[i].Command = slices.Clone(evidence.Steps[i].Command)
 	}

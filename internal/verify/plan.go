@@ -25,7 +25,7 @@ func ValidateConfig(config record.BuildConfig) error {
 	if config.CapabilityDigest != "" && (!config.CapabilitiesRequired || !utf8.ValidString(config.CapabilityDigest) || strings.IndexFunc(config.CapabilityDigest, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0) {
 		return fmt.Errorf("verify: invalid environment capability identity")
 	}
-	if config.Tests != record.TestDeclared && config.Tests != record.TestSkip {
+	if config.Tests != record.TestDeclared && config.Tests != record.TestSkip && config.Tests != record.TestWorkflow {
 		return fmt.Errorf("verify: an explicit test policy is required")
 	}
 	return nil
@@ -37,7 +37,7 @@ func ValidateRequirements(requirements record.BuildRequirements) error {
 			return fmt.Errorf("verify: provider and platform requirements are required")
 		}
 	}
-	if requirements.Tests != record.TestDeclared && requirements.Tests != record.TestSkip {
+	if requirements.Tests != record.TestDeclared && requirements.Tests != record.TestSkip && requirements.Tests != record.TestWorkflow {
 		return fmt.Errorf("verify: an explicit test policy is required")
 	}
 	return nil
@@ -100,7 +100,14 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 			targetID = record.TargetID(fmt.Sprintf("target_%s_%d", job.ID, i+1))
 		}
 		plan.Targets = append(plan.Targets, record.VerificationTarget{ID: targetID, Port: target, Platform: config.Platform})
-		build := record.BuildSpec{RevisionID: revision.ID, Source: source, Target: target, Config: config, Inputs: []record.Artifact{}}
+		branch := job.Spec.SourceBranch
+		if job.Spec.Checkout != nil {
+			branch = job.Spec.Checkout.Branch
+		}
+		if job.Prepared != nil {
+			branch = job.Prepared.Branch
+		}
+		build := record.BuildSpec{Branch: branch, RevisionID: revision.ID, Source: source, Target: target, Config: config, Inputs: []record.Artifact{}}
 		build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
 		builds = append(builds, build)
 	}

@@ -41,7 +41,8 @@ type Submission struct {
 }
 
 type Observation struct {
-	TestOmission string `json:",omitempty"`
+	Workflow     *record.WorkflowEvidence `json:",omitempty"`
+	TestOmission string                   `json:",omitempty"`
 	Run          record.ProviderRun
 	State        record.AttemptState
 	Environment  *record.EnvironmentEvidence `json:",omitempty"`

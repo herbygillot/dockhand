@@ -164,7 +164,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if inferred != nil && record.CompareTargets(targets[0], *inferred) != 0 {
 		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)
 	}
-	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
+	spec, err := normalizeSpec(record.JobSpec{Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
 		return BoundVerification{}, err
 	}

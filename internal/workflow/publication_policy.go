@@ -34,7 +34,7 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 		return ErrInvalidRequest
 	}
 	_, source := publicationInput(job)
-	build := record.BuildSpec{Source: source, Target: job.Spec.Targets[0], Config: config}
+	build := record.BuildSpec{Branch: change.Branch, Source: source, Target: job.Spec.Targets[0], Config: config}
 	if verdict := verify.Applicable(build, candidate); !verdict.Matches {
 		return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 	}

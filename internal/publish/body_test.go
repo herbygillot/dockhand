@@ -62,3 +62,15 @@ func TestBodyDoesNotInventTestsOrEnvironmentForOlderEvidence(t *testing.T) {
 		require.NotContains(t, publicationBody(record.PublicationContent{}, record.Change{}, record.Source{}, attempt), "(pristine)")
 	}
 }
+
+func TestBodyReportsWorkflowSuccessWithoutInventingPortPhases(t *testing.T) {
+	evidence := &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now(), TestOmission: "Workflow policy may tolerate test failures", Workflow: &record.WorkflowEvidence{RunID: 10, RunAttempt: 2, URL: "https://github.com/author/ports/actions/runs/10", Jobs: []record.WorkflowJob{{Name: "macos-15", Conclusion: "success"}}}}
+	body := publicationBody(record.PublicationContent{Title: "fixture: update"}, record.Change{}, record.Source{}, record.Attempt{ID: "attempt", Evidence: evidence})
+	require.Contains(t, body, "Provider: GitHub Actions")
+	require.Contains(t, body, "attempt 2")
+	require.Contains(t, body, "macos-15: success")
+	require.Contains(t, body, "may tolerate port test failures")
+	require.NotContains(t, body, "[x] Ran the port's tests")
+	require.NotContains(t, body, "[x] Completed a full install")
+	require.NotContains(t, body, "image:")
+}

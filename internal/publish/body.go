@@ -30,7 +30,13 @@ func publicationBody(content record.PublicationContent, change record.Change, so
 		fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 	} else {
 		environment := evidence.Environment
-		if environment == nil {
+		if flow := evidence.Workflow; flow != nil {
+			fmt.Fprintf(&b, "\nProvider: GitHub Actions; [workflow run](%s), attempt %d.\n", oneLine(flow.URL), flow.RunAttempt)
+			for _, job := range flow.Jobs {
+				fmt.Fprintf(&b, "\n- %s: %s\n", oneLine(job.Name), oneLine(job.Conclusion))
+			}
+			fmt.Fprintln(&b, "\nThe MacPorts workflow passed under its own policy. It may tolerate port test failures; individual port phases and exact runner tool versions are not independently established.")
+		} else if environment == nil {
 			fmt.Fprintln(&b, "\nEnvironment details were not recorded.")
 		} else {
 			guest := environment.Guest

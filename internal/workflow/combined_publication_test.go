@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
@@ -324,4 +325,25 @@ func TestCombinedPublicationWithReusedEvidenceCanBeCanceled(t *testing.T) {
 	require.Equal(t, original.ID, status.Jobs[0].Job.ReusedAttempt)
 	require.Empty(t, status.Jobs[0].Publications)
 	require.Zero(t, hosting.writes)
+}
+
+func TestWorkflowPolicyEvidenceCanContinueThroughPublication(t *testing.T) {
+	f, hosting, request := combinedFixture(t, record.Bump)
+	request.Spec.Build.Tests = record.TestWorkflow
+	id := prepareCombined(t, f, request)
+	f.run(t, id)
+	attempt := f.attempt(t, id)
+	f.provider.observe = func(_ context.Context, run record.ProviderRun) (verify.Observation, error) {
+		return verify.Observation{Run: run, State: record.AttemptFinished, Verdict: record.VerdictPassed, ObservedAt: f.now(), TestOmission: "Workflow policy", Workflow: &record.WorkflowEvidence{Repository: "author/ports", Branch: attempt.Spec.Branch, Commit: attempt.Spec.Source.Commit, RunID: 10, RunAttempt: 1, URL: "https://github.com/author/ports/actions/runs/10", Conclusion: "success", Jobs: []record.WorkflowJob{{Name: "macos-15", Status: "completed", Conclusion: "success"}}}}, nil
+	}
+	for range 8 {
+		f.run(t, id)
+		if f.status(t, id).Jobs[0].Job.State.Terminal() {
+			break
+		}
+	}
+	status := f.status(t, id)
+	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State, status.Jobs[0].Job.Detail)
+	require.Equal(t, 1, hosting.writes)
+	require.Contains(t, status.Jobs[0].Publications[0].Spec.Desired.Body, "workflow run")
 }

@@ -45,6 +45,9 @@ type cycle struct {
 	capabilities          verify.Capabilities
 	providerError         error
 	providerChecked       bool
+	providerName          string
+	provider              verify.Provider
+	providerResults       map[string]providerCheck
 }
 
 func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
@@ -123,7 +126,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		return result, err
 	}
 	for _, resource := range resources {
-		c.checkProvider(ctx)
+		c.checkProvider(ctx, resource.Handle.Provider)
 		detail, err := c.cleanup(ctx, resource.ID)
 		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || errors.Is(err, ErrNotImplemented) {
 			detail, err = err.Error(), nil
@@ -155,20 +158,37 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	return result, err
 }
 
-// checkProvider observes capabilities once, only when this pass has a candidate
-// action. It always runs outside the write transaction.
-func (c *cycle) checkProvider(ctx context.Context) {
-	if c.providerChecked {
+type providerCheck struct {
+	provider     verify.Provider
+	capabilities verify.Capabilities
+	err          error
+}
+
+// checkProvider observes each provider once per pass, outside write transactions.
+func (c *cycle) checkProvider(ctx context.Context, name string) {
+	if c.providerChecked && c.providerName == name {
 		return
 	}
+	if value, ok := c.providerResults[name]; ok {
+		c.provider, c.capabilities, c.providerError = value.provider, value.capabilities, value.err
+		c.providerName, c.providerChecked = name, true
+		return
+	}
+	if c.providerResults == nil {
+		c.providerResults = map[string]providerCheck{}
+	}
+	defer func() { c.providerResults[name] = providerCheck{c.provider, c.capabilities, c.providerError} }()
 	c.providerChecked = true
-	if c.engine.Provider == nil {
+	c.providerName = name
+	c.providerError = nil
+	c.provider = c.engine.VerificationProvider(name)
+	if c.provider == nil {
 		c.providerError = fmt.Errorf("workflow: verification provider is required")
 		return
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeouts.Observe)
 	defer cancel()
-	c.capabilities, c.providerError = c.engine.Provider.Capabilities(callCtx)
+	c.capabilities, c.providerError = c.provider.Capabilities(callCtx)
 	if c.providerError == nil {
 		c.providerError = callCtx.Err()
 	}

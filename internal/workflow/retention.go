@@ -146,7 +146,7 @@ func (c *cycle) collectResource(ctx context.Context, id record.ResourceID, befor
 		if err != nil || item.Action != "release" {
 			return item, err
 		}
-		c.checkProvider(ctx)
+		c.checkProvider(ctx, resource.Handle.Provider)
 		item.Detail, err = c.cleanup(ctx, id)
 		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) {
 			item.Detail, err = err.Error(), nil
@@ -164,7 +164,7 @@ func (c *cycle) collectResource(ctx context.Context, id record.ResourceID, befor
 		}
 		return item, err
 	}
-	pruner, ok := e.Provider.(verify.ArtifactPruner)
+	pruner, ok := e.VerificationProvider(resource.Handle.Provider).(verify.ArtifactPruner)
 	if !ok {
 		item.Detail = "provider does not support artifact pruning"
 		return item, nil
