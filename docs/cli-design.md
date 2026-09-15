@@ -73,12 +73,14 @@ dockhand db migrate
 ## Tart setup
 
 ```text
-dockhand setup [--check|--rebuild] [--image <local-name>]
+dockhand setup [--os <release-name-or-major-version>] [--check|--rebuild] [--image <local-name>]
     [--source <oci-image>] [--macports-version <version>]
     [--xcode <archive-or-directory>]
 ```
 
 `setup` prepares the local Tart image used by native verification. It determines the native Darwin version and architecture through the selected local MacPorts installation, chooses a conventional image name and matching vanilla macOS source, and provisions only when that image is missing. An existing image is started only as a disposable clone and must pass the same checks. `--check` refuses a missing image and performs no pull or installation. `--rebuild` always prepares and validates a replacement before attempting to adopt it.
+
+`--os` selects a macOS release by name or major product version, for example `--os sonoma` or `--os 14`. It keeps the native architecture and chooses the matching source, image names, MacPorts installer, and Xcode archive. Omit it to use the host release.
 
 The base profile installs the pinned Tart guest agent from its release archive after verifying its SHA-256 digest, installs Apple's Command Line Tools when the vanilla source lacks a working compiler, then installs the selected official MacPorts package. `--xcode` adds full Xcode from an explicit `.xip` or selects the newest compatible release archive in a directory. It creates a separate conventional image such as `dockhand-xcode-tahoe` and refuses to replace a `dockhand-base-*` image. Equal-version Apple-silicon archives are preferred over universal and unsuffixed archives. Pre-release archive names are ignored. Validation requires the requested platform and MacPorts version, guest command transport (stdin, stdout, and failure propagation), a working compiler, passwordless sudo, MacPorts Tcl packages, no active ports, and no recognized foreign package-manager prefix. A base profile must select Command Line Tools; an Xcode profile must select `/Applications/Xcode.app` and report the requested exact Xcode version. The implementation supports arm64 Darwin 21 through 25 and MacPorts under `/opt/local`.
 

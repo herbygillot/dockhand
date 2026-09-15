@@ -57,7 +57,7 @@ Prepare a verification image once:
 dockhand setup
 ```
 
-Setup provisions a macOS image with development tools and MacPorts. Each verification runs in a disposable clone. For ports that require full Xcode, provide a downloaded Xcode archive with `dockhand setup --xcode /path/to/Xcode.xip`.
+Setup provisions a macOS image with development tools and MacPorts. It defaults to the host release; use `dockhand setup --os sonoma` to prepare another supported macOS release. Each verification runs in a disposable clone. For ports that require full Xcode, provide a downloaded Xcode archive with `dockhand setup --xcode /path/to/Xcode.xip`.
 
 ## Preview an update
 

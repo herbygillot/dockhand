@@ -3,13 +3,16 @@ package app
 import (
 	"context"
 	"io"
+	"strconv"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/tart/provision"
 )
 
 type SetupOptions struct {
+	OS              string
 	Check           bool
 	Rebuild         bool
 	Image           string
@@ -28,6 +31,13 @@ func Setup(ctx context.Context, config Config, options SetupOptions, progress io
 	platform, err := ports.NativePlatform(ctx)
 	if err != nil {
 		return SetupResult{}, err
+	}
+	if options.OS != "" {
+		release, err := macos.ParseRelease(options.OS)
+		if err != nil {
+			return SetupResult{}, err
+		}
+		platform.Version = strconv.Itoa(release.Darwin)
 	}
 	image := options.Image
 	if image == "" {

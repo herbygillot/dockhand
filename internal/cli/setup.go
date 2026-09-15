@@ -14,7 +14,7 @@ func (r *runtime) setupCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:         "setup",
 		Short:       "Prepare a local Tart verification image",
-		Long:        "Check the native MacPorts platform and prepare a clean local Tart image with the guest agent, command line tools, and MacPorts. Pass --xcode to prepare a separate full-Xcode profile from one .xip archive or a directory of release archives. An existing image is validated in a disposable clone. Missing images are provisioned from the matching vanilla macOS image.",
+		Long:        "Check the native MacPorts platform and prepare a clean local Tart image with the guest agent, command line tools, and MacPorts. Pass --os to choose another macOS release. Pass --xcode to prepare a separate full-Xcode profile from one .xip archive or a directory of release archives. An existing image is validated in a disposable clone. Missing images are provisioned from the matching vanilla macOS image.",
 		Args:        cobra.NoArgs,
 		Annotations: map[string]string{stateIndependentHelp: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -46,6 +46,7 @@ func (r *runtime) setupCommand() *cobra.Command {
 			return err
 		},
 	}
+	command.Flags().StringVar(&options.OS, "os", "", "macOS release name or major version (defaults to the host release)")
 	command.Flags().BoolVar(&options.Check, "check", false, "Validate an existing image without provisioning one")
 	command.Flags().BoolVar(&options.Rebuild, "rebuild", false, "Provision and validate a replacement even when the image exists")
 	command.Flags().StringVar(&options.Image, "image", r.config.Tart.Image, "Local Tart image name (defaults from the native macOS release)")
