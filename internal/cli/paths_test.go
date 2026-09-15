@@ -183,3 +183,24 @@ func TestGlobalPathsRejectExplicitEmptyValues(t *testing.T) {
 	require.ErrorContains(t, Run(t.Context(), []string{"status", "--tart="}, Streams{Out: &out, Err: &out}, config), "executable path must not be empty")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }
+
+func TestOptionalDependencyToolPathPrecedence(t *testing.T) {
+	for _, tool := range []struct{ name, env string }{{"go2port", "GO2PORT_BIN"}, {"cargo2port", "CARGO2PORT_BIN"}} {
+		t.Run(tool.name, func(t *testing.T) {
+			t.Setenv(tool.env, "environment-helper")
+			config := app.Config{DBPath: filepath.Join(t.TempDir(), "absent", "state.db")}
+			root, err := NewRoot(config)
+			require.NoError(t, err)
+			require.Equal(t, "environment-helper", root.PersistentFlags().Lookup(tool.name).Value.String())
+			var out bytes.Buffer
+			root.SetOut(&out)
+			root.SetErr(&out)
+			root.SetArgs([]string{"setup", "--help", "--" + tool.name, "./tool with spaces"})
+			require.NoError(t, root.ExecuteContext(t.Context()))
+			expected, err := filepath.Abs("./tool with spaces")
+			require.NoError(t, err)
+			require.Equal(t, expected, root.PersistentFlags().Lookup(tool.name).Value.String())
+			require.NoFileExists(t, config.DBPath)
+		})
+	}
+}

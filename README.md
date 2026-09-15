@@ -75,6 +75,8 @@ dockhand bump jq 1.8.1 --diff
 
 An upstream tag prefix such as `v` can be included; if omitted, Dockhand uses the port's existing prefix convention. Automatic updates currently cover supported GitHub and GitLab source conventions. Some Portfiles still need manual edits; Dockhand reports when it cannot prepare an update.
 
+For ports with generated Go or Rust dependency blocks, Dockhand uses the optional host tools `go2port` (`go.vendors`) and `cargo2port` (`cargo.crates`, including supported GitHub Git dependencies). Install the needed helper with MacPorts, for example `sudo port install go2port` or `sudo port install cargo2port`. `dockhand setup` reports whether they are available; unrelated updates do not require them. Use `--go2port` / `GO2PORT_BIN` or `--cargo2port` / `CARGO2PORT_BIN` to choose an executable. If a block contains overrides it cannot safely regenerate, Dockhand asks you to prepare that change manually.
+
 ## Prepare and verify
 
 ```sh

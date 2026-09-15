@@ -24,7 +24,7 @@ namespace eval ::dockhand {
                 fetch.user_agent fetch.ignore_sslcert
                 patchfiles patch.pre_args livecheck.type livecheck.url livecheck.regex
                 livecheck.version go.vendors go.version go.package go.domain go.offline_build go.toolchain_min
-                cargo.crates cargo.crates_github
+                cargo.crates cargo.crates_github cargo.update cargo.dir
                 github.author github.project github.version github.tag_prefix github.tag_suffix github.tarball_from
                 gitlab.author gitlab.project gitlab.version gitlab.tag_prefix gitlab.tag_suffix gitlab.instance
                 git.url git.branch
@@ -36,6 +36,15 @@ namespace eval ::dockhand {
                     } else {
                         dict set out $field $value
                     }
+                }
+            }
+            if {[dict exists $out cargo.dir]} {
+                set source [$worker eval {file normalize [option worksrcpath]}]
+                set directory [file normalize [dict get $out cargo.dir]]
+                if {$directory eq $source} {
+                    dict set out cargo.dir @worksrc@
+                } elseif {[string first "${source}/" $directory] == 0} {
+                    dict set out cargo.dir "@worksrc@/[string range $directory [expr {[string length $source] + 1}] end]"
                 }
             }
             if {[catch {$worker eval {

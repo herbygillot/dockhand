@@ -3,7 +3,9 @@ package prepare
 import (
 	"context"
 	"fmt"
+	"io"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,7 +16,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
-func (s *Service) prepareVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
+func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	release := request.Release
 	if release == nil || release.Requested != request.Version {
 		return Result{}, fmt.Errorf("prepare: a matching resolved release is required")
@@ -89,7 +91,23 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 	}
 	downloads := make([]Download, 0, len(sources))
 	for _, source := range sources {
-		download, err := s.downloadArchive(ctx, info, source, nil)
+		var output io.Writer
+		var file *os.File
+		if s.archiveDirectory != "" {
+			file, err = os.CreateTemp(s.archiveDirectory, "source-*")
+			if err != nil {
+				return result, err
+			}
+			output = file
+		}
+		download, err := s.downloadArchive(ctx, info, source, output)
+		if file != nil {
+			closeErr := file.Close()
+			if err == nil {
+				err = closeErr
+			}
+			download.path = file.Name()
+		}
 		if err != nil {
 			return result, err
 		}

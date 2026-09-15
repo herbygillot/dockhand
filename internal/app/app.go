@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/proc"
 	"github.com/herbygillot/dockhand/internal/publish"
@@ -23,13 +24,14 @@ import (
 )
 
 type Config struct {
-	DBPath         string
-	Repository     string
-	GitExecutable  string
-	TclExecutable  string
-	MacPortsPrefix string
-	Tart           tart.Config
-	GitHub         github.Config
+	DependencyTools dependency.Tools
+	DBPath          string
+	Repository      string
+	GitExecutable   string
+	TclExecutable   string
+	MacPortsPrefix  string
+	Tart            tart.Config
+	GitHub          github.Config
 }
 
 type Services struct {
@@ -66,7 +68,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		githubClient.Credentials = github.SystemCredentials{Store: keychain.Store{}, Key: githubCredentialKey}
 	}
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient)
-	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery}
+	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools}
 	if config.Tart.ArtifactDirectory == "" {
 		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
 	}

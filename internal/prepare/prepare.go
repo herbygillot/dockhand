@@ -8,6 +8,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
@@ -53,6 +54,8 @@ type Result struct {
 }
 
 type Service struct {
+	DependencyTools  dependency.Tools
+	archiveDirectory string
 	Repo             *git.Repository
 	Ports            macports.Reader
 	Upstream         *upstream.Service

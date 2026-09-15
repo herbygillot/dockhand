@@ -8,23 +8,11 @@ Last updated: 2026-09-14.
 
 ## Next
 
-This order broadens automatic source preparation before adding dependency regeneration and downstream coverage. Small independent items may land separately; do not combine them into a single architectural rewrite.
+Source archive and Go/Rust dependency preparation are implemented; the next priority connects downstream discovery to verification scheduling. Small independent items may land separately; do not combine them into a single architectural rewrite.
 
 Keep live exercise results in activity reports. Add regressions for defects that remain, rather than re-queuing cancellation, recovery, or provisioning work that has already passed its exercise.
 
-### 1. Regenerate Go and Rust dependency declarations during bumps
-
-Add explicit preparation support for `go2port`/`go.vendors` and `cargo2port`/`cargo.crates`, including `cargo.crates_github` where applicable. Derive dependency declarations and checksums from the selected new source release, using the appropriate MacPorts helpers rather than treating these declarations as ordinary single-archive checksums.
-
-Treat `go2port` and `cargo2port` as optional preparation tools. Determine whether the selected port's dependency/checksum block requires the corresponding helper; require only that helper for that update. If it is missing, stop with an actionable error naming the port, missing executable, and dependency block that cannot be regenerated. Do not silently retain stale declarations or require either tool for unrelated ports. Check availability before invoking the helper or applying its dependent edits, including previews.
-
-Alongside each helper's preparation support, have `setup` report whether the executable is available without making its absence a setup failure or automatically installing it. These are host preparation tools, not blanket verification-image prerequisites. Add README guidance when the corresponding support lands; do not advertise it as available beforehand. Validate missing-tool behavior separately from tool execution failure and successful regeneration.
-
-Account for added, removed, and changed dependencies, relevant module/lock files, Git-sourced dependencies, and helper failures. Keep helper execution outside database write transactions and changes in isolated preparation workspaces. Review the generated diff, reevaluate the Portfile in its frozen context, and run normal verification before publication. Preserve human-maintained options and overrides; report cases that cannot be regenerated safely.
-
-Implement and validate Go and Rust independently through the existing preparation contract. Neither needs a separate workflow engine or a new general-purpose plugin framework.
-
-### 2. Plan and execute dependent verification
+### 1. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 
@@ -120,6 +108,7 @@ The following capabilities are established and should be extended through their 
 - explicit job phases, transactional claims, recovery, cancellation, and resource cleanup;
 - workflow lifecycle organization that keeps binding, intake, policy, execution, and projection roles visible without exporting driver internals;
 - immutable committed and working-tree source capture with native MacPorts evaluation;
+- named and multiple source checksums, preserved local patches, and guarded Go/Rust dependency regeneration through optional host helpers;
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;
 - capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;

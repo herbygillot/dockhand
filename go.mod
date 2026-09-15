@@ -3,11 +3,13 @@ module github.com/herbygillot/dockhand
 go 1.27.1
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/google/go-github/v91 v91.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	gitlab.com/gitlab-org/api/client-go/v2 v2.64.0
 	golang.org/x/crypto v0.55.0
+	golang.org/x/mod v0.38.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.58.0

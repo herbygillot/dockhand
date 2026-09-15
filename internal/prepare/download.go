@@ -18,6 +18,7 @@ import (
 )
 
 type Download struct {
+	path                      string
 	Name, URL, SHA256, RMD160 string
 	Size                      int64
 }
@@ -101,7 +102,9 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 			return nil, fmt.Errorf("%w: only direct HTTP(S) master sites are supported", ErrUnsupported)
 		}
 		tags := []string{""}
-		if cut := strings.LastIndex(raw, ":"); cut > strings.Index(raw, "://")+3 && strings.Contains(site.Path, ":") {
+		authority := strings.Index(raw, "://") + 3
+		pathStart := strings.Index(raw[authority:], "/")
+		if cut := strings.LastIndex(raw, ":"); pathStart >= 0 && cut > authority+pathStart {
 			tags = strings.Split(raw[cut+1:], ",")
 			for _, tag := range tags {
 				if tag == "" || !literalVersion(tag) {

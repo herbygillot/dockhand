@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/tart/provision"
 )
 
@@ -17,7 +18,10 @@ type SetupOptions struct {
 	Xcode           string
 }
 
-type SetupResult = provision.Result
+type SetupResult struct {
+	provision.Result
+	OptionalTools []dependency.Availability `json:"optional_tools"`
+}
 
 func Setup(ctx context.Context, config Config, options SetupOptions, progress io.Writer) (SetupResult, error) {
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
@@ -42,5 +46,6 @@ func Setup(ctx context.Context, config Config, options SetupOptions, progress io
 		},
 		Progress: progress,
 	}
-	return service.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
+	result, err := service.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
+	return SetupResult{Result: result, OptionalTools: config.DependencyTools.Probe()}, err
 }

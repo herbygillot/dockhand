@@ -23,6 +23,12 @@ type runtime struct {
 }
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
+	if config.DependencyTools.Go2Port == "" {
+		config.DependencyTools.Go2Port = os.Getenv("GO2PORT_BIN")
+	}
+	if config.DependencyTools.Cargo2Port == "" {
+		config.DependencyTools.Cargo2Port = os.Getenv("CARGO2PORT_BIN")
+	}
 	if config.Repository == "" {
 		config.Repository = os.Getenv("MACPORTS_TREE")
 		if config.Repository == "" {
@@ -95,6 +101,21 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		}
 	}
 	root.PersistentFlags().Var(tartPath, "tart", "Tart executable (TART_BIN; otherwise find tart on PATH)")
+	for _, tool := range []struct {
+		name, env string
+		target    *string
+	}{{"go2port", "GO2PORT_BIN", &runtime.config.DependencyTools.Go2Port}, {"cargo2port", "CARGO2PORT_BIN", &runtime.config.DependencyTools.Cargo2Port}} {
+		value := executablePathValue{target: tool.target}
+		if *tool.target != "" {
+			if err := value.Set(*tool.target); err != nil {
+				return nil, err
+			}
+		}
+		root.PersistentFlags().Var(value, tool.name, "Optional dependency generator executable ("+tool.env+")")
+		if err := root.MarkPersistentFlagFilename(tool.name); err != nil {
+			return nil, err
+		}
+	}
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
 	if err := root.MarkPersistentFlagFilename("db"); err != nil {
 		return nil, err

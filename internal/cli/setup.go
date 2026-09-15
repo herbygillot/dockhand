@@ -25,6 +25,15 @@ func (r *runtime) setupCommand() *cobra.Command {
 			if r.json {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
+			for _, tool := range result.OptionalTools {
+				status := "not found (needed only for matching dependency blocks)"
+				if tool.Available {
+					status = plain(tool.Path)
+				}
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Optional %s: %s\n", tool.Name, status); err != nil {
+					return err
+				}
+			}
 			verb := "Provisioned"
 			if result.Reused {
 				verb = "Ready"
