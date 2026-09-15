@@ -37,7 +37,7 @@ A push may complete before GitHub exposes its run. Dockhand retains an uncertain
 
 The provider refuses to replace an existing different contribution head. After corrective edits or a rebase, reconcile and push the branch with Git, then run `verify --provider github` again. A newly accepted verification inspects GitHub again instead of automatically reusing an older local pass. To request another remote execution of the same commit, rerun the workflow on GitHub first, then verify again. `--fresh` does not dispatch reruns and is currently refused for this provider.
 
-A missing run remains uncertain because a successful Git push does not prove whether a delayed Actions event will execute. This includes pushes that did not trigger a workflow. Dockhand does not repeatedly manufacture new branches, mutate commits, or declare such work safely canceled. Inspect the fork's Actions settings and event history when a run does not appear. Cancellation requests target the admitted run; final disposition still comes from observation. No branch or workflow run is deleted during cleanup.
+A missing run remains uncertain because a successful Git push does not prove whether a delayed Actions event will execute. This includes pushes that did not trigger a workflow. Dockhand does not repeatedly manufacture new branches or mutate commits. Canceling an uncertain submission closes its local tracking and prevents later submission calls from pushing; a push already sent may still trigger Actions. Inspect the fork's Actions settings and event history when a run does not appear. Cancellation requests target the admitted run; final disposition still comes from observation. No branch or workflow run is deleted during cleanup.
 
 ## Logs
 

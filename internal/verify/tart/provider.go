@@ -416,7 +416,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	return submission(v, verify.Admitted), nil
 }
 
-func (p *Provider) Reconcile(ctx context.Context, id record.RequestID) (verify.Reconciliation, error) {
+func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, _ verify.ReconcileOptions) (verify.Reconciliation, error) {
 	o, err := p.begin(ctx, id)
 	if err != nil {
 		return verify.Reconciliation{}, err

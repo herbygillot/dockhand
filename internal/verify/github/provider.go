@@ -236,7 +236,7 @@ func admitted(row record.ProviderExecution) (verify.Submission, error) {
 	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: ProviderName, RequestID: row.ID, RunID: fmt.Sprintf("%d:%d", run.ID, run.Attempt)}}, nil
 }
 
-func (p *Provider) Reconcile(ctx context.Context, id record.RequestID) (verify.Reconciliation, error) {
+func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, options verify.ReconcileOptions) (verify.Reconciliation, error) {
 	result := verify.Reconciliation{State: verify.RunUnknown}
 	err := p.locked(ctx, id, func(ctx context.Context) error {
 		row, err := p.read(ctx, id)
@@ -250,6 +250,20 @@ func (p *Provider) Reconcile(ctx context.Context, id record.RequestID) (verify.R
 		}
 		if row.State == record.ExecutionClosed {
 			result.State = verify.RequestClosed
+			if len(row.Payload) > 0 {
+				result.Submission.Detail = "Stopped GitHub submission tracking; any push already sent may still run in Actions"
+			}
+			return nil
+		}
+		if options.CancelRequested && row.State == record.ExecutionReserved {
+			// The request lock fences both in-flight and stale Submit calls. A push
+			// already sent may still run remotely; closing tracking cannot undo it.
+			row.State, row.Occupied = record.ExecutionClosed, false
+			if err := p.put(ctx, row); err != nil {
+				return err
+			}
+			result.State = verify.RequestClosed
+			result.Submission.Detail = "Stopped GitHub submission tracking; any push already sent may still run in Actions"
 			return nil
 		}
 		result.Submission, err = p.advance(ctx, row)

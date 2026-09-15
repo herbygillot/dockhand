@@ -63,6 +63,13 @@ const (
 	RunUnknown    ReconciliationState = "unknown"
 )
 
+// ReconcileOptions distinguishes continuing admission from stopping a request.
+// CancelRequested forbids starting new external work; an existing run may
+// still be returned for cancellation or observation.
+type ReconcileOptions struct {
+	CancelRequested bool
+}
+
 type Reconciliation struct {
 	State      ReconciliationState
 	Submission Submission
@@ -77,9 +84,9 @@ type Provider interface {
 	Capabilities(context.Context) (Capabilities, error)
 	// Submit enforces capacity and is idempotent by request ID across processes.
 	Submit(context.Context, Request) (Submission, error)
-	// Reconcile returns an existing run, durably closes an unadmitted request, or reports uncertainty.
+	// Reconcile returns an existing run, durably closes a request to further submission, or reports uncertainty.
 	// A closed request must reject every later Submit, including calls from stale drivers.
-	Reconcile(context.Context, record.RequestID) (Reconciliation, error)
+	Reconcile(context.Context, record.RequestID, ReconcileOptions) (Reconciliation, error)
 	Observe(context.Context, record.ProviderRun) (Observation, error)
 	Cancel(context.Context, record.ProviderRun) error
 	Release(context.Context, record.ResourceHandle) (ReleaseResult, error)

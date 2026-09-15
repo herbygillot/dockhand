@@ -37,7 +37,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	e := c.engine
 	var attempt record.Attempt
 	var action attemptAction
-	var changed, recorded bool
+	var changed, recorded, cancelRequested bool
 	var detail string
 	var err error
 	for {
@@ -171,6 +171,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			if err != nil {
 				return err
 			}
+			cancelRequested = job.CancelRequestedAt != nil
 			attempt.Claim = claim
 			if action == submitAttempt {
 				attempt.State = record.AttemptSubmitting
@@ -191,7 +192,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 	if action == "" {
 		return changed, detail, nil
 	}
-	response := c.callAttempt(ctx, action, attempt)
+	response := c.callAttempt(ctx, action, attempt, cancelRequested)
 	err = e.updateExecution(ctx, id, func(tx state.Tx, work *execution) error {
 		current, exists := work.Attempts[attempt.ID]
 		now := e.now()
@@ -259,7 +260,7 @@ func selectAttempt(work *execution, now time.Time, canceling bool) (record.Attem
 }
 
 // callAttempt performs exactly one provider operation outside the write transaction.
-func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt record.Attempt) attemptResult {
+func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt record.Attempt, cancelRequested bool) attemptResult {
 	ctx, cancel := context.WithTimeout(ctx, c.attemptTimeout(action))
 	defer cancel()
 	var result attemptResult
@@ -267,7 +268,7 @@ func (c *cycle) callAttempt(ctx context.Context, action attemptAction, attempt r
 	case submitAttempt:
 		result.submission, result.err = c.provider.Submit(ctx, verify.Request{ID: attempt.SubmissionID, AttemptID: attempt.ID, Spec: attempt.Spec})
 	case reconcileAttempt:
-		result.reconciliation, result.err = c.provider.Reconcile(ctx, attempt.SubmissionID)
+		result.reconciliation, result.err = c.provider.Reconcile(ctx, attempt.SubmissionID, verify.ReconcileOptions{CancelRequested: cancelRequested})
 	case observeAttempt:
 		result.observation, result.err = c.provider.Observe(ctx, attempt.Run)
 	case cancelAttempt:
@@ -315,7 +316,11 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 				return job.Detail
 			}
 			if job.CancelRequestedAt != nil {
-				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, "Canceled before admission", now)
+				detail := result.reconciliation.Submission.Detail
+				if detail == "" {
+					detail = "Canceled before admission"
+				}
+				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictCanceled, ObservedAt: now}, detail, now)
 			} else {
 				attempt.SubmissionID = record.RequestID("submit_" + rand.Text())
 				work.Submissions[attempt.SubmissionID] = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: current.Sequence + 1, Provider: attempt.Spec.Config.Provider, CreatedAt: now}

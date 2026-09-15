@@ -246,7 +246,7 @@ func TestAdmissionIsIdempotentAndClosesUnknownIDs(t *testing.T) {
 	changed.Spec.Config.Tests = record.TestDeclared
 	_, err = f.provider.Submit(t.Context(), changed)
 	require.ErrorIs(t, err, state.ErrConflict)
-	closed, err := f.provider.Reconcile(t.Context(), "late")
+	closed, err := f.provider.Reconcile(t.Context(), "late", verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RequestClosed, closed.State)
 	late := f.request
@@ -324,7 +324,7 @@ func TestReconcileAdoptsAnIncompatibleImageResultAfterStopFailure(t *testing.T) 
 	_, err := f.provider.Submit(t.Context(), f.request)
 	require.Error(t, err)
 	machine.stopError = nil
-	reconciled, err := f.provider.Reconcile(t.Context(), f.request.ID)
+	reconciled, err := f.provider.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RunFound, reconciled.State)
 	observed, err := f.provider.Observe(t.Context(), reconciled.Submission.Run)
@@ -351,7 +351,7 @@ func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T
 	result, err = b.provider.Submit(t.Context(), b.request)
 	require.NoError(t, err)
 	require.Equal(t, verify.AtCapacity, result.State)
-	reconciliation, err := a.provider.Reconcile(t.Context(), a.request.ID)
+	reconciliation, err := a.provider.Reconcile(t.Context(), a.request.ID, verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RequestClosed, reconciliation.State)
 	require.Len(t, reconciliation.Submission.Resources, 1)
@@ -368,7 +368,7 @@ func TestRecoveryCompletesAdmittedLaunchAndPreservesResultsAcrossStopFailure(t *
 	_, err := f.provider.Submit(t.Context(), f.request)
 	require.Error(t, err)
 	recovered := &Provider{State: f.store, Repository: f.provider.Repository, Repo: f.provider.Repo, Config: f.provider.Config, backend: m}
-	reconciliation, err := recovered.Reconcile(t.Context(), f.request.ID)
+	reconciliation, err := recovered.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RunFound, reconciliation.State)
 	run := reconciliation.Submission.Run
@@ -492,7 +492,7 @@ func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
 	admitted, err := p.Submit(t.Context(), f.request)
 	require.NoError(t, err)
 	require.Equal(t, verify.Admitted, admitted.State)
-	again, err := p.Reconcile(t.Context(), f.request.ID)
+	again, err := p.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RunFound, again.State)
 	require.NoError(t, p.Cancel(t.Context(), admitted.Run))
@@ -534,7 +534,7 @@ func TestStandaloneVerificationAdmissionRequiresNoContributionRevision(t *testin
 	require.NoError(t, err)
 	require.Equal(t, verify.Admitted, result.State)
 	require.Equal(t, 1, m.calls["clone"])
-	recovered, err := f.provider.Reconcile(t.Context(), request.ID)
+	recovered, err := f.provider.Reconcile(t.Context(), request.ID, verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RunFound, recovered.State)
 	require.Equal(t, result.Run, recovered.Submission.Run)

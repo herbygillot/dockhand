@@ -157,7 +157,7 @@ func (p *scriptedProvider) Submit(ctx context.Context, r verify.Request) (verify
 	}
 	return admitted(r.ID), nil
 }
-func (p *scriptedProvider) Reconcile(ctx context.Context, id record.RequestID) (verify.Reconciliation, error) {
+func (p *scriptedProvider) Reconcile(ctx context.Context, id record.RequestID, _ verify.ReconcileOptions) (verify.Reconciliation, error) {
 	if err := p.begin(ctx, "reconcile"); err != nil {
 		return verify.Reconciliation{}, err
 	}

@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -40,12 +41,16 @@ type fakeActions struct {
 	run      *gh.WorkflowRun
 	jobs     []*gh.WorkflowJob
 	err      error
+	runsErr  error
 	canceled int
 	logCalls int
 }
 
 func (a *fakeActions) Workflow(context.Context, string) (*gh.Workflow, error) { return a.flow, a.err }
 func (a *fakeActions) Runs(context.Context, int64, string, string) ([]*gh.WorkflowRun, error) {
+	if a.runsErr != nil {
+		return nil, a.runsErr
+	}
 	return a.runs, a.err
 }
 func (a *fakeActions) Run(_ context.Context, _ int64, attempt int) (*gh.WorkflowRun, error) {
@@ -157,7 +162,7 @@ func TestPushRecoveryAndDriverCompletion(t *testing.T) {
 	f.ready()
 	// A newly constructed provider must recover solely from persisted intent.
 	restarted := *f.provider
-	found, err := restarted.Reconcile(t.Context(), f.request.ID)
+	found, err := restarted.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RunFound, found.State)
 	repeated, err := restarted.Submit(t.Context(), f.request)
@@ -194,7 +199,7 @@ func TestConcurrentSubmitAndClosedRequest(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	closed, err := f.provider.Reconcile(t.Context(), "never-submitted")
+	closed, err := f.provider.Reconcile(t.Context(), "never-submitted", verify.ReconcileOptions{})
 	require.NoError(t, err)
 	require.Equal(t, verify.RequestClosed, closed.State)
 	request := f.request
@@ -280,5 +285,47 @@ func TestWorkflowMatrixRejectsUnsupportedTriggers(t *testing.T) {
 	for _, raw := range []string{strings.Replace(testWorkflow, "push:", "pull_request:", 1), strings.Replace(testWorkflow, "[master]", "[master, candidate]", 1), strings.Replace(testWorkflow, "macos-15", "macos-14", 1)} {
 		_, err := workflowMatrix([]byte(raw))
 		require.Error(t, err)
+	}
+}
+
+func TestCancellationFencesUncertainPush(t *testing.T) {
+	for _, pushed := range []bool{false, true} {
+		t.Run(fmt.Sprint("pushed=", pushed), func(t *testing.T) {
+			f := setup(t)
+			if !pushed {
+				f.api.runsErr = errors.New("Actions unavailable before push")
+			}
+			// Go through the driver so cancellation intent must cross the provider boundary.
+			_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+			require.NoError(t, err)
+			row, err := f.provider.read(t.Context(), f.request.ID)
+			require.NoError(t, err)
+			require.Equal(t, record.ExecutionReserved, row.State)
+			head, err := f.provider.Repo.RemoteHead(t.Context(), f.remote, "candidate")
+			require.NoError(t, err)
+			require.Equal(t, pushed, head.Exists)
+			require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-fixture", Kind: record.Cancel, Jobs: []record.JobID{f.job}}))
+			// Closure must work even if GitHub is unavailable.
+			f.api.err = errors.New("offline")
+			require.Eventually(t, func() bool {
+				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				return status.Jobs[0].Job.State == record.JobCanceled
+			}, 5*time.Second, 10*time.Millisecond)
+			restarted := *f.provider
+			row, err = restarted.read(t.Context(), f.request.ID)
+			require.NoError(t, err)
+			require.Equal(t, record.ExecutionClosed, row.State)
+			require.False(t, row.Occupied)
+			f.api.err, f.api.runsErr = nil, nil
+			stale, err := restarted.Submit(t.Context(), f.request)
+			require.NoError(t, err)
+			require.Equal(t, verify.Unsupported, stale.State)
+			after, err := f.provider.Repo.RemoteHead(t.Context(), f.remote, "candidate")
+			require.NoError(t, err)
+			require.Equal(t, head, after)
+		})
 	}
 }

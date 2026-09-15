@@ -14,6 +14,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/stretchr/testify/require"
 )
@@ -161,7 +162,7 @@ destroot {
 					t.Logf("cleanup cancel: %v", err)
 				}
 			} else {
-				if _, err := provider.Reconcile(cleanup, attempt.SubmissionID); err != nil {
+				if _, err := provider.Reconcile(cleanup, attempt.SubmissionID, verify.ReconcileOptions{}); err != nil {
 					t.Logf("cleanup reconcile: %v", err)
 				}
 			}
