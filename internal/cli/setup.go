@@ -25,6 +25,11 @@ func (r *runtime) setupCommand() *cobra.Command {
 			if r.json {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
+			review := "no source-review record"
+			if result.HostMacPorts.SourceReviewed {
+				review = "source-reviewed"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Host MacPorts Base %s (Tcl %s): evaluator startup checks passed; %s.\n", plain(result.HostMacPorts.BaseVersion), plain(result.HostMacPorts.TclVersion), review)
 			for _, tool := range result.OptionalTools {
 				status := "not found (needed only for matching dependency blocks)"
 				if tool.Available {

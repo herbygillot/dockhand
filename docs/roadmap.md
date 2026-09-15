@@ -34,12 +34,10 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 
 ### MacPorts Base compatibility and fetch semantics
 
-A read-only source review found no incompatible evaluator interfaces in Base 2.12.2–2.12.6, or in the representative older releases 2.11.6, 2.10.7, 2.9.3, and 2.8.1. This is source-review evidence, not runtime certification or a guarantee that current PortGroups support those older releases.
+Capability checks and host Base/Tcl diagnostics are implemented. Native evaluator tests pass on Base 2.12.6 and an isolated Base 2.11.6 build on Darwin 25 arm64. Earlier source-reviewed releases remain source-review evidence only; see [compatibility scope and reproduction](macports-compatibility.md).
 
-- Report the installed Base version in evaluator diagnostics and track which versions have source-review evidence versus runtime validation. An untested version should not silently appear certified, nor should version alone replace capability checks.
-- Check the evaluator's required capabilities and assumptions at startup or first use. Missing metadata access should produce a clear compatibility error; unrecognized fetch internals should disable automatic source preparation with an actionable explanation.
-- Validate the shared evaluator against representative Base versions on compatible hosts, covering source/resource binding, subports and variants, optional metadata, and fetch-hook inspection. Track PortGroup compatibility separately: Go hook recognition can change with the ports tree independently of Base. In particular, test the assumptions about target record keys, `user${hook}` procedure names, and the `global {*}[info globals]` body prefix.
-- Keep source binding, metadata access, and fetch-hook inspection identifiable within the MacPorts adapter. Retain one shared Tcl implementation while the contracts agree; introduce version-specific overrides when a demonstrated incompatibility requires them. V1's version selector currently has only one actual shim, `2.12.6.tcl`, so its presence alone is not evidence of historical coverage.
+- Extend runtime coverage to additional Base/OS combinations when needed, tracking PortGroup compatibility separately.
+- Keep metadata access, fetch registration, and Go hook recognition within the shared MacPorts adapter. Introduce version-specific adapters only for demonstrated incompatibilities; unknown versions are not rejected by version number alone.
 
 ### Provisioning follow-up
 

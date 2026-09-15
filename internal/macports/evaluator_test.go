@@ -16,6 +16,9 @@ import (
 
 func liveEvaluator(t *testing.T) *Evaluator {
 	t.Helper()
+	if executable := os.Getenv("DOCKHAND_TEST_MACPORTS_TCLSH"); executable != "" {
+		return &Evaluator{Executable: executable}
+	}
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
 		t.Skip("MacPorts port-tclsh is required for integration tests")

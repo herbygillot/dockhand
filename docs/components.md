@@ -350,3 +350,8 @@ Tart supplies the recorded index recipe and executes preinstalled roots in each 
 ### Read-only upstream selection
 
 `app.Outdated` captures committed local HEAD and observes each selected port through the existing source adapters and version probe. `macports/portindex.Filter` owns exact maintainer/category metadata matching and reports unknown coverage for omitted Portfiles, missing subports, and unread fields. The application stages a source-bound index in the system user cache without opening state; the CLI owns selector flags and rendering. Discovery does not accept jobs or grant publication authority. Primary-port-only version probing remains an explicit unknown for selected subports.
+
+
+### MacPorts runtime diagnostics
+
+`macports/compatibility.go` describes the observed Base/Tcl/platform and historical source-review coverage. Its Tcl companion checks startup interfaces, worker option access, and native fetch-target registration before interpreting actual fetch hooks. `Evaluator.Inspect` supplies setup diagnostics; snapshots retain the runtime observation. `macports/portedit` preserves specific fetch-compatibility failures when refusing preparation. There is no version-selected adapter or new package; [compatibility evidence](macports-compatibility.md) distinguishes runtime tests from source review.

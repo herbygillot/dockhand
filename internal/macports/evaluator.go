@@ -43,6 +43,7 @@ type PortInfo struct {
 }
 
 type Snapshot struct {
+	Runtime    Runtime
 	Source     record.Source
 	Target     record.Target
 	Platform   record.Platform
@@ -90,7 +91,7 @@ var evaluatorScript string
 //go:embed fetch_credentials.tcl
 var fetchCredentialsScript string
 
-func (e *Evaluator) start(ctx context.Context, tree Tree) (*rpc.Session, record.Platform, error) {
+func (e *Evaluator) start(ctx context.Context, tree Tree) (*rpc.Session, Runtime, error) {
 	executable := e.Executable
 	if executable == "" {
 		if e.Prefix != "" {
@@ -99,49 +100,42 @@ func (e *Evaluator) start(ctx context.Context, tree Tree) (*rpc.Session, record.
 			var err error
 			executable, err = exec.LookPath("port-tclsh")
 			if err != nil {
-				return nil, record.Platform{}, fmt.Errorf("%w: %w", ErrStartup, err)
+				return nil, Runtime{}, fmt.Errorf("%w: %w", ErrStartup, err)
 			}
 		}
 	}
 	proc, err := shell.Start(ctx, executable, shell.WithDir(tree.root))
 	if err != nil {
-		return nil, record.Platform{}, fmt.Errorf("%w: %w", ErrStartup, err)
+		return nil, Runtime{}, fmt.Errorf("%w: %w", ErrStartup, err)
 	}
 	session, err := rpc.New(ctx, proc)
 	if err != nil {
-		return nil, record.Platform{}, fmt.Errorf("%w: %w", ErrStartup, err)
+		return nil, Runtime{}, fmt.Errorf("%w: %w", ErrStartup, err)
 	}
-	fail := func(err error) (*rpc.Session, record.Platform, error) {
+	fail := func(err error) (*rpc.Session, Runtime, error) {
 		_ = session.Close()
-		return nil, record.Platform{}, err
+		return nil, Runtime{}, err
 	}
-	if _, err := session.Call(ctx, "eval", fetchCredentialsScript+"\n"+evaluatorScript); err != nil {
+	if _, err := session.Call(ctx, "eval", compatibilityScript+"\n"+fetchCredentialsScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", ErrStartup, err))
 	}
 	reply, err := session.Call(ctx, "initialize", tree.root)
 	if err != nil {
 		return fail(fmt.Errorf("%w: %w", ErrStartup, err))
 	}
-	values, errs := syntax.ListValues(reply)
-	if len(errs) != 0 || len(values) != 3 {
-		return fail(fmt.Errorf("%w: invalid platform reply %q", ErrStartup, reply))
+	runtime, err := decodeRuntime(reply)
+	if err != nil {
+		return fail(err)
 	}
-	platform := record.Platform{OS: values[0], Version: values[1], Architecture: values[2]}
-	if platform.OS == "" || platform.Version == "" || platform.Architecture == "" {
-		return fail(fmt.Errorf("%w: incomplete native platform", ErrStartup))
+	if tree.platform != (record.Platform{}) && tree.platform != runtime.Platform {
+		return fail(fmt.Errorf("%w: MacPorts Base %s; requested %+v; native %+v", ErrPlatform, runtime.BaseVersion, tree.platform, runtime.Platform))
 	}
-	if tree.platform != (record.Platform{}) && tree.platform != platform {
-		return fail(fmt.Errorf("%w: requested %+v; native %+v", ErrPlatform, tree.platform, platform))
-	}
-	return session, platform, nil
+	return session, runtime, nil
 }
 
 func (e *Evaluator) NativePlatform(ctx context.Context) (record.Platform, error) {
-	session, platform, err := e.start(ctx, Tree{})
-	if err != nil {
-		return record.Platform{}, err
-	}
-	return platform, session.Close()
+	runtime, err := e.Inspect(ctx)
+	return runtime.Platform, err
 }
 
 func (e *Evaluator) Evaluate(ctx context.Context, source Context) (_ Snapshot, err error) {
@@ -149,7 +143,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, source Context) (_ Snapshot, e
 	if err != nil {
 		return Snapshot{}, err
 	}
-	session, platform, err := e.start(ctx, checked.Tree)
+	session, runtime, err := e.start(ctx, checked.Tree)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -177,7 +171,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, source Context) (_ Snapshot, e
 			ports[sub] = value
 		}
 	}
-	return Snapshot{Source: source.Source(), Target: source.Target(), Platform: platform, Ports: ports, ObservedAt: time.Now().UTC()}, nil
+	return Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, ObservedAt: time.Now().UTC()}, nil
 }
 
 func evaluateOne(ctx context.Context, session *rpc.Session, source Context, subport string) (PortInfo, []string, error) {
@@ -225,6 +219,8 @@ func decodeMetadata(reply string) (PortInfo, []string, error) {
 		values["fetch.archive_compatible"] = "0"
 		if archiveFetchCompatible(value, fields[0], fields[1], fields[2]) {
 			values["fetch.archive_compatible"] = "1"
+		} else {
+			value.OptionErrors["fetch.archive_compatible"] = fmt.Sprintf("MacPorts Base %s: fetch procedure or hooks are not recognized for automatic archive preparation; prepare this port manually", values["dockhand.base_version"])
 		}
 		delete(values, "fetch_details")
 	}

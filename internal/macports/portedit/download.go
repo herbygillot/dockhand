@@ -81,6 +81,9 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 	if err := checkFetchCredentials(info); err != nil {
 		return nil, err
 	}
+	if problem := info.OptionErrors["fetch.archive_compatible"]; problem != "" {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupported, problem)
+	}
 	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
 		if info.OptionErrors[key] != "" {
 			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)

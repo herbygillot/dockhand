@@ -1,14 +1,15 @@
 namespace eval ::dockhand {
     proc initialize {root} {
         package require macports
-        mportinit
+        check_startup
+        if {[catch {mportinit} detail]} { incompatible "initialization failed: $detail" }
         if {$root ne ""} {
             set url "file://[file normalize $root]"
             set ::macports::sources [list [list $url]]
             set ::macports::sources_default [list $url]
             set ::macports::porturl_prefix_map [dict create $url $url]
         }
-        return [list $::macports::os_platform $::macports::os_major $::macports::build_arch]
+        return [dict create platform [list $::macports::os_platform $::macports::os_major $::macports::build_arch] base_version [base_version] tcl_version [info patchlevel]]
     }
 
     proc metadata {portdir subport args} {
@@ -16,8 +17,9 @@ namespace eval ::dockhand {
         if {$subport ne ""} { lappend opts subport $subport }
         set handle [mportopen "file://$portdir" $opts $args]
         try {
-            set out [dict create {*}[mportinfo $handle]]
+            if {[catch {dict create {*}[mportinfo $handle]} out]} { incompatible "metadata dictionary could not be read" }
             set worker [ditem_key $handle workername]
+            check_worker $worker
             set failures [dict create]
             foreach field {
                 checksums distfiles worksrcdir filespath master_sites fetch.type
@@ -47,18 +49,12 @@ namespace eval ::dockhand {
                     dict set out cargo.dir "@worksrc@/[string range $directory [expr {[string length $source] + 1}] end]"
                 }
             }
-            if {[catch {$worker eval {
-                set target ${org.macports.fetch}
-                set pre {}
-                foreach hook [ditem_key $target pre] {
-                    lappend pre [info body user${hook}]
-                }
-                list [ditem_key $target procedure] $pre [ditem_key $target post]
-            }} fetch]} {
-                dict set failures fetch.archive_compatible "cannot inspect fetch target"
+            if {[catch {fetch_details $worker} fetch]} {
+                dict set failures fetch.archive_compatible "MacPorts Base [base_version]: $fetch; automatic archive preparation is unavailable; update Base or prepare this port manually"
             } else {
                 dict set out fetch_details $fetch
             }
+            dict set out dockhand.base_version [base_version]
             foreach field {fetch.user fetch.password fetch_credentials macports::fetch_credentials} {
                 dict unset out $field
             }

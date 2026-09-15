@@ -200,3 +200,8 @@ Use explicit port arguments or metadata selectors. Repeat `--maintainer` or `--c
 Metadata selection requires the host MacPorts `portindex` (`--prefix` selects its installation). Dockhand generates an index from the captured local HEAD and caches it by source tree, platform, and indexer identity in the system user cache under `dockhand/indexes`. The first pass on a full tree may take several minutes. It does not use the checkout's possibly stale PortIndex, fetch master, or initialize SQLite.
 
 Unindexed Portfiles, missing subports, and unread selection metadata remain explicit unknowns: their membership cannot be established. Selected subports currently report unknown because version probing supports primary ports only. Unsupported upstreams and individual catalog failures remain visible alongside successful results. Any unknown makes the command exit unsuccessfully after printing results; an empty, complete selection reports no matches successfully.
+
+
+## Host MacPorts diagnostics
+
+`setup` reports the host MacPorts Base and Tcl versions, evaluator startup checks, and available source-review evidence; `setup --json` includes `host_macports`. Dockhand checks actual interfaces on use. Missing metadata capabilities stop evaluation, while unknown fetch layouts or hooks stop automatic archive preparation with a specific explanation. An unfamiliar Base version is not rejected solely by its version. See [compatibility evidence](macports-compatibility.md) for the tested scope.

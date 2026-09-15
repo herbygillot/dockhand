@@ -110,3 +110,12 @@ func TestCredentialsStopPreparationBeforeDownload(t *testing.T) {
 	}
 	require.Zero(t, requests)
 }
+
+func TestFetchCompatibilityDiagnosisSurvivesPreparationBoundary(t *testing.T) {
+	info := archiveInfo("https://example.invalid")
+	info.OptionErrors = map[string]string{"fetch.archive_compatible": "MacPorts Base 99.0: fetch target record is unavailable; prepare this port manually"}
+	_, err := downloadSources(info, t.TempDir())
+	require.ErrorIs(t, err, ErrUnsupported)
+	require.ErrorContains(t, err, "MacPorts Base 99.0")
+	require.ErrorContains(t, err, "prepare this port manually")
+}

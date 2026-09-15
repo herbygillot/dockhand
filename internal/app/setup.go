@@ -22,16 +22,18 @@ type SetupOptions struct {
 }
 
 type SetupResult struct {
+	HostMacPorts macports.Runtime `json:"host_macports"`
 	provision.Result
 	OptionalTools []dependency.Availability `json:"optional_tools"`
 }
 
 func Setup(ctx context.Context, config Config, options SetupOptions, progress io.Writer) (SetupResult, error) {
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
-	platform, err := ports.NativePlatform(ctx)
+	runtime, err := ports.Inspect(ctx)
 	if err != nil {
 		return SetupResult{}, err
 	}
+	platform := runtime.Platform
 	if options.OS != "" {
 		release, err := macos.ParseRelease(options.OS)
 		if err != nil {
@@ -57,5 +59,5 @@ func Setup(ctx context.Context, config Config, options SetupOptions, progress io
 		Progress: progress,
 	}
 	result, err := service.Run(ctx, provision.Options{Check: options.Check, Rebuild: options.Rebuild})
-	return SetupResult{Result: result, OptionalTools: config.DependencyTools.Probe()}, err
+	return SetupResult{HostMacPorts: runtime, Result: result, OptionalTools: config.DependencyTools.Probe()}, err
 }
