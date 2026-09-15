@@ -1,4 +1,4 @@
-package prepare
+package portedit
 
 import (
 	"context"
@@ -9,11 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
@@ -113,17 +112,16 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	_, baseTree, _, _, err := s.evaluateEdit(ctx, request, input, stripped)
+	_, strippedSnapshot, _, err := s.evaluateEdit(ctx, request, input, stripped)
 	if err != nil {
 		return Result{}, err
 	}
 	baseRequest := request
-	baseRequest.Source = record.Source{Tree: record.ObjectID(baseTree), Base: request.Source.Base}
-	base, err := s.load(ctx, baseRequest)
-	if err != nil {
-		return Result{}, err
-	}
-	defer base.files.Close()
+	baseValue := *input
+	baseValue.data, baseValue.before = stripped, strippedSnapshot
+	baseValue.info = strippedSnapshot.Ports[input.target.Name]
+	base := &baseValue
+
 	sources, err := downloadSources(base.info, filepath.Join(base.files.Root, filepath.Dir(base.target.Portfile)))
 	if err != nil {
 		return Result{}, err
@@ -195,11 +193,14 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	edit, tree, after, root, err := s.evaluateEdit(ctx, request, input, contents)
+	edit, after, root, err := s.evaluateEdit(ctx, request, input, contents)
 	if err != nil {
 		return Result{}, err
 	}
 	selected := after.Ports[input.target.Name]
+	if selected.Version != request.Release.Version || selected.Revision != 0 || selected.Epoch != input.info.Epoch || selected.Options["git.branch"] != request.Release.Tag {
+		return Result{}, fmt.Errorf("%w: dependency regeneration changed the selected version or source", ErrFidelity)
+	}
 	for name, wanted := range values {
 		actual, errs := syntax.ListValues(selected.Options[name])
 		if len(errs) > 0 || !slices.Equal(actual, wanted) {
@@ -218,6 +219,9 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		if !ok {
 			return Result{}, fmt.Errorf("%w: sibling port disappeared", ErrFidelity)
 		}
+		if old.Revision != next.Revision {
+			final.UnexpectedChanges = append(final.UnexpectedChanges, name+".revision changed")
+		}
 		final.UnexpectedChanges = append(final.UnexpectedChanges, comparePortMetadata(name, comparablePort(old, input.files.Root), comparablePort(next, root))...)
 	}
 	if len(final.UnexpectedChanges) > 0 {
@@ -227,8 +231,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	result.Base = request.Source
-	result.PreparedTree = record.ObjectID(tree)
-	result.Files = []git.FileEdit{edit}
+	result.Files = []portfile.Edit{edit}
 	result.Fidelity = append(result.Fidelity, final)
 	result.Downloads = append(result.Downloads, gitDownloads...)
 	return result, nil
@@ -261,7 +264,7 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 	if err != nil {
 		return nil, nil, err
 	}
-	_, _, snapshot, _, err := s.evaluateEdit(ctx, request, input, provisional)
+	_, snapshot, _, err := s.evaluateEdit(ctx, request, input, provisional)
 	if err != nil {
 		return nil, nil, err
 	}

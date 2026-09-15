@@ -18,7 +18,7 @@ var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not
 
 // Stable numeric versions include calendar and multi-component versions. Other
 // spellings, including prereleases, remain available through explicit selection.
-var stableVersion = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*$`)
+var stableVersion = regexp.MustCompile(`^[0-9]+(?:[.-][0-9]+)*$`)
 
 type VersionSelector interface {
 	SelectVersion(context.Context, string, string, []macports.VersionCandidate) (macports.VersionSelection, error)
@@ -31,8 +31,8 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 			result.Detail = err.Error()
 		}
 	}()
-	if s == nil || s.Versions == nil {
-		return result, fmt.Errorf("upstream: version reader is required")
+	if s == nil || s.Versions == nil || s.EvaluateVersion == nil {
+		return result, fmt.Errorf("upstream: version comparison and Portfile evaluation are required")
 	}
 	spec, repository, err := s.repository(port, true)
 	if err != nil {
@@ -81,9 +81,38 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		if err != nil {
 			return result, err
 		}
-		candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: subject})
+		candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: subject, CaptureVersion: version})
 		tags = append(tags, release.Tag)
 	}
+	filters := make([]macports.VersionCandidate, len(candidates))
+	copy(filters, candidates)
+	for i := range filters {
+		filters[i].Version = "1"
+	}
+	eligible, err := s.Versions.SelectVersion(ctx, "0", spec.Livecheck.Regex, filters)
+	if err != nil {
+		return result, err
+	}
+	var evaluated []macports.VersionCandidate
+	var selectedTags []string
+	for _, index := range eligible.Indices {
+		if index < 0 || index >= len(candidates) {
+			return result, fmt.Errorf("upstream: invalid filter result")
+		}
+		candidate := candidates[index]
+		if candidate.CaptureVersion == spec.SourceVersion {
+			candidate.Version = port.Version
+		} else {
+			version, err := s.EvaluateVersion(ctx, candidate.CaptureVersion)
+			if err != nil {
+				return result, fmt.Errorf("upstream: cannot evaluate %s: %w", tags[index], err)
+			}
+			candidate.Version = version
+		}
+		evaluated = append(evaluated, candidate)
+		selectedTags = append(selectedTags, tags[index])
+	}
+	candidates, tags = evaluated, selectedTags
 	selection, err := s.Versions.SelectVersion(ctx, port.Version, spec.Livecheck.Regex, candidates)
 	if err != nil {
 		return result, err

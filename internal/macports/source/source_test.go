@@ -86,3 +86,22 @@ func TestSourceInterpretationRejectsAmbiguousOrInconsistentMetadata(t *testing.T
 	_, err := source.Discover(port)
 	require.ErrorIs(t, err, source.ErrUnsupported)
 }
+
+func TestSourceSpellingIsIndependentOfCalculatedPortVersion(t *testing.T) {
+	port := githubPort()
+	port.Version = "20260907"
+	port.Options["github.version"] = "2026-09-07"
+	port.Options["git.branch"] = "release/2026-09-07-stable"
+	port.Options["livecheck.version"] = "2026-09-07"
+	spec, err := source.Discover(port)
+	require.NoError(t, err)
+	require.Equal(t, "release/2026-09-14-stable", spec.Pattern.Tag("2026-09-14"))
+	version, ok := spec.Pattern.Version("release/2026-09-14-stable")
+	require.True(t, ok)
+	require.Equal(t, "2026-09-14", version)
+	_, ok = spec.Pattern.Version("release/2026-02-31-stable")
+	require.True(t, ok)
+	port.Version = "20260908"
+	_, err = source.Interpret(port)
+	require.NoError(t, err)
+}

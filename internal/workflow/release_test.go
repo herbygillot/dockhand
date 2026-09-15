@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
 )
 
-type resolveFunc func(context.Context, prepare.Request) (record.Release, error)
+type resolveFunc func(context.Context, preparation.Request) (record.Release, error)
 
-func (f resolveFunc) ResolveRelease(ctx context.Context, r prepare.Request) (record.Release, error) {
+func (f resolveFunc) ResolveRelease(ctx context.Context, r preparation.Request) (record.Release, error) {
 	return f(ctx, r)
 }
 
@@ -43,7 +43,7 @@ func TestVersionBumpCheckpointsReleaseBeforePreparationAndResumesVerification(t 
 					release.CurrentVersion = "1.0"
 				}
 				var resolves, prepares int
-				f.engine.Releases = resolveFunc(func(ctx context.Context, r prepare.Request) (record.Release, error) {
+				f.engine.Releases = resolveFunc(func(ctx context.Context, r preparation.Request) (record.Release, error) {
 					resolves++
 					require.Equal(t, req.Spec.Version, r.Version)
 					require.Nil(t, r.Release)
@@ -52,7 +52,7 @@ func TestVersionBumpCheckpointsReleaseBeforePreparationAndResumesVerification(t 
 					return release, err
 				})
 				original := f.engine.Preparer
-				f.engine.Preparer = prepareFunc(func(ctx context.Context, r prepare.Request) (prepare.Result, error) {
+				f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {
 					prepares++
 					require.Equal(t, &release, r.Release)
 					return original.Prepare(ctx, r)
@@ -120,11 +120,11 @@ func TestFailedReleaseCheckpointCannotStartPreparation(t *testing.T) {
 	f, req := preparationFixture(t, false)
 	req.Spec.Action = record.Bump
 	req.Spec.Version = "2.0"
-	f.engine.Releases = resolveFunc(func(context.Context, prepare.Request) (record.Release, error) { return resolvedFixture(f), nil })
+	f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) { return resolvedFixture(f), nil })
 	var prepares int
-	f.engine.Preparer = prepareFunc(func(context.Context, prepare.Request) (prepare.Result, error) {
+	f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
 		prepares++
-		return prepare.Result{}, nil
+		return preparation.Result{}, nil
 	})
 	id := submitPreparation(t, f, req)
 	f.engine.State = releaseFailureStore{f.store}
@@ -147,7 +147,7 @@ func TestReleaseResolutionFencesExpiredAndCanceledClaims(t *testing.T) {
 			releaseFirst := func() { once.Do(func() { close(unblock) }) }
 			defer releaseFirst()
 			var calls atomic.Int64
-			f.engine.Releases = resolveFunc(func(ctx context.Context, r prepare.Request) (record.Release, error) {
+			f.engine.Releases = resolveFunc(func(ctx context.Context, r preparation.Request) (record.Release, error) {
 				release := resolvedFixture(f)
 				if calls.Add(1) == 1 {
 					close(started)
@@ -197,10 +197,10 @@ func TestAlreadyCurrentBumpCompletesWithoutPreparationOrVerification(t *testing.
 			release.CurrentVersion = "2.0"
 			release.NoUpdate = true
 			resolves := 0
-			f.engine.Releases = resolveFunc(func(context.Context, prepare.Request) (record.Release, error) { resolves++; return release, nil })
-			f.engine.Preparer = prepareFunc(func(context.Context, prepare.Request) (prepare.Result, error) {
+			f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) { resolves++; return release, nil })
+			f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
 				t.Error("current port must not be prepared")
-				return prepare.Result{}, errors.New("unexpected preparation")
+				return preparation.Result{}, errors.New("unexpected preparation")
 			})
 			id := submitPreparation(t, f, req)
 			f.run(t, id)
@@ -235,7 +235,7 @@ func TestAlreadyCurrentBumpCompletesWithoutPreparationOrVerification(t *testing.
 func TestFailedAutomaticObservationIsNotSuccessfulNoOp(t *testing.T) {
 	f, req := preparationFixture(t, false)
 	req.Spec.Action = record.Bump
-	f.engine.Releases = resolveFunc(func(context.Context, prepare.Request) (record.Release, error) {
+	f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) {
 		return record.Release{}, errors.New("incomplete upstream observation")
 	})
 	id := submitPreparation(t, f, req)
@@ -254,7 +254,7 @@ func TestNoUpdateCheckpointFailureDoesNotReportSuccess(t *testing.T) {
 	release.Requested = ""
 	release.CurrentVersion = "2.0"
 	release.NoUpdate = true
-	f.engine.Releases = resolveFunc(func(context.Context, prepare.Request) (record.Release, error) { return release, nil })
+	f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) { return release, nil })
 	id := submitPreparation(t, f, req)
 	f.engine.State = releaseFailureStore{f.store}
 	_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})

@@ -8,11 +8,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge/github"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 )
 
 type PreviewRequest struct {
@@ -25,13 +25,13 @@ type PreviewRequest struct {
 type Preview struct {
 	Repository  string
 	Branch      string
-	Preparation prepare.Result
+	Preparation preparation.Result
 	Diff        string
 }
 
 func PreviewPreparation(ctx context.Context, config Config, request PreviewRequest) (Preview, error) {
 	if request.Action != record.BumpRevision && request.Action != record.Bump {
-		return Preview{}, fmt.Errorf("%w: %s", prepare.ErrNotImplemented, request.Action)
+		return Preview{}, fmt.Errorf("%w: %s", preparation.ErrNotImplemented, request.Action)
 	}
 	root := config.Repository
 	if root == "" {
@@ -47,8 +47,8 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	}
 	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	githubClient := &github.Client{HTTP: http.DefaultClient, Config: config.GitHub}
-	service := prepare.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
-	input := prepare.Request{
+	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
+	input := preparation.Request{
 		Action: request.Action, Source: source,
 		Selection: request.Selection, Version: request.Version, Reason: request.Reason,
 	}

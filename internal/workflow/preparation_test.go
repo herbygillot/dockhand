@@ -12,17 +12,17 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
 )
 
-type prepareFunc func(context.Context, prepare.Request) (prepare.Result, error)
+type prepareFunc func(context.Context, preparation.Request) (preparation.Result, error)
 
-func (fn prepareFunc) Prepare(ctx context.Context, r prepare.Request) (prepare.Result, error) {
+func (fn prepareFunc) Prepare(ctx context.Context, r preparation.Request) (preparation.Result, error) {
 	return fn(ctx, r)
 }
 
@@ -39,17 +39,17 @@ func preparationFixture(t *testing.T, verification bool) (*fixture, workflow.Req
 	}
 	bound, err := f.engine.BindPreparation(t.Context(), req)
 	require.NoError(t, err)
-	f.engine.Preparer = prepareFunc(func(ctx context.Context, r prepare.Request) (prepare.Result, error) {
+	f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {
 		// Immutable preparation must not hold the database writer.
 		if err := f.store.Update(ctx, f.repository, func(context.Context, state.Tx) error { return nil }); err != nil {
-			return prepare.Result{}, err
+			return preparation.Result{}, err
 		}
 		before, _, err := f.repo.File(ctx, string(r.Source.Tree), r.Selection.Selector)
 		if err != nil {
-			return prepare.Result{}, err
+			return preparation.Result{}, err
 		}
 		tree, err := f.repo.EditTree(ctx, string(r.Source.Tree), []git.FileEdit{{Path: r.Selection.Selector, Before: before, After: []byte("version 1\nrevision 1\n"), Mode: before.Mode}})
-		return prepare.Result{Base: r.Source, Release: r.Release, Target: bound.Request.Spec.Targets[0], PreparedTree: record.ObjectID(tree), Commits: []prepare.CommitIntent{{Subject: "fixture: revbump", Body: r.Reason}}}, err
+		return preparation.Result{Base: r.Source, Release: r.Release, Target: bound.Request.Spec.Targets[0], PreparedTree: record.ObjectID(tree), Commits: []preparation.CommitIntent{{Subject: "fixture: revbump", Body: r.Reason}}}, err
 	})
 	return f, bound.Request
 }
@@ -101,7 +101,7 @@ func TestRevisionPreparationCreatesSeparateContributionWithoutProvider(t *testin
 	require.NoFileExists(t, filepath.Join(f.repo.CommonDir, "index"))
 	out, err := exec.CommandContext(t.Context(), "git", "-C", f.repo.Root, "show", "-s", "--format=%P%n%an <%ae>%n%at%n%B", commit).CombinedOutput()
 	require.NoError(t, err)
-	require.Contains(t, string(out), "\n\n"+prepare.GeneratedBy)
+	require.Contains(t, string(out), "\n\n"+preparation.GeneratedBy)
 	require.Contains(t, string(out), sourceCommit+"\nAccepted Author <accepted@example.invalid>\n")
 	require.Contains(t, string(out), "fixture: revbump\n\nRebuild dependents")
 	require.Len(t, status.Changes, 1)
@@ -165,7 +165,7 @@ func TestPreparationClaimFencesLateResultsAndCancellation(t *testing.T) {
 			unblock := func() { once.Do(func() { close(release) }) }
 			defer unblock()
 			var calls atomic.Int64
-			f.engine.Preparer = prepareFunc(func(ctx context.Context, req prepare.Request) (prepare.Result, error) {
+			f.engine.Preparer = prepareFunc(func(ctx context.Context, req preparation.Request) (preparation.Result, error) {
 				if calls.Add(1) == 1 {
 					close(started)
 					<-release

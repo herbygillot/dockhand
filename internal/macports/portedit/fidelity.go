@@ -1,4 +1,4 @@
-package prepare
+package portedit
 
 import (
 	"fmt"
@@ -102,4 +102,23 @@ func comparePortMetadata(name string, old, next macports.PortInfo) []string {
 		differences = append(differences, name+".option-errors changed")
 	}
 	return differences
+}
+
+func CheckEquivalent(expected, actual macports.Snapshot, expectedRoot, actualRoot string) error {
+	if expected.Platform != actual.Platform || !reflect.DeepEqual(expected.Target, actual.Target) {
+		return fmt.Errorf("%w: candidate evaluation changed evaluation context", ErrFidelity)
+	}
+	if len(expected.Ports) != len(actual.Ports) {
+		return fmt.Errorf("%w: candidate evaluation changed port set", ErrFidelity)
+	}
+	for name, old := range expected.Ports {
+		next, ok := actual.Ports[name]
+		if !ok || old.Revision != next.Revision {
+			return fmt.Errorf("%w: candidate evaluation changed %s", ErrFidelity, name)
+		}
+		if changes := comparePortMetadata(name, comparablePort(old, expectedRoot), comparablePort(next, actualRoot)); len(changes) > 0 {
+			return fmt.Errorf("%w: candidate evaluation: %v", ErrFidelity, changes)
+		}
+	}
+	return nil
 }

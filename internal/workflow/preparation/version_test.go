@@ -1,4 +1,4 @@
-package prepare_test
+package preparation_test
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +36,7 @@ func (r *releaseRepository) Tag(ctx context.Context, name string) (forge.Tag, er
 	return r.tag(ctx, r.name, name)
 }
 
-func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc) (*prepare.Service, prepare.Request) {
+func versionFixture(t *testing.T, style, extra string, handler http.HandlerFunc) (*preparation.Service, preparation.Request) {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -126,13 +126,18 @@ pre-fetch {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})
 	service.Upstream = &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: resolver, portsource.GitLab: resolver}}
-	release, err := service.ResolveRelease(t.Context(), request)
+	release := record.Release{Requested: "2.0", Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/fixture", Tag: "v2.0", Commit: strings.Repeat("a", 40)}
+	if style == "gitlab-setup" {
+		release.Forge = "gitlab"
+		release.Instance = "https://gitlab.example"
+		release.Repository = "group/subgroup/fixture"
+	}
 	require.NoError(t, err)
 	request.Release = &release
 	return service, request
 }
 func TestVersionPreparationUpdatesSourceAndChecksumsWithFidelity(t *testing.T) {
-	for _, style := range []string{"literal", "setup", "gitlab-setup", "go-setup", "go-version", "go-check"} {
+	for _, style := range []string{"literal", "calculated", "setup", "gitlab-setup", "go-setup", "go-version", "go-check"} {
 		t.Run(style, func(t *testing.T) {
 			body := "fixture archive bytes"
 			var requests atomic.Int64
@@ -171,15 +176,14 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 		name, style, extra string
 		expected           error
 	}{
-		{"calculated", "calculated", "", prepare.ErrUnsupported},
-		{"dependency", "literal", "if {$version eq {2.0}} {depends_lib port:other}\n", prepare.ErrFidelity},
-		{"sibling", "setup", "subport fixture-child {}\n", prepare.ErrFidelity},
-		{"fetch hook", "literal", "pre-fetch {error custom}\n", prepare.ErrUnsupported},
-		{"conditional hook", "literal", "if {1} { pre-fetch {error custom} }\n", prepare.ErrUnsupported},
-		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {error custom} }\n", prepare.ErrUnsupported},
-		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", prepare.ErrUnsupported},
-		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", prepare.ErrFidelity},
-		{"credentials", "literal", "fetch.password secret-test-value\n", prepare.ErrUnsupported},
+		{"dependency", "literal", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity},
+		{"sibling", "setup", "subport fixture-child {}\n", preparation.ErrFidelity},
+		{"fetch hook", "literal", "pre-fetch {error custom}\n", preparation.ErrUnsupported},
+		{"conditional hook", "literal", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported},
+		{"custom hook after Go check", "go-check", "if {1} { pre-fetch {error custom} }\n", preparation.ErrUnsupported},
+		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", preparation.ErrUnsupported},
+		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity},
+		{"credentials", "literal", "fetch.password secret-test-value\n", preparation.ErrUnsupported},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var requests atomic.Int64
@@ -252,4 +256,48 @@ func TestGitLabPreparationPreservesFrozenLocalPatch(t *testing.T) {
 	_, patch, err := service.Repo.File(t.Context(), string(result.PreparedTree), "devel/fixture/files/fix.patch")
 	require.NoError(t, err)
 	require.Equal(t, "fixture local patch\n", string(patch))
+}
+
+func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
+	for _, mismatch := range []bool{false, true} {
+		t.Run(fmt.Sprint(mismatch), func(t *testing.T) {
+			var downloads atomic.Int64
+			service, request := versionFixture(t, "setup", "", func(w http.ResponseWriter, r *http.Request) { downloads.Add(1); fmt.Fprint(w, "dated archive") })
+			before, data, err := service.Repo.File(t.Context(), string(request.Source.Tree), "devel/fixture/Portfile")
+			require.NoError(t, err)
+			text := strings.Replace(string(data), "github.setup owner fixture 1.0 v", "github.setup owner fixture 2026-09-07 v\nversion [string map { {-} {} } ${github.version}]", 1)
+			if mismatch {
+				text += "\nif {${github.version} ne \"2026-09-07\"} {version 99999999}\n"
+			}
+			tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: []byte(text), Mode: before.Mode}})
+			require.NoError(t, err)
+			request.Source = record.Source{Tree: record.ObjectID(tree)}
+			request.Version = "2026-09-14"
+			catalog := releaseTagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
+				if tag != "v2026-09-14" {
+					return forge.Tag{}, forge.ErrNotFound
+				}
+				return forge.Tag{Name: tag, Commit: strings.Repeat("a", 40)}, nil
+			})
+			service.Upstream.Catalogs[portsource.GitHub] = catalog
+			release, err := service.ResolveRelease(t.Context(), request)
+			require.NoError(t, err)
+			if mismatch {
+				release.Version = "20260914"
+			}
+			request.Release = &release
+			result, err := service.Prepare(t.Context(), request)
+			if mismatch {
+				require.ErrorIs(t, err, preparation.ErrFidelity)
+				require.Empty(t, result.PreparedTree)
+				require.Zero(t, downloads.Load())
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "20260914", result.Release.Version)
+			require.Contains(t, string(result.Files[0].After), "github.setup owner fixture 2026-09-14 v\nversion [string map { {-} {} } ${github.version}]")
+			require.Equal(t, "20260914", result.Fidelity[len(result.Fidelity)-1].After.Ports["fixture"].Version)
+			require.Equal(t, int64(1), downloads.Load())
+		})
+	}
 }

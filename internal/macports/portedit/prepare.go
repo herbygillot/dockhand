@@ -1,4 +1,4 @@
-package prepare
+package portedit
 
 import (
 	"context"
@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
 var (
-	ErrNotImplemented = errors.New("prepare: requested transformation is not implemented")
-	ErrUnsupported    = errors.New("prepare: source cannot be edited with the supported transformations")
-	ErrFidelity       = errors.New("prepare: evaluation does not match the intended change")
+	ErrNotImplemented = errors.New("portedit: requested transformation is not implemented")
+	ErrUnsupported    = errors.New("portedit: source cannot be edited with the supported transformations")
+	ErrFidelity       = errors.New("portedit: evaluation does not match the intended change")
 )
 
 type CommitIntent struct {
@@ -26,8 +26,10 @@ type CommitIntent struct {
 }
 
 type Request struct {
-	Action    record.Action
-	Source    record.Source
+	Action record.Action
+	Source record.Source
+	// Root is an exclusively owned disposable source snapshot, never a user checkout.
+	Root      string
 	Selection macports.Selection
 	Platform  record.Platform
 	Version   string
@@ -43,20 +45,18 @@ type Fidelity struct {
 }
 
 type Result struct {
-	Base         record.Source
-	Target       record.Target
-	PreparedTree record.ObjectID
-	Files        []git.FileEdit
-	Commits      []CommitIntent
-	Fidelity     []Fidelity
-	Release      *record.Release
-	Downloads    []Download
+	Base      record.Source
+	Target    record.Target
+	Files     []portfile.Edit
+	Commits   []CommitIntent
+	Fidelity  []Fidelity
+	Release   *record.Release
+	Downloads []Download
 }
 
 type Service struct {
 	DependencyTools  dependency.Tools
 	archiveDirectory string
-	Repo             *git.Repository
 	Ports            macports.Reader
 	Upstream         *upstream.Service
 	HTTP             *http.Client
@@ -67,20 +67,13 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if request.Action != record.BumpRevision && request.Action != record.Bump {
-		return Result{}, fmt.Errorf("%w: %s", ErrNotImplemented, request.Action)
-	}
-	if request.Action == record.Bump && request.Release == nil {
-		return Result{}, fmt.Errorf("prepare: a resolved release is required")
-	}
-	if request.Action == record.BumpRevision && request.Version != "" {
-		return Result{}, fmt.Errorf("prepare: an explicit version applies only to bump")
+	if err := request.Validate(); err != nil {
+		return Result{}, err
 	}
 	input, err := s.load(ctx, request)
 	if err != nil {
 		return Result{}, err
 	}
-	defer func() { err = errors.Join(err, input.files.Close()) }()
 	if request.Action == record.Bump {
 		return s.prepareVersion(ctx, request, input)
 	}
@@ -88,16 +81,28 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err != nil {
 		return Result{}, err
 	}
-	edit, tree, after, root, err := s.evaluateEdit(ctx, request, input, revised)
+	edit, after, root, err := s.evaluateEdit(ctx, request, input, revised)
 	if err != nil {
 		return Result{}, err
 	}
 	fidelity := revisionFidelity(input.before, after, input.target.Name, input.files.Root, root)
-	result := Result{Base: request.Source, Target: input.target, Files: []git.FileEdit{edit}, Fidelity: []Fidelity{fidelity}}
+	result := Result{Base: request.Source, Target: input.target, Files: []portfile.Edit{edit}, Fidelity: []Fidelity{fidelity}}
 	if len(fidelity.UnexpectedChanges) > 0 {
 		return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 	}
-	result.PreparedTree = record.ObjectID(tree)
 	result.Commits = []CommitIntent{{Subject: input.target.Name + ": revbump", Body: request.Reason, Paths: []string{input.target.Portfile}}}
 	return result, nil
+}
+
+func (request Request) Validate() error {
+	if request.Action != record.BumpRevision && request.Action != record.Bump {
+		return fmt.Errorf("%w: %s", ErrNotImplemented, request.Action)
+	}
+	if request.Action == record.Bump && request.Release == nil {
+		return fmt.Errorf("portedit: a resolved release is required")
+	}
+	if request.Action == record.BumpRevision && request.Version != "" {
+		return fmt.Errorf("portedit: an explicit version applies only to bump")
+	}
+	return nil
 }

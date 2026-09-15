@@ -47,9 +47,10 @@ type Result struct {
 }
 
 type Service struct {
-	Ports    macports.Reader
-	Catalogs map[portsource.Forge]Catalog
-	Versions VersionSelector
+	Ports           macports.Reader
+	Catalogs        map[portsource.Forge]Catalog
+	Versions        VersionSelector
+	EvaluateVersion func(context.Context, string) (string, error)
 }
 
 func (s *Service) Discover(ctx context.Context, source macports.Context) (Result, error) {

@@ -1,4 +1,4 @@
-package prepare
+package portedit
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"golang.org/x/crypto/ripemd160"
 )
@@ -64,7 +65,7 @@ func localPatches(info macports.PortInfo, portdir string) error {
 		return fmt.Errorf("%w: patches must be inside the frozen port directory", ErrUnsupported)
 	}
 	for _, name := range files {
-		if !literalVersion(name) || name == "." || name == ".." {
+		if !portfile.Literal(name) || name == "." || name == ".." {
 			return fmt.Errorf("%w: remote or ambiguous patchfile %s", ErrUnsupported, name)
 		}
 		stat, err := os.Lstat(filepath.Join(resolved, name))
@@ -107,7 +108,7 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 		if cut := strings.LastIndex(raw, ":"); pathStart >= 0 && cut > authority+pathStart {
 			tags = strings.Split(raw[cut+1:], ",")
 			for _, tag := range tags {
-				if tag == "" || !literalVersion(tag) {
+				if tag == "" || !portfile.Literal(tag) {
 					return nil, fmt.Errorf("%w: invalid master-site tag", ErrUnsupported)
 				}
 			}
@@ -121,7 +122,7 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 	var result []archiveSource
 	for _, file := range files {
 		name, tag, _ := strings.Cut(file, ":")
-		if name == "" || !literalVersion(name) || name == "." || name == ".." || seen[name] || (tag != "" && !literalVersion(tag)) {
+		if name == "" || !portfile.Literal(name) || name == "." || name == ".." || seen[name] || (tag != "" && !portfile.Literal(tag)) {
 			return nil, fmt.Errorf("%w: ambiguous distfile %s", ErrUnsupported, file)
 		}
 		choices := locations[tag]
@@ -163,10 +164,10 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	configured := *client
 	configured.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if req.URL.User != nil || req.URL.Scheme != "https" && req.URL.Scheme != "http" || len(via) >= 10 {
-			return fmt.Errorf("prepare: unsupported download redirect")
+			return fmt.Errorf("portedit: unsupported download redirect")
 		}
 		if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-			return fmt.Errorf("prepare: download redirect downgraded HTTPS")
+			return fmt.Errorf("portedit: download redirect downgraded HTTPS")
 		}
 		if client.CheckRedirect != nil {
 			return client.CheckRedirect(req, via)
@@ -179,20 +180,20 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return Download{}, fmt.Errorf("prepare: downloading %s returned HTTP %d", name, response.StatusCode)
+		return Download{}, fmt.Errorf("portedit: downloading %s returned HTTP %d", name, response.StatusCode)
 	}
 	if encoding := response.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
-		return Download{}, fmt.Errorf("prepare: download returned encoded content")
+		return Download{}, fmt.Errorf("portedit: download returned encoded content")
 	}
 	if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/html") {
-		return Download{}, fmt.Errorf("prepare: download returned HTML for %s", name)
+		return Download{}, fmt.Errorf("portedit: download returned HTML for %s", name)
 	}
 	limit := s.MaxDownloadBytes
 	if limit <= 0 {
 		limit = 512 << 20
 	}
 	if response.ContentLength > limit {
-		return Download{}, fmt.Errorf("prepare: distfile exceeds download limit (%d bytes)", limit)
+		return Download{}, fmt.Errorf("portedit: distfile exceeds download limit (%d bytes)", limit)
 	}
 	reader := io.LimitReader(response.Body, limit+1)
 	prefix := make([]byte, 512)
@@ -202,7 +203,7 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	}
 	prefix = prefix[:n]
 	if strings.Contains(http.DetectContentType(prefix), "text/html") {
-		return Download{}, fmt.Errorf("prepare: download body is HTML for %s", name)
+		return Download{}, fmt.Errorf("portedit: download body is HTML for %s", name)
 	}
 	sha, rmd := sha256.New(), ripemd160.New()
 	writers := []io.Writer{sha, rmd}
@@ -219,7 +220,7 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	}
 	size := int64(n) + remaining
 	if size == 0 || size > limit {
-		return Download{}, fmt.Errorf("prepare: empty or oversized distfile %s", name)
+		return Download{}, fmt.Errorf("portedit: empty or oversized distfile %s", name)
 	}
 	return Download{Name: name, URL: address, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), Size: size}, nil
 }

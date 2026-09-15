@@ -1,4 +1,4 @@
-package prepare
+package portedit
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
@@ -19,13 +19,13 @@ import (
 func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	release := request.Release
 	if release == nil || release.Requested != request.Version {
-		return Result{}, fmt.Errorf("prepare: a matching resolved release is required")
+		return Result{}, fmt.Errorf("portedit: a matching resolved release is required")
 	}
 	if request.Version == "" && release.CurrentVersion != input.info.Version {
-		return Result{}, fmt.Errorf("prepare: automatic selection does not match the input version")
+		return Result{}, fmt.Errorf("portedit: automatic selection does not match the input version")
 	}
 	if release.NoUpdate && request.Version != "" {
-		return Result{}, fmt.Errorf("prepare: explicit selection cannot imply no update")
+		return Result{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
 	}
 	if input.target.Subport != "" {
 		return Result{}, fmt.Errorf("%w: version bumps currently select the primary port", ErrUnsupported)
@@ -34,12 +34,29 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		return Result{}, err
 	}
 	if release.NoUpdate {
-		return Result{Base: request.Source, Target: input.target, Release: release, PreparedTree: request.Source.Tree}, nil
+		return Result{Base: request.Source, Target: input.target, Release: release}, nil
 	}
-	contents, err := versionEdits(input.data, input.info.Version, release.Version, input.info.Revision)
+	spec, err := portsource.Interpret(input.info)
 	if err != nil {
 		return Result{}, err
 	}
+	sourceVersion, ok := spec.Pattern.Version(release.Tag)
+	if !ok {
+		return Result{}, fmt.Errorf("%w: selected tag does not match source convention", ErrFidelity)
+	}
+	carriers, err := s.versionCarriers(ctx, request, input)
+	if err != nil {
+		return Result{}, err
+	}
+	contents, versioned, err := s.probeVersion(ctx, request, input, carriers, sourceVersion)
+	if err != nil {
+		return Result{}, err
+	}
+	if versioned.Ports[input.target.Name].Version != release.Version {
+		return Result{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
+	}
+	versionRoot := input.files.Root
+
 	oldSources, err := downloadSources(input.info, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
 	if err != nil {
 		return Result{}, err
@@ -48,10 +65,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return Result{}, err
 	}
-	_, _, versioned, versionRoot, err := s.evaluateEdit(ctx, request, input, contents)
-	if err != nil {
-		return Result{}, err
-	}
+
 	info := versioned.Ports[input.target.Name]
 	checked := info
 	checked.Options = maps.Clone(info.Options)
@@ -117,19 +131,18 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return result, err
 	}
-	edit, tree, after, root, err := s.evaluateEdit(ctx, request, input, contents)
+	edit, after, root, err := s.evaluateEdit(ctx, request, input, contents)
 	if err != nil {
 		return result, err
 	}
-	final := versionFidelity(input.before, after, input.target.Name, input.files.Root, root, *release, checksums)
-	result.Files, result.Downloads, result.Fidelity = []git.FileEdit{edit}, downloads, append(result.Fidelity, final)
+	final := checksumFidelity(versioned, after, input.target.Name, versionRoot, root, checksums)
+	result.Files, result.Downloads, result.Fidelity = []portfile.Edit{edit}, downloads, append(result.Fidelity, final)
 	if len(final.UnexpectedChanges) > 0 {
 		return result, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
 	}
 	if err := s.Upstream.Check(ctx, input.info, *release); err != nil {
 		return result, err
 	}
-	result.PreparedTree = record.ObjectID(tree)
 	result.Commits = []CommitIntent{{Subject: input.target.Name + ": update to " + release.Version, Body: request.Reason, Paths: []string{input.target.Portfile}}}
 	return result, nil
 }
@@ -155,10 +168,13 @@ func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afte
 		if name == selected {
 			old.Version, old.Revision = release.Version, 0
 			for _, key := range []string{"version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "distfiles", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites"} {
-				if value, ok := old.Options[key]; ok {
-					old.Options[key] = strings.ReplaceAll(value, original.Version, release.Version)
+				if value, ok := next.Options[key]; ok {
+					old.Options[key] = value
+				} else {
+					delete(old.Options, key)
 				}
 			}
+
 			if next.Options["git.branch"] != release.Tag {
 				result.UnexpectedChanges = append(result.UnexpectedChanges, name+".git.branch differs from selected tag")
 			}
@@ -175,5 +191,30 @@ func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afte
 		result.UnexpectedChanges = append(result.UnexpectedChanges, comparePortMetadata(name, old, next)...)
 	}
 	slices.Sort(result.UnexpectedChanges)
+	return result
+}
+
+func checksumFidelity(before, after macports.Snapshot, selected, beforeRoot, afterRoot, checksums string) Fidelity {
+	expected := before
+	expected.Ports = maps.Clone(before.Ports)
+	info := expected.Ports[selected]
+	info.Options = maps.Clone(info.Options)
+	info.Options["checksums"] = checksums
+	expected.Ports[selected] = info
+	result := Fidelity{Before: before, After: after, ExpectedChanges: []string{selected + ".checksums"}}
+	normalized := after
+	normalized.Ports = maps.Clone(after.Ports)
+	next := normalized.Ports[selected]
+	next.Options = maps.Clone(next.Options)
+	values, errs := syntax.ListValues(next.Options["checksums"])
+	wanted, wantedErrs := syntax.ListValues(checksums)
+	if len(errs) > 0 || len(wantedErrs) > 0 || !slices.Equal(values, wanted) {
+		result.UnexpectedChanges = append(result.UnexpectedChanges, selected+".checksums differ from intended values")
+	}
+	next.Options["checksums"] = checksums
+	normalized.Ports[selected] = next
+	if err := CheckEquivalent(expected, normalized, beforeRoot, afterRoot); err != nil {
+		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
+	}
 	return result
 }

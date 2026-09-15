@@ -58,7 +58,7 @@ func automaticService(t *testing.T, c *catalog) *upstream.Service {
 	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})
-	return &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}, Versions: &macports.Evaluator{Executable: executable}}
+	return &upstream.Service{EvaluateVersion: identityVersion, Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}, Versions: &macports.Evaluator{Executable: executable}}
 
 }
 
@@ -199,4 +199,76 @@ func TestTagDiscoveryNeverConsultsReleases(t *testing.T) {
 			require.Zero(t, c.releaseReads)
 		})
 	}
+}
+
+func TestCalendarTagSelectionAndExplicitVersions(t *testing.T) {
+	c := &catalog{tags: []forge.Tag{{Name: "v2026-09-07"}, {Name: "v2026-09-14"}, {Name: "v2026-02-31"}, {Name: "nightly"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Version = "20260907"
+	port.Options["version"] = port.Version
+	port.Options["github.version"] = "2026-09-07"
+	port.Options["git.branch"] = "v2026-09-07"
+	port.Options["github.tarball_from"] = "archive"
+	port.Options["livecheck.version"] = "2026-09-07"
+	service.EvaluateVersion = func(_ context.Context, raw string) (string, error) { return strings.ReplaceAll(raw, "-", ""), nil }
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, "20260914", result.CandidateVersion)
+	require.Equal(t, "v2026-09-14", result.Release.Tag)
+	require.NoError(t, service.Check(t.Context(), port, *result.Release))
+	// The fake repository should only recognize real observed tags.
+	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		if name != "v2026-09-14" {
+			return forge.Tag{}, forge.ErrNotFound
+		}
+		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
+	})
+	for _, input := range []string{"2026-09-14", "v2026-09-14"} {
+		release, err := service.Resolve(t.Context(), port, input)
+		require.NoError(t, err)
+		require.Equal(t, "20260914", release.Version)
+		require.Equal(t, "v2026-09-14", release.Tag)
+	}
+}
+
+func TestAutomaticSelectionOrdersEvaluatedVersions(t *testing.T) {
+	c := &catalog{tags: []forge.Tag{{Name: "v2.0"}, {Name: "v3.0"}, {Name: "nightly"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Options["github.tarball_from"] = "archive"
+	var evaluated []string
+	service.EvaluateVersion = func(_ context.Context, source string) (string, error) {
+		evaluated = append(evaluated, source)
+		if source == "2.0" {
+			return "10.0", nil
+		}
+		return "9.0", nil
+	}
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"2.0", "3.0"}, evaluated)
+	require.Equal(t, "v2.0", result.Release.Tag)
+	require.Equal(t, "10.0", result.Release.Version)
+	require.False(t, result.Release.NoUpdate)
+	service.EvaluateVersion = func(context.Context, string) (string, error) { return "1.0", nil }
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.ErrorIs(t, err, upstream.ErrReleaseAmbiguous)
+	c.tags = c.tags[:1]
+	result, err = service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.True(t, result.Release.NoUpdate)
+}
+
+func TestAutomaticSelectionDoesNotHideFailedEvaluation(t *testing.T) {
+	c := &catalog{tags: []forge.Tag{{Name: "v2.0"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Options["github.tarball_from"] = "archive"
+	failed := errors.New("candidate evaluation failed")
+	service.EvaluateVersion = func(context.Context, string) (string, error) { return "", failed }
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.ErrorIs(t, err, failed)
+	require.Equal(t, upstream.Unknown, result.Assessment)
+	require.Nil(t, result.Release)
 }

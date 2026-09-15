@@ -1,4 +1,4 @@
-package prepare_test
+package preparation_test
 
 import (
 	"archive/tar"

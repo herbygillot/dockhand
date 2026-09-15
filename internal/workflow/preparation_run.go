@@ -8,9 +8,9 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 )
 
 func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, string, error) {
@@ -111,9 +111,9 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 	return changed, detail, err
 }
 
-func preparationRequest(job record.Job) prepare.Request {
+func preparationRequest(job record.Job) preparation.Request {
 	target := job.Spec.Targets[0]
-	return prepare.Request{Action: job.Spec.Action, Source: job.Spec.Source,
+	return preparation.Request{Action: job.Spec.Action, Source: job.Spec.Source,
 		Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants},
 		Platform:  job.Spec.Preparation.Platform, Reason: job.Spec.Reason, Version: job.Spec.Version, Release: job.ResolvedRelease}
 }

@@ -38,7 +38,7 @@ func (p TagPattern) Tag(version string) string { return p.Prefix + version + p.S
 func (p TagPattern) Version(tag string) (string, bool) {
 	version, prefix := strings.CutPrefix(tag, p.Prefix)
 	version, suffix := strings.CutSuffix(version, p.Suffix)
-	return version, prefix && suffix
+	return version, prefix && suffix && version != ""
 }
 func (p TagPattern) Explicit(value string) bool {
 	return p.Prefix != "" && strings.HasPrefix(value, p.Prefix) || p.Suffix != "" && strings.HasSuffix(value, p.Suffix)
@@ -56,6 +56,7 @@ type Spec struct {
 	Instance       string
 	Repository     string
 	CurrentVersion string
+	SourceVersion  string
 	Pattern        TagPattern
 	Catalog        Catalog
 	Livecheck      Livecheck
@@ -87,7 +88,7 @@ func Discover(port macports.PortInfo) (Spec, error) {
 		Type: port.Options["livecheck.type"], URL: port.Options["livecheck.url"],
 		Regex: port.Options["livecheck.regex"], Version: port.Options["livecheck.version"],
 	}
-	if spec.Livecheck.Type != "regex" || spec.Livecheck.Regex == "" || spec.Livecheck.Version != spec.CurrentVersion {
+	if spec.Livecheck.Type != "regex" || spec.Livecheck.Regex == "" || (spec.Livecheck.Version != spec.CurrentVersion && spec.Livecheck.Version != spec.SourceVersion) {
 		return Spec{}, fmt.Errorf("%w: require a regex livecheck for the evaluated port version", ErrUnsupported)
 	}
 	switch spec.Forge {
@@ -161,8 +162,9 @@ func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Sp
 			return Spec{}, err
 		}
 	}
-	if port.Options[prefix+".version"] != port.Version {
-		return Spec{}, fmt.Errorf("macports source: %s PortGroup version differs from the evaluated port version", prefix)
+	raw := port.Options[prefix+".version"]
+	if raw == "" || port.Version == "" {
+		return Spec{}, fmt.Errorf("%w: empty source or port version", ErrUnsupported)
 	}
 	values := make([]string, 0, 2)
 	for _, key := range []string{prefix + ".tag_prefix", prefix + ".tag_suffix"} {
@@ -173,7 +175,7 @@ func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Sp
 		values = append(values, strings.Join(parts, " "))
 	}
 	pattern := TagPattern{Prefix: values[0], Suffix: values[1]}
-	if port.Options["git.branch"] != pattern.Tag(port.Version) {
+	if port.Options["git.branch"] != pattern.Tag(raw) {
 		return Spec{}, ErrTagPattern
 	}
 	instance, err := normalizeInstance(instance)
@@ -188,7 +190,7 @@ func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Sp
 	if !validPath(repository, segments) {
 		return Spec{}, fmt.Errorf("macports source: invalid %s repository %q", prefix, repository)
 	}
-	return Spec{Forge: forge, Instance: instance, Repository: repository, CurrentVersion: port.Version, Pattern: pattern, Catalog: Tags}, nil
+	return Spec{Forge: forge, Instance: instance, Repository: repository, CurrentVersion: port.Version, SourceVersion: raw, Pattern: pattern, Catalog: Tags}, nil
 }
 
 func evaluated(port macports.PortInfo, key string) error {

@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +38,7 @@ func combinedFixture(t *testing.T, action record.Action) (*fixture, *publication
 	request.Spec.Build.VerifierDigest = "fixture:v1"
 	if action == record.Bump {
 		request.Spec.Version = "2.0"
-		f.engine.Releases = resolveFunc(func(context.Context, prepare.Request) (record.Release, error) { return resolvedFixture(f), nil })
+		f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) { return resolvedFixture(f), nil })
 	}
 	return f, hosting, request
 }
@@ -295,7 +295,7 @@ func TestAlreadyCurrentCombinedBumpCreatesNoPublication(t *testing.T) {
 	request.Spec.Version = ""
 	release := resolvedFixture(f)
 	release.Requested, release.CurrentVersion, release.NoUpdate = "", "2.0", true
-	f.engine.Releases = resolveFunc(func(context.Context, prepare.Request) (record.Release, error) { return release, nil })
+	f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) { return release, nil })
 	id := submitPreparation(t, f, request)
 	f.run(t, id)
 	status := f.status(t, id)

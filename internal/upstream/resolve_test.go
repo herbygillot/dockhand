@@ -20,7 +20,7 @@ func (f tagFunc) Repository(_ string, name string) (forge.Repository, error) {
 }
 
 func serviceWithCatalog(c upstream.Catalog) upstream.Service {
-	return upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}}
+	return upstream.Service{EvaluateVersion: identityVersion, Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}}
 }
 
 type tagRepository struct {
@@ -159,4 +159,15 @@ func TestResolutionRejectsFailedOrMismatchedRepositoryBinding(t *testing.T) {
 			}
 		})
 	}
+}
+
+func identityVersion(_ context.Context, source string) (string, error) { return source, nil }
+
+func TestResolutionRequiresVersionEvaluationEvenWhenCurrentValuesMatch(t *testing.T) {
+	service := serviceWithCatalog(tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
+		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
+	}))
+	service.EvaluateVersion = nil
+	_, err := service.Resolve(t.Context(), githubPort(), "v2.0")
+	require.ErrorContains(t, err, "Portfile version evaluation is required")
 }

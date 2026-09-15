@@ -13,7 +13,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/proc"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -21,6 +20,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/verify/tart"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 )
 
 type Config struct {
@@ -37,7 +37,7 @@ type Config struct {
 type Services struct {
 	Workflow     *workflow.Engine
 	Processes    *proc.Manager
-	Preparation  *prepare.Service
+	Preparation  *preparation.Service
 	Discovery    *upstream.Service
 	close        func() error
 	verification *tart.Provider
@@ -68,7 +68,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		githubClient.Credentials = github.SystemCredentials{Store: keychain.Store{}, Key: githubCredentialKey}
 	}
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient)
-	preparation := &prepare.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools}
+	preparation := &preparation.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools}
 	if config.Tart.ArtifactDirectory == "" {
 		config.Tart.ArtifactDirectory = filepath.Join(filepath.Dir(store.Path()), "artifacts", "tart")
 	}

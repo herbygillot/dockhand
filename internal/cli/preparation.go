@@ -7,11 +7,11 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +37,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command := &cobra.Command{
 			Use: use, Short: spec.short,
-			Long: spec.short + ".\n\nVersion and revision bumps use freshly fetched master from macports/macports-ports, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification. Version updates are supported for a bounded set of GitHub PortGroup sources with one distfile and literal checksums. Omitting the version selects the newest eligible stable numeric version using the port's GitHub tags livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Standalone checksum refresh is not implemented yet.",
+			Long: spec.short + ".\n\nVersion and revision bumps use freshly fetched master from macports/macports-ports, then create a new local contribution branch. --diff previews the edit; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification. Version updates support recognized GitHub and GitLab sources, named or multiple archive checksums, and supported Go/Cargo dependency declarations. Omitting the version selects the newest eligible stable numeric version using the port's source convention and livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Standalone checksum refresh is not implemented yet.",
 			Args: func(cmd *cobra.Command, args []string) error {
 				if err := cobra.RangeArgs(1, maximum)(cmd, args); err != nil {
 					return err
@@ -56,7 +56,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					return err
 				}
 				if spec.action == record.RefreshChecksums {
-					return fmt.Errorf("%w: %w: checksum refresh", ErrNotImplemented, prepare.ErrNotImplemented)
+					return fmt.Errorf("%w: %w: checksum refresh", ErrNotImplemented, preparation.ErrNotImplemented)
 				}
 				var version string
 				if spec.action == record.Bump && len(args) == 2 {

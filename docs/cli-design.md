@@ -390,3 +390,9 @@ One job owns preparation, verification, and publication. Its accepted input sour
 Without `--wait` or `--trace`, the command waits through capacity pressure and returns at build admission, evidence reuse, or an earlier terminal outcome. `wait <job_id>` and `start` resume the exact accepted destination without repeating flags. With `--wait` or `--trace`, completion means PR confirmation. An automatic no-update result needs no branch, verification, or PR.
 
 Failed verification prevents publication. A changed or missing prepared branch or newer matching negative evidence stops fresh remote effects; human edits require a new explicit verification/publication request. Cancellation before a PR request preserves any branch already created or pushed. Once the PR request has started, the existing observation-only recovery applies. This slice adds no unverified publication override, automatic rebase/squash, downstream scheduling, or post-PR monitoring.
+
+### Calculated source versions
+
+Upstream tags and evaluated MacPorts versions can differ. Dockhand discovers literal inputs, tests candidate edits with the native evaluator, and preserves the Portfile's Tcl calculations. For example, a source tag `2026-09-14` can evaluate to port version `20260914` without a calendar-specific rule. Automatic selection applies the livecheck filter to upstream source spelling and compares the evaluated versions with MacPorts `vercmp`.
+
+Specify an upstream tag or its source version with the usual optional prefix. Dockhand does not infer an arbitrary inverse from a calculated port version: use `2026-09-14`, rather than expecting `20260914` to reconstruct that tag. Ambiguous edits, inconclusive candidate evaluation, changed siblings, and unrelated metadata changes stop the selected update. Explicit selection may request an older version; automatic selection advances only when the newest eligible evaluated version is newer than the current one.

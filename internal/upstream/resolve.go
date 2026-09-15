@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -55,10 +56,19 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 	if err != nil {
 		return record.Release{}, err
 	}
-	if selection.Candidate.Version == port.Version {
+	version := selection.Candidate.Version
+	if s.EvaluateVersion == nil {
+		return record.Release{}, fmt.Errorf("upstream: Portfile version evaluation is required")
+	}
+	version, err = s.EvaluateVersion(ctx, version)
+	if err != nil {
+		return record.Release{}, err
+	}
+
+	if version == port.Version {
 		return record.Release{}, fmt.Errorf("upstream: %s is already at version %s", port.Name, port.Version)
 	}
-	return record.Release{Requested: requested, Version: selection.Candidate.Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag], ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, nil
+	return record.Release{Requested: requested, Version: version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: selection.Candidate.Tag, Commit: commits[selection.Candidate.Tag], ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}, nil
 }
 
 func (s *Service) Check(ctx context.Context, port macports.PortInfo, release record.Release) error {
@@ -66,7 +76,7 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release rec
 	if err != nil {
 		return err
 	}
-	if string(spec.Forge) != release.Forge || spec.Instance != release.Instance || repository.Name() != release.Repository || release.Tag != spec.Pattern.Tag(release.Version) || !git.ValidObjectID(release.Commit) {
+	if string(spec.Forge) != release.Forge || spec.Instance != release.Instance || repository.Name() != release.Repository || !matchesTag(spec, release.Tag) || !git.ValidObjectID(release.Commit) {
 		return fmt.Errorf("upstream: resolved release does not match the Portfile source convention")
 	}
 	tag, err := repository.Tag(ctx, release.Tag)
@@ -80,4 +90,9 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release rec
 		return fmt.Errorf("%w: %s", ErrSourceChanged, release.Tag)
 	}
 	return nil
+}
+
+func matchesTag(spec portsource.Spec, tag string) bool {
+	_, ok := spec.Pattern.Version(tag)
+	return ok
 }

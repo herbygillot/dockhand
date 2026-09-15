@@ -7,11 +7,11 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 )
 
 var (
@@ -88,9 +88,9 @@ func (e *Engine) now() time.Time {
 }
 
 type ReleaseResolver interface {
-	ResolveRelease(context.Context, prepare.Request) (record.Release, error)
+	ResolveRelease(context.Context, preparation.Request) (record.Release, error)
 }
 
 type SourcePreparer interface {
-	Prepare(context.Context, prepare.Request) (prepare.Result, error)
+	Prepare(context.Context, preparation.Request) (preparation.Result, error)
 }

@@ -1,4 +1,4 @@
-package prepare_test
+package preparation_test
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/prepare"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
 )
 
-func preparationFixture(t *testing.T, body string) (*prepare.Service, prepare.Request) {
+func preparationFixture(t *testing.T, body string) (*preparation.Service, preparation.Request) {
 	t.Helper()
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
@@ -37,7 +37,7 @@ func preparationFixture(t *testing.T, body string) (*prepare.Service, prepare.Re
 	require.NoError(t, err)
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
-	return &prepare.Service{Repo: repo, Ports: &macports.Evaluator{Executable: executable}}, prepare.Request{
+	return &preparation.Service{Repo: repo, Ports: &macports.Evaluator{Executable: executable}}, preparation.Request{
 		Action: record.BumpRevision, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Reason: "rebuild against updated dependency",
 	}
 }
@@ -120,9 +120,9 @@ func TestPreparationDeclinesUnintendedEvaluationAndUnsupportedExpressions(t *tes
 		expected error
 		detail   string
 	}{
-		{"revision 4\nsubport fixture-child {}\n", prepare.ErrFidelity, "fixture-child.revision"},
-		{"revision 4\ndescription revision=${revision}\n", prepare.ErrFidelity, "description changed"},
-		{"revision [expr {2+2}]\n", prepare.ErrUnsupported, "matching literal"},
+		{"revision 4\nsubport fixture-child {}\n", preparation.ErrFidelity, "fixture-child.revision"},
+		{"revision 4\ndescription revision=${revision}\n", preparation.ErrFidelity, "description changed"},
+		{"revision [expr {2+2}]\n", preparation.ErrUnsupported, "matching literal"},
 		{"revision 4\nif {${revision} == 5} { error {candidate evaluation fails} }\n", nil, "candidate evaluation fails"},
 	} {
 		t.Run(fixture.detail, func(t *testing.T) {
