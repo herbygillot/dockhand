@@ -14,6 +14,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 )
 
+var errNoSourceChanges = errors.New("Checksums are already current")
+
 func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, string, error) {
 	e := c.engine
 	var selected record.Job
@@ -93,6 +95,8 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		job.Claim, job.RetryAt = nil, nil
 		if job.CancelRequestedAt != nil {
 			finishPreparation(&job, record.JobCanceled, "Canceled before branch integration", e.now())
+		} else if errors.Is(operationErr, errNoSourceChanges) {
+			finishPreparation(&job, record.JobCompleted, operationErr.Error(), e.now())
 		} else if operationErr != nil {
 			detail = operationErr.Error()
 			var limited *forge.RateLimitError
@@ -142,8 +146,14 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	if err != nil {
 		return record.PreparedChange{}, err
 	}
-	if (job.Spec.Action == record.Bump && (result.Release == nil || *result.Release != *job.ResolvedRelease)) || result.Base != job.Spec.Source || record.CompareTargets(result.Target, target) != 0 || !git.ValidObjectID(string(result.PreparedTree)) || len(result.Commits) != 1 {
+	if (job.Spec.Action == record.Bump && (result.Release == nil || *result.Release != *job.ResolvedRelease)) || result.Base != job.Spec.Source || record.CompareTargets(result.Target, target) != 0 || !git.ValidObjectID(string(result.PreparedTree)) {
 		return record.PreparedChange{}, fmt.Errorf("workflow: preparation result does not match accepted input")
+	}
+	if job.Spec.Action == record.RefreshChecksums && result.PreparedTree == job.Spec.Source.Tree && len(result.Commits) == 0 && len(result.Files) == 0 {
+		return record.PreparedChange{}, errNoSourceChanges
+	}
+	if len(result.Commits) != 1 {
+		return record.PreparedChange{}, fmt.Errorf("workflow: preparation must produce one commit")
 	}
 	intent := result.Commits[0]
 	signature := git.Signature{Name: choices.Author.Name, Email: choices.Author.Email, When: job.AcceptedAt}
@@ -168,6 +178,9 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	prefix := "dockhand/revbump/"
 	if job.Spec.Action == record.Bump {
 		prefix = "dockhand/bump/"
+	}
+	if job.Spec.Action == record.RefreshChecksums {
+		prefix = "dockhand/checksums/"
 	}
 	branch := prefix + name + "-" + strings.ToLower(strings.TrimPrefix(string(job.ID), "job_"))
 	return record.PreparedChange{Branch: branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}}, nil

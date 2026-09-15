@@ -18,5 +18,5 @@ func initialPhase(action record.Action) record.JobPhase {
 }
 
 func preparationAction(action record.Action) bool {
-	return action == record.Bump || action == record.BumpRevision
+	return action == record.Bump || action == record.BumpRevision || action == record.RefreshChecksums
 }

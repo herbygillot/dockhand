@@ -374,3 +374,21 @@ func TestRateLimitedPreparationRetainsAcceptedWork(t *testing.T) {
 	require.NotNil(t, f.status(t, id).Jobs[0].Job.Prepared)
 	require.Zero(t, f.status(t, id).Jobs[0].Job.ConsecutiveFailures)
 }
+
+func TestCurrentChecksumsDoNotCreateBranchOrPublish(t *testing.T) {
+	f, hosting, request := combinedFixture(t, record.RefreshChecksums)
+	f.engine.Preparer = prepareFunc(func(_ context.Context, input preparation.Request) (preparation.Result, error) {
+		return preparation.Result{Base: input.Source, Target: request.Spec.Targets[0], PreparedTree: input.Source.Tree}, nil
+	})
+	id := submitPreparation(t, f, request)
+	f.run(t, id)
+	status := f.status(t, id)
+	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State)
+	require.Contains(t, status.Jobs[0].Job.Detail, "already current")
+	require.Nil(t, status.Jobs[0].Job.Prepared)
+	require.Empty(t, status.Changes)
+	require.Empty(t, status.Jobs[0].Attempts)
+	require.Empty(t, status.Jobs[0].Publications)
+	require.Zero(t, hosting.writes)
+	require.Zero(t, f.provider.count("submit"))
+}

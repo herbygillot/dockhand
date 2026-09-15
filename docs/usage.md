@@ -128,3 +128,9 @@ dockhand status
 ```
 
 Use the same `--db PATH` on both commands when selecting a nondefault database. Migration updates the schema for every repository in that database without running jobs, accessing a ports checkout, or starting verification. An already-current schema succeeds. Missing, empty, unrelated, and newer databases are refused. To keep an old-schema snapshot first, run `dockhand db backup <new-backup-file>` with the same `--db PATH`; backup and integrity checks support older schemas without upgrading them.
+
+## Refresh existing distfile checksums
+
+`dockhand refresh-checksums jq --diff` previews checksum changes for the current MacPorts master without changing the port's version or revision. Omit `--diff` to prepare and verify a branch; `--publish --wait` uses the normal verified publication path. `--no-verify` stops at the prepared branch. If the checksums already match, the job completes without creating a branch or PR.
+
+The command uses the same direct archive association, HTTP transfer, checksum replacement, and evaluation checks as version updates. Named and multiple archives are supported. Customized fetch hooks, authenticated downloads, and generated Go/Cargo dependency blocks require manual preparation; this command does not regenerate those blocks or turn a changed upstream archive into a trusted release automatically.

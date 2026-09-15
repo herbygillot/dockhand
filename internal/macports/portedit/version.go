@@ -3,9 +3,7 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"io"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 
@@ -92,39 +90,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if len(fidelity.UnexpectedChanges) > 0 {
 		return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 	}
-	// Check source associations before starting downloads, including unchanged auxiliary archives.
-	placeholders := make([]portfile.Checksum, len(sources))
-	for i, source := range sources {
-		placeholders[i] = portfile.Checksum{Name: source.Name}
-	}
-	if _, _, err = portfile.ReplaceChecksums(contents, info.Options["checksums"], placeholders...); err != nil {
-		return result, err
-	}
-	downloads := make([]Download, 0, len(sources))
-	for _, source := range sources {
-		var output io.Writer
-		var file *os.File
-		if s.archiveDirectory != "" {
-			file, err = os.CreateTemp(s.archiveDirectory, "source-*")
-			if err != nil {
-				return result, err
-			}
-			output = file
-		}
-		download, err := s.downloadArchive(ctx, info, source, output)
-		if file != nil {
-			closeErr := file.Close()
-			if err == nil {
-				err = closeErr
-			}
-			download.path = file.Name()
-		}
-		if err != nil {
-			return result, err
-		}
-		downloads = append(downloads, download)
-	}
-	contents, checksums, err := portfile.ReplaceChecksums(contents, info.Options["checksums"], checksumValues(downloads)...)
+	contents, checksums, downloads, err := s.refreshArchives(ctx, contents, info, sources)
 	if err != nil {
 		return result, err
 	}

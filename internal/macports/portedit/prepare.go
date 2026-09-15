@@ -75,6 +75,9 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if request.Action == record.Bump {
 		return s.prepareVersion(ctx, request, input)
 	}
+	if request.Action == record.RefreshChecksums {
+		return s.prepareChecksums(ctx, request, input)
+	}
 	revised, err := portfile.BumpRevision(input.data, input.target.Subport, input.info.Revision)
 	if err != nil {
 		return Result{}, err
@@ -93,13 +96,13 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 }
 
 func (request Request) Validate() error {
-	if request.Action != record.BumpRevision && request.Action != record.Bump {
+	if request.Action != record.BumpRevision && request.Action != record.Bump && request.Action != record.RefreshChecksums {
 		return fmt.Errorf("%w: %s", ErrNotImplemented, request.Action)
 	}
 	if request.Action == record.Bump && request.Release == nil {
 		return fmt.Errorf("portedit: a resolved release is required")
 	}
-	if request.Action == record.BumpRevision && request.Version != "" {
+	if request.Action != record.Bump && request.Version != "" {
 		return fmt.Errorf("portedit: an explicit version applies only to bump")
 	}
 	return nil

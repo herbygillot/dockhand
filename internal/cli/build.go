@@ -20,12 +20,12 @@ func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
 	provider := config.VerificationProvider
 	if provider == "" {
 		provider = "tart"
-		if cmd.Name() == "bump" || cmd.Name() == "bump-revision" {
+		if cmd.Name() == "bump" || cmd.Name() == "bump-revision" || cmd.Name() == "refresh-checksums" {
 			provider = "auto"
 		}
 	}
 	providerHelp := "Verification provider: tart or github (pushes to your fork)"
-	if cmd.Name() == "bump" || cmd.Name() == "bump-revision" {
+	if cmd.Name() == "bump" || cmd.Name() == "bump-revision" || cmd.Name() == "refresh-checksums" {
 		providerHelp = "Verification provider: auto (prefers prepared Tart), tart, or github (pushes to your fork)"
 	}
 	cmd.Flags().StringVar(&o.provider, "provider", provider, providerHelp)
@@ -45,8 +45,8 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	if o.provider != "auto" && o.provider != "tart" && o.provider != "github" {
 		return config, fmt.Errorf("provider must be auto, tart, or github")
 	}
-	if o.provider == "auto" && cmd.Name() != "bump" && cmd.Name() != "bump-revision" {
-		return config, fmt.Errorf("automatic provider selection is supported for bumps; choose --provider tart or github")
+	if o.provider == "auto" && cmd.Name() != "bump" && cmd.Name() != "bump-revision" && cmd.Name() != "refresh-checksums" {
+		return config, fmt.Errorf("automatic provider selection is supported for preparation commands; choose --provider tart or github")
 	}
 	if o.provider == "auto" {
 		if cmd.Flags().Changed("image") || config.Tart.Image != "" || cmd.Flags().Changed("capacity") || cmd.Flags().Changed("from-source") || cmd.Flags().Changed("variant") {

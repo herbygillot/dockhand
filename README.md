@@ -230,7 +230,7 @@ The `docs/` directory has the detailed material:
 A few things worth knowing up front:
 
 - Automatic version discovery currently covers sources hosted on GitHub or GitLab that follow the standard PortGroup conventions. Other ports can still be bumped to a version you name, or edited by hand and then built and published with Dockhand.
-- `refresh-checksums` and `review` appear in `--help` but are not implemented yet.
+- `review` appears in `--help` but is not implemented yet.
 - Build results, VM images, and logs live outside the database: VMs under Tart's home directory, logs and artifacts next to the database under `~/.dockhand/`.
 - A successful GitHub Actions workflow is recorded as a pass under the workflow's own rules, which may tolerate individual port test failures. A Tart build reports lint, build, tests, and install separately.
 

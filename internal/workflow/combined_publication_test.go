@@ -72,7 +72,7 @@ func passCombined(t *testing.T, f *fixture, id record.JobID) {
 }
 
 func TestCombinedPublicationKeepsOneJobAndResumesFrozenDestination(t *testing.T) {
-	for _, action := range []record.Action{record.Bump, record.BumpRevision} {
+	for _, action := range []record.Action{record.Bump, record.BumpRevision, record.RefreshChecksums} {
 		t.Run(string(action), func(t *testing.T) {
 			f, hosting, request := combinedFixture(t, action)
 			id := prepareCombined(t, f, request)

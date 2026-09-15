@@ -28,7 +28,7 @@ type Preview struct {
 }
 
 func PreviewPreparation(ctx context.Context, config Config, request PreviewRequest) (Preview, error) {
-	if request.Action != record.BumpRevision && request.Action != record.Bump {
+	if request.Action != record.BumpRevision && request.Action != record.Bump && request.Action != record.RefreshChecksums {
 		return Preview{}, fmt.Errorf("%w: %s", preparation.ErrNotImplemented, request.Action)
 	}
 	root := config.Repository
