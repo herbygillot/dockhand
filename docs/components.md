@@ -14,6 +14,7 @@ dockhand2/
     app/                 # Configuration, setup, and dependency construction
     cli/                 # Command parsing, human/JSON output, attachment
     proc/                # Current-process driver lifetime and residency
+    progress/            # Optional transient operation observations
     credential/          # Device authorization and secret-store contracts
       keychain/          # macOS Keychain implementation
     filelock/            # Context-aware locks for shared external resources
@@ -292,3 +293,7 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 `record.JobSpec.PublishTo` holds a combined job's destination. `record.PublicationSpec` remains the complete external-action intent, populated only once the prepared revision passes verification. Workflow checks the action against the accepted destination and prepared revision before persisting it and before claiming it for execution; SQLite preserves the resulting intent and its relationships. Verification and publication read the result source without replacing the accepted source. See the [combined publication report](activity/2026-09-13-combined-publication.md).
 
 `macports/dependents` stages a source-matched PortIndex, selects direct build/library/runtime dependents, and evaluates independent target configurations. It preserves selection reasons, evaluation failures, and indexed closure gaps. Its closures are default-variant estimates, not guest dependency resolutions. This discovery boundary performs no state writes, revision edits, or provider operations; workflow adoption and configuration selection remain the next integration step.
+
+### Transient operation progress
+
+`progress` carries optional scoped messages through the active call context. The CLI installs a serialized observer that prints escaped stage messages on stderr, including with `--json`. Tart and PortIndex report actual work boundaries without importing the CLI or persisting display text. This does not change durable job states, provider capacity, or admission semantics. A different driver reports its own activity; status readers still use recorded state.

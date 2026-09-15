@@ -17,6 +17,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
@@ -147,6 +148,7 @@ func (p *Provider) DescribeEnvironment(ctx context.Context) (Environment, error)
 	if err != nil {
 		return Environment{}, err
 	}
+	progress.Report(ctx, "Inspecting Tart image %s", c.Image)
 	return p.machineFor(c, nil).Environment(ctx)
 }
 func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error) {
@@ -246,6 +248,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err := validateRequest(request); err != nil {
 		return verify.Submission{State: verify.Unsupported, Detail: err.Error()}, nil
 	}
+	ctx = progress.WithScope(ctx, string(request.AttemptID))
 	config := p.Config
 	if len(request.Spec.Config.ProviderConfig) > 0 {
 		config = Config{}
@@ -343,6 +346,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return verify.Submission{}, err
 	}
 	uncertain := submission(v, verify.SubmissionUncertain)
+	progress.Report(ctx, "Tart capacity reserved for %s; cloning image %s", request.Spec.Target.Name, o.config.Image)
 	if err = o.machine.Clone(ctx, o.config.Image, v.Resource); err != nil {
 		return uncertain, err
 	}
@@ -358,6 +362,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err = os.MkdirAll(directory, 0700); err != nil {
 		return uncertain, err
 	}
+	progress.Report(ctx, "Starting verification VM and waiting for the guest agent")
 	if err = o.machine.Start(ctx, v.Resource, directory); err != nil {
 		return uncertain, err
 	}
@@ -365,6 +370,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return uncertain, err
 	}
 	if !observed {
+		progress.Report(ctx, "Inspecting guest verification prerequisites")
 		inspection, inspectErr := o.machine.InspectCapabilities(ctx, v.Resource, o.config.GuestPrefix)
 		if inspectErr != nil {
 			return uncertain, inspectErr
@@ -393,6 +399,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err != nil {
 		return uncertain, err
 	}
+	progress.Report(ctx, "Transferring prepared source to the verification VM")
 	if err = o.machine.Stage(ctx, v.Resource, archive); err != nil {
 		return uncertain, err
 	}
@@ -401,9 +408,11 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err = o.put(ctx, v); err != nil {
 		return uncertain, err
 	}
+	progress.Report(ctx, "Launching verification")
 	if err = o.machine.Launch(ctx, v.Resource); err != nil {
 		return uncertain, err
 	}
+	progress.Report(ctx, "Verification launched")
 	return submission(v, verify.Admitted), nil
 }
 
@@ -728,6 +737,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 			return record.BuildConfig{}, e
 		}
 	}
+	progress.Report(ctx, "Inspecting Tart image %s", c.Image)
 	environment, err := p.machineFor(c, nil).Environment(ctx)
 	if err != nil {
 		if p.Config.Image == "" {

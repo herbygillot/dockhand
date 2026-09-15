@@ -12,7 +12,9 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
 )
@@ -110,6 +112,8 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 		n.images.stamp, n.images.digest = before, cached.Digest
 		return Environment{Digest: cached.Digest, Platform: n.config.Platform}, nil
 	}
+	progress.Report(ctx, "Hashing Tart image %s; reading the disk image may take several minutes", n.config.Image)
+	started := time.Now()
 	hash := sha256.New()
 	buffer := make([]byte, 1<<20)
 	for _, name := range names {
@@ -158,5 +162,6 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 		}
 	}
 	n.images.stamp, n.images.digest = before, cached.Digest
+	progress.Report(ctx, "Tart image fingerprint ready (%s)", time.Since(started).Round(time.Second))
 	return Environment{Digest: n.images.digest, Platform: n.config.Platform}, nil
 }

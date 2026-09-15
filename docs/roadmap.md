@@ -12,7 +12,6 @@ This order prioritizes correct contribution inputs, attribution, and recovery be
 
 ### 1. Finish the outstanding exercise corrections
 
-- Show progress during initial image inspection, provider admission/source staging, and full PortIndex generation rather than leaving a stale `queued` line while work proceeds.
 - Make read-only status errors on an older database schema explain the supported migration path.
 
 Keep live exercise results in activity reports. Add regressions for defects that remain, rather than re-queuing cancellation, recovery, or provisioning work that has already passed its exercise.

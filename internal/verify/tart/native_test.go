@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/stretchr/testify/require"
@@ -31,11 +32,16 @@ func TestImageDigestTracksContentDespiteRestoredModificationTime(t *testing.T) {
 printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
 `), 0700))
 	p := &Provider{Config: Config{Home: root, Image: "base", ArtifactDirectory: filepath.Join(root, "artifacts"), Executable: executable, Platform: testPlatform}}
-	first, err := p.DescribeEnvironment(t.Context())
+	var messages []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { messages = append(messages, update.Message) })
+	first, err := p.DescribeEnvironment(ctx)
 	require.NoError(t, err)
-	again, err := p.DescribeEnvironment(t.Context())
+	require.Contains(t, strings.Join(messages, "\n"), "Hashing Tart image base")
+	messages = nil
+	again, err := p.DescribeEnvironment(ctx)
 	require.NoError(t, err)
 	require.Equal(t, first, again)
+	require.NotContains(t, strings.Join(messages, "\n"), "Hashing")
 	disk := filepath.Join(vm, "disk.img")
 	info, err := os.Stat(disk)
 	require.NoError(t, err)
@@ -90,10 +96,16 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	f.request.Spec.Source.Base = f.request.Spec.Source.Commit
 	config, err := f.provider.settings()
 	require.NoError(t, err)
-	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir(), nil)
+	var messages []string
+	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { messages = append(messages, update.Message) })
+	_, err = makeInput(ctx, f.provider.Repo, f.request, config, t.TempDir(), nil)
 	require.NoError(t, err)
-	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir(), nil)
+	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
+	messages = nil
+	_, err = makeInput(ctx, f.provider.Repo, f.request, config, t.TempDir(), nil)
 	require.NoError(t, err)
+	require.NotContains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
+	require.Contains(t, strings.Join(messages, "\n"), "PortIndex ready")
 	calls := config.PortIndexExecutable + ".calls"
 	data, err := os.ReadFile(calls)
 	require.NoError(t, err)

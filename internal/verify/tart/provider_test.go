@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
@@ -536,4 +538,36 @@ func TestStandaloneVerificationAdmissionRequiresNoContributionRevision(t *testin
 	require.NoError(t, err)
 	require.Equal(t, verify.RunFound, recovered.State)
 	require.Equal(t, result.Run, recovered.Submission.Run)
+}
+
+func TestAdmissionProgressPrecedesWorkAndStopsAtFailure(t *testing.T) {
+	for _, failStage := range []bool{false, true} {
+		t.Run(fmt.Sprint(failStage), func(t *testing.T) {
+			f, m := singleRun(t)
+			var updates []progress.Update
+			ctx := progress.WithReporter(t.Context(), func(update progress.Update) { updates = append(updates, update) })
+			m.stageHook = func() {
+				require.NotEmpty(t, updates)
+				require.Equal(t, "Transferring prepared source to the verification VM", updates[len(updates)-1].Message)
+				require.Zero(t, m.calls["launch"])
+			}
+			if failStage {
+				m.stageError = errors.New("transfer failed")
+			}
+			submitted, err := f.provider.Submit(ctx, f.request)
+			for _, update := range updates {
+				require.Equal(t, string(f.request.AttemptID), update.Scope)
+			}
+			if failStage {
+				require.ErrorContains(t, err, "transfer failed")
+				require.Equal(t, verify.SubmissionUncertain, submitted.State)
+				require.Zero(t, m.calls["launch"])
+				require.Equal(t, "Transferring prepared source to the verification VM", updates[len(updates)-1].Message)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, verify.Admitted, submitted.State)
+				require.Equal(t, "Verification launched", updates[len(updates)-1].Message)
+			}
+		})
+	}
 }

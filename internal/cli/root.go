@@ -52,8 +52,11 @@ func NewRoot(config app.Config) (*cobra.Command, error) {
 		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nPrepare version and revision bumps, verify committed ports, resume jobs, and run driver cycles. Automatic selection supports GitHub sources with stable numeric versions and a tags livecheck. Publish verified contribution branches to GitHub.",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
-		SilenceUsage:  true,
-		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+			cmd.SetContext(progressContext(cmd.Context(), cmd.ErrOrStderr()))
+		},
+		SilenceUsage: true,
+		RunE:         func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	dbPath := dbPathValue{target: &runtime.config.DBPath}
 	if err := dbPath.Set(runtime.config.DBPath); err != nil {

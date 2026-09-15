@@ -18,6 +18,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -116,15 +117,18 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 	}
 	profile := digest([]byte(resolved.Digest + "\x00" + resolved.MirrorURL + "\x00" + platform.OS + "\x00" + platform.Version + "\x00" + platform.Architecture))
 	cacheRoot := filepath.Join(resolved.CacheDirectory, profile)
+	progress.Report(ctx, "Preparing PortIndex; waiting for the shared index cache")
 	guard, err := filelock.Acquire(ctx, filepath.Join(cacheRoot, "index.lock"), filelock.Exclusive)
 	if err != nil {
 		return err
 	}
 	defer guard.Close()
+	progress.Report(ctx, "Checking cached PortIndex")
 	entry, temporary, err := ensurePortIndex(ctx, repo, source, platform, resolved, cacheRoot, root, client)
 	if err != nil {
 		return err
 	}
+	progress.Report(ctx, "PortIndex ready; installing into staged source")
 	if temporary {
 		defer os.RemoveAll(filepath.Dir(entry))
 	}
@@ -170,6 +174,7 @@ func ensurePortIndex(ctx context.Context, repo *git.Repository, source record.So
 			return "", false, err
 		}
 		if c.MirrorURL != "" {
+			progress.Report(ctx, "Fetching a mirrored PortIndex to seed the source index")
 			mirror, changed, mirrorErr := mirroredPortIndex(ctx, repo, source, seedTree, c.MirrorURL, cacheRoot, client)
 			if mirrorErr == nil {
 				err = buildPortIndex(ctx, c, platform, snapshot.Root, seed, mirror, changed, false)
@@ -305,6 +310,12 @@ func requiresFullIndex(paths []string) bool {
 }
 
 func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sourceRoot, destination, seed string, changed []string, strict bool) (err error) {
+	if seed == "" {
+		progress.Report(ctx, "Generating full PortIndex; this may take several minutes")
+	} else {
+		progress.Report(ctx, "Updating PortIndex for changed source paths")
+	}
+	started := time.Now()
 	if err = os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
 		return err
 	}
@@ -393,6 +404,7 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	if err = os.Rename(temp, destination); err != nil {
 		return err
 	}
+	progress.Report(ctx, "PortIndex generated (%s)", time.Since(started).Round(time.Second))
 	return nil
 }
 

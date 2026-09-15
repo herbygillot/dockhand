@@ -16,6 +16,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
@@ -97,6 +98,7 @@ func makeInput(ctx context.Context, repo *git.Repository, request verify.Request
 			return "", fmt.Errorf("tart: source commit and tree disagree")
 		}
 	}
+	progress.Report(ctx, "Materializing committed source for verification")
 	snapshot, err := repo.Materialize(ctx, string(request.Spec.Source.Tree))
 	if err != nil {
 		return "", err
@@ -112,6 +114,7 @@ func makeInput(ctx context.Context, repo *git.Repository, request verify.Request
 	if err = requireIndexedTarget(snapshot.Root, request.Spec.Target); err != nil {
 		return "", err
 	}
+	progress.Report(ctx, "Packing source and verification inputs")
 	temp, err := os.CreateTemp(directory, ".input-")
 	if err != nil {
 		return "", err

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -140,4 +141,19 @@ func completedOutcome(entry workflow.JobStatus) string {
 		}
 	}
 	return "verification passed"
+}
+
+func progressContext(ctx context.Context, out io.Writer) context.Context {
+	var last progress.Update
+	return progress.WithReporter(ctx, func(update progress.Update) {
+		if update == last {
+			return
+		}
+		last = update
+		message := update.Message
+		if update.Scope != "" {
+			message = update.Scope + ": " + message
+		}
+		_, _ = fmt.Fprintln(out, plain(message))
+	})
 }
