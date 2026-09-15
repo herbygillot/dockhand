@@ -45,6 +45,7 @@ type fakeActions struct {
 	err      error
 	runsErr  error
 	logCalls int
+	jobLog   func(context.Context, int64) (io.ReadCloser, error)
 }
 
 func (a *fakeActions) Workflow(context.Context, string) (*gh.Workflow, error) { return a.flow, a.err }
@@ -63,8 +64,11 @@ func (a *fakeActions) Run(_ context.Context, _ int64, attempt int) (*gh.Workflow
 func (a *fakeActions) Jobs(context.Context, int64, int) ([]*gh.WorkflowJob, error) {
 	return a.jobs, a.err
 }
-func (a *fakeActions) JobLog(context.Context, int64) (io.ReadCloser, error) {
+func (a *fakeActions) JobLog(ctx context.Context, id int64) (io.ReadCloser, error) {
 	a.logCalls++
+	if a.jobLog != nil {
+		return a.jobLog(ctx, id)
+	}
 	return io.NopCloser(strings.NewReader("build log\n")), a.err
 }
 
@@ -271,9 +275,21 @@ func TestCompletedLogsArePinnedAndCached(t *testing.T) {
 	require.True(t, result.Complete)
 	require.Contains(t, string(result.Data), "build log")
 	require.Equal(t, 2, f.api.logCalls)
-	again, err := f.provider.ReadLog(t.Context(), submission.Run, 0, 4096)
+	restarted := *f.provider
+	credentialReads := 0
+	restarted.Actions = func(context.Context, string) (Actions, error) {
+		credentialReads++
+		return nil, errors.New("credentials unavailable")
+	}
+	again, err := restarted.ReadLog(t.Context(), submission.Run, 0, 4096)
 	require.NoError(t, err)
 	require.Equal(t, result, again)
+	chunk, err := restarted.ReadLog(t.Context(), submission.Run, 7, 13)
+	require.NoError(t, err)
+	require.Equal(t, result.Data[7:20], chunk.Data)
+	require.EqualValues(t, 20, chunk.Next)
+	require.False(t, chunk.Complete)
+	require.Zero(t, credentialReads)
 	require.Equal(t, 2, f.api.logCalls)
 }
 
