@@ -4,7 +4,7 @@ This document is the current source of truth for implementation priorities. The 
 
 The order within **Next** is intentional. Other sections describe accepted direction, unresolved design, or explicitly deferred scope without promising implementation order.
 
-Last updated: 2026-09-14.
+Last updated: 2026-09-15.
 
 ## Next
 
@@ -44,6 +44,16 @@ Expose the existing discovery and version-assessment boundary through `outdated`
 ### Pull-request observation
 
 Teach resident driver cycles to refresh PR head, mergeability, review, CI, and conflict observations. Publication still completes when the PR is opened or updated; later observations remain attached to the contribution.
+
+### MacPorts Base compatibility and fetch semantics
+
+A read-only source review found no incompatible evaluator interfaces in Base 2.12.2–2.12.6, or in the representative older releases 2.11.6, 2.10.7, 2.9.3, and 2.8.1. This is source-review evidence, not runtime certification or a guarantee that current PortGroups support those older releases.
+
+- Correct the evaluator's incomplete credential detection. It currently checks only `fetch.user` and `fetch.password`; Base also supports global `fetch_credentials` (present in the reviewed 2.10.7 and later releases), whose matching behavior changed in 2.12.6. Determine whether configured credentials apply to the selected download locations before declaring direct fetching compatible. Expose only the necessary capability/status information; keep secret values out of snapshots and diagnostics. Add regressions for applicable and unrelated credentials and the supported matching semantics.
+- Report the installed Base version in evaluator diagnostics and track which versions have source-review evidence versus runtime validation. An untested version should not silently appear certified, nor should version alone replace capability checks.
+- Check the evaluator's required capabilities and assumptions at startup or first use. Missing metadata access should produce a clear compatibility error; unrecognized fetch internals should disable automatic source preparation with an actionable explanation.
+- Validate the shared evaluator against representative Base versions on compatible hosts, covering source/resource binding, subports and variants, optional metadata, and fetch-hook inspection. Track PortGroup compatibility separately: Go hook recognition can change with the ports tree independently of Base. In particular, test the assumptions about target record keys, `user${hook}` procedure names, and the `global {*}[info globals]` body prefix.
+- Keep source binding, metadata access, and fetch-hook inspection identifiable within the MacPorts adapter. Retain one shared Tcl implementation while the contracts agree; introduce version-specific overrides when a demonstrated incompatibility requires them. V1's version selector currently has only one actual shim, `2.12.6.tcl`, so its presence alone is not evidence of historical coverage.
 
 ### Engineering follow-up
 
