@@ -125,6 +125,12 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 			rejected = fmt.Errorf("%w: candidate did not change the evaluated version", ErrUnsupported)
 			continue
 		}
+		if checkFidelity {
+			if err := checkFetchCredentials(next); err != nil {
+				rejected = err
+				continue
+			}
+		}
 		fidelity := versionFidelity(input.before, after, input.target.Name, input.files.Root, root, record.Release{Version: next.Version, Tag: spec.Pattern.Tag(sourceVersion)}, next.Options["checksums"])
 		if checkFidelity && len(fidelity.UnexpectedChanges) > 0 {
 			rejected = fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)

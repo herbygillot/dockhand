@@ -167,7 +167,7 @@ func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afte
 		next = comparablePort(next, afterRoot)
 		if name == selected {
 			old.Version, old.Revision = release.Version, 0
-			for _, key := range []string{"version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "distfiles", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites"} {
+			for _, key := range []string{"fetch.has_credentials", "version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "distfiles", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites"} {
 				if value, ok := next.Options[key]; ok {
 					old.Options[key] = value
 				} else {

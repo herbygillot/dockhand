@@ -184,6 +184,7 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 		{"post-fetch after Go check", "go-check", "if {1} { post-fetch {error custom} }\n", preparation.ErrUnsupported},
 		{"Go dependency", "go-check", "if {$version eq {2.0}} {depends_lib port:other}\n", preparation.ErrFidelity},
 		{"credentials", "literal", "fetch.password secret-test-value\n", preparation.ErrUnsupported},
+		{"credentials after version edit", "literal", "if {$version eq {2.0}} {fetch.password secret-test-value}\n", preparation.ErrUnsupported},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var requests atomic.Int64

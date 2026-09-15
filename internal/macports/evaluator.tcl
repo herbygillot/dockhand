@@ -59,16 +59,12 @@ namespace eval ::dockhand {
             } else {
                 dict set out fetch_details $fetch
             }
-            set credentials 0
-            foreach field {fetch.user fetch.password} {
-                if {[$worker eval [list exists $field]]} {
-                    if {[catch {$worker eval [list option $field]} value]} {
-                        dict set failures fetch.has_credentials "cannot evaluate fetch credentials"
-                    } elseif {$value ne ""} {
-                        set credentials 1
-                    }
-                }
+            foreach field {fetch.user fetch.password fetch_credentials macports::fetch_credentials} {
                 dict unset out $field
+            }
+            if {[catch {fetch_credentials $worker} credentials]} {
+                set credentials 1
+                dict set failures fetch.has_credentials "cannot determine applicable fetch credentials"
             }
             dict set out fetch.has_credentials $credentials
             dict set out option_errors $failures

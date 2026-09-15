@@ -17,7 +17,7 @@ Keep live exercise results in activity reports. Add regressions for defects that
 Add downstream coverage without turning workflow into a generic graph engine.
 
 - `macports` discovers reverse dependents and the dependency closure for each selected target against the frozen source tree. PortIndex lookup, direct reverse indexing, and transitive closure queries are implemented. `macports/dependents` now stages that index against frozen source and evaluates a deterministic coverage cohort, retaining per-target failures and index gaps; workflow still needs to invoke discovery for the prepared source outside a write transaction and persist the result.
-- `prepare` proposes any required revision edits separately from the verification coverage plan.
+- `macports/portedit` proposes any required revision edits separately from the verification coverage plan.
 - `verify` records the concrete target/configuration questions that need answers.
 - `workflow` schedules an isolated attempt for each target/configuration and lets provider capacity determine parallel or sequential execution. The multi-attempt scheduler and aggregate outcomes are implemented; the source-bound discovery result still needs to populate these plans with per-target environment requirements.
 - Each attempt owns its VM and artifacts. Conflicting dependents therefore do not need to coexist in one guest.
@@ -49,7 +49,6 @@ Teach resident driver cycles to refresh PR head, mergeability, review, CI, and c
 
 A read-only source review found no incompatible evaluator interfaces in Base 2.12.2–2.12.6, or in the representative older releases 2.11.6, 2.10.7, 2.9.3, and 2.8.1. This is source-review evidence, not runtime certification or a guarantee that current PortGroups support those older releases.
 
-- Correct the evaluator's incomplete credential detection. It currently checks only `fetch.user` and `fetch.password`; Base also supports global `fetch_credentials` (present in the reviewed 2.10.7 and later releases), whose matching behavior changed in 2.12.6. Determine whether configured credentials apply to the selected download locations before declaring direct fetching compatible. Expose only the necessary capability/status information; keep secret values out of snapshots and diagnostics. Add regressions for applicable and unrelated credentials and the supported matching semantics.
 - Report the installed Base version in evaluator diagnostics and track which versions have source-review evidence versus runtime validation. An untested version should not silently appear certified, nor should version alone replace capability checks.
 - Check the evaluator's required capabilities and assumptions at startup or first use. Missing metadata access should produce a clear compatibility error; unrecognized fetch internals should disable automatic source preparation with an actionable explanation.
 - Validate the shared evaluator against representative Base versions on compatible hosts, covering source/resource binding, subports and variants, optional metadata, and fetch-hook inspection. Track PortGroup compatibility separately: Go hook recognition can change with the ports tree independently of Base. In particular, test the assumptions about target record keys, `user${hook}` procedure names, and the `global {*}[info globals]` body prefix.
@@ -118,6 +117,7 @@ The following capabilities are established and should be extended through their 
 - explicit job phases, transactional claims, recovery, cancellation, and resource cleanup;
 - workflow lifecycle organization that keeps binding, intake, policy, execution, and projection roles visible without exporting driver internals;
 - immutable committed and working-tree source capture with native MacPorts evaluation;
+- native credential-applicability checks that block unsupported authenticated source downloads without exposing secrets;
 - named and multiple source checksums, preserved local patches, and guarded Go/Rust dependency regeneration through optional host helpers;
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
 - base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;

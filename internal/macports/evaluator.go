@@ -87,6 +87,9 @@ type Evaluator struct {
 //go:embed evaluator.tcl
 var evaluatorScript string
 
+//go:embed fetch_credentials.tcl
+var fetchCredentialsScript string
+
 func (e *Evaluator) start(ctx context.Context, tree Tree) (*rpc.Session, record.Platform, error) {
 	executable := e.Executable
 	if executable == "" {
@@ -112,7 +115,7 @@ func (e *Evaluator) start(ctx context.Context, tree Tree) (*rpc.Session, record.
 		_ = session.Close()
 		return nil, record.Platform{}, err
 	}
-	if _, err := session.Call(ctx, "eval", evaluatorScript); err != nil {
+	if _, err := session.Call(ctx, "eval", fetchCredentialsScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", ErrStartup, err))
 	}
 	reply, err := session.Call(ctx, "initialize", tree.root)

@@ -93,3 +93,20 @@ func TestMultipleSourcesUseExplicitMasterSiteTags(t *testing.T) {
 		require.ErrorIs(t, err, ErrUnsupported)
 	}
 }
+
+func TestCredentialsStopPreparationBeforeDownload(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++; fmt.Fprint(w, "archive") }))
+	defer server.Close()
+	for _, unknown := range []bool{false, true} {
+		info := archiveInfo(server.URL)
+		info.Options["fetch.has_credentials"] = "1"
+		if unknown {
+			info.OptionErrors = map[string]string{"fetch.has_credentials": "cannot determine applicable fetch credentials"}
+		}
+		_, err := (&Service{}).download(t.Context(), info)
+		require.ErrorIs(t, err, ErrUnsupported)
+		require.ErrorContains(t, err, "prepare this update manually with MacPorts")
+	}
+	require.Zero(t, requests)
+}

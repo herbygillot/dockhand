@@ -77,12 +77,15 @@ func localPatches(info macports.PortInfo, portdir string) error {
 }
 
 func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, error) {
-	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.has_credentials", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
+	if err := checkFetchCredentials(info); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
 		if info.OptionErrors[key] != "" {
 			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
 		}
 	}
-	if info.Options["fetch.type"] != "standard" || info.Options["fetch.has_credentials"] != "0" || info.Options["fetch.archive_compatible"] != "1" || info.Options["fetch.ignore_sslcert"] != "no" || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
+	if info.Options["fetch.type"] != "standard" || info.Options["fetch.archive_compatible"] != "1" || info.Options["fetch.ignore_sslcert"] != "no" || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
 		return nil, fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", ErrUnsupported)
 	}
 	if err := localPatches(info, portdir); err != nil {
@@ -223,4 +226,14 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 		return Download{}, fmt.Errorf("portedit: empty or oversized distfile %s", name)
 	}
 	return Download{Name: name, URL: address, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), Size: size}, nil
+}
+
+func checkFetchCredentials(info macports.PortInfo) error {
+	if info.OptionErrors["fetch.has_credentials"] != "" || info.Options["fetch.has_credentials"] == "" {
+		return fmt.Errorf("%w: cannot determine applicable MacPorts fetch credentials; prepare this update manually with MacPorts", ErrUnsupported)
+	}
+	if info.Options["fetch.has_credentials"] != "0" {
+		return fmt.Errorf("%w: MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts", ErrUnsupported)
+	}
+	return nil
 }
