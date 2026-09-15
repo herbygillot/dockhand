@@ -2,16 +2,18 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
 func (r *runtime) databaseCommand() *cobra.Command {
-	command := &cobra.Command{Use: "db", Short: "Back up and check the shared state database", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
+	command := &cobra.Command{Use: "db", Short: "Back up, check, and migrate the shared state database", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() }}
 	backup := &cobra.Command{
 		Use: "backup <file>", Short: "Write a consistent standalone database snapshot",
 		Long: "Back up every repository in the selected database, including committed WAL contents. The destination must not exist. Git objects, logs, VMs, and remote state are not included. No repository or provider setup is required.",
@@ -42,7 +44,21 @@ func (r *runtime) databaseCommand() *cobra.Command {
 			return err
 		},
 	}
-	command.AddCommand(backup, check)
+	migrate := &cobra.Command{
+		Use: "migrate", Short: "Upgrade an existing Dockhand database without advancing work", Args: cobra.NoArgs,
+		Long: "Apply supported schema migrations transactionally to the selected database for all repositories. A current schema needs no upgrade. Missing, unrecognized, and newer databases are refused. This requires no checkout or provider and does not run driver cycles. Use db backup beforehand if you want a snapshot of the old schema.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := app.MigrateDatabase(cmd.Context(), r.config); err != nil {
+				return err
+			}
+			if r.json {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct{ Current bool }{true})
+			}
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Database schema is current.")
+			return err
+		},
+	}
+	command.AddCommand(backup, check, migrate)
 	return command
 }
 
@@ -86,7 +102,7 @@ func (r *runtime) gcCommand() *cobra.Command {
 				}
 			}
 			if callErr != nil {
-				return callErr
+				return databaseReadError(callErr)
 			}
 			if !options.DryRun {
 				for _, item := range result.Items {
@@ -101,4 +117,12 @@ func (r *runtime) gcCommand() *cobra.Command {
 	command.Flags().DurationVar(&options.OlderThan, "older-than", 7*24*time.Hour, "Minimum age since job completion and, for artifacts, resource release (0 includes recent work)")
 	command.Flags().BoolVar(&options.DryRun, "dry-run", false, "Show eligible cleanup without changing state or contacting providers")
 	return command
+}
+
+func databaseReadError(err error) error {
+	var migration *state.MigrationRequiredError
+	if !errors.As(err, &migration) {
+		return err
+	}
+	return fmt.Errorf("%w; this command is read-only. Run dockhand db migrate with the same --db option, then retry. To save the old schema first, use dockhand db backup <file> with the same --db option", err)
 }

@@ -8,15 +8,11 @@ Last updated: 2026-09-14.
 
 ## Next
 
-This order prioritizes correct contribution inputs, attribution, and recovery before expanding automatic preparation and downstream coverage. Small independent items may land separately; do not combine them into a single architectural rewrite.
-
-### 1. Finish the outstanding exercise corrections
-
-- Make read-only status errors on an older database schema explain the supported migration path.
+This order broadens automatic source preparation before adding dependency regeneration and downstream coverage. Small independent items may land separately; do not combine them into a single architectural rewrite.
 
 Keep live exercise results in activity reports. Add regressions for defects that remain, rather than re-queuing cancellation, recovery, or provisioning work that has already passed its exercise.
 
-### 2. Broaden source and checksum preparation
+### 1. Broaden source and checksum preparation
 
 Support explicitly named checksums for a single distfile, retaining the distfile name and its Tcl expression. Then define safe handling for multiple source distfiles and their independent checksum groups. Preserve unrelated Portfile content and reject ambiguous associations.
 
@@ -24,7 +20,7 @@ Investigate the GitLab preparation pattern rejected by the `zix` exercise. Disti
 
 These checksum and source-editing boundaries should be shared by the dependency preparation below and by standalone checksum refresh.
 
-### 3. Regenerate Go and Rust dependency declarations during bumps
+### 2. Regenerate Go and Rust dependency declarations during bumps
 
 Add explicit preparation support for `go2port`/`go.vendors` and `cargo2port`/`cargo.crates`, including `cargo.crates_github` where applicable. Derive dependency declarations and checksums from the selected new source release, using the appropriate MacPorts helpers rather than treating these declarations as ordinary single-archive checksums.
 
@@ -36,7 +32,7 @@ Account for added, removed, and changed dependencies, relevant module/lock files
 
 Implement and validate Go and Rust independently through the existing preparation contract. Neither needs a separate workflow engine or a new general-purpose plugin framework.
 
-### 4. Plan and execute dependent verification
+### 3. Plan and execute dependent verification
 
 Add downstream coverage without turning workflow into a generic graph engine.
 

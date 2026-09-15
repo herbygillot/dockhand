@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -65,7 +66,7 @@ func TestProviderMigrationRollsBackOnFailure(t *testing.T) {
 	path, db := versionOne(t)
 	_, err := db.Exec("CREATE TABLE provider_executions (unrelated TEXT)")
 	require.NoError(t, err)
-	_, err = Open(t.Context(), path, Options{})
+	_, err = Open(t.Context(), path, Options{RequireExisting: true})
 	require.Error(t, err)
 	var version, count int
 	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
@@ -477,4 +478,27 @@ func TestMaintenanceCanBackUpOlderSchemaWithoutMigrating(t *testing.T) {
 	require.ErrorIs(t, err, state.ErrSchema)
 	_, err = Open(t.Context(), path, Options{AllowOlderSchema: true})
 	require.ErrorIs(t, err, state.ErrInvalid)
+}
+
+func TestReadOnlySchemaErrorDistinguishesSupportedUpgrade(t *testing.T) {
+	path, db := versionOne(t)
+	for _, scenario := range []struct {
+		appID, version int
+		upgrade        bool
+	}{
+		{applicationID, 1, true}, {applicationID, schemaVersion + 1, false}, {1234, 1, false}, {applicationID, 0, false},
+	} {
+		_, err := db.Exec(fmt.Sprintf("PRAGMA application_id=%d; PRAGMA user_version=%d", scenario.appID, scenario.version))
+		require.NoError(t, err)
+		_, err = Open(t.Context(), path, Options{ReadOnly: true})
+		require.ErrorIs(t, err, state.ErrSchema)
+		var migration *state.MigrationRequiredError
+		if scenario.upgrade {
+			require.ErrorAs(t, err, &migration)
+			require.Equal(t, 1, migration.Current)
+			require.Equal(t, schemaVersion, migration.Required)
+		} else {
+			require.False(t, errors.As(err, &migration))
+		}
+	}
 }

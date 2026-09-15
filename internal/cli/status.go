@@ -39,7 +39,7 @@ func (r *runtime) statusCommand() *cobra.Command {
 			}
 			status, err := app.FilteredStatus(cmd.Context(), r.config, filter)
 			if err != nil {
-				return err
+				return databaseReadError(err)
 			}
 			if r.json {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(status)

@@ -32,6 +32,14 @@ func CheckDatabase(ctx context.Context, config Config) error {
 	return store.Check(ctx)
 }
 
+func MigrateDatabase(ctx context.Context, config Config) error {
+	store, err := sqlite.Open(ctx, config.DBPath, sqlite.Options{RequireExisting: true})
+	if err != nil {
+		return err
+	}
+	return store.Close()
+}
+
 func Collect(ctx context.Context, config Config, options workflow.RetentionOptions) (workflow.RetentionResult, error) {
 	empty := workflow.RetentionResult{Before: time.Now().UTC().Add(-options.OlderThan), DryRun: options.DryRun, Items: []workflow.CleanupItem{}}
 	if options.OlderThan < 0 {

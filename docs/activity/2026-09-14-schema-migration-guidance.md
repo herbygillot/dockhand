@@ -1,0 +1,9 @@
+# Read-only schema errors and explicit migration
+
+Status and GC preview now distinguish an upgradeable older database from incompatible state. They report the stored and required schema versions and point to `dockhand db migrate`, using the same `--db` option. The error retains `state.ErrSchema` classification through a small typed migration-required error. Newer databases instead request a newer Dockhand build; foreign and unknown schemas get no upgrade suggestion.
+
+Added `db migrate` as database-only application maintenance. It reuses SQLite's existing initialization/migration registry and transactional rollback, with a RequireExisting option that refuses missing, empty, and unrecognized databases. It neither constructs repository/provider services nor starts a driver cycle. Current schemas succeed without another upgrade. Backup/check retain their ability to read supported older schemas without migration.
+
+All changes and tests were authored in the existing state, SQLite, application maintenance, and CLI packages. Regression coverage exercises a real schema-1 fixture through read-only status, backup/check, migration, repeated migration, and status again; checks preserved repository data and absence of new jobs/artifacts; rejects missing/empty/foreign/future databases without file changes; distinguishes typed errors; and exercises rollback on the existing-only migration path. No user database is migrated during validation.
+
+Validation passed: focused packages, `go test ./...`, `go vet ./...`, and `make build`. The rebuilt executable also completed a temporary schema-1 status → `db migrate --json` → status exercise; the first status returned actionable guidance and no JSON body, migration reported a current schema, and the final status decoded successfully. Fixture and captured status output: `/private/tmp/dockhand-migration-cli-lqdy0c4u`.

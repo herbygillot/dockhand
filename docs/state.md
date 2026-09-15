@@ -261,3 +261,7 @@ The setup manifest is a declaration checked against the observed guest. It is no
 `changes.generated_commit` retains the original fully generated contribution commit, or an empty value when provenance is unknown. It is immutable across amendments and branch renames. Publication compares the current single-commit head to this identity instead of treating a trailer as proof of generation. Migration leaves existing rows unknown.
 
 Verification evidence also retains optional per-run guest diagnostics, image/provider version, exact step argv and user, and test-omission reasons in its existing JSON payload. These diagnostics do not participate in capability identity and are never filled from a later publisher's host.
+
+### Explicit schema maintenance
+
+`dockhand db migrate` opens only an existing recognized Dockhand database for a writable schema upgrade, using the same migration registry and transactions as normal writable opens. It does not register a repository or construct workflow/provider services. Current databases succeed without another schema upgrade. Missing and unrecognized databases are not initialized; newer schema versions require a newer Dockhand build. `state.MigrationRequiredError` preserves `ErrSchema` classification while exposing current and required versions for supported older schemas. Read-only status remains read-only and gives CLI recovery guidance; backup/check continue to accept supported older versions without migration.

@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -18,6 +19,17 @@ var (
 	ErrUncertain   = errors.New("state: commit outcome uncertain")
 	ErrReadOnly    = errors.New("state: read-only store")
 )
+
+// MigrationRequiredError identifies a supported schema that needs a writable upgrade.
+type MigrationRequiredError struct {
+	Current  int
+	Required int
+}
+
+func (e *MigrationRequiredError) Error() string {
+	return fmt.Sprintf("%s: database schema %d requires migration to %d", ErrSchema, e.Current, e.Required)
+}
+func (e *MigrationRequiredError) Unwrap() error { return ErrSchema }
 
 type Store interface {
 	FindRepository(context.Context, string) (record.Repository, error)

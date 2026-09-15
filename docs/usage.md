@@ -113,3 +113,14 @@ The push remote defaults to `origin`; the PR target comes from `upstream` when c
 Publication without `--wait` returns after driver pickup or an earlier terminal outcome. `--wait` follows remote confirmation. Resume accepted work using its job ID with `wait`, or run `start`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Missing-verification scheduling for standalone `publish`, rebase/amend commands, and post-publication monitoring remain future work.
 
 Image inspection and fingerprinting, capacity reservation, VM startup, guest checks, source materialization, index preparation, and source transfer print stage messages on stderr. Full PortIndex generation is explicitly identified and timed; a cache hit does not claim a new generation. These messages work without `--trace` and leave JSON stdout intact. `--trace` additionally streams the build log. Stage messages describe work performed by the attached process; they are not stored progress events from other drivers.
+
+## Upgrade an older state database
+
+If `status` reports that the database schema needs migration, run:
+
+```sh
+dockhand db migrate
+dockhand status
+```
+
+Use the same `--db PATH` on both commands when selecting a nondefault database. Migration updates the schema for every repository in that database without running jobs, accessing a ports checkout, or starting verification. An already-current schema succeeds. Missing, empty, unrelated, and newer databases are refused. To keep an old-schema snapshot first, run `dockhand db backup <new-backup-file>` with the same `--db PATH`; backup and integrity checks support older schemas without upgrading them.

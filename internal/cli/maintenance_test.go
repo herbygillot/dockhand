@@ -2,7 +2,9 @@ package cli_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,4 +73,109 @@ func TestGCDryRunAndEmptyRepositoryDoNotInitializeState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before, after)
 	require.NoDirExists(t, filepath.Join(filepath.Dir(config.DBPath), "artifacts"))
+}
+
+func TestOldSchemaStatusExplainsDatabaseOnlyMigration(t *testing.T) {
+	root := t.TempDir()
+	out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	path := filepath.Join(root, "old state.db")
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	defer db.Close()
+	schema, err := os.ReadFile("../state/sqlite/migrations/001.sql")
+	require.NoError(t, err)
+	_, err = db.Exec(string(schema) + `PRAGMA application_id=0x44484e44; PRAGMA user_version=1;
+ INSERT INTO repositories(id,common_dir,created_at) VALUES('preserved','/old/repository',1);`)
+	require.NoError(t, err)
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	config := app.Config{DBPath: path, Repository: root, TclExecutable: "/missing/tcl"}
+	var required int
+	for _, args := range [][]string{{"status"}, {"status", "--json"}, {"gc", "--dry-run"}} {
+		var stdout, stderr bytes.Buffer
+		err = cli.Run(t.Context(), args, cli.Streams{Out: &stdout, Err: &stderr}, config)
+		require.ErrorIs(t, err, state.ErrSchema)
+		if args[0] == "status" {
+			require.Empty(t, stdout.String())
+		}
+		var migration *state.MigrationRequiredError
+		require.ErrorAs(t, err, &migration)
+		require.Equal(t, 1, migration.Current)
+		required = migration.Required
+		require.Greater(t, required, 1)
+		require.Contains(t, err.Error(), "read-only")
+		require.Contains(t, err.Error(), "dockhand db migrate")
+		require.Contains(t, err.Error(), "same --db option")
+		require.Contains(t, err.Error(), "dockhand db backup")
+	}
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "read-only inspection must not migrate")
+	require.NoDirExists(t, filepath.Join(root, "artifacts"))
+	config.Repository = "/missing/repository"
+	config.GitExecutable = "/missing/git"
+	config.Tart.Executable = "/missing/tart"
+	backup := filepath.Join(root, "backup.db")
+	for _, args := range [][]string{{"db", "check"}, {"db", "backup", backup}} {
+		var output bytes.Buffer
+		require.NoError(t, cli.Run(t.Context(), args, cli.Streams{Out: &output, Err: &output}, config))
+	}
+	var version int
+	require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 1, version)
+	for range 2 {
+		var output bytes.Buffer
+		require.NoError(t, cli.Run(t.Context(), []string{"db", "migrate", "--json"}, cli.Streams{Out: &output, Err: &output}, config))
+		require.JSONEq(t, `{"Current":true}`, output.String())
+		require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
+		require.Equal(t, required, version)
+	}
+	var common string
+	require.NoError(t, db.QueryRow("SELECT common_dir FROM repositories WHERE id='preserved'").Scan(&common))
+	require.Equal(t, "/old/repository", common)
+	var count int
+	require.NoError(t, db.QueryRow("SELECT count(*) FROM jobs").Scan(&count))
+	require.Zero(t, count)
+	require.NoDirExists(t, filepath.Join(root, "artifacts"))
+	preserved, err := sql.Open("sqlite", backup)
+	require.NoError(t, err)
+	defer preserved.Close()
+	require.NoError(t, preserved.QueryRow("PRAGMA user_version").Scan(&version))
+	require.Equal(t, 1, version, "backup must retain the old schema")
+	config.Repository, config.GitExecutable = root, ""
+	var output bytes.Buffer
+	require.NoError(t, cli.Run(t.Context(), []string{"status"}, cli.Streams{Out: &output, Err: &output}, config))
+	require.Contains(t, output.String(), "No recorded jobs")
+}
+
+func TestMigrationRefusesMissingEmptyForeignAndNewerDatabases(t *testing.T) {
+	config := app.Config{Repository: "/missing/repository", GitExecutable: "/missing/git"}
+	root := t.TempDir()
+	config.DBPath = filepath.Join(root, "missing", "state.db")
+	var output bytes.Buffer
+	require.ErrorIs(t, cli.Run(t.Context(), []string{"db", "migrate"}, cli.Streams{Out: &output, Err: &output}, config), state.ErrNoDatabase)
+	require.NoDirExists(t, filepath.Dir(config.DBPath))
+	for name, setup := range map[string]string{"empty": "", "foreign": "CREATE TABLE important(value TEXT)", "newer": "PRAGMA application_id=0x44484e44; PRAGMA user_version=999"} {
+		t.Run(name, func(t *testing.T) {
+			config.DBPath = filepath.Join(root, name+".db")
+			db, err := sql.Open("sqlite", config.DBPath)
+			require.NoError(t, err)
+			_, err = db.Exec(setup)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+			before, err := os.ReadFile(config.DBPath)
+			require.NoError(t, err)
+			output.Reset()
+			err = cli.Run(t.Context(), []string{"db", "migrate"}, cli.Streams{Out: &output, Err: &output}, config)
+			require.ErrorIs(t, err, state.ErrSchema)
+			require.NotContains(t, err.Error(), "dockhand db migrate")
+			if name == "newer" {
+				require.Contains(t, err.Error(), "newer Dockhand build")
+			}
+			after, err := os.ReadFile(config.DBPath)
+			require.NoError(t, err)
+			require.Equal(t, before, after, fmt.Sprintf("must not mutate %s database", name))
+		})
+	}
 }

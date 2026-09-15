@@ -59,6 +59,8 @@ const applicationID = 0x44484e44
 
 type Options struct {
 	ReadOnly bool
+	// RequireExisting limits writable open to an existing Dockhand database.
+	RequireExisting bool
 	// AllowOlderSchema is for schema-independent backup and integrity checks.
 	// It requires ReadOnly. Do not use older schemas with normal record queries.
 	AllowOlderSchema bool
@@ -93,7 +95,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !options.ReadOnly {
+	if !options.ReadOnly && !options.RequireExisting {
 		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return nil, fmt.Errorf("%w: %w", state.ErrUnavailable, err)
 		}
@@ -103,7 +105,7 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return nil, fmt.Errorf("%w: %w", state.ErrUnavailable, e)
 	} else {
-		if options.ReadOnly {
+		if options.ReadOnly || options.RequireExisting {
 			return nil, state.ErrNoDatabase
 		}
 		parent, e := filepath.EvalSymlinks(filepath.Dir(path))
@@ -155,8 +157,8 @@ func (s *Store) initialize(ctx context.Context) error {
 		if appID == applicationID && (version == schemaVersion || version >= 1 && version < schemaVersion && (!s.options.ReadOnly || s.options.AllowOlderSchema)) {
 			return nil
 		}
-		if appID != 0 || version != 0 || s.options.ReadOnly {
-			return state.ErrSchema
+		if appID != 0 || version != 0 || s.options.ReadOnly || s.options.RequireExisting {
+			return schemaMismatch(appID, version)
 		}
 		if err := t.conn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").Scan(&count); err != nil {
 			return storageError(err)
@@ -209,8 +211,8 @@ func (s *Store) initialize(ctx context.Context) error {
 		if appID == applicationID && version >= 1 && version < schemaVersion && !s.options.ReadOnly {
 			return migrateSchema(ctx, t, version)
 		}
-		if appID != 0 || version != 0 || s.options.ReadOnly {
-			return state.ErrSchema
+		if appID != 0 || version != 0 || s.options.ReadOnly || s.options.RequireExisting {
+			return schemaMismatch(appID, version)
 		}
 		var count int
 		if err := t.conn.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").Scan(&count); err != nil {
@@ -224,6 +226,19 @@ func (s *Store) initialize(ctx context.Context) error {
 		}
 		return migrateSchema(ctx, t, 1)
 	})
+}
+
+func schemaMismatch(appID, version int) error {
+	if appID != applicationID {
+		return fmt.Errorf("%w: not a recognized Dockhand database", state.ErrSchema)
+	}
+	if version >= 1 && version < schemaVersion {
+		return &state.MigrationRequiredError{Current: version, Required: schemaVersion}
+	}
+	if version > schemaVersion {
+		return fmt.Errorf("%w: database schema %d is newer than this Dockhand supports (%d); use a newer Dockhand build", state.ErrSchema, version, schemaVersion)
+	}
+	return fmt.Errorf("%w: unrecognized Dockhand schema version %d", state.ErrSchema, version)
 }
 
 type schemaMigration struct {
