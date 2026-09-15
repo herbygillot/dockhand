@@ -42,7 +42,6 @@ type fakeActions struct {
 	jobs     []*gh.WorkflowJob
 	err      error
 	runsErr  error
-	canceled int
 	logCalls int
 }
 
@@ -62,7 +61,6 @@ func (a *fakeActions) Run(_ context.Context, _ int64, attempt int) (*gh.Workflow
 func (a *fakeActions) Jobs(context.Context, int64, int) ([]*gh.WorkflowJob, error) {
 	return a.jobs, a.err
 }
-func (a *fakeActions) Cancel(context.Context, int64) error { a.canceled++; return a.err }
 func (a *fakeActions) JobLog(context.Context, int64) (io.ReadCloser, error) {
 	a.logCalls++
 	return io.NopCloser(strings.NewReader("build log\n")), a.err
@@ -236,7 +234,6 @@ func TestNegativeEvidenceAndPinnedRunAttempt(t *testing.T) {
 	_, err = f.provider.Observe(t.Context(), submitted.Run)
 	require.ErrorContains(t, err, "wrong run attempt")
 	require.NoError(t, f.provider.Cancel(t.Context(), submitted.Run))
-	require.Zero(t, f.api.canceled)
 }
 
 func TestSubmissionRefusalsDoNotPush(t *testing.T) {
@@ -296,8 +293,13 @@ func TestCancellationFencesUncertainPush(t *testing.T) {
 				f.api.runsErr = errors.New("Actions unavailable before push")
 			}
 			// Go through the driver so cancellation intent must cross the provider boundary.
-			_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
-			require.NoError(t, err)
+			require.Eventually(t, func() bool {
+				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+				require.NoError(t, err)
+				return status.Jobs[0].Attempts[0].State == record.AttemptUncertain
+			}, 5*time.Second, 10*time.Millisecond)
 			row, err := f.provider.read(t.Context(), f.request.ID)
 			require.NoError(t, err)
 			require.Equal(t, record.ExecutionReserved, row.State)
@@ -328,4 +330,72 @@ func TestCancellationFencesUncertainPush(t *testing.T) {
 			require.Equal(t, head, after)
 		})
 	}
+}
+
+func TestCancellationDetachesOnlyItsOwnTracking(t *testing.T) {
+	f := setup(t)
+	f.ready()
+	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+	first, err := f.provider.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	otherRequest := f.request
+	otherRequest.ID = "another-observer"
+	other, err := f.provider.Submit(t.Context(), otherRequest)
+	require.NoError(t, err)
+	require.Equal(t, first.Run.RunID, other.Run.RunID)
+	// Cancellation must not need GitHub access or affect another observer's run.
+	f.api.err = errors.New("GitHub is offline")
+	invalid := first.Run
+	invalid.RunID = "wrong"
+	require.Error(t, f.provider.Cancel(t.Context(), invalid))
+	require.NoError(t, f.provider.Cancel(t.Context(), first.Run))
+	restarted := *f.provider
+	require.NoError(t, restarted.Cancel(t.Context(), first.Run))
+	observed, err := restarted.Observe(t.Context(), first.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.AttemptCanceled, observed.State)
+	require.Equal(t, record.VerdictCanceled, observed.Verdict)
+	require.Contains(t, observed.Detail, "remote run was not canceled")
+	require.Nil(t, observed.Workflow, "local cancellation must not fabricate a remote conclusion")
+	_, err = verify.Judge(observed)
+	require.NoError(t, err)
+	logs, err := restarted.ReadLog(t.Context(), first.Run, 0, 4096)
+	require.NoError(t, err)
+	require.True(t, logs.Complete)
+	stale, err := restarted.Submit(t.Context(), f.request)
+	require.NoError(t, err)
+	require.Equal(t, verify.Unsupported, stale.State)
+	// A driver that lost the cancellation response can recover the same handle.
+	recovered, err := restarted.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{CancelRequested: true})
+	require.NoError(t, err)
+	require.Equal(t, verify.RunFound, recovered.State)
+	require.Equal(t, first.Run, recovered.Submission.Run)
+	f.api.err = nil
+	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("completed"), gh.Ptr("success")
+	observed, err = restarted.Observe(t.Context(), other.Run)
+	require.NoError(t, err)
+	require.Equal(t, record.VerdictPassed, observed.Verdict)
+}
+
+func TestDriverCancellationDetachesGitHubRun(t *testing.T) {
+	f := setup(t)
+	f.ready()
+	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
+	require.Eventually(t, func() bool {
+		_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+		require.NoError(t, err)
+		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+		require.NoError(t, err)
+		return status.Jobs[0].Attempts[0].State == record.AttemptRunning
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-admitted", Kind: record.Cancel, Jobs: []record.JobID{f.job}}))
+	f.api.err = errors.New("offline")
+	require.Eventually(t, func() bool {
+		_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+		require.NoError(t, err)
+		status, err := f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
+		require.NoError(t, err)
+		return status.Jobs[0].Job.State == record.JobCanceled
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, "in_progress", f.api.run.GetStatus())
 }

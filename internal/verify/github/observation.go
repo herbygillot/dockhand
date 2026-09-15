@@ -15,35 +15,44 @@ func matches(saved payload, run *gh.WorkflowRun) bool {
 	return run != nil && run.GetHeadSHA() == string(saved.Request.Spec.Source.Commit) && run.GetHeadBranch() == saved.Request.Spec.Branch && run.GetEvent() == "push" && run.GetWorkflowID() == saved.Config.WorkflowID && run.GetPath() == WorkflowPath && strings.EqualFold(run.GetRepository().GetFullName(), saved.Config.Destination.HeadRepository) && strings.EqualFold(run.GetHeadRepository().GetFullName(), saved.Config.Destination.HeadRepository)
 }
 
-func (p *Provider) execution(ctx context.Context, handle record.ProviderRun) (payload, executionRun, Actions, error) {
+func (p *Provider) execution(ctx context.Context, handle record.ProviderRun) (payload, executionRun, record.ProviderExecution, error) {
 	var saved payload
 	var run executionRun
+	var row record.ProviderExecution
 	if handle.Provider != ProviderName || handle.RequestID == "" {
-		return saved, run, nil, fmt.Errorf("github verification: invalid run handle")
+		return saved, run, row, fmt.Errorf("github verification: invalid run handle")
 	}
 	row, err := p.read(ctx, handle.RequestID)
 	if err != nil {
-		return saved, run, nil, err
+		return saved, run, row, err
 	}
-	if row.State != record.ExecutionAdmitted {
-		return saved, run, nil, fmt.Errorf("github verification: run has not been admitted")
+	if row.State != record.ExecutionAdmitted && row.State != record.ExecutionReleased {
+		return saved, run, row, fmt.Errorf("github verification: run has not been admitted")
 	}
 	if err = json.Unmarshal(row.Payload, &saved); err != nil {
-		return saved, run, nil, err
+		return saved, run, row, err
 	}
 	if err = json.Unmarshal(row.Result, &run); err != nil {
-		return saved, run, nil, err
+		return saved, run, row, err
 	}
 	if handle.RunID != fmt.Sprintf("%d:%d", run.ID, run.Attempt) {
-		return saved, run, nil, fmt.Errorf("github verification: run handle does not match the stored attempt")
+		return saved, run, row, fmt.Errorf("github verification: run handle does not match the stored attempt")
 	}
-	api, err := p.Actions(ctx, saved.Config.Destination.HeadRepository)
-	return saved, run, api, err
+	return saved, run, row, nil
 }
 
 func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (verify.Observation, error) {
 	result := verify.Observation{Run: handle, State: record.AttemptRunning, Verdict: record.VerdictUnknown, ObservedAt: time.Now().UTC()}
-	saved, selected, api, err := p.execution(ctx, handle)
+	saved, selected, row, err := p.execution(ctx, handle)
+	if err != nil {
+		return result, err
+	}
+	if row.State == record.ExecutionReleased {
+		result.State, result.Verdict = record.AttemptCanceled, record.VerdictCanceled
+		result.Detail = "Stopped tracking GitHub Actions run; the remote run was not canceled"
+		return result, nil
+	}
+	api, err := p.Actions(ctx, saved.Config.Destination.HeadRepository)
 	if err != nil {
 		return result, err
 	}
@@ -108,22 +117,20 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 	return result, nil
 }
 
+// Cancel releases this request's tracking, not the shared remote workflow run.
+// A push-triggered run has no exclusive owner or attempt-specific cancellation API.
 func (p *Provider) Cancel(ctx context.Context, handle record.ProviderRun) error {
-	saved, selected, api, err := p.execution(ctx, handle)
-	if err != nil {
-		return err
-	}
-	current, err := api.Run(ctx, selected.ID, 0)
-	if err != nil {
-		return err
-	}
-	if !matches(saved, current) {
-		return fmt.Errorf("github verification: cancellation run identity changed")
-	}
-	if current.GetStatus() == "completed" || current.GetRunAttempt() != selected.Attempt {
-		return nil
-	}
-	return api.Cancel(ctx, selected.ID)
+	return p.locked(ctx, handle.RequestID, func(ctx context.Context) error {
+		_, _, row, err := p.execution(ctx, handle)
+		if err != nil {
+			return err
+		}
+		if row.State == record.ExecutionReleased {
+			return nil
+		}
+		row.State, row.Occupied = record.ExecutionReleased, false
+		return p.put(ctx, row)
+	})
 }
 
 func (p *Provider) Release(context.Context, record.ResourceHandle) (verify.ReleaseResult, error) {

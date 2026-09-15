@@ -79,7 +79,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	err := p.locked(ctx, request.ID, func(ctx context.Context) error {
 		row, err := p.read(ctx, request.ID)
 		if err == nil {
-			if row.State == record.ExecutionClosed {
+			if row.State == record.ExecutionClosed || row.State == record.ExecutionReleased {
 				result = verify.Submission{State: verify.Unsupported, Detail: "GitHub submission is permanently closed"}
 				return nil
 			}
@@ -161,7 +161,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 }
 
 func (p *Provider) advance(ctx context.Context, row record.ProviderExecution) (verify.Submission, error) {
-	if row.State == record.ExecutionAdmitted {
+	if row.State == record.ExecutionAdmitted || row.State == record.ExecutionReleased {
 		return admitted(row)
 	}
 	var saved payload

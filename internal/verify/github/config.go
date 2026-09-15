@@ -28,7 +28,6 @@ type Actions interface {
 	Runs(context.Context, int64, string, string) ([]*gh.WorkflowRun, error)
 	Run(context.Context, int64, int) (*gh.WorkflowRun, error)
 	Jobs(context.Context, int64, int) ([]*gh.WorkflowJob, error)
-	Cancel(context.Context, int64) error
 	JobLog(context.Context, int64) (io.ReadCloser, error)
 }
 

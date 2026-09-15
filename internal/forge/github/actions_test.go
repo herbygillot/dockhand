@@ -33,9 +33,6 @@ func TestActionsUseAuthenticatedSDKPaginationAndPinnedAttempt(t *testing.T) {
 			fmt.Fprint(w, `{"id":1,"run_attempt":3}`)
 		case "/repos/author/ports/actions/runs/1/attempts/3/jobs":
 			fmt.Fprint(w, `{"jobs":[{"id":11,"run_id":1,"run_attempt":3}]}`)
-		case "/repos/author/ports/actions/runs/1/cancel":
-			assert.Equal(t, http.MethodPost, r.Method)
-			w.WriteHeader(http.StatusAccepted)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL)
 			http.NotFound(w, r)
@@ -58,5 +55,4 @@ func TestActionsUseAuthenticatedSDKPaginationAndPinnedAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	require.Equal(t, int64(3), jobs[0].GetRunAttempt())
-	require.NoError(t, api.Cancel(t.Context(), 1))
 }

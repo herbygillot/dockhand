@@ -311,6 +311,6 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 
 ### GitHub verification
 
-`internal/verify/github` owns committed-source eligibility, the supported MacPorts workflow shape, durable submission and recovery, matrix outcome interpretation, cancellation, and completed-job log caching. `internal/forge/github` binds the existing authenticated go-github SDK to Actions operations. `internal/app` resolves the personal fork through publication's destination logic before acceptance.
+`internal/verify/github` owns committed-source eligibility, the supported MacPorts workflow shape, durable submission and recovery, matrix outcome interpretation, per-request tracking cancellation, and completed-job log caching. Canceling tracking does not cancel a shared Actions run. `internal/forge/github` binds the existing authenticated go-github SDK to Actions operations. `internal/app` resolves the personal fork through publication's destination logic before acceptance.
 
 `internal/workflow` selects providers by the names recorded on attempts and resource handles, independent of CLI defaults. Both publication and GitHub verification use `internal/git`'s remote-branch lock and conditional push. `record.WorkflowEvidence` records remote run attempts and matrix jobs separately from locally observed environment and port-phase evidence. SQLite persists the selected branch in job/attempt JSON options; no schema migration is required.

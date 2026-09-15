@@ -21,7 +21,15 @@ func (p *Provider) ReadLog(ctx context.Context, handle record.ProviderRun, offse
 		return result, fmt.Errorf("github verification: invalid log range")
 	}
 	err := p.locked(ctx, handle.RequestID, func(ctx context.Context) error {
-		saved, selected, api, err := p.execution(ctx, handle)
+		saved, selected, row, err := p.execution(ctx, handle)
+		if err != nil {
+			return err
+		}
+		if row.State == record.ExecutionReleased {
+			result.Complete = true
+			return nil
+		}
+		api, err := p.Actions(ctx, saved.Config.Destination.HeadRepository)
 		if err != nil {
 			return err
 		}

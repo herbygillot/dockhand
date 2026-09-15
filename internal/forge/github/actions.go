@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -73,15 +72,6 @@ func (a *Actions) Jobs(ctx context.Context, id int64, attempt int) ([]*gh.Workfl
 		}
 		options.Page = response.NextPage
 	}
-}
-
-func (a *Actions) Cancel(ctx context.Context, id int64) error {
-	_, err := a.service.CancelWorkflowRunByID(ctx, a.owner, a.repository, id)
-	var accepted *gh.AcceptedError
-	if errors.As(err, &accepted) {
-		return nil
-	}
-	return err
 }
 
 // JobLog follows the SDK-provided download URL without forwarding API credentials.
