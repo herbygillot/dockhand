@@ -105,6 +105,10 @@ func (p *Provisioner) Run(ctx context.Context, options Options) (Result, error) 
 		return Result{}, err
 	}
 	golden := goldenName(config.Image)
+	previous := config.Image + "-previous"
+	if images[config.Image].Name == "" && images[previous].Name != "" {
+		return Result{}, fmt.Errorf("setup: interrupted image replacement; previous image is preserved as %s; restore it to %s with tart rename before retrying", previous, config.Image)
+	}
 	if !options.Check && !options.Rebuild && images[config.Image].Name == "" && images[golden].Name != "" {
 		if images[golden].Running {
 			return Result{}, fmt.Errorf("setup: recovery image %s is running", golden)

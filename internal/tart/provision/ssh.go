@@ -21,15 +21,28 @@ func sshClient(ctx context.Context, host string) (*ssh.Client, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         15 * time.Second,
 	}
-	connection, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	return dialSSH(ctx, address, config)
+}
+
+func dialSSH(ctx context.Context, address string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	connection, err := (&net.Dialer{Timeout: config.Timeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stop()
+	if config.Timeout > 0 {
+		_ = connection.SetDeadline(time.Now().Add(config.Timeout))
 	}
 	clientConnection, channels, requests, err := ssh.NewClientConn(connection, address, config)
 	if err != nil {
 		_ = connection.Close()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, err
 	}
+	_ = connection.SetDeadline(time.Time{})
 	return ssh.NewClient(clientConnection, channels, requests), nil
 }
 
@@ -39,13 +52,16 @@ func sshRun(ctx context.Context, host, script string) (string, error) {
 		return "", err
 	}
 	defer client.Close()
+	stop := closeSSHOnCancellation(ctx, client)
+	defer stop()
 	session, err := client.NewSession()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", err
 	}
 	defer session.Close()
-	stop := closeSSHOnCancellation(ctx, client)
-	defer stop()
 	output, err := session.CombinedOutput(script)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -77,8 +93,13 @@ func sshPush(ctx context.Context, host, local, remote string) error {
 		return err
 	}
 	defer client.Close()
+	stop := closeSSHOnCancellation(ctx, client)
+	defer stop()
 	session, err := client.NewSession()
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	defer session.Close()
@@ -86,8 +107,6 @@ func sshPush(ctx context.Context, host, local, remote string) error {
 	session.Stdout = io.Discard
 	var output bytes.Buffer
 	session.Stderr = &output
-	stop := closeSSHOnCancellation(ctx, client)
-	defer stop()
 	if err := session.Run("/bin/cat > /private/tmp/Xcode.xip"); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -110,6 +129,8 @@ func closeSSHOnCancellation(ctx context.Context, client *ssh.Client) func() {
 }
 
 func waitSSH(ctx context.Context, host string) error {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
 	var last error
 	for attempt := 0; attempt < 120; attempt++ {
 		if _, err := sshRun(ctx, host, "/usr/bin/true"); err == nil {

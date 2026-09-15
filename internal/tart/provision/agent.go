@@ -40,7 +40,40 @@ sudo -n /usr/bin/tee /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist
 %sDOCKHAND_AGENT
 sudo -n /usr/sbin/chown root:wheel /Library/LaunchDaemons/org.cirruslabs.tart-guest-daemon.plist /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist
 sudo -n /bin/chmod 0644 /Library/LaunchDaemons/org.cirruslabs.tart-guest-daemon.plist /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist
-sudo -n /bin/launchctl bootstrap system /Library/LaunchDaemons/org.cirruslabs.tart-guest-daemon.plist
-/bin/launchctl bootstrap gui/$(/usr/bin/id -u) /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist
-`, agentURL(), agentDigest, agentPath, daemon, agent)
+%s
+`, agentURL(), agentDigest, agentPath, daemon, agent, agentRegistrationScript())
+}
+
+func agentRegistrationScript() string {
+	return `set -eu
+launch() {
+  if [ "$domain" = system ]; then sudo -n /bin/launchctl "$@"; else /bin/launchctl "$@"; fi
+}
+register_service() {
+  domain=$1
+  plist=$2
+  label=$3
+  attempt=0
+  detail='launchd domain is not available'
+  printf 'Registering %s in %s...\n' "$label" "$domain"
+  while [ "$attempt" -lt 120 ]; do
+    if launch print "$domain" >/dev/null 2>&1; then
+      if launch print "$domain/$label" >/dev/null 2>&1; then return 0; fi
+      bootstrap_status=0
+      detail=$(launch bootstrap "$domain" "$plist" 2>&1) || bootstrap_status=$?
+      if launch print "$domain/$label" >/dev/null 2>&1; then return 0; fi
+      if [ "$bootstrap_status" -ne 125 ]; then
+        printf 'Unable to register %s in %s (exit %s): %s\n' "$label" "$domain" "$bootstrap_status" "$detail" >&2
+        return 1
+      fi
+    fi
+    attempt=$((attempt + 1))
+    /bin/sleep 1
+  done
+  printf 'Timed out registering %s in %s: %s\n' "$label" "$domain" "$detail" >&2
+  return 1
+}
+register_service system /Library/LaunchDaemons/org.cirruslabs.tart-guest-daemon.plist org.cirruslabs.tart-guest-daemon
+register_service gui/$(/usr/bin/id -u) /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist org.cirruslabs.tart-guest-agent
+`
 }

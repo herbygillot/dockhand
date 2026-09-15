@@ -28,6 +28,9 @@ type native struct {
 }
 
 func newNative(config Config, progress io.Writer) *native {
+	if progress != nil {
+		progress = &progressWriter{writer: progress}
+	}
 	return &native{config: config, progress: progress, runs: map[string]chan error{}}
 }
 
@@ -155,6 +158,9 @@ func (n *native) guest(ctx context.Context, name string, input io.Reader, args .
 }
 
 func (n *native) ReadyAgent(ctx context.Context, name string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	var last error
 	for {
 		call, cancel := context.WithTimeout(ctx, 3*time.Second)
 		_, err := n.guest(call, name, nil, "/usr/bin/true")
@@ -164,6 +170,7 @@ func (n *native) ReadyAgent(ctx context.Context, name string) error {
 				return n.guest(ctx, name, input, args...)
 			})
 		}
+		last = err
 		if done := n.runError(name); done != nil {
 			select {
 			case runErr := <-done:
@@ -176,7 +183,7 @@ func (n *native) ReadyAgent(ctx context.Context, name string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("tart: guest agent in %s did not become ready: %w; last probe: %v", name, ctx.Err(), last)
 		case <-time.After(time.Second):
 		}
 	}
@@ -230,13 +237,7 @@ func (n *native) Adopt(ctx context.Context, source, destination string, replace 
 		return err
 	}
 	defer guard.Close()
-	if replace {
-		if err := n.Delete(ctx, destination); err != nil {
-			return err
-		}
-	}
-	_, err = n.commandWithGuard(ctx, nil, true, guard, "clone", source, destination)
-	return err
+	return adopt(ctx, adoptionMachine{n, guard}, source, destination, replace)
 }
 
 func (n *native) BootstrapAgent(ctx context.Context, name string) error {
@@ -269,11 +270,15 @@ func (n *native) streamTarget(name string) macos.Command {
 	}
 }
 func (n *native) EnsureToolchain(ctx context.Context, name string) error {
-	return macos.EnsureCommandLineTools(ctx, n.target(name))
+	return n.during(ctx, "Command line tools", func() error {
+		return macos.EnsureCommandLineTools(ctx, n.streamTarget(name))
+	})
 }
 
 func (n *native) InstallXcode(ctx context.Context, name string, config Config) error {
-	if err := macos.EnsureAPFSSpace(ctx, n.target(name), "/private/tmp", "disk0", "disk0s2", macos.XcodeExpansionSpaceGiB); err != nil {
+	if err := n.during(ctx, "Preparing guest Xcode storage", func() error {
+		return macos.EnsureAPFSSpace(ctx, n.target(name), "/private/tmp", "disk0", "disk0s2", macos.XcodeExpansionSpaceGiB)
+	}); err != nil {
 		return fmt.Errorf("setup: expanding the Xcode image filesystem: %w", err)
 	}
 	output, err := n.command(ctx, nil, false, "ip", name, "--wait", "300")
@@ -295,13 +300,15 @@ func (n *native) InstallXcode(ctx context.Context, name string, config Config) e
 		_, _ = fmt.Fprintf(n.progress, "Copying Xcode %s into the guest (%.1f GiB)...\n", config.XcodeVersion, float64(info.Size())/(1<<30))
 	}
 	const guestArchive = "/private/tmp/Xcode.xip"
-	if err := sshPush(ctx, host, config.XcodeArchive, guestArchive); err != nil {
+	if err := n.during(ctx, "Copying Xcode archive", func() error { return sshPush(ctx, host, config.XcodeArchive, guestArchive) }); err != nil {
 		return fmt.Errorf("setup: copying Xcode archive: %w", err)
 	}
 	if n.progress != nil {
 		_, _ = fmt.Fprintf(n.progress, "Expanding and installing Xcode %s...\n", config.XcodeVersion)
 	}
-	return macos.InstallXcode(ctx, n.streamTarget(name), guestArchive)
+	return n.during(ctx, "Xcode installation", func() error {
+		return macos.InstallXcode(ctx, n.streamTarget(name), guestArchive)
+	})
 }
 
 func installerName(version string, release macos.Release) string {

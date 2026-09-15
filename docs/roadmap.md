@@ -58,11 +58,11 @@ A read-only source review found no incompatible evaluator interfaces in Base 2.1
 
 ### Provisioning follow-up
 
-The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) passed nine of ten profiles. Remaining work, in order:
+The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) initially passed nine of ten profiles. The [reliability exercise](activity/2026-09-15-provisioning-reliability.md) subsequently provisioned Monterey/Xcode 14.2 twice and independently checked all ten profiles.
 
-- Investigate first-boot agent registration failures (SSH exit 125) on Sonoma and Sequoia. Successful retries and the output-capture race fix do not establish their cause.
-- Show useful progress during CLT installation and Xcode expansion. Avoid expensive deletion of partial expansion when the entire failed disposable VM will be deleted.
-- Diagnose Monterey/Xcode 14.2's reproducible native extraction failure. Verified transfer and available space did not explain it. This profile is not validated.
+- Earlier first-boot exit 125 failures on Sonoma/Sequoia did not recur in the new live runs. Registration now observes launchd domains/services, tolerates observed registration races and transient domain rejection, and reports bounded readiness failures. Preserve stage-specific evidence if the earlier failure recurs; successful runs do not establish its original cause.
+- Monterey/Xcode 14.2's earlier native extraction failure also did not recur with the same archive and source-image digest. Both host extraction and two fresh guest installations succeeded. Its original cause remains unestablished; do not describe it as a proven archive, memory, disk-space, or concurrency defect.
+- Long-stage progress, bounded SSH handshakes, prompt failed-guest cleanup, and image-replacement rollback are implemented and covered by regressions/live exercises. Continue targeted failure exercises when these mechanisms change.
 
 ### Engineering follow-up
 

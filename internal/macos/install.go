@@ -43,7 +43,8 @@ while [ "$attempt" -le 6 ]; do
   /bin/sleep 15
   attempt=$((attempt + 1))
 done
-[ -n "$label" ]
+[ -n "$label" ] || { echo "No installable Command Line Tools update was found" >&2; exit 1; }
+printf 'Installing %s...\n' "$label"
 sudo -n /usr/sbin/softwareupdate --install "$label"`
 	if _, err := run(ctx, nil, "/bin/sh", "-c", script); err != nil {
 		return fmt.Errorf("guest command line tools installation failed: %w", err)
@@ -59,14 +60,16 @@ func InstallXcode(ctx context.Context, run Command, archive string) error {
 	install := `set -eu
 archive=$1
 work=$(/usr/bin/mktemp -d /private/tmp/dockhand-xcode.XXXXXX)
-trap '/bin/rm -rf "$work"' EXIT
+trap 'status=$?; if [ "$status" -eq 0 ]; then /bin/rm -rf "$work"; else printf "Xcode installation failed; workspace retained at %s\n" "$work" >&2; fi' EXIT
 /bin/mv "$archive" "$work/Xcode.xip"
 cd "$work"
+printf 'Expanding Xcode archive...\n'
 /usr/bin/xip --expand Xcode.xip
 /bin/rm -f Xcode.xip
 sudo -n /bin/rm -rf /Applications/Xcode.app
 sudo -n /bin/mv Xcode.app /Applications/Xcode.app
 sudo -n /usr/bin/xcode-select -s /Applications/Xcode.app/Contents/Developer
+printf 'Configuring Xcode and installing first-launch components...\n'
 sudo -n /usr/bin/xcodebuild -license accept
 sudo -n /usr/bin/xcodebuild -runFirstLaunch`
 	if output, err := run(ctx, nil, "/bin/sh", "-c", install, "dockhand", archive); err != nil {

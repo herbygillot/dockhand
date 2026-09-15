@@ -103,15 +103,11 @@ func (f *fakeMachine) Rename(_ context.Context, from, to string) error {
 	f.images[to] = image{Name: to}
 	return nil
 }
-func (f *fakeMachine) Adopt(_ context.Context, source, destination string, replace bool) error {
-	if replace {
-		delete(f.images, destination)
-	}
+func (f *fakeMachine) Adopt(ctx context.Context, source, destination string, replace bool) error {
 	if err := f.event("adopt:" + source + ":" + destination); err != nil {
 		return err
 	}
-	f.images[destination] = image{Name: destination}
-	return nil
+	return adopt(ctx, f, source, destination, replace)
 }
 
 func testProvisioner(machine *fakeMachine) *Provisioner {
@@ -200,7 +196,7 @@ func TestFailedAdoptionRetainsProvenCandidate(t *testing.T) {
 	_, err := testProvisioner(machine).Run(t.Context(), Options{Rebuild: true})
 	require.ErrorContains(t, err, "proven candidate remains")
 	require.Contains(t, machine.images, "dockhand-base-tahoe-next")
-	require.NotContains(t, machine.images, "dockhand-base-tahoe")
+	require.Contains(t, machine.images, "dockhand-base-tahoe")
 }
 
 func TestCheckRefusesMissingImage(t *testing.T) {
@@ -227,4 +223,12 @@ func TestAgentBootstrapPinsAndChecksTheReleaseAsset(t *testing.T) {
 	require.NotContains(t, script, "homebrew")
 	var document struct{}
 	require.NoError(t, xml.Unmarshal([]byte(agentPlist("fixture", "--run-agent", "/tmp")), &document))
+}
+
+func TestInterruptedAdoptionDoesNotHidePreviousImageWithGoldenRestore(t *testing.T) {
+	machine := newFakeMachine("dockhand-base-tahoe-previous", "dockhand-golden-tahoe")
+	_, err := testProvisioner(machine).Run(t.Context(), Options{})
+	require.ErrorContains(t, err, "previous image is preserved")
+	require.NotContains(t, machine.events, "adopt:dockhand-golden-tahoe:dockhand-base-tahoe")
+	require.Contains(t, machine.images, "dockhand-base-tahoe-previous")
 }
