@@ -19,6 +19,9 @@ type Verification struct {
 }
 
 func (s *Services) BindVerification(ctx context.Context, request Verification) (workflow.BoundVerification, error) {
+	if s.providerName == "auto" {
+		return workflow.BoundVerification{}, fmt.Errorf("automatic provider selection is supported for bumps; choose tart or github for verify")
+	}
 	if s.providerName == "github" && (request.Branch == "" || request.Fresh) {
 		return workflow.BoundVerification{}, fmt.Errorf("github verification requires --branch; --fresh is unsupported, rerun the workflow on GitHub and verify again")
 	}

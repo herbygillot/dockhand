@@ -43,7 +43,7 @@ type Services struct {
 	Preparation       *preparation.Service
 	Discovery         *upstream.Service
 	close             func() error
-	tartVerification  *tart.Provider
+	tartVerification  tartBuildConfigurator
 	ports             *macports.Evaluator
 	providerName      string
 	githubClient      *github.Client
@@ -51,7 +51,7 @@ type Services struct {
 }
 
 func Build(ctx context.Context, config Config) (*Services, error) {
-	if config.VerificationProvider != "" && config.VerificationProvider != "tart" && config.VerificationProvider != "github" {
+	if config.VerificationProvider != "" && config.VerificationProvider != "auto" && config.VerificationProvider != "tart" && config.VerificationProvider != "github" {
 		return nil, fmt.Errorf("unknown verification provider %q", config.VerificationProvider)
 	}
 	if config.Repository == "" {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -44,10 +45,17 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 	defer guard.Close()
 	exists, running, err := n.localVM(ctx, n.config.Image)
 	if err != nil {
+		var path *os.PathError
+		if errors.Is(err, exec.ErrNotFound) || errors.As(err, &path) && path.Op == "fork/exec" && errors.Is(path.Err, os.ErrNotExist) {
+			return Environment{}, errors.Join(ErrExecutableUnavailable, err)
+		}
 		return Environment{}, err
 	}
-	if !exists || running {
-		return Environment{}, fmt.Errorf("tart: prepared image must exist and be stopped")
+	if !exists {
+		return Environment{}, fmt.Errorf("%w: %s; run dockhand setup", ErrImageUnavailable, n.config.Image)
+	}
+	if running {
+		return Environment{}, fmt.Errorf("tart: prepared image %s must be stopped", n.config.Image)
 	}
 	names := []string{"config.json", "disk.img", "nvram.bin"}
 	stamp := func() (string, error) {

@@ -33,6 +33,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &prior))
 			seedCLIVerification(t, config, prior.Status.Jobs[0].Job.Prepared.Branch)
 			config.Tart.Image = ""
+			config.VerificationProvider = "tart"
 			remote := filepath.Join(t.TempDir(), "remote.git")
 			out, err := exec.CommandContext(t.Context(), "git", "init", "--bare", "-q", remote).CombinedOutput()
 			require.NoError(t, err, "%s", out)

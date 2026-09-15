@@ -200,3 +200,33 @@ func TestInterruptedOrChangedImageDoesNotPublishDigest(t *testing.T) {
 		})
 	}
 }
+
+func TestImageAvailabilityErrorsAreSpecific(t *testing.T) {
+	for _, kind := range []string{"missing image", "missing binary", "running image", "missing disk"} {
+		t.Run(kind, func(t *testing.T) {
+			root := imageFixture(t)
+			p := imageFixtureProvider(root)
+			switch kind {
+			case "missing image":
+				p.Config.Image = "absent"
+			case "missing binary":
+				p.Config.Executable = filepath.Join(root, "missing-tart")
+			case "running image":
+				require.NoError(t, os.WriteFile(filepath.Join(root, "tart"), []byte("#!/bin/sh\nprintf '%s\\n' '[{\"Name\":\"base\",\"Source\":\"local\",\"State\":\"running\"}]'\n"), 0700))
+			case "missing disk":
+				require.NoError(t, os.Remove(filepath.Join(root, "vms", "base", "disk.img")))
+			}
+			_, err := p.DescribeEnvironment(t.Context())
+			require.Error(t, err)
+			switch kind {
+			case "missing image":
+				require.ErrorIs(t, err, ErrImageUnavailable)
+			case "missing binary":
+				require.ErrorIs(t, err, ErrExecutableUnavailable)
+			default:
+				require.NotErrorIs(t, err, ErrImageUnavailable)
+				require.NotErrorIs(t, err, ErrExecutableUnavailable)
+			}
+		})
+	}
+}

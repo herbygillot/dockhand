@@ -31,7 +31,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.ErrorContains(t, err, "git rev-parse")
 	}
-	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--wait"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish", "--no-verify"}, {"bump-revision", "jq", "--publish", "--no-verify"}, {"bump", "jq", "--diff", "--publish"}, {"bump", "jq", "--remote", "origin"}, {"bump-revision", "jq", "--base", "main"}, {"bump", "jq", "--upstream", "upstream"}} {
+	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--wait"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish", "--no-verify"}, {"bump-revision", "jq", "--publish", "--no-verify"}, {"bump", "jq", "--diff", "--publish"}, {"bump", "jq", "--provider", "tart", "--remote", "origin"}, {"bump-revision", "jq", "--provider", "tart", "--base", "main"}, {"bump", "jq", "--provider", "tart", "--upstream", "upstream"}} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)
@@ -151,7 +151,7 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 			config, repo, _ := preparationCLI(t)
 			config.Tart = tart.Config{Executable: "/missing/tart", Image: image}
 			var stdout, stderr bytes.Buffer
-			err := Run(t.Context(), []string{"bump-revision", "fixture", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 			require.ErrorIs(t, err, ErrNeedsAttention, "%s", stderr.String())
 			var result ActionResult
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))

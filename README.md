@@ -51,7 +51,7 @@ Run the following examples from this checkout. To work from elsewhere, pass `--t
 
 For pull requests, Dockhand can use an existing GitHub CLI login (`gh auth login`), a `GH_TOKEN` or `GITHUB_TOKEN` credential, or its own configured browser login. Git must also be able to push to your fork.
 
-Prepare a verification image once:
+To verify locally, prepare a Tart image once:
 
 ```sh
 dockhand setup
@@ -59,7 +59,7 @@ dockhand setup
 
 Setup provisions a macOS image with development tools and MacPorts. It defaults to the host release; use `dockhand setup --os sonoma` to prepare another supported macOS release. Each verification runs in a disposable clone. For ports that require full Xcode, provide a downloaded Xcode archive with `dockhand setup --xcode /path/to/Xcode.xip`.
 
-You can also verify through GitHub Actions on your personal MacPorts fork, with its existing Actions workflow enabled:
+Bumps prefer Tart when the matching prepared image is available. Otherwise they use GitHub Actions on your personal MacPorts fork, with its existing Actions workflow enabled. If Tart is installed but the image is missing, Dockhand suggests `setup`. You can also choose GitHub explicitly:
 
 ```sh
 dockhand bump croc --provider github --publish --wait
@@ -91,7 +91,7 @@ For ports with generated Go or Rust dependency blocks, Dockhand uses the optiona
 dockhand bump jq --wait
 ```
 
-Dockhand starts from freshly fetched **MacPorts `master`**, creates an update branch, and verifies it using the image prepared by `setup`. It prints the branch name for inspection. Your current checkout stays in place.
+Dockhand starts from freshly fetched **MacPorts `master`**, creates an update branch, and verifies it with Tart when a suitable image prepared by `setup` is available, or with GitHub otherwise. Only one Dockhand verification provider is used. `--provider tart` or `--provider github` overrides automatic selection. It prints the branch name for inspection. Your current checkout stays in place.
 
 Use `--trace` instead of `--wait` to follow the build logs. Available dependency binaries are used by default. To prepare only the branch for manual work, use `--no-verify`.
 

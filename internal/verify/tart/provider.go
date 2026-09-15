@@ -25,6 +25,10 @@ import (
 )
 
 var ErrClosed = errors.New("tart: submission is permanently closed")
+var ErrExecutableUnavailable = errors.New("tart: executable is unavailable")
+
+var ErrImageUnavailable = errors.New("tart: no suitable prepared image is available")
+
 var errCapacity = errors.New("tart: pool is at capacity")
 
 const ProviderName = "tart"
@@ -762,7 +766,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	if observed {
 		accepted := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true}
 		if problem := capabilityProblem(capabilities, c, accepted); problem != "" {
-			return record.BuildConfig{}, fmt.Errorf("tart: image %s is incompatible: %s", c.Image, problem)
+			return record.BuildConfig{}, fmt.Errorf("%w: image %s is incompatible: %s", ErrImageUnavailable, c.Image, problem)
 		}
 	}
 	resolvedIndex, err := portindex.ResolveTool(ctx, portindex.Config{Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest})
