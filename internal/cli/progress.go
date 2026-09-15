@@ -64,13 +64,19 @@ func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 		if entry.Job.Detail != "" && entry.Job.Detail != entry.Job.ReuseDetail {
 			message += "; " + entry.Job.Detail
 		}
+		waiting := 0
 		for _, attempt := range entry.Attempts {
 			if attempt.State == record.AttemptQueued {
-				message += "; waiting for provider admission"
+				waiting++
 			}
 			if attempt.LastError != "" && attempt.LastError != entry.Job.Detail {
 				message += "; " + attempt.LastError
 			}
+		}
+		if waiting == 1 {
+			message += "; waiting for provider admission"
+		} else if waiting > 1 {
+			message += fmt.Sprintf("; %d targets waiting for provider admission", waiting)
 		}
 		if err := r.changed("job:"+string(entry.Job.ID), message); err != nil {
 			return err
