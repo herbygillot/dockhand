@@ -62,7 +62,7 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 					return nil, err
 				}
 				for _, port := range observed.Ports {
-					if port.ModeledHostAccess {
+					if port.HostAccess || port.ModeledHostAccess {
 						return nil, fmt.Errorf("%w: platform boundary depends on host state", ErrProbeInconclusive)
 					}
 					for _, fact := range port.Operands {

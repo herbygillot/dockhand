@@ -1,8 +1,9 @@
 package portedit
 
 import (
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNativePlatformOperands(t *testing.T) {
@@ -45,5 +46,19 @@ master_sites @SITE@/${version}
 	_, err := s.Prepare(t.Context(), r)
 	require.ErrorIs(t, err, ErrProbeInconclusive)
 	require.Contains(t, err.Error(), "changes value")
+	require.Empty(t, *requests)
+}
+
+func TestExternalThresholdCannotEscapeThroughNativeOnlyProfiles(t *testing.T) {
+	s, r, requests := archiveFixture(t, `set minimum [exec /bin/echo 99]
+version 1.2.3
+revision 0
+if {${os.major} < $minimum} {distfiles source.tar.gz} else {distfiles future.tar.gz}
+checksums sha256 aaaa size 2
+master_sites @SITE@/${version}
+`)
+	_, err := s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrProbeInconclusive)
+	require.Contains(t, err.Error(), "host state")
 	require.Empty(t, *requests)
 }

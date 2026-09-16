@@ -9,3 +9,5 @@ Validation: native evaluator/editor suites passed. Authored integration cases co
 Code in this change was authored here; no v1 comments or tests were copied. Raw controls: `~/Documents/ChatGPT/Dockhand/exercises/2026-09-16-bump-coverage`.
 
 A subsequent negative test also rejects arithmetic before an inverted threshold (`17 + 25 < ${os.major}`), preventing the scanner from treating the last numeric term as the whole boundary. Unsupported minor-version reads have an explicit regression test.
+
+Final hardening records external evaluator inputs in the native context too. A dynamically sourced future boundary must not evade the host-state refusal merely because its threshold introduces no additional supported profile. A native integration test uses an external `exec`-supplied threshold and asserts refusal before downloading.

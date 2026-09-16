@@ -108,6 +108,10 @@ namespace eval ::dockhand {
         set artifacts {}
         set problems {}
         set host_access 0
+        set any_host_access 0
+        foreach event $events {
+            if {[lindex [lindex $event 0] 0] eq "dockhand.host-access"} {set any_host_access 1}
+        }
         if {$::dockhand::modeled} {
             foreach event $events {
                 lassign $event cmd frames
@@ -141,7 +145,7 @@ namespace eval ::dockhand {
         if {[$worker eval {info exists ::dockhand_platform::events}]} {
             set operands [$worker eval {set ::dockhand_platform::events}]
         }
-        return [list $events $artifacts $problems $host_access $operands]
+        return [list $events $artifacts $problems $host_access $operands $any_host_access]
     }
 }
 ::tclrpc::register observation_setup ::dockhand::observation_setup

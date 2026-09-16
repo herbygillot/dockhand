@@ -4,10 +4,11 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"regexp"
 	"strconv"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 //go:embed observation.tcl
@@ -20,7 +21,7 @@ func (e *Evaluator) Observe(ctx context.Context, source macports.Context, reques
 func decodeObservation(value string) (macports.PortObservation, error) {
 	var out macports.PortObservation
 	fields, errs := syntax.ListValues(value)
-	if len(errs) > 0 || len(fields) != 5 {
+	if len(errs) > 0 || len(fields) != 6 {
 		return out, fmt.Errorf("macports: invalid observation")
 	}
 	events, errs := syntax.ListValues(fields[0])
@@ -83,6 +84,7 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 		return out, fmt.Errorf("macports: invalid observation problems")
 	}
 	out.ModeledHostAccess, _ = strconv.ParseBool(fields[3])
+	out.HostAccess, _ = strconv.ParseBool(fields[5])
 	return out, nil
 }
 

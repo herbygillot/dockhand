@@ -2,6 +2,7 @@ package macports
 
 import (
 	"context"
+
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -42,6 +43,8 @@ type OperandObservation struct {
 }
 
 type PortObservation struct {
+	// HostAccess records external evaluation inputs even in the native context.
+	HostAccess        bool
 	Operands          []OperandObservation
 	ModeledHostAccess bool
 	Declarations      []Declaration
