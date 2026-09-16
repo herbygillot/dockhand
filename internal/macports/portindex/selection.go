@@ -14,12 +14,20 @@ import (
 
 // Filter matches exact metadata values: alternatives within a field, intersection
 // across fields. Maintainers accept MacPorts handles/emails and Repology handles.
+// All selects every indexed entry while retaining coverage problems.
 type Filter struct {
+	All         bool
 	Maintainers []string
 	Categories  []string
 }
 
 func (f Filter) Validate() error {
+	if f.All {
+		if len(f.Maintainers)+len(f.Categories) > 0 {
+			return fmt.Errorf("portindex: choose all ports or metadata filters")
+		}
+		return nil
+	}
 	if len(f.Maintainers)+len(f.Categories) == 0 {
 		return fmt.Errorf("portindex: a maintainer or category is required")
 	}

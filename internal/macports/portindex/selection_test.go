@@ -22,6 +22,7 @@ func TestMetadataSelection(t *testing.T) {
 		filter portindex.Filter
 		want   []string
 	}{
+		{"all", portindex.Filter{All: true}, []string{"alpha", "alpha-child", "beta"}},
 		{"github", portindex.Filter{Maintainers: []string{"contributor@github"}}, []string{"alpha", "alpha-child"}},
 		{"MacPorts email", portindex.Filter{Maintainers: []string{"macporter@macports.org"}}, []string{"beta"}},
 		{"email", portindex.Filter{Maintainers: []string{"owner@example.org"}}, []string{"alpha"}},
@@ -71,4 +72,10 @@ func TestSelectionPreservesMalformedMetadata(t *testing.T) {
 	require.Len(t, result.Entries, 1)
 	require.Len(t, result.Problems, 1)
 	require.Equal(t, "broken", result.Problems[0].Port)
+}
+
+func TestAllSelectionRequiresAnExplicitMode(t *testing.T) {
+	require.Error(t, (portindex.Filter{}).Validate())
+	require.Error(t, (portindex.Filter{All: true, Categories: []string{"devel"}}).Validate())
+	require.NoError(t, (portindex.Filter{All: true}).Validate())
 }

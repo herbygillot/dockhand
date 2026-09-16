@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	"github.com/herbygillot/dockhand/internal/macports/survey"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
@@ -49,43 +50,32 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 	if s == nil || s.Repo == nil || s.Ports == nil || s.Upstream == nil {
 		return Result{}, fmt.Errorf("outdated: Git, MacPorts, and upstream discovery are required")
 	}
-	repo := s.Repo
-	commit, err := repo.Resolve(ctx, "HEAD^{commit}")
-	if err != nil {
-		return Result{}, err
-	}
-	trees, err := repo.CommitTrees(ctx, []string{commit})
-	if err != nil {
-		return Result{}, err
-	}
-	source := record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(trees[commit])}
-	files, err := repo.Materialize(ctx, string(source.Tree))
-	if err != nil {
-		return Result{}, err
-	}
-	defer func() { err = errors.Join(err, files.Close()) }()
 	ports := s.Ports
 	platform, err := ports.NativePlatform(ctx)
 	if err != nil {
 		return Result{}, err
 	}
+	files, err := survey.Open(ctx, s.Repo, platform, s.Index, s.HTTP, selection)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { err = errors.Join(err, files.Close()) }()
+	source := files.Source
 	discovery := s.Upstream
 	editor := &portedit.Service{Ports: ports}
 	result := Result{Source: source}
-	selected, problems, err := s.selectPorts(ctx, source, platform, files.Root, selection)
-	if err != nil {
-		return result, err
+	for _, problem := range files.Problems {
+		result.Ports = append(result.Ports, Port{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
 	}
-	result.Ports = append(result.Ports, problems...)
-	for _, selected := range selected {
-		selector := selected.label
+	for _, selected := range files.Ports {
+		selector := selected.Label
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
 		item := Port{Selector: selector, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC()}}
-		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: source, Root: files.Root, Selection: selected.selection, Platform: platform})
-		if problem == nil && selected.name != "" && probe.Port().Name != selected.name {
-			problem = fmt.Errorf("indexed subport %s: upstream version probing currently supports the primary port %s", selected.name, probe.Port().Name)
+		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: source, Root: files.Root, Selection: selected.Selection, Platform: platform})
+		if problem == nil && selected.Name != "" && probe.Port().Name != selected.Name {
+			problem = fmt.Errorf("indexed subport %s: upstream version probing currently supports the primary port %s", selected.Name, probe.Port().Name)
 		}
 		if problem == nil {
 			var bound *upstream.Discovery
