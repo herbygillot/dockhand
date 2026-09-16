@@ -13,7 +13,7 @@ import (
 var (
 	osRead       = regexp.MustCompile(`\$(?:\{os\.major\}|os\.major\b)`)
 	osComparison = regexp.MustCompile(`^\s*(?:>=|<=|>|<|==|!=|eq|ne)\s*([0-9]+)\s*`)
-	archRead     = regexp.MustCompile(`\$(?:\{(?:build_arch|os\.arch)\}|(?:build_arch|os\.arch)\b)`)
+	archRead     = regexp.MustCompile(`\$(?:\{(?:(?:configure\.)?build_arch|os\.arch)\}|(?:(?:configure\.)?build_arch|os\.arch)\b)`)
 )
 
 // Scan every command, including expressions assigned to variables. This is not

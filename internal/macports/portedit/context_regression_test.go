@@ -83,3 +83,21 @@ master_sites @SITE@/${version}
 	require.ErrorIs(t, err, ErrFidelity)
 	require.Empty(t, *requests)
 }
+
+func TestPrepareConfigureArchitectureBranches(t *testing.T) {
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+if {${configure.build_arch} eq "arm64"} {
+ distfiles arm.zip
+ checksums sha256 aaaa size 2
+} else {
+ distfiles intel.zip
+ checksums sha256 bbbb size 3
+}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Downloads, 2)
+	require.ElementsMatch(t, []string{"/1.2.4/arm.zip", "/1.2.4/intel.zip"}, *requests)
+}

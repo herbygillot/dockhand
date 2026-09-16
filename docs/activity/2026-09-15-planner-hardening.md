@@ -27,3 +27,7 @@ Added an optional selected-port evaluator operation for counterfactual/discovery
 Regressions establish that a selected probe can avoid an unrelated sibling failure while full evaluation still reports it, that sibling changes still reject automatic edits, and that cache entries cannot cross contents/scope or satisfy final evaluations. The broader package run also caught and corrected lost `ErrProbeInconclusive` classification on revision-observation failures; its targeted assessment/probing regressions passed afterward.
 
 A paired `beets` assessment against the same committed ports tree took 23.54 seconds before and 8.70 seconds after, both `input-found`. This is a local diagnostic comparison, not a timing guarantee or a full-tree extrapolation. The earlier 25-second timeout remains recorded in the original survey report.
+
+## Survey follow-up
+
+Replayed the same 147-Portfile sample. Investigating every changed outcome caught a missed `configure.build_arch` alias in the tightened source scanner: libewf had incorrectly stopped requesting its alternate architecture. Restored alias recognition and added a native preparation regression with separate unnamed checksum declarations under that condition. Both archives are refreshed, and libewf again reports its modeled host-filesystem dependence as unknown. Terraform's explicit `terraform-1.16` / `1.16.2` CLI assessment still passes candidate checks across native arm64 and modeled x86_64.
