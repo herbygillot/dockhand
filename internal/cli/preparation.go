@@ -116,7 +116,11 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					if release.NoUpdate {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Already current at %s; latest eligible version is %s.\n", release.CurrentVersion, release.Version)
 					} else if release.Archive {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Release: explicit archive version %s\n", release.Version)
+						if release.Listing != nil {
+							fmt.Fprintf(cmd.ErrOrStderr(), "Release: archive version %s; discovered at %s\n", release.Version, release.Listing.URL)
+						} else {
+							fmt.Fprintf(cmd.ErrOrStderr(), "Release: explicit archive version %s\n", release.Version)
+						}
 					} else {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Release: %s (%s); upstream commit: %s\n", release.Tag, release.Version, release.Commit)
 					}

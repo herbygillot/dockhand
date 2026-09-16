@@ -105,9 +105,14 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 	spec, err := portsource.ForEditing(p.input.info)
 	sourceDetail := fmt.Sprintf("%s %s; source version %s", spec.Forge, spec.Repository, spec.SourceVersion)
 	if err == nil && spec.Forge == "" {
-		sourceDetail = "Explicit archive version " + spec.SourceVersion + "; automatic upstream discovery is not available"
+		sourceDetail = "Archive source version " + spec.SourceVersion
 	}
 	add("source", sourceDetail, err)
+	if discovery, discoveryErr := portsource.Discover(p.input.info); discoveryErr == nil {
+		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: Passed, Code: "discovery-supported", Detail: "Supported " + string(discovery.Catalog) + " discovery; remote availability is untested"})
+	} else {
+		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: NotTested, Code: "explicit-version-required", Detail: discoveryErr.Error() + "; supply an explicit version"})
+	}
 	if err == nil {
 		err = p.prepare(ctx)
 		add("version-input", "Literal input candidates found; a specific release still needs edit-fidelity checks", err)

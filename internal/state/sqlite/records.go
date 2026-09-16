@@ -298,7 +298,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	}
 	var release any
 	if r := v.ResolvedRelease; r != nil {
-		if v.Spec.Action != record.Bump || r.Requested != v.Spec.Version || r.Version == "" || r.Forge == "" || r.Instance == "" || r.Repository == "" || r.Tag == "" || !objectID(record.ObjectID(r.Commit)) || r.ObservedAt.IsZero() {
+		if v.Spec.Action != record.Bump || r.Requested != v.Spec.Version || r.Version == "" || r.ObservedAt.IsZero() || !validReleaseSource(*r) {
 			return state.ErrInvalid
 		}
 		if r.Requested == "" && r.CurrentVersion == "" {

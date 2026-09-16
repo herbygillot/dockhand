@@ -44,10 +44,12 @@ func (p TagPattern) Explicit(value string) bool {
 }
 
 type Livecheck struct {
-	Type    string
-	URL     string
-	Regex   string
-	Version string
+	Headers     map[string]string
+	Compression bool
+	Type        string
+	URL         string
+	Regex       string
+	Version     string
 }
 
 type Spec struct {
@@ -74,6 +76,9 @@ func Interpret(port macports.PortInfo) (Spec, error) {
 }
 
 func Discover(port macports.PortInfo) (Spec, error) {
+	if !present(port, "github.author") && !present(port, "gitlab.author") {
+		return discoverListing(port)
+	}
 	spec, err := Interpret(port)
 	if err != nil {
 		return Spec{}, err

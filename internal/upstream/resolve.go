@@ -94,8 +94,17 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release rec
 		if err != nil {
 			return err
 		}
-		if spec.Forge != "" || release.Requested == "" || release.Version != release.Requested || release.CurrentVersion != port.Version || release.NoUpdate || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || ValidateVersion(release.Version) != nil {
+		if spec.Forge != "" || release.Requested != "" && release.Version != release.Requested || release.CurrentVersion != port.Version || release.NoUpdate || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || ValidateVersion(release.Version) != nil {
 			return fmt.Errorf("upstream: archive release does not match the Portfile")
+		}
+		if release.Requested == "" {
+			observed, err := portsource.Discover(port)
+			if err != nil {
+				return err
+			}
+			if release.Listing == nil || release.Listing.URL != observed.Livecheck.URL || release.Listing.SHA256 == "" {
+				return fmt.Errorf("upstream: archive discovery evidence does not match the Portfile")
+			}
 		}
 		return nil
 	}

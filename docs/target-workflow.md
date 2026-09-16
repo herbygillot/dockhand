@@ -1,6 +1,6 @@
 # One target through the contribution workflow
 
-Status: implementation in progress, 2026-09-16. Stages 0–3 are implemented; release discovery and the coverage stages below remain in progress. It takes priority over the earlier target-selection prerequisite in [bump coverage](bump-coverage.md). The [roadmap](roadmap.md) remains the queue; this document specifies the work and its acceptance criteria.
+Status: implementation in progress, 2026-09-16. Stages 0–4 are implemented; the preparation reliability and coverage stages below remain in progress. It takes priority over the earlier target-selection prerequisite in [bump coverage](bump-coverage.md). The [roadmap](roadmap.md) remains the queue; this document specifies the work and its acceptance criteria.
 
 ## Problem and intended experience
 

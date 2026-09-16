@@ -26,7 +26,7 @@ namespace eval ::dockhand {
                 checksums distfiles worksrcdir filespath master_sites fetch.type
                 fetch.user_agent fetch.ignore_sslcert
                 patchfiles patch.pre_args livecheck.type livecheck.url livecheck.regex
-                livecheck.version go.vendors go.version go.package go.domain go.offline_build go.toolchain_min
+                livecheck.version livecheck.ignore_sslcert livecheck.compression livecheck.curloptions go.vendors go.version go.package go.domain go.offline_build go.toolchain_min
                 cargo.crates cargo.crates_github cargo.update cargo.dir
                 github.author github.project github.version github.tag_prefix github.tag_suffix github.tarball_from
                 gitlab.author gitlab.project gitlab.version gitlab.tag_prefix gitlab.tag_suffix gitlab.instance
@@ -54,6 +54,15 @@ namespace eval ::dockhand {
                 dict set failures fetch.archive_compatible "MacPorts Base [base_version]: $fetch; automatic archive preparation is unavailable; update Base or prepare this port manually"
             } else {
                 dict set out fetch_details $fetch
+            }
+            if {[catch {$worker eval {
+                set target ${org.macports.livecheck}
+                expr {[ditem_key $target procedure] eq "portlivecheck::livecheck_main" &&
+                      [llength [ditem_key $target pre]] == 0 && [llength [ditem_key $target post]] == 0}
+            }} standard]} {
+                dict set failures dockhand.livecheck_standard "cannot inspect livecheck target"
+            } else {
+                dict set out dockhand.livecheck_standard $standard
             }
             dict set out dockhand.base_version [base_version]
             foreach field {fetch.user fetch.password fetch_credentials macports::fetch_credentials} {

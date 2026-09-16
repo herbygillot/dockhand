@@ -14,7 +14,7 @@ import (
 func releaseDiscovery(ports *selection.Reader, github *githubapi.Client, httpClient *http.Client) *upstream.Service {
 	gitlab := &forgegitlab.Client{HTTP: httpClient}
 	return &upstream.Service{
-		Ports: ports,
+		Ports: ports, HTTP: httpClient,
 		Catalogs: map[portsource.Forge]upstream.Catalog{
 			portsource.GitHub: &forgegithub.Client{Client: github},
 			portsource.GitLab: gitlab,

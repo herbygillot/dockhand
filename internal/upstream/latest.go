@@ -34,6 +34,13 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if s == nil || s.Versions == nil || s.EvaluateVersion == nil {
 		return result, fmt.Errorf("upstream: version comparison and Portfile evaluation are required")
 	}
+	discovery, discoveryErr := portsource.Discover(port)
+	if discoveryErr != nil {
+		return result, fmt.Errorf("%w: %v", ErrAutomaticUnsupported, discoveryErr)
+	}
+	if discovery.Catalog == portsource.HTTPRegex {
+		return s.discoverListing(ctx, port, discovery)
+	}
 	spec, repository, err := s.repository(port, true)
 	if err != nil {
 		return result, err

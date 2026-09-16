@@ -1,0 +1,11 @@
+# Automatic release discovery beyond forge catalogs
+
+Added HTTP regex listing discovery for non-forge sources. MacPorts source interpretation checks evaluated request settings and standard livecheck registration. Unsupported curl options, ignored TLS certificates, custom hooks, missing captures, failed/truncated responses, and ambiguous versions remain explicit errors. GitHub/GitLab catalog policies remain unchanged; no fallback hides forge authentication or network failures.
+
+The evaluator collects distinct captures with native Tcl regex semantics, matching line-oriented regex livecheck. Upstream applies stable-version policy and MacPorts comparison, then probes the selected candidate. Shared fetch handles HTTP transfers. Stored archive releases support explicit and automatic selection, retaining listing URL, ETag/Last-Modified when supplied, body SHA256, and observation time. Retry checks the frozen release without selecting from a changed listing. This also fixes the prior SQLite validation that incorrectly required forge identity for explicit archive releases.
+
+Assessment reports local discovery support separately from candidate/editability checks. New local HTTP and native Tcl fixtures cover unordered/duplicate links, numeric ordering, other series, prereleases, current/ahead versions, malformed regexes and captures, custom behavior, failures, and equivalent newest spellings. An end-to-end CLI fixture resolves a calculated release-series subport, prepares the latest eligible update, retains the older sibling, and persists a contribution selectable by target. Explicit and automatic routes select the same candidate.
+
+Real exercise: `outdated terraform-1.16` against ports commit `0f8e26f480b8a6f0fd39ea57c58f2083e259e06b` observed 1.16.0 locally and selected **1.16.3** from the HashiCorp release listing at **2026-09-16T16:57:15Z**. A cold index took 4m8s; this is an index-generation cost, not HTTP discovery. JSON and progress are in `/private/tmp/dockhand-terraform-discovery.{json,log}`. No live database, branch, VM, or PR was created by that query.
+
+Upstream, source-interpretation, native evaluator, and the dedicated CLI fixture pass. No new library or package was required beyond focused files in the existing boundaries.

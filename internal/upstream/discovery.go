@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -44,6 +45,7 @@ type Result struct {
 }
 
 type Service struct {
+	HTTP            *http.Client
 	Ports           macports.Reader
 	Catalogs        map[portsource.Forge]Catalog
 	Versions        VersionSelector

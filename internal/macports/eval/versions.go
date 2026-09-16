@@ -59,3 +59,25 @@ func (e *Evaluator) SelectVersion(ctx context.Context, current, expression strin
 	}
 	return result, nil
 }
+
+// ExtractVersions collects all distinct first captures using native Tcl regex
+// semantics and Base's line-oriented regex livecheck behavior.
+func (e *Evaluator) ExtractVersions(ctx context.Context, expression, page string) (_ []string, err error) {
+	session, _, err := e.start(ctx, macports.Tree{})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, session.Close()) }()
+	if _, err = session.Call(ctx, "eval", versionScript); err != nil {
+		return nil, err
+	}
+	reply, err := session.Call(ctx, "extract-versions", expression, page)
+	if err != nil {
+		return nil, err
+	}
+	values, errs := syntax.ListValues(reply)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("macports: invalid livecheck capture response")
+	}
+	return values, nil
+}

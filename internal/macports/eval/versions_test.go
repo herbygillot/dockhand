@@ -56,3 +56,21 @@ func TestVersionSelectionNormalizesMacPortsComparison(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractVersionsUsesNativeTclAndLineBoundaries(t *testing.T) {
+	executable, err := exec.LookPath("port-tclsh")
+	if err != nil {
+		t.Skip("MacPorts is required")
+	}
+	evaluator := eval.Evaluator{Executable: executable}
+	versions, err := evaluator.ExtractVersions(t.Context(), `{\mversion_([[:digit:]]+\.[[:digit:]]+)\M}`, "version_1.9 version_1.10\nversion_1.9 xversion_9.9\n")
+	require.NoError(t, err)
+	require.Equal(t, []string{"1.9", "1.10"}, versions)
+	versions, err = evaluator.ExtractVersions(t.Context(), `{start(.*)end}`, "start\n1.2\nend")
+	require.NoError(t, err)
+	require.Empty(t, versions)
+	for _, expression := range []string{`{(}`, `{version}`, `{()}`} {
+		_, err = evaluator.ExtractVersions(t.Context(), expression, "version")
+		require.Error(t, err)
+	}
+}

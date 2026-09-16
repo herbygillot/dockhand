@@ -23,3 +23,24 @@ proc ::dockhand::select_version {current expression args} {
     return [list [vercmp $latest $current] {*}$indices]
 }
 ::tclrpc::register select-version ::dockhand::select_version
+
+proc ::dockhand::extract_versions {expression page} {
+    set regex [join $expression]
+    if {$regex eq ""} {error "empty livecheck expression"}
+    # Match each line like Base's regex livecheck. Progress is explicit even for
+    # zero-width matches, so malformed patterns cannot trap the interpreter.
+    set versions [dict create]
+    foreach line [split $page "\n"] {
+        set start 0
+        while {$start <= [string length $line] && [regexp -nocase -start $start -indices -- $regex $line whole capture]} {
+            if {![info exists capture] || [lindex $capture 0] < 0} {error "livecheck requires a version capture"}
+            lassign $capture first last
+            set version [string range $line $first $last]
+            if {$version eq ""} {error "empty livecheck version capture"}
+            dict set versions $version 1
+            set start [expr {max($start + 1, [lindex $whole 1] + 1)}]
+        }
+    }
+    return [dict keys $versions]
+}
+::tclrpc::register extract-versions ::dockhand::extract_versions

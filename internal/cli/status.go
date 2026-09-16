@@ -166,7 +166,11 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		if release := job.ResolvedRelease; release != nil {
 			if release.Archive {
-				line("  release: explicit archive version %s", release.Version)
+				if release.Listing != nil {
+					line("  release: archive version %s; discovered at %s", release.Version, release.Listing.URL)
+				} else {
+					line("  release: explicit archive version %s", release.Version)
+				}
 			} else {
 				line("  release: %s %s; commit: %s", release.Repository, release.Tag, release.Commit)
 			}
