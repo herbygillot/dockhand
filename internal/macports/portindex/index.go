@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"io"
 	"io/fs"
 	"net/url"
@@ -274,104 +275,93 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		progress.Report(ctx, "Updating PortIndex for source %s from %d changed paths", short, len(changed))
 	}
 	started := time.Now()
-	if err = os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
-		return err
-	}
-	temp, err := os.MkdirTemp(filepath.Dir(destination), ".index-")
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, os.RemoveAll(temp)) }()
-	configRoot, err := os.MkdirTemp(filepath.Dir(destination), ".portindex-config-")
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, os.RemoveAll(configRoot)) }()
-	args := []string{"-q"}
-	if seed == "" {
-		args = append(args, "-f")
-	} else {
-		if err = copyIndexFile(filepath.Join(seed, portIndexName), filepath.Join(temp, portIndexName)); err != nil {
-			return err
-		}
-		quick := filepath.Join(seed, quickIndexName)
-		if _, statErr := os.Stat(quick); statErr == nil {
-			if err = copyIndexFile(quick, filepath.Join(temp, quickIndexName)); err != nil {
-				return err
-			}
-		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return statErr
-		}
-		if err = touchEntry(seed); err != nil {
-			return err
-		}
-		indexInfo, err := os.Stat(filepath.Join(temp, portIndexName))
+	err = atomicfile.ReplaceDirectory(destination, func(temp string) (err error) {
+		configRoot, err := os.MkdirTemp(filepath.Dir(destination), ".portindex-config-")
 		if err != nil {
 			return err
 		}
-		if err = setPortfileTimes(sourceRoot, changed, indexInfo.ModTime()); err != nil {
-			return err
-		}
-	}
-	if strict {
-		args = append(args, "-e")
-	}
-	args = append(args, "-p", strings.Join([]string{platform.OS, platform.Version, platform.Architecture}, "_"), "-o", temp, sourceRoot)
-	configuration := filepath.Join(configRoot, "macports.conf")
-	sources := filepath.Join(configRoot, "sources.conf")
-	variants := filepath.Join(configRoot, "variants.conf")
-	portdb := filepath.Join(configRoot, "portdb")
-	if err = os.MkdirAll(filepath.Join(portdb, "registry"), 0700); err != nil {
-		return err
-	}
-	if err = os.WriteFile(sources, []byte((&url.URL{Scheme: "file", Path: sourceRoot}).String()+" [default,nosync]\n"), 0600); err != nil {
-		return err
-	}
-	if err = os.WriteFile(variants, nil, 0600); err != nil {
-		return err
-	}
-	configurationText := fmt.Sprintf("sources_conf %s\nvariants_conf %s\nportdbpath %s\n", sources, variants, portdb)
-	if err = os.WriteFile(configuration, []byte(configurationText), 0600); err != nil {
-		return err
-	}
-	command := exec.CommandContext(ctx, c.Executable, args...)
-	command.Dir = sourceRoot
-	if guard != nil {
-		command.ExtraFiles = []*os.File{guard}
-	}
-	command.Env = indexerEnvironment(configuration)
-	output, runErr := command.CombinedOutput()
-	if runErr != nil {
-		var exit *exec.ExitError
-		if ctx.Err() == nil && strict && seed != "" && errors.As(runErr, &exit) && exit.ExitCode() == 2 {
-			if coverageErr := validateIncrementalCoverage(seed, temp, sourceRoot, changed); coverageErr == nil {
-				runErr = nil
-			} else {
-				runErr = errors.Join(runErr, coverageErr)
+		defer func() { err = errors.Join(err, os.RemoveAll(configRoot)) }()
+		args := []string{"-q"}
+		if seed == "" {
+			args = append(args, "-f")
+		} else {
+			if err = copyIndexFile(filepath.Join(seed, portIndexName), filepath.Join(temp, portIndexName)); err != nil {
+				return err
+			}
+			quick := filepath.Join(seed, quickIndexName)
+			if _, statErr := os.Stat(quick); statErr == nil {
+				if err = copyIndexFile(quick, filepath.Join(temp, quickIndexName)); err != nil {
+					return err
+				}
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return statErr
+			}
+			if err = touchEntry(seed); err != nil {
+				return err
+			}
+			indexInfo, err := os.Stat(filepath.Join(temp, portIndexName))
+			if err != nil {
+				return err
+			}
+			if err = setPortfileTimes(sourceRoot, changed, indexInfo.ModTime()); err != nil {
+				return err
 			}
 		}
-		if runErr != nil {
-			return fmt.Errorf("portindex: %w: %s", errors.Join(ctx.Err(), runErr), strings.TrimSpace(string(output)))
+		if strict {
+			args = append(args, "-e")
 		}
-	}
-	if !validIndexEntry(temp) {
-		return fmt.Errorf("portindex: executable produced an incomplete index")
-	}
-	meta.Strict, meta.Changed, meta.Full, meta.Built = strict, len(changed), seed == "", time.Now().UTC()
-	if seed != "" {
-		meta.Seed = filepath.Base(seed)
-	}
-	encoded, err := json.Marshal(meta)
+		args = append(args, "-p", strings.Join([]string{platform.OS, platform.Version, platform.Architecture}, "_"), "-o", temp, sourceRoot)
+		configuration := filepath.Join(configRoot, "macports.conf")
+		sources := filepath.Join(configRoot, "sources.conf")
+		variants := filepath.Join(configRoot, "variants.conf")
+		portdb := filepath.Join(configRoot, "portdb")
+		if err = os.MkdirAll(filepath.Join(portdb, "registry"), 0700); err != nil {
+			return err
+		}
+		if err = os.WriteFile(sources, []byte((&url.URL{Scheme: "file", Path: sourceRoot}).String()+" [default,nosync]\n"), 0600); err != nil {
+			return err
+		}
+		if err = os.WriteFile(variants, nil, 0600); err != nil {
+			return err
+		}
+		configurationText := fmt.Sprintf("sources_conf %s\nvariants_conf %s\nportdbpath %s\n", sources, variants, portdb)
+		if err = os.WriteFile(configuration, []byte(configurationText), 0600); err != nil {
+			return err
+		}
+		command := exec.CommandContext(ctx, c.Executable, args...)
+		command.Dir = sourceRoot
+		if guard != nil {
+			command.ExtraFiles = []*os.File{guard}
+		}
+		command.Env = indexerEnvironment(configuration)
+		output, runErr := command.CombinedOutput()
+		if runErr != nil {
+			var exit *exec.ExitError
+			if ctx.Err() == nil && strict && seed != "" && errors.As(runErr, &exit) && exit.ExitCode() == 2 {
+				if coverageErr := validateIncrementalCoverage(seed, temp, sourceRoot, changed); coverageErr == nil {
+					runErr = nil
+				} else {
+					runErr = errors.Join(runErr, coverageErr)
+				}
+			}
+			if runErr != nil {
+				return fmt.Errorf("portindex: %w: %s", errors.Join(ctx.Err(), runErr), strings.TrimSpace(string(output)))
+			}
+		}
+		if !validIndexEntry(temp) {
+			return fmt.Errorf("portindex: executable produced an incomplete index")
+		}
+		meta.Strict, meta.Changed, meta.Full, meta.Built = strict, len(changed), seed == "", time.Now().UTC()
+		if seed != "" {
+			meta.Seed = filepath.Base(seed)
+		}
+		encoded, err := json.Marshal(meta)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(temp, generationFileName), encoded, 0600)
+	})
 	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(filepath.Join(temp, generationFileName), encoded, 0600); err != nil {
-		return err
-	}
-	if err = os.RemoveAll(destination); err != nil {
-		return err
-	}
-	if err = os.Rename(temp, destination); err != nil {
 		return err
 	}
 	pass := "incremental"

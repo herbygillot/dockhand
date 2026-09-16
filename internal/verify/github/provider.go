@@ -59,7 +59,7 @@ func (p *Provider) locked(ctx context.Context, id record.RequestID, fn func(cont
 	if err != nil {
 		return err
 	}
-	lock, err := filelock.Acquire(ctx, filepath.Join(p.Directory, digest([]byte(id))+".lock"), filelock.Exclusive)
+	lock, err := filelock.Acquire(ctx, filelock.Path(p.Directory, string(id)), filelock.Exclusive)
 	if err != nil {
 		return err
 	}

@@ -2,15 +2,12 @@ package git
 
 import (
 	"context"
-	"crypto/sha256"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/herbygillot/dockhand/internal/filelock"
 )
 
 type branchLockKey struct{}
@@ -45,44 +42,15 @@ func (r *Repository) WithPushLock(ctx context.Context, directory, scope string, 
 	return withLock(ctx, directory, scope, fn)
 }
 
-func withLock(ctx context.Context, directory, key string, fn func(context.Context) error) (err error) {
+// withLock carries the lock file in the context so git children inherit the
+// descriptor and keep the lock if this process exits mid-operation.
+func withLock(ctx context.Context, directory, key string, fn func(context.Context) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return err
-	}
-	name := fmt.Sprintf("%x.lock", sha256.Sum256([]byte(key)))
-	fd, err := unix.Open(filepath.Join(directory, name), unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0600)
-	if err != nil {
-		return err
-	}
-	file := os.NewFile(uintptr(fd), filepath.Join(directory, name))
-	defer func() { err = errors.Join(err, file.Close()) }()
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
-			return err
-		}
-		timer := time.NewTimer(25 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
-	defer func() { err = errors.Join(err, unix.Flock(fd, unix.LOCK_UN)) }()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return fn(context.WithValue(ctx, branchLockKey{}, file))
+	return filelock.With(ctx, filelock.Path(directory, key), filelock.Exclusive, func(ctx context.Context, file *os.File) error {
+		return fn(context.WithValue(ctx, branchLockKey{}, file))
+	})
 }
 
 // WithRemoteBranchLock serializes cooperating pushes to one forge repository branch.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"io"
 	"io/fs"
 	"net/http"
@@ -64,20 +65,22 @@ func Archive(ctx context.Context, repo *git.Repository, request Request, destina
 		}
 	}
 	progress.Report(ctx, "Packing source and verification inputs")
-	temp, err := os.CreateTemp(filepath.Dir(destination), ".input-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
+	return atomicfile.Create(destination, 0600, func(temp *os.File) error {
+		return packSource(ctx, snapshot.Root, payload, temp)
+	})
+}
+
+// packSource writes the snapshot and provider payload as one tar stream.
+func packSource(ctx context.Context, root string, payload map[string][]byte, temp *os.File) error {
 	output := tar.NewWriter(temp)
-	err = filepath.WalkDir(snapshot.Root, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if err = ctx.Err(); err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(snapshot.Root, path)
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
@@ -138,16 +141,9 @@ func Archive(ctx context.Context, repo *git.Repository, request Request, destina
 		err = closeErr
 	}
 	if err == nil {
-		err = temp.Sync()
+		err = ctx.Err()
 	}
-	closeErr = temp.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), destination)
+	return err
 
 }
 

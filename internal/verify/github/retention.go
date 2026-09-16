@@ -32,7 +32,7 @@ func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, be
 	if pool.Directory != p.Directory {
 		return false, state.ErrConflict
 	}
-	lock, err := filelock.TryExisting(ctx, filepath.Join(p.Directory, digest([]byte(run.RequestID))+".lock"), filelock.Exclusive)
+	lock, err := filelock.TryExisting(ctx, filelock.Path(p.Directory, string(run.RequestID)), filelock.Exclusive)
 	if errors.Is(err, filelock.ErrBusy) || errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}

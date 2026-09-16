@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"sort"
@@ -137,14 +138,15 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 	}
 	lockPath := target + ".lock"
 	guard, err := filelock.TryExisting(ctx, lockPath, filelock.Exclusive)
-	if errors.Is(err, filelock.ErrBusy) {
+	switch {
+	case errors.Is(err, filelock.ErrBusy):
 		progress.Report(ctx, "Waiting for another process indexing source %s", tree[:12])
+		fallthrough
+	case errors.Is(err, os.ErrNotExist):
+		guard, err = filelock.Acquire(ctx, lockPath, filelock.Exclusive)
 	}
 	if err != nil {
-		guard, err = filelock.Acquire(ctx, lockPath, filelock.Exclusive)
-		if err != nil {
-			return "", err
-		}
+		return "", err
 	}
 	defer guard.Close()
 	if c.usable(tree, strict) {
@@ -272,21 +274,4 @@ func (c *cache) recentGenerations(limit int) ([]string, error) {
 	return result, nil
 }
 
-func writeAtomically(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-")
-	if err != nil {
-		return err
-	}
-	_, writeErr := temp.Write(data)
-	err = errors.Join(writeErr, temp.Close())
-	if err != nil {
-		return errors.Join(err, os.Remove(temp.Name()))
-	}
-	if err := os.Rename(temp.Name(), path); err != nil {
-		return errors.Join(err, os.Remove(temp.Name()))
-	}
-	return nil
-}
+func writeAtomically(path string, data []byte) error { return atomicfile.Write(path, data, 0600) }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"io"
 	"os"
 	"path/filepath"
@@ -139,22 +140,12 @@ func cacheJobLog(ctx context.Context, api actionsAPI, job *gh.WorkflowJob, path 
 }
 
 func writeLogFile(ctx context.Context, path string, write func(*os.File) error) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".github-log-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	defer file.Close()
-	if err := write(file); err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), path)
+	return atomicfile.Create(path, 0600, func(file *os.File) error {
+		if err := write(file); err != nil {
+			return err
+		}
+		return ctx.Err()
+	})
 }
 
 func readLogChunk(path string, offset int64, limit int) (verify.LogChunk, error) {

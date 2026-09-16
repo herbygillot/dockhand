@@ -3,9 +3,9 @@ package tart
 import (
 	"context"
 	"encoding/json"
+	"github.com/herbygillot/dockhand/internal/atomicfile"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macos"
@@ -105,21 +105,8 @@ fi`)
 	return result, nil
 }
 func (n *native) Logs(ctx context.Context, vm, path string) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".log-")
-	if err != nil {
+	return atomicfile.Create(path, 0600, func(file *os.File) error {
+		_, err := n.execGuest(ctx, vm, nil, file, "sudo", "-n", "/bin/sh", "-c", "if [ -f /var/tmp/dockhand2/build.log ]; then cat /var/tmp/dockhand2/build.log; fi; cat /var/tmp/dockhand2/runner.log")
 		return err
-	}
-	defer os.Remove(file.Name())
-	_, err = n.execGuest(ctx, vm, nil, file, "sudo", "-n", "/bin/sh", "-c", "if [ -f /var/tmp/dockhand2/build.log ]; then cat /var/tmp/dockhand2/build.log; fi; cat /var/tmp/dockhand2/runner.log")
-	if err == nil {
-		err = file.Sync()
-	}
-	closeErr := file.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	return os.Rename(file.Name(), path)
+	})
 }

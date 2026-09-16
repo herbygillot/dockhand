@@ -43,7 +43,7 @@ func (p *Provider) beginWith(ctx context.Context, id record.RequestID, config Co
 	if err != nil {
 		return nil, err
 	}
-	lock, err := filelock.Acquire(ctx, filepath.Join(pool.Directory, "locks", digest([]byte(string(id)))+".lock"), filelock.Exclusive)
+	lock, err := filelock.Acquire(ctx, filelock.Path(filepath.Join(pool.Directory, "locks"), string(id)), filelock.Exclusive)
 	if err != nil {
 		return nil, err
 	}
