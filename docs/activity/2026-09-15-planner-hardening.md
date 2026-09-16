@@ -13,3 +13,9 @@ The scanner remains a conservative source analysis, not a general Tcl interprete
 The modeled evaluator now observes file opens (including process pipes), source-file loading, and directory enumeration as well as filesystem metadata queries and process execution. Relative paths are normalized in the worker during the intercepted access. Captured regular files remain permitted; external paths and opaque symlinks produce a coverage gap. Directory enumeration is conservatively reported rather than treated as a modeled platform fact. Host-access events do not record file contents.
 
 Native evaluator regressions passed for external and captured reads/sources, relative filesystem queries, symlinks, process execution, declaration ownership, and session isolation. The native final evaluation remains uninstrumented. This expands explicit dependency detection; it does not turn a modeled context into a virtual machine or certify arbitrary environment/SDK behavior.
+
+## Revisions across contexts
+
+Revision reset now collects the executed literal declarations from every affected context and applies each source span once. It handles nonzero alternate revisions even when the native revision is already zero. The complete candidate still passes the existing whole-Portfile and protected-context fidelity checks before any download; a revision shared with an independent pinned release is refused.
+
+Moved revision ownership/reset logic into `portedit/revision_reset.go`, leaving version spelling/probing helpers separate. Native regressions passed for separate OS revisions, a zero native revision with a nonzero alternate revision, protected shared revisions, independent old releases, and selected release-series subports.

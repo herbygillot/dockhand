@@ -1,0 +1,85 @@
+package portedit
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"strconv"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/text"
+)
+
+func (s *Service) resetRevision(ctx context.Context, request Request, input *sourceInput, contents []byte) ([]byte, error) {
+	if _, ok := s.Ports.(macports.Observer); !ok {
+		if input.info.Revision == 0 {
+			return contents, nil
+		}
+		return portfile.ResetRevision(contents, input.info.Revision)
+	}
+	profiles, err := observationProfiles(input.data, input.before.Platform)
+	if err != nil {
+		return nil, err
+	}
+	edits := map[text.Span]text.Edit{}
+	selectedVersion := ""
+	for _, profile := range profiles {
+		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
+		before, err := s.observeContents(ctx, request, input, input.data, mode, true)
+		if err != nil {
+			return nil, err
+		}
+		after, err := s.observeContents(ctx, request, input, contents, mode, true)
+		if err != nil {
+			return nil, err
+		}
+		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
+		if selectedVersion == "" {
+			selectedVersion = next.Version
+		}
+		if old.Version == next.Version {
+			continue
+		}
+		if old.Version != input.info.Version || next.Version != selectedVersion {
+			return nil, fmt.Errorf("%w: revision reset would affect an independent release on %+v", ErrFidelity, profile)
+		}
+		if next.Revision == 0 {
+			continue
+		}
+		edit, err := revisionReset(contents, filepath.Join(input.files.Root, input.target.Portfile), next, after.Ports[input.target.Name].Declarations)
+		if err != nil {
+			return nil, err
+		}
+		edits[edit.Span] = edit
+	}
+	replacements := make([]text.Edit, 0, len(edits))
+	for _, edit := range edits {
+		replacements = append(replacements, edit)
+	}
+	// Full context and sibling fidelity is checked after applying the complete
+	// candidate, including shared revision declarations in protected releases.
+	return text.Apply(contents, replacements)
+}
+
+func revisionReset(contents []byte, path string, info macports.PortInfo, events []macports.Declaration) (text.Edit, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		d := events[i]
+		if d.Command != "revision" {
+			continue
+		}
+		cmd, err := portfile.LocateDeclaration(contents, path, d)
+		if err != nil {
+			return text.Edit{}, err
+		}
+		if len(cmd.Words) != 2 {
+			return text.Edit{}, fmt.Errorf("%w: revision is not a literal", ErrUnsupported)
+		}
+		value, literal := cmd.Words[1].Literal(contents)
+		if !literal || value != strconv.Itoa(info.Revision) {
+			return text.Edit{}, fmt.Errorf("%w: revision is calculated or overridden", ErrUnsupported)
+		}
+		return text.Edit{Span: cmd.Words[1].Span, New: []byte("0")}, nil
+	}
+	return text.Edit{}, fmt.Errorf("%w: nonzero revision has no editable declaration", ErrUnsupported)
+}
