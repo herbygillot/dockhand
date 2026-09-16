@@ -96,7 +96,7 @@ cd macports-ports
 git remote add upstream https://github.com/macports/macports-ports.git
 ```
 
-Run the commands below from inside this checkout. To run them from somewhere else, add `--tree /path/to/macports-ports` or set `MACPORTS_TREE`. Dockhand pushes to `origin` and targets `upstream` by default; `--remote` and `--upstream` change that.
+Run the commands below from inside this checkout. To run them from somewhere else, add `--tree /path/to/macports-ports` or set `MACPORTS_TREE`. Dockhand pushes to `origin` and targets `upstream` by default; `--remote` and `--upstream` change that. Dockhand only pushes to a repository owned by your GitHub login. If your `origin` is `macports/macports-ports` itself, publication stops and names the remotes that point at your fork; pass one of them with `--remote`.
 
 ### Sign in to GitHub
 

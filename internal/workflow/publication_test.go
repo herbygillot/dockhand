@@ -37,6 +37,12 @@ func (p *publicationForge) Authenticate(context.Context) error {
 	p.authCalls++
 	return p.authErr
 }
+func (p *publicationForge) AuthenticatedUser(context.Context) (string, error) {
+	if p.authErr != nil {
+		return "", p.authErr
+	}
+	return "author", nil
+}
 func (p *publicationForge) NameFromRemote(remote string) (string, error) {
 	if remote != p.remote {
 		return "", fmt.Errorf("unexpected remote")

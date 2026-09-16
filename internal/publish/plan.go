@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -43,6 +44,9 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 	if err != nil {
 		return destination, err
 	}
+	if err := s.requireOwnedHead(ctx, head.Name, push.Name, remotes); err != nil {
+		return destination, err
+	}
 	targetName := head.Name
 	if head.Parent != "" {
 		targetName = head.Parent
@@ -63,6 +67,41 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 
 	destination = record.PublicationDestination{Forge: s.Forge.Name(), Repository: target.Name, HeadRepository: head.Name, BaseBranch: options.Base, PushURL: push.PushURL, BaseURL: target.CloneURL, LockDirectory: s.LockDirectory}
 	return destination, ValidateDestination(destination)
+}
+
+// requireOwnedHead refuses a push repository the authenticated user does not
+// own. Contributions are published from the contributor's fork; a checkout
+// whose selected remote is the upstream repository must name the fork.
+func (s *Service) requireOwnedHead(ctx context.Context, head, remote string, remotes []git.Remote) error {
+	login, err := s.Forge.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	owner, _, _ := strings.Cut(head, "/")
+	if strings.EqualFold(owner, login) {
+		return nil
+	}
+	if remote == "" {
+		return fmt.Errorf("%w: recorded publication destination pushes to %s, which %s does not own; request publication again with --remote naming your fork", ErrPrecondition, head, login)
+	}
+	var forks []string
+	for _, r := range remotes {
+		if r.Name == remote {
+			continue
+		}
+		name, err := s.Forge.NameFromRemote(r.PushURL)
+		if err != nil {
+			continue
+		}
+		if candidate, _, _ := strings.Cut(name, "/"); strings.EqualFold(candidate, login) {
+			forks = append(forks, r.Name+" ("+name+")")
+		}
+	}
+	hint := "add a Git remote for your fork and select it with --remote"
+	if len(forks) > 0 {
+		hint = "select your fork with --remote: " + strings.Join(forks, ", ")
+	}
+	return fmt.Errorf("%w: remote %q pushes to %s, which %s does not own; %s", ErrPrecondition, remote, head, login, hint)
 }
 
 func ValidateDestination(d record.PublicationDestination) error {
@@ -87,6 +126,9 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 		return spec, fmt.Errorf("%w: matching publication service required", ErrPrecondition)
 	}
 	if err := ValidateDestination(destination); err != nil {
+		return spec, err
+	}
+	if err := s.requireOwnedHead(ctx, destination.HeadRepository, "", nil); err != nil {
 		return spec, err
 	}
 	content, err := s.SourceContent(ctx, source, change.Targets)

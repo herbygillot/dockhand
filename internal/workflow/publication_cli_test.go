@@ -66,7 +66,8 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	config := app.Config{DBPath: f.store.Path(), Repository: f.repo.Root, GitExecutable: wrapper, GitHub: github.Config{BaseURL: server.URL}}
+	// The dry run needs the authenticated login to prove the push repository is owned by the user.
+	config := app.Config{DBPath: f.store.Path(), Repository: f.repo.Root, GitExecutable: wrapper, GitHub: github.Config{BaseURL: server.URL, Token: "fixture"}}
 	var output, diagnostics bytes.Buffer
 	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--dry-run", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.NoError(t, err, "%s", diagnostics.String())
@@ -81,6 +82,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	head, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
 	require.NoError(t, err)
 	require.False(t, head.Exists)
+	config.GitHub.Token = ""
 	output.Reset()
 	diagnostics.Reset()
 	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)

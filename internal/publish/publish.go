@@ -15,6 +15,7 @@ var ErrPrecondition = errors.New("publish: precondition failed")
 type Forge interface {
 	Name() string
 	Authenticate(context.Context) error
+	AuthenticatedUser(context.Context) (string, error)
 	NameFromRemote(string) (string, error)
 	RepositoryInfo(context.Context, string) (forge.RepositoryInfo, error)
 	Find(context.Context, forge.PullRequestQuery) (forge.PullRequestObservation, error)

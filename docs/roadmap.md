@@ -2,23 +2,37 @@
 
 This document is the current source of truth for implementation priorities. The [architecture](architecture.md), [component map](components.md), [CLI design](cli-design.md), and [state design](state.md) define behavior and boundaries. Activity reports retain implementation history and validation; they are not additional queues.
 
-Last reconciled: 2026-09-16, after the [three-part bump-coverage pass](activity/2026-09-16-bump-coverage-validation.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
+Last reconciled: 2026-09-16, after the [new-user deno exercise](reviews/2026-09-16-new-user-deno-exercise.md) and the [PortIndex storage design](portindex.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
 
 ## Next
 
-### 1. Support commit-qualified Cargo Git dependencies
+### 1. Refuse publication pushes to repositories the user does not own
+
+Implemented on 2026-09-16; see the [activity report](activity/2026-09-16-publication-owned-head.md). The README promised that nothing is pushed to `macports/macports-ports` directly, but destination resolution selected the push remote by name only. A checkout whose `origin` is the upstream repository, with the fork under another remote name, planned to push the contribution branch upstream. Destination resolution and frozen-destination planning now require the push repository to be owned by the authenticated GitHub login and name the remotes that are.
+
+### 2. Consolidate PortIndex storage and reuse
+
+Implement the [PortIndex storage design](portindex.md) in its stated order: generation identity and one shared cache root; exact-generation lookup with explicit seed selection; incremental advancement of the master seed with derived candidate generations; atomic publication, concurrent use, and retention. The new-user exercise measured about 3m40s for a cold full index on a one-port `outdated`, then about eight minutes of preparation before a revision bump was admitted, most of it repeated index staging under the Tart artifact root and hashing the Tart image. Two exercises have now generated the same full index twice.
+
+Acceptance: the checks listed in the design, plus recorded cold, warm, master-advance, and candidate timings from a real tree before and after.
+
+### 3. Harden the first-use path
+
+Small fixes from the [new-user exercise](reviews/2026-09-16-new-user-deno-exercise.md), each without new design: validate that `--tree` is a ports tree before any index work; print the URL and a missing-release-assets hint on distfile 404s; echo the resolved release and tag in human `assess --version` output; state in `outdated` output that only published releases are consulted for release-catalog ports; memoize the selection reader's index staging so progress lines print once per command; give `bump-revision` and `refresh-checksums` their own help prose; add `--version`.
+
+### 4. Support commit-qualified Cargo Git dependencies
 
 The real Codex exercise now identifies its Cargo source independently of its pinned V8 auxiliary file, but stops at a separate generator constraint: crossterm is pinned with `rev=`, while the current Cargo mapping requires a branch. Extend source identity and helper comparison to represent the exact Git commit without inventing a branch or relaxing maintained-override checks. Keep this in `macports/dependency` and its existing preparation integration.
 
 Acceptance: repeat the historical Codex update through complete preparation with the V8 pin unchanged, then verify it through the ordinary contribution workflow. Include branch-, tag-, and revision-qualified Git source refusals or support explicitly. Ambiguous or unsupported source URLs must remain actionable errors.
 
-### 2. Resolve the remaining demonstrated platform-coverage gaps
+### 5. Resolve the remaining demonstrated platform-coverage gaps
 
 The source-bound scalar/option and Darwin-major work is implemented. The corpus now explicitly exposes minor-version/deployment-target reads that the previous scanner missed; mrustc still accesses unmodeled host state. Classify these concrete inputs before choosing another modeled dimension. Start from the pinned abendrot, bun, warzone2100, fldigi, and mrustc controls; preserve the existing refusal when a source-bound value cannot be established.
 
 Acceptance: each supported case has baseline/candidate observations and counterexamples, preserves independent releases, and reports the modeled dimensions accurately. Keep session budgets measured. Do not model arbitrary filesystem, SDK, or command output by implication.
 
-### 3. Broaden PR observation
+### 6. Broaden PR observation
 
 Observe PR head, mergeability, review, CI, and conflicts through the existing contribution lifecycle. Publication still completes when the PR is opened or updated; later observations attach to the contribution. Observation does not authorize automatic corrective edits, pushes, or responses to reviewers.
 
@@ -70,7 +84,7 @@ These are ongoing checks or evidence-triggered investigations, not unfinished im
 - **Provisioning reliability:** all ten tested profiles were independently checked, including two successful Monterey/Xcode 14.2 provisions. Earlier first-boot exit 125 and Monterey extraction failures did not recur; their original causes remain unestablished. Preserve stage-specific evidence if they recur. Long-stage progress, readiness handling, failed-guest cleanup, and replacement rollback are implemented; see the [reliability exercise](activity/2026-09-15-provisioning-reliability.md).
 - **Tests and package boundaries:** preserve the useful integration boundaries from the [review 7 follow-up](activity/2026-09-15-review7.md). Extend focused import checks when touching meaningful dependency boundaries; do not split packages by file count or duplicate workflow engines.
 - **Exported surface and documentation:** audit Tcl/upstream exports against real callers and protocol use. Package overviews exist; improve operation/recovery contracts when useful. Keep implementation history in activity reports and current ownership in `components.md`; review raw benchmark retention without automatically deleting history.
-- **Caches and transport:** preparation precedes Tart capacity reservation; exact candidate indexes, incremental index reuse, shared `fetch`, and explicit cache retention are implemented. Keep cache ownership in callers. The cold manual-branch Terraform cleanup exercise generated a full index twice, in discovery and Tart staging (about four minutes each); investigate safe reuse for identical source/tool/platform inputs across those cache roots before adding another cache abstraction. Reconsider splitting PortIndex query/staging only for a concrete consumer boundary.
+- **Caches and transport:** preparation precedes Tart capacity reservation; exact candidate indexes, incremental index reuse, shared `fetch`, and explicit cache retention are implemented. Keep cache ownership in callers. The cold manual-branch Terraform cleanup exercise generated a full index twice, in discovery and Tart staging (about four minutes each); the [PortIndex storage design](portindex.md) now owns that consolidation as Next item 2. Reconsider splitting PortIndex query/staging only for a concrete consumer boundary.
 - **Rate limits:** consider account-wide GitHub cooldown coordination only if concurrent measurements justify it beyond the existing persisted per-record deadlines.
 
 ## Completed capabilities
