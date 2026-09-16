@@ -25,7 +25,9 @@ func portReader(config Config, repo *git.Repository) *selection.Reader {
 				return nil, err
 			}
 		}
-		if err = portindex.Stage(ctx, repo, tree.Source(), platform, index, tree.Root(), http.DefaultClient); err != nil {
+		source := tree.Source()
+		source.Base = "" // Name lookup can reconcile an exact-tree index from the complete Git diff.
+		if err = portindex.Stage(ctx, repo, source, platform, index, tree.Root(), http.DefaultClient); err != nil {
 			return nil, err
 		}
 		return portindex.Open(tree.Root())
