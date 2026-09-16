@@ -2,14 +2,16 @@ package portedit
 
 import (
 	"context"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/stretchr/testify/require"
 )
 
 func probeFixture(t *testing.T, declaration string) (*Service, Request, *sourceInput) {
@@ -36,7 +38,7 @@ proc github.setup {owner project raw prefix} {
 ` + declaration + "\nrevision 3\nchecksums sha256 " + strings.Repeat("0", 64) + "\n"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
 	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Root: root, Selection: macports.Selection{Selector: "fixture"}}
-	service := &Service{Ports: &macports.Evaluator{Executable: executable}}
+	service := &Service{Ports: &eval.Evaluator{Executable: executable}}
 	input, err := service.load(t.Context(), request)
 	require.NoError(t, err)
 	return service, request, input

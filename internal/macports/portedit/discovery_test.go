@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/forge"
-	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
@@ -49,7 +49,7 @@ livecheck.version ${github.version}
 		info := probe.Port()
 		info.Options["github.project"] = "changed-by-caller"
 		require.Equal(t, "fixture", probe.Port().Options["github.project"])
-		catalogs := &upstream.Service{Versions: service.Ports.(*macports.Evaluator), Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: probeCatalog{test.tag}}}
+		catalogs := &upstream.Service{Versions: service.Ports.(*eval.Evaluator), Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: probeCatalog{test.tag}}}
 		discovery, err := catalogs.Bind(probe)
 		require.NoError(t, err)
 		assessment, err := discovery.Discover(t.Context())

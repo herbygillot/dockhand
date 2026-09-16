@@ -1,4 +1,4 @@
-package macports
+package eval
 
 import (
 	"strings"

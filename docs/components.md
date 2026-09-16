@@ -38,7 +38,8 @@ dockhand2/
       host/              # VM lifecycle, launchd, foreground boot, and guest transport
       provision/         # Tart base-image construction and validation
     publish/             # Publication policy, desired state, reconciliation
-    macports/            # Bound source contexts, evaluation, dependencies
+    macports/            # Bound source contexts and evaluated observations
+      eval/              # Native Tcl evaluation and MacPorts runtime compatibility
       installation/      # MacPorts installation and observed installation facts
       portedit/          # Evaluator-driven source edits and fidelity checks
       portfile/          # Tcl literal candidates and precise source edits
@@ -105,7 +106,9 @@ Observation and judgment remain separate within the capability packages. The dri
 
 ### Preparing and understanding source
 
-`macports` resolves ports and selectors and binds evaluation to the complete source context: snapshot, tree resources, selected subport, variants, and platform. It exposes evaluated metadata, before-and-after snapshots, and dependency information. `macports/source` interprets evaluated GitHub and GitLab PortGroup fields into a forge instance, repository, tag convention, catalog choice, and the text shape consumed by the port's livecheck regex. Preparation, verification preflight, and publication context checks all use these boundaries. They must not each reconstruct a target from a directory string or reinterpret PortGroup defaults.
+The next preparation expansion follows [the bump-planner design](bump-planner.md). The native evaluator extraction is implemented; declaration provenance, artifact ownership, and alternate-context planning remain staged work.
+
+`macports` defines evaluation contracts and binds the complete source context: snapshot, tree resources, selected subport, variants, and platform. It exposes evaluated metadata, before-and-after snapshots, and dependency information. `macports/eval` implements these contracts through native Tcl: runtime startup, compatibility checks, selector resolution, metadata decoding, fetch observations, and version comparisons. Application wiring selects the concrete evaluator; preparation and workflow consume the shared contracts. The evaluator reports observations and does not choose edits or decide which releases to preserve. `macports/source` interprets evaluated GitHub and GitLab PortGroup fields into a forge instance, repository, tag convention, catalog choice, and the text shape consumed by the port's livecheck regex. Preparation, verification preflight, and publication context checks all use these boundaries. They must not each reconstruct a target from a directory string or reinterpret PortGroup defaults.
 
 `tcl` supplies the proven process/RPC and syntax machinery. MacPorts remains the semantic authority. Reuse focused source editing and Tcl syntax code where it holds up independently; it does not need to be redesigned to fit a driver.
 

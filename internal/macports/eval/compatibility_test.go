@@ -1,9 +1,10 @@
-package macports
+package eval
 
 import (
 	"path/filepath"
 	"testing"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,13 +22,13 @@ func TestRuntimeInspectionAndVersionEvidence(t *testing.T) {
 		require.Equal(t, version != "99.0" && version != "unknown", decoded.SourceReviewed)
 	}
 	_, err = decodeRuntime("platform {darwin 25 arm64}")
-	require.ErrorIs(t, err, ErrStartup)
+	require.ErrorIs(t, err, macports.ErrStartup)
 }
 
 func TestStartupChecksCapabilitiesWithoutVersionGate(t *testing.T) {
 	for _, mutation := range []string{"proc ::macports::version {} {return 99.0}", "rename ::mportinfo ::saved_mportinfo", "rename ::vercmp ::saved_vercmp; proc ::vercmp {a b} {return 0}"} {
 		t.Run(mutation, func(t *testing.T) {
-			session, runtime, err := liveEvaluator(t).start(t.Context(), Tree{})
+			session, runtime, err := liveEvaluator(t).start(t.Context(), macports.Tree{})
 			require.NoError(t, err)
 			defer session.Close()
 			_, err = session.Call(t.Context(), "eval", mutation+"; ::dockhand::check_startup")
@@ -52,7 +53,7 @@ func TestWorkerAndFetchContracts(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			tree := fixtureTree(t)
-			putFile(t, tree.root, "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\npre-fetch {error should-not-run}\n")
+			putFile(t, tree.Root(), "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\npre-fetch {error should-not-run}\n")
 			session, _, err := liveEvaluator(t).start(t.Context(), tree)
 			require.NoError(t, err)
 			defer session.Close()
@@ -67,7 +68,7 @@ func TestWorkerAndFetchContracts(t *testing.T) {
    }
    ::tclrpc::register test-contract ::dockhand::test_contract`)
 			require.NoError(t, err)
-			_, err = session.Call(t.Context(), "test-contract", filepath.Join(tree.root, "devel/fixture"), test.mutation)
+			_, err = session.Call(t.Context(), "test-contract", filepath.Join(tree.Root(), "devel/fixture"), test.mutation)
 			if test.want == "" {
 				require.NoError(t, err)
 			} else {
@@ -80,8 +81,8 @@ func TestWorkerAndFetchContracts(t *testing.T) {
 func TestUnknownFetchLayoutKeepsMetadataButBlocksArchivePreparation(t *testing.T) {
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
-	putFile(t, tree.root, "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\nditem_key ${org.macports.fetch} procedure nonexistent\n")
-	targets, err := evaluator.Resolve(t.Context(), tree, Selection{Selector: "fixture"})
+	putFile(t, tree.Root(), "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\nditem_key ${org.macports.fetch} procedure nonexistent\n")
+	targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})
 	require.NoError(t, err)
 	bound, err := tree.Select(targets[0])
 	require.NoError(t, err)

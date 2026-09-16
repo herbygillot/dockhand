@@ -1,0 +1,48 @@
+package macports
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"strings"
+
+	"github.com/herbygillot/dockhand/internal/record"
+)
+
+var (
+	ErrStartup  = errors.New("macports: evaluator startup failed")
+	ErrPlatform = errors.New("macports: evaluation requires the native platform")
+	ErrTarget   = errors.New("macports: target could not be resolved")
+)
+
+type Selection struct {
+	Selector string
+	Subport  string
+	Variants map[string]bool
+}
+
+type Reader interface {
+	Evaluate(context.Context, Context) (Snapshot, error)
+	Resolve(context.Context, Tree, Selection) ([]record.Target, error)
+}
+
+// NativeReader supplies native platform facts for locally selected source trees.
+type NativeReader interface {
+	Reader
+	NativePlatform(context.Context) (record.Platform, error)
+}
+
+// Validate checks selector syntax before filesystem or evaluator access.
+func (s Selection) Validate() error {
+	if err := validateVariants(s.Variants); err != nil {
+		return err
+	}
+	if s.Subport != "" && !ValidName(s.Subport) {
+		return fmt.Errorf("%w: invalid subport", ErrTarget)
+	}
+	if !fs.ValidPath(s.Selector) || strings.ContainsAny(s.Selector, "\\\x00") || s.Selector == "." {
+		return fmt.Errorf("%w: use a snapshot-relative port path or directory name", ErrTarget)
+	}
+	return nil
+}

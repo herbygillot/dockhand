@@ -1,8 +1,8 @@
-// Package macports evaluates and resolves ports through native MacPorts Base.
+// Package macports defines bound ports-tree contexts and evaluated observations.
 //
-// Tree and Context bind a materialized source to its immutable identity, target,
-// variants, and platform. Evaluator uses a Tcl child to obtain port metadata,
-// dependencies, fetch information, version comparisons, and runtime capability
-// diagnostics. Evaluation requires the native platform. Source conventions,
-// Portfile edits, indexes, and installation have separate subpackages.
+// Tree and Context tie a materialized snapshot to its source identity, target,
+// variants, and platform. Reader is the evaluation contract used by preparation,
+// discovery, and verification. The eval subpackage supplies the native MacPorts
+// implementation; editing, source conventions, and installation have separate
+// subpackages.
 package macports

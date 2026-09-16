@@ -1,4 +1,4 @@
-package macports
+package eval
 
 import (
 	"path/filepath"
@@ -22,7 +22,7 @@ func TestFetchCredentialsUseInstalledSelectorWithoutExposingSecrets(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			evaluator := liveEvaluator(t)
 			tree := fixtureTree(t)
-			putFile(t, tree.root, "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\nmaster_sites "+test.sites+"\ndistfiles "+test.files+"\n"+test.extra)
+			putFile(t, tree.Root(), "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\nmaster_sites "+test.sites+"\ndistfiles "+test.files+"\n"+test.extra)
 			session, _, err := evaluator.start(t.Context(), tree)
 			require.NoError(t, err)
 			defer session.Close()
@@ -33,7 +33,7 @@ func TestFetchCredentialsUseInstalledSelectorWithoutExposingSecrets(t *testing.T
 			}
 			_, err = session.Call(t.Context(), "eval", "set ::macports::fetch_credentials {"+test.configured+"}")
 			require.NoError(t, err)
-			reply, err := session.Call(t.Context(), "metadata", filepath.Join(tree.root, "devel/fixture"), "")
+			reply, err := session.Call(t.Context(), "metadata", filepath.Join(tree.Root(), "devel/fixture"), "")
 			require.NoError(t, err)
 			require.NotContains(t, reply, "secret-value")
 			require.NotContains(t, reply, "private-user")
@@ -72,13 +72,13 @@ func TestFetchCredentialsFollowLegacySiteMatchingAndFailClosed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			evaluator := liveEvaluator(t)
 			tree := fixtureTree(t)
-			putFile(t, tree.root, "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\nmaster_sites https://example.invalid/archive:source\ndistfiles source.tar.gz:source\n"+test.extra)
+			putFile(t, tree.Root(), "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\nmaster_sites https://example.invalid/archive:source\ndistfiles source.tar.gz:source\n"+test.extra)
 			session, _, err := evaluator.start(t.Context(), tree)
 			require.NoError(t, err)
 			defer session.Close()
 			_, err = session.Call(t.Context(), "eval", test.selector+"\nset ::macports::fetch_credentials {"+test.configured+"}")
 			require.NoError(t, err)
-			reply, err := session.Call(t.Context(), "metadata", filepath.Join(tree.root, "devel/fixture"), "")
+			reply, err := session.Call(t.Context(), "metadata", filepath.Join(tree.Root(), "devel/fixture"), "")
 			require.NoError(t, err)
 			require.NotContains(t, reply, "secret-value")
 			info, _, err := decodeMetadata(reply)

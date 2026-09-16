@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
@@ -58,7 +59,7 @@ func automaticService(t *testing.T, c *catalog) *upstream.Service {
 	c.tag = tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})
-	return &upstream.Service{EvaluateVersion: identityVersion, Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}, Versions: &macports.Evaluator{Executable: executable}}
+	return &upstream.Service{EvaluateVersion: identityVersion, Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: c, portsource.GitLab: c}, Versions: &eval.Evaluator{Executable: executable}}
 
 }
 

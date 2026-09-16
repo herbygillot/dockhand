@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -133,7 +134,7 @@ destroot {
 	defer store.Close()
 	repository, err := store.RegisterRepository(ctx, repo.CommonDir)
 	require.NoError(t, err)
-	ports := &macports.Evaluator{}
+	ports := &eval.Evaluator{}
 	platform, err := ports.NativePlatform(ctx)
 	require.NoError(t, err)
 	config := Config{Image: image, ArtifactDirectory: filepath.Join(directory, "artifacts"), Platform: platform, Capacity: 1}

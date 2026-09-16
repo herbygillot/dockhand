@@ -1,10 +1,11 @@
-package macports_test
+package eval_test
 
 import (
 	"os/exec"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,7 +14,7 @@ func TestVersionSelectionUsesTclFiltersAndMacPortsOrdering(t *testing.T) {
 	if err != nil {
 		t.Skip("MacPorts is required")
 	}
-	evaluator := macports.Evaluator{Executable: executable}
+	evaluator := eval.Evaluator{Executable: executable}
 	expression := `{archive/refs/tags/v(1\.[0-9]+)\.tar\.gz}`
 	candidates := []macports.VersionCandidate{{Version: "1.9", MatchText: "https://github.com/o/p/archive/refs/tags/v1.9.tar.gz"}, {Version: "2.0", MatchText: "https://github.com/o/p/archive/refs/tags/v2.0.tar.gz"}, {Version: "1.10", MatchText: "https://github.com/o/p/archive/refs/tags/v1.10.tar.gz"}}
 	result, err := evaluator.SelectVersion(t.Context(), "1.9", expression, candidates)
@@ -41,7 +42,7 @@ func TestVersionSelectionNormalizesMacPortsComparison(t *testing.T) {
 	if err != nil {
 		t.Skip("MacPorts is required")
 	}
-	evaluator := macports.Evaluator{Executable: executable}
+	evaluator := eval.Evaluator{Executable: executable}
 	candidates := []macports.VersionCandidate{{Version: "11.5.3", MatchText: "v11.5.3"}}
 	for _, test := range []struct {
 		current string

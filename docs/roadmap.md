@@ -8,6 +8,8 @@ Last updated: 2026-09-15.
 
 ## Next
 
+The user-selected immediate work is the [bump planner](bump-planner.md): native evaluator separation, declaration/artifact ownership, scoped subport edits, independent-pin preservation, and forge-independent explicit-version preparation. The evaluator boundary is implemented; the broader preparation mechanisms remain pending. Terraform/Helm existing release series, Deno, and gh are the initial preparation targets. Full Rust maintenance is excluded. Resume the queue below after this work.
+
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
 Per-target dependent images and maintainer/category discovery are complete. See the [image-selection report](activity/2026-09-15-dependent-images.md) and [selector report](activity/2026-09-15-outdated-selectors.md). Baseline comparison for dependent failures and automatic downstream revision edits remain separate work; GitHub dependent verification remains unsupported.

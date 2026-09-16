@@ -53,7 +53,7 @@ func NewContext(source record.Source, root string, target record.Target, platfor
 }
 
 func (t Tree) Select(target record.Target) (Context, error) {
-	if t.root == "" || !token(target.Name) || (target.Subport != "" && !token(target.Subport)) || !portfilePath(target.Portfile) {
+	if t.root == "" || !ValidName(target.Name) || (target.Subport != "" && !ValidName(target.Subport)) || !portfilePath(target.Portfile) {
 		return Context{}, fmt.Errorf("macports: a snapshot and category/port/Portfile target are required")
 	}
 	if err := validateVariants(target.Variants); err != nil {

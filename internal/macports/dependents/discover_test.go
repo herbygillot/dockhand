@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
@@ -257,7 +258,7 @@ func TestNativeEvaluationSelectsIndexedSubports(t *testing.T) {
 	if err != nil {
 		t.Skip("MacPorts port-tclsh is required")
 	}
-	evaluator := &macports.Evaluator{Executable: executable}
+	evaluator := &eval.Evaluator{Executable: executable}
 	native, err := evaluator.NativePlatform(t.Context())
 	require.NoError(t, err)
 	tree, index := fixture(t,

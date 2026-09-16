@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
@@ -218,7 +219,7 @@ func TestVerificationBindingAgainstPortsTree(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	registered, err := store.RegisterRepository(t.Context(), repo.CommonDir)
 	require.NoError(t, err)
-	ports := &macports.Evaluator{}
+	ports := &eval.Evaluator{}
 	platform, err := ports.NativePlatform(t.Context())
 	require.NoError(t, err)
 	engine := workflow.Engine{State: store, Repository: registered.ID, Repo: repo, Ports: ports}

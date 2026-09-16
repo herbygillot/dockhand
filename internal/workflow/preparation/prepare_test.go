@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow/preparation"
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func preparationFixture(t *testing.T, body string) (*preparation.Service, prepar
 	require.NoError(t, err)
 	commit, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
-	return &preparation.Service{Repo: repo, Ports: &macports.Evaluator{Executable: executable}}, preparation.Request{
+	return &preparation.Service{Repo: repo, Ports: &eval.Evaluator{Executable: executable}}, preparation.Request{
 		Action: record.BumpRevision, Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree)}, Selection: macports.Selection{Selector: "fixture"}, Reason: "rebuild against updated dependency",
 	}
 }

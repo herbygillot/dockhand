@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"errors"
+
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -51,7 +53,7 @@ func PreviewCorrection(ctx context.Context, config Config, request workflow.Corr
 	if err != nil {
 		return workflow.BoundCorrection{}, err
 	}
-	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	ports := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	services := Services{Workflow: &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Ports: ports}, ports: ports}
 	request.Preview = true
 	return services.BindCorrection(ctx, request, "", false)

@@ -8,6 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/tart/provision"
 )
 
@@ -28,7 +29,7 @@ type SetupResult struct {
 }
 
 func Setup(ctx context.Context, config Config, options SetupOptions, progress io.Writer) (SetupResult, error) {
-	ports := &macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	ports := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	runtime, err := ports.Inspect(ctx)
 	if err != nil {
 		return SetupResult{}, err

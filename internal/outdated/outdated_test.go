@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
@@ -38,7 +38,7 @@ func TestObserveKeepsCommittedSourceAndCleansWorkspace(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("invalid checkout edits\n"), 0600))
 	scratch := t.TempDir()
 	t.Setenv("TMPDIR", scratch)
-	ports := &macports.Evaluator{Executable: executable}
+	ports := &eval.Evaluator{Executable: executable}
 	service := outdated.Service{Repo: repo, Ports: ports, Upstream: &upstream.Service{Ports: ports, Versions: ports}}
 	result, err := service.Observe(t.Context(), outdated.Selection{Ports: []string{"missing", "fixture", "fixture"}})
 	require.NoError(t, err)

@@ -1,12 +1,13 @@
-package macports
+package eval
 
 import (
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
-func archiveFetchCompatible(info PortInfo, procedure, pre, post string) bool {
+func archiveFetchCompatible(info macports.PortInfo, procedure, pre, post string) bool {
 	if procedure != "portfetch::fetch_main" || post != "" {
 		return false
 	}

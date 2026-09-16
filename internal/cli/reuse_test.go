@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	tartvm "github.com/herbygillot/dockhand/internal/tart"
@@ -117,7 +118,7 @@ func seedCLIVerification(t *testing.T, config app.Config, branch string) time.Ti
 func TestVerifyCLISelectsSetupImageWhenImageIsOmitted(t *testing.T) {
 	config, _, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
-	evaluator := macports.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	evaluator := eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
 	platform, err := evaluator.NativePlatform(t.Context())
 	require.NoError(t, err)
 	name, err := tartvm.DefaultImageName(platform)
