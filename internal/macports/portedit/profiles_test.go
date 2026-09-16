@@ -18,3 +18,18 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	_, err = observationProfiles([]byte(`if {${os.major} >= $minimum} {version 1}`), native)
 	require.ErrorIs(t, err, ErrProbeInconclusive)
 }
+
+func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
+	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
+	for _, source := range []string{
+		`set major ${os.major}; if {$major >= 17} {version 1}`,
+		`if {${os.major} >= 17 && ${os.major} < $limit} {version 1}`,
+		`if {${os.major} >= 17 + 5} {version 1}`,
+		`if {${os.major} >= 17.5} {version 1}`,
+	} {
+		t.Run(source, func(t *testing.T) {
+			_, err := observationProfiles([]byte(source), native)
+			require.ErrorIs(t, err, ErrProbeInconclusive)
+		})
+	}
+}

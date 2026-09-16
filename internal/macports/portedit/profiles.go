@@ -10,51 +10,60 @@ import (
 	"strings"
 )
 
-var osBoundary = regexp.MustCompile(`\$\{?os\.major\}?\s*(?:>=|<=|>|<|==|!=|eq|ne)\s*([0-9]+)`)
+var (
+	osRead       = regexp.MustCompile(`\$(?:\{os\.major\}|os\.major\b)`)
+	osComparison = regexp.MustCompile(`^\s*(?:>=|<=|>|<|==|!=|eq|ne)\s*([0-9]+)\s*`)
+	archRead     = regexp.MustCompile(`\$(?:\{(?:build_arch|os\.arch)\}|(?:build_arch|os\.arch)\b)`)
+)
 
-// observationProfiles includes the host, relevant architecture choices, and
-// both sides of literal Darwin conditions. Unmodeled expressions are gaps.
-func observationProfiles(src []byte, native record.Platform) ([]record.Platform, error) {
-	result := []record.Platform{native}
+// Scan every command, including expressions assigned to variables. This is not
+// Tcl data-flow analysis: a platform read without a supported comparison is an
+// explicit gap, even when other reads in the same command have known bounds.
+func contextBoundaries(src []byte) (map[int]bool, bool, error) {
 	script, errs := syntax.Parse(src)
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("%w: invalid context syntax", ErrUnsupported)
+		return nil, false, fmt.Errorf("%w: invalid context syntax", ErrUnsupported)
 	}
 	majors := map[int]bool{}
 	archDependent := false
 	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
 		name, _ := cmd.Name(src)
-		if name == "supported_archs" && len(cmd.Words) > 2 {
+		if name == "supported_archs" && len(cmd.Words) > 1 {
 			archDependent = true
 		}
-		if name != "if" && name != "switch" && name != "platform" {
-			continue
-		}
-		// Only expression words are inspected; bodies are traversed separately.
-		for _, word := range cmd.Words[1:] {
-			raw := word.Span.Text(src)
-			if strings.Contains(raw, "\n") || strings.Contains(raw, ";") {
-				continue
+		raw := cmd.Span.Text(src)
+		archDependent = archDependent || archRead.MatchString(raw)
+		for _, read := range osRead.FindAllStringIndex(raw, -1) {
+			suffix := raw[read[1]:]
+			comparison := osComparison.FindStringSubmatchIndex(suffix)
+			if comparison == nil || !comparisonEnd(suffix[comparison[1]:]) {
+				return nil, false, fmt.Errorf("%w: OS read needs an explicit modeled boundary", ErrProbeInconclusive)
 			}
-			if strings.Contains(raw, "build_arch") || strings.Contains(raw, "os.arch") {
-				archDependent = true
+			n, err := strconv.Atoi(suffix[comparison[2]:comparison[3]])
+			if err != nil || n < 8 || n > 1000 {
+				return nil, false, fmt.Errorf("%w: unsupported Darwin boundary", ErrProbeInconclusive)
 			}
-			if !strings.Contains(raw, "os.major") {
-				continue
-			}
-			matches := osBoundary.FindAllStringSubmatch(raw, -1)
-			if len(matches) == 0 {
-				return nil, fmt.Errorf("%w: OS condition needs an explicit modeled boundary", ErrProbeInconclusive)
-			}
-			for _, match := range matches {
-				n, _ := strconv.Atoi(match[1])
-				for _, v := range []int{n - 1, n, n + 1} {
-					if v >= 8 {
-						majors[v] = true
-					}
+			for _, v := range []int{n - 1, n, n + 1} {
+				if v >= 8 {
+					majors[v] = true
 				}
 			}
 		}
+	}
+	return majors, archDependent, nil
+}
+
+func comparisonEnd(rest string) bool {
+	return rest == "" || strings.ContainsAny(rest[:1], "})]\"") || strings.HasPrefix(rest, "&&") || strings.HasPrefix(rest, "||")
+}
+
+// observationProfiles includes the host, relevant architecture choices, and
+// both sides of literal Darwin conditions. Unmodeled expressions are gaps.
+func observationProfiles(src []byte, native record.Platform) ([]record.Platform, error) {
+	result := []record.Platform{native}
+	majors, archDependent, err := contextBoundaries(src)
+	if err != nil {
+		return nil, err
 	}
 	if native.OS != "darwin" && (archDependent || len(majors) > 0) {
 		return nil, fmt.Errorf("%w: alternate platforms require Darwin modeling", ErrProbeInconclusive)
