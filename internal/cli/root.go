@@ -140,6 +140,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	root.AddCommand(runtime.correctionCommands()...)
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
 	root.AddCommand(runtime.statusCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.startCommand(), runtime.reviewCommand())
+	groupCommands(root)
 
 	root.InitDefaultHelpCmd()
 	for _, command := range root.Commands() {
@@ -155,4 +156,52 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 		}
 	})
 	return root, nil
+}
+
+// helpGroups orders the help screen as the life of a contribution: prepare the
+// machine, look at ports, prepare and revise an update, prove and publish it,
+// follow the accepted work, and clean up afterwards. Commands outside these
+// groups, such as the unimplemented review command, stay under Cobra's
+// "Additional Commands" heading.
+var helpGroups = []struct {
+	id, title string
+	commands  []string
+}{
+	{"start", "Get started:", []string{"setup", "auth"}},
+	{"investigate", "Investigate ports:", []string{"outdated", "assess"}},
+	{"prepare", "Prepare an update:", []string{"bump", "bump-revision", "refresh-checksums"}},
+	{"revise", "Revise your update:", []string{"amend", "rebase", "reassociate"}},
+	{"publish", "Verify and publish:", []string{"verify", "publish"}},
+	{"jobs", "Watch and manage jobs:", []string{"status", "wait", "cancel", "start"}},
+	{"housekeeping", "Housekeeping:", []string{"gc", "db"}},
+}
+
+func groupCommands(root *cobra.Command) {
+	commands := root.Commands()
+	byName := make(map[string]*cobra.Command, len(commands))
+	for _, command := range commands {
+		byName[command.Name()] = command
+	}
+	// Re-register commands in group order so help lists each group's commands
+	// in the order a contributor uses them rather than alphabetically.
+	cobra.EnableCommandSorting = false
+	root.RemoveCommand(commands...)
+	grouped := make(map[string]bool, len(commands))
+	for _, group := range helpGroups {
+		root.AddGroup(&cobra.Group{ID: group.id, Title: group.title})
+		for _, name := range group.commands {
+			command, ok := byName[name]
+			if !ok {
+				continue
+			}
+			command.GroupID = group.id
+			grouped[name] = true
+			root.AddCommand(command)
+		}
+	}
+	for _, command := range commands {
+		if !grouped[command.Name()] {
+			root.AddCommand(command)
+		}
+	}
 }
