@@ -1,3 +1,4 @@
 - Before adding any new code, carefully consider existing package structure and code organization.
 - As code changes are made, log and describe the changes made in an activity log in `./docs/activity`
 - Use Conventional Commits format for commits: https://www.conventionalcommits.org/en/v1.0.0/
+- LLM agents must not use `Co-Authored-By` trailers to credit themselves or other LLM agents. They may acknowledge AI assistance with `Assisted-By` trailers instead; preserve human authorship.
