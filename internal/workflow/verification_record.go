@@ -10,13 +10,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.Attempt, action attemptAction, result attemptResult, now time.Time) string {
+func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.Attempt, action attemptAction, result attemptResult, now time.Time) outcome {
 	switch action {
 	case submitAttempt:
 		return recordSubmission(work, job, attempt, result.submission, result.err, now)
 	case reconcileAttempt:
 		if result.err != nil {
-			return result.err.Error()
+			return failure(result.err)
 		}
 		switch result.reconciliation.State {
 		case verify.RunFound:
@@ -27,10 +27,10 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			return recordSubmission(work, job, attempt, submission, nil, now)
 		case verify.RequestClosed:
 			if result.reconciliation.Submission.Run != (record.ProviderRun{}) || attempt.Run != (record.ProviderRun{}) {
-				return "workflow: closed submission unexpectedly identifies a run"
+				return failuref("workflow: closed submission unexpectedly identifies a run")
 			}
 			if err := recordResources(work, *attempt, result.reconciliation.Submission.Resources); err != nil {
-				return err.Error()
+				return failure(err)
 			}
 			current := work.Submissions[attempt.SubmissionID]
 			current.ClosedAt = &now
@@ -42,7 +42,7 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 				}
 				finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictErrored, ObservedAt: now}, detail, now)
 				dispositionResources(work, attempt.ID, record.ResourceReleaseRequested)
-				return job.Detail
+				return settledProblem(job.Detail)
 			}
 			if job.CancelRequestedAt != nil {
 				detail := result.reconciliation.Submission.Detail
@@ -57,73 +57,76 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 				work.Submissions[attempt.SubmissionID] = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: current.Sequence + 1, Provider: attempt.Spec.Config.Provider, CreatedAt: now}
 				attempt.State = record.AttemptQueued
 			}
-			return ""
+			return waitingFor("")
 		case verify.RunUnknown:
+			// Reconciliation exists for this case; an undetermined run is expected waiting.
 			attempt.State = record.AttemptUncertain
-			if detail := result.reconciliation.Submission.Detail; detail != "" {
-				recordVerificationProgress(work, job, detail)
-				return ""
+			detail := result.reconciliation.Submission.Detail
+			if detail == "" {
+				detail = "Provider cannot yet determine whether the submission exists; reconciling"
 			}
-			return "workflow: provider cannot yet determine whether submission exists"
+			recordVerificationProgress(work, job, detail)
+			return waitingFor(detail)
 		default:
-			return "workflow: invalid provider reconciliation state"
+			return failuref("workflow: invalid provider reconciliation state")
 		}
 	case cancelAttempt:
 		attempt.CancelPendingObservation = true
 		if result.err != nil {
-			return result.err.Error()
+			return failure(result.err)
 		}
 		attempt.CancelSentAt = &now
-		return ""
+		return waitingFor("")
 	case observeAttempt:
 		attempt.CancelPendingObservation = false
 		if result.err != nil {
-			return result.err.Error()
+			return failure(result.err)
 		}
 		observation := result.observation
 		if observation.Run != attempt.Run {
-			return "workflow: observation identifies a different run"
+			return failuref("workflow: observation identifies a different run")
 		}
 		if attempt.Evidence != nil && observation.ObservedAt.Before(attempt.Evidence.ObservedAt) {
-			return "workflow: provider returned an older observation"
+			return failuref("workflow: provider returned an older observation")
 		}
 		evidence, err := verify.Judge(observation)
 		if err != nil {
-			return err.Error()
+			return failure(err)
 		}
 		attempt.Evidence = &evidence
 		recordVerificationProgress(work, job, observation.Detail)
 		if observation.State != record.AttemptRunning {
 			finishAttempt(work, job, attempt, evidence, observation.Detail, now)
+			return settledWith(observation.Detail)
 		}
-		return ""
+		return waitingFor(observation.Detail)
 	}
-	return "workflow: invalid attempt action"
+	return failuref("workflow: invalid attempt action")
 }
 
 // recordSubmission validates a submission response and retains its recoverable identity.
-func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt, submission verify.Submission, callErr error, now time.Time) string {
+func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt, submission verify.Submission, callErr error, now time.Time) outcome {
 	attempt.State = record.AttemptUncertain
 	if run := submission.Run; run != (record.ProviderRun{}) {
 		if run.Provider != attempt.Spec.Config.Provider || run.RequestID != attempt.SubmissionID || !validToken(run.RunID) {
-			return "workflow: submission response identifies a different or invalid run"
+			return failuref("workflow: submission response identifies a different or invalid run")
 		}
 		if attempt.Run != (record.ProviderRun{}) && attempt.Run != run {
-			return "workflow: provider changed the admitted run identity"
+			return failuref("workflow: provider changed the admitted run identity")
 		}
 	}
 	resourceErr := recordResources(work, *attempt, submission.Resources)
 	if callErr != nil {
-		return callErr.Error()
+		return failure(callErr)
 	}
 	if resourceErr != nil {
-		return resourceErr.Error()
+		return failure(resourceErr)
 	}
 	switch submission.State {
 	case verify.Admitted:
 		run := submission.Run
 		if run == (record.ProviderRun{}) {
-			return "workflow: admission does not identify the requested run"
+			return failuref("workflow: admission does not identify the requested run")
 		}
 		attempt.Run, attempt.State = run, record.AttemptRunning
 		recordVerificationProgress(work, job, submission.Detail)
@@ -137,25 +140,28 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 			job.AdmittedAt = &now
 		}
 		dispositionResources(work, attempt.ID, record.ResourceActive)
-		return ""
+		return waitingFor(submission.Detail)
 	case verify.AtCapacity, verify.Unsupported:
 		if submission.Run != (record.ProviderRun{}) || hasResources(work, attempt.ID) {
-			return "workflow: non-admission response has external effects; reconciling submission"
+			return failuref("workflow: non-admission response has external effects; reconciling submission")
 		}
 		if submission.State == verify.AtCapacity {
 			attempt.State = record.AttemptQueued
-			return ""
+			return waitingFor(submission.Detail)
 		}
 		finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictUnsupported, ObservedAt: now}, submission.Detail, now)
-		return "workflow: provider rejected the build as unsupported"
+		return settledProblem("workflow: provider rejected the build as unsupported")
 	case verify.SubmissionUncertain:
-		if submission.Detail != "" {
-			recordVerificationProgress(work, job, submission.Detail)
-			return ""
+		// The submission may or may not have reached the provider; reconciliation
+		// settles it, so this is expected waiting rather than a failure.
+		detail := submission.Detail
+		if detail == "" {
+			detail = "Submission outcome is uncertain; reconciling"
 		}
-		return "workflow: submission outcome is uncertain"
+		recordVerificationProgress(work, job, detail)
+		return waitingFor(detail)
 	default:
-		return "workflow: invalid provider submission state"
+		return failuref("workflow: invalid provider submission state")
 	}
 }
 
@@ -205,6 +211,7 @@ func settleVerification(work *execution, job *record.Job, detail string, now tim
 		job.State = record.JobCompleted
 	}
 	job.FinishedAt = &now
+	job.Release()
 	if len(work.Attempts) == 1 {
 		job.Detail = detail
 	} else {

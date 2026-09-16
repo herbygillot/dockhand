@@ -3,7 +3,6 @@ package workflow
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -45,7 +44,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				return nil
 			}
 			now := e.now()
-			if job.Claim.Live(now) || !due(job.RetryAt, now) {
+			if !job.Eligible(now) {
 				return nil
 			}
 			if job.CancelRequestedAt != nil && len(work.Attempts) == 0 {
@@ -101,18 +100,16 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 			}
 			if err := c.providerReady(attempt.Spec.Config, action == submitAttempt); err != nil {
 				detail = err.Error()
-				retry := c.failureDeadline(string(attempt.ID), &attempt.ConsecutiveFailures, err)
-				attempt.LastError, attempt.RetryAt = detail, &retry
+				c.fail(&attempt.Lease, string(attempt.ID), err)
+				attempt.LastError = detail
 				work.Attempts[attempt.ID] = attempt
 				changed, action = true, ""
 				return nil
 			}
-			claim, err := c.claim(&attempt.ClaimGeneration, now, c.attemptTimeout(action))
-			if err != nil {
+			if err := c.take(&attempt.Lease, now, c.attemptTimeout(action)); err != nil {
 				return err
 			}
 			cancelRequested = job.CancelRequestedAt != nil
-			attempt.Claim = claim
 			if action == submitAttempt {
 				attempt.State = record.AttemptSubmitting
 			}
@@ -143,28 +140,28 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 		if job.State.Terminal() || current.State != attempt.State {
 			return ErrClaimLost
 		}
-		current.Claim = nil
-		current.RetryAt = nil
-		detail = c.recordAttempt(work, &job, &current, action, response, now)
-		if detail == "" {
+		current.Release()
+		result := c.recordAttempt(work, &job, &current, action, response, now)
+		detail = result.problem()
+		current.LastError = detail
+		switch result.kind {
+		case failed:
+			if !current.State.Terminal() {
+				c.fail(&current.Lease, string(current.ID), result.err)
+			}
+		case waiting:
+			c.await(&current.Lease)
+			if current.State == record.AttemptRunning {
+				retry := now.Add(c.observe)
+				current.RetryAt = &retry
+			}
+			if job.CancelRequestedAt != nil {
+				retry := now.Add(c.retry)
+				current.RetryAt = &retry
+			}
+		case settled:
 			current.ConsecutiveFailures = 0
 		}
-		if !current.State.Terminal() {
-			var retry time.Time
-			if detail != "" {
-				retry = c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, response.err)
-			} else {
-				retry = c.waitingDeadline(&current.ConsecutiveFailures)
-				if current.State == record.AttemptRunning {
-					retry = now.Add(c.observe)
-				}
-			}
-			if job.CancelRequestedAt != nil && detail == "" {
-				retry = now.Add(c.retry)
-			}
-			current.RetryAt = &retry
-		}
-		current.LastError = detail
 		work.Attempts[current.ID] = current
 		work.Job = job
 		return nil

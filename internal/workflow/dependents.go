@@ -40,7 +40,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 		if err != nil {
 			return err
 		}
-		if job.State.Terminal() || job.Phase != record.PhaseVerification || job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
+		if job.State.Terminal() || job.Phase != record.PhaseVerification || !job.Eligible(e.now()) {
 			return nil
 		}
 		if _, err := tx.Plan(ctx, id); err == nil {
@@ -50,12 +50,12 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 			return err
 		}
 		if job.CancelRequestedAt != nil {
-			finishPreparation(&job, record.JobCanceled, "Canceled before dependent discovery", e.now())
+			finishJob(&job, record.JobCanceled, "Canceled before dependent discovery", e.now())
 			changed = true
 			return tx.PutJob(ctx, job)
 		}
 		if e.Dependents == nil || job.Spec.Build == nil {
-			finishPreparation(&job, record.JobNeedsAttention, "Dependent discovery requires a source index and concrete local build configuration", e.now())
+			finishJob(&job, record.JobNeedsAttention, "Dependent discovery requires a source index and concrete local build configuration", e.now())
 			changed = true
 			return tx.PutJob(ctx, job)
 		}
@@ -66,8 +66,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 				return err
 			}
 		}
-		job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), c.timeouts.Prepare)
-		if err != nil {
+		if err := c.take(&job.Lease, e.now(), c.timeouts.Prepare); err != nil {
 			return err
 		}
 		job.State, job.Detail, job.RetryAt = record.JobActive, "Discovering direct dependent coverage", nil
@@ -102,16 +101,16 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 		if err != nil {
 			return err
 		}
-		if job.State.Terminal() || !job.Claim.Owns(selected.Claim, e.now()) {
-			return ErrClaimLost
+		if err := claimGuard(job, record.PhaseVerification, selected.Claim, e.now()); err != nil {
+			return err
 		}
-		job.Claim, job.RetryAt = nil, nil
+		job.Release()
 		switch {
 		case job.CancelRequestedAt != nil:
-			finishPreparation(&job, record.JobCanceled, "Canceled during dependent discovery", e.now())
+			finishJob(&job, record.JobCanceled, "Canceled during dependent discovery", e.now())
 		case operationErr != nil:
 			detail = operationErr.Error()
-			finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
+			finishJob(&job, record.JobNeedsAttention, detail, e.now())
 		default:
 			if err := tx.PutPlan(ctx, plan); err != nil {
 				return err

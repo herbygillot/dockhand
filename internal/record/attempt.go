@@ -157,16 +157,11 @@ type Attempt struct {
 	TargetID TargetID
 	Spec     BuildSpec
 	State    AttemptState
-	Claim    *Claim
-	// ClaimGeneration retains the last issued generation when Claim is cleared.
-	ClaimGeneration uint64
+	Lease
 	// SubmissionID and Run project the latest submission row. Persist changes
 	// through the submission record before updating an existing attempt.
 	// Submission identity remains stable through capacity waiting and uncertainty.
-	SubmissionID        RequestID
-	ConsecutiveFailures uint32 `json:",omitempty"`
-
-	RetryAt *time.Time
+	SubmissionID RequestID
 	// CancelSentAt records a successful cancellation acknowledgement, which
 	// still requires observation to establish the run's outcome.
 	CancelSentAt *time.Time

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -29,7 +28,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		if job.State.Terminal() || job.Phase != record.PhasePublication || job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
+		if job.State.Terminal() || job.Phase != record.PhasePublication || !job.Eligible(e.now()) {
 			return nil
 		}
 		action, err = tx.PublicationForJob(ctx, id)
@@ -42,18 +41,15 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		if action.ID != "" {
 			if policyErr := validatePublicationAction(job, action); policyErr != nil {
 				rejected = policyErr.Error()
-				now := e.now()
 				action.State, action.LastError = record.PublicationNeedsAttention, rejected
-				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, rejected
-				job.Claim, job.RetryAt = nil, nil
+				finishJob(&job, record.JobNeedsAttention, rejected, e.now())
 				if err := tx.PutPublication(ctx, action); err != nil {
 					return err
 				}
 				return tx.PutJob(ctx, job)
 			}
 		}
-		job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), c.timeouts.Publish)
-		if err != nil {
+		if err := c.take(&job.Lease, e.now(), c.timeouts.Publish); err != nil {
 			return err
 		}
 		job.State, job.RetryAt = record.JobActive, nil
@@ -73,8 +69,9 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		return c.planPublication(ctx, job)
 	}
 	if e.Publisher == nil || e.Publisher.Repo == nil || e.Publisher.Forge == nil {
-		err = c.publicationRetry(ctx, job, "Publication service is unavailable", fmt.Errorf("publication service is unavailable"))
-		return true, "Publication service is unavailable", err
+		// Another driver may be configured with a publisher, so this backs off rather than settling.
+		err = c.publicationRetry(ctx, job, failuref("publication service is unavailable"))
+		return true, "publication service is unavailable", err
 	}
 	call, cancel := context.WithTimeout(ctx, c.timeouts.Publish)
 	defer cancel()
@@ -113,7 +110,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 		}
 		return true, err.Error(), c.finishPublication(ctx, job, result, err.Error(), nil)
 	}
-	return true, err.Error(), c.publicationRetry(ctx, job, err.Error(), err)
+	return true, err.Error(), c.publicationRetry(ctx, job, failure(err))
 }
 
 func (c *cycle) publicationUpdate(ctx context.Context, expected record.Job, fn func(state.Tx, *record.Job, *record.PublicationAction) error) error {
@@ -123,8 +120,8 @@ func (c *cycle) publicationUpdate(ctx context.Context, expected record.Job, fn f
 		if err != nil {
 			return err
 		}
-		if job.State.Terminal() || !job.Claim.Owns(expected.Claim, e.now()) {
-			return ErrClaimLost
+		if err := claimGuard(job, record.PhasePublication, expected.Claim, e.now()); err != nil {
+			return err
 		}
 		action, err := tx.PublicationForJob(ctx, job.ID)
 		if err != nil {
@@ -213,7 +210,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		return c.finishPublication(ctx, job, record.JobCompleted, fmt.Sprintf("Published %s from verified branch %s:%s at %s", observed.PullRequest.Ref.URL, spec.HeadRepository, spec.HeadBranch, spec.Desired.Head), &observed.PullRequest)
 	}
 	if action.WriteStarted {
-		return c.publicationRetry(ctx, job, "PR request outcome is unresolved; observing without repeating the write")
+		return c.publicationRetry(ctx, job, waitingFor("PR request outcome is unresolved; observing without repeating the write"))
 	}
 	if err := s.Repo.CheckContributionBase(ctx, spec.BaseURL, spec.BaseBranch, string(source.Base), string(source.Commit)); err != nil {
 		return err
@@ -235,10 +232,10 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		if err := s.Repo.Push(ctx, git.Push{Remote: spec.PushURL, Branch: spec.HeadBranch, Commit: string(spec.Desired.Head), ExpectedRemote: expected}); err != nil {
 			return err
 		}
-		return c.publicationRetry(ctx, job, fmt.Sprintf("Pushed verified branch %s:%s at %s; checking the remote before publishing", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head))
+		return c.publicationRetry(ctx, job, waitingFor(fmt.Sprintf("Pushed verified branch %s:%s at %s; checking the remote before publishing", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)))
 	}
 	if observed.Found && observed.PullRequest.RemoteHead != spec.Desired.Head {
-		return c.publicationRetry(ctx, job, "Waiting for the forge to observe the pushed branch")
+		return c.publicationRetry(ctx, job, waitingFor("Waiting for the forge to observe the pushed branch"))
 	}
 	if err := s.Preflight(ctx); err != nil {
 		return err
@@ -256,8 +253,9 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 			stored.WriteStarted = false
 			stored.WriteRefusals++
 			stored.State, stored.LastError = record.PublicationPending, err.Error()
-			retry := c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, err)
-			current.Claim, current.RetryAt, current.Detail = nil, &retry, err.Error()
+			current.Release()
+			c.fail(&current.Lease, string(current.ID), err)
+			current.Detail = err.Error()
 			return nil
 		})
 	}
@@ -267,23 +265,25 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 	if err != nil {
 		return err
 	}
-	return c.publicationRetry(ctx, job, fmt.Sprintf("PR request sent for verified branch %s:%s at %s; awaiting confirmation", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head))
+	return c.publicationRetry(ctx, job, waitingFor(fmt.Sprintf("PR request sent for verified branch %s:%s at %s; awaiting confirmation", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)))
 }
 
-func (c *cycle) publicationRetry(ctx context.Context, expected record.Job, detail string, problems ...error) error {
+// publicationRetry releases the job for a later pass: a failure backs off and
+// is retained as the action's last error; expected waiting uses the wait interval.
+func (c *cycle) publicationRetry(ctx context.Context, expected record.Job, result outcome) error {
 	return c.publicationUpdate(ctx, expected, func(_ state.Tx, job *record.Job, action *record.PublicationAction) error {
 		if action.WriteStarted {
 			action.State = record.PublicationUncertain
 		}
 		action.LastError = ""
-		var retry time.Time
-		if len(problems) != 0 {
-			action.LastError = detail
-			retry = c.failureDeadline(string(job.ID), &job.ConsecutiveFailures, problems[0])
+		job.Release()
+		if result.kind == failed {
+			action.LastError = result.detail
+			c.fail(&job.Lease, string(job.ID), result.err)
 		} else {
-			retry = c.waitingDeadline(&job.ConsecutiveFailures)
+			c.await(&job.Lease)
 		}
-		job.Claim, job.RetryAt, job.Detail = nil, &retry, detail
+		job.Detail = result.detail
 		return nil
 	})
 }
@@ -312,8 +312,7 @@ func (c *cycle) finishPublication(ctx context.Context, expected record.Job, outc
 			}
 			action.State, action.ConfirmedAt, action.LastError = record.PublicationConfirmed, &now, ""
 		}
-		job.State, job.FinishedAt, job.Detail = outcome, &now, detail
-		job.Claim, job.RetryAt = nil, nil
+		finishJob(job, outcome, detail, now)
 		return nil
 	})
 }

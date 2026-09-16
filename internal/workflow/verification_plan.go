@@ -55,7 +55,7 @@ func initializeVerification(ctx context.Context, tx state.Reader, work *executio
 				detail += "; " + planningErr.Error()
 			}
 			job.ReuseDetail = explanation
-			job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
+			finishJob(&job, record.JobNeedsAttention, detail, now)
 			work.Job = job
 
 			return true, detail, nil
@@ -63,7 +63,7 @@ func initializeVerification(ctx context.Context, tx state.Reader, work *executio
 	} else {
 		plan, builds, err = verify.Plan(job, work.Revision)
 		if err != nil {
-			job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, err.Error()
+			finishJob(&job, record.JobNeedsAttention, err.Error(), now)
 			work.Job = job
 			detail = err.Error()
 			return true, detail, nil
@@ -78,7 +78,7 @@ func initializeVerification(ctx context.Context, tx state.Reader, work *executio
 	job.ReuseDetail = explanation
 	if reused.ID != "" {
 		job.ReusedAttempt = reused.ID
-		job.State, job.FinishedAt, job.Detail = record.JobCompleted, &now, explanation
+		finishJob(&job, record.JobCompleted, explanation, now)
 		if job.Spec.PublishTo != nil {
 			job.Phase = record.PhasePublication
 			job.State, job.FinishedAt, job.Detail = record.JobActive, nil, explanation+"; publication pending"

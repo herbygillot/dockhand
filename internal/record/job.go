@@ -152,12 +152,9 @@ type Job struct {
 	// ReusedAttempt cites an original passing execution; this job created no attempt.
 	ReusedAttempt AttemptID `json:",omitempty"`
 	ReuseDetail   string    `json:",omitempty"`
-	// Claim covers preparation, branch integration, and publication; verification and cleanup
+	// Lease covers preparation, branch integration, and publication; verification and cleanup
 	// claim their own records.
-	Claim               *Claim
-	ClaimGeneration     uint64
-	ConsecutiveFailures uint32 `json:",omitempty"`
-	RetryAt             *time.Time
+	Lease
 	// ResolvedRelease freezes the selected upstream tag and commit before preparation.
 	ResolvedRelease *Release
 	Prepared        *PreparedChange

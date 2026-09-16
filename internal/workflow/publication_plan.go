@@ -41,20 +41,18 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 			if err != nil {
 				return err
 			}
-			if current.State.Terminal() || !current.Claim.Owns(job.Claim, e.now()) {
-				return ErrClaimLost
+			if err := claimGuard(current, record.PhasePublication, job.Claim, e.now()); err != nil {
+				return err
 			}
 			if current.CancelRequestedAt != nil {
 				outcome, problem = record.JobCanceled, errPublicationCanceled
 			}
-			current.State, current.Claim, current.Detail = outcome, nil, problem.Error()
-			current.RetryAt = nil
 			if outcome == record.JobActive {
-				retry := c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, problem)
-				current.RetryAt = &retry
+				current.Release()
+				c.fail(&current.Lease, string(current.ID), problem)
+				current.State, current.Detail = outcome, problem.Error()
 			} else {
-				now := e.now()
-				current.FinishedAt = &now
+				finishJob(&current, outcome, problem.Error(), e.now())
 			}
 			return tx.PutJob(ctx, current)
 		})

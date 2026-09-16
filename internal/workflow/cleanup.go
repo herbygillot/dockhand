@@ -103,16 +103,15 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 		if err := c.providerReady(attempt.Spec.Config, false); err != nil {
 			detail = err.Error()
 		} else {
-			claim, err := c.claim(&resource.ClaimGeneration, now, c.timeouts.Cleanup)
-			if err != nil {
+			if err := c.take(&resource.Lease, now, c.timeouts.Cleanup); err != nil {
 				return err
 			}
-			resource.State, resource.Claim = record.ResourceReleaseRequested, claim
+			resource.State = record.ResourceReleaseRequested
 			claimed = true
 		}
 		if detail != "" {
-			retry := c.failureDeadline(string(resource.ID), &resource.ConsecutiveFailures, fmt.Errorf("%s", detail))
-			resource.LastError, resource.RetryAt = detail, &retry
+			c.fail(&resource.Lease, string(resource.ID), fmt.Errorf("%s", detail))
+			resource.LastError = detail
 		}
 		return tx.PutResource(ctx, resource)
 	})
@@ -136,7 +135,8 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 		if !current.Claim.Owns(resource.Claim, now) || current.State != record.ResourceReleaseRequested {
 			return ErrClaimLost
 		}
-		current.Claim, current.LastError, current.RetryAt = nil, "", nil
+		current.Release()
+		current.LastError = ""
 		if callErr == nil && result.Confirmed {
 			current.ConsecutiveFailures = 0
 			current.State, current.ReleasedAt = record.ResourceReleased, &now
@@ -145,13 +145,12 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			if callErr != nil {
 				detail = callErr.Error()
 			}
-			retry := c.engine.now().Add(c.wait)
 			if callErr != nil {
-				retry = c.failureDeadline(string(current.ID), &current.ConsecutiveFailures, callErr)
+				c.fail(&current.Lease, string(current.ID), callErr)
 			} else {
-				current.ConsecutiveFailures = 0
+				c.await(&current.Lease)
 			}
-			current.State, current.LastError, current.RetryAt = record.ResourceUncertain, detail, &retry
+			current.State, current.LastError = record.ResourceUncertain, detail
 		}
 		return tx.PutResource(ctx, current)
 	})

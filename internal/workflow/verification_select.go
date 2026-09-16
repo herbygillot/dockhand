@@ -14,7 +14,7 @@ import (
 func selectAttempt(work *execution, now time.Time, canceling bool) (record.Attempt, bool) {
 	ids := make([]string, 0, len(work.Attempts))
 	for id, attempt := range work.Attempts {
-		if attempt.State.Terminal() || attempt.Claim.Live(now) || !due(attempt.RetryAt, now) {
+		if attempt.State.Terminal() || !attempt.Eligible(now) {
 			continue
 		}
 		ids = append(ids, string(id))

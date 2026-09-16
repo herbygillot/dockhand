@@ -4,17 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 )
-
-func finishPreparation(job *record.Job, state record.JobState, detail string, now time.Time) {
-	job.State, job.Detail, job.FinishedAt = state, detail, &now
-	job.Claim, job.RetryAt = nil, nil
-}
 
 func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) (changed bool, detail string, err error) {
 	e := c.engine
@@ -31,20 +25,20 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if err != nil {
 				return err
 			}
-			if job.State.Terminal() || job.Phase != record.PhasePreparation || job.ResultRevision != "" || job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
+			if job.State.Terminal() || job.Phase != record.PhasePreparation || job.ResultRevision != "" || !job.Eligible(e.now()) {
 				return nil
 			}
 			if job.Prepared == nil || job.Prepared.Branch != candidate.Prepared.Branch || job.Spec.Preparation == nil {
 				return state.ErrInvalid
 			}
 			if job.CancelRequestedAt != nil && !job.Prepared.IntegrationStarted {
-				finishPreparation(&job, record.JobCanceled, "Canceled before branch integration", e.now())
+				finishJob(&job, record.JobCanceled, "Canceled before branch integration", e.now())
 				changed = true
 				return tx.PutJob(ctx, job)
 			}
 			if correction := job.Spec.Preparation.Correction; correction != nil {
 				if _, err := correctionCurrent(ctx, tx, *correction); err != nil {
-					finishPreparation(&job, record.JobNeedsAttention, err.Error(), e.now())
+					finishJob(&job, record.JobNeedsAttention, err.Error(), e.now())
 					changed = true
 					return tx.PutJob(ctx, job)
 				}
@@ -53,8 +47,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			prepared := *job.Prepared
 			prepared.IntegrationStarted = true
 			job.Prepared = &prepared
-			job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), c.timeouts.Prepare)
-			if err != nil {
+			if err := c.take(&job.Lease, e.now(), c.timeouts.Prepare); err != nil {
 				return err
 			}
 			job.RetryAt = nil
@@ -74,17 +67,17 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if err != nil {
 				return err
 			}
-			if job.State.Terminal() || job.Phase != record.PhasePreparation || job.ResultRevision != "" || !job.Claim.Owns(selected.Claim, e.now()) {
+			if err := claimGuard(job, record.PhasePreparation, selected.Claim, e.now()); err != nil || job.ResultRevision != "" {
 				return ErrClaimLost
 			}
-			job.Claim, job.RetryAt = nil, nil
+			job.Release()
 			if operationErr != nil {
 				detail = operationErr.Error()
 				if errors.Is(operationErr, git.ErrRefUpdateUncertain) {
-					retry := c.failureDeadline(string(job.ID), &job.ConsecutiveFailures, operationErr)
-					job.RetryAt, job.Detail = &retry, detail
+					c.fail(&job.Lease, string(job.ID), operationErr)
+					job.Detail = detail
 				} else {
-					finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
+					finishJob(&job, record.JobNeedsAttention, detail, e.now())
 				}
 				return tx.PutJob(ctx, job)
 			}
@@ -126,11 +119,11 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 				job.ChangeID, job.ResultRevision = change.ID, revision.ID
 			}
 			if job.CancelRequestedAt != nil {
-				finishPreparation(&job, record.JobCanceled, "Canceled; any integrated branch is preserved", e.now())
+				finishJob(&job, record.JobCanceled, "Canceled; any integrated branch is preserved", e.now())
 			} else if !confirmed {
 				return fmt.Errorf("%w: branch integration has no conclusive outcome", state.ErrInvalid)
 			} else if job.Spec.Destination == record.BranchReady {
-				finishPreparation(&job, record.JobCompleted, "Prepared branch "+job.Prepared.Branch, e.now())
+				finishJob(&job, record.JobCompleted, "Prepared branch "+job.Prepared.Branch, e.now())
 			} else {
 				job.Phase = record.PhaseVerification
 				job.State, job.Detail = record.JobActive, "Prepared branch "+job.Prepared.Branch+"; verification pending"

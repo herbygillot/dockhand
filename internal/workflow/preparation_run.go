@@ -35,24 +35,23 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 			return nil
 		}
 		if job.CancelRequestedAt != nil {
-			finishPreparation(&job, record.JobCanceled, "Canceled before branch integration", e.now())
+			finishJob(&job, record.JobCanceled, "Canceled before branch integration", e.now())
 			changed = true
 			return tx.PutJob(ctx, job)
 		}
-		if job.Claim.Live(e.now()) || !due(job.RetryAt, e.now()) {
+		if !job.Eligible(e.now()) {
 			return nil
 		}
 		if job.Spec.Preparation == nil || e.Repo == nil || e.Preparer == nil && job.Spec.Preparation.Correction == nil {
 			detail = "workflow: preparation requires bound source, author, platform, Git, and a preparer"
-			finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
+			finishJob(&job, record.JobNeedsAttention, detail, e.now())
 			changed = true
 			return tx.PutJob(ctx, job)
 		}
 		if job.Spec.Action == record.Bump && job.ResolvedRelease == nil {
 			budget = c.timeouts.Resolve
 		}
-		job.Claim, err = c.claim(&job.ClaimGeneration, e.now(), budget)
-		if err != nil {
+		if err := c.take(&job.Lease, e.now(), budget); err != nil {
 			return err
 		}
 		job.State, job.Detail, job.RetryAt = record.JobActive, "Preparing "+string(job.Spec.Action), nil
@@ -89,25 +88,25 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if err != nil {
 			return err
 		}
-		if job.State.Terminal() || job.Prepared != nil || !job.Claim.Owns(selected.Claim, e.now()) {
+		if err := claimGuard(job, record.PhasePreparation, selected.Claim, e.now()); err != nil || job.Prepared != nil {
 			return ErrClaimLost
 		}
-		job.Claim, job.RetryAt = nil, nil
+		job.Release()
 		if job.CancelRequestedAt != nil {
-			finishPreparation(&job, record.JobCanceled, "Canceled before branch integration", e.now())
+			finishJob(&job, record.JobCanceled, "Canceled before branch integration", e.now())
 		} else if errors.Is(operationErr, errNoSourceChanges) {
 			if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
 				return err
 			}
-			finishPreparation(&job, record.JobCompleted, operationErr.Error(), e.now())
+			finishJob(&job, record.JobCompleted, operationErr.Error(), e.now())
 		} else if operationErr != nil {
 			detail = operationErr.Error()
 			var limited *forge.RateLimitError
 			if errors.As(operationErr, &limited) {
-				retry := c.failureDeadline(string(job.ID), &job.ConsecutiveFailures, operationErr)
-				job.RetryAt, job.Detail = &retry, detail
+				c.fail(&job.Lease, string(job.ID), operationErr)
+				job.Detail = detail
 			} else {
-				finishPreparation(&job, record.JobNeedsAttention, detail, e.now())
+				finishJob(&job, record.JobNeedsAttention, detail, e.now())
 			}
 		} else if resolving {
 			job.ConsecutiveFailures = 0
@@ -116,7 +115,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 				if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
 					return err
 				}
-				finishPreparation(&job, record.JobCompleted, fmt.Sprintf("Already current at %s; latest eligible version is %s", release.CurrentVersion, release.Version), e.now())
+				finishJob(&job, record.JobCompleted, fmt.Sprintf("Already current at %s; latest eligible version is %s", release.CurrentVersion, release.Version), e.now())
 			} else {
 				label := release.Tag
 				if release.Archive {

@@ -36,14 +36,9 @@ type Resource struct {
 	SubmissionID RequestID
 	Handle       ResourceHandle
 	State        ResourceState
-	// Claim grants ownership of a cleanup action separately from attempt work.
-	Claim *Claim
-	// ClaimGeneration retains the last issued generation after Claim is cleared.
-	ClaimGeneration uint64
-	// RetryAt is the earliest release or released-diagnostic pruning retry time;
-	// nil imposes no delay.
-	RetryAt             *time.Time
-	ConsecutiveFailures uint32 `json:",omitempty"`
+	// Lease grants ownership of a cleanup action separately from attempt work;
+	// its retry time covers release and released-diagnostic pruning.
+	Lease
 	// RetainUntil makes a retained resource eligible for cleanup at this time.
 	// Nil retains it indefinitely. Expiry does not authorize releasing an active run.
 	RetainUntil *time.Time
