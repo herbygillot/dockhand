@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -115,4 +116,32 @@ func (e *Engine) ContributionBuild(ctx context.Context, change record.Change) (r
 		return nil
 	})
 	return spec, err
+}
+
+// PreparationInput selects the frozen input of existing preparation before an
+// application fetches new upstream source. Nil means a new contribution.
+func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, error) {
+	if e == nil || e.State == nil || e.Repository == "" {
+		return nil, ErrNoState
+	}
+	var result *record.Job
+	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		change, err := selectContribution(ctx, r, selector)
+		if errors.Is(err, ErrNotFound) && selector.ChangeID == "" && selector.Branch == "" {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		jobs, err := r.Jobs(ctx, state.Query{ChangeID: change.ID, Action: action, Newest: true, Limit: 1})
+		if err != nil {
+			return err
+		}
+		if len(jobs) == 0 {
+			return fmt.Errorf("%w: contribution %s has different preparation intent; use verify or publish", ErrInvalidRequest, change.ID)
+		}
+		result = &jobs[0]
+		return nil
+	})
+	return result, err
 }

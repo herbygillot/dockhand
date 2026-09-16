@@ -180,7 +180,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 			return record.JobSpec{}, fmt.Errorf("%w: omit source when selecting an existing revision", ErrInvalidRequest)
 		}
 	} else {
-		if spec.ChangeID != "" {
+		if spec.ChangeID != "" && spec.Preparation == nil {
 			return record.JobSpec{}, fmt.Errorf("%w: an existing change requires an explicit input revision", ErrInvalidRequest)
 		}
 		if err := validateSource(spec.Source); err != nil {

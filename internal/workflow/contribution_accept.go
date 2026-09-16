@@ -86,11 +86,14 @@ func acceptPreparation(ctx context.Context, tx state.Tx, id record.JobID, reques
 		if old.State == record.JobCompleted && (reflect.DeepEqual(compared, prior) || spec.Destination == record.BranchReady) {
 			return job, &old, nil
 		}
+		if old.ResolvedRelease != nil {
+			spec.Version = old.Spec.Version
+		}
 		job.Spec = spec
 		job.Prepared, job.ResultRevision = old.Prepared, old.ResultRevision
 		if old.ResolvedRelease != nil {
 			release := *old.ResolvedRelease
-			release.Requested = spec.Version
+			// Preserve how the frozen release was originally selected.
 			job.ResolvedRelease = &release
 		}
 		if job.ResultRevision != "" {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -86,4 +87,17 @@ subport fixture-1.15 {
 	logs.Reset()
 	require.NoError(t, Run(t.Context(), []string{"status", "fixture-1.16", "--json"}, Streams{Out: &out, Err: &logs}, config))
 	require.Contains(t, out.String(), string(job.ID))
+	// A retry must not need a fresh upstream fetch or rewrite the original
+	// automatic release provenance when the user supplies its explicit version.
+	output, err := exec.CommandContext(t.Context(), "git", "-C", repo.Root, "config", "url./missing/upstream.insteadOf", "https://github.com/macports/macports-ports.git").CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	out.Reset()
+	logs.Reset()
+	require.NoError(t, Run(t.Context(), []string{"bump", "fixture-1.16", "1.16.2", "--no-verify", "--json"}, Streams{Out: &out, Err: &logs}, config), logs.String())
+	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	require.Equal(t, job.ID, result.Status.Jobs[0].Job.ID)
+	require.Empty(t, result.Status.Jobs[0].Job.ResolvedRelease.Requested)
+	require.Equal(t, int64(1), listingReads.Load())
+	require.Contains(t, logs.String(), "Continuing contribution")
+
 }

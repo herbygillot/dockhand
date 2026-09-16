@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/progress"
+	"maps"
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -87,9 +89,36 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if request.Publish != nil && request.NoVerify {
 		return workflow.BoundPreparation{}, fmt.Errorf("publication requires verification")
 	}
-	source, err := preparationSource(ctx, s.Workflow.Repo)
-	if err != nil {
-		return workflow.BoundPreparation{}, err
+	var prior *record.Job
+	var err error
+	if macports.ValidName(request.Selection.Selector) || request.ChangeID != "" {
+		selector := workflow.ContributionSelector{ChangeID: request.ChangeID}
+		if macports.ValidName(request.Selection.Selector) {
+			selector.Target = request.Selection.Selector
+		}
+		prior, err = s.Workflow.PreparationInput(ctx, selector, request.Action)
+		if err != nil {
+			return workflow.BoundPreparation{}, err
+		}
+	}
+	var source record.Source
+	if prior == nil {
+		progress.Report(ctx, "Fetching MacPorts master")
+		source, err = preparationSource(ctx, s.Workflow.Repo)
+		if err != nil {
+			return workflow.BoundPreparation{}, err
+		}
+	} else {
+		progress.Report(ctx, "Continuing contribution %s from recorded source %s", prior.ChangeID, prior.Spec.Source.Commit)
+		source = prior.Spec.Source
+		request.ChangeID = prior.ChangeID
+		target := prior.Spec.Targets[0]
+		variants := maps.Clone(target.Variants)
+		if variants == nil {
+			variants = map[string]bool{}
+		}
+		maps.Copy(variants, request.Selection.Variants)
+		request.Selection = macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: variants}
 	}
 	author, err := s.Workflow.Repo.Author(ctx)
 	if err != nil {
