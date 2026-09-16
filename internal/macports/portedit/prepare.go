@@ -44,7 +44,16 @@ type Fidelity struct {
 	UnexpectedChanges []string
 }
 
+// ContextCoverage distinguishes metadata models from the native host. Neither
+// kind records a build; verification providers establish build results.
+type ContextCoverage struct {
+	Platform record.Platform
+	Modeled  bool
+	Affected bool
+}
+
 type Result struct {
+	Coverage  []ContextCoverage `json:",omitempty"`
 	Base      record.Source
 	Target    record.Target
 	Files     []portfile.Edit

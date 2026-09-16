@@ -24,3 +24,15 @@ func TestParseRelease(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestProductForDarwinDoesNotExtendProvisioning(t *testing.T) {
+	for darwin, want := range map[int]string{8: "10.4", 16: "10.12", 19: "10.15", 20: "11", 24: "15", 25: "26"} {
+		got, err := ProductForDarwin(darwin)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	_, err := ProductForDarwin(26)
+	require.Error(t, err)
+	_, err = ReleaseForDarwin(16)
+	require.Error(t, err)
+}

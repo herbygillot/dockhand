@@ -19,7 +19,7 @@ func (e *Evaluator) Observe(ctx context.Context, source macports.Context, reques
 func decodeObservation(value string) (macports.PortObservation, error) {
 	var out macports.PortObservation
 	fields, errs := syntax.ListValues(value)
-	if len(errs) > 0 || len(fields) != 3 {
+	if len(errs) > 0 || len(fields) != 4 {
 		return out, fmt.Errorf("macports: invalid observation")
 	}
 	events, errs := syntax.ListValues(fields[0])
@@ -72,6 +72,7 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 	if len(errs) > 0 {
 		return out, fmt.Errorf("macports: invalid observation problems")
 	}
+	out.ModeledHostAccess, _ = strconv.ParseBool(fields[3])
 	return out, nil
 }
 

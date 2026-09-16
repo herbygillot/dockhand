@@ -1,5 +1,6 @@
 namespace eval ::dockhand {
     proc initialize {root} {
+        variable source_root [file normalize $root]
         package require macports
         check_startup
         if {[catch {mportinit} detail]} { incompatible "initialization failed: $detail" }

@@ -171,3 +171,25 @@ func TestResolutionRequiresVersionEvaluationEvenWhenCurrentValuesMatch(t *testin
 	_, err := service.Resolve(t.Context(), githubPort(), "v2.0")
 	require.ErrorContains(t, err, "Portfile version evaluation is required")
 }
+
+func TestExplicitArchiveReleaseNeedsNoForgeButRetainsSourceChecks(t *testing.T) {
+	service := upstream.Service{EvaluateVersion: identityVersion}
+	port := macports.PortInfo{Name: "fixture", Version: "1.2.3", Options: map[string]string{}}
+	release, err := service.Resolve(t.Context(), port, "1.2.4")
+	require.NoError(t, err)
+	require.True(t, release.Archive)
+	require.Empty(t, release.Forge)
+	require.Empty(t, release.Commit)
+	require.Empty(t, release.Tag)
+	require.NoError(t, service.Check(t.Context(), port, release))
+	require.Error(t, service.Check(t.Context(), githubPort(), release))
+	changed := port
+	changed.Version = "1.2.2"
+	require.Error(t, service.Check(t.Context(), changed, release))
+	_, err = service.Resolve(t.Context(), port, "")
+	require.Error(t, err, "archive preparation does not invent automatic discovery")
+	_, err = service.Resolve(t.Context(), port, "1.2.3")
+	require.Error(t, err)
+	release.Commit = strings.Repeat("a", 40)
+	require.Error(t, service.Check(t.Context(), port, release))
+}

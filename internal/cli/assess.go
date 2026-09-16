@@ -14,7 +14,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 	var request assess.Request
 	cmd := &cobra.Command{
 		Use: "assess [port...]", Short: "Assess whether Dockhand can prepare a port update",
-		Long:        "Assess committed ports from local HEAD; working-tree edits are excluded. Select explicit ports, exact maintainer/category filters, or --all. The default checks local declarations and probes version inputs without querying upstream. With --version, resolve a specific upstream tag and check the proposed edit. No source archives are downloaded, helpers executed, builds run, branches changed, or jobs created. Native Portfile evaluation still executes Tcl. An input-found or candidate-checked result is preparation evidence, not a build guarantee. Blocked, unsupported, or unknown results exit with status 1 after reporting all selected ports.",
+		Long:        "Assess committed ports from local HEAD; working-tree edits are excluded. Select explicit ports, exact maintainer/category filters, or --all. The default checks local declarations and probes version inputs without querying upstream. With --version, resolve a specific upstream tag or explicit archive version and check the proposed edit. No source archives are downloaded, helpers executed, builds run, branches changed, or jobs created. Native Portfile evaluation still executes Tcl. An input-found or candidate-checked result is preparation evidence, not a build guarantee. Blocked, unsupported, or unknown results exit with status 1 after reporting all selected ports.",
 		Example:     "  dockhand assess terraform\n  dockhand assess rust-analyzer --version 2026-09-14\n  dockhand assess --maintainer herbygillot@github\n  dockhand assess --all --json",
 		Annotations: map[string]string{stateIndependentHelp: "true"},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -66,7 +66,8 @@ func (r *runtime) assessCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&request.Version, "version", "", "Check one explicit upstream version/tag (one port only; queries upstream)")
+	cmd.Flags().StringVar(&request.Subport, "subport", "", "Select a subport inside one explicit Portfile")
+	cmd.Flags().StringVar(&request.Version, "version", "", "Check one explicit upstream version/tag (one port only; forge sources query upstream)")
 	cmd.Flags().StringArrayVar(&request.Selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email (repeatable)")
 	cmd.Flags().StringArrayVar(&request.Selection.Categories, "category", nil, "Exact MacPorts category (repeatable; intersects maintainer selection)")
 	cmd.Flags().BoolVar(&request.Selection.All, "all", false, "Assess the entire committed ports tree")

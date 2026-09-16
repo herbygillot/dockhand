@@ -38,3 +38,16 @@ func ParseRelease(value string) (Release, error) {
 	}
 	return Release{}, fmt.Errorf("macos: unknown release %q; use monterey (12), ventura (13), sonoma (14), sequoia (15), or tahoe (26)", value)
 }
+
+// ProductForDarwin returns the macOS release used for metadata modeling. This
+// does not extend the set of VM releases supported by provisioning.
+func ProductForDarwin(darwin int) (string, error) {
+	if darwin >= 8 && darwin < 20 {
+		return fmt.Sprintf("10.%d", darwin-4), nil
+	}
+	if darwin == 20 {
+		return "11", nil
+	}
+	release, err := ReleaseForDarwin(darwin)
+	return release.Product, err
+}

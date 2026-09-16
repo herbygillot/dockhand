@@ -157,7 +157,11 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			line("  input: working tree (%s); HEAD %s; %s modified files", label, c.Head, c.ModifiedFiles)
 		}
 		if release := job.ResolvedRelease; release != nil {
-			line("  release: %s %s; commit: %s", release.Repository, release.Tag, release.Commit)
+			if release.Archive {
+				line("  release: explicit archive version %s", release.Version)
+			} else {
+				line("  release: %s %s; commit: %s", release.Repository, release.Tag, release.Commit)
+			}
 		}
 		if job.Prepared != nil {
 			line("  prepared branch: %s; commit: %s", job.Prepared.Branch, job.Prepared.Source.Commit)

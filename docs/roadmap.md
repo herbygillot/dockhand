@@ -8,7 +8,7 @@ Last updated: 2026-09-15.
 
 ## Next
 
-The user-selected immediate work is the [bump planner](bump-planner.md): native evaluator separation, declaration/artifact ownership, scoped subport edits, independent-pin preservation, and forge-independent explicit-version preparation. The evaluator boundary is implemented; the broader preparation mechanisms remain pending. Terraform/Helm existing release series, Deno, and gh are the initial preparation targets. Full Rust maintenance is excluded. Resume the queue below after this work.
+The user-selected immediate work is the [bump planner](bump-planner.md): native evaluator separation, declaration/artifact ownership, scoped subport edits, independent-pin preservation, and forge-independent explicit-version preparation. The initial planner is implemented, including native fetch observations, scoped checksum ownership, modeled metadata contexts, and explicit archive versions. See the [implementation and exercise report](activity/2026-09-15-scoped-bump-planner.md). Terraform/Helm existing release series, Deno, and gh are the initial preparation targets. Full Rust maintenance is excluded. Resume the queue below; broader shared-subport contribution scopes and additional context models remain follow-up work.
 
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 

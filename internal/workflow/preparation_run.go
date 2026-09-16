@@ -112,7 +112,11 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 			if release.NoUpdate {
 				finishPreparation(&job, record.JobCompleted, fmt.Sprintf("Already current at %s; latest eligible version is %s", release.CurrentVersion, release.Version), e.now())
 			} else {
-				job.Detail = "Resolved " + release.Tag + "; awaiting source preparation"
+				label := release.Tag
+				if release.Archive {
+					label = "archive version " + release.Version
+				}
+				job.Detail = "Resolved " + label + "; awaiting source preparation"
 			}
 		} else {
 			job.ConsecutiveFailures = 0

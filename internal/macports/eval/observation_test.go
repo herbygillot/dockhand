@@ -82,3 +82,21 @@ subport fixture-child {
 		require.Equal(t, d.Command, name)
 	}
 }
+
+func TestModeledObservationReportsHostDependentPortfile(t *testing.T) {
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/host/Portfile", `PortSystem 1.0
+name host
+version 1
+set host_value [exec /usr/bin/true]
+`)
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "host"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	o, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Platform: record.Platform{OS: "darwin", Version: "16", Architecture: "x86_64"}, Declarations: true})
+	require.NoError(t, err)
+	require.True(t, o.Ports["host"].ModeledHostAccess)
+	require.NotEmpty(t, o.Ports["host"].Problems)
+}

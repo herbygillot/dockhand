@@ -6,6 +6,9 @@ import "time"
 // The forge instance, repository, requested spelling, Portfile version, tag,
 // and resolved commit remain distinct.
 type Release struct {
+	// Archive selects an explicit Portfile version whose source is established by
+	// evaluated download locations and prepared checksums, without a forge tag.
+	Archive bool `json:",omitempty"`
 	// Automatic selections retain the evaluated version and whether an update is needed.
 	// Requested is empty for those jobs; explicit selections never set NoUpdate.
 	CurrentVersion string `json:",omitempty"`

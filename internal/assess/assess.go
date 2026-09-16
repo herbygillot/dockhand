@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -21,11 +22,15 @@ import (
 type Request struct {
 	Selection survey.Selection
 	Version   string
+	Subport   string
 }
 
 func (r Request) Validate() error {
 	if err := r.Selection.Validate(); err != nil {
 		return err
+	}
+	if r.Subport != "" && (len(r.Selection.Ports) != 1 || !macports.ValidName(r.Subport)) {
+		return fmt.Errorf("assess: --subport requires one explicit Portfile and a valid subport name")
 	}
 	if r.Version != "" {
 		if len(r.Selection.Ports) != 1 {
@@ -86,9 +91,14 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		}
 		progress.Report(ctx, "Assessing %s", selected.Label)
 		item := Port{Selector: selected.Label}
+		if request.Subport != "" {
+			selected.Selection.Subport = request.Subport
+		} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
+			selected.Selection.Subport = selected.Name
+		}
 		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Root: files.Root, Selection: selected.Selection, Platform: platform})
 		if problem == nil && selected.Name != "" && selected.Name != probe.Port().Name {
-			problem = fmt.Errorf("%w: indexed subport %s; version preparation currently selects the primary port %s", portedit.ErrUnsupported, selected.Name, probe.Port().Name)
+			problem = fmt.Errorf("%w: indexed subport %s; evaluation selected a different port %s", portedit.ErrUnsupported, selected.Name, probe.Port().Name)
 		}
 		if problem != nil {
 			item.Findings = []portedit.Finding{portedit.Problem("evaluation", problem)}

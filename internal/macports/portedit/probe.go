@@ -36,9 +36,6 @@ func (s *Service) Probe(ctx context.Context, source ProbeSource) (*VersionProbe,
 	if err != nil {
 		return nil, err
 	}
-	if input.target.Subport != "" {
-		return nil, fmt.Errorf("%w: version probing currently selects the primary port", ErrUnsupported)
-	}
 	return &VersionProbe{editor: s, request: request, input: input}, nil
 }
 
@@ -87,11 +84,14 @@ func (p *VersionProbe) CheckRelease(ctx context.Context, release record.Release)
 	if err := p.prepare(ctx); err != nil {
 		return err
 	}
-	spec, err := portsource.Interpret(p.input.info)
+	spec, err := portsource.ForEditing(p.input.info)
 	if err != nil {
 		return err
 	}
 	raw, ok := spec.Pattern.Version(release.Tag)
+	if spec.Forge == "" {
+		raw, ok = release.Version, release.Forge == ""
+	}
 	if !ok {
 		return fmt.Errorf("%w: selected tag no longer matches source convention", ErrFidelity)
 	}

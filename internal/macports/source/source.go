@@ -257,3 +257,15 @@ func appendPath(base string, elements ...string) (string, error) {
 	return parsed.String(), nil
 }
 func trimURL(value string) string { return strings.TrimRight(value, "/") }
+
+// ForEditing accepts an explicit evaluated version without inventing a forge or
+// tag identity. A present but malformed forge declaration remains an error.
+func ForEditing(port macports.PortInfo) (Spec, error) {
+	if !present(port, "github.author") && !present(port, "gitlab.author") {
+		if port.Version == "" {
+			return Spec{}, fmt.Errorf("%w: missing evaluated version", ErrUnsupported)
+		}
+		return Spec{CurrentVersion: port.Version, SourceVersion: port.Version}, nil
+	}
+	return Interpret(port)
+}

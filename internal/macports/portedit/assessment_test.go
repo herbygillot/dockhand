@@ -74,7 +74,7 @@ func TestAssessmentRetainsFetchAndChecksumLimitations(t *testing.T) {
 	require.Equal(t, Unsupported, result.Outcome)
 	require.Equal(t, Unsupported, assessmentFinding(t, result, "fetch").Status)
 	p, _ = assessmentFixture(t, "github.setup owner fixture 1.2.3 v")
-	p.input.data = append(p.input.data, []byte("checksums sha256 1234\n")...)
+	p.input.data = append(p.input.data, []byte("checksums sha256 [string repeat a 64]\n")...)
 	result, err = p.Assess(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, Unsupported, assessmentFinding(t, result, "checksums").Status)

@@ -26,6 +26,23 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 	if err := ValidateVersion(requested); err != nil {
 		return record.Release{}, err
 	}
+	editable, err := portsource.ForEditing(port)
+	if err != nil {
+		return record.Release{}, err
+	}
+	if editable.Forge == "" {
+		if s.EvaluateVersion == nil {
+			return record.Release{}, fmt.Errorf("upstream: Portfile version evaluation is required")
+		}
+		version, err := s.EvaluateVersion(ctx, requested)
+		if err != nil {
+			return record.Release{}, err
+		}
+		if version != requested || version == port.Version {
+			return record.Release{}, fmt.Errorf("upstream: explicit archive version must select a different evaluated version")
+		}
+		return record.Release{Archive: true, Requested: requested, CurrentVersion: port.Version, Version: version, ObservedAt: time.Now().UTC()}, nil
+	}
 	spec, repository, err := s.repository(port, false)
 	if err != nil {
 		return record.Release{}, err
@@ -72,6 +89,16 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 }
 
 func (s *Service) Check(ctx context.Context, port macports.PortInfo, release record.Release) error {
+	if release.Archive {
+		spec, err := portsource.ForEditing(port)
+		if err != nil {
+			return err
+		}
+		if spec.Forge != "" || release.Requested == "" || release.Version != release.Requested || release.CurrentVersion != port.Version || release.NoUpdate || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || ValidateVersion(release.Version) != nil {
+			return fmt.Errorf("upstream: archive release does not match the Portfile")
+		}
+		return nil
+	}
 	spec, repository, err := s.repository(port, false)
 	if err != nil {
 		return err

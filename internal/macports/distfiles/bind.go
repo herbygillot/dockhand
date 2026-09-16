@@ -12,6 +12,7 @@ import (
 )
 
 type Token struct {
+	Owner   string
 	Value   string
 	Span    text.Span
 	Literal bool
@@ -21,6 +22,7 @@ type Group struct {
 	Values map[string]Token
 }
 
+func (g Group) ID() string     { return g.Values["sha256"].Owner }
 func (g Group) Key() text.Span { return g.Values["sha256"].Span }
 
 type Artifact struct {
@@ -44,12 +46,25 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 			continue
 		}
 		cmd, err := portfile.LocateDeclaration(src, path, declaration)
+		ordinal := -1
+		if err == nil {
+			script, _ := syntax.Parse(src)
+			index := 0
+			for candidate := range script.Commands(src, func(syntax.Command) bool { return true }) {
+				if candidate.Span == cmd.Span {
+					ordinal = index
+					break
+				}
+				index++
+			}
+		}
 		tokens := make([]Token, len(declaration.Values))
 		for i, value := range declaration.Values {
 			tokens[i].Value = value
 			if err == nil && len(cmd.Words) == len(tokens)+1 {
 				word := cmd.Words[i+1]
 				literal, ok := word.Literal(src)
+				tokens[i].Owner = fmt.Sprintf("%d/%d", ordinal, i)
 				tokens[i].Span = word.Span
 				tokens[i].Literal = ok && literal == value && !word.Expand
 			}

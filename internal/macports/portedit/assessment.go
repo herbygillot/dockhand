@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
@@ -14,6 +13,7 @@ import (
 
 // Assessment describes preparation evidence, not whether a port will build.
 type Assessment struct {
+	Contexts       []record.Platform `json:",omitempty"`
 	Outcome        string
 	CurrentVersion string
 	Portfile       string
@@ -102,8 +102,12 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 		}
 	}
 	add("evaluation", "Committed Portfile evaluated successfully", nil)
-	spec, err := portsource.Interpret(p.input.info)
-	add("source", fmt.Sprintf("%s %s; source version %s", spec.Forge, spec.Repository, spec.SourceVersion), err)
+	spec, err := portsource.ForEditing(p.input.info)
+	sourceDetail := fmt.Sprintf("%s %s; source version %s", spec.Forge, spec.Repository, spec.SourceVersion)
+	if err == nil && spec.Forge == "" {
+		sourceDetail = "Explicit archive version " + spec.SourceVersion + "; automatic upstream discovery is not available"
+	}
+	add("source", sourceDetail, err)
 	if err == nil {
 		err = p.prepare(ctx)
 		add("version-input", "Literal input candidates found; a specific release still needs edit-fidelity checks", err)
@@ -114,7 +118,7 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 			}
 		}
 	} else {
-		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: "source-required", Detail: "Version probing requires a recognized source convention"})
+		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: "source-required", Detail: "Version probing requires an evaluable version convention"})
 	}
 	base := p.input
 	plan, depErr := inspectDependencies(p.input)
@@ -133,10 +137,11 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 		a.Findings = append(a.Findings, Finding{Check: "regeneration", Status: NotTested, Code: "archives-required", Detail: "Manifest regeneration and preservation of maintained overrides require source archives"})
 	}
 	if depErr == nil {
-		sources, fetchErr := downloadSources(base.info, filepath.Join(base.files.Root, filepath.Dir(base.target.Portfile)))
-		add("fetch", "Archive source declarations are supported; availability is untested", fetchErr)
+
+		fetchErr, checksumErr := p.editor.assessArchives(ctx, p.request, base)
+		add("fetch", "Native archive locations are observed; availability is untested", fetchErr)
 		if fetchErr == nil {
-			add("checksums", "Checksum declarations match the archive sources", checkChecksumSources(base.data, base.info, sources))
+			add("checksums", "Checksum declarations are associated across the observed contexts", checksumErr)
 		} else {
 			a.Findings = append(a.Findings, Finding{Check: "checksums", Status: NotTested, Code: "sources-required", Detail: "Checksum association requires supported archive sources"})
 		}

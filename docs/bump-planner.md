@@ -5,16 +5,16 @@ The initial targets are existing Terraform/Helm release-series subports, Deno's 
 ## Responsibilities
 
 - `macports` owns bound source contexts and neutral metadata/reader contracts.
-- `macports/eval` implements native Tcl sessions, compatibility checks, selector resolution, metadata decoding, and MacPorts version comparisons. Future declaration provenance and modeled-context observations belong here. Observation does not authorize an edit.
+- `macports/eval` implements native Tcl sessions, compatibility checks, selector resolution, metadata decoding, and MacPorts version comparisons. Declaration provenance, native fetch observations, and explicitly modeled contexts also belong here. Observation does not authorize an edit.
 - `macports/portfile` and `tcl/syntax` identify precise source spans and preserve formatting.
 - `macports/portedit` selects candidate edits, establishes the affected and protected sets, and validates the complete plan.
-- A focused `macports/distfiles` package will own artifact/checksum associations as that behavior is extracted. Native fetch interpretation stays at the evaluator boundary; HTTP transfers stay in `fetch`.
+- `macports/distfiles` owns artifact/checksum associations, stable declaration identities, and precise digest spans. Native fetch interpretation stays at the evaluator boundary; HTTP transfers stay in `fetch`.
 - `upstream` owns discovery and release selection. Explicit-version preparation must not require a recognized forge source. Discovery, complete preparation, and actual builds remain separate capabilities.
 - `workflow/preparation` owns disposable workspace lifetime and storing the completed tree. Tcl and checksum policy do not move into workflow.
 
 Concrete evaluator dependencies belong in application wiring. Capabilities consume small interfaces, not evaluator constructors. Keep shared types in `macports` to prevent dependencies from cycling through the concrete implementation. No aliases or forwarding constructor are retained in the parent package.
 
-## Implementation sequence
+## Implemented sequence
 
 1. Extract the native evaluator without changing metadata or selection behavior. Move its tests and embedded scripts with it. Preserve source/path validation and native platform enforcement.
 2. Establish declaration ownership and artifact observations. Represent exact source locations, context, evaluated filename, fetch locations, and checksum declarations. Filenames alone are not artifact identities. Use MacPorts' site/tag interpretation rather than reconstructing mirror semantics in Go.
@@ -48,3 +48,13 @@ Among 4,706 Portfiles with explicit GitHub/GitLab/Go source clues, 634 had selec
 These counts describe observed obstacles, not promised future successful updates. The census counts Portfiles rather than subport names, does not exhaustively traverse arbitrary generated Tcl, and does not establish archive availability or release/build success. It supports prioritizing scoped checksum ownership and native fetch planning alongside generalized version probing. The raw survey and harness are retained outside the application checkout in the shared workspace's `surveys/2026-09-15-bump-coverage` directory.
 
 No new production dependency is required for the first stages. Keep the existing parser and native Tcl evaluator; evaluate other parsing or property-testing libraries only against a demonstrated gap.
+
+## Current behavior and limits
+
+The initial implementation completes all six stages above. `assess` and `bump` share scoped planning. `assess terraform --subport terraform-1.16 --version 1.16.2` checks an explicit archive version; `bump terraform 1.16.2 --subport terraform-1.16 --diff` also downloads the affected archives and previews the completed edit. No forge identity or Git commit is manufactured for HashiCorp's archive source.
+
+Candidate generation remains deliberately bounded by supported literal transformations and actual forward evaluation. It is not a general Tcl inverse or taint engine. Multiple independently edited version inputs, dynamically generated source declarations, new release-series creation, coordinated Rust/bootstrap updates, and automatic discovery from arbitrary livecheck pages remain outside the implemented preparation scope. Changes to unselected sibling metadata are still refused; a shared multi-subport update needs an explicit contribution scope.
+
+Modeled observations use fresh interpreters and keep native runtime facts separately. Their profiles cover the native host, relevant arm64/x86_64 choices, and nearby literal Darwin condition boundaries. They do not claim full host virtualization or build coverage. Unresolved boundaries and uncovered checksum groups remain visible; direct host-process/filesystem dependencies during modeled Portfile evaluation are reported as gaps. The model does not certify arbitrary PortGroup execution or enumerate every possible variant/environment.
+
+Tests and real archive exercises are recorded in [the implementation report](activity/2026-09-15-scoped-bump-planner.md). The survey comparison distinguishes input discovery from complete archive preparation and actual verification.

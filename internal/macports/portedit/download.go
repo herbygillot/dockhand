@@ -78,21 +78,7 @@ func localPatches(info macports.PortInfo, portdir string) error {
 }
 
 func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, error) {
-	if err := checkFetchCredentials(info); err != nil {
-		return nil, err
-	}
-	if problem := info.OptionErrors["fetch.archive_compatible"]; problem != "" {
-		return nil, fmt.Errorf("%w: %s", ErrUnsupported, problem)
-	}
-	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
-		if info.OptionErrors[key] != "" {
-			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
-		}
-	}
-	if info.Options["fetch.type"] != "standard" || info.Options["fetch.archive_compatible"] != "1" || info.Options["fetch.ignore_sslcert"] != "no" || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
-		return nil, fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", ErrUnsupported)
-	}
-	if err := localPatches(info, portdir); err != nil {
+	if err := checkArchivePolicy(info, portdir); err != nil {
 		return nil, err
 	}
 	files, errs := syntax.ListValues(info.Options["distfiles"])
@@ -216,5 +202,27 @@ func checkFetchCredentials(info macports.PortInfo) error {
 	if info.Options["fetch.has_credentials"] != "0" {
 		return fmt.Errorf("%w: MacPorts credentials apply to the selected source downloads; authenticated fetching is not supported by the direct downloader; prepare this update manually with MacPorts", ErrUnsupported)
 	}
+	return nil
+}
+
+func checkArchivePolicy(info macports.PortInfo, portdir string) error {
+	if err := checkFetchCredentials(info); err != nil {
+		return err
+	}
+	if problem := info.OptionErrors["fetch.archive_compatible"]; problem != "" {
+		return fmt.Errorf("%w: %s", ErrUnsupported, problem)
+	}
+	for _, key := range []string{"distfiles", "master_sites", "checksums", "fetch.type", "fetch.archive_compatible", "patchfiles", "filespath", "fetch.ignore_sslcert", "go.vendors", "cargo.crates", "cargo.crates_github"} {
+		if info.OptionErrors[key] != "" {
+			return fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
+		}
+	}
+	if info.Options["fetch.type"] != "standard" || info.Options["fetch.archive_compatible"] != "1" || info.Options["fetch.ignore_sslcert"] != "no" || info.Options["go.vendors"] != "" || info.Options["cargo.crates"] != "" || info.Options["cargo.crates_github"] != "" {
+		return fmt.Errorf("%w: fetch customization or vendored source requires a dedicated preparer", ErrUnsupported)
+	}
+	if err := localPatches(info, portdir); err != nil {
+		return err
+	}
+
 	return nil
 }

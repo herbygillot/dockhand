@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tcl/rpc"
@@ -95,7 +96,15 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 	if request != nil {
 		platform := ""
 		if request.Platform != (record.Platform{}) && request.Platform != runtime.Platform {
-			platform = request.Platform.OS + " " + request.Platform.Version + " " + request.Platform.Architecture
+			major, err := strconv.Atoi(request.Platform.Version)
+			if err != nil {
+				return macports.Observation{}, fmt.Errorf("macports: invalid modeled Darwin release")
+			}
+			product, err := macos.ProductForDarwin(major)
+			if err != nil {
+				return macports.Observation{}, err
+			}
+			platform = request.Platform.OS + " " + request.Platform.Version + " " + request.Platform.Architecture + " " + product
 		}
 		if _, err := session.Call(ctx, "observation_setup", platform, strconv.FormatBool(request.Declarations)); err != nil {
 			return macports.Observation{}, err

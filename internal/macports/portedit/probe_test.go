@@ -51,6 +51,8 @@ func TestForwardVersionProbing(t *testing.T) {
 version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -format %Y%m%d -gmt 1]`, "2026-09-14", "20260914", "version [clock format"},
 		{"arithmetic", "set release 12\ngithub.setup owner fixture $release v\nversion [expr {${github.version} * 10 + 7}]", "13", "137", "version [expr"},
 		{"procedure and fragment", "set patchNumber 3\nproc release {} {global patchNumber; return 1.2.${patchNumber}}\ngithub.setup owner fixture [release] v", "1.2.4", "1.2.4", "set patchNumber 4"},
+		{"mapped separators", "set real_version 7.5\ngithub.setup owner fixture [string map {. _} $real_version] v\nversion $real_version", "7_6", "7.6", "set real_version 7.6"},
+		{"arithmetic source", "set patch 3\ngithub.setup owner fixture 1.2.[expr {$patch + 1}] v", "1.2.5", "1.2.5", "set patch 4"},
 		{"inactive assignments", "set unused 1.2.3\nif {0} {set release 1.2.3}\nset release {1.2.3}\ngithub.setup owner fixture $release v", "1.2.4", "1.2.4", "set unused 1.2.3"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -7,26 +7,34 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/record"
+	"math/big"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
 type carrier struct {
-	candidate      portfile.Candidate
-	prefix, suffix string
+	candidate                         portfile.Candidate
+	prefix, suffix                    string
+	sourceSeparator, literalSeparator string
+	numeric                           *numericCarrier
 }
 
 func (s *Service) versionCarriers(ctx context.Context, request Request, input *sourceInput) ([]carrier, error) {
-	spec, err := portsource.Interpret(input.info)
+	spec, err := portsource.ForEditing(input.info)
 	if err != nil {
 		return nil, err
 	}
 	candidates, err := portfile.Candidates(input.data)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
 	}
 	var carriers []carrier
 	failures := 0
 	for _, candidate := range candidates {
+		if !portfile.CandidateInSelection(input.data, candidate, input.target.Subport) {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -41,7 +49,7 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 		if err != nil {
 			continue
 		}
-		_, snapshot, _, err := s.evaluateEdit(ctx, request, input, contents)
+		_, snapshot, _, err := s.evaluateCandidate(ctx, request, input, contents)
 		if err != nil {
 			failures++
 			continue
@@ -50,9 +58,15 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 		if !ok || info.Version == input.info.Version {
 			continue
 		}
-		observed, err := portsource.Interpret(info)
+		observed, err := portsource.ForEditing(info)
 		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion == spec.SourceVersion {
 			continue
+		}
+		if sourceSeparator, literalSeparator, ok := separatorMapping(candidate.Value, spec.SourceVersion, probe, observed.SourceVersion); ok {
+			carriers = append(carriers, carrier{candidate: candidate, sourceSeparator: sourceSeparator, literalSeparator: literalSeparator})
+		}
+		if numeric := numericRelation(candidate, probe, spec.SourceVersion, observed.SourceVersion); numeric != nil {
+			carriers = append(carriers, *numeric)
 		}
 		// Infer only literal substitution into the source reference. The final port
 		// version is always evaluated, never inverted or predicted from this probe.
@@ -84,7 +98,7 @@ func (s *Service) probeVersion(ctx context.Context, request Request, input *sour
 }
 
 func (s *Service) evaluateVersion(ctx context.Context, request Request, input *sourceInput, carriers []carrier, sourceVersion string, checkFidelity bool) ([]byte, macports.Snapshot, error) {
-	spec, err := portsource.Interpret(input.info)
+	spec, err := portsource.ForEditing(input.info)
 	if err != nil {
 		return nil, macports.Snapshot{}, err
 	}
@@ -98,6 +112,16 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 			continue
 		}
 		value, ok = strings.CutSuffix(value, carrier.suffix)
+		if carrier.numeric != nil {
+			mapped, valid := carrier.numeric.literal(value)
+			if !valid {
+				continue
+			}
+			value = mapped
+		}
+		if carrier.sourceSeparator != "" {
+			value = strings.ReplaceAll(value, carrier.sourceSeparator, carrier.literalSeparator)
+		}
 		if !ok || !portfile.Literal(value) || value == carrier.candidate.Value {
 			continue
 		}
@@ -105,9 +129,9 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 		if err != nil {
 			continue
 		}
-		contents, err = portfile.ResetRevision(contents, input.info.Revision)
+		contents, err = s.resetRevision(ctx, request, input, contents)
 		if err != nil {
-			return nil, snapshot, fmt.Errorf("%w: %v", ErrUnsupported, err)
+			return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
 		}
 		_, after, root, err := s.evaluateEdit(ctx, request, input, contents)
 		if err != nil {
@@ -118,8 +142,8 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 			continue
 		}
 		next := after.Ports[input.target.Name]
-		observed, err := portsource.Interpret(next)
-		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion != sourceVersion || next.Options["git.branch"] != spec.Pattern.Tag(sourceVersion) {
+		observed, err := portsource.ForEditing(next)
+		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion != sourceVersion || spec.Forge != "" && next.Options["git.branch"] != spec.Pattern.Tag(sourceVersion) {
 			rejected = fmt.Errorf("%w: candidate did not select the requested source tag", ErrFidelity)
 			continue
 		}
@@ -133,7 +157,11 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 				continue
 			}
 		}
-		fidelity := versionFidelity(input.before, after, input.target.Name, input.files.Root, root, record.Release{Version: next.Version, Tag: spec.Pattern.Tag(sourceVersion)}, next.Options["checksums"])
+		desired := record.Release{Version: next.Version, Forge: string(spec.Forge)}
+		if spec.Forge != "" {
+			desired.Tag = spec.Pattern.Tag(sourceVersion)
+		}
+		fidelity := versionFidelity(input.before, after, input.target.Name, input.files.Root, root, desired, next.Options["checksums"])
 		if checkFidelity && len(fidelity.UnexpectedChanges) > 0 {
 			rejected = fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 			continue
@@ -151,4 +179,56 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 		return nil, snapshot, fmt.Errorf("%w: %d version inputs can select %s; edit the Portfile manually", ErrUnsupported, matches, sourceVersion)
 	}
 	return selected, snapshot, nil
+}
+
+var decimalComponent = regexp.MustCompile(`[0-9]+`)
+
+type numericCarrier struct{ scale, offset *big.Rat }
+
+func (n *numericCarrier) literal(value string) (string, bool) {
+	y, ok := new(big.Rat).SetString(value)
+	if !ok {
+		return "", false
+	}
+	x := new(big.Rat).Quo(new(big.Rat).Sub(y, n.offset), n.scale)
+	if !x.IsInt() || x.Sign() < 0 {
+		return "", false
+	}
+	return x.Num().String(), true
+}
+func numericRelation(candidate portfile.Candidate, probe, old, next string) *carrier {
+	x, err := strconv.ParseInt(candidate.Value, 10, 64)
+	if err != nil {
+		return nil
+	}
+	xp, err := strconv.ParseInt(probe, 10, 64)
+	if err != nil || xp == x {
+		return nil
+	}
+	for _, span := range decimalComponent.FindAllStringIndex(old, -1) {
+		prefix, suffix := old[:span[0]], old[span[1]:]
+		value, ok := strings.CutPrefix(next, prefix)
+		if !ok {
+			continue
+		}
+		value, ok = strings.CutSuffix(value, suffix)
+		if !ok {
+			continue
+		}
+		y, ok := new(big.Rat).SetString(old[span[0]:span[1]])
+		if !ok {
+			continue
+		}
+		yp, ok := new(big.Rat).SetString(value)
+		if !ok || y.Cmp(yp) == 0 {
+			continue
+		}
+		scale := new(big.Rat).Quo(new(big.Rat).Sub(yp, y), new(big.Rat).Sub(new(big.Rat).SetInt64(xp), new(big.Rat).SetInt64(x)))
+		offset := new(big.Rat).Sub(y, new(big.Rat).Mul(scale, new(big.Rat).SetInt64(x)))
+		if scale.Cmp(big.NewRat(1, 1)) == 0 && offset.Sign() == 0 {
+			continue
+		}
+		return &carrier{candidate: candidate, prefix: prefix, suffix: suffix, numeric: &numericCarrier{scale: scale, offset: offset}}
+	}
+	return nil
 }

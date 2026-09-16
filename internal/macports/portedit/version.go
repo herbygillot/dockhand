@@ -15,6 +15,7 @@ import (
 )
 
 type archivePlan struct {
+	observed  *observedArchivePlan
 	result    Result
 	contents  []byte
 	versioned macports.Snapshot
@@ -32,17 +33,17 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if release.NoUpdate && request.Version != "" {
 		return archivePlan{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
 	}
-	if input.target.Subport != "" {
-		return archivePlan{}, fmt.Errorf("%w: version bumps currently select the primary port", ErrUnsupported)
-	}
 	if release.NoUpdate {
 		return archivePlan{result: Result{Base: request.Source, Target: input.target, Release: release}}, nil
 	}
-	spec, err := portsource.Interpret(input.info)
+	spec, err := portsource.ForEditing(input.info)
 	if err != nil {
 		return archivePlan{}, err
 	}
 	sourceVersion, ok := spec.Pattern.Version(release.Tag)
+	if spec.Forge == "" {
+		sourceVersion, ok = release.Version, release.Forge == ""
+	}
 	if !ok {
 		return archivePlan{}, fmt.Errorf("%w: selected tag does not match source convention", ErrFidelity)
 	}
@@ -58,6 +59,16 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return archivePlan{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
 	}
 	versionRoot := input.files.Root
+	if _, ok := s.Ports.(macports.Observer); ok {
+		observed, err := s.planObservedArchives(ctx, request, input, contents)
+		result := Result{Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{versionFidelity(input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
+		if observed != nil {
+			for _, frame := range observed.contexts {
+				result.Coverage = append(result.Coverage, ContextCoverage{Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
+			}
+		}
+		return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed}, err
+	}
 
 	oldSources, err := downloadSources(input.info, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
 	if err != nil {
@@ -109,6 +120,9 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil || request.Release.NoUpdate {
 		return result, err
 	}
+	if plan.observed != nil {
+		return s.applyObservedArchives(ctx, request, input, plan)
+	}
 	contents, versioned, sources := plan.contents, plan.versioned, plan.sources
 	info := versioned.Ports[input.target.Name]
 	versionRoot := input.files.Root
@@ -150,7 +164,7 @@ func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afte
 		next = comparablePort(next, afterRoot)
 		if name == selected {
 			old.Version, old.Revision = release.Version, 0
-			for _, key := range []string{"fetch.has_credentials", "version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "distfiles", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites"} {
+			for _, key := range []string{"fetch.has_credentials", "version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "dist_subdir", "distfiles", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites"} {
 				if value, ok := next.Options[key]; ok {
 					old.Options[key] = value
 				} else {
@@ -158,7 +172,7 @@ func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afte
 				}
 			}
 
-			if next.Options["git.branch"] != release.Tag {
+			if release.Tag != "" && next.Options["git.branch"] != release.Tag {
 				result.UnexpectedChanges = append(result.UnexpectedChanges, name+".git.branch differs from selected tag")
 			}
 			actual, errs := syntax.ListValues(next.Options["checksums"])

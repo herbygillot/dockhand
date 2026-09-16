@@ -24,6 +24,7 @@ var ErrFidelity = portedit.ErrFidelity
 var ErrNotImplemented = portedit.ErrNotImplemented
 
 type Result struct {
+	Coverage     []portedit.ContextCoverage `json:",omitempty"`
 	Base         record.Source
 	Target       record.Target
 	PreparedTree record.ObjectID
@@ -117,7 +118,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
-	result := Result{Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads}
+	result := Result{Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads}
 	if err != nil {
 		return result, err
 	}

@@ -140,7 +140,7 @@ func TestAssessIndexedSelectionKeepsSubportsAndCoverageProblems(t *testing.T) {
 		require.Equal(t, "fixture", result.Ports[1].Selector)
 		require.Equal(t, portedit.InputFound, result.Ports[1].Outcome)
 		require.Equal(t, "fixture-extra", result.Ports[2].Selector)
-		require.Equal(t, portedit.Unsupported, result.Ports[2].Outcome)
+		require.Equal(t, portedit.InputFound, result.Ports[2].Outcome)
 	}
 	require.Zero(t, downloads.Load())
 	require.Zero(t, catalogs.Load())

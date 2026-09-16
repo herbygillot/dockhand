@@ -6,6 +6,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 	"github.com/herbygillot/dockhand/internal/text"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -38,7 +39,7 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 		frame := declaration.Frames[i]
 		for _, cmd := range commands {
 			name, _ := cmd.Name(src)
-			if name == strings.TrimPrefix(declaration.Command, "::") && strings.TrimSpace(cmd.Span.Text(src)) == strings.TrimSpace(frame.Command) {
+			if name == strings.TrimPrefix(declaration.Command, "::") && sourceCommand(cmd.Span.Text(src)) == sourceCommand(frame.Command) {
 				matches = append(matches, cmd)
 			}
 		}
@@ -56,8 +57,12 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 				continue
 			}
 			for _, scope := range commands {
+				scopeName, _ := scope.Name(src)
+				if scopeName == strings.TrimPrefix(declaration.Command, "::") {
+					continue
+				}
 				line, _ := text.Position(src, scope.Span.Start)
-				if line != frame.Line || strings.TrimSpace(scope.Span.Text(src)) != strings.TrimSpace(frame.Command) {
+				if line != frame.Line || sourceCommand(scope.Span.Text(src)) != sourceCommand(frame.Command) {
 					continue
 				}
 				var within []syntax.Command
@@ -76,4 +81,10 @@ func LocateDeclaration(src []byte, path string, declaration macports.Declaration
 		return syntax.Command{}, fmt.Errorf("%w: declaration source is ambiguous (%d matches)", ErrUnsupported, len(matches))
 	}
 	return matches[0], nil
+}
+
+var continuedLine = regexp.MustCompile(`\\\r?\n[ \t]*`)
+
+func sourceCommand(value string) string {
+	return strings.TrimSpace(continuedLine.ReplaceAllString(value, " "))
 }

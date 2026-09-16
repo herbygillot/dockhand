@@ -32,9 +32,10 @@ type Distfile struct {
 }
 
 type PortObservation struct {
-	Declarations []Declaration
-	Distfiles    []Distfile
-	Problems     []string
+	ModeledHostAccess bool
+	Declarations      []Declaration
+	Distfiles         []Distfile
+	Problems          []string
 }
 type Observation struct {
 	Snapshot Snapshot
