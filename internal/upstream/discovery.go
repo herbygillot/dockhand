@@ -50,6 +50,9 @@ type Service struct {
 	Catalogs        map[portsource.Forge]Catalog
 	Versions        VersionSelector
 	EvaluateVersion func(context.Context, string) (string, error)
+	// EvaluateVersions evaluates several source versions in one pass when the
+	// bound probe supports it; discovery falls back to EvaluateVersion otherwise.
+	EvaluateVersions func(context.Context, []string) ([]string, error)
 }
 
 func (s *Service) Discover(ctx context.Context, source macports.Context) (Result, error) {

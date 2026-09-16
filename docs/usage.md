@@ -4,7 +4,7 @@ Detailed command behavior and operational choices for the current prerelease. Fo
 
 ## Tools and checkout selection
 
-Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Select the local MacPorts installation with `--prefix` / `-P` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. Select Git with `--git` or `GIT_BIN`, and Tart with `--tart` or `TART_BIN`; otherwise Dockhand finds each executable on `PATH`. Flags override the environment. `--publish` has no shorthand.
+Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Select the local MacPorts installation with `--prefix` / `-P` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. Select Git with `--git` or `GIT_BIN`, and Tart with `--tart` or `TART_BIN`; otherwise Dockhand finds each executable on `PATH`. `DOCKHAND_INDEX_CACHE` relocates the shared PortIndex cache, which otherwise lives under the user cache directory as `dockhand/indexes`. Flags override the environment. `--publish` has no shorthand.
 
 ## GitHub authentication
 

@@ -95,10 +95,10 @@ func sameRepository(a, b portsource.Spec) bool {
 }
 
 func (s *Service) probeVersion(ctx context.Context, request Request, input *sourceInput, carriers []carrier, sourceVersion string) ([]byte, macports.Snapshot, error) {
-	return s.evaluateVersion(ctx, request, input, carriers, sourceVersion, true)
+	return s.evaluateVersion(ctx, s.Ports, request, input, carriers, sourceVersion, true)
 }
 
-func (s *Service) evaluateVersion(ctx context.Context, request Request, input *sourceInput, carriers []carrier, sourceVersion string, checkFidelity bool) ([]byte, macports.Snapshot, error) {
+func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, carriers []carrier, sourceVersion string, checkFidelity bool) ([]byte, macports.Snapshot, error) {
 	spec, err := portsource.ForEditing(input.info)
 	if err != nil {
 		return nil, macports.Snapshot{}, err
@@ -144,7 +144,7 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 				return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
 			}
 		}
-		_, after, root, err := s.evaluateContents(ctx, request, input, contents, !checkFidelity)
+		_, after, root, err := s.evaluateContents(ctx, reader, request, input, contents, !checkFidelity)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, snapshot, ctx.Err()

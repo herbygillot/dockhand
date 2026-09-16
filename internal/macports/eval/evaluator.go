@@ -100,6 +100,59 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 		return macports.Observation{}, err
 	}
 	defer func() { err = errors.Join(err, session.Close()) }()
+	return evaluateIn(ctx, session, runtime, checked, source, request, selectedOnly)
+}
+
+// Session keeps one MacPorts interpreter for repeated evaluations of the same
+// tree, such as probing many candidate versions of one Portfile. Each
+// evaluation still opens the port afresh, so rewritten contents are observed.
+type Session struct {
+	tree    macports.Tree
+	session *rpc.Session
+	runtime macports.Runtime
+}
+
+// Open starts an interpreter bound to the tree for Session evaluations.
+func (e *Evaluator) Open(ctx context.Context, tree macports.Tree) (*Session, error) {
+	session, runtime, err := e.start(ctx, tree)
+	if err != nil {
+		return nil, err
+	}
+	return &Session{tree: tree, session: session, runtime: runtime}, nil
+}
+
+// OpenBatch satisfies macports.BatchReader.
+func (e *Evaluator) OpenBatch(ctx context.Context, tree macports.Tree) (macports.Batch, error) {
+	return e.Open(ctx, tree)
+}
+
+func (s *Session) Close() error { return s.session.Close() }
+
+func (s *Session) Evaluate(ctx context.Context, source macports.Context) (macports.Snapshot, error) {
+	observation, err := s.evaluate(ctx, source, false)
+	return observation.Snapshot, err
+}
+
+func (s *Session) EvaluateSelected(ctx context.Context, source macports.Context) (macports.Snapshot, error) {
+	observation, err := s.evaluate(ctx, source, true)
+	return observation.Snapshot, err
+}
+
+func (s *Session) evaluate(ctx context.Context, source macports.Context, selectedOnly bool) (macports.Observation, error) {
+	if s == nil || s.session == nil {
+		return macports.Observation{}, fmt.Errorf("%w: session is closed", macports.ErrStartup)
+	}
+	checked, err := source.Tree.Select(source.Target())
+	if err != nil {
+		return macports.Observation{}, err
+	}
+	if checked.Tree.Root() != s.tree.Root() {
+		return macports.Observation{}, fmt.Errorf("%w: session is bound to %s, not %s", macports.ErrTarget, s.tree.Root(), checked.Tree.Root())
+	}
+	return evaluateIn(ctx, s.session, s.runtime, checked, source, nil, selectedOnly)
+}
+
+func evaluateIn(ctx context.Context, session *rpc.Session, runtime macports.Runtime, checked, source macports.Context, request *macports.ObservationRequest, selectedOnly bool) (macports.Observation, error) {
 	if request != nil {
 		for _, operand := range request.Operands {
 			if !operandName.MatchString(operand) {

@@ -33,6 +33,19 @@ type SelectedReader interface {
 	EvaluateSelected(context.Context, Context) (Snapshot, error)
 }
 
+// BatchReader opens one evaluator for many probes of the same tree, such as
+// candidate versions of one Portfile, instead of starting an interpreter per probe.
+type BatchReader interface {
+	OpenBatch(context.Context, Tree) (Batch, error)
+}
+
+// Batch evaluates within one interpreter until closed.
+type Batch interface {
+	Evaluate(context.Context, Context) (Snapshot, error)
+	EvaluateSelected(context.Context, Context) (Snapshot, error)
+	Close() error
+}
+
 // NativeReader supplies native platform facts for locally selected source trees.
 type NativeReader interface {
 	Reader

@@ -9,7 +9,14 @@ import (
 
 // indexCacheDirectory is the PortIndex cache shared by discovery, dependents,
 // and Tart staging. It is disposable and independent of the state database.
-func indexCacheDirectory() (string, error) {
+// Configuration, then DOCKHAND_INDEX_CACHE, then the user cache directory
+// select it; tests point it at a temporary directory.
+func indexCacheDirectory(config Config) (string, error) {
+	for _, chosen := range []string{config.IndexCacheDirectory, os.Getenv("DOCKHAND_INDEX_CACHE")} {
+		if chosen != "" {
+			return filepath.Abs(chosen)
+		}
+	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		return "", err
@@ -20,7 +27,7 @@ func indexCacheDirectory() (string, error) {
 func surveyIndex(config Config, indexed bool) (portindex.Config, error) {
 	index := portindex.Config{}
 	if indexed {
-		directory, err := indexCacheDirectory()
+		directory, err := indexCacheDirectory(config)
 		if err != nil {
 			return portindex.Config{}, err
 		}

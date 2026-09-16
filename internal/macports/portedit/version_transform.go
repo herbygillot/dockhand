@@ -24,5 +24,5 @@ func separatorMapping(literal, source, probe, observed string) (string, string, 
 }
 
 func (s *Service) evaluateCandidate(ctx context.Context, request Request, input *sourceInput, contents []byte) (portfile.Edit, macports.Snapshot, string, error) {
-	return s.evaluateContents(ctx, request, input, contents, true)
+	return s.evaluateContents(ctx, s.Ports, request, input, contents, true)
 }

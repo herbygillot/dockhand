@@ -102,6 +102,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	var evaluated []macports.VersionCandidate
 	var selectedTags []string
+	var pending []int
 	for _, index := range eligible.Indices {
 		if index < 0 || index >= len(candidates) {
 			return result, fmt.Errorf("upstream: invalid filter result")
@@ -110,14 +111,13 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		if candidate.CaptureVersion == spec.SourceVersion {
 			candidate.Version = port.Version
 		} else {
-			version, err := s.EvaluateVersion(ctx, candidate.CaptureVersion)
-			if err != nil {
-				return result, fmt.Errorf("upstream: cannot evaluate %s: %w", tags[index], err)
-			}
-			candidate.Version = version
+			pending = append(pending, len(evaluated))
 		}
 		evaluated = append(evaluated, candidate)
 		selectedTags = append(selectedTags, tags[index])
+	}
+	if err := s.evaluateCandidates(ctx, evaluated, selectedTags, pending); err != nil {
+		return result, err
 	}
 	candidates, tags = evaluated, selectedTags
 	selection, err := s.Versions.SelectVersion(ctx, port.Version, spec.Livecheck.Regex, candidates)
@@ -161,4 +161,38 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		result.Detail = "Selected " + tag.Name + " from " + catalog
 	}
 	return result, nil
+}
+
+// evaluateCandidates fills the evaluated version of every pending candidate,
+// in one batch when the bound probe supports it. MacPorts still evaluates each
+// candidate; batching only shares the interpreter.
+func (s *Service) evaluateCandidates(ctx context.Context, candidates []macports.VersionCandidate, tags []string, pending []int) error {
+	if len(pending) == 0 {
+		return nil
+	}
+	if s.EvaluateVersions != nil && len(pending) > 1 {
+		values := make([]string, len(pending))
+		for i, index := range pending {
+			values[i] = candidates[index].CaptureVersion
+		}
+		versions, err := s.EvaluateVersions(ctx, values)
+		if err != nil {
+			return fmt.Errorf("upstream: cannot evaluate candidate versions: %w", err)
+		}
+		if len(versions) != len(values) {
+			return fmt.Errorf("upstream: incomplete candidate evaluation")
+		}
+		for i, index := range pending {
+			candidates[index].Version = versions[i]
+		}
+		return nil
+	}
+	for _, index := range pending {
+		version, err := s.EvaluateVersion(ctx, candidates[index].CaptureVersion)
+		if err != nil {
+			return fmt.Errorf("upstream: cannot evaluate %s: %w", tags[index], err)
+		}
+		candidates[index].Version = version
+	}
+	return nil
 }

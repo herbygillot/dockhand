@@ -35,8 +35,11 @@ type Config struct {
 	GitExecutable           string
 	TclExecutable           string
 	MacPortsPrefix          string
-	Tart                    tart.Config
-	GitHub                  github.Config
+	// IndexCacheDirectory overrides the shared PortIndex cache root; empty
+	// selects DOCKHAND_INDEX_CACHE, then the user cache directory.
+	IndexCacheDirectory string
+	Tart                tart.Config
+	GitHub              github.Config
 }
 
 type Services struct {
@@ -83,7 +86,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if config.Tart.PortIndexExecutable == "" && config.MacPortsPrefix != "" {
 		config.Tart.PortIndexExecutable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
 	}
-	indexCache, err := indexCacheDirectory()
+	indexCache, err := indexCacheDirectory(config)
 	if err != nil {
 		store.Close()
 		return nil, err

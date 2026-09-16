@@ -85,7 +85,7 @@ func Collect(ctx context.Context, config Config, options workflow.RetentionOptio
 	if err != nil {
 		return result, err
 	}
-	shared, err := indexCacheDirectory()
+	shared, err := indexCacheDirectory(config)
 	if err != nil {
 		return result, err
 	}

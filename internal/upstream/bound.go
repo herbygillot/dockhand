@@ -27,6 +27,12 @@ func (s *Service) Bind(probe VersionProbe) (*Discovery, error) {
 	}
 	bound := *s
 	bound.EvaluateVersion = probe.EvaluateVersion
+	bound.EvaluateVersions = nil
+	if batch, ok := probe.(interface {
+		EvaluateVersions(context.Context, []string) ([]string, error)
+	}); ok {
+		bound.EvaluateVersions = batch.EvaluateVersions
+	}
 	return &Discovery{service: bound, port: probe.Port()}, nil
 }
 func (d *Discovery) Discover(ctx context.Context) (Result, error) {

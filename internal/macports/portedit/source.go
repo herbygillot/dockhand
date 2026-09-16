@@ -81,10 +81,16 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 type workspace struct{ Root string }
 
 func (s *Service) evaluateEdit(ctx context.Context, request Request, input *sourceInput, contents []byte) (portfile.Edit, macports.Snapshot, string, error) {
-	return s.evaluateContents(ctx, request, input, contents, false)
+	return s.evaluateContents(ctx, s.Ports, request, input, contents, false)
 }
 
-func (s *Service) evaluateContents(ctx context.Context, request Request, input *sourceInput, contents []byte, selectedOnly bool) (_ portfile.Edit, _ macports.Snapshot, _ string, err error) {
+// snapshotEvaluator is the reader used for one evaluation: the service's
+// reader, or a batch bound to the workspace tree.
+type snapshotEvaluator interface {
+	Evaluate(context.Context, macports.Context) (macports.Snapshot, error)
+}
+
+func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, contents []byte, selectedOnly bool) (_ portfile.Edit, _ macports.Snapshot, _ string, err error) {
 	edit := portfile.Edit{Path: input.target.Portfile, After: contents}
 	path := filepath.Join(input.files.Root, input.target.Portfile)
 	original, err := os.ReadFile(path)
@@ -104,10 +110,10 @@ func (s *Service) evaluateContents(ctx context.Context, request Request, input *
 		return edit, macports.Snapshot{}, "", err
 	}
 	var after macports.Snapshot
-	if reader, ok := s.Ports.(macports.SelectedReader); ok && selectedOnly {
-		after, err = reader.EvaluateSelected(ctx, bound)
+	if selected, ok := reader.(macports.SelectedReader); ok && selectedOnly {
+		after, err = selected.EvaluateSelected(ctx, bound)
 	} else {
-		after, err = s.Ports.Evaluate(ctx, bound)
+		after, err = reader.Evaluate(ctx, bound)
 	}
 	if err == nil {
 		err = checkSnapshot(after, bound)

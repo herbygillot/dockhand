@@ -12,7 +12,7 @@ Implemented on 2026-09-16; see the [activity report](activity/2026-09-16-publica
 
 ### 2. Consolidate PortIndex storage and reuse
 
-Implemented on 2026-09-16 per the [PortIndex storage design](portindex.md); see the [consolidation report](activity/2026-09-16-portindex-consolidation.md). One shared cache root holds immutable generations per indexing environment; candidates derive from their base, master advances incrementally from the retained seed, and every consumer reuses the same generation. The cold deno revision bump fell from 9m58s to 6m38s with one full pass instead of two. Two follow-ups remain: point package tests at a temporary cache root instead of the user cache, and account for the roughly 85 seconds of a warm `outdated` that is not index work.
+Implemented on 2026-09-16 per the [PortIndex storage design](portindex.md); see the [consolidation report](activity/2026-09-16-portindex-consolidation.md). One shared cache root holds immutable generations per indexing environment; candidates derive from their base, master advances incrementally from the retained seed, and every consumer reuses the same generation. The cold deno revision bump fell from 9m58s to 6m38s with one full pass instead of two. Both follow-ups are done; see the [follow-up report](activity/2026-09-16-portindex-follow-ups.md): package tests use a temporary cache root through `DOCKHAND_INDEX_CACHE`, and the 80 seconds of a warm `outdated deno` were per-candidate interpreter startups in release discovery, now one batched session (87s to 27s).
 
 ### 3. Harden the first-use path
 
