@@ -142,6 +142,9 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	prefix := filepath.Join(working, "MacPorts prefix")
 	require.NoError(t, os.MkdirAll(filepath.Join(prefix, "bin"), 0700))
 	require.NoError(t, os.Symlink(config.TclExecutable, filepath.Join(prefix, "bin", "port-tclsh")))
+	indexer, err := exec.LookPath("portindex")
+	require.NoError(t, err)
+	require.NoError(t, os.Symlink(indexer, filepath.Join(prefix, "bin", "portindex")))
 	config.Repository, config.TclExecutable = "", ""
 	t.Chdir(working)
 	t.Setenv("MACPORTS_TREE", repo.Root)
@@ -153,8 +156,8 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	err := Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
-	require.ErrorContains(t, err, filepath.Join(working, "missing prefix", "bin", "port-tclsh"))
+	err = Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--prefix", "missing prefix"}, Streams{Out: &stdout, Err: &stderr}, config)
+	require.ErrorContains(t, err, filepath.Join(working, "missing prefix", "bin"))
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 
 	stdout.Reset()

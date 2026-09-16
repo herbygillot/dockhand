@@ -39,6 +39,7 @@ dockhand2/
       provision/         # Tart base-image construction and validation
     publish/             # Publication policy, desired state, reconciliation
     macports/            # Bound source contexts and evaluated observations
+      selection/         # Source-bound indexed port/subport names and validation
       eval/              # Native Tcl evaluation and MacPorts runtime compatibility
       installation/      # MacPorts installation and observed installation facts
       portedit/          # Evaluator-driven source edits and fidelity checks

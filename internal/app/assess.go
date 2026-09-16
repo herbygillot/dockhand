@@ -6,7 +6,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/assess"
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 )
 
 // Assess wires preparation diagnostics without opening workflow state.
@@ -18,7 +17,7 @@ func Assess(ctx context.Context, config Config, request assess.Request) (assess.
 	if err != nil {
 		return assess.Result{}, err
 	}
-	ports := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	ports := portReader(config, repo)
 	index, err := surveyIndex(config, len(request.Selection.Ports) == 0)
 	if err != nil {
 		return assess.Result{}, err

@@ -50,13 +50,13 @@ type ActionResult struct {
 }
 
 func (r *runtime) verifyCommand() *cobra.Command {
-	var branch, subport string
+	var branch string
 	var build buildOptions
 	var variants []string
 	var wait, trace, fresh bool
 	command := &cobra.Command{
 		Use: "verify [port]", Short: "Verify a port from the current checkout or a committed branch",
-		Long: "Verify one snapshot-relative port directory or unique directory name. By default, capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices; an explicit port starts from its own defaults. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
+		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices; an explicit port starts from its own defaults. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
 				return err
@@ -95,7 +95,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if len(args) == 1 {
 				selector = args[0]
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Subport: subport, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
 				return err
 			}
@@ -115,7 +115,6 @@ func (r *runtime) verifyCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&branch, "branch", "", "Verify committed contents of this local branch instead of the working tree")
-	command.Flags().StringVar(&subport, "subport", "", "Select one subport from the Portfile")
 	command.Flags().StringArrayVar(&variants, "variant", nil, "Explicit variant choice, such as +ssl or -x11 (repeatable)")
 	command.Flags().String("remote", "origin", "Git remote receiving the branch for GitHub verification")
 	build.flags(command, r.config)

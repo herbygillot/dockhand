@@ -115,8 +115,8 @@ func TestOutdatedIndexedSelectionKeepsSourceAndCoverage(t *testing.T) {
 		require.Equal(t, "fixture", result.Ports[1].Selector)
 		require.Equal(t, upstream.UpdateAvailable, result.Ports[1].Assessment)
 		require.Equal(t, "fixture-extra", result.Ports[2].Selector)
-		require.Equal(t, upstream.Unknown, result.Ports[2].Assessment)
-		require.Contains(t, result.Ports[2].Detail, "primary port")
+		require.Equal(t, upstream.UpdateAvailable, result.Ports[2].Assessment)
+		require.Equal(t, result.Ports[1].CandidateVersion, result.Ports[2].CandidateVersion)
 	}
 	require.Zero(t, downloads.Load())
 	require.NoDirExists(t, filepath.Dir(config.DBPath))

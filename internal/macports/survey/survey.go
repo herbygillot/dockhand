@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
+	portselection "github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -113,7 +114,7 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 			return nil, nil, err
 		}
 		for _, entry := range matches.Entries {
-			selected = append(selected, Port{Label: entry.Name, Name: entry.Name, Selection: macports.Selection{Selector: entry.Portdir + "/Portfile"}})
+			selected = append(selected, Port{Label: entry.Name, Name: entry.Name, Selection: portselection.FromEntry(entry, nil)})
 		}
 		problems = matches.Problems
 		progress.Report(ctx, "Selected %d indexed ports; %d selection coverage problems", len(selected), len(matches.Problems))

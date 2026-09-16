@@ -13,7 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
+	"github.com/herbygillot/dockhand/internal/macports/selection"
 	"github.com/herbygillot/dockhand/internal/proc"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -45,7 +45,7 @@ type Services struct {
 	Preparation       *preparation.Service
 	close             func() error
 	tartVerification  tartBuildConfigurator
-	ports             *eval.Evaluator
+	ports             *selection.Reader
 	targetImages      map[string]string
 	providerName      string
 	githubClient      *github.Client
@@ -73,7 +73,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		return nil, err
 	}
 
-	ports := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	ports := portReader(config, repo)
 	githubClient := newGitHubClient(config.GitHub)
 	discovery := releaseDiscovery(ports, githubClient, http.DefaultClient)
 	preparation := &preparation.Service{Repo: repo, Ports: ports, Upstream: discovery, DependencyTools: config.DependencyTools}

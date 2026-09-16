@@ -98,7 +98,7 @@ Provisioning uses temporary `-next` images. A failed build leaves the current ba
 
 ```text
 dockhand verify [port] [--image <prepared-local-image>] [--branch <branch>]
-    [--subport <name>] [--variant +name|--variant=-name ...]
+    [--variant +name|--variant=-name ...]
     [--capacity <positive-limit>] [--tests declared|skip]
     [--from-source] [--fresh] [--wait|--trace]
 dockhand wait [<job_id>] [--branch <branch>] [--trace]
@@ -106,7 +106,7 @@ dockhand cancel [<job_id>] [--branch <branch>] [--reason <text>] [--wait]
 dockhand start
 ```
 
-`verify` resolves one snapshot-relative port directory/Portfile or unique directory name. Omitting `--branch` captures current working-tree contents; detached HEAD is supported when a HEAD commit exists. Supplying `--branch`, even the current branch name, selects committed contents. Output identifies the input kind, branch or detached source, HEAD/commit, modified-file count, selected target, and accepted tree. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Omitting the port infers the single target of an open tracked contribution, as specified below. Multi-target selectors remain future work.
+`verify` resolves one named port/subport or snapshot-relative port directory/Portfile. Names are located through the captured source’s index and validated by native evaluation. Omitting `--branch` captures current working-tree contents; detached HEAD is supported when a HEAD commit exists. Supplying `--branch`, even the current branch name, selects committed contents. Output identifies the input kind, branch or detached source, HEAD/commit, modified-file count, selected target, and accepted tree. Explicit subports and variants use the existing snapshot evaluator. Standalone verification records source and targets without creating a tracked contribution. A tracked branch can verify other ports without changing its recorded set of edited ports. Omitting the port infers the single target of an open tracked contribution, as specified below. Multi-target selectors remain future work.
 
 The prepared image can be selected explicitly with `--image` or through the Go application's configured default. Otherwise Dockhand selects the conventional image for the native MacPorts platform; `setup` prepares and checks that image. The effective provider settings and image digest are recorded in the job, so queued and admitted work can resume without repeating image-selection flags. The shared pool's capacity is initially two; `--capacity` may establish another positive limit. An existing pool's limit and directory must agree. Omission reuses the recorded limit. Image availability and platform checks are distinct from admission capacity.
 
@@ -148,13 +148,13 @@ Each result retains findings with a check, status, stable reason code, and expla
 
 All findings remain visible when several conditions apply; the overall result prioritizes unsupported, then blocked, then unknown. Archives, generated-manifest equivalence, and verification remain explicitly untested. Successful assessment does not promise that a download, full preparation, or build will succeed. Use `bump --diff` to exercise full source preparation.
 
-Independent ports continue after a per-port failure. Indexed subports are selected within their owning Portfile; explicit selection uses `assess <Portfile> --subport <name>`. Unresolvable targets are reported individually; omitted Portfiles and missing index entries remain unknown. Exit status is 0 when all results are `input-found` or `candidate-checked` (or no ports match), and 1 if any are blocked, unsupported, or unknown. Cancellation follows the normal CLI exit convention.
+Independent ports continue after a per-port failure. Indexed subports are selected within their owning Portfile; explicit selection uses `assess <name>`. Unresolvable targets are reported individually; omitted Portfiles and missing index entries remain unknown. Exit status is 0 when all results are `input-found` or `candidate-checked` (or no ports match), and 1 if any are blocked, unsupported, or unknown. Cancellation follows the normal CLI exit convention.
 
 ## Implemented preparation groundwork
 
 ```text
 dockhand bump-revision <port> --diff
-    [--subport <name>] [--variant +name|--variant=-name ...]
+    [--variant +name|--variant=-name ...]
     [--reason <text>] [--json]
 dockhand bump <port> [version]
 ```

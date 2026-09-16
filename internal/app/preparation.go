@@ -7,7 +7,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -44,7 +43,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	if err != nil {
 		return Preview{}, err
 	}
-	ports := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	ports := portReader(config, repo)
 	githubClient := newGitHubClient(config.GitHub)
 	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
 	input := preparation.Request{

@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
-	"github.com/herbygillot/dockhand/internal/macports/eval"
 	"github.com/herbygillot/dockhand/internal/outdated"
 )
 
@@ -18,7 +17,7 @@ func Outdated(ctx context.Context, config Config, selection outdated.Selection) 
 	if err != nil {
 		return outdated.Result{}, err
 	}
-	ports := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	ports := portReader(config, repo)
 	index, err := surveyIndex(config, len(selection.Ports) == 0)
 	if err != nil {
 		return outdated.Result{}, err

@@ -18,5 +18,8 @@ func surveyIndex(config Config, indexed bool) (portindex.Config, error) {
 			index.Executable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
 		}
 	}
+	if config.Tart.PortIndexExecutable != "" {
+		index.Executable = config.Tart.PortIndexExecutable
+	}
 	return index, nil
 }

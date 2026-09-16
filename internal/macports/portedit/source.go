@@ -31,14 +31,22 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 	if err != nil {
 		return nil, err
 	}
-	selection := request.Selection
-	selection.Subport = ""
-	targets, err := s.Ports.Resolve(ctx, tree, selection)
+	targets, err := s.Ports.Resolve(ctx, tree, request.Selection)
 	if err != nil {
 		return nil, err
 	}
-	if len(targets) != 1 || targets[0].Subport != "" {
-		return nil, fmt.Errorf("%w: select one Portfile", ErrUnsupported)
+	if len(targets) != 1 {
+		return nil, fmt.Errorf("%w: select one port", ErrUnsupported)
+	}
+	selected := targets[0]
+	if selected.Subport != "" {
+		targets, err = s.Ports.Resolve(ctx, tree, macports.Selection{Selector: selected.Portfile, Variants: selected.Variants})
+		if err != nil {
+			return nil, err
+		}
+		if len(targets) != 1 || targets[0].Subport != "" {
+			return nil, fmt.Errorf("%w: select one owning Portfile", ErrUnsupported)
+		}
 	}
 	bound, err := tree.Select(targets[0])
 	if err != nil {
@@ -50,10 +58,6 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 	}
 	if err := checkSnapshot(before, bound); err != nil {
 		return nil, err
-	}
-	selected := targets[0]
-	if request.Selection.Subport != "" {
-		selected.Name, selected.Subport = request.Selection.Subport, request.Selection.Subport
 	}
 	info, ok := before.Ports[selected.Name]
 	if !ok {

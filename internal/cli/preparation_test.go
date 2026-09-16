@@ -64,7 +64,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	require.Equal(t, "master", result.Branch)
 	require.Contains(t, result.Diff, "+revision 1")
-	require.Empty(t, stderr.String())
+	require.Contains(t, stderr.String(), "PortIndex ready")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 }
 
