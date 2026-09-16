@@ -23,7 +23,7 @@ namespace eval ::dockhand {
             check_worker $worker
             set failures [dict create]
             foreach field {
-                checksums distfiles worksrcdir filespath master_sites fetch.type
+                checksums distfiles extract.only extract.rename worksrcdir filespath master_sites fetch.type
                 fetch.user_agent fetch.ignore_sslcert
                 patchfiles patch.pre_args livecheck.type livecheck.url livecheck.regex
                 livecheck.version livecheck.ignore_sslcert livecheck.compression livecheck.curloptions go.vendors go.version go.package go.domain go.offline_build go.toolchain_min

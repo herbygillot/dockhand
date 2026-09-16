@@ -130,7 +130,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 }
 func TestCargoDependencyPreparation(t *testing.T) {
 	sha := strings.Repeat("b", 64)
-	for _, scenario := range []string{"success", "added", "removed", "missing", "failed", "partial"} {
+	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial"} {
 		t.Run(scenario, func(t *testing.T) {
 			lock := func(name string) string {
 				result := "version = 4\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n"
@@ -162,6 +162,15 @@ func TestCargoDependencyPreparation(t *testing.T) {
  }
  port::register_callback fixture_crates
  `
+			if scenario == "auxiliary" {
+				extra += `
+checksums ${distname}${extract.suffix} sha256 aaaa size 1 pinned-v8.gz sha256 cccc size 4
+master_sites-append https://invalid.example/frozen:pin
+distfiles-append pinned-v8.gz:pin
+extract.only ${distname}${extract.suffix}
+extract.rename no
+`
+			}
 			if oldName != "" {
 				extra += "cargo.crates old 1.2.3 " + sha + "\n"
 			}
@@ -208,6 +217,10 @@ func TestCargoDependencyPreparation(t *testing.T) {
 					require.Contains(t, string(result.Files[0].After), "new 1.2.3")
 				}
 				require.Equal(t, int64(2), requests.Load())
+				if scenario == "auxiliary" {
+					require.Contains(t, string(result.Files[0].After), "pinned-v8.gz sha256 cccc size 4")
+					require.Len(t, result.Downloads, 1)
+				}
 			}
 			if err != nil {
 				require.Empty(t, result.PreparedTree)

@@ -135,8 +135,9 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(sources) != 1 {
-		return nil, nil, fmt.Errorf("%w: dependency regeneration requires one primary source archive", ErrUnsupported)
+	sources, err = dependencySources(base.info, sources)
+	if err != nil {
+		return nil, nil, err
 	}
 	return base, sources, nil
 }
@@ -158,19 +159,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	defer os.RemoveAll(directory)
-	oldArchive, err := os.CreateTemp(directory, "old-*")
-	if err != nil {
-		return Result{}, err
-	}
-	_, err = s.downloadArchive(ctx, base.info, sources[0], oldArchive)
-	closeErr := oldArchive.Close()
-	if err != nil {
-		return Result{}, err
-	}
-	if closeErr != nil {
-		return Result{}, closeErr
-	}
-	oldInput, err := dependencyInput(base.info, oldArchive.Name())
+	oldInput, err := s.originalDependencySource(ctx, base.info, sources, plan.Kind, directory)
 	if err != nil {
 		return Result{}, err
 	}
@@ -196,11 +185,16 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	if len(result.Downloads) != 1 {
-		return Result{}, fmt.Errorf("%w: expected one downloaded dependency source", ErrUnsupported)
-	}
 	next := result.Fidelity[len(result.Fidelity)-1].After.Ports[input.target.Name]
-	nextInput, err := dependencyInput(next, result.Downloads[0].path)
+	nextSources, err := downloadSources(next, filepath.Join(base.files.Root, filepath.Dir(base.target.Portfile)))
+	if err != nil {
+		return Result{}, err
+	}
+	nextSources, err = dependencySources(next, nextSources)
+	if err != nil {
+		return Result{}, err
+	}
+	nextInput, err := selectDependencySource(ctx, next, nextSources, result.Downloads, plan.Kind)
 	if err != nil {
 		return Result{}, err
 	}
