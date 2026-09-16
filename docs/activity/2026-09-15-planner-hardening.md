@@ -35,3 +35,9 @@ Replayed the same 147-Portfile sample. Investigating every changed outcome caugh
 ## Equivalent calculated-version candidates
 
 A new arithmetic fixture (`release * 10 + 1`) exposed two relations generating the same byte-for-byte edit: numeric inversion and literal substitution. Counting those as two inputs incorrectly refused the update. Candidate evaluation now deduplicates identical edits before evaluation, while different edits still trigger ambiguity. Forward-probing and genuine-ambiguity/sibling-fidelity regressions passed.
+
+## Cold submission deadline
+
+The fresh jq verification generated its complete PortIndex in 4m24s, then exhausted the original five-minute provider-call budget during VM provisioning. No build verdict was produced; reconciliation closed the partial submission and released its resource. Increased the bounded submission/reconciliation default to fifteen minutes to cover both cold source staging and VM startup. Explicit engine overrides and shorter observation/cleanup deadlines remain intact; claims automatically use the same budget plus their existing grace period.
+
+A concurrent-driver regression advances the stored clock beyond the old deadline during a still-active submission and establishes that another driver cannot reclaim it. Existing operation-deadline/retry checks passed alongside it. The longer default also extends the maximum abandoned-claim recovery wait; splitting staging into a separately persisted phase would be a larger design change, not a requirement for this bounded correction.

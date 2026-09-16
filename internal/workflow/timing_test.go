@@ -174,3 +174,30 @@ func TestMissingRegisteredProviderDoesNotUseFallbackOrTerminateWork(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, record.AttemptRunning, f.attempt(t, id).State)
 }
+
+func TestDefaultSubmissionClaimCoversColdPreparationAndStartup(t *testing.T) {
+	f := newFixture(t)
+	f.engine.Timeouts.Provision = 0
+	f.engine.LeaseGrace = time.Minute
+	id := f.submit(t, "cold-submission")
+	started, proceed := make(chan struct{}), make(chan struct{})
+	f.provider.submit = func(ctx context.Context, request verify.Request) (verify.Submission, error) {
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok)
+		require.Greater(t, time.Until(deadline), 10*time.Minute)
+		close(started)
+		<-proceed
+		return admitted(request.ID), nil
+	}
+	reply := startCycle(t.Context(), f.engine, id)
+	receive(t, started)
+	f.advance(6 * time.Minute)
+	other := *f.engine
+	other.Owner = "other-driver"
+	_, err := other.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
+	close(proceed)
+	require.NoError(t, err)
+	require.NoError(t, receive(t, reply).err)
+	require.Equal(t, 1, f.provider.count("submit"), "cold staging must not let another driver reclaim an active submission")
+	require.Equal(t, record.AttemptRunning, f.attempt(t, id).State)
+}

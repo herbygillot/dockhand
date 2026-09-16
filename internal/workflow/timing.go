@@ -16,7 +16,8 @@ func (t Timeouts) defaults() (Timeouts, error) {
 		fallback time.Duration
 	}{
 		{&t.Resolve, 5 * time.Minute}, {&t.Prepare, 10 * time.Minute},
-		{&t.Provision, 5 * time.Minute}, {&t.Observe, 30 * time.Second},
+		// Submission includes source staging/index generation before VM startup.
+		{&t.Provision, 15 * time.Minute}, {&t.Observe, 30 * time.Second},
 		{&t.Publish, 2 * time.Minute}, {&t.Cleanup, time.Minute},
 	} {
 		if *item.value < 0 {
