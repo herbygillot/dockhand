@@ -104,7 +104,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 				mu.Unlock()
 				stdout.Reset()
 				stderr.Reset()
-				require.NoError(t, runFixture(t.Context(), []string{"wait", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+				require.NoError(t, runFixture(t.Context(), []string{"wait", "--job", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 			}
 			entry := result.Status.Jobs[0]

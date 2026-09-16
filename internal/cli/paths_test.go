@@ -80,7 +80,7 @@ func TestGlobalGitReachesRepositoryOperations(t *testing.T) {
 	config.GitExecutable = ""
 	t.Setenv("GIT_BIN", "/missing/environment/git")
 	var output bytes.Buffer
-	err := Run(t.Context(), []string{"status", string(id), "--json"}, Streams{Out: &output, Err: &output}, config)
+	err := Run(t.Context(), []string{"status", "--job", string(id), "--json"}, Streams{Out: &output, Err: &output}, config)
 	require.ErrorContains(t, err, "/missing/environment/git")
 
 	gitPath, err := exec.LookPath("git")
@@ -89,7 +89,7 @@ func TestGlobalGitReachesRepositoryOperations(t *testing.T) {
 	require.NoError(t, os.Symlink(gitPath, filepath.Join(working, "selected-git")))
 	t.Chdir(working)
 	output.Reset()
-	require.NoError(t, Run(t.Context(), []string{"status", string(id), "--git", "./selected-git", "--json"}, Streams{Out: &output, Err: &output}, config))
+	require.NoError(t, Run(t.Context(), []string{"status", "--job", string(id), "--git", "./selected-git", "--json"}, Streams{Out: &output, Err: &output}, config))
 	var result workflow.Status
 	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
 	require.Len(t, result.Jobs, 1)
@@ -117,12 +117,12 @@ func TestGlobalTreeSelectsRecordedWorkFromOutsideCheckout(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("MACPORTS_PREFIX", "/missing/macports")
 	for _, args := range [][]string{
-		{"status", string(id), "--json"},
-		{"--tree", tree, "status", string(id), "--json"},
-		{"status", string(id), "-T", tree, "--json"},
+		{"status", "--job", string(id), "--json"},
+		{"--tree", tree, "status", "--job", string(id), "--json"},
+		{"status", "--job", string(id), "-T", tree, "--json"},
 	} {
 		t.Setenv("MACPORTS_TREE", tree)
-		if len(args) > 3 {
+		if len(args) > 4 {
 			t.Setenv("MACPORTS_TREE", "/missing/ports")
 		}
 		var stdout, stderr bytes.Buffer

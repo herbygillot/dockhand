@@ -161,15 +161,15 @@ Dockhand fetches the current MacPorts `master`, creates an update branch named l
 - `--provider tart` or `--provider github` overrides the automatic choice.
 - `--from-source` builds dependencies from source instead of using binary archives.
 
-A failed build keeps the branch. Switch to it, look at the log, fix what needs fixing, and check it again with `verify`.
+Use `dockhand status jq` to follow the contribution, and `dockhand verify jq --wait` to verify its committed branch again. A failed build keeps the branch. Switch to it, look at the log, fix what needs fixing, and check it again with `verify`.
 
 ### Open the pull request
 
 When the branch has a passing build, preview the publication and then open the pull request:
 
 ```sh
-dockhand publish --branch dockhand/bump/jq-... --dry-run
-dockhand publish --branch dockhand/bump/jq-... --wait
+dockhand publish jq --dry-run
+dockhand publish jq --wait
 ```
 
 The dry run shows the full pull-request body without pushing anything. The real run pushes the branch to your fork and opens the pull request against MacPorts. Publishing requires a passing build for exactly the committed contents; if you changed the branch since it was built, Dockhand asks you to verify it again first.
@@ -191,7 +191,7 @@ git switch dockhand/bump/jq-...
 # edit, then stage the changed files
 git add <changed-files>
 git commit --amend --no-edit
-dockhand verify jq --trace
+dockhand verify jq --working-tree --trace
 dockhand publish --wait
 ```
 
@@ -204,8 +204,8 @@ Everything Dockhand accepts is recorded, so you can leave and come back:
 ```sh
 dockhand status
 dockhand status --active
-dockhand wait <job-id> --trace
-dockhand cancel <job-id> --wait
+dockhand wait --job <job-id> --trace
+dockhand cancel --job <job-id> --wait
 ```
 
 `status` reads what is recorded and starts nothing. `wait` resumes a job and follows it to the end. `wait` and `cancel` also accept `--branch <name>`, or no selector at all when you are on the branch in question. Ctrl-C detaches from a running command; the build keeps going, and `cancel` is how you stop it. `dockhand start` keeps working through every pending job for the checkout until you interrupt it.

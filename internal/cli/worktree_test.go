@@ -25,7 +25,7 @@ func (w *detachOnAcceptance) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func TestVerifyCLISelectsWorkingTreeUnlessBranchIsExplicit(t *testing.T) {
+func TestVerifyCLISelectsExplicitWorkingTreeOrBranch(t *testing.T) {
 	for _, explicit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "checkout", true: "branch"}[explicit], func(t *testing.T) {
 			config, repo, _ := preparationCLI(t)
@@ -50,6 +50,8 @@ func TestVerifyCLISelectsWorkingTreeUnlessBranchIsExplicit(t *testing.T) {
 			args := []string{"verify", "fixture", "--json"}
 			if explicit {
 				args = append(args, "--branch", "candidate")
+			} else {
+				args = append(args, "--working-tree")
 			}
 			err = Run(ctx, args, Streams{Out: &stdout, Err: stderr}, config)
 			require.ErrorIs(t, err, context.Canceled)

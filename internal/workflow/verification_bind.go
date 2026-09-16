@@ -17,6 +17,9 @@ import (
 )
 
 type VerificationRequest struct {
+	// Continue selects tracked work before capturing its committed source.
+	Continue          *ContributionSelector
+	UseRecordedBuild  bool
 	TargetBuilds      map[string]record.BuildConfig
 	IncludeDependents bool
 	Fresh             bool
@@ -52,6 +55,41 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	}
 	if e.Repo == nil || e.Ports == nil {
 		return BoundVerification{}, fmt.Errorf("workflow: source binding requires Git and MacPorts")
+	}
+	var continuation *record.Change
+	if request.Continue != nil {
+		change, err := e.SelectContribution(ctx, *request.Continue)
+		if err != nil {
+			return BoundVerification{}, err
+		}
+		if err := contributionPrepared(change); err != nil {
+			return BoundVerification{}, err
+		}
+		if err := e.Repo.RequireCleanBranch(ctx, change.Branch); err != nil {
+			return BoundVerification{}, err
+		}
+		continuation = &change
+		request.Branch = change.Branch
+		request.Selection.Selector = ""
+		spec, err := e.ContributionBuild(ctx, change)
+		if err != nil {
+			return BoundVerification{}, err
+		}
+		request.IncludeDependents = request.IncludeDependents || spec.IncludeDependents
+		inherited := maps.Clone(spec.TargetBuilds)
+		if inherited == nil {
+			inherited = map[string]record.BuildConfig{}
+		}
+		maps.Copy(inherited, request.TargetBuilds)
+		request.TargetBuilds = inherited
+		if request.UseRecordedBuild {
+			if spec.Build != nil {
+				request.Build = *spec.Build
+				request.ResolveBuild = nil
+				request.IncludeDependents = spec.IncludeDependents
+				request.TargetBuilds = spec.TargetBuilds
+			}
+		}
 	}
 	if !validToken(string(request.ID)) || (request.Branch != "" && !git.ValidBranchName(request.Branch)) {
 		return BoundVerification{}, ErrInvalidRequest
@@ -100,11 +138,14 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 			return nil
 		}
 		change, err := reader.OpenChangeByBranch(ctx, request.Branch)
-		if errors.Is(err, state.ErrNotFound) {
+		if errors.Is(err, state.ErrNotFound) && continuation == nil {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if continuation != nil && (change.ID != continuation.ID || change.CurrentRevision != continuation.CurrentRevision) {
+			return ErrStaleRevision
 		}
 		if change.CurrentRevision == "" {
 			return fmt.Errorf("%w: tracked branch has no revision", state.ErrInvalid)
@@ -156,7 +197,10 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		if resolved.Build == nil || resolved.Requirements != nil || resolved.Problem != "" {
 			return BoundVerification{}, fmt.Errorf("%w: verification requires a concrete build configuration", ErrInvalidRequest)
 		}
-		request.TargetBuilds = resolved.TargetBuilds
+		if request.TargetBuilds == nil {
+			request.TargetBuilds = map[string]record.BuildConfig{}
+		}
+		maps.Copy(request.TargetBuilds, resolved.TargetBuilds)
 		request.Build = *resolved.Build
 		if request.Build.Platform != platform {
 			return BoundVerification{}, fmt.Errorf("%w: resolved build platform differs from the evaluated platform", ErrInvalidRequest)
@@ -167,6 +211,12 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	}
 	if inferred != nil && record.CompareTargets(targets[0], *inferred) != 0 {
 		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)
+	}
+	if request.Build.Provider == "github" {
+		if working {
+			return BoundVerification{}, fmt.Errorf("GitHub verification requires committed branch source; select --branch instead of --working-tree")
+		}
+		request.Fresh = true
 	}
 	spec, err := normalizeSpec(record.JobSpec{TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {

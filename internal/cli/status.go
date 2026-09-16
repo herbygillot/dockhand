@@ -20,19 +20,16 @@ import (
 func (r *runtime) statusCommand() *cobra.Command {
 	var filter workflow.StatusFilter
 	cmd := &cobra.Command{
-		Use:   "status [job_id]",
+		Use:   "status [target]",
 		Short: "Show recorded workflow status",
 		Long:  "Show a repository state snapshot, including recorded jobs, verification, publication, and resource cleanup. This command does not advance work or refresh provider or pull request state.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
-				if cmd.Flags().Changed("branch") {
-					return fmt.Errorf("status accepts a job ID or --branch, not both")
+				if args[0] == "" {
+					return fmt.Errorf("status requires a nonempty target")
 				}
-				filter.JobID = record.JobID(args[0])
-				if filter.JobID == "" {
-					return fmt.Errorf("status requires a nonempty job ID")
-				}
+				filter.Target = args[0]
 			}
 			if cmd.Flags().Changed("branch") && filter.Branch == "" {
 				return fmt.Errorf("--branch requires a nonempty branch name")
@@ -47,6 +44,8 @@ func (r *runtime) statusCommand() *cobra.Command {
 			return renderStatus(cmd.OutOrStdout(), status)
 		},
 	}
+	cmd.Flags().StringVar((*string)(&filter.JobID), "job", "", "Inspect one job instead of a target")
+	cmd.Flags().StringVar((*string)(&filter.ChangeID), "change", "", "Inspect one contribution")
 	cmd.Flags().BoolVar(&filter.Active, "active", false, "Show queued and active jobs, including capacity and retry waits")
 	cmd.Flags().StringVar(&filter.Branch, "branch", "", "Show jobs for a recorded contribution branch")
 	return cmd
@@ -91,6 +90,12 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		line("Repository: %s", status.Repository)
 	}
 	if f := status.Filter; f != nil {
+		if f.Target != "" {
+			line("Target: %s", f.Target)
+		}
+		if f.ChangeID != "" {
+			line("Contribution: %s", f.ChangeID)
+		}
 		if f.JobID != "" {
 			line("Job: %s", f.JobID)
 		}

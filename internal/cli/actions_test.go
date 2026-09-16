@@ -94,6 +94,6 @@ func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
 	status := workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, Spec: record.JobSpec{Destination: record.Published}}}}}
 	require.NoError(t, r.result(&out, ActionResult{Status: status}))
 	require.Contains(t, out.String(), "PR publication remains pending.")
-	require.Contains(t, out.String(), "dockhand wait job")
+	require.Contains(t, out.String(), "dockhand wait --job job")
 	require.Contains(t, out.String(), "dockhand start")
 }

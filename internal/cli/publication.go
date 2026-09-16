@@ -12,18 +12,25 @@ import (
 )
 
 func (r *runtime) publishCommand() *cobra.Command {
-	var branch string
+	var branch, change string
 	var options publish.Options
 	var dryRun, wait bool
-	cmd := &cobra.Command{Use: "publish", Short: "Publish a verified, committed contribution to GitHub", Args: cobra.NoArgs,
-		Long: "Publish the current branch, or select one with --branch. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. Without --wait, return after driver pickup; --wait follows confirmation of the pushed head and PR metadata. Ctrl-C detaches, and wait or start resumes the durable job. GH_TOKEN, GITHUB_TOKEN, or an authenticated GitHub CLI supplies GitHub API authentication. Git uses its configured credentials.",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "publish [target]", Short: "Publish a verified, committed contribution to GitHub", Args: cobra.MaximumNArgs(1),
+		Long: "Publish the unique open contribution for a target. Omit the target to use the current branch, or select --branch or --change explicitly. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. Without --wait, return after driver pickup; --wait follows confirmation of the pushed head and PR metadata. Ctrl-C detaches, and wait or start resumes the durable job. GH_TOKEN, GITHUB_TOKEN, or an authenticated GitHub CLI supplies GitHub API authentication. Git uses its configured credentials.",
+		RunE: func(cmd *cobra.Command, args []string) error {
 			services, err := r.build(cmd.Context(), r.config)
 			if err != nil {
 				return err
 			}
 			defer services.Close()
-			input := workflow.PublicationRequest{ID: record.RequestID("request_" + rand.Text()), Branch: branch, Options: options}
+			var target string
+			if len(args) == 1 {
+				target = args[0]
+				if target == "" {
+					return fmt.Errorf("target must not be empty")
+				}
+			}
+			input := workflow.PublicationRequest{Target: target, ChangeID: record.ChangeID(change), ID: record.RequestID("request_" + rand.Text()), Branch: branch, Options: options}
 			var request workflow.Request
 			if dryRun {
 				request, err = services.Workflow.PlanPublication(cmd.Context(), input)
@@ -58,6 +65,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&branch, "branch", "", "Publish committed contents of this local branch")
+	cmd.Flags().StringVar(&change, "change", "", "Select one tracked contribution when the target is ambiguous")
 	publicationFlags(cmd, &options)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the publication plan without accepting a job or writing remotely")
 	cmd.Flags().BoolVar(&wait, "wait", false, "Stay until the branch and PR are confirmed")

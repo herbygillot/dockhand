@@ -140,7 +140,7 @@ func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) 
 	require.Equal(t, "unstaged edits", string(afterFile))
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"wait", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"wait", "--job", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	require.Equal(t, job.ResultRevision, result.Status.Jobs[0].Job.ResultRevision)
 }
@@ -249,7 +249,7 @@ checksums rmd160 %s \
 	require.Equal(t, int64(2), downloads.Load())
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"wait", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"wait", "--job", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Equal(t, int64(2), downloads.Load(), "reattachment must not prepare or download again")
 }
 

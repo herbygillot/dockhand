@@ -39,7 +39,7 @@ func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
 	require.Contains(t, entry.Job.ReuseDetail, "Reused passing verification")
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"wait", string(entry.Job.ID), "--trace", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"wait", "--job", string(entry.Job.ID), "--trace", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	detach := &detachOnAcceptance{cancel: cancel}

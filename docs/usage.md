@@ -49,9 +49,9 @@ All cooperating drivers using the same Tart home must use the same DB, capacity,
 Verify current edits or committed branch contents, then reattach by the printed job ID:
 
 ```sh
-dockhand verify jq --image dockhand-base-tahoe --wait
+dockhand verify jq --working-tree --image dockhand-base-tahoe --wait
 dockhand verify jq --branch update-jq --image dockhand-base-tahoe
-dockhand wait <job_id> --trace
+dockhand wait --job <job_id> --trace
 # Or resume every pending job already associated with a contribution:
 dockhand wait --branch update-jq
 # From that branch, the selector may be omitted:
@@ -61,14 +61,16 @@ dockhand verify jq --branch update-jq --image dockhand-base-tahoe --wait
 # A tracked contribution supplies the target when it is omitted:
 dockhand verify --branch update-jq --image dockhand-base-tahoe --wait
 
-dockhand cancel <job_id> --wait
+dockhand cancel --job <job_id> --wait
 dockhand cancel --branch update-jq --wait
 dockhand start
 ```
 
-Omitting `--branch` captures tracked working-tree contents, including staged additions and deletions, without changing the index or branch. New files must be staged; explicit `--branch` uses committed contents. The accepted snapshot stays fixed while editing continues; each invocation selects one port directory or unique directory name, optionally `--subport` and repeated `--variant` choices. `wait` and `cancel` accept a job ID, `--branch`, or the current branch when both are omitted. Branch selection freezes that open contribution's queued and active jobs; later submissions do not join. Broader port selectors remain later work. A tracked contribution retains its edited targets; verification may select a different target without redefining that contribution.
+`verify <target>` continues the unique open contribution in this repository using its committed branch and recorded build settings. `--working-tree` explicitly captures tracked checkout contents, including staged additions and deletions, without changing the index or branch. Stage new files to include them. `--branch` selects committed manual work. Port and subport names are single target arguments; variants use repeated `--variant` choices.
 
-Omit the port on an open tracked contribution to reuse its single target, subport, and variant choices. Explicit variant flags override the recorded choices; supplying a port starts from that port's defaults. Inference checks the selected tree against the recorded contribution base and asks for an explicit port if changes extend outside its directory. Untracked branches and detached checkouts require an explicit port. See the [inference report](activity/2026-09-13-verification-target-inference.md).
+Use `status <target>`, `wait <target>`, or `cancel <target>` for that contribution, and `--job <id>` for one particular job. `--change <id>` or `--branch <branch>` disambiguates multiple contributions. Wait/cancel freeze the pending jobs at selection; later submissions do not join. Failed preparation remains visible but cannot be verified or published until it produces a branch. A dirty checkout of the contribution branch requires explicit working-tree capture or an amendment.
+
+Omit the port on a tracked branch to infer its single target and variants. Named continuation inherits recorded variants; explicit variant flags override them. Manual untracked branches and detached working-tree snapshots require an explicit target.
 
 Matching passing verification is reused when the complete source tree, target, variants, image, verifier implementation, and build settings agree. You can verify edits, commit the same contents, and verify that branch without another build. Status cites the original attempt. Use `verify --fresh` to require a new execution; reattaching with `wait` preserves the existing decision. Older results without a recorded verifier identity require a fresh build before they can be reused.
 
@@ -99,11 +101,11 @@ dockhand bump jq --publish --image dockhand-base-tahoe --wait
 dockhand bump-revision jq --publish --image dockhand-base-tahoe --trace
 ```
 
-The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. If no suitable image is available, matching recorded verification can still satisfy the accepted requirements; otherwise the job needs attention and preserves the prepared branch for a later verification run. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. If no suitable image is available, matching recorded verification can still satisfy the accepted requirements; otherwise the job needs attention and preserves the prepared branch for a later verification run. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait --job <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
 
 ## Publish an existing branch
 
-Publish a contribution, including a branch created with ordinary Git commands, after verifying and committing its contents:
+Publish a tracked update with `publish <target>`. You can also publish a contribution, including a branch created with ordinary Git commands, after verifying and committing its contents:
 
 ```sh
 dockhand publish --branch update-jq --dry-run

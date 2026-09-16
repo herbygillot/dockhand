@@ -98,7 +98,7 @@ func TestAutomaticBumpCLIUsesResolvedReleaseAndPreparedBranch(t *testing.T) {
 	require.Equal(t, int64(2), catalogs.Load())
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"wait", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"wait", "--job", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Equal(t, int64(2), catalogs.Load())
 	require.NoFileExists(t, filepath.Join(repo.CommonDir, "index"))
 }
@@ -136,7 +136,7 @@ func TestCurrentBumpCLIIsSuccessfulWithoutDownloadsBranchOrProvider(t *testing.T
 	observed := catalogs.Load()
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"wait", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"wait", "--job", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Equal(t, observed, catalogs.Load())
 }
 

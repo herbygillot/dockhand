@@ -50,13 +50,14 @@ type ActionResult struct {
 }
 
 func (r *runtime) verifyCommand() *cobra.Command {
-	var branch string
+	var branch, change string
+	var workingTree bool
 	var build buildOptions
 	var variants []string
 	var wait, trace, fresh bool
 	command := &cobra.Command{
-		Use: "verify [port]", Short: "Verify a port from the current checkout or a committed branch",
-		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices; an explicit port starts from its own defaults. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
+		Use: "verify [port]", Short: "Verify a prepared contribution or explicit source",
+		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, continue the unique open contribution for the target using its committed branch and recorded verification settings. Use --working-tree to capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command waits for provider admission; --wait follows completion. Ctrl-C detaches without canceling accepted work.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
 				return err
@@ -78,24 +79,24 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if config.VerificationProvider == "github" && (branch == "" || fresh) {
-				return fmt.Errorf("GitHub verification requires --branch; --fresh is unsupported, rerun the workflow on GitHub and verify again")
+			if config.VerificationProvider == "github" && (workingTree || fresh) {
+				return fmt.Errorf("GitHub verification requires committed source; --fresh is unsupported, rerun the workflow on GitHub and verify again")
 			}
 			services, err := r.build(cmd.Context(), config)
 			if err != nil {
 				return err
 			}
 			defer services.Close()
-			if branch == "" {
+			if workingTree {
 				fmt.Fprintln(cmd.ErrOrStderr(), "Capturing working-tree source and checking verification settings...")
-			} else {
+			} else if branch != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Binding committed source from %s and checking verification settings...\n", branch)
 			}
 			var selector string
 			if len(args) == 1 {
 				selector = args[0]
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
 				return err
 			}
@@ -114,7 +115,11 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			return r.attach(cmd, services, receipt.JobID, milestone, trace, false, &receipt)
 		},
 	}
-	command.Flags().StringVar(&branch, "branch", "", "Verify committed contents of this local branch instead of the working tree")
+	command.Flags().StringVar(&branch, "branch", "", "Explicitly verify committed contents of this local branch")
+	command.Flags().StringVar(&change, "change", "", "Select one tracked contribution when the target is ambiguous")
+	command.Flags().BoolVar(&workingTree, "working-tree", false, "Explicitly capture tracked checkout edits and staged new files")
+	command.MarkFlagsMutuallyExclusive("working-tree", "branch")
+	command.MarkFlagsMutuallyExclusive("working-tree", "change")
 	command.Flags().StringArrayVar(&variants, "variant", nil, "Explicit variant choice, such as +ssl or -x11 (repeatable)")
 	command.Flags().String("remote", "origin", "Git remote receiving the branch for GitHub verification")
 	build.flags(command, r.config)
@@ -143,11 +148,49 @@ func parseVariants(values []string) (map[string]bool, error) {
 	}
 	return result, nil
 }
+
+type workSelector struct{ branch, change, job string }
+
+func (s *workSelector) flags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&s.branch, "branch", "", "Select a tracked contribution branch (defaults to the current branch)")
+	cmd.Flags().StringVar(&s.change, "change", "", "Select a tracked contribution by ID")
+	cmd.Flags().StringVar(&s.job, "job", "", "Select one recorded job")
+	cmd.MarkFlagsMutuallyExclusive("job", "branch", "change")
+}
+func (s workSelector) validate(args []string) error {
+	if len(args) == 1 && (args[0] == "" || !macports.ValidName(args[0])) {
+		return fmt.Errorf("target must name a port or subport")
+	}
+	if len(args) > 0 && s.job != "" {
+		return fmt.Errorf("select a target or --job, not both")
+	}
+	if s.branch != "" && !git.ValidBranchName(s.branch) {
+		return fmt.Errorf("branch must name a literal recorded contribution branch")
+	}
+	return nil
+}
+func (s workSelector) contribution(ctx context.Context, services *app.Services, args []string) (workflow.ContributionSelector, error) {
+	selected := workflow.ContributionSelector{Branch: s.branch, ChangeID: record.ChangeID(s.change)}
+	if len(args) == 1 {
+		selected.Target = args[0]
+	}
+	if selected == (workflow.ContributionSelector{}) {
+		branch, err := services.Workflow.Repo.CurrentBranch(ctx)
+		if err != nil {
+			return selected, err
+		}
+		selected.Branch = branch
+	}
+	return selected, selected.Validate()
+}
 func (r *runtime) waitCommand() *cobra.Command {
-	var branch string
+	var selected workSelector
 	var trace bool
-	command := &cobra.Command{Use: "wait [job_id]", Short: "Resume existing work through completion", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validateWorkSelector(cmd, args, branch); err != nil {
+	command := &cobra.Command{Use: "wait [target]", Short: "Resume existing work through completion", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("branch") && !git.ValidBranchName(selected.branch) {
+			return fmt.Errorf("branch must name a literal recorded contribution branch")
+		}
+		if err := selected.validate(args); err != nil {
 			return err
 		}
 		services, err := r.build(cmd.Context(), r.config)
@@ -155,30 +198,33 @@ func (r *runtime) waitCommand() *cobra.Command {
 			return err
 		}
 		defer services.Close()
-		if len(args) == 1 {
-			return r.attach(cmd, services, record.JobID(args[0]), workflow.Completion, trace, false, nil)
+		if selected.job != "" {
+			return r.attach(cmd, services, record.JobID(selected.job), workflow.Completion, trace, false, nil)
 		}
-		branch, err = selectedWorkBranch(cmd.Context(), services, branch)
+		selector, err := selected.contribution(cmd.Context(), services, args)
 		if err != nil {
 			return err
 		}
-		scope, err := services.Workflow.BranchScope(cmd.Context(), branch)
+		scope, err := services.Workflow.ContributionScope(cmd.Context(), selector)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "Selected %d pending job(s) for branch %s: %s.\n", len(scope.Jobs), branch, joinJobIDs(scope.Jobs))
-		return r.attachScope(cmd, services, scope, workflow.Completion, trace, false, nil, ActionResult{JobIDs: slices.Clone(scope.Jobs), Branch: branch})
+		fmt.Fprintf(cmd.ErrOrStderr(), "Selected %d pending job(s): %s.\n", len(scope.Jobs), joinJobIDs(scope.Jobs))
+		return r.attachScope(cmd, services, scope, workflow.Completion, trace, false, nil, ActionResult{JobIDs: slices.Clone(scope.Jobs), Branch: selector.Branch})
 	}}
-	command.Flags().StringVar(&branch, "branch", "", "Select pending work for this recorded contribution branch (defaults to the current branch)")
+	selected.flags(command)
 	command.Flags().BoolVar(&trace, "trace", false, "Stream build logs to stderr")
 	return command
 }
 func (r *runtime) cancelCommand() *cobra.Command {
-	var branch string
+	var selected workSelector
 	var wait bool
 	var reason string
-	command := &cobra.Command{Use: "cancel [job_id]", Short: "Request cancellation while preserving branches and evidence", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validateWorkSelector(cmd, args, branch); err != nil {
+	command := &cobra.Command{Use: "cancel [target]", Short: "Request cancellation while preserving branches and evidence", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("branch") && !git.ValidBranchName(selected.branch) {
+			return fmt.Errorf("branch must name a literal recorded contribution branch")
+		}
+		if err := selected.validate(args); err != nil {
 			return err
 		}
 		services, err := r.build(cmd.Context(), r.config)
@@ -189,27 +235,26 @@ func (r *runtime) cancelCommand() *cobra.Command {
 		request := record.ControlRequest{ID: record.RequestID("control_" + rand.Text()), Kind: record.Cancel, Reason: reason}
 		var scope workflow.Scope
 		result := ActionResult{}
-		if len(args) == 1 {
-			id := record.JobID(args[0])
+		if selected.job != "" {
+			id := record.JobID(selected.job)
 			request.Jobs = []record.JobID{id}
 			if err = services.Workflow.Control(cmd.Context(), request); err != nil {
 				return err
 			}
 			scope = workflow.Scope{Jobs: []record.JobID{id}}
 			result.JobID = id
-			fmt.Fprintf(cmd.ErrOrStderr(), "Cancellation requested for %s.\n", id)
 		} else {
-			branch, err = selectedWorkBranch(cmd.Context(), services, branch)
+			selector, err := selected.contribution(cmd.Context(), services, args)
 			if err != nil {
 				return err
 			}
-			scope, err = services.Workflow.ControlBranch(cmd.Context(), request, branch)
+			scope, err = services.Workflow.ControlContribution(cmd.Context(), request, selector)
 			if err != nil {
 				return err
 			}
-			result.JobIDs, result.Branch = slices.Clone(scope.Jobs), branch
-			fmt.Fprintf(cmd.ErrOrStderr(), "Cancellation requested for %d pending job(s) on branch %s: %s.\n", len(scope.Jobs), branch, joinJobIDs(scope.Jobs))
+			result.JobIDs, result.Branch = slices.Clone(scope.Jobs), selector.Branch
 		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "Cancellation requested for %s.\n", joinJobIDs(scope.Jobs))
 		if wait {
 			return r.attachScope(cmd, services, scope, workflow.Completion, false, true, nil, result)
 		}
@@ -218,30 +263,10 @@ func (r *runtime) cancelCommand() *cobra.Command {
 		result.Status, result.Interrupted = status, cmd.Context().Err() != nil
 		return errors.Join(cycleErr, statusErr, r.result(cmd.OutOrStdout(), result))
 	}}
-	command.Flags().StringVar(&branch, "branch", "", "Select pending work for this recorded contribution branch (defaults to the current branch)")
-	command.Flags().BoolVar(&wait, "wait", false, "Remain attached until the job settles")
+	selected.flags(command)
+	command.Flags().BoolVar(&wait, "wait", false, "Remain attached until the selected jobs settle")
 	command.Flags().StringVar(&reason, "reason", "", "Record a cancellation reason")
 	return command
-}
-
-func validateWorkSelector(cmd *cobra.Command, args []string, branch string) error {
-	if len(args) == 1 && args[0] == "" {
-		return fmt.Errorf("job ID must not be empty")
-	}
-	if len(args) == 1 && cmd.Flags().Changed("branch") {
-		return fmt.Errorf("select a job ID or --branch, not both")
-	}
-	if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
-		return fmt.Errorf("branch must name a literal recorded contribution branch")
-	}
-	return nil
-}
-
-func selectedWorkBranch(ctx context.Context, services *app.Services, branch string) (string, error) {
-	if branch != "" {
-		return branch, nil
-	}
-	return services.Workflow.Repo.CurrentBranch(ctx)
 }
 
 func joinJobIDs(ids []record.JobID) string {
@@ -323,7 +348,7 @@ func (r *runtime) result(out io.Writer, result ActionResult) error {
 			if entry.Job.Spec.Destination == record.Published {
 				pending = "PR publication remains pending."
 			}
-			if _, err := fmt.Fprintf(out, "\n%s A running driver must settle the result and perform cleanup. Resume with dockhand wait %s or run dockhand start for this repository.\n", pending, entry.Job.ID); err != nil {
+			if _, err := fmt.Fprintf(out, "\n%s A running driver must settle the result and perform cleanup. Resume with dockhand wait --job %s or run dockhand start for this repository.\n", pending, entry.Job.ID); err != nil {
 				return err
 			}
 		}

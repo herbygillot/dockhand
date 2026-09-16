@@ -77,10 +77,13 @@ func acceptPreparation(ctx context.Context, tx state.Tx, id record.JobID, reques
 		if len(pending) > 0 && pending[0].ID != old.ID {
 			return job, nil, fmt.Errorf("%w: contribution %s has pending work %s", ErrInvalidRequest, change.ID, pending[0].ID)
 		}
-		if !old.State.Terminal() || old.State == record.JobCompleted {
+		if !old.State.Terminal() {
 			if !reflect.DeepEqual(compared, prior) {
-				return job, nil, fmt.Errorf("%w: contribution %s has accepted work with different settings; continue it explicitly", ErrInvalidRequest, change.ID)
+				return job, nil, fmt.Errorf("%w: contribution %s has pending work with different settings", ErrInvalidRequest, change.ID)
 			}
+			return job, &old, nil
+		}
+		if old.State == record.JobCompleted && (reflect.DeepEqual(compared, prior) || spec.Destination == record.BranchReady) {
 			return job, &old, nil
 		}
 		job.Spec = spec
@@ -91,7 +94,7 @@ func acceptPreparation(ctx context.Context, tx state.Tx, id record.JobID, reques
 			job.ResolvedRelease = &release
 		}
 		if job.ResultRevision != "" {
-			job.Phase = record.PhaseVerification
+			job.Phase, job.State = record.PhaseVerification, record.JobActive
 		}
 	}
 	job.ChangeID = change.ID

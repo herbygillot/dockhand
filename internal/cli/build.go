@@ -132,3 +132,12 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 	}
 	return config, nil
 }
+
+func verificationSettingsChanged(cmd *cobra.Command) bool {
+	for _, name := range []string{"provider", "image", "capacity", "tests", "from-source", "dependents", "target-image", "remote"} {
+		if cmd.Flags().Changed(name) {
+			return true
+		}
+	}
+	return false
+}

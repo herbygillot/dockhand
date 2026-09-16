@@ -1,0 +1,7 @@
+# Continue one contribution by target
+
+Implemented target-oriented verify, publish, status, wait, and cancel. The workflow resolves repository-scoped contributions before capturing Git contents; ambiguous or unprepared contributions cannot fall through to the current checkout. `--change` selects branchless work, and `--job` explicitly selects execution history. Manual checkout verification requires `--working-tree` in the CLI. Committed continuation checks dirty branch occupancy across worktrees. Source/revision acceptance retains existing adoption and stale-revision checks.
+
+Verification inherits concrete recorded settings and dependent coverage. A repeat bump can advance an already prepared contribution to verification/publication without editing or generating another branch. A regression exposed a queued-to-publication transition loop on evidence reuse; prepared retries now enter the active verification phase. Cancellation freezes and persists the selected pending jobs in one transaction; replay does not cancel newer work.
+
+New behavioral fixtures cover branchless failures, selection ambiguity, dirty and deleted branches, target-only verification/publication, recorded build inheritance, and cancellation replay. Workflow, app, and SQLite suites pass. The CLI suite passed except an assertion helper whose argument-count test needed adjustment for the new explicit --job syntax; that affected test passes separately. No user's database, ports branch, VM, or remote publication was used by these tests.

@@ -460,3 +460,11 @@ Provider-specific admission failures are classified by meaning rather than force
 Explicit provider choices remain authoritative. Image, capacity, variant, source and local test-policy options select Tart; `--tests workflow` selects GitHub. Default tests are chosen after the provider: declared tests for Tart, workflow policy for GitHub. The accepted job retains a concrete provider; no second verifier is submitted after a Tart run. The repository may independently trigger Actions when publication pushes the branch or opens the PR. Standalone `verify` keeps its Tart default.
 
 An automatic GitHub configuration failure is retained as a preparation verification problem, without inventing a build configuration or borrowing unrelated evidence. This preserves no-op bumps and useful prepared branches. Explicit GitHub errors still stop intake.
+
+## Target continuation (implemented 2026-09-16)
+
+`bump <target>`, `verify <target>`, and `publish <target>` refer to the same open contribution in the selected repository. Port and subport names are equivalent selectors; there is no public `--subport`. A contribution exists even if preparation has not yet produced a branch. Retrying bump resumes its frozen source/release. Equivalent concurrent requests join existing work.
+
+Verification and publication require a prepared branch. `verify <target>` inherits recorded verification settings unless overridden. `verify <target> --working-tree` explicitly captures local tracked edits, while `verify --branch <branch>` selects committed manual work. Multiple contributions require `--change <id>` or `--branch <branch>`; an accompanying target must agree. Publication still requires applicable passing evidence.
+
+`status <target>` shows recorded history without consulting Git or providers. Inspect a particular job with `status --job <id>`. `wait <target>` and `cancel <target>` freeze the currently pending jobs for that contribution; both also accept `--job`, `--change`, and `--branch`. Bare wait/cancel use the current tracked branch. Later jobs do not enter an existing wait/cancel selection.

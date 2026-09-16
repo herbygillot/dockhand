@@ -89,9 +89,16 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 		sql += " AND j.change_id IN (SELECT id FROM changes WHERE repository_id=? AND branch=?)"
 		args = append(args, t.repo, q.Branch)
 	}
+	if q.Target != "" {
+		sql += " AND j.change_id IN (SELECT id FROM changes WHERE repository_id=? AND initiating_target=? COLLATE NOCASE)"
+		args = append(args, t.repo, q.Target)
+	}
 	if q.ChangeID != "" {
 		sql += " AND j.change_id=?"
 		args = append(args, q.ChangeID)
+	}
+	if q.WithBuild {
+		sql += " AND j.action!='publish' AND json_type(j.options,'$.Build')='object'"
 	}
 	if q.Action != "" {
 		sql += " AND j.action=?"

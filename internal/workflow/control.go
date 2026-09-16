@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 )
@@ -72,24 +72,29 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 // BranchScope freezes the queued and active jobs currently associated with one
 // open tracked contribution. Jobs accepted after this read are not added.
 func (e *Engine) BranchScope(ctx context.Context, branch string) (Scope, error) {
+	return e.ContributionScope(ctx, ContributionSelector{Branch: branch})
+}
+
+// ContributionScope freezes pending jobs without incorporating later submissions.
+func (e *Engine) ContributionScope(ctx context.Context, selected ContributionSelector) (Scope, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
 		return Scope{}, ErrNoState
 	}
-	if !git.ValidBranchName(branch) {
-		return Scope{}, fmt.Errorf("%w: invalid branch", ErrInvalidRequest)
+	if err := selected.Validate(); err != nil {
+		return Scope{}, err
 	}
 	var scope Scope
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
-		change, err := r.OpenChangeByBranch(ctx, branch)
+		change, err := selectContribution(ctx, r, selected)
 		if err != nil {
-			return fmt.Errorf("workflow: tracked branch %q: %w", branch, err)
+			return err
 		}
 		jobs, err := pendingJobIDs(ctx, r, change.ID)
 		if err != nil {
 			return err
 		}
 		if len(jobs) == 0 {
-			return fmt.Errorf("%w for branch %q", ErrNoPendingJobs, branch)
+			return fmt.Errorf("%w for contribution %s", ErrNoPendingJobs, change.ID)
 		}
 		scope = Scope{Jobs: jobs}
 		return nil
@@ -101,13 +106,22 @@ func (e *Engine) BranchScope(ctx context.Context, branch string) (Scope, error) 
 // cancellation set in the same transaction. Retrying an accepted request uses
 // its original job set, even when newer work now exists on the branch.
 func (e *Engine) ControlBranch(ctx context.Context, request record.ControlRequest, branch string) (Scope, error) {
+	return e.ControlContribution(ctx, request, ContributionSelector{Branch: branch})
+}
+
+// ControlContribution selects and records cancellation in one transaction.
+// A replay retains the original jobs even if later work has been accepted.
+func (e *Engine) ControlContribution(ctx context.Context, request record.ControlRequest, selected ContributionSelector) (Scope, error) {
+	if err := selected.Validate(); err != nil {
+		return Scope{}, err
+	}
 	if e == nil || e.State == nil || e.Repository == "" {
 		return Scope{}, ErrNoState
 	}
 	if request.Kind != record.Cancel {
 		return Scope{}, fmt.Errorf("%w: control %s", ErrUnsupportedAction, request.Kind)
 	}
-	if !validToken(string(request.ID)) || len(request.Jobs) != 0 || request.ChangeID != "" || request.ExpectedRevision != "" || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) || !git.ValidBranchName(branch) {
+	if !validToken(string(request.ID)) || len(request.Jobs) != 0 || request.ChangeID != "" || request.ExpectedRevision != "" || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) {
 		return Scope{}, fmt.Errorf("%w: branch cancellation requires a request ID and literal branch; selection and timestamps are driver-owned", ErrInvalidRequest)
 	}
 	var scope Scope
@@ -124,7 +138,7 @@ func (e *Engine) ControlBranch(ctx context.Context, request record.ControlReques
 			if previous.Kind != request.Kind || previous.Reason != request.Reason {
 				return ErrRequestConflict
 			}
-			if err = controlMatchesBranch(ctx, tx, previous, branch); err != nil {
+			if err = controlMatchesContribution(ctx, tx, previous, selected); err != nil {
 				return err
 			}
 			scope = Scope{Jobs: slices.Clone(previous.Jobs)}
@@ -133,16 +147,16 @@ func (e *Engine) ControlBranch(ctx context.Context, request record.ControlReques
 		if !errors.Is(err, state.ErrNotFound) {
 			return err
 		}
-		change, err := tx.OpenChangeByBranch(ctx, branch)
+		change, err := selectContribution(ctx, tx, selected)
 		if err != nil {
-			return fmt.Errorf("workflow: tracked branch %q: %w", branch, err)
+			return err
 		}
 		jobs, err := pendingJobIDs(ctx, tx, change.ID)
 		if err != nil {
 			return err
 		}
 		if len(jobs) == 0 {
-			return fmt.Errorf("%w for branch %q", ErrNoPendingJobs, branch)
+			return fmt.Errorf("%w for contribution %s", ErrNoPendingJobs, change.ID)
 		}
 		request.Jobs = jobs
 		request.SubmittedAt = e.now()
@@ -173,7 +187,7 @@ func pendingJobIDs(ctx context.Context, r state.Reader, change record.ChangeID) 
 	}
 }
 
-func controlMatchesBranch(ctx context.Context, r state.Reader, request record.ControlRequest, branch string) error {
+func controlMatchesContribution(ctx context.Context, r state.Reader, request record.ControlRequest, selector ContributionSelector) error {
 	var selected record.ChangeID
 	for _, id := range request.Jobs {
 		job, err := r.Job(ctx, id)
@@ -192,7 +206,7 @@ func controlMatchesBranch(ctx context.Context, r state.Reader, request record.Co
 	if err != nil {
 		return err
 	}
-	if change.Branch != branch {
+	if selector.Branch != "" && change.Branch != selector.Branch || selector.ChangeID != "" && change.ID != selector.ChangeID || selector.Target != "" && !strings.EqualFold(change.InitiatingTarget, selector.Target) {
 		return ErrRequestConflict
 	}
 	return nil

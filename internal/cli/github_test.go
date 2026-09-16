@@ -48,7 +48,7 @@ func TestGitHubBuildFlagsSelectWorkflowPolicy(t *testing.T) {
 func TestGitHubRequiresCommittedBranchBeforeOpeningState(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "missing", "state.db")
 	var output bytes.Buffer
-	err := Run(t.Context(), []string{"verify", "fixture", "--provider", "github"}, Streams{Out: &output, Err: &output}, app.Config{DBPath: db})
-	require.ErrorContains(t, err, "requires --branch")
+	err := Run(t.Context(), []string{"verify", "fixture", "--working-tree", "--provider", "github"}, Streams{Out: &output, Err: &output}, app.Config{DBPath: db})
+	require.ErrorContains(t, err, "requires committed source")
 	require.NoFileExists(t, db)
 }

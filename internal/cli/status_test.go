@@ -24,8 +24,8 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s", out)
 	for _, args := range [][]string{
-		{"status", string(id)}, {"status", "--active"}, {"status", "--branch", "candidate"},
-		{"status", "--branch", "candidate", "--active"}, {"status", string(id), "--active"},
+		{"status", "--job", string(id)}, {"status", "--active"}, {"status", "--branch", "candidate"},
+		{"status", "--branch", "candidate", "--active"}, {"status", "--job", string(id), "--active"},
 	} {
 		var stdout, stderr bytes.Buffer
 		require.NoError(t, Run(t.Context(), append(args, "--json"), Streams{Out: &stdout, Err: &stderr}, config))
@@ -40,7 +40,7 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 		require.Empty(t, stderr.String())
 	}
 	var outbuf bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"status", string(id)}, Streams{Out: &outbuf, Err: &outbuf}, config))
+	require.NoError(t, Run(t.Context(), []string{"status", "--job", string(id)}, Streams{Out: &outbuf, Err: &outbuf}, config))
 	require.Contains(t, outbuf.String(), "phase: verification")
 	outbuf.Reset()
 	require.NoError(t, Run(t.Context(), []string{"status", "--branch", "missing", "--active"}, Streams{Out: &outbuf, Err: &outbuf}, config))
@@ -48,13 +48,13 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 	require.Contains(t, outbuf.String(), "Showing queued and active jobs.")
 	require.Contains(t, outbuf.String(), "No matching jobs.")
 	require.NotContains(t, outbuf.String(), string(id))
-	require.ErrorIs(t, Run(t.Context(), []string{"status", "unknown"}, Streams{Out: &outbuf, Err: &outbuf}, config), state.ErrNotFound)
+	require.ErrorIs(t, Run(t.Context(), []string{"status", "--job", "unknown"}, Streams{Out: &outbuf, Err: &outbuf}, config), state.ErrNotFound)
 }
 
 func TestStatusRejectsInvalidSelectorsBeforeOpeningRepository(t *testing.T) {
 	config := app.Config{Repository: "/missing/repository", DBPath: filepath.Join(t.TempDir(), "absent", "state.db")}
 	for _, args := range [][]string{
-		{"status", "job", "--branch", "candidate"}, {"status", "job", "second"},
+		{"status", "--job", "job", "--branch", "candidate"}, {"status", "job", "second"},
 		{"status", ""}, {"status", "bad\njob"}, {"status", "--branch="}, {"status", "--branch", "bad..branch"},
 	} {
 		var out bytes.Buffer

@@ -27,7 +27,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		options := &Options{}
 		var build buildOptions
 		var publication publish.Options
-		var reason string
+		var reason, change string
 		var variants []string
 		use, maximum := string(spec.action)+" <port>", 1
 		if spec.action == record.Bump {
@@ -79,7 +79,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					defer services.Close()
 					fmt.Fprintln(cmd.ErrOrStderr(), "Fetching MacPorts master; local commits and working-tree edits are excluded.")
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{
-						IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
+						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Variants: choices},
 						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
@@ -126,6 +126,8 @@ func (r *runtime) changeCommands() []*cobra.Command {
 			},
 		}
 		changeFlags(command, options)
+		command.Flags().StringVar(&change, "change", "", "Continue one contribution when the target is ambiguous")
+		command.MarkFlagsMutuallyExclusive("change", "diff")
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")
 		if spec.action == record.BumpRevision || spec.action == record.Bump || spec.action == record.RefreshChecksums {
 			build.flags(command, r.config)

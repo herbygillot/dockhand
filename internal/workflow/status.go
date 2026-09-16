@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 )
@@ -17,14 +18,19 @@ import (
 // Active includes queued jobs and jobs waiting for capacity or a retry.
 // Branch matches the contribution's recorded branch, including closed contributions.
 type StatusFilter struct {
-	JobID  record.JobID `json:",omitempty"`
-	Branch string       `json:",omitempty"`
-	Active bool         `json:",omitempty"`
+	Target   string          `json:",omitempty"`
+	ChangeID record.ChangeID `json:",omitempty"`
+	JobID    record.JobID    `json:",omitempty"`
+	Branch   string          `json:",omitempty"`
+	Active   bool            `json:",omitempty"`
 }
 
 func (f StatusFilter) Validate() error {
-	if f.JobID != "" && f.Branch != "" {
-		return fmt.Errorf("workflow: status accepts a job ID or a branch, not both")
+	if f.Branch != "" && f.ChangeID != "" || f.JobID != "" && (f.Branch != "" || f.Target != "" || f.ChangeID != "") {
+		return fmt.Errorf("workflow: status accepts one of --job, --branch, or --change")
+	}
+	if f.Target != "" && !macports.ValidName(f.Target) || f.ChangeID != "" && !validToken(string(f.ChangeID)) {
+		return ErrInvalidRequest
 	}
 	if f.JobID != "" && !validToken(string(f.JobID)) {
 		return fmt.Errorf("workflow: invalid status job ID")
@@ -104,12 +110,12 @@ func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (
 		if scope.All {
 			selection = nil
 		}
-		q := state.Query{Jobs: selection, Pending: filter.Active, Branch: filter.Branch}
+		q := state.Query{Jobs: selection, Pending: filter.Active, Branch: filter.Branch, Target: filter.Target, ChangeID: filter.ChangeID}
 		jobs, err := collect(ctx, q, r.Jobs, func(v record.Job) string { return string(v.ID) })
 		if err != nil {
 			return err
 		}
-		if filter.Active || filter.Branch != "" {
+		if filter.Active || filter.Branch != "" || filter.Target != "" || filter.ChangeID != "" {
 			selection = make([]record.JobID, 0, len(jobs))
 			for _, job := range jobs {
 				selection = append(selection, job.ID)

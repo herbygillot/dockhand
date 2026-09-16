@@ -14,9 +14,11 @@ import (
 )
 
 type PublicationRequest struct {
-	ID      record.RequestID
-	Branch  string
-	Options publish.Options
+	Target   string
+	ChangeID record.ChangeID
+	ID       record.RequestID
+	Branch   string
+	Options  publish.Options
 }
 
 // BindPublication freezes committed source, applicable evidence, and remote
@@ -54,14 +56,29 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	if registered.ID != e.Repository {
 		return Request{}, ErrInvalidRequest
 	}
-	if authenticate {
-		if err := e.Publisher.Preflight(ctx); err != nil {
+	var continuation *record.Change
+	if input.Target != "" || input.ChangeID != "" {
+		change, err := e.SelectContribution(ctx, ContributionSelector{Target: input.Target, Branch: input.Branch, ChangeID: input.ChangeID})
+		if err != nil {
 			return Request{}, err
 		}
+		if err := contributionPrepared(change); err != nil {
+			return Request{}, err
+		}
+		if err := e.Repo.RequireCleanBranch(ctx, change.Branch); err != nil {
+			return Request{}, err
+		}
+		input.Branch = change.Branch
+		continuation = &change
 	}
 	if input.Branch == "" {
 		input.Branch, err = e.Repo.CurrentBranch(ctx)
 		if err != nil {
+			return Request{}, err
+		}
+	}
+	if authenticate {
+		if err := e.Publisher.Preflight(ctx); err != nil {
 			return Request{}, err
 		}
 	}
@@ -77,11 +94,14 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		var err error
 		change, err = r.OpenChangeByBranch(ctx, input.Branch)
-		if errors.Is(err, state.ErrNotFound) {
+		if errors.Is(err, state.ErrNotFound) && continuation == nil {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if continuation != nil && (change.ID != continuation.ID || change.CurrentRevision != continuation.CurrentRevision) {
+			return ErrStaleRevision
 		}
 		revision, err = r.Revision(ctx, change.CurrentRevision)
 		if err != nil {
