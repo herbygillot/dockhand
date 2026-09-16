@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +27,7 @@ func TestOutdatedObservesFrozenSourceWithoutStateOrDownloads(t *testing.T) {
 			require.NoError(t, os.WriteFile(path, []byte("invalid working tree"), 0600))
 			var stdout, stderr bytes.Buffer
 			require.NoError(t, Run(t.Context(), []string{"outdated", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), stderr.String())
-			var result app.OutdatedResult
+			var result outdated.Result
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 			require.Len(t, result.Ports, 1)
 			require.Equal(t, version, result.Ports[0].CurrentVersion)
@@ -52,7 +53,7 @@ func TestOutdatedKeepsUnknownAlongsideSuccessfulObservations(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(t.Context(), []string{"outdated", "missing", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, "unknown")
-	var result app.OutdatedResult
+	var result outdated.Result
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	require.Len(t, result.Ports, 2)
 	require.Equal(t, upstream.Unknown, result.Ports[0].Assessment)
@@ -105,7 +106,7 @@ func TestOutdatedIndexedSelectionKeepsSourceAndCoverage(t *testing.T) {
 		var out, stderr bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &stderr}, config)
 		require.ErrorContains(t, err, "unknown", stderr.String())
-		var result app.OutdatedResult
+		var result outdated.Result
 		require.NoError(t, json.Unmarshal(out.Bytes(), &result), out.String())
 		require.Equal(t, commit, string(result.Source.Commit))
 		require.Len(t, result.Ports, 3)
@@ -140,7 +141,7 @@ func TestOutdatedEmptySelectionAndDuplicatePorts(t *testing.T) {
 	out.Reset()
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"outdated", "fixture", "fixture", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
-	var result app.OutdatedResult
+	var result outdated.Result
 	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
 	require.Len(t, result.Ports, 1)
 	require.EqualValues(t, 1, catalogs.Load())

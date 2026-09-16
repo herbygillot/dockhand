@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/outdated"
 	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/spf13/cobra"
 )
 
 func (r *runtime) outdatedCommand() *cobra.Command {
-	var selection app.OutdatedSelection
+	var selection outdated.Selection
 	cmd := &cobra.Command{
 		Use: "outdated [port...]", Short: "Check committed ports for upstream updates",
 		Long:        "Check explicit ports, or select by --maintainer and --category, from local HEAD using their GitHub or GitLab source conventions. Working-tree edits are excluded. Reports current, update-available, and unknown assessments; unsupported or failed observations remain visible. Does not fetch MacPorts master, open the state database, create jobs, or authorize publication.",

@@ -1,15 +1,11 @@
-package app
+package outdated
 
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -17,13 +13,15 @@ import (
 	"github.com/herbygillot/dockhand/internal/upstream"
 )
 
-type OutdatedSelection struct {
+// Selection chooses explicit ports or exact maintainer/category filters.
+type Selection struct {
 	Ports       []string
 	Maintainers []string
 	Categories  []string
 }
 
-func (s OutdatedSelection) Validate() error {
+// Validate rejects mixed selector modes and malformed filter values.
+func (s Selection) Validate() error {
 	grouped := len(s.Maintainers)+len(s.Categories) > 0
 	if grouped && len(s.Ports) > 0 {
 		return fmt.Errorf("choose explicit ports or maintainer/category selectors, not both")
@@ -48,9 +46,9 @@ type selectedPort struct {
 	selection macports.Selection
 }
 
-func selectOutdated(ctx context.Context, config Config, repo *git.Repository, source record.Source, platform record.Platform, root string, selection OutdatedSelection) ([]selectedPort, []OutdatedPort, error) {
+func (s *Service) selectPorts(ctx context.Context, source record.Source, platform record.Platform, root string, selection Selection) ([]selectedPort, []Port, error) {
 	var selected []selectedPort
-	var problems []OutdatedPort
+	var problems []Port
 	seen := map[string]bool{}
 	for _, selector := range selection.Ports {
 		if !seen[selector] {
@@ -59,15 +57,7 @@ func selectOutdated(ctx context.Context, config Config, repo *git.Repository, so
 		}
 	}
 	if len(selection.Ports) == 0 {
-		cache, err := os.UserCacheDir()
-		if err != nil {
-			return nil, nil, err
-		}
-		indexConfig := portindex.Config{CacheDirectory: filepath.Join(cache, "dockhand", "indexes")}
-		if config.MacPortsPrefix != "" {
-			indexConfig.Executable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
-		}
-		if err := portindex.Stage(ctx, repo, source, platform, indexConfig, root, http.DefaultClient); err != nil {
+		if err := portindex.Stage(ctx, s.Repo, source, platform, s.Index, root, s.HTTP); err != nil {
 			return nil, nil, err
 		}
 		index, err := portindex.Open(root)
@@ -82,7 +72,7 @@ func selectOutdated(ctx context.Context, config Config, repo *git.Repository, so
 			selected = append(selected, selectedPort{label: entry.Name, name: entry.Name, selection: macports.Selection{Selector: entry.Portdir + "/Portfile"}})
 		}
 		for _, problem := range matches.Problems {
-			problems = append(problems, OutdatedPort{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
+			problems = append(problems, Port{Selector: problem.Port, Result: upstream.Result{Assessment: upstream.Unknown, ObservedAt: time.Now().UTC(), Detail: problem.Detail}})
 		}
 		progress.Report(ctx, "Selected %d indexed ports; %d selection coverage problems", len(selected), len(matches.Problems))
 	}
