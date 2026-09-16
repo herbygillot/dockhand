@@ -37,7 +37,7 @@ func dependencyHelper(t *testing.T, body string) string {
 }
 func TestGoDependencyPreparation(t *testing.T) {
 	sha := strings.Repeat("a", 64)
-	for _, scenario := range []string{"success", "removed", "missing", "failed", "partial", "override", "patched"} {
+	for _, scenario := range []string{"success", "removed", "missing", "failed", "partial", "override", "patched", "unsupported-context"} {
 		t.Run(scenario, func(t *testing.T) {
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
 			next := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/new/v2 v2.0.0\n"
@@ -63,6 +63,9 @@ func TestGoDependencyPreparation(t *testing.T) {
 			if scenario == "patched" {
 				extra += "post-patch { reinplace s/foo/bar/ ${worksrcpath}/go.mod }\n"
 			}
+			if scenario == "unsupported-context" {
+				extra += "if {${os.major} < 23 && ${build_arch} eq \"arm64\"} { pre-fetch { set distfiles changed.tar.gz } }\n"
+			}
 			var requests atomic.Int64
 			service, request := versionFixture(t, "go-setup", extra, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
@@ -77,7 +80,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 				output = ""
 			}
 			script := "for tag do :; done\nif [ \"$tag\" = v1.0 ]; then\nprintf '%s\\n' 'go.vendors example.com/old lock v1.0.0 sha256 " + sha + "'\nelse\nprintf '%s\\n' '" + output + "'\nfi"
-			if scenario == "failed" {
+			if scenario == "failed" || scenario == "unsupported-context" {
 				script = "echo 'dependency resolution failed' >&2; exit 3"
 			}
 			executable := dependencyHelper(t, script)
@@ -87,6 +90,10 @@ func TestGoDependencyPreparation(t *testing.T) {
 			service.DependencyTools = dependency.Tools{Go2Port: executable, Cargo2Port: "absent"}
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
+			case "unsupported-context":
+				require.ErrorContains(t, err, "pre-fetch hook 1 has unrecognized behavior")
+				require.NotContains(t, err.Error(), "dependency resolution failed")
+				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":
 				require.ErrorContains(t, err, "fixture: dependency: cannot regenerate go.vendors: missing executable go2port")
 				require.Zero(t, requests.Load())
@@ -171,7 +178,7 @@ func TestCargoDependencyPreparation(t *testing.T) {
 			if scenario == "partial" {
 				script = "exit 0"
 			}
-			if scenario == "failed" {
+			if scenario == "failed" || scenario == "unsupported-context" {
 				script = "echo 'invalid lockfile' >&2;exit 4"
 			}
 			executable := dependencyHelper(t, script)
@@ -181,6 +188,10 @@ func TestCargoDependencyPreparation(t *testing.T) {
 			service.DependencyTools = dependency.Tools{Cargo2Port: executable, Go2Port: "absent"}
 			result, err := service.Prepare(t.Context(), request)
 			switch scenario {
+			case "unsupported-context":
+				require.ErrorContains(t, err, "pre-fetch hook 1 has unrecognized behavior")
+				require.NotContains(t, err.Error(), "dependency resolution failed")
+				require.Zero(t, requests.Load(), "local refusal must precede old-source download and helper")
 			case "missing":
 				require.ErrorContains(t, err, "missing executable cargo2port")
 				require.Zero(t, requests.Load())

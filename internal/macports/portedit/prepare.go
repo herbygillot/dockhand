@@ -47,6 +47,7 @@ type Fidelity struct {
 // ContextCoverage distinguishes metadata models from the native host. Neither
 // kind records a build; verification providers establish build results.
 type ContextCoverage struct {
+	Fetch    *macports.FetchSemantics `json:",omitempty"`
 	Platform record.Platform
 	Modeled  bool
 	Affected bool

@@ -52,3 +52,27 @@ func TestFetchMetadataReportsCompatibilityWithoutExposingHookBodies(t *testing.T
 		require.NotContains(t, info.Options, "fetch_details")
 	}
 }
+
+func TestRejectionOnlyFetchGuardPreservesPlatformRestriction(t *testing.T) {
+	wrapper := "global {*}[info globals]\n"
+	safe := wrapper + `ui_error "${subport} is unavailable on this platform"
+return -code error "unsupported platform"`
+	require.True(t, rejectionOnly(safe))
+	for _, body := range []string{
+		wrapper + `set master_sites https://other.invalid; return -code error`,
+		wrapper + `ui_error "[exec touch file]"; return -code error`,
+		wrapper + `ui_error "$array([exec touch file])"; return -code error`,
+		wrapper + `ui_error {*}$messages; return -code error`,
+		wrapper + `if {$os.major < 23} {return -code error}`,
+		safe + "\nset distfiles other",
+		`return -code error`,
+	} {
+		require.False(t, rejectionOnly(body), body)
+	}
+	info, _, err := decodeMetadata("name fixture version 1 revision 0 epoch 0 fetch_details {portfetch::fetch_main {{" + safe + "}} {}}")
+	require.NoError(t, err)
+	require.Equal(t, "guarded", info.Fetch.Kind)
+	require.True(t, info.Fetch.Rejected)
+	require.Equal(t, "1", info.Options["fetch.archive_compatible"])
+	require.NotContains(t, info.Options, "fetch_details")
+}

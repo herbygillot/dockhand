@@ -146,6 +146,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
+	// Complete local candidate/context checks before any source transfer or helper.
+	archivePlan, err := s.planArchiveVersion(ctx, request, base)
+	if err != nil {
+		return archivePlan.result, err
+	}
 	stripped := base.data
 	baseRequest := request
 	directory, err := os.MkdirTemp("", "dockhand-dependencies-")
@@ -187,7 +192,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	worker := *s
 	worker.archiveDirectory = directory
-	result, err := worker.prepareArchiveVersion(ctx, baseRequest, base)
+	result, err := worker.applyArchivePlan(ctx, baseRequest, base, archivePlan)
 	if err != nil {
 		return Result{}, err
 	}

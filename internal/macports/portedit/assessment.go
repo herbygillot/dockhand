@@ -13,6 +13,7 @@ import (
 
 // Assessment describes preparation evidence, not whether a port will build.
 type Assessment struct {
+	Coverage       []ContextCoverage `json:",omitempty"`
 	Contexts       []record.Platform `json:",omitempty"`
 	Outcome        string
 	CurrentVersion string
@@ -143,7 +144,13 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 	}
 	if depErr == nil {
 
-		fetchErr, checksumErr := p.editor.assessArchives(ctx, p.request, base)
+		coverage, fetchErr, checksumErr := p.editor.assessArchives(ctx, p.request, base)
+		a.Coverage = coverage
+		for _, context := range coverage {
+			if context.Fetch != nil && context.Fetch.Rejected {
+				a.Findings = append(a.Findings, Finding{Check: "platform-restriction", Status: NotTested, Code: "fetch-rejected", Detail: fmt.Sprintf("%s %s %s: archive metadata is available, but the preserved pre-fetch guard rejects this platform", context.Platform.OS, context.Platform.Version, context.Platform.Architecture)})
+			}
+		}
 		add("fetch", "MacPorts archive locations are observed; availability is untested", fetchErr)
 		if fetchErr == nil {
 			if checksumErr == nil {

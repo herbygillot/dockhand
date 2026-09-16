@@ -14,7 +14,18 @@ type Dependency struct {
 	Spec  string
 }
 
+// FetchSemantics describes inspected target registration without running hooks.
+// Rejected means an unconditional rejection guard is active in this context.
+type FetchSemantics struct {
+	Kind      string
+	Procedure string
+	Guards    []string `json:",omitempty"`
+	Rejected  bool     `json:",omitempty"`
+	Problem   string   `json:",omitempty"`
+}
+
 type PortInfo struct {
+	Fetch        *FetchSemantics `json:",omitempty"`
 	Name         string
 	Version      string
 	Revision     int

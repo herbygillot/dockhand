@@ -1,0 +1,9 @@
+# Preserve rejection-only fetch guards during preparation
+
+The evaluator now reports standard, guarded, or custom fetch semantics, the registered procedure, recognized guards, and whether an unconditional rejection applies in the observed context. Recognized guards never execute during host preparation. A narrow diagnostic/error-return shape is accepted alongside the existing Go toolchain guard; mutations, command substitutions, array substitutions, mixed hooks, altered procedures, and post-fetch work remain unsupported.
+
+Preparation retains complete archive/checksum coverage for rejected contexts. Structured assessment and candidate coverage preserve the restriction separately from archive editability, and progress explains it. A guarded platform has no implied build support. Local candidate/context planning now finishes before baseline dependency archives are downloaded or generators run; application reuses that plan instead of redoing the probes.
+
+Tests cover the rejection grammar, preserved guarded contexts, pinned archives, and a locally unsupported Cargo/Go candidate triggering neither HTTP requests nor helper execution. Native evaluator, preparation, editor, and assessment suites pass. The exact reported Wasmer source `1a43a39ca19448b8904bb750a9a06f0d3eb30185` now passes the 7.4.1 local candidate check, including the formerly rejected Darwin 22 arm64 context.
+
+A live isolated exercise against current MacPorts source `0f8e26f480b8a6f0fd39ea57c58f2083e259e06b` automatically selected Wasmer 7.4.2, checked the original Cargo declarations, regenerated the new declarations, refreshed the archive, and created its branch. Verification is a separate pending exercise; this record claims preparation success only. The user's ports branches, default database, and Tart images were not modified. No new dependencies were added.

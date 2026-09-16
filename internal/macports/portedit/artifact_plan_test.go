@@ -151,3 +151,27 @@ checksums sha256 aaaa size 2
 	require.NoError(t, err)
 	require.Contains(t, string(original), "version 1.2.3")
 }
+
+func TestPreparePreservesRejectedPlatformGuardWithoutClaimingBuildCoverage(t *testing.T) {
+	guard := `if {${os.major} < 23 && ${build_arch} eq "arm64"} {
+ known_fail yes
+ pre-fetch {
+  ui_error "${subport} requires a newer macOS release"
+  return -code error "unsupported platform"
+ }
+}`
+	s, r, requests := archiveFixture(t, "version 1.2.3\nmaster_sites @SITE@/${version}\nchecksums sha256 aaaa size 2\n"+guard)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), guard)
+	require.Len(t, *requests, 1)
+	guarded := false
+	for _, profile := range result.Coverage {
+		if profile.Platform.Version == "22" && profile.Platform.Architecture == "arm64" {
+			guarded = true
+			require.NotNil(t, profile.Fetch)
+			require.True(t, profile.Fetch.Rejected)
+		}
+	}
+	require.True(t, guarded)
+}

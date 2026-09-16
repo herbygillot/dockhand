@@ -64,7 +64,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		result := Result{Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{versionFidelity(input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
 		if observed != nil {
 			for _, frame := range observed.contexts {
-				result.Coverage = append(result.Coverage, ContextCoverage{Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
+				result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
 			}
 		}
 		return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed}, err
@@ -116,9 +116,16 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 
 func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	plan, err := s.planArchiveVersion(ctx, request, input)
+	if err != nil {
+		return plan.result, err
+	}
+	return s.applyArchivePlan(ctx, request, input, plan)
+}
+
+func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan) (Result, error) {
 	result := plan.result
-	if err != nil || request.Release.NoUpdate {
-		return result, err
+	if request.Release.NoUpdate {
+		return result, nil
 	}
 	if plan.observed != nil {
 		return s.applyObservedArchives(ctx, request, input, plan)

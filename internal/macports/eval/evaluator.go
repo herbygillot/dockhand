@@ -206,10 +206,12 @@ func decodeMetadata(reply string) (macports.PortInfo, []string, error) {
 			return macports.PortInfo{}, nil, fmt.Errorf("macports: invalid fetch metadata")
 		}
 		values["fetch.archive_compatible"] = "0"
-		if archiveFetchCompatible(value, fields[0], fields[1], fields[2]) {
+		assessment := assessFetch(value, fields[0], fields[1], fields[2])
+		value.Fetch = &assessment
+		if assessment.Kind != "custom" {
 			values["fetch.archive_compatible"] = "1"
 		} else {
-			value.OptionErrors["fetch.archive_compatible"] = fmt.Sprintf("MacPorts Base %s: fetch procedure or hooks are not recognized for automatic archive preparation; prepare this port manually", values["dockhand.base_version"])
+			value.OptionErrors["fetch.archive_compatible"] = fmt.Sprintf("MacPorts Base %s: %s; prepare this port manually", values["dockhand.base_version"], assessment.Problem)
 		}
 		delete(values, "fetch_details")
 	}

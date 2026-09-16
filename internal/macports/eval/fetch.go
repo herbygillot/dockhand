@@ -1,22 +1,73 @@
 package eval
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
-func archiveFetchCompatible(info macports.PortInfo, procedure, pre, post string) bool {
-	if procedure != "portfetch::fetch_main" || post != "" {
-		return false
+func assessFetch(info macports.PortInfo, procedure, pre, post string) macports.FetchSemantics {
+	result := macports.FetchSemantics{Kind: "custom", Procedure: procedure}
+	if procedure != "portfetch::fetch_main" {
+		result.Problem = "custom fetch procedure " + procedure
+		return result
+	}
+	if post != "" {
+		result.Problem = "post-fetch hooks can modify archive preparation"
+		return result
 	}
 	hooks, errs := syntax.ListValues(pre)
 	if len(errs) != 0 {
+		result.Problem = "unrecognized pre-fetch registration"
+		return result
+	}
+	for i, hook := range hooks {
+		switch {
+		case rejectionOnly(hook):
+			result.Rejected = true
+			result.Guards = append(result.Guards, fmt.Sprintf("pre-fetch hook %d unconditionally rejects this platform", i+1))
+		case info.Options["go.domain"] == "github.com" && goToolchainCheck(hook):
+			result.Guards = append(result.Guards, "Go toolchain compatibility guard")
+		default:
+			result.Problem = fmt.Sprintf("pre-fetch hook %d has unrecognized behavior", i+1)
+			return result
+		}
+	}
+	result.Kind = "standard"
+	if len(result.Guards) > 0 {
+		result.Kind = "guarded"
+	}
+	return result
+}
+
+// A rejection-only hook consists of harmless diagnostic arguments followed by
+// an unconditional error return. The registered Base wrapper must also match.
+func rejectionOnly(body string) bool {
+	body, ok := strings.CutPrefix(body, "global {*}[info globals]\n")
+	if !ok {
 		return false
 	}
-	for _, hook := range hooks {
-		if info.Options["go.domain"] != "github.com" || !goToolchainCheck(hook) {
+	src := []byte(body)
+	script, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return false
+	}
+	commands := scriptCommands(script)
+	if len(commands) == 0 {
+		return false
+	}
+	for i, command := range commands {
+		words := command.Words
+		if i == len(commands)-1 {
+			if len(words) < 3 || len(words) > 4 || !commandWords(src, syntax.Command{Words: words[:3]}, "return", "-code", "error") {
+				return false
+			}
+			if len(words) == 4 && (words[3].Expand || !messageSegments(words[3].Segments)) {
+				return false
+			}
+		} else if len(words) != 2 || words[0].Span.Text(src) != "ui_error" || words[1].Expand || !messageSegments(words[1].Segments) {
 			return false
 		}
 	}
