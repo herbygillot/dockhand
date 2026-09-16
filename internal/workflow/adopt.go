@@ -13,6 +13,7 @@ import (
 )
 
 type BranchInput struct {
+	Scope            *record.ReleaseScope `json:",omitempty"`
 	Name             string
 	ExpectedChange   record.ChangeID
 	ExpectedRevision record.RevisionID
@@ -74,9 +75,12 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 			return record.JobSpec{}, err
 		}
 	}
+	if !previous.Scope.SameMembership(input.Scope) {
+		return record.JobSpec{}, fmt.Errorf("%w: shared-release scope must be checked before branch adoption", ErrInvalidRequest)
+	}
 	revision := previous
 	if revision.ID == "" || revision.Source != spec.Source {
-		revision = record.Revision{ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Previous: change.CurrentRevision, Source: spec.Source, CreatedAt: now}
+		revision = record.Revision{Scope: input.Scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: change.ID, Previous: change.CurrentRevision, Source: spec.Source, CreatedAt: now}
 		if err := tx.PutRevision(ctx, revision); err != nil {
 			return record.JobSpec{}, err
 		}

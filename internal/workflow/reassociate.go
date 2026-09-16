@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+
 	"github.com/herbygillot/dockhand/internal/git/changeset"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -55,6 +56,10 @@ func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch str
 	if len(targets) != 1 || record.CompareTargets(target, targets[0]) != 0 {
 		return change, ErrInvalidRequest
 	}
+	scope, err := e.rebindReleaseScope(ctx, previous.Scope, source, platform)
+	if err != nil {
+		return change, err
+	}
 	err = e.Repo.WithBranchLock(ctx, branch, func(ctx context.Context) error {
 		current, err := changeset.CaptureBranch(ctx, e.Repo, branch)
 		if err != nil {
@@ -82,7 +87,7 @@ func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch str
 				return fmt.Errorf("workflow: branch already belongs to %s", owner.ID)
 			}
 			if source != previous.Source {
-				revision := record.Revision{ID: record.RevisionID("revision_" + rand.Text()), ChangeID: id, Previous: previous.ID, Source: source, CreatedAt: e.now()}
+				revision := record.Revision{Scope: scope, ID: record.RevisionID("revision_" + rand.Text()), ChangeID: id, Previous: previous.ID, Source: source, CreatedAt: e.now()}
 				if err := tx.PutRevision(ctx, revision); err != nil {
 					return err
 				}

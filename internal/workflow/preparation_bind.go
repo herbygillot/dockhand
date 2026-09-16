@@ -11,6 +11,7 @@ import (
 )
 
 type PreparationRequest struct {
+	SharedRelease       bool
 	KeepFailed          bool
 	ChangeID            record.ChangeID
 	TargetBuilds        map[string]record.BuildConfig
@@ -107,7 +108,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed,
 		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
-		Preparation: &record.PreparationSpec{SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
+		Preparation: &record.PreparationSpec{SharedRelease: request.SharedRelease, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {
 		return BoundPreparation{}, err

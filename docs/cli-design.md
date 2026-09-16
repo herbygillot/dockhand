@@ -467,3 +467,7 @@ Provider-specific admission failures are classified by meaning rather than force
 Explicit provider choices remain authoritative. Image, capacity, variant, source and local test-policy options select Tart; `--tests workflow` selects GitHub. Default tests are chosen after the provider: declared tests for Tart, workflow policy for GitHub. The accepted job retains a concrete provider; no second verifier is submitted after a Tart run. The repository may independently trigger Actions when publication pushes the branch or opens the PR. Standalone `verify` keeps its Tart default.
 
 An automatic GitHub configuration failure is retained as a preparation verification problem, without inventing a build configuration or borrowing unrelated evidence. This preserves no-op bumps and useful prepared branches. Explicit GitHub errors still stop intake.
+
+### Shared-release authorization
+
+For a named subport whose release is shared with siblings, inspect with `dockhand assess py313-ipdb --version <version> --shared-release` or preview with `dockhand bump py313-ipdb <version> --shared-release --diff`. Use `bump --shared-release` to authorize the listed release cohort. Continue with `verify py313-ipdb` and `publish py313-ipdb`; the immutable revision retains the required sibling coverage. Each buildable sibling needs passing local verification. Metadata-only parents are recorded but do not receive a build. Multi-target GitHub verification is not yet supported.

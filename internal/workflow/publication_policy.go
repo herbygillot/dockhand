@@ -30,7 +30,12 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	if err != nil {
 		return err
 	}
-	if err := publicationCoverage(ctx, r, candidate); err != nil {
+	revisionID, _ := publicationInput(job)
+	revision, err := r.Revision(ctx, revisionID)
+	if err != nil {
+		return err
+	}
+	if err := publicationCoverage(ctx, r, candidate, revision.Scope); err != nil {
 		return err
 	}
 	config := candidate.Spec.Config

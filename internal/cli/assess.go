@@ -51,6 +51,11 @@ func (r *runtime) assessCommand() *cobra.Command {
 					for _, input := range port.Inputs {
 						fmt.Fprintf(cmd.OutOrStdout(), "  input: %s:%d:%d (%s)\n", plain(port.Portfile), input.Line, input.Column, plain(input.Value))
 					}
+					if scope := port.Scope; scope != nil {
+						for _, member := range scope.Affected {
+							fmt.Fprintf(cmd.OutOrStdout(), "  affected: %s %s -> %s (metadata only: %t)\n", plain(member.Target.Name), plain(member.Before.Version), plain(member.After.Version), member.MetadataOnly)
+						}
+					}
 					for _, finding := range port.Findings {
 						fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s; %s\n", finding.Check, finding.Status, plain(finding.Detail))
 					}
@@ -66,6 +71,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&request.SharedRelease, "shared-release", false, "Assess the full shared release across sibling subports")
 	cmd.Flags().StringVar(&request.Version, "version", "", "Check one explicit upstream version/tag (one port only; forge sources query upstream)")
 	cmd.Flags().StringArrayVar(&request.Selection.Maintainers, "maintainer", nil, "Exact maintainer: @handle, handle@github, or email (repeatable)")
 	cmd.Flags().StringArrayVar(&request.Selection.Categories, "category", nil, "Exact MacPorts category (repeatable; intersects maintainer selection)")

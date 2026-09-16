@@ -149,7 +149,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 		if verdict := verify.Applicable(wanted, evidence); !verdict.Matches {
 			return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 		}
-		return publicationCoverage(ctx, r, evidence)
+		return publicationCoverage(ctx, r, evidence, revision.Scope)
 	})
 	if err != nil {
 		return Request{}, err
@@ -172,5 +172,5 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	if err != nil {
 		return Request{}, err
 	}
-	return Request{ID: input.ID, Spec: spec, Branch: &BranchInput{Name: input.Branch, ExpectedChange: change.ID, ExpectedRevision: revision.ID}}, nil
+	return Request{ID: input.ID, Spec: spec, Branch: &BranchInput{Scope: revision.Scope, Name: input.Branch, ExpectedChange: change.ID, ExpectedRevision: revision.ID}}, nil
 }

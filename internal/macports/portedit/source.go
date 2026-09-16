@@ -13,6 +13,8 @@ import (
 )
 
 type sourceInput struct {
+	scope                *record.ReleaseScope
+	versionInput         record.ReleaseInput
 	files                workspace
 	before               macports.Snapshot
 	primary, target      record.Target
@@ -25,6 +27,11 @@ type sourceInput struct {
 func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, err error) {
 	if s == nil || s.Ports == nil || request.Root == "" {
 		return nil, fmt.Errorf("portedit: a disposable source workspace and MacPorts reader are required")
+	}
+	if request.SharedRelease {
+		if _, ok := s.Ports.(macports.Observer); !ok {
+			return nil, fmt.Errorf("%w: shared releases require native declaration observation", ErrUnsupported)
+		}
 	}
 	files := workspace{Root: request.Root}
 

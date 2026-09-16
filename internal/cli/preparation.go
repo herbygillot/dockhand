@@ -28,6 +28,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		var build buildOptions
 		var publication publish.Options
 		var reason, change string
+		var sharedRelease bool
 		var variants []string
 		use, maximum := string(spec.action)+" <port>", 1
 		if spec.action == record.Bump {
@@ -78,7 +79,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					defer services.Close()
 					fmt.Fprintln(cmd.ErrOrStderr(), "Binding contribution source; local commits and working-tree edits are excluded.")
-					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{KeepFailed: build.keepFailed,
+					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{SharedRelease: sharedRelease, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Variants: choices},
 						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
@@ -97,7 +98,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					return r.attach(cmd, services, receipt.JobID, milestone, options.Trace, false, &receipt)
 				}
-				request := app.PreviewRequest{Action: spec.action, Selection: macports.Selection{Selector: args[0], Variants: choices}, Reason: reason}
+				request := app.PreviewRequest{SharedRelease: sharedRelease, Action: spec.action, Selection: macports.Selection{Selector: args[0], Variants: choices}, Reason: reason}
 				if len(args) == 2 {
 					request.Version = args[1]
 				}
@@ -125,11 +126,19 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Release: %s (%s); upstream commit: %s\n", release.Tag, release.Version, release.Commit)
 					}
 				}
+				if scope := preview.Preparation.Scope; scope != nil {
+					for _, member := range scope.Affected {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Affected: %s %s -> %s (metadata only: %t)\n", plain(member.Target.Name), plain(member.Before.Version), plain(member.After.Version), member.MetadataOnly)
+					}
+				}
 				_, err = fmt.Fprint(cmd.OutOrStdout(), preview.Diff)
 				return err
 			},
 		}
 		changeFlags(command, options)
+		if spec.action == record.Bump {
+			command.Flags().BoolVar(&sharedRelease, "shared-release", false, "Authorize updating all subports that share this release source")
+		}
 		command.Flags().StringVar(&change, "change", "", "Continue one contribution when the target is ambiguous")
 		command.MarkFlagsMutuallyExclusive("change", "diff")
 		command.Flags().StringArrayVar(&variants, "variant", nil, "Select a variant, e.g. +debug or --variant=-debug")

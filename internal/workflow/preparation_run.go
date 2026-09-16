@@ -136,7 +136,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 
 func preparationRequest(job record.Job) preparation.Request {
 	target := job.Spec.Targets[0]
-	return preparation.Request{Action: job.Spec.Action, Source: job.Spec.Source,
+	return preparation.Request{SharedRelease: job.Spec.Preparation.SharedRelease, Action: job.Spec.Action, Source: job.Spec.Source,
 		Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants},
 		Platform:  job.Spec.Preparation.Platform, Reason: job.Spec.Reason, Version: job.Spec.Version, Release: job.ResolvedRelease}
 }
@@ -153,7 +153,7 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	target := job.Spec.Targets[0]
 	choices := job.Spec.Preparation
 	if correction := choices.Correction; correction != nil {
-		return record.PreparedChange{Branch: correction.Branch, Source: correction.Candidate}, nil
+		return record.PreparedChange{Scope: correction.Scope, Branch: correction.Branch, Source: correction.Candidate}, nil
 	}
 	result, err := e.Preparer.Prepare(ctx, preparationRequest(job))
 	if err != nil {
@@ -164,6 +164,9 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 	}
 	if job.Spec.Action == record.RefreshChecksums && result.PreparedTree == job.Spec.Source.Tree && len(result.Commits) == 0 && len(result.Files) == 0 {
 		return record.PreparedChange{}, errNoSourceChanges
+	}
+	if !result.Scope.Valid() || result.Scope != nil && !choices.SharedRelease {
+		return record.PreparedChange{}, fmt.Errorf("workflow: unapproved shared-release scope")
 	}
 	if len(result.Commits) != 1 {
 		return record.PreparedChange{}, fmt.Errorf("workflow: preparation must produce one commit")
@@ -196,5 +199,5 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 		prefix = "dockhand/checksums/"
 	}
 	branch := prefix + name + "-" + strings.ToLower(strings.TrimPrefix(string(job.ID), "job_"))
-	return record.PreparedChange{Branch: branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}}, nil
+	return record.PreparedChange{Scope: result.Scope, Branch: branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}}, nil
 }

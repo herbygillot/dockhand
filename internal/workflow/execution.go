@@ -39,7 +39,7 @@ func loadExecution(ctx context.Context, r state.Reader, id record.JobID) (execut
 			return work, err
 		}
 	}
-	if work.Job.Spec.IncludeDependents {
+	if work.Job.Spec.IncludeDependents || work.Revision.Scope != nil {
 		plan, err := r.Plan(ctx, id)
 		if err != nil && !errors.Is(err, state.ErrNotFound) {
 			return work, err

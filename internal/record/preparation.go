@@ -8,11 +8,12 @@ type CommitIdentity struct {
 
 // PreparationSpec records the inputs a later driver needs to create a contribution.
 type PreparationSpec struct {
-	Correction   *CorrectionSpec `json:",omitempty"`
-	SourceURL    string          `json:",omitempty"`
-	SourceBranch string
-	Platform     Platform
-	Author       CommitIdentity
+	SharedRelease bool            `json:",omitempty"`
+	Correction    *CorrectionSpec `json:",omitempty"`
+	SourceURL     string          `json:",omitempty"`
+	SourceBranch  string
+	Platform      Platform
+	Author        CommitIdentity
 	// VerificationProblem preserves setup failure without preventing branch creation.
 	VerificationProblem string `json:",omitempty"`
 }
@@ -20,6 +21,7 @@ type PreparationSpec struct {
 // PreparedChange is a candidate checkpoint before branch integration. Once
 // integration starts, recovery inspects this exact commit rather than preparing again.
 type PreparedChange struct {
+	Scope              *ReleaseScope `json:",omitempty"`
 	Branch             string
 	Source             Source
 	IntegrationStarted bool
@@ -27,6 +29,7 @@ type PreparedChange struct {
 
 // CorrectionSpec freezes branch adoption preconditions alongside its candidate.
 type CorrectionSpec struct {
+	Scope        *ReleaseScope `json:",omitempty"`
 	ChangeID     ChangeID
 	RevisionID   RevisionID
 	Branch       string

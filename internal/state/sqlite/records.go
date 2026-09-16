@@ -139,10 +139,14 @@ func (t *transaction) Revision(ctx context.Context, id record.RevisionID) (recor
 	}
 	var source string
 	var previous sql.NullString
+	var scope string
 	var created int64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,change_id,source_id,previous_id,created_at FROM revisions WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.ChangeID, &source, &previous, &created)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,change_id,source_id,previous_id,created_at,release_scope FROM revisions WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.ChangeID, &source, &previous, &created, &scope)
 	if err != nil {
 		return v, storageError(err)
+	}
+	if err := decode(scope, &v.Scope); err != nil {
+		return v, err
 	}
 	v.Previous = record.RevisionID(previous.String)
 	v.CreatedAt = fromTime(created)
@@ -150,7 +154,7 @@ func (t *transaction) Revision(ctx context.Context, id record.RevisionID) (recor
 	return v, err
 }
 func (t *transaction) PutRevision(ctx context.Context, v record.Revision) error {
-	if v.ID == "" || v.ChangeID == "" || v.ID == v.Previous {
+	if v.ID == "" || v.ChangeID == "" || v.ID == v.Previous || !v.Scope.Valid() {
 		return state.ErrInvalid
 	}
 	if old, err := t.Revision(ctx, v.ID); err == nil {
@@ -158,11 +162,24 @@ func (t *transaction) PutRevision(ctx context.Context, v record.Revision) error 
 	} else if !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
+	if v.Previous != "" {
+		prior, err := t.Revision(ctx, v.Previous)
+		if err != nil {
+			return err
+		}
+		if prior.ChangeID != v.ChangeID || !prior.Scope.SameMembership(v.Scope) {
+			return state.ErrInvalid
+		}
+	}
 	source, err := t.source(ctx, v.Source)
 	if err != nil {
 		return err
 	}
-	return t.exec(ctx, "INSERT INTO revisions(id,repository_id,change_id,source_id,previous_id,created_at) VALUES(?,?,?,?,?,?)", v.ID, t.repo, v.ChangeID, source, nullableID(v.Previous), v.CreatedAt.UnixMilli())
+	scope, err := encode(v.Scope)
+	if err != nil {
+		return err
+	}
+	return t.exec(ctx, "INSERT INTO revisions(id,repository_id,change_id,source_id,previous_id,created_at,release_scope) VALUES(?,?,?,?,?,?,?)", v.ID, t.repo, v.ChangeID, source, nullableID(v.Previous), v.CreatedAt.UnixMilli(), scope)
 }
 func (t *transaction) Request(ctx context.Context, id record.RequestID) (record.AcceptedRequest, error) {
 	var v record.AcceptedRequest
@@ -316,7 +333,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	}
 	var prepared any
 	if v.Prepared != nil {
-		if v.Prepared.Branch == "" || !objectID(v.Prepared.Source.Commit) || !objectID(v.Prepared.Source.Tree) {
+		if !v.Prepared.Scope.Valid() || v.Prepared.Branch == "" || !objectID(v.Prepared.Source.Commit) || !objectID(v.Prepared.Source.Tree) {
 			return state.ErrInvalid
 		}
 		prepared, err = encode(v.Prepared)
@@ -346,7 +363,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 			}
 		}
 		if old.Prepared != nil {
-			if v.Prepared == nil || old.Prepared.Branch != v.Prepared.Branch || old.Prepared.Source != v.Prepared.Source || (old.Prepared.IntegrationStarted && !v.Prepared.IntegrationStarted) {
+			if v.Prepared == nil || old.Prepared.Branch != v.Prepared.Branch || old.Prepared.Source != v.Prepared.Source || !reflect.DeepEqual(old.Prepared.Scope, v.Prepared.Scope) || (old.Prepared.IntegrationStarted && !v.Prepared.IntegrationStarted) {
 				return state.ErrConflict
 			}
 		}

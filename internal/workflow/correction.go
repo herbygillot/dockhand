@@ -177,6 +177,10 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if _, err := e.inferVerificationTarget(ctx, candidate, change, macports.Selection{}); err != nil {
 		return result, err
 	}
+	scope, err := e.rebindReleaseScope(ctx, revision.Scope, candidate, input.Platform)
+	if err != nil {
+		return result, err
+	}
 	diff, err := e.Repo.DiffTrees(ctx, string(revision.Source.Tree), string(candidate.Tree))
 	if err != nil {
 		return result, err
@@ -194,7 +198,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	}
 	spec := record.JobSpec{KeepFailed: input.KeepFailed, Action: input.Action, Source: committed.Source(revision.Source.Base), Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: build.Build, BuildRequirements: build.Requirements, IncludeDependents: input.IncludeDependents, TargetBuilds: build.TargetBuilds,
 		Preparation: &record.PreparationSpec{SourceBranch: branch, Platform: input.Platform, Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, VerificationProblem: build.Problem,
-			Correction: &record.CorrectionSpec{ChangeID: change.ID, RevisionID: revision.ID, Branch: branch, PreviousHead: committed.Head, RemoteHead: remoteHead, Candidate: candidate}}}
+			Correction: &record.CorrectionSpec{Scope: scope, ChangeID: change.ID, RevisionID: revision.ID, Branch: branch, PreviousHead: committed.Head, RemoteHead: remoteHead, Candidate: candidate}}}
 	if input.Publication != nil {
 		if e.Publisher == nil {
 			return result, fmt.Errorf("workflow: publisher required")

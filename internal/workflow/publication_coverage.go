@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,20 +14,54 @@ import (
 
 // A root attempt cites its immutable coverage plan. Both combined and standalone
 // publication must prove the entire cohort, including after process restart.
-func publicationCoverage(ctx context.Context, r state.Reader, root record.Attempt) error {
+func publicationCoverage(ctx context.Context, r state.Reader, root record.Attempt, required ...*record.ReleaseScope) error {
 	owner, err := r.Job(ctx, root.JobID)
 	if err != nil {
 		return err
 	}
+	var scope *record.ReleaseScope
+	revisionID, _ := publicationInput(owner)
+	if revisionID != "" {
+		revision, err := r.Revision(ctx, revisionID)
+		if err != nil {
+			return err
+		}
+		scope = revision.Scope
+	}
+	if len(required) > 0 && required[0] != nil {
+		scope = required[0]
+	}
 	if !owner.Spec.IncludeDependents {
-		return nil
+		if scope == nil {
+			return nil
+		}
+		targets := scope.BuildTargets()
+		if len(targets) == 1 && record.CompareTargets(targets[0], root.Spec.Target) == 0 {
+			return nil
+		}
 	}
 	plan, err := r.Plan(ctx, owner.ID)
+	if errors.Is(err, state.ErrNotFound) {
+		return fmt.Errorf("%w: required coverage plan is missing; verify the shared release", publish.ErrPrecondition)
+	}
 	if err != nil {
 		return err
 	}
 	fail := func(detail string) error {
-		return fmt.Errorf("%w: dependent coverage: %s", publish.ErrPrecondition, detail)
+		return fmt.Errorf("%w: verification coverage: %s", publish.ErrPrecondition, detail)
+	}
+	if scope != nil {
+		for _, required := range scope.BuildTargets() {
+			found := false
+			for _, target := range plan.Targets {
+				if record.CompareTargets(required, target.Port) == 0 {
+					found = true
+				}
+			}
+			if !found {
+				return fail("missing shared-release target " + required.Name)
+			}
+		}
 	}
 	if problems := verify.CoverageProblems(plan); len(problems) > 0 {
 		return fail(strings.Join(problems, "; "))
@@ -88,7 +123,16 @@ func (e *Engine) describePublicationCoverage(ctx context.Context, spec *record.P
 		if err != nil {
 			return err
 		}
-		if !owner.Spec.IncludeDependents {
+		revisionID, _ := publicationInput(owner)
+		var scope *record.ReleaseScope
+		if revisionID != "" {
+			revision, err := r.Revision(ctx, revisionID)
+			if err != nil {
+				return err
+			}
+			scope = revision.Scope
+		}
+		if !owner.Spec.IncludeDependents && scope == nil {
 			return nil
 		}
 		if err := publicationCoverage(ctx, r, root); err != nil {
@@ -102,7 +146,11 @@ func (e *Engine) describePublicationCoverage(ctx context.Context, spec *record.P
 		if err != nil {
 			return err
 		}
-		spec.Desired.Body += publish.CoverageSummary(plan, attempts)
+		if scope != nil && !owner.Spec.IncludeDependents {
+			spec.Desired.Body += publish.SharedReleaseSummary(plan, attempts)
+		} else {
+			spec.Desired.Body += publish.CoverageSummary(plan, attempts)
+		}
 		return nil
 	})
 }

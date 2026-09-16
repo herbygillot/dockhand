@@ -20,9 +20,10 @@ import (
 
 // Request selects local ports and optionally one exact upstream release.
 type Request struct {
-	Selection survey.Selection
-	Version   string
-	Subport   string
+	SharedRelease bool
+	Selection     survey.Selection
+	Version       string
+	Subport       string
 }
 
 func (r Request) Validate() error {
@@ -96,7 +97,7 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
 			selected.Selection.Subport = selected.Name
 		}
-		probe, problem := editor.Probe(ctx, portedit.ProbeSource{Source: files.Source, Root: files.Root, Selection: selected.Selection, Platform: platform})
+		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Root: files.Root, Selection: selected.Selection, Platform: platform})
 		if problem == nil && selected.Name != "" && selected.Name != probe.Port().Name {
 			problem = fmt.Errorf("%w: indexed subport %s; evaluation selected a different port %s", portedit.ErrUnsupported, selected.Name, probe.Port().Name)
 		}

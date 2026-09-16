@@ -91,7 +91,7 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			job.ConsecutiveFailures = 0
 			if confirmed {
 				change := record.Change{ID: record.ChangeID("change_" + string(job.ID)), Branch: job.Prepared.Branch, Targets: job.Spec.Targets, GeneratedCommit: job.Prepared.Source.Commit, Disposition: record.ChangeOpen, CreatedAt: job.AcceptedAt}
-				revision := record.Revision{ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt}
+				revision := record.Revision{Scope: job.Prepared.Scope, ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt}
 				if job.ChangeID != "" && job.Spec.Preparation.Correction == nil {
 					existing, err := tx.Change(ctx, job.ChangeID)
 					if err != nil {

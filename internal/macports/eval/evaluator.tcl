@@ -41,6 +41,18 @@ namespace eval ::dockhand {
                     }
                 }
             }
+            set metadata_only 0
+            if {![catch {$worker eval {
+                apply {{} {
+                    if {[llength [option distfiles]] || [option use_configure]} { return 0 }
+                    set target ${::org.macports.build}
+                    if {[llength [ditem_key $target pre]] || [llength [ditem_key $target post]]} { return 0 }
+                    set procedure user[ditem_key $target procedure]
+                    if {![llength [info procs $procedure]]} { return 0 }
+                    expr {[string trim [info body $procedure]] eq {global {*}[info globals]}}
+                }}
+            }} value]} { set metadata_only $value }
+            dict set out dockhand.metadata_only $metadata_only
             if {[dict exists $out cargo.dir]} {
                 set source [$worker eval {file normalize [option worksrcpath]}]
                 set directory [file normalize [dict get $out cargo.dir]]

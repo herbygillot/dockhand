@@ -58,10 +58,17 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if versioned.Ports[input.target.Name].Version != release.Version {
 		return archivePlan{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
 	}
+	if request.SharedRelease {
+		input.scope, err = releaseScope(input.before, versioned, input.target.Name, true)
+		if err != nil {
+			return archivePlan{}, err
+		}
+		input.scope.Input = input.versionInput
+	}
 	versionRoot := input.files.Root
 	if _, ok := s.Ports.(macports.Observer); ok {
 		observed, err := s.planObservedArchives(ctx, request, input, contents)
-		result := Result{Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{versionFidelity(input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
+		result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
 		if observed != nil {
 			for _, frame := range observed.contexts {
 				result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
@@ -103,8 +110,8 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if !changed {
 		return archivePlan{}, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
 	}
-	fidelity := versionFidelity(input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, info.Options["checksums"])
-	result := Result{Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{fidelity}}
+	fidelity := scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, info.Options["checksums"])
+	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{fidelity}}
 	if len(fidelity.UnexpectedChanges) > 0 {
 		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 	}

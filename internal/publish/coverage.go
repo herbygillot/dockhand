@@ -10,10 +10,27 @@ import (
 // CoverageSummary describes recorded isolated attempts after workflow has
 // established complete passing coverage. It does not grant publication authority.
 func CoverageSummary(plan record.VerificationPlan, attempts []record.Attempt) string {
+	return coverageSummary(plan, attempts, false)
+}
+
+// SharedReleaseSummary lists required sibling evidence without implying dependencies.
+func SharedReleaseSummary(plan record.VerificationPlan, attempts []record.Attempt) string {
+	return coverageSummary(plan, attempts, true)
+}
+
+func coverageSummary(plan record.VerificationPlan, attempts []record.Attempt, shared bool) string {
 	var b strings.Builder
-	fmt.Fprintln(&b, "\n###### Dependent verification")
+	if shared {
+		fmt.Fprintln(&b, "\n###### Shared-release verification")
+	} else {
+		fmt.Fprintln(&b, "\n###### Dependent verification")
+	}
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Each target was checked in a separate guest. Downstream guests first built and installed the selected source roots.")
+	if shared {
+		fmt.Fprintln(&b, "All buildable subports in this shared release passed verification.")
+	} else {
+		fmt.Fprintln(&b, "Each target was checked in a separate guest. Downstream guests first built and installed the selected source roots.")
+	}
 	for _, target := range plan.Targets {
 		for _, attempt := range attempts {
 			if attempt.TargetID != target.ID || attempt.Evidence == nil {

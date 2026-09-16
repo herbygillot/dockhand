@@ -90,13 +90,32 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 			return record.VerificationPlan{}, nil, fmt.Errorf("verify: selected evidence does not satisfy accepted requirements: %s", strings.Join(differences, "; "))
 		}
 	}
-	plan := record.VerificationPlan{JobID: job.ID, RevisionID: revision.ID, Targets: make([]record.VerificationTarget, 0, len(job.Spec.Targets))}
-	builds := make([]record.BuildSpec, 0, len(job.Spec.Targets))
-	for i, value := range job.Spec.Targets {
+	targets := job.Spec.Targets
+	if revision.Scope != nil {
+		targets = revision.Scope.BuildTargets()
+		rootPresent := false
+		for _, target := range targets {
+			if record.CompareTargets(target, job.Spec.Targets[0]) == 0 {
+				rootPresent = true
+			}
+		}
+		if !rootPresent {
+			return record.VerificationPlan{}, nil, fmt.Errorf("verify: initiating port is not a buildable member of the recorded shared release")
+		}
+		if len(targets) > 1 && config.Provider == "github" {
+			return record.VerificationPlan{}, nil, fmt.Errorf("verify: shared-release coverage requires isolated local verification; select --provider tart and a prepared image")
+		}
+		if len(targets) == 0 {
+			return record.VerificationPlan{}, nil, fmt.Errorf("verify: shared release has no buildable targets")
+		}
+	}
+	plan := record.VerificationPlan{JobID: job.ID, RevisionID: revision.ID, Targets: make([]record.VerificationTarget, 0, len(targets))}
+	builds := make([]record.BuildSpec, 0, len(targets))
+	for i, value := range targets {
 		target := value
 		target.Variants = maps.Clone(target.Variants)
 		targetID := record.TargetID("target_" + string(job.ID))
-		if len(job.Spec.Targets) > 1 {
+		if len(targets) > 1 {
 			targetID = record.TargetID(fmt.Sprintf("target_%s_%d", job.ID, i+1))
 		}
 		plan.Targets = append(plan.Targets, record.VerificationTarget{ID: targetID, Port: target, Platform: config.Platform})
@@ -112,6 +131,16 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 			build.ReplaceRemoteHead = job.Spec.Preparation.Correction.RemoteHead
 		}
 		build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
+		if revision.Scope != nil {
+			for _, member := range revision.Scope.Affected {
+				if record.CompareTargets(member.Target, target) == 0 {
+					build.Config.NeedsXcode = build.Config.NeedsXcode || member.NeedsXcode
+				}
+			}
+			plan.Targets[i].Build = &build
+			plan.Targets[i].Root = record.CompareTargets(target, job.Spec.Targets[0]) == 0
+			plan.Targets[i].Reasons = []string{"shared-release sibling"}
+		}
 		builds = append(builds, build)
 	}
 	return plan, builds, nil
@@ -119,7 +148,7 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 
 // PlanSingle retains the one-target planning contract used by evidence reuse.
 func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPlan, record.BuildSpec, error) {
-	if len(job.Spec.Targets) != 1 {
+	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.BuildTargets()) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
 	if job.Spec.Build == nil {
@@ -134,7 +163,7 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 // PlanSingleWithConfig creates a one-target plan from an exact configuration
 // selected by accepted requirements and recorded evidence.
 func PlanSingleWithConfig(job record.Job, revision record.Revision, config record.BuildConfig) (record.VerificationPlan, record.BuildSpec, error) {
-	if len(job.Spec.Targets) != 1 {
+	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.BuildTargets()) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
 	plan, builds, err := PlanWithConfig(job, revision, config)

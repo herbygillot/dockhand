@@ -3,14 +3,15 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
 	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type carrier struct {
@@ -171,12 +172,13 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 		if spec.Forge != "" {
 			desired.Tag = spec.Pattern.Tag(sourceVersion)
 		}
-		fidelity := versionFidelity(input.before, after, input.target.Name, input.files.Root, root, desired, next.Options["checksums"])
+		fidelity := scopedVersionFidelity(request.SharedRelease, input.before, after, input.target.Name, input.files.Root, root, desired, next.Options["checksums"])
 		if checkFidelity && len(fidelity.UnexpectedChanges) > 0 {
 			rejected = fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 			continue
 		}
 		selected, snapshot = contents, after
+		input.versionInput = record.ReleaseInput{Portfile: input.target.Portfile, Offset: carrier.candidate.Span.Start, Before: carrier.candidate.Value, After: value}
 		matches++
 	}
 	if matches == 0 {

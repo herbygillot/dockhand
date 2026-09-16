@@ -26,32 +26,34 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 	selectedVersion := ""
 	for _, profile := range profiles {
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
-		before, err := s.observeContents(ctx, request, input, input.data, mode, true)
+		before, err := s.observeContents(ctx, request, input, input.data, mode, !request.SharedRelease)
 		if err != nil {
 			return nil, fmt.Errorf("%w: baseline revision evaluation was inconclusive: %w", ErrProbeInconclusive, err)
 		}
-		after, err := s.observeContents(ctx, request, input, contents, mode, true)
+		after, err := s.observeContents(ctx, request, input, contents, mode, !request.SharedRelease)
 		if err != nil {
 			return nil, fmt.Errorf("%w: candidate revision evaluation was inconclusive: %w", ErrProbeInconclusive, err)
 		}
-		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
 		if selectedVersion == "" {
-			selectedVersion = next.Version
+			selectedVersion = after.Snapshot.Ports[input.target.Name].Version
 		}
-		if old.Version == next.Version {
-			continue
+		for name, next := range after.Snapshot.Ports {
+			old := before.Snapshot.Ports[name]
+			if old.Version == next.Version {
+				continue
+			}
+			if old.Version != input.info.Version || next.Version != selectedVersion {
+				return nil, fmt.Errorf("%w: revision reset would affect independent release %s on %+v", ErrFidelity, name, profile)
+			}
+			if next.Revision == 0 {
+				continue
+			}
+			edit, err := revisionReset(contents, filepath.Join(input.files.Root, input.target.Portfile), next, after.Ports[name].Declarations)
+			if err != nil {
+				return nil, err
+			}
+			edits[edit.Span] = edit
 		}
-		if old.Version != input.info.Version || next.Version != selectedVersion {
-			return nil, fmt.Errorf("%w: revision reset would affect an independent release on %+v", ErrFidelity, profile)
-		}
-		if next.Revision == 0 {
-			continue
-		}
-		edit, err := revisionReset(contents, filepath.Join(input.files.Root, input.target.Portfile), next, after.Ports[input.target.Name].Declarations)
-		if err != nil {
-			return nil, err
-		}
-		edits[edit.Span] = edit
 	}
 	replacements := make([]text.Edit, 0, len(edits))
 	for _, edit := range edits {

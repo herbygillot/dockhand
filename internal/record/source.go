@@ -72,6 +72,7 @@ type Platform struct {
 // Revision binds a change to an immutable Source. Later edits or rebases produce
 // another revision while earlier jobs and evidence retain their original inputs.
 type Revision struct {
+	Scope    *ReleaseScope `json:",omitempty"`
 	ID       RevisionID
 	ChangeID ChangeID
 	// Previous links to the preceding revision, or is empty for the first.

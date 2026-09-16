@@ -3,13 +3,14 @@ package portedit
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"slices"
+	"strings"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
-	"path/filepath"
-	"slices"
-	"strings"
 )
 
 type archiveContext struct {
@@ -77,7 +78,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				return nil, fmt.Errorf("protected context %+v: %w", profile, err)
 			}
 		} else {
-			fidelity := versionFidelity(before.Snapshot, after.Snapshot, input.target.Name, input.files.Root, input.files.Root, *request.Release, next.Options["checksums"])
+			fidelity := scopedVersionFidelity(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, input.files.Root, input.files.Root, *request.Release, next.Options["checksums"])
 			if len(fidelity.UnexpectedChanges) > 0 {
 				return nil, fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, fidelity.UnexpectedChanges)
 			}
@@ -89,6 +90,12 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		binding, err := s.bindArchives(input, contents, after)
 		if err != nil {
 			return nil, fmt.Errorf("candidate %+v: %w", profile, err)
+		}
+		if err := s.checkSharedArchiveOwners(input, input.data, before, oldBinding); err != nil {
+			return nil, err
+		}
+		if err := s.checkSharedArchiveOwners(input, contents, after, binding); err != nil {
+			return nil, err
 		}
 		if len(oldBinding.Groups) != len(binding.Groups) || len(oldBinding.Artifacts) != len(binding.Artifacts) {
 			return nil, fmt.Errorf("%w: candidate changed archive/checksum structure", ErrFidelity)

@@ -26,8 +26,9 @@ type CommitIntent struct {
 }
 
 type Request struct {
-	Action record.Action
-	Source record.Source
+	SharedRelease bool
+	Action        record.Action
+	Source        record.Source
 	// Root is an exclusively owned disposable source snapshot, never a user checkout.
 	Root      string
 	Selection macports.Selection
@@ -54,7 +55,8 @@ type ContextCoverage struct {
 }
 
 type Result struct {
-	Coverage  []ContextCoverage `json:",omitempty"`
+	Scope     *record.ReleaseScope `json:",omitempty"`
+	Coverage  []ContextCoverage    `json:",omitempty"`
 	Base      record.Source
 	Target    record.Target
 	Files     []portfile.Edit

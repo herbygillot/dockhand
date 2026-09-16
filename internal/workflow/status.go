@@ -127,7 +127,7 @@ func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (
 				return err
 			}
 			entry := JobStatus{Job: job, Attempts: attempts, Publications: []record.PublicationAction{}}
-			if job.Spec.IncludeDependents {
+			{
 				plan, err := r.Plan(ctx, job.ID)
 				if err != nil && !errors.Is(err, state.ErrNotFound) {
 					return err

@@ -13,8 +13,9 @@ import (
 
 // Assessment describes preparation evidence, not whether a port will build.
 type Assessment struct {
-	Coverage       []ContextCoverage `json:",omitempty"`
-	Contexts       []record.Platform `json:",omitempty"`
+	Scope          *record.ReleaseScope `json:",omitempty"`
+	Coverage       []ContextCoverage    `json:",omitempty"`
+	Contexts       []record.Platform    `json:",omitempty"`
 	Outcome        string
 	CurrentVersion string
 	Portfile       string
@@ -168,7 +169,8 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 	if release != nil && depErr == nil {
 		request := p.request
 		request.Version, request.Release = release.Requested, release
-		_, candidateErr := p.editor.planArchiveVersion(ctx, request, base)
+		plan, candidateErr := p.editor.planArchiveVersion(ctx, request, base)
+		a.Scope = plan.result.Scope
 		add("candidate", "Resolved release passes pre-download version, source, checksum, and edit-fidelity checks", candidateErr)
 	} else {
 		a.Findings = append(a.Findings, Finding{Check: "candidate", Status: NotTested, Code: "candidate-unchecked", Detail: "A resolved release and supported dependency source are required to check a specific update"})

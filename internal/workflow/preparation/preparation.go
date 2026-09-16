@@ -24,6 +24,7 @@ var ErrFidelity = portedit.ErrFidelity
 var ErrNotImplemented = portedit.ErrNotImplemented
 
 type Result struct {
+	Scope        *record.ReleaseScope       `json:",omitempty"`
 	Coverage     []portedit.ContextCoverage `json:",omitempty"`
 	Base         record.Source
 	Target       record.Target
@@ -118,7 +119,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
-	result := Result{Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads}
+	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads}
 	if err != nil {
 		return result, err
 	}
@@ -170,5 +171,5 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 }
 
 func probeSource(request Request) portedit.ProbeSource {
-	return portedit.ProbeSource{Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform}
+	return portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform}
 }

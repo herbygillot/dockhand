@@ -30,7 +30,11 @@ func PlanDependents(job record.Job, revision record.Revision, coverage Coverage)
 			return plan, fmt.Errorf("verify: image override %s does not name a discovered dependent", name)
 		}
 	}
-	roots := make([]bool, len(job.Spec.Targets))
+	rootTargets := job.Spec.Targets
+	if revision.Scope != nil {
+		rootTargets = revision.Scope.BuildTargets()
+	}
+	roots := make([]bool, len(rootTargets))
 	for i, candidate := range coverage.Targets {
 		for _, old := range plan.Targets {
 			if record.CompareTargets(old.Port, candidate.Target) == 0 {
@@ -41,7 +45,7 @@ func PlanDependents(job record.Job, revision record.Revision, coverage Coverage)
 		target.Port.Variants = maps.Clone(target.Port.Variants)
 		if candidate.Root {
 			found := false
-			for j, root := range job.Spec.Targets {
+			for j, root := range rootTargets {
 				if record.CompareTargets(root, candidate.Target) == 0 {
 					roots[j], found = true, true
 				}
@@ -66,7 +70,7 @@ func PlanDependents(job record.Job, revision record.Revision, coverage Coverage)
 				build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
 				build.Config.NeedsXcode = evaluation.NeedsXcode || builds[0].Config.NeedsXcode || build.Config.NeedsXcode
 				if !candidate.Root {
-					for _, root := range job.Spec.Targets {
+					for _, root := range rootTargets {
 						root.Variants = maps.Clone(root.Variants)
 						build.Preinstall = append(build.Preinstall, root)
 					}

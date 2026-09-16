@@ -283,3 +283,7 @@ Equivalent new requests can join existing work through requests.joined_job. Requ
 Schema 16 adds a partial index for old, unpruned released resources. `Query.PruneBefore` selects terminal jobs/attempts without recorded build outputs; `DueBefore` filters pruning retries. Released resource ownership and release facts remain immutable. Only the pruning timestamp and pruning retry/error metadata may advance before pruning completes; a completed marker cannot be erased.
 
 `JobSpec.KeepFailed` is persisted in existing job options. It requests explicit failed-environment retention and is not part of the verification input digest. New terminal attempts otherwise request ordinary claimed release. Already retained resources keep their established disposition.
+
+## Shared releases (schema 17)
+
+Revisions have an optional `release_scope` JSON value. It records the edited literal's source location, affected and protected targets, before/after version and archive identities, and which parents are metadata only. Candidate checkpoints carry the same scope until branch integration. Correction/adoption preserves membership; immutable prior revisions retain their evidence. `Change.Targets` and accepted job targets retain the initiating command target, while the revision scope supplies the complete verification cohort. Scope is independent of reverse-dependent discovery.

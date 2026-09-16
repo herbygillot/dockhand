@@ -66,7 +66,10 @@ var contributionSchema string
 //go:embed migrations/016.sql
 var diagnosticPruningSchema string
 
-const schemaVersion = 16
+//go:embed migrations/017.sql
+var releaseScopeSchema string
+
+const schemaVersion = 17
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -276,6 +279,7 @@ func migrations() []schemaMigration {
 		{version: 14, schema: retrySchema},
 		{version: 15, schema: contributionSchema},
 		{version: 16, schema: diagnosticPruningSchema},
+		{version: 17, schema: releaseScopeSchema},
 	}
 }
 

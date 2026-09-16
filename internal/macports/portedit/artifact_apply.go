@@ -3,14 +3,15 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/portfile"
-	"github.com/herbygillot/dockhand/internal/progress"
-	"github.com/herbygillot/dockhand/internal/text"
 	"io"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/text"
 )
 
 func (s *Service) applyObservedArchives(ctx context.Context, request Request, input *sourceInput, plan archivePlan) (Result, error) {
@@ -84,7 +85,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 			wanted = append(wanted, value)
 		}
 		checksums := strings.Join(wanted, " ")
-		finalFidelity := checksumFidelity(frame.after, final.Snapshot, input.target.Name, input.files.Root, input.files.Root, checksums)
+		finalFidelity := scopedChecksumFidelity(input.scope, frame.after, final.Snapshot, input.target.Name, input.files.Root, input.files.Root, checksums)
 		if len(finalFidelity.UnexpectedChanges) > 0 {
 			return result, fmt.Errorf("%w: final context %+v: %v", ErrFidelity, frame.profile, finalFidelity.UnexpectedChanges)
 		}
@@ -110,9 +111,15 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 		wanted = append(wanted, value)
 	}
-	fidelity := checksumFidelity(native.after, final, input.target.Name, input.files.Root, root, strings.Join(wanted, " "))
+	fidelity := scopedChecksumFidelity(input.scope, native.after, final, input.target.Name, input.files.Root, root, strings.Join(wanted, " "))
 	if len(fidelity.UnexpectedChanges) > 0 {
 		return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
+	}
+	if input.scope != nil {
+		result.Scope, err = macports.RebindReleaseScope(input.scope, final)
+		if err != nil {
+			return result, err
+		}
 	}
 	result.Files = []portfile.Edit{edit}
 	result.Downloads = downloads

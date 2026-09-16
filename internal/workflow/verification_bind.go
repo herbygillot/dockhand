@@ -134,6 +134,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	branch := BranchInput{Name: request.Branch}
 	var base record.ObjectID
 	var contribution record.Change
+	var scope *record.ReleaseScope
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
 		if request.Branch == "" {
 			return nil
@@ -157,6 +158,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		}
 		branch.ExpectedChange, branch.ExpectedRevision = change.ID, revision.ID
 		base = revision.Source.Base
+		scope = revision.Scope
 		contribution = change
 		return nil
 	})
@@ -187,6 +189,13 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	}
 	untracked := snapshot.UntrackedPaths
 	targets, evaluation, err = e.bindSnapshot(ctx, source, request.Selection, platform, untracked)
+	if err != nil {
+		return BoundVerification{}, err
+	}
+	if scope != nil && !maps.Equal(targets[0].Variants, contribution.Targets[0].Variants) {
+		return BoundVerification{}, fmt.Errorf("%w: shared release must retain its accepted variant choices", ErrInvalidRequest)
+	}
+	branch.Scope, err = e.rebindReleaseScope(ctx, scope, source, platform)
 	if err != nil {
 		return BoundVerification{}, err
 	}

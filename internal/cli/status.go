@@ -242,6 +242,21 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 	for _, change := range status.Changes {
 		line("\nChange %s: %s; branch: %s; current revision: %s; published revision: %s", change.ID, change.Disposition, change.Branch, change.CurrentRevision, change.PublishedRevision)
 	}
+	for _, revision := range status.Revisions {
+		if revision.Scope != nil {
+			line("\nShared release %s:", revision.ID)
+			for _, member := range revision.Scope.Affected {
+				kind := "verification required"
+				if member.MetadataOnly {
+					kind = "metadata only"
+				}
+				line("  %s: %s -> %s; %s", member.Target.Name, member.Before.Version, member.After.Version, kind)
+			}
+			for _, member := range revision.Scope.Protected {
+				line("  protected: %s %s", member.Target.Name, member.After.Version)
+			}
+		}
+	}
 	for _, pr := range status.PullRequests {
 		line("\nPull request %s: %s; change: %s; %s", pr.ID, pr.State, pr.ChangeID, pr.Ref.URL)
 		line("  observed: %s", statusTime(pr.ObservedAt))

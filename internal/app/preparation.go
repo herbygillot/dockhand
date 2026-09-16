@@ -3,12 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/progress"
 	"maps"
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -16,10 +16,11 @@ import (
 )
 
 type PreviewRequest struct {
-	Action    record.Action
-	Selection macports.Selection
-	Version   string
-	Reason    string
+	SharedRelease bool
+	Action        record.Action
+	Selection     macports.Selection
+	Version       string
+	Reason        string
 }
 
 type Preview struct {
@@ -49,7 +50,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	githubClient := newGitHubClient(config.GitHub)
 	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
 	input := preparation.Request{
-		Action: request.Action, Source: source,
+		SharedRelease: request.SharedRelease, Action: request.Action, Source: source,
 		Selection: request.Selection, Version: request.Version, Reason: request.Reason,
 	}
 	if request.Action == record.Bump {
@@ -72,6 +73,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 
 // Preparation captures the choices needed to create a new contribution.
 type Preparation struct {
+	SharedRelease     bool
 	KeepFailed        bool
 	ChangeID          record.ChangeID
 	IncludeDependents bool
@@ -113,6 +115,9 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		progress.Report(ctx, "Continuing contribution %s from recorded source %s", prior.ChangeID, prior.Spec.Source.Commit)
 		source = prior.Spec.Source
 		request.ChangeID = prior.ChangeID
+		if prior.Spec.Preparation != nil && prior.Spec.Preparation.SharedRelease {
+			request.SharedRelease = true
+		}
 		target := prior.Spec.Targets[0]
 		variants := maps.Clone(target.Variants)
 		if variants == nil {
@@ -129,7 +134,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
+	bound := workflow.PreparationRequest{SharedRelease: request.SharedRelease, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.NoVerify {

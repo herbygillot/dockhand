@@ -2,9 +2,11 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -52,9 +54,26 @@ func selectRecordedVerification(ctx context.Context, reader state.Reader, job re
 		if len(verify.RequirementDifferences(*job.Spec.BuildRequirements, candidate.Spec.Config)) != 0 {
 			continue
 		}
-		plan, build, err := verify.PlanSingleWithConfig(job, revision, candidate.Spec.Config)
+		plan, builds, err := verify.PlanWithConfig(job, revision, candidate.Spec.Config)
 		if err != nil {
 			return record.Attempt{}, record.VerificationPlan{}, "", err
+		}
+		var build record.BuildSpec
+		for _, item := range builds {
+			if record.CompareTargets(item.Target, job.Spec.Targets[0]) == 0 {
+				build = item
+			}
+		}
+		if build.Target.Name == "" {
+			continue
+		}
+		if revision.Scope != nil {
+			if err := publicationCoverage(ctx, reader, candidate, revision.Scope); err != nil {
+				if !errors.Is(err, publish.ErrPrecondition) {
+					return record.Attempt{}, record.VerificationPlan{}, "", err
+				}
+				continue
+			}
 		}
 		if len(verify.InputDifferences(build, candidate.Spec)) != 0 {
 			continue
