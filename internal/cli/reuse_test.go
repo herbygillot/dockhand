@@ -35,7 +35,7 @@ func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
 	require.Empty(t, entry.Attempts)
 	require.NotNil(t, entry.Reused)
 	require.Equal(t, observed, entry.Reused.Evidence.ObservedAt)
-	require.Contains(t, stderr.String(), "completed; verification passed (reused)")
+	require.Contains(t, stderr.String(), "completed; verification passed for standalone source; no update was prepared (reused)")
 	require.Contains(t, entry.Job.ReuseDetail, "Reused passing verification")
 	stdout.Reset()
 	stderr.Reset()

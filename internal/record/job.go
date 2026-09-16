@@ -65,10 +65,12 @@ type JobSpec struct {
 	// this field; intake copies the referenced revision's source into it.
 	Source Source
 	// Checkout records provenance when verification captured working-tree contents.
-	Checkout     *Checkout `json:",omitempty"`
-	Targets      []Target
-	Destination  Destination
-	Verification VerificationPolicy
+	Checkout *Checkout `json:",omitempty"`
+	// EvaluatedVersions records the input versions observed during source binding.
+	EvaluatedVersions map[string]string `json:",omitempty"`
+	Targets           []Target
+	Destination       Destination
+	Verification      VerificationPolicy
 	// Build records effective verification choices. A nil value leaves them
 	// unspecified; execution must not infer them from later application configuration.
 	Build *BuildConfig

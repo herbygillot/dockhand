@@ -118,3 +118,40 @@ func TestStatusShowsQueuedGitHubRunAndForkBranch(t *testing.T) {
 	require.Contains(t, output.String(), "GitHub Actions: queued; run 10 attempt 2")
 	require.Contains(t, output.String(), "Fork branch: owner/ports:update at abc")
 }
+
+func TestStatusDistinguishesFailedBumpFromStandaloneVerification(t *testing.T) {
+	target := record.Target{Name: "terraform-1.16", Subport: "terraform-1.16", Portfile: "sysutils/terraform/Portfile"}
+	status := workflow.EmptyStatus(time.Now())
+	status.Jobs = []workflow.JobStatus{
+		{Job: record.Job{ID: "bump", State: record.JobNeedsAttention, Phase: record.PhasePreparation,
+			Spec: record.JobSpec{Action: record.Bump, Targets: []record.Target{target}}}},
+		{Job: record.Job{ID: "verify", State: record.JobCompleted, Phase: record.PhaseVerification,
+			Spec: record.JobSpec{Action: record.Verify, Targets: []record.Target{target},
+				EvaluatedVersions: map[string]string{target.Name: "1.16.0"},
+				Checkout:          &record.Checkout{Branch: "master", ModifiedFiles: 0}}},
+			Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}},
+	}
+	var output bytes.Buffer
+	require.NoError(t, renderStatus(&output, status))
+	require.Contains(t, output.String(), "preparation stopped; no update branch was created")
+	require.Contains(t, output.String(), "verification passed for standalone source; no update was prepared")
+	require.Contains(t, output.String(), "input version: 1.16.0")
+	require.Contains(t, output.String(), "working tree (master)")
+	require.NotContains(t, output.String(), "terraform-1.16/terraform-1.16")
+	require.NotContains(t, output.String(), "prepared branch:")
+}
+
+func TestStatusDoesNotDescribeUnintegratedCandidateAsBranch(t *testing.T) {
+	status := workflow.EmptyStatus(time.Now())
+	job := record.Job{ID: "bump", Phase: record.PhasePreparation, State: record.JobNeedsAttention,
+		Prepared: &record.PreparedChange{Branch: "candidate"}}
+	status.Jobs = []workflow.JobStatus{{Job: job}}
+	var output bytes.Buffer
+	require.NoError(t, renderStatus(&output, status))
+	require.Contains(t, output.String(), "candidate awaiting confirmed branch integration: candidate")
+	require.NotContains(t, output.String(), "prepared branch:")
+	status.Jobs[0].Job.ResultRevision = "revision"
+	output.Reset()
+	require.NoError(t, renderStatus(&output, status))
+	require.Contains(t, output.String(), "prepared branch: candidate")
+}

@@ -123,6 +123,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 		}
 		for _, target := range job.Spec.Targets {
 			line("  target: %s", targetLabel(target))
+			if version := job.Spec.EvaluatedVersions[target.Name]; version != "" {
+				line("    input version: %s", version)
+			}
 		}
 		if entry.Plan != nil {
 			for _, target := range entry.Plan.Targets {
@@ -163,8 +166,21 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 				line("  release: %s %s; commit: %s", release.Repository, release.Tag, release.Commit)
 			}
 		}
+		if job.Spec.Checkout == nil && job.Spec.SourceBranch != "" {
+			line("  input: committed branch %s; commit %s", job.Spec.SourceBranch, job.Spec.Source.Commit)
+		}
 		if job.Prepared != nil {
-			line("  prepared branch: %s; commit: %s", job.Prepared.Branch, job.Prepared.Source.Commit)
+			if job.ResultRevision != "" {
+				line("  prepared branch: %s; commit: %s", job.Prepared.Branch, job.Prepared.Source.Commit)
+			} else {
+				line("  candidate awaiting confirmed branch integration: %s; commit: %s", job.Prepared.Branch, job.Prepared.Source.Commit)
+			}
+		}
+		if job.Spec.Action == record.Verify && job.ChangeID == "" {
+			line("  scope: standalone verification; no update contribution was prepared by this job")
+		}
+		if job.Phase == record.PhasePreparation && job.ResultRevision == "" && job.Prepared == nil {
+			line("  update branch: none created")
 		}
 		if job.ResultRevision != "" {
 			line("  result revision: %s", job.ResultRevision)
@@ -245,7 +261,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 
 func targetLabel(target record.Target) string {
 	name := target.Name
-	if target.Subport != "" {
+	if target.Subport != "" && target.Subport != target.Name {
 		name += "/" + target.Subport
 	}
 	var variants []string

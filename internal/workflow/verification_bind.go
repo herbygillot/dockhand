@@ -168,7 +168,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if inferred != nil && record.CompareTargets(targets[0], *inferred) != 0 {
 		return BoundVerification{}, fmt.Errorf("%w: tracked target %s no longer matches the evaluated Portfile; specify a port explicitly", ErrInvalidRequest, inferred.Name)
 	}
-	spec, err := normalizeSpec(record.JobSpec{TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
+	spec, err := normalizeSpec(record.JobSpec{TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
 		return BoundVerification{}, err
 	}
@@ -242,4 +242,14 @@ func checkUntrackedSelection(paths []string, selector string) error {
 		}
 	}
 	return checkUntracked(paths, "./Portfile")
+}
+
+func evaluatedVersions(snapshot macports.Snapshot, targets []record.Target) map[string]string {
+	versions := make(map[string]string, len(targets))
+	for _, target := range targets {
+		if port, ok := snapshot.Ports[target.Name]; ok && port.Version != "" {
+			versions[target.Name] = port.Version
+		}
+	}
+	return versions
 }

@@ -134,14 +134,27 @@ func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 }
 
 func completedOutcome(entry workflow.JobStatus) string {
-	if entry.Job.State != record.JobCompleted {
+	job := entry.Job
+	if job.State != record.JobCompleted {
+		if job.State.Terminal() && job.Phase == record.PhasePreparation && job.ResultRevision == "" {
+			if job.Prepared != nil {
+				return "preparation stopped; candidate branch integration is unconfirmed"
+			}
+			return "preparation stopped; no update branch was created"
+		}
 		return ""
+	}
+	if job.ResolvedRelease != nil && job.ResolvedRelease.NoUpdate {
+		return fmt.Sprintf("already current at %s; no update branch or build needed", job.ResolvedRelease.CurrentVersion)
+	}
+	if job.Spec.Destination == record.BranchReady && job.ResultRevision != "" {
+		return "update branch prepared; verification has not been requested"
 	}
 	if entry.Job.Spec.Destination == record.Published && len(entry.Publications) > 0 && entry.Publications[0].State == record.PublicationConfirmed {
 		return "publication confirmed"
 	}
 	if entry.Reused != nil && entry.Reused.Evidence != nil && entry.Reused.Evidence.Verdict == record.VerdictPassed {
-		return "verification passed (reused)"
+		return verificationOutcome(entry.Job) + " (reused)"
 	}
 	if len(entry.Attempts) == 0 {
 		return ""
@@ -151,7 +164,7 @@ func completedOutcome(entry workflow.JobStatus) string {
 			return ""
 		}
 	}
-	return "verification passed"
+	return verificationOutcome(entry.Job)
 }
 
 func progressContext(ctx context.Context, out io.Writer) context.Context {
@@ -167,4 +180,14 @@ func progressContext(ctx context.Context, out io.Writer) context.Context {
 		}
 		_, _ = fmt.Fprintln(out, plain(message))
 	})
+}
+
+func verificationOutcome(job record.Job) string {
+	if job.Spec.Action == record.Verify && job.ChangeID == "" {
+		return "verification passed for standalone source; no update was prepared"
+	}
+	if job.ResultRevision != "" {
+		return "verification passed for prepared update (recorded result)"
+	}
+	return "verification passed"
 }
