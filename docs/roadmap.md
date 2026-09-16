@@ -52,14 +52,15 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 - Investigate jq's native destroot/test ownership failure observed during the [retention smoke exercise](activity/2026-09-15-retention-smoke.md): destroot rebuilt `src/main.o` as root, and a later unprivileged test recompilation could not overwrite it. A direct MacPorts retry reproduced the failure; the earlier fresh run passed. Keep the failed verdict intact and resolve this at the appropriate port/Base boundary rather than silently repairing ownership or skipping tests in Dockhand.
 
 - Source archives are now prepared before Tart capacity reservation. Exact candidate indexes are retained, and standalone edits can seed from a cached tree using the complete Git diff. Index-cache retention is implemented; the [retention smoke exercise](activity/2026-09-15-retention-smoke.md) measured a cold index build and confirmed warm reuse before admission.
-- Measure the current CLI suite, then move duplicated lifecycle/composition scenarios to app or integration tests where useful. Keep focused CLI coverage for parsing, rendering, exit codes, and representative end-to-end wiring; retain existing recovery assertions. Do not impose the old review's timing target without current measurements.
-- Add a lightweight automated check of the dependency rules in `components.md`; enforce meaningful package boundaries rather than a broad stylistic lint regime.
+- Integration suites were remeasured serially without a live VM exercise in the [review 7 follow-up](activity/2026-09-15-review7.md). Keep native snapshot/storage integration tests with preparation; relocate duplicated CLI scenarios only when a concrete responsibility boundary warrants it. Retain parsing, rendering, exit-code, wiring, and recovery coverage.
+- Focused import checks now protect `verify` and `outdated`. Extend automated checking to the remaining meaningful dependency rules in `components.md` when those boundaries are touched; avoid a broad stylistic lint regime.
 - Audit unused exported Tcl/upstream APIs and reserved scaffolding against current callers and protocol use. Unexport, remove, or test deliberately; do not delete functioning planning code based on an older review's inventory.
-- Continue the coherent-comment pass, prioritizing package responsibilities and recovery contracts over comment-count targets.
+- Package overviews now cover every package, including the workflow file-group map. Continue documentation of exported operations and recovery contracts where it aids callers, rather than targeting comment counts.
 - Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
 - PortIndex and GitHub log-cache retention is implemented in `gc`, with last-use thresholds, existing operation locks, read-only previews, and retained database evidence. Consider orphaned temporary-file cleanup separately; unidentified/incomplete temporaries are currently preserved.
 - Consider account-wide GitHub cooldown coordination only if measurements show concurrent jobs continue causing rate-limit pressure despite their persisted per-record deadlines.
 - The shared `fetch` package now serves bounded source-archive and PortIndex transfers; keep cache/storage ownership in callers.
+- Reconsider separating PortIndex reading/querying from staging/cache maintenance when extending selectors. The seam is credible, but current consumers stage then read; no immediate split is required.
 
 ## Needs design
 
