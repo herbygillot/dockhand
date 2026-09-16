@@ -30,3 +30,15 @@ A current binary exercised real Tart with an APFS-cloned prepared Tahoe image in
 These are small-fixture measurements, not a promise that every real build log is this size. Failure logs preserve the actual `port -d build` error and Tcl backtrace. Success and cancellation were exercised through the real CLI. Explicit `gc --older-than 0s` released the intentionally kept VM, pruned already-released diagnostics, and preserved the just-released failure logs for a later collection. Branches and records survived.
 
 The original ports checkout, database, and Tart images were left intact. Exercise transcripts are kept outside the source repository; test Portfiles and Git changes are not committed to Dockhand.
+
+## Complete ports-tree failure and automatic expiry
+
+A second real run verified Terraform 1.16.3 from the complete ports tree with an intentionally failing `pre-build` hook, contained solely in the disposable Git clone. It used a 168,690,688-byte (160.88 MiB) source-transfer archive. After the expected failure, the archive and VM were gone; the run directory contained only 10,497 bytes of diagnostics, including the exact failure and backtrace. There were no leftover `.preparing-*` directories.
+
+The Tart PortIndex cache retained 26,636,919 bytes separately. Discovery also uses its own shared index cache. These reusable caches are not included in the diagnostic-only figures above and remain subject to explicit `gc`; the result is not a claim that total filesystem growth was only 10 KB.
+
+Automatic expiry was exercised with the real CLI by aging only a disposable released resource and its completed job by eight days. `start` pruned its diagnostic directory and recorded the pruning timestamp while a different repository's verification remained pending in the same database. No historical user record was altered for this test.
+
+The full-tree run generated two cold indexes, taking 3m53s in discovery and 3m54s in Tart staging. The caches have separate roots/profile inputs; this concrete duplicated-work observation is recorded in the roadmap for a measured reuse improvement, not silently treated as equivalent cache entries here.
+
+Exercise transcripts and measurements are preserved outside the repository at `/Users/herby/Documents/ChatGPT/Dockhand/exercises/2026-09-16-roadmap-cleanup`. The isolated Tart image/home, source checkouts, test databases, staging caches, and temporary binaries were removed after validation. The repository's `dockhand` binary was rebuilt from the committed implementation.
