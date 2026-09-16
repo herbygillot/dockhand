@@ -38,6 +38,26 @@ A new arithmetic fixture (`release * 10 + 1`) exposed two relations generating t
 
 ## Cold submission deadline
 
-The fresh jq verification generated its complete PortIndex in 4m24s, then exhausted the original five-minute provider-call budget during VM provisioning. No build verdict was produced; reconciliation closed the partial submission and released its resource. Increased the bounded submission/reconciliation default to fifteen minutes to cover both cold source staging and VM startup. Explicit engine overrides and shorter observation/cleanup deadlines remain intact; claims automatically use the same budget plus their existing grace period.
+A cold verification generated its complete PortIndex in 4m24s, then exhausted the original five-minute provider-call budget during VM provisioning. No build verdict was produced; reconciliation closed the partial submission and released its resource. Increased the bounded submission/reconciliation default to fifteen minutes to cover both cold source staging and VM startup. Explicit engine overrides and shorter observation/cleanup deadlines remain intact; claims automatically use the same budget plus their existing grace period.
 
 A concurrent-driver regression advances the stored clock beyond the old deadline during a still-active submission and establishes that another driver cannot reclaim it. Existing operation-deadline/retry checks passed alongside it. The longer default also extends the maximum abandoned-claim recovery wait; splitting staging into a separately persisted phase would be a larger design change, not a requirement for this bounded correction.
+
+## Final survey
+
+The repeated 147-Portfile sample finishes with 83 input-found, 53 unsupported, and 11 unknown, compared with 85/54/8 before this hardening pass. Beets now completes; libfec, mpir, and gstreamer010-gst-plugins-ugly conservatively become unknown because they read Darwin-major values without individually resolvable comparison boundaries. Py-openssl changes from unsupported to unknown for the same reason. Libewf retains its original unknown result after the architecture-alias correction. These are local assessments, not successful builds or complete-preparation guarantees.
+
+Raw results, progress, and a reusable survey harness are retained in the shared workspace at `exercises/2026-09-16-hardening`. The harness's module replacement points to the persistent project checkout; adjust that local path when reproducing elsewhere. The original survey evidence remains unchanged.
+
+## Repeated real archive preparations
+
+Replayed the earlier Deno 2.9.5 → 2.9.6, gh 2.100.0 → 2.101.0, terraform-1.16 1.16.0 → 1.16.2, and helm-4.2 4.2.3 → 4.2.4 preparations against the hardened implementation. All four passed with two public archives downloaded per target and final fidelity checks. The disposable corpus and historical Portfiles were the same as the [initial exercise](2026-09-15-scoped-bump-planner.md); the user's checkout and branches were not edited. These establish preparation, not builds on the modeled architectures/OS versions. Reports, digests, and final Portfiles are retained alongside the survey evidence.
+
+## Final validation
+
+- The complete `go test -p 1 ./...` suite passed after the final code changes, including workflow/preparation integration tests.
+- `go vet ./...` passed; the project CLI was rebuilt.
+- The 147-port survey and all four repeated public-archive preparations completed.
+- A cold end-to-end Tart verification passed and released its VM automatically, exercising the corrected submission budget beyond its former five-minute limit.
+- The project's main branch contains the individual fixes and this report. No GitHub push or PR publication was performed in this pass. The pre-existing untracked `docs/reviews/` directory remains untouched.
+
+The out-of-scope port investigation and patch were moved outside this repository to `~/Source/jq-version-marker`, and their proposed submission was removed from the Dockhand roadmap. The unpublished documentation commit was amended to exclude those artifacts. Dockhand retains the independently applicable submission-budget fix and its validation.

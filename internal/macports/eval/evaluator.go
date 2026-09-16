@@ -83,6 +83,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, source macports.Context) (macp
 	return observation.Snapshot, err
 }
 
+// EvaluateSelected omits sibling metadata for probes. Full edit validation
+// must use Evaluate so unrelated subport changes remain visible.
 func (e *Evaluator) EvaluateSelected(ctx context.Context, source macports.Context) (macports.Snapshot, error) {
 	observation, err := e.evaluate(ctx, source, nil, true)
 	return observation.Snapshot, err

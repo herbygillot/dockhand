@@ -8,7 +8,7 @@ Last updated: 2026-09-15.
 
 ## Next
 
-The user-selected immediate work is the [bump planner](bump-planner.md): native evaluator separation, declaration/artifact ownership, scoped subport edits, independent-pin preservation, and forge-independent explicit-version preparation. The initial planner is implemented, including native fetch observations, scoped checksum ownership, modeled metadata contexts, and explicit archive versions. See the [implementation and exercise report](activity/2026-09-15-scoped-bump-planner.md). Terraform/Helm existing release series, Deno, and gh are the initial preparation targets. Full Rust maintenance is excluded. Resume the queue below; broader shared-subport contribution scopes and additional context models remain follow-up work.
+The user-selected immediate work is the [bump planner](bump-planner.md): native evaluator separation, declaration/artifact ownership, scoped subport edits, independent-pin preservation, and forge-independent explicit-version preparation. The initial planner is implemented, including native fetch observations, scoped checksum ownership, modeled metadata contexts, and explicit archive versions. See the [implementation and exercise report](activity/2026-09-15-scoped-bump-planner.md). Terraform/Helm existing release series, Deno, and gh are the initial preparation targets. Full Rust maintenance is excluded. The follow-up [hardening pass](activity/2026-09-15-planner-hardening.md) fixes missed multiline/derived OS conditions, external-file observation gaps, and revisions across affected contexts, and reduces repeated probe evaluation. Broader shared-subport contribution scopes and additional context models remain follow-up work.
 
 The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
 
@@ -54,8 +54,6 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 - Long-stage progress, bounded SSH handshakes, prompt failed-guest cleanup, and image-replacement rollback are implemented and covered by regressions/live exercises. Continue targeted failure exercises when these mechanisms change.
 
 ### Engineering follow-up
-
-- Investigate jq's native destroot/test ownership failure observed during the [retention smoke exercise](activity/2026-09-15-retention-smoke.md): destroot rebuilt `src/main.o` as root, and a later unprivileged test recompilation could not overwrite it. A direct MacPorts retry reproduced the failure; the earlier fresh run passed. Keep the failed verdict intact and resolve this at the appropriate port/Base boundary rather than silently repairing ownership or skipping tests in Dockhand.
 
 - Source archives are now prepared before Tart capacity reservation. Exact candidate indexes are retained, and standalone edits can seed from a cached tree using the complete Git diff. Index-cache retention is implemented; the [retention smoke exercise](activity/2026-09-15-retention-smoke.md) measured a cold index build and confirmed warm reuse before admission.
 - Integration suites were remeasured serially without a live VM exercise in the [review 7 follow-up](activity/2026-09-15-review7.md). Keep native snapshot/storage integration tests with preparation; relocate duplicated CLI scenarios only when a concrete responsibility boundary warrants it. Retain parsing, rendering, exit-code, wiring, and recovery coverage.

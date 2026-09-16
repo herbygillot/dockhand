@@ -10,6 +10,7 @@ import (
 type ObservationRequest struct {
 	Platform     record.Platform
 	Declarations bool
+	// SelectedOnly omits sibling metadata; it is not suitable for final fidelity.
 	SelectedOnly bool
 }
 
