@@ -110,6 +110,8 @@ func TestBindVerificationFreezesCommittedInputAndCreatesNoState(t *testing.T) {
 	require.NoError(t, err)
 	job := f.status(t, receipt.JobID).Jobs[0].Job
 	require.Equal(t, original, job.Spec.Source)
+	require.Equal(t, bound.Request.Spec.EvaluatedVersions, job.Spec.EvaluatedVersions)
+	require.NotEmpty(t, job.Spec.EvaluatedVersions)
 	require.Empty(t, job.Spec.InputRevision)
 	require.Empty(t, job.ChangeID)
 	f.run(t, receipt.JobID)
