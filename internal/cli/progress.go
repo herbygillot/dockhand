@@ -148,7 +148,7 @@ func completedOutcome(entry workflow.JobStatus) string {
 		return fmt.Sprintf("already current at %s; no update branch or build needed", job.ResolvedRelease.CurrentVersion)
 	}
 	if job.Spec.Destination == record.BranchReady && job.ResultRevision != "" {
-		return "update branch prepared; verification has not been requested"
+		return "update branch prepared; this job did not request verification"
 	}
 	if entry.Job.Spec.Destination == record.Published && len(entry.Publications) > 0 && entry.Publications[0].State == record.PublicationConfirmed {
 		return "publication confirmed"
