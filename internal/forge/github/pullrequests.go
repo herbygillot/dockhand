@@ -15,7 +15,7 @@ import (
 
 func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullRequestObservation, error) {
 	at := time.Now().UTC().Truncate(time.Millisecond)
-	if r == nil || r.Head == nil || r.Base == nil || r.GetNumber() <= 0 || r.Head.Repo == nil || r.Base.Repo == nil || !strings.EqualFold(r.Base.Repo.GetFullName(), repository) || !githubapi.ValidRepositoryName(r.Head.Repo.GetFullName()) || !git.ValidBranchName(r.Head.GetRef()) || !git.ValidBranchName(r.Base.GetRef()) || !git.ValidObjectID(r.Head.GetSHA()) || (r.GetState() != "open" && r.GetState() != "closed") || r.GetTitle() == "" || r.GetHTMLURL() == "" {
+	if r == nil || r.Head == nil || r.Base == nil || r.GetNumber() <= 0 || (r.Head.Repo == nil && r.GetState() != "closed") || r.Base.Repo == nil || !strings.EqualFold(r.Base.Repo.GetFullName(), repository) || (r.Head.Repo != nil && !githubapi.ValidRepositoryName(r.Head.Repo.GetFullName())) || !git.ValidBranchName(r.Head.GetRef()) || !git.ValidBranchName(r.Base.GetRef()) || !git.ValidObjectID(r.Head.GetSHA()) || (r.GetState() != "open" && r.GetState() != "closed") || r.GetTitle() == "" || r.GetHTMLURL() == "" {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request observation")
 	}
 	state := record.PullRequestOpen

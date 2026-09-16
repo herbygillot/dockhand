@@ -31,6 +31,10 @@ func (s ContributionSelector) Validate() error {
 }
 
 func selectContribution(ctx context.Context, reader state.Reader, selected ContributionSelector) (record.Change, error) {
+	return lookupContribution(ctx, reader, selected, true)
+}
+
+func lookupContribution(ctx context.Context, reader state.Reader, selected ContributionSelector, requireOpen bool) (record.Change, error) {
 	if err := selected.Validate(); err != nil {
 		return record.Change{}, err
 	}
@@ -65,7 +69,7 @@ func selectContribution(ctx context.Context, reader state.Reader, selected Contr
 	if err != nil {
 		return change, err
 	}
-	if change.Disposition != record.ChangeOpen {
+	if requireOpen && change.Disposition != record.ChangeOpen {
 		return change, fmt.Errorf("%w: contribution %s is %s", ErrInvalidRequest, change.ID, change.Disposition)
 	}
 	if selected.Branch != "" && selected.Branch != change.Branch || selected.Target != "" && !strings.EqualFold(selected.Target, change.InitiatingTarget) {

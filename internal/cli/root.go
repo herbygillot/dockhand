@@ -62,7 +62,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	root := &cobra.Command{
 		Use:           "dockhand",
 		Short:         "Maintain MacPorts ports",
-		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nPrepare version and revision bumps, verify committed ports, resume jobs, and run driver cycles. Automatic selection supports GitHub sources with stable numeric versions and a tags livecheck. Publish verified contribution branches to GitHub.",
+		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nPrepare version and revision bumps, verify committed ports, resume jobs, and run driver cycles. Automatic discovery supports GitHub/GitLab catalogs and supported MacPorts livechecks. Publish verified contribution branches to GitHub.",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
@@ -138,6 +138,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	root.AddCommand(runtime.authCommand(), runtime.outdatedCommand(), runtime.assessCommand())
 	root.AddCommand(runtime.changeCommands()...)
 	root.AddCommand(runtime.correctionCommands()...)
+	root.AddCommand(runtime.contributionCommands()...)
 	root.AddCommand(runtime.verifyCommand(), runtime.publishCommand())
 	root.AddCommand(runtime.statusCommand(), runtime.waitCommand(), runtime.cancelCommand(), runtime.startCommand(), runtime.reviewCommand())
 	groupCommands(root)
@@ -172,7 +173,7 @@ var helpGroups = []struct {
 	{"prepare", "Prepare an update:", []string{"bump", "bump-revision", "refresh-checksums"}},
 	{"revise", "Revise your update:", []string{"amend", "rebase", "reassociate"}},
 	{"publish", "Verify and publish:", []string{"verify", "publish"}},
-	{"jobs", "Watch and manage jobs:", []string{"status", "wait", "cancel", "start"}},
+	{"jobs", "Watch and manage jobs:", []string{"status", "wait", "cancel", "start", "refresh", "abandon"}},
 	{"housekeeping", "Housekeeping:", []string{"gc", "db"}},
 }
 

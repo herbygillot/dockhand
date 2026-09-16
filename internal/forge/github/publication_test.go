@@ -260,3 +260,26 @@ func TestRateLimitedWritesRemainDistinctFromPermissionRejections(t *testing.T) {
 		}
 	}
 }
+
+func TestObserveTerminalPRFromDeletedFork(t *testing.T) {
+	for _, merged := range []bool{false, true} {
+		row := prJSON()
+		row["state"] = "closed"
+		if merged {
+			row["merged_at"] = "2026-09-16T12:00:00Z"
+		}
+		row["head"].(map[string]any)["repo"] = nil
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(row) }))
+		client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
+		result, err := client.Observe(t.Context(), record.PullRequestRef{Forge: "github", Repository: "upstream/ports", Number: 3})
+		server.Close()
+		require.NoError(t, err)
+		expected := record.PullRequestClosed
+		if merged {
+			expected = record.PullRequestMerged
+		}
+		require.Equal(t, expected, result.PullRequest.State)
+		require.Empty(t, result.PullRequest.HeadRepository)
+		require.Equal(t, "candidate", result.PullRequest.HeadBranch)
+	}
+}

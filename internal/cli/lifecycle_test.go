@@ -155,3 +155,24 @@ func TestResidentDriverAppliesAcceptedControlAndStopsWithoutNewWork(t *testing.T
 	require.Len(t, status.Jobs, 1)
 	require.Empty(t, status.Jobs[0].Attempts)
 }
+
+func TestAbandonRequiresSettledWorkAndPreservesBranch(t *testing.T) {
+	config, id := queuedJob(t)
+	var out bytes.Buffer
+	err := Run(t.Context(), []string{"abandon"}, Streams{Out: &out, Err: &out}, config)
+	require.ErrorContains(t, err, "pending job")
+	require.NoError(t, Run(t.Context(), []string{"cancel", "--job", string(id), "--wait"}, Streams{Out: &out, Err: &out}, config))
+	out.Reset()
+	require.NoError(t, Run(t.Context(), []string{"abandon", "--json"}, Streams{Out: &out, Err: &out}, config))
+	var result workflow.ContributionResult
+	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	require.Equal(t, record.ChangeAbandoned, result.Change.Disposition)
+	out.Reset()
+	require.NoError(t, Run(t.Context(), []string{"abandon", "--change", "change"}, Streams{Out: &out, Err: &out}, config))
+	require.Contains(t, out.String(), "preserved")
+	output, err := exec.CommandContext(t.Context(), "git", "-C", config.Repository, "rev-parse", "--verify", "refs/heads/candidate").CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	out.Reset()
+	err = Run(t.Context(), []string{"refresh", "--change", "change"}, Streams{Out: &out, Err: &out}, config)
+	require.ErrorContains(t, err, "no recorded pull request")
+}

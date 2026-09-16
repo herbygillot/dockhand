@@ -159,7 +159,7 @@ func (s *workSelector) flags(cmd *cobra.Command) {
 }
 func (s workSelector) validate(cmd *cobra.Command, args []string) error {
 	for _, name := range []string{"job", "branch", "change"} {
-		if cmd.Flags().Changed(name) && cmd.Flag(name).Value.String() == "" {
+		if flag := cmd.Flags().Lookup(name); flag != nil && flag.Changed && flag.Value.String() == "" {
 			return fmt.Errorf("--%s requires a nonempty selector", name)
 		}
 	}

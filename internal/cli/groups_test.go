@@ -25,7 +25,7 @@ func TestHelpGroupsCommandsInContributionOrder(t *testing.T) {
 		"Prepare an update:", "bump", "bump-revision", "refresh-checksums",
 		"Revise your update:", "amend", "rebase", "reassociate",
 		"Verify and publish:", "verify", "publish",
-		"Watch and manage jobs:", "status", "wait", "cancel", "start",
+		"Watch and manage jobs:", "status", "wait", "cancel", "start", "refresh", "abandon",
 		"Housekeeping:", "gc", "db",
 		"Additional Commands:", "review",
 	}

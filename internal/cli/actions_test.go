@@ -99,8 +99,11 @@ func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
 }
 
 func TestEmptyWorkSelectorsDoNotFallBackToCurrentBranch(t *testing.T) {
-	for _, command := range []string{"wait", "cancel"} {
+	for _, command := range []string{"wait", "cancel", "abandon", "refresh"} {
 		for _, selector := range []string{"job", "change", "branch"} {
+			if selector == "job" && (command == "abandon" || command == "refresh") {
+				continue
+			}
 			t.Run(command+"/"+selector, func(t *testing.T) {
 				var output bytes.Buffer
 				db := filepath.Join(t.TempDir(), "missing", "state.db")

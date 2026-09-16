@@ -6,6 +6,8 @@ See [architecture](architecture.md) for driver ownership and recovery, [principl
 
 The [target workflow](target-workflow.md) is implemented through its ordinary-workflow and preparation-reliability milestone. `bump <target>`, `verify <target>`, and `publish <target>` accept ports and subports identically and follow one repository-scoped contribution. That identity exists before preparation succeeds. Manual checkout verification requires `--working-tree`; ambiguous contributions require `--change` or `--branch`. Automatic discovery and editing capability remain separate checks.
 
+`abandon [target]` ends a contribution locally, with pending-job exclusion in the same transaction as disposition. `refresh [target]` observes the associated PR outside transactions and conditionally records its outcome; it retires matching completed work while preserving newer local corrections. Both support `--branch` and exact historical `--change`. They preserve branches and history, never mutate the remote PR, and never reopen retired work. See [usage](usage.md#end-a-contribution-or-refresh-its-pr). Status remains a local snapshot.
+
 ## Global options
 
 `--tree PATH` / `-T PATH` selects the ports checkout. It defaults to `MACPORTS_TREE` when nonempty, otherwise the current directory. The selection applies to repository-scoped commands without changing the process working directory. Database-only commands still do not need a ports tree.

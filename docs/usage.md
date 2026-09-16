@@ -78,6 +78,21 @@ Tart stages a platform-specific PortIndex generated from the frozen source inste
 
 Without `--wait`, verification remains attached while capacity is unavailable and returns at admission or a conclusive outcome. `--wait` and `--trace` follow completion. Ctrl-C detaches without canceling accepted work; `start` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job selection; it never submits another verification. JSON results go to stdout, progress and trace output to stderr. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
 
+## End a contribution or refresh its PR
+
+```sh
+dockhand refresh jq
+dockhand abandon terraform-1.16
+# Inspect an older contribution after starting a newer one:
+dockhand refresh --change <change_id>
+```
+
+`refresh` reads the associated PR from GitHub and records its open, closed, or merged state. It retires a closed or merged contribution only when no job is pending and the published revision still matches both the PR head and the local branch. Newer revisions, moved branches, and dirty checkouts stay open with an explanation. A deleted local branch or deleted fork does not prevent recognizing a matching completed PR. `status` continues to read recorded state without contacting GitHub.
+
+`abandon` explicitly ends local pursuit, including failed preparation that never made a branch. Wait for or cancel pending jobs first. It preserves branches, evidence, and any remote PR; it does not close the PR. A subsequent `bump <target>` starts a new contribution with freshly fetched source and a newly discovered release. Canceling a job alone preserves the contribution for retry.
+
+Both commands accept a unique open port/subport target, `--branch`, or the current branch when the selector is omitted. Use `--change` for an exact contribution, including historical work. Refreshing a reopened PR never reopens a retired local contribution or redirects newer work.
+
 ## Prepare version updates
 
 Preview or prepare a version update from freshly fetched `master` in `macports/macports-ports`. Local branches and uncommitted edits are excluded; a failed fetch stops the request without falling back to stale source:

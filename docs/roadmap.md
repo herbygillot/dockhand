@@ -2,22 +2,11 @@
 
 This document is the current source of truth for implementation priorities. The [architecture](architecture.md), [component map](components.md), [CLI design](cli-design.md), and [state design](state.md) define behavior and boundaries. Activity reports retain implementation history and validation; they are not additional queues.
 
-Last reconciled: 2026-09-16, after the [target-workflow exercise](activity/2026-09-16-target-workflow-validation.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
+Last reconciled: 2026-09-16, after the [contribution lifecycle exercise](activity/2026-09-16-contribution-lifecycle.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
 
 ## Next
 
-### 1. Finish the contribution lifecycle
-
-Target-based continuation now finds an existing open contribution and preserves its selected source/release. That solves retries, but makes ending one contribution necessary before starting the next update to the same port. Already-current preparations close their empty intent; a general user-facing abandonment operation and observation of merged/closed PRs are still missing. A canceled job does not mean the contribution is abandoned, and successful publication does not mean the PR has merged.
-
-- Define the smallest explicit way to finish or abandon a contribution, including one with no branch. Keep this separate from job cancellation and the unresolved `review accept`/`review dismiss` design.
-- Observe the associated PR's open/closed/merged state through the driver or an explicit refresh operation. Keep `status` a read-only snapshot. Broader review/CI monitoring can follow later.
-- Preserve branches, evidence, and history. Reconcile active jobs and concurrent writers before changing disposition. A merged older published revision must not silently discard newer local corrections; reopening a PR must not silently redirect a newer contribution.
-- Once the earlier contribution is settled, a new `bump <target>` should fetch current source and discover the newest eligible release. An ordinary retry of open work must continue its frozen source/release.
-
-Acceptance: complete an update, record its PR outcome, then bump the same target again; abandon failed preparation and start fresh; preserve ambiguous legacy contributions; exercise concurrent close/retry, pending jobs, reopened PRs, and unpublished corrections.
-
-### 2. Make routine cleanup part of driver operation
+### 1. Make routine cleanup part of driver operation
 
 The disk-space investigation remains an open follow-up. Existing cycles release successful/canceled VMs and eligible resources, while `gc` handles retained environments, diagnostics, and caches under the [current retention policy](operations.md). The recent exercise removed its disposable artifacts explicitly; that does not establish automatic cleanup for ordinary users.
 
@@ -30,7 +19,7 @@ Define retention by artifact purpose, then reuse the existing claims and cleanup
 
 Acceptance: measure retained bytes after success, preparation failure, build failure, and cancellation; prove restart/retry and concurrent drivers cannot lose needed inputs or diagnostics. An idle process need not become a new daemon just to clean up.
 
-### 3. Improve platform observations and context selection
+### 2. Improve platform observations and context selection
 
 Continue [bump coverage stage 2](bump-coverage.md#2-improve-platform-observations-and-context-selection). Fetch-guard classification and planning before dependency downloads are complete; scalar/option thresholds and non-conditional OS reads are not.
 
@@ -38,7 +27,7 @@ Have `macports/eval` expose source-bound observations; keep context selection in
 
 Acceptance: the py-openssl/mrustc threshold cases and libfec/mpir formatting reads, plus mutable thresholds, candidate-activated branches, and unresolved dimensions. Measure session counts and timings while retaining the existing literal-boundary and archive controls. Several modeled profiles are not proof of arbitrary Tcl or build compatibility.
 
-### 4. Separate manifest-bearing source from auxiliary archives
+### 3. Separate manifest-bearing source from auxiliary archives
 
 Implement [bump coverage stage 4](bump-coverage.md#4-identify-dependency-source-archives-independently-of-auxiliary-files) before expanding contribution scope. This is a bounded single-target improvement and does not depend on shared-subport publication.
 
@@ -46,7 +35,7 @@ Identify one unambiguous source for Cargo/Go manifests while retaining independe
 
 Acceptance: complete candidate preparation with the auxiliary pin unchanged; ambiguous ownership, missing manifests/helpers, and unsupported extraction remain actionable refusals. Verify the prepared target using the ordinary contribution workflow.
 
-### 5. Carry shared-release subports through the whole workflow
+### 4. Carry shared-release subports through the whole workflow
 
 Implement [bump coverage stage 3](bump-coverage.md#3-represent-a-shared-release-across-subports-end-to-end) after the smaller preparation improvements. Named subport lookup is complete; authorizing one release to change several subports is a different capability.
 
@@ -84,7 +73,7 @@ Triage the survey's weak/missing digest findings separately from checksum owners
 
 ### Review and unattended-publication authority
 
-`review accept` and `review dismiss` still need defined durable meaning: what creates a pending review, what acceptance authorizes, how it binds to a revision, and what dismissal closes. A manual bump/publish already records direct user intent. Contribution abandonment in Next #1 does not require implementing a review system.
+`review accept` and `review dismiss` still need defined durable meaning: what creates a pending review, what acceptance authorizes, how it binds to a revision, and what dismissal closes. A manual bump/publish already records direct user intent. Implemented contribution abandonment is separate from a future review system.
 
 Before discovery or a persistent driver can originate publishable work, define requester provenance and authority. Read-only `outdated` and starting a driver must not silently grant publication permission.
 
@@ -115,13 +104,13 @@ Extend these through their existing paths rather than treating them as new roadm
 
 | Capability | Established behavior / evidence |
 | --- | --- |
-| Target-based contribution workflow | Exact-source port/subport resolution; early contribution identity; transactional acceptance, replay, and frozen retries; named verify/publish/status/wait/cancel; explicit manual checkout verification. [Integrated validation](activity/2026-09-16-target-workflow-validation.md). General contribution closure remains Next #1. |
+| Target-based contribution workflow | Exact-source port/subport resolution; early contribution identity; transactional acceptance, replay, and frozen retries; named verify/publish/status/wait/cancel; explicit manual checkout verification. [Integrated validation](activity/2026-09-16-target-workflow-validation.md). Local abandonment and explicit PR refresh retire settled contributions while preserving corrections and history. [Lifecycle validation](activity/2026-09-16-contribution-lifecycle.md). |
 | Release discovery and assessment | GitHub/GitLab catalogs and supported native HTTP regex livechecks shared by bump/outdated; local assess with optional candidate probes; maintainer/category selectors and whole-tree assessment. Terraform selected 1.16.3 and passed Tart verification/publication preview. |
 | Source preparation | Evaluator-guided calculated versions, revision bumps, checksum refresh, scoped series updates, conditional/multiple archives, preserved pins, and supported Go/Cargo regeneration. Rejection-only fetch guards and local planning before helper/download work are implemented; Wasmer 7.4.2 passed preparation and Tart verification. |
 | State and recovery | Repository-scoped SQLite, concurrent claims, cancellation/recovery, explicit phases, immutable source capture, backup/check/migration, and durable snapshots. Schema-15 migration was rehearsed on a copy of existing user state without losing history/evidence. |
 | Verification and publication | Tart preference with GitHub fallback, immutable image/evidence inputs, reuse, GitHub fork verification, durable publication recovery, and independent per-target dependent builds with full required coverage. Local exercises in this milestone used publication previews; earlier GitHub exercises reached live PRs. |
 | Setup and credentials | Base/full-Xcode Tart provisioning and capacity-aware image inspection; device login, credential precedence/diagnostics, registered OAuth client, and public-read authentication. |
-| Corrections and operations | Managed amend/rebase, branch reassociation, conditional PR updates, resource release, manual gc and cache retention, durable logs/progress, tested Tcl transport, and package documentation. More automatic retention remains Next #2. |
+| Corrections and operations | Managed amend/rebase, branch reassociation, conditional PR updates, resource release, manual gc and cache retention, durable logs/progress, tested Tcl transport, and package documentation. More automatic retention remains Next #1. |
 
 ## Deferred
 
