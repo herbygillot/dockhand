@@ -1,6 +1,6 @@
 # Next pass: core bump coverage
 
-Status: prepared for implementation on 2026-09-16; the changes below are proposed, not implemented. This continues the [evaluator-driven planner](bump-planner.md). The immediate objective is to prepare more real port updates without weakening preservation of independent releases or publication evidence.
+Status: target-workflow prerequisites and stage 1 are implemented on 2026-09-16; stages 2–4 remain planned. This continues the [evaluator-driven planner](bump-planner.md). The immediate objective is to prepare more real port updates without weakening preservation of independent releases or publication evidence.
 
 ## Evidence and scope
 
@@ -12,7 +12,7 @@ Work in the following order. Each stage should complete through assessment, prep
 
 ## Prerequisite: target resolution and contribution continuity
 
-The [target workflow plan](target-workflow.md) supersedes the earlier name-resolution-only prerequisite. Remove public `--subport` after source-bound port/subport lookup works across commands, but also make verify/publish continue the selected contribution, record that contribution before branch creation, distinguish standalone builds from prepared updates, and support Terraform's automatic livecheck discovery.
+The [target workflow plan](target-workflow.md) supersedes the earlier name-resolution-only prerequisite. This prerequisite is implemented: source-bound name resolution replaces public `--subport`; verify/publish continue the selected contribution; contribution identity precedes preparation; outcomes distinguish standalone builds from updates; and native HTTP livecheck supports automatic Terraform discovery.
 
 The intended ordinary commands are `dockhand bump terraform-1.16`, `dockhand verify terraform-1.16`, and `dockhand publish terraform-1.16`. An explicit version remains available; `--branch` is an override, not a required handoff. Internal subport identity and exact source/evidence binding remain necessary. The plan defines manual checkout selection, retry and ambiguity behavior, package placement, and migration/concurrency tests.
 

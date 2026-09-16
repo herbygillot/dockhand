@@ -55,7 +55,7 @@ The [core coverage plan](bump-coverage.md) sets the next sequence: fetch guards 
 
 ## Current behavior and limits
 
-The initial implementation supplies each of the six stages above within the supported cases below. `assess` and `bump` share scoped planning. `assess terraform --subport terraform-1.16 --version 1.16.2` checks an explicit archive version; `bump terraform 1.16.2 --subport terraform-1.16 --diff` also downloads the affected archives and previews the completed edit. No forge identity or Git commit is manufactured for HashiCorp's archive source.
+The initial implementation supplies each of the six stages above within the supported cases below. `assess` and `bump` share scoped planning. `assess terraform-1.16 --version 1.16.2` checks an explicit archive version; `bump terraform-1.16 1.16.2 --diff` also downloads the affected archives and previews the completed edit. No forge identity or Git commit is manufactured for HashiCorp's archive source.
 
 Candidate generation remains deliberately bounded by supported literal transformations and actual forward evaluation. It is not a general Tcl inverse or taint engine. Multiple independently edited version inputs, dynamically generated source declarations, new release-series creation, coordinated Rust/bootstrap updates, and automatic discovery from arbitrary livecheck pages remain outside the implemented preparation scope. Changes to unselected sibling metadata are still refused; a shared multi-subport update needs an explicit contribution scope.
 

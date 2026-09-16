@@ -39,7 +39,7 @@ Optional, depending on what you work on:
 
 **Preparing updates**
 
-- Version bumps that find the newest stable upstream release from GitHub or GitLab tags or releases, following the port's own livecheck and tag conventions, or use a version you name.
+- Version bumps that find the newest stable upstream release from GitHub/GitLab catalogs or supported HTTP release listings, following the port's own livecheck and tag conventions, or use a version you name.
 - Revision bumps.
 - Literal `version`, `github.setup`, `gitlab.setup`, and GitHub-backed `go.setup` sources, with checksums recomputed from the real archives, including ports with several archives or named checksums.
 - Regenerated `go.vendors`, `cargo.crates`, and `cargo.crates_github` blocks, checked against the upstream module and lockfile so a helper that silently drops a dependency is caught.

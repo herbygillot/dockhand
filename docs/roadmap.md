@@ -8,24 +8,11 @@ Last updated: 2026-09-16.
 
 ## Next
 
-### 1. Keep one target through bump, verification, and publication
+### 1. Continue broader Portfile coverage
 
-The [target workflow plan](target-workflow.md) is the immediate implementation sequence. The Terraform exercise showed that supported explicit-version editing does not yet imply automatic discovery or a continuous contribution workflow. A failed bump was followed by a successful standalone verification of unchanged master; no update branch existed.
+The [target workflow milestone](target-workflow.md) is implemented through stages 0–5: named subport resolution, contribution identity before preparation, transactional retries, target-based continuation, native HTTP livecheck discovery, and preserved rejection-only fetch guards. See the [integrated validation report](activity/2026-09-16-target-workflow-validation.md) for exercises and limits. Broader shared-release coverage remains separate work.
 
-Implement in this order:
-
-1. Make outcomes distinguish failed preparation, standalone verification, an actual prepared update, and publication readiness.
-2. Unify source-bound port/subport name resolution across commands and remove public `--subport` once it works everywhere.
-3. Record the contribution when preparation is accepted; keep retries under it, with transactional selection, migration, and interrupted-integration checks.
-4. Let `verify <target>`, `publish <target>`, and target-oriented status follow that contribution. Make checkout verification explicit, handle ambiguity, and preserve revision/evidence checks.
-5. Add evaluated HTTP regex livecheck discovery alongside forge catalogs, shared by bump/outdated. Terraform should select the newest eligible release in its selected series without an explicit version.
-6. Complete Wasmer's fetch-guard/local-planning reliability slice described below, then exercise the integrated paths.
-
-The plan defines stage boundaries, package ownership, retry/no-update behavior, human edits, concurrency, and acceptance checks. It is proposed behavior, not a claim that the commands have changed. One focused `macports/selection` package is justified; no external dependency or second workflow engine is required. PR observation and expiring OAuth tokens remain behind this core work.
-
-### 2. Continue broader Portfile coverage
-
-The [bump coverage plan](bump-coverage.md) and its [readiness investigation](activity/2026-09-16-core-bump-readiness.md) remain applicable. Its first implementation slice is included in the target-workflow milestone: distinguish rejection-only fetch guards from archive modifications, report the affected context, and finish local candidate planning before dependency-source downloads/helpers.
+The [bump coverage plan](bump-coverage.md) and its [readiness investigation](activity/2026-09-16-core-bump-readiness.md) guide the next changes. Its first slice is complete: rejection-only guards are distinguished from archive modifications, affected contexts are reported, and local candidate planning precedes dependency-source downloads/helpers.
 
 Then implement:
 
@@ -47,7 +34,7 @@ Extend the current single-port selector deliberately. A multi-target request sho
 
 ### Upstream discovery
 
-`outdated` is implemented for explicit selectors, including GitHub/GitLab catalogs and calculated-version probing. Unknown or incomplete observations remain visible. Maintainer/category selection is implemented; discovery does not create branches, jobs, or publication authority.
+`outdated` is implemented for explicit selectors, including GitHub/GitLab catalogs, supported native HTTP regex livechecks, and calculated-version probing. Unknown or incomplete observations remain visible. Maintainer/category selection is implemented; discovery does not create branches, jobs, or publication authority.
 
 ### Preparation assessment
 
@@ -136,6 +123,7 @@ The following capabilities are established and should be extended through their 
 - explicit job phases, transactional claims, recovery, cancellation, and resource cleanup;
 - workflow lifecycle organization that keeps binding, intake, policy, execution, and projection roles visible without exporting driver internals;
 - immutable committed and working-tree source capture with native MacPorts evaluation;
+- source-bound port/subport name resolution, contribution identity before preparation, and target-based bump/verify/publish/status continuation with explicit manual checkout selection;
 - native credential-applicability checks that block unsupported authenticated source downloads without exposing secrets;
 - named and multiple source checksums, preserved local patches, and guarded Go/Rust dependency regeneration through optional host helpers;
 - Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;

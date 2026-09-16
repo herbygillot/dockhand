@@ -101,7 +101,7 @@ dockhand bump jq --publish --image dockhand-base-tahoe --wait
 dockhand bump-revision jq --publish --image dockhand-base-tahoe --trace
 ```
 
-The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. If no suitable image is available, matching recorded verification can still satisfy the accepted requirements; otherwise the job needs attention and preserves the prepared branch for a later verification run. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait --job <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. Automatic provider selection prefers a suitable Tart image and falls back to GitHub when unavailable. An explicit Tart request can reuse applicable evidence; otherwise missing build configuration preserves the prepared branch for a later verification run. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait --job <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
 
 ## Publish an existing branch
 
@@ -193,7 +193,7 @@ dockhand outdated --maintainer herbygillot@github
 dockhand outdated --maintainer @herbygillot --category devel --json
 ```
 
-This reads committed local `HEAD` and checks each selected port using the same GitHub/GitLab source conventions and calculated-version probing as bump. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
+This reads committed local `HEAD` and checks each selected port using the same GitHub/GitLab catalogs, supported native HTTP regex livechecks, and calculated-version probing as bump. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
 
 Results distinguish `current`, `update-available`, and `unknown`. Unsupported ports and incomplete observations stay visible alongside successful results; any unknown result produces a nonzero exit status. An available update by itself is successful discovery. Automatic bump intake and unattended publication policy remain separate work.
 
