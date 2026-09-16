@@ -106,6 +106,7 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 	var snapshot macports.Snapshot
 	matches := 0
 	var rejected error
+	attempted := map[string]bool{}
 	for _, carrier := range carriers {
 		value, ok := strings.CutPrefix(sourceVersion, carrier.prefix)
 		if !ok {
@@ -129,6 +130,13 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 		if err != nil {
 			continue
 		}
+		// Different relations can predict the same source edit. Ambiguity is
+		// between distinct edits, not between ways of deriving one edit.
+		key := string(contents)
+		if attempted[key] {
+			continue
+		}
+		attempted[key] = true
 		if checkFidelity {
 			contents, err = s.resetRevision(ctx, request, input, contents)
 			if err != nil {

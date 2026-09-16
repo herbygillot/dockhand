@@ -52,6 +52,7 @@ version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -fo
 		{"arithmetic", "set release 12\ngithub.setup owner fixture $release v\nversion [expr {${github.version} * 10 + 7}]", "13", "137", "version [expr"},
 		{"procedure and fragment", "set patchNumber 3\nproc release {} {global patchNumber; return 1.2.${patchNumber}}\ngithub.setup owner fixture [release] v", "1.2.4", "1.2.4", "set patchNumber 4"},
 		{"mapped separators", "set real_version 7.5\ngithub.setup owner fixture [string map {. _} $real_version] v\nversion $real_version", "7_6", "7.6", "set real_version 7.6"},
+		{"equivalent numeric and substitution mappings", "set release 3\ngithub.setup owner fixture [expr {$release * 10 + 1}] v", "41", "41", "set release 4"},
 		{"arithmetic source", "set patch 3\ngithub.setup owner fixture 1.2.[expr {$patch + 1}] v", "1.2.5", "1.2.5", "set patch 4"},
 		{"inactive assignments", "set unused 1.2.3\nif {0} {set release 1.2.3}\nset release {1.2.3}\ngithub.setup owner fixture $release v", "1.2.4", "1.2.4", "set unused 1.2.3"},
 	} {

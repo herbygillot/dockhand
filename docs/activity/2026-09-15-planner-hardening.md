@@ -31,3 +31,7 @@ A paired `beets` assessment against the same committed ports tree took 23.54 sec
 ## Survey follow-up
 
 Replayed the same 147-Portfile sample. Investigating every changed outcome caught a missed `configure.build_arch` alias in the tightened source scanner: libewf had incorrectly stopped requesting its alternate architecture. Restored alias recognition and added a native preparation regression with separate unnamed checksum declarations under that condition. Both archives are refreshed, and libewf again reports its modeled host-filesystem dependence as unknown. Terraform's explicit `terraform-1.16` / `1.16.2` CLI assessment still passes candidate checks across native arm64 and modeled x86_64.
+
+## Equivalent calculated-version candidates
+
+A new arithmetic fixture (`release * 10 + 1`) exposed two relations generating the same byte-for-byte edit: numeric inversion and literal substitution. Counting those as two inputs incorrectly refused the update. Candidate evaluation now deduplicates identical edits before evaluation, while different edits still trigger ambiguity. Forward-probing and genuine-ambiguity/sibling-fidelity regressions passed.
