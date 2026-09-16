@@ -118,6 +118,34 @@ Default verification waits for admission or a conclusive outcome; `--wait` follo
 
 JSON verification/attachment results contain the selected job ID or branch and frozen job IDs, any acceptance receipt, the last status snapshot, and an interruption indicator. Progress and logs stay on stderr. `start --json` writes a stopped/interrupted result when it exits. Exit codes distinguish milestone success (0), failed work (2), needs-attention or superseded work (3), canceled work or process interruption (130), and other errors (1). Confirmed cancellation is success for `cancel --wait`; stopping attachment never submits a cancellation request.
 
+## Preparation assessment
+
+`assess` reports whether Dockhand can prepare an update from committed local HEAD:
+
+```sh
+dockhand assess terraform
+dockhand assess jq rust-analyzer
+dockhand assess rust-analyzer --version 2026-09-14
+dockhand assess --maintainer herbygillot@github --category devel
+dockhand assess --all --json
+```
+
+Explicit ports, maintainer/category filters, and `--all` are separate selection modes. Repeated values within a metadata field are alternatives; maintainer and category fields intersect. `--version` requires exactly one explicit port and accepts the same tag-prefix inference as `bump`.
+
+Default assessment evaluates local declarations and probes literal version inputs without querying upstream. `--version` resolves the requested tag and runs the shared preparation plan through version, source, checksum-association, and edit-fidelity checks, stopping before downloads. Neither mode opens workflow state, creates jobs, changes branches, executes dependency generators, or builds ports. It evaluates Tcl in an isolated materialization; this is not a sandbox for untrusted Portfiles. Working-tree edits are excluded. Indexed scans may create or refresh the source-bound index cache.
+
+Each result retains findings with a check, status, stable reason code, and explanation, plus input locations where available:
+
+- `input-found`: local checks found literal candidates. A specific update has not been established; candidates can still be ambiguous or unsuitable for the requested release.
+- `candidate-checked`: a resolved release passes the pre-download preparation checks.
+- `blocked`: a required optional helper, such as `cargo2port` or `go2port`, is unavailable.
+- `unsupported`: an established preparation limitation, including unsupported source conventions or edits that change unrelated metadata.
+- `unknown`: evaluation, probing, upstream observation, or index coverage could not establish an answer.
+
+All findings remain visible when several conditions apply; the overall result prioritizes unsupported, then blocked, then unknown. Archives, generated-manifest equivalence, and verification remain explicitly untested. Successful assessment does not promise that a download, full preparation, or build will succeed. Use `bump --diff` to exercise full source preparation.
+
+Independent ports continue after a per-port failure. Indexed subports outside primary-port preparation are reported as unsupported; omitted Portfiles and missing index entries remain unknown. Exit status is 0 when all results are `input-found` or `candidate-checked` (or no ports match), and 1 if any are blocked, unsupported, or unknown. Cancellation follows the normal CLI exit convention.
+
 ## Implemented preparation groundwork
 
 ```text

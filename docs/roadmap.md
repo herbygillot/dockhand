@@ -28,6 +28,10 @@ Extend the current single-port selector deliberately. A multi-target request sho
 
 `outdated` is implemented for explicit selectors, including GitHub/GitLab catalogs and calculated-version probing. Unknown or incomplete observations remain visible. Maintainer/category selection is implemented; discovery does not create branches, jobs, or publication authority.
 
+### Preparation assessment
+
+`assess` is implemented for explicit ports, maintainer/category selectors, and whole-tree scans. Optional `--version` checks a resolved release with shared preparation checks; local assessment does not query upstream. Results distinguish editable inputs, checked candidates, missing helpers, known limitations, and uncertainty. See [CLI behavior](cli-design.md#preparation-assessment).
+
 ### Pull-request observation
 
 Teach resident driver cycles to refresh PR head, mergeability, review, CI, and conflict observations. Publication still completes when the PR is opened or updated; later observations remain attached to the contribution.

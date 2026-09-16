@@ -121,6 +121,15 @@ It takes a while the first time. Use `dockhand setup --check` to validate an exi
 
 If you skip this step, Dockhand builds on GitHub Actions in your fork. Make sure the fork's existing `main.yml` workflow is enabled under its Actions settings.
 
+### Check whether a port can be updated
+
+```sh
+dockhand assess jq
+dockhand assess rust-analyzer --version 2026-09-14
+```
+
+`assess` examines the committed Portfile and explains what Dockhand can edit, what tools are missing, and what it cannot determine. Add `--version` to check a specific upstream release. It does not download source archives or build the port; an assessment is not a guarantee that the update will build.
+
 ### Preview an update
 
 Start by looking at what Dockhand would change:

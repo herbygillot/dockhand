@@ -25,7 +25,8 @@ dockhand2/
       sqlite/            # SQLite storage, connections, and schema migrations
     workflow/            # Request acceptance and all workflow advancement
       preparation/       # Git snapshot lifetime and final edited-tree storage
-    outdated/            # Read-only committed-port update scans and selector orchestration
+    assess/              # Preparation capability reports, without jobs or downloads
+    outdated/            # Read-only committed-port update scans
     upstream/            # Release discovery and version assessment
     verify/              # Build specifications, coverage plans, verdicts
       staging/           # Immutable indexed source archives
@@ -42,6 +43,7 @@ dockhand2/
       portedit/          # Evaluator-driven source edits and fidelity checks
       portfile/          # Tcl literal candidates and precise source edits
       dependents/        # Frozen-source downstream coverage discovery
+      survey/            # Shared committed-source lifetime and port selection
       source/            # Evaluated PortGroup source conventions
       portindex/         # Frozen-source PortIndex construction and caching
     tcl/                 # Tcl process/RPC support and source syntax tools
@@ -357,7 +359,7 @@ Tart supplies the recorded index recipe and executes preinstalled roots in each 
 
 ### Read-only upstream selection
 
-`app.Outdated` constructs `outdated.Service` with the selected repository, native evaluator, upstream adapters, and cache configuration. `outdated` captures committed local HEAD, owns the disposable workspace, and observes each selected port through the source adapters and version probe. `macports/portindex.Filter` owns exact maintainer/category metadata matching and reports unknown coverage for omitted Portfiles, missing subports, and unread fields. The capability stages a source-bound index in the caller-selected system user cache without opening state; the CLI owns selector flags and rendering. Discovery does not accept jobs or grant publication authority. Primary-port-only version probing remains an explicit unknown for selected subports.
+`app.Outdated` constructs `outdated.Service` with the selected repository, native evaluator, upstream adapters, and cache configuration. `macports/survey` captures committed local HEAD and selects ports in an owned disposable workspace; `outdated` observes those ports through source adapters and the version probe. `assess` shares that source and selection boundary. `macports/portindex.Filter` owns exact maintainer/category metadata matching and reports unknown coverage for omitted Portfiles, missing subports, and unread fields. The capability stages a source-bound index in the caller-selected system user cache without opening state; the CLI owns selector flags and rendering. Discovery does not accept jobs or grant publication authority. Primary-port-only version probing remains an explicit unknown for selected subports.
 
 
 ### MacPorts runtime diagnostics
@@ -375,3 +377,11 @@ Tart supplies the recorded index recipe and executes preinstalled roots in each 
 ### Disposable cache retention
 
 `workflow.Collect` selects terminal jobs/attempts for the optional `verify.LogCachePruner` capability. The GitHub provider owns cache naming, local age checks, and request-lock serialization; no workflow evidence or remote data is deleted. `app.Collect` composes this with `macports/portindex.Collect` for the shared discovery and selected Tart index roots. PortIndex owns profile-lock coordination and last-use tracking; its subprocess inherits that lock during index construction. `filelock.TryExisting` provides nonblocking acquisition without initialization so previews and collection skip active users. Cache cleanup introduces no schema or generic storage collector. See [state operations](operations.md#index-and-github-log-cache-retention).
+
+### Preparation assessment
+
+`assess.Service` coordinates source selection and optional explicit-release resolution. `app.Assess` only wires integrations; `cli` owns flags, formatting, and exit status. Assessment does not depend on workflow or state. `macports/survey` shares committed-source materialization, selection, index staging, coverage problems, and cleanup between assessment and outdated discovery.
+
+`macports/portedit.VersionProbe.Assess` owns preparation findings and input locations. Its release-specific checks reuse the archive plan used by actual preparation, including fetch/checksum associations and fidelity. Dependency declaration inspection and primary-source stripping are also shared with preparation. Helper availability is checked without executing the generator; downloaded manifest equivalence remains untested. A typed inconclusive-probe error preserves uncertainty without interpreting error messages.
+
+No new preparation engine, forge client, or workflow path is introduced. PortIndex reading remains alongside staging/cache management: adding an explicit all-port filter did not require a second consumer abstraction within that package.
