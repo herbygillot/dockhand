@@ -12,12 +12,13 @@ import (
 )
 
 type dependentDiscovery struct {
-	repo  *git.Repository
-	ports macports.Reader
+	repo       *git.Repository
+	ports      macports.Reader
+	indexCache string
 }
 
 func (d dependentDiscovery) Discover(ctx context.Context, source record.Source, build record.BuildConfig, roots []record.Target) (verify.Coverage, error) {
-	index, err := tart.SourceIndex(build)
+	index, err := tart.SourceIndex(build, d.indexCache)
 	if err != nil {
 		return verify.Coverage{}, err
 	}

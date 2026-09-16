@@ -55,7 +55,7 @@ func Archive(ctx context.Context, repo *git.Repository, request Request, destina
 		return err
 	}
 	defer func() { err = errors.Join(err, snapshot.Close()) }()
-	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, snapshot.Root, client); err != nil {
+	if err = portindex.Stage(ctx, repo, request.Source, request.Platform, request.Index, snapshot.Root); err != nil {
 		return err
 	}
 	for _, target := range append([]record.Target{request.Target}, request.AdditionalTargets...) {

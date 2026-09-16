@@ -9,8 +9,10 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-// SourceIndex returns the index recipe frozen in an accepted Tart configuration.
-func SourceIndex(build record.BuildConfig) (portindex.Config, error) {
+// SourceIndex returns the index recipe frozen in an accepted Tart configuration,
+// staged through the shared cache root. An empty cache root falls back to the
+// legacy location beneath the recorded artifact directory.
+func SourceIndex(build record.BuildConfig, indexCache string) (portindex.Config, error) {
 	var config Config
 	if build.Provider != ProviderName || len(build.ProviderConfig) == 0 {
 		return portindex.Config{}, fmt.Errorf("tart: recorded configuration required for source indexing")
@@ -21,5 +23,12 @@ func SourceIndex(build record.BuildConfig) (portindex.Config, error) {
 	if config.Platform != build.Platform || config.PortIndexExecutable == "" || config.PortIndexDigest == "" || config.ArtifactDirectory == "" {
 		return portindex.Config{}, fmt.Errorf("tart: incomplete recorded index configuration")
 	}
-	return portindex.Config{Executable: config.PortIndexExecutable, Digest: config.PortIndexDigest, MirrorURL: config.PortIndexURL, CacheDirectory: filepath.Join(config.ArtifactDirectory, "indexes")}, nil
+	return sourceIndex(config, indexCache), nil
+}
+
+func sourceIndex(c Config, indexCache string) portindex.Config {
+	if indexCache == "" {
+		indexCache = filepath.Join(c.ArtifactDirectory, "indexes")
+	}
+	return portindex.Config{Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest, CacheDirectory: indexCache}
 }

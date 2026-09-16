@@ -4,13 +4,10 @@ import (
 	"archive/tar"
 	"encoding/json"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -58,7 +55,7 @@ func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {
 	config, err := f.provider.settings()
 	require.NoError(t, err)
 	directory := t.TempDir()
-	archive, err := makeInput(t.Context(), f.provider.Repo, f.request, config, directory, nil)
+	archive, err := makeInput(t.Context(), f.provider.Repo, f.request, config, "", directory, nil)
 	require.NoError(t, err)
 	file, err := os.Open(archive)
 	require.NoError(t, err)
@@ -86,7 +83,7 @@ func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {
 	require.NotEmpty(t, entries["ports/PortIndex.quick"])
 	changed := f.request
 	changed.Spec.Source.Tree = record.ObjectID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, directory, nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, "", directory, nil)
 	require.ErrorContains(t, err, "commit and tree disagree")
 }
 
@@ -97,14 +94,14 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	require.NoError(t, err)
 	var messages []string
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { messages = append(messages, update.Message) })
-	_, err = makeInput(ctx, f.provider.Repo, f.request, config, t.TempDir(), nil)
+	_, err = makeInput(ctx, f.provider.Repo, f.request, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
 	messages = nil
-	_, err = makeInput(ctx, f.provider.Repo, f.request, config, t.TempDir(), nil)
+	_, err = makeInput(ctx, f.provider.Repo, f.request, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	require.NotContains(t, strings.Join(messages, "\n"), "Generating full PortIndex")
-	require.Contains(t, strings.Join(messages, "\n"), "PortIndex ready")
+	require.Contains(t, strings.Join(messages, "\n"), "Using cached PortIndex")
 	calls := config.PortIndexExecutable + ".calls"
 	data, err := os.ReadFile(calls)
 	require.NoError(t, err)
@@ -117,7 +114,7 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	require.NoError(t, err)
 	changed := f.request
 	changed.Spec.Source = record.Source{Tree: record.ObjectID(tree), Base: f.request.Spec.Source.Commit}
-	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, t.TempDir(), nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	data, err = os.ReadFile(calls)
 	require.NoError(t, err)
@@ -125,10 +122,10 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 	require.Len(t, lines, 2)
 	require.Contains(t, lines[0], "-f")
 	require.NotContains(t, lines[1], "-f")
-	retained, err := filepath.Glob(filepath.Join(config.ArtifactDirectory, "indexes", "*", "candidates", string(f.request.Spec.Source.Tree), tree))
+	retained, err := filepath.Glob(filepath.Join(config.ArtifactDirectory, "indexes", "*", "generations", tree))
 	require.NoError(t, err)
 	require.Len(t, retained, 1)
-	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, t.TempDir(), nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, changed, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	after, err := os.ReadFile(calls)
 	require.NoError(t, err)
@@ -145,7 +142,7 @@ func TestConcurrentPortIndexPreparationBuildsOneCacheEntry(t *testing.T) {
 		directory := t.TempDir()
 		go func() {
 			<-start
-			_, err := makeInput(t.Context(), f.provider.Repo, f.request, config, directory, nil)
+			_, err := makeInput(t.Context(), f.provider.Repo, f.request, config, "", directory, nil)
 			results <- err
 		}()
 	}
@@ -158,39 +155,38 @@ func TestConcurrentPortIndexPreparationBuildsOneCacheEntry(t *testing.T) {
 	require.Len(t, strings.Split(strings.TrimSpace(string(data)), "\n"), 1)
 }
 
-func TestPortIndexMirrorSeedsBaseBeforeCandidateUpdate(t *testing.T) {
+func TestCandidateIndexDerivesFromBaseGenerationInSharedCache(t *testing.T) {
 	f, _ := singleRun(t)
-	commit := string(f.request.Spec.Source.Commit)
-	for range 10 {
-		signature := git.Signature{Name: "Fixture", Email: "fixture@example.invalid", When: time.Now()}
-		var err error
-		commit, err = f.provider.Repo.WriteCommit(t.Context(), git.Commit{Tree: string(f.request.Spec.Source.Tree), Parents: []string{commit}, Message: "advance", Author: signature, Committer: signature})
-		require.NoError(t, err)
-	}
 	before, portfile, err := f.provider.Repo.File(t.Context(), string(f.request.Spec.Source.Tree), "devel/fixture/Portfile")
 	require.NoError(t, err)
 	tree, err := f.provider.Repo.EditTree(t.Context(), string(f.request.Spec.Source.Tree), []git.FileEdit{{Path: "devel/fixture/Portfile", Before: before, After: append(portfile, []byte("revision 2\n")...), Mode: before.Mode}})
 	require.NoError(t, err)
 	request := f.request
-	request.Spec.Source = record.Source{Tree: record.ObjectID(tree), Base: record.ObjectID(commit)}
-	hits := 0
-	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
-		hits++
-		_, _ = response.Write([]byte("fixture 1\nx\n"))
-	}))
-	defer server.Close()
+	request.Spec.Source = record.Source{Tree: record.ObjectID(tree), Base: f.request.Spec.Source.Commit}
 	config, err := f.provider.settings()
 	require.NoError(t, err)
-	config.PortIndexURL = server.URL
-	_, err = makeInput(t.Context(), f.provider.Repo, request, config, t.TempDir(), server.Client())
+	indexCache := t.TempDir()
+	_, err = makeInput(t.Context(), f.provider.Repo, request, config, indexCache, t.TempDir(), nil)
 	require.NoError(t, err)
-	require.Equal(t, 1, hits)
 	data, err := os.ReadFile(config.PortIndexExecutable + ".calls")
 	require.NoError(t, err)
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	require.Len(t, lines, 2)
-	require.NotContains(t, lines[0], "-f", "the mirror should seed the base index")
-	require.NotContains(t, lines[1], "-f", "the candidate should update the reconciled base index")
+	require.Contains(t, lines[0], "-f", "the base generation is a one-time full pass")
+	require.NotContains(t, lines[1], "-f", "the candidate updates the base generation")
+	environments, err := os.ReadDir(indexCache)
+	require.NoError(t, err)
+	require.Len(t, environments, 1)
+	generations, err := os.ReadDir(filepath.Join(indexCache, environments[0].Name(), "generations"))
+	require.NoError(t, err)
+	var trees []string
+	for _, entry := range generations {
+		if entry.IsDir() {
+			trees = append(trees, entry.Name())
+		}
+	}
+	require.ElementsMatch(t, []string{string(f.request.Spec.Source.Tree), tree}, trees)
+	require.NoDirExists(t, filepath.Join(config.ArtifactDirectory, "indexes"), "the legacy artifact cache is not written")
 }
 func TestRunningMarkerDoesNotHideExitedGuestRunner(t *testing.T) {
 	root := t.TempDir()
@@ -249,7 +245,7 @@ func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T
 	require.NoError(t, validateRequest(f.request))
 	config, err := f.provider.settings()
 	require.NoError(t, err)
-	archive, err := makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir(), nil)
+	archive, err := makeInput(t.Context(), f.provider.Repo, f.request, config, "", t.TempDir(), nil)
 	require.NoError(t, err)
 	file, err := os.Open(archive)
 	require.NoError(t, err)
@@ -274,7 +270,7 @@ func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, verify.Admitted, result.State)
 	f.request.Spec.Source.Tree = record.ObjectID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, t.TempDir(), nil)
+	_, err = makeInput(t.Context(), f.provider.Repo, f.request, config, "", t.TempDir(), nil)
 	require.Error(t, err)
 }
 

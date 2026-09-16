@@ -1,14 +1,15 @@
 package portindex
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -16,8 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/fetch"
-	"github.com/herbygillot/dockhand/internal/filelock"
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -25,7 +24,7 @@ import (
 
 const portIndexName = "PortIndex"
 const quickIndexName = "PortIndex.quick"
-const portIndexReconciliationCommits = 10
+const runtimeProbeTimeout = 30 * time.Second
 const maxPortIndexBytes = 128 << 20
 
 func digest(data []byte) string {
@@ -33,16 +32,19 @@ func digest(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Config freezes the indexer, mirror, and cache inputs used for staging.
+// Config freezes the indexer identity and names the cache shared by every
+// consumer. Runtime is the MacPorts Base the executable loads; ResolveTool
+// probes it because hashing the launcher alone would miss a Base upgrade.
 type Config struct {
-	guard          *os.File
 	Executable     string
 	Digest         string
-	MirrorURL      string
+	Runtime        string
 	CacheDirectory string
 }
 
-// DefaultMirrorURL returns the MacPorts mirror index for a platform.
+// DefaultMirrorURL returns the MacPorts mirror index for a platform. Recorded
+// provider settings keep it as bootstrap provenance; staging does not use it
+// because a mirrored index cannot prove which source tree it describes.
 func DefaultMirrorURL(platform record.Platform) (string, error) {
 	for _, value := range []string{platform.OS, platform.Version, platform.Architecture} {
 		if value == "" || strings.ContainsAny(value, "/\\\x00\r\n\t ") {
@@ -104,12 +106,67 @@ func ResolveTool(ctx context.Context, c Config) (Config, error) {
 	if c.Digest != "" && c.Digest != identity {
 		return c, fmt.Errorf("portindex: executable changed after the build was accepted")
 	}
-	c.Executable, c.Digest = abs, identity
+	runtime, err := runtimeIdentity(ctx, abs)
+	if err != nil {
+		return c, err
+	}
+	c.Executable, c.Digest, c.Runtime = abs, identity, runtime
 	return c, nil
 }
 
-// Stage installs full and quick indexes into an already materialized source root.
-func Stage(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, root string, client *http.Client) error {
+// runtimeIdentity names the MacPorts Base loaded by a Tcl launcher. Other
+// executables, such as test stand-ins, carry no runtime beyond their digest.
+func runtimeIdentity(ctx context.Context, executable string) (string, error) {
+	file, err := os.Open(executable)
+	if err != nil {
+		return "", err
+	}
+	line, err := bufio.NewReader(file).ReadString('\n')
+	file.Close()
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if !strings.HasPrefix(line, "#!") {
+		return "", nil
+	}
+	fields := strings.Fields(strings.TrimPrefix(line, "#!"))
+	if len(fields) == 0 || !strings.HasPrefix(filepath.Base(fields[0]), "tclsh") {
+		return "", nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, runtimeProbeTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, fields[0], fields[1:]...)
+	command.Stdin = strings.NewReader("package require macports\nputs [macports::version]\n")
+	command.Env = indexerEnvironment("")
+	output, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("portindex: probing the MacPorts runtime of %s: %w", executable, errors.Join(ctx.Err(), err))
+	}
+	version := strings.TrimSpace(string(output))
+	if version == "" || strings.ContainsAny(version, " \t\r\n\x00") {
+		return "", fmt.Errorf("portindex: MacPorts runtime version is unavailable for %s", executable)
+	}
+	return "macports-" + version, nil
+}
+
+func indexerEnvironment(configuration string) []string {
+	var env []string
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "PORTSRC=") && !strings.HasPrefix(entry, "LC_ALL=") {
+			env = append(env, entry)
+		}
+	}
+	if configuration != "" {
+		env = append(env, "PORTSRC="+configuration)
+	}
+	return append(env, "LC_ALL=C")
+}
+
+// Stage installs the PortIndex for an immutable source tree into an already
+// materialized source root. Completed generations are shared by every consumer
+// naming the same tree and indexing environment; a contribution's candidate
+// derives from the generation of its recorded base.
+func Stage(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, root string) error {
 	resolved, err := ResolveTool(ctx, c)
 	if err != nil {
 		return err
@@ -117,157 +174,42 @@ func Stage(ctx context.Context, repo *git.Repository, source record.Source, plat
 	if resolved.CacheDirectory == "" {
 		return fmt.Errorf("portindex: cache directory is required")
 	}
-	profile := digest([]byte(resolved.Digest + "\x00" + resolved.MirrorURL + "\x00" + platform.OS + "\x00" + platform.Version + "\x00" + platform.Architecture))
-	cacheRoot := filepath.Join(resolved.CacheDirectory, profile)
-	progress.Report(ctx, "Preparing PortIndex; waiting for the shared index cache")
-	guard, err := filelock.Acquire(ctx, filepath.Join(cacheRoot, "index.lock"), filelock.Exclusive)
+	if !git.ValidObjectID(string(source.Tree)) {
+		return fmt.Errorf("portindex: source tree is required")
+	}
+	cache, err := openCache(ctx, resolved, platform)
 	if err != nil {
 		return err
 	}
-	defer guard.Close()
-	resolved.guard = guard
-	progress.Report(ctx, "Checking cached PortIndex")
-	entry, err := ensurePortIndex(ctx, repo, source, platform, resolved, cacheRoot, root, client)
+	defer cache.Close()
+	baseTree, err := sourceBaseTree(ctx, repo, source)
 	if err != nil {
 		return err
 	}
-	if err := touchEntry(entry); err != nil {
-		return err
-	}
-	progress.Report(ctx, "PortIndex ready; installing into staged source")
-	for _, name := range []string{portIndexName, quickIndexName} {
-		if err := copyIndexFile(filepath.Join(entry, name), filepath.Join(root, name)); err != nil {
+	tree := string(source.Tree)
+	var entry string
+	if baseTree != "" && baseTree != tree {
+		// The base generation is an exact seed for the candidate and the
+		// preferred seed for later work from the same upstream.
+		if _, err := cache.ensure(ctx, repo, baseTree, "", false, nil, true); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func ensurePortIndex(ctx context.Context, repo *git.Repository, source record.Source, platform record.Platform, c Config, cacheRoot, targetRoot string, client *http.Client) (string, error) {
-	if source.Base == "" {
-		return standaloneIndex(ctx, repo, source, platform, c, cacheRoot, targetRoot)
-	}
-	seedTree, err := sourceBaseTree(ctx, repo, source)
-	if err != nil {
-		return "", err
-	}
-	if seedTree == "" || seedTree == string(source.Tree) {
-		target := filepath.Join(cacheRoot, "complete", string(source.Tree))
-		if !validIndexEntry(target) {
-			if err := buildPortIndex(ctx, c, platform, targetRoot, target, "", nil, true); err != nil {
-				return "", err
-			}
-		}
-		return target, nil
-	}
-	target := filepath.Join(cacheRoot, "candidates", seedTree, string(source.Tree))
-	if validIndexEntry(target) {
-		return target, nil
-	}
-	seed := filepath.Join(cacheRoot, seedTree)
-	if complete := filepath.Join(cacheRoot, "complete", seedTree); validIndexEntry(complete) {
-		seed = complete
-	}
-	if !validIndexEntry(seed) {
-		snapshot, err := repo.Materialize(ctx, seedTree)
-		if err != nil {
-			return "", err
-		}
-		if c.MirrorURL != "" {
-			progress.Report(ctx, "Fetching a mirrored PortIndex to seed the source index")
-			mirror, changed, mirrorErr := mirroredPortIndex(ctx, repo, source, seedTree, c.MirrorURL, cacheRoot, client)
-			if mirrorErr == nil {
-				err = buildPortIndex(ctx, c, platform, snapshot.Root, seed, mirror, changed, false)
-				_ = os.RemoveAll(mirror)
-			}
-		}
-		if !validIndexEntry(seed) {
-			err = buildPortIndex(ctx, c, platform, snapshot.Root, seed, "", nil, false)
-		}
-		closeErr := snapshot.Close()
-		if err != nil {
-			return "", errors.Join(err, closeErr)
-		}
-		if closeErr != nil {
-			return "", closeErr
-		}
-	}
-	paths, err := repo.ChangedPaths(ctx, seedTree, string(source.Tree))
-	if err != nil {
-		return "", err
-	}
-	if requiresFullIndex(paths) {
-		err = buildPortIndex(ctx, c, platform, targetRoot, target, "", nil, true)
+		entry, err = cache.ensure(ctx, repo, tree, root, true, []string{baseTree}, false)
 	} else {
-		err = buildPortIndex(ctx, c, platform, targetRoot, target, seed, paths, true)
+		entry, err = cache.ensure(ctx, repo, tree, root, source.Base != "", nil, true)
 	}
-	if err != nil {
-		return "", err
-	}
-	return target, nil
-}
-
-func mirroredPortIndex(ctx context.Context, repo *git.Repository, source record.Source, baseTree, address, cacheRoot string, client *http.Client) (string, []string, error) {
-	if source.Base == "" {
-		return "", nil, fmt.Errorf("portindex: source base commit required for mirror reconciliation")
-	}
-	typ, err := repo.ObjectType(ctx, string(source.Base))
-	if err != nil || typ != "commit" {
-		return "", nil, errors.Join(err, fmt.Errorf("portindex: source base commit required for mirror reconciliation"))
-	}
-	ancestor, err := repo.Resolve(ctx, fmt.Sprintf("%s~%d", source.Base, portIndexReconciliationCommits))
-	if err != nil {
-		return "", nil, err
-	}
-	changed, err := repo.ChangedPaths(ctx, ancestor, baseTree)
-	if err != nil {
-		return "", nil, err
-	}
-	directory, err := os.MkdirTemp(cacheRoot, ".mirror-")
-	if err != nil {
-		return "", nil, err
-	}
-	if err = downloadPortIndex(ctx, client, address, filepath.Join(directory, portIndexName)); err != nil {
-		return "", nil, errors.Join(err, os.RemoveAll(directory))
-	}
-	return directory, changed, nil
-}
-
-func downloadPortIndex(ctx context.Context, client *http.Client, address, destination string) error {
-	parsed, err := url.Parse(address)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
-		return fmt.Errorf("portindex: invalid mirror URL")
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return err
 	}
-	response, err := fetch.Open(client, request, maxPortIndexBytes)
-	if err != nil {
-		return fmt.Errorf("portindex: mirrored index: %w", err)
-	}
-	defer response.Body.Close()
-	file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	written, copyErr := io.Copy(file, response.Body)
-	closeErr := file.Close()
-	if copyErr != nil {
-		return copyErr
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if written == 0 || written > maxPortIndexBytes {
-		return fmt.Errorf("portindex: mirrored index is empty or exceeds %d bytes", maxPortIndexBytes)
-	}
-	return nil
+	return install(entry, root)
 }
 
 func sourceBaseTree(ctx context.Context, repo *git.Repository, source record.Source) (string, error) {
 	if source.Base == "" {
 		return "", nil
+	}
+	if repo == nil {
+		return "", fmt.Errorf("portindex: repository required to resolve the source base")
 	}
 	typ, err := repo.ObjectType(ctx, string(source.Base))
 	if err != nil {
@@ -292,11 +234,44 @@ func requiresFullIndex(paths []string) bool {
 	return false
 }
 
-func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sourceRoot, destination, seed string, changed []string, strict bool) (err error) {
+// install copies a completed generation into the staged root, skipping files
+// already installed from the same generation.
+func install(entry, root string) error {
+	for _, name := range []string{portIndexName, quickIndexName} {
+		source, destination := filepath.Join(entry, name), filepath.Join(root, name)
+		if sameFile(source, destination) {
+			continue
+		}
+		if err := copyIndexFile(source, destination); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sameFile(source, destination string) bool {
+	a, err := os.Stat(source)
+	if err != nil {
+		return false
+	}
+	b, err := os.Lstat(destination)
+	return err == nil && b.Mode().IsRegular() && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime())
+}
+
+// buildPortIndex runs the indexer for one immutable source root and publishes
+// the complete result atomically. An empty seed requests a full pass; otherwise
+// the seed's entries are reused and the changed port directories are reindexed.
+// The guard, when present, is inherited by the indexer so the generation lock
+// outlives a parent that exits mid-build.
+func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sourceRoot, destination, seed string, changed []string, strict bool, guard *os.File, meta generation) (err error) {
+	short := meta.Tree
+	if len(short) > 12 {
+		short = short[:12]
+	}
 	if seed == "" {
-		progress.Report(ctx, "Generating full PortIndex; this may take several minutes")
+		progress.Report(ctx, "Generating full PortIndex for source %s; this may take several minutes", short)
 	} else {
-		progress.Report(ctx, "Updating PortIndex for changed source paths")
+		progress.Report(ctx, "Updating PortIndex for source %s from %d changed paths", short, len(changed))
 	}
 	started := time.Now()
 	if err = os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
@@ -361,15 +336,10 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	}
 	command := exec.CommandContext(ctx, c.Executable, args...)
 	command.Dir = sourceRoot
-	if c.guard != nil {
-		command.ExtraFiles = []*os.File{c.guard}
+	if guard != nil {
+		command.ExtraFiles = []*os.File{guard}
 	}
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "PORTSRC=") && !strings.HasPrefix(entry, "LC_ALL=") {
-			command.Env = append(command.Env, entry)
-		}
-	}
-	command.Env = append(command.Env, "PORTSRC="+configuration, "LC_ALL=C")
+	command.Env = indexerEnvironment(configuration)
 	output, runErr := command.CombinedOutput()
 	if runErr != nil {
 		var exit *exec.ExitError
@@ -387,13 +357,28 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	if !validIndexEntry(temp) {
 		return fmt.Errorf("portindex: executable produced an incomplete index")
 	}
+	meta.Strict, meta.Changed, meta.Full, meta.Built = strict, len(changed), seed == "", time.Now().UTC()
+	if seed != "" {
+		meta.Seed = filepath.Base(seed)
+	}
+	encoded, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(filepath.Join(temp, generationFileName), encoded, 0600); err != nil {
+		return err
+	}
 	if err = os.RemoveAll(destination); err != nil {
 		return err
 	}
 	if err = os.Rename(temp, destination); err != nil {
 		return err
 	}
-	progress.Report(ctx, "PortIndex generated (%s)", time.Since(started).Round(time.Second))
+	pass := "incremental"
+	if seed == "" {
+		pass = "full"
+	}
+	progress.Report(ctx, "PortIndex generated (%s pass, %s)", pass, time.Since(started).Round(time.Second))
 	return nil
 }
 

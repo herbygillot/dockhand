@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -27,7 +26,7 @@ func portReader(config Config, repo *git.Repository) *selection.Reader {
 		}
 		source := tree.Source()
 		source.Base = "" // Name lookup can reconcile an exact-tree index from the complete Git diff.
-		if err = portindex.Stage(ctx, repo, source, platform, index, tree.Root(), http.DefaultClient); err != nil {
+		if err = portindex.Stage(ctx, repo, source, platform, index, tree.Root()); err != nil {
 			return nil, err
 		}
 		return portindex.Open(tree.Root())

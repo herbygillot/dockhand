@@ -1,19 +1,30 @@
 package app
 
 import (
-	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"os"
 	"path/filepath"
+
+	"github.com/herbygillot/dockhand/internal/macports/portindex"
 )
+
+// indexCacheDirectory is the PortIndex cache shared by discovery, dependents,
+// and Tart staging. It is disposable and independent of the state database.
+func indexCacheDirectory() (string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cache, "dockhand", "indexes"), nil
+}
 
 func surveyIndex(config Config, indexed bool) (portindex.Config, error) {
 	index := portindex.Config{}
 	if indexed {
-		cache, err := os.UserCacheDir()
+		directory, err := indexCacheDirectory()
 		if err != nil {
 			return portindex.Config{}, err
 		}
-		index.CacheDirectory = filepath.Join(cache, "dockhand", "indexes")
+		index.CacheDirectory = directory
 		if config.MacPortsPrefix != "" {
 			index.Executable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
 		}

@@ -85,11 +85,12 @@ func Collect(ctx context.Context, config Config, options workflow.RetentionOptio
 	if err != nil {
 		return result, err
 	}
-	cache, err := os.UserCacheDir()
+	shared, err := indexCacheDirectory()
 	if err != nil {
 		return result, err
 	}
-	roots := []string{filepath.Join(config.Tart.ArtifactDirectory, "indexes"), filepath.Join(cache, "dockhand", "indexes")}
+	// The artifact-directory cache is the legacy Tart location; it is only collected.
+	roots := []string{shared, filepath.Join(config.Tart.ArtifactDirectory, "indexes")}
 	seen := map[string]bool{}
 	for _, root := range roots {
 		root, err = filepath.Abs(root)

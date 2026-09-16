@@ -1,6 +1,6 @@
 # PortIndex storage and reuse
 
-Status: agreed design direction, recorded 2026-09-16; consolidation is not yet implemented. The [roadmap](roadmap.md) owns implementation priority.
+Status: agreed design direction, recorded 2026-09-16 and implemented the same day; see the [consolidation report](activity/2026-09-16-portindex-consolidation.md). The [roadmap](roadmap.md) owns any follow-up priority.
 
 ## Disposition
 

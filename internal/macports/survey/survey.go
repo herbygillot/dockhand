@@ -102,7 +102,7 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 		}
 	}
 	if len(selection.Ports) == 0 {
-		if err := portindex.Stage(ctx, repo, source, platform, config, root, client); err != nil {
+		if err := portindex.Stage(ctx, repo, source, platform, config, root); err != nil {
 			return nil, nil, err
 		}
 		index, err := portindex.Open(root)

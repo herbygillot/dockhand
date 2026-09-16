@@ -83,7 +83,12 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if config.Tart.PortIndexExecutable == "" && config.MacPortsPrefix != "" {
 		config.Tart.PortIndexExecutable = filepath.Join(config.MacPortsPrefix, "bin", "portindex")
 	}
-	provider := &tart.Provider{Config: config.Tart, State: store, Repository: repository.ID, Repo: repo}
+	indexCache, err := indexCacheDirectory()
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	provider := &tart.Provider{Config: config.Tart, IndexCache: indexCache, State: store, Repository: repository.ID, Repo: repo}
 	githubProvider := &githubverify.Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification"), Client: githubClient}
 
 	engine := &workflow.Engine{
@@ -92,7 +97,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Repo:       repo,
 		Ports:      ports,
 		Preparer:   preparation,
-		Dependents: dependentDiscovery{repo: repo, ports: ports},
+		Dependents: dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache},
 		Releases:   preparation,
 		Provider:   provider,
 		Providers:  map[string]verify.Provider{"tart": provider, "github": githubProvider},

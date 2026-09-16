@@ -20,7 +20,10 @@ var errCapacity = errors.New("tart: pool is at capacity")
 const ProviderName = "tart"
 
 type Provider struct {
-	Config     Config
+	Config Config
+	// IndexCache is the PortIndex cache root shared with discovery; it is
+	// disposable and therefore not part of the frozen configuration.
+	IndexCache string
 	State      state.ProviderStore
 	Repository record.RepositoryID
 	Repo       *git.Repository

@@ -18,8 +18,12 @@ type CacheRemoval struct {
 	Completed bool
 }
 
-// Collect removes old disposable indexes under the same profile lock as Stage.
-// Busy profiles are skipped. Neither previews nor absent caches create paths.
+// Collect removes old generations and leftover build directories under each
+// environment's exclusive lock, so nothing is taken from an active reader or
+// builder. Busy environments are skipped. The latest seed is retained
+// regardless of age. Legacy complete, standalone, and candidate entries from
+// the earlier layout are collected the same way. Neither previews nor absent
+// caches create paths.
 func Collect(ctx context.Context, directory string, before time.Time, dry bool) ([]CacheRemoval, error) {
 	var result []CacheRemoval
 	root, err := os.OpenRoot(directory)
@@ -41,7 +45,7 @@ func Collect(ctx context.Context, directory string, before time.Time, dry bool) 
 		if !profile.IsDir() || !cacheHash(profile.Name()) {
 			continue
 		}
-		lock, err := filelock.TryExisting(ctx, filepath.Join(directory, profile.Name(), "index.lock"), filelock.Exclusive)
+		lock, err := lockProfile(ctx, filepath.Join(directory, profile.Name()))
 		if errors.Is(err, filelock.ErrBusy) || errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -58,8 +62,23 @@ func Collect(ctx context.Context, directory string, before time.Time, dry bool) 
 	return result, nil
 }
 
+// lockProfile takes the environment's exclusive lock, whichever layout wrote it.
+func lockProfile(ctx context.Context, profile string) (*os.File, error) {
+	lock, err := filelock.TryExisting(ctx, filepath.Join(profile, cacheLockName), filelock.Exclusive)
+	if errors.Is(err, os.ErrNotExist) {
+		return filelock.TryExisting(ctx, filepath.Join(profile, "index.lock"), filelock.Exclusive)
+	}
+	return lock, err
+}
+
 func collectProfile(ctx context.Context, root *os.Root, profile, directory string, before time.Time, dry bool) ([]CacheRemoval, error) {
 	var result []CacheRemoval
+	latest := ""
+	if data, err := fs.ReadFile(root.FS(), profile+"/"+latestFileName); err == nil {
+		if value := strings.TrimSpace(string(data)); git.ValidObjectID(value) {
+			latest = value
+		}
+	}
 	err := fs.WalkDir(root.FS(), profile, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -71,11 +90,13 @@ func collectProfile(ctx context.Context, root *os.Root, profile, directory strin
 			return nil
 		}
 		parts := strings.Split(strings.TrimPrefix(path, profile+"/"), "/")
-		candidate := cacheEntry(parts)
-		if !candidate {
-			if len(parts) == 1 && (parts[0] == "complete" || parts[0] == "standalone" || parts[0] == "candidates") || len(parts) == 2 && parts[0] == "candidates" && git.ValidObjectID(parts[1]) {
+		if !cacheEntry(parts) {
+			if cacheContainer(parts) {
 				return nil
 			}
+			return fs.SkipDir
+		}
+		if len(parts) == 2 && parts[0] == generationsDirectory && parts[1] == latest {
 			return fs.SkipDir
 		}
 		info, err := entry.Info()
@@ -109,12 +130,27 @@ func cacheHash(s string) bool {
 	}
 	return true
 }
-func cacheEntry(parts []string) bool {
+
+// cacheContainer names directories whose children may be collectable entries.
+func cacheContainer(parts []string) bool {
 	switch len(parts) {
 	case 1:
-		return git.ValidObjectID(parts[0])
+		return parts[0] == generationsDirectory || parts[0] == "complete" || parts[0] == "standalone" || parts[0] == "candidates"
 	case 2:
-		return (parts[0] == "complete" || parts[0] == "standalone") && git.ValidObjectID(parts[1])
+		return parts[0] == "candidates" && git.ValidObjectID(parts[1])
+	}
+	return false
+}
+
+// cacheEntry names a disposable entry: a generation, a legacy entry, or a
+// leftover temporary build directory.
+func cacheEntry(parts []string) bool {
+	leftover := func(name string) bool { return strings.HasPrefix(name, ".") && name != "." && name != ".." }
+	switch len(parts) {
+	case 1:
+		return git.ValidObjectID(parts[0]) || leftover(parts[0])
+	case 2:
+		return (parts[0] == generationsDirectory || parts[0] == "complete" || parts[0] == "standalone") && (git.ValidObjectID(parts[1]) || leftover(parts[1]))
 	case 3:
 		return parts[0] == "candidates" && git.ValidObjectID(parts[1]) && git.ValidObjectID(parts[2])
 	}
