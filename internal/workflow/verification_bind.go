@@ -17,6 +17,7 @@ import (
 )
 
 type VerificationRequest struct {
+	KeepFailed bool
 	// Continue selects tracked work before capturing its committed source.
 	Continue          *ContributionSelector
 	UseRecordedBuild  bool
@@ -218,7 +219,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		}
 		request.Fresh = true
 	}
-	spec, err := normalizeSpec(record.JobSpec{TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
+	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
 		return BoundVerification{}, err
 	}

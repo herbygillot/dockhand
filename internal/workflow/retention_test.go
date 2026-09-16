@@ -33,7 +33,11 @@ func (p pruningProvider) PruneArtifacts(ctx context.Context, h record.ResourceHa
 func retainedFixture(t *testing.T) (*fixture, record.JobID) {
 	t.Helper()
 	f := newFixture(t)
-	id := f.submit(t, "retention")
+	request := f.request("retention")
+	request.Spec.KeepFailed = true
+	receipt, err := f.engine.Submit(t.Context(), request)
+	require.NoError(t, err)
+	id := receipt.JobID
 	f.run(t, id)
 	f.provider.observe = terminal(f, record.VerdictFailed)
 	f.run(t, id)
@@ -239,4 +243,120 @@ func TestRetentionPaginatesWhileRemovingCandidates(t *testing.T) {
 	result, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
 	require.NoError(t, err)
 	require.Empty(t, result.Items)
+}
+
+func TestCycleReleasesFailureAndPrunesDiagnosticsAfterRetention(t *testing.T) {
+	f := newFixture(t)
+	id := f.submit(t, "automatic-cleanup")
+	f.run(t, id)
+	f.provider.observe = terminal(f, record.VerdictFailed)
+	f.run(t, id)
+	before := f.status(t, id)
+	require.Equal(t, record.ResourceReleased, before.Resources[0].State)
+	require.NotNil(t, before.Jobs[0].Attempts[0].Evidence)
+	f.engine.Provider = pruningProvider{scriptedProvider: f.provider}
+	f.advance(6 * 24 * time.Hour)
+	f.run(t, id)
+	require.Zero(t, f.provider.count("prune"))
+	f.advance(2 * 24 * time.Hour)
+	other, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
+	require.NoError(t, err)
+	defer other.Close()
+	restarted := *f.engine
+	restarted.State = other
+	_, err = restarted.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{id}})
+	require.NoError(t, err)
+	after := f.status(t, id)
+	require.NotNil(t, after.Resources[0].ArtifactsPrunedAt)
+	require.Equal(t, before.Jobs, after.Jobs)
+	require.Equal(t, before.Changes, after.Changes)
+	f.run(t, id)
+	require.Equal(t, 1, f.provider.count("prune"))
+}
+
+func TestAutomaticPruningBacksOffWithoutLosingReleasedIdentity(t *testing.T) {
+	f := newFixture(t)
+	id := f.submit(t, "prune-retry")
+	f.run(t, id)
+	f.provider.observe = terminal(f, record.VerdictPassed)
+	f.run(t, id)
+	f.advance(8 * 24 * time.Hour)
+	f.engine.Provider = pruningProvider{f.provider, func(context.Context, record.ResourceHandle) error { return errors.New("directory busy") }}
+	result := f.run(t, id)
+	require.NotEmpty(t, result.Problems)
+	resource := f.status(t, id).Resources[0]
+	require.Equal(t, record.ResourceReleased, resource.State)
+	require.Nil(t, resource.ArtifactsPrunedAt)
+	require.NotNil(t, resource.RetryAt)
+	f.run(t, id)
+	require.Equal(t, 1, f.provider.count("prune"))
+	f.engine.Provider = pruningProvider{scriptedProvider: f.provider}
+	f.advance(25 * time.Hour)
+	f.run(t, id)
+	resource = f.status(t, id).Resources[0]
+	require.NotNil(t, resource.ArtifactsPrunedAt)
+	require.Nil(t, resource.RetryAt)
+	require.Empty(t, resource.LastError)
+}
+
+func TestAutomaticPruningIsBoundedAndSkipsBuildOutputs(t *testing.T) {
+	for _, outputs := range []bool{false, true} {
+		t.Run(fmt.Sprint(outputs), func(t *testing.T) {
+			f := newFixture(t)
+			f.provider.submit = func(_ context.Context, r verify.Request) (verify.Submission, error) {
+				result := admitted(r.ID)
+				result.Resources = nil
+				for i := range 17 {
+					result.Resources = append(result.Resources, record.ResourceHandle{Provider: "scripted", ID: fmt.Sprintf("bounded-%d", i)})
+				}
+				return result, nil
+			}
+			id := f.submit(t, "bounded")
+			f.run(t, id)
+			observe := terminal(f, record.VerdictPassed)
+			f.provider.observe = func(ctx context.Context, run record.ProviderRun) (verify.Observation, error) {
+				v, err := observe(ctx, run)
+				if outputs {
+					v.Artifacts = []record.Artifact{{Name: "output", Location: "/keep/output"}}
+				}
+				return v, err
+			}
+			f.run(t, id)
+			f.engine.Provider = pruningProvider{scriptedProvider: f.provider}
+			f.advance(8 * 24 * time.Hour)
+			for i := range 3 {
+				f.run(t, id)
+				want := min(17, (i+1)*8)
+				if outputs {
+					want = 0
+				}
+				require.Equal(t, want, f.provider.count("prune"))
+			}
+		})
+	}
+}
+
+func TestKeepFailedSurvivesDriverRestartWithoutChangingEvidenceInputs(t *testing.T) {
+	f := newFixture(t)
+	request := f.request("keep-failed")
+	request.Spec.KeepFailed = true
+	receipt, err := f.engine.Submit(t.Context(), request)
+	require.NoError(t, err)
+	f.run(t, receipt.JobID)
+	other, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
+	require.NoError(t, err)
+	defer other.Close()
+	restarted := *f.engine
+	restarted.State = other
+	f.advance(2 * time.Second)
+	f.provider.observe = terminal(f, record.VerdictFailed)
+	_, err = restarted.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	status := f.status(t, receipt.JobID)
+	require.True(t, status.Jobs[0].Job.Spec.KeepFailed)
+	require.Equal(t, record.ResourceRetained, status.Resources[0].State)
+	require.Equal(t, *request.Spec.Build, status.Jobs[0].Attempts[0].Spec.Config)
+	f.advance(30 * 24 * time.Hour)
+	f.run(t, receipt.JobID)
+	require.Zero(t, f.provider.count("release"))
 }

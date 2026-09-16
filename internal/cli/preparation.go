@@ -78,7 +78,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					defer services.Close()
 					fmt.Fprintln(cmd.ErrOrStderr(), "Binding contribution source; local commits and working-tree edits are excluded.")
-					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{
+					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Variants: choices},
 						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,

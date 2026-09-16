@@ -2,24 +2,11 @@
 
 This document is the current source of truth for implementation priorities. The [architecture](architecture.md), [component map](components.md), [CLI design](cli-design.md), and [state design](state.md) define behavior and boundaries. Activity reports retain implementation history and validation; they are not additional queues.
 
-Last reconciled: 2026-09-16, after the [contribution lifecycle exercise](activity/2026-09-16-contribution-lifecycle.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
+Last reconciled: 2026-09-16, after contribution lifecycle and [routine cleanup](activity/2026-09-16-routine-cleanup.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
 
 ## Next
 
-### 1. Make routine cleanup part of driver operation
-
-The disk-space investigation remains an open follow-up. Existing cycles release successful/canceled VMs and eligible resources, while `gc` handles retained environments, diagnostics, and caches under the [current retention policy](operations.md). The recent exercise removed its disposable artifacts explicitly; that does not establish automatic cleanup for ordinary users.
-
-Define retention by artifact purpose, then reuse the existing claims and cleanup machinery in bounded driver-cycle work:
-
-- Remove owned staging trees, transfer copies, and preparation scratch once no accepted operation needs them. Distinguish these from reusable indexes/caches and diagnostic logs.
-- Establish defaults for failed VM retention, retained build outputs, and logs, with an explicit way to keep diagnostics when wanted. Preserve compact evidence and actionable failure details when large files go away.
-- Respect active jobs, shared users of an artifact, ownership uncertainty, and operation locks. Do filesystem/provider work outside state transactions; do not run an unrestricted full `gc` on every write.
-- Retain `gc` as the explicit preview/manual cleanup command. Unidentified orphan cleanup needs a separate ownership decision.
-
-Acceptance: measure retained bytes after success, preparation failure, build failure, and cancellation; prove restart/retry and concurrent drivers cannot lose needed inputs or diagnostics. An idle process need not become a new daemon just to clean up.
-
-### 2. Improve platform observations and context selection
+### 1. Improve platform observations and context selection
 
 Continue [bump coverage stage 2](bump-coverage.md#2-improve-platform-observations-and-context-selection). Fetch-guard classification and planning before dependency downloads are complete; scalar/option thresholds and non-conditional OS reads are not.
 
@@ -27,7 +14,7 @@ Have `macports/eval` expose source-bound observations; keep context selection in
 
 Acceptance: the py-openssl/mrustc threshold cases and libfec/mpir formatting reads, plus mutable thresholds, candidate-activated branches, and unresolved dimensions. Measure session counts and timings while retaining the existing literal-boundary and archive controls. Several modeled profiles are not proof of arbitrary Tcl or build compatibility.
 
-### 3. Separate manifest-bearing source from auxiliary archives
+### 2. Separate manifest-bearing source from auxiliary archives
 
 Implement [bump coverage stage 4](bump-coverage.md#4-identify-dependency-source-archives-independently-of-auxiliary-files) before expanding contribution scope. This is a bounded single-target improvement and does not depend on shared-subport publication.
 
@@ -35,7 +22,7 @@ Identify one unambiguous source for Cargo/Go manifests while retaining independe
 
 Acceptance: complete candidate preparation with the auxiliary pin unchanged; ambiguous ownership, missing manifests/helpers, and unsupported extraction remain actionable refusals. Verify the prepared target using the ordinary contribution workflow.
 
-### 4. Carry shared-release subports through the whole workflow
+### 3. Carry shared-release subports through the whole workflow
 
 Implement [bump coverage stage 3](bump-coverage.md#3-represent-a-shared-release-across-subports-end-to-end) after the smaller preparation improvements. Named subport lookup is complete; authorizing one release to change several subports is a different capability.
 
@@ -110,7 +97,7 @@ Extend these through their existing paths rather than treating them as new roadm
 | State and recovery | Repository-scoped SQLite, concurrent claims, cancellation/recovery, explicit phases, immutable source capture, backup/check/migration, and durable snapshots. Schema-15 migration was rehearsed on a copy of existing user state without losing history/evidence. |
 | Verification and publication | Tart preference with GitHub fallback, immutable image/evidence inputs, reuse, GitHub fork verification, durable publication recovery, and independent per-target dependent builds with full required coverage. Local exercises in this milestone used publication previews; earlier GitHub exercises reached live PRs. |
 | Setup and credentials | Base/full-Xcode Tart provisioning and capacity-aware image inspection; device login, credential precedence/diagnostics, registered OAuth client, and public-read authentication. |
-| Corrections and operations | Managed amend/rebase, branch reassociation, conditional PR updates, resource release, manual gc and cache retention, durable logs/progress, tested Tcl transport, and package documentation. More automatic retention remains Next #1. |
+| Corrections and operations | Managed amend/rebase, branch reassociation, conditional PR updates, resource release, manual gc and cache retention, durable logs/progress, tested Tcl transport, and package documentation. Automatic failed-VM release, explicit `--keep-failed`, prompt transfer-archive removal, and bounded expiry of released diagnostics are implemented. [Cleanup validation](activity/2026-09-16-routine-cleanup.md). |
 
 ## Deferred
 

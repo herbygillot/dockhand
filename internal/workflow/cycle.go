@@ -142,6 +142,9 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 			result.Problems = append(result.Problems, JobProblem{ResourceID: resource.ID, Detail: detail})
 		}
 	}
+	if err = c.pruneDiagnostics(ctx, &result); err != nil {
+		return result, err
+	}
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		q := state.Query{Jobs: selection, Pending: true, Limit: 64}
 		for {

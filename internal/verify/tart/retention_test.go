@@ -2,6 +2,7 @@ package tart
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,4 +82,48 @@ func TestPruneWaitsForProviderLockAndDoesNotFollowResourceSymlink(t *testing.T) 
 	require.FileExists(t, sentinel)
 	_, err = os.Lstat(directory)
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestTransferCopyRemovedOnlyAfterDurableStaging(t *testing.T) {
+	for _, point := range []string{"stage", "launch", "success"} {
+		t.Run(point, func(t *testing.T) {
+			f, m := singleRun(t)
+			if point == "stage" {
+				m.stageError = errors.New("interrupted stage")
+			}
+			if point == "launch" {
+				m.launchError = errors.New("interrupted launch")
+			}
+			admitted, err := f.provider.Submit(t.Context(), f.request)
+			operation, readErr := f.provider.begin(t.Context(), f.request.ID)
+			require.NoError(t, readErr)
+			execution, readErr := operation.read(t.Context(), f.request.ID)
+			operation.close()
+			require.NoError(t, readErr)
+			path := filepath.Join(f.provider.Config.ArtifactDirectory, execution.Resource, "input.tar")
+			if point == "stage" {
+				require.Error(t, err)
+				require.FileExists(t, path)
+				_, err = f.provider.Reconcile(t.Context(), f.request.ID, verify.ReconcileOptions{})
+				require.NoError(t, err)
+				// Reserved staging is closed, never replayed as a second admission.
+				_, err = f.provider.Release(t.Context(), admitted.Resources[0])
+				require.NoError(t, err)
+				require.NoFileExists(t, path)
+				return
+			}
+			if point == "launch" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoFileExists(t, path)
+			m.launchError = nil
+			again, err := f.provider.Submit(t.Context(), f.request)
+			require.NoError(t, err)
+			require.Equal(t, verify.Admitted, again.State)
+			require.Equal(t, 1, m.calls["stage"])
+			require.NoFileExists(t, path)
+		})
+	}
 }

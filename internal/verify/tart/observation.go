@@ -25,6 +25,11 @@ func (p *Provider) Observe(ctx context.Context, run record.ProviderRun) (verify.
 }
 
 func (o *operation) observe(ctx context.Context, v record.ProviderExecution, data payload) (verify.Observation, error) {
+	if v.State == record.ExecutionAdmitted {
+		if err := o.removeInput(v); err != nil {
+			return verify.Observation{}, err
+		}
+	}
 	run := submission(v, verify.Admitted).Run
 	if len(v.Result) > 0 {
 		var result verify.Observation
@@ -99,6 +104,9 @@ func (o *operation) finish(ctx context.Context, v record.ProviderExecution, resu
 		return verify.Observation{}, err
 	}
 	if err = o.machine.Stop(ctx, v.Resource); err != nil {
+		return verify.Observation{}, err
+	}
+	if err = o.removeInput(v); err != nil {
 		return verify.Observation{}, err
 	}
 	v.Result = data

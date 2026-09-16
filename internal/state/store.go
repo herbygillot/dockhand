@@ -63,6 +63,9 @@ type Query struct {
 	// CleanupBefore selects old terminal jobs or resources for explicit maintenance.
 	// Jobs and Resources use this field.
 	CleanupBefore *time.Time
+	// PruneBefore selects released diagnostics older than this cutoff, excluding
+	// recorded build outputs. DueBefore additionally filters pruning retries.
+	PruneBefore *time.Time
 }
 
 // VerificationQuery bounds candidate lookup to a repository, target, and optional tree.

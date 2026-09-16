@@ -13,6 +13,7 @@ import (
 )
 
 type CorrectionRequest struct {
+	KeepFailed        bool
 	Title             string
 	ID                record.RequestID
 	Action            record.Action
@@ -191,7 +192,7 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if err != nil {
 		return result, err
 	}
-	spec := record.JobSpec{Action: input.Action, Source: committed.Source(revision.Source.Base), Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: build.Build, BuildRequirements: build.Requirements, IncludeDependents: input.IncludeDependents, TargetBuilds: build.TargetBuilds,
+	spec := record.JobSpec{KeepFailed: input.KeepFailed, Action: input.Action, Source: committed.Source(revision.Source.Base), Targets: targets, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: build.Build, BuildRequirements: build.Requirements, IncludeDependents: input.IncludeDependents, TargetBuilds: build.TargetBuilds,
 		Preparation: &record.PreparationSpec{SourceBranch: branch, Platform: input.Platform, Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, VerificationProblem: build.Problem,
 			Correction: &record.CorrectionSpec{ChangeID: change.ID, RevisionID: revision.ID, Branch: branch, PreviousHead: committed.Head, RemoteHead: remoteHead, Candidate: candidate}}}
 	if input.Publication != nil {

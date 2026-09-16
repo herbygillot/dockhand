@@ -49,6 +49,9 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		}
 		if previous.State == record.ExecutionAdmitted || previous.State == record.ExecutionReleased {
 			if previous.State == record.ExecutionAdmitted && len(previous.Result) == 0 {
+				if e := o.removeInput(previous); e != nil {
+					return submission(previous, verify.SubmissionUncertain), e
+				}
 				if e := o.machine.Launch(ctx, previous.Resource); e != nil {
 					return submission(previous, verify.SubmissionUncertain), e
 				}
@@ -182,6 +185,9 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	// Once launch intent is admitted, recovery completes the same guest launch.
 	v.State = record.ExecutionAdmitted
 	if err = o.put(ctx, v); err != nil {
+		return uncertain, err
+	}
+	if err = o.removeInput(v); err != nil {
 		return uncertain, err
 	}
 	progress.Report(ctx, "Launching verification")

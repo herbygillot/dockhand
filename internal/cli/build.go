@@ -10,6 +10,7 @@ import (
 )
 
 type buildOptions struct {
+	keepFailed   bool
 	targetImages []string
 	dependents   bool
 	provider     string
@@ -20,6 +21,7 @@ type buildOptions struct {
 }
 
 func (o *buildOptions) flags(cmd *cobra.Command, config app.Config) {
+	cmd.Flags().BoolVar(&o.keepFailed, "keep-failed", false, "Keep failed local verification VMs for investigation; logs survive normal VM cleanup")
 	cmd.Flags().BoolVar(&o.dependents, "dependents", false, "Verify direct dependents in isolated Tart guests")
 	cmd.Flags().StringArrayVar(&o.targetImages, "target-image", nil, "Dependent port=image override (repeatable; requires --dependents, same platform)")
 	provider := config.VerificationProvider
@@ -68,6 +70,12 @@ func (o *buildOptions) config(cmd *cobra.Command, config app.Config) (app.Config
 			}
 			config.TargetImages[name] = image
 		}
+	}
+	if o.keepFailed && o.provider == "github" {
+		return config, fmt.Errorf("--keep-failed requires local verification")
+	}
+	if o.keepFailed && o.provider == "auto" {
+		o.provider = "tart"
 	}
 	if o.dependents {
 		if o.provider == "github" {

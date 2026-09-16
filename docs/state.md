@@ -277,3 +277,9 @@ Preparation acceptance now creates an open contribution with an initiating targe
 An indexed repository-scoped initiating_target supports continuation independently of the edited target set. Existing single-target contributions are backfilled; legacy unassociated preparation jobs each receive their own contribution, while standalone verification remains unassociated. No jobs are combined merely because their targets match.
 
 Equivalent new requests can join existing work through requests.joined_job. Request-ID replay preserves the receipt, and joined requests cannot also own a new job. Failed preparation retries create a new job under the same contribution, retaining the captured source and any resolved release/candidate. State transactions serialize selection and creation; external preparation and Git integration remain outside them.
+
+## Released diagnostics (schema 16)
+
+Schema 16 adds a partial index for old, unpruned released resources. `Query.PruneBefore` selects terminal jobs/attempts without recorded build outputs; `DueBefore` filters pruning retries. Released resource ownership and release facts remain immutable. Only the pruning timestamp and pruning retry/error metadata may advance before pruning completes; a completed marker cannot be erased.
+
+`JobSpec.KeepFailed` is persisted in existing job options. It requests explicit failed-environment retention and is not part of the verification input digest. New terminal attempts otherwise request ordinary claimed release. Already retained resources keep their established disposition.

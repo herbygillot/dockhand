@@ -230,13 +230,14 @@ func (t *transaction) PutResource(ctx context.Context, v record.Resource) error 
 		if old.State == record.ResourceReleased {
 			compared := v
 			compared.ArtifactsPrunedAt = old.ArtifactsPrunedAt
+			compared.RetryAt, compared.LastError = old.RetryAt, old.LastError
 			if err := immutable(old, compared); err != nil {
 				return err
 			}
-			if old.ArtifactsPrunedAt != nil || v.ArtifactsPrunedAt == nil {
+			if old.ArtifactsPrunedAt != nil {
 				return immutable(old, v)
 			}
-			return t.exec(ctx, "UPDATE resources SET artifacts_pruned_at=? WHERE repository_id=? AND id=?", nullableTime(v.ArtifactsPrunedAt), t.repo, v.ID)
+			return t.exec(ctx, "UPDATE resources SET artifacts_pruned_at=?,retry_at=?,last_error=? WHERE repository_id=? AND id=?", nullableTime(v.ArtifactsPrunedAt), nullableTime(v.RetryAt), v.LastError, t.repo, v.ID)
 		}
 	} else {
 		submission, e := t.Submission(ctx, v.SubmissionID)

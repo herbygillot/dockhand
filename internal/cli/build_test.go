@@ -15,6 +15,7 @@ func TestBuildProviderDefaultsAndExplicitChoices(t *testing.T) {
 		config          app.Config
 		provider, tests string
 	}{
+		{name: "keep failed chooses local", command: "bump", args: []string{"--keep-failed"}, provider: "tart", tests: "declared"},
 		{name: "bump automatic", command: "bump", provider: "auto"},
 		{name: "revision automatic", command: "bump-revision", provider: "auto"},
 		{name: "verify stays local", command: "verify", provider: "tart", tests: "declared"},

@@ -68,3 +68,21 @@ func (p *Provider) PruneArtifacts(ctx context.Context, handle record.ResourceHan
 	}
 	return errors.Join(parent.Sync(), parent.Close())
 }
+
+// removeInput discards the host transfer copy under the submission lock. The
+// guest owns its staged source after admission; retries never restage it.
+func (o *operation) removeInput(v record.ProviderExecution) error {
+	if v.Resource != "dockhand2-"+digest([]byte(o.pool.ID + "/" + string(v.ID)))[:24] {
+		return fmt.Errorf("tart: unexpected resource directory")
+	}
+	root, err := os.OpenRoot(o.pool.Directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	err = root.Remove(v.Resource + "/input.tar")
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}

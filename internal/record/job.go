@@ -82,6 +82,9 @@ type JobSpec struct {
 	TargetBuilds      map[string]BuildConfig
 	IncludeDependents bool `json:",omitempty"`
 	FreshVerification bool `json:",omitempty"`
+	// KeepFailed retains a failed verification environment for explicit investigation.
+	// It does not affect evidence compatibility or retain successful/canceled runs.
+	KeepFailed bool `json:",omitempty"`
 	// Version is an optional explicit version for Bump; empty requests automatic selection.
 	Version string
 	Reason  string

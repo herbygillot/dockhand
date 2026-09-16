@@ -8,7 +8,7 @@ The existing Terraform/Helm release-series, gh source/binary, and Deno architect
 
 The [readiness investigation](activity/2026-09-16-core-bump-readiness.md) reproduced Wasmer's reported failure and checked sixteen selected controls. The earlier 147-Portfile survey remains a comparison corpus, not a whole-tree success estimate. Shared-subport cases require explicit candidate checks: finding a version input alone does not test whether sibling edits are acceptable.
 
-The section numbers below identify capabilities, not the current queue. Follow the [roadmap](roadmap.md): finish contribution lifecycle and routine cleanup, then platform observations (stage 2), manifest/auxiliary archive separation (stage 4), and shared-release scope (stage 3). Each implementation should complete through assessment, preparation, and applicable verification/publication checks before broadening its claims.
+The section numbers below identify capabilities, not the current queue. Follow the [roadmap](roadmap.md): contribution lifecycle and routine cleanup are implemented; next are platform observations (stage 2), manifest/auxiliary archive separation (stage 4), and shared-release scope (stage 3). Each implementation should complete through assessment, preparation, and applicable verification/publication checks before broadening its claims.
 
 ## Prerequisite: target resolution and contribution continuity
 

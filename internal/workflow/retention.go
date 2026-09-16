@@ -34,7 +34,7 @@ type RetentionResult struct {
 
 // Collect releases old terminal resources through the driver's existing cleanup
 // path and prunes older released diagnostics. It never advances jobs or forgets
-// their identities. Retention is explicit; normal cycles do not expire failures.
+// their identities. Explicit collection also releases retained failed environments.
 func (e *Engine) Collect(ctx context.Context, options RetentionOptions) (RetentionResult, error) {
 	result := RetentionResult{DryRun: options.DryRun, Items: []CleanupItem{}}
 	if err := e.checkScope(Scope{All: true}); err != nil {
@@ -195,6 +195,7 @@ func (c *cycle) collectResource(ctx context.Context, id record.ResourceID, befor
 		if current.ArtifactsPrunedAt == nil {
 			now := e.now()
 			current.ArtifactsPrunedAt = &now
+			current.RetryAt, current.LastError = nil, ""
 			if err = tx.PutResource(ctx, current); err != nil {
 				return err
 			}

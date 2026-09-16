@@ -204,6 +204,7 @@ func (t *transaction) PutRequest(ctx context.Context, v record.AcceptedRequest) 
 }
 
 type jobOptions struct {
+	KeepFailed        bool                           `json:",omitempty"`
 	EvaluatedVersions map[string]string              `json:",omitempty"`
 	TargetBuilds      map[string]record.BuildConfig  `json:",omitempty"`
 	IncludeDependents bool                           `json:",omitempty"`
@@ -247,6 +248,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	v.Spec.FreshVerification = options.FreshVerification
 	v.Spec.TargetBuilds = options.TargetBuilds
 	v.Spec.IncludeDependents = options.IncludeDependents
+	v.Spec.KeepFailed = options.KeepFailed
 	v.ReusedAttempt = record.AttemptID(reused.String)
 	v.Claim = readClaim(owner, v.ClaimGeneration, until)
 	v.RetryAt = scanTime(retry)
@@ -379,7 +381,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
+	raw, err := encode(jobOptions{KeepFailed: v.Spec.KeepFailed, EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}

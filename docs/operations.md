@@ -34,6 +34,16 @@ Before resuming, compare recorded jobs and resources against current Git branche
 
 After that reconciliation, use the replacement as the sole operational database through `--db`, or replace the default path while all drivers remain stopped and the original files are preserved. Restoring/overwriting the live database and repairing lost external-operation history are deliberately not automatic commands. Without a usable database or backup, verification evidence, accepted intent, ownership, and publication checkpoints cannot currently be reconstructed from the repository alone.
 
+## Routine cleanup
+
+Ordinary driver cycles release terminal verification VMs, including failures, after collecting their result and available build logs. `bump`, `bump-revision`, `refresh-checksums`, `verify`, `amend`, and `rebase` accept `--keep-failed` to retain failed local environments for investigation. That choice is stored with the accepted job and survives driver restarts. Successful and canceled runs are released even when the flag was set. It does not change verification evidence compatibility. Existing retained environments are not retroactively released by this policy change.
+
+Tart removes its host `input.tar` after guest staging and durable admission; retries launch the same staged guest without retransferring the archive. Interrupted staging keeps its input until the reserved execution is closed and released. Normal preparation/staging scratch remains scoped to the operation and is removed on return, including errors. Unknown leftovers from process death are not swept blindly.
+
+Host logs and result files survive VM deletion. Once both the job and resource release are at least seven days old, a cycle may prune up to eight released diagnostic directories in the current repository. It skips active work, live claims, and recorded build outputs. Provider locks serialize removal outside database transactions, and failed/unavailable pruning backs off for a day rather than blocking every cycle. Compact evidence, history, branch/PR identities, and small coordination files survive. No extra daemon is started; cleanup resumes with later driver activity.
+
+`--keep-failed` retains the VM until explicit `gc` or a recorded retention deadline releases it; its logs remain for at least another seven days after that release. Reusable indexes and re-downloadable GitHub log caches keep their separate explicit `gc` policy below.
+
 ## Reclaim environments and diagnostic files
 
 ```sh
@@ -49,9 +59,9 @@ There are two independent age checks:
 - A terminal job older than the threshold can have its retained VM released. Future explicit retention deadlines and live claims are respected. Release uses the same ownership checks, claim, provider call, and confirmation as an ordinary driver cycle.
 - Diagnostic files can be removed only after both the job and the confirmed resource release are older than the threshold. This preserves logs for another retention interval after releasing a failed VM. Removal includes the released run's host directory and logs, but skips resources with recorded build outputs.
 
-Active jobs, unresolved attempts, uncertain ownership, and unregistered directories are not discovered by scanning the filesystem for garbage. Cleanup starts with owned resource records. Successful and canceled VMs continue to be released by normal cycles; failed environments remain retained until an explicit `gc` or recorded retention deadline makes them eligible.
+Active jobs, unresolved attempts, uncertain ownership, and unregistered directories are not discovered by scanning the filesystem for garbage. Cleanup starts with owned resource records. Normal cycles release terminal VMs by default. Environments explicitly kept for investigation, and failures already retained by older versions, remain retained until `gc` or a recorded deadline makes them eligible.
 
-Release failures remain durable cleanup obligations and can be retried by `gc` or another driver cycle. File-pruning failures are reported by `gc`; rerunning it retries idempotently. A filesystem removal followed by a failed database checkpoint is also safe to retry. `gc` reports each action and returns an error if a selected action remains incomplete. It never advances unrelated jobs.
+Release failures remain durable cleanup obligations and can be retried by `gc` or another driver cycle. File-pruning failures are reported by `gc` or the cycle and remain retryable. Explicit `gc` may retry released diagnostics immediately, without waiting for automatic pruning backoff. A filesystem removal followed by a failed database checkpoint is also safe to retry. `gc` reports each action and returns an error if a selected action remains incomplete. It never advances unrelated jobs.
 
 Status records the time diagnostics were pruned. Historical log paths remain in immutable evidence, and reading a missing terminal log reports that it is unavailable. Verification verdicts, input identities, job/request history, PR associations, provider results, and closed submission identities are retained. Pruning logs does not invalidate a verification result.
 

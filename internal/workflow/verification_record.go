@@ -163,7 +163,7 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 func finishAttempt(work *execution, job *record.Job, attempt *record.Attempt, evidence record.Evidence, detail string, now time.Time) {
 	attempt.Evidence, attempt.State, attempt.Claim, attempt.RetryAt = &evidence, record.AttemptFinished, nil, nil
 	resourceState := record.ResourceRetained
-	if evidence.Verdict == record.VerdictPassed || evidence.Verdict == record.VerdictCanceled {
+	if !job.Spec.KeepFailed || evidence.Verdict == record.VerdictPassed || evidence.Verdict == record.VerdictCanceled {
 		resourceState = record.ResourceReleaseRequested
 	}
 	if evidence.Verdict == record.VerdictCanceled {

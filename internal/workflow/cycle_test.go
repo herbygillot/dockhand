@@ -111,9 +111,9 @@ func TestCycleRejectsInvalidEvidenceAndRetainsFailure(t *testing.T) {
 	f.runAttemptDue(t, id)
 	status := f.status(t, id)
 	require.Equal(t, record.JobFailed, status.Jobs[0].Job.State, "failure diagnosis was lost")
-	require.Equal(t, record.ResourceRetained, status.Resources[0].State, "failure diagnosis was lost")
+	require.Equal(t, record.ResourceReleased, status.Resources[0].State, "failed VM should be released while preserving diagnosis")
 	require.Equal(t, "outside-cohort", status.Jobs[0].Attempts[0].Evidence.Failure.Package, "failure was hidden, cleaned or rebuilt")
-	require.Zero(t, f.provider.count("release"), "failure was hidden, cleaned or rebuilt")
+	require.Equal(t, 1, f.provider.count("release"))
 	require.Equal(t, 1, f.provider.count("submit"), "failure was hidden, cleaned or rebuilt")
 }
 

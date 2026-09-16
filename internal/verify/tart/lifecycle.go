@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -115,7 +114,7 @@ func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (v
 		if err = o.machine.Delete(ctx, v.Resource); err != nil {
 			return verify.ReleaseResult{}, err
 		}
-		if err = os.Remove(filepath.Join(o.directory(v), "input.tar")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err = o.removeInput(v); err != nil {
 			return verify.ReleaseResult{}, err
 		}
 	}

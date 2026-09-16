@@ -214,7 +214,7 @@ Commands exit with 0 on success, 2 when the requested build failed, 3 when somet
 
 ### Housekeeping
 
-Dockhand keeps its records in one SQLite database, `~/.dockhand/state.db` by default (`--db` selects another). VMs from failed builds are kept for a week so you can inspect them, then released:
+Dockhand keeps its records in one SQLite database, `~/.dockhand/state.db` by default (`--db` selects another). Completed verification VMs are released automatically, including failed builds. Use `--keep-failed` on a bump or verification to retain a failed VM for investigation. Logs survive VM release and are eligible for automatic cleanup after seven days. Preview or request additional cleanup with `gc`:
 
 ```sh
 dockhand gc --dry-run

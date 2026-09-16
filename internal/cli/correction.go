@@ -48,7 +48,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 					return err
 				}
 				defer services.Close()
-				input := workflow.CorrectionRequest{ID: record.RequestID("request_" + rand.Text()), Action: action, Title: title, Branch: branch, Preview: diff, IncludeDependents: build.dependents}
+				input := workflow.CorrectionRequest{KeepFailed: build.keepFailed, ID: record.RequestID("request_" + rand.Text()), Action: action, Title: title, Branch: branch, Preview: diff, IncludeDependents: build.dependents}
 				if publication {
 					input.Publication = &destination
 				}

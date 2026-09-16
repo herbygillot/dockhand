@@ -63,6 +63,8 @@ Repository and identity API calls remain in `go-github`; `golang.org/x/oauth2` o
 
 ## Maintenance commands
 
+Verification-capable commands accept `--keep-failed` for explicit local-VM retention. Normal cycles release terminal environments by default and prune bounded batches of old released diagnostics after seven days. Accepted policy belongs to `JobSpec`, separate from build/evidence inputs. Manual `gc` continues to release intentionally retained environments and collect reusable caches. See [routine cleanup](operations.md#routine-cleanup).
+
 ```text
 dockhand gc [--older-than 168h] [--dry-run]
 dockhand db backup <file>

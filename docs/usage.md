@@ -93,6 +93,8 @@ dockhand refresh --change <change_id>
 
 Both commands accept a unique open port/subport target, `--branch`, or the current branch when the selector is omitted. Use `--change` for an exact contribution, including historical work. Refreshing a reopened PR never reopens a retired local contribution or redirects newer work.
 
+`--keep-failed` keeps a failed local verification VM for investigation. The default releases it after collecting the result and logs. This is a per-job choice: `wait` preserves it, while a new verification uses its own flag. Logs remain available after VM release; see [routine cleanup](operations.md#routine-cleanup).
+
 ## Prepare version updates
 
 Preview or prepare a version update from freshly fetched `master` in `macports/macports-ports`. Local branches and uncommitted edits are excluded; a failed fetch stops the request without falling back to stale source:

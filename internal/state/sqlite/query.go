@@ -205,10 +205,18 @@ func (t *transaction) Resources(ctx context.Context, q state.Query) ([]record.Re
 		sql = "SELECT r.id FROM attempts a INDEXED BY attempts_job CROSS JOIN resources r INDEXED BY resources_attempt ON r.repository_id=a.repository_id AND r.attempt_id=a.id WHERE a.repository_id=? AND r.id>?" + clause
 	}
 	order := "r.id"
-	if q.DueBefore != nil {
+	if q.DueBefore != nil && q.PruneBefore == nil {
 		sql += " AND r.next_action_at IS NOT NULL AND r.next_action_at<=? AND a.state IN ('finished','canceled')"
 		base = append(base, q.DueBefore.UnixMilli())
 		order = "r.next_action_at,r.id"
+	}
+	if q.PruneBefore != nil {
+		sql += " AND r.state='released' AND r.artifacts_pruned_at IS NULL AND r.released_at<=? AND a.state IN ('finished','canceled') AND EXISTS(SELECT 1 FROM jobs j WHERE j.repository_id=a.repository_id AND j.id=a.job_id AND j.state IN ('completed','failed','needs-attention','canceled','superseded') AND j.finished_at<=?) AND NOT EXISTS(SELECT 1 FROM attempt_evidence e WHERE e.repository_id=a.repository_id AND e.attempt_id=a.id AND coalesce(json_array_length(e.evidence,'$.Artifacts'),0)>0)"
+		base = append(base, q.PruneBefore.UnixMilli(), q.PruneBefore.UnixMilli())
+		if q.DueBefore != nil {
+			sql += " AND (r.retry_at IS NULL OR r.retry_at<=?)"
+			base = append(base, q.DueBefore.UnixMilli())
+		}
 	}
 	if q.CleanupBefore != nil {
 		sql += " AND r.artifacts_pruned_at IS NULL AND a.state IN ('finished','canceled') AND EXISTS(SELECT 1 FROM jobs j WHERE j.repository_id=a.repository_id AND j.id=a.job_id AND j.state IN ('completed','failed','needs-attention','canceled','superseded') AND j.finished_at<=?) AND ((r.state='released' AND r.released_at<=?) OR r.state IN ('retained','release-requested','uncertain'))"
