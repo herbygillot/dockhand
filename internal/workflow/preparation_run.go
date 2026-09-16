@@ -96,6 +96,9 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		if job.CancelRequestedAt != nil {
 			finishPreparation(&job, record.JobCanceled, "Canceled before branch integration", e.now())
 		} else if errors.Is(operationErr, errNoSourceChanges) {
+			if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
+				return err
+			}
 			finishPreparation(&job, record.JobCompleted, operationErr.Error(), e.now())
 		} else if operationErr != nil {
 			detail = operationErr.Error()
@@ -110,6 +113,9 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 			job.ConsecutiveFailures = 0
 			job.ResolvedRelease = &release
 			if release.NoUpdate {
+				if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
+					return err
+				}
 				finishPreparation(&job, record.JobCompleted, fmt.Sprintf("Already current at %s; latest eligible version is %s", release.CurrentVersion, release.Version), e.now())
 			} else {
 				label := release.Tag

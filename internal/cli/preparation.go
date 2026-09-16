@@ -90,7 +90,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					if err != nil {
 						return fmt.Errorf("accepting request %s: %w", bound.Request.ID, err)
 					}
-					fmt.Fprintf(cmd.ErrOrStderr(), "Accepted job %s; source commit %s.\n", receipt.JobID, bound.Request.Spec.Source.Commit)
+					fmt.Fprintf(cmd.ErrOrStderr(), "Accepted job %s; source commit %s.\n", receipt.JobID, receipt.Source.Commit)
 					milestone := workflow.Admission
 					if options.Wait || options.Trace {
 						milestone = workflow.Completion

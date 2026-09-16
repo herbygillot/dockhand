@@ -561,3 +561,55 @@ func TestRetryMigrationPreservesHistoryAndDefaultsCounters(t *testing.T) {
 		require.Zero(t, nonzero)
 	}
 }
+
+func TestContributionMigrationRetainsLegacyPreparationAndStandaloneEvidence(t *testing.T) {
+	path, db := versionTenWithWork(t)
+	_, err := db.Exec("BEGIN;" + imageCapabilitiesSchema + generationSchema + sharedRunsSchema + "PRAGMA defer_foreign_keys=OFF;" + retrySchema + "PRAGMA user_version=14; COMMIT;")
+	require.NoError(t, err)
+	columns, before := migrationRows(t, db, "attempts", nil)
+	jobColumns, _ := migrationRows(t, db, "jobs", nil)
+	for _, action := range []string{"bump", "verify"} {
+		id := "legacy-" + action
+		_, err = db.Exec("INSERT INTO requests(id,repository_id,kind,payload,accepted_at) VALUES(?,'preserved','job',x'7b7d',1)", id)
+		require.NoError(t, err)
+		expressions := append([]string(nil), jobColumns...)
+		for i, column := range jobColumns {
+			switch column {
+			case "id", "request_id":
+				expressions[i] = "'" + id + "'"
+			case "change_id", "spec_change_id", "input_revision", "result_revision", "prepared", "resolved_release", "reused_attempt":
+				expressions[i] = "NULL"
+			case "action":
+				expressions[i] = "'" + action + "'"
+			case "options":
+				expressions[i] = `'{"Targets":[{"Name":"terraform-1.16","Portfile":"sysutils/terraform/Portfile","Subport":"terraform-1.16"}],"Preparation":{}}'`
+			}
+		}
+		_, err = db.Exec("INSERT INTO jobs(" + strings.Join(jobColumns, ",") + ") SELECT " + strings.Join(expressions, ",") + " FROM jobs WHERE id='job'")
+		require.NoError(t, err)
+	}
+	store, err := Open(t.Context(), path, Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	require.NoError(t, store.View(t.Context(), "preserved", func(ctx context.Context, reader state.Reader) error {
+		bump, err := reader.Job(ctx, "legacy-bump")
+		require.NoError(t, err)
+		require.EqualValues(t, "change_legacy-bump", bump.ChangeID)
+		change, err := reader.Change(ctx, bump.ChangeID)
+		require.NoError(t, err)
+		require.Equal(t, "terraform-1.16", change.InitiatingTarget)
+		require.Empty(t, change.Branch)
+		require.Empty(t, change.CurrentRevision)
+		verified, err := reader.Job(ctx, "legacy-verify")
+		require.NoError(t, err)
+		require.Empty(t, verified.ChangeID)
+		return nil
+	}))
+	_, after := migrationRows(t, db, "attempts", columns)
+	require.Equal(t, before, after)
+	rows, err := db.Query("PRAGMA foreign_key_check")
+	require.NoError(t, err)
+	defer rows.Close()
+	require.False(t, rows.Next())
+	require.NoError(t, rows.Err())
+}

@@ -30,6 +30,9 @@ type Request struct {
 // pickup, provider admission, or completion. Equivalent retries return the same
 // job identity and acceptance time.
 type Receipt struct {
+	// Source and ChangeID identify the accepted work, including a joined retry.
+	Source     record.Source
+	ChangeID   record.ChangeID
 	RequestID  record.RequestID
 	JobID      record.JobID
 	AcceptedAt time.Time
@@ -95,10 +98,10 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 			if err != nil {
 				return err
 			}
-			if spec.ChangeID != "" && spec.ChangeID != job.Spec.ChangeID {
+			if spec.ChangeID != "" && spec.ChangeID != job.ChangeID {
 				return ErrRequestConflict
 			}
-			receipt = Receipt{RequestID: request.ID, JobID: job.ID, AcceptedAt: job.AcceptedAt}
+			receipt = Receipt{RequestID: request.ID, JobID: job.ID, AcceptedAt: job.AcceptedAt, Source: job.Spec.Source, ChangeID: job.ChangeID}
 			return nil
 		}
 		if !errors.Is(err, state.ErrNotFound) {
@@ -128,10 +131,22 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 			accepted.ChangeID = correction.ChangeID
 		}
 		id := record.JobID("job_" + rand.Text())
+		job, joined, err := acceptPreparation(ctx, tx, id, request.ID, accepted, now)
+		if err != nil {
+			return err
+		}
+		if joined != nil {
+			if err := tx.PutRequest(ctx, record.AcceptedRequest{ID: request.ID, Kind: record.JobRequest, Payload: payload, AcceptedAt: now, JoinedJob: joined.ID}); err != nil {
+				return err
+			}
+			receipt = Receipt{RequestID: request.ID, JobID: joined.ID, AcceptedAt: joined.AcceptedAt, Source: joined.Spec.Source, ChangeID: joined.ChangeID}
+			return nil
+		}
+		accepted = job.Spec
 		if err = tx.PutRequest(ctx, record.AcceptedRequest{ID: request.ID, Kind: record.JobRequest, Payload: payload, AcceptedAt: now}); err != nil {
 			return err
 		}
-		if err = tx.PutJob(ctx, record.Job{ID: id, RequestID: request.ID, Spec: accepted, ChangeID: accepted.ChangeID, State: record.JobQueued, Phase: initialPhase(accepted.Action), AcceptedAt: now}); err != nil {
+		if err = tx.PutJob(ctx, job); err != nil {
 			return err
 		}
 		if accepted.Action == record.Publish {
@@ -160,7 +175,7 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 				return fmt.Errorf("accept publication (another job may own this remote branch): %w", err)
 			}
 		}
-		receipt = Receipt{RequestID: request.ID, JobID: id, AcceptedAt: now}
+		receipt = Receipt{RequestID: request.ID, JobID: id, AcceptedAt: now, Source: job.Spec.Source, ChangeID: job.ChangeID}
 		return nil
 	})
 	if err != nil {

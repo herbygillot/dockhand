@@ -92,6 +92,18 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 			if confirmed {
 				change := record.Change{ID: record.ChangeID("change_" + string(job.ID)), Branch: job.Prepared.Branch, Targets: job.Spec.Targets, GeneratedCommit: job.Prepared.Source.Commit, Disposition: record.ChangeOpen, CreatedAt: job.AcceptedAt}
 				revision := record.Revision{ID: record.RevisionID("revision_" + string(job.ID)), ChangeID: change.ID, Source: job.Prepared.Source, CreatedAt: job.AcceptedAt}
+				if job.ChangeID != "" && job.Spec.Preparation.Correction == nil {
+					existing, err := tx.Change(ctx, job.ChangeID)
+					if err != nil {
+						return err
+					}
+					if existing.Disposition != record.ChangeOpen || existing.CurrentRevision != "" || existing.Branch != "" {
+						return ErrStaleRevision
+					}
+					existing.Branch, existing.GeneratedCommit = job.Prepared.Branch, job.Prepared.Source.Commit
+					change = existing
+					revision.ChangeID = change.ID
+				}
 				if correction := job.Spec.Preparation.Correction; correction != nil {
 					existing, err := correctionCurrent(ctx, tx, *correction)
 					if err != nil {

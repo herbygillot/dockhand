@@ -74,7 +74,7 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 	var current sql.NullString
 	var raw string
 	var created int64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,''),generated_commit FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID, &v.GeneratedCommit)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,''),generated_commit,initiating_target FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID, &v.GeneratedCommit, &v.InitiatingTarget)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -108,7 +108,19 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 	if err != nil && !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
-	if err == nil && (old.GeneratedCommit != v.GeneratedCommit || !old.CreatedAt.Equal(v.CreatedAt) || old.PullRequestID != "" && old.PullRequestID != v.PullRequestID) {
+	if err == nil && old.GeneratedCommit != v.GeneratedCommit {
+		if old.GeneratedCommit != "" || old.CurrentRevision != "" || old.Branch != "" || v.GeneratedCommit == "" || v.Branch == "" {
+			return state.ErrConflict
+		}
+		var count int
+		if err := t.conn.QueryRowContext(ctx, "SELECT count(*) FROM jobs WHERE repository_id=? AND change_id=? AND json_extract(prepared,'$.Source.Commit')=? AND json_extract(prepared,'$.Branch')=? AND json_extract(prepared,'$.IntegrationStarted')=1", t.repo, v.ID, v.GeneratedCommit, v.Branch).Scan(&count); err != nil {
+			return storageError(err)
+		}
+		if count == 0 {
+			return state.ErrConflict
+		}
+	}
+	if err == nil && (old.InitiatingTarget != v.InitiatingTarget || !old.CreatedAt.Equal(v.CreatedAt) || old.PullRequestID != "" && old.PullRequestID != v.PullRequestID) {
 		return state.ErrConflict
 	}
 	raw, err := encode(v.Targets)
@@ -116,9 +128,9 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 		return err
 	}
 	if old.ID != "" {
-		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=?,published_revision=?,pull_request_id=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, nullableID(v.PublishedRevision), nullableID(v.PullRequestID), t.repo, v.ID)
+		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=?,published_revision=?,pull_request_id=?,generated_commit=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, nullableID(v.PublishedRevision), nullableID(v.PullRequestID), v.GeneratedCommit, t.repo, v.ID)
 	}
-	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at,generated_commit) VALUES(?,?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli(), v.GeneratedCommit)
+	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at,generated_commit,initiating_target) VALUES(?,?,?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli(), v.GeneratedCommit, v.InitiatingTarget)
 }
 func (t *transaction) Revision(ctx context.Context, id record.RevisionID) (record.Revision, error) {
 	var v record.Revision
@@ -159,12 +171,20 @@ func (t *transaction) Request(ctx context.Context, id record.RequestID) (record.
 	}
 	var accepted int64
 	var completed sql.NullInt64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,kind,payload,accepted_at,completed_at FROM requests WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Kind, &v.Payload, &accepted, &completed)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,kind,payload,accepted_at,completed_at,coalesce(joined_job,'') FROM requests WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Kind, &v.Payload, &accepted, &completed, &v.JoinedJob)
 	v.AcceptedAt = fromTime(accepted)
 	v.CompletedAt = scanTime(completed)
 	return v, storageError(err)
 }
 func (t *transaction) PutRequest(ctx context.Context, v record.AcceptedRequest) error {
+	if v.JoinedJob != "" {
+		if v.Kind != record.JobRequest {
+			return state.ErrInvalid
+		}
+		if _, err := t.Job(ctx, v.JoinedJob); err != nil {
+			return err
+		}
+	}
 	if v.ID == "" || v.AcceptedAt.IsZero() || len(v.Payload) == 0 {
 		return state.ErrInvalid
 	}
@@ -180,7 +200,7 @@ func (t *transaction) PutRequest(ctx context.Context, v record.AcceptedRequest) 
 	} else if !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
-	return t.exec(ctx, "INSERT INTO requests(id,repository_id,kind,payload,accepted_at,completed_at) VALUES(?,?,?,?,?,?)", v.ID, t.repo, v.Kind, v.Payload, v.AcceptedAt.UnixMilli(), nullableTime(v.CompletedAt))
+	return t.exec(ctx, "INSERT INTO requests(id,repository_id,kind,payload,accepted_at,completed_at,joined_job) VALUES(?,?,?,?,?,?,?)", v.ID, t.repo, v.Kind, v.Payload, v.AcceptedAt.UnixMilli(), nullableTime(v.CompletedAt), nullableID(v.JoinedJob))
 }
 
 type jobOptions struct {
@@ -258,7 +278,7 @@ func (t *transaction) JobForRequest(ctx context.Context, id record.RequestID) (r
 		return record.Job{}, err
 	}
 	var job record.JobID
-	if err := t.conn.QueryRowContext(ctx, "SELECT id FROM jobs WHERE repository_id=? AND request_id=?", t.repo, id).Scan(&job); err != nil {
+	if err := t.conn.QueryRowContext(ctx, "SELECT id FROM jobs WHERE repository_id=? AND request_id=? UNION SELECT joined_job FROM requests WHERE repository_id=? AND id=? AND joined_job IS NOT NULL", t.repo, id, t.repo, id).Scan(&job); err != nil {
 		return record.Job{}, storageError(err)
 	}
 	return t.Job(ctx, job)
@@ -343,7 +363,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	if request.Kind != record.JobRequest {
+	if request.Kind != record.JobRequest || request.JoinedJob != "" {
 		return state.ErrConflict
 	}
 	if v.Spec.InputRevision != "" {

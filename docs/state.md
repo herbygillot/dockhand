@@ -269,3 +269,11 @@ Verification evidence also retains optional per-run guest diagnostics, image/pro
 ### Shared provider runs
 
 Multiple submissions may observe the same `(provider, run ID)`, including submissions from different registered repositories. Each attempt still has at most one live submission. A remote run identity does not confer resource ownership or cancellation authority: resource handles retain their global uniqueness, and providers own their admission and cancellation policy. Schema 13 removes the old submission/run uniqueness constraint while preserving records and foreign keys.
+
+## Contribution acceptance and retry joins (schema 15)
+
+Preparation acceptance now creates an open contribution with an initiating target before a branch or revision exists. Integration fills the branch and original generated commit under the existing candidate checkpoint and ownership checks. GeneratedCommit permits only a validated initial transition from unset, then remains immutable. A successful no-update intent closes without creating a revision or PR.
+
+An indexed repository-scoped initiating_target supports continuation independently of the edited target set. Existing single-target contributions are backfilled; legacy unassociated preparation jobs each receive their own contribution, while standalone verification remains unassociated. No jobs are combined merely because their targets match.
+
+Equivalent new requests can join existing work through requests.joined_job. Request-ID replay preserves the receipt, and joined requests cannot also own a new job. Failed preparation retries create a new job under the same contribution, retaining the captured source and any resolved release/candidate. State transactions serialize selection and creation; external preparation and Git integration remain outside them.

@@ -305,7 +305,8 @@ func TestAlreadyCurrentCombinedBumpCreatesNoPublication(t *testing.T) {
 	require.Nil(t, status.Jobs[0].Job.Prepared)
 	require.Empty(t, status.Jobs[0].Attempts)
 	require.Empty(t, status.Jobs[0].Publications)
-	require.Empty(t, status.Changes)
+	require.Len(t, status.Changes, 1)
+	require.Equal(t, record.ChangeClosed, status.Changes[0].Disposition)
 	require.Zero(t, hosting.writes)
 	require.Zero(t, f.provider.count("submit"))
 }

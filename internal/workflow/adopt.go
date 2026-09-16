@@ -59,7 +59,7 @@ func adoptBranch(ctx context.Context, tx state.Tx, spec record.JobSpec, input Br
 	}
 	var previous record.Revision
 	if change.ID == "" {
-		change = record.Change{ID: record.ChangeID("change_" + rand.Text()), Branch: input.Name, Targets: spec.Targets, Disposition: record.ChangeOpen, CreatedAt: now}
+		change = record.Change{InitiatingTarget: spec.Targets[0].Name, ID: record.ChangeID("change_" + rand.Text()), Branch: input.Name, Targets: spec.Targets, Disposition: record.ChangeOpen, CreatedAt: now}
 		if err := tx.PutChange(ctx, change); err != nil {
 			return record.JobSpec{}, err
 		}

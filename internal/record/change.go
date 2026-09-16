@@ -20,9 +20,11 @@ const (
 // Change tracks one contribution across revisions, jobs, and pull-request updates.
 // Its identity survives branch renames and commit rewrites.
 type Change struct {
-	ID      ChangeID
-	Branch  string
-	Targets []Target
+	// InitiatingTarget is the named port used to continue this contribution.
+	InitiatingTarget string `json:",omitempty"`
+	ID               ChangeID
+	Branch           string
+	Targets          []Target
 	// GeneratedCommit is the original fully generated commit, if known. Rewrites
 	// retain this identity so a trailer cannot masquerade as generation evidence.
 	GeneratedCommit ObjectID `json:",omitempty"`

@@ -18,6 +18,8 @@ const (
 )
 
 type AcceptedRequest struct {
+	// JoinedJob durably associates an equivalent request with existing work.
+	JoinedJob   JobID `json:",omitempty"`
 	ID          RequestID
 	Kind        RequestKind
 	Payload     []byte

@@ -42,7 +42,13 @@ type Store interface {
 // a nil Jobs slice includes that repository, while an empty non-nil slice is empty.
 // DueBefore selects scheduled work. After is an exclusive ID cursor.
 type Query struct {
-	Jobs []record.JobID
+	// Target selects contributions by initiating port name.
+	Target string
+	// Newest orders jobs by acceptance time, for bounded recent-work lookup.
+	Newest bool
+	// Action restricts job lookup to one action.
+	Action record.Action
+	Jobs   []record.JobID
 	// ChangeID selects jobs belonging to one tracked change. Only Jobs uses it.
 	ChangeID  record.ChangeID
 	DueBefore *time.Time

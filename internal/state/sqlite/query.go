@@ -68,7 +68,7 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 	if err != nil {
 		return nil, err
 	}
-	if q.Branch != "" && q.ChangeID != "" {
+	if q.Branch != "" && q.ChangeID != "" || q.Newest && q.After != "" {
 		return nil, state.ErrInvalid
 	}
 	clause, args := jobFilter("j.id", q.Jobs)
@@ -93,7 +93,14 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 		sql += " AND j.change_id=?"
 		args = append(args, q.ChangeID)
 	}
+	if q.Action != "" {
+		sql += " AND j.action=?"
+		args = append(args, q.Action)
+	}
 	order := "j.id"
+	if q.Newest {
+		order = "j.accepted_at DESC,j.rowid DESC"
+	}
 	if q.DueBefore != nil {
 		sql += " AND j.next_action_at IS NOT NULL AND j.next_action_at<=?"
 		args = append(args, q.DueBefore.UnixMilli())
@@ -115,6 +122,19 @@ func (t *transaction) Changes(ctx context.Context, q state.Query) ([]record.Chan
 		filter, selected := jobFilter("id", q.Jobs)
 		query = "SELECT DISTINCT change_id AS id FROM jobs WHERE repository_id=? AND change_id>?" + filter
 		args = append(args, selected...)
+	}
+	if q.Target != "" {
+		if q.Jobs != nil {
+			return nil, state.ErrInvalid
+		}
+		query += " AND initiating_target=? COLLATE NOCASE"
+		args = append(args, q.Target)
+	}
+	if q.Pending {
+		if q.Jobs != nil {
+			return nil, state.ErrInvalid
+		}
+		query += " AND disposition='open'"
 	}
 	ids, err := t.ids(ctx, query+" ORDER BY id LIMIT ?", append(args, limit)...)
 	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.Change, error) { return t.Change(ctx, record.ChangeID(id)) })
