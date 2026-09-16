@@ -2,39 +2,27 @@
 
 This document is the current source of truth for implementation priorities. The [architecture](architecture.md), [component map](components.md), [CLI design](cli-design.md), and [state design](state.md) define behavior and boundaries. Activity reports retain implementation history and validation; they are not additional queues.
 
-Last reconciled: 2026-09-16, after contribution lifecycle and [routine cleanup](activity/2026-09-16-routine-cleanup.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
+Last reconciled: 2026-09-16, after the [three-part bump-coverage pass](activity/2026-09-16-bump-coverage-validation.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
 
 ## Next
 
-### 1. Improve platform observations and context selection
+### 1. Support commit-qualified Cargo Git dependencies
 
-Continue [bump coverage stage 2](bump-coverage.md#2-improve-platform-observations-and-context-selection). Fetch-guard classification and planning before dependency downloads are complete; scalar/option thresholds and non-conditional OS reads are not.
+The real Codex exercise now identifies its Cargo source independently of its pinned V8 auxiliary file, but stops at a separate generator constraint: crossterm is pinned with `rev=`, while the current Cargo mapping requires a branch. Extend source identity and helper comparison to represent the exact Git commit without inventing a branch or relaxing maintained-override checks. Keep this in `macports/dependency` and its existing preparation integration.
 
-Have `macports/eval` expose source-bound observations; keep context selection in `macports/portedit`. Resolve supported thresholds through native evaluation, retain the source scanner for unvisited branches, and report unresolved coverage explicitly. Preserve independent older-OS release/checksum pins.
+Acceptance: repeat the historical Codex update through complete preparation with the V8 pin unchanged, then verify it through the ordinary contribution workflow. Include branch-, tag-, and revision-qualified Git source refusals or support explicitly. Ambiguous or unsupported source URLs must remain actionable errors.
 
-Acceptance: the py-openssl/mrustc threshold cases and libfec/mpir formatting reads, plus mutable thresholds, candidate-activated branches, and unresolved dimensions. Measure session counts and timings while retaining the existing literal-boundary and archive controls. Several modeled profiles are not proof of arbitrary Tcl or build compatibility.
+### 2. Resolve the remaining demonstrated platform-coverage gaps
 
-### 2. Separate manifest-bearing source from auxiliary archives
+The source-bound scalar/option and Darwin-major work is implemented. The corpus now explicitly exposes minor-version/deployment-target reads that the previous scanner missed; mrustc still accesses unmodeled host state. Classify these concrete inputs before choosing another modeled dimension. Start from the pinned abendrot, bun, warzone2100, fldigi, and mrustc controls; preserve the existing refusal when a source-bound value cannot be established.
 
-Implement [bump coverage stage 4](bump-coverage.md#4-identify-dependency-source-archives-independently-of-auxiliary-files) before expanding contribution scope. This is a bounded single-target improvement and does not depend on shared-subport publication.
+Acceptance: each supported case has baseline/candidate observations and counterexamples, preserves independent releases, and reports the modeled dimensions accurately. Keep session budgets measured. Do not model arbitrary filesystem, SDK, or command output by implication.
 
-Identify one unambiguous source for Cargo/Go manifests while retaining independently pinned auxiliary archives. Codex's Cargo source plus pinned V8 archive is the concrete control. Keep archive ownership in `macports/distfiles`, manifest/helper validation in `macports/dependency`, and orchestration in `portedit`. Preserve baseline generator comparisons and maintained overrides; do not pick the first archive or infer ownership solely from its filename.
+### 3. Broaden PR observation
 
-Acceptance: complete candidate preparation with the auxiliary pin unchanged; ambiguous ownership, missing manifests/helpers, and unsupported extraction remain actionable refusals. Verify the prepared target using the ordinary contribution workflow.
-
-### 3. Carry shared-release subports through the whole workflow
-
-Implement [bump coverage stage 3](bump-coverage.md#3-represent-a-shared-release-across-subports-end-to-end) after the smaller preparation improvements. Named subport lookup is complete; authorizing one release to change several subports is a different capability.
-
-Represent affected and protected targets explicitly using declaration provenance and before/after source evidence. Assessment/preview must explain the enlargement and let the user accept its scope. Carry it through intake, revisions, correction, restart, evidence reuse, isolated verification, and publication together. Reuse the existing per-target verification plans where their contracts fit.
-
-Acceptance: py-memprof/py-ipdb shared releases, protected Terraform/Helm series and libusb-devel pins, conflicting targets, and cancellation/restart. Every required target must pass before publication. Shared-release siblings are not reverse dependents; deleting sibling-fidelity checks or setting `IncludeDependents` is not an implementation.
+Observe PR head, mergeability, review, CI, and conflicts through the existing contribution lifecycle. Publication still completes when the PR is opened or updated; later observations attach to the contribution. Observation does not authorize automatic corrective edits, pushes, or responses to reviewers.
 
 ## Later capabilities
-
-### Broader PR observation
-
-After the basic lifecycle work, observe PR head, mergeability, review, CI, and conflicts. Publication still completes when the PR is opened or updated; later observations attach to the contribution. Observation does not authorize automatic corrective edits, pushes, or responses to reviewers.
 
 ### Dependent verification follow-up
 
@@ -93,7 +81,8 @@ Extend these through their existing paths rather than treating them as new roadm
 | --- | --- |
 | Target-based contribution workflow | Exact-source port/subport resolution; early contribution identity; transactional acceptance, replay, and frozen retries; named verify/publish/status/wait/cancel; explicit manual checkout verification. [Integrated validation](activity/2026-09-16-target-workflow-validation.md). Local abandonment and explicit PR refresh retire settled contributions while preserving corrections and history. [Lifecycle validation](activity/2026-09-16-contribution-lifecycle.md). |
 | Release discovery and assessment | GitHub/GitLab catalogs and supported native HTTP regex livechecks shared by bump/outdated; local assess with optional candidate probes; maintainer/category selectors and whole-tree assessment. Terraform selected 1.16.3 and passed Tart verification/publication preview. |
-| Source preparation | Evaluator-guided calculated versions, revision bumps, checksum refresh, scoped series updates, conditional/multiple archives, preserved pins, and supported Go/Cargo regeneration. Rejection-only fetch guards and local planning before helper/download work are implemented; Wasmer 7.4.2 passed preparation and Tart verification. |
+| Source preparation | Evaluator-guided calculated versions, revision bumps, checksum refresh, scoped series updates, conditional/multiple archives, preserved pins, and supported Go/Cargo regeneration. Source-bound platform operands and manifest/auxiliary archive separation are implemented; see [coverage validation](activity/2026-09-16-bump-coverage-validation.md). Rejection-only fetch guards and local planning before helper/download work are implemented; Wasmer 7.4.2 passed preparation and Tart verification. |
+| Shared-release contributions | Explicit `--shared-release` authorization; source/checksum-owner evidence; affected/protected members on immutable revisions; isolated sibling verification and complete publication coverage. Metadata-only parents remain in the change. Initial multi-target provider support is local; GitHub reports the unsupported coverage. [Scope contract](activity/2026-09-16-shared-release-scope.md). |
 | State and recovery | Repository-scoped SQLite, concurrent claims, cancellation/recovery, explicit phases, immutable source capture, backup/check/migration, and durable snapshots. Schema-15 migration was rehearsed on a copy of existing user state without losing history/evidence. |
 | Verification and publication | Tart preference with GitHub fallback, immutable image/evidence inputs, reuse, GitHub fork verification, durable publication recovery, and independent per-target dependent builds with full required coverage. Local exercises in this milestone used publication previews; earlier GitHub exercises reached live PRs. |
 | Setup and credentials | Base/full-Xcode Tart provisioning and capacity-aware image inspection; device login, credential precedence/diagnostics, registered OAuth client, and public-read authentication. |
