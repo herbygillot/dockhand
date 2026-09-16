@@ -32,3 +32,27 @@ All exercises used disposable copies; the user's ports checkout and branches wer
 Every exercise downloaded real public archives, regenerated SHA256/RIPEMD160/size, and passed final uninstrumented evaluations. Terraform/Helm siblings and obsolete parents remained unchanged. The prepared Portfiles and download/digest reports are retained in the shared exercise workspace. These results establish archive preparation, not builds on every modeled platform. No port PRs were opened as part of this pass.
 
 Smartmontools additionally passed candidate planning for the dotted Portfile version / underscore tag mapping. The obsolete Terraform and Helm parent ports correctly remain unsuitable archive-update targets; select an existing release-series subport.
+
+## Repeated survey
+
+Reused the exact 147-Portfile sample from the design survey: 140 stratified random choices (seed `20260915`) plus seven named controls, against the same committed ports tree. This is a comparison sample, not a full-tree success-rate estimate. The earlier structural census covered 20,087 Portfiles. The same 25-second per-Portfile budget was retained. Per-file outcomes are in [the comparison table](2026-09-15-bump-survey.tsv).
+
+| Local assessment | Before | After |
+| --- | ---: | ---: |
+| input-found | 45 | 85 |
+| unsupported | 101 | 54 |
+| unknown | 1 | 8 |
+
+Forty-two previously unsupported Portfiles now find an editable input with supported local archive declarations. Two previously input-found results become unknown because the expanded context checks expose an unmodeled OS condition or external host-state dependence. Additional unknowns include unresolved tag spelling, failed probes, host-dependent modeled evaluation, and one 25-second timeout for beets. None of these is treated as success.
+
+The comparison took approximately 175 seconds versus the baseline's 96 seconds; median per-file time increased from 0.45 to 0.77 seconds. That reflects additional native fetch/declaration observations and modeled-context coverage. These numbers are survey diagnostics, not driver-cycle or build performance measurements. No extrapolated count of successful updates is claimed. Automatic discovery remains distinct: many new explicit-archive inputs still require a version supplied by the contributor. Terraform/Helm metaports remain unsupported in the primary-port sample; the explicit subports were exercised separately above.
+
+## Final checks
+
+- `go test -p 1 ./...`: passed, including existing CLI, workflow, dependency-generator, and stored-source integration suites.
+- `go vet ./...`: passed; the CLI was rebuilt.
+- `dockhand -T <ports-tree> assess terraform --subport terraform-1.16 --version 1.16.2 --json`: candidate-checked, without downloads or jobs.
+- `dockhand -T <ports-tree> bump terraform 1.16.2 --subport terraform-1.16 --diff --json`: passed the complete application/upstream/preparation/Git validation path. Its diff changed only the selected series' patch input and two archive checksum groups. Coverage identifies arm64 as native and x86_64 as modeled metadata.
+- The follow-up coverage-reporting check also passed. Raw survey inputs/results, public archive digests, prepared Portfiles, and CLI preview evidence are retained under the shared workspace's `surveys/2026-09-15-bump-coverage-after` directory; the original survey was preserved.
+
+Known conservative limits include shared edits that would change unselected siblings, revision declarations that cannot be reset without touching a protected release, host/SDK-dependent conditions beyond the modeled facts, and checksum declarations whose runtime ownership cannot be established uniquely. Creating a new release series, coordinated Rust maintenance, and generic livecheck discovery remain separate work.

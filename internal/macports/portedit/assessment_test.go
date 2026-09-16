@@ -31,6 +31,7 @@ func TestAssessmentDistinguishesInputsFromCandidateFidelity(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, InputFound, local.Outcome, "%+v", local.Findings)
 			require.NotEmpty(t, local.Inputs)
+			require.NotEmpty(t, local.Contexts)
 			require.Greater(t, local.Inputs[0].Line, 1)
 			require.Equal(t, NotTested, assessmentFinding(t, local, "candidate").Status)
 			release := record.Release{Requested: tc.raw, Version: tc.version, Tag: "v" + tc.raw}

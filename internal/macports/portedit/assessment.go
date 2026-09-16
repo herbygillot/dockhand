@@ -139,8 +139,11 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 	if depErr == nil {
 
 		fetchErr, checksumErr := p.editor.assessArchives(ctx, p.request, base)
-		add("fetch", "Native archive locations are observed; availability is untested", fetchErr)
+		add("fetch", "MacPorts archive locations are observed; availability is untested", fetchErr)
 		if fetchErr == nil {
+			if checksumErr == nil {
+				a.Contexts, _ = observationProfiles(base.data, base.before.Platform)
+			}
 			add("checksums", "Checksum declarations are associated across the observed contexts", checksumErr)
 		} else {
 			a.Findings = append(a.Findings, Finding{Check: "checksums", Status: NotTested, Code: "sources-required", Detail: "Checksum association requires supported archive sources"})
