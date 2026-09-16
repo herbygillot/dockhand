@@ -10,6 +10,7 @@ import (
 type ObservationRequest struct {
 	Platform     record.Platform
 	Declarations bool
+	SelectedOnly bool
 }
 
 // Declaration records an executed option command and its Tcl source frames.

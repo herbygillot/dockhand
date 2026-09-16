@@ -27,6 +27,12 @@ type Reader interface {
 	Resolve(context.Context, Tree, Selection) ([]record.Target, error)
 }
 
+// SelectedReader evaluates only the selected port for counterfactual probes.
+// Whole-Portfile validation continues to use Reader.Evaluate.
+type SelectedReader interface {
+	EvaluateSelected(context.Context, Context) (Snapshot, error)
+}
+
 // NativeReader supplies native platform facts for locally selected source trees.
 type NativeReader interface {
 	Reader

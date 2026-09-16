@@ -129,11 +129,13 @@ func (s *Service) evaluateVersion(ctx context.Context, request Request, input *s
 		if err != nil {
 			continue
 		}
-		contents, err = s.resetRevision(ctx, request, input, contents)
-		if err != nil {
-			return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
+		if checkFidelity {
+			contents, err = s.resetRevision(ctx, request, input, contents)
+			if err != nil {
+				return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
+			}
 		}
-		_, after, root, err := s.evaluateEdit(ctx, request, input, contents)
+		_, after, root, err := s.evaluateContents(ctx, request, input, contents, !checkFidelity)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, snapshot, ctx.Err()

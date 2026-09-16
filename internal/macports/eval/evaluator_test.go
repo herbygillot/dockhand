@@ -222,3 +222,27 @@ git.branch ${github.tag_prefix}${github.version}${github.tag_suffix}
 	require.Equal(t, "-stable", info.Options["github.tag_suffix"])
 	require.Equal(t, "1.8.1", info.Options["github.version"])
 }
+
+func TestSelectedEvaluationLeavesSiblingFailuresToFullValidation(t *testing.T) {
+	e := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "devel/selected/Portfile", `PortSystem 1.0
+name selected
+version 1
+subport selected-broken { error "sibling requires attention" }
+`)
+	targets, err := e.Resolve(t.Context(), tree, macports.Selection{Selector: "selected"})
+	require.NoError(t, err)
+	bound, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := e.EvaluateSelected(t.Context(), bound)
+	require.NoError(t, err)
+	require.Len(t, snapshot.Ports, 1)
+	observed, err := e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true, SelectedOnly: true})
+	require.NoError(t, err)
+	require.Len(t, observed.Snapshot.Ports, 1)
+	_, err = e.Evaluate(t.Context(), bound)
+	require.ErrorContains(t, err, "sibling requires attention")
+	_, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})
+	require.ErrorContains(t, err, "sibling requires attention")
+}

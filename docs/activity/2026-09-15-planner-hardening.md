@@ -19,3 +19,11 @@ Native evaluator regressions passed for external and captured reads/sources, rel
 Revision reset now collects the executed literal declarations from every affected context and applies each source span once. It handles nonzero alternate revisions even when the native revision is already zero. The complete candidate still passes the existing whole-Portfile and protected-context fidelity checks before any download; a revision shared with an independent pinned release is refused.
 
 Moved revision ownership/reset logic into `portedit/revision_reset.go`, leaving version spelling/probing helpers separate. Native regressions passed for separate OS revisions, a zero native revision with a nonzero alternate revision, protected shared revisions, independent old releases, and selected release-series subports.
+
+## Evaluation overhead
+
+Added an optional selected-port evaluator operation for counterfactual/discovery probes and an explicit selected-only observation mode. Baseline loading and strict/final fidelity still evaluate all siblings. Read-only discovery no longer resets revisions merely to calculate a candidate's version. Source-bound requests reuse traced baseline observations keyed by exact source contents, platform, and selection scope; candidates and final untraced checks always run again. Cancellation remains checked before cache access.
+
+Regressions establish that a selected probe can avoid an unrelated sibling failure while full evaluation still reports it, that sibling changes still reject automatic edits, and that cache entries cannot cross contents/scope or satisfy final evaluations. The broader package run also caught and corrected lost `ErrProbeInconclusive` classification on revision-observation failures; its targeted assessment/probing regressions passed afterward.
+
+A paired `beets` assessment against the same committed ports tree took 23.54 seconds before and 8.70 seconds after, both `input-found`. This is a local diagnostic comparison, not a timing guarantee or a full-tree extrapolation. The earlier 25-second timeout remains recorded in the original survey report.

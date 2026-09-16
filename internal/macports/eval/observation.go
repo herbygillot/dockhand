@@ -13,7 +13,7 @@ import (
 var observationScript string
 
 func (e *Evaluator) Observe(ctx context.Context, source macports.Context, request macports.ObservationRequest) (macports.Observation, error) {
-	return e.evaluate(ctx, source, &request)
+	return e.evaluate(ctx, source, &request, request.SelectedOnly)
 }
 
 func decodeObservation(value string) (macports.PortObservation, error) {

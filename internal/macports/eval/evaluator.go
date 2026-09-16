@@ -79,11 +79,16 @@ func (e *Evaluator) NativePlatform(ctx context.Context) (record.Platform, error)
 }
 
 func (e *Evaluator) Evaluate(ctx context.Context, source macports.Context) (macports.Snapshot, error) {
-	observation, err := e.evaluate(ctx, source, nil)
+	observation, err := e.evaluate(ctx, source, nil, false)
 	return observation.Snapshot, err
 }
 
-func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, request *macports.ObservationRequest) (_ macports.Observation, err error) {
+func (e *Evaluator) EvaluateSelected(ctx context.Context, source macports.Context) (macports.Snapshot, error) {
+	observation, err := e.evaluate(ctx, source, nil, true)
+	return observation.Snapshot, err
+}
+
+func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, request *macports.ObservationRequest, selectedOnly bool) (_ macports.Observation, err error) {
 	checked, err := source.Tree.Select(source.Target())
 	if err != nil {
 		return macports.Observation{}, err
@@ -126,7 +131,7 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 	}
 	delete(top.Options, "dockhand.observation")
 	ports := map[string]macports.PortInfo{top.Name: top}
-	if checked.Target().Subport == "" {
+	if !selectedOnly && checked.Target().Subport == "" {
 		for _, sub := range subs {
 			if sub == top.Name {
 				continue

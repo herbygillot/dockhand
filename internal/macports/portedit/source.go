@@ -13,11 +13,12 @@ import (
 )
 
 type sourceInput struct {
-	files           workspace
-	before          macports.Snapshot
-	primary, target record.Target
-	info            macports.PortInfo
-	data            []byte
+	files                workspace
+	before               macports.Snapshot
+	primary, target      record.Target
+	info                 macports.PortInfo
+	data                 []byte
+	baselineObservations map[observationKey]macports.Observation
 }
 
 func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, err error) {
@@ -67,7 +68,11 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 
 type workspace struct{ Root string }
 
-func (s *Service) evaluateEdit(ctx context.Context, request Request, input *sourceInput, contents []byte) (_ portfile.Edit, _ macports.Snapshot, _ string, err error) {
+func (s *Service) evaluateEdit(ctx context.Context, request Request, input *sourceInput, contents []byte) (portfile.Edit, macports.Snapshot, string, error) {
+	return s.evaluateContents(ctx, request, input, contents, false)
+}
+
+func (s *Service) evaluateContents(ctx context.Context, request Request, input *sourceInput, contents []byte, selectedOnly bool) (_ portfile.Edit, _ macports.Snapshot, _ string, err error) {
 	edit := portfile.Edit{Path: input.target.Portfile, After: contents}
 	path := filepath.Join(input.files.Root, input.target.Portfile)
 	original, err := os.ReadFile(path)
@@ -78,11 +83,20 @@ func (s *Service) evaluateEdit(ctx context.Context, request Request, input *sour
 		return edit, macports.Snapshot{}, "", err
 	}
 	defer func() { err = errors.Join(err, os.WriteFile(path, original, 0600)) }()
-	bound, err := macports.NewContext(request.Source, input.files.Root, input.primary, input.before.Platform)
+	target := input.primary
+	if selectedOnly {
+		target = input.target
+	}
+	bound, err := macports.NewContext(request.Source, input.files.Root, target, input.before.Platform)
 	if err != nil {
 		return edit, macports.Snapshot{}, "", err
 	}
-	after, err := s.Ports.Evaluate(ctx, bound)
+	var after macports.Snapshot
+	if reader, ok := s.Ports.(macports.SelectedReader); ok && selectedOnly {
+		after, err = reader.EvaluateSelected(ctx, bound)
+	} else {
+		after, err = s.Ports.Evaluate(ctx, bound)
+	}
 	if err == nil {
 		err = checkSnapshot(after, bound)
 	}
