@@ -8,15 +8,22 @@ Last updated: 2026-09-16.
 
 ## Next
 
-The user-selected immediate work is the [bump planner](bump-planner.md): native evaluator separation, declaration/artifact ownership, scoped subport edits, independent-pin preservation, and forge-independent explicit-version preparation. The initial planner is implemented, including native fetch observations, scoped checksum ownership, modeled metadata contexts, and explicit archive versions. See the [implementation and exercise report](activity/2026-09-15-scoped-bump-planner.md). Terraform/Helm existing release series, Deno, and gh are the initial preparation targets. Full Rust maintenance is excluded. The follow-up [hardening pass](activity/2026-09-15-planner-hardening.md) fixes missed multiline/derived OS conditions, external-file observation gaps, and revisions across affected contexts, and reduces repeated probe evaluation. Broader shared-subport contribution scopes and additional context models remain follow-up work.
+### 1. Strengthen core bump preparation
 
-The immediate queue favors bounded reliability work before expanding workflow scope. Source/dependency preparation, GitHub verification, and automatic Tart preference are implemented. Keep live exercise results in activity reports; only unresolved findings belong here.
+The user-selected priority is broader, dependable Portfile preparation. The [next implementation plan](bump-coverage.md) is ready; its [readiness investigation](activity/2026-09-16-core-bump-readiness.md) reproduces the Wasmer failure and records a targeted baseline. Implement in this order:
 
-Per-target dependent images and maintainer/category discovery are complete. See the [image-selection report](activity/2026-09-15-dependent-images.md) and [selector report](activity/2026-09-15-outdated-selectors.md). Baseline comparison for dependent failures and automatic downstream revision edits remain separate work; GitHub dependent verification remains unsupported.
+1. Distinguish rejection-only fetch guards from archive modifications, explain the affected context, and finish local candidate planning before dependency-source downloads/helpers.
+2. Improve platform observations and context discovery for scalar/option thresholds and non-conditional OS reads without dropping unresolved coverage.
+3. Support one shared release across subports with explicit contribution scope, preserved pins, and verification/publication coverage for every required target.
+4. Allow dependency regeneration with one identified manifest-bearing source plus independently pinned auxiliary archives; this can proceed independently of shared-subport publication.
 
-### 1. Pull-request observation
+No new package or production dependency is needed to begin. Keep native semantics in `macports/eval`, planning in `macports/portedit`, archive ownership in `macports/distfiles`, and helper/manifest validation in `macports/dependency`.
 
-Refresh PR head, mergeability, review, CI, and conflict observations through resident cycles without automatically changing branches. Publication remains complete when the PR is opened or updated. Managed amendment, rebase, reassociation, and guarded existing-PR updates are implemented; observational follow-up should build on their retained PR identity.
+The initial [bump planner](bump-planner.md), [scoped implementation](activity/2026-09-15-scoped-bump-planner.md), and [hardening pass](activity/2026-09-15-planner-hardening.md) are implemented. Existing Terraform/Helm series, gh source/binary branches, and Deno architecture archives have passed real preparation exercises; retain them as controls. New release-series creation and coordinated Rust/bootstrap maintenance remain outside this pass.
+
+Source/dependency preparation, GitHub verification, automatic Tart preference, per-target dependent images, and maintainer/category discovery are already implemented. Baseline comparison for dependent failures and automatic downstream revision edits remain separate work; GitHub dependent verification remains unsupported. Keep exercise evidence in activity reports and unresolved work here.
+
+PR observation and expiring OAuth tokens remain planned below, after this core workflow work.
 
 ## Planned
 

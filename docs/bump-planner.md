@@ -49,6 +49,10 @@ These counts describe observed obstacles, not promised future successful updates
 
 No new production dependency is required for the first stages. Keep the existing parser and native Tcl evaluator; evaluate other parsing or property-testing libraries only against a demonstrated gap.
 
+## Next implementation pass
+
+The [core coverage plan](bump-coverage.md) sets the next sequence: fetch guards and pre-download planning, richer platform observations, shared-release contribution scope, and dependency sources with auxiliary artifacts. It is a prepared implementation plan; the current limits below remain in force until each stage ships.
+
 ## Current behavior and limits
 
 The initial implementation supplies each of the six stages above within the supported cases below. `assess` and `bump` share scoped planning. `assess terraform --subport terraform-1.16 --version 1.16.2` checks an explicit archive version; `bump terraform 1.16.2 --subport terraform-1.16 --diff` also downloads the affected archives and previews the completed edit. No forge identity or Git commit is manufactured for HashiCorp's archive source.

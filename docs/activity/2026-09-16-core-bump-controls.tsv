@@ -1,0 +1,17 @@
+Portfile	Subport	CurrentVersion	LocalAssessment	StructuralCandidate	CandidateAssessment	Blockers
+lang/wasmer/Portfile		7.4.0	unsupported	7.4.1	unsupported	portfile: unsupported source edit: MacPorts Base 2.12.6: fetch procedure or hooks are not recognized for automatic archive preparation; prepare this port manually; baseline {OS:darwin Version:22 Architecture:arm64}: portfile: unsupported source edit: MacPorts Base 2.12.6: fetch procedure or hooks are not recognized for automatic archive preparation; prepare this port manually
+sysutils/terraform/Portfile	terraform-1.16	1.16.0	input-found	1.16.2	candidate-checked	none
+sysutils/helm/Portfile	helm-4.2	4.2.4	input-found	4.2.5	candidate-checked	none
+devel/gh/Portfile		2.100.0	input-found	2.101.0	candidate-checked	none
+devel/deno/Portfile		2.9.6	input-found	2.9.7	candidate-checked	none
+devel/libusb/Portfile		1.0.30	input-found	1.0.31	candidate-checked	none
+python/py-memprof/Portfile	py311-memprof	0.3.6	input-found	0.3.7	unsupported	portedit: evaluation does not match the intended change: [py-memprof.git.branch changed py-memprof.github.version changed py-memprof.livecheck.version changed py-memprof.master_sites changed py-memprof.revision changed unexpectedly py-memprof.version changed py-memprof.version changed py-memprof.worksrcdir changed py310-memprof.distfiles changed py310-memprof.git.branch changed py310-memprof.github.version changed py
+python/py-ipdb/Portfile	py313-ipdb	0.13.13	input-found	0.13.14	unsupported	portedit: evaluation does not match the intended change: [py-ipdb.git.branch changed py-ipdb.github.version changed py-ipdb.livecheck.version changed py-ipdb.master_sites changed py-ipdb.version changed py-ipdb.version changed py-ipdb.worksrcdir changed py310-ipdb.distfiles changed py310-ipdb.git.branch changed py310-ipdb.github.version changed py310-ipdb.livecheck.version changed py310-ipdb.master_sites changed py31
+python/py-openssl/Portfile	py313-openssl	25.3.0	unknown	25.3.1	unknown	portedit: version probe is inconclusive: OS read needs an explicit modeled boundary; portfile: unsupported source edit: portedit: version probe is inconclusive: OS read needs an explicit modeled boundary
+devel/mpir/Portfile		3.0.0	unknown		not-tested	portedit: version probe is inconclusive: OS read needs an explicit modeled boundary
+science/libfec/Portfile		20210201-c5d935f4	unknown		not-tested	portedit: version probe is inconclusive: OS read needs an explicit modeled boundary
+lang/mrustc/Portfile		1.54-20231219	unknown		not-tested	portedit: version probe is inconclusive: OS read needs an explicit modeled boundary
+graphics/Aseprite/Portfile		1.3.12	unsupported		not-tested	portfile: unsupported source edit: MacPorts Base 2.12.6: fetch procedure or hooks are not recognized for automatic archive preparation; prepare this port manually
+llm/codex/Portfile		0.154.0	unsupported		not-tested	portfile: unsupported source edit: dependency regeneration requires one primary source archive
+aqua/iTerm2/Portfile		3.4.23	input-found		not-tested	none
+devel/love-0.7/Portfile		0.7.2	input-found		not-tested	none
