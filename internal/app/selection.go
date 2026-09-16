@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"sync"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -12,7 +13,20 @@ import (
 
 func portReader(config Config, repo *git.Repository) *selection.Reader {
 	native := &eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}
+	// One command resolves names repeatedly against the same materialized
+	// tree; the generation is installed there once.
+	var mu sync.Mutex
+	staged := map[string]bool{}
 	return &selection.Reader{Evaluator: native, Index: func(ctx context.Context, tree macports.Tree) (*portindex.Index, error) {
+		key := tree.Root() + "\x00" + string(tree.Source().Tree)
+		mu.Lock()
+		defer mu.Unlock()
+		if staged[key] {
+			return portindex.Open(tree.Root())
+		}
+		if err := macports.ValidatePortsTree(tree.Root(), repo.Root); err != nil {
+			return nil, err
+		}
 		index, err := surveyIndex(config, true)
 		if err != nil {
 			return nil, err
@@ -29,6 +43,7 @@ func portReader(config Config, repo *git.Repository) *selection.Reader {
 		if err = portindex.Stage(ctx, repo, source, platform, index, tree.Root()); err != nil {
 			return nil, err
 		}
+		staged[key] = true
 		return portindex.Open(tree.Root())
 	}}
 }

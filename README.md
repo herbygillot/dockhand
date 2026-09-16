@@ -78,7 +78,7 @@ cd dockhand
 make build
 ```
 
-This produces `./dockhand`. Put it somewhere on your `PATH`:
+This produces `./dockhand`; `./dockhand --version` shows the build it came from. Put it somewhere on your `PATH`:
 
 ```sh
 mkdir -p "$HOME/.local/bin"

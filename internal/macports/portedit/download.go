@@ -3,6 +3,7 @@ package portedit
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -156,6 +157,10 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	}
 	response, err := fetch.Open(s.HTTP, request, limit)
 	if err != nil {
+		var status *fetch.StatusError
+		if errors.As(err, &status) && status.Status == http.StatusNotFound {
+			return Download{}, fmt.Errorf("portedit: downloading %s: %w; no archive is published at that location yet, and a release tag alone does not publish its assets", name, err)
+		}
 		return Download{}, fmt.Errorf("portedit: downloading %s: %w", name, err)
 	}
 	defer response.Body.Close()

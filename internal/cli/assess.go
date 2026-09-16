@@ -47,6 +47,12 @@ func (r *runtime) assessCommand() *cobra.Command {
 					if port.CurrentVersion != "" {
 						fmt.Fprintf(cmd.OutOrStdout(), "; current %s", plain(port.CurrentVersion))
 					}
+					if release := port.Release; release != nil {
+						fmt.Fprintf(cmd.OutOrStdout(), "; candidate %s", plain(release.Version))
+						if release.Tag != "" {
+							fmt.Fprintf(cmd.OutOrStdout(), " (tag %s)", plain(release.Tag))
+						}
+					}
 					fmt.Fprintln(cmd.OutOrStdout())
 					for _, input := range port.Inputs {
 						fmt.Fprintf(cmd.OutOrStdout(), "  input: %s:%d:%d (%s)\n", plain(port.Portfile), input.Line, input.Column, plain(input.Value))

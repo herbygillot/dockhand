@@ -16,13 +16,22 @@ import (
 
 func (r *runtime) changeCommands() []*cobra.Command {
 	var commands []*cobra.Command
+	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. Retries continue their recorded contribution and frozen source. --diff previews the edit without touching the checkout or opening the state database; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification."
 	for _, spec := range []struct {
-		action record.Action
-		short  string
+		action  record.Action
+		short   string
+		long    string
+		example string
 	}{
-		{record.Bump, "Prepare a port version update"},
-		{record.BumpRevision, "Prepare a port revision bump"},
-		{record.RefreshChecksums, "Refresh a port's distfile checksums"},
+		{record.Bump, "Prepare a port version update",
+			shared + " Version updates support GitHub/GitLab tags and explicit archive versions, scoped release subports, conditional archive checksums, and supported Go/Cargo dependency declarations. Independent pinned releases are preserved. Omitting the version selects the newest eligible stable numeric version using the port's source convention and livecheck filter; ports whose source selects published releases ignore tags without a release. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix.",
+			"  dockhand bump jq\n  dockhand bump jq 1.8.1 --diff\n  dockhand bump rust-analyzer 2026-09-14 --publish --wait"},
+		{record.BumpRevision, "Prepare a port revision bump",
+			shared + " The literal revision increments by one; revision expressions and ambiguous or dynamically named scopes are refused. --reason becomes the commit body and pull-request description. The version and checksums are preserved.",
+			"  dockhand bump-revision jq --reason \"rebuild against oniguruma 6.9.10\"\n  dockhand bump-revision jq --diff --reason rebuild"},
+		{record.RefreshChecksums, "Refresh a port's distfile checksums",
+			shared + " The port's declared archives are downloaded from their direct master sites and every declared digest is recomputed from the real contents, including named and conditional checksums. The version and revision are preserved; a changed archive is reported rather than silently accepted when the port pins its size.",
+			"  dockhand refresh-checksums jq --diff\n  dockhand refresh-checksums jq --reason \"upstream re-rolled the tarball\""},
 	} {
 		options := &Options{}
 		var build buildOptions
@@ -37,7 +46,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		}
 		command := &cobra.Command{
 			Use: use, Short: spec.short,
-			Long: spec.short + ".\n\nNew preparations use freshly fetched master from macports/macports-ports. Retries continue their recorded contribution and frozen source/release. --diff previews the edit; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification. Version updates support GitHub/GitLab tags and explicit archive versions, scoped release subports, conditional archive checksums, and supported Go/Cargo dependency declarations. Independent pinned releases are preserved. Omitting the version selects the newest eligible stable numeric version using the port's source convention and livecheck filter. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix. Checksum refresh preserves the version and revision.",
+			Long: spec.short + ".\n\n" + spec.long, Example: spec.example,
 			Args: func(cmd *cobra.Command, args []string) error {
 				if err := cobra.RangeArgs(1, maximum)(cmd, args); err != nil {
 					return err

@@ -149,12 +149,16 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		return result, err
 	}
 	result.Evidence = []Observation{{Source: string(spec.Forge) + "-" + string(spec.Catalog), Version: result.CandidateVersion, URL: evidenceURL, ObservedAt: result.ObservedAt}}
+	catalog := "tags"
+	if spec.Catalog == portsource.Releases {
+		catalog = "published releases"
+	}
 	if result.Release.NoUpdate {
 		result.Assessment = Current
-		result.Detail = fmt.Sprintf("Already current at %s; latest eligible version is %s", port.Version, result.CandidateVersion)
+		result.Detail = fmt.Sprintf("Already current at %s; latest eligible version among %s is %s", port.Version, catalog, result.CandidateVersion)
 	} else {
 		result.Assessment = UpdateAvailable
-		result.Detail = "Selected " + tag.Name
+		result.Detail = "Selected " + tag.Name + " from " + catalog
 	}
 	return result, nil
 }

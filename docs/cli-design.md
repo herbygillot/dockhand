@@ -142,7 +142,9 @@ dockhand assess --all --json
 
 Explicit ports, maintainer/category filters, and `--all` are separate selection modes. Repeated values within a metadata field are alternatives; maintainer and category fields intersect. `--version` requires exactly one explicit port and accepts the same tag-prefix inference as `bump`.
 
-Default assessment evaluates local declarations and probes literal version inputs without querying upstream. `--version` resolves the requested tag and runs the shared preparation plan through version, source, checksum-association, and edit-fidelity checks, stopping before downloads. Neither mode opens workflow state, creates jobs, changes branches, executes dependency generators, or builds ports. It evaluates Tcl in an isolated materialization; this is not a sandbox for untrusted Portfiles. Working-tree edits are excluded. Indexed scans may create or refresh the source-bound index cache.
+Every command that reads ports validates the committed tree before any index work: it must contain at least one `<category>/<port>/Portfile`, and a wrong directory fails immediately, naming the checkout, with a hint to pass `--tree` or set `MACPORTS_TREE`. Commands that only read workflow state, such as `status`, do not require a ports tree. `dockhand --version` prints the module version or VCS revision embedded at build time.
+
+Default assessment evaluates local declarations and probes literal version inputs without querying upstream. `--version` resolves the requested tag and runs the shared preparation plan through version, source, checksum-association, and edit-fidelity checks, stopping before downloads; human output echoes the resolved candidate version and tag on the port line. Neither mode opens workflow state, creates jobs, changes branches, executes dependency generators, or builds ports. It evaluates Tcl in an isolated materialization; this is not a sandbox for untrusted Portfiles. Working-tree edits are excluded. Indexed scans may create or refresh the source-bound index cache.
 
 Each result retains findings with a check, status, stable reason code, and explanation, plus input locations where available:
 

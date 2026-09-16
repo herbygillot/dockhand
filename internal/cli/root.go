@@ -61,6 +61,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	runtime := &runtime{build: build, config: config, loginGitHub: app.LoginGitHub, statusGitHub: app.StatusGitHub, logoutGitHub: app.LogoutGitHub}
 	root := &cobra.Command{
 		Use:           "dockhand",
+		Version:       buildVersion(),
 		Short:         "Maintain MacPorts ports",
 		Long:          "Dockhand prepares, verifies, and publishes MacPorts changes.\nPrepare version and revision bumps, verify committed ports, resume jobs, and run driver cycles. Automatic discovery supports GitHub/GitLab catalogs and supported MacPorts livechecks. Publish verified contribution branches to GitHub.",
 		Args:          cobra.NoArgs,

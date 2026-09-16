@@ -9,6 +9,14 @@ import (
 
 var ErrTooLarge = errors.New("fetch: response exceeds size limit")
 
+// StatusError reports an unsuccessful response with the URL that produced it.
+type StatusError struct {
+	Status int
+	URL    string
+}
+
+func (e *StatusError) Error() string { return fmt.Sprintf("fetch: HTTP %d for %s", e.Status, e.URL) }
+
 // Open requires a successful HTTP response and bounds bytes read from its body.
 // The caller closes the body and decides content validation, hashing, and storage.
 func Open(client *http.Client, request *http.Request, limit int64) (*http.Response, error) {
@@ -40,7 +48,7 @@ func Open(client *http.Client, request *http.Request, limit int64) (*http.Respon
 	}
 	if response.StatusCode != http.StatusOK {
 		response.Body.Close()
-		return nil, fmt.Errorf("fetch: HTTP %d", response.StatusCode)
+		return nil, &StatusError{Status: response.StatusCode, URL: response.Request.URL.Redacted()}
 	}
 	if response.ContentLength > limit {
 		response.Body.Close()

@@ -84,6 +84,9 @@ func Open(ctx context.Context, repo *git.Repository, platform record.Platform, i
 			err = errors.Join(err, files.Close())
 		}
 	}()
+	if err := macports.ValidatePortsTree(files.Root, repo.Root); err != nil {
+		return nil, err
+	}
 	ports, problems, err := selectPorts(ctx, repo, source, platform, index, client, files.Root, selection)
 	if err != nil {
 		return nil, err

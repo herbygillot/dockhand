@@ -16,7 +16,7 @@ Implemented on 2026-09-16 per the [PortIndex storage design](portindex.md); see 
 
 ### 3. Harden the first-use path
 
-Small fixes from the [new-user exercise](reviews/2026-09-16-new-user-deno-exercise.md), each without new design: validate that `--tree` is a ports tree before any index work; print the URL and a missing-release-assets hint on distfile 404s; echo the resolved release and tag in human `assess --version` output; state in `outdated` output that only published releases are consulted for release-catalog ports; memoize the selection reader's index staging so progress lines print once per command; give `bump-revision` and `refresh-checksums` their own help prose; add `--version`.
+Implemented on 2026-09-16; see the [hardening report](activity/2026-09-16-first-use-hardening.md). A wrong `--tree` fails immediately, distfile 404s name the URL and explain unreleased tags, `assess --version` echoes the resolved release, `outdated` names the catalog it consulted, index staging happens once per command, the three change commands have their own help prose and examples, and `--version` exists.
 
 ### 4. Support commit-qualified Cargo Git dependencies
 
