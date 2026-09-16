@@ -28,17 +28,6 @@ type Download struct {
 
 type archiveSource struct{ Name, URL string }
 
-func downloadSource(info macports.PortInfo) (string, string, error) {
-	files, err := downloadSources(info, "")
-	if err != nil {
-		return "", "", err
-	}
-	if len(files) != 1 {
-		return "", "", fmt.Errorf("%w: expected one distfile", ErrUnsupported)
-	}
-	return files[0].Name, files[0].URL, nil
-}
-
 func localPatches(info macports.PortInfo, portdir string) error {
 	files, errs := syntax.ListValues(info.Options["patchfiles"])
 	if len(errs) > 0 {
@@ -127,14 +116,6 @@ func downloadSources(info macports.PortInfo, portdir string) ([]archiveSource, e
 		result = append(result, archiveSource{Name: name, URL: strings.TrimRight(choices[0], "/") + "/" + url.PathEscape(name)})
 	}
 	return result, nil
-}
-
-func (s *Service) download(ctx context.Context, info macports.PortInfo) (Download, error) {
-	name, address, err := downloadSource(info)
-	if err != nil {
-		return Download{}, err
-	}
-	return s.downloadArchive(ctx, info, archiveSource{name, address}, nil)
 }
 
 func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, source archiveSource, output io.Writer) (Download, error) {

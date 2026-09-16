@@ -57,7 +57,7 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 			}
 			visited[profile] = true
 			for _, contents := range [][]byte{input.data, candidate} {
-				observed, err := s.observeContents(ctx, request, input, contents, macports.ObservationRequest{Platform: profile, Declarations: true}, false)
+				observed, err := s.observeContents(ctx, input, contents, macports.ObservationRequest{Platform: profile, Declarations: true}, false)
 				if err != nil {
 					return nil, err
 				}
@@ -69,7 +69,7 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 						if !slices.Contains(needs.operands, fact.Name) {
 							continue
 						}
-						if !sourceBoundOperand(input.files.Root, fact.Frames) {
+						if !sourceBoundOperand(input.files.root, fact.Frames) {
 							return nil, fmt.Errorf("%w: platform operand %s has no captured source", ErrProbeInconclusive, fact.Name)
 						}
 						value, err := strconv.Atoi(fact.Value)

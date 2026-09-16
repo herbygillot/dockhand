@@ -3,7 +3,6 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -33,10 +32,10 @@ func (s *Service) bindArchives(input *sourceInput, contents []byte, observed mac
 		return distfiles.Binding{}, fmt.Errorf("%w: %v", ErrProbeInconclusive, observed.Ports[input.target.Name].Problems)
 	}
 	info := observed.Snapshot.Ports[input.target.Name]
-	if err := checkArchivePolicy(info, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile))); err != nil {
+	if err := checkArchivePolicy(info, input.portdir()); err != nil {
 		return distfiles.Binding{}, err
 	}
-	binding, err := distfiles.Bind(contents, filepath.Join(input.files.Root, input.target.Portfile), info, observed.Ports[input.target.Name])
+	binding, err := distfiles.Bind(contents, input.portfile(), info, observed.Ports[input.target.Name])
 	if err == nil && len(binding.Artifacts) == 0 {
 		err = fmt.Errorf("%w: no downloadable source archives; select a release subport when this is a metaport", ErrUnsupported)
 	}
@@ -57,11 +56,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	for _, profile := range profiles {
 		progress.Report(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
-		before, err := s.observeContents(ctx, request, input, input.data, mode, false)
+		before, err := s.observeContents(ctx, input, input.data, mode, false)
 		if err != nil {
 			return nil, fmt.Errorf("%w: observing baseline %+v: %v", ErrProbeInconclusive, profile, err)
 		}
-		after, err := s.observeContents(ctx, request, input, contents, mode, false)
+		after, err := s.observeContents(ctx, input, contents, mode, false)
 		if err != nil {
 			return nil, fmt.Errorf("%w: observing candidate %+v: %v", ErrProbeInconclusive, profile, err)
 		}
@@ -74,11 +73,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			return nil, fmt.Errorf("%w: candidate changed an independent version on %+v", ErrFidelity, profile)
 		}
 		if !affected {
-			if err := CheckEquivalent(before.Snapshot, after.Snapshot, input.files.Root, input.files.Root); err != nil {
+			if err := CheckEquivalent(before.Snapshot, after.Snapshot, input.files.root, input.files.root); err != nil {
 				return nil, fmt.Errorf("protected context %+v: %w", profile, err)
 			}
 		} else {
-			fidelity := scopedVersionFidelity(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, input.files.Root, input.files.Root, *request.Release, next.Options["checksums"])
+			fidelity := scopedVersionFidelity(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, input.files.root, *request.Release, next.Options["checksums"])
 			if len(fidelity.UnexpectedChanges) > 0 {
 				return nil, fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, fidelity.UnexpectedChanges)
 			}

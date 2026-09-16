@@ -53,12 +53,12 @@ func releaseScope(before, after macports.Snapshot, selected string, authorized b
 	return scope, nil
 }
 
-func scopedVersionFidelity(shared bool, before, after macports.Snapshot, selected, beforeRoot, afterRoot string, release record.Release, checksums string) Fidelity {
+func scopedVersionFidelity(shared bool, before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Fidelity {
 	if !shared {
 		if _, err := releaseScope(before, after, selected, false); err != nil {
 			return Fidelity{Before: before, After: after, UnexpectedChanges: []string{err.Error()}}
 		}
-		return versionFidelity(before, after, selected, beforeRoot, afterRoot, release, checksums)
+		return versionFidelity(before, after, selected, root, release, checksums)
 	}
 	scope, err := releaseScope(before, after, selected, true)
 	if err != nil {
@@ -76,19 +76,19 @@ func scopedVersionFidelity(shared bool, before, after macports.Snapshot, selecte
 		if member.MetadataOnly {
 			ownRelease.Tag = ""
 		}
-		f := versionFidelity(oneBefore, oneAfter, name, beforeRoot, afterRoot, ownRelease, after.Ports[name].Options["checksums"])
+		f := versionFidelity(oneBefore, oneAfter, name, root, ownRelease, after.Ports[name].Options["checksums"])
 		problems = append(problems, f.UnexpectedChanges...)
 		normalized.Ports[name] = after.Ports[name]
 	}
-	if err := CheckEquivalent(normalized, after, beforeRoot, afterRoot); err != nil {
+	if err := CheckEquivalent(normalized, after, root, root); err != nil {
 		problems = append(problems, err.Error())
 	}
 	return Fidelity{Before: before, After: after, UnexpectedChanges: problems}
 }
 
-func scopedChecksumFidelity(scope *record.ReleaseScope, before, after macports.Snapshot, selected, beforeRoot, afterRoot, checksums string) Fidelity {
+func scopedChecksumFidelity(scope *record.ReleaseScope, before, after macports.Snapshot, selected, root, checksums string) Fidelity {
 	if scope == nil {
-		return checksumFidelity(before, after, selected, beforeRoot, afterRoot, checksums)
+		return checksumFidelity(before, after, selected, root, checksums)
 	}
 	expected := before
 	expected.Ports = maps.Clone(before.Ports)
@@ -103,7 +103,7 @@ func scopedChecksumFidelity(scope *record.ReleaseScope, before, after macports.S
 		expected.Ports[name] = info
 	}
 	result := Fidelity{Before: before, After: after}
-	if err := CheckEquivalent(expected, after, beforeRoot, afterRoot); err != nil {
+	if err := CheckEquivalent(expected, after, root, root); err != nil {
 		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
 	}
 	return result

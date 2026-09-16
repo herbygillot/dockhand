@@ -3,7 +3,6 @@ package portedit
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strconv"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -26,11 +25,11 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 	selectedVersion := ""
 	for _, profile := range profiles {
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
-		before, err := s.observeContents(ctx, request, input, input.data, mode, !request.SharedRelease)
+		before, err := s.observeContents(ctx, input, input.data, mode, !request.SharedRelease)
 		if err != nil {
 			return nil, fmt.Errorf("%w: baseline revision evaluation was inconclusive: %w", ErrProbeInconclusive, err)
 		}
-		after, err := s.observeContents(ctx, request, input, contents, mode, !request.SharedRelease)
+		after, err := s.observeContents(ctx, input, contents, mode, !request.SharedRelease)
 		if err != nil {
 			return nil, fmt.Errorf("%w: candidate revision evaluation was inconclusive: %w", ErrProbeInconclusive, err)
 		}
@@ -48,7 +47,7 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 			if next.Revision == 0 {
 				continue
 			}
-			edit, err := revisionReset(contents, filepath.Join(input.files.Root, input.target.Portfile), next, after.Ports[name].Declarations)
+			edit, err := revisionReset(contents, input.portfile(), next, after.Ports[name].Declarations)
 			if err != nil {
 				return nil, err
 			}

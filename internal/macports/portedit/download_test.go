@@ -119,3 +119,23 @@ func TestFetchCompatibilityDiagnosisSurvivesPreparationBoundary(t *testing.T) {
 	require.ErrorContains(t, err, "MacPorts Base 99.0")
 	require.ErrorContains(t, err, "prepare this port manually")
 }
+
+// Test-only conveniences over the single-archive path.
+func downloadSource(info macports.PortInfo) (string, string, error) {
+	files, err := downloadSources(info, "")
+	if err != nil {
+		return "", "", err
+	}
+	if len(files) != 1 {
+		return "", "", fmt.Errorf("%w: expected one distfile", ErrUnsupported)
+	}
+	return files[0].Name, files[0].URL, nil
+}
+
+func (s *Service) download(ctx context.Context, info macports.PortInfo) (Download, error) {
+	name, address, err := downloadSource(info)
+	if err != nil {
+		return Download{}, err
+	}
+	return s.downloadArchive(ctx, info, archiveSource{name, address}, nil)
+}

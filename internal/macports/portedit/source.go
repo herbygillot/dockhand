@@ -12,10 +12,13 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
+// sourceInput is one editing session: the workspace, the evaluated baseline,
+// the selected and owning targets, and the original Portfile contents. Fields
+// after data are filled in as preparation learns more about the source.
 type sourceInput struct {
 	scope                *record.ReleaseScope
 	versionInput         record.ReleaseInput
-	files                workspace
+	files                *workspace
 	before               macports.Snapshot
 	primary, target      record.Target
 	info                 macports.PortInfo
@@ -33,9 +36,9 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 			return nil, fmt.Errorf("%w: shared releases require native declaration observation", ErrUnsupported)
 		}
 	}
-	files := workspace{Root: request.Root}
+	files := &workspace{root: request.Root, source: request.Source}
 
-	tree, err := macports.NewTree(request.Source, files.Root, request.Platform)
+	tree, err := macports.NewTree(request.Source, files.root, request.Platform)
 	if err != nil {
 		return nil, err
 	}
@@ -71,17 +74,71 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 	if !ok {
 		return nil, fmt.Errorf("%w: subport %s was not evaluated", ErrUnsupported, selected.Name)
 	}
-	data, err := os.ReadFile(filepath.Join(files.Root, selected.Portfile))
+	data, err := os.ReadFile(files.path(selected.Portfile))
 	if err != nil {
 		return nil, err
 	}
 	return &sourceInput{files: files, before: before, primary: targets[0], target: selected, info: info, data: data}, nil
 }
 
-type workspace struct{ Root string }
+// workspace is the exclusively owned, disposable source snapshot an editing
+// session probes: never a user checkout. It owns the paths under its root and
+// the cycle that writes candidate contents over a file, evaluates, and restores
+// the original, so callers never touch the snapshot directly.
+type workspace struct {
+	root   string
+	source record.Source
+}
 
-func (s *Service) evaluateEdit(ctx context.Context, request Request, input *sourceInput, contents []byte) (portfile.Edit, macports.Snapshot, string, error) {
-	return s.evaluateContents(ctx, s.Ports, request, input, contents, false)
+func (w *workspace) path(relative string) string {
+	return filepath.Join(w.root, filepath.FromSlash(relative))
+}
+
+// withContents runs fn with contents written over the named file, then
+// restores the original even when fn fails.
+func (w *workspace) withContents(relative string, contents []byte, fn func() error) (err error) {
+	path := w.path(relative)
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(path, contents, 0600); err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, os.WriteFile(path, original, 0600)) }()
+	return fn()
+}
+
+// portfile is the selected target's Portfile inside the workspace.
+func (i *sourceInput) portfile() string { return i.files.path(i.target.Portfile) }
+
+// portdir is the selected target's port directory inside the workspace.
+func (i *sourceInput) portdir() string { return filepath.Dir(i.portfile()) }
+
+// context binds the workspace to the owning Portfile, or to the selected
+// subport alone for counterfactual probes.
+func (i *sourceInput) context(platform record.Platform, selectedOnly bool) (macports.Context, error) {
+	target := i.primary
+	if selectedOnly {
+		target = i.target
+	}
+	return macports.NewContext(i.files.source, i.files.root, target, platform)
+}
+
+// evaluation is one candidate's edit and its evaluated snapshot.
+type evaluation struct {
+	edit  portfile.Edit
+	after macports.Snapshot
+}
+
+func (s *Service) evaluateEdit(ctx context.Context, input *sourceInput, contents []byte) (evaluation, error) {
+	return s.evaluateContents(ctx, s.Ports, input, contents, false)
+}
+
+// evaluateCandidate omits sibling metadata for probes; full edit validation
+// uses evaluateEdit so unrelated subport changes remain visible.
+func (s *Service) evaluateCandidate(ctx context.Context, input *sourceInput, contents []byte) (evaluation, error) {
+	return s.evaluateContents(ctx, s.Ports, input, contents, true)
 }
 
 // snapshotEvaluator is the reader used for one evaluation: the service's
@@ -90,35 +147,26 @@ type snapshotEvaluator interface {
 	Evaluate(context.Context, macports.Context) (macports.Snapshot, error)
 }
 
-func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, contents []byte, selectedOnly bool) (_ portfile.Edit, _ macports.Snapshot, _ string, err error) {
-	edit := portfile.Edit{Path: input.target.Portfile, After: contents}
-	path := filepath.Join(input.files.Root, input.target.Portfile)
-	original, err := os.ReadFile(path)
-	if err != nil {
-		return edit, macports.Snapshot{}, "", err
-	}
-	if err = os.WriteFile(path, contents, 0600); err != nil {
-		return edit, macports.Snapshot{}, "", err
-	}
-	defer func() { err = errors.Join(err, os.WriteFile(path, original, 0600)) }()
-	target := input.primary
-	if selectedOnly {
-		target = input.target
-	}
-	bound, err := macports.NewContext(request.Source, input.files.Root, target, input.before.Platform)
-	if err != nil {
-		return edit, macports.Snapshot{}, "", err
-	}
-	var after macports.Snapshot
-	if selected, ok := reader.(macports.SelectedReader); ok && selectedOnly {
-		after, err = selected.EvaluateSelected(ctx, bound)
-	} else {
-		after, err = reader.Evaluate(ctx, bound)
-	}
-	if err == nil {
-		err = checkSnapshot(after, bound)
-	}
-	// Probe snapshots describe uncommitted contents, not the immutable base tree.
-	after.Source = record.Source{}
-	return edit, after, input.files.Root, err
+func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator, input *sourceInput, contents []byte, selectedOnly bool) (evaluation, error) {
+	result := evaluation{edit: portfile.Edit{Path: input.target.Portfile, After: contents}}
+	err := input.files.withContents(input.target.Portfile, contents, func() error {
+		bound, err := input.context(input.before.Platform, selectedOnly)
+		if err != nil {
+			return err
+		}
+		var after macports.Snapshot
+		if selected, ok := reader.(macports.SelectedReader); ok && selectedOnly {
+			after, err = selected.EvaluateSelected(ctx, bound)
+		} else {
+			after, err = reader.Evaluate(ctx, bound)
+		}
+		if err == nil {
+			err = checkSnapshot(after, bound)
+		}
+		// Probe snapshots describe uncommitted contents, not the immutable base tree.
+		after.Source = record.Source{}
+		result.after = after
+		return err
+	})
+	return result, err
 }

@@ -96,7 +96,7 @@ func dependencyPatches(input *sourceInput, kind string) error {
 	if err := checkHooks(script); err != nil {
 		return err
 	}
-	portdir := filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile))
+	portdir := input.portdir()
 	if err := localPatches(input.info, portdir); err != nil {
 		return err
 	}
@@ -122,16 +122,17 @@ func (s *Service) dependencyBase(ctx context.Context, request Request, input *so
 	if err != nil {
 		return nil, nil, err
 	}
-	_, strippedSnapshot, _, err := s.evaluateEdit(ctx, request, input, stripped)
+	evaluated, err := s.evaluateEdit(ctx, input, stripped)
 	if err != nil {
 		return nil, nil, err
 	}
+	strippedSnapshot := evaluated.after
 	baseValue := *input
 	baseValue.data, baseValue.before = stripped, strippedSnapshot
 	baseValue.info = strippedSnapshot.Ports[input.target.Name]
 	base := &baseValue
 
-	sources, err := downloadSources(base.info, filepath.Join(base.files.Root, filepath.Dir(base.target.Portfile)))
+	sources, err := downloadSources(base.info, base.portdir())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -159,7 +160,8 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		return Result{}, err
 	}
 	defer os.RemoveAll(directory)
-	oldInput, err := s.originalDependencySource(ctx, base.info, sources, plan.Kind, directory)
+	archives := s.archives(directory)
+	oldInput, err := originalDependencySource(ctx, archives, base.info, sources, plan.Kind)
 	if err != nil {
 		return Result{}, err
 	}
@@ -179,14 +181,12 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 			return Result{}, fmt.Errorf("%w: existing %s differs from the original manifest/helper output; preserve these overrides with manual preparation", ErrUnsupported, name)
 		}
 	}
-	worker := *s
-	worker.archiveDirectory = directory
-	result, err := worker.applyArchivePlan(ctx, baseRequest, base, archivePlan)
+	result, err := s.applyArchivePlan(ctx, baseRequest, base, archivePlan, archives)
 	if err != nil {
 		return Result{}, err
 	}
 	next := result.Fidelity[len(result.Fidelity)-1].After.Ports[input.target.Name]
-	nextSources, err := downloadSources(next, filepath.Join(base.files.Root, filepath.Dir(base.target.Portfile)))
+	nextSources, err := downloadSources(next, base.portdir())
 	if err != nil {
 		return Result{}, err
 	}
@@ -211,10 +211,11 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	edit, after, root, err := s.evaluateEdit(ctx, request, input, contents)
+	evaluated, err := s.evaluateEdit(ctx, input, contents)
 	if err != nil {
 		return Result{}, err
 	}
+	after := evaluated.after
 	selected := after.Ports[input.target.Name]
 	if selected.Version != request.Release.Version || selected.Revision != 0 || selected.Epoch != input.info.Epoch || selected.Options["git.branch"] != request.Release.Tag {
 		return Result{}, fmt.Errorf("%w: dependency regeneration changed the selected version or source", ErrFidelity)
@@ -240,13 +241,13 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		if old.Revision != next.Revision {
 			final.UnexpectedChanges = append(final.UnexpectedChanges, name+".revision changed")
 		}
-		final.UnexpectedChanges = append(final.UnexpectedChanges, comparePortMetadata(name, comparablePort(old, input.files.Root), comparablePort(next, root))...)
+		final.UnexpectedChanges = append(final.UnexpectedChanges, comparePortMetadata(name, comparablePort(old, input.files.root), comparablePort(next, input.files.root))...)
 	}
 	if len(final.UnexpectedChanges) > 0 {
 		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
 	}
 	result.Base = request.Source
-	result.Files = []portfile.Edit{edit}
+	result.Files = []portfile.Edit{evaluated.edit}
 	result.Fidelity = append(result.Fidelity, final)
 	result.Downloads = append(result.Downloads, gitDownloads...)
 	return result, nil
@@ -279,11 +280,11 @@ func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input 
 	if err != nil {
 		return nil, nil, err
 	}
-	_, snapshot, _, err := s.evaluateEdit(ctx, request, input, provisional)
+	evaluated, err := s.evaluateEdit(ctx, input, provisional)
 	if err != nil {
 		return nil, nil, err
 	}
-	info := snapshot.Ports[input.target.Name]
+	info := evaluated.after.Ports[input.target.Name]
 	info.Options = maps.Clone(info.Options)
 	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit} {
 		info.Options[key] = ""

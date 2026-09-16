@@ -5,12 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
+
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
-	"os"
-	"path/filepath"
 )
 
 type observationKey struct {
@@ -18,7 +16,7 @@ type observationKey struct {
 	profile  string
 }
 
-func (s *Service) observeContents(ctx context.Context, request Request, input *sourceInput, contents []byte, profile macports.ObservationRequest, selectedOnly bool) (_ macports.Observation, err error) {
+func (s *Service) observeContents(ctx context.Context, input *sourceInput, contents []byte, profile macports.ObservationRequest, selectedOnly bool) (macports.Observation, error) {
 	observer, ok := s.Ports.(macports.Observer)
 	if !ok {
 		return macports.Observation{}, fmt.Errorf("%w: declaration observation is unavailable", ErrUnsupported)
@@ -40,25 +38,16 @@ func (s *Service) observeContents(ctx context.Context, request Request, input *s
 			return cached, nil
 		}
 	}
-	path := filepath.Join(input.files.Root, input.target.Portfile)
-	original, err := os.ReadFile(path)
-	if err != nil {
-		return macports.Observation{}, err
-	}
-	if err = os.WriteFile(path, contents, 0600); err != nil {
-		return macports.Observation{}, err
-	}
-	defer func() { err = errors.Join(err, os.WriteFile(path, original, 0600)) }()
-	target := input.primary
-	if selectedOnly {
-		target = input.target
-	}
-	bound, err := macports.NewContext(request.Source, input.files.Root, target, input.before.Runtime.Platform)
-	if err != nil {
-		return macports.Observation{}, err
-	}
-	observed, err := observer.Observe(ctx, bound, profile)
-	observed.Snapshot.Source = record.Source{}
+	var observed macports.Observation
+	err := input.files.withContents(input.target.Portfile, contents, func() error {
+		bound, err := input.context(input.before.Runtime.Platform, selectedOnly)
+		if err != nil {
+			return err
+		}
+		observed, err = observer.Observe(ctx, bound, profile)
+		observed.Snapshot.Source = record.Source{}
+		return err
+	})
 	if err == nil && baseline {
 		if input.baselineObservations == nil {
 			input.baselineObservations = make(map[observationKey]macports.Observation)

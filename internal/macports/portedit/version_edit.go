@@ -50,12 +50,12 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 		if err != nil {
 			continue
 		}
-		_, snapshot, _, err := s.evaluateCandidate(ctx, request, input, contents)
+		evaluated, err := s.evaluateCandidate(ctx, input, contents)
 		if err != nil {
 			failures++
 			continue
 		}
-		info, ok := snapshot.Ports[input.target.Name]
+		info, ok := evaluated.after.Ports[input.target.Name]
 		if !ok || info.Version == input.info.Version {
 			continue
 		}
@@ -144,7 +144,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 				return nil, snapshot, fmt.Errorf("%w: %w", ErrUnsupported, err)
 			}
 		}
-		_, after, root, err := s.evaluateContents(ctx, reader, request, input, contents, !checkFidelity)
+		evaluated, err := s.evaluateContents(ctx, reader, input, contents, !checkFidelity)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, snapshot, ctx.Err()
@@ -152,6 +152,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 			rejected = fmt.Errorf("%w: %w: candidate evaluation was inconclusive: %v", ErrUnsupported, ErrProbeInconclusive, err)
 			continue
 		}
+		after := evaluated.after
 		next := after.Ports[input.target.Name]
 		observed, err := portsource.ForEditing(next)
 		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion != sourceVersion || spec.Forge != "" && next.Options["git.branch"] != spec.Pattern.Tag(sourceVersion) {
@@ -172,7 +173,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		if spec.Forge != "" {
 			desired.Tag = spec.Pattern.Tag(sourceVersion)
 		}
-		fidelity := scopedVersionFidelity(request.SharedRelease, input.before, after, input.target.Name, input.files.Root, root, desired, next.Options["checksums"])
+		fidelity := scopedVersionFidelity(request.SharedRelease, input.before, after, input.target.Name, input.files.root, desired, next.Options["checksums"])
 		if checkFidelity && len(fidelity.UnexpectedChanges) > 0 {
 			rejected = fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 			continue

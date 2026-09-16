@@ -20,12 +20,12 @@ func (c *countedObserver) Observe(ctx context.Context, source macports.Context, 
 }
 
 func TestBaselineObservationReuseExcludesCandidatesAndFinalEvaluations(t *testing.T) {
-	s, request, input := probeFixture(t, "github.setup owner fixture 1.2.3 v")
+	s, _, input := probeFixture(t, "github.setup owner fixture 1.2.3 v")
 	counted := &countedObserver{Evaluator: s.Ports.(*eval.Evaluator)}
 	s.Ports = counted
 	mode := macports.ObservationRequest{Declarations: true}
 	observe := func(contents []byte, mode macports.ObservationRequest, selected bool) {
-		_, err := s.observeContents(t.Context(), request, input, contents, mode, selected)
+		_, err := s.observeContents(t.Context(), input, contents, mode, selected)
 		require.NoError(t, err)
 	}
 	observe(input.data, mode, true)
@@ -45,7 +45,7 @@ func TestBaselineObservationReuseExcludesCandidatesAndFinalEvaluations(t *testin
 	require.Equal(t, 7, counted.calls, "stripped dependency inputs cannot reuse a different baseline")
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := s.observeContents(cancelled, request, input, candidate, mode, true)
+	_, err := s.observeContents(cancelled, input, candidate, mode, true)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, 7, counted.calls)
 }

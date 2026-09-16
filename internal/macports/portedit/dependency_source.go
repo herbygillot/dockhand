@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -30,22 +29,13 @@ func dependencySources(info macports.PortInfo, sources []archiveSource) ([]archi
 	return result, nil
 }
 
-func (s *Service) originalDependencySource(ctx context.Context, info macports.PortInfo, sources []archiveSource, kind, directory string) (dependency.Input, error) {
+func originalDependencySource(ctx context.Context, archives *archiveStore, info macports.PortInfo, sources []archiveSource, kind string) (dependency.Input, error) {
 	var downloads []Download
 	for _, source := range sources {
-		file, err := os.CreateTemp(directory, "original-*")
+		download, err := archives.fetch(ctx, info, source)
 		if err != nil {
 			return dependency.Input{}, err
 		}
-		download, err := s.downloadArchive(ctx, info, source, file)
-		closeErr := file.Close()
-		if err != nil {
-			return dependency.Input{}, err
-		}
-		if closeErr != nil {
-			return dependency.Input{}, closeErr
-		}
-		download.path = file.Name()
 		downloads = append(downloads, download)
 	}
 	return selectDependencySource(ctx, info, sources, downloads, kind)

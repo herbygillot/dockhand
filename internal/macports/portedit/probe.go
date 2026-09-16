@@ -86,7 +86,7 @@ func (p *VersionProbe) EvaluateVersions(ctx context.Context, values []string) ([
 	}
 	var reader snapshotEvaluator = p.editor.Ports
 	if batcher, ok := p.editor.Ports.(macports.BatchReader); ok && len(values) > 1 {
-		tree, err := macports.NewTree(p.request.Source, p.input.files.Root, p.input.before.Platform)
+		tree, err := macports.NewTree(p.request.Source, p.input.files.root, p.input.before.Platform)
 		if err != nil {
 			return nil, err
 		}

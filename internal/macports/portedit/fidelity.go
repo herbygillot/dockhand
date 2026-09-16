@@ -26,7 +26,7 @@ func checkSnapshot(snapshot macports.Snapshot, bound macports.Context) error {
 	return nil
 }
 
-func revisionFidelity(before, after macports.Snapshot, selected, beforeRoot, afterRoot string) Fidelity {
+func revisionFidelity(before, after macports.Snapshot, selected, root string) Fidelity {
 	result := Fidelity{Before: before, After: after, ExpectedChanges: []string{selected + ".revision +1"}, UnexpectedChanges: []string{}}
 	names := map[string]bool{}
 	for name := range before.Ports {
@@ -49,8 +49,8 @@ func revisionFidelity(before, after macports.Snapshot, selected, beforeRoot, aft
 		if next.Revision != wanted {
 			result.UnexpectedChanges = append(result.UnexpectedChanges, fmt.Sprintf("%s.revision: expected %d, got %d", name, wanted, next.Revision))
 		}
-		old = comparablePort(old, beforeRoot)
-		next = comparablePort(next, afterRoot)
+		old = comparablePort(old, root)
+		next = comparablePort(next, root)
 		result.UnexpectedChanges = append(result.UnexpectedChanges, comparePortMetadata(name, old, next)...)
 	}
 	slices.Sort(result.UnexpectedChanges)

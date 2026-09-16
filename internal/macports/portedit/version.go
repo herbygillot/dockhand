@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path/filepath"
 	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -65,10 +64,9 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		}
 		input.scope.Input = input.versionInput
 	}
-	versionRoot := input.files.Root
 	if _, ok := s.Ports.(macports.Observer); ok {
 		observed, err := s.planObservedArchives(ctx, request, input, contents)
-		result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
+		result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
 		if observed != nil {
 			for _, frame := range observed.contexts {
 				result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
@@ -77,7 +75,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed}, err
 	}
 
-	oldSources, err := downloadSources(input.info, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
+	oldSources, err := downloadSources(input.info, input.portdir())
 	if err != nil {
 		return archivePlan{}, err
 	}
@@ -90,7 +88,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	checked := info
 	checked.Options = maps.Clone(info.Options)
 	checked.Options["filespath"] = input.info.Options["filespath"]
-	sources, err := downloadSources(checked, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
+	sources, err := downloadSources(checked, input.portdir())
 	if err != nil {
 		return archivePlan{}, err
 	}
@@ -110,7 +108,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if !changed {
 		return archivePlan{}, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
 	}
-	fidelity := scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, info.Options["checksums"])
+	fidelity := scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, info.Options["checksums"])
 	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{fidelity}}
 	if len(fidelity.UnexpectedChanges) > 0 {
 		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
@@ -126,39 +124,33 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return plan.result, err
 	}
-	return s.applyArchivePlan(ctx, request, input, plan)
+	return s.applyArchivePlan(ctx, request, input, plan, s.archives(""))
 }
 
-func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan) (Result, error) {
+func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, archives *archiveStore) (Result, error) {
 	result := plan.result
 	if request.Release.NoUpdate {
 		return result, nil
 	}
 	if plan.observed != nil {
-		return s.applyObservedArchives(ctx, request, input, plan)
+		return s.applyObservedArchives(ctx, request, input, plan, archives)
 	}
 	contents, versioned, sources := plan.contents, plan.versioned, plan.sources
 	info := versioned.Ports[input.target.Name]
-	versionRoot := input.files.Root
-	release := request.Release
-	contents, checksums, downloads, err := s.refreshArchives(ctx, contents, info, sources)
+	contents, checksums, downloads, err := archives.refresh(ctx, contents, info, sources)
 	if err != nil {
 		return result, err
 	}
-	edit, after, root, err := s.evaluateEdit(ctx, request, input, contents)
+	result.Downloads = downloads
+	evaluated, err := s.evaluateEdit(ctx, input, contents)
 	if err != nil {
 		return result, err
 	}
-	final := checksumFidelity(versioned, after, input.target.Name, versionRoot, root, checksums)
-	result.Files, result.Downloads, result.Fidelity = []portfile.Edit{edit}, downloads, append(result.Fidelity, final)
-	if len(final.UnexpectedChanges) > 0 {
-		return result, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)
-	}
-	result.Commits = []CommitIntent{{Subject: input.target.Name + ": update to " + release.Version, Body: request.Reason, Paths: []string{input.target.Portfile}}}
-	return result, nil
+	final := checksumFidelity(versioned, evaluated.after, input.target.Name, input.files.root, checksums)
+	return result, result.commitEdit(input, request, evaluated.edit, final, "update to "+request.Release.Version)
 }
 
-func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afterRoot string, release record.Release, checksums string) Fidelity {
+func versionFidelity(before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Fidelity {
 	result := Fidelity{Before: before, After: after, ExpectedChanges: []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}, UnexpectedChanges: []string{}}
 	names := map[string]bool{}
 	for name := range before.Ports {
@@ -174,8 +166,8 @@ func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afte
 			result.UnexpectedChanges = append(result.UnexpectedChanges, name+": port set changed")
 			continue
 		}
-		old := comparablePort(original, beforeRoot)
-		next = comparablePort(next, afterRoot)
+		old := comparablePort(original, root)
+		next = comparablePort(next, root)
 		if name == selected {
 			old.Version, old.Revision = release.Version, 0
 			for _, key := range []string{"fetch.has_credentials", "version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "dist_subdir", "distfiles", "extract.only", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites"} {
@@ -205,7 +197,7 @@ func versionFidelity(before, after macports.Snapshot, selected, beforeRoot, afte
 	return result
 }
 
-func checksumFidelity(before, after macports.Snapshot, selected, beforeRoot, afterRoot, checksums string) Fidelity {
+func checksumFidelity(before, after macports.Snapshot, selected, root, checksums string) Fidelity {
 	expected := before
 	expected.Ports = maps.Clone(before.Ports)
 	info := expected.Ports[selected]
@@ -224,7 +216,7 @@ func checksumFidelity(before, after macports.Snapshot, selected, beforeRoot, aft
 	}
 	next.Options["checksums"] = checksums
 	normalized.Ports[selected] = next
-	if err := CheckEquivalent(expected, normalized, beforeRoot, afterRoot); err != nil {
+	if err := CheckEquivalent(expected, normalized, root, root); err != nil {
 		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
 	}
 	return result

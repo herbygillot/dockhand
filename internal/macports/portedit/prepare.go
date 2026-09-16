@@ -68,7 +68,6 @@ type Result struct {
 
 type Service struct {
 	DependencyTools  dependency.Tools
-	archiveDirectory string
 	Ports            macports.Reader
 	HTTP             *http.Client
 	MaxDownloadBytes int64
@@ -95,17 +94,13 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err != nil {
 		return Result{}, err
 	}
-	edit, after, root, err := s.evaluateEdit(ctx, request, input, revised)
+	evaluated, err := s.evaluateEdit(ctx, input, revised)
 	if err != nil {
 		return Result{}, err
 	}
-	fidelity := revisionFidelity(input.before, after, input.target.Name, input.files.Root, root)
-	result := Result{Base: request.Source, Target: input.target, Files: []portfile.Edit{edit}, Fidelity: []Fidelity{fidelity}}
-	if len(fidelity.UnexpectedChanges) > 0 {
-		return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
-	}
-	result.Commits = []CommitIntent{{Subject: input.target.Name + ": revbump", Body: request.Reason, Paths: []string{input.target.Portfile}}}
-	return result, nil
+	result := Result{Base: request.Source, Target: input.target}
+	err = result.commitEdit(input, request, evaluated.edit, revisionFidelity(input.before, evaluated.after, input.target.Name, input.files.root), "revbump")
+	return result, err
 }
 
 func (request Request) Validate() error {
