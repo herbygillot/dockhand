@@ -8,8 +8,45 @@ namespace eval ::dockhand {
         $worker eval {
             namespace eval ::dockhand_observation {
                 variable events {}
+                variable recording 0
+                proc host_event {cmd} {
+                    variable source_root
+                    set name [lindex $cmd 0]
+                    switch -- $name {
+                        exec { return "modeled context depends on a host process executed while evaluating the Portfile" }
+                        glob { return "modeled context depends on directory enumeration while evaluating the Portfile" }
+                        open {
+                            set path [lindex $cmd 1]
+                            if {[string index $path 0] eq "|"} {
+                                return "modeled context depends on a host process opened while evaluating the Portfile"
+                            }
+                        }
+                        source { set path [lindex $cmd end] }
+                        file { set path [lindex $cmd 2] }
+                        default { return "" }
+                    }
+                    # Resolve in the worker while its current directory is still
+                    # the one used by the intercepted operation.
+                    if {[catch {file normalize $path} normalized]} {
+                        return "modeled context has an unresolved filesystem dependency"
+                    }
+                    set root [file normalize $source_root]
+                    if {$normalized ne $root && [string first "${root}/" $normalized] != 0} {
+                        return "modeled context depends on filesystem state outside the captured ports tree"
+                    }
+                    # normalize does not resolve a final symlink on all Tcl
+                    # versions. An opaque link must not certify captured input.
+                    if {![catch {file type $normalized} kind] && $kind eq "link"} {
+                        return "modeled context depends on a symbolic link while evaluating the Portfile"
+                    }
+                    return ""
+                }
                 proc record {cmd op} {
-                    if {[llength $cmd] < 2} { return }
+                    variable recording
+                    if {$recording || [llength $cmd] < 2} { return }
+                    lset cmd 0 [namespace tail [lindex $cmd 0]]
+                    set name [lindex $cmd 0]
+                    if {$name eq "file" && [lindex $cmd 1] ni {exists isfile isdirectory readable writable executable mtime atime stat lstat size type readlink owned attributes}} { return }
                     set frames {}
                     for {set i 1} {$i < [info frame]} {incr i} {
                         set frame [info frame $i]
@@ -17,23 +54,28 @@ namespace eval ::dockhand {
                         if {[dict exists $frame file]} { set file [dict get $frame file] }
                         lappend frames [list $file [dict get $frame line] [dict get $frame cmd]]
                     }
-                    if {[lindex $cmd 0] in {file exec}} {
+                    if {$name in {file exec open source glob}} {
                         set owned 0
                         foreach frame $frames { if {[string match */Portfile [lindex $frame 0]]} { set owned 1 } }
                         if {!$owned} { return }
+                        set recording 1
+                        try { set problem [host_event $cmd] } finally { set recording 0 }
+                        if {$problem eq ""} { return }
+                        set cmd [list dockhand.host-access $problem]
                     }
                     variable events
                     lappend events [list $cmd $frames]
                 }
                 proc ready {cmd code result op} {
                     if {$code != 0} { return }
-                    foreach name {checksums checksums-append checksums-prepend revision exec file} {
+                    foreach name {checksums checksums-append checksums-prepend revision exec file open source glob} {
                         trace add execution ::$name enter ::dockhand_observation::record
                     }
                 }
             }
             trace add execution PortSystem leave ::dockhand_observation::ready
         }
+        $worker eval [list set ::dockhand_observation::source_root $::dockhand::source_root]
     }
     proc observation_setup {platform trace_declarations} {
         variable observing 1
@@ -65,18 +107,7 @@ namespace eval ::dockhand {
         if {$::dockhand::modeled} {
             foreach event $events {
                 lassign $event cmd frames
-                set source_frame 0
-                foreach frame $frames {
-                    if {[file tail [lindex $frame 0]] eq "Portfile"} { set source_frame 1 }
-                }
-                if {!$source_frame} { continue }
-                if {[lindex $cmd 0] eq "exec"} { lappend problems "modeled context depends on a host process executed while evaluating the Portfile" }
-                if {[lindex $cmd 0] eq "file" && [lindex $cmd 1] in {exists isfile isdirectory readable executable mtime stat lstat size}} {
-                    set path [lindex $cmd 2]
-                    if {[file pathtype $path] eq "absolute" && ![string match "${::dockhand::source_root}/*" [file normalize $path]]} {
-                        lappend problems "modeled context depends on filesystem state outside the captured ports tree"
-                    }
-                }
+                if {[lindex $cmd 0] eq "dockhand.host-access"} { lappend problems [lindex $cmd 1] }
             }
             set problems [lsort -unique $problems]
             set host_access [expr {[llength $problems] > 0}]
