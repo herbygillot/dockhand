@@ -154,7 +154,10 @@ Desired revision, expected remote head, PR title/body, and observed forge state 
 - `forge` defines remote facts and access contracts using shared records and the standard library. It imports no capability or concrete adapter.
 - `github` owns shared authentication and SDK transport, depending on `credential` and `forge` errors. `forge/github` depends on that client, `forge`, `record`, and Git validation mechanics; `forge/gitlab` depends on `forge`, Git validation mechanics, and the GitLab SDK. Neither adapter imports `upstream`, `publish`, nor `macports`.
 - `macports/source` depends on evaluated MacPorts metadata and Tcl value decoding. It imports no forge adapter or upstream policy.
-- `macports/portindex` depends on Git object mechanics, shared records, and `filelock`. It imports neither Tart provider nor workflow policy.
+- `macports/portindex` combines index reading/querying with staging and disposable cache retention. Its dependencies are Git object mechanics, shared records, `filelock`, `fetch`, `progress`, and `tcl/syntax`; it imports neither verification nor workflow policy.
+- `verify` owns provider contracts, coverage inputs, planning, judgment, and applicability. Its project dependencies are limited to `record` and Git object-ID validation. Native MacPorts evaluation and index types stay in discovery adapters.
+- `macports/dependents` evaluates frozen native source and projects tool requirements, selection reasons, and index gaps into `verify.Coverage`. The planner validates that neutral input against the accepted source, platform, and roots.
+- `verify/staging` consumes Git snapshots, records, PortIndex, and progress reporting to package accepted source. It imports neither a concrete provider nor workflow/state.
 - `verify/tart` consumes `tart/host`, shared Tart image coordination, and PortIndex. It retains request/state lifecycle, capacity, image identity/capability evidence, guest request/result protocol, staging, and cleanup policy; mechanics do not import the provider.
 - `upstream` consumes `macports/source` specifications and forge observations. `publish` consumes forge PR contracts. Neither constructs a concrete client.
 - `workflow` depends on `state` and capability APIs. Capabilities do not depend back on the engine or write its records.
@@ -311,7 +314,7 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 
 `record.JobSpec.PublishTo` holds a combined job's destination. `record.PublicationSpec` remains the complete external-action intent, populated only once the prepared revision passes verification. Workflow checks the action against the accepted destination and prepared revision before persisting it and before claiming it for execution; SQLite preserves the resulting intent and its relationships. Verification and publication read the result source without replacing the accepted source. See the [combined publication report](activity/2026-09-13-combined-publication.md).
 
-`macports/dependents` stages a source-matched PortIndex, selects direct build/library/runtime dependents, and evaluates independent target configurations. It preserves selection reasons, evaluation failures, and indexed closure gaps. Its closures are default-variant estimates, not guest dependency resolutions. This discovery boundary performs no state writes, revision edits, or provider operations; workflow adoption and configuration selection remain the next integration step.
+`macports/dependents` stages a source-matched PortIndex, selects direct build/library/runtime dependents, and evaluates independent target configurations. It projects native results into `verify.Coverage`, including source-bound Xcode requirements; raw evaluator snapshots and index query structures stay inside the adapter. It preserves selection reasons, evaluation failures, and indexed closure gaps. Its closures are default-variant estimates, not guest dependency resolutions. This discovery boundary performs no state writes, revision edits, or provider operations; workflow adoption and configuration selection remain the next integration step.
 
 ### Transient operation progress
 

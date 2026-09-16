@@ -84,7 +84,7 @@ func TestDirectCoverageMergesReasonsAndKeepsRootVariants(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, tree.Source(), coverage.Source)
 	require.Equal(t, platform, coverage.Platform)
-	require.Empty(t, coverage.Unread)
+	require.Empty(t, coverage.Problems)
 	require.Len(t, coverage.Targets, 4)
 	var names []string
 	for _, candidate := range coverage.Targets {
@@ -95,15 +95,15 @@ func TestDirectCoverageMergesReasonsAndKeepsRootVariants(t *testing.T) {
 	require.Equal(t, []string{"a", "b", "competitor", "consumer"}, names)
 	require.True(t, coverage.Targets[0].Root)
 	require.Equal(t, rootA, coverage.Targets[0].Target)
-	require.Equal(t, []Reason{{Root: "b", Fields: []string{portindex.DependsRun}}}, coverage.Targets[0].Reasons)
-	require.Equal(t, []Reason{{Root: "a", Fields: []string{portindex.DependsBuild}}}, coverage.Targets[2].Reasons)
+	require.Equal(t, []string{"b: depends_run"}, coverage.Targets[0].Reasons)
+	require.Equal(t, []string{"a: depends_build"}, coverage.Targets[2].Reasons)
 	consumer := coverage.Targets[3]
 	require.False(t, consumer.Root)
 	require.Equal(t, "consumer", consumer.Target.Subport)
 	require.Empty(t, consumer.Target.Variants)
-	require.Equal(t, []Reason{{Root: "a", Fields: []string{portindex.DependsLib}}, {Root: "b", Fields: []string{portindex.DependsLib}}}, consumer.Reasons)
-	require.Equal(t, []string{"a", "b", "unindexed"}, consumer.IndexedClosure.Dependencies)
-	require.Equal(t, []string{"unindexed"}, consumer.IndexedClosure.Missing)
+	require.Equal(t, []string{"a: depends_lib", "b: depends_lib"}, consumer.Reasons)
+	require.Equal(t, []string{"a", "b", "unindexed"}, consumer.IndexedDependencies)
+	require.Equal(t, []string{"dependency not indexed: unindexed"}, consumer.CoverageProblems)
 
 	other, err := discover(t.Context(), evaluationFunc(evaluated), tree, index, []record.Target{rootA, rootB})
 	require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestFailuresAndUnreadFieldsRemainVisible(t *testing.T) {
 	require.Equal(t, "fixture evaluation failure", coverage.Targets[0].Problem)
 	require.Nil(t, coverage.Targets[0].Evaluation)
 	require.NotNil(t, coverage.Targets[2].Evaluation)
-	require.Equal(t, []portindex.Unread{{Port: "unknown", Portdir: "apps/unknown", Field: portindex.DependsLib}}, coverage.Unread)
+	require.Equal(t, []string{"reverse index unread: unknown depends_lib"}, coverage.Problems)
 }
 
 func TestEvaluationMustMatchFrozenQuestion(t *testing.T) {
@@ -170,7 +170,7 @@ func TestMissingRootAndIndexedPathMismatch(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, coverage.Targets[0].Problem, "indexed identity")
-	require.Equal(t, []string{"missing"}, coverage.Targets[1].IndexedClosure.Missing)
+	require.Equal(t, []string{"dependency not indexed: missing"}, coverage.Targets[1].CoverageProblems)
 	require.Contains(t, coverage.Targets[1].Problem, "not indexed")
 	for _, target := range coverage.Targets {
 		require.Nil(t, target.Evaluation)
@@ -279,5 +279,36 @@ func TestNativeEvaluationSelectsIndexedSubports(t *testing.T) {
 	}
 	require.Equal(t, "consumer", coverage.Targets[0].Target.Name)
 	require.Equal(t, "consumer", coverage.Targets[0].Target.Subport)
-	require.Len(t, coverage.Targets[0].Evaluation.Ports, 1)
+	require.Equal(t, coverage.Targets[0].Target, coverage.Targets[0].Evaluation.Target)
+}
+
+func TestDiscoveryProjectsToolRequirementsAndRejectsUnreadXcode(t *testing.T) {
+	for _, value := range []string{"yes", "no", "invalid", "unread"} {
+		t.Run(value, func(t *testing.T) {
+			tree, index := fixture(t, entry{"core", "devel/core", ""})
+			reader := evaluationFunc(func(ctx context.Context, target macports.Context) (macports.Snapshot, error) {
+				snapshot, err := evaluated(ctx, target)
+				info := snapshot.Ports["core"]
+				info.Options = map[string]string{"use_xcode": value}
+				if value == "unread" {
+					info.OptionErrors = map[string]string{"use_xcode": "unavailable option"}
+				}
+				snapshot.Ports["core"] = info
+				return snapshot, err
+			})
+			coverage, err := discover(t.Context(), reader, tree, index, []record.Target{{Name: "core", Portfile: "devel/core/Portfile"}})
+			require.NoError(t, err)
+			candidate := coverage.Targets[0]
+			if value == "invalid" || value == "unread" {
+				require.Nil(t, candidate.Evaluation)
+				require.Contains(t, candidate.Problem, "use_xcode")
+			} else {
+				require.Empty(t, candidate.Problem)
+				require.NotNil(t, candidate.Evaluation)
+				require.Equal(t, value == "yes", candidate.Evaluation.NeedsXcode)
+				require.Equal(t, tree.Source(), candidate.Evaluation.Source)
+				require.Equal(t, tree.Platform(), candidate.Evaluation.Platform)
+			}
+		})
+	}
 }

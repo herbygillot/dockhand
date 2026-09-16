@@ -5,14 +5,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/herbygillot/dockhand/internal/macports/dependents"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
 type DependentDiscoverer interface {
-	Discover(context.Context, record.Source, record.BuildConfig, []record.Target) (dependents.Coverage, error)
+	Discover(context.Context, record.Source, record.BuildConfig, []record.Target) (verify.Coverage, error)
 }
 
 // planDependents claims source-bound discovery, runs it outside the writer, and

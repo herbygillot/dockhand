@@ -7,9 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/herbygillot/dockhand/internal/macports"
-	"github.com/herbygillot/dockhand/internal/macports/dependents"
-	"github.com/herbygillot/dockhand/internal/macports/portindex"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -19,23 +16,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type discoverFunc func(context.Context, record.Source, record.BuildConfig, []record.Target) (dependents.Coverage, error)
+type discoverFunc func(context.Context, record.Source, record.BuildConfig, []record.Target) (verify.Coverage, error)
 
-func (fn discoverFunc) Discover(ctx context.Context, s record.Source, b record.BuildConfig, roots []record.Target) (dependents.Coverage, error) {
+func (fn discoverFunc) Discover(ctx context.Context, s record.Source, b record.BuildConfig, roots []record.Target) (verify.Coverage, error) {
 	return fn(ctx, s, b, roots)
 }
 
-func dependentCoverage(source record.Source, config record.BuildConfig, roots []record.Target) dependents.Coverage {
-	result := dependents.Coverage{Source: source, Platform: config.Platform}
+func dependentCoverage(source record.Source, config record.BuildConfig, roots []record.Target) verify.Coverage {
+	result := verify.Coverage{Source: source, Platform: config.Platform}
 	for i, target := range append(append([]record.Target{}, roots...), record.Target{Name: "downstream", Portfile: "devel/downstream/Portfile"}, record.Target{Name: "other", Portfile: "devel/other/Portfile"}) {
-		xcode := "no"
-		if target.Name == "other" {
-			xcode = "yes"
-		}
-		item := dependents.Candidate{Target: target, Root: i < len(roots), Evaluation: &macports.Snapshot{Source: source, Target: target, Platform: config.Platform, Ports: map[string]macports.PortInfo{target.Name: {Name: target.Name, Options: map[string]string{"use_xcode": xcode}}}}}
+		item := verify.CoverageTarget{Target: target, Root: i < len(roots), Evaluation: &verify.TargetEvaluation{Source: source, Target: target, Platform: config.Platform, NeedsXcode: target.Name == "other"}}
+
 		if !item.Root {
-			item.Reasons = []dependents.Reason{{Root: roots[0].Name, Fields: []string{portindex.DependsLib}}}
-			item.IndexedClosure.Dependencies = []string{roots[0].Name, "external"}
+			item.Reasons = []string{roots[0].Name + ": depends_lib"}
+			item.IndexedDependencies = []string{roots[0].Name, "external"}
 		}
 		result.Targets = append(result.Targets, item)
 	}
@@ -52,13 +46,13 @@ func TestDependentCoverageResumesAndGatesPublication(t *testing.T) {
 			override.ProviderConfig = []byte(`{"Image":"xcode-image"}`)
 			request.Spec.TargetBuilds = map[string]record.BuildConfig{"other": override}
 			var discovered atomic.Int64
-			f.engine.Dependents = discoverFunc(func(ctx context.Context, source record.Source, config record.BuildConfig, roots []record.Target) (dependents.Coverage, error) {
+			f.engine.Dependents = discoverFunc(func(ctx context.Context, source record.Source, config record.BuildConfig, roots []record.Target) (verify.Coverage, error) {
 				discovered.Add(1)
 				require.NoError(t, f.store.Update(ctx, f.repository, func(context.Context, state.Tx) error { return nil }), "discovery must run outside the writer")
 				require.NotEqual(t, request.Spec.Source.Tree, source.Tree, "discover the prepared tree")
 				coverage := dependentCoverage(source, config, roots)
 				if scenario == "unread" {
-					coverage.Unread = []portindex.Unread{{Port: "hidden", Field: portindex.DependsLib}}
+					coverage.Problems = []string{"reverse index unread: hidden depends_lib"}
 				}
 				if scenario == "unevaluated" {
 					coverage.Targets[1].Problem = "evaluation unavailable"
@@ -157,7 +151,7 @@ func TestDependentDiscoveryClaimCanBeReplacedWithoutAdoptingStalePlan(t *testing
 	request.Spec.IncludeDependents = true
 	entered, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int64
-	f.engine.Dependents = discoverFunc(func(ctx context.Context, source record.Source, config record.BuildConfig, roots []record.Target) (dependents.Coverage, error) {
+	f.engine.Dependents = discoverFunc(func(ctx context.Context, source record.Source, config record.BuildConfig, roots []record.Target) (verify.Coverage, error) {
 		if calls.Add(1) == 1 {
 			close(entered)
 			<-release

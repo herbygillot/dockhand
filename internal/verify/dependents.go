@@ -4,15 +4,13 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
-	"github.com/herbygillot/dockhand/internal/macports/dependents"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
 // PlanDependents records every discovered question, including ones that cannot
 // be built. A coverage gap must remain visible even when all runnable ports pass.
-func PlanDependents(job record.Job, revision record.Revision, coverage dependents.Coverage) (record.VerificationPlan, error) {
+func PlanDependents(job record.Job, revision record.Revision, coverage Coverage) (record.VerificationPlan, error) {
 	base, builds, err := Plan(job, revision)
 	if err != nil {
 		return base, err
@@ -39,7 +37,7 @@ func PlanDependents(job record.Job, revision record.Revision, coverage dependent
 				return plan, fmt.Errorf("verify: duplicate coverage target")
 			}
 		}
-		target := record.VerificationTarget{ID: record.TargetID(fmt.Sprintf("target_%s_%d", job.ID, i+1)), Port: candidate.Target, Platform: coverage.Platform, Root: candidate.Root, Problem: candidate.Problem, IndexedDependencies: slices.Clone(candidate.IndexedClosure.Dependencies)}
+		target := record.VerificationTarget{ID: record.TargetID(fmt.Sprintf("target_%s_%d", job.ID, i+1)), Port: candidate.Target, Platform: coverage.Platform, Root: candidate.Root, Problem: candidate.Problem, IndexedDependencies: slices.Clone(candidate.IndexedDependencies)}
 		target.Port.Variants = maps.Clone(target.Port.Variants)
 		if candidate.Root {
 			found := false
@@ -51,43 +49,29 @@ func PlanDependents(job record.Job, revision record.Revision, coverage dependent
 			if !found {
 				return plan, fmt.Errorf("verify: discovery introduced an unrequested root")
 			}
-			for _, unread := range coverage.Unread {
-				target.CoverageProblems = append(target.CoverageProblems, fmt.Sprintf("reverse index unread: %s %s", unread.Port, unread.Field))
-			}
+			target.CoverageProblems = append(target.CoverageProblems, coverage.Problems...)
 		}
-		for _, reason := range candidate.Reasons {
-			target.Reasons = append(target.Reasons, reason.Root+": "+strings.Join(reason.Fields, ", "))
-		}
-		for _, missing := range candidate.IndexedClosure.Missing {
-			target.CoverageProblems = append(target.CoverageProblems, "dependency not indexed: "+missing)
-		}
-		for _, unread := range candidate.IndexedClosure.Unread {
-			target.CoverageProblems = append(target.CoverageProblems, fmt.Sprintf("dependency index unread: %s %s", unread.Port, unread.Field))
-		}
+		target.Reasons = slices.Clone(candidate.Reasons)
+		target.CoverageProblems = append(target.CoverageProblems, candidate.CoverageProblems...)
 		if target.Problem == "" {
 			evaluation := candidate.Evaluation
 			if evaluation == nil || evaluation.Source != coverage.Source || evaluation.Platform != coverage.Platform || record.CompareTargets(evaluation.Target, candidate.Target) != 0 {
 				target.Problem = "evaluation does not match the coverage target"
 			} else {
-				needsXcode, err := evaluation.RequiresXcode()
-				if err != nil {
-					target.Problem = err.Error()
-				} else {
-					build := builds[0]
-					build.Target = target.Port
-					if override, ok := job.Spec.TargetBuilds[target.Port.Name]; ok {
-						build.Config = override
-					}
-					build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
-					build.Config.NeedsXcode = needsXcode || builds[0].Config.NeedsXcode || build.Config.NeedsXcode
-					if !candidate.Root {
-						for _, root := range job.Spec.Targets {
-							root.Variants = maps.Clone(root.Variants)
-							build.Preinstall = append(build.Preinstall, root)
-						}
-					}
-					target.Build = &build
+				build := builds[0]
+				build.Target = target.Port
+				if override, ok := job.Spec.TargetBuilds[target.Port.Name]; ok {
+					build.Config = override
 				}
+				build.Config.ProviderConfig = slices.Clone(build.Config.ProviderConfig)
+				build.Config.NeedsXcode = evaluation.NeedsXcode || builds[0].Config.NeedsXcode || build.Config.NeedsXcode
+				if !candidate.Root {
+					for _, root := range job.Spec.Targets {
+						root.Variants = maps.Clone(root.Variants)
+						build.Preinstall = append(build.Preinstall, root)
+					}
+				}
+				target.Build = &build
 			}
 		}
 		plan.Targets = append(plan.Targets, target)
