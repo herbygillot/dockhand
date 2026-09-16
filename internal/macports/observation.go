@@ -12,6 +12,8 @@ type ObservationRequest struct {
 	Declarations bool
 	// SelectedOnly omits sibling metadata; it is not suitable for final fidelity.
 	SelectedOnly bool
+	// Operands selects scalar or option values needed to resolve platform boundaries.
+	Operands []string
 }
 
 // Declaration records an executed option command and its Tcl source frames.
@@ -33,7 +35,14 @@ type Distfile struct {
 	URLs []string
 }
 
+type OperandObservation struct {
+	Name   string
+	Value  string
+	Frames []SourceFrame
+}
+
 type PortObservation struct {
+	Operands          []OperandObservation
 	ModeledHostAccess bool
 	Declarations      []Declaration
 	Distfiles         []Distfile

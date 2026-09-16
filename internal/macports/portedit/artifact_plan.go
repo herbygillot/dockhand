@@ -43,7 +43,7 @@ func (s *Service) bindArchives(input *sourceInput, contents []byte, observed mac
 }
 
 func (s *Service) planObservedArchives(ctx context.Context, request Request, input *sourceInput, contents []byte) (*observedArchivePlan, error) {
-	profiles, err := observationProfiles(input.data, input.before.Platform)
+	profiles, err := s.contextProfiles(ctx, request, input, contents)
 	if err != nil {
 		return nil, err
 	}

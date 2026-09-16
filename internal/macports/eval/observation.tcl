@@ -68,6 +68,7 @@ namespace eval ::dockhand {
                 }
                 proc ready {cmd code result op} {
                     if {$code != 0} { return }
+                    ::dockhand_platform::ready
                     foreach name {checksums checksums-append checksums-prepend revision exec file open source glob} {
                         trace add execution ::$name enter ::dockhand_observation::record
                     }
@@ -75,9 +76,12 @@ namespace eval ::dockhand {
             }
             trace add execution PortSystem leave ::dockhand_observation::ready
         }
+        $worker eval $::dockhand::platform_script
+        $worker eval [list set ::dockhand_platform::operands $::dockhand::operands]
         $worker eval [list set ::dockhand_observation::source_root $::dockhand::source_root]
     }
-    proc observation_setup {platform trace_declarations} {
+    proc observation_setup {platform trace_declarations operands_to_observe} {
+        variable operands $operands_to_observe
         variable observing 1
         variable declarations $trace_declarations
         variable modeled [expr {[llength $platform] > 0}]
@@ -133,7 +137,11 @@ namespace eval ::dockhand {
             lappend problems "native fetch plan unavailable: $artifacts"
             set artifacts {}
         }
-        return [list $events $artifacts $problems $host_access]
+        set operands {}
+        if {[$worker eval {info exists ::dockhand_platform::events}]} {
+            set operands [$worker eval {set ::dockhand_platform::events}]
+        }
+        return [list $events $artifacts $problems $host_access $operands]
     }
 }
 ::tclrpc::register observation_setup ::dockhand::observation_setup

@@ -18,6 +18,7 @@ type sourceInput struct {
 	primary, target      record.Target
 	info                 macports.PortInfo
 	data                 []byte
+	platformOperands     []string
 	baselineObservations map[observationKey]macports.Observation
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -14,7 +15,7 @@ import (
 
 type observationKey struct {
 	contents [sha256.Size]byte
-	profile  macports.ObservationRequest
+	profile  string
 }
 
 func (s *Service) observeContents(ctx context.Context, request Request, input *sourceInput, contents []byte, profile macports.ObservationRequest, selectedOnly bool) (_ macports.Observation, err error) {
@@ -26,7 +27,11 @@ func (s *Service) observeContents(ctx context.Context, request Request, input *s
 		return macports.Observation{}, err
 	}
 	profile.SelectedOnly = selectedOnly
-	key := observationKey{contents: sha256.Sum256(contents), profile: profile}
+	if profile.Declarations {
+		profile.Operands = input.platformOperands
+	}
+	encoded, _ := json.Marshal(profile)
+	key := observationKey{contents: sha256.Sum256(contents), profile: string(encoded)}
 	// Reuse only immutable baseline declarations in this source-bound request.
 	// Candidate observations and final untraced evaluations always run afresh.
 	baseline := profile.Declarations && bytes.Equal(contents, input.data)

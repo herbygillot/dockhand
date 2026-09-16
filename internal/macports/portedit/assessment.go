@@ -154,7 +154,9 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 		add("fetch", "MacPorts archive locations are observed; availability is untested", fetchErr)
 		if fetchErr == nil {
 			if checksumErr == nil {
-				a.Contexts, _ = observationProfiles(base.data, base.before.Platform)
+				for _, context := range coverage {
+					a.Contexts = append(a.Contexts, context.Platform)
+				}
 			}
 			add("checksums", "Checksum declarations are associated across the observed contexts", checksumErr)
 		} else {

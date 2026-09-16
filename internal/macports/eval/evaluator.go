@@ -56,7 +56,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 		_ = session.Close()
 		return nil, macports.Runtime{}, err
 	}
-	if _, err := session.Call(ctx, "eval", compatibilityScript+"\n"+fetchCredentialsScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
+	if _, err := session.Call(ctx, "eval", compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
 	reply, err := session.Call(ctx, "initialize", tree.Root())
@@ -101,6 +101,11 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 	}
 	defer func() { err = errors.Join(err, session.Close()) }()
 	if request != nil {
+		for _, operand := range request.Operands {
+			if !operandName.MatchString(operand) {
+				return macports.Observation{}, fmt.Errorf("macports: invalid observation operand %q", operand)
+			}
+		}
 		platform := ""
 		if request.Platform != (record.Platform{}) && request.Platform != runtime.Platform {
 			major, err := strconv.Atoi(request.Platform.Version)
@@ -113,7 +118,7 @@ func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, reque
 			}
 			platform = request.Platform.OS + " " + request.Platform.Version + " " + request.Platform.Architecture + " " + product
 		}
-		if _, err := session.Call(ctx, "observation_setup", platform, strconv.FormatBool(request.Declarations)); err != nil {
+		if _, err := session.Call(ctx, "observation_setup", platform, strconv.FormatBool(request.Declarations), strings.Join(request.Operands, " ")); err != nil {
 			return macports.Observation{}, err
 		}
 	}

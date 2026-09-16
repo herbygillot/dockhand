@@ -16,7 +16,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		}
 		return coverage, nil, checkChecksumSources(input.data, input.info, sources)
 	}
-	profiles, err := observationProfiles(input.data, input.before.Platform)
+	profiles, err := s.contextProfiles(ctx, request, input, input.data)
 	if err != nil {
 		return coverage, err, nil
 	}

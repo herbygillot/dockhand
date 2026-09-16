@@ -18,7 +18,7 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 		}
 		return portfile.ResetRevision(contents, input.info.Revision)
 	}
-	profiles, err := observationProfiles(input.data, input.before.Platform)
+	profiles, err := s.contextProfiles(ctx, request, input, contents)
 	if err != nil {
 		return nil, err
 	}

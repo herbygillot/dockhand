@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
+	"regexp"
 	"strconv"
 )
 
@@ -19,13 +20,18 @@ func (e *Evaluator) Observe(ctx context.Context, source macports.Context, reques
 func decodeObservation(value string) (macports.PortObservation, error) {
 	var out macports.PortObservation
 	fields, errs := syntax.ListValues(value)
-	if len(errs) > 0 || len(fields) != 4 {
+	if len(errs) > 0 || len(fields) != 5 {
 		return out, fmt.Errorf("macports: invalid observation")
 	}
 	events, errs := syntax.ListValues(fields[0])
 	if len(errs) > 0 {
 		return out, fmt.Errorf("macports: invalid declarations")
 	}
+	operands, errs := syntax.ListValues(fields[4])
+	if len(errs) > 0 {
+		return out, fmt.Errorf("macports: invalid operand observations")
+	}
+	events = append(events, operands...)
 	for _, event := range events {
 		parts, errs := syntax.ListValues(event)
 		if len(errs) > 0 || len(parts) != 2 {
@@ -51,7 +57,11 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 			}
 			d.Frames = append(d.Frames, macports.SourceFrame{File: f[0], Line: line, Command: f[2]})
 		}
-		out.Declarations = append(out.Declarations, d)
+		if d.Command == "dockhand.operand" && len(d.Values) == 2 {
+			out.Operands = append(out.Operands, macports.OperandObservation{Name: d.Values[0], Value: d.Values[1], Frames: d.Frames})
+		} else {
+			out.Declarations = append(out.Declarations, d)
+		}
 	}
 	files, errs := syntax.ListValues(fields[1])
 	if len(errs) > 0 {
@@ -77,3 +87,8 @@ func decodeObservation(value string) (macports.PortObservation, error) {
 }
 
 var _ macports.Observer = (*Evaluator)(nil)
+
+var operandName = regexp.MustCompile(`^(?:option:)?[a-zA-Z_][a-zA-Z0-9_.]*$`)
+
+//go:embed platform.tcl
+var platformScript string
