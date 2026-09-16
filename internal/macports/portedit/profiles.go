@@ -46,8 +46,12 @@ func scanPlatformNeeds(src []byte) (platformNeeds, error) {
 			operand := ""
 			if m := forwardComparison.FindStringSubmatch(suffix); m != nil && comparisonEnd(suffix[len(m[0]):]) {
 				operand = m[1]
-			} else if m := reverseComparison.FindStringSubmatch(raw[:read[0]]); m != nil {
-				operand = m[1]
+			} else if m := reverseComparison.FindStringSubmatchIndex(raw[:read[0]]); m != nil {
+				prefix := strings.TrimSpace(raw[:m[2]])
+				if prefix != "" && !strings.ContainsAny(prefix[len(prefix)-1:], "{([\"&|") {
+					return n, fmt.Errorf("%w: unresolved inverted Darwin comparison", ErrProbeInconclusive)
+				}
+				operand = raw[m[2]:m[3]]
 			} else {
 				// Enumerate metadata contexts for aliases and formatting, but do not
 				// mistake an unsupported comparison expression for a harmless read.

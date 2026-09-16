@@ -7,3 +7,5 @@ Aliases and formatting reads use a bounded Darwin metadata enumeration (8 throug
 Validation: native evaluator/editor suites passed. Authored integration cases cover scalar/option/inverted thresholds, aliases, formatting, mutable thresholds, revision reset, and preservation of independent older releases. Pinned real controls retain Wasmer/Terraform/Helm/gh/Deno behavior. py-openssl, mpir, and libfec now reach input-found assessment. mrustc resolves its option threshold but remains inconclusive because modeled evaluation accesses host state; this guard was deliberately retained. Whole-corpus comparison and session measurements accompany the complete coverage pass.
 
 Code in this change was authored here; no v1 comments or tests were copied. Raw controls: `~/Documents/ChatGPT/Dockhand/exercises/2026-09-16-bump-coverage`.
+
+A subsequent negative test also rejects arithmetic before an inverted threshold (`17 + 25 < ${os.major}`), preventing the scanner from treating the last numeric term as the whole boundary. Unsupported minor-version reads have an explicit regression test.

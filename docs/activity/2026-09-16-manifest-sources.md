@@ -7,3 +7,5 @@ The baseline/helper comparison remains mandatory. Candidate archive planning sti
 Validation: workflow/preparation, distfiles, and dependency tests passed, including a Cargo source plus independently pinned V8-style file, exact versus renamed manifest roots, missing extraction sources, existing overrides, helper failures, and no-download refusal controls. Real-source exercise results will be recorded with the completed coverage pass.
 
 Implementation and tests were authored here; no v1 comments or tests were copied.
+
+Additional archive-content tests distinguish two exact manifest owners, one exact owner plus an unrelated root, and no manifest owner. The real Codex exercise advanced beyond auxiliary-source selection but encountered a separate existing Cargo `rev=` Git-source restriction; details are in the completed coverage report.

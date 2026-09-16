@@ -26,6 +26,8 @@ func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
 		`if {${os.major} >= 17 && ${os.major} < $limit} {version 1}`,
 		`if {${os.major} >= 17 + 5} {version 1}`,
 		`if {${os.major} >= 17.5} {version 1}`,
+		`if {17 + 25 < ${os.major}} {version 1}`,
+		`if {${os.version} eq "25.1.0"} {version 1}`,
 	} {
 		t.Run(source, func(t *testing.T) {
 			_, err := observationProfiles([]byte(source), native)
