@@ -8,7 +8,7 @@ The existing Terraform/Helm release-series, gh source/binary, and Deno architect
 
 The [readiness investigation](activity/2026-09-16-core-bump-readiness.md) reproduced Wasmer's reported failure and checked sixteen selected controls. The earlier 147-Portfile survey remains a comparison corpus, not a whole-tree success estimate. Shared-subport cases require explicit candidate checks: finding a version input alone does not test whether sibling edits are acceptable.
 
-Work in the following order. Each stage should complete through assessment, preparation, and applicable verification/publication checks before broadening its claims.
+The section numbers below identify capabilities, not the current queue. Follow the [roadmap](roadmap.md): finish contribution lifecycle and routine cleanup, then platform observations (stage 2), manifest/auxiliary archive separation (stage 4), and shared-release scope (stage 3). Each implementation should complete through assessment, preparation, and applicable verification/publication checks before broadening its claims.
 
 ## Prerequisite: target resolution and contribution continuity
 
@@ -16,21 +16,23 @@ The [target workflow plan](target-workflow.md) supersedes the earlier name-resol
 
 The intended ordinary commands are `dockhand bump terraform-1.16`, `dockhand verify terraform-1.16`, and `dockhand publish terraform-1.16`. An explicit version remains available; `--branch` is an override, not a required handoff. Internal subport identity and exact source/evidence binding remain necessary. The plan defines manual checkout selection, retry and ambiguity behavior, package placement, and migration/concurrency tests.
 
-The roadmap places the target workflow stages before the reliability work below. Stage 1 here then completes that integrated milestone; stages 2–4 extend coverage afterwards. Named target selection does not itself authorize shared-release sibling edits, and successful explicit-version archive preparation is not proof of automatic release discovery.
+Target continuity and stage 1 below completed the same milestone; stages 2–4 extend coverage in the order maintained by the roadmap. Named target selection does not itself authorize shared-release sibling edits, and successful explicit-version archive preparation is not proof of automatic release discovery.
 
 ## 1. Distinguish fetch guards from archive modifications
 
-Wasmer 7.4.0 has a `pre-fetch` hook on Darwin < 23 arm64 that reports an error and returns. On the reported source, Darwin 22 arm64 is rejected by Dockhand's generic fetch-hook check; the same source archive is observable on all six inspected Darwin 22/23/25 and arm64/x86_64 combinations. There is no evidence here that Wasmer builds on the rejected platform.
+Implemented; retained below as the contract for this capability. See the [integrated exercise](activity/2026-09-16-target-workflow-validation.md) for Wasmer preparation and verification results.
 
-Replace the adapter's undifferentiated hook refusal with a small structured fetch assessment. It should distinguish standard archive semantics, recognized rejection-only guards, and unsupported/custom behavior. Preserve procedure/hook kind and source provenance where available, with a useful reason. Keep hook bodies inside `macports/eval`; higher layers should consume facts, not parse Tcl strings or error messages.
+Wasmer 7.4.0 has a `pre-fetch` hook on Darwin < 23 arm64 that reports an error and returns. The earlier generic fetch-hook check rejected Darwin 22 arm64 on that source; the same source archive is observable on all six inspected Darwin 22/23/25 and arm64/x86_64 combinations. There is no evidence here that Wasmer builds on the rejected platform.
 
-For the first increment, recognize the general shape of Wasmer's already-registered unconditional diagnostic/error hook, independent of port name. Accept only the known MacPorts scope wrapper, permitted diagnostic statements, safe message substitutions, and an unconditional error return. Do not execute fetch hooks to discover whether they mutate something. Unknown commands, command substitutions in messages, array-index substitutions, writes, URL/distfile mutations, replaced fetch procedures, and post-fetch work remain unsupported. Preserve the existing narrowly checked Go toolchain guard.
+The adapter now distinguishes standard archive semantics, recognized rejection-only guards, and unsupported/custom behavior in a structured fetch assessment. It preserves procedure/hook facts and a diagnostic reason. Hook bodies stay inside `macports/eval`; higher layers consume facts rather than parsing Tcl strings or error messages.
+
+The implemented recognition covers the general shape of Wasmer's already-registered unconditional diagnostic/error hook, independent of port name. Accept only the known MacPorts scope wrapper, permitted diagnostic statements, safe message substitutions, and an unconditional error return. Do not execute fetch hooks to discover whether they mutate something. Unknown commands, command substitutions in messages, array-index substitutions, writes, URL/distfile mutations, replaced fetch procedures, and post-fetch work remain unsupported. Preserve the existing narrowly checked Go toolchain guard.
 
 Archive editability and platform availability are separate facts. `known_fail` alone is not a license to discard a context or bypass a hook. A recognized guard may permit archive preparation while still reporting that the platform cannot fetch/build normally. Do not remove the guard, claim build coverage, or suppress failure if the user actually verifies that platform.
 
 Initially retain the existing archive/checksum coverage requirements even for guarded contexts. Wasmer can reuse the shared archive facts; a unique uncovered artifact or changed pin must still block the plan. This avoids silently leaving an old checksum in a branch whose source URL changed.
 
-Acceptance cases:
+Implemented acceptance cases:
 
 - Wasmer's reported 7.4.0 -> 7.4.1 preparation passes this guard check, preserves the guard and its OS/architecture condition, and reports the rejected context accurately.
 - A supported-platform Tart verification runs normal MacPorts phases. Any later dependency-regeneration, patch, or build failure remains a separate finding, not a promised success from fixing this guard.
@@ -38,7 +40,7 @@ Acceptance cases:
 - Aseprite's post-fetch Git work remains unsupported. Go guard behavior and independent version/checksum pins remain covered by regressions.
 - `assess`, explicit-version assessment, and actual preparation use the same classification and explain which hook/context prevents progress.
 
-Move local candidate/context planning ahead of dependency-source transfers as part of this stage. Today `prepareDependencyVersion` downloads the old archive and invokes the helper before `prepareArchiveVersion` discovers the alternate-context refusal. Establish the source-bound plan first and pass it to application rather than repeating the same probes. Preserve the old-manifest/helper comparison before accepting regenerated dependency edits. Add a regression proving that a locally unsupported candidate triggers neither a download nor helper execution; missing helpers must keep their actionable errors.
+Local candidate/context planning now precedes dependency-source downloads and helper execution. Application reuses that source-bound plan without repeating the probes; the old-manifest/helper comparison remains required before accepting regenerated dependency edits. Regressions establish that a locally unsupported candidate triggers neither a download nor helper execution. Missing helpers retain their actionable errors.
 
 This stage fits the current single-target workflow and needs no new CLI flag, state migration, or production dependency.
 
@@ -56,7 +58,7 @@ Acceptance cases include a literal threshold, a scalar/option threshold, inverte
 
 ## 3. Represent a shared release across subports end to end
 
-The next useful capability is a release shared by several subports in one Portfile, such as py-memprof or py-ipdb. Those ports already expose an editable input, but an actual candidate correctly fails today's single-target fidelity policy. Terraform release-series siblings and libusb-devel demonstrate why an entire Portfile must not automatically become one release scope.
+This broader capability covers a release shared by several subports in one Portfile, such as py-memprof or py-ipdb. Those ports already expose an editable input, but an actual candidate correctly fails today's single-target fidelity policy. Terraform release-series siblings and libusb-devel demonstrate why an entire Portfile must not automatically become one release scope.
 
 Introduce an explicit release scope in the editor's plan: the requested target, the exact related targets affected by the selected declaration/source, and protected targets/contexts. Membership requires declaration provenance plus before/after source evidence; matching version strings, names, or merely living in one file are insufficient. Auxiliary metaports with no archive/build still need recorded metadata changes and preservation checks.
 

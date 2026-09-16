@@ -101,7 +101,7 @@ This work does not depend on shared-subport releases. Keep it a separate change 
 
 ### 6. Broaden scope after the ordinary workflow holds
 
-Proceed through the remaining bump-coverage stages: platform observations, complete shared-release subport scope, and manifest-bearing archives alongside pinned auxiliary files. Downstream dependency verification is already a separate coverage plan: preserve isolated builds and require every required result before publication. Do not confuse dependents with targets whose source declarations changed.
+The remaining bump-coverage capabilities are platform observations, complete shared-release subport scope, and manifest-bearing archives alongside pinned auxiliary files. Their implementation order, and contribution lifecycle/cleanup work now preceding them, are maintained in the [roadmap](roadmap.md). Downstream dependency verification is already a separate coverage plan: preserve isolated builds and require every required result before publication. Do not confuse dependents with targets whose source declarations changed.
 
 Shared releases add changed targets/revisions under the same contribution; they do not require exposing child jobs as the user's primary handle. Initially only the initiating target selects the contribution by name. If related targets later become aliases, add them explicitly with ambiguity rules; do not treat every dependent as a contribution alias. Baseline comparison for unrelated downstream failures and automatic dependent revision bumps remain separate roadmap work.
 

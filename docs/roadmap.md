@@ -1,158 +1,140 @@
 # Dockhand roadmap
 
-This document is the current source of truth for implementation priorities. The [architecture](architecture.md), [component map](components.md), [CLI design](cli-design.md), and [state design](state.md) define behavior and boundaries. Activity reports record completed work and its validation; they do not maintain the current queue.
+This document is the current source of truth for implementation priorities. The [architecture](architecture.md), [component map](components.md), [CLI design](cli-design.md), and [state design](state.md) define behavior and boundaries. Activity reports retain implementation history and validation; they are not additional queues.
 
-The order within **Next** is intentional. Other sections describe accepted direction, unresolved design, or explicitly deferred scope without promising implementation order.
-
-Last updated: 2026-09-16.
+Last reconciled: 2026-09-16, after the [target-workflow exercise](activity/2026-09-16-target-workflow-validation.md). **Next** is ordered. Later capabilities and maintenance work are not prerequisites unless stated explicitly.
 
 ## Next
 
-### 1. Continue broader Portfile coverage
+### 1. Finish the contribution lifecycle
 
-The [target workflow milestone](target-workflow.md) is implemented through stages 0–5: named subport resolution, contribution identity before preparation, transactional retries, target-based continuation, native HTTP livecheck discovery, and preserved rejection-only fetch guards. See the [integrated validation report](activity/2026-09-16-target-workflow-validation.md) for exercises and limits. Broader shared-release coverage remains separate work.
+Target-based continuation now finds an existing open contribution and preserves its selected source/release. That solves retries, but makes ending one contribution necessary before starting the next update to the same port. Already-current preparations close their empty intent; a general user-facing abandonment operation and observation of merged/closed PRs are still missing. A canceled job does not mean the contribution is abandoned, and successful publication does not mean the PR has merged.
 
-The [bump coverage plan](bump-coverage.md) and its [readiness investigation](activity/2026-09-16-core-bump-readiness.md) guide the next changes. Its first slice is complete: rejection-only guards are distinguished from archive modifications, affected contexts are reported, and local candidate planning precedes dependency-source downloads/helpers.
+- Define the smallest explicit way to finish or abandon a contribution, including one with no branch. Keep this separate from job cancellation and the unresolved `review accept`/`review dismiss` design.
+- Observe the associated PR's open/closed/merged state through the driver or an explicit refresh operation. Keep `status` a read-only snapshot. Broader review/CI monitoring can follow later.
+- Preserve branches, evidence, and history. Reconcile active jobs and concurrent writers before changing disposition. A merged older published revision must not silently discard newer local corrections; reopening a PR must not silently redirect a newer contribution.
+- Once the earlier contribution is settled, a new `bump <target>` should fetch current source and discover the newest eligible release. An ordinary retry of open work must continue its frozen source/release.
 
-Then implement:
+Acceptance: complete an update, record its PR outcome, then bump the same target again; abandon failed preparation and start fresh; preserve ambiguous legacy contributions; exercise concurrent close/retry, pending jobs, reopened PRs, and unpublished corrections.
 
-1. Improve platform observations and context discovery for scalar/option thresholds and non-conditional OS reads without dropping unresolved coverage.
-2. Support one shared release across subports with explicit contribution scope, preserved pins, and verification/publication coverage for every required target.
-3. Allow dependency regeneration with one identified manifest-bearing source plus independently pinned auxiliary archives; this can proceed independently of shared-subport publication.
+### 2. Make routine cleanup part of driver operation
 
-Keep native semantics in `macports/eval`, planning in `macports/portedit`, archive ownership in `macports/distfiles`, and helper/manifest validation in `macports/dependency`. The initial [bump planner](bump-planner.md), [scoped implementation](activity/2026-09-15-scoped-bump-planner.md), and [hardening pass](activity/2026-09-15-planner-hardening.md) are implemented. Existing Terraform/Helm series, gh source/binary branches, and Deno architecture archives have passed preparation exercises; retain them as controls, without equating those exercises with complete automatic bump support. New release-series creation and coordinated Rust/bootstrap maintenance remain outside this pass.
+The disk-space investigation remains an open follow-up. Existing cycles release successful/canceled VMs and eligible resources, while `gc` handles retained environments, diagnostics, and caches under the [current retention policy](operations.md). The recent exercise removed its disposable artifacts explicitly; that does not establish automatic cleanup for ordinary users.
 
-Source/dependency preparation, GitHub verification, automatic Tart preference, per-target dependent images, and maintainer/category discovery are already implemented. Baseline comparison for dependent failures and automatic downstream revision edits remain separate work; GitHub dependent verification remains unsupported. Keep exercise evidence in activity reports and unresolved work here.
+Define retention by artifact purpose, then reuse the existing claims and cleanup machinery in bounded driver-cycle work:
 
-## Planned
+- Remove owned staging trees, transfer copies, and preparation scratch once no accepted operation needs them. Distinguish these from reusable indexes/caches and diagnostic logs.
+- Establish defaults for failed VM retention, retained build outputs, and logs, with an explicit way to keep diagnostics when wanted. Preserve compact evidence and actionable failure details when large files go away.
+- Respect active jobs, shared users of an artifact, ownership uncertainty, and operation locks. Do filesystem/provider work outside state transactions; do not run an unrestricted full `gc` on every write.
+- Retain `gc` as the explicit preview/manual cleanup command. Unidentified orphan cleanup needs a separate ownership decision.
 
-These items have a useful place in the current architecture but are not the immediate implementation queue.
+Acceptance: measure retained bytes after success, preparation failure, build failure, and cancellation; prove restart/retry and concurrent drivers cannot lose needed inputs or diagnostics. An idle process need not become a new daemon just to clean up.
+
+### 3. Improve platform observations and context selection
+
+Continue [bump coverage stage 2](bump-coverage.md#2-improve-platform-observations-and-context-selection). Fetch-guard classification and planning before dependency downloads are complete; scalar/option thresholds and non-conditional OS reads are not.
+
+Have `macports/eval` expose source-bound observations; keep context selection in `macports/portedit`. Resolve supported thresholds through native evaluation, retain the source scanner for unvisited branches, and report unresolved coverage explicitly. Preserve independent older-OS release/checksum pins.
+
+Acceptance: the py-openssl/mrustc threshold cases and libfec/mpir formatting reads, plus mutable thresholds, candidate-activated branches, and unresolved dimensions. Measure session counts and timings while retaining the existing literal-boundary and archive controls. Several modeled profiles are not proof of arbitrary Tcl or build compatibility.
+
+### 4. Separate manifest-bearing source from auxiliary archives
+
+Implement [bump coverage stage 4](bump-coverage.md#4-identify-dependency-source-archives-independently-of-auxiliary-files) before expanding contribution scope. This is a bounded single-target improvement and does not depend on shared-subport publication.
+
+Identify one unambiguous source for Cargo/Go manifests while retaining independently pinned auxiliary archives. Codex's Cargo source plus pinned V8 archive is the concrete control. Keep archive ownership in `macports/distfiles`, manifest/helper validation in `macports/dependency`, and orchestration in `portedit`. Preserve baseline generator comparisons and maintained overrides; do not pick the first archive or infer ownership solely from its filename.
+
+Acceptance: complete candidate preparation with the auxiliary pin unchanged; ambiguous ownership, missing manifests/helpers, and unsupported extraction remain actionable refusals. Verify the prepared target using the ordinary contribution workflow.
+
+### 5. Carry shared-release subports through the whole workflow
+
+Implement [bump coverage stage 3](bump-coverage.md#3-represent-a-shared-release-across-subports-end-to-end) after the smaller preparation improvements. Named subport lookup is complete; authorizing one release to change several subports is a different capability.
+
+Represent affected and protected targets explicitly using declaration provenance and before/after source evidence. Assessment/preview must explain the enlargement and let the user accept its scope. Carry it through intake, revisions, correction, restart, evidence reuse, isolated verification, and publication together. Reuse the existing per-target verification plans where their contracts fit.
+
+Acceptance: py-memprof/py-ipdb shared releases, protected Terraform/Helm series and libusb-devel pins, conflicting targets, and cancellation/restart. Every required target must pass before publication. Shared-release siblings are not reverse dependents; deleting sibling-fidelity checks or setting `IncludeDependents` is not an implementation.
+
+## Later capabilities
+
+### Broader PR observation
+
+After the basic lifecycle work, observe PR head, mergeability, review, CI, and conflicts. Publication still completes when the PR is opened or updated; later observations attach to the contribution. Observation does not authorize automatic corrective edits, pushes, or responses to reviewers.
+
+### Dependent verification follow-up
+
+Direct-dependent discovery, isolated Tart builds, per-target images, and full-cohort publication checks are implemented. Remaining work includes baseline comparison when an unrelated dependency causes a failure, a separate design for automatic downstream revision edits, and GitHub dependent coverage. Keep those separate from shared-release subports.
 
 ### Broader selectors and multi-target intake
 
-Extend the current single-port selector deliberately. A multi-target request should expose one result per target, preserve independent failures, and use the same admission and attachment rules as current jobs.
+Names and indexed subports work now; `assess` and `outdated` also support maintainer/category selection, and `assess` can scan the tree. Batch preparation remains future work: expose one result per requested target and preserve independent failures, admission rules, and attachment behavior. Do not add a generic batch interface merely to implement one shared release.
 
-### Upstream discovery
+### GitHub verification refinements
 
-`outdated` is implemented for explicit selectors, including GitHub/GitLab catalogs, supported native HTTP regex livechecks, and calculated-version probing. Unknown or incomplete observations remain visible. Maintainer/category selection is implemented; discovery does not create branches, jobs, or publication authority.
+Consider controlled reruns, safe updates of already-pushed verification branches, and broader workflow coverage. After a local branch rename, verification currently uses the new local branch while publication retains the existing PR head; coordinating that identity is a concrete follow-up. Shared-run cancellation, missing-run diagnostics, delayed-run recovery, offline cancellation, and log-cache retention already exist; see the [GitHub exercise](activity/2026-09-15-xplr-github-exercise.md).
 
-### Preparation assessment
+### Expiring credentials
 
-`assess` is implemented for explicit ports, maintainer/category selectors, and whole-tree scans. Optional `--version` checks a resolved release with shared preparation checks; local assessment does not query upstream. Results distinguish editable inputs, checked candidates, missing helpers, known limitations, and uncertainty. See [CLI behavior](cli-design.md#preparation-assessment).
+Add access/refresh-token storage, expirations, and cross-process refresh rotation before enabling an authentication flow that requires expiring user tokens. Preserve the selected identity and require login again only after revocation or unusable refresh credentials. This is separate from the implemented device login and registered OAuth client.
 
-### Pull-request observation
+### Further preparation coverage
 
-Teach resident driver cycles to refresh PR head, mergeability, review, CI, and conflict observations. Publication still completes when the PR is opened or updated; later observations remain attached to the contribution.
-
-### MacPorts Base compatibility and fetch semantics
-
-Capability checks and host Base/Tcl diagnostics are implemented. Native evaluator tests pass on Base 2.12.6 and an isolated Base 2.11.6 build on Darwin 25 arm64. Earlier source-reviewed releases remain source-review evidence only; see [compatibility scope and reproduction](macports-compatibility.md).
-
-- Extend runtime coverage to additional Base/OS combinations when needed, tracking PortGroup compatibility separately.
-- Keep metadata access, fetch registration, and Go hook recognition within the shared MacPorts adapter. Introduce version-specific adapters only for demonstrated incompatibilities; unknown versions are not rejected by version number alone.
-
-### Provisioning follow-up
-
-The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) initially passed nine of ten profiles. The [reliability exercise](activity/2026-09-15-provisioning-reliability.md) subsequently provisioned Monterey/Xcode 14.2 twice and independently checked all ten profiles.
-
-- Earlier first-boot exit 125 failures on Sonoma/Sequoia did not recur in the new live runs. Registration now observes launchd domains/services, tolerates observed registration races and transient domain rejection, and reports bounded readiness failures. Preserve stage-specific evidence if the earlier failure recurs; successful runs do not establish its original cause.
-- Monterey/Xcode 14.2's earlier native extraction failure also did not recur with the same archive and source-image digest. Both host extraction and two fresh guest installations succeeded. Its original cause remains unestablished; do not describe it as a proven archive, memory, disk-space, or concurrency defect.
-- Long-stage progress, bounded SSH handshakes, prompt failed-guest cleanup, and image-replacement rollback are implemented and covered by regressions/live exercises. Continue targeted failure exercises when these mechanisms change.
-
-### Engineering follow-up
-
-- Source archives are now prepared before Tart capacity reservation. Exact candidate indexes are retained, and standalone edits can seed from a cached tree using the complete Git diff. Index-cache retention is implemented; the [retention smoke exercise](activity/2026-09-15-retention-smoke.md) measured a cold index build and confirmed warm reuse before admission.
-- Integration suites were remeasured serially without a live VM exercise in the [review 7 follow-up](activity/2026-09-15-review7.md). Keep native snapshot/storage integration tests with preparation; relocate duplicated CLI scenarios only when a concrete responsibility boundary warrants it. Retain parsing, rendering, exit-code, wiring, and recovery coverage.
-- Focused import checks now protect `verify` and `outdated`. Extend automated checking to the remaining meaningful dependency rules in `components.md` when those boundaries are touched; avoid a broad stylistic lint regime.
-- Audit unused exported Tcl/upstream APIs and reserved scaffolding against current callers and protocol use. Unexport, remove, or test deliberately; do not delete functioning planning code based on an older review's inventory.
-- Package overviews now cover every package, including the workflow file-group map. Continue documentation of exported operations and recovery contracts where it aids callers, rather than targeting comment counts.
-- Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
-- PortIndex and GitHub log-cache retention is implemented in `gc`, with last-use thresholds, existing operation locks, read-only previews, and retained database evidence. Consider orphaned temporary-file cleanup separately; unidentified/incomplete temporaries are currently preserved.
-- Add expiring OAuth token support before enabling it for Dockhand's registration: retain access and refresh tokens with their expirations, coordinate refresh-token rotation across processes, and require login again only after revocation or an unusable refresh token.
-- Consider account-wide GitHub cooldown coordination only if measurements show concurrent jobs continue causing rate-limit pressure despite their persisted per-record deadlines.
-- The shared `fetch` package now serves bounded source-archive and PortIndex transfers; keep cache/storage ownership in callers.
-- Reconsider separating PortIndex reading/querying from staging/cache maintenance when extending selectors. The seam is credible, but current consumers stage then read; no immediate split is required.
+Triage the survey's weak/missing digest findings separately from checksum ownership ambiguity. A future checksum-upgrade operation should compute and add a strong digest with correct source ownership; simply removing the SHA256 requirement is not the fix. Arbitrary livecheck scripts, multiple independent version inputs, new release-series creation, and coordinated Rust/bootstrap maintenance require separate designs rather than per-port special cases.
 
 ## Needs design
 
-These items should not be implemented from their existing command placeholders alone. Build post-publication commands on the implemented correction contracts; settle review authority and requester provenance before unattended discovery can originate publishable work.
+### Review and unattended-publication authority
 
-### Review controls
+`review accept` and `review dismiss` still need defined durable meaning: what creates a pending review, what acceptance authorizes, how it binds to a revision, and what dismissal closes. A manual bump/publish already records direct user intent. Contribution abandonment in Next #1 does not require implementing a review system.
 
-The design names `review accept` and `review dismiss`, but it does not yet define what creates a pending review, what acceptance authorizes, or what dismissal closes. A manual `bump` or `publish` already records direct user intent. Review controls should be designed with discovery, unattended work, and corrective edits so their durable consequences are unambiguous and revision-bound.
+Before discovery or a persistent driver can originate publishable work, define requester provenance and authority. Read-only `outdated` and starting a driver must not silently grant publication permission.
 
-At minimum, the design must settle:
+### More permissive human-edit capture
 
-- whether review applies to a discovered candidate, a prepared revision, or publication authority;
-- how a user inspects the exact diff and evidence before deciding;
-- how acceptance is bound to the current revision and rejected after it changes;
-- whether dismissal closes one revision, the whole contribution, or only pending jobs; and
-- how the driver reports and applies the decision idempotently.
+Managed amend/rebase and explicit reassociation are implemented under the [human-correction contract](human-corrections.md). Adopting unstaged tracked corrections or rebasing a checked-out branch needs crash-safe index/worktree preservation. Existing conservative preconditions remain until that design is complete.
 
-### Human corrections and post-publication work
-
-The accepted [human-correction design](human-corrections.md) is implemented with conservative checkout preconditions. A future extension may adopt unstaged tracked edits or update a checked-out rebase while preserving index/worktree intent across crashes. GitHub verification after a local rename currently uses the new local branch, while publication retains the original PR head; coordinating that remote branch directly is a later refinement.
-
-### Standalone publication with missing verification
-
-Decision: standalone `publish` keeps requiring explicit `verify` when evidence is missing. Combined correction-and-publish commands express authority for both steps.
-
-### Requester and unattended-publication policy
-
-Before discovery or persistent drivers can originate publishable work, define which provenance and policy inputs must be durable. Starting a driver must not silently grant publication authority.
+Standalone `publish` continues to require explicit verification when evidence is missing. Combined correction-and-publish commands authorize both steps; this is a settled rule, not an unimplemented feature.
 
 ### Evidence across repository registrations
 
-The shared database currently scopes verification evidence to one registered clone, even when another clone contains the same tree. Decide whether identical tree and build inputs may share evidence across repository registrations and what repository trust checks that requires.
+One database supports multiple repositories, but evidence is currently scoped to one registered clone. Decide whether identical tree/build inputs may share evidence across registrations and what repository trust checks are necessary. This is distinct from preserving identity within one contribution.
+
+## Maintenance and regression work
+
+These are ongoing checks or evidence-triggered investigations, not unfinished implementations of their existing capabilities.
+
+- **MacPorts compatibility:** native evaluator tests pass on Base 2.12.6 and an isolated Base 2.11.6 on Darwin 25 arm64. Extend runtime coverage when needed, keeping Base and PortGroup compatibility distinct. Add version-specific adapters only for demonstrated differences; see [compatibility evidence](macports-compatibility.md).
+- **Provisioning reliability:** all ten tested profiles were independently checked, including two successful Monterey/Xcode 14.2 provisions. Earlier first-boot exit 125 and Monterey extraction failures did not recur; their original causes remain unestablished. Preserve stage-specific evidence if they recur. Long-stage progress, readiness handling, failed-guest cleanup, and replacement rollback are implemented; see the [reliability exercise](activity/2026-09-15-provisioning-reliability.md).
+- **Tests and package boundaries:** preserve the useful integration boundaries from the [review 7 follow-up](activity/2026-09-15-review7.md). Extend focused import checks when touching meaningful dependency boundaries; do not split packages by file count or duplicate workflow engines.
+- **Exported surface and documentation:** audit Tcl/upstream exports against real callers and protocol use. Package overviews exist; improve operation/recovery contracts when useful. Keep implementation history in activity reports and current ownership in `components.md`; review raw benchmark retention without automatically deleting history.
+- **Caches and transport:** preparation precedes Tart capacity reservation; exact candidate indexes, incremental index reuse, shared `fetch`, and explicit cache retention are implemented. Keep cache ownership in callers. Reconsider splitting PortIndex query/staging only for a concrete consumer boundary.
+- **Rate limits:** consider account-wide GitHub cooldown coordination only if concurrent measurements justify it beyond the existing persisted per-record deadlines.
+
+## Completed capabilities
+
+Extend these through their existing paths rather than treating them as new roadmap items:
+
+| Capability | Established behavior / evidence |
+| --- | --- |
+| Target-based contribution workflow | Exact-source port/subport resolution; early contribution identity; transactional acceptance, replay, and frozen retries; named verify/publish/status/wait/cancel; explicit manual checkout verification. [Integrated validation](activity/2026-09-16-target-workflow-validation.md). General contribution closure remains Next #1. |
+| Release discovery and assessment | GitHub/GitLab catalogs and supported native HTTP regex livechecks shared by bump/outdated; local assess with optional candidate probes; maintainer/category selectors and whole-tree assessment. Terraform selected 1.16.3 and passed Tart verification/publication preview. |
+| Source preparation | Evaluator-guided calculated versions, revision bumps, checksum refresh, scoped series updates, conditional/multiple archives, preserved pins, and supported Go/Cargo regeneration. Rejection-only fetch guards and local planning before helper/download work are implemented; Wasmer 7.4.2 passed preparation and Tart verification. |
+| State and recovery | Repository-scoped SQLite, concurrent claims, cancellation/recovery, explicit phases, immutable source capture, backup/check/migration, and durable snapshots. Schema-15 migration was rehearsed on a copy of existing user state without losing history/evidence. |
+| Verification and publication | Tart preference with GitHub fallback, immutable image/evidence inputs, reuse, GitHub fork verification, durable publication recovery, and independent per-target dependent builds with full required coverage. Local exercises in this milestone used publication previews; earlier GitHub exercises reached live PRs. |
+| Setup and credentials | Base/full-Xcode Tart provisioning and capacity-aware image inspection; device login, credential precedence/diagnostics, registered OAuth client, and public-read authentication. |
+| Corrections and operations | Managed amend/rebase, branch reassociation, conditional PR updates, resource release, manual gc and cache retention, durable logs/progress, tested Tcl transport, and package documentation. More automatic retention remains Next #2. |
 
 ## Deferred
 
-- Exporting workflow state to Git notes or reconstructing the database from Git metadata.
+- Exporting state to Git notes or reconstructing the database from Git metadata.
 - Portable verification-evidence exchange between machines.
-- A generic workflow DAG or generic package-build scheduler.
+- A generic workflow DAG or package-build scheduler.
 - Automatic mutation in response to PR reviews, CI failures, or merge conflicts.
 - Broad provider matrices and an `all`-platform execution mode.
-- A QEMU provider without a concrete current use case; it remains an architectural thought experiment.
-- Supporting every command or internal mechanism from Dockhand v1 without a current v2 use case.
+- A QEMU provider without a concrete current use case.
+- Supporting every v1 command or mechanism without a current use case.
 
-## Completed foundations
+## Review triage and validation
 
-The following capabilities are established and should be extended through their existing paths:
+Earlier findings about whole-state Git-ledger writes, SQLite migration structure, repeated phase inference, state/workflow ownership, CI, workflow organization, shared Tart mechanics, and the unused placeholder planner have been addressed. Remaining useful review findings are represented above. Do not reintroduce the discarded Git ledger or require v1 feature parity as a prerequisite for this queue.
 
-- repository-scoped SQLite state shared safely by concurrent driver processes;
-- explicit job phases, transactional claims, recovery, cancellation, and resource cleanup;
-- workflow lifecycle organization that keeps binding, intake, policy, execution, and projection roles visible without exporting driver internals;
-- immutable committed and working-tree source capture with native MacPorts evaluation;
-- source-bound port/subport name resolution, contribution identity before preparation, and target-based bump/verify/publish/status continuation with explicit manual checkout selection;
-- native credential-applicability checks that block unsupported authenticated source downloads without exposing secrets;
-- named and multiple source checksums, preserved local patches, and guarded Go/Rust dependency regeneration through optional host helpers;
-- Tart verification with shared capacity, result reuse, retained diagnostics, and garbage collection;
-- base and full-Xcode Tart provisioning through `setup`, with automatic profile selection;
-- capacity-aware validation of provisioned and custom Tart images, with immutable-digest caching and reusable environment evidence;
-- tested Tcl subprocess/RPC failure contracts, strict reply framing, pre-dispatch cancellation, and handshake deadlines covering script loading;
-- evaluator-guided calculated-version probing and standalone checksum refresh through `macports/portedit`;
-- claimed direct-dependent discovery, durable isolated coverage plans, full-cohort publication checks, and live conflicting-dependent/failure exercises;
-- managed amend/rebase, explicit branch reassociation, and conditional existing-PR updates preserving local/remote identities;
-- read-only `outdated` discovery for explicit port selectors;
-- GitHub fork verification through publication, shared-run tracking cancellation, durable progress, and resumable/offline log reads;
-- consistent public-read authentication, publication rate-limit recovery, and durable failure backoff distinct from expected waiting;
-- automatic bump selection of a suitable prepared Tart image, with GitHub fallback only for availability conditions; explicit choices remain authoritative;
-- status as a durable snapshot, distinct from driver reconciliation and external observation.
-
-## Review triage
-
-This ordering incorporates the findings that remain useful from Claude's four project reviews and workflow review. Earlier findings about whole-state Git-ledger writes, the SQLite migration ladder, repeated phase inference, state/workflow policy ownership, missing CI, workflow file organization, shared Tart mechanics, PortIndex placement, and the unused placeholder planner have already been addressed; they are not new pending work.
-
-The remaining test-placement, mechanism-documentation, exported-surface, and dependency-checking suggestions are represented above; the status contract is now explicit in the principles. Cross-repository evidence reuse, requester provenance, review controls, and PR observation retain their existing design/planning slots. Do not split workflow merely because it is large, reintroduce the discarded Git ledger, rename the user-selected environment variables, or require v1 feature parity as a prerequisite for this queue.
-
-## GitHub provider follow-ups
-
-The [xplr exercise](activity/2026-09-15-xplr-github-exercise.md) completed fork verification through PR, driver recovery, shared-run tracking cancellation, and a user-triggered rerun.
-
-- Missing-run observations now identify the accepted source, submission time, push condition, and current workflow settings; wait/cancel guidance and delayed-run/offline-cancellation regressions are implemented. See the [recovery guide](github-verification.md#when-a-pushed-branch-has-no-visible-run). Automatic reruns and managed branch updates remain below.
-- Consider controlled rerun support, safe updates to previously pushed branches, and broader cohort/workflow coverage after the initial committed single-port path.
-- Log-cache retention is tracked with engineering storage follow-up above.
-
-## Validation milestones
-
-End each meaningful milestone with a targeted user-path exercise or recovery regression. Repeat a full provisioning matrix or create live PRs only when the change warrants it. Historical exercise reports and reviews remain evidence, not additional queues.
+End meaningful milestones with targeted user-path and recovery exercises. For coverage changes, replay the pinned 147-Portfile corpus and the targeted controls, distinguishing input discovery, candidate checks, actual archive preparation, and builds. Preserve Terraform/Helm/gh/Deno and the new Wasmer path as controls. Repeat a provisioning matrix or create live PRs only when the changed behavior warrants it. Historical exercises and reviews are evidence, not additional queues.

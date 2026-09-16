@@ -1,0 +1,9 @@
+# Roadmap reconciliation after target continuity
+
+Compared the roadmap with the target-workflow implementation and validation, preparation acceptance/closure, CLI registration, and retention paths. Moved implemented discovery, assessment, named subports, fetch guards, provisioning, and engineering foundations out of the pending queue. Historical activity/review files remain evidence rather than parallel task lists.
+
+The next order is contribution lifecycle, routine driver cleanup, richer platform observations, manifest-bearing source/auxiliary archive separation, then shared-release subport scope. Persistent target selection makes contribution closure a prerequisite for naturally starting another update to the same port; current automatic closure covers empty no-update intent, not general abandonment or PR completion. The earlier disk-space follow-up is now explicit: successful resource release and manual gc already exist, but broader automatic retention still needs policy and implementation. Basic PR lifecycle observation is separated from later review/CI monitoring.
+
+Manifest/auxiliary handling moves ahead of shared-release scope because it can remain a single-target improvement. Named subport lookup is marked complete without implying that a bump may already modify every sibling. Broader dependent verification, batch intake, credential expiration, checksum coverage, and unresolved authority/trust questions retain distinct entries. Maintenance sections preserve the unresolved causes of earlier provisioning failures without treating successful provisioning work as unimplemented.
+
+Aligned the coverage and target-workflow plans with the revised queue and corrected the CLI design's stale statement that checksum refresh was unfinished. No runtime behavior changed. Checked local Markdown links, the diff, and whitespace; no application test rerun was needed for documentation edits.
