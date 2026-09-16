@@ -49,7 +49,9 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 
 ### Engineering follow-up
 
-- Source archives are now prepared before Tart capacity reservation. Exact candidate indexes are retained, and standalone edits can seed from a cached tree using the complete Git diff. Further index-cache retention and large-tree timing work remain below.
+- Investigate jq's native destroot/test ownership failure observed during the [retention smoke exercise](activity/2026-09-15-retention-smoke.md): destroot rebuilt `src/main.o` as root, and a later unprivileged test recompilation could not overwrite it. A direct MacPorts retry reproduced the failure; the earlier fresh run passed. Keep the failed verdict intact and resolve this at the appropriate port/Base boundary rather than silently repairing ownership or skipping tests in Dockhand.
+
+- Source archives are now prepared before Tart capacity reservation. Exact candidate indexes are retained, and standalone edits can seed from a cached tree using the complete Git diff. Index-cache retention is implemented; the [retention smoke exercise](activity/2026-09-15-retention-smoke.md) measured a cold index build and confirmed warm reuse before admission.
 - Measure the current CLI suite, then move duplicated lifecycle/composition scenarios to app or integration tests where useful. Keep focused CLI coverage for parsing, rendering, exit codes, and representative end-to-end wiring; retain existing recovery assertions. Do not impose the old review's timing target without current measurements.
 - Add a lightweight automated check of the dependency rules in `components.md`; enforce meaningful package boundaries rather than a broad stylistic lint regime.
 - Audit unused exported Tcl/upstream APIs and reserved scaffolding against current callers and protocol use. Unexport, remove, or test deliberately; do not delete functioning planning code based on an older review's inventory.

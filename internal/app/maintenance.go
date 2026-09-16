@@ -78,7 +78,7 @@ func Collect(ctx context.Context, config Config, options workflow.RetentionOptio
 	}
 	engine := workflow.Engine{State: store, Repository: repository.ID, Providers: map[string]verify.Provider{}}
 	if !options.DryRun {
-		engine.Provider = &tart.Provider{State: store, Repository: repository.ID, Config: config.Tart}
+		engine.Providers["tart"] = &tart.Provider{State: store, Repository: repository.ID, Config: config.Tart}
 	}
 	engine.Providers["github"] = &githubverify.Provider{State: store, Repository: repository.ID, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification")}
 	result, err := engine.Collect(ctx, options)
