@@ -157,7 +157,12 @@ func (s *workSelector) flags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&s.job, "job", "", "Select one recorded job")
 	cmd.MarkFlagsMutuallyExclusive("job", "branch", "change")
 }
-func (s workSelector) validate(args []string) error {
+func (s workSelector) validate(cmd *cobra.Command, args []string) error {
+	for _, name := range []string{"job", "branch", "change"} {
+		if cmd.Flags().Changed(name) && cmd.Flag(name).Value.String() == "" {
+			return fmt.Errorf("--%s requires a nonempty selector", name)
+		}
+	}
 	if len(args) == 1 && (args[0] == "" || !macports.ValidName(args[0])) {
 		return fmt.Errorf("target must name a port or subport")
 	}
@@ -190,7 +195,7 @@ func (r *runtime) waitCommand() *cobra.Command {
 		if cmd.Flags().Changed("branch") && !git.ValidBranchName(selected.branch) {
 			return fmt.Errorf("branch must name a literal recorded contribution branch")
 		}
-		if err := selected.validate(args); err != nil {
+		if err := selected.validate(cmd, args); err != nil {
 			return err
 		}
 		services, err := r.build(cmd.Context(), r.config)
@@ -224,7 +229,7 @@ func (r *runtime) cancelCommand() *cobra.Command {
 		if cmd.Flags().Changed("branch") && !git.ValidBranchName(selected.branch) {
 			return fmt.Errorf("branch must name a literal recorded contribution branch")
 		}
-		if err := selected.validate(args); err != nil {
+		if err := selected.validate(cmd, args); err != nil {
 			return err
 		}
 		services, err := r.build(cmd.Context(), r.config)

@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/workflow"
 )
 
@@ -46,6 +48,15 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 			}
 		}
 		continuation = &selected
+	}
+	if !request.WorkingTree && continuation == nil && request.Branch != "" && macports.ValidName(request.Selection.Selector) {
+		change, lookupErr := s.Workflow.SelectContribution(ctx, workflow.ContributionSelector{Branch: request.Branch})
+		if lookupErr != nil && !errors.Is(lookupErr, state.ErrNotFound) {
+			return workflow.BoundVerification{}, lookupErr
+		}
+		if lookupErr == nil && change.InitiatingTarget != "" {
+			continuation = &workflow.ContributionSelector{Target: request.Selection.Selector, Branch: request.Branch}
+		}
 	}
 	return s.Workflow.BindVerification(ctx, workflow.VerificationRequest{
 		Continue: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,

@@ -97,3 +97,18 @@ func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
 	require.Contains(t, out.String(), "dockhand wait --job job")
 	require.Contains(t, out.String(), "dockhand start")
 }
+
+func TestEmptyWorkSelectorsDoNotFallBackToCurrentBranch(t *testing.T) {
+	for _, command := range []string{"wait", "cancel"} {
+		for _, selector := range []string{"job", "change", "branch"} {
+			t.Run(command+"/"+selector, func(t *testing.T) {
+				var output bytes.Buffer
+				db := filepath.Join(t.TempDir(), "missing", "state.db")
+				err := Run(t.Context(), []string{command, "--" + selector, ""}, Streams{Out: &output, Err: &output}, app.Config{DBPath: db, Repository: "/does-not-exist"})
+				require.Error(t, err)
+				require.Contains(t, err.Error(), selector)
+				require.NoDirExists(t, filepath.Dir(db))
+			})
+		}
+	}
+}
