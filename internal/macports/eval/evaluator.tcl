@@ -64,6 +64,7 @@ namespace eval ::dockhand {
             }
             dict set out fetch.has_credentials $credentials
             dict set out option_errors $failures
+            if {$::dockhand::observing} { dict set out dockhand.observation [observation_details $worker] }
             return $out
         } finally {
             mportclose $handle

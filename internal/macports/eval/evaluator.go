@@ -55,7 +55,7 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 		_ = session.Close()
 		return nil, macports.Runtime{}, err
 	}
-	if _, err := session.Call(ctx, "eval", compatibilityScript+"\n"+fetchCredentialsScript+"\n"+evaluatorScript); err != nil {
+	if _, err := session.Call(ctx, "eval", compatibilityScript+"\n"+fetchCredentialsScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
 	reply, err := session.Call(ctx, "initialize", tree.Root())
@@ -77,23 +77,45 @@ func (e *Evaluator) NativePlatform(ctx context.Context) (record.Platform, error)
 	return runtime.Platform, err
 }
 
-func (e *Evaluator) Evaluate(ctx context.Context, source macports.Context) (_ macports.Snapshot, err error) {
+func (e *Evaluator) Evaluate(ctx context.Context, source macports.Context) (macports.Snapshot, error) {
+	observation, err := e.evaluate(ctx, source, nil)
+	return observation.Snapshot, err
+}
+
+func (e *Evaluator) evaluate(ctx context.Context, source macports.Context, request *macports.ObservationRequest) (_ macports.Observation, err error) {
 	checked, err := source.Tree.Select(source.Target())
 	if err != nil {
-		return macports.Snapshot{}, err
+		return macports.Observation{}, err
 	}
 	session, runtime, err := e.start(ctx, checked.Tree)
 	if err != nil {
-		return macports.Snapshot{}, err
+		return macports.Observation{}, err
 	}
 	defer func() { err = errors.Join(err, session.Close()) }()
+	if request != nil {
+		platform := ""
+		if request.Platform != (record.Platform{}) && request.Platform != runtime.Platform {
+			platform = request.Platform.OS + " " + request.Platform.Version + " " + request.Platform.Architecture
+		}
+		if _, err := session.Call(ctx, "observation_setup", platform, strconv.FormatBool(request.Declarations)); err != nil {
+			return macports.Observation{}, err
+		}
+	}
+	observations := map[string]macports.PortObservation{}
 	top, subs, err := evaluateOne(ctx, session, checked, checked.Target().Subport)
 	if err != nil {
-		return macports.Snapshot{}, err
+		return macports.Observation{}, err
 	}
 	if top.Name != checked.Target().Name {
-		return macports.Snapshot{}, fmt.Errorf("%w: expected %s, evaluated %s", macports.ErrTarget, checked.Target().Name, top.Name)
+		return macports.Observation{}, fmt.Errorf("%w: expected %s, evaluated %s", macports.ErrTarget, checked.Target().Name, top.Name)
 	}
+	if request != nil {
+		observations[top.Name], err = decodeObservation(top.Options["dockhand.observation"])
+		if err != nil {
+			return macports.Observation{}, err
+		}
+	}
+	delete(top.Options, "dockhand.observation")
 	ports := map[string]macports.PortInfo{top.Name: top}
 	if checked.Target().Subport == "" {
 		for _, sub := range subs {
@@ -102,15 +124,27 @@ func (e *Evaluator) Evaluate(ctx context.Context, source macports.Context) (_ ma
 			}
 			value, _, err := evaluateOne(ctx, session, checked, sub)
 			if err != nil {
-				return macports.Snapshot{}, err
+				return macports.Observation{}, err
 			}
 			if value.Name != sub {
-				return macports.Snapshot{}, fmt.Errorf("%w: expected subport %s, evaluated %s", macports.ErrTarget, sub, value.Name)
+				return macports.Observation{}, fmt.Errorf("%w: expected subport %s, evaluated %s", macports.ErrTarget, sub, value.Name)
 			}
+			if request != nil {
+				observations[sub], err = decodeObservation(value.Options["dockhand.observation"])
+				if err != nil {
+					return macports.Observation{}, err
+				}
+			}
+			delete(value.Options, "dockhand.observation")
 			ports[sub] = value
 		}
 	}
-	return macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, ObservedAt: time.Now().UTC()}, nil
+	snapshot := macports.Snapshot{Source: source.Source(), Target: source.Target(), Platform: runtime.Platform, Runtime: runtime, Ports: ports, ObservedAt: time.Now().UTC()}
+	modeled := request != nil && request.Platform != (record.Platform{}) && request.Platform != runtime.Platform
+	if modeled {
+		snapshot.Platform = request.Platform
+	}
+	return macports.Observation{Snapshot: snapshot, Modeled: modeled, Ports: observations}, nil
 }
 
 func evaluateOne(ctx context.Context, session *rpc.Session, source macports.Context, subport string) (macports.PortInfo, []string, error) {
