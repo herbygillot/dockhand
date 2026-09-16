@@ -1,4 +1,3 @@
-// Package dependency handles MacPorts dependency declarations and their generators.
 package dependency
 
 import (

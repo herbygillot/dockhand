@@ -1,4 +1,3 @@
-// Package github verifies committed contributions using the MacPorts workflow on a personal fork.
 package github
 
 import (

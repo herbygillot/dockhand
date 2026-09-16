@@ -1,5 +1,3 @@
-// Package dependents discovers verification coverage from a frozen ports tree.
-// It does not decide which ports need revision edits or schedule builds.
 package dependents
 
 import (

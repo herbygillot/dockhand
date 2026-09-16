@@ -1,4 +1,3 @@
-// Package fetch performs bounded HTTP transfers using caller-owned requests and clients.
 package fetch
 
 import (

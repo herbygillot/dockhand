@@ -1,4 +1,3 @@
-// Package github shares SDK construction, authentication, and transport policy between GitHub adapters.
 package github
 
 import (

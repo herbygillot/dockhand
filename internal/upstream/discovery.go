@@ -1,6 +1,3 @@
-// Package upstream selects and checks releases from interpreted port sources.
-// Forge adapters supply repository facts; this package owns eligibility and the
-// selected source returned to preparation.
 package upstream
 
 import (

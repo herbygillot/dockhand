@@ -1,4 +1,3 @@
-// Package staging prepares immutable indexed source archives for verification providers.
 package staging
 
 import (

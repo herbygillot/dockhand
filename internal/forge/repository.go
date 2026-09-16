@@ -1,5 +1,3 @@
-// Package forge defines remote repository facts shared by discovery and publication.
-// Adapters observe these facts; capability packages decide what they mean for a port.
 package forge
 
 import (

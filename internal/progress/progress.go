@@ -1,5 +1,3 @@
-// Package progress carries transient operation messages to an optional observer.
-// Messages describe work in this process; they are not durable workflow status.
 package progress
 
 import (

@@ -1,4 +1,3 @@
-// Package installation observes and installs MacPorts on an explicit command target.
 package installation
 
 import (

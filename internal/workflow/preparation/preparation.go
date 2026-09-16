@@ -1,4 +1,3 @@
-// Package preparation binds Git snapshots to Portfile editing and stores the result.
 package preparation
 
 import (

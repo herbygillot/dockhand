@@ -1,4 +1,3 @@
-// Package gitlab adapts GitLab repository observations to forge contracts.
 package gitlab
 
 import (

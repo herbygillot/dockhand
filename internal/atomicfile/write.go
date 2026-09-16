@@ -1,4 +1,3 @@
-// Package atomicfile durably replaces small local files.
 package atomicfile
 
 import (

@@ -1,4 +1,3 @@
-// Package credential defines short-lived authorization prompts and durable secret storage.
 package credential
 
 import (

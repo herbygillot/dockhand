@@ -1,4 +1,3 @@
-// Package source interprets the upstream source conventions of evaluated Portfiles.
 package source
 
 import (

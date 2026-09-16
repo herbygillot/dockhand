@@ -1,4 +1,3 @@
-// Package keychain stores credentials in the current user's macOS Keychain.
 package keychain
 
 import (
