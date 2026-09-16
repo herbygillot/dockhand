@@ -11,12 +11,12 @@ Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockh
 Authorize Dockhand for GitHub publication without installing `gh`:
 
 ```sh
-DOCKHAND_GITHUB_CLIENT_ID=<registered-oauth-client-id> dockhand auth login
+dockhand auth login
 ```
 
-The OAuth application must have GitHub's device flow enabled. Build with `make GITHUB_OAUTH_CLIENT_ID=<id>` to embed its registered client ID; the client ID is public application metadata, not a secret. Login opens GitHub's device page, requests `public_repo`, validates the selected account, and stores the token in macOS Keychain. `--client-id` overrides the configured ID and `--no-browser` prints the URL for manual opening. Login uses neither the ports tree nor the workflow database.
+Dockhand includes the public client ID for its registered OAuth application. Login opens GitHub's device page, requests `public_repo`, validates the selected account, and stores the token in macOS Keychain. `--client-id` or `DOCKHAND_GITHUB_CLIENT_ID` overrides the registered application for development, and `--no-browser` prints the URL for manual opening. No client secret is present or required. Login uses neither the ports tree nor the workflow database.
 
-For an ordinary build without an embedded OAuth client ID, use an existing authenticated GitHub CLI login, or provide `GH_TOKEN` or `GITHUB_TOKEN`. Git push authentication is configured separately through Git. The publication section below describes credential precedence and remote selection.
+An existing authenticated GitHub CLI login, `GH_TOKEN`, or `GITHUB_TOKEN` also works. Git push authentication is configured separately through Git. The publication section below describes credential precedence and remote selection.
 
 `dockhand auth status` checks the selected credential against GitHub and reports its source and account. Rejections name the source and how to replace it; Dockhand does not try another identity after rejection. `dockhand auth login` replaces the saved Keychain credential. If `GH_TOKEN` or `GITHUB_TOKEN` is set, login explains that the environment credential still takes precedence.
 

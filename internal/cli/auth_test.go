@@ -11,6 +11,9 @@ import (
 )
 
 func TestAuthLoginHelpAndMissingClientIDDoNotOpenState(t *testing.T) {
+	configuredClientID := app.DefaultGitHubOAuthClientID
+	app.DefaultGitHubOAuthClientID = ""
+	t.Cleanup(func() { app.DefaultGitHubOAuthClientID = configuredClientID })
 	t.Setenv("DOCKHAND_GITHUB_CLIENT_ID", "")
 	database := filepath.Join(t.TempDir(), "state.db")
 	var output bytes.Buffer

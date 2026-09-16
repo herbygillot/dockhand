@@ -11,7 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/github"
 )
 
-var DefaultGitHubOAuthClientID string
+var DefaultGitHubOAuthClientID = "Ov23lixRrrqO0uEzU2GA"
 
 var githubCredentialKey = credential.Key{Service: "github.com/herbygillot/dockhand", Account: "github.com"}
 

@@ -4,7 +4,7 @@ This document is the current source of truth for implementation priorities. The 
 
 The order within **Next** is intentional. Other sections describe accepted direction, unresolved design, or explicitly deferred scope without promising implementation order.
 
-Last updated: 2026-09-15.
+Last updated: 2026-09-16.
 
 ## Next
 
@@ -62,6 +62,7 @@ The [fresh provisioning exercise](activity/2026-09-15-fresh-provisioning.md) ini
 - Package overviews now cover every package, including the workflow file-group map. Continue documentation of exported operations and recovery contracts where it aids callers, rather than targeting comment counts.
 - Keep `components.md` focused on the current map, responsibilities, and dependency rules. Link to activity reports for implementation history instead of repeating it. Review how raw benchmark data is retained while preserving reproducible commands and useful conclusions; no automatic deletion of history is implied.
 - PortIndex and GitHub log-cache retention is implemented in `gc`, with last-use thresholds, existing operation locks, read-only previews, and retained database evidence. Consider orphaned temporary-file cleanup separately; unidentified/incomplete temporaries are currently preserved.
+- Add expiring OAuth token support before enabling it for Dockhand's registration: retain access and refresh tokens with their expirations, coordinate refresh-token rotation across processes, and require login again only after revocation or an unusable refresh token.
 - Consider account-wide GitHub cooldown coordination only if measurements show concurrent jobs continue causing rate-limit pressure despite their persisted per-record deadlines.
 - The shared `fetch` package now serves bounded source-archive and PortIndex transfers; keep cache/storage ownership in callers.
 - Reconsider separating PortIndex reading/querying from staging/cache maintenance when extending selectors. The seam is credible, but current consumers stage then read; no immediate split is required.

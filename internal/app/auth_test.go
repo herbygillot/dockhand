@@ -60,7 +60,18 @@ func TestGitHubLoginAuthorizesBeforeSavingToKeychain(t *testing.T) {
 	require.Equal(t, app.GitHubLoginResult{Host: "github.com", Account: "fixture-user", Storage: "macOS Keychain"}, result)
 }
 
+func TestGitHubLoginUsesRegisteredClientID(t *testing.T) {
+	flow, store := &loginFlow{}, &loginStore{}
+	_, err := app.LoginGitHub(t.Context(), app.GitHubLoginOptions{Flow: flow, Store: store, Present: func(credential.DeviceAuthorization) error { return nil }})
+	require.NoError(t, err)
+	require.Equal(t, app.DefaultGitHubOAuthClientID, flow.clientID)
+	require.NotEmpty(t, flow.clientID)
+}
+
 func TestGitHubLoginRequiresConfigurationAndPropagatesStorageFailure(t *testing.T) {
+	configuredClientID := app.DefaultGitHubOAuthClientID
+	app.DefaultGitHubOAuthClientID = ""
+	t.Cleanup(func() { app.DefaultGitHubOAuthClientID = configuredClientID })
 	_, err := app.LoginGitHub(t.Context(), app.GitHubLoginOptions{})
 	require.ErrorContains(t, err, "client ID")
 	flow, store := &loginFlow{}, &loginStore{err: errors.New("keychain locked")}

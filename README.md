@@ -28,7 +28,7 @@ You can take an update one step at a time, previewing the diff, preparing a bran
 - **Git.**
 - **A local MacPorts installation.** Dockhand reads Portfiles through MacPorts' own Tcl interpreter, so it sees exactly what `port` sees, including computed versions and PortGroup effects.
 - **A GitHub account with a fork of `macports/macports-ports`**, cloned to your machine, with Git able to push to that fork.
-- **A GitHub credential for Dockhand.** Any one of these works: an existing GitHub CLI login (`gh auth login`), a `GH_TOKEN` or `GITHUB_TOKEN` environment variable, or Dockhand's own browser login (`dockhand auth login`, available when Dockhand was built with a registered OAuth client ID).
+- **A GitHub credential for Dockhand.** Any one of these works: Dockhand's browser login (`dockhand auth login`), an existing GitHub CLI login (`gh auth login`), or a `GH_TOKEN` or `GITHUB_TOKEN` environment variable.
 
 Optional, depending on what you work on:
 
@@ -100,7 +100,7 @@ Run the commands below from inside this checkout. To run them from somewhere els
 
 ### Sign in to GitHub
 
-If you already use the GitHub CLI, `gh auth login` is enough. Otherwise export `GH_TOKEN` or `GITHUB_TOKEN`, or use Dockhand's browser login when your build includes an OAuth client ID:
+Use Dockhand's browser login:
 
 ```sh
 dockhand auth login
