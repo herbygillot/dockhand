@@ -14,51 +14,58 @@ import (
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
-func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
+type archivePlan struct {
+	result    Result
+	contents  []byte
+	versioned macports.Snapshot
+	sources   []archiveSource
+}
+
+func (s *Service) planArchiveVersion(ctx context.Context, request Request, input *sourceInput) (archivePlan, error) {
 	release := request.Release
 	if release == nil || release.Requested != request.Version {
-		return Result{}, fmt.Errorf("portedit: a matching resolved release is required")
+		return archivePlan{}, fmt.Errorf("portedit: a matching resolved release is required")
 	}
 	if request.Version == "" && release.CurrentVersion != input.info.Version {
-		return Result{}, fmt.Errorf("portedit: automatic selection does not match the input version")
+		return archivePlan{}, fmt.Errorf("portedit: automatic selection does not match the input version")
 	}
 	if release.NoUpdate && request.Version != "" {
-		return Result{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
+		return archivePlan{}, fmt.Errorf("portedit: explicit selection cannot imply no update")
 	}
 	if input.target.Subport != "" {
-		return Result{}, fmt.Errorf("%w: version bumps currently select the primary port", ErrUnsupported)
+		return archivePlan{}, fmt.Errorf("%w: version bumps currently select the primary port", ErrUnsupported)
 	}
 	if release.NoUpdate {
-		return Result{Base: request.Source, Target: input.target, Release: release}, nil
+		return archivePlan{result: Result{Base: request.Source, Target: input.target, Release: release}}, nil
 	}
 	spec, err := portsource.Interpret(input.info)
 	if err != nil {
-		return Result{}, err
+		return archivePlan{}, err
 	}
 	sourceVersion, ok := spec.Pattern.Version(release.Tag)
 	if !ok {
-		return Result{}, fmt.Errorf("%w: selected tag does not match source convention", ErrFidelity)
+		return archivePlan{}, fmt.Errorf("%w: selected tag does not match source convention", ErrFidelity)
 	}
 	carriers, err := s.versionCarriers(ctx, request, input)
 	if err != nil {
-		return Result{}, err
+		return archivePlan{}, err
 	}
 	contents, versioned, err := s.probeVersion(ctx, request, input, carriers, sourceVersion)
 	if err != nil {
-		return Result{}, err
+		return archivePlan{}, err
 	}
 	if versioned.Ports[input.target.Name].Version != release.Version {
-		return Result{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
+		return archivePlan{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
 	}
 	versionRoot := input.files.Root
 
 	oldSources, err := downloadSources(input.info, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
 	if err != nil {
-		return Result{}, err
+		return archivePlan{}, err
 	}
 	oldGroups, err := portfile.ChecksumCount(input.data, input.info.Options["checksums"])
 	if err != nil {
-		return Result{}, err
+		return archivePlan{}, err
 	}
 
 	info := versioned.Ports[input.target.Name]
@@ -67,14 +74,14 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	checked.Options["filespath"] = input.info.Options["filespath"]
 	sources, err := downloadSources(checked, filepath.Join(input.files.Root, filepath.Dir(input.target.Portfile)))
 	if err != nil {
-		return Result{}, err
+		return archivePlan{}, err
 	}
 	groups, err := portfile.ChecksumCount(contents, info.Options["checksums"])
 	if err != nil {
-		return Result{}, err
+		return archivePlan{}, err
 	}
 	if groups != oldGroups || len(sources) != len(oldSources) {
-		return Result{}, fmt.Errorf("%w: source/checksum group count changed", ErrUnsupported)
+		return archivePlan{}, fmt.Errorf("%w: source/checksum group count changed", ErrUnsupported)
 	}
 	changed := false
 	for i, source := range sources {
@@ -83,13 +90,29 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		}
 	}
 	if !changed {
-		return Result{}, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
+		return archivePlan{}, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
 	}
 	fidelity := versionFidelity(input.before, versioned, input.target.Name, input.files.Root, versionRoot, *release, info.Options["checksums"])
 	result := Result{Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{fidelity}}
 	if len(fidelity.UnexpectedChanges) > 0 {
-		return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
+		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
 	}
+	if err := checkChecksumSources(contents, info, sources); err != nil {
+		return archivePlan{}, err
+	}
+	return archivePlan{result: result, contents: contents, versioned: versioned, sources: sources}, nil
+}
+
+func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
+	plan, err := s.planArchiveVersion(ctx, request, input)
+	result := plan.result
+	if err != nil || request.Release.NoUpdate {
+		return result, err
+	}
+	contents, versioned, sources := plan.contents, plan.versioned, plan.sources
+	info := versioned.Ports[input.target.Name]
+	versionRoot := input.files.Root
+	release := request.Release
 	contents, checksums, downloads, err := s.refreshArchives(ctx, contents, info, sources)
 	if err != nil {
 		return result, err

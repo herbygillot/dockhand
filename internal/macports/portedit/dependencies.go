@@ -20,14 +20,9 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 	if request.Release != nil && request.Release.NoUpdate {
 		return s.prepareArchiveVersion(ctx, request, input)
 	}
-	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit, "cargo.update", "cargo.dir"} {
-		if input.info.OptionErrors[key] != "" {
-			return Result{}, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
-		}
-	}
-	plan, err := dependency.Inspect(input.data, input.info.Options)
+	plan, err := inspectDependencies(input)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
+		return Result{}, err
 	}
 	if plan == nil {
 		return s.prepareArchiveVersion(ctx, request, input)
@@ -36,10 +31,25 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
 	}
-	if err := dependencyPatches(input, plan.Kind); err != nil {
-		return Result{}, err
-	}
 	return s.prepareDependencyVersion(ctx, request, input, plan, executable)
+}
+
+func inspectDependencies(input *sourceInput) (*dependency.Plan, error) {
+	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit, "cargo.update", "cargo.dir"} {
+		if input.info.OptionErrors[key] != "" {
+			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
+		}
+	}
+	plan, err := dependency.Inspect(input.data, input.info.Options)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", ErrUnsupported, input.target.Name, err)
+	}
+	if plan != nil {
+		if err := dependencyPatches(input, plan.Kind); err != nil {
+			return nil, err
+		}
+	}
+	return plan, nil
 }
 
 func dependencyPatches(input *sourceInput, kind string) error {
@@ -107,16 +117,15 @@ func dependencyPatches(input *sourceInput, kind string) error {
 	return nil
 }
 
-func (s *Service) prepareDependencyVersion(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan, executable string) (Result, error) {
+func (s *Service) dependencyBase(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan) (*sourceInput, []archiveSource, error) {
 	stripped, err := plan.Strip(input.data)
 	if err != nil {
-		return Result{}, err
+		return nil, nil, err
 	}
 	_, strippedSnapshot, _, err := s.evaluateEdit(ctx, request, input, stripped)
 	if err != nil {
-		return Result{}, err
+		return nil, nil, err
 	}
-	baseRequest := request
 	baseValue := *input
 	baseValue.data, baseValue.before = stripped, strippedSnapshot
 	baseValue.info = strippedSnapshot.Ports[input.target.Name]
@@ -124,11 +133,21 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 
 	sources, err := downloadSources(base.info, filepath.Join(base.files.Root, filepath.Dir(base.target.Portfile)))
 	if err != nil {
-		return Result{}, err
+		return nil, nil, err
 	}
 	if len(sources) != 1 {
-		return Result{}, fmt.Errorf("%w: dependency regeneration requires one primary source archive", ErrUnsupported)
+		return nil, nil, fmt.Errorf("%w: dependency regeneration requires one primary source archive", ErrUnsupported)
 	}
+	return base, sources, nil
+}
+
+func (s *Service) prepareDependencyVersion(ctx context.Context, request Request, input *sourceInput, plan *dependency.Plan, executable string) (Result, error) {
+	base, sources, err := s.dependencyBase(ctx, request, input, plan)
+	if err != nil {
+		return Result{}, err
+	}
+	stripped := base.data
+	baseRequest := request
 	directory, err := os.MkdirTemp("", "dockhand-dependencies-")
 	if err != nil {
 		return Result{}, err

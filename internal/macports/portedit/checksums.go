@@ -42,12 +42,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 
 func (s *Service) refreshArchives(ctx context.Context, contents []byte, info macports.PortInfo, sources []archiveSource) ([]byte, string, []Download, error) {
 	var err error
-	// Check source associations before starting downloads, including unchanged auxiliary archives.
-	placeholders := make([]portfile.Checksum, len(sources))
-	for i, source := range sources {
-		placeholders[i] = portfile.Checksum{Name: source.Name}
-	}
-	if _, _, err = portfile.ReplaceChecksums(contents, info.Options["checksums"], placeholders...); err != nil {
+	if err := checkChecksumSources(contents, info, sources); err != nil {
 		return nil, "", nil, err
 	}
 	downloads := make([]Download, 0, len(sources))
@@ -79,4 +74,13 @@ func (s *Service) refreshArchives(ctx context.Context, contents []byte, info mac
 		return nil, "", nil, err
 	}
 	return contents, checksums, downloads, nil
+}
+
+func checkChecksumSources(contents []byte, info macports.PortInfo, sources []archiveSource) error {
+	placeholders := make([]portfile.Checksum, len(sources))
+	for i, source := range sources {
+		placeholders[i] = portfile.Checksum{Name: source.Name}
+	}
+	_, _, err := portfile.ReplaceChecksums(contents, info.Options["checksums"], placeholders...)
+	return err
 }

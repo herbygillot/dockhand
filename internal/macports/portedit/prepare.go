@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	ErrNotImplemented = errors.New("portedit: requested transformation is not implemented")
-	ErrUnsupported    = portfile.ErrUnsupported
-	ErrFidelity       = errors.New("portedit: evaluation does not match the intended change")
+	ErrProbeInconclusive = errors.New("portedit: version probe is inconclusive")
+	ErrNotImplemented    = errors.New("portedit: requested transformation is not implemented")
+	ErrUnsupported       = portfile.ErrUnsupported
+	ErrFidelity          = errors.New("portedit: evaluation does not match the intended change")
 )
 
 type CommitIntent struct {

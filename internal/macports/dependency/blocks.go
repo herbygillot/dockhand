@@ -1,6 +1,7 @@
 package dependency
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os/exec"
@@ -15,6 +16,9 @@ import (
 const Go = "go.vendors"
 const Cargo = "cargo.crates"
 const CargoGit = "cargo.crates_github"
+
+// ErrToolUnavailable identifies a missing optional regeneration prerequisite.
+var ErrToolUnavailable = errors.New("dependency: cannot regenerate")
 
 type Tools struct{ Go2Port, Cargo2Port string }
 type Availability struct {
@@ -45,7 +49,7 @@ func (t Tools) Resolve(kind string) (string, error) {
 	}
 	resolved, err := exec.LookPath(path)
 	if err != nil {
-		return "", fmt.Errorf("dependency: cannot regenerate %s: missing executable %s; install the tool or select --%s", kind, name, name)
+		return "", fmt.Errorf("%w %s: missing executable %s; install the tool or select --%s", ErrToolUnavailable, kind, name, name)
 	}
 	return filepath.Abs(resolved)
 }

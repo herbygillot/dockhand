@@ -1,0 +1,159 @@
+package portedit
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/text"
+)
+
+// Assessment describes preparation evidence, not whether a port will build.
+type Assessment struct {
+	Outcome        string
+	CurrentVersion string
+	Portfile       string
+	Inputs         []VersionInput
+	Findings       []Finding
+	Release        *record.Release `json:",omitempty"`
+}
+
+// VersionInput locates a literal candidate in the original committed Portfile.
+// Its presence alone does not establish that any particular release is editable.
+type VersionInput struct {
+	Line, Column int
+	Value        string
+}
+
+// Finding has a stable check/code and a human-readable explanation.
+type Finding struct {
+	Check  string
+	Status string
+	Code   string
+	Detail string
+}
+
+const (
+	InputFound       = "input-found"
+	CandidateChecked = "candidate-checked"
+	Passed           = "passed"
+	Blocked          = "blocked"
+	Unsupported      = "unsupported"
+	Unknown          = "unknown"
+	NotTested        = "not-tested"
+)
+
+// Problem preserves typed failure distinctions without interpreting error text.
+func Problem(check string, err error) Finding {
+	status, code := Unknown, "check-inconclusive"
+	switch {
+	case errors.Is(err, dependency.ErrToolUnavailable):
+		status, code = Blocked, "missing-helper"
+	case errors.Is(err, ErrProbeInconclusive):
+		code = "probe-inconclusive"
+	case errors.Is(err, portsource.ErrTagPattern):
+		code = "tag-pattern-unknown"
+	case errors.Is(err, ErrFidelity):
+		status, code = Unsupported, "edit-fidelity"
+	case errors.Is(err, ErrUnsupported), errors.Is(err, portsource.ErrUnsupported):
+		status, code = Unsupported, "unsupported-convention"
+	}
+	return Finding{Check: check, Status: status, Code: code, Detail: err.Error()}
+}
+
+// Summarize retains all findings; the outcome prioritizes established limitations
+// over missing prerequisites, then uncertainty. Not-tested stages remain explicit.
+func (a *Assessment) Summarize() {
+	a.Outcome = Unknown
+	for _, f := range a.Findings {
+		if f.Check == "version-input" && f.Status == Passed {
+			a.Outcome = InputFound
+		}
+		if f.Check == "candidate" && f.Status == Passed {
+			a.Outcome = CandidateChecked
+		}
+	}
+	for _, status := range []string{Unknown, Blocked, Unsupported} {
+		for _, f := range a.Findings {
+			if f.Status == status {
+				a.Outcome = status
+				break
+			}
+		}
+	}
+}
+
+// Assess checks declarations and optional candidate fidelity without downloading
+// archives or executing dependency generators. It restores each temporary edit.
+func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Assessment, error) {
+	if err := ctx.Err(); err != nil {
+		return Assessment{}, err
+	}
+	a := Assessment{CurrentVersion: p.input.info.Version, Portfile: p.input.target.Portfile, Release: release}
+	add := func(check, detail string, err error) {
+		if err != nil {
+			a.Findings = append(a.Findings, Problem(check, err))
+		} else {
+			a.Findings = append(a.Findings, Finding{Check: check, Status: Passed, Code: check + "-checked", Detail: detail})
+		}
+	}
+	add("evaluation", "Committed Portfile evaluated successfully", nil)
+	spec, err := portsource.Interpret(p.input.info)
+	add("source", fmt.Sprintf("%s %s; source version %s", spec.Forge, spec.Repository, spec.SourceVersion), err)
+	if err == nil {
+		err = p.prepare(ctx)
+		add("version-input", "Literal input candidates found; a specific release still needs edit-fidelity checks", err)
+		if err == nil {
+			for _, carrier := range p.carriers {
+				line, col := text.Position(p.input.data, carrier.candidate.Span.Start)
+				a.Inputs = append(a.Inputs, VersionInput{Line: line, Column: col, Value: carrier.candidate.Value})
+			}
+		}
+	} else {
+		a.Findings = append(a.Findings, Finding{Check: "version-input", Status: NotTested, Code: "source-required", Detail: "Version probing requires a recognized source convention"})
+	}
+	base := p.input
+	plan, depErr := inspectDependencies(p.input)
+	detail := "No generated dependency block requires a helper"
+	if depErr == nil && plan != nil {
+		detail = "Recognized " + plan.Kind + " declaration"
+	}
+	add("dependencies", detail, depErr)
+	if depErr == nil && plan != nil {
+		executable, toolErr := p.editor.DependencyTools.Resolve(plan.Kind)
+		add("helper", executable, toolErr)
+		base, _, depErr = p.editor.dependencyBase(ctx, p.request, p.input, plan)
+		if depErr != nil {
+			add("dependency-source", "", depErr)
+		}
+		a.Findings = append(a.Findings, Finding{Check: "regeneration", Status: NotTested, Code: "archives-required", Detail: "Manifest regeneration and preservation of maintained overrides require source archives"})
+	}
+	if depErr == nil {
+		sources, fetchErr := downloadSources(base.info, filepath.Join(base.files.Root, filepath.Dir(base.target.Portfile)))
+		add("fetch", "Archive source declarations are supported; availability is untested", fetchErr)
+		if fetchErr == nil {
+			add("checksums", "Checksum declarations match the archive sources", checkChecksumSources(base.data, base.info, sources))
+		} else {
+			a.Findings = append(a.Findings, Finding{Check: "checksums", Status: NotTested, Code: "sources-required", Detail: "Checksum association requires supported archive sources"})
+		}
+	} else {
+		a.Findings = append(a.Findings, Finding{Check: "fetch", Status: NotTested, Code: "dependency-source-required", Detail: "Primary archive checks require a supported dependency declaration"})
+	}
+	if release != nil && depErr == nil {
+		request := p.request
+		request.Version, request.Release = release.Requested, release
+		_, candidateErr := p.editor.planArchiveVersion(ctx, request, base)
+		add("candidate", "Resolved release passes pre-download version, source, checksum, and edit-fidelity checks", candidateErr)
+	} else {
+		a.Findings = append(a.Findings, Finding{Check: "candidate", Status: NotTested, Code: "candidate-unchecked", Detail: "A resolved release and supported dependency source are required to check a specific update"})
+	}
+	a.Findings = append(a.Findings,
+		Finding{Check: "archives", Status: NotTested, Code: "archives-not-downloaded", Detail: "Archive downloads and checksum regeneration were not performed"},
+		Finding{Check: "verification", Status: NotTested, Code: "build-not-run", Detail: "Lint, builds, tests, and installation were not performed"})
+	a.Summarize()
+	return a, ctx.Err()
+}
