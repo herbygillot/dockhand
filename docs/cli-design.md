@@ -2,6 +2,10 @@
 
 See [architecture](architecture.md) for driver ownership and recovery, [principles](principles.md) for the design commitments, [state.md](state.md) for the shared database contract, and the [roadmap](roadmap.md) for current priorities and deferred work. The SQLite migration and `--db` flag are implemented. `setup`, `verify`, job- and contribution-selected `wait`/`cancel`, and current-process `start` are implemented. Explicit version bumps and revision bumps support previews and durable preparation jobs. Automatic selection is implemented for the bounded GitHub conventions described below. Working-tree verification and matching-evidence reuse are implemented. Standalone and combined bump/publication of verified branches, resource retention, and database backup/check commands are implemented. Broader target selection remains unfinished.
 
+## Planned target-oriented continuation
+
+The [target workflow plan](target-workflow.md) defines the next change to source and contribution selection. Its intended flow is `bump <target>`, `verify <target>`, and `publish <target>`, accepting ports and subports identically. It records contribution identity before preparation and makes arbitrary checkout verification explicit. These semantics are not implemented yet; the command descriptions below continue to describe the current executable until their implementation changes land. The plan also separates automatic release discovery from edit capability.
+
 ## Global options
 
 `--tree PATH` / `-T PATH` selects the ports checkout. It defaults to `MACPORTS_TREE` when nonempty, otherwise the current directory. The selection applies to repository-scoped commands without changing the process working directory. Database-only commands still do not need a ports tree.

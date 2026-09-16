@@ -8,22 +8,34 @@ Last updated: 2026-09-16.
 
 ## Next
 
-### 1. Strengthen core bump preparation
+### 1. Keep one target through bump, verification, and publication
 
-The user-selected priority is broader, dependable Portfile preparation. The [next implementation plan](bump-coverage.md) is ready; its [readiness investigation](activity/2026-09-16-core-bump-readiness.md) reproduces the Wasmer failure and records a targeted baseline. Implement in this order:
+The [target workflow plan](target-workflow.md) is the immediate implementation sequence. The Terraform exercise showed that supported explicit-version editing does not yet imply automatic discovery or a continuous contribution workflow. A failed bump was followed by a successful standalone verification of unchanged master; no update branch existed.
 
-1. Distinguish rejection-only fetch guards from archive modifications, explain the affected context, and finish local candidate planning before dependency-source downloads/helpers.
-2. Improve platform observations and context discovery for scalar/option thresholds and non-conditional OS reads without dropping unresolved coverage.
-3. Support one shared release across subports with explicit contribution scope, preserved pins, and verification/publication coverage for every required target.
-4. Allow dependency regeneration with one identified manifest-bearing source plus independently pinned auxiliary archives; this can proceed independently of shared-subport publication.
+Implement in this order:
 
-No new package or production dependency is needed to begin. Keep native semantics in `macports/eval`, planning in `macports/portedit`, archive ownership in `macports/distfiles`, and helper/manifest validation in `macports/dependency`.
+1. Make outcomes distinguish failed preparation, standalone verification, an actual prepared update, and publication readiness.
+2. Unify source-bound port/subport name resolution across commands and remove public `--subport` once it works everywhere.
+3. Record the contribution when preparation is accepted; keep retries under it, with transactional selection, migration, and interrupted-integration checks.
+4. Let `verify <target>`, `publish <target>`, and target-oriented status follow that contribution. Make checkout verification explicit, handle ambiguity, and preserve revision/evidence checks.
+5. Add evaluated HTTP regex livecheck discovery alongside forge catalogs, shared by bump/outdated. Terraform should select the newest eligible release in its selected series without an explicit version.
+6. Complete Wasmer's fetch-guard/local-planning reliability slice described below, then exercise the integrated paths.
 
-The initial [bump planner](bump-planner.md), [scoped implementation](activity/2026-09-15-scoped-bump-planner.md), and [hardening pass](activity/2026-09-15-planner-hardening.md) are implemented. Existing Terraform/Helm series, gh source/binary branches, and Deno architecture archives have passed real preparation exercises; retain them as controls. New release-series creation and coordinated Rust/bootstrap maintenance remain outside this pass.
+The plan defines stage boundaries, package ownership, retry/no-update behavior, human edits, concurrency, and acceptance checks. It is proposed behavior, not a claim that the commands have changed. One focused `macports/selection` package is justified; no external dependency or second workflow engine is required. PR observation and expiring OAuth tokens remain behind this core work.
+
+### 2. Continue broader Portfile coverage
+
+The [bump coverage plan](bump-coverage.md) and its [readiness investigation](activity/2026-09-16-core-bump-readiness.md) remain applicable. Its first implementation slice is included in the target-workflow milestone: distinguish rejection-only fetch guards from archive modifications, report the affected context, and finish local candidate planning before dependency-source downloads/helpers.
+
+Then implement:
+
+1. Improve platform observations and context discovery for scalar/option thresholds and non-conditional OS reads without dropping unresolved coverage.
+2. Support one shared release across subports with explicit contribution scope, preserved pins, and verification/publication coverage for every required target.
+3. Allow dependency regeneration with one identified manifest-bearing source plus independently pinned auxiliary archives; this can proceed independently of shared-subport publication.
+
+Keep native semantics in `macports/eval`, planning in `macports/portedit`, archive ownership in `macports/distfiles`, and helper/manifest validation in `macports/dependency`. The initial [bump planner](bump-planner.md), [scoped implementation](activity/2026-09-15-scoped-bump-planner.md), and [hardening pass](activity/2026-09-15-planner-hardening.md) are implemented. Existing Terraform/Helm series, gh source/binary branches, and Deno architecture archives have passed preparation exercises; retain them as controls, without equating those exercises with complete automatic bump support. New release-series creation and coordinated Rust/bootstrap maintenance remain outside this pass.
 
 Source/dependency preparation, GitHub verification, automatic Tart preference, per-target dependent images, and maintainer/category discovery are already implemented. Baseline comparison for dependent failures and automatic downstream revision edits remain separate work; GitHub dependent verification remains unsupported. Keep exercise evidence in activity reports and unresolved work here.
-
-PR observation and expiring OAuth tokens remain planned below, after this core workflow work.
 
 ## Planned
 

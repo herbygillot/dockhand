@@ -10,6 +10,14 @@ The [readiness investigation](activity/2026-09-16-core-bump-readiness.md) reprod
 
 Work in the following order. Each stage should complete through assessment, preparation, and applicable verification/publication checks before broadening its claims.
 
+## Prerequisite: target resolution and contribution continuity
+
+The [target workflow plan](target-workflow.md) supersedes the earlier name-resolution-only prerequisite. Remove public `--subport` after source-bound port/subport lookup works across commands, but also make verify/publish continue the selected contribution, record that contribution before branch creation, distinguish standalone builds from prepared updates, and support Terraform's automatic livecheck discovery.
+
+The intended ordinary commands are `dockhand bump terraform-1.16`, `dockhand verify terraform-1.16`, and `dockhand publish terraform-1.16`. An explicit version remains available; `--branch` is an override, not a required handoff. Internal subport identity and exact source/evidence binding remain necessary. The plan defines manual checkout selection, retry and ambiguity behavior, package placement, and migration/concurrency tests.
+
+The roadmap places the target workflow stages before the reliability work below. Stage 1 here then completes that integrated milestone; stages 2–4 extend coverage afterwards. Named target selection does not itself authorize shared-release sibling edits, and successful explicit-version archive preparation is not proof of automatic release discovery.
+
 ## 1. Distinguish fetch guards from archive modifications
 
 Wasmer 7.4.0 has a `pre-fetch` hook on Darwin < 23 arm64 that reports an error and returns. On the reported source, Darwin 22 arm64 is rejected by Dockhand's generic fetch-hook check; the same source archive is observable on all six inspected Darwin 22/23/25 and arm64/x86_64 combinations. There is no evidence here that Wasmer builds on the rejected platform.
@@ -70,7 +78,7 @@ This follows the guard/context work and can be implemented independently of shar
 
 ## Package and dependency decisions
 
-No new package or library is required before the first increment. `macports/eval` already provides the needed boundary around native Tcl. Add focused files for fetch semantics/diagnostics and later platform observations there; do not move interpretation into `workflow` or add per-port implementations.
+The preceding target-resolution work introduces the focused `macports/selection` boundary. No additional package or library is required for the fetch-guard increment. `macports/eval` already provides the needed boundary around native Tcl. Add focused files for fetch semantics/diagnostics and later platform observations there; do not move interpretation into `workflow` or add per-port implementations.
 
 Keep release scope, candidate validation, context selection, and edit authorization in `macports/portedit`; `distfiles` continues to bind artifacts to exact checksum declarations. Shared observation types belong in `macports`, and only durable contribution/verification facts belong in `record`. A later package split needs a concrete independent consumer or dependency boundary, not a file-count threshold.
 
