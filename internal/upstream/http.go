@@ -68,22 +68,12 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 			candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: version})
 		}
 	}
-	selected, err := s.Versions.SelectVersion(ctx, port.Version, `^(.*)$`, candidates)
+	index, comparison, err := s.newest(ctx, port.Version, `^(.*)$`, candidates, "livecheck", "a version")
 	if err != nil {
 		return result, err
 	}
-	if len(selected.Indices) == 0 {
-		return result, fmt.Errorf("%w: no eligible stable version matches livecheck", ErrReleaseMissing)
-	}
-	if len(selected.Indices) != 1 {
-		return result, fmt.Errorf("%w: multiple livecheck versions compare equal; specify a version explicitly", ErrReleaseAmbiguous)
-	}
-	index := selected.Indices[0]
-	if index < 0 || index >= len(candidates) || selected.Comparison < -1 || selected.Comparison > 1 {
-		return result, fmt.Errorf("upstream: invalid version selection")
-	}
 	version := candidates[index].Version
-	if selected.Comparison > 0 {
+	if comparison > 0 {
 		evaluated, err := s.EvaluateVersion(ctx, version)
 		if err != nil {
 			return result, err
@@ -93,15 +83,8 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 		}
 	}
 	digest := sha256.Sum256(page)
-	result.CandidateVersion = version
-	release := classified(record.Release{Archive: true, Version: version, CurrentVersion: port.Version, ObservedAt: result.ObservedAt, NoUpdate: selected.Comparison <= 0, Listing: &record.ReleaseListing{URL: spec.Livecheck.URL, ETag: response.Header.Get("ETag"), LastModified: response.Header.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}, port.Version)
-	result.Release = &release
+	release := record.Release{Archive: true, Version: version, CurrentVersion: port.Version, ObservedAt: result.ObservedAt, NoUpdate: comparison <= 0, Listing: &record.ReleaseListing{URL: spec.Livecheck.URL, ETag: response.Header.Get("ETag"), LastModified: response.Header.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
+	result.finish(release, port.Version, "Selected "+version+" from livecheck", "")
 	result.Evidence = []Observation{{Source: string(portsource.HTTPRegex), Version: version, URL: spec.Livecheck.URL, ObservedAt: result.ObservedAt}}
-	result.Assessment = UpdateAvailable
-	result.Detail = "Selected " + version + " from livecheck"
-	if result.Release.NoUpdate {
-		result.Assessment = Current
-		result.Detail = fmt.Sprintf("Already current at %s; latest eligible version is %s", port.Version, version)
-	}
 	return result, nil
 }

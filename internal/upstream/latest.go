@@ -10,7 +10,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -44,7 +43,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if !automatic(port.Version) {
 		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
 	}
-	followsPrereleases := version.Classify(port.Version) == version.Prerelease
+	followsPrereleases := followsPrereleases(port.Version)
 	var observations []forge.Release
 	if spec.Catalog == portsource.Releases {
 		releases, ok := repository.(forge.ReleaseRepository)
@@ -117,19 +116,9 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		return result, err
 	}
 	candidates, tags = evaluated, selectedTags
-	selection, err := s.Versions.SelectVersion(ctx, port.Version, spec.Livecheck.Regex, candidates)
+	index, comparison, err := s.newest(ctx, port.Version, spec.Livecheck.Regex, candidates, "the port's livecheck filter", "a tag")
 	if err != nil {
 		return result, err
-	}
-	if len(selection.Indices) == 0 {
-		return result, fmt.Errorf("%w: no eligible stable version matches the port's livecheck filter", ErrReleaseMissing)
-	}
-	if len(selection.Indices) != 1 {
-		return result, fmt.Errorf("%w: multiple tags compare equal as the newest version; specify a tag explicitly", ErrReleaseAmbiguous)
-	}
-	index := selection.Indices[0]
-	if index < 0 || index >= len(candidates) || selection.Comparison < -1 || selection.Comparison > 1 {
-		return result, fmt.Errorf("upstream: invalid version selection")
 	}
 	tag, err := repository.Tag(ctx, tags[index])
 	if err != nil {
@@ -139,25 +128,17 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		return result, fmt.Errorf("upstream: invalid selected tag observation")
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
-	result.CandidateVersion = candidates[index].Version
-	release := classified(record.Release{CurrentVersion: port.Version, Version: result.CandidateVersion, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: selection.Comparison <= 0}, port.Version)
-	result.Release = &release
 	evidenceURL, err := spec.EvidenceURL(tag.Name)
 	if err != nil {
 		return result, err
 	}
-	result.Evidence = []Observation{{Source: string(spec.Forge) + "-" + string(spec.Catalog), Version: result.CandidateVersion, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 	catalog := "tags"
 	if spec.Catalog == portsource.Releases {
 		catalog = "published releases"
 	}
-	if result.Release.NoUpdate {
-		result.Assessment = Current
-		result.Detail = fmt.Sprintf("Already current at %s; latest eligible version among %s is %s", port.Version, catalog, result.CandidateVersion)
-	} else {
-		result.Assessment = UpdateAvailable
-		result.Detail = "Selected " + tag.Name + " from " + catalog
-	}
+	release := record.Release{CurrentVersion: port.Version, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: comparison <= 0}
+	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
+	result.Evidence = []Observation{{Source: string(spec.Forge) + "-" + string(spec.Catalog), Version: release.Version, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 	return result, nil
 }
 
