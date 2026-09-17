@@ -80,11 +80,11 @@ func (a *archiveStore) refresh(ctx context.Context, contents []byte, info macpor
 // commitEdit records one evaluated edit as the result's single commit unless
 // fidelity found unexpected changes. Files and fidelity are recorded either
 // way so callers can report what was attempted.
-func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.Edit, fidelity Fidelity, subject string) error {
+func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.Edit, report Fidelity, subject string) error {
 	r.Files = []portfile.Edit{edit}
-	r.Fidelity = append(r.Fidelity, fidelity)
-	if len(fidelity.UnexpectedChanges) > 0 {
-		return fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
+	r.Fidelity = append(r.Fidelity, report)
+	if len(report.UnexpectedChanges) > 0 {
+		return fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 	}
 	r.Commits = []CommitIntent{{Subject: input.target.Name + ": " + subject, Body: request.Reason, Paths: []string{input.target.Portfile}}}
 	return nil

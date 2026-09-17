@@ -3,6 +3,7 @@ package portedit
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"slices"
 	"strings"
 
@@ -73,13 +74,13 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 			return nil, fmt.Errorf("%w: candidate changed an independent version on %+v", ErrFidelity, profile)
 		}
 		if !affected {
-			if err := CheckEquivalent(before.Snapshot, after.Snapshot, input.files.root, input.files.root); err != nil {
+			if err := fidelity.Equivalent(before.Snapshot, after.Snapshot, input.files.root, input.files.root); err != nil {
 				return nil, fmt.Errorf("protected context %+v: %w", profile, err)
 			}
 		} else {
-			fidelity := scopedVersionFidelity(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, input.files.root, *request.Release, next.Options["checksums"])
-			if len(fidelity.UnexpectedChanges) > 0 {
-				return nil, fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, fidelity.UnexpectedChanges)
+			report := fidelity.ScopedVersion(request.SharedRelease, before.Snapshot, after.Snapshot, input.target.Name, input.files.root, *request.Release, next.Options["checksums"])
+			if len(report.UnexpectedChanges) > 0 {
+				return nil, fmt.Errorf("%w: context %+v: %v", ErrFidelity, profile, report.UnexpectedChanges)
 			}
 		}
 		oldBinding, err := s.bindArchives(input, input.data, before)

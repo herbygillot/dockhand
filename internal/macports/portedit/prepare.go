@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -16,7 +17,7 @@ var (
 	ErrProbeInconclusive = errors.New("portedit: version probe is inconclusive")
 	ErrNotImplemented    = errors.New("portedit: requested transformation is not implemented")
 	ErrUnsupported       = portfile.ErrUnsupported
-	ErrFidelity          = errors.New("portedit: evaluation does not match the intended change")
+	ErrFidelity          = fidelity.ErrMismatch
 )
 
 type CommitIntent struct {
@@ -38,12 +39,8 @@ type Request struct {
 	Release   *record.Release
 }
 
-type Fidelity struct {
-	Before            macports.Snapshot
-	After             macports.Snapshot
-	ExpectedChanges   []string
-	UnexpectedChanges []string
-}
+// Fidelity is the comparison report for one evaluated edit.
+type Fidelity = fidelity.Report
 
 // ContextCoverage distinguishes metadata models from the native host. Neither
 // kind records a build; verification providers establish build results.
@@ -99,7 +96,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		return Result{}, err
 	}
 	result := Result{Base: request.Source, Target: input.target}
-	err = result.commitEdit(input, request, evaluated.edit, revisionFidelity(input.before, evaluated.after, input.target.Name, input.files.root), "revbump")
+	err = result.commitEdit(input, request, evaluated.edit, fidelity.Revision(input.before, evaluated.after, input.target.Name, input.files.root), "revbump")
 	return result, err
 }
 

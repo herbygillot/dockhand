@@ -3,6 +3,7 @@ package portedit
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"math/big"
 	"regexp"
 	"strconv"
@@ -21,7 +22,7 @@ type carrier struct {
 	numeric                           *numericCarrier
 }
 
-func (s *Service) versionCarriers(ctx context.Context, request Request, input *sourceInput) ([]carrier, error) {
+func (s *Service) versionCarriers(ctx context.Context, request Request, input *sourceInput) (versionInputs, error) {
 	spec, err := portsource.ForEditing(input.info)
 	if err != nil {
 		return nil, err
@@ -30,7 +31,7 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
 	}
-	var carriers []carrier
+	var carriers versionInputs
 	failures := 0
 	for _, candidate := range candidates {
 		if !portfile.CandidateInSelection(input.data, candidate, input.target.Subport) {
@@ -94,21 +95,30 @@ func sameRepository(a, b portsource.Spec) bool {
 	return a.Forge == b.Forge && a.Instance == b.Instance && a.Repository == b.Repository && a.Pattern == b.Pattern
 }
 
-func (s *Service) probeVersion(ctx context.Context, request Request, input *sourceInput, carriers []carrier, sourceVersion string) ([]byte, macports.Snapshot, error) {
+func (s *Service) probeVersion(ctx context.Context, request Request, input *sourceInput, carriers versionInputs, sourceVersion string) ([]byte, macports.Snapshot, error) {
 	return s.evaluateVersion(ctx, s.Ports, request, input, carriers, sourceVersion, true)
 }
 
-func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, carriers []carrier, sourceVersion string, checkFidelity bool) ([]byte, macports.Snapshot, error) {
-	spec, err := portsource.ForEditing(input.info)
-	if err != nil {
-		return nil, macports.Snapshot{}, err
-	}
-	var selected []byte
-	var snapshot macports.Snapshot
-	matches := 0
-	var rejected error
+// versionInputs is the set of proven relations between Portfile literals and
+// the source version. It decides which literal edits could select a source
+// version; evaluating those edits is the service's job.
+type versionInputs []carrier
+
+// versionEdit is one literal edit that may select the source version, with
+// the relation that produced it.
+type versionEdit struct {
+	carrier  carrier
+	value    string
+	contents []byte
+}
+
+// edits proposes the distinct Portfile edits that could select sourceVersion.
+// Different relations can predict the same edit; ambiguity is between distinct
+// edits, not between ways of deriving one edit.
+func (inputs versionInputs) edits(data []byte, sourceVersion string) []versionEdit {
+	var result []versionEdit
 	attempted := map[string]bool{}
-	for _, carrier := range carriers {
+	for _, carrier := range inputs {
 		value, ok := strings.CutPrefix(sourceVersion, carrier.prefix)
 		if !ok {
 			continue
@@ -127,17 +137,31 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		if !ok || !portfile.Literal(value) || value == carrier.candidate.Value {
 			continue
 		}
-		contents, err := carrier.candidate.Replace(input.data, value)
-		if err != nil {
+		contents, err := carrier.candidate.Replace(data, value)
+		if err != nil || attempted[string(contents)] {
 			continue
 		}
-		// Different relations can predict the same source edit. Ambiguity is
-		// between distinct edits, not between ways of deriving one edit.
-		key := string(contents)
-		if attempted[key] {
-			continue
-		}
-		attempted[key] = true
+		attempted[string(contents)] = true
+		result = append(result, versionEdit{carrier: carrier, value: value, contents: contents})
+	}
+	return result
+}
+
+// evaluateVersion evaluates every distinct edit that could select sourceVersion
+// and accepts exactly one that selects the requested source. With
+// checkFidelity it also resets the revision, requires a changed version, and
+// refuses unexpected sibling changes, as an actual bump must.
+func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, inputs versionInputs, sourceVersion string, checkFidelity bool) ([]byte, macports.Snapshot, error) {
+	spec, err := portsource.ForEditing(input.info)
+	if err != nil {
+		return nil, macports.Snapshot{}, err
+	}
+	var selected []byte
+	var snapshot macports.Snapshot
+	matches := 0
+	var rejected error
+	for _, edit := range inputs.edits(input.data, sourceVersion) {
+		contents := edit.contents
 		if checkFidelity {
 			contents, err = s.resetRevision(ctx, request, input, contents)
 			if err != nil {
@@ -173,13 +197,13 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		if spec.Forge != "" {
 			desired.Tag = spec.Pattern.Tag(sourceVersion)
 		}
-		fidelity := scopedVersionFidelity(request.SharedRelease, input.before, after, input.target.Name, input.files.root, desired, next.Options["checksums"])
-		if checkFidelity && len(fidelity.UnexpectedChanges) > 0 {
-			rejected = fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
+		report := fidelity.ScopedVersion(request.SharedRelease, input.before, after, input.target.Name, input.files.root, desired, next.Options["checksums"])
+		if checkFidelity && len(report.UnexpectedChanges) > 0 {
+			rejected = fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 			continue
 		}
 		selected, snapshot = contents, after
-		input.versionInput = record.ReleaseInput{Portfile: input.target.Portfile, Offset: carrier.candidate.Span.Start, Before: carrier.candidate.Value, After: value}
+		input.versionInput = record.ReleaseInput{Portfile: input.target.Portfile, Offset: edit.carrier.candidate.Span.Start, Before: edit.carrier.candidate.Value, After: edit.value}
 		matches++
 	}
 	if matches == 0 {

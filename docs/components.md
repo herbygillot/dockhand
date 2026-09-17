@@ -14,6 +14,7 @@ dockhand2/
     app/                 # Configuration, setup, and dependency construction
     cli/                 # Command parsing, human/JSON output, attachment
     proc/                # Current-process driver lifetime and residency
+    subprocess/          # One external command with shared capture and error conventions
     progress/            # Optional transient operation observations
     credential/          # Device authorization and secret-store contracts
       keychain/          # macOS Keychain implementation
@@ -25,6 +26,7 @@ dockhand2/
       sqlite/            # SQLite storage, connections, and schema migrations
     workflow/            # Request acceptance and all workflow advancement
       preparation/       # Git snapshot lifetime and final edited-tree storage
+      policy/            # Read-only evidence, coverage, and publication questions
     assess/              # Preparation capability reports, without jobs or downloads
     outdated/            # Read-only committed-port update scans
     upstream/            # Release discovery and version assessment
@@ -42,7 +44,8 @@ dockhand2/
       selection/         # Source-bound indexed port/subport names and validation
       eval/              # Native Tcl evaluation and MacPorts runtime compatibility
       installation/      # MacPorts installation and observed installation facts
-      portedit/          # Evaluator-driven source edits and fidelity checks
+      fidelity/          # Before-and-after evaluation comparison reports
+      portedit/          # Evaluator-driven source edits in a disposable workspace
       portfile/          # Tcl literal candidates and precise source edits
       dependents/        # Frozen-source downstream coverage discovery
       survey/            # Shared committed-source lifetime and port selection
@@ -85,7 +88,7 @@ The CLI observes progress by reading state through a shared read-only status pro
 
 Keep package-specific requests and intermediate results with their owning capability. `record` must not become a miscellaneous collection of services, provider SDK types, terminal strings, or duplicate versions of existing records. Backend encoding, constraints, and schema migration belong in `state/sqlite`; domain invariants remain with their owning packages.
 
-`state` defines persistence contracts, record-specific reads/writes, bounded queries, transaction semantics, and backend-independent errors. Every view or transaction is bound to one repository. `state/sqlite` implements those contracts with SQLite transactions, constraints, indexes, and migrations. SQL and the Go database driver stay private to that package. Neither package invokes Git or decides workflow policy. There is no whole-state serialization API or interface per table.
+`workflow/policy` answers read-only questions over a state reader: which recorded evidence applies to a build question, whether evidence covers a publication's cohort, and whether a publication action still matches its job; both intake and drivers ask it. `subprocess` runs one external command with the conventions every tool runner shares, a bounded wait after cancellation, captured output returned even on failure, per-stream limits, and one error naming the tool, command, and stderr, while each caller keeps its own environment policy. `state` defines persistence contracts, record-specific reads/writes, bounded queries, transaction semantics, and backend-independent errors. Every view or transaction is bound to one repository. `state/sqlite` implements those contracts with SQLite transactions, constraints, indexes, and migrations. SQL and the Go database driver stay private to that package. Neither package invokes Git or decides workflow policy. There is no whole-state serialization API or interface per table.
 
 Claims stay in the same transaction as the state they protect. `workflow` owns request intake and progression decisions, including atomic cross-record updates; capabilities return results for it to record. An independently replaceable lock backend must not authorize workflow writes. If a concrete executor later needs an external-resource lock, define a separate small contract then. No generic lock service or new filesystem lock implementation is needed for the state migration.
 
@@ -117,7 +120,7 @@ The next preparation expansion follows [the bump-planner design](bump-planner.md
 
 `upstream` collects release evidence, assesses eligible versions, and resolves explicit version/reference requests. It keeps the requested spelling, MacPorts version, and upstream tag distinct. Prefix inference uses the current port's source convention supplied through bound MacPorts metadata and confirms the candidate against upstream evidence. It returns structured update-available, current, and unknown results. It has no dependency on job submission, a state writer, or branch creation. `Service.Bind` composes a source-specific `VersionProbe` with the catalogs without mutating the shared service. This assessment needs no bump request or edit-fidelity approval; preparation separately checks whether the selected release can be edited safely. Phase-one automatic and explicit bumps use it; phase-two `outdated` exposes discovery directly.
 
-`macports/portedit` edits an exclusively owned disposable source workspace and returns Portfile edits, commit intent, and fidelity observations. The workspace owns the write-evaluate-restore cycle and its paths; an archive store owns downloads and decides whether bytes are kept for dependency generators; `Result.commitEdit` is the one place an edit becomes a commit intent. It coordinates MacPorts evaluation, archive checksums, and dependency regeneration. Its `VersionProbe` binds metadata and calculated-version evaluation to one caller-owned disposable workspace; it has no upstream catalog dependency. `EvaluateVersions` evaluates many candidate source versions through one batch when the reader supports it, with the same per-candidate evaluation and Portfile restoration. It imports no Git package and creates no branches, objects, jobs, or publications. `macports/portfile` identifies literal inputs, including assignments and command-substitution arguments, and applies precise replacements without implementing Tcl semantics.
+`macports/fidelity` compares MacPorts evaluations before and after an edit and reports whether only the intended metadata changed; it knows nothing about editing, downloads, or workspaces. `macports/portedit` edits an exclusively owned disposable source workspace and returns Portfile edits, commit intent, and fidelity reports. The workspace owns the write-evaluate-restore cycle and its paths; an archive store owns downloads and decides whether bytes are kept for dependency generators; `Result.commitEdit` is the one place an edit becomes a commit intent. It coordinates MacPorts evaluation, archive checksums, and dependency regeneration. Its `VersionProbe` binds metadata and calculated-version evaluation to one caller-owned disposable workspace; it has no upstream catalog dependency. `EvaluateVersions` evaluates many candidate source versions through one batch when the reader supports it, with the same per-candidate evaluation and Portfile restoration. It imports no Git package and creates no branches, objects, jobs, or publications. `macports/portfile` identifies literal inputs, including assignments and command-substitution arguments, and applies precise replacements without implementing Tcl semantics.
 
 `workflow/preparation` materializes the immutable input, binds its version probe to upstream discovery, passes the disposable workspace to the editor, and translates returned edits into Git file preconditions. It checks upstream source identity before and after editing. It stores only the final candidate tree and reevaluates that tree before returning it to workflow. Intermediate probe snapshots have no immutable source identity. The workflow engine still owns candidate commits, branch integration, and state transitions.
 

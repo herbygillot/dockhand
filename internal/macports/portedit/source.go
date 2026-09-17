@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"os"
 	"path/filepath"
 
@@ -67,7 +68,7 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 	if err != nil {
 		return nil, err
 	}
-	if err := checkSnapshot(before, bound); err != nil {
+	if err := fidelity.CheckSnapshot(before, bound); err != nil {
 		return nil, err
 	}
 	info, ok := before.Ports[selected.Name]
@@ -161,7 +162,7 @@ func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator
 			after, err = reader.Evaluate(ctx, bound)
 		}
 		if err == nil {
-			err = checkSnapshot(after, bound)
+			err = fidelity.CheckSnapshot(after, bound)
 		}
 		// Probe snapshots describe uncommitted contents, not the immutable base tree.
 		after.Source = record.Source{}

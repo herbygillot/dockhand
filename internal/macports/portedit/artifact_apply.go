@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"strconv"
 	"strings"
 
@@ -59,7 +60,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 			wanted = append(wanted, value)
 		}
 		checksums := strings.Join(wanted, " ")
-		finalFidelity := scopedChecksumFidelity(input.scope, frame.after, final.Snapshot, input.target.Name, input.files.root, checksums)
+		finalFidelity := fidelity.ScopedChecksums(input.scope, frame.after, final.Snapshot, input.target.Name, input.files.root, checksums)
 		if len(finalFidelity.UnexpectedChanges) > 0 {
 			return result, fmt.Errorf("%w: final context %+v: %v", ErrFidelity, frame.profile, finalFidelity.UnexpectedChanges)
 		}
@@ -86,8 +87,8 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		}
 		wanted = append(wanted, value)
 	}
-	fidelity := scopedChecksumFidelity(input.scope, native.after, final, input.target.Name, input.files.root, strings.Join(wanted, " "))
-	if err := result.commitEdit(input, request, evaluated.edit, fidelity, plan.subject); err != nil {
+	report := fidelity.ScopedChecksums(input.scope, native.after, final, input.target.Name, input.files.root, strings.Join(wanted, " "))
+	if err := result.commitEdit(input, request, evaluated.edit, report, plan.subject); err != nil {
 		return result, err
 	}
 	if input.scope != nil {

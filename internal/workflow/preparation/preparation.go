@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -162,7 +163,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if snapshot.Source != source {
 		return result, fmt.Errorf("%w: stored candidate source identity differs", ErrFidelity)
 	}
-	if err = portedit.CheckEquivalent(expected, snapshot, files.Root, candidate.Root); err != nil {
+	if err = fidelity.Equivalent(expected, snapshot, files.Root, candidate.Root); err != nil {
 		return result, err
 	}
 	result.Fidelity[len(result.Fidelity)-1].After = snapshot

@@ -3,14 +3,12 @@ package portedit
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"maps"
-	"slices"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
-	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/tcl/syntax"
 )
 
 type archivePlan struct {
@@ -60,7 +58,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 		return archivePlan{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
 	}
 	if request.SharedRelease {
-		input.scope, err = releaseScope(input.before, versioned, input.target.Name, true)
+		input.scope, err = fidelity.ReleaseScope(input.before, versioned, input.target.Name, true)
 		if err != nil {
 			return archivePlan{}, err
 		}
@@ -68,7 +66,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	}
 	if _, ok := s.Ports.(macports.Observer); ok {
 		observed, err := s.planObservedArchives(ctx, request, input, contents)
-		result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
+		result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{fidelity.ScopedVersion(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"])}}
 		if observed != nil {
 			for _, frame := range observed.contexts {
 				result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
@@ -110,10 +108,10 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if !changed {
 		return archivePlan{}, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
 	}
-	fidelity := scopedVersionFidelity(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, info.Options["checksums"])
-	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{fidelity}}
-	if len(fidelity.UnexpectedChanges) > 0 {
-		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
+	report := fidelity.ScopedVersion(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, info.Options["checksums"])
+	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{report}}
+	if len(report.UnexpectedChanges) > 0 {
+		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 	}
 	if err := checkChecksumSources(contents, info, sources); err != nil {
 		return archivePlan{}, err
@@ -148,80 +146,8 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 	if err != nil {
 		return result, err
 	}
-	final := checksumFidelity(versioned, evaluated.after, input.target.Name, input.files.root, checksums)
+	final := fidelity.Checksums(versioned, evaluated.after, input.target.Name, input.files.root, checksums)
 	return result, result.commitEdit(input, request, evaluated.edit, final, plan.subject)
-}
-
-func versionFidelity(before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Fidelity {
-	result := Fidelity{Before: before, After: after, ExpectedChanges: []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}, UnexpectedChanges: []string{}}
-	names := map[string]bool{}
-	for name := range before.Ports {
-		names[name] = true
-	}
-	for name := range after.Ports {
-		names[name] = true
-	}
-	for name := range names {
-		original, was := before.Ports[name]
-		next, is := after.Ports[name]
-		if !was || !is {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+": port set changed")
-			continue
-		}
-		old := comparablePort(original, root)
-		next = comparablePort(next, root)
-		if name == selected {
-			old.Version, old.Revision = release.Version, 0
-			for _, key := range []string{"fetch.has_credentials", "version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "dist_subdir", "distfiles", "extract.only", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites"} {
-				if value, ok := next.Options[key]; ok {
-					old.Options[key] = value
-				} else {
-					delete(old.Options, key)
-				}
-			}
-
-			if release.Tag != "" && next.Options["git.branch"] != release.Tag {
-				result.UnexpectedChanges = append(result.UnexpectedChanges, name+".git.branch differs from selected tag")
-			}
-			actual, errs := syntax.ListValues(next.Options["checksums"])
-			expected, expectedErrs := syntax.ListValues(checksums)
-			if len(errs) > 0 || len(expectedErrs) > 0 || !slices.Equal(actual, expected) {
-				result.UnexpectedChanges = append(result.UnexpectedChanges, name+".checksums differ from intended values")
-			}
-			old.Options["checksums"] = next.Options["checksums"]
-		}
-		if old.Revision != next.Revision {
-			result.UnexpectedChanges = append(result.UnexpectedChanges, name+".revision changed unexpectedly")
-		}
-		result.UnexpectedChanges = append(result.UnexpectedChanges, comparePortMetadata(name, old, next)...)
-	}
-	slices.Sort(result.UnexpectedChanges)
-	return result
-}
-
-func checksumFidelity(before, after macports.Snapshot, selected, root, checksums string) Fidelity {
-	expected := before
-	expected.Ports = maps.Clone(before.Ports)
-	info := expected.Ports[selected]
-	info.Options = maps.Clone(info.Options)
-	info.Options["checksums"] = checksums
-	expected.Ports[selected] = info
-	result := Fidelity{Before: before, After: after, ExpectedChanges: []string{selected + ".checksums"}}
-	normalized := after
-	normalized.Ports = maps.Clone(after.Ports)
-	next := normalized.Ports[selected]
-	next.Options = maps.Clone(next.Options)
-	values, errs := syntax.ListValues(next.Options["checksums"])
-	wanted, wantedErrs := syntax.ListValues(checksums)
-	if len(errs) > 0 || len(wantedErrs) > 0 || !slices.Equal(values, wanted) {
-		result.UnexpectedChanges = append(result.UnexpectedChanges, selected+".checksums differ from intended values")
-	}
-	next.Options["checksums"] = checksums
-	normalized.Ports[selected] = next
-	if err := CheckEquivalent(expected, normalized, root, root); err != nil {
-		result.UnexpectedChanges = append(result.UnexpectedChanges, err.Error())
-	}
-	return result
 }
 
 func checksumValues(downloads []Download) []portfile.Checksum {

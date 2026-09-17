@@ -3,6 +3,7 @@ package portedit
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"maps"
 	"os"
 	"path/filepath"
@@ -241,7 +242,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 		if old.Revision != next.Revision {
 			final.UnexpectedChanges = append(final.UnexpectedChanges, name+".revision changed")
 		}
-		final.UnexpectedChanges = append(final.UnexpectedChanges, comparePortMetadata(name, comparablePort(old, input.files.root), comparablePort(next, input.files.root))...)
+		final.UnexpectedChanges = append(final.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(old, input.files.root), fidelity.ComparablePort(next, input.files.root))...)
 	}
 	if len(final.UnexpectedChanges) > 0 {
 		return Result{}, fmt.Errorf("%w: %v", ErrFidelity, final.UnexpectedChanges)

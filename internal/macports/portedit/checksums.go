@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -40,15 +41,15 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 	if err != nil {
 		return result, err
 	}
-	fidelity := checksumFidelity(input.before, evaluated.after, input.target.Name, input.files.root, checksums)
+	report := fidelity.Checksums(input.before, evaluated.after, input.target.Name, input.files.root, checksums)
 	if bytes.Equal(contents, input.data) {
-		result.Fidelity = []Fidelity{fidelity}
-		if len(fidelity.UnexpectedChanges) > 0 {
-			return result, fmt.Errorf("%w: %v", ErrFidelity, fidelity.UnexpectedChanges)
+		result.Fidelity = []Fidelity{report}
+		if len(report.UnexpectedChanges) > 0 {
+			return result, fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 		}
 		return result, nil
 	}
-	return result, result.commitEdit(input, request, evaluated.edit, fidelity, "refresh checksums")
+	return result, result.commitEdit(input, request, evaluated.edit, report, "refresh checksums")
 }
 
 // planObservedChecksums observes the unchanged Portfile in every modeled

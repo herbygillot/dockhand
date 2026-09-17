@@ -28,7 +28,7 @@ type VersionProbe struct {
 	editor   *Service
 	request  Request
 	input    *sourceInput
-	carriers []carrier
+	carriers versionInputs
 }
 
 func (s *Service) Probe(ctx context.Context, source ProbeSource) (*VersionProbe, error) {

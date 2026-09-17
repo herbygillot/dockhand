@@ -112,6 +112,8 @@ Extend these through their existing paths rather than treating them as new roadm
 
 ## Review triage and validation
 
+The [structural review](reviews/2026-09-16-bump-machinery-structure.md) of the bump-to-PR machinery is implemented: embedded leases and typed step outcomes, shared lock and atomic-replacement helpers, the `portedit` workspace and archive store, checksum refresh through the observed archive plan, the `workflow/policy` leaf, one `subprocess` runner, the version-input set, the `macports/fidelity` package, and counted waits; see the [completion report](activity/2026-09-16-structural-completion.md). Whether a long expected wait should settle as needs-attention remains a policy decision.
+
 Earlier findings about whole-state Git-ledger writes, SQLite migration structure, repeated phase inference, state/workflow ownership, CI, workflow organization, shared Tart mechanics, and the unused placeholder planner have been addressed. Remaining useful review findings are represented above. Do not reintroduce the discarded Git ledger or require v1 feature parity as a prerequisite for this queue.
 
 End meaningful milestones with targeted user-path and recovery exercises. For coverage changes, replay the pinned 147-Portfile corpus and the targeted controls, distinguishing input discovery, candidate checks, actual archive preparation, and builds. Preserve Terraform/Helm/gh/Deno and the new Wasmer path as controls. Repeat a provisioning matrix or create live PRs only when the changed behavior warrants it. Historical exercises and reviews are evidence, not additional queues.
