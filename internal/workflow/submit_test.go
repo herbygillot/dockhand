@@ -12,6 +12,7 @@ import (
 )
 
 func TestSubmitCanonicalRetriesAndFrozenInputs(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	request := f.request("request")
 	request.Spec.Targets = append(request.Spec.Targets, record.Target{Name: "other", Portfile: "other/Portfile"})
@@ -52,6 +53,7 @@ func TestSubmitCanonicalRetriesAndFrozenInputs(t *testing.T) {
 }
 
 func TestSubmitRejectsInvalidIntentWithoutPersisting(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	cases := map[string]func(*workflow.Request){
 		"empty identity":       func(r *workflow.Request) { r.ID = "" },
@@ -80,6 +82,7 @@ func TestSubmitRejectsInvalidIntentWithoutPersisting(t *testing.T) {
 }
 
 func TestSubmitRevisionConstraints(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	require.NoError(t, f.mutate(t.Context(), func(_ context.Context, tx *fixtureTx) error {
 		r := tx.State.Revisions["revision"]
@@ -108,6 +111,7 @@ func TestSubmitRevisionConstraints(t *testing.T) {
 }
 
 func TestConcurrentEquivalentSubmissionsConverge(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	request := f.request("same-request")
 	const callers = 4
@@ -129,6 +133,7 @@ func TestConcurrentEquivalentSubmissionsConverge(t *testing.T) {
 }
 
 func TestControlsAreIdempotentAndScoped(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	a, b := f.submit(t, "a"), f.submit(t, "b")
 	request := record.ControlRequest{ID: "cancel-both", Kind: record.Cancel, Jobs: []record.JobID{b, a, b}, Reason: "stop"}
@@ -156,6 +161,7 @@ func TestControlsAreIdempotentAndScoped(t *testing.T) {
 }
 
 func TestStatusIsAnIndependentReadOnlyProjection(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "status")
 	f.run(t, id)
@@ -188,6 +194,7 @@ func TestStatusIsAnIndependentReadOnlyProjection(t *testing.T) {
 }
 
 func TestRetryAcceptsRedundantMatchingChangeIdentity(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	request := f.request("retry-change")
 	receipt, err := f.engine.Submit(t.Context(), request)

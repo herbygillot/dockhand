@@ -76,6 +76,7 @@ func candidateJob(t *testing.T, f *fixture, id record.JobID) record.Job {
 }
 
 func TestRevisionPreparationCreatesSeparateContributionWithoutProvider(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, false)
 	require.Empty(t, f.run(t).Advanced)
 	id := submitPreparation(t, f, req)
@@ -116,6 +117,7 @@ func TestRevisionPreparationCreatesSeparateContributionWithoutProvider(t *testin
 }
 
 func TestPreparedRevisionUsesExistingVerificationLifecycle(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, true)
 	id := submitPreparation(t, f, req)
 	candidate := candidateJob(t, f, id)
@@ -141,6 +143,7 @@ func TestPreparedRevisionUsesExistingVerificationLifecycle(t *testing.T) {
 }
 
 func TestMissingBuildConfigurationPreservesPreparedBranch(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, true)
 	req.Spec.Build = nil
 	id := submitPreparation(t, f, req)
@@ -157,6 +160,7 @@ func TestMissingBuildConfigurationPreservesPreparedBranch(t *testing.T) {
 }
 
 func TestPreparationClaimFencesLateResultsAndCancellation(t *testing.T) {
+	t.Parallel()
 	for _, cancelJob := range []bool{false, true} {
 		t.Run(map[bool]string{false: "expired", true: "canceled"}[cancelJob], func(t *testing.T) {
 			f, req := preparationFixture(t, false)
@@ -229,6 +233,7 @@ func (t *resultFailureTx) PutJob(ctx context.Context, job record.Job) error {
 }
 
 func TestInterruptedIntegrationRecoversExactBranchWithoutRepeatingPreparation(t *testing.T) {
+	t.Parallel()
 	for _, cancelJob := range []bool{false, true} {
 		t.Run(map[bool]string{false: "resume", true: "cancel"}[cancelJob], func(t *testing.T) {
 			f, req := preparationFixture(t, false)
@@ -266,6 +271,7 @@ func TestInterruptedIntegrationRecoversExactBranchWithoutRepeatingPreparation(t 
 }
 
 func TestIntegrationDoesNotOverwriteMovedBranchesOrRecreateMissingOnRecovery(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"source-moved", "destination-moved", "missing-after-interruption", "cancel-before-integration", "cancel-missing-after-interruption"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, req := preparationFixture(t, false)
@@ -327,6 +333,7 @@ func TestIntegrationDoesNotOverwriteMovedBranchesOrRecreateMissingOnRecovery(t *
 }
 
 func TestIntegrationWaiterRechecksStateUnderBranchLock(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, false)
 	id := submitPreparation(t, f, req)
 	job := candidateJob(t, f, id)
@@ -357,6 +364,7 @@ func TestIntegrationWaiterRechecksStateUnderBranchLock(t *testing.T) {
 }
 
 func TestRateLimitedPreparationRetainsAcceptedWork(t *testing.T) {
+	t.Parallel()
 	f, request := preparationFixture(t, false)
 	original := f.engine.Preparer
 	deadline := f.now().Add(time.Minute)
@@ -377,6 +385,7 @@ func TestRateLimitedPreparationRetainsAcceptedWork(t *testing.T) {
 }
 
 func TestCurrentChecksumsDoNotCreateBranchOrPublish(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.RefreshChecksums)
 	f.engine.Preparer = prepareFunc(func(_ context.Context, input preparation.Request) (preparation.Result, error) {
 		return preparation.Result{Base: input.Source, Target: request.Spec.Targets[0], PreparedTree: input.Source.Tree}, nil
@@ -396,6 +405,7 @@ func TestCurrentChecksumsDoNotCreateBranchOrPublish(t *testing.T) {
 }
 
 func TestRejectedPatchCreatesTheBranchButNotVerification(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, true)
 	original := f.engine.Preparer
 	f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {

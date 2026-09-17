@@ -28,6 +28,7 @@ func versionOne(t *testing.T) (string, *sql.DB) {
 	return path, db
 }
 func TestProviderMigrationPreservesStateAndSerializesOpeners(t *testing.T) {
+	t.Parallel()
 	path, db := versionOne(t)
 	_, err := Open(t.Context(), path, Options{ReadOnly: true})
 	require.ErrorIs(t, err, state.ErrSchema)
@@ -63,6 +64,7 @@ func TestProviderMigrationPreservesStateAndSerializesOpeners(t *testing.T) {
 	require.Zero(t, count)
 }
 func TestProviderMigrationRollsBackOnFailure(t *testing.T) {
+	t.Parallel()
 	path, db := versionOne(t)
 	_, err := db.Exec("CREATE TABLE provider_executions (unrelated TEXT)")
 	require.NoError(t, err)
@@ -118,6 +120,7 @@ func versionTenWithWork(t *testing.T) (string, *sql.DB) {
 }
 
 func TestMigrationsAreContiguous(t *testing.T) {
+	t.Parallel()
 	migrations := migrations()
 	require.Len(t, migrations, schemaVersion-1)
 	for i, migration := range migrations {
@@ -127,6 +130,7 @@ func TestMigrationsAreContiguous(t *testing.T) {
 }
 
 func TestChangeJobsMigrationSupportsIndexedSelection(t *testing.T) {
+	t.Parallel()
 	path, db := versionEightWithWork(t)
 	_, err := db.Exec(phaseSchema)
 	require.NoError(t, err)
@@ -151,6 +155,7 @@ func TestChangeJobsMigrationSupportsIndexedSelection(t *testing.T) {
 }
 
 func TestImageCapabilitiesMigrationPreservesProviderExecutions(t *testing.T) {
+	t.Parallel()
 	path, db := versionTenWithWork(t)
 	columns, before := migrationRows(t, db, "provider_executions", nil)
 	store, err := Open(t.Context(), path, Options{})
@@ -199,6 +204,7 @@ func migrationRows(t *testing.T, db *sql.DB, table string, columns []string) ([]
 }
 
 func TestPreparationMigrationPreservesPopulatedExecutionGraph(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	tables := []string{"repositories", "sources", "changes", "revisions", "requests", "jobs", "plans", "attempts", "submissions", "attempt_evidence", "resources", "provider_pools", "provider_executions"}
 	columns := map[string][]string{}
@@ -225,6 +231,7 @@ func TestPreparationMigrationPreservesPopulatedExecutionGraph(t *testing.T) {
 }
 
 func TestPreparationMigrationRollsBackAddedColumnsAndTableRebuild(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	_, err := db.Exec("CREATE TABLE attempts_new(unrelated TEXT)")
 	require.NoError(t, err)
@@ -241,6 +248,7 @@ func TestPreparationMigrationRollsBackAddedColumnsAndTableRebuild(t *testing.T) 
 }
 
 func TestReleaseMigrationPreservesPreparedWork(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	_, err := db.Exec("BEGIN;" + preparationSchema + `PRAGMA defer_foreign_keys=OFF; PRAGMA user_version=3;
  UPDATE jobs SET prepared='{"Branch":"dockhand/revbump/fixture","Source":{"Commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"IntegrationStarted":true}'; COMMIT;`)
@@ -261,6 +269,7 @@ func TestReleaseMigrationPreservesPreparedWork(t *testing.T) {
 }
 
 func TestVerificationMigrationPreservesHistoryAndBuildsLookupIndexes(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + "COMMIT;")
 	require.NoError(t, err)
@@ -311,6 +320,7 @@ func TestVerificationMigrationPreservesHistoryAndBuildsLookupIndexes(t *testing.
 }
 
 func TestVerificationMigrationRollsBackWithoutDisturbingSchemaFour(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + "COMMIT; CREATE TABLE sources_reuse_tree(unrelated TEXT);")
 	require.NoError(t, err)
@@ -325,6 +335,7 @@ func TestVerificationMigrationRollsBackWithoutDisturbingSchemaFour(t *testing.T)
 }
 
 func TestPublicationMigrationPreservesSchemaFiveHistory(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + "COMMIT;")
 	require.NoError(t, err)
@@ -350,6 +361,7 @@ func TestPublicationMigrationPreservesSchemaFiveHistory(t *testing.T) {
 }
 
 func TestPublicationMigrationFailureRollsBackAdditions(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + "COMMIT; CREATE TABLE publications(unrelated TEXT);")
 	require.NoError(t, err)
@@ -363,6 +375,7 @@ func TestPublicationMigrationFailureRollsBackAdditions(t *testing.T) {
 }
 
 func TestImageCacheMigrationPreservesSchemaSixAndRollsBackOnConflict(t *testing.T) {
+	t.Parallel()
 	for _, conflict := range []bool{false, true} {
 		t.Run(fmt.Sprint(conflict), func(t *testing.T) {
 			path, db := versionTwoWithWork(t)
@@ -397,6 +410,7 @@ func TestImageCacheMigrationPreservesSchemaSixAndRollsBackOnConflict(t *testing.
 }
 
 func TestRetentionMigrationPreservesReleasedResources(t *testing.T) {
+	t.Parallel()
 	path, db := versionTwoWithWork(t)
 	_, err := db.Exec("BEGIN;" + preparationSchema + "PRAGMA defer_foreign_keys=OFF;" + releaseSchema + verificationSchema + publicationSchema + imageSchema + "COMMIT;")
 	require.NoError(t, err)
@@ -415,6 +429,7 @@ func TestRetentionMigrationPreservesReleasedResources(t *testing.T) {
 }
 
 func TestPhaseMigrationBackfillsWorkflowOwnership(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name  string
 		setup string
@@ -448,6 +463,7 @@ func TestPhaseMigrationBackfillsWorkflowOwnership(t *testing.T) {
 }
 
 func TestPhaseMigrationFailureLeavesSchemaEightVersion(t *testing.T) {
+	t.Parallel()
 	path, db := versionEightWithWork(t)
 	_, err := db.Exec("ALTER TABLE jobs ADD COLUMN phase TEXT")
 	require.NoError(t, err)
@@ -459,6 +475,7 @@ func TestPhaseMigrationFailureLeavesSchemaEightVersion(t *testing.T) {
 }
 
 func TestMaintenanceCanBackUpOlderSchemaWithoutMigrating(t *testing.T) {
+	t.Parallel()
 	path, db := versionOne(t)
 	store, err := Open(t.Context(), path, Options{ReadOnly: true, AllowOlderSchema: true})
 	require.NoError(t, err)
@@ -481,6 +498,7 @@ func TestMaintenanceCanBackUpOlderSchemaWithoutMigrating(t *testing.T) {
 }
 
 func TestReadOnlySchemaErrorDistinguishesSupportedUpgrade(t *testing.T) {
+	t.Parallel()
 	path, db := versionOne(t)
 	for _, scenario := range []struct {
 		appID, version int
@@ -504,6 +522,7 @@ func TestReadOnlySchemaErrorDistinguishesSupportedUpgrade(t *testing.T) {
 }
 
 func TestSharedRunMigrationPreservesReferencesAndAttemptExclusivity(t *testing.T) {
+	t.Parallel()
 	path, db := versionTenWithWork(t)
 	_, err := db.Exec(imageCapabilitiesSchema + generationSchema + "PRAGMA user_version=12;")
 	require.NoError(t, err)
@@ -537,6 +556,7 @@ func TestSharedRunMigrationPreservesReferencesAndAttemptExclusivity(t *testing.T
 }
 
 func TestRetryMigrationPreservesHistoryAndDefaultsCounters(t *testing.T) {
+	t.Parallel()
 	path, db := versionTenWithWork(t)
 	_, err := db.Exec("BEGIN;" + imageCapabilitiesSchema + generationSchema + sharedRunsSchema + "PRAGMA defer_foreign_keys=OFF; PRAGMA user_version=13; COMMIT;")
 	require.NoError(t, err)
@@ -563,6 +583,7 @@ func TestRetryMigrationPreservesHistoryAndDefaultsCounters(t *testing.T) {
 }
 
 func TestContributionMigrationRetainsLegacyPreparationAndStandaloneEvidence(t *testing.T) {
+	t.Parallel()
 	path, db := versionTenWithWork(t)
 	_, err := db.Exec("BEGIN;" + imageCapabilitiesSchema + generationSchema + sharedRunsSchema + "PRAGMA defer_foreign_keys=OFF;" + retrySchema + "PRAGMA user_version=14; COMMIT;")
 	require.NoError(t, err)

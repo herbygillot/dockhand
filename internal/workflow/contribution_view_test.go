@@ -9,6 +9,7 @@ import (
 )
 
 func TestProjectGroupsJobsByContributionAndWordsEachPhase(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	platform := record.Platform{OS: "macOS", Version: "26", Architecture: "arm64"}
 	finished := base.Add(10 * time.Minute)
@@ -66,6 +67,7 @@ func TestProjectGroupsJobsByContributionAndWordsEachPhase(t *testing.T) {
 }
 
 func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
+	t.Parallel()
 	platform := record.Platform{OS: "macOS", Version: "15"}
 	waiting := JobStatus{Job: record.Job{ID: "job_w", ChangeID: "c1", State: record.JobActive, Phase: record.PhaseVerification, Spec: record.JobSpec{Action: record.Bump, Destination: record.Published, Targets: []record.Target{{Name: "a"}}}},
 		Attempts: []record.Attempt{{State: record.AttemptQueued, Spec: record.BuildSpec{Config: record.BuildConfig{Platform: platform}}}}}
@@ -92,6 +94,7 @@ func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
 }
 
 func TestProjectFoldsAPortsContributionsUnderItsOpenOne(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	status := Status{
 		Changes: []record.Change{
@@ -124,6 +127,7 @@ func TestProjectFoldsAPortsContributionsUnderItsOpenOne(t *testing.T) {
 }
 
 func TestFinishedStandaloneVerificationsRetire(t *testing.T) {
+	t.Parallel()
 	verified := JobStatus{Job: record.Job{ID: "j", State: record.JobCompleted, Phase: record.PhaseVerification, Spec: record.JobSpec{Action: record.Verify, Destination: record.VerificationComplete, Targets: []record.Target{{Name: "libmd"}}}},
 		Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}}
 	rows := Project(Status{Jobs: []JobStatus{verified}})

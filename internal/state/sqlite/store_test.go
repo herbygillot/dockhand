@@ -49,6 +49,7 @@ func seed(t *testing.T, s *sqlite.Store, r record.Repository, id string) workflo
 	return receipt
 }
 func TestRepositoryScopeAndImmutableReferences(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	a, b := repository(t, s, "a"), repository(t, s, "b")
 	first, second := seed(t, s, a, "a"), seed(t, s, b, "b")
@@ -100,6 +101,7 @@ func TestRepositoryScopeAndImmutableReferences(t *testing.T) {
 	}), state.ErrConflict)
 }
 func TestRollbackSnapshotAndReadOnlyContract(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	r := repository(t, s, "repo")
 	seed(t, s, r, "change")
@@ -178,6 +180,7 @@ func TestRollbackSnapshotAndReadOnlyContract(t *testing.T) {
 	}))
 }
 func TestConcurrentInitializationRegistrationAndSchemaProtection(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "private", "state.db")
 	common := filepath.Join(t.TempDir(), "common")
 	var wg sync.WaitGroup
@@ -236,6 +239,7 @@ func TestConcurrentInitializationRegistrationAndSchemaProtection(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 func TestResourceIdentityIsGlobalAndSubmissionHistoryPersists(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	a, b := repository(t, s, "a"), repository(t, s, "b")
 	ja, jb := seed(t, s, a, "a"), seed(t, s, b, "b")
@@ -281,6 +285,7 @@ func TestResourceIdentityIsGlobalAndSubmissionHistoryPersists(t *testing.T) {
 }
 
 func TestBranchLookupIsRepositoryScopedAndExcludesClosedChanges(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	a, b := repository(t, s, "a"), repository(t, s, "b")
 	seed(t, s, a, "first")
@@ -312,6 +317,7 @@ func TestBranchLookupIsRepositoryScopedAndExcludesClosedChanges(t *testing.T) {
 }
 
 func TestGeneratedCommitIsImmutableContributionProvenance(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "state.db")
 	s := openStore(t, path)
 	repo := repository(t, s, "source")
@@ -331,6 +337,7 @@ func TestGeneratedCommitIsImmutableContributionProvenance(t *testing.T) {
 }
 
 func TestRepositoriesListsEveryRegistrationOldestFirst(t *testing.T) {
+	t.Parallel()
 	store, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"), sqlite.Options{})
 	require.NoError(t, err)
 	defer store.Close()

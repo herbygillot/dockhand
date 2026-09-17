@@ -194,6 +194,11 @@ var helpGroups = []struct {
 	{"housekeeping", "Housekeeping:", []string{"gc", "db"}},
 }
 
+// Help lists commands in group order, never alphabetically. The setting is a
+// cobra package global, so it is made once here rather than on every root,
+// where concurrent constructions would race on it.
+func init() { cobra.EnableCommandSorting = false }
+
 func groupCommands(root *cobra.Command) {
 	commands := root.Commands()
 	byName := make(map[string]*cobra.Command, len(commands))
@@ -202,7 +207,6 @@ func groupCommands(root *cobra.Command) {
 	}
 	// Re-register commands in group order so help lists each group's commands
 	// in the order a contributor uses them rather than alphabetically.
-	cobra.EnableCommandSorting = false
 	root.RemoveCommand(commands...)
 	grouped := make(map[string]bool, len(commands))
 	for _, group := range helpGroups {

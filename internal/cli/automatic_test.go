@@ -73,6 +73,7 @@ checksums sha256 %s size 1
 }
 
 func TestAutomaticBumpCLIUsesResolvedReleaseAndPreparedBranch(t *testing.T) {
+	t.Parallel()
 	config, repo, downloads, catalogs := automaticCLI(t, "1.0")
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
@@ -103,6 +104,7 @@ func TestAutomaticBumpCLIUsesResolvedReleaseAndPreparedBranch(t *testing.T) {
 }
 
 func TestCurrentBumpCLIIsSuccessfulWithoutDownloadsBranchOrProvider(t *testing.T) {
+	t.Parallel()
 	config, repo, downloads, catalogs := automaticCLI(t, "2.0")
 	before, err := repo.ReadRefs(t.Context(), "refs/heads/")
 	require.NoError(t, err)
@@ -140,6 +142,7 @@ func TestCurrentBumpCLIIsSuccessfulWithoutDownloadsBranchOrProvider(t *testing.T
 }
 
 func TestFailedAutomaticDiscoveryCLIRequiresAttention(t *testing.T) {
+	t.Parallel()
 	config, _, downloads, _ := automaticCLI(t, "1.0")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
 	defer server.Close()

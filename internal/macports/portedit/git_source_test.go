@@ -15,6 +15,7 @@ func gitRelease(commit string) *record.Release {
 // A port fetched with git bumps through its version alone: nothing is
 // downloaded, and the evaluated git.branch must land on the resolved tag.
 func TestGitFetchedPortBumpsThroughItsBranch(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 2
 fetch.type git
@@ -40,6 +41,7 @@ git.branch v${version}
 // A literal commit pin moves to the resolved commit; a pin carried any
 // other way is refused rather than guessed.
 func TestGitFetchedPortMovesALiteralCommitPin(t *testing.T) {
+	t.Parallel()
 	old, next := strings.Repeat("0", 40), strings.Repeat("a", 40)
 	s, r, _ := archiveFixture(t, `version 1.2.3
 fetch.type git
@@ -79,6 +81,7 @@ git.branch `+old+`
 // fidelity failure, and one that mixes an archive into the clone is refused
 // before any edit.
 func TestGitFetchedPortRefusalsAndFidelity(t *testing.T) {
+	t.Parallel()
 	s, r, _ := archiveFixture(t, `version 1.2.3
 fetch.type git
 git.url https://example.invalid/fixture.git

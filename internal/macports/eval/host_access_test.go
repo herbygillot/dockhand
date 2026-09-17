@@ -12,6 +12,7 @@ import (
 )
 
 func TestModeledObservationTracksHostFilesAtAccessTime(t *testing.T) {
+	t.Parallel()
 	for _, operation := range []string{"open", "relative-stat", "source", "captured-open", "captured-source", "symlink"} {
 		t.Run(operation, func(t *testing.T) {
 			e := liveEvaluator(t)

@@ -27,6 +27,7 @@ const mdxBlock = "go.vendors          gopkg.in/yaml.v3 \\\n" +
 	"                        size    30360"
 
 func TestChangedCrateBlockKeepsMaintainedColumns(t *testing.T) {
+	t.Parallel()
 	src := []byte("name fixture\nversion 1\n" + codexBlock + "\nlicense MIT\n")
 	values, err := generated(src, Cargo)
 	require.NoError(t, err)
@@ -60,6 +61,7 @@ func TestChangedCrateBlockKeepsMaintainedColumns(t *testing.T) {
 }
 
 func TestChangedGoBlockKeepsModuleAndFieldColumns(t *testing.T) {
+	t.Parallel()
 	src := []byte("name fixture\n" + mdxBlock + "\n")
 	values, err := generated(src, Go)
 	require.NoError(t, err)
@@ -78,6 +80,7 @@ func TestChangedGoBlockKeepsModuleAndFieldColumns(t *testing.T) {
 }
 
 func TestUnusualBlocksFallBackToPlainRows(t *testing.T) {
+	t.Parallel()
 	require.Nil(t, inferLayout(Cargo, "cargo.crates \\\n    a 1.0 \\\n    "+strings.Repeat("a", 64)), "a wrapped row is not a sample")
 	require.Nil(t, inferLayout(Go, "go.vendors \\\n    example.com/x lock v1 sha256 abc"), "a single-line Go module is not go2port's shape")
 	require.Nil(t, inferLayout(Cargo, "cargo.crates"))

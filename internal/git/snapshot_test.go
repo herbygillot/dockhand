@@ -43,6 +43,7 @@ func snapshotCommit(t *testing.T, repo *git.Repository, tree string) string {
 }
 
 func TestSnapshotUsesRawWholeTreeAndLeavesCheckoutAlone(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	subtree := snapshotTree(t, repo, snapshotBlob(t, repo, "helper.tcl", "set version 2\n", 0100644))
 	tree := snapshotTree(t, repo,
@@ -78,6 +79,7 @@ func TestSnapshotUsesRawWholeTreeAndLeavesCheckoutAlone(t *testing.T) {
 }
 
 func TestBranchSelectionIsLiteralAndReportsMissingBranches(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	tree := snapshotTree(t, repo)
 	commit := snapshotCommit(t, repo, tree)
@@ -101,6 +103,7 @@ func TestBranchSelectionIsLiteralAndReportsMissingBranches(t *testing.T) {
 }
 
 func TestSnapshotRefusesExternalSymlinksAndSubmodules(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	for _, target := range []string{"../outside", "/etc/passwd", "missing", "link"} {
 		tree := snapshotTree(t, repo, snapshotBlob(t, repo, "link", target, 0120000))

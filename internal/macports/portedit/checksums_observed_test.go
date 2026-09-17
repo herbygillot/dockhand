@@ -10,6 +10,7 @@ import (
 )
 
 func TestRefreshChecksumsCoversPerArchitectureArchives(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 2
 master_sites @SITE@/${version}
@@ -49,6 +50,7 @@ if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 // refresh and on a version bump alike. A group already made of current
 // algorithms keeps its layout.
 func TestLegacyChecksumBlocksAreModernizedWhenTouched(t *testing.T) {
+	t.Parallel()
 	body := `version 1.2.3
 revision 2
 master_sites @SITE@/${version}
@@ -92,6 +94,7 @@ checksums sha256 aaaa \
 // --keep-old-checksums refreshes a legacy block in place: the same
 // algorithms in the same layout, every value recomputed from the download.
 func TestKeepOldChecksumsRefreshesLegacyBlockInPlace(t *testing.T) {
+	t.Parallel()
 	s, r, _ := archiveFixture(t, `version 1.2.3
 master_sites @SITE@/${version}
 distfiles fixture.zip

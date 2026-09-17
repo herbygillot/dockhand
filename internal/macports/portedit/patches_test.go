@@ -19,6 +19,7 @@ import (
 )
 
 func TestPreparationChecksDeclaredPatchesAgainstTheNewSource(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
 		t.Skip("MacPorts required")

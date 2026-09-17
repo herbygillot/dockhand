@@ -15,6 +15,7 @@ import (
 // refused by every command that would register it or fetch into it, before
 // the state database is created.
 func TestCommandsRefuseCheckoutsThatAreNotPortsTrees(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644))
 	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "-A"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + os.DevNull, "commit", "-q", "-m", "not a ports tree"}} {

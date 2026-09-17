@@ -16,6 +16,7 @@ import (
 )
 
 func TestLogRetentionProtectsActiveJobsAndPreservesEvidenceOffline(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	submission, err := f.provider.Submit(t.Context(), f.request)
@@ -77,6 +78,7 @@ func TestLogRetentionProtectsActiveJobsAndPreservesEvidenceOffline(t *testing.T)
 }
 
 func TestLogCacheRetentionChecksIdentityAgeAndRequestLock(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	submission, err := f.provider.Submit(t.Context(), f.request)
@@ -99,8 +101,8 @@ func TestLogCacheRetentionChecksIdentityAgeAndRequestLock(t *testing.T) {
 	require.NoError(t, lock.Close())
 	wrong := submission.Run
 	wrong.RunID = "11:1"
-	_, err = f.provider.PruneLogCache(t.Context(), wrong, cutoff, false)
-	require.Error(t, err)
+	found, err = f.provider.PruneLogCache(t.Context(), wrong, cutoff, false)
+	require.Error(t, err, "a run that is not the recorded one must be refused (found=%v)", found)
 	require.FileExists(t, name)
 	other := *f.provider
 	other.Repository = "another-repository"

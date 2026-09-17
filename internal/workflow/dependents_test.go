@@ -37,6 +37,7 @@ func dependentCoverage(source record.Source, config record.BuildConfig, roots []
 }
 
 func TestDependentCoverageResumesAndGatesPublication(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"passed", "failed", "unread", "unevaluated", "all-unevaluated"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, hosting, request := combinedFixture(t, record.BumpRevision)
@@ -147,6 +148,7 @@ func TestDependentCoverageResumesAndGatesPublication(t *testing.T) {
 }
 
 func TestDependentDiscoveryClaimCanBeReplacedWithoutAdoptingStalePlan(t *testing.T) {
+	t.Parallel()
 	f, _, request := combinedFixture(t, record.BumpRevision)
 	request.Spec.IncludeDependents = true
 	entered, release := make(chan struct{}), make(chan struct{})

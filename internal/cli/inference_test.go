@@ -15,6 +15,7 @@ import (
 )
 
 func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
+	t.Parallel()
 	config, repo, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	var stdout, stderr bytes.Buffer
@@ -62,6 +63,7 @@ func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
 }
 
 func TestVerifyCLIRejectsUnknownInferenceWithoutAcceptingWork(t *testing.T) {
+	t.Parallel()
 	config, _, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	var stdout, stderr bytes.Buffer

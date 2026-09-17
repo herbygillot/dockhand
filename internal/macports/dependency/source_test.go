@@ -6,6 +6,7 @@ import (
 )
 
 func TestManifestOwnershipHonorsExtractionDirectory(t *testing.T) {
+	t.Parallel()
 	archive := sourceArchive(t, map[string]string{"other/Cargo.lock": "lock", "actual/subdir/Cargo.lock": "nested"})
 	require.NoError(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "actual/subdir"}, false))
 	require.ErrorIs(t, ConfirmSource(t.Context(), Cargo, Input{Archive: archive, Worksrcdir: "missing/subdir"}, false), ErrManifestMissing)

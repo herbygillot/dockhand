@@ -43,6 +43,7 @@ func archiveFixture(t *testing.T, body string) (*Service, Request, *[]string) {
 }
 
 func TestPrepareAllArchitectureArchivesWithConstantNames(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 2
 master_sites @SITE@/${version}
@@ -61,6 +62,7 @@ if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 	require.Contains(t, string(original), "version 1.2.3")
 }
 func TestPrepareSharedOSBranchesPreservesAuxiliaryPin(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
 if {${os.major} >= 17} {
@@ -81,6 +83,7 @@ checksums-append pinned.zip sha256 cccc size 4
 	require.Contains(t, string(result.Files[0].After), "checksums-append pinned.zip sha256 cccc size 4")
 }
 func TestPrepareKeepsIndependentOldOSVersionAndChecksums(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `if {${os.major} >= 17} {
  version 1.2.3
  revision 2
@@ -98,6 +101,7 @@ master_sites @SITE@/${version}
 	require.Contains(t, string(result.Files[0].After), "version 0.9.0\n revision 5\n checksums sha256 bbbb size 3")
 }
 func TestPrepareScopedSeriesWithoutForge(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 0
 subport fixture-1.2 {
  set patchNumber 3
@@ -124,6 +128,7 @@ if {${subport} ne ${name}} {
 }
 
 func TestCandidateCannotActivateUnprovenChecksumDeclaration(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
 master_sites @SITE@/${version}
@@ -138,6 +143,7 @@ if {$version eq "1.2.3"} {
 	require.Empty(t, *requests)
 }
 func TestConflictingContextChecksumsLeaveWorkspaceUntouched(t *testing.T) {
+	t.Parallel()
 	s, r, _ := archiveFixture(t, `version 1.2.3
 revision 0
 master_sites @SITE@/${version}
@@ -153,6 +159,7 @@ checksums sha256 aaaa size 2
 }
 
 func TestPreparePreservesRejectedPlatformGuardWithoutClaimingBuildCoverage(t *testing.T) {
+	t.Parallel()
 	guard := `if {${os.major} < 23 && ${build_arch} eq "arm64"} {
  known_fail yes
  pre-fetch {

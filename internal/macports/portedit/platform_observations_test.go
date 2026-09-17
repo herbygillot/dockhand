@@ -7,6 +7,7 @@ import (
 )
 
 func TestNativePlatformOperands(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, setup, condition string }{
 		{"scalar", "set minimum 17", `${os.major} >= $minimum`},
 		{"inverted", "set minimum 17", `$minimum <= ${os.major}`},
@@ -15,6 +16,7 @@ func TestNativePlatformOperands(t *testing.T) {
 		{"formatting", `configure.args --triplet=darwin${os.major}`, `${os.major} >= 17`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s, r, requests := archiveFixture(t, tc.setup+"\nif {"+tc.condition+`} {
 version 1.2.3
 revision 2
@@ -35,6 +37,7 @@ master_sites @SITE@/${version}
 	}
 }
 func TestMutablePlatformOperandRefusedBeforeDownloads(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `set minimum 16
 set minimum 17
 version 1.2.3
@@ -50,6 +53,7 @@ master_sites @SITE@/${version}
 }
 
 func TestExternalThresholdCannotEscapeThroughNativeOnlyProfiles(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `set minimum [exec /bin/echo 99]
 version 1.2.3
 revision 0
@@ -64,6 +68,7 @@ master_sites @SITE@/${version}
 }
 
 func TestUnmodeledFormattingReadsDoNotBlockPreparation(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 2
 checksums sha256 aaaa size 2
@@ -86,6 +91,7 @@ post-patch {
 }
 
 func TestUnmodeledReadSelectingSourcesRefusedBeforeDownloads(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
 if {[vercmp $macosx_deployment_target 10.12] < 0} {distfiles legacy.tar.gz} else {distfiles source.tar.gz}

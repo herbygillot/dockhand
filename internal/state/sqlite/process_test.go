@@ -31,6 +31,7 @@ func helperCommand(t *testing.T, s *sqlite.Store, r record.Repository, mode stri
 	return cmd
 }
 func TestSQLiteProcessHelper(t *testing.T) {
+	t.Parallel()
 	mode := os.Getenv("DOCKHAND_TEST_PROCESS")
 	if mode == "" {
 		return
@@ -81,6 +82,7 @@ func TestSQLiteProcessHelper(t *testing.T) {
 	}
 }
 func TestConcurrentProcessesAndAbandonedWriter(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	r := repository(t, s, "repo")
 	require.NoError(t, s.Update(t.Context(), r.ID, func(ctx context.Context, tx state.Tx) error {
@@ -157,6 +159,7 @@ func (p processProvider) Submit(ctx context.Context, r verify.Request) (verify.S
 	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: "test", RequestID: r.ID, RunID: "run_" + string(r.ID)}}, nil
 }
 func TestDriverProcessesClaimOneSubmission(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	r := repository(t, s, "repo")
 	receipt := seed(t, s, r, "change")

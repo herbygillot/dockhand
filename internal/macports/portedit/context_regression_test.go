@@ -6,6 +6,7 @@ import (
 )
 
 func TestPrepareDerivedOSBoundary(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
 set modern [expr {${os.major} >= 17}]
@@ -25,6 +26,7 @@ master_sites @SITE@/${version}
 }
 
 func TestPrepareMultilineOSBoundary(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
 if {
@@ -45,6 +47,7 @@ master_sites @SITE@/${version}
 }
 
 func TestPrepareResetsRevisionsAcrossAffectedContexts(t *testing.T) {
+	t.Parallel()
 	for _, nativeRevision := range []string{"0", "2"} {
 		t.Run(nativeRevision, func(t *testing.T) {
 			s, r, requests := archiveFixture(t, `version 1.2.3
@@ -69,6 +72,7 @@ master_sites @SITE@/${version}
 }
 
 func TestPrepareRefusesRevisionSharedWithIndependentPin(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `revision 2
 if {${os.major} >= 17} {
  version 1.2.3
@@ -85,6 +89,7 @@ master_sites @SITE@/${version}
 }
 
 func TestPrepareConfigureArchitectureBranches(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
 master_sites @SITE@/${version}

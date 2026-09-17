@@ -9,6 +9,7 @@ import (
 )
 
 func TestContractPackageDependencies(t *testing.T) {
+	t.Parallel()
 	pkg, err := build.Default.ImportDir(".", 0)
 	require.NoError(t, err)
 	allowed := map[string]bool{

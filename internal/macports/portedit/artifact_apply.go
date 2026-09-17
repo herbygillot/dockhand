@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/text"
 )
 
@@ -57,11 +58,16 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		// Every archive still matches its declared checksums; there is nothing to commit.
 		return result, nil
 	}
-	for _, frame := range plan.observed.contexts {
-		final, err := s.observeContents(ctx, input, contents, macports.ObservationRequest{Platform: frame.profile}, false)
-		if err != nil {
-			return result, err
-		}
+	finalProfiles := make([]record.Platform, len(plan.observed.contexts))
+	for i, frame := range plan.observed.contexts {
+		finalProfiles[i] = frame.profile
+	}
+	finals, err := s.observeProfiles(ctx, input, contents, finalProfiles, false, false)
+	if err != nil {
+		return result, err
+	}
+	for i, frame := range plan.observed.contexts {
+		final := finals[i]
 		checksums := strings.Join(wantedChecksums(frame.binding, updates), " ")
 		finalFidelity := fidelity.ScopedChecksums(input.scope, frame.after, final.Snapshot, input.target.Name, input.files.root, checksums)
 		if len(finalFidelity.UnexpectedChanges) > 0 {

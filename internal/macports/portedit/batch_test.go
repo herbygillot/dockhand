@@ -10,6 +10,7 @@ import (
 )
 
 func TestEvaluateVersionsMatchesSequentialEvaluation(t *testing.T) {
+	t.Parallel()
 	service, request, input := probeFixture(t, "set release 12\ngithub.setup owner fixture $release v\nversion [expr {${github.version} * 10 + 7}]\n")
 	probe, err := service.Probe(t.Context(), ProbeSource{Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform})
 	require.NoError(t, err)

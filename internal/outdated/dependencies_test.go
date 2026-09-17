@@ -9,6 +9,7 @@ import (
 )
 
 func TestCapabilityDependencies(t *testing.T) {
+	t.Parallel()
 	pkg, err := build.Default.ImportDir(".", 0)
 	require.NoError(t, err)
 	const prefix = "github.com/herbygillot/dockhand/internal/"

@@ -10,6 +10,7 @@ import (
 )
 
 func TestManagedCorrectionPushRequiresRecordedRemoteHead(t *testing.T) {
+	t.Parallel()
 	for _, authorized := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unexpected", true: "recorded"}[authorized], func(t *testing.T) {
 			f := setup(t)

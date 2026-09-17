@@ -41,6 +41,7 @@ func outputHelper(t *testing.T, body string) string {
 	return helper(t, "cat <<'BLOCK'\n"+body+"\nBLOCK")
 }
 func TestManifestSelectionAndUnsafeMembers(t *testing.T) {
+	t.Parallel()
 	archive := sourceArchive(t, map[string]string{"root/go.mod": "root", "root/sub/go.mod": "nested"})
 	data, member, err := Manifest(t.Context(), archive, "root/sub", "go.mod")
 	require.NoError(t, err)
@@ -63,6 +64,7 @@ func TestManifestSelectionAndUnsafeMembers(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 func TestManifestZipRejectsLinks(t *testing.T) {
+	t.Parallel()
 	for _, link := range []bool{false, true} {
 		var data bytes.Buffer
 		zw := zip.NewWriter(&data)
@@ -88,6 +90,7 @@ func TestManifestZipRejectsLinks(t *testing.T) {
 	}
 }
 func TestLiteralBlockEditingPreservesUnrelatedPortfile(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("a", 64)
 	src := []byte("# retained\nname fixture\ncargo.crates old 1.0 " + sha + "\n# human notes\nconfigure.args --keep\n")
 	plan, err := Inspect(src, map[string]string{Cargo: "old 1.0 " + sha})
@@ -110,6 +113,7 @@ func TestLiteralBlockEditingPreservesUnrelatedPortfile(t *testing.T) {
 	require.Error(t, err)
 }
 func TestGoGeneratorChecksExactManifestRequirements(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("a", 64)
 	manifest := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/dep v1.2.3\n"
 	in := Input{Archive: sourceArchive(t, map[string]string{"root/go.mod": manifest}), Worksrcdir: "root", Package: "github.com/owner/fixture", Tag: "v2.0"}
@@ -133,6 +137,7 @@ func TestGoGeneratorChecksExactManifestRequirements(t *testing.T) {
 	require.Empty(t, result.Values[Go])
 }
 func TestCargoGeneratorRetainsRegistryAndGitDependencies(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("a", 64)
 	commit := strings.Repeat("b", 40)
 	lock := fmt.Sprintf(`version = 4
@@ -175,6 +180,7 @@ source = "git+https://github.com/owner/dep?branch=main#%s"
 	}
 }
 func TestToolsDistinguishMissingFailureAndCancellation(t *testing.T) {
+	t.Parallel()
 	tools := Tools{Go2Port: filepath.Join(t.TempDir(), "missing"), Cargo2Port: outputHelper(t, "")}
 	_, err := tools.Resolve(Go)
 	require.ErrorContains(t, err, "missing executable go2port")
@@ -191,6 +197,7 @@ func TestToolsDistinguishMissingFailureAndCancellation(t *testing.T) {
 }
 
 func TestEmptyDependencyBlocksAndUnrelatedPorts(t *testing.T) {
+	t.Parallel()
 	_, err := Inspect([]byte("go.vendors\n"), map[string]string{Go: "", Cargo: ""})
 	require.ErrorContains(t, err, "mixed Go and Cargo")
 	plan, err := Inspect([]byte("go.vendors\n"), map[string]string{Go: ""})
@@ -202,6 +209,7 @@ func TestEmptyDependencyBlocksAndUnrelatedPorts(t *testing.T) {
 }
 
 func TestUnchangedDependencyBlockKeepsOriginalFormatting(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("a", 64)
 	src := []byte("version 1\ncargo.crates \\\n    first      1.0.0   " + sha + " \\\n    second     2.0.0   " + sha + "\n")
 	values := []string{"first", "1.0.0", sha, "second", "2.0.0", sha}
@@ -215,6 +223,7 @@ func TestUnchangedDependencyBlockKeepsOriginalFormatting(t *testing.T) {
 }
 
 func TestCargoGitReferencesFollowThePortPolicy(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("a", 64)
 	commit := strings.Repeat("b", 40)
 	lock := func(selector string) string {
@@ -273,6 +282,7 @@ source = "git+https://github.com/owner/pinned%s#%s"
 }
 
 func TestInspectDerivesGitPolicyFromOfflineMode(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("a", 64)
 	crates := "cargo.crates dep 1.0 " + sha + "\n"
 	declared := crates + "cargo.crates_github\n"

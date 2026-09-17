@@ -10,6 +10,7 @@ import (
 )
 
 func TestDependentOptionsRejectIncompatibleWorkBeforeState(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"bump", "jq", "--dependents", "--provider", "github"},
 		{"verify", "jq", "--target-image", "child=image"},

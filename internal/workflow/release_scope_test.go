@@ -15,6 +15,7 @@ import (
 )
 
 func TestSharedReleaseResumesIsolatedCoverageAndGatesPublication(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"passed", "failed", "canceled"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, hosting, request := combinedFixture(t, record.Bump)
@@ -115,6 +116,7 @@ func TestSharedReleaseResumesIsolatedCoverageAndGatesPublication(t *testing.T) {
 // default and still publishes; the PR body names the siblings left to the
 // pull request workflow. This is the path the first real stub bump took.
 func TestSharedReleaseRootOnlyCoveragePublishes(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.Bump)
 	request.Spec.Preparation.SharedRelease = true
 	original := f.engine.Preparer

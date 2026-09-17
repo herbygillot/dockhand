@@ -64,6 +64,7 @@ func automaticService(t *testing.T, c *catalog) *upstream.Service {
 }
 
 func TestAutomaticSelectionHonorsArchiveModeVersionOrderingAndPrereleases(t *testing.T) {
+	t.Parallel()
 	c := &catalog{releases: []forge.Release{{Tag: "v1.9"}, {Tag: "v1.10"}, {Tag: "v2.0", Prerelease: true}, {Tag: "v3.0", Draft: true}, {Tag: "v4.0-rc1"}, {Tag: "other-99.0"}}, tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}, {Name: "v1.11"}, {Name: "v2.0"}, {Name: "v4.0-rc1"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
@@ -87,6 +88,7 @@ func TestAutomaticSelectionHonorsArchiveModeVersionOrderingAndPrereleases(t *tes
 }
 
 func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *testing.T) {
+	t.Parallel()
 	c := &catalog{releases: []forge.Release{{Tag: "v1.0"}, {Tag: "v2.0"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
@@ -107,6 +109,7 @@ func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *te
 }
 
 func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"network", "no matches", "prerelease only", "invalid regex", "ambiguous", "missing selected tag", "custom source", "unknown current"} {
 		t.Run(mode, func(t *testing.T) {
 			c := &catalog{releases: []forge.Release{{Tag: "v2.0"}}}
@@ -156,6 +159,7 @@ func (c *catalog) Tag(ctx context.Context, name string) (forge.Tag, error) {
 }
 
 func TestDiscoveryRecordsMacPortsSourceIdentityAndURL(t *testing.T) {
+	t.Parallel()
 	c := &catalog{releases: []forge.Release{{Tag: "v2.0"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
@@ -169,6 +173,7 @@ func TestDiscoveryRecordsMacPortsSourceIdentityAndURL(t *testing.T) {
 }
 
 func TestAutomaticGitLabSelectionUsesTagFeedConvention(t *testing.T) {
+	t.Parallel()
 	c := &catalog{tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}}}
 	service := automaticService(t, c)
 	port := macports.PortInfo{Name: "fixture", Version: "1.9", Options: map[string]string{
@@ -188,6 +193,7 @@ func TestAutomaticGitLabSelectionUsesTagFeedConvention(t *testing.T) {
 }
 
 func TestTagDiscoveryNeverConsultsReleases(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"", "archive", "tarball"} {
 		t.Run("mode="+mode, func(t *testing.T) {
 			c := &catalog{tags: []forge.Tag{{Name: "v1.9"}, {Name: "v1.10"}}, releaseErr: errors.New("release catalog must not be read")}
@@ -204,6 +210,7 @@ func TestTagDiscoveryNeverConsultsReleases(t *testing.T) {
 }
 
 func TestCalendarTagSelectionAndExplicitVersions(t *testing.T) {
+	t.Parallel()
 	c := &catalog{tags: []forge.Tag{{Name: "v2026-09-07"}, {Name: "v2026-09-14"}, {Name: "v2026-02-31"}, {Name: "nightly"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
@@ -235,6 +242,7 @@ func TestCalendarTagSelectionAndExplicitVersions(t *testing.T) {
 }
 
 func TestAutomaticSelectionOrdersEvaluatedVersions(t *testing.T) {
+	t.Parallel()
 	c := &catalog{tags: []forge.Tag{{Name: "v2.0"}, {Name: "v3.0"}, {Name: "nightly"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
@@ -263,6 +271,7 @@ func TestAutomaticSelectionOrdersEvaluatedVersions(t *testing.T) {
 }
 
 func TestAutomaticSelectionDoesNotHideFailedEvaluation(t *testing.T) {
+	t.Parallel()
 	c := &catalog{tags: []forge.Tag{{Name: "v2.0"}}}
 	service := automaticService(t, c)
 	port := automaticPort()
@@ -276,6 +285,7 @@ func TestAutomaticSelectionDoesNotHideFailedEvaluation(t *testing.T) {
 }
 
 func TestAutomaticSelectionFollowsPrereleasesForPrereleasePorts(t *testing.T) {
+	t.Parallel()
 	c := &catalog{tags: []forge.Tag{{Name: "v3.0"}, {Name: "v4.0-rc1"}, {Name: "v4.0-rc2"}, {Name: "v4.0-beta.9"}}}
 	service := automaticService(t, c)
 	port := automaticPort()

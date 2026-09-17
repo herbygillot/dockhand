@@ -154,6 +154,7 @@ func (f *fixture) ready() {
 }
 
 func TestPushRecoveryAndDriverCompletion(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	submission, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -193,6 +194,7 @@ func TestPushRecoveryAndDriverCompletion(t *testing.T) {
 }
 
 func TestConcurrentSubmitAndClosedRequest(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
@@ -219,6 +221,7 @@ func TestConcurrentSubmitAndClosedRequest(t *testing.T) {
 }
 
 func TestNegativeEvidenceAndPinnedRunAttempt(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	submitted, err := f.provider.Submit(t.Context(), f.request)
@@ -244,6 +247,7 @@ func TestNegativeEvidenceAndPinnedRunAttempt(t *testing.T) {
 }
 
 func TestSubmissionRefusalsDoNotPush(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"disabled", "wrong tree", "variants", "moved branch"} {
 		t.Run(kind, func(t *testing.T) {
 			f := setup(t)
@@ -267,6 +271,7 @@ func TestSubmissionRefusalsDoNotPush(t *testing.T) {
 }
 
 func TestCompletedLogsArePinnedAndCached(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	submission, err := f.provider.Submit(t.Context(), f.request)
@@ -295,6 +300,7 @@ func TestCompletedLogsArePinnedAndCached(t *testing.T) {
 }
 
 func TestWorkflowMatrixRejectsUnsupportedTriggers(t *testing.T) {
+	t.Parallel()
 	matrix, err := workflowMatrix([]byte(testWorkflow))
 	require.NoError(t, err)
 	require.Equal(t, []string{"macos-14", "macos-15"}, matrix)
@@ -305,6 +311,7 @@ func TestWorkflowMatrixRejectsUnsupportedTriggers(t *testing.T) {
 }
 
 func TestCancellationFencesUncertainPush(t *testing.T) {
+	t.Parallel()
 	for _, pushed := range []bool{false, true} {
 		t.Run(fmt.Sprint("pushed=", pushed), func(t *testing.T) {
 			f := setup(t)
@@ -352,6 +359,7 @@ func TestCancellationFencesUncertainPush(t *testing.T) {
 }
 
 func TestCancellationDetachesOnlyItsOwnTracking(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
@@ -397,6 +405,7 @@ func TestCancellationDetachesOnlyItsOwnTracking(t *testing.T) {
 }
 
 func TestDriverCancellationDetachesGitHubRun(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
@@ -420,6 +429,7 @@ func TestDriverCancellationDetachesGitHubRun(t *testing.T) {
 }
 
 func TestSourceRequiresWorkflowDetectableChanges(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"deleted patch", "renamed patch", "added patch", "modified patch", "modified Portfile with deleted patch", "outside deletion"} {
 		t.Run(kind, func(t *testing.T) {
 			f := setup(t)
@@ -476,6 +486,7 @@ func TestSourceRequiresWorkflowDetectableChanges(t *testing.T) {
 }
 
 func TestIndependentJobsShareRunAndCancelSeparately(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	f.api.run.Status, f.api.run.Conclusion = gh.Ptr("in_progress"), nil
@@ -536,6 +547,7 @@ func (p lostRejectionReply) Submit(ctx context.Context, request verify.Request) 
 }
 
 func TestPermanentAdmissionFailureSurvivesLostReply(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"merged", "missing base", "missing local branch", "unrelated base", "authentication", "missing workflow"} {
 		t.Run(kind, func(t *testing.T) {
 			f := setup(t)
@@ -587,6 +599,7 @@ func TestPermanentAdmissionFailureSurvivesLostReply(t *testing.T) {
 }
 
 func TestTemporaryPreflightFailureCanRecover(t *testing.T) {
+	t.Parallel()
 	for _, code := range []int{403, 429, 503} {
 		t.Run(fmt.Sprint(code), func(t *testing.T) {
 			f := setup(t)
@@ -612,6 +625,7 @@ func TestTemporaryPreflightFailureCanRecover(t *testing.T) {
 }
 
 func TestDriverProgressFollowsGitHubRun(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	scope := workflow.Scope{Jobs: []record.JobID{f.job}}
 	require.Eventually(t, func() bool {

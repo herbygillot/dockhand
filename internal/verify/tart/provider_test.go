@@ -40,6 +40,7 @@ func newMachine() *fakeMachine {
 }
 
 func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	provider := &Provider{
 		Config:  Config{Home: home, ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)},
@@ -56,6 +57,7 @@ func TestBuildConfigSelectsConventionalNativeImage(t *testing.T) {
 }
 
 func TestBuildConfigSelectsXcodeImageForRequiredTargets(t *testing.T) {
+	t.Parallel()
 	provider := &Provider{Config: Config{Home: t.TempDir(), ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
 	config, err := provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared, NeedsXcode: true})
 	require.NoError(t, err)
@@ -235,6 +237,7 @@ func singleRun(t *testing.T) (*testRun, *fakeMachine) {
 }
 
 func TestAdmissionIsIdempotentAndClosesUnknownIDs(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	result, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -258,6 +261,7 @@ func TestAdmissionIsIdempotentAndClosesUnknownIDs(t *testing.T) {
 }
 
 func TestImageCapabilitiesAreProbedOncePerImmutableImage(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	machine := newMachine()
 	a := fixtureRun(t, filepath.Join(root, "state.db"), root, filepath.Join(root, "artifacts"), "a", machine)
@@ -284,6 +288,7 @@ func TestImageCapabilitiesAreProbedOncePerImmutableImage(t *testing.T) {
 }
 
 func TestIncompatibleImageIsRecordedAndReleasedBeforeStaging(t *testing.T) {
+	t.Parallel()
 	f, machine := singleRun(t)
 	machine.inspection = capabilityInspection{Capabilities: record.EnvironmentCapabilities{
 		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
@@ -316,6 +321,7 @@ func TestIncompatibleImageIsRecordedAndReleasedBeforeStaging(t *testing.T) {
 }
 
 func TestReconcileAdoptsAnIncompatibleImageResultAfterStopFailure(t *testing.T) {
+	t.Parallel()
 	f, machine := singleRun(t)
 	machine.inspection = capabilityInspection{Capabilities: record.EnvironmentCapabilities{
 		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
@@ -334,6 +340,7 @@ func TestReconcileAdoptsAnIncompatibleImageResultAfterStopFailure(t *testing.T) 
 	require.Contains(t, observed.Detail, "active ports")
 }
 func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	m := newMachine()
 	a := fixtureRun(t, filepath.Join(root, "state.db"), root, filepath.Join(root, "artifacts"), "a", m)
@@ -364,6 +371,7 @@ func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T
 	require.Equal(t, verify.Admitted, result.State)
 }
 func TestRecoveryCompletesAdmittedLaunchAndPreservesResultsAcrossStopFailure(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	m.launchError = errors.New("lost launch reply")
 	_, err := f.provider.Submit(t.Context(), f.request)
@@ -407,6 +415,7 @@ func TestRecoveryCompletesAdmittedLaunchAndPreservesResultsAcrossStopFailure(t *
 	require.Equal(t, 1, m.calls["delete"])
 }
 func TestCancellationDoesNotFreeCapacityUntilStopped(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	result, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -425,6 +434,7 @@ func TestCancellationDoesNotFreeCapacityUntilStopped(t *testing.T) {
 	require.Equal(t, record.VerdictCanceled, observed.Verdict)
 }
 func TestProviderCallsDoNotHoldDatabaseTransactions(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	m.stageHook = func() {
 		require.NoError(t, f.store.Update(t.Context(), f.provider.Repository, func(context.Context, state.Tx) error { return nil }))
@@ -433,6 +443,7 @@ func TestProviderCallsDoNotHoldDatabaseTransactions(t *testing.T) {
 	require.NoError(t, err)
 }
 func TestResultIdentityMustMatchAcceptedInputs(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	result, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -443,6 +454,7 @@ func TestResultIdentityMustMatchAcceptedInputs(t *testing.T) {
 	require.ErrorContains(t, err, "no confirmed terminal")
 }
 func TestConcurrentAdmissionHonorsPoolCapacity(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	machine := newMachine()
 	a := fixtureRun(t, filepath.Join(root, "state.db"), root, filepath.Join(root, "artifacts"), "a", machine)
@@ -472,6 +484,7 @@ func TestConcurrentAdmissionHonorsPoolCapacity(t *testing.T) {
 }
 
 func TestCancellationPreservesAnAlreadyFinishedGuest(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	submitted, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -485,6 +498,7 @@ func TestCancellationPreservesAnAlreadyFinishedGuest(t *testing.T) {
 }
 
 func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	config, err := f.provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestSkip, FromSource: true})
 	require.NoError(t, err)
@@ -516,6 +530,7 @@ func TestFrozenProviderChoicesResumeWithoutImageOrCapacityFlags(t *testing.T) {
 }
 
 func TestStandaloneVerificationAdmissionRequiresNoContributionRevision(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	engine := workflow.Engine{State: f.store, Repository: f.provider.Repository, Provider: capacityProvider{}}
 	receipt, err := engine.Submit(t.Context(), workflow.Request{ID: "standalone", Spec: record.JobSpec{
@@ -542,6 +557,7 @@ func TestStandaloneVerificationAdmissionRequiresNoContributionRevision(t *testin
 }
 
 func TestAdmissionProgressPrecedesWorkAndStopsAtFailure(t *testing.T) {
+	t.Parallel()
 	for _, failStage := range []bool{false, true} {
 		t.Run(fmt.Sprint(failStage), func(t *testing.T) {
 			f, m := singleRun(t)
@@ -574,6 +590,7 @@ func TestAdmissionProgressPrecedesWorkAndStopsAtFailure(t *testing.T) {
 }
 
 func TestNamedBuildConfigDoesNotChangeProviderDefault(t *testing.T) {
+	t.Parallel()
 	provider := &Provider{Config: Config{Image: "default-image", Home: t.TempDir(), ArtifactDirectory: t.TempDir(), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
 	config, err := provider.BuildConfigForImage(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared}, "dependent-image")
 	require.NoError(t, err)
@@ -587,6 +604,7 @@ func TestNamedBuildConfigDoesNotChangeProviderDefault(t *testing.T) {
 }
 
 func TestSourcePreparationBeforeReservation(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"pass", "cancel", "index-failure", "capacity-race"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, m := singleRun(t)
@@ -645,6 +663,7 @@ func TestSourcePreparationBeforeReservation(t *testing.T) {
 // and the person is told that evaluation and builds run on different Base
 // releases. An unobserved image, or a matching one, says nothing.
 func TestBuildConfigWarnsWhenHostAndImageMacPortsDiffer(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	store, err := sqlite.Open(t.Context(), filepath.Join(root, "state.db"), sqlite.Options{})
 	require.NoError(t, err)

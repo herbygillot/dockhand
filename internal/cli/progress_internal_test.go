@@ -15,6 +15,7 @@ import (
 )
 
 func TestCommandProgressStaysOnStderrAndEscapesControlCharacters(t *testing.T) {
+	t.Parallel()
 	db := filepath.Join(t.TempDir(), "state.db")
 	root, err := NewRoot(app.Config{DBPath: db})
 	require.NoError(t, err)
@@ -36,6 +37,7 @@ func TestCommandProgressStaysOnStderrAndEscapesControlCharacters(t *testing.T) {
 }
 
 func TestCohortProgressCountsQueuedTargets(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	reporter := newReporter(&out, nil, false, progress.Info, false)
 	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{State: record.AttemptQueued}, {State: record.AttemptRunning}, {State: record.AttemptQueued}}}}}

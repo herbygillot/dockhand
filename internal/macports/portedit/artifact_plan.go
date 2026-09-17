@@ -55,17 +55,18 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	protected := map[string]bool{}
 	changed := map[string]bool{}
 	unique := map[string]bool{}
-	for _, profile := range profiles {
+	progress.DebugReport(ctx, "Observing %d archive contexts", len(profiles))
+	befores, err := s.observeProfiles(ctx, input, input.data, profiles, true, false)
+	if err != nil {
+		return nil, fmt.Errorf("%w: observing baseline %v", errProbeInconclusive, err)
+	}
+	afters, err := s.observeProfiles(ctx, input, contents, profiles, true, false)
+	if err != nil {
+		return nil, fmt.Errorf("%w: observing candidate %v", errProbeInconclusive, err)
+	}
+	for i, profile := range profiles {
 		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
-		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
-		before, err := s.observeContents(ctx, input, input.data, mode, false)
-		if err != nil {
-			return nil, fmt.Errorf("%w: observing baseline %+v: %v", errProbeInconclusive, profile, err)
-		}
-		after, err := s.observeContents(ctx, input, contents, mode, false)
-		if err != nil {
-			return nil, fmt.Errorf("%w: observing candidate %+v: %v", errProbeInconclusive, profile, err)
-		}
+		before, after := befores[i], afters[i]
 		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
 		affected := old.Version != next.Version
 		if next.Fetch != nil && next.Fetch.Rejected {

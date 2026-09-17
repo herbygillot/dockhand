@@ -17,6 +17,7 @@ func assessmentFixture(t *testing.T, declaration string) (*VersionProbe, *source
 }
 
 func TestAssessmentDistinguishesInputsFromCandidateFidelity(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, body, raw, version, status string }{
 		{"literal", "github.setup owner fixture 1.2.3 v", "1.2.4", "1.2.4", CandidateChecked},
 		{"calculation", "github.setup owner fixture 2026-09-07 v\nversion [string map {- {}} ${github.version}]", "2026-09-14", "20260914", CandidateChecked},
@@ -51,6 +52,7 @@ func TestAssessmentDistinguishesInputsFromCandidateFidelity(t *testing.T) {
 }
 
 func TestAssessmentReportsMissingHelperWithoutRunningIt(t *testing.T) {
+	t.Parallel()
 	p, _ := assessmentFixture(t, "github.setup owner fixture 1.2.3 v\noptions go.vendors\ngo.vendors example.invalid/module v1.0 1234")
 	p.editor.DependencyTools.Go2Port = filepath.Join(t.TempDir(), "missing-helper")
 	result, err := p.Assess(t.Context(), nil)
@@ -69,6 +71,7 @@ func TestAssessmentReportsMissingHelperWithoutRunningIt(t *testing.T) {
 }
 
 func TestAssessmentRetainsFetchAndChecksumLimitations(t *testing.T) {
+	t.Parallel()
 	p, _ := assessmentFixture(t, "github.setup owner fixture 1.2.3 v\nfetch.type git")
 	result, err := p.Assess(t.Context(), nil)
 	require.NoError(t, err)
@@ -97,6 +100,7 @@ func assessmentFinding(t *testing.T, a Assessment, check string) Finding {
 }
 
 func TestLocalAssessmentKeepsFailedCounterfactualUnknown(t *testing.T) {
+	t.Parallel()
 	p, input := assessmentFixture(t, `set patchNumber 3
 if {$patchNumber ne "3"} {error "artificial patch not allowed"}
 proc release {} {global patchNumber; return 1.2.${patchNumber}}

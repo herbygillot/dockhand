@@ -91,6 +91,7 @@ func bindingFixture(t *testing.T) (*fixture, *boundPorts) {
 }
 
 func TestBindVerificationFreezesCommittedInputAndCreatesNoState(t *testing.T) {
+	t.Parallel()
 	f, ports := bindingFixture(t)
 	require.NoError(t, os.MkdirAll(filepath.Join(f.repo.Root, "devel/fixture"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(f.repo.Root, "devel/fixture/Portfile"), []byte("dirty"), 0600))
@@ -128,6 +129,7 @@ func TestBindVerificationFreezesCommittedInputAndCreatesNoState(t *testing.T) {
 }
 
 func TestCorrectedBranchAddsRevisionAndSameSourceReusesIt(t *testing.T) {
+	t.Parallel()
 	f, _ := bindingFixture(t)
 	trackCandidate(t, f)
 	first, err := f.engine.BindVerification(t.Context(), bindRequest(f, "first"))
@@ -166,6 +168,7 @@ func TestCorrectedBranchAddsRevisionAndSameSourceReusesIt(t *testing.T) {
 }
 
 func TestCompetingBranchBindingsHaveOneAtomicWinner(t *testing.T) {
+	t.Parallel()
 	f, _ := bindingFixture(t)
 	trackCandidate(t, f)
 	one, err := f.engine.BindVerification(t.Context(), bindRequest(f, "one"))
@@ -195,6 +198,7 @@ func TestCompetingBranchBindingsHaveOneAtomicWinner(t *testing.T) {
 }
 
 func TestBranchBindingFailureLeavesNoJobAndCleansSnapshot(t *testing.T) {
+	t.Parallel()
 	f, ports := bindingFixture(t)
 	ports.err = errors.New("evaluation failed")
 	_, err := f.engine.BindVerification(t.Context(), bindRequest(f, "failed"))
@@ -215,6 +219,7 @@ func TestBranchBindingFailureLeavesNoJobAndCleansSnapshot(t *testing.T) {
 }
 
 func TestVerificationBindingAgainstPortsTree(t *testing.T) {
+	t.Parallel()
 	directory := os.Getenv("DOCKHAND_TEST_PORTS_REPO")
 	branch := os.Getenv("DOCKHAND_TEST_PORTS_BRANCH")
 	if directory == "" || branch == "" {
@@ -250,6 +255,7 @@ func TestVerificationBindingAgainstPortsTree(t *testing.T) {
 }
 
 func TestBranchAdoptionRollsBackWhenRequestWriteFails(t *testing.T) {
+	t.Parallel()
 	f, _ := bindingFixture(t)
 	trackCandidate(t, f)
 	bound, err := f.engine.BindVerification(t.Context(), bindRequest(f, "collision"))
@@ -288,6 +294,7 @@ func trackCandidate(t *testing.T, f *fixture) {
 }
 
 func TestVerificationTargetsShareSourceWithoutClaimingContributionBranch(t *testing.T) {
+	t.Parallel()
 	f, p := bindingFixture(t)
 	first, err := f.engine.BindVerification(t.Context(), bindRequest(f, "first-port"))
 	require.NoError(t, err)
@@ -313,6 +320,7 @@ func TestVerificationTargetsShareSourceWithoutClaimingContributionBranch(t *test
 }
 
 func TestTrackedVerificationPreservesEditedTargetsWhenTestingOtherPorts(t *testing.T) {
+	t.Parallel()
 	f, p := bindingFixture(t)
 	trackCandidate(t, f)
 	edited := []record.Target{{Name: "edited-port", Portfile: "devel/edited/Portfile"}}
@@ -337,6 +345,7 @@ func TestTrackedVerificationPreservesEditedTargetsWhenTestingOtherPorts(t *testi
 }
 
 func TestStubSelectionBumpsItsNewestSubportAsASharedRelease(t *testing.T) {
+	t.Parallel()
 	f, ports := bindingFixture(t)
 	ports.snapshot = func(c macports.Context) map[string]macports.PortInfo {
 		return map[string]macports.PortInfo{

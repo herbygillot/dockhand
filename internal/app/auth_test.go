@@ -44,6 +44,7 @@ func (s *loginStore) Put(_ context.Context, key credential.Key, secret string) e
 }
 
 func TestGitHubLoginAuthorizesBeforeSavingToKeychain(t *testing.T) {
+	t.Parallel()
 	flow, store := &loginFlow{}, &loginStore{}
 	presented := false
 	result, err := app.LoginGitHub(t.Context(), app.GitHubLoginOptions{ClientID: "fixture-client", Flow: flow, Store: store, Present: func(authorization credential.DeviceAuthorization) error {
@@ -61,6 +62,7 @@ func TestGitHubLoginAuthorizesBeforeSavingToKeychain(t *testing.T) {
 }
 
 func TestGitHubLoginUsesRegisteredClientID(t *testing.T) {
+	t.Parallel()
 	flow, store := &loginFlow{}, &loginStore{}
 	_, err := app.LoginGitHub(t.Context(), app.GitHubLoginOptions{Flow: flow, Store: store, Present: func(credential.DeviceAuthorization) error { return nil }})
 	require.NoError(t, err)
@@ -69,6 +71,7 @@ func TestGitHubLoginUsesRegisteredClientID(t *testing.T) {
 }
 
 func TestGitHubLoginRequiresConfigurationAndPropagatesStorageFailure(t *testing.T) {
+	t.Parallel()
 	configuredClientID := app.DefaultGitHubOAuthClientID
 	app.DefaultGitHubOAuthClientID = ""
 	t.Cleanup(func() { app.DefaultGitHubOAuthClientID = configuredClientID })
@@ -83,6 +86,7 @@ func TestGitHubLoginRequiresConfigurationAndPropagatesStorageFailure(t *testing.
 func (s *loginStore) Delete(_ context.Context, key credential.Key) error { s.key = key; return s.err }
 
 func TestGitHubLogoutRemovesOnlyDockhandEntry(t *testing.T) {
+	t.Parallel()
 	for _, failure := range []error{nil, credential.ErrNotFound, errors.New("keychain locked")} {
 		store := &loginStore{err: failure}
 		result, err := app.LogoutGitHub(t.Context(), store)
@@ -97,6 +101,7 @@ func TestGitHubLogoutRemovesOnlyDockhandEntry(t *testing.T) {
 }
 
 func TestGitHubStatusReturnsSourceOnRejection(t *testing.T) {
+	t.Parallel()
 	for _, accepted := range []bool{true, false} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if accepted {

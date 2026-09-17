@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildProviderDefaultsAndExplicitChoices(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, command   string
 		args            []string

@@ -36,9 +36,11 @@ func dependencyHelper(t *testing.T, body string) string {
 	return file
 }
 func TestGoDependencyPreparation(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("a", 64)
 	for _, scenario := range []string{"success", "removed", "missing", "failed", "partial", "override", "patched", "unsupported-context"} {
 		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
 			old := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/old v1.0.0\n"
 			next := "module github.com/owner/fixture\ngo 1.24\nrequire example.com/new/v2 v2.0.0\n"
 			if scenario == "removed" {
@@ -129,6 +131,7 @@ func TestGoDependencyPreparation(t *testing.T) {
 	}
 }
 func TestCargoDependencyPreparation(t *testing.T) {
+	t.Parallel()
 	sha := strings.Repeat("b", 64)
 	for _, scenario := range []string{"success", "auxiliary", "added", "removed", "missing", "failed", "partial"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -230,6 +233,7 @@ extract.rename no
 }
 
 func TestCargoGitArchivesUseEvaluatedPortGroupLocations(t *testing.T) {
+	t.Parallel()
 	oldCommit, newCommit := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	gitBody := "git dependency archive"
 	checksum := fmt.Sprintf("%x", sha256.Sum256([]byte(gitBody)))
@@ -280,6 +284,7 @@ source = "git+https://github.com/owner/gitdep?branch=main#%s"
 }
 
 func TestCargoRevPinnedCratesStayOnlineWhenThePortDisablesOfflineMode(t *testing.T) {
+	t.Parallel()
 	oldCommit, newCommit := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	lock := func(commit string) string {
 		return fmt.Sprintf(`version = 4

@@ -23,6 +23,7 @@ import (
 )
 
 func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
+	t.Parallel()
 	f, hosting := manualPublicationFixture(t)
 	remoteURL := "https://github.com/author/ports.git"
 	command := exec.CommandContext(t.Context(), "git", "remote", "set-url", "origin", remoteURL)

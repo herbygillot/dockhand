@@ -39,6 +39,7 @@ func githubPort() macports.PortInfo {
 }
 
 func TestResolveUsesObservedTagsAndChecksRecordedCommit(t *testing.T) {
+	t.Parallel()
 	for _, request := range []string{"2.0", "v2.0"} {
 		t.Run(request, func(t *testing.T) {
 			var calls []string
@@ -71,6 +72,7 @@ func TestResolveUsesObservedTagsAndChecksRecordedCommit(t *testing.T) {
 }
 
 func TestResolveRecordsGitLabSourceIdentity(t *testing.T) {
+	t.Parallel()
 	commit := strings.Repeat("a", 40)
 	service := serviceWithCatalog(tagFunc(func(_ context.Context, repository, tag string) (forge.Tag, error) {
 		require.Equal(t, "group/project", repository)
@@ -95,6 +97,7 @@ func TestResolveRecordsGitLabSourceIdentity(t *testing.T) {
 }
 
 func TestResolveDoesNotHideFailuresOrAmbiguity(t *testing.T) {
+	t.Parallel()
 	outage := errors.New("rate limited")
 	for _, test := range []struct {
 		name     string
@@ -137,6 +140,7 @@ func (f repositoryFunc) Repository(_ string, name string) (forge.Repository, err
 }
 
 func TestResolutionRejectsFailedOrMismatchedRepositoryBinding(t *testing.T) {
+	t.Parallel()
 	unavailable := errors.New("repository unavailable")
 	for _, test := range []struct {
 		name       string
@@ -164,6 +168,7 @@ func TestResolutionRejectsFailedOrMismatchedRepositoryBinding(t *testing.T) {
 func identityVersion(_ context.Context, source string) (string, error) { return source, nil }
 
 func TestResolutionRequiresVersionEvaluationEvenWhenCurrentValuesMatch(t *testing.T) {
+	t.Parallel()
 	service := serviceWithCatalog(tagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	}))
@@ -173,6 +178,7 @@ func TestResolutionRequiresVersionEvaluationEvenWhenCurrentValuesMatch(t *testin
 }
 
 func TestExplicitArchiveReleaseNeedsNoForgeButRetainsSourceChecks(t *testing.T) {
+	t.Parallel()
 	service := upstream.Service{EvaluateVersion: identityVersion}
 	port := macports.PortInfo{Name: "fixture", Version: "1.2.3", Options: map[string]string{}}
 	release, err := service.Resolve(t.Context(), port, "1.2.4")
@@ -195,6 +201,7 @@ func TestExplicitArchiveReleaseNeedsNoForgeButRetainsSourceChecks(t *testing.T) 
 }
 
 func TestResolveClassifiesStabilityWithoutRefusing(t *testing.T) {
+	t.Parallel()
 	commit := strings.Repeat("a", 40)
 	service := serviceWithCatalog(tagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
 		if tag != "v2.0-rc1" && tag != "v2.0" {

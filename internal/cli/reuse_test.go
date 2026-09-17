@@ -22,6 +22,7 @@ import (
 )
 
 func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
+	t.Parallel()
 	config, _, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	observed := seedCLIVerification(t, config, "candidate")
@@ -116,6 +117,7 @@ func seedCLIVerification(t *testing.T, config app.Config, branch string) time.Ti
 }
 
 func TestVerifyCLISelectsSetupImageWhenImageIsOmitted(t *testing.T) {
+	t.Parallel()
 	config, _, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	evaluator := eval.Evaluator{Executable: config.TclExecutable, Prefix: config.MacPortsPrefix}

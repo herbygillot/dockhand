@@ -7,6 +7,7 @@ import (
 )
 
 func TestFailureBackoffCapsAndSpreadsJobs(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	c := cycle{engine: &Engine{Now: func() time.Time { return now }}, retry: time.Second}
 	a, b := uint32(1), uint32(1)

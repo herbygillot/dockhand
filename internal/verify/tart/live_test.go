@@ -28,6 +28,7 @@ type driverFixture struct {
 }
 
 func TestTartDriverProcess(t *testing.T) {
+	t.Parallel()
 	path := os.Getenv("DOCKHAND_TART_DRIVER_FIXTURE")
 	if path == "" {
 		t.Skip("subprocess helper")
@@ -75,6 +76,7 @@ func TestTartDriverProcess(t *testing.T) {
 }
 
 func TestRealTartBuildSurvivesSubmittingDriverExit(t *testing.T) {
+	t.Parallel()
 	image := os.Getenv("DOCKHAND_TEST_TART_IMAGE")
 	if image == "" {
 		t.Skip("set DOCKHAND_TEST_TART_IMAGE to a prepared local VM for the opt-in integration test")

@@ -20,6 +20,7 @@ func listingPort(address string) macports.PortInfo {
 }
 
 func TestHTTPDiscoveryUsesNativeFilterAndFreezesRelease(t *testing.T) {
+	t.Parallel()
 	page := `>terraform_1.16.2< >terraform_1.17.0< >terraform_1.16.10< >terraform_1.16.10< >terraform_1.16.11-rc1<`
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +63,7 @@ func TestHTTPDiscoveryUsesNativeFilterAndFreezesRelease(t *testing.T) {
 }
 
 func TestHTTPDiscoveryRejectsIncompleteOrUnsupportedObservations(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"empty", "malformed", "prerelease", "HTTP failure", "custom hook", "curl option", "unmatched version", "invalid capture", "ambiguous"} {
 		t.Run(scenario, func(t *testing.T) {
 			page := `>terraform_1.16.2<`

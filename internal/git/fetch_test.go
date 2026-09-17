@@ -12,6 +12,7 @@ import (
 )
 
 func TestFetchBranchFreezesRemoteAndPreservesLocalRefs(t *testing.T) {
+	t.Parallel()
 	upstream, local := snapshotRepo(t), snapshotRepo(t)
 	tree := snapshotTree(t, upstream, snapshotBlob(t, upstream, "Portfile", "version 2", 0100644))
 	latest := snapshotCommit(t, upstream, tree)
@@ -68,6 +69,7 @@ func TestFetchBranchFreezesRemoteAndPreservesLocalRefs(t *testing.T) {
 }
 
 func TestFetchBranchUsesURLWithoutRemoteTrackingSideEffects(t *testing.T) {
+	t.Parallel()
 	remote, local := snapshotRepo(t), snapshotRepo(t)
 	commit := snapshotCommit(t, remote, snapshotTree(t, remote, snapshotBlob(t, remote, "file", "contents", 0100644)))
 	require.NoError(t, remote.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Desired: git.RefValue{Exists: true, Object: commit}}}))

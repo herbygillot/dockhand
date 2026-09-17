@@ -17,6 +17,7 @@ import (
 )
 
 func TestMissingRunWorkflowDiagnostics(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, state, want string
 		missing, replaced bool
@@ -70,6 +71,7 @@ type workflowFailure struct {
 func (a workflowFailure) Workflow(context.Context, string) (*gh.Workflow, error) { return nil, a.err }
 
 func TestMissingRunRetainsTransientErrors(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	_, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -85,6 +87,7 @@ func TestMissingRunRetainsTransientErrors(t *testing.T) {
 }
 
 func TestMissingRunWithMovedRemoteKeepsObserving(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	_, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -107,6 +110,7 @@ func TestMissingRunWithMovedRemoteKeepsObserving(t *testing.T) {
 }
 
 func TestOldMissingRunHasNoAutomaticFailureDeadline(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	var config Config
 	require.NoError(t, json.Unmarshal(f.request.Spec.Config.ProviderConfig, &config))
@@ -123,6 +127,7 @@ func TestOldMissingRunHasNoAutomaticFailureDeadline(t *testing.T) {
 }
 
 func TestDriverRecordsMissingRunGuidanceAndCancelsOffline(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	scope := workflow.Scope{Jobs: []record.JobID{f.job}}
 	require.Eventually(t, func() bool {

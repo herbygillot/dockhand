@@ -30,6 +30,7 @@ func resolvedFixture(f *fixture) record.Release {
 }
 
 func TestVersionBumpCheckpointsReleaseBeforePreparationAndResumesVerification(t *testing.T) {
+	t.Parallel()
 	for _, automatic := range []bool{false, true} {
 		for _, verification := range []bool{false, true} {
 			t.Run(fmt.Sprintf("automatic=%t/verification=%t", automatic, verification), func(t *testing.T) {
@@ -117,6 +118,7 @@ func (t releaseFailureTx) PutJob(ctx context.Context, job record.Job) error {
 }
 
 func TestFailedReleaseCheckpointCannotStartPreparation(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, false)
 	req.Spec.Action = record.Bump
 	req.Spec.Version = "2.0"
@@ -137,6 +139,7 @@ func TestFailedReleaseCheckpointCannotStartPreparation(t *testing.T) {
 }
 
 func TestReleaseResolutionFencesExpiredAndCanceledClaims(t *testing.T) {
+	t.Parallel()
 	for _, canceled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "expired", true: "canceled"}[canceled], func(t *testing.T) {
 			f, req := preparationFixture(t, false)
@@ -188,6 +191,7 @@ func TestReleaseResolutionFencesExpiredAndCanceledClaims(t *testing.T) {
 }
 
 func TestAlreadyCurrentBumpCompletesWithoutPreparationOrVerification(t *testing.T) {
+	t.Parallel()
 	for _, verification := range []bool{false, true} {
 		t.Run(fmt.Sprint(verification), func(t *testing.T) {
 			f, req := preparationFixture(t, verification)
@@ -234,6 +238,7 @@ func TestAlreadyCurrentBumpCompletesWithoutPreparationOrVerification(t *testing.
 }
 
 func TestFailedAutomaticObservationIsNotSuccessfulNoOp(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, false)
 	req.Spec.Action = record.Bump
 	f.engine.Releases = resolveFunc(func(context.Context, preparation.Request) (record.Release, error) {
@@ -249,6 +254,7 @@ func TestFailedAutomaticObservationIsNotSuccessfulNoOp(t *testing.T) {
 }
 
 func TestNoUpdateCheckpointFailureDoesNotReportSuccess(t *testing.T) {
+	t.Parallel()
 	f, req := preparationFixture(t, false)
 	req.Spec.Action = record.Bump
 	release := resolvedFixture(f)

@@ -24,6 +24,7 @@ import (
 )
 
 func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
+	t.Parallel()
 	config := app.Config{DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), Repository: "/missing/repository"}
 	for _, args := range [][]string{{"bump", "jq"}, {"bump", "jq", "v1.8.1"}, {"bump", "jq", "1.8.1"}} {
 		var out bytes.Buffer
@@ -44,6 +45,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 }
 
 func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.T) {
+	t.Parallel()
 	config, repo, commit := preparationCLI(t)
 	var err error
 	var stdout, stderr bytes.Buffer
@@ -100,6 +102,7 @@ func preparationCLI(t *testing.T) (app.Config, *git.Repository, string) {
 }
 
 func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) {
+	t.Parallel()
 	config, repo, commit := preparationCLI(t)
 	out, err := exec.CommandContext(t.Context(), "git", "-C", repo.Root, "reset", "--hard", commit).CombinedOutput()
 	require.NoError(t, err, "%s", out)
@@ -145,6 +148,7 @@ func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) 
 }
 
 func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T) {
+	t.Parallel()
 	for _, image := range []string{"", "unavailable-image"} {
 		t.Run("image="+image, func(t *testing.T) {
 			config, repo, _ := preparationCLI(t)
@@ -167,6 +171,7 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 }
 
 func TestExplicitVersionBumpCLIFromPreviewToTrackedBranch(t *testing.T) {
+	t.Parallel()
 	config, repo, original := preparationCLI(t)
 	body := "source archive fixture"
 	upstreamCommit := strings.Repeat("a", 40)
@@ -253,6 +258,7 @@ checksums rmd160 %s \
 }
 
 func TestPreparationIgnoresLocalBranchAndRefusesFailedFetch(t *testing.T) {
+	t.Parallel()
 	config, repo, upstream := preparationCLI(t)
 	_, tree, err := repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)

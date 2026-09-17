@@ -45,6 +45,7 @@ proc github.setup {owner project raw prefix} {
 }
 
 func TestForwardVersionProbing(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, body, source, version, kept string }{
 		{"date", "github.setup owner fixture 2026-09-07 v\nversion [string map {- {}} ${github.version}]", "2026-09-14", "20260914", "version [string map"},
 		{"validated date", `github.setup owner fixture 2026-09-07 v
@@ -72,6 +73,7 @@ version [clock format [clock scan ${github.version} -format %Y-%m-%d -gmt 1] -fo
 	}
 }
 func TestVersionProbingRejectsAmbiguityAndSiblingChanges(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, body, detail string
 		expected           error
@@ -100,6 +102,7 @@ github.setup owner fixture $release v`, "inconclusive", ErrUnsupported},
 	}
 }
 func TestProbeCancellation(t *testing.T) {
+	t.Parallel()
 	service, request, input := probeFixture(t, "github.setup owner fixture 1.2.3 v")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

@@ -11,6 +11,7 @@ import (
 )
 
 func TestEditTreePreservesUneditedObjectsAndChecksFilePreconditions(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	original := snapshotBlob(t, repo, "Portfile", "version 1\nrevision 0\n", 0o100755)
 	sibling := snapshotBlob(t, repo, "keep", "untouched", 0o100644)
@@ -63,6 +64,7 @@ func TestEditTreePreservesUneditedObjectsAndChecksFilePreconditions(t *testing.T
 }
 
 func TestEditTreeRefusesInvalidOverlappingAndSymlinkPaths(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	base := snapshotTree(t, repo, snapshotBlob(t, repo, "link", "target", 0o120000), snapshotBlob(t, repo, "target", "data", 0o100644))
 	for _, path := range []string{"", ".", "../escape", "/absolute", ".git/config", "nested/.GIT/config", "link", "link/child", "target/child"} {

@@ -60,6 +60,7 @@ func fixtureGit(t *testing.T, root string, args ...string) string {
 }
 
 func TestPrepareRevisionUsesWholeSnapshotAndPreservesCheckout(t *testing.T) {
+	t.Parallel()
 	service, request := preparationFixture(t, "revision 4\nsubport fixture-child {\n revision 9\n}\n")
 	filename := filepath.Join(service.Repo.Root, "devel/fixture/Portfile")
 	require.NoError(t, os.WriteFile(filename, []byte("a staged user edit\n"), 0600))
@@ -93,6 +94,7 @@ func TestPrepareRevisionUsesWholeSnapshotAndPreservesCheckout(t *testing.T) {
 }
 
 func TestPrepareRevisionScopesSelectedSubportAndDefaultRevision(t *testing.T) {
+	t.Parallel()
 	for _, fixture := range []struct {
 		body, subport string
 		revision      int
@@ -116,6 +118,7 @@ func TestPrepareRevisionScopesSelectedSubportAndDefaultRevision(t *testing.T) {
 }
 
 func TestPreparationDeclinesUnintendedEvaluationAndUnsupportedExpressions(t *testing.T) {
+	t.Parallel()
 	for _, fixture := range []struct {
 		body     string
 		expected error
@@ -140,6 +143,7 @@ func TestPreparationDeclinesUnintendedEvaluationAndUnsupportedExpressions(t *tes
 }
 
 func TestPreparationRejectsInconsistentSourceAndCancellation(t *testing.T) {
+	t.Parallel()
 	service, request := preparationFixture(t, "revision 0\n")
 	request.Source.Tree = record.ObjectID(strings.Repeat("a", 40))
 	_, err := service.Prepare(t.Context(), request)

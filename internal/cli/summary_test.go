@@ -11,6 +11,7 @@ import (
 )
 
 func TestSummaryNamesPortVersionBranchVerdictAndPR(t *testing.T) {
+	t.Parallel()
 	platform := record.Platform{OS: "macOS", Version: "26", Architecture: "arm64"}
 	status := workflow.EmptyStatus(time.Now())
 	status.Jobs = []workflow.JobStatus{{
@@ -30,6 +31,7 @@ func TestSummaryNamesPortVersionBranchVerdictAndPR(t *testing.T) {
 }
 
 func TestSummaryShowsFailingPhaseLogAndResumeByPort(t *testing.T) {
+	t.Parallel()
 	platform := record.Platform{OS: "macOS", Version: "15", Architecture: "arm64"}
 	failed := workflow.JobStatus{
 		Job: record.Job{ID: "job_2", State: record.JobFailed, Phase: record.PhaseVerification, Detail: "verification failed",
@@ -51,6 +53,7 @@ func TestSummaryShowsFailingPhaseLogAndResumeByPort(t *testing.T) {
 }
 
 func TestSummaryReportsCurrentPortsAndReusedEvidence(t *testing.T) {
+	t.Parallel()
 	platform := record.Platform{OS: "macOS", Version: "26", Architecture: "arm64"}
 	status := workflow.Status{Jobs: []workflow.JobStatus{
 		{Job: record.Job{State: record.JobCompleted, Spec: record.JobSpec{Action: record.Bump, Destination: record.VerificationComplete, Targets: []record.Target{{Name: "gh"}}}, ResolvedRelease: &record.Release{Selection: record.Selection{CurrentVersion: "2.0", NoUpdate: true}, Version: "2.0"}}},

@@ -8,6 +8,7 @@ import (
 )
 
 func TestSessionEvaluatesRewrittenContentsWithoutRestarting(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "fixture"})

@@ -8,6 +8,7 @@ import (
 )
 
 func TestSharedReleasePlansEveryBuildableSibling(t *testing.T) {
+	t.Parallel()
 	root := record.Target{Name: "py310-example", Portfile: "python/py-example/Portfile", Subport: "py310-example"}
 	sibling := root
 	sibling.Name = "py311-example"

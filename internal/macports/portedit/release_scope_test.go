@@ -10,6 +10,7 @@ import (
 )
 
 func TestSharedReleaseRequiresAuthorizationAndPreservesIndependentSibling(t *testing.T) {
+	t.Parallel()
 	for _, authorized := range []bool{false, true} {
 		t.Run(map[bool]string{false: "refuse", true: "prepare"}[authorized], func(t *testing.T) {
 			s, r, requests := archiveFixture(t, `version 1.2.3
@@ -51,6 +52,7 @@ if {${subport} eq "fixture"} {distfiles; fetch {}; use_configure no; build {}}
 }
 
 func TestSharedReleaseRefusesUnprovableChecksumOwners(t *testing.T) {
+	t.Parallel()
 	s, r, requests := archiveFixture(t, `version 1.2.3
 revision 0
 distname shared-${version}
@@ -73,6 +75,7 @@ if {${subport} eq "fixture-b"} {
 // that subport's version as its own literal moves with the subport's bump,
 // without shared-release authorization; the terraform Portfile has this shape.
 func TestObsoleteFollowerMovesWithTheSubportItIsReplacedBy(t *testing.T) {
+	t.Parallel()
 	const portfile = `subport fixture-1 {
  version 1.2.3
  revision 0
@@ -128,6 +131,7 @@ if {${subport} eq ${name}} {
 // stub's livecheck: MacPorts disables livecheck on subports that share the
 // stub's version, and the release they share is discovered once.
 func TestStubProbeBorrowsTheStubsLivecheck(t *testing.T) {
+	t.Parallel()
 	s, r, _ := archiveFixture(t, `version 1.2.3
 revision 0
 distname shared-${version}

@@ -9,6 +9,7 @@ import (
 )
 
 func TestGoToolchainCheckDoesNotAdmitOtherFetchBehavior(t *testing.T) {
+	t.Parallel()
 	check := `global {*}[info globals]
 # A compatibility gate supplied by a PortGroup.
 global go.toolchain_unmet
@@ -38,6 +39,7 @@ if {${go.toolchain_unmet} ne ""} {
 }
 
 func TestFetchMetadataReportsCompatibilityWithoutExposingHookBodies(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		details    string
 		compatible string
@@ -55,6 +57,7 @@ func TestFetchMetadataReportsCompatibilityWithoutExposingHookBodies(t *testing.T
 }
 
 func TestRejectionOnlyFetchGuardPreservesPlatformRestriction(t *testing.T) {
+	t.Parallel()
 	wrapper := "global {*}[info globals]\n"
 	safe := wrapper + `ui_error "${subport} is unavailable on this platform"
 return -code error "unsupported platform"`
@@ -79,6 +82,7 @@ return -code error "unsupported platform"`
 }
 
 func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
+	t.Parallel()
 	wrapper := "global {*}[info globals]\n"
 	perl := wrapper + `if {${perl5.variant} eq {} && ${perl5.require_variant}} {
     ui_error "${name} requires one of these variants: ${perl5.variants}"

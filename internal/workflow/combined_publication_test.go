@@ -72,6 +72,7 @@ func passCombined(t *testing.T, f *fixture, id record.JobID) {
 }
 
 func TestCombinedPublicationKeepsOneJobAndResumesFrozenDestination(t *testing.T) {
+	t.Parallel()
 	for _, action := range []record.Action{record.Bump, record.BumpRevision, record.RefreshChecksums} {
 		t.Run(string(action), func(t *testing.T) {
 			f, hosting, request := combinedFixture(t, action)
@@ -125,6 +126,7 @@ func TestCombinedPublicationKeepsOneJobAndResumesFrozenDestination(t *testing.T)
 }
 
 func TestCombinedPublicationStopsBeforeRemoteEffects(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"failed", "canceled", "moved", "deleted", "negative-before-plan", "negative-after-plan"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, hosting, request := combinedFixture(t, record.BumpRevision)
@@ -175,6 +177,7 @@ func TestCombinedPublicationStopsBeforeRemoteEffects(t *testing.T) {
 }
 
 func TestCombinedPublicationCanReuseEvidenceWithoutPretendingProviderAdmission(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.BumpRevision)
 	id := prepareCombined(t, f, request)
 	job := f.status(t, id).Jobs[0].Job
@@ -202,6 +205,7 @@ func TestCombinedPublicationCanReuseEvidenceWithoutPretendingProviderAdmission(t
 }
 
 func TestCombinedPublicationClaimsPlanningAndRechecksCancellation(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.BumpRevision)
 	id := prepareCombined(t, f, request)
 	passCombined(t, f, id)
@@ -240,6 +244,7 @@ func (tx failPublicationTx) PutPublication(context.Context, record.PublicationAc
 }
 
 func TestCombinedPublicationCannotPushBeforeCheckpointCommits(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.BumpRevision)
 	id := prepareCombined(t, f, request)
 	passCombined(t, f, id)
@@ -261,6 +266,7 @@ func TestCombinedPublicationCannotPushBeforeCheckpointCommits(t *testing.T) {
 }
 
 func TestCombinedPublicationRequiresVerifiedPreparationAndImmutableDestination(t *testing.T) {
+	t.Parallel()
 	f, _, request := combinedFixture(t, record.BumpRevision)
 	for _, mutate := range []func(*record.JobSpec){
 		func(s *record.JobSpec) { s.PublishTo = nil },
@@ -292,6 +298,7 @@ func TestCombinedPublicationRequiresVerifiedPreparationAndImmutableDestination(t
 }
 
 func TestAlreadyCurrentCombinedBumpCreatesNoPublication(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.Bump)
 	request.Spec.Version = ""
 	release := resolvedFixture(f)
@@ -312,6 +319,7 @@ func TestAlreadyCurrentCombinedBumpCreatesNoPublication(t *testing.T) {
 }
 
 func TestCombinedPublicationWithReusedEvidenceCanBeCanceled(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.BumpRevision)
 	id := prepareCombined(t, f, request)
 	job := f.status(t, id).Jobs[0].Job
@@ -329,6 +337,7 @@ func TestCombinedPublicationWithReusedEvidenceCanBeCanceled(t *testing.T) {
 }
 
 func TestWorkflowPolicyEvidenceCanContinueThroughPublication(t *testing.T) {
+	t.Parallel()
 	f, hosting, request := combinedFixture(t, record.Bump)
 	request.Spec.Build.Tests = record.TestWorkflow
 	id := prepareCombined(t, f, request)

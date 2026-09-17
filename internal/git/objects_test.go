@@ -13,6 +13,7 @@ import (
 )
 
 func TestCommitTreesBatchesAndValidatesImmutableInputs(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("git")
 	require.NoError(t, err)
 	for _, format := range []string{"sha1", "sha256"} {
@@ -62,6 +63,7 @@ func TestCommitTreesBatchesAndValidatesImmutableInputs(t *testing.T) {
 }
 
 func TestCommitTreesRejectsMalformedBatchResponses(t *testing.T) {
+	t.Parallel()
 	commit, tree := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	root := t.TempDir()
 	wrapper := filepath.Join(root, "git-wrapper")

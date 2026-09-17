@@ -16,6 +16,7 @@ import (
 )
 
 func TestCycleCapacityAdmissionCompletionAndCleanup(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "build")
 	f.provider.submit = func(_ context.Context, r verify.Request) (verify.Submission, error) {
@@ -70,6 +71,7 @@ func TestCycleCapacityAdmissionCompletionAndCleanup(t *testing.T) {
 }
 
 func TestCycleRejectsInvalidEvidenceAndRetainsFailure(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "evidence")
 	f.runAttemptDue(t, id)
@@ -118,6 +120,7 @@ func TestCycleRejectsInvalidEvidenceAndRetainsFailure(t *testing.T) {
 }
 
 func TestCycleReconcilesUncertainSubmission(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "uncertain")
 	f.provider.submit = func(_ context.Context, r verify.Request) (verify.Submission, error) {
@@ -141,6 +144,7 @@ func TestCycleReconcilesUncertainSubmission(t *testing.T) {
 }
 
 func TestCycleClosedSubmissionRetryOrPartialCleanup(t *testing.T) {
+	t.Parallel()
 	for _, partial := range []bool{false, true} {
 		t.Run(map[bool]string{false: "empty", true: "partial provisioning"}[partial], func(t *testing.T) {
 			f := newFixture(t)
@@ -179,6 +183,7 @@ func TestCycleClosedSubmissionRetryOrPartialCleanup(t *testing.T) {
 }
 
 func TestCycleCancellationNeedsAnObservedOutcome(t *testing.T) {
+	t.Parallel()
 	for _, verdict := range []record.Verdict{record.VerdictCanceled, record.VerdictPassed} {
 		t.Run(string(verdict), func(t *testing.T) {
 			f := newFixture(t)
@@ -215,6 +220,7 @@ func TestCycleCancellationNeedsAnObservedOutcome(t *testing.T) {
 }
 
 func TestCycleOneUnsupportedJobDoesNotBlockAnother(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	bad := f.request("missing-config")
 	bad.Spec.Build = nil
@@ -228,6 +234,7 @@ func TestCycleOneUnsupportedJobDoesNotBlockAnother(t *testing.T) {
 }
 
 func TestCycleExpiredClaimRejectsStaleResult(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "claims")
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -265,6 +272,7 @@ func TestCycleExpiredClaimRejectsStaleResult(t *testing.T) {
 }
 
 func TestCycleCancellationClosesIdentityBeforeLateSubmission(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "late")
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -305,6 +313,7 @@ func TestCycleCancellationClosesIdentityBeforeLateSubmission(t *testing.T) {
 }
 
 func TestCycleCleanupHasIndependentClaims(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "cleanup")
 	f.run(t, id)
@@ -340,6 +349,7 @@ func TestCycleCleanupHasIndependentClaims(t *testing.T) {
 }
 
 func TestCycleRunsEveryVerificationTargetAfterOneFails(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	request := f.request("multiple-targets")
 	request.Spec.Targets = append(request.Spec.Targets, record.Target{Name: "dependent", Portfile: "devel/dependent/Portfile"})
@@ -397,6 +407,7 @@ func TestCycleRunsEveryVerificationTargetAfterOneFails(t *testing.T) {
 }
 
 func TestCycleCancelsEveryVerificationTarget(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	request := f.request("cancel-multiple")
 	request.Spec.Targets = append(request.Spec.Targets, record.Target{Name: "dependent", Portfile: "devel/dependent/Portfile"})
@@ -430,6 +441,7 @@ func TestCycleCancelsEveryVerificationTarget(t *testing.T) {
 }
 
 func TestPartialSubmissionCleanupPreservesItsFailure(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "failed-staging")
 	f.provider.submit = func(_ context.Context, request verify.Request) (verify.Submission, error) {
@@ -448,6 +460,7 @@ func TestPartialSubmissionCleanupPreservesItsFailure(t *testing.T) {
 }
 
 func TestUnresolvedReconciliationSettlesAfterItsBudget(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "never-reconciled")
 	f.provider.submit = func(context.Context, verify.Request) (verify.Submission, error) {

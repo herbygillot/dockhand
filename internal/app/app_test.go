@@ -16,6 +16,7 @@ import (
 )
 
 func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
+	t.Parallel()
 	repository := t.TempDir()
 	runGit(t, repository, "init", "--quiet")
 	portsTree(t, repository)
@@ -55,6 +56,7 @@ func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
 	require.Len(t, status.Changes, 1)
 }
 func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runGit(t, root, "init", "--quiet")
 	portsTree(t, root)

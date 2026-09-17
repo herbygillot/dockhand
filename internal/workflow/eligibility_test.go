@@ -13,6 +13,7 @@ import (
 )
 
 func TestIdleCycleDoesNotAcquireWriterOrCallProvider(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"settled", "attempt claimed", "attempt delayed", "uncertain resource with running owner", "retained indefinitely", "retained until later", "cleanup claimed", "cleanup delayed"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newFixture(t)
@@ -76,6 +77,7 @@ func TestIdleCycleDoesNotAcquireWriterOrCallProvider(t *testing.T) {
 }
 
 func TestCancellationPreemptsQueuedRetryDelay(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.provider.submit = func(context.Context, verify.Request) (verify.Submission, error) {
 		return verify.Submission{State: verify.AtCapacity}, nil
@@ -91,6 +93,7 @@ func TestCancellationPreemptsQueuedRetryDelay(t *testing.T) {
 }
 
 func TestPartiallyAppliedControlDoesNotWriteForUnselectedJobs(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	a, b := f.submit(t, "first"), f.submit(t, "second")
 	require.NoError(t, f.engine.Control(t.Context(), record.ControlRequest{ID: "cancel-both", Kind: record.Cancel, Jobs: []record.JobID{a, b}}))
@@ -129,6 +132,7 @@ func (p *capabilityBarrier) Capabilities(ctx context.Context) (verify.Capabiliti
 }
 
 func TestCandidateIsRecheckedAfterAnotherDriverAdvancesIt(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "build")
 	paused := &capabilityBarrier{Provider: f.provider, started: make(chan struct{}), proceed: make(chan struct{})}
@@ -147,6 +151,7 @@ func TestCandidateIsRecheckedAfterAnotherDriverAdvancesIt(t *testing.T) {
 }
 
 func TestCycleBoundsCandidateBatches(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.provider.submit = func(context.Context, verify.Request) (verify.Submission, error) {
 		return verify.Submission{State: verify.AtCapacity}, nil
@@ -170,6 +175,7 @@ func TestCycleBoundsCandidateBatches(t *testing.T) {
 }
 
 func TestUnsupportedExecutorsCannotStarveOtherJobs(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	for i := range 65 {
 		request := f.request(fmt.Sprint("bump-", i))

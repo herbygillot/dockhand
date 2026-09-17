@@ -47,6 +47,7 @@ func queuedJob(t *testing.T) (app.Config, record.JobID) {
 	return config, receipt.JobID
 }
 func TestWaitRecordsFailureWithoutSubmittingNewWork(t *testing.T) {
+	t.Parallel()
 	config, id := queuedJob(t)
 	var stdout, stderr bytes.Buffer
 	err := Run(t.Context(), []string{"wait", "--job", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
@@ -60,6 +61,7 @@ func TestWaitRecordsFailureWithoutSubmittingNewWork(t *testing.T) {
 	require.Len(t, status.Jobs, 1)
 }
 func TestWaitSelectsExplicitOrCurrentContributionBranch(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"wait", "--branch", "candidate", "--json", "-v"}, {"wait", "--json", "-v"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			config, id := queuedJob(t)
@@ -76,6 +78,7 @@ func TestWaitSelectsExplicitOrCurrentContributionBranch(t *testing.T) {
 	}
 }
 func TestCancelBeforeAdmissionPreservesBranchAndDoesNotNeedTart(t *testing.T) {
+	t.Parallel()
 	config, id := queuedJob(t)
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"cancel", "--job", string(id), "--wait", "--reason", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
@@ -91,6 +94,7 @@ func TestCancelBeforeAdmissionPreservesBranchAndDoesNotNeedTart(t *testing.T) {
 	require.Equal(t, string(result.Status.Jobs[0].Job.Spec.Source.Commit), commit)
 }
 func TestCancelSelectsContributionBranch(t *testing.T) {
+	t.Parallel()
 	config, id := queuedJob(t)
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"cancel", "--branch", "candidate", "--wait", "--reason", "fixture", "--json", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
@@ -102,6 +106,7 @@ func TestCancelSelectsContributionBranch(t *testing.T) {
 	require.Contains(t, stderr.String(), "Cancellation requested for")
 }
 func TestWaitAndCancelRejectAmbiguousOrInvalidBranchSelectorsBeforeState(t *testing.T) {
+	t.Parallel()
 	config := app.Config{Repository: "/missing/repository", DBPath: filepath.Join(t.TempDir(), "absent", "state.db")}
 	for _, args := range [][]string{
 		{"wait", "--job", "job", "--branch", "candidate"},
@@ -118,6 +123,7 @@ func TestWaitAndCancelRejectAmbiguousOrInvalidBranchSelectorsBeforeState(t *test
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 func TestForeignRepositoryJobCannotBeWaitedOrCanceled(t *testing.T) {
+	t.Parallel()
 	config, id := queuedJob(t)
 	other := t.TempDir()
 	output, err := exec.CommandContext(t.Context(), "git", "init", "-q", other).CombinedOutput()
@@ -133,6 +139,7 @@ func TestForeignRepositoryJobCannotBeWaitedOrCanceled(t *testing.T) {
 }
 
 func TestResidentDriverAppliesAcceptedControlAndStopsWithoutNewWork(t *testing.T) {
+	t.Parallel()
 	config, id := queuedJob(t)
 	services, err := app.Build(t.Context(), config)
 	require.NoError(t, err)
@@ -160,6 +167,7 @@ func TestResidentDriverAppliesAcceptedControlAndStopsWithoutNewWork(t *testing.T
 }
 
 func TestAbandonRequiresSettledWorkAndPreservesBranch(t *testing.T) {
+	t.Parallel()
 	config, id := queuedJob(t)
 	var out bytes.Buffer
 	err := Run(t.Context(), []string{"abandon"}, Streams{Out: &out, Err: &out}, config)

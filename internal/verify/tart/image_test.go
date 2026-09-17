@@ -32,6 +32,7 @@ type imageProcessResult struct {
 }
 
 func TestImageDigestProcess(t *testing.T) {
+	t.Parallel()
 	root := os.Getenv("DOCKHAND_IMAGE_FIXTURE")
 	if root == "" {
 		t.Skip("subprocess helper")
@@ -82,6 +83,7 @@ func imageResult(t *testing.T, output []byte) imageProcessResult {
 	return imageProcessResult{}
 }
 func TestImageCacheSurvivesProcessesAndInvalidatesChangedFiles(t *testing.T) {
+	t.Parallel()
 	root := imageFixture(t)
 	run := func() imageProcessResult {
 		output, err := imageProcess(t, root).CombinedOutput()
@@ -113,6 +115,7 @@ func TestImageCacheSurvivesProcessesAndInvalidatesChangedFiles(t *testing.T) {
 	require.Error(t, err, "cache must not conceal a missing image: %s", output)
 }
 func TestImageCacheChecksConfigContentsWithoutRehashingForChangeTimeAlone(t *testing.T) {
+	t.Parallel()
 	root := imageFixture(t)
 	run := func() imageProcessResult {
 		output, err := imageProcess(t, root).CombinedOutput()
@@ -135,6 +138,7 @@ func TestImageCacheChecksConfigContentsWithoutRehashingForChangeTimeAlone(t *tes
 }
 
 func TestConcurrentImageCacheProcessesPublishConsistentDigests(t *testing.T) {
+	t.Parallel()
 	root := imageFixture(t)
 	store, err := sqlite.Open(t.Context(), filepath.Join(root, "state.db"), sqlite.Options{})
 	require.NoError(t, err)
@@ -176,6 +180,7 @@ func (s *interruptedImageCache) PutImageDigest(context.Context, state.ImageDiges
 	return nil
 }
 func TestInterruptedOrChangedImageDoesNotPublishDigest(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"canceled", "changed"} {
 		t.Run(mode, func(t *testing.T) {
 			root := imageFixture(t)
@@ -202,6 +207,7 @@ func TestInterruptedOrChangedImageDoesNotPublishDigest(t *testing.T) {
 }
 
 func TestImageAvailabilityErrorsAreSpecific(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"missing image", "missing binary", "running image", "missing disk"} {
 		t.Run(kind, func(t *testing.T) {
 			root := imageFixture(t)

@@ -47,6 +47,7 @@ func retainedFixture(t *testing.T) (*fixture, record.JobID) {
 }
 
 func TestRetentionUsesSeparateJobAndReleaseAgesAndPreservesHistory(t *testing.T) {
+	t.Parallel()
 	f, id := retainedFixture(t)
 	before := f.status(t, id)
 	options := workflow.RetentionOptions{OlderThan: 7 * 24 * time.Hour, DryRun: true}
@@ -96,6 +97,7 @@ func TestRetentionUsesSeparateJobAndReleaseAgesAndPreservesHistory(t *testing.T)
 }
 
 func TestRetentionSkipsLiveWorkClaimsAndExplicitRetention(t *testing.T) {
+	t.Parallel()
 	f, id := retainedFixture(t)
 	f.advance(8 * 24 * time.Hour)
 	resource := f.status(t, id).Resources[0]
@@ -148,6 +150,7 @@ func (tx failPruneTx) PutResource(ctx context.Context, r record.Resource) error 
 }
 
 func TestRetentionRetriesFailedEffectsAndLostPruneCheckpoints(t *testing.T) {
+	t.Parallel()
 	f, id := retainedFixture(t)
 	f.provider.release = func(context.Context, record.ResourceHandle) (verify.ReleaseResult, error) {
 		return verify.ReleaseResult{}, errors.New("delete interrupted")
@@ -182,6 +185,7 @@ func TestRetentionRetriesFailedEffectsAndLostPruneCheckpoints(t *testing.T) {
 }
 
 func TestCompetingCollectorsUseReleaseClaimAndKeepRepositoryScope(t *testing.T) {
+	t.Parallel()
 	f, id := retainedFixture(t)
 	entered, proceed := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -216,6 +220,7 @@ func TestCompetingCollectorsUseReleaseClaimAndKeepRepositoryScope(t *testing.T) 
 }
 
 func TestRetentionPaginatesWhileRemovingCandidates(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.provider.submit = func(_ context.Context, r verify.Request) (verify.Submission, error) {
 		result := admitted(r.ID)
@@ -246,6 +251,7 @@ func TestRetentionPaginatesWhileRemovingCandidates(t *testing.T) {
 }
 
 func TestCycleReleasesFailureAndPrunesDiagnosticsAfterRetention(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "automatic-cleanup")
 	f.run(t, id)
@@ -275,6 +281,7 @@ func TestCycleReleasesFailureAndPrunesDiagnosticsAfterRetention(t *testing.T) {
 }
 
 func TestAutomaticPruningBacksOffWithoutLosingReleasedIdentity(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "prune-retry")
 	f.run(t, id)
@@ -300,6 +307,7 @@ func TestAutomaticPruningBacksOffWithoutLosingReleasedIdentity(t *testing.T) {
 }
 
 func TestAutomaticPruningIsBoundedAndSkipsBuildOutputs(t *testing.T) {
+	t.Parallel()
 	for _, outputs := range []bool{false, true} {
 		t.Run(fmt.Sprint(outputs), func(t *testing.T) {
 			f := newFixture(t)
@@ -337,6 +345,7 @@ func TestAutomaticPruningIsBoundedAndSkipsBuildOutputs(t *testing.T) {
 }
 
 func TestKeepFailedSurvivesDriverRestartWithoutChangingEvidenceInputs(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	request := f.request("keep-failed")
 	request.Spec.KeepFailed = true

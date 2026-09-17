@@ -13,6 +13,7 @@ import (
 )
 
 func TestFilteredStatusKeepsOnlySelectedJobRelations(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
 		change, err := tx.Change(ctx, "change")
@@ -80,6 +81,7 @@ func TestFilteredStatusKeepsOnlySelectedJobRelations(t *testing.T) {
 }
 
 func TestFilteredStatusPaginationDeduplicatesSharedRecords(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	for i := range 260 {
 		f.submit(t, fmt.Sprintf("job-%03d", i))
@@ -114,6 +116,7 @@ func TestFilteredStatusPaginationDeduplicatesSharedRecords(t *testing.T) {
 }
 
 func TestFilteredStatusReuseDoesNotSelectOriginalJobResources(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	original := completeVerification(t, f, reuseRequest(f, "original"), record.VerdictPassed)
 	receipt, err := f.engine.Submit(t.Context(), reuseRequest(f, "reused"))
@@ -156,6 +159,7 @@ func (r statusWriteReader) Jobs(ctx context.Context, q state.Query) ([]record.Jo
 }
 
 func TestFilteredStatusSelectionAndDetailsShareSnapshot(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.submit(t, "queued")
 	store := &statusWriteStore{Store: f.store, afterSelection: func() {

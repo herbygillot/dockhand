@@ -26,6 +26,7 @@ func (w *detachOnAcceptance) Write(p []byte) (int, error) {
 }
 
 func TestVerifyCLISelectsExplicitWorkingTreeOrBranch(t *testing.T) {
+	t.Parallel()
 	for _, explicit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "checkout", true: "branch"}[explicit], func(t *testing.T) {
 			config, repo, _ := preparationCLI(t)

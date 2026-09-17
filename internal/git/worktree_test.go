@@ -27,6 +27,7 @@ func workFile(t *testing.T, repo *git.Repository, name, data string) {
 	require.NoError(t, os.WriteFile(filename, []byte(data), 0600))
 }
 func TestCheckoutCapturesWorkingBytesAndPreservesIndexAndRefs(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	for _, name := range []string{"port", "deleted", "staged-delete", "executable", "assumed"} {
 		workFile(t, repo, name, "original\n")
@@ -86,6 +87,7 @@ func TestCheckoutCapturesWorkingBytesAndPreservesIndexAndRefs(t *testing.T) {
 	require.Equal(t, "working\r\n", string(data))
 }
 func TestCheckoutHandlesDetachedAndLinkedWorktrees(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	workFile(t, repo, "file", "initial")
 	workGit(t, repo, "add", ".")
@@ -108,6 +110,7 @@ func TestCheckoutHandlesDetachedAndLinkedWorktrees(t *testing.T) {
 	require.Equal(t, captured.Tree, original.Tree)
 }
 func TestCheckoutRejectsSparseAndConflictedIndexes(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	workFile(t, repo, "file", "initial")
 	workGit(t, repo, "add", ".")
@@ -130,6 +133,7 @@ func TestCheckoutRejectsSparseAndConflictedIndexes(t *testing.T) {
 }
 
 func TestCheckoutRejectsEditsObservedDuringCapture(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	workFile(t, repo, "a", "original")
 	workFile(t, repo, "z", "original")
@@ -151,6 +155,7 @@ func TestCheckoutRejectsEditsObservedDuringCapture(t *testing.T) {
 }
 
 func TestCheckoutSupportsSHA256Objects(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	command := exec.CommandContext(t.Context(), "git", "init", "--quiet", "--object-format=sha256", root)
 	out, err := command.CombinedOutput()
@@ -174,6 +179,7 @@ func TestCheckoutSupportsSHA256Objects(t *testing.T) {
 }
 
 func TestCaptureRealPortsCheckout(t *testing.T) {
+	t.Parallel()
 	directory := os.Getenv("DOCKHAND_TEST_PORTS_REPO")
 	if directory == "" {
 		t.Skip("set DOCKHAND_TEST_PORTS_REPO for a real checkout capture")

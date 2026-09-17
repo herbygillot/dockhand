@@ -36,6 +36,7 @@ func (b *localBuild) BuildConfig(_ context.Context, platform record.Platform, op
 }
 
 func TestAutomaticProviderSelection(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, provider string
 		localError     error
@@ -124,6 +125,7 @@ func (b *localBuild) BuildConfigForImage(ctx context.Context, platform record.Pl
 }
 
 func TestTargetImagesBoundAtIntake(t *testing.T) {
+	t.Parallel()
 	local := &localBuild{}
 	services := &Services{providerName: "tart", tartVerification: local, targetImages: map[string]string{"child": "xcode-image"}}
 	evaluation := macports.Snapshot{Target: record.Target{Name: "root"}, Ports: map[string]macports.PortInfo{"root": {Options: map[string]string{"use_xcode": "no"}}}}

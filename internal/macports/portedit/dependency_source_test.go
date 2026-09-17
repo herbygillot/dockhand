@@ -12,6 +12,7 @@ import (
 )
 
 func TestManifestSourceAmbiguityAndAbsence(t *testing.T) {
+	t.Parallel()
 	archive := func(name, member string) Download {
 		filename := filepath.Join(t.TempDir(), name)
 		f, err := os.Create(filename)

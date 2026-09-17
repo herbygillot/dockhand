@@ -8,6 +8,7 @@ import (
 )
 
 func TestSharedReleaseSummaryNamesWhatWasNotBuiltLocally(t *testing.T) {
+	t.Parallel()
 	newest := record.Target{Name: "py314-requests", Portfile: "python/py-requests/Portfile", Subport: "py314-requests"}
 	older := record.Target{Name: "py313-requests", Portfile: newest.Portfile, Subport: "py313-requests"}
 	stub := record.Target{Name: "py-requests", Portfile: newest.Portfile}

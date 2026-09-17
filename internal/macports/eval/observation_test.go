@@ -10,6 +10,7 @@ import (
 )
 
 func TestObservationOwnsDeclarationsAndDoesNotLeakProfiles(t *testing.T) {
+	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/observed/Portfile", `PortSystem 1.0
@@ -58,6 +59,7 @@ if {${build_arch} eq "arm64"} { distfiles a.zip:release } else { distfiles b.zip
 }
 
 func TestObservedDeclarationsResolveNestedSource(t *testing.T) {
+	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
 	contents := `PortSystem 1.0
@@ -84,6 +86,7 @@ subport fixture-child {
 }
 
 func TestModeledObservationReportsHostDependentPortfile(t *testing.T) {
+	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/host/Portfile", `PortSystem 1.0

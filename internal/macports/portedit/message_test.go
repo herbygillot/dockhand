@@ -8,6 +8,7 @@ import (
 )
 
 func TestGeneratedCommitMessageKeepsReasonAndOneTrailer(t *testing.T) {
+	t.Parallel()
 	for _, body := range []string{"", "Rebuild dependents", "Rebuild dependents\n\n" + portedit.GeneratedBy + "\n" + portedit.GeneratedBy} {
 		intent := portedit.CommitIntent{Subject: "fixture: revbump", Body: body}
 		message := intent.Message()

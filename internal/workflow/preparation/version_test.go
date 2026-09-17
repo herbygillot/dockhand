@@ -137,6 +137,7 @@ pre-fetch {
 	return service, request
 }
 func TestVersionPreparationUpdatesSourceAndChecksumsWithFidelity(t *testing.T) {
+	t.Parallel()
 	for _, style := range []string{"literal", "calculated", "setup", "gitlab-setup", "go-setup", "go-version", "go-check"} {
 		t.Run(style, func(t *testing.T) {
 			body := "fixture archive bytes"
@@ -172,6 +173,7 @@ func TestVersionPreparationUpdatesSourceAndChecksumsWithFidelity(t *testing.T) {
 	}
 }
 func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, style, extra string
 		expected           error
@@ -198,6 +200,7 @@ func TestVersionPreparationRefusesCollateralChangesBeforeDownloading(t *testing.
 	}
 }
 func TestVersionPreparationRejectsTagMutationDuringDownload(t *testing.T) {
+	t.Parallel()
 	var moved atomic.Bool
 	service, request := versionFixture(t, "setup", "", func(w http.ResponseWriter, r *http.Request) { moved.Store(true); fmt.Fprint(w, "archive") })
 	service.Upstream.Catalogs[portsource.GitHub] = releaseTagFunc(func(_ context.Context, _ string, name string) (forge.Tag, error) {
@@ -214,6 +217,7 @@ func TestVersionPreparationRejectsTagMutationDuringDownload(t *testing.T) {
 }
 
 func TestVersionPreparationNamedAndMultipleArchives(t *testing.T) {
+	t.Parallel()
 	for _, multiple := range []bool{false, true} {
 		t.Run(fmt.Sprint(multiple), func(t *testing.T) {
 			service, request := versionFixture(t, "literal", "", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, r.URL.Path) })
@@ -246,6 +250,7 @@ func TestVersionPreparationNamedAndMultipleArchives(t *testing.T) {
 }
 
 func TestGitLabPreparationPreservesFrozenLocalPatch(t *testing.T) {
+	t.Parallel()
 	service, request := versionFixture(t, "gitlab-setup", "patchfiles fix.patch\n", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "source archive") })
 	tree, err := service.Repo.EditTree(t.Context(), string(request.Source.Tree), []git.FileEdit{{Path: "devel/fixture/files/fix.patch", After: []byte("fixture local patch\n"), Mode: 0o100644}})
 	require.NoError(t, err)
@@ -260,6 +265,7 @@ func TestGitLabPreparationPreservesFrozenLocalPatch(t *testing.T) {
 }
 
 func TestCalendarPreparationEvaluatesPreservedTransformation(t *testing.T) {
+	t.Parallel()
 	for _, mismatch := range []bool{false, true} {
 		t.Run(fmt.Sprint(mismatch), func(t *testing.T) {
 			var downloads atomic.Int64

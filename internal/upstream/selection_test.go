@@ -9,6 +9,7 @@ import (
 )
 
 func TestRequestedVersionUsesConfirmedTagConvention(t *testing.T) {
+	t.Parallel()
 	for _, pattern := range []upstream.TagPattern{{Prefix: "v"}, {Prefix: "jq-"}, {Prefix: "release/", Suffix: "-stable"}, {}} {
 		tag := pattern.Prefix + "1.8.1" + pattern.Suffix
 		observed := []upstream.Candidate{{Release: forge.Release{Tag: tag, URL: "https://example.invalid/release"}}}
@@ -32,6 +33,7 @@ func TestRequestedVersionUsesConfirmedTagConvention(t *testing.T) {
 }
 
 func TestReleaseSelectionDoesNotGuessPastAmbiguousOrMissingEvidence(t *testing.T) {
+	t.Parallel()
 	pattern := &upstream.TagPattern{Prefix: "v"}
 	_, err := upstream.MatchRelease("2", pattern, []upstream.Candidate{{Version: "2", Release: forge.Release{Tag: "2"}}, {Release: forge.Release{Tag: "v2"}}})
 	require.ErrorIs(t, err, upstream.ErrReleaseAmbiguous)

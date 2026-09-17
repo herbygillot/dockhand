@@ -14,6 +14,7 @@ import (
 )
 
 func TestJobStatusFiltersBeforeDecodingAndWithinRepository(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	a, b := repository(t, s, "a"), repository(t, s, "b")
 	first, foreign := seed(t, s, a, "first"), seed(t, s, b, "foreign")

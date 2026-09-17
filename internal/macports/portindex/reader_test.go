@@ -39,6 +39,7 @@ func writeIndex(t *testing.T, records []indexRecord, quick map[string]int64) str
 }
 
 func TestLookupRepairsStaleQuickIndex(t *testing.T) {
+	t.Parallel()
 	records := []indexRecord{
 		{"alpha", "name alpha portdir devel/alpha description {first}"},
 		{"beta", "name beta portdir devel/beta description {second}"},
@@ -55,6 +56,7 @@ func TestLookupRepairsStaleQuickIndex(t *testing.T) {
 }
 
 func TestSequentialReadUsesTclStringLength(t *testing.T) {
+	t.Parallel()
 	index, err := portindex.Open(writeIndex(t, []indexRecord{
 		{"accent", "name accent portdir textproc/accent description {café 😀}"},
 		{"next", "name next portdir textproc/next description {still aligned}"},
@@ -70,6 +72,7 @@ func TestSequentialReadUsesTclStringLength(t *testing.T) {
 }
 
 func TestReverseDependenciesAndTransitiveClosure(t *testing.T) {
+	t.Parallel()
 	index, err := portindex.Open(writeIndex(t, []indexRecord{
 		{"core", "name core portdir devel/core depends_run port:runtime"},
 		{"runtime", "name runtime portdir devel/runtime"},

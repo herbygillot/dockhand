@@ -17,6 +17,7 @@ func archiveInfo(site string) macports.PortInfo {
 	return macports.PortInfo{Options: map[string]string{"master_sites": site, "distfiles": "source-2.tar.gz", "fetch.type": "standard", "fetch.has_credentials": "0", "fetch.archive_compatible": "1", "fetch.ignore_sslcert": "no"}}
 }
 func TestDownloadHashesExactBodyAndFollowsArchiveRedirect(t *testing.T) {
+	t.Parallel()
 	body := strings.Repeat("archive bytes\x00", 200)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Accept-Encoding") != "identity" {
@@ -44,6 +45,7 @@ func TestDownloadHashesExactBodyAndFollowsArchiveRedirect(t *testing.T) {
 	require.Equal(t, "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc", result.RMD160)
 }
 func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, body string
 		status     int
@@ -73,6 +75,7 @@ func TestDownloadRejectsErrorBodiesAndSizeOverflow(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 func TestDownloadSourceDeclinesUnsupportedFetchConventions(t *testing.T) {
+	t.Parallel()
 	for key, value := range map[string]string{"distfiles": "one.tar.gz two.tar.gz", "master_sites": "https://example.invalid/site:tag", "fetch.type": "git", "fetch.archive_compatible": "0", "patchfiles": "remote.patch", "fetch.has_credentials": "1", "cargo.crates_github": "vendor", "go.vendors": "vendor", "fetch.ignore_sslcert": "yes"} {
 		info := archiveInfo("https://example.invalid")
 		info.Options[key] = value
@@ -82,6 +85,7 @@ func TestDownloadSourceDeclinesUnsupportedFetchConventions(t *testing.T) {
 }
 
 func TestMultipleSourcesUseExplicitMasterSiteTags(t *testing.T) {
+	t.Parallel()
 	info := archiveInfo("https://example.invalid/main:source https://example.invalid/assets:extras")
 	info.Options["distfiles"] = "main.tar.gz:source extra.tar.gz:extras"
 	sources, err := downloadSources(info, "")
@@ -95,6 +99,7 @@ func TestMultipleSourcesUseExplicitMasterSiteTags(t *testing.T) {
 }
 
 func TestCredentialsStopPreparationBeforeDownload(t *testing.T) {
+	t.Parallel()
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++; fmt.Fprint(w, "archive") }))
 	defer server.Close()
@@ -112,6 +117,7 @@ func TestCredentialsStopPreparationBeforeDownload(t *testing.T) {
 }
 
 func TestFetchCompatibilityDiagnosisSurvivesPreparationBoundary(t *testing.T) {
+	t.Parallel()
 	info := archiveInfo("https://example.invalid")
 	info.OptionErrors = map[string]string{"fetch.archive_compatible": "MacPorts Base 99.0: fetch target record is unavailable; prepare this port manually"}
 	_, err := downloadSources(info, t.TempDir())

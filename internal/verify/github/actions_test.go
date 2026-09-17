@@ -16,6 +16,7 @@ import (
 )
 
 func TestActionsUseAuthenticatedSDKPaginationAndPinnedAttempt(t *testing.T) {
+	t.Parallel()
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer fixture-token", r.Header.Get("Authorization"))
@@ -61,6 +62,7 @@ func TestActionsUseAuthenticatedSDKPaginationAndPinnedAttempt(t *testing.T) {
 }
 
 func TestRepositoryAndActionsShareCredentialInitialization(t *testing.T) {
+	t.Parallel()
 	var credentials atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer shared-token", r.Header.Get("Authorization"))

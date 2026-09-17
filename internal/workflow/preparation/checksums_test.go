@@ -15,6 +15,7 @@ import (
 )
 
 func TestRefreshChecksumsPreservesVersionsAndCanBeCurrent(t *testing.T) {
+	t.Parallel()
 	for _, multiple := range []bool{false, true} {
 		t.Run(fmt.Sprint(multiple), func(t *testing.T) {
 			var reads atomic.Int64
@@ -46,6 +47,7 @@ func TestRefreshChecksumsPreservesVersionsAndCanBeCurrent(t *testing.T) {
 }
 
 func TestRefreshChecksumsRejectsCustomFetchBeforeDownload(t *testing.T) {
+	t.Parallel()
 	var reads atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reads.Add(1) }))
 	defer server.Close()

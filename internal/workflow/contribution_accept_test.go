@@ -15,6 +15,7 @@ import (
 )
 
 func TestConcurrentPreparationsJoinOneContribution(t *testing.T) {
+	t.Parallel()
 	f, input := preparationFixture(t, false)
 	const count = 8
 	receipts := make([]workflow.Receipt, count)
@@ -57,6 +58,7 @@ func TestConcurrentPreparationsJoinOneContribution(t *testing.T) {
 }
 
 func TestPreparationStoppedBeforeBranchRetiresAndRetryStartsAfresh(t *testing.T) {
+	t.Parallel()
 	f, input := preparationFixture(t, false)
 	original := f.engine.Preparer
 	f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
@@ -93,6 +95,7 @@ func TestPreparationStoppedBeforeBranchRetiresAndRetryStartsAfresh(t *testing.T)
 }
 
 func TestPreparationDoesNotReplaceDifferentVersionOrOtherContribution(t *testing.T) {
+	t.Parallel()
 	f, input := preparationFixture(t, false)
 	input.Spec.Action = record.Bump
 	input.Spec.Version = "2.0"

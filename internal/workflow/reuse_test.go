@@ -37,6 +37,7 @@ func reuseRequest(f *fixture, id string) workflow.Request {
 	return r
 }
 func TestCommittedWorkingTreeReusesOriginalEvidenceAfterRestart(t *testing.T) {
+	t.Parallel()
 	f, _ := bindingFixture(t)
 	checkoutFixture(t, f)
 	trackCandidate(t, f)
@@ -90,6 +91,7 @@ func TestCommittedWorkingTreeReusesOriginalEvidenceAfterRestart(t *testing.T) {
 	require.Equal(t, receipt, retry)
 }
 func TestReuseMissesAndFreshRequestsProduceNewAttempts(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"tree", "variants", "environment", "tests", "fresh", "newer failure", "newer cancellation", "legacy"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newFixture(t)
@@ -145,6 +147,7 @@ func (t reuseFailureTx) PutJob(ctx context.Context, job record.Job) error {
 	return t.Tx.PutJob(ctx, job)
 }
 func TestReuseIsAtomicUnderFailedWritesAndCompetingDrivers(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	original := completeVerification(t, f, reuseRequest(f, "original"), record.VerdictPassed)
 	receipt, err := f.engine.Submit(t.Context(), reuseRequest(f, "new"))
@@ -178,6 +181,7 @@ func TestReuseIsAtomicUnderFailedWritesAndCompetingDrivers(t *testing.T) {
 }
 
 func TestCancellationBeforeReusePreservesOriginalResult(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	original := completeVerification(t, f, reuseRequest(f, "original"), record.VerdictPassed)
 	receipt, err := f.engine.Submit(t.Context(), reuseRequest(f, "canceled"))
@@ -193,6 +197,7 @@ func TestCancellationBeforeReusePreservesOriginalResult(t *testing.T) {
 }
 
 func TestCancellationDuringCapabilitiesRechecksPlannedWork(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "build")
 	paused := &capabilityBarrier{Provider: f.provider, started: make(chan struct{}), proceed: make(chan struct{})}
@@ -211,6 +216,7 @@ func TestCancellationDuringCapabilitiesRechecksPlannedWork(t *testing.T) {
 }
 
 func TestPreparedBumpReusesEvidenceForItsResultTree(t *testing.T) {
+	t.Parallel()
 	f, request := preparationFixture(t, true)
 	request.Spec.Build.VerifierDigest = "fixture:v1"
 	id := submitPreparation(t, f, request)
@@ -237,6 +243,7 @@ func TestPreparedBumpReusesEvidenceForItsResultTree(t *testing.T) {
 }
 
 func TestPreparedBumpSelectsExactConfigurationFromRecordedEvidence(t *testing.T) {
+	t.Parallel()
 	f, request := preparationFixture(t, true)
 	config := *request.Spec.Build
 	config.VerifierDigest = "fixture:v1"
@@ -259,6 +266,7 @@ func TestPreparedBumpSelectsExactConfigurationFromRecordedEvidence(t *testing.T)
 }
 
 func TestPreparedBumpRecordedSelectionStopsAtNewerNegativeEvidence(t *testing.T) {
+	t.Parallel()
 	f, request := preparationFixture(t, true)
 	config := *request.Spec.Build
 	config.VerifierDigest = "fixture:v1"

@@ -8,6 +8,7 @@ import (
 )
 
 func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
+	t.Parallel()
 	config, repo, _ := preparationCLI(t)
 	configureReuseImage(t, &config)
 	var out, stderr bytes.Buffer
@@ -34,6 +35,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	require.NotEmpty(t, result.Status.Jobs[0].Job.ReusedAttempt)
 }
 func TestCorrectionPreviewDoesNotInitializeMissingState(t *testing.T) {
+	t.Parallel()
 	config, _, _ := preparationCLI(t)
 	var out bytes.Buffer
 	err := Run(t.Context(), []string{"amend", "--diff"}, Streams{Out: &out, Err: &out}, config)

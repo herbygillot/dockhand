@@ -15,6 +15,7 @@ import (
 // Execute the shipped Tcl program with mocked external commands and MacPorts
 // metadata. All file writes stay under the test root; no VM or host port runs.
 func TestGuestBuildsEditedRootBeforeDependent(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
 		t.Skip("MacPorts Tcl required")

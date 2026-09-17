@@ -12,6 +12,7 @@ import (
 )
 
 func TestChangedPathsIncludesBothSidesOfMovesAndRawNames(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	before := snapshotTree(t, repo,
 		snapshotBlob(t, repo, "old\tname", "same bytes", 0o100644),
@@ -48,6 +49,7 @@ func TestChangedPathsIncludesBothSidesOfMovesAndRawNames(t *testing.T) {
 }
 
 func TestAddedOrModifiedPathsMatchesGitAMSelection(t *testing.T) {
+	t.Parallel()
 	repo := snapshotRepo(t)
 	before := snapshotTree(t, repo,
 		snapshotBlob(t, repo, "deleted", "removed bytes", 0o100644),

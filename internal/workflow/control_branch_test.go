@@ -23,6 +23,7 @@ func trackFixtureBranch(t *testing.T, f *fixture, branch string) {
 }
 
 func TestBranchScopeFreezesPendingJobs(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	trackFixtureBranch(t, f, "candidate")
 	settled := f.submit(t, "settled")
@@ -42,6 +43,7 @@ func TestBranchScopeFreezesPendingJobs(t *testing.T) {
 }
 
 func TestControlBranchSelectsAndRecordsAtomically(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	trackFixtureBranch(t, f, "candidate")
 	first := f.submit(t, "first")
@@ -72,6 +74,7 @@ func TestControlBranchSelectsAndRecordsAtomically(t *testing.T) {
 }
 
 func TestBranchSelectionRequiresOpenContributionAndPendingWork(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	trackFixtureBranch(t, f, "candidate")
 	job := f.submit(t, "job")

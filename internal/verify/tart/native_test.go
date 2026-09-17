@@ -17,6 +17,7 @@ import (
 )
 
 func TestImageDigestTracksContentDespiteRestoredModificationTime(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	vm := filepath.Join(root, "vms", "base")
 	require.NoError(t, os.MkdirAll(vm, 0700))
@@ -51,6 +52,7 @@ printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
 	require.Error(t, err, "cached identity cannot conceal a missing image")
 }
 func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {
+	t.Parallel()
 	f, _ := singleRun(t)
 	config, err := f.provider.settings()
 	require.NoError(t, err)
@@ -88,6 +90,7 @@ func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {
 }
 
 func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
+	t.Parallel()
 	f, _ := singleRun(t)
 	f.request.Spec.Source.Base = f.request.Spec.Source.Commit
 	config, err := f.provider.settings()
@@ -133,6 +136,7 @@ func TestPortIndexCacheBuildsBaseOnceAndUpdatesChangedPort(t *testing.T) {
 }
 
 func TestConcurrentPortIndexPreparationBuildsOneCacheEntry(t *testing.T) {
+	t.Parallel()
 	f, _ := singleRun(t)
 	config, err := f.provider.settings()
 	require.NoError(t, err)
@@ -156,6 +160,7 @@ func TestConcurrentPortIndexPreparationBuildsOneCacheEntry(t *testing.T) {
 }
 
 func TestCandidateIndexDerivesFromBaseGenerationInSharedCache(t *testing.T) {
+	t.Parallel()
 	f, _ := singleRun(t)
 	before, portfile, err := f.provider.Repo.File(t.Context(), string(f.request.Spec.Source.Tree), "devel/fixture/Portfile")
 	require.NoError(t, err)
@@ -189,6 +194,7 @@ func TestCandidateIndexDerivesFromBaseGenerationInSharedCache(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(config.ArtifactDirectory, "indexes"), "the legacy artifact cache is not written")
 }
 func TestRunningMarkerDoesNotHideExitedGuestRunner(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	executable := filepath.Join(root, "tart")
 	require.NoError(t, os.WriteFile(executable, []byte(`#!/bin/sh
@@ -208,6 +214,7 @@ esac
 }
 
 func TestTerminalResultPublishedBetweenMarkerAndRunnerReadsWins(t *testing.T) {
+	t.Parallel()
 	for _, verdict := range []record.Verdict{record.VerdictPassed, record.VerdictFailed} {
 		t.Run(string(verdict), func(t *testing.T) {
 			root := t.TempDir()
@@ -235,6 +242,7 @@ esac
 }
 
 func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T) {
+	t.Parallel()
 	f, _ := singleRun(t)
 	before, data, err := f.provider.Repo.File(t.Context(), string(f.request.Spec.Source.Tree), "devel/fixture/Portfile")
 	require.NoError(t, err)
@@ -275,6 +283,7 @@ func TestTreeOnlyInputArchivesTheFrozenEditAndRejectsMissingObjects(t *testing.T
 }
 
 func TestRecordedVerifierIdentityRejectsChangedExecutionCode(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	config, err := f.provider.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared})
 	require.NoError(t, err)

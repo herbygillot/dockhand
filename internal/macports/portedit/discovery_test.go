@@ -29,6 +29,7 @@ func (c probeCatalog) ListTags(context.Context) ([]forge.Tag, error) {
 }
 
 func TestSourceBoundDiscoveryDoesNotRequireABumpOrPermitUnsafeEdits(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		body, tag, version string
 		unsafe             bool

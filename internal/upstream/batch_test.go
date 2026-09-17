@@ -29,6 +29,7 @@ func (p *batchProbe) EvaluateVersions(_ context.Context, values []string) ([]str
 }
 
 func TestBoundDiscoveryEvaluatesCandidatesInOneBatch(t *testing.T) {
+	t.Parallel()
 	c := &catalog{releases: []forge.Release{{Tag: "v1.9"}, {Tag: "v1.10"}, {Tag: "v1.11"}, {Tag: "v2.0", Prerelease: true}}}
 	service := automaticService(t, c)
 	probe := &batchProbe{port: automaticPort()}
@@ -45,6 +46,7 @@ func TestBoundDiscoveryEvaluatesCandidatesInOneBatch(t *testing.T) {
 }
 
 func TestBoundDiscoveryFallsBackToSingleEvaluation(t *testing.T) {
+	t.Parallel()
 	c := &catalog{releases: []forge.Release{{Tag: "v1.9"}, {Tag: "v1.10"}}}
 	service := automaticService(t, c)
 	probe := &batchProbe{port: automaticPort()}

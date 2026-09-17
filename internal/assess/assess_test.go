@@ -12,6 +12,7 @@ import (
 )
 
 func TestValidationAndCancellationPrecedeIntegrations(t *testing.T) {
+	t.Parallel()
 	var service *assess.Service
 	_, err := service.Assess(t.Context(), assess.Request{})
 	require.ErrorContains(t, err, "select ports")
@@ -25,6 +26,7 @@ func TestValidationAndCancellationPrecedeIntegrations(t *testing.T) {
 }
 
 func TestAssessmentCapabilityDependencies(t *testing.T) {
+	t.Parallel()
 	pkg, err := build.Default.ImportDir(".", 0)
 	require.NoError(t, err)
 	const prefix = "github.com/herbygillot/dockhand/internal/"

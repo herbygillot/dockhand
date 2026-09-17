@@ -19,6 +19,7 @@ import (
 )
 
 func TestStoppedPreparationRetiresAndFreshSourceStartsAnew(t *testing.T) {
+	t.Parallel()
 	f, request := preparationFixture(t, false)
 	f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
 		return preparation.Result{}, errors.New("missing helper")
@@ -49,6 +50,7 @@ func TestStoppedPreparationRetiresAndFreshSourceStartsAnew(t *testing.T) {
 }
 
 func TestAbandonAndRetryAreSerialized(t *testing.T) {
+	t.Parallel()
 	for range 4 {
 		f, request := preparationFixture(t, true)
 		request.Spec.Build = nil
@@ -90,6 +92,7 @@ func publishedLifecycleFixture(t *testing.T) (*fixture, *publicationForge, workf
 }
 
 func TestRefreshRetiresMatchingPRAndNeverReopensLocalContribution(t *testing.T) {
+	t.Parallel()
 	for _, remoteState := range []record.PullRequestState{record.PullRequestClosed, record.PullRequestMerged} {
 		t.Run(string(remoteState), func(t *testing.T) {
 			f, hosting, selected := publishedLifecycleFixture(t)
@@ -134,6 +137,7 @@ func TestRefreshRetiresMatchingPRAndNeverReopensLocalContribution(t *testing.T) 
 }
 
 func TestRefreshPreservesCorrectionsAndPendingWork(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"recorded revision", "moved branch", "dirty checkout", "pending job", "moved PR", "deleted local branch"} {
 		t.Run(mode, func(t *testing.T) {
 			f, hosting, selected := publishedLifecycleFixture(t)
@@ -184,6 +188,7 @@ func TestRefreshPreservesCorrectionsAndPendingWork(t *testing.T) {
 }
 
 func TestRefreshFencesConcurrentDispositionChange(t *testing.T) {
+	t.Parallel()
 	f, hosting, selected := publishedLifecycleFixture(t)
 	hosting.observation.PullRequest.State = record.PullRequestMerged
 	hosting.onFind = func() { _, err := f.engine.AbandonContribution(t.Context(), selected); require.NoError(t, err) }
@@ -197,6 +202,7 @@ func TestRefreshFencesConcurrentDispositionChange(t *testing.T) {
 }
 
 func TestRefreshRecordsPRStatusWithoutActingOnIt(t *testing.T) {
+	t.Parallel()
 	f, hosting, selected := publishedLifecycleFixture(t)
 	hosting.status = record.PullRequestStatus{Mergeable: "no", MergeableDetail: "dirty", Review: "changes-requested", ChangesRequested: 1, Checks: record.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"Build ports (macos-15)"}}}
 	result, err := f.engine.RefreshContribution(t.Context(), selected)
@@ -228,6 +234,7 @@ func TestRefreshRecordsPRStatusWithoutActingOnIt(t *testing.T) {
 }
 
 func TestMergeCleanupKeepsCheckedOutBranchesAndGcSweepsLeftovers(t *testing.T) {
+	t.Parallel()
 	f, hosting, selected := publishedLifecycleFixture(t)
 	worktree := filepath.Join(t.TempDir(), "checkout")
 	add := exec.CommandContext(t.Context(), "git", "worktree", "add", "-q", worktree, "candidate")
@@ -286,6 +293,7 @@ func branchItems(result workflow.RetentionResult) []workflow.CleanupItem {
 }
 
 func TestCycleObservesOpenPullRequestsOnASchedule(t *testing.T) {
+	t.Parallel()
 	f, hosting, _ := publishedLifecycleFixture(t)
 	hosting.status = record.PullRequestStatus{Mergeable: "yes", Review: "none", Checks: record.CheckSummary{Total: 3, Passed: 1, Pending: 2}}
 	f.engine.PullRequestInterval = time.Hour

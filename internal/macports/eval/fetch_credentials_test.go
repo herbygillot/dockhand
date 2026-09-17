@@ -8,6 +8,7 @@ import (
 )
 
 func TestFetchCredentialsUseInstalledSelectorWithoutExposingSecrets(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, configured, sites, files, extra, want string }{
 		{"matching host", "example.invalid secret-value", "https://example.invalid/archive", "source.tar.gz", "", "1"},
 		{"unrelated host", "other.invalid secret-value", "https://example.invalid/archive", "source.tar.gz", "", "0"},
@@ -49,6 +50,7 @@ func TestFetchCredentialsUseInstalledSelectorWithoutExposingSecrets(t *testing.T
 }
 
 func TestFetchCredentialsFollowLegacySiteMatchingAndFailClosed(t *testing.T) {
+	t.Parallel()
 	const legacy = `proc ::macports::curlwrap {action site fallback args} {
     variable fetch_credentials
     if {[dict exists $fetch_credentials $site]} {set fallback [dict get $fetch_credentials $site]}

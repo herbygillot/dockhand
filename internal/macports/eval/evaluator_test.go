@@ -63,6 +63,7 @@ subport fixture-child {
 }
 
 func TestEvaluateSnapshotResourcesVariantsAndSubports(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	variants := map[string]bool{"debug": true}
@@ -95,6 +96,7 @@ func TestEvaluateSnapshotResourcesVariantsAndSubports(t *testing.T) {
 }
 
 func TestEvaluateTerraformStyleCalculatedVersion(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "sysutils/terraform/Portfile", `PortSystem 1.0
@@ -122,6 +124,7 @@ subport terraform-1.4 {
 }
 
 func TestEvaluationDoesNotFallbackToInstalledPortGroups(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/missing/Portfile", "PortSystem 1.0\nPortGroup github 1.0\nname missing\nversion 1.0\ncategories devel\n")
@@ -135,6 +138,7 @@ func TestEvaluationDoesNotFallbackToInstalledPortGroups(t *testing.T) {
 }
 
 func TestSnapshotFailsIfAnySubportFails(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/broken/Portfile", "PortSystem 1.0\nname broken\nversion 1\nsubport bad { error {deliberate failure} }\n")
@@ -148,6 +152,7 @@ func TestSnapshotFailsIfAnySubportFails(t *testing.T) {
 }
 
 func TestResolutionRefusesAmbiguityTraversalAndMissingSubports(t *testing.T) {
+	t.Parallel()
 	tree := fixtureTree(t)
 	evaluator := &Evaluator{Executable: "missing-shell"}
 	putFile(t, tree.Root(), "other/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\n")
@@ -161,6 +166,7 @@ func TestResolutionRefusesAmbiguityTraversalAndMissingSubports(t *testing.T) {
 }
 
 func TestEvaluationRejectsPlatformMismatchAndCancellation(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	tree, err := macports.NewTree(tree.Source(), tree.Root(), record.Platform{OS: "darwin", Version: "1", Architecture: "arm64"})
@@ -179,6 +185,7 @@ func TestEvaluationRejectsPlatformMismatchAndCancellation(t *testing.T) {
 }
 
 func TestDecodeMetadataPreservesTclValuesAndDependencySyntax(t *testing.T) {
+	t.Parallel()
 	info, subs, err := decodeMetadata(`name {demo} version 1.2 revision 0 epoch 0 description {a {b} [c] $d} depends_run {port:foo bin:bar:provider} subports {child}`)
 	require.NoError(t, err)
 	require.Equal(t, []string{"child"}, subs)
@@ -191,6 +198,7 @@ func TestDecodeMetadataPreservesTclValuesAndDependencySyntax(t *testing.T) {
 }
 
 func TestStartupErrorsAreNotSuccessfulHandshakes(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("tclsh")
 	require.NoError(t, err)
 	evaluator := &Evaluator{Executable: executable}
@@ -199,6 +207,7 @@ func TestStartupErrorsAreNotSuccessfulHandshakes(t *testing.T) {
 }
 
 func TestEvaluationExposesComputedUpstreamTagMetadata(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/tagged/Portfile", `PortSystem 1.0
@@ -224,6 +233,7 @@ git.branch ${github.tag_prefix}${github.version}${github.tag_suffix}
 }
 
 func TestSelectedEvaluationLeavesSiblingFailuresToFullValidation(t *testing.T) {
+	t.Parallel()
 	e := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/selected/Portfile", `PortSystem 1.0
@@ -251,6 +261,7 @@ subport selected-broken { error "sibling requires attention" }
 // definitions, exactly as port livecheck does, so dockhand sees the regex
 // livecheck it stands for rather than a type it would have to understand.
 func TestEvaluateResolvesLivecheckTypesThroughTheTreesCheckers(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "_resources/port1.0/livecheck/pypi.tcl", `if {${livecheck.name} eq "default"} {

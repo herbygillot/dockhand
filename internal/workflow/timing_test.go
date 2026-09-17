@@ -14,6 +14,7 @@ import (
 )
 
 func TestObservationScheduleSurvivesOtherDriversAndCancellationPreemptsIt(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.engine.ObserveInterval = 30 * time.Second
 	id := f.submit(t, "scheduled")
@@ -41,6 +42,7 @@ func TestObservationScheduleSurvivesOtherDriversAndCancellationPreemptsIt(t *tes
 	require.Equal(t, record.JobCanceled, f.status(t, id).Jobs[0].Job.State)
 }
 func TestDueObservationIsClaimedByOnlyOneDriver(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.engine.ObserveInterval = 10 * time.Second
 	id := f.submit(t, "shared-observation")
@@ -64,6 +66,7 @@ func TestDueObservationIsClaimedByOnlyOneDriver(t *testing.T) {
 	require.Equal(t, f.now().Add(10*time.Second), *f.attempt(t, id).RetryAt)
 }
 func TestOperationDeadlinesHaveMatchingClaimsAndTimeoutsRemainRetryable(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.engine.Timeouts.Provision = 2 * time.Second
 	f.engine.Timeouts.Observe = 500 * time.Millisecond
@@ -103,6 +106,7 @@ func TestOperationDeadlinesHaveMatchingClaimsAndTimeoutsRemainRetryable(t *testi
 }
 
 func TestFailureBackoffSurvivesDriverRestartAndResetsOnSuccess(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "backoff")
 	f.run(t, id)
@@ -138,6 +142,7 @@ func TestFailureBackoffSurvivesDriverRestartAndResetsOnSuccess(t *testing.T) {
 }
 
 func TestCapacityUsesWaitingScheduleWithoutFailureCount(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.engine.WaitInterval = time.Minute
 	f.provider.submit = func(context.Context, verify.Request) (verify.Submission, error) {
@@ -157,6 +162,7 @@ func TestCapacityUsesWaitingScheduleWithoutFailureCount(t *testing.T) {
 }
 
 func TestMissingRegisteredProviderDoesNotUseFallbackOrTerminateWork(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	id := f.submit(t, "missing-provider")
 	f.engine.Providers = map[string]verify.Provider{}
@@ -176,6 +182,7 @@ func TestMissingRegisteredProviderDoesNotUseFallbackOrTerminateWork(t *testing.T
 }
 
 func TestDefaultSubmissionClaimCoversColdPreparationAndStartup(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.engine.Timeouts.Provision = 0
 	f.engine.LeaseGrace = time.Minute

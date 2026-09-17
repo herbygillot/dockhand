@@ -33,6 +33,7 @@ func (p *secondProvider) Release(context.Context, record.ResourceHandle) (verify
 }
 
 func TestCycleRoutesRecordedProvidersAndResourceCleanup(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t)
 	f.provider.observe = terminal(f, record.VerdictPassed)
 	other := &secondProvider{f: f, calls: map[string]int{}}

@@ -14,6 +14,7 @@ import (
 )
 
 func TestPruneRequiresReleaseAndPreservesTerminalIdentity(t *testing.T) {
+	t.Parallel()
 	f, m := singleRun(t)
 	admitted, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -59,6 +60,7 @@ func TestPruneRequiresReleaseAndPreservesTerminalIdentity(t *testing.T) {
 }
 
 func TestPruneWaitsForProviderLockAndDoesNotFollowResourceSymlink(t *testing.T) {
+	t.Parallel()
 	f, _ := singleRun(t)
 	run, err := f.provider.Submit(t.Context(), f.request)
 	require.NoError(t, err)
@@ -85,6 +87,7 @@ func TestPruneWaitsForProviderLockAndDoesNotFollowResourceSymlink(t *testing.T) 
 }
 
 func TestTransferCopyRemovedOnlyAfterDurableStaging(t *testing.T) {
+	t.Parallel()
 	for _, point := range []string{"stage", "launch", "success"} {
 		t.Run(point, func(t *testing.T) {
 			f, m := singleRun(t)

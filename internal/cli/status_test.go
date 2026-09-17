@@ -16,6 +16,7 @@ import (
 )
 
 func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
+	t.Parallel()
 	config, id := queuedJob(t)
 	// The recorded association remains queryable after its Git ref is removed.
 	cmd := exec.CommandContext(t.Context(), "git", "update-ref", "-d", "refs/heads/candidate")
@@ -64,6 +65,7 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 }
 
 func TestStatusRejectsInvalidSelectorsBeforeOpeningRepository(t *testing.T) {
+	t.Parallel()
 	config := app.Config{Repository: "/missing/repository", DBPath: filepath.Join(t.TempDir(), "absent", "state.db")}
 	for _, args := range [][]string{
 		{"status", "--job", "job", "--branch", "candidate"}, {"status", "job", "second"},
@@ -79,6 +81,7 @@ func TestStatusRejectsInvalidSelectorsBeforeOpeningRepository(t *testing.T) {
 }
 
 func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
+	t.Parallel()
 	status := workflow.EmptyStatus(time.Now())
 	status.Jobs = []workflow.JobStatus{{Job: record.Job{
 		ID:    "job_fixture",
@@ -109,6 +112,7 @@ func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
 }
 
 func TestStatusRendersGitHubRunIdentity(t *testing.T) {
+	t.Parallel()
 	status := workflow.EmptyStatus(time.Now())
 	status.Jobs = []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobCompleted}, Attempts: []record.Attempt{{
 		ID: "attempt", State: record.AttemptFinished,
@@ -121,6 +125,7 @@ func TestStatusRendersGitHubRunIdentity(t *testing.T) {
 }
 
 func TestStatusShowsQueuedGitHubRunAndForkBranch(t *testing.T) {
+	t.Parallel()
 	status := workflow.EmptyStatus(time.Now())
 	status.Jobs = []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{
 		State: record.AttemptRunning, Evidence: &record.Evidence{Workflow: &record.WorkflowEvidence{Repository: "owner/ports", Branch: "update", Commit: "abc", RunID: 10, RunAttempt: 2, Status: "queued", URL: "https://github.com/owner/ports/actions/runs/10"}},
@@ -132,6 +137,7 @@ func TestStatusShowsQueuedGitHubRunAndForkBranch(t *testing.T) {
 }
 
 func TestStatusDistinguishesFailedBumpFromStandaloneVerification(t *testing.T) {
+	t.Parallel()
 	target := record.Target{Name: "terraform-1.16", Subport: "terraform-1.16", Portfile: "sysutils/terraform/Portfile"}
 	status := workflow.EmptyStatus(time.Now())
 	status.Jobs = []workflow.JobStatus{
@@ -154,6 +160,7 @@ func TestStatusDistinguishesFailedBumpFromStandaloneVerification(t *testing.T) {
 }
 
 func TestStatusDoesNotDescribeUnintegratedCandidateAsBranch(t *testing.T) {
+	t.Parallel()
 	status := workflow.EmptyStatus(time.Now())
 	job := record.Job{ID: "bump", Phase: record.PhasePreparation, State: record.JobNeedsAttention,
 		Prepared: &record.PreparedChange{Branch: "candidate"}}

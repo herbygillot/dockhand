@@ -9,6 +9,7 @@ import (
 )
 
 func TestRevisionFidelityDetectsSiblingsAndOtherMetadataChanges(t *testing.T) {
+	t.Parallel()
 	before := macports.Snapshot{Ports: map[string]macports.PortInfo{
 		"main":  {Name: "main", Version: "1", Revision: 0, Options: map[string]string{"revision": "0", "filespath": "/source/files"}},
 		"child": {Name: "child", Version: "2", Revision: 3},

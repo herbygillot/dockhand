@@ -16,6 +16,7 @@ import (
 )
 
 func TestBackupIncludesWALAndAllRepositoriesDuringAnUncommittedWrite(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "state.db")
 	store := openStore(t, path)
 	first, second := repository(t, store, "a"), repository(t, store, "b")
@@ -90,6 +91,7 @@ func TestBackupIncludesWALAndAllRepositoriesDuringAnUncommittedWrite(t *testing.
 }
 
 func TestBackupRefusesExistingDestinationsAndPublishesOnlyCompleteSnapshots(t *testing.T) {
+	t.Parallel()
 	store := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	directory := t.TempDir()
 	file := filepath.Join(directory, "existing.db")
@@ -137,6 +139,7 @@ func TestBackupRefusesExistingDestinationsAndPublishesOnlyCompleteSnapshots(t *t
 }
 
 func TestCheckDetectsForeignKeyDamageAndBackupDoesNotInstallIt(t *testing.T) {
+	t.Parallel()
 	store := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	raw, err := sql.Open("sqlite", store.Path())
 	require.NoError(t, err)

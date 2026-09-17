@@ -14,6 +14,7 @@ import (
 )
 
 func TestVerificationLookupIsBoundedScopedAndIncludesNegativeEvidence(t *testing.T) {
+	t.Parallel()
 	s := openStore(t, filepath.Join(t.TempDir(), "state.db"))
 	a, b := repository(t, s, "a"), repository(t, s, "b")
 	one, two := seed(t, s, a, "a"), seed(t, s, b, "b")

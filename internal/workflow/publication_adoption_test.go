@@ -26,6 +26,7 @@ func requireUntrackedPublication(t *testing.T, f *fixture) {
 }
 
 func TestManualPublicationAdoptsAtomicallyAndResumesAfterLostPRResponse(t *testing.T) {
+	t.Parallel()
 	f, hosting := manualPublicationFixture(t)
 	requireUntrackedPublication(t, f)
 	request := bindPublication(t, f, "manual")
@@ -68,6 +69,7 @@ func TestManualPublicationAdoptsAtomicallyAndResumesAfterLostPRResponse(t *testi
 }
 
 func TestManualPublicationRechecksEvidenceAndRollsBackAdoption(t *testing.T) {
+	t.Parallel()
 	f, hosting := manualPublicationFixture(t)
 	request := bindPublication(t, f, "planned")
 	fresh := reuseRequest(f, "failed-recheck")
@@ -97,6 +99,7 @@ func TestManualPublicationRechecksEvidenceAndRollsBackAdoption(t *testing.T) {
 }
 
 func TestManualPublicationCompetingAdmissionsCreateOneContribution(t *testing.T) {
+	t.Parallel()
 	f, _ := manualPublicationFixture(t)
 	requests := []workflow.Request{bindPublication(t, f, "one"), bindPublication(t, f, "two")}
 	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
@@ -135,6 +138,7 @@ func TestManualPublicationCompetingAdmissionsCreateOneContribution(t *testing.T)
 }
 
 func TestManualPublicationRejectsMovedBranchesBeforeRemoteEffects(t *testing.T) {
+	t.Parallel()
 	for _, stage := range []string{"binding", "before-acceptance", "after-acceptance", "deleted"} {
 		t.Run(stage, func(t *testing.T) {
 			f, hosting := manualPublicationFixture(t)
@@ -173,6 +177,7 @@ func TestManualPublicationRejectsMovedBranchesBeforeRemoteEffects(t *testing.T) 
 }
 
 func TestManualPublicationRequiresEvidenceForTheWholeTreeAndPort(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"new-tree", "other-port", "foreign-repository", "two-commits", "merged"} {
 		t.Run(mode, func(t *testing.T) {
 			f, hosting := manualPublicationFixture(t)
@@ -225,6 +230,7 @@ func TestManualPublicationRequiresEvidenceForTheWholeTreeAndPort(t *testing.T) {
 }
 
 func TestManualPublicationPreservesVerifiedSubportAndVariants(t *testing.T) {
+	t.Parallel()
 	f, _ := manualPublicationFixture(t)
 	request := reuseRequest(f, "subport")
 	request.Spec.Targets = []record.Target{{Name: "fixture-cli", Portfile: "devel/fixture/Portfile", Subport: "fixture-cli", Variants: map[string]bool{"ssl": true}}}
@@ -242,6 +248,7 @@ func TestManualPublicationPreservesVerifiedSubportAndVariants(t *testing.T) {
 }
 
 func TestManualPublicationUsesWorkingTreeEvidenceAfterCommit(t *testing.T) {
+	t.Parallel()
 	f, _ := manualPublicationFixture(t)
 	request := reuseRequest(f, "working-tree")
 	request.Spec.Source.Commit, request.Spec.Source.Base = "", ""

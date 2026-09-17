@@ -19,6 +19,7 @@ type interruptedLog struct{}
 func (interruptedLog) Read([]byte) (int, error) { return 0, context.DeadlineExceeded }
 
 func TestLogDownloadsResumeCompletedJobs(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	submission, err := f.provider.Submit(t.Context(), f.request)
@@ -64,6 +65,7 @@ func TestLogDownloadsResumeCompletedJobs(t *testing.T) {
 }
 
 func TestConcurrentLogReadersShareCompletedDownloads(t *testing.T) {
+	t.Parallel()
 	f := setup(t)
 	f.ready()
 	submission, err := f.provider.Submit(t.Context(), f.request)
@@ -87,6 +89,7 @@ func TestConcurrentLogReadersShareCompletedDownloads(t *testing.T) {
 }
 
 func TestLogIdentityMismatchDoesNotDownload(t *testing.T) {
+	t.Parallel()
 	for _, mismatch := range []string{"run", "job", "duplicate job"} {
 		t.Run(mismatch, func(t *testing.T) {
 			f := setup(t)
@@ -112,6 +115,7 @@ func TestLogIdentityMismatchDoesNotDownload(t *testing.T) {
 }
 
 func TestCanceledLogWriteDoesNotPublishCache(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "cache.log")
 	ctx, cancel := context.WithCancel(t.Context())
 	err := writeLogFile(ctx, path, func(f *os.File) error {

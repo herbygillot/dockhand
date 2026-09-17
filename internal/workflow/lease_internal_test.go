@@ -10,6 +10,7 @@ import (
 )
 
 func TestClaimGuardRejectsFinishedMovedOrForeignJobs(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	claim := &record.Claim{Owner: "driver", Generation: 2, ExpiresAt: now.Add(time.Minute)}
 	job := record.Job{State: record.JobActive, Phase: record.PhaseVerification}
@@ -23,6 +24,7 @@ func TestClaimGuardRejectsFinishedMovedOrForeignJobs(t *testing.T) {
 }
 
 func TestFinishJobReleasesTheLease(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	retry := now.Add(time.Minute)
 	job := record.Job{State: record.JobActive}
@@ -38,6 +40,7 @@ func TestFinishJobReleasesTheLease(t *testing.T) {
 }
 
 func TestLeaseHelpersScheduleFailureAndWaiting(t *testing.T) {
+	t.Parallel()
 	errTest := errors.New("test failure")
 	engine := &Engine{RetryDelay: time.Second, WaitInterval: 10 * time.Second, Now: func() time.Time { return time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC) }}
 	c, err := engine.newCycle()
@@ -65,6 +68,7 @@ func TestLeaseHelpersScheduleFailureAndWaiting(t *testing.T) {
 }
 
 func TestWaitCountBelongsToOneKind(t *testing.T) {
+	t.Parallel()
 	engine := &Engine{RetryDelay: time.Second, WaitInterval: 10 * time.Second, ObserveInterval: 30 * time.Second, Now: func() time.Time { return time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC) }}
 	c, err := engine.newCycle()
 	require.NoError(t, err)
@@ -87,6 +91,7 @@ func TestWaitCountBelongsToOneKind(t *testing.T) {
 }
 
 func TestWaitKindsScheduleAndBudgetDifferently(t *testing.T) {
+	t.Parallel()
 	engine := &Engine{RetryDelay: time.Second, WaitInterval: 10 * time.Second, ObserveInterval: 30 * time.Second, Now: func() time.Time { return time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC) }}
 	c, err := engine.newCycle()
 	require.NoError(t, err)

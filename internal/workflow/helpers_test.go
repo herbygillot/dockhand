@@ -35,8 +35,6 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	root := t.TempDir()
 	command := exec.CommandContext(t.Context(), "git", "init", "--quiet", root)
 	command.Env = isolatedGitEnv()

@@ -12,6 +12,7 @@ import (
 )
 
 func TestCacheRetentionSkipsBusyEnvironmentsAndPreservesSeedsRecentOrUnknownPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	busy := filepath.Join(root, strings.Repeat("a", 64))
 	lock, err := filelock.Acquire(t.Context(), filepath.Join(busy, cacheLockName), filelock.Shared)

@@ -20,6 +20,7 @@ func (c *countedObserver) Observe(ctx context.Context, source macports.Context, 
 }
 
 func TestBaselineObservationReuseExcludesCandidatesAndFinalEvaluations(t *testing.T) {
+	t.Parallel()
 	s, _, input := probeFixture(t, "github.setup owner fixture 1.2.3 v")
 	counted := &countedObserver{Evaluator: s.Ports.(*eval.Evaluator)}
 	s.Ports = counted

@@ -18,6 +18,7 @@ import (
 )
 
 func TestLivecheckBumpNamedSeriesFromDiscoveryThroughStoredBranch(t *testing.T) {
+	t.Parallel()
 	config, repo, original := preparationCLI(t)
 	var listingReads atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

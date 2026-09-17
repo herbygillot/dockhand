@@ -15,6 +15,7 @@ import (
 )
 
 func TestWorkspaceRestoresContentsAfterTheCallbackEvenOnFailure(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	relative := "devel/fixture/Portfile"
 	require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, relative)), 0700))
@@ -36,6 +37,7 @@ func TestWorkspaceRestoresContentsAfterTheCallbackEvenOnFailure(t *testing.T) {
 }
 
 func TestSourceInputPathsFollowTheSelectedTarget(t *testing.T) {
+	t.Parallel()
 	input := &sourceInput{files: &workspace{root: "/snapshot"}, target: record.Target{Portfile: "devel/fixture/Portfile"}}
 	require.Equal(t, filepath.Join("/snapshot", "devel", "fixture", "Portfile"), input.portfile())
 	require.Equal(t, filepath.Join("/snapshot", "devel", "fixture"), input.portdir())
@@ -45,6 +47,7 @@ func TestSourceInputPathsFollowTheSelectedTarget(t *testing.T) {
 }
 
 func TestArchiveStoreKeepsBytesOnlyWithADirectory(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/missing" {
 			w.WriteHeader(http.StatusNotFound)
@@ -82,6 +85,7 @@ func TestArchiveStoreKeepsBytesOnlyWithADirectory(t *testing.T) {
 }
 
 func TestCommitEditRecordsFilesAndFidelityBeforeJudging(t *testing.T) {
+	t.Parallel()
 	input := &sourceInput{target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}}
 	request := Request{Reason: "because"}
 	edit := portfile.Edit{Path: "devel/fixture/Portfile", After: []byte("new")}

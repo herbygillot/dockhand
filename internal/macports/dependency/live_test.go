@@ -15,6 +15,7 @@ import (
 )
 
 func TestInstalledHelpers(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("DOCKHAND_TEST_DEPENDENCY_HELPERS") != "1" {
 		t.Skip("set DOCKHAND_TEST_DEPENDENCY_HELPERS=1 to exercise installed tools and an upstream Go archive")
 	}

@@ -15,6 +15,7 @@ func reusableBuild() record.BuildSpec {
 	return record.BuildSpec{Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Target: record.Target{Name: "fixture", Portfile: "devel/fixture/Portfile"}, Config: record.BuildConfig{Provider: "test", Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, EnvironmentDigest: "image:one", VerifierDigest: "runner:one", ProviderConfig: json.RawMessage(`{"a":1,"b":2}`), Tests: record.TestDeclared}}
 }
 func TestApplicabilityIgnoresProvenanceButRequiresAllBuildInputs(t *testing.T) {
+	t.Parallel()
 	original := record.Attempt{ID: "attempt", Spec: reusableBuild(), State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now()}}
 	wanted := reusableBuild()
 	wanted.Source.Commit = record.ObjectID(strings.Repeat("b", 40))
@@ -51,6 +52,7 @@ func TestApplicabilityIgnoresProvenanceButRequiresAllBuildInputs(t *testing.T) {
 	require.Equal(t, json.RawMessage(`{"a":1,"b":2}`), original.Spec.Config.ProviderConfig)
 }
 func TestApplicabilityRejectsIncompleteOrNonPassingEvidence(t *testing.T) {
+	t.Parallel()
 	for _, verdict := range []record.Verdict{record.VerdictUnknown, record.VerdictFailed, record.VerdictBlocked, record.VerdictErrored, record.VerdictUnsupported, record.VerdictCanceled} {
 		attempt := record.Attempt{ID: "a", Spec: reusableBuild(), State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: verdict, ObservedAt: time.Now()}}
 		require.False(t, verify.Applicable(reusableBuild(), attempt).Matches)
@@ -66,6 +68,7 @@ func TestApplicabilityRejectsIncompleteOrNonPassingEvidence(t *testing.T) {
 }
 
 func TestApplicabilityRequiresCapabilitiesObservedInTheAcceptedEnvironment(t *testing.T) {
+	t.Parallel()
 	wanted := reusableBuild()
 	wanted.Config.CapabilitiesRequired = true
 	wanted.Config.CapabilityDigest = "sha256:capabilities"
@@ -106,6 +109,7 @@ func TestApplicabilityRequiresCapabilitiesObservedInTheAcceptedEnvironment(t *te
 }
 
 func TestJudgeRetainsEnvironmentEvidence(t *testing.T) {
+	t.Parallel()
 	commands := []string{"port", "-d", "install"}
 	environment := &record.EnvironmentEvidence{
 		Provider: "tart", EnvironmentDigest: "sha256:image", CapabilityDigest: "sha256:capabilities",
@@ -135,6 +139,7 @@ func TestJudgeRetainsEnvironmentEvidence(t *testing.T) {
 }
 
 func TestBuildRequirementsPreserveAcceptedChoices(t *testing.T) {
+	t.Parallel()
 	config := reusableBuild().Config
 	requirements := record.BuildRequirements{Provider: config.Provider, Platform: config.Platform, FromSource: config.FromSource, Tests: config.Tests}
 	require.NoError(t, verify.ValidateRequirements(requirements))
@@ -156,6 +161,7 @@ func TestBuildRequirementsPreserveAcceptedChoices(t *testing.T) {
 }
 
 func TestWorkflowEvidenceRequiresTheExactCommitAndBranch(t *testing.T) {
+	t.Parallel()
 	wanted := reusableBuild()
 	wanted.Source.Commit = record.ObjectID(strings.Repeat("b", 40))
 	wanted.Branch = "candidate"
@@ -173,6 +179,7 @@ func TestWorkflowEvidenceRequiresTheExactCommitAndBranch(t *testing.T) {
 }
 
 func TestApplicabilityComparesWorkflowEvidenceOnTheRemoteBranch(t *testing.T) {
+	t.Parallel()
 	previous := record.Attempt{ID: "attempt", Spec: reusableBuild(), State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now()}}
 	previous.Spec.Branch, previous.Spec.Config.Tests = "candidate", record.TestWorkflow
 	previous.Spec.Source.Commit = record.ObjectID(strings.Repeat("b", 40))

@@ -16,6 +16,7 @@ var testPlatform = record.Platform{OS: "darwin", Version: "25", Architecture: "a
 func testGeneration() generation { return generation{Tree: strings.Repeat("a", 40)} }
 
 func TestPortIndexMirrorURL(t *testing.T) {
+	t.Parallel()
 	address, err := DefaultMirrorURL(testPlatform)
 	require.NoError(t, err)
 	require.Equal(t, "https://ftp.fau.de/macports/release/tarballs/PortIndex_darwin_25_arm64/PortIndex", address)
@@ -24,6 +25,7 @@ func TestPortIndexMirrorURL(t *testing.T) {
 }
 
 func TestResolveToolProbesRuntimeOnlyForTclLaunchers(t *testing.T) {
+	t.Parallel()
 	stub := filepath.Join(t.TempDir(), "portindex")
 	require.NoError(t, os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0700))
 	config, err := ResolveTool(t.Context(), Config{Executable: stub})
@@ -43,6 +45,7 @@ func TestResolveToolProbesRuntimeOnlyForTclLaunchers(t *testing.T) {
 }
 
 func TestPortIndexUsesPortGroupsFromFrozenSource(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("portindex")
 	if err != nil {
 		t.Skip("MacPorts portindex is required for integration test")
@@ -81,11 +84,13 @@ func TestPortIndexUsesPortGroupsFromFrozenSource(t *testing.T) {
 }
 
 func TestSharedPortGroupChangesRequireFullIndex(t *testing.T) {
+	t.Parallel()
 	require.True(t, requiresFullIndex([]string{"_resources/port1.0/group/github-1.0.tcl"}))
 	require.False(t, requiresFullIndex([]string{"devel/fixture/files/metadata.tcl"}))
 }
 
 func TestIncrementalIndexAllowsOnlyExistingUnrelatedOmissions(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("portindex")
 	if err != nil {
 		t.Skip("MacPorts portindex is required")

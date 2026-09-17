@@ -188,6 +188,7 @@ func (tx alteredPublicationTx) PutPublication(ctx context.Context, action record
 }
 
 func TestWorkflowRejectsPublicationActionOutsideAcceptedIntent(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	f.engine.State = alteredPublicationStore{Store: f.store}
 	id := submitPublication(t, f, "altered-publication")
@@ -203,6 +204,7 @@ func TestWorkflowRejectsPublicationActionOutsideAcceptedIntent(t *testing.T) {
 }
 
 func TestPublicationPushesConfirmsAndRetainsAssociationAcrossRestart(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	request := bindPublication(t, f, "publish")
 	require.Contains(t, request.Spec.Publication.Desired.Body, "Contribution details")
@@ -242,6 +244,7 @@ func TestPublicationPushesConfirmsAndRetainsAssociationAcrossRestart(t *testing.
 }
 
 func TestPublicationRecoversLostPRResponseWithoutAnotherWrite(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	hosting.writeErr = errors.New("connection lost after server accepted PR")
 	id := submitPublication(t, f, "publish")
@@ -256,6 +259,7 @@ func TestPublicationRecoversLostPRResponseWithoutAnotherWrite(t *testing.T) {
 }
 
 func TestPublicationAuthenticationPrecedesAcceptanceAndRemoteEffects(t *testing.T) {
+	t.Parallel()
 	t.Run("acceptance", func(t *testing.T) {
 		f, hosting := publicationFixture(t)
 		hosting.authErr = fmt.Errorf("%w: credential missing", forge.ErrAuthentication)
@@ -297,6 +301,7 @@ func TestPublicationAuthenticationPrecedesAcceptanceAndRemoteEffects(t *testing.
 }
 
 func TestPublicationUnknownRequestIsObservationOnlyEvenAfterCancellation(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	id := submitPublication(t, f, "publish")
 	f.run(t, id)
@@ -319,6 +324,7 @@ func TestPublicationUnknownRequestIsObservationOnlyEvenAfterCancellation(t *test
 }
 
 func TestPublicationRejectsMovedSourceRemoteAndNewNegativeEvidence(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"source", "remote", "verification", "cancel", "cancel missing branch", "PR"} {
 		t.Run(mode, func(t *testing.T) {
 			f, hosting := publicationFixture(t)
@@ -356,6 +362,7 @@ func TestPublicationRejectsMovedSourceRemoteAndNewNegativeEvidence(t *testing.T)
 }
 
 func TestPublicationConcurrentAcceptanceAndRepositoryScope(t *testing.T) {
+	t.Parallel()
 	f, _ := publicationFixture(t)
 	first, second := bindPublication(t, f, "one"), bindPublication(t, f, "two")
 	var receipts [2]workflow.Receipt
@@ -382,6 +389,7 @@ func TestPublicationConcurrentAcceptanceAndRepositoryScope(t *testing.T) {
 }
 
 func TestPublicationWaiterRechecksCancellationUnderLock(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	id := submitPublication(t, f, "publish")
 	done := make(chan error, 1)
@@ -407,6 +415,7 @@ func TestPublicationWaiterRechecksCancellationUnderLock(t *testing.T) {
 }
 
 func TestPublicationUpdatesCorrectedCommitAndPreservesHumanPRBody(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	id := submitPublication(t, f, "first")
 	f.run(t, id)
@@ -436,6 +445,7 @@ func TestPublicationUpdatesCorrectedCommitAndPreservesHumanPRBody(t *testing.T) 
 }
 
 func TestPublicationDefinitiveRejectionSettlesAndAllowsANewRequest(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	hosting.writeErr = fmt.Errorf("%w: credentials rejected", forge.ErrRejected)
 	id := submitPublication(t, f, "denied")
@@ -451,6 +461,7 @@ func TestPublicationDefinitiveRejectionSettlesAndAllowsANewRequest(t *testing.T)
 }
 
 func TestCompetingPublicationDriversUseOneWrite(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	id := submitPublication(t, f, "publication")
 	reopened, err := sqlite.Open(t.Context(), f.store.Path(), sqlite.Options{})
@@ -482,6 +493,7 @@ func TestCompetingPublicationDriversUseOneWrite(t *testing.T) {
 }
 
 func TestRateLimitedPublicationResumesAfterDurableRefusal(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	id := submitPublication(t, f, "limited")
 	f.run(t, id)
@@ -514,6 +526,7 @@ func TestRateLimitedPublicationResumesAfterDurableRefusal(t *testing.T) {
 }
 
 func TestUnknownPublicationCannotClearWriteIntentWithoutRecordedRefusal(t *testing.T) {
+	t.Parallel()
 	f, _ := publicationFixture(t)
 	id := submitPublication(t, f, "guarded-intent")
 	f.run(t, id)

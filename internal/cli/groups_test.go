@@ -11,6 +11,7 @@ import (
 )
 
 func TestHelpGroupsCommandsInContributionOrder(t *testing.T) {
+	t.Parallel()
 	root, err := cli.NewRoot(app.Config{DBPath: t.TempDir() + "/state.db"})
 	require.NoError(t, err)
 	var out bytes.Buffer

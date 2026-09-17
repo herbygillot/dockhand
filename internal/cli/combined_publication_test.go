@@ -23,6 +23,7 @@ import (
 )
 
 func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
+	t.Parallel()
 	for _, wait := range []bool{false, true} {
 		t.Run(fmt.Sprint(wait), func(t *testing.T) {
 			config, repo, source := preparationCLI(t)

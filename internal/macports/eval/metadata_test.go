@@ -7,6 +7,7 @@ import (
 )
 
 func TestMetadataDecodesEachDictionaryValueOnlyOnce(t *testing.T) {
+	t.Parallel()
 	port, _, err := decodeMetadata(`name fixture version 1.2 revision 0 epoch 0 description {{literal braces}} livecheck.regex {{v(\d+)\.tar}} github.tag_suffix {{}} option_errors {livecheck.url {failure with \backslashes}}`)
 	require.NoError(t, err)
 	require.Equal(t, "{literal braces}", port.Options["description"])

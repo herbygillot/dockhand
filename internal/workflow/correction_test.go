@@ -31,6 +31,7 @@ func correctionFixture(t *testing.T) (*fixture, workflow.CorrectionRequest) {
 }
 
 func TestCorrectionPreservesChangeAndReusesSameTree(t *testing.T) {
+	t.Parallel()
 	f, input := correctionFixture(t)
 	bound, err := f.engine.BindCorrection(t.Context(), input)
 	require.NoError(t, err)
@@ -59,6 +60,7 @@ func TestCorrectionPreservesChangeAndReusesSameTree(t *testing.T) {
 }
 
 func TestCorrectionRecoveryAndBranchMove(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"already-replaced", "moved", "concurrent-adoption"} {
 		t.Run(mode, func(t *testing.T) {
 			f, input := correctionFixture(t)
@@ -100,6 +102,7 @@ func TestCorrectionRecoveryAndBranchMove(t *testing.T) {
 }
 
 func TestCorrectionRefusesStaleRevisionAndPendingWork(t *testing.T) {
+	t.Parallel()
 	f, input := correctionFixture(t)
 	bound, err := f.engine.BindCorrection(t.Context(), input)
 	require.NoError(t, err)
@@ -112,6 +115,7 @@ func TestCorrectionRefusesStaleRevisionAndPendingWork(t *testing.T) {
 }
 
 func TestReassociatePreservesPRRemoteBranch(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	id := submitPublication(t, f, "publish-first")
 	for range 5 {
@@ -137,6 +141,7 @@ func TestReassociatePreservesPRRemoteBranch(t *testing.T) {
 }
 
 func TestCorrectionRetriesOriginalBranchAfterInterruptedIntegration(t *testing.T) {
+	t.Parallel()
 	f, input := correctionFixture(t)
 	bound, err := f.engine.BindCorrection(t.Context(), input)
 	require.NoError(t, err)
@@ -157,6 +162,7 @@ func TestCorrectionRetriesOriginalBranchAfterInterruptedIntegration(t *testing.T
 }
 
 func TestChangedCorrectionBuildsAgain(t *testing.T) {
+	t.Parallel()
 	f, input := correctionFixture(t)
 	commitPort(t, f, "candidate", "version 3\n")
 	bound, err := f.engine.BindCorrection(t.Context(), input)
@@ -178,6 +184,7 @@ func TestChangedCorrectionBuildsAgain(t *testing.T) {
 }
 
 func TestCorrectionUpdatesExistingPRAndPreservesHumanBody(t *testing.T) {
+	t.Parallel()
 	f, input := correctionFixture(t)
 	hosting := f.engine.Publisher.Forge.(*publicationForge)
 	first := submitPublication(t, f, "first-pr")
@@ -204,6 +211,7 @@ func TestCorrectionUpdatesExistingPRAndPreservesHumanBody(t *testing.T) {
 }
 
 func TestExistingPRRejectsUnexpectedRemoteHeadDuringPlanning(t *testing.T) {
+	t.Parallel()
 	f, hosting := publicationFixture(t)
 	id := submitPublication(t, f, "first")
 	for range 4 {
@@ -218,6 +226,7 @@ func TestExistingPRRejectsUnexpectedRemoteHeadDuringPlanning(t *testing.T) {
 }
 
 func TestCorrectionExplicitTitlePreservesBody(t *testing.T) {
+	t.Parallel()
 	f, input := correctionFixture(t)
 	input.Title = "fixture: corrective update"
 	bound, err := f.engine.BindCorrection(t.Context(), input)
@@ -231,6 +240,7 @@ func TestCorrectionExplicitTitlePreservesBody(t *testing.T) {
 }
 
 func TestVerificationAfterRenameKeepsThePRHeadAsItsRemoteBranch(t *testing.T) {
+	t.Parallel()
 	f, _ := publicationFixture(t)
 	id := submitPublication(t, f, "publish-first")
 	for range 5 {

@@ -14,6 +14,7 @@ import (
 )
 
 func TestTargetContinuationDoesNotFallBackToCheckout(t *testing.T) {
+	t.Parallel()
 	f, input := preparationFixture(t, false)
 	id := submitPreparation(t, f, input)
 	selected := workflow.ContributionSelector{Target: "fixture"}
@@ -51,6 +52,7 @@ func TestTargetContinuationDoesNotFallBackToCheckout(t *testing.T) {
 }
 
 func TestTargetContinuationRejectsDirtyCheckoutAndMissingBranch(t *testing.T) {
+	t.Parallel()
 	f, input := preparationFixture(t, false)
 	id := submitPreparation(t, f, input)
 	candidateJob(t, f, id)
@@ -80,6 +82,7 @@ func TestTargetContinuationRejectsDirtyCheckoutAndMissingBranch(t *testing.T) {
 }
 
 func TestTargetPublicationUsesPreparedRevisionAndRecordedBuild(t *testing.T) {
+	t.Parallel()
 	f, _, input := combinedFixture(t, record.BumpRevision)
 	id := prepareCombined(t, f, input)
 	passCombined(t, f, id)
@@ -102,6 +105,7 @@ func TestTargetPublicationUsesPreparedRevisionAndRecordedBuild(t *testing.T) {
 }
 
 func TestTargetControlRetainsFrozenJobsBeforeBranchExists(t *testing.T) {
+	t.Parallel()
 	f, input := preparationFixture(t, false)
 	first := submitPreparation(t, f, input)
 	selected := workflow.ContributionSelector{Target: "fixture"}

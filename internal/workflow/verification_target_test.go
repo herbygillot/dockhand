@@ -42,6 +42,7 @@ func inferenceFixture(t *testing.T) (*fixture, *boundPorts, workflow.Verificatio
 }
 
 func TestInferredVerificationUsesRecordedScopeAndFreezesItsInput(t *testing.T) {
+	t.Parallel()
 	f, ports, request := inferenceFixture(t)
 	bound, err := f.engine.BindVerification(t.Context(), request)
 	require.NoError(t, err)
@@ -65,6 +66,7 @@ func TestInferredVerificationUsesRecordedScopeAndFreezesItsInput(t *testing.T) {
 }
 
 func TestInferredVerificationPreservesAndOverridesSubportAndVariants(t *testing.T) {
+	t.Parallel()
 	f, _, request := inferenceFixture(t)
 	require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
 		change, err := tx.Change(ctx, "change")
@@ -93,6 +95,7 @@ func TestInferredVerificationPreservesAndOverridesSubportAndVariants(t *testing.
 }
 
 func TestInferredVerificationRefusesUnknownAndChangedScope(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{"untracked", "closed", "no-targets", "many-targets", "no-base", "missing-base", "renamed-target", "outside-port", "shared-resource", "neighbor-prefix"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, ports, request := inferenceFixture(t)
@@ -171,6 +174,7 @@ func editInferenceBranch(t *testing.T, f *fixture, name string) {
 }
 
 func TestInferredVerificationCapturesCurrentEditsAndRejectsDetachedScope(t *testing.T) {
+	t.Parallel()
 	f, _, request := inferenceFixture(t)
 	out, err := exec.CommandContext(t.Context(), "git", "-C", f.repo.Root, "checkout", "-f", "candidate").CombinedOutput()
 	require.NoError(t, err, "%s", out)
@@ -198,6 +202,7 @@ func TestInferredVerificationCapturesCurrentEditsAndRejectsDetachedScope(t *test
 }
 
 func TestInferredVerificationRechecksRecordedTargetAtAcceptance(t *testing.T) {
+	t.Parallel()
 	f, _, request := inferenceFixture(t)
 	bound, err := f.engine.BindVerification(t.Context(), request)
 	require.NoError(t, err)

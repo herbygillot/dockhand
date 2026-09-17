@@ -12,6 +12,7 @@ import (
 )
 
 func TestCapabilityProblemAppliesTheAcceptedToolchainProfile(t *testing.T) {
+	t.Parallel()
 	capabilities := record.EnvironmentCapabilities{
 		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
 	}
@@ -30,6 +31,7 @@ func TestCapabilityProblemAppliesTheAcceptedToolchainProfile(t *testing.T) {
 }
 
 func TestManifestComparisonSupportsTheOriginalProvisionedFormat(t *testing.T) {
+	t.Parallel()
 	capabilities := record.EnvironmentCapabilities{
 		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6",
 		DeveloperTools: record.DeveloperToolsCommandLine, GuestAgentVersion: "0.14.1",
@@ -47,6 +49,7 @@ func TestManifestComparisonSupportsTheOriginalProvisionedFormat(t *testing.T) {
 }
 
 func TestAgentDiagnosticsDoNotDetermineCompatibility(t *testing.T) {
+	t.Parallel()
 	capabilities := record.EnvironmentCapabilities{Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine, GuestAgentVersion: "development-snapshot"}
 	identity := capabilityIdentity(capabilities)
 	manifest := tartvm.ImageManifest{Protocol: tartvm.ImageManifestProtocol, Source: "source", Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", GuestAgentVersion: "different-release-tag"}
@@ -63,6 +66,7 @@ func TestAgentDiagnosticsDoNotDetermineCompatibility(t *testing.T) {
 }
 
 func TestCachedAgentVersionFailuresAreReobserved(t *testing.T) {
+	t.Parallel()
 	f, _ := singleRun(t)
 	for _, test := range []struct {
 		version, problem string

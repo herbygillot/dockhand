@@ -11,6 +11,7 @@ import (
 )
 
 func TestMetadataSelection(t *testing.T) {
+	t.Parallel()
 	index, err := portindex.Open(writeIndex(t, []indexRecord{
 		{"alpha", "name alpha portdir devel/alpha maintainers {{example.org:owner @contributor} openmaintainer} categories {devel net}"},
 		{"alpha-child", "name alpha-child portdir devel/alpha maintainers @contributor categories net"},
@@ -49,6 +50,7 @@ func TestMetadataSelection(t *testing.T) {
 }
 
 func TestSelectionExposesOmittedPortfilesAndSubports(t *testing.T) {
+	t.Parallel()
 	root := writeIndex(t, []indexRecord{{"alpha", "name alpha portdir devel/alpha categories devel subports {alpha child}"}}, nil)
 	missing := filepath.Join(root, "other", "broken", "Portfile")
 	require.NoError(t, os.MkdirAll(filepath.Dir(missing), 0700))
@@ -64,6 +66,7 @@ func TestSelectionExposesOmittedPortfilesAndSubports(t *testing.T) {
 }
 
 func TestSelectionPreservesMalformedMetadata(t *testing.T) {
+	t.Parallel()
 	root := writeIndex(t, []indexRecord{{"broken", `name broken portdir devel/broken maintainers \{ categories devel`}, {"good", "name good portdir devel/good maintainers @contributor categories devel"}}, nil)
 	index, err := portindex.Open(root)
 	require.NoError(t, err)
@@ -75,6 +78,7 @@ func TestSelectionPreservesMalformedMetadata(t *testing.T) {
 }
 
 func TestAllSelectionRequiresAnExplicitMode(t *testing.T) {
+	t.Parallel()
 	require.Error(t, (portindex.Filter{}).Validate())
 	require.Error(t, (portindex.Filter{All: true, Categories: []string{"devel"}}).Validate())
 	require.NoError(t, (portindex.Filter{All: true}).Validate())

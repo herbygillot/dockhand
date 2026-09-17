@@ -9,6 +9,7 @@ import (
 )
 
 func TestDependentPlanRejectsUnboundOrMissingRoots(t *testing.T) {
+	t.Parallel()
 	source := record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}
 	platform := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	root := record.Target{Name: "root", Portfile: "devel/root/Portfile"}

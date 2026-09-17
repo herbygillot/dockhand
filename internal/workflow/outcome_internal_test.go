@@ -8,6 +8,7 @@ import (
 )
 
 func TestOutcomeKindsAndReporting(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, waiting, waitingFor(waitBuild, "progress").kind)
 	require.Equal(t, waitBuild, waitingFor(waitBuild, "progress").wait)
 	require.Empty(t, waitingFor(waitBuild, "progress").problem(), "waiting is not a cycle problem")

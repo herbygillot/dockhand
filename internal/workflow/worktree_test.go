@@ -20,6 +20,7 @@ func checkoutFixture(t *testing.T, f *fixture) {
 	require.NoError(t, err, "%s", out)
 }
 func TestWorkingTreeVerificationFreezesInputAcrossEditsAndDriverRestart(t *testing.T) {
+	t.Parallel()
 	for _, tracked := range []bool{false, true} {
 		t.Run(map[bool]string{false: "standalone", true: "tracked"}[tracked], func(t *testing.T) {
 			f, ports := bindingFixture(t)
@@ -64,6 +65,7 @@ func TestWorkingTreeVerificationFreezesInputAcrossEditsAndDriverRestart(t *testi
 	}
 }
 func TestUntrackedSourceMustBeStagedBeforeWorkingTreeVerification(t *testing.T) {
+	t.Parallel()
 	f, _ := bindingFixture(t)
 	checkoutFixture(t, f)
 	file := filepath.Join(f.repo.Root, "devel/fixture/patch.diff")
@@ -88,6 +90,7 @@ func TestUntrackedSourceMustBeStagedBeforeWorkingTreeVerification(t *testing.T) 
 }
 
 func TestWorkingBindingOutsideTransactionAndDetachedCheckout(t *testing.T) {
+	t.Parallel()
 	f, ports := bindingFixture(t)
 	checkoutFixture(t, f)
 	command := exec.CommandContext(t.Context(), "git", "checkout", "--detach")

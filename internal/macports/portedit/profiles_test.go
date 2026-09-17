@@ -8,6 +8,7 @@ import (
 )
 
 func TestProfilesIncludeBoundaryAndArchitectureWithoutImpossibleOldARM(t *testing.T) {
+	t.Parallel()
 	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	profiles, err := observationProfiles([]byte(`if {${os.major} >= 17} {version 1} else {version 0}
 if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
@@ -21,6 +22,7 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 }
 
 func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
+	t.Parallel()
 	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	for _, source := range []string{
 		`set major ${os.major}; if {$major >= 17} {version 1}`,
@@ -38,6 +40,7 @@ func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
 }
 
 func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
+	t.Parallel()
 	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	for _, source := range []string{
 		`configure.env-append MACOSX_DEPLOYMENT_TARGET=${macosx_deployment_target}`,
@@ -113,6 +116,7 @@ func observationProfiles(src []byte, native record.Platform) ([]record.Platform,
 }
 
 func TestToolchainReadsAreBenignInBuildPositionsOnly(t *testing.T) {
+	t.Parallel()
 	require.True(t, toolchainReadsBenign([]byte(`set CFLAGS "${configure.cflags} -std=gnu99 [get_canonical_archflags cc]"
 build.args CFLAGS="${CFLAGS}" CC=${configure.cc}
 if {[string match macports-clang-* ${configure.compiler}]} { depends_run-append port:[string map {"macports-" ""} ${configure.compiler}] }

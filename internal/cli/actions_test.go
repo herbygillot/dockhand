@@ -17,6 +17,7 @@ import (
 )
 
 func TestVerificationArgumentsFailBeforeOpeningState(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"verify", "jq", "--image", "base", "--capacity", "0"}, {"verify", "jq", "--image", "base", "--tests", "perhaps"}, {"verify", "jq", "--image", "base", "--variant", "ssl"}, {"verify", "jq", "--image", "base", "--variant", "+ssl", "--variant=-ssl"}} {
 		var out bytes.Buffer
 		db := filepath.Join(t.TempDir(), "missing", "state.db")
@@ -27,6 +28,7 @@ func TestVerificationArgumentsFailBeforeOpeningState(t *testing.T) {
 	}
 }
 func TestResultCodesDistinguishFailureAttentionAndInterruption(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, 2, ExitCode(errors.Join(errJobFailed, errors.New("write"))))
 	require.Equal(t, 3, ExitCode(errNeedsAttention))
 	require.Equal(t, 130, ExitCode(context.Canceled))
@@ -35,6 +37,7 @@ func TestResultCodesDistinguishFailureAttentionAndInterruption(t *testing.T) {
 	require.NoError(t, outcome(status, true))
 }
 func TestJSONResultKeepsLogsAndProgressOffStdout(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	r := runtime{json: true}
 	result := ActionResult{Status: workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}}}}}
@@ -61,6 +64,7 @@ func (p *logProvider) ReadLog(_ context.Context, _ record.ProviderRun, offset in
 	return verify.LogChunk{Data: p.data[offset : int(offset)+n], Next: offset + int64(n), Complete: int(offset)+n == len(p.data)}, nil
 }
 func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
+	t.Parallel()
 	var output bytes.Buffer
 	provider := &logProvider{data: []byte("first\nsecond\n")}
 	reporter := newReporter(&output, provider, true, progress.Info, false)
@@ -75,6 +79,7 @@ func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
 }
 
 func TestCompletionEmphasizesPassedVerificationAndKeepsReuseDecisionEarlier(t *testing.T) {
+	t.Parallel()
 	var output bytes.Buffer
 	reporter := newReporter(&output, nil, false, progress.Info, false)
 	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, ReuseDetail: "Previous image differs; running a new build"}}}}
@@ -90,6 +95,7 @@ func TestCompletionEmphasizesPassedVerificationAndKeepsReuseDecisionEarlier(t *t
 }
 
 func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	r := runtime{}
 	status := workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, Spec: record.JobSpec{Destination: record.Published}}}}}
@@ -100,6 +106,7 @@ func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
 }
 
 func TestEmptyWorkSelectorsDoNotFallBackToCurrentBranch(t *testing.T) {
+	t.Parallel()
 	for _, command := range []string{"wait", "cancel", "abandon", "refresh"} {
 		for _, selector := range []string{"job", "change", "branch"} {
 			if selector == "job" && (command == "abandon" || command == "refresh") {

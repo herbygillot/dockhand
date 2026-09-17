@@ -9,6 +9,7 @@ import (
 )
 
 func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
+	t.Parallel()
 	source := record.Source{Commit: record.ObjectID(strings.Repeat("a", 40))}
 	change := record.Change{GeneratedCommit: source.Commit}
 	content := record.PublicationContent{Title: "fixture: update to 2", Body: "Useful explanation\n\nGenerated-by: [dockhand](https://github.com/herbygillot/dockhand)"}
@@ -41,6 +42,7 @@ func TestBodyUsesSelectedEvidenceAndGeneratedIdentity(t *testing.T) {
 }
 
 func TestBodyDoesNotInventTestsOrEnvironmentForOlderEvidence(t *testing.T) {
+	t.Parallel()
 	attempt := record.Attempt{ID: "original", Spec: record.BuildSpec{Target: record.Target{Name: "fixture"}, Config: record.BuildConfig{Platform: record.Platform{OS: "darwin", Version: "25"}, Tests: record.TestDeclared}}, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now(), Steps: []record.StepResult{{Package: "other", Phase: "test", Verdict: record.VerdictPassed}, {Package: "fixture", Phase: "install", Verdict: record.VerdictPassed}}}}
 	for _, reason := range []string{"", "Skipped by request", "Port declares no test phase"} {
 		attempt.Evidence.TestOmission = reason
@@ -64,6 +66,7 @@ func TestBodyDoesNotInventTestsOrEnvironmentForOlderEvidence(t *testing.T) {
 }
 
 func TestBodyReportsWorkflowSuccessWithoutInventingPortPhases(t *testing.T) {
+	t.Parallel()
 	evidence := &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now(), TestOmission: "Workflow policy may tolerate test failures", Workflow: &record.WorkflowEvidence{RunID: 10, RunAttempt: 2, URL: "https://github.com/author/ports/actions/runs/10", Jobs: []record.WorkflowJob{{Name: "macos-15", Conclusion: "success"}}}}
 	body := publicationBody(record.PublicationContent{Title: "fixture: update"}, record.Change{}, record.Source{}, record.Attempt{ID: "attempt", Evidence: evidence})
 	require.Contains(t, body, "Provider: GitHub Actions")

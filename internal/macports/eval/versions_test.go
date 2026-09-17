@@ -10,6 +10,7 @@ import (
 )
 
 func TestVersionSelectionUsesTclFiltersAndMacPortsOrdering(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
 		t.Skip("MacPorts is required")
@@ -38,6 +39,7 @@ func TestVersionSelectionUsesTclFiltersAndMacPortsOrdering(t *testing.T) {
 }
 
 func TestVersionSelectionNormalizesMacPortsComparison(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
 		t.Skip("MacPorts is required")
@@ -58,6 +60,7 @@ func TestVersionSelectionNormalizesMacPortsComparison(t *testing.T) {
 }
 
 func TestExtractVersionsUsesNativeTclAndLineBoundaries(t *testing.T) {
+	t.Parallel()
 	executable, err := exec.LookPath("port-tclsh")
 	if err != nil {
 		t.Skip("MacPorts is required")

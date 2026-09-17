@@ -23,11 +23,12 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		return coverage, err, nil
 	}
 	declared, covered := map[string]bool{}, map[string]bool{}
-	for _, profile := range profiles {
-		observed, err := s.observeContents(ctx, input, input.data, macports.ObservationRequest{Platform: profile, Declarations: true}, false)
-		if err != nil {
-			return coverage, err, nil
-		}
+	observations, err := s.observeProfiles(ctx, input, input.data, profiles, true, false)
+	if err != nil {
+		return coverage, err, nil
+	}
+	for i, profile := range profiles {
+		observed := observations[i]
 		info := observed.Snapshot.Ports[input.target.Name]
 		coverage = append(coverage, ContextCoverage{Platform: profile, Modeled: observed.Modeled, Fetch: info.Fetch})
 		if err := checkArchivePolicy(info, input.portdir()); err != nil {

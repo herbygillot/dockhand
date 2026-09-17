@@ -12,6 +12,7 @@ import (
 )
 
 func TestGitHubBuildFlagsSelectWorkflowPolicy(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		flags []string
 		valid bool
@@ -46,6 +47,7 @@ func TestGitHubBuildFlagsSelectWorkflowPolicy(t *testing.T) {
 }
 
 func TestGitHubRequiresCommittedBranchBeforeOpeningState(t *testing.T) {
+	t.Parallel()
 	db := filepath.Join(t.TempDir(), "missing", "state.db")
 	var output bytes.Buffer
 	err := Run(t.Context(), []string{"verify", "fixture", "--working-tree", "--provider", "github"}, Streams{Out: &output, Err: &output}, app.Config{DBPath: db})

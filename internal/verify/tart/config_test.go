@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildConfigDoesNotInitializeRuntimeDirectories(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	p := &Provider{Config: Config{Home: filepath.Join(root, "home"), ArtifactDirectory: filepath.Join(root, "artifacts"), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine()}
 	_, err := p.BuildConfig(t.Context(), testPlatform, BuildOptions{Tests: record.TestDeclared})

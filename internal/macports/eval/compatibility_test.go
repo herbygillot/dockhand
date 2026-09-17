@@ -9,6 +9,7 @@ import (
 )
 
 func TestRuntimeInspectionAndVersionEvidence(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	runtime, err := evaluator.Inspect(t.Context())
 	require.NoError(t, err)
@@ -26,6 +27,7 @@ func TestRuntimeInspectionAndVersionEvidence(t *testing.T) {
 }
 
 func TestStartupChecksCapabilitiesWithoutVersionGate(t *testing.T) {
+	t.Parallel()
 	for _, mutation := range []string{"proc ::macports::version {} {return 99.0}", "rename ::mportinfo ::saved_mportinfo", "rename ::vercmp ::saved_vercmp; proc ::vercmp {a b} {return 0}"} {
 		t.Run(mutation, func(t *testing.T) {
 			session, runtime, err := liveEvaluator(t).start(t.Context(), macports.Tree{})
@@ -43,6 +45,7 @@ func TestStartupChecksCapabilitiesWithoutVersionGate(t *testing.T) {
 }
 
 func TestWorkerAndFetchContracts(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct{ name, mutation, want string }{
 		{"normal", "", ""},
 		{"missing option", "rename option saved_option", "metadata capability check failed"},
@@ -79,6 +82,7 @@ func TestWorkerAndFetchContracts(t *testing.T) {
 }
 
 func TestUnknownFetchLayoutKeepsMetadataButBlocksArchivePreparation(t *testing.T) {
+	t.Parallel()
 	evaluator := liveEvaluator(t)
 	tree := fixtureTree(t)
 	putFile(t, tree.Root(), "devel/fixture/Portfile", "PortSystem 1.0\nname fixture\nversion 1\ncategories devel\nditem_key ${org.macports.fetch} procedure nonexistent\n")

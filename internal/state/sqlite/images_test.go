@@ -11,6 +11,7 @@ import (
 )
 
 func TestImageCapabilitiesAreSharedByProviderAndEnvironmentDigest(t *testing.T) {
+	t.Parallel()
 	store, err := Open(t.Context(), filepath.Join(t.TempDir(), "state.db"), Options{})
 	require.NoError(t, err)
 	defer store.Close()
