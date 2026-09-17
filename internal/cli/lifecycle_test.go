@@ -122,6 +122,8 @@ func TestForeignRepositoryJobCannotBeWaitedOrCanceled(t *testing.T) {
 	other := t.TempDir()
 	output, err := exec.CommandContext(t.Context(), "git", "init", "-q", other).CombinedOutput()
 	require.NoError(t, err, "%s", output)
+	require.NoError(t, os.MkdirAll(filepath.Join(other, "devel", "fixture"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(other, "devel", "fixture", "Portfile"), []byte("PortSystem 1.0\nname fixture\n"), 0o644))
 	config.Repository = other
 	for _, name := range []string{"wait", "cancel"} {
 		var out bytes.Buffer
