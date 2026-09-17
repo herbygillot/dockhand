@@ -28,7 +28,10 @@ type Options struct {
 	Run       func(ctx context.Context, args []string, out io.Writer) error
 	Open      func(target string) error
 	Processor func(ctx context.Context, say func(scope, text string)) error
-	Interval  time.Duration
+	// ShowRetired starts the table with merged, closed, and abandoned rows
+	// visible; the h key toggles them.
+	ShowRetired bool
+	Interval    time.Duration
 	// Messages is how many strip lines stay visible.
 	Messages int
 }
@@ -75,18 +78,20 @@ type pending struct {
 }
 
 type model struct {
-	options  Options
-	runner   *runner
-	rows     []workflow.Contribution
-	readAt   time.Time
-	now      time.Time
-	err      error
-	cursor   int
-	expanded bool
-	messages []string
-	confirm  *pending
-	width    int
-	height   int
+	options Options
+	runner  *runner
+	rows    []workflow.Contribution
+	// showRetired includes retired rows; hidden counts those left out.
+	showRetired bool
+	readAt      time.Time
+	now         time.Time
+	err         error
+	cursor      int
+	expanded    bool
+	messages    []string
+	confirm     *pending
+	width       int
+	height      int
 	// processing is set while the processor runs; stop ends it and done
 	// closes when it has returned.
 	processing bool
@@ -101,7 +106,7 @@ func newModel(options Options) *model {
 	if options.Messages <= 0 {
 		options.Messages = 5
 	}
-	return &model{options: options, runner: &runner{running: map[string]string{}}, width: 100, height: 30, now: time.Now()}
+	return &model{options: options, showRetired: options.ShowRetired, runner: &runner{running: map[string]string{}}, width: 100, height: 30, now: time.Now()}
 }
 
 func (m *model) Init() tea.Cmd {
@@ -166,9 +171,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.rows = msg.overview.Contributions
 		m.readAt = msg.overview.ReadAt
-		if m.cursor >= len(m.rows) {
-			m.cursor = max(len(m.rows)-1, 0)
-		}
+		m.clampCursor()
 	case tickMsg:
 		m.now = time.Time(msg)
 		return m, tea.Batch(m.poll(), m.tick())
@@ -217,11 +220,14 @@ func (m *model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case "down", "j":
-		if m.cursor < len(m.rows)-1 {
+		if m.cursor < len(m.visible())-1 {
 			m.cursor++
 		}
 	case "enter", " ", "space":
 		m.expanded = !m.expanded
+	case "h":
+		m.showRetired = !m.showRetired
+		m.clampCursor()
 	case "o":
 		m.open("PR", m.selected().PullRequest)
 	case "l":
@@ -233,9 +239,25 @@ func (m *model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// visible is the rows the table shows: all of them, or only those not retired.
+func (m *model) visible() []workflow.Contribution {
+	if m.showRetired {
+		return m.rows
+	}
+	return workflow.Current(m.rows)
+}
+
+func (m *model) hidden() int { return len(m.rows) - len(m.visible()) }
+
+func (m *model) clampCursor() {
+	if n := len(m.visible()); m.cursor >= n {
+		m.cursor = max(n-1, 0)
+	}
+}
+
 func (m *model) selected() workflow.Contribution {
-	if m.cursor < len(m.rows) {
-		return m.rows[m.cursor]
+	if rows := m.visible(); m.cursor < len(rows) {
+		return rows[m.cursor]
 	}
 	return workflow.Contribution{}
 }
@@ -386,12 +408,15 @@ func (m *model) View() string {
 	if m.processing {
 		title += " (processing)"
 	}
+	if hidden := m.hidden(); hidden > 0 {
+		age += fmt.Sprintf("  %d retired hidden (h shows)", hidden)
+	}
 	fmt.Fprintf(&b, "%s  %s\n", headerStyle.Render(title), faintStyle.Render(age))
 	if m.err != nil {
 		fmt.Fprintf(&b, "%s\n", "status unavailable: "+m.err.Error())
 	}
-	if len(m.rows) == 0 {
-		b.WriteString("No contributions recorded.\n")
+	if len(m.visible()) == 0 {
+		b.WriteString("No open contributions.\n")
 	} else {
 		m.table(&b)
 	}
@@ -402,14 +427,15 @@ func (m *model) View() string {
 	if m.confirm != nil {
 		fmt.Fprintf(&b, "%s", headerStyle.Render(fmt.Sprintf("Run dockhand %s for %s? y/n", m.confirm.verb, m.confirm.port)))
 	} else {
-		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  b bump again  v verify  p publish  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
+		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  h history  b bump again  v verify  p publish  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
 	}
 	return b.String()
 }
 
 func (m *model) table(b *strings.Builder) {
+	rows := m.visible()
 	columns := []column{{"PORT", 4}, {"CHANGE", 6}, {"PHASE", 5}, {"STATE", 5}, {"NEXT", 4}}
-	for _, row := range m.rows {
+	for _, row := range rows {
 		for i, value := range []string{row.Port, row.Change, row.Phase, row.State, row.Next} {
 			columns[i].width = max(columns[i].width, len([]rune(value)))
 		}
@@ -422,7 +448,7 @@ func (m *model) table(b *strings.Builder) {
 	b.WriteString(headerStyle.Render(strings.Join(titles, "  ")) + "\n")
 	first, last := m.window()
 	for i := first; i < last; i++ {
-		row := m.rows[i]
+		row := rows[i]
 		var cells []string
 		for j, value := range []string{row.Port, row.Change, row.Phase, row.State, row.Next} {
 			cells = append(cells, pad(truncate(value, columns[j].width), columns[j].width))
@@ -478,11 +504,12 @@ func (m *model) window() (int, int) {
 	if m.expanded {
 		available = max(available-len(expansion(m.selected())), 1)
 	}
-	if len(m.rows) <= available {
-		return 0, len(m.rows)
+	count := len(m.visible())
+	if count <= available {
+		return 0, count
 	}
 	first := max(m.cursor-available/2, 0)
-	last := min(first+available, len(m.rows))
+	last := min(first+available, count)
 	return max(last-available, 0), last
 }
 

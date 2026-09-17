@@ -138,3 +138,24 @@ func TestProcessorRunsWhileTheTableIsOpenAndStopsWithIt(t *testing.T) {
 	m.Update(processorMsg{err: io.ErrUnexpectedEOF})
 	require.Contains(t, m.View(), "processing stopped: unexpected EOF")
 }
+
+func TestRetiredRowsHideUntilHistoryIsAsked(t *testing.T) {
+	retired := workflow.Contribution{Port: "xplr", Change: "1.1.1 -> 1.1.2", Phase: "done", State: "merged", Next: "merged; branches cleaned", Retired: true}
+	m := newModel(Options{})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.Update(snapshotMsg{overview: workflow.Overview{Contributions: append(rows(), retired)}})
+	view := m.View()
+	require.NotContains(t, view, "xplr")
+	require.Contains(t, view, "1 retired hidden (h shows)")
+	m.Update(key("j"))
+	m.Update(key("j"))
+	require.Equal(t, 1, m.cursor, "the cursor stays within the visible rows")
+	m.Update(key("h"))
+	view = m.View()
+	require.Contains(t, view, "xplr")
+	require.NotContains(t, view, "retired hidden")
+	m.Update(key("j"))
+	require.Equal(t, "xplr", m.selected().Port)
+	m.Update(key("h"))
+	require.Equal(t, "deno", m.selected().Port, "hiding again clamps the cursor to the last visible row")
+}

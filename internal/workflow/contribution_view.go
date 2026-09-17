@@ -111,6 +111,19 @@ func foldByPort(rows []Contribution) []Contribution {
 	return folded
 }
 
+// Current keeps the rows that still have something going on: every row
+// whose leading contribution is not retired. Retired rows are what --all
+// and the table's history toggle bring back.
+func Current(rows []Contribution) []Contribution {
+	current := make([]Contribution, 0, len(rows))
+	for _, row := range rows {
+		if !row.Retired {
+			current = append(current, row)
+		}
+	}
+	return current
+}
+
 // contributions derives one row per contribution or standalone verification.
 func contributions(status Status) []Contribution {
 	changes := make(map[record.ChangeID]record.Change, len(status.Changes))

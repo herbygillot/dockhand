@@ -24,7 +24,7 @@ import (
 
 func (r *runtime) statusCommand() *cobra.Command {
 	var filter workflow.StatusFilter
-	var printOnly bool
+	var printOnly, all bool
 	cmd := &cobra.Command{
 		Use:   "status [target]",
 		Short: "Show recorded workflow status",
@@ -45,6 +45,9 @@ func (r *runtime) statusCommand() *cobra.Command {
 				return databaseReadError(err)
 			}
 			overview := workflow.Overview{Status: status, Contributions: workflow.Project(status)}
+			if !all {
+				overview.Contributions = workflow.Current(overview.Contributions)
+			}
 			if r.json {
 				return r.emit(overview)
 			}
@@ -52,12 +55,13 @@ func (r *runtime) statusCommand() *cobra.Command {
 				return renderStatus(cmd.OutOrStdout(), status)
 			}
 			if !printOnly && isTerminal(cmd.OutOrStdout()) && isTerminal(cmd.InOrStdin()) {
-				return r.liveStatus(cmd, filter)
+				return r.liveStatus(cmd, filter, all)
 			}
-			return renderContributions(cmd.OutOrStdout(), overview)
+			return renderContributions(cmd.OutOrStdout(), overview, len(workflow.Project(status))-len(overview.Contributions))
 		},
 	}
 	cmd.Flags().BoolVar(&printOnly, "print", false, "Print the snapshot once; do not open the live table or process work")
+	cmd.Flags().BoolVar(&all, "all", false, "Include retired contributions: merged, closed, and abandoned")
 	cmd.Flags().StringVar((*string)(&filter.JobID), "job", "", "Inspect one job instead of a target")
 	cmd.Flags().StringVar((*string)(&filter.ChangeID), "change", "", "Inspect one contribution")
 	cmd.Flags().BoolVar(&filter.Active, "active", false, "Show queued and active jobs, including capacity and retry waits")
@@ -70,7 +74,7 @@ func (r *runtime) statusCommand() *cobra.Command {
 // table with its reports in the message strip, the snapshot is reread as
 // work advances, and the keys run the verbs in-process on this runtime's
 // configuration, so a key has exactly the authority of the command.
-func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter) error {
+func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter, showRetired bool) error {
 	services, err := r.build(cmd.Context(), r.config)
 	if err != nil {
 		return err
@@ -78,6 +82,7 @@ func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter) e
 	defer services.Close()
 	level := r.level(cmd)
 	options := tui.Options{
+		ShowRetired: showRetired,
 		Poll: func(ctx context.Context) (workflow.Overview, error) {
 			status, err := services.Workflow.FilteredStatus(ctx, filter)
 			if err != nil {
@@ -132,12 +137,16 @@ func isTerminal(stream any) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-// renderContributions prints the info-level status: one row per contribution
-// with the words of the projection, and nothing a person has to decode.
-func renderContributions(out io.Writer, overview workflow.Overview) error {
+// renderContributions prints the info-level status: one row per port with
+// the words of the projection, and nothing a person has to decode. hidden
+// counts the retired rows left out without --all.
+func renderContributions(out io.Writer, overview workflow.Overview, hidden int) error {
 	if len(overview.Contributions) == 0 {
 		message := "No recorded jobs."
-		if overview.Filter != nil {
+		switch {
+		case hidden > 0:
+			message = fmt.Sprintf("No open contributions; %d retired (--all shows them).", hidden)
+		case overview.Filter != nil:
 			message = "No matching jobs."
 		}
 		_, err := fmt.Fprintln(out, message)
@@ -148,7 +157,14 @@ func renderContributions(out io.Writer, overview workflow.Overview) error {
 	for _, row := range overview.Contributions {
 		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n", plain(row.Port), plain(row.Change), plain(row.Phase), plain(row.State), plain(row.PullRequest), plain(row.Next))
 	}
-	return table.Flush()
+	if err := table.Flush(); err != nil {
+		return err
+	}
+	if hidden > 0 {
+		_, err := fmt.Fprintf(out, "%d retired hidden (--all shows them).\n", hidden)
+		return err
+	}
+	return nil
 }
 
 // renderStatus prints the full record behind -v: every job, attempt,
