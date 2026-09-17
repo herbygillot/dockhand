@@ -58,12 +58,15 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if versioned.Ports[input.target.Name].Version != release.Version {
 		return archivePlan{}, fmt.Errorf("%w: evaluated version differs from resolved release", ErrFidelity)
 	}
-	if request.SharedRelease {
-		input.scope, err = fidelity.ReleaseScope(input.before, versioned, input.target.Name, true)
-		if err != nil {
-			return archivePlan{}, err
-		}
-		input.scope.Input = input.versionInput
+	scope, err := fidelity.ReleaseScope(input.before, versioned, input.target.Name, request.SharedRelease)
+	if err != nil {
+		return archivePlan{}, err
+	}
+	// The scope is recorded when it holds more than the target: an authorized
+	// shared release, or obsolete followers that moved with the target.
+	if request.SharedRelease || len(scope.Affected) > 1 {
+		scope.Input = input.versionInput
+		input.scope = scope
 	}
 	if _, ok := s.Ports.(macports.Observer); ok {
 		observed, err := s.planObservedArchives(ctx, request, input, contents)

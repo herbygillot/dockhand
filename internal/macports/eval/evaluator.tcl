@@ -31,7 +31,7 @@ namespace eval ::dockhand {
                 github.author github.project github.version github.tag_prefix github.tag_suffix github.tarball_from
                 gitlab.author gitlab.project gitlab.version gitlab.tag_prefix gitlab.tag_suffix gitlab.instance
                 git.url git.branch
-                use_xcode
+                use_xcode replaced_by
             } {
                 if {[$worker eval [list exists $field]]} {
                     if {[catch {$worker eval [list option $field]} value]} {
@@ -44,6 +44,7 @@ namespace eval ::dockhand {
             set metadata_only 0
             if {![catch {$worker eval {
                 apply {{} {
+                    if {[exists replaced_by] && [option replaced_by] ne ""} { return 1 }
                     if {[llength [option distfiles]] || [option use_configure]} { return 0 }
                     set target ${::org.macports.build}
                     if {[llength [ditem_key $target pre]] || [llength [ditem_key $target post]]} { return 0 }

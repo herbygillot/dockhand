@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"maps"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -215,7 +217,83 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 	if matches != 1 {
 		return nil, snapshot, fmt.Errorf("%w: %d version inputs can select %s; edit the Portfile manually", ErrUnsupported, matches, sourceVersion)
 	}
+	if checkFidelity {
+		return s.followObsolete(ctx, reader, input, selected, snapshot)
+	}
 	return selected, snapshot, nil
+}
+
+// followObsolete carries the new version into obsolete siblings that are
+// replaced by the target and spell its old version as their own literal,
+// such as a main port whose versioned subports have moved past it. A
+// follower is edited only when exactly one literal in its selection holds
+// the old version, its revision is already 0, and the edit moves nothing but
+// the follower's version; otherwise it is left for a person.
+func (s *Service) followObsolete(ctx context.Context, reader snapshotEvaluator, input *sourceInput, contents []byte, after macports.Snapshot) ([]byte, macports.Snapshot, error) {
+	target := input.target.Name
+	oldVersion, newVersion := input.info.Version, after.Ports[target].Version
+	if oldVersion == "" || newVersion == "" || oldVersion == newVersion {
+		return contents, after, nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(input.before.Ports)) {
+		old := input.before.Ports[name]
+		if name == target || old.Options["replaced_by"] != target || old.Version != oldVersion || old.Revision != 0 || after.Ports[name].Version != oldVersion {
+			continue
+		}
+		candidates, err := portfile.Candidates(contents)
+		if err != nil {
+			return contents, after, nil
+		}
+		var chosen *portfile.Candidate
+		for i := range candidates {
+			candidate := candidates[i]
+			if candidate.Value != oldVersion || !portfile.CandidateInSelection(contents, candidate, name) {
+				continue
+			}
+			if chosen != nil {
+				chosen = nil
+				break
+			}
+			chosen = &candidate
+		}
+		if chosen == nil {
+			continue
+		}
+		next, err := chosen.Replace(contents, newVersion)
+		if err != nil {
+			continue
+		}
+		evaluated, err := s.evaluateContents(ctx, reader, input, next, false)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, after, ctx.Err()
+			}
+			continue
+		}
+		moved := evaluated.after.Ports[name]
+		if moved.Version != newVersion || moved.Revision != 0 {
+			continue
+		}
+		clean := true
+		for other, port := range after.Ports {
+			if other == name {
+				continue
+			}
+			if !samePort(port, evaluated.after.Ports[other]) {
+				clean = false
+				break
+			}
+		}
+		if !clean {
+			continue
+		}
+		contents, after = next, evaluated.after
+	}
+	return contents, after, nil
+}
+
+func samePort(a, b macports.PortInfo) bool {
+	return a.Version == b.Version && a.Revision == b.Revision && a.Epoch == b.Epoch && maps.Equal(a.Options, b.Options)
 }
 
 var decimalComponent = regexp.MustCompile(`[0-9]+`)

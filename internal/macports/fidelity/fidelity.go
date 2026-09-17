@@ -249,7 +249,8 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 			scope.Protected = append(scope.Protected, member)
 			continue
 		}
-		if name != selected && !authorized {
+		follower := followsObsolete(name, selected, old, next, oldRoot, nextRoot)
+		if name != selected && !authorized && !follower {
 			return nil, fmt.Errorf("%w: shared release also changes %s; inspect with assess --shared-release --version and authorize with bump --shared-release", ErrMismatch, name)
 		}
 		if old.Version != oldRoot.Version || next.Version != nextRoot.Version {
@@ -270,18 +271,25 @@ func ReleaseScope(before, after macports.Snapshot, selected string, authorized b
 	return scope, nil
 }
 
-// ScopedVersion applies Version to every affected member of a shared release
-// and Equivalent to the rest.
+// followsObsolete reports whether name is an obsolete follower of the selected
+// port: replaced by it, carrying its version before and after, and building
+// nothing. Such a sibling moves with the selected port without shared-release
+// authorization, since it has no source of its own to get wrong.
+func followsObsolete(name, selected string, old, next, oldRoot, nextRoot macports.PortInfo) bool {
+	return name != selected && next.Options["replaced_by"] == selected && next.Options["dockhand.metadata_only"] == "1" &&
+		old.Version == oldRoot.Version && next.Version == nextRoot.Version
+}
+
+// ScopedVersion applies Version to every affected member of a release and
+// Equivalent to the rest. Without shared authorization the affected members
+// are the selected port and its obsolete followers.
 func ScopedVersion(shared bool, before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Report {
-	if !shared {
-		if _, err := ReleaseScope(before, after, selected, false); err != nil {
-			return Report{Before: before, After: after, UnexpectedChanges: []string{err.Error()}}
-		}
-		return version(before, after, selected, root, release, checksums)
-	}
-	scope, err := ReleaseScope(before, after, selected, true)
+	scope, err := ReleaseScope(before, after, selected, shared)
 	if err != nil {
 		return Report{Before: before, After: after, UnexpectedChanges: []string{err.Error()}}
+	}
+	if len(scope.Affected) == 1 && scope.Affected[0].Target.Name == selected {
+		return version(before, after, selected, root, release, checksums)
 	}
 	normalized := before
 	normalized.Ports = maps.Clone(before.Ports)
