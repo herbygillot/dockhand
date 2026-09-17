@@ -119,6 +119,9 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 			result.Problems = append(result.Problems, JobProblem{JobID: job.ID, Detail: detail})
 		}
 	}
+	if scope.All {
+		e.observePullRequests(ctx)
+	}
 	var resources []record.Resource
 	now = e.now()
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {

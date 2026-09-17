@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -74,6 +75,9 @@ type Engine struct {
 	LeaseGrace time.Duration
 	// RetryDelay is the initial failure backoff and cancellation retry delay.
 	RetryDelay time.Duration
+	// PullRequestInterval bounds how often a whole-repository cycle re-observes
+	// an open contribution's pull request; zero means defaultPullRequestInterval.
+	PullRequestInterval time.Duration
 	// WaitInterval controls expected capacity, discovery and publication waiting.
 	WaitInterval time.Duration
 	// ObserveInterval schedules successful observations of running builds.
@@ -104,3 +108,18 @@ func (e *Engine) verificationProvider(name string) verify.Provider {
 	}
 	return e.Provider
 }
+
+const (
+	// defaultPullRequestInterval is how long a cycle leaves an open PR unobserved.
+	defaultPullRequestInterval = 5 * time.Minute
+	// observationsPerCycle bounds forge calls in one cycle.
+	observationsPerCycle = 4
+)
+
+// lastObserved throttles pull-request observation per process, keyed by
+// repository and change, so engines that share a process (and tests that
+// copy one) share one clock.
+var (
+	observeMu    sync.Mutex
+	lastObserved = map[string]time.Time{}
+)

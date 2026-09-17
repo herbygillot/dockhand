@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -282,4 +283,44 @@ func branchItems(result workflow.RetentionResult) []workflow.CleanupItem {
 		}
 	}
 	return items
+}
+
+func TestCycleObservesOpenPullRequestsOnASchedule(t *testing.T) {
+	f, hosting, _ := publishedLifecycleFixture(t)
+	hosting.status = record.PullRequestStatus{Mergeable: "yes", Review: "none", Checks: record.CheckSummary{Total: 3, Passed: 1, Pending: 2}}
+	f.engine.PullRequestInterval = time.Hour
+	_, err := f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Equal(t, 1, hosting.inspections, "a whole-repository cycle looks at the open PR")
+	var stored record.PullRequest
+	require.NoError(t, f.store.View(t.Context(), f.repository, func(ctx context.Context, r state.Reader) error {
+		change, err := r.Change(ctx, "change")
+		if err != nil {
+			return err
+		}
+		stored, err = r.PullRequest(ctx, change.PullRequestID)
+		return err
+	}))
+	require.NotNil(t, stored.Status)
+	require.Equal(t, 2, stored.Status.Checks.Pending)
+	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Equal(t, 1, hosting.inspections, "within the interval the PR is left alone")
+	hosting.inspectErr = errors.New("offline")
+	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err, "a failed look never fails the cycle")
+	hosting.observation.PullRequest.State = record.PullRequestMerged
+	f.advance(2 * time.Hour)
+	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	var change record.Change
+	require.NoError(t, f.store.View(t.Context(), f.repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		change, err = r.Change(ctx, "change")
+		return err
+	}))
+	require.Equal(t, record.ChangeMerged, change.Disposition, "a merged PR retires the contribution from the cycle")
+	local, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
+	require.NoError(t, err)
+	require.False(t, local.Exists, "and cleans its branch as refresh would")
 }

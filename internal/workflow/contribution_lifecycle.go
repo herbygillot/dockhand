@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 )
@@ -62,17 +63,30 @@ func contributionIdle(ctx context.Context, r state.Reader, id record.ChangeID) e
 // conditionally records the observation and disposition. It never reopens local
 // work or follows a different PR found by branch name.
 func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionSelector) (ContributionResult, error) {
-	var result ContributionResult
 	if e == nil || e.State == nil || e.Repository == "" || e.Repo == nil || e.Publisher == nil || e.Publisher.Forge == nil {
-		return result, errNoState
+		return ContributionResult{}, errNoState
 	}
 	var expected record.Change
+	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		expected, err = lookupContribution(ctx, r, selected, false)
+		return err
+	})
+	if err != nil {
+		return ContributionResult{}, err
+	}
+	return e.refreshChange(ctx, expected)
+}
+
+// refreshChange is RefreshContribution for a change already in hand; the
+// periodic observation in Cycle uses it too.
+func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (ContributionResult, error) {
+	var result ContributionResult
 	var previous record.PullRequest
 	var published record.Revision
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		var err error
-		expected, err = lookupContribution(ctx, r, selected, false)
-		if err != nil {
+		if expected, err = r.Change(ctx, expected.ID); err != nil {
 			return err
 		}
 		if expected.PullRequestID == "" {
@@ -215,4 +229,68 @@ func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionS
 		return nil
 	})
 	return result, err
+}
+
+// observePullRequests refreshes the open contributions whose PR has not been
+// looked at for PullRequestInterval, a few per cycle, exactly as refresh would:
+// the observation is recorded, and a merged or closed PR retires the
+// contribution and cleans its branches. Failures, such as being offline,
+// leave the last observation in place and are reported only at the verbose
+// level; the next look waits a full interval.
+func (e *Engine) observePullRequests(ctx context.Context) {
+	if e.Publisher == nil || e.Publisher.Forge == nil || e.Repo == nil {
+		return
+	}
+	interval := e.PullRequestInterval
+	if interval <= 0 {
+		interval = defaultPullRequestInterval
+	}
+	var open []record.Change
+	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		changes, err := collect(ctx, state.Query{}, r.Changes, func(v record.Change) string { return string(v.ID) })
+		if err != nil {
+			return err
+		}
+		for _, change := range changes {
+			if change.Disposition == record.ChangeOpen && change.PullRequestID != "" {
+				open = append(open, change)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		progress.VerboseReport(ctx, "PR observation skipped: %v", err)
+		return
+	}
+	now := e.now()
+	looked := 0
+	for _, change := range open {
+		if looked >= observationsPerCycle || ctx.Err() != nil {
+			return
+		}
+		key := string(e.Repository) + "/" + string(change.ID)
+		observeMu.Lock()
+		due := now.Sub(lastObserved[key]) >= interval
+		if due {
+			lastObserved[key] = now
+		}
+		observeMu.Unlock()
+		if !due {
+			continue
+		}
+		looked++
+		result, err := e.refreshChange(ctx, change)
+		port := change.InitiatingTarget
+		if port == "" {
+			port = string(change.ID)
+		}
+		switch {
+		case err != nil:
+			progress.VerboseReport(ctx, "%s: PR observation skipped: %v", port, err)
+		case result.Change.Disposition != record.ChangeOpen:
+			progress.Report(ctx, "%s: %s", port, result.Detail)
+		default:
+			progress.VerboseReport(ctx, "%s: %s", port, result.Detail)
+		}
+	}
 }
