@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strconv"
@@ -38,6 +39,11 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 	contents, err := text.Apply(plan.contents, edits)
 	if err != nil {
 		return result, err
+	}
+	result.Downloads = downloads
+	if bytes.Equal(contents, input.data) {
+		// Every archive still matches its declared checksums; there is nothing to commit.
+		return result, nil
 	}
 	for _, frame := range plan.observed.contexts {
 		final, err := s.observeContents(ctx, input, contents, macports.ObservationRequest{Platform: frame.profile}, false)
@@ -81,8 +87,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 		wanted = append(wanted, value)
 	}
 	fidelity := scopedChecksumFidelity(input.scope, native.after, final, input.target.Name, input.files.root, strings.Join(wanted, " "))
-	result.Downloads = downloads
-	if err := result.commitEdit(input, request, evaluated.edit, fidelity, "update to "+request.Release.Version); err != nil {
+	if err := result.commitEdit(input, request, evaluated.edit, fidelity, plan.subject); err != nil {
 		return result, err
 	}
 	if input.scope != nil {

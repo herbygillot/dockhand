@@ -19,6 +19,8 @@ type archivePlan struct {
 	contents  []byte
 	versioned macports.Snapshot
 	sources   []archiveSource
+	// subject names the commit the applied plan intends.
+	subject string
 }
 
 func (s *Service) planArchiveVersion(ctx context.Context, request Request, input *sourceInput) (archivePlan, error) {
@@ -72,7 +74,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 				result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
 			}
 		}
-		return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed}, err
+		return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed, subject: "update to " + release.Version}, err
 	}
 
 	oldSources, err := downloadSources(input.info, input.portdir())
@@ -116,7 +118,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if err := checkChecksumSources(contents, info, sources); err != nil {
 		return archivePlan{}, err
 	}
-	return archivePlan{result: result, contents: contents, versioned: versioned, sources: sources}, nil
+	return archivePlan{result: result, contents: contents, versioned: versioned, sources: sources, subject: "update to " + release.Version}, nil
 }
 
 func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {
@@ -147,7 +149,7 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 		return result, err
 	}
 	final := checksumFidelity(versioned, evaluated.after, input.target.Name, input.files.root, checksums)
-	return result, result.commitEdit(input, request, evaluated.edit, final, "update to "+request.Release.Version)
+	return result, result.commitEdit(input, request, evaluated.edit, final, plan.subject)
 }
 
 func versionFidelity(before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Fidelity {

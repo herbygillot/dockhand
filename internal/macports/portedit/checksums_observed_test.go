@@ -1,0 +1,44 @@
+package portedit
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/stretchr/testify/require"
+)
+
+func TestRefreshChecksumsCoversPerArchitectureArchives(t *testing.T) {
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 2
+master_sites @SITE@/${version}
+checksums arm.zip sha256 aaaa size 2 intel.zip sha256 bbbb size 3
+if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
+`)
+	r.Action, r.Version, r.Release = record.RefreshChecksums, "", nil
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Downloads, 2)
+	require.ElementsMatch(t, []string{"/1.2.3/arm.zip", "/1.2.3/intel.zip"}, *requests)
+	require.Len(t, result.Commits, 1)
+	require.Equal(t, "fixture: refresh checksums", result.Commits[0].Subject)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "version 1.2.3")
+	require.Contains(t, after, "revision 2")
+	require.NotContains(t, after, "sha256 aaaa")
+	require.NotContains(t, after, "sha256 bbbb")
+	require.Len(t, result.Coverage, 2, "both architectures are observed contexts")
+	original, err := os.ReadFile(filepath.Join(r.Root, "devel/fixture/Portfile"))
+	require.NoError(t, err)
+	require.Contains(t, string(original), "sha256 aaaa", "the workspace is restored")
+
+	// Writing the refreshed contents back and refreshing again downloads but changes nothing.
+	require.NoError(t, os.WriteFile(filepath.Join(r.Root, "devel/fixture/Portfile"), result.Files[0].After, 0600))
+	*requests = nil
+	again, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, again.Downloads, 2)
+	require.Empty(t, again.Files)
+	require.Empty(t, again.Commits)
+}
