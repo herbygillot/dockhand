@@ -149,7 +149,7 @@ func warnMacPortsVersionSkew(ctx context.Context, host, image, guest string) {
 	if host == "" || guest == "" || host == guest {
 		return
 	}
-	progress.Report(ctx, "Warning: the host evaluates ports with MacPorts %s, but image %s builds with MacPorts %s; pass -P or set MACPORTS_PREFIX to the install that matches, or run dockhand setup --macports-version %s", host, image, guest, host)
+	progress.Report(ctx, "Warning: the host evaluates ports with MacPorts %s, but image %s builds with MacPorts %s; pass -p or set MACPORTS_PREFIX to the install that matches, or run dockhand setup --macports-version %s", host, image, guest, host)
 }
 
 func validateRequest(r verify.Request) error {

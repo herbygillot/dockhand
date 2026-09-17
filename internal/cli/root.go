@@ -95,8 +95,8 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 		name, shorthand, usage string
 		target                 *string
 	}{
-		{"tree", "T", "Ports tree directory (MACPORTS_TREE; defaults to the current directory)", &runtime.config.Repository},
-		{"prefix", "P", "Local MacPorts installation prefix (MACPORTS_PREFIX; otherwise find port-tclsh on PATH)", &runtime.config.MacPortsPrefix},
+		{"tree", "t", "Ports tree directory (MACPORTS_TREE; defaults to the current directory)", &runtime.config.Repository},
+		{"prefix", "p", "Local MacPorts installation prefix (MACPORTS_PREFIX; otherwise find port-tclsh on PATH)", &runtime.config.MacPortsPrefix},
 	} {
 		value := directoryPathValue{target: flag.target}
 		if *flag.target != "" {

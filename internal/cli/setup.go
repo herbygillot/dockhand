@@ -51,7 +51,7 @@ func (r *runtime) setupCommand() *cobra.Command {
 				return err
 			}
 			if host := result.HostMacPorts.BaseVersion; host != "" && host != result.MacPortsVersion {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: the host evaluates ports with MacPorts %s, but this image builds with MacPorts %s; host evaluation and guest builds will disagree on the Base release. Point -P or MACPORTS_PREFIX at the matching install, or provision with --macports-version %s.\n", plain(host), plain(result.MacPortsVersion), plain(host))
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: the host evaluates ports with MacPorts %s, but this image builds with MacPorts %s; host evaluation and guest builds will disagree on the Base release. Point -p or MACPORTS_PREFIX at the matching install, or provision with --macports-version %s.\n", plain(host), plain(result.MacPortsVersion), plain(host))
 			}
 			return nil
 		},

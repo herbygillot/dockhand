@@ -32,7 +32,7 @@ func TestGlobalToolAndMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
 		{name: "environment", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", wantTree: "env tree", wantPrefix: "env prefix", wantGit: "env/git"},
 		{name: "configured caller", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", configTree: "configured tree", configPrefix: "configured prefix", configGit: "configured/git", wantTree: "configured tree", wantPrefix: "configured prefix", wantGit: "configured/git"},
 		{name: "long flags", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", configTree: "configured tree", configPrefix: "configured prefix", configGit: "configured/git", flags: []string{"--tree", "flag tree", "--prefix", "flag prefix", "--git", "flag/git"}, wantTree: "flag tree", wantPrefix: "flag prefix", wantGit: "flag/git"},
-		{name: "short flags", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", flags: []string{"-T", "flag tree", "-P", "flag prefix"}, wantTree: "flag tree", wantPrefix: "flag prefix", wantGit: "env/git"},
+		{name: "short flags", envTree: "env tree", envPrefix: "env prefix", envGit: "env/git", flags: []string{"-t", "flag tree", "-p", "flag prefix"}, wantTree: "flag tree", wantPrefix: "flag prefix", wantGit: "env/git"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("MACPORTS_TREE", tc.envTree)
@@ -63,8 +63,8 @@ func TestGlobalToolAndMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
 			for _, name := range []string{"tree", "prefix"} {
 				require.Contains(t, root.PersistentFlags().Lookup(name).Annotations, cobra.BashCompSubdirsInDir)
 			}
-			require.Contains(t, out.String(), "-T, --tree")
-			require.Contains(t, out.String(), "-P, --prefix")
+			require.Contains(t, out.String(), "-t, --tree")
+			require.Contains(t, out.String(), "-p, --prefix")
 			require.Contains(t, out.String(), "--git")
 			bump, _, err := root.Find([]string{"bump"})
 			require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestGlobalTreeSelectsRecordedWorkFromOutsideCheckout(t *testing.T) {
 	for _, args := range [][]string{
 		{"status", "--job", string(id), "--json"},
 		{"--tree", tree, "status", "--job", string(id), "--json"},
-		{"status", "--job", string(id), "-T", tree, "--json"},
+		{"status", "--job", string(id), "-t", tree, "--json"},
 	} {
 		t.Setenv("MACPORTS_TREE", tree)
 		if len(args) > 4 {
@@ -165,7 +165,7 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	stderr.Reset()
 	t.Setenv("MACPORTS_TREE", "/missing/ports")
 	t.Setenv("MACPORTS_PREFIX", "/missing/macports")
-	require.NoError(t, Run(t.Context(), []string{"-T", repo.Root, "-P", "MacPorts prefix", "bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"-t", repo.Root, "-p", "MacPorts prefix", "bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
@@ -177,7 +177,7 @@ func TestGlobalPathsRejectExplicitEmptyValues(t *testing.T) {
 	t.Setenv("MACPORTS_TREE", "")
 	t.Setenv("MACPORTS_PREFIX", "")
 	config := app.Config{DBPath: filepath.Join(t.TempDir(), "absent", "state.db"), Repository: "/missing/ports"}
-	for _, args := range [][]string{{"--tree=", "status"}, {"status", "--prefix="}, {"status", "-T", ""}, {"status", "-P", ""}} {
+	for _, args := range [][]string{{"--tree=", "status"}, {"status", "--prefix="}, {"status", "-t", ""}, {"status", "-p", ""}} {
 		var out bytes.Buffer
 		require.ErrorContains(t, Run(t.Context(), args, Streams{Out: &out, Err: &out}, config), "directory path must not be empty")
 	}

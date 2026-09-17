@@ -10,9 +10,9 @@ The [target workflow](target-workflow.md) is implemented through its ordinary-wo
 
 ## Global options
 
-`--tree PATH` / `-T PATH` selects the ports checkout. It defaults to `MACPORTS_TREE` when nonempty, otherwise the current directory. The selection applies to repository-scoped commands without changing the process working directory. Database-only commands still do not need a ports tree.
+`--tree PATH` / `-t PATH` selects the ports checkout. It defaults to `MACPORTS_TREE` when nonempty, otherwise the current directory. The selection applies to repository-scoped commands without changing the process working directory. Database-only commands still do not need a ports tree.
 
-`--prefix PATH` / `-P PATH` selects the local MacPorts installation used for evaluation, through `<prefix>/bin/port-tclsh`. It defaults to `MACPORTS_PREFIX` when nonempty; otherwise Dockhand finds `port-tclsh` on the executable search path. The VM's MacPorts prefix remains a separate provider setting tied to its image: the package installer supports only `/opt/local`, and no host selection changes it. The host Base release is passed to build resolution so the Tart provider can warn when the image's observed MacPorts differs; `setup` warns the same way against the release it is asked to install. `--no-publish` has no short alias now that `-P` selects the prefix.
+`--prefix PATH` / `-p PATH` selects the local MacPorts installation used for evaluation, through `<prefix>/bin/port-tclsh`. It defaults to `MACPORTS_PREFIX` when nonempty; otherwise Dockhand finds `port-tclsh` on the executable search path. The VM's MacPorts prefix remains a separate provider setting tied to its image: the package installer supports only `/opt/local`, and no host selection changes it. The host Base release is passed to build resolution so the Tart provider can warn when the image's observed MacPorts differs; `setup` warns the same way against the release it is asked to install. `--no-publish` has no short alias; `-p` selects the prefix.
 
 `--git PATH` selects the Git executable used for all source-repository operations. It defaults to `GIT_BIN` when nonempty, then to `git` on the executable search path. A path supplied by the flag overrides the environment and an embedding caller's configured executable. Relative paths containing a directory component resolve against the invocation's working directory; a bare executable name remains eligible for `PATH` lookup.
 
@@ -38,7 +38,7 @@ One database can hold work for many repositories. Workflow commands operate on t
 
 ## Command parsing and help
 
-The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-T`, `--prefix` / `-P`, `--git`, `--tart`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
+The initial command tree uses Cobra v1.10.2, matching v1, with pflag v1.0.10. `--tree` / `-t`, `--prefix` / `-p`, `--git`, `--tart`, `--db`, and `--json` are inherited global flags. Waiting, tracing, publication, verification skipping, and preview flags are registered on the commands that support them. Cobra validates argument counts, unknown commands/flags, and the declared incompatible flag groups before the command handler constructs repository services. Help output remains ordinary text even when `--json` is present.
 
 `dockhand help <command>` and `<command> --help` show generated command help. `usage` is an alias for `help`, including nested paths such as `dockhand usage review accept`. `dockhand completion` generates shell completion scripts through Cobra. Help and completion do not open state or require a Git repository or provider, and create no directories or files.
 
