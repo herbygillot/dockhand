@@ -130,7 +130,7 @@ func TestVerifyCLISelectsSetupImageWhenImageIsOmitted(t *testing.T) {
 	config.Tart.Image = ""
 	seedCLIVerification(t, config, "candidate")
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--branch", "candidate", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--branch", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)

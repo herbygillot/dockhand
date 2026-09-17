@@ -17,7 +17,7 @@ dockhand verify terraform-1.16
 dockhand publish terraform-1.16
 ```
 
-Bump still verifies by default. Separate verification is useful after a failure or corrective edit; it is not a mandatory extra build. `bump <target> --publish` retains its combined meaning. An optional explicit version remains supported. No public `--subport` is needed, and branch names and job IDs are optional selectors for exceptional cases, not required handoffs.
+Bump verifies and publishes by default, staying attached until the PR is confirmed. Separate verification is useful after a failure or corrective edit; it is not a mandatory extra build. `--no-publish`, `--no-verify`, and `--detach` stop earlier or let go. An optional explicit version remains supported. No public `--subport` is needed, and branch names and job IDs are optional selectors for exceptional cases, not required handoffs.
 
 ## Behavioral decisions
 

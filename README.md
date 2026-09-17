@@ -148,39 +148,35 @@ Include the upstream tag prefix if you like (`v1.8.1`); if you leave it off, Doc
 
 If the port's Portfile does something Dockhand does not understand, the preview says so instead of producing a guess. Those ports still need a manual edit, and you can hand that edit back to Dockhand for building and publishing, as described below.
 
-### Prepare and check an update
+### Update, build, and open the pull request
 
 ```sh
-dockhand bump jq --wait
+dockhand bump jq
 ```
 
-Dockhand fetches the current MacPorts `master`, creates an update branch named like `dockhand/bump/jq-...`, and builds it: in a Tart VM if you prepared an image, otherwise on GitHub Actions. It prints the branch name so you can inspect it. Your current checkout is not touched.
+Dockhand fetches the current MacPorts `master`, creates an update branch named like `dockhand/bump/jq-...`, builds it (in a Tart VM if you prepared an image, otherwise on GitHub Actions), and when the build passes pushes the branch to your fork and opens the pull request against MacPorts. It stays in the foreground the whole way and prints the branch, the verdict, and the pull request URL. Your current checkout is not touched. If the port is already at the newest version, the command finishes with nothing to do. If the build fails, the branch is kept and no pull request is opened.
 
-- `--trace` instead of `--wait` streams the build log as it runs.
+- `--no-publish` stops after the build, for updates you want to look at before opening a pull request.
 - `--no-verify` prepares the branch and stops, for updates you want to finish by hand.
+- `--detach` submits the work and returns as soon as the build is admitted; `dockhand wait jq` picks it back up. Ctrl-C does the same without canceling anything.
+- `--trace` streams the build log as it runs.
 - `--provider tart` or `--provider github` overrides the automatic choice.
 - `--from-source` builds dependencies from source instead of using binary archives.
 
-Use `dockhand status jq` to follow the contribution, and `dockhand verify jq --wait` to verify its committed branch again. A failed build keeps the branch. Switch to it, look at the log, fix what needs fixing, and check it again with `verify`.
+Opening the pull request needs a GitHub login and a fork; if either is missing, the command says so before doing any work and points at `--no-publish`.
 
-### Open the pull request
+Use `dockhand status` to follow your contributions, and `dockhand verify jq` to verify a committed branch again. A failed build keeps the branch. Switch to it, look at the log, fix what needs fixing, and check it again with `verify`.
 
-When the branch has a passing build, preview the publication and then open the pull request:
+### Open the pull request later
+
+When a branch has a passing build but no pull request yet, preview the publication and then open it:
 
 ```sh
 dockhand publish jq --dry-run
-dockhand publish jq --wait
+dockhand publish jq
 ```
 
 The dry run shows the full pull-request body without pushing anything. The real run pushes the branch to your fork and opens the pull request against MacPorts. Publishing requires a passing build for exactly the committed contents; if you changed the branch since it was built, Dockhand asks you to verify it again first.
-
-### Do it all in one command
-
-```sh
-dockhand bump jq --publish --wait
-```
-
-This prepares the update, builds it, and opens the pull request. If the port is already at the newest version, the command finishes with nothing to do. If the build fails, the branch is kept and no pull request is opened.
 
 ### Edit by hand
 
@@ -192,7 +188,7 @@ git switch dockhand/bump/jq-...
 git add <changed-files>
 git commit --amend --no-edit
 dockhand verify jq --working-tree --trace
-dockhand publish --wait
+dockhand publish
 ```
 
 `verify` checks the working tree by default, including staged edits, so you can build before you even commit; new files must be staged to be included. Add `--branch <name>` to check a branch's committed contents instead. Without a Tart image, add `--provider github`, which pushes the branch to your fork for the workflow to build.

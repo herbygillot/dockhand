@@ -204,11 +204,11 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 			return result, fmt.Errorf("workflow: publisher required")
 		}
 		if err := e.Publisher.Preflight(ctx); err != nil {
-			return result, err
+			return result, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
 		}
 		destination, err := e.Publisher.Destination(ctx, *input.Publication)
 		if err != nil {
-			return result, err
+			return result, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
 		}
 		spec.PublishTo, spec.Destination = &destination, record.Published
 	}

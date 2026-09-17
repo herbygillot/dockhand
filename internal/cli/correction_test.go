@@ -26,7 +26,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	require.Equal(t, before, after)
 	out.Reset()
 	stderr.Reset()
-	require.NoError(t, runFixture(t.Context(), []string{"amend", "--branch", branch, "--provider", "tart", "--wait", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
+	require.NoError(t, runFixture(t.Context(), []string{"amend", "--branch", branch, "--provider", "tart", "--no-publish", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
 	var result ActionResult
 	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)

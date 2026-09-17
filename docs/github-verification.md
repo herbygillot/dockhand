@@ -1,21 +1,20 @@
 # GitHub verification
 
-`--provider github` verifies a committed branch through GitHub Actions on your personal fork of `macports/macports-ports`. Selecting it authorizes pushing the candidate branch to that fork. Opening an upstream PR is a separate action, requested with `--publish` or the `publish` command. Bumps default to `--provider auto`: Tart is preferred when its matching prepared image is available; missing Tart or an unavailable suitable image selects GitHub instead. Standalone `verify` still defaults to Tart. Explicit provider choices take precedence.
+`--provider github` verifies a committed branch through GitHub Actions on your personal fork of `macports/macports-ports`. Selecting it authorizes pushing the candidate branch to that fork. Opening an upstream PR follows by default; `--no-publish` stops after the workflow, and the `publish` command does it later. Bumps default to `--provider auto`: Tart is preferred when its matching prepared image is available; missing Tart or an unavailable suitable image selects GitHub instead. Standalone `verify` still defaults to Tart. Explicit provider choices take precedence.
 
 ```sh
-# Prepare an update, push it to your fork, and wait for its workflow.
-dockhand bump croc --provider github --wait
+# Prepare an update, push it to your fork, wait for its workflow, and open the PR.
+dockhand bump croc --provider github
 
-# Continue through an upstream PR after workflow success.
-dockhand bump croc --provider github --publish --wait
+# Stop after workflow success without a PR.
+dockhand bump croc --provider github --no-publish
 
 # Verify a committed contribution you edited yourself.
-dockhand verify croc --branch my-update --provider github --wait
+dockhand verify croc --branch my-update --provider github
 
 # Use a different local remote for your personal fork.
-dockhand verify croc --branch my-update --provider github --wait
 # The fork is found by URL and login; name it only when two remotes qualify:
-dockhand verify croc --branch my-update --provider github --remote personal --wait
+dockhand verify croc --branch my-update --provider github --remote personal
 
 # Resume an accepted job. Its recorded provider and destination are retained.
 dockhand wait --branch my-update

@@ -85,7 +85,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	config.GitHub.Token = ""
 	output.Reset()
 	diagnostics.Reset()
-	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
+	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--detach", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.ErrorIs(t, err, github.ErrAuthentication)
 	afterRejected, err := f.engine.Status(t.Context(), workflow.Scope{All: true})
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	config.GitHub.Token = "fixture"
 	output.Reset()
 	diagnostics.Reset()
-	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--wait", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
+	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.NoError(t, err, "%s", diagnostics.String())
 	var result cli.ActionResult
 	decodeCLIResult(t, output.Bytes(), &result)

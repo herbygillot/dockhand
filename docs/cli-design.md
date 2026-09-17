@@ -12,7 +12,7 @@ The [target workflow](target-workflow.md) is implemented through its ordinary-wo
 
 `--tree PATH` / `-T PATH` selects the ports checkout. It defaults to `MACPORTS_TREE` when nonempty, otherwise the current directory. The selection applies to repository-scoped commands without changing the process working directory. Database-only commands still do not need a ports tree.
 
-`--prefix PATH` / `-P PATH` selects the local MacPorts installation used for evaluation, through `<prefix>/bin/port-tclsh`. It defaults to `MACPORTS_PREFIX` when nonempty; otherwise Dockhand finds `port-tclsh` on the executable search path. The VM's MacPorts prefix remains a separate provider setting tied to its image. `--publish` has no short alias now that `-P` selects the prefix.
+`--prefix PATH` / `-P PATH` selects the local MacPorts installation used for evaluation, through `<prefix>/bin/port-tclsh`. It defaults to `MACPORTS_PREFIX` when nonempty; otherwise Dockhand finds `port-tclsh` on the executable search path. The VM's MacPorts prefix remains a separate provider setting tied to its image. `--no-publish` has no short alias now that `-P` selects the prefix.
 
 `--git PATH` selects the Git executable used for all source-repository operations. It defaults to `GIT_BIN` when nonempty, then to `git` on the executable search path. A path supplied by the flag overrides the environment and an embedding caller's configured executable. Relative paths containing a directory component resolve against the invocation's working directory; a bare executable name remains eligible for `PATH` lookup.
 
@@ -105,7 +105,7 @@ dockhand verify [target] [--image <prepared-local-image>]
     [--branch <branch> | --change <id> | --working-tree]
     [--variant +name|--variant=-name ...]
     [--capacity <positive-limit>] [--tests declared|skip]
-    [--from-source] [--fresh] [--wait|--trace]
+    [--from-source] [--fresh] [--detach|--trace]
 dockhand wait [target] [--job <id> | --branch <branch> | --change <id>] [--trace]
 dockhand cancel [target] [--job <id> | --branch <branch> | --change <id>]
     [--reason <text>] [--wait]
@@ -124,7 +124,7 @@ Standalone Tart `verify` requires a usable prepared image because a reuse miss m
 
 `--from-source` defaults to false for `verify`, `bump`, and `bump-revision`. MacPorts may use available binary archives for the target and its dependencies. Explicit `--from-source` passes MacPorts’ global `-s` option, requiring source builds for ports that need installing; it does not rebuild dependencies already installed in the VM image. The effective choice is recorded at acceptance, so a changed CLI default does not alter existing jobs.
 
-Default verification waits for admission or a conclusive outcome; `--wait` follows completion, and `--trace` adds log streaming to stderr. `wait` and `cancel` accept a target, `--job`, `--change`, or `--branch`; omitting selectors uses the current local branch. A branch must identify an open tracked contribution and selects its queued and active jobs at command start. No later job joins that fixed selection. Branch selection reports an error when the contribution has no pending work. `cancel` records intent and runs one cycle; `cancel --wait` continues until settlement. Exact-job cancellation of completed work preserves its existing evidence. `start` advances all eligible work in the selected repository until interrupted, without submitting new jobs or acquiring a singleton driver lock.
+Verification stays in the foreground through completion; `--detach` returns at admission or a conclusive outcome, and `--trace` adds log streaming to stderr. `wait` and `cancel` accept a target, `--job`, `--change`, or `--branch`; omitting selectors uses the current local branch. A branch must identify an open tracked contribution and selects its queued and active jobs at command start. No later job joins that fixed selection. Branch selection reports an error when the contribution has no pending work. `cancel` records intent and runs one cycle; `cancel --wait` continues until settlement. Exact-job cancellation of completed work preserves its existing evidence. `start` advances all eligible work in the selected repository until interrupted, without submitting new jobs or acquiring a singleton driver lock.
 
 Every JSON result is wrapped in one envelope, `{"command", "exit_code", "error", "result"}`, written once after the command runs so the exit code is known; a refused command still writes the envelope with a null result. JSON verification/attachment results contain the selected job ID or branch and frozen job IDs, any acceptance receipt, the last status snapshot, and an interruption indicator. Progress and logs stay on stderr, as JSON lines in JSON mode; see [output](output.md) for the levels. `start --json` writes a stopped/interrupted result when it exits. Exit codes distinguish milestone success (0), failed work (2), needs-attention or superseded work (3), canceled work or process interruption (130), and other errors (1). Confirmed cancellation is success for `cancel --wait`; stopping attachment never submits a cancellation request.
 
@@ -175,11 +175,12 @@ Successful previews render a Git diff to stdout and source/target information to
 
 ```sh
 dockhand bump jq --diff
-dockhand bump jq --wait                    # reuse applicable evidence if present
-dockhand bump jq --image dockhand-base-tahoe --wait
+dockhand bump jq                           # verify, then open the PR; reuse applicable evidence if present
+dockhand bump jq --no-publish              # stop after verification
+dockhand bump jq --image dockhand-base-tahoe
 dockhand bump jq 1.8.1 --diff
 dockhand bump jq jq-1.8.1 --no-verify
-dockhand bump jq 1.8.1 --image dockhand-base-tahoe --wait
+dockhand bump jq 1.8.1 --image dockhand-base-tahoe --detach
 ```
 
 For GitHub/GitLab sources, an explicit version or tag is resolved against the evaluated repository. Other archive sources accept an explicit evaluated version without inventing a forge tag or Git commit. Supported native HTTP regex livechecks also supply automatic candidates. The PortGroup prefix and suffix supply the inferred tag; no generic `v` is removed or added independently of that convention. Missing, ambiguous, and failed lookups are distinct errors. Explicit selection can choose an older version; an unchanged version is refused. Omitting the version requests automatic selection. Standalone `refresh-checksums` is implemented and preserves the version and revision. An explicit version is honored even when it is a prerelease: `bump`, `assess`, and `status` say that the change takes the port out of stable, and the machine never refuses a version a person typed.
@@ -196,19 +197,19 @@ Archive preparation observes exact checksum/revision declarations and uses MacPo
 
 Modeled metadata is explicitly separated from native runtime facts and build verification. Unresolved context boundaries, unassociated checksum groups, host-dependent modeled evaluation, changed declaration ownership, and conflicting required digests remain gaps or refusals. Fetch credentials, unrecognized hooks, remote patches, and unsupported dependency forms retain their existing restrictions. Supported dependency generators still regenerate manifest-backed blocks separately. See [bump preparation](bump-planner.md) for implementation limits and exercises.
 
-The driver records the resolved release before archive preparation. Forge tags are checked before and after preparation; a moved or missing tag requires attention. HTTP-listing candidates retain their observation and selected version across retries without reselecting from a newer page. Previews report the release and diff without opening state; normal jobs create `dockhand/bump/<port>-<job suffix>` through the same integration machinery as revision bumps. `--no-verify`, `--image`, `--capacity`, `--tests`, `--from-source`, `--wait`, `--trace`, `--reason`, `wait`, and `start` have the same meanings on both bump paths. `--publish` continues a verified bump through the shared publication phase. See the [implementation report](activity/2026-09-13-explicit-version-bumps.md).
+The driver records the resolved release before archive preparation. Forge tags are checked before and after preparation; a moved or missing tag requires attention. HTTP-listing candidates retain their observation and selected version across retries without reselecting from a newer page. Previews report the release and diff without opening state; normal jobs create `dockhand/bump/<port>-<job suffix>` through the same integration machinery as revision bumps. `--no-verify`, `--no-publish`, `--image`, `--capacity`, `--tests`, `--from-source`, `--detach`, `--trace`, `--reason`, `wait`, and `start` have the same meanings on both bump paths. A verified bump continues through the shared publication phase unless `--no-publish` was given. See the [implementation report](activity/2026-09-13-explicit-version-bumps.md).
 
 ### Revision-bump jobs
 
 ```sh
 dockhand bump-revision jq --no-verify
 dockhand bump-revision jq --image dockhand-base-tahoe
-dockhand bump-revision jq --image dockhand-base-tahoe --wait
+dockhand bump-revision jq --image dockhand-base-tahoe --no-publish --detach
 ```
 
 A new contribution starts from freshly fetched authoritative MacPorts `master`, using the same immutable intake as version bumps. Equivalent repeated requests join existing work; retries retain the contribution and its original source. A new contribution receives a branch named `dockhand/revbump/<port>-<job suffix>`. The source branch, checkout, and index stay in place. Git author identity, source commit/tree/base, target, platform, and any verification configuration are captured before acceptance. `--reason` becomes the commit body, followed by the generated-contribution trailer. The output reports the job, prepared branch, commit, and result revision.
 
-`--no-verify` completes once the branch is recorded. Otherwise the command prepares the branch and waits for verification admission or evidence reuse; `--wait` follows completion and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. Automatic bumps bind one concrete provider at intake when available; applicable evidence can satisfy its verification after the prepared tree is known. Explicit Tart requests may also use the evidence-selection behavior described above. A missing executable configuration or reuse miss in that evidence-only path is recorded as needs-attention after preserving the branch. A later `verify <target> --image <image>` continues the contribution with a new verification job. `--publish` continues the same job through publication of the verified prepared revision, using the destination options of standalone `publish`. It requires verification; `--no-verify --publish` is rejected before submission.
+`--no-verify` completes once the branch is recorded. Otherwise the command prepares the branch and stays through verification and, unless `--no-publish`, publication; `--detach` returns at verification admission or evidence reuse and `--trace` also streams logs. Revision bumps accept the same image, capacity, test, and source-build options as `verify`. Automatic bumps bind one concrete provider at intake when available; applicable evidence can satisfy its verification after the prepared tree is known. Explicit Tart requests may also use the evidence-selection behavior described above. A missing executable configuration or reuse miss in that evidence-only path is recorded as needs-attention after preserving the branch. A later `verify <target> --image <image>` continues the contribution with a new verification job. The same job continues through publication of the verified prepared revision by default, using the destination options of standalone `publish`; `--no-publish` stops before it. Publication requires verification, so `--no-verify` implies `--no-publish`.
 
 `wait --job <job_id>` and `start` resume recorded preparation and integration as well as verification. Cancellation before integration leaves no output branch. After integration may have started, the driver reconciles the recorded candidate and preserves any confirmed branch. An interrupted integration whose branch is absent or contains another commit requires attention; it never overwrites user work or guesses that a deleted branch should be recreated. See the [driver implementation report](activity/2026-09-13-revision-driver.md).
 
@@ -251,13 +252,13 @@ Standalone verification does not establish an exclusive contribution association
 
 ## The flow
 
-The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified. If `--publish` is specified, the branch will ultimately be submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports).
+The standard workflow for `dockhand` involves bumping a port's version to its latest release by default, bumping its revision, or refreshing its checksums. This produces a Git branch with the proposed changes. Build verification of these changes is requested by default unless `-N` / `--no-verify` is specified, and a verified branch is submitted as a pull request against [macports/macports-ports](https://github.com/macports/macports-ports) unless `--no-publish` is specified.
 
-The driver owns each accepted job and its bookkeeping. The CLI submits the request transactionally to the state store through the shared workflow API, runs targeted driver cycles in the same invocation, and observes recorded progress. A normal invocation remains attached until the verification provider accepts the build; `--wait` remains attached until the requested work completes. With `--wait`, the invocation keeps running the required cycles through completion. After it exits, further workflow advancement requires a running `dockhand start` process or a later driver cycle. Both modes use the same workflow implementation; commands do not launch background drivers.
+The driver owns each accepted job and its bookkeeping. The CLI submits the request transactionally to the state store through the shared workflow API, runs targeted driver cycles in the same invocation, and observes recorded progress. A normal invocation remains attached until the requested work completes, running the required cycles itself; `--detach` returns once the verification provider accepts the build. After a detached invocation exits, further workflow advancement requires `wait`, a running `dockhand start` process, or a later driver cycle. Both modes use the same workflow implementation; commands do not launch background drivers.
 
 ```text
-dockhand bump <port|selector> [version] [-N|--no-verify] [--publish] [--wait]
-dockhand (bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [--publish] [--wait]
+dockhand bump <port|selector> [version] [-N|--no-verify] [--no-publish] [--detach|--trace]
+dockhand (bump-revision | refresh-checksums) <port|selector> [-N|--no-verify] [--no-publish] [--detach|--trace]
 ```
 
 ```sh
@@ -276,27 +277,27 @@ dockhand bump jq --diff
 # Follow one port's build logs and remain attached through the requested work.
 dockhand bump jq --trace
 
-# Wait for verification. This does not request publication.
-dockhand bump jq --wait
+# Prepare, verify, and publish a PR, staying attached throughout.
+dockhand bump jq
 
-# Request verification followed by publication. Return after build admission.
-# Publication then requires a running persistent driver or a later driver cycle.
-dockhand bump jq --publish
+# Verify only; stop before publication.
+dockhand bump jq --no-publish
 
-# Remain attached through verification and publication.
-dockhand bump jq --publish --wait
+# Submit and return after build admission. Publication then requires
+# wait, a running persistent driver, or a later driver cycle.
+dockhand bump jq --detach
 
 # Create only the branch, with verification explicitly skipped.
 dockhand bump jq --no-verify
 
-# Request publication of the current contribution, or select a branch.
-dockhand publish [--branch <branch>] [--wait]
+# Publish the current contribution, or select a branch.
+dockhand publish [--branch <branch>] [--detach]
 
 # Verify current-checkout edits; omit targets when contribution scope is clear.
-dockhand verify [<port|selector>] [--wait|--trace]
+dockhand verify [<port|selector>] [--detach|--trace]
 
 # Explicit branch selection verifies committed contents.
-dockhand verify [<port|selector>] --branch <branch> [--wait|--trace]
+dockhand verify [<port|selector>] --branch <branch> [--detach|--trace]
 
 # Read all recorded work, one exact job, or a contribution branch.
 # --active narrows any view to queued and active jobs.
@@ -341,25 +342,24 @@ Display the resolved version and tag when they differ, including in `--diff` out
 
 | Request | When the CLI returns |
 | --- | --- |
-| Verification, without `--wait` | After the provider admits the initial build, or an earlier conclusive result is available. |
+| Verification and publication (the default) | After publication completes or verification/publication requires attention. |
+| Verification with `--no-publish` | After the requested verification finishes or requires attention. |
 | Verification when the provider is at capacity | It reports that it is waiting, stays attached, and submits when capacity becomes available. |
-| Verification with `--wait` | After the requested verification finishes or requires attention. |
-| Verification and publication, without `--wait` | After initial build admission or evidence reuse; later settlement and publication require `wait` or a persistent driver. |
-| Verification and publication with `--wait` | After publication completes or verification/publication requires attention. |
-| `--no-verify`, without publication | After the driver records completion of branch creation. There is no provider-admission milestone. |
-| `--no-verify --publish` | Rejected before submission; publication requires passing verification. |
+| Any of the above with `--detach` | After the provider admits the initial build, or an earlier conclusive result is available; later settlement and publication require `wait` or a persistent driver. |
+| `--no-verify` | After the driver records completion of branch creation. There is no provider-admission milestone, and no publication, since it requires passing verification. |
+| Default publication that cannot be bound | Rejected before submission, before any preparation: no GitHub login, no fork, or an ambiguous remote layout; the refusal names `--no-publish`. |
 
-For an existing change, standalone `publish` requires matching passing evidence and returns after driver pickup by default. Scheduling missing verification or joining an active build from this command remains later work. Combined `bump --publish` performs its own verification or reuses matching evidence before publication.
+For an existing change, standalone `publish` requires matching passing evidence and stays through confirmation by default. Scheduling missing verification or joining an active build from this command remains later work. A combined bump performs its own verification or reuses matching evidence before publication.
 
-For a selector, the return condition applies to each selected target operation. Without `--wait`, each must reach its applicable handoff milestone or report a conclusive result. When there are more initial builds than available slots, this can require waiting for earlier builds to finish. The driver continues independent targets when another fails. Downstream follow-up builds remain the driver's responsibility after the initial admission; `--wait` follows the full requested operation.
+For a selector, the return condition applies to each selected target operation. With `--detach`, each must reach its applicable handoff milestone or report a conclusive result. When there are more initial builds than available slots, this can require waiting for earlier builds to finish. The driver continues independent targets when another fails. Downstream follow-up builds remain the driver's responsibility after the initial admission; the default attachment follows the full requested operation.
 
 **Waiting, tracing, and cancellation**
 
-Requests and progress pass through the state store. Attachment means observing the selected durable jobs, not opening a socket to a driver. Successful submission returns a job ID without waiting for driver pickup; ordinary verification commands still remain present until provider admission, and `--wait` follows completion. After this invocation exits, report pending work and its job ID without promising automatic advancement when no persistent driver is running.
+Requests and progress pass through the state store. Attachment means observing the selected durable jobs, not opening a socket to a driver. Successful submission records a durable job; the command then stays attached through completion, or with `--detach` only until provider admission. After a detached invocation exits, report pending work and how to resume it without promising automatic advancement when no persistent driver is running.
 
-`--wait` changes attachment, not the requested destination. It never enables publication by itself. With verification skipped and no publication requested, it waits only for branch creation.
+`--detach` changes attachment, not the requested destination. The destination is chosen by `--no-verify` and `--no-publish`; with verification skipped, attachment ends at branch creation.
 
-`--trace` has the completion behavior of `--wait` and also streams build logs. It is available for a single selected port when verification is enabled. With `--publish`, it stays attached through the publication result after the build logs end. Reject incompatible requests such as `--trace --no-verify`, or tracing a multi-port selector, with a clear usage error. Supplying both `--trace` and `--wait` is redundant and harmless.
+`--trace` keeps the default completion behavior and also streams build logs. It is available for a single selected port when verification is enabled. With publication, it stays attached through the publication result after the build logs end. Reject incompatible requests such as `--trace --no-verify` or `--trace --detach`, or tracing a multi-port selector, with a clear usage error.
 
 `wait` attaches to existing work; it does not submit a fresh verification or request publication. It can run targeted cycles in the current process to resume the selected durable jobs, sharing the same engine and state claims as `dockhand start`. It binds the jobs and revisions selected when the command starts rather than silently following future requests or new branch tips.
 
@@ -371,7 +371,7 @@ Temporary capacity pressure is different from missing tools, an unprovisioned en
 
 Branch creation remains useful when verification tools are unavailable. Preserve the branch and record why verification could not proceed. Distinguish that from `--no-verify`, where the user explicitly chose to skip verification. Neither case is a verification pass.
 
-Publication requires passing verification. If verification is unavailable, the job records the setup requirement and preserves the prepared branch. `--no-verify` can request branch creation on its own; combining it with `--publish` is rejected. A negative build result is never a pass.
+Publication requires passing verification. If verification is unavailable, the job records the setup requirement, preserves the prepared branch, and ends needing attention, so the default bump exits 3 rather than quietly succeeding without a PR. `--no-verify` requests branch creation on its own and therefore implies `--no-publish`. A negative build result is never a pass.
 
 **Observation, previews, and results**
 
@@ -385,7 +385,7 @@ Publication requires passing verification. If verification is unavailable, the j
 
 Snapshot-read time is separate from evidence and PR observation times. Human output includes each job's recorded workflow phase and escapes embedded control characters. JSON uses the typed `workflow.Status` projection, with empty collections represented as arrays and an optional `Filter` describing the requested selection. Missing database or repository registration produces empty status; an explicit unknown or foreign-repository job ID returns not-found, even with `--active`. A known terminal job with `--active` produces an empty matching set. Unreadable, corrupt, or unsupported state is an error. Status does not initialize or migrate the database, register repositories, or mutate workflow records.
 
-`--diff` performs only the preparation needed to show the proposed changes. It may evaluate Portfiles and fetch inputs needed to calculate checksums, but it does not edit the working tree, create a branch, persist a job, start a build, or publish a PR. Reject combinations with `--publish`, `--wait`, or `--trace` that ask a preview to execute the workflow.
+`--diff` performs only the preparation needed to show the proposed changes. It may evaluate Portfiles and fetch inputs needed to calculate checksums, but it does not edit the working tree, create a branch, persist a job, start a build, or publish a PR. Reject combinations with `--no-publish`, `--detach`, or `--trace` that ask a preview to execute the workflow.
 
 Targets resolve consistently within the selected repository across commands. A foreign-repository job ID is an error, even if it exists in the same database. A job ID identifies exact accepted work. Port selectors identify targets, `--branch` selects committed branch source or its associated work, and job IDs select exact executions; ambiguous inferred scope produces a choice rather than silently selecting unrelated work. Selector results remain individually visible. Verification of an untracked port captures its source context so its result names what was actually tested.
 
@@ -411,34 +411,34 @@ The architecture must support these workflows from phase one, even though their 
 
 `outdated` shares discovery and version assessment with `bump`. Automatic latest-version bumps already skip current ports, so no separate `--outdated` filter is needed. Unknown results remain visible and do not prevent independent known updates from proceeding.
 
-`rebase` and `amend` follow the established `--no-verify`, `--publish`, and `--wait` conventions. For example, `dockhand amend <branch> --publish --wait` incorporates selected corrections, verifies the resulting revision, and updates the existing PR. Verification alone does not publish local corrections. Neither command silently includes unrelated working-tree edits.
+`rebase` and `amend` follow the same `--no-publish` and `--detach` conventions. `dockhand amend --branch <branch>` incorporates selected corrections, verifies the resulting revision, and updates the existing PR; `--no-publish` stops after verification, which never publishes local corrections by itself. Neither command silently includes unrelated working-tree edits.
 
 `status` distinguishes the local revision, evidence applicable to it, the last confirmed published revision, and the latest recorded PR observations. In phase two, `start` refreshes PR state, remote CI checks, review decisions, and conflict information. Before a field has been observed, it is unknown; an old observation is shown with its age. Observations do not automatically trigger corrective work.
 
-`--wait` and `wait` continue to follow the selected job's requested destination. Publishing still completes when the PR is opened or updated, even when the change remains under review. They do not become indefinite waits for PR approval or merge. Later rebase, correction, verification, and publication requests create new jobs associated with the same tracked change.
+Attachment and `wait` follow the selected job's requested destination. Publishing still completes when the PR is opened or updated, even when the change remains under review. They do not become indefinite waits for PR approval or merge. Later rebase, correction, verification, and publication requests create new jobs associated with the same tracked change.
 
 ## Implemented standalone publication (2026-09-13)
 
-`publish [--branch <branch>] [--remote <remote>] [--upstream <remote>] [--base <branch>] [--dry-run] [--wait]` is now connected to the shared driver. It takes no port argument. Omitted `--branch` uses the current branch's committed contents, even if the checkout contains uncommitted edits. The command shows its bound commit and evidence. `--dry-run` performs local/remote preflight and renders the plan; it accepts no job and performs no remote write. The preflight includes the authenticated-user and push-repository ownership checks, so a dry run needs the same GitHub credential as publication. It reads verification state through normal DB service initialization.
+`publish [--branch <branch>] [--remote <remote>] [--upstream <remote>] [--base <branch>] [--dry-run] [--detach]` is now connected to the shared driver. It takes no port argument. Omitted `--branch` uses the current branch's committed contents, even if the checkout contains uncommitted edits. The command shows its bound commit and evidence. `--dry-run` performs local/remote preflight and renders the plan; it accepts no job and performs no remote write. The preflight includes the authenticated-user and push-repository ownership checks, so a dry run needs the same GitHub credential as publication. It reads verification state through normal DB service initialization.
 
-The initial executable scope is one contribution commit in one port directory, with passing evidence already recorded for its complete tree/target and selected configuration. Standalone publication tells the user to verify first when evidence is missing or not passing. Combined `bump --publish` uses the shared preparation and verification path before publication. For a user-created branch, the changed port directory selects the latest terminal verification for the exact tree. Its recorded target, subport, variants, and configuration appear in the plan and status. Publishing adopts that branch in the same transaction as the publication request. Neither verification nor `--dry-run` adopts it. Root commits, merges, multiple unpublished commits, empty changes, and changes outside one port directory are refused.
+The initial executable scope is one contribution commit in one port directory, with passing evidence already recorded for its complete tree/target and selected configuration. Standalone publication tells the user to verify first when evidence is missing or not passing. A combined bump uses the shared preparation and verification path before publication. For a user-created branch, the changed port directory selects the latest terminal verification for the exact tree. Its recorded target, subport, variants, and configuration appear in the plan and status. Publishing adopts that branch in the same transaction as the publication request. Neither verification nor `--dry-run` adopts it. Root commits, merges, multiple unpublished commits, empty changes, and changes outside one port directory are refused.
 
 The default push remote is `origin`. PR target discovery prefers a configured `upstream` remote, otherwise the push repository's fork parent, otherwise the push repository. The target's default branch supplies the base unless overridden. The push repository must be owned by the authenticated GitHub login; a remote that resolves to `macports/macports-ports` or to another contributor's fork is refused before acceptance, and the refusal lists the local remotes whose repository the login owns. The same ownership check runs again when a frozen destination is planned for publication. The commit supplies the PR title and contribution description. The initial body adds Dockhand attribution, recorded guest environment details, and an evidence-based checklist; the full body appears in `--dry-run`. Lint, tests, and install are checked only when the selected attempt records successful execution for the target. Test omission, actual argv/user, and missing historical metadata are explicit. The single-commit check additionally requires an unchanged recorded generated commit. Other review checks remain manual. An existing PR's body remains intact. The API uses `GH_TOKEN`, `GITHUB_TOKEN`, Dockhand's Keychain credential, or the active `gh` login, while Git authentication stays with Git.
 
-Without `--wait`, the command runs a driver cycle and returns after pickup or an earlier conclusive outcome. `--wait` stays through confirmation of the pushed head and PR metadata. `wait --job <job_id>`, `start`, cancellation, JSON output, and detachment use the existing workflow path. An uncertain issued PR request is observed without another write; it can remain pending when the remote outcome cannot be established. `status` shows that state and the retained PR URL after confirmation.
+The command stays through confirmation of the pushed head and PR metadata; `--detach` runs a driver cycle and returns after pickup or an earlier conclusive outcome. `wait --job <job_id>`, `start`, cancellation, JSON output, and detachment use the existing workflow path. An uncertain issued PR request is observed without another write; it can remain pending when the remote outcome cannot be established. `status` shows that state and the retained PR URL after confirmation.
 
 ## Implemented combined bump and publication
 
 ```sh
-dockhand bump jq [version] --publish [--image dockhand-base-tahoe] [--wait|--trace]
-dockhand bump-revision jq --publish [--image dockhand-base-tahoe] [--wait|--trace]
+dockhand bump jq [version] [--image dockhand-base-tahoe] [--detach|--trace]
+dockhand bump-revision jq [--image dockhand-base-tahoe] [--detach|--trace]
 ```
 
-Both accept `--remote`, `--upstream`, and `--base` with the same defaults as `publish`: the fork is the remote pushing to a repository the authenticated login owns, the upstream is the remote whose URL names `macports/macports-ports` whatever its name, and `--remote` is required only when that is ambiguous. On bump commands those flags require `--publish`. Destination repositories, URLs, base branch, and the operation-lock directory are frozen before acceptance. No remote ref or PR is written during intake.
+Both accept `--remote`, `--upstream`, and `--base` with the same defaults as `publish`: the fork is the remote pushing to a repository the authenticated login owns, the upstream is the remote whose URL names `macports/macports-ports` whatever its name, and `--remote` is required only when that is ambiguous. On bump commands those flags need publication, which is the default; they are refused with `--no-publish` or `--no-verify` unless GitHub verification uses them. Destination repositories, URLs, base branch, and the operation-lock directory are frozen before acceptance. No remote ref or PR is written during intake.
 
 One job owns preparation, verification, and publication. Its accepted input source remains the original commit; its result revision identifies the prepared commit that is built and published. A passing build or applicable reuse leaves the job active for publication. When `--image` is omitted, the exact configuration comes from the selected evidence while accepted provider, platform, test, and source-build requirements remain fixed. The driver then records remote preconditions and content before any push, using the same executor and uncertainty handling as standalone publication. Status shows the requested destination before that publication checkpoint exists.
 
-Without `--wait` or `--trace`, the command waits through capacity pressure and returns at build admission, evidence reuse, or an earlier terminal outcome. `wait --job <job_id>` and `start` resume the exact accepted destination without repeating flags. With `--wait` or `--trace`, completion means PR confirmation. An automatic no-update result needs no branch, verification, or PR.
+By default the command stays attached until PR confirmation. With `--detach` it waits through capacity pressure and returns at build admission, evidence reuse, or an earlier terminal outcome; `wait <port>` and `start` resume the exact accepted destination without repeating flags. An automatic no-update result needs no branch, verification, or PR.
 
 Failed verification prevents publication. A changed or missing prepared branch or newer matching negative evidence stops fresh remote effects; human edits require a new explicit verification/publication request. Cancellation before a PR request preserves any branch already created or pushed. Once the PR request has started, the existing observation-only recovery applies. This slice adds no unverified publication override, automatic rebase/squash, downstream scheduling, or post-PR monitoring.
 
@@ -450,7 +450,7 @@ Specify an upstream tag or its source version with the usual optional prefix. Do
 
 ## GitHub verification provider
 
-Build commands accept `--provider tart|github`; bumps additionally accept `auto` and use it by default, preferring a suitable prepared Tart image. Standalone `verify` defaults to Tart. `github` pushes a committed contribution to a personal `macports-ports` fork and observes its existing `main.yml` workflow. `--remote` selects the fork's Git remote, defaulting to `origin`. `bump --provider github --publish` continues to publication after workflow success. Explicit `verify` requires `--branch`.
+Build commands accept `--provider tart|github`; bumps additionally accept `auto` and use it by default, preferring a suitable prepared Tart image. Standalone `verify` defaults to Tart. `github` pushes a committed contribution to a personal `macports-ports` fork and observes its existing `main.yml` workflow. `--remote` selects the fork's Git remote, defaulting to `origin`. `bump --provider github` continues to publication after workflow success. Explicit `verify` requires `--branch`.
 
 GitHub selects `--tests workflow` by default, reflecting the workflow's tolerance of individual test failures. It refuses Tart image/capacity/source-build flags and variant overrides. A newly accepted GitHub verification observes the current remote run attempt rather than reusing old local evidence; `--fresh` does not dispatch a rerun. `--trace` retrieves completed-job logs. See [GitHub verification](github-verification.md) for coverage, credentials, recovery, and initial limits.
 
@@ -463,7 +463,7 @@ A confirmed GitHub rate-limit refusal may retry a publication write after the co
 
 Preview and execution use the same credential setup. Public GitHub reads use an available credential without requiring a prior authenticated operation. Only absence of credentials permits anonymous reads; inaccessible, malformed or rejected credentials are reported, without silently trying anonymous access or another credential. An explicitly configured alternative API endpoint does not receive implicit system credentials.
 
-Provider-specific admission failures are classified by meaning rather than forced to occur at the same point. Invalid GitHub policy or fork configuration fails during intake. A missing usable Tart image may preserve a prepared branch and report the remaining verification requirement. `--publish` continues to select the destination, while `--wait` selects attachment through completion; detached output names pending PR publication explicitly.
+Provider-specific admission failures are classified by meaning rather than forced to occur at the same point. Invalid GitHub policy or fork configuration fails during intake. A missing usable Tart image may preserve a prepared branch and report the remaining verification requirement. `--no-publish` selects the destination, while `--detach` selects attachment only through admission; detached output names pending PR publication explicitly.
 
 
 ### Automatic bump verification

@@ -64,18 +64,18 @@ func (v executablePathValue) Set(value string) error {
 }
 
 func verificationFlags(command *cobra.Command, options *Options) {
-	command.Flags().BoolVar(&options.Wait, "wait", false, "Stay until the requested work completes")
-	command.Flags().BoolVar(&options.Trace, "trace", false, "Follow build logs and wait for completion")
+	command.Flags().BoolVar(&options.Detach, "detach", false, "Return once the work is accepted and admitted; wait or start finishes it")
+	command.Flags().BoolVar(&options.Trace, "trace", false, "Follow build logs through completion")
+	command.MarkFlagsMutuallyExclusive("detach", "trace")
 }
 
 func changeFlags(command *cobra.Command, options *Options) {
 	verificationFlags(command, options)
-	command.Flags().BoolVarP(&options.NoVerify, "no-verify", "N", false, "Explicitly skip verification")
-	command.Flags().BoolVar(&options.Publish, "publish", false, "Request publication after preparing the change")
+	command.Flags().BoolVarP(&options.NoVerify, "no-verify", "N", false, "Stop at the prepared branch; skip verification and publication")
+	command.Flags().BoolVar(&options.NoPublish, "no-publish", false, "Stop after verification; do not open or update a PR")
 	command.Flags().BoolVar(&options.Diff, "diff", false, "Preview source changes without submitting work")
-	command.MarkFlagsMutuallyExclusive("diff", "publish")
-	command.MarkFlagsMutuallyExclusive("diff", "wait")
+	command.MarkFlagsMutuallyExclusive("diff", "no-publish")
+	command.MarkFlagsMutuallyExclusive("diff", "detach")
 	command.MarkFlagsMutuallyExclusive("diff", "trace")
 	command.MarkFlagsMutuallyExclusive("trace", "no-verify")
-	command.MarkFlagsMutuallyExclusive("publish", "no-verify")
 }

@@ -32,7 +32,7 @@ The info level prints only these; everything else moves to verbose or debug.
 
 | Command | Info output |
 | --- | --- |
-| `bump`, `bump-revision`, `refresh-checksums` | port, old version to new version (or the revision), the branch name, then the verdict line when the command waits; with `--publish`, the PR URL and whether it was created or updated |
+| `bump`, `bump-revision`, `refresh-checksums` | port, old version to new version (or the revision), the branch name, then the verdict line, then the PR URL and whether it was created or updated; `--detach` stops after the branch name |
 | `--diff` variants | the same header lines, then the diff on stdout |
 | `verify` | port, platform, verdict; on failure the phase that failed and where the log is |
 | `publish` | PR URL, created or updated, the head commit |

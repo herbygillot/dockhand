@@ -86,9 +86,9 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			config.GitHub = github.Config{BaseURL: server.URL, Token: "fixture"}
 			stdout.Reset()
 			stderr.Reset()
-			args := []string{"bump-revision", "fixture", "--publish", "--remote", "contribution", "--base", "main", "--json"}
-			if wait {
-				args = append(args, "--wait")
+			args := []string{"bump-revision", "fixture", "--remote", "contribution", "--base", "main", "--json"}
+			if !wait {
+				args = append(args, "--detach")
 			}
 			require.NoError(t, runFixture(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 			var result ActionResult

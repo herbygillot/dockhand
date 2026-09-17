@@ -25,7 +25,7 @@ func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
 	seedCLIVerification(t, config, branch)
 	out, err := exec.CommandContext(t.Context(), "git", "-C", repo.Root, "checkout", "-f", branch).CombinedOutput()
 	require.NoError(t, err, "%s", out)
-	for _, args := range [][]string{{"verify", "--branch", branch, "--wait", "--json"}, {"verify", "--trace", "--json"}} {
+	for _, args := range [][]string{{"verify", "--branch", branch, "--json"}, {"verify", "--trace", "--json"}} {
 		stdout.Reset()
 		stderr.Reset()
 		require.NoError(t, Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())

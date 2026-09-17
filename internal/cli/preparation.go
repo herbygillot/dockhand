@@ -2,6 +2,7 @@ package cli
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -16,7 +17,7 @@ import (
 
 func (r *runtime) changeCommands() []*cobra.Command {
 	var commands []*cobra.Command
-	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. Retries continue their recorded contribution and frozen source. --diff previews the edit without touching the checkout or opening the state database; --no-verify stops at branch creation. --publish continues to a confirmed PR after passing verification; --wait or --trace stays through that destination. Publication requires verification."
+	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. Retries continue their recorded contribution and frozen source. By default the command stays in the foreground through verification and publication of a PR on macports/macports-ports from your fork. --no-publish stops after verification, --no-verify stops at the prepared branch, and --detach returns once the work is accepted and admitted, leaving wait or start to finish it. Ctrl-C detaches without canceling accepted work. --diff previews the edit without touching the checkout or opening the state database."
 	for _, spec := range []struct {
 		action  record.Action
 		short   string
@@ -72,10 +73,10 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					version = args[1]
 				}
 				var destination *publish.Options
-				if options.Publish {
+				if !options.NoPublish && !options.NoVerify && !options.Diff {
 					destination = &publication
 				} else if (cmd.Flags().Changed("remote") || cmd.Flags().Changed("upstream") || cmd.Flags().Changed("base")) && build.provider != "github" && build.provider != "auto" {
-					return fmt.Errorf("publication destination flags require --publish")
+					return fmt.Errorf("publication destination flags need publication; drop --no-publish or --no-verify")
 				}
 				if !options.Diff {
 					config, err := build.config(cmd, r.config)
@@ -94,16 +95,16 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
 					})
 					if err != nil {
-						return err
+						return publicationIntakeHint(err, destination != nil)
 					}
 					receipt, err := services.Workflow.Submit(cmd.Context(), bound.Request)
 					if err != nil {
 						return fmt.Errorf("accepting request %s: %w", bound.Request.ID, err)
 					}
 					progress.VerboseReport(cmd.Context(), "Accepted job %s; source commit %s", receipt.JobID, receipt.Source.Commit)
-					milestone := workflow.Admission
-					if options.Wait || options.Trace {
-						milestone = workflow.Completion
+					milestone := workflow.Completion
+					if options.Detach {
+						milestone = workflow.Admission
 					}
 					return r.attach(cmd, services, receipt.JobID, milestone, options.Trace, false, &receipt)
 				}
@@ -173,4 +174,14 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		commands = append(commands, command)
 	}
 	return commands
+}
+
+// publicationIntakeHint names the way out when the default publication
+// cannot be bound before any work starts: no GitHub login, no fork, or an
+// ambiguous remote layout.
+func publicationIntakeHint(err error, publishing bool) error {
+	if publishing && errors.Is(err, workflow.ErrPublicationIntake) {
+		return fmt.Errorf("%w; pass --no-publish to stop after verification", err)
+	}
+	return err
 }

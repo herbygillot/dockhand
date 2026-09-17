@@ -20,13 +20,16 @@ type Streams struct {
 	Err io.Writer
 }
 
+// Options are the attachment and destination choices of the change commands.
+// The defaults are the foreground and the PR: a command stays through
+// verification and publication unless told to stop earlier or to detach.
 type Options struct {
-	Wait     bool
-	Trace    bool
-	JSON     bool
-	NoVerify bool
-	Publish  bool
-	Diff     bool
+	Detach    bool
+	Trace     bool
+	JSON      bool
+	NoVerify  bool
+	NoPublish bool
+	Diff      bool
 }
 
 func Run(ctx context.Context, args []string, streams Streams, config app.Config) error {

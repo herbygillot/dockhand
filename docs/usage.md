@@ -4,7 +4,7 @@ Detailed command behavior and operational choices for the current prerelease. Fo
 
 ## Tools and checkout selection
 
-Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Select the local MacPorts installation with `--prefix` / `-P` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. Select Git with `--git` or `GIT_BIN`, and Tart with `--tart` or `TART_BIN`; otherwise Dockhand finds each executable on `PATH`. `DOCKHAND_INDEX_CACHE` relocates the shared PortIndex cache, which otherwise lives under the user cache directory as `dockhand/indexes`. Flags override the environment. `--publish` has no shorthand.
+Select a ports checkout with `--tree` / `-T` or `MACPORTS_TREE`; otherwise Dockhand uses the current directory. Select the local MacPorts installation with `--prefix` / `-P` or `MACPORTS_PREFIX`; otherwise it finds `port-tclsh` on `PATH`. Select Git with `--git` or `GIT_BIN`, and Tart with `--tart` or `TART_BIN`; otherwise Dockhand finds each executable on `PATH`. `DOCKHAND_INDEX_CACHE` relocates the shared PortIndex cache, which otherwise lives under the user cache directory as `dockhand/indexes`. Flags override the environment. `--no-publish` has no shorthand.
 
 ## GitHub authentication
 
@@ -49,17 +49,17 @@ All cooperating drivers using the same Tart home must use the same DB, capacity,
 Verify current edits or committed branch contents, then reattach by port, branch, or the job ID that `-v` prints:
 
 ```sh
-dockhand verify jq --working-tree --image dockhand-base-tahoe --wait
-dockhand verify jq --branch update-jq --image dockhand-base-tahoe
+dockhand verify jq --working-tree --image dockhand-base-tahoe
+dockhand verify jq --branch update-jq --image dockhand-base-tahoe --detach
 dockhand wait --job <job_id> --trace
 # Or resume every pending job already associated with a contribution:
 dockhand wait --branch update-jq
 # From that branch, the selector may be omitted:
 dockhand wait
 # Or submit and stay attached in one invocation:
-dockhand verify jq --branch update-jq --image dockhand-base-tahoe --wait
+dockhand verify jq --branch update-jq --image dockhand-base-tahoe
 # A tracked contribution supplies the target when it is omitted:
-dockhand verify --branch update-jq --image dockhand-base-tahoe --wait
+dockhand verify --branch update-jq --image dockhand-base-tahoe
 
 dockhand cancel --job <job_id> --wait
 dockhand cancel --branch update-jq --wait
@@ -76,7 +76,7 @@ Matching passing verification is reused when the complete source tree, target, v
 
 Tart stages a platform-specific PortIndex generated from the frozen source instead of rebuilding the complete index inside every VM. Every consumer shares one cache of completed generations, keyed by source tree and indexing environment, in the system user cache under `dockhand/indexes`. A contribution's candidate derives from the generation of its recorded base; a new upstream master derives from the previous one; discovery, dependent selection, and staging reuse whatever generation already matches. Only the first tree in a new environment needs a full pass, and changes under `_resources` still require one. The local `portindex` is selected through `--prefix` / `MACPORTS_PREFIX`, or from `PATH`; its content identity is frozen with the accepted provider settings, and the MacPorts Base it loads is part of the cache identity.
 
-Without `--wait`, verification remains attached while capacity is unavailable and returns at admission or a conclusive outcome. `--wait` and `--trace` follow completion. Ctrl-C detaches without canceling accepted work; `start` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job selection; it never submits another verification. With `--json`, every command writes one envelope to stdout, `{"command", "exit_code", "error", "result"}`, where `exit_code` repeats the process exit code, `error` is empty on success, and `result` is the command's typed result or null when the command was refused; progress reports become one JSON object per line on stderr with `level`, `scope`, and `message`. Without `--json`, results go to stdout and progress to stderr at the info level; `-v` adds identifiers and the work behind the scenes, `-vv` or `--debug` adds every sub-operation, and `--trace` implies debug plus the guest log stream. At the info level an action's result is one short block per job: the port, the version move or the kind of change, its state, the branch, one verdict line per platform with the failing phase and log location, and the pull request; `-v` prints the full record with identifiers instead. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
+Verification stays attached through completion; `--trace` also streams logs. With `--detach` it remains attached only while capacity is unavailable and returns at admission or a conclusive outcome. Ctrl-C detaches without canceling accepted work; `start` runs until interrupted and must be invoked separately for each repository. If nobody is running cycles for an admitted job, its VM can continue and occupy capacity until a later cycle collects its outcome. `wait` resumes a fixed job selection; it never submits another verification. With `--json`, every command writes one envelope to stdout, `{"command", "exit_code", "error", "result"}`, where `exit_code` repeats the process exit code, `error` is empty on success, and `result` is the command's typed result or null when the command was refused; progress reports become one JSON object per line on stderr with `level`, `scope`, and `message`. Without `--json`, results go to stdout and progress to stderr at the info level; `-v` adds identifiers and the work behind the scenes, `-vv` or `--debug` adds every sub-operation, and `--trace` implies debug plus the guest log stream. At the info level an action's result is one short block per job: the port, the version move or the kind of change, its state, the branch, one verdict line per platform with the failing phase and log location, and the pull request; `-v` prints the full record with identifiers instead. Exit codes are 0 for the requested milestone, 2 for failed work, 3 for needs-attention, 130 for interruption/canceled work, and 1 for other errors. Confirmed cancellation is successful for `cancel --wait`.
 
 ## End a contribution or refresh its PR
 
@@ -102,8 +102,8 @@ Preview or prepare a version update from freshly fetched `master` in `macports/m
 ```sh
 dockhand bump jq --diff
 dockhand bump jq --no-verify
-dockhand bump jq --wait
-dockhand bump jq --image dockhand-base-tahoe --wait
+dockhand bump jq --no-publish
+dockhand bump jq --image dockhand-base-tahoe --no-publish
 dockhand bump jq 1.8.1 --diff
 ```
 
@@ -111,14 +111,16 @@ Omitting the version selects the newest eligible GitHub or GitLab version: stabl
 
 ## Prepare and publish together
 
-Prepare, verify, and publish as one durable job:
+A plain bump prepares, verifies, and publishes as one durable job, staying in the foreground until the PR is confirmed:
 
 ```sh
-dockhand bump jq --publish --image dockhand-base-tahoe --wait
-dockhand bump-revision jq --publish --image dockhand-base-tahoe --trace
+dockhand bump jq
+dockhand bump jq --image dockhand-base-tahoe
+dockhand bump-revision jq --reason "rebuild against oniguruma 6.9.10" --trace
+dockhand bump jq --detach       # submit, return at admission; wait or start finishes it
 ```
 
-The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. Automatic provider selection prefers a suitable Tart image and falls back to GitHub when unavailable. An explicit Tart request can reuse applicable evidence; otherwise missing build configuration preserves the prepared branch for a later verification run. Without `--wait` or `--trace`, the command returns at build admission or evidence reuse; `wait --job <job_id>` or `start` continues the same job. `--publish` requires verification and rejects `--no-verify`. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
+The destination is captured before acceptance. The driver verifies the prepared revision, then pushes it and confirms the PR. `--image` may be omitted after `setup`; Dockhand selects the matching default image. Automatic provider selection prefers a suitable Tart image and falls back to GitHub when unavailable. An explicit Tart request can reuse applicable evidence; otherwise missing build configuration preserves the prepared branch for a later verification run. With `--detach`, the command returns at build admission or evidence reuse; `wait <port>` or `start` continues the same job. Publication requires verification, so `--no-verify` also stops before the PR. Already-current automatic bumps complete without a PR. Failed verification preserves the local branch for correction and a later explicit `verify`/`publish`.
 
 ## Publish an existing branch
 
@@ -126,14 +128,14 @@ Publish a tracked update with `publish <target>`. You can also publish a contrib
 
 ```sh
 dockhand publish --branch update-jq --dry-run
-dockhand publish --branch update-jq --wait
+dockhand publish --branch update-jq
 ```
 
 Without `--branch`, publication selects the current local branch's committed contents. The first path requires one contribution commit, changes confined to one verified port directory, and passing evidence for its complete tree and target. It uses that result's recorded image, verifier, platform, variants, and build settings; no image flag or new build is needed. Missing or failed evidence requires an explicit `verify` first. A user-created branch is adopted only when publication is accepted; `--dry-run` accepts no job and creates no contribution.
 
 Dockhand works out the remotes from their URLs and your login: the remote whose URL names `macports/macports-ports` is the upstream whatever it is called, and the remote pushing to a fork your GitHub login owns is where contributions go. `--remote` and `--upstream` override that, and Dockhand asks for `--remote` only when the choice is ambiguous: two owned forks, or several non-upstream remotes while logged out. The PR target comes from the upstream remote, then the fork parent, then the push repository, and `--base` overrides the base branch.
 
-Publication without `--wait` returns after driver pickup or an earlier terminal outcome. `--wait` follows remote confirmation. Resume accepted work using its job ID with `wait`, or run `start`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Missing-verification scheduling for standalone `publish`, rebase/amend commands, and post-publication monitoring remain future work.
+Publication stays attached through remote confirmation; `--detach` returns after driver pickup or an earlier terminal outcome. Resume accepted work with `wait`, or run `start`; Ctrl-C detaches. A lost PR response is reconciled by observation without repeating the write. If the outcome cannot be established, the job stays pending and reserves that remote branch. Cancellation cannot undo an already issued PR request. Missing-verification scheduling for standalone `publish`, rebase/amend commands, and post-publication monitoring remain future work.
 
 Image inspection and fingerprinting, capacity reservation, VM startup, guest checks, source materialization, index preparation, and source transfer print stage messages on stderr. Full PortIndex generation is explicitly identified and timed; a cache hit does not claim a new generation. These messages work without `--trace` and leave JSON stdout intact. `--trace` additionally streams the build log. Stage messages describe work performed by the attached process; they are not stored progress events from other drivers.
 
@@ -150,14 +152,14 @@ Use the same `--db PATH` on both commands when selecting a nondefault database. 
 
 ## Refresh existing distfile checksums
 
-`dockhand refresh-checksums jq --diff` previews checksum changes for the current MacPorts master without changing the port's version or revision. Omit `--diff` to prepare and verify a branch; `--publish --wait` uses the normal verified publication path. `--no-verify` stops at the prepared branch. If the checksums already match, the job completes without creating a branch or PR.
+`dockhand refresh-checksums jq --diff` previews checksum changes for the current MacPorts master without changing the port's version or revision. Omit `--diff` to prepare, verify, and publish through the normal verified publication path; `--no-publish` stops after verification. `--no-verify` stops at the prepared branch. If the checksums already match, the job completes without creating a branch or PR.
 
 The command uses the same direct archive association, HTTP transfer, checksum replacement, and evaluation checks as version updates. Named and multiple archives are supported. Customized fetch hooks, authenticated downloads, and generated Go/Cargo dependency blocks require manual preparation; this command does not regenerate those blocks or turn a changed upstream archive into a trusted release automatically.
 
 ## Verify direct dependents
 
 ```sh
-dockhand bump jq --dependents --wait
+dockhand bump jq --dependents
 dockhand verify jq --branch my-update --dependents --trace
 ```
 
@@ -169,14 +171,14 @@ The default image is retained for the cohort. Override individual dependent port
 
 ```sh
 dockhand verify root --dependents --image dockhand-base-tahoe \
-  --target-image downstream=dockhand-xcode-tahoe --wait
+  --target-image downstream=dockhand-xcode-tahoe
 ```
 
 Use exact dependent names, including subport names; use `--image` for the root. Image identities and settings are frozen at intake and survive restart. Overrides must use the same OS/architecture and build policies as the root; this is not a platform matrix. A name outside the discovered cohort stops planning before builds start. Each target's full-Xcode requirement, including its root prerequisite, is checked. Missing tooling does not trigger an unrequested GitHub build or disappear from coverage.
 
 `status` and `--json` retain each planned target, selection reasons, discovery problems, and attempts. Missing index entries or unread dependency fields mean incomplete coverage even if runnable targets pass. A build log can identify a failing dependency outside the cohort, but Dockhand does not call it unrelated without a baseline comparison.
 
-`--publish` requires every requested target to pass and no discovery gaps. A later standalone `publish` using the cohort's root result enforces the same requirement. New PR bodies list the isolated coverage. This option does not authorize edits or revision bumps to downstream ports. Artifact sharing is not implemented; each guest builds its own root prerequisite.
+Publication requires every requested target to pass and no discovery gaps. A later standalone `publish` using the cohort's root result enforces the same requirement. New PR bodies list the isolated coverage. This option does not authorize edits or revision bumps to downstream ports. Artifact sharing is not implemented; each guest builds its own root prerequisite.
 
 ## Correct an existing contribution
 
@@ -187,19 +189,19 @@ git switch dockhand/bump/example-...
 # Edit the Portfile or patches, then stage the intended contents.
 git add path/to/port/Portfile
 dockhand amend --diff
-dockhand amend --publish --wait
+dockhand amend
 
 # Rebase without changing files in an occupied contribution checkout.
 git switch master
-dockhand rebase --branch dockhand/bump/example-... --publish --wait
+dockhand rebase --branch dockhand/bump/example-...
 
 # After explicitly renaming a local branch:
 dockhand reassociate change_... --branch new-local-name
 ```
 
-`amend` defaults to the current tracked checkout; `--branch` selects committed contents instead. Checked-out amendments require matching staged and working contents; Dockhand does not stage files or reset the checkout. Switch away before rebasing, including in linked worktrees. Rebase fetches MacPorts master, preserves one contribution commit, and leaves a conflict workspace for inspection if replay fails. Both commands retain the original contribution message (`--title` replaces its subject), verify the replacement, and accept the usual provider and `--dependents` options. Without `--publish`, they stop after verification.
+`amend` defaults to the current tracked checkout; `--branch` selects committed contents instead. Checked-out amendments require matching staged and working contents; Dockhand does not stage files or reset the checkout. Switch away before rebasing, including in linked worktrees. Rebase fetches MacPorts master, preserves one contribution commit, and leaves a conflict workspace for inspection if replay fails. Both commands retain the original contribution message (`--title` replaces its subject), verify the replacement, and accept the usual provider and `--dependents` options. With `--no-publish`, they stop after verification; `--detach` returns once the correction is accepted.
 
-An existing PR retains its remote branch and body after local reassociation. Unexpected remote changes require reconciliation. `publish` still requires applicable verification; managed `amend --publish` and `rebase --publish` authorize both steps.
+An existing PR retains its remote branch and body after local reassociation. Unexpected remote changes require reconciliation. `publish` still requires applicable verification; managed `amend` and `rebase` authorize both steps by default, and `--no-publish` stops them after verification.
 
 ## Discover upstream updates
 

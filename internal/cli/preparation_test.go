@@ -30,7 +30,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.ErrorContains(t, err, "git rev-parse")
 	}
-	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--wait"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish", "--no-verify"}, {"bump-revision", "jq", "--publish", "--no-verify"}, {"bump", "jq", "--diff", "--publish"}, {"bump", "jq", "--provider", "tart", "--remote", "origin"}, {"bump-revision", "jq", "--provider", "tart", "--base", "main"}, {"bump", "jq", "--provider", "tart", "--upstream", "upstream"}} {
+	for _, args := range [][]string{{"bump"}, {"bump", "jq", "1", "2"}, {"bump-revision", "jq", "1"}, {"bump", "jq", "1", "--diff", "--detach"}, {"bump-revision", "jq", "--diff", "--branch="}, {"bump-revision", "jq", "--diff", "--variant=bad"}, {"bump", "jq", "--publish"}, {"bump-revision", "jq", "--wait"}, {"bump", "jq", "--diff", "--no-publish"}, {"bump", "jq", "--trace", "--detach"}, {"bump", "jq", "--provider", "tart", "--no-publish", "--remote", "origin"}, {"bump-revision", "jq", "--provider", "tart", "--no-verify", "--base", "main"}, {"bump", "jq", "--provider", "tart", "--no-publish", "--upstream", "upstream"}} {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)
@@ -150,7 +150,7 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 			config, repo, _ := preparationCLI(t)
 			config.Tart = tart.Config{Executable: "/missing/tart", Image: image}
 			var stdout, stderr bytes.Buffer
-			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
+			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--no-publish", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 			require.ErrorIs(t, err, errNeedsAttention, "%s", stderr.String())
 			var result ActionResult
 			decodeResult(t, stdout.Bytes(), &result)

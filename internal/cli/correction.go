@@ -16,16 +16,16 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 	var commands []*cobra.Command
 	for _, action := range []record.Action{record.Amend, record.Rebase} {
 		var branch, title string
-		var diff, publication, wait, trace bool
+		var diff, noPublish, detach, trace bool
 		var build buildOptions
 		var destination publish.Options
 		command := &cobra.Command{Use: string(action), Short: "Correct a tracked contribution and verify it", Args: cobra.NoArgs,
-			Long: "Amend captures the current tracked checkout (stage intended changes before branch adoption); --branch selects committed contents. Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace. Switch away from the branch before rebasing it. Conflicts preserve that workspace and leave the original branch intact. Both commands verify the replacement and optionally update its existing PR. --diff previews without accepting work or moving branches.",
+			Long: "Amend captures the current tracked checkout (stage intended changes before branch adoption); --branch selects committed contents. Rebase fetches MacPorts master and reapplies the contribution as one commit in a disposable workspace. Switch away from the branch before rebasing it. Conflicts preserve that workspace and leave the original branch intact. Both commands verify the replacement and update its PR, staying in the foreground through both; --no-publish stops after verification and --detach returns once the work is accepted. --diff previews without accepting work or moving branches.",
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				if cmd.Flags().Changed("branch") && !git.ValidBranchName(branch) {
 					return fmt.Errorf("branch must name a literal local branch")
 				}
-				if diff && (publication || wait || trace || build.dependents) {
+				if diff && (noPublish || detach || trace || build.dependents) {
 					return fmt.Errorf("--diff cannot be combined with publication or verification attachment flags")
 				}
 				config, err := build.config(cmd, r.config)
@@ -49,21 +49,21 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 				}
 				defer services.Close()
 				input := workflow.CorrectionRequest{KeepFailed: build.keepFailed, ID: record.RequestID("request_" + rand.Text()), Action: action, Title: title, Branch: branch, Preview: diff, IncludeDependents: build.dependents}
-				if publication {
+				if !noPublish {
 					input.Publication = &destination
 				}
 				bound, err := services.BindCorrection(cmd.Context(), input, record.TestPolicy(build.tests), build.fromSource)
 				if err != nil {
-					return err
+					return publicationIntakeHint(err, !noPublish)
 				}
 				receipt, err := services.Workflow.Submit(cmd.Context(), bound.Request)
 				if err != nil {
 					return err
 				}
 				progress.VerboseReport(cmd.Context(), "Accepted correction %s for %s", receipt.JobID, bound.Branch)
-				milestone := workflow.Admission
-				if wait || trace {
-					milestone = workflow.Completion
+				milestone := workflow.Completion
+				if detach {
+					milestone = workflow.Admission
 				}
 				return r.attach(cmd, services, receipt.JobID, milestone, trace, false, &receipt)
 			},
@@ -71,9 +71,10 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 		command.Flags().StringVar(&branch, "branch", "", "Select a tracked local contribution branch")
 		command.Flags().StringVar(&title, "title", "", "Replace the contribution commit title, preserving its body")
 		command.Flags().BoolVar(&diff, "diff", false, "Preview without moving branches or accepting work")
-		command.Flags().BoolVar(&publication, "publish", false, "Verify and publish the corrected contribution")
-		command.Flags().BoolVar(&wait, "wait", false, "Wait through the requested destination")
-		command.Flags().BoolVar(&trace, "trace", false, "Stream logs and wait through completion")
+		command.Flags().BoolVar(&noPublish, "no-publish", false, "Stop after verification; leave the PR untouched")
+		command.Flags().BoolVar(&detach, "detach", false, "Return once the correction is accepted and admitted; wait or start finishes it")
+		command.Flags().BoolVar(&trace, "trace", false, "Stream logs through completion")
+		command.MarkFlagsMutuallyExclusive("detach", "trace")
 		build.flags(command, r.config)
 		publicationFlags(command, &destination)
 		commands = append(commands, command)

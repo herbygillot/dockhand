@@ -22,7 +22,7 @@ func (r *runtime) workflowCommand(use, short string, args cobra.PositionalArgs) 
 			defer services.Close()
 			effective := *options
 			effective.JSON = r.json
-			effective.Wait = effective.Wait || effective.Trace
+			effective.Detach = effective.Detach && !effective.Trace
 			streams := Streams{In: cmd.InOrStdin(), Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
 			return execute(cmd.Context(), cmd.CommandPath(), args, effective, streams, services)
 		},

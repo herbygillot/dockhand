@@ -14,9 +14,9 @@ import (
 func (r *runtime) publishCommand() *cobra.Command {
 	var branch, change string
 	var options publish.Options
-	var dryRun, wait bool
+	var dryRun, detach bool
 	cmd := &cobra.Command{Use: "publish [target]", Short: "Publish a verified, committed contribution to GitHub", Args: cobra.MaximumNArgs(1),
-		Long: "Publish the unique open contribution for a target. Omit the target to use the current branch, or select --branch or --change explicitly. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. Without --wait, return after driver pickup; --wait follows confirmation of the pushed head and PR metadata. Ctrl-C detaches, and wait or start resumes the durable job. GH_TOKEN, GITHUB_TOKEN, or an authenticated GitHub CLI supplies GitHub API authentication. Git uses its configured credentials.",
+		Long: "Publish the unique open contribution for a target. Omit the target to use the current branch, or select --branch or --change explicitly. A verified user-created branch becomes a tracked contribution when publication is accepted. Uses the latest terminal verification for the committed tree and selected port; it must have passed. Its recorded build configuration is preserved. The contribution must contain one commit in one verified port directory. Existing PR bodies are preserved. The command stays through confirmation of the pushed head and PR metadata; --detach returns after driver pickup. Ctrl-C detaches, and wait or start resumes the durable job. GH_TOKEN, GITHUB_TOKEN, or an authenticated GitHub CLI supplies GitHub API authentication. Git uses its configured credentials.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			services, err := r.build(cmd.Context(), r.config)
 			if err != nil {
@@ -57,9 +57,9 @@ func (r *runtime) publishCommand() *cobra.Command {
 				return fmt.Errorf("accepting request %s: %w", request.ID, err)
 			}
 			progress.VerboseReport(cmd.Context(), "Accepted publication job %s; branch %s at %s; verification %s", receipt.JobID, plain(spec.HeadBranch), spec.Desired.Head, spec.EvidenceAttempt)
-			milestone := workflow.Admission
-			if wait {
-				milestone = workflow.Completion
+			milestone := workflow.Completion
+			if detach {
+				milestone = workflow.Admission
 			}
 			return r.attach(cmd, services, receipt.JobID, milestone, false, false, &receipt)
 		},
@@ -68,7 +68,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 	cmd.Flags().StringVar(&change, "change", "", "Select one tracked contribution when the target is ambiguous")
 	publicationFlags(cmd, &options)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the publication plan without accepting a job or writing remotely")
-	cmd.Flags().BoolVar(&wait, "wait", false, "Stay until the branch and PR are confirmed")
+	cmd.Flags().BoolVar(&detach, "detach", false, "Return after driver pickup; wait or start finishes it")
 	return cmd
 }
 

@@ -68,7 +68,9 @@ func TestGlobalToolAndMacPortsPathsDefaultsAndPrecedence(t *testing.T) {
 			require.Contains(t, out.String(), "--git")
 			bump, _, err := root.Find([]string{"bump"})
 			require.NoError(t, err)
-			require.Empty(t, bump.Flags().Lookup("publish").Shorthand)
+			require.Empty(t, bump.Flags().Lookup("no-publish").Shorthand)
+			require.Nil(t, bump.Flags().Lookup("publish"), "publication is the default, not a flag")
+			require.Nil(t, bump.Flags().Lookup("wait"), "waiting is the default; --detach is the exception")
 			require.NoDirExists(t, filepath.Dir(db))
 		})
 	}
