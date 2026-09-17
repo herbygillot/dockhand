@@ -25,7 +25,7 @@ namespace eval ::dockhand {
             foreach field {
                 checksums distfiles extract.only extract.rename worksrcdir filespath master_sites fetch.type
                 fetch.user_agent fetch.ignore_sslcert
-                patchfiles patch.pre_args livecheck.type livecheck.url livecheck.regex
+                patchfiles patch.pre_args patch.dir livecheck.type livecheck.url livecheck.regex
                 livecheck.version livecheck.ignore_sslcert livecheck.compression livecheck.curloptions go.vendors go.version go.package go.domain go.offline_build go.toolchain_min
                 cargo.crates cargo.crates_github cargo.update cargo.dir cargo.offline_cmd
                 github.author github.project github.version github.tag_prefix github.tag_suffix github.tarball_from
@@ -53,13 +53,14 @@ namespace eval ::dockhand {
                 }}
             }} value]} { set metadata_only $value }
             dict set out dockhand.metadata_only $metadata_only
-            if {[dict exists $out cargo.dir]} {
+            foreach field {cargo.dir patch.dir} {
+                if {![dict exists $out $field]} { continue }
                 set source [$worker eval {file normalize [option worksrcpath]}]
-                set directory [file normalize [dict get $out cargo.dir]]
+                set directory [file normalize [dict get $out $field]]
                 if {$directory eq $source} {
-                    dict set out cargo.dir @worksrc@
+                    dict set out $field @worksrc@
                 } elseif {[string first "${source}/" $directory] == 0} {
-                    dict set out cargo.dir "@worksrc@/[string range $directory [expr {[string length $source] + 1}] end]"
+                    dict set out $field "@worksrc@/[string range $directory [expr {[string length $source] + 1}] end]"
                 }
             }
             if {[catch {fetch_details $worker} fetch]} {

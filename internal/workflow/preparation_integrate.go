@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -124,6 +125,8 @@ func (c *cycle) integratePreparation(ctx context.Context, candidate record.Job) 
 				return fmt.Errorf("%w: branch integration has no conclusive outcome", state.ErrInvalid)
 			} else if job.Spec.Destination == record.BranchReady {
 				finishJob(&job, record.JobCompleted, "Prepared branch "+job.Prepared.Branch, e.now())
+			} else if len(job.Prepared.PatchProblems) > 0 {
+				finishJob(&job, record.JobNeedsAttention, "Prepared branch "+job.Prepared.Branch+"; verification not started because a patch no longer applies to the new source: "+strings.Join(job.Prepared.PatchProblems, "; ")+". Refresh the patch on the branch, then verify.", e.now())
 			} else {
 				job.Phase = record.PhaseVerification
 				job.State, job.Detail = record.JobActive, "Prepared branch "+job.Prepared.Branch+"; verification pending"

@@ -13,6 +13,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
@@ -392,4 +393,30 @@ func TestCurrentChecksumsDoNotCreateBranchOrPublish(t *testing.T) {
 	require.Empty(t, status.Jobs[0].Publications)
 	require.Zero(t, hosting.writes)
 	require.Zero(t, f.provider.count("submit"))
+}
+
+func TestRejectedPatchCreatesTheBranchButNotVerification(t *testing.T) {
+	f, req := preparationFixture(t, true)
+	original := f.engine.Preparer
+	f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+		result, err := original.Prepare(ctx, r)
+		result.Patches = []patchcheck.Result{{Name: "patch-keep.diff", Checked: true, Applies: true, Detail: "applies"}, {Name: "patch-daemon.diff", Checked: true, Applies: false, Detail: "4 out of 5 hunks failed"}}
+		return result, err
+	})
+	id := submitPreparation(t, f, req)
+	var job record.Job
+	for i := 0; i < 6; i++ {
+		f.run(t, id)
+		job = f.status(t, id).Jobs[0].Job
+		if job.State != record.JobActive && job.State != record.JobQueued {
+			break
+		}
+	}
+	require.Equal(t, record.JobNeedsAttention, job.State)
+	require.Equal(t, record.PhasePreparation, job.Phase)
+	require.NotNil(t, job.Prepared)
+	require.Equal(t, []string{"patch-daemon.diff: 4 out of 5 hunks failed"}, job.Prepared.PatchProblems)
+	require.Contains(t, job.Detail, "Prepared branch "+job.Prepared.Branch+"; verification not started because a patch no longer applies")
+	require.Contains(t, job.Detail, "patch-daemon.diff: 4 out of 5 hunks failed")
+	require.NotEmpty(t, job.ChangeID, "the branch and change exist for a correction")
 }

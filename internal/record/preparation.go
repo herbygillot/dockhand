@@ -25,6 +25,10 @@ type PreparedChange struct {
 	Branch             string
 	Source             Source
 	IntegrationStarted bool
+	// PatchProblems names declared patches that no longer apply to the
+	// candidate source. The branch is still created; verification is not
+	// started until a person refreshes the patch.
+	PatchProblems []string `json:",omitempty"`
 }
 
 // CorrectionSpec freezes branch adoption preconditions alongside its candidate.

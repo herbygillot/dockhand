@@ -138,6 +138,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: this takes %s out of stable; %s is a prerelease. The explicit version is honored.\n", args[0], release.Version)
 					}
 				}
+				for _, patch := range preview.Preparation.Patches {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Patch %s: %s\n", plain(patch.Name), plain(patch.Detail))
+				}
 				if scope := preview.Preparation.Scope; scope != nil {
 					for _, member := range scope.Affected {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Affected: %s %s -> %s (metadata only: %t)\n", plain(member.Target.Name), plain(member.Before.Version), plain(member.After.Version), member.MetadataOnly)

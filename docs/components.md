@@ -36,6 +36,7 @@ dockhand2/
       tart/              # Concrete Tart verification provider
       github/            # Fork Actions verification and SDK adapter
     atomicfile/          # Durable replacement of small local files
+    archive/             # Tar and zip member walks without host extraction
     macos/               # OS/toolchain facts, operations, and launchd plist rendering
     tart/                # Shared local Tart commands, runtime paths, images, and coordination
       host/              # VM lifecycle, launchd, foreground boot, and guest transport
@@ -48,6 +49,7 @@ dockhand2/
       fidelity/          # Before-and-after evaluation comparison reports
       portedit/          # Evaluator-driven source edits in a disposable workspace
       portfile/          # Tcl literal candidates and precise source edits
+      patchcheck/        # Declared patch files checked against a candidate source
       dependents/        # Frozen-source downstream coverage discovery
       survey/            # Shared committed-source lifetime and port selection
       source/            # Evaluated PortGroup source conventions
@@ -117,7 +119,7 @@ The next preparation expansion follows [the bump-planner design](bump-planner.md
 
 `tcl` supplies the proven process/RPC and syntax machinery. MacPorts remains the semantic authority. Reuse focused source editing and Tcl syntax code where it holds up independently; it does not need to be redesigned to fit a driver.
 
-`macports/dependency` owns Go/Cargo declaration parsing, source-manifest reading, optional helper discovery/execution, and validation of generated blocks. `macports/portedit` composes these mechanisms with frozen-tree editing, archive hashing, and MacPorts reevaluation. Helper output is data: only recognized literal dependency declarations are incorporated, never a generated Portfile as executable Tcl. This introduces no workflow or state layer.
+`macports/dependency` owns Go/Cargo declaration parsing, source-manifest reading, optional helper discovery/execution, and validation of generated blocks. `macports/portedit` composes these mechanisms with frozen-tree editing, archive hashing, and MacPorts reevaluation. Helper output is data: only recognized literal dependency declarations are incorporated, never a generated Portfile as executable Tcl. This introduces no workflow or state layer. `archive` walks tar and zip members for both the manifest reader and `macports/patchcheck`, which extracts only the files a port's patch files name and runs the system patch command in check mode; preparation records whether each declared patch still applies, the workflow creates the branch but does not start verification while a patch is rejected, and nothing refuses the version.
 
 `upstream` collects release evidence, assesses eligible versions, and resolves explicit version/reference requests. It keeps the requested spelling, MacPorts version, and upstream tag distinct. Prefix inference uses the current port's source convention supplied through bound MacPorts metadata and confirms the candidate against upstream evidence. It returns structured update-available, current, and unknown results. `upstream/releasever` is a pure leaf that classifies a version spelling as stable, prerelease, or unknown; automatic selection admits stable spellings only, and every resolved release records its classification and whether it takes the port out of stable, which reporting states and nothing refuses. It has no dependency on job submission, a state writer, or branch creation. `Service.Bind` composes a source-specific `VersionProbe` with the catalogs without mutating the shared service. This assessment needs no bump request or edit-fidelity approval; preparation separately checks whether the selected release can be edited safely. Phase-one automatic and explicit bumps use it; phase-two `outdated` exposes discovery directly.
 

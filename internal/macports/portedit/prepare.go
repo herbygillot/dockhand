@@ -9,6 +9,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
 	"github.com/herbygillot/dockhand/internal/record"
 )
@@ -61,6 +62,9 @@ type Result struct {
 	Fidelity  []Fidelity
 	Release   *record.Release
 	Downloads []Download
+	// Patches reports whether each declared patch file still applies to the
+	// candidate source; a rejected patch is a finding, not a refusal.
+	Patches []patchcheck.Result `json:",omitempty"`
 }
 
 type Service struct {

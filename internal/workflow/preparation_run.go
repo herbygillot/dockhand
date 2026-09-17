@@ -201,5 +201,5 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 		prefix = "dockhand/checksums/"
 	}
 	branch := prefix + name + "-" + strings.ToLower(strings.TrimPrefix(string(job.ID), "job_"))
-	return record.PreparedChange{Scope: result.Scope, Branch: branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}}, nil
+	return record.PreparedChange{Scope: result.Scope, Branch: branch, Source: record.Source{Commit: record.ObjectID(commit), Tree: result.PreparedTree, Base: job.Spec.Source.Base}, PatchProblems: result.PatchProblems()}, nil
 }

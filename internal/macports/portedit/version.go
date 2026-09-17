@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"maps"
+	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -124,7 +125,20 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return plan.result, err
 	}
-	return s.applyArchivePlan(ctx, request, input, plan, s.archives(""))
+	store := s.archives("")
+	if patched(input.info) {
+		directory, err := os.MkdirTemp("", "dockhand-patchcheck-")
+		if err != nil {
+			return Result{}, err
+		}
+		defer os.RemoveAll(directory)
+		store = s.archives(directory)
+	}
+	result, err := s.applyArchivePlan(ctx, request, input, plan, store)
+	if err != nil {
+		return result, err
+	}
+	return result, s.checkPatches(ctx, input, &result)
 }
 
 func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *sourceInput, plan archivePlan, archives *archiveStore) (Result, error) {

@@ -254,6 +254,9 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.Fidelity = append(result.Fidelity, final)
 	result.Downloads = append(result.Downloads, gitDownloads...)
+	if err := s.checkPatches(ctx, input, &result); err != nil {
+		return Result{}, err
+	}
 	return result, nil
 }
 

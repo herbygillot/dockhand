@@ -10,6 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/macports/patchcheck"
 	"github.com/herbygillot/dockhand/internal/macports/portedit"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/upstream"
@@ -35,7 +36,18 @@ type Result struct {
 	Fidelity     []portedit.Fidelity
 	Release      *record.Release
 	Downloads    []portedit.Download
+	Patches      []patchcheck.Result `json:",omitempty"`
 }
+
+// PatchProblems names the declared patches that no longer apply to the candidate source.
+func (r Result) PatchProblems() []string {
+	var problems []string
+	for _, patch := range patchcheck.Rejected(r.Patches) {
+		problems = append(problems, patch.Name+": "+patch.Detail)
+	}
+	return problems
+}
+
 type Service struct {
 	Repo             *git.Repository
 	Ports            macports.Reader
@@ -120,7 +132,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
-	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads}
+	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads, Patches: edited.Patches}
 	if err != nil {
 		return result, err
 	}
