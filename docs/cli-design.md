@@ -66,13 +66,13 @@ Repository and identity API calls remain in `go-github`; `golang.org/x/oauth2` o
 Verification-capable commands accept `--keep-failed` for explicit local-VM retention. Normal cycles release terminal environments by default and prune bounded batches of old released diagnostics after seven days. Accepted policy belongs to `JobSpec`, separate from build/evidence inputs. Manual `gc` continues to release intentionally retained environments and collect reusable caches. See [routine cleanup](operations.md#routine-cleanup).
 
 ```text
-dockhand gc [--older-than 168h] [--dry-run]
+dockhand gc [--older-than 168h] [--dry-run] [--all-repositories]
 dockhand db backup <file>
 dockhand db check
 dockhand db migrate
 ```
 
-`gc` selects the current repository's terminal resources, releases old retained VMs, and removes diagnostic files whose confirmed release is also old. Future retention deadlines and live claims are respected; active or unresolved attempts are excluded. Dry-run performs no writes or provider calls. History, evidence, build outputs, provider identities, and lockfiles survive cleanup. Action reports support `--json`; incomplete selected actions return an error. An absent database or unregistered repository yields no eligible cleanup.
+`gc` selects the current repository's terminal resources, releases old retained VMs, and removes diagnostic files whose confirmed release is also old. `--all-repositories` runs the same collection over every registration in the database, needs no checkout, and names each registration it visited, marking those whose checkout no longer exists; a deleted checkout can otherwise never release its environments. Future retention deadlines and live claims are respected; active or unresolved attempts are excluded. Dry-run performs no writes or provider calls. History, evidence, build outputs, provider identities, and lockfiles survive cleanup. Action reports support `--json`; incomplete selected actions return an error. An absent database or unregistered repository yields no eligible cleanup.
 
 `db backup` and `db check` have an explicit whole-database scope and require no checkout or provider configuration. Backup creates a checked standalone snapshot including committed WAL contents; an existing destination is refused. Check is read-only and covers SQLite integrity and foreign keys. These two commands accept older supported schemas without migration. Missing databases are errors. They do not repair or restore a live database or resume work. See [operations and recovery](operations.md) for examples and external-state limitations.
 

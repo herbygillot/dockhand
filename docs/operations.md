@@ -52,7 +52,7 @@ dockhand gc
 dockhand gc --older-than 720h --dry-run
 ```
 
-`gc` operates on the current checkout's registered repository. Its default age is seven days (`168h`); durations use Go syntax such as `24h`, and `--older-than 0` explicitly includes recent terminal work. Dry-run uses read-only state and contacts no provider. Missing state or an unregistered repository yields no eligible cleanup.
+`gc` operates on the current checkout's registered repository, or on every registration with `--all-repositories`, which is the way to reach work whose checkout was deleted, such as a temporary exercise directory, before removing a development database. Its default age is seven days (`168h`); durations use Go syntax such as `24h`, and `--older-than 0` explicitly includes recent terminal work. Dry-run uses read-only state and contacts no provider. Missing state or an unregistered repository yields no eligible cleanup.
 
 There are two independent age checks:
 

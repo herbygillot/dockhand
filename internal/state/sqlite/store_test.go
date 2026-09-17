@@ -329,3 +329,22 @@ func TestGeneratedCommitIsImmutableContributionProvenance(t *testing.T) {
 	change.GeneratedCommit = ""
 	require.ErrorIs(t, s.Update(t.Context(), repo.ID, func(ctx context.Context, tx state.Tx) error { return tx.PutChange(ctx, change) }), state.ErrConflict)
 }
+
+func TestRepositoriesListsEveryRegistrationOldestFirst(t *testing.T) {
+	store, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "state.db"), sqlite.Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	empty, err := store.Repositories(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, empty)
+	first, err := store.RegisterRepository(t.Context(), "/checkouts/first/.git")
+	require.NoError(t, err)
+	second, err := store.RegisterRepository(t.Context(), "/checkouts/second/.git")
+	require.NoError(t, err)
+	listed, err := store.Repositories(t.Context())
+	require.NoError(t, err)
+	require.Len(t, listed, 2)
+	require.Equal(t, []string{first.CommonDir, second.CommonDir}, []string{listed[0].CommonDir, listed[1].CommonDir})
+	require.Equal(t, first.ID, listed[0].ID)
+	require.Equal(t, second.ID, listed[1].ID)
+}

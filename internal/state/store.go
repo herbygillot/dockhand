@@ -34,6 +34,9 @@ func (e *MigrationRequiredError) Unwrap() error { return ErrSchema }
 type Store interface {
 	FindRepository(context.Context, string) (record.Repository, error)
 	RegisterRepository(context.Context, string) (record.Repository, error)
+	// Repositories lists every registration in registration order, so maintenance can
+	// reach work whose checkout no longer exists.
+	Repositories(context.Context) ([]record.Repository, error)
 	View(context.Context, record.RepositoryID, func(context.Context, Reader) error) error
 	Update(context.Context, record.RepositoryID, func(context.Context, Tx) error) error
 }

@@ -229,3 +229,35 @@ func TestGCPrunesSharedIndexCacheWithoutProviderSetup(t *testing.T) {
 	require.FileExists(t, filepath.Join(profile, "index.lock"))
 	require.NoDirExists(t, filepath.Join(root, "artifacts"))
 }
+
+func TestGCAllRepositoriesReachesRegistrationsWithoutACheckout(t *testing.T) {
+	root := t.TempDir()
+	config := app.Config{Repository: filepath.Join(root, "not-a-checkout"), DBPath: filepath.Join(root, "state.db"), TclExecutable: "/missing/tcl"}
+	config.Tart.Executable = "/missing/tart"
+	store, err := sqlite.Open(t.Context(), config.DBPath, sqlite.Options{})
+	require.NoError(t, err)
+	present := t.TempDir()
+	out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", present).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	repo, err := git.Open(t.Context(), present, "")
+	require.NoError(t, err)
+	kept, err := store.RegisterRepository(t.Context(), repo.CommonDir)
+	require.NoError(t, err)
+	gone, err := store.RegisterRepository(t.Context(), filepath.Join(root, "deleted-checkout", ".git"))
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	var output bytes.Buffer
+	require.NoError(t, cli.Run(t.Context(), []string{"gc", "--all-repositories", "--dry-run"}, cli.Streams{Out: &output, Err: &output}, config), output.String())
+	require.Contains(t, output.String(), "Registration "+string(kept.ID)+": "+repo.CommonDir+"\n")
+	require.Contains(t, output.String(), "Registration "+string(gone.ID)+": "+filepath.Join(root, "deleted-checkout", ".git")+" (checkout missing)\n")
+	require.Contains(t, output.String(), "No eligible cleanup.")
+	output.Reset()
+	require.NoError(t, cli.Run(t.Context(), []string{"gc", "--all-repositories", "--json"}, cli.Streams{Out: &output, Err: &output}, config))
+	var result app.CollectResult
+	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	require.Len(t, result.Registrations, 2)
+	require.False(t, result.Registrations[0].CheckoutMissing)
+	require.True(t, result.Registrations[1].CheckoutMissing)
+	output.Reset()
+	require.Error(t, cli.Run(t.Context(), []string{"gc"}, cli.Streams{Out: &output, Err: &output}, config), "without the flag gc still needs a checkout")
+}

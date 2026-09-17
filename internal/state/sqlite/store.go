@@ -326,6 +326,28 @@ func (s *Store) FindRepository(ctx context.Context, path string) (record.Reposit
 	})
 	return result, err
 }
+func (s *Store) Repositories(ctx context.Context) ([]record.Repository, error) {
+	var result []record.Repository
+	err := s.transaction(ctx, false, "", func(ctx context.Context, t *transaction) error {
+		rows, err := t.conn.QueryContext(ctx, "SELECT id,common_dir,created_at FROM repositories ORDER BY created_at,rowid")
+		if err != nil {
+			return storageError(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var repository record.Repository
+			var created int64
+			if err := rows.Scan(&repository.ID, &repository.CommonDir, &created); err != nil {
+				return storageError(err)
+			}
+			repository.CreatedAt = fromTime(created)
+			result = append(result, repository)
+		}
+		return storageError(rows.Err())
+	})
+	return result, err
+}
+
 func (s *Store) RegisterRepository(ctx context.Context, path string) (record.Repository, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return record.Repository{}, state.ErrInvalid

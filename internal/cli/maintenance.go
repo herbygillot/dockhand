@@ -8,7 +8,6 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/state"
-	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -63,10 +62,10 @@ func (r *runtime) databaseCommand() *cobra.Command {
 }
 
 func (r *runtime) gcCommand() *cobra.Command {
-	options := workflow.RetentionOptions{}
+	options := app.CollectOptions{}
 	command := &cobra.Command{
 		Use: "gc", Short: "Release old environments and prune old diagnostics and caches", Args: cobra.NoArgs,
-		Long: "Clean up terminal work in the current repository. Release retained environments whose jobs finished before the age threshold; prune diagnostic files only when confirmed release is also that old. Future explicit retention deadlines are honored. History, evidence, submission identities, and lockfiles remain. Active or unresolved attempts are never cleaned up. Old local GitHub log caches are removed only for terminal jobs; remote logs and database evidence remain. Shared PortIndex caches are removed by last-use age, across repositories, under their existing locks. Busy caches are skipped. This command does not advance jobs.",
+		Long: "Clean up terminal work in the current repository, or in every registered repository with --all-repositories, which also reaches registrations whose checkout no longer exists and could otherwise never release their environments. Release retained environments whose jobs finished before the age threshold; prune diagnostic files only when confirmed release is also that old. Future explicit retention deadlines are honored. History, evidence, submission identities, and lockfiles remain. Active or unresolved attempts are never cleaned up. Old local GitHub log caches are removed only for terminal jobs; remote logs and database evidence remain. Shared PortIndex caches are removed by last-use age, across repositories, under their existing locks. Busy caches are skipped. This command does not advance jobs.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, callErr := app.Collect(cmd.Context(), r.config, options)
 			if r.json {
@@ -75,15 +74,26 @@ func (r *runtime) gcCommand() *cobra.Command {
 				}
 			} else {
 				prefix := ""
-				if options.DryRun {
+				if options.Retention.DryRun {
 					prefix = "Would "
+				}
+				if options.AllRepositories {
+					for _, registration := range result.Registrations {
+						note := ""
+						if registration.CheckoutMissing {
+							note = " (checkout missing)"
+						}
+						if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Registration %s: %s%s\n", registration.ID, registration.CommonDir, note); err != nil {
+							return err
+						}
+					}
 				}
 				for _, item := range result.Items {
 					status := "pending"
 					if item.Completed {
 						status = "completed"
 					}
-					if options.DryRun {
+					if options.Retention.DryRun {
 						status = "preview"
 					}
 					target := string(item.ResourceID)
@@ -111,7 +121,7 @@ func (r *runtime) gcCommand() *cobra.Command {
 			if callErr != nil {
 				return databaseReadError(callErr)
 			}
-			if !options.DryRun {
+			if !options.Retention.DryRun {
 				for _, item := range result.Items {
 					if !item.Completed {
 						return fmt.Errorf("cleanup remains pending; rerun gc or inspect status")
@@ -121,8 +131,9 @@ func (r *runtime) gcCommand() *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().DurationVar(&options.OlderThan, "older-than", 7*24*time.Hour, "Minimum age since job completion, resource release, or cache use (0 includes recent work)")
-	command.Flags().BoolVar(&options.DryRun, "dry-run", false, "Show eligible cleanup without changing files/state or contacting remote services")
+	command.Flags().DurationVar(&options.Retention.OlderThan, "older-than", 7*24*time.Hour, "Minimum age since job completion, resource release, or cache use (0 includes recent work)")
+	command.Flags().BoolVar(&options.Retention.DryRun, "dry-run", false, "Show eligible cleanup without changing files/state or contacting remote services")
+	command.Flags().BoolVar(&options.AllRepositories, "all-repositories", false, "Collect every registered repository, including ones whose checkout no longer exists")
 	return command
 }
 

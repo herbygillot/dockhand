@@ -17,6 +17,8 @@ type RetentionOptions struct {
 }
 
 type CleanupItem struct {
+	// Repository is set by callers that collect several registrations.
+	Repository record.RepositoryID `json:",omitempty"`
 	ResourceID record.ResourceID
 	AttemptID  record.AttemptID
 	Path       string
