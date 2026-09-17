@@ -57,7 +57,7 @@ func correctionCurrent(ctx context.Context, r state.Reader, c record.CorrectionS
 func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (BoundCorrection, error) {
 	var result BoundCorrection
 	if e == nil || e.State == nil || e.Repo == nil || e.Ports == nil {
-		return result, ErrNoState
+		return result, errNoState
 	}
 	if input.Title != "" && (strings.TrimSpace(input.Title) == "" || strings.ContainsAny(input.Title, "\r\n\x00")) {
 		return result, fmt.Errorf("workflow: title must be one nonempty line")

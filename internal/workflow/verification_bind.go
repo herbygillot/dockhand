@@ -52,7 +52,7 @@ type BoundVerification struct {
 // Reuse the returned Request when retrying Submit; binding again selects fresh input.
 func (e *Engine) BindVerification(ctx context.Context, request VerificationRequest) (_ BoundVerification, err error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return BoundVerification{}, ErrNoState
+		return BoundVerification{}, errNoState
 	}
 	if e.Repo == nil || e.Ports == nil {
 		return BoundVerification{}, fmt.Errorf("workflow: source binding requires Git and MacPorts")
@@ -72,7 +72,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		continuation = &change
 		request.Branch = change.Branch
 		request.Selection.Selector = ""
-		spec, err := e.ContributionBuild(ctx, change)
+		spec, err := e.contributionBuild(ctx, change)
 		if err != nil {
 			return BoundVerification{}, err
 		}

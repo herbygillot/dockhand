@@ -98,7 +98,7 @@ func TestLiteralBlockEditingPreservesUnrelatedPortfile(t *testing.T) {
 	updated, err := Apply(stripped, map[string][]string{Cargo: {"new", "2.0", sha, "extra", "1.0", sha}})
 	require.NoError(t, err)
 	require.Contains(t, string(updated), "# human notes\nconfigure.args --keep")
-	values, err := Generated(updated, Cargo)
+	values, err := generated(updated, Cargo)
 	require.NoError(t, err)
 	require.Len(t, values, 6)
 	require.Contains(t, string(updated), "\\\n    extra")

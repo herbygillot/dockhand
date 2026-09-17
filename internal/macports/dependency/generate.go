@@ -1,7 +1,6 @@
 package dependency
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -25,14 +24,6 @@ type GeneratedBlocks struct {
 	Online []GitCrate
 }
 
-type boundedBuffer struct{ bytes.Buffer }
-
-func (b *boundedBuffer) Write(p []byte) (int, error) {
-	if b.Len()+len(p) > maxManifestBytes {
-		return 0, fmt.Errorf("dependency: helper output exceeds limit")
-	}
-	return b.Buffer.Write(p)
-}
 func run(ctx context.Context, executable, directory string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()

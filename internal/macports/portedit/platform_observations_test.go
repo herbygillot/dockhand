@@ -44,7 +44,7 @@ checksums sha256 aaaa size 2
 master_sites @SITE@/${version}
 `)
 	_, err := s.Prepare(t.Context(), r)
-	require.ErrorIs(t, err, ErrProbeInconclusive)
+	require.ErrorIs(t, err, errProbeInconclusive)
 	require.Contains(t, err.Error(), "changes value")
 	require.Empty(t, *requests)
 }
@@ -58,7 +58,7 @@ checksums sha256 aaaa size 2
 master_sites @SITE@/${version}
 `)
 	_, err := s.Prepare(t.Context(), r)
-	require.ErrorIs(t, err, ErrProbeInconclusive)
+	require.ErrorIs(t, err, errProbeInconclusive)
 	require.Contains(t, err.Error(), "host state")
 	require.Empty(t, *requests)
 }
@@ -93,7 +93,7 @@ checksums sha256 aaaa size 2
 master_sites @SITE@/${version}
 `)
 	_, err := s.Prepare(t.Context(), r)
-	require.ErrorIs(t, err, ErrProbeInconclusive)
+	require.ErrorIs(t, err, errProbeInconclusive)
 	require.Contains(t, err.Error(), "distfiles is selected by the OS minor version or deployment target")
 	require.Empty(t, *requests)
 }

@@ -157,12 +157,12 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 		}
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: no build configuration was selected")
 	}
-	return PlanSingleWithConfig(job, revision, *job.Spec.Build)
+	return planSingleWithConfig(job, revision, *job.Spec.Build)
 }
 
-// PlanSingleWithConfig creates a one-target plan from an exact configuration
+// planSingleWithConfig creates a one-target plan from an exact configuration
 // selected by accepted requirements and recorded evidence.
-func PlanSingleWithConfig(job record.Job, revision record.Revision, config record.BuildConfig) (record.VerificationPlan, record.BuildSpec, error) {
+func planSingleWithConfig(job record.Job, revision record.Revision, config record.BuildConfig) (record.VerificationPlan, record.BuildSpec, error) {
 	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.BuildTargets()) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}

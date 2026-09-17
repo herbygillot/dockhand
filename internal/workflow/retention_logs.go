@@ -41,7 +41,7 @@ func (c *cycle) collectLogCaches(ctx context.Context, result *RetentionResult) e
 				if !attempt.State.Terminal() || attempt.Claim.Live(e.now()) || attempt.Run.RunID == "" || attempt.Run.Provider != attempt.Spec.Config.Provider || attempt.Evidence != nil && len(attempt.Evidence.Artifacts) > 0 {
 					continue
 				}
-				pruner, ok := e.VerificationProvider(attempt.Run.Provider).(verify.LogCachePruner)
+				pruner, ok := e.verificationProvider(attempt.Run.Provider).(verify.LogCachePruner)
 				if !ok {
 					continue
 				}

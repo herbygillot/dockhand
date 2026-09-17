@@ -55,21 +55,6 @@ type Service struct {
 	EvaluateVersions func(context.Context, []string) ([]string, error)
 }
 
-func (s *Service) Discover(ctx context.Context, source macports.Context) (Result, error) {
-	if s == nil || s.Ports == nil {
-		return Result{Assessment: Unknown}, fmt.Errorf("upstream: port reader is required")
-	}
-	snapshot, err := s.Ports.Evaluate(ctx, source)
-	if err != nil {
-		return Result{Assessment: Unknown}, err
-	}
-	info, ok := snapshot.Ports[source.Target().Name]
-	if !ok {
-		return Result{Assessment: Unknown}, fmt.Errorf("upstream: selected port was not evaluated")
-	}
-	return s.DiscoverPort(ctx, info)
-}
-
 func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource.Spec, forge.Repository, error) {
 	var spec portsource.Spec
 	var err error
@@ -80,7 +65,7 @@ func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource
 	}
 	if err != nil {
 		if automatic && errors.Is(err, portsource.ErrUnsupported) {
-			return spec, nil, fmt.Errorf("%w: %v", ErrAutomaticUnsupported, err)
+			return spec, nil, fmt.Errorf("%w: %v", errAutomaticUnsupported, err)
 		}
 		return spec, nil, err
 	}

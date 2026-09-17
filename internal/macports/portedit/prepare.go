@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	ErrProbeInconclusive = errors.New("portedit: version probe is inconclusive")
+	errProbeInconclusive = errors.New("portedit: version probe is inconclusive")
 	ErrNotImplemented    = errors.New("portedit: requested transformation is not implemented")
 	ErrUnsupported       = portfile.ErrUnsupported
 	ErrFidelity          = fidelity.ErrMismatch

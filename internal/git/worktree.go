@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"hash"
 	"io"
 	"os"
@@ -100,7 +101,7 @@ func (r *Repository) checkoutHead(ctx context.Context) (string, string, error) {
 	}
 	out, err := r.output(ctx, "symbolic-ref", "--quiet", "HEAD")
 	if err != nil {
-		var failure *CommandError
+		var failure *subprocess.Error
 		var exit interface{ ExitCode() int }
 		if errors.As(err, &failure) && errors.As(failure.Cause, &exit) && exit.ExitCode() == 1 {
 			return "", head, nil

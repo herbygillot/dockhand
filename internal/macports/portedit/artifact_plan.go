@@ -30,7 +30,7 @@ type observedArchivePlan struct {
 
 func (s *Service) bindArchives(input *sourceInput, contents []byte, observed macports.Observation) (distfiles.Binding, error) {
 	if observed.Ports[input.target.Name].ModeledHostAccess {
-		return distfiles.Binding{}, fmt.Errorf("%w: %v", ErrProbeInconclusive, observed.Ports[input.target.Name].Problems)
+		return distfiles.Binding{}, fmt.Errorf("%w: %v", errProbeInconclusive, observed.Ports[input.target.Name].Problems)
 	}
 	info := observed.Snapshot.Ports[input.target.Name]
 	if err := checkArchivePolicy(info, input.portdir()); err != nil {
@@ -59,11 +59,11 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
 		before, err := s.observeContents(ctx, input, input.data, mode, false)
 		if err != nil {
-			return nil, fmt.Errorf("%w: observing baseline %+v: %v", ErrProbeInconclusive, profile, err)
+			return nil, fmt.Errorf("%w: observing baseline %+v: %v", errProbeInconclusive, profile, err)
 		}
 		after, err := s.observeContents(ctx, input, contents, mode, false)
 		if err != nil {
-			return nil, fmt.Errorf("%w: observing candidate %+v: %v", ErrProbeInconclusive, profile, err)
+			return nil, fmt.Errorf("%w: observing candidate %+v: %v", errProbeInconclusive, profile, err)
 		}
 		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
 		affected := old.Version != next.Version
@@ -151,7 +151,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	}
 	for id := range declared {
 		if !covered[id] {
-			return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", ErrProbeInconclusive, id)
+			return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, id)
 		}
 	}
 	for id := range changed {

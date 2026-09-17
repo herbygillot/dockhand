@@ -28,7 +28,7 @@ func (r GitReference) String() string {
 // Declarable reports whether cargo.crates_github can express the reference.
 // The cargo PortGroup writes the declared value as a branch into Cargo's source
 // replacement, which matches the lockfile only for branch selectors.
-func (r GitReference) Declarable() bool { return r.Kind == GitBranch }
+func (r GitReference) declarable() bool { return r.Kind == GitBranch }
 
 // GitCrate identifies a Git-sourced crate by repository, exact commit, and selector.
 type GitCrate struct {

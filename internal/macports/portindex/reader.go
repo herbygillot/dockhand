@@ -15,9 +15,9 @@ import (
 )
 
 var (
-	ErrNoIndex    = errors.New("portindex: tree has no PortIndex")
+	errNoIndex    = errors.New("portindex: tree has no PortIndex")
 	ErrNotIndexed = errors.New("portindex: name not indexed")
-	ErrMalformed  = errors.New("portindex: malformed index")
+	errMalformed  = errors.New("portindex: malformed index")
 )
 
 // Entry contains the indexed metadata for one port or subport.
@@ -40,7 +40,7 @@ func Open(root string) (*Index, error) {
 	name := filepath.Join(root, portIndexName)
 	if _, err := os.Stat(name); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%w: %s", ErrNoIndex, root)
+			return nil, fmt.Errorf("%w: %s", errNoIndex, root)
 		}
 		return nil, err
 	}
@@ -92,12 +92,12 @@ func (i *Index) lookup(key string) (Entry, error) {
 		return Entry{}, err
 	}
 	if strings.ToLower(frame.name) != key {
-		return Entry{}, fmt.Errorf("%w: offset for %q addresses %q", ErrMalformed, key, frame.name)
+		return Entry{}, fmt.Errorf("%w: offset for %q addresses %q", errMalformed, key, frame.name)
 	}
 	return frame.entry()
 }
 
-// Each visits the complete index sequentially and stops when yield returns false.
+// each visits the complete index sequentially and stops when yield returns false.
 func (i *Index) Each(yield func(Entry) bool) error {
 	file, err := os.Open(i.path)
 	if err != nil {
@@ -112,7 +112,7 @@ func (i *Index) Each(yield func(Entry) bool) error {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("%w: at byte %d: %v", ErrMalformed, offset, err)
+			return fmt.Errorf("%w: at byte %d: %v", errMalformed, offset, err)
 		}
 		offset += frame.size
 		entry, err := frame.entry()
@@ -136,15 +136,15 @@ func readQuick(name string) (map[string]int64, error) {
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) != 2 {
-			return nil, fmt.Errorf("%w: invalid quick-index line", ErrMalformed)
+			return nil, fmt.Errorf("%w: invalid quick-index line", errMalformed)
 		}
 		offset, err := strconv.ParseInt(fields[1], 10, 64)
 		if err != nil || offset < 0 {
-			return nil, fmt.Errorf("%w: invalid quick-index offset", ErrMalformed)
+			return nil, fmt.Errorf("%w: invalid quick-index offset", errMalformed)
 		}
 		key := strings.ToLower(fields[0])
 		if _, exists := offsets[key]; exists {
-			return nil, fmt.Errorf("%w: duplicate quick-index name %q", ErrMalformed, fields[0])
+			return nil, fmt.Errorf("%w: duplicate quick-index name %q", errMalformed, fields[0])
 		}
 		offsets[key] = offset
 	}
@@ -152,7 +152,7 @@ func readQuick(name string) (map[string]int64, error) {
 		return nil, err
 	}
 	if len(offsets) == 0 {
-		return nil, fmt.Errorf("%w: empty quick index", ErrMalformed)
+		return nil, fmt.Errorf("%w: empty quick index", errMalformed)
 	}
 	return offsets, nil
 }
@@ -172,11 +172,11 @@ func scanOffsets(name string) (map[string]int64, error) {
 			return offsets, nil
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: at byte %d: %v", ErrMalformed, offset, err)
+			return nil, fmt.Errorf("%w: at byte %d: %v", errMalformed, offset, err)
 		}
 		key := strings.ToLower(frame.name)
 		if _, exists := offsets[key]; exists {
-			return nil, fmt.Errorf("%w: duplicate name %q", ErrMalformed, frame.name)
+			return nil, fmt.Errorf("%w: duplicate name %q", errMalformed, frame.name)
 		}
 		offsets[key] = offset
 		offset += frame.size
@@ -192,14 +192,14 @@ type frame struct {
 func (f frame) entry() (Entry, error) {
 	fields, failures := syntax.DictValues(string(f.payload))
 	if len(failures) != 0 {
-		return Entry{}, fmt.Errorf("%w: entry %q is not a Tcl dictionary", ErrMalformed, f.name)
+		return Entry{}, fmt.Errorf("%w: entry %q is not a Tcl dictionary", errMalformed, f.name)
 	}
 	entry := Entry{Name: f.name, Portdir: fields["portdir"], Fields: fields}
 	if fields["name"] != "" {
 		entry.Name = fields["name"]
 	}
 	if entry.Name == "" || entry.Portdir == "" {
-		return Entry{}, fmt.Errorf("%w: entry %q lacks name or portdir", ErrMalformed, f.name)
+		return Entry{}, fmt.Errorf("%w: entry %q lacks name or portdir", errMalformed, f.name)
 	}
 	return entry, nil
 }

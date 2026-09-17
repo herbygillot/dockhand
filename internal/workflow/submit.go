@@ -46,12 +46,12 @@ type Receipt struct {
 //
 // Reusing an ID with equivalent intent returns the original receipt, even after
 // the job progresses or its change advances or closes. Different intent returns
-// an error wrapping ErrRequestConflict. Every error returns a zero receipt,
+// an error wrapping state.ErrConflict. Every error returns a zero receipt,
 // including a state commit whose outcome is uncertain; retry with the same ID
 // rather than creating a new request.
 func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return Receipt{}, ErrNoState
+		return Receipt{}, errNoState
 	}
 	if !validToken(string(request.ID)) {
 		return Receipt{}, fmt.Errorf("%w: a nonempty request ID without whitespace or control characters is required", ErrInvalidRequest)
@@ -93,14 +93,14 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 		previous, err := tx.Request(ctx, request.ID)
 		if err == nil {
 			if previous.Kind != record.JobRequest || !bytes.Equal(previous.Payload, payload) {
-				return ErrRequestConflict
+				return state.ErrConflict
 			}
 			job, err := tx.JobForRequest(ctx, request.ID)
 			if err != nil {
 				return err
 			}
 			if spec.ChangeID != "" && spec.ChangeID != job.ChangeID {
-				return ErrRequestConflict
+				return state.ErrConflict
 			}
 			receipt = Receipt{RequestID: request.ID, JobID: job.ID, AcceptedAt: job.AcceptedAt, Source: job.Spec.Source, ChangeID: job.ChangeID}
 			return nil

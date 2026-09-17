@@ -21,9 +21,9 @@ var loopScript string
 
 const noiseLimit = 64 << 10
 
-const DefaultLineLimit = 1 << 20
+const defaultLineLimit = 1 << 20
 
-const DefaultFrameLimit = 16 << 20
+const defaultFrameLimit = 16 << 20
 
 const sentinel = "TCLRPC1 "
 
@@ -79,17 +79,17 @@ func WithFrameLimit(n int) Option { return func(c *config) { c.frameLimit = n } 
 func New(ctx context.Context, proc *shell.Proc, opts ...Option) (*Session, error) {
 	cfg := config{
 		handshake:  defaultHandshakeTimeout,
-		lineLimit:  DefaultLineLimit,
-		frameLimit: DefaultFrameLimit,
+		lineLimit:  defaultLineLimit,
+		frameLimit: defaultFrameLimit,
 	}
 	for _, o := range opts {
 		o(&cfg)
 	}
 	if cfg.lineLimit <= 0 {
-		cfg.lineLimit = DefaultLineLimit
+		cfg.lineLimit = defaultLineLimit
 	}
 	if cfg.frameLimit <= 0 {
-		cfg.frameLimit = DefaultFrameLimit
+		cfg.frameLimit = defaultFrameLimit
 	}
 	if err := proc.Claim(); err != nil {
 		return nil, fmt.Errorf("rpc: %w", err)

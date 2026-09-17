@@ -95,7 +95,7 @@ func SplitList(src []byte, window text.Span) ([]text.Span, []Error) {
 	}
 }
 
-func ListValue(raw string) string {
+func listValue(raw string) string {
 	if len(raw) >= 2 && raw[0] == '{' && raw[len(raw)-1] == '}' {
 		return raw[1 : len(raw)-1]
 	}
@@ -204,7 +204,7 @@ func ListValues(s string) ([]string, []Error) {
 	}
 	out := make([]string, len(elems))
 	for i, e := range elems {
-		out[i] = ListValue(e.Text(src))
+		out[i] = listValue(e.Text(src))
 	}
 	return out, nil
 }

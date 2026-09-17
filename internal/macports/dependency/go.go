@@ -52,7 +52,7 @@ func generateGo(ctx context.Context, executable string, in Input) (GeneratedBloc
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}
-	values, err := Generated(output, Go)
+	values, err := generated(output, Go)
 	if err != nil {
 		return GeneratedBlocks{}, err
 	}

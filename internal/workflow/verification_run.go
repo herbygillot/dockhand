@@ -54,7 +54,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				return nil
 			}
 			if job.Phase != record.PhaseVerification {
-				detail = ErrNotImplemented.Error()
+				detail = errNotImplemented.Error()
 				job.State, job.FinishedAt, job.Detail = record.JobNeedsAttention, &now, detail
 				work.Job = job
 				changed = true

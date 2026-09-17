@@ -10,7 +10,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/state"
 )
 
-var ErrClosed = errors.New("tart: submission is permanently closed")
+var errClosed = errors.New("tart: submission is permanently closed")
 var ErrExecutableUnavailable = errors.New("tart: executable is unavailable")
 
 var ErrImageUnavailable = errors.New("tart: no suitable prepared image is available")

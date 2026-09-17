@@ -42,7 +42,7 @@ type BoundPreparation struct {
 
 func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest) (BoundPreparation, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return BoundPreparation{}, ErrNoState
+		return BoundPreparation{}, errNoState
 	}
 	if e.Repo == nil || e.Ports == nil {
 		return BoundPreparation{}, fmt.Errorf("workflow: preparation binding requires Git and MacPorts")

@@ -254,7 +254,7 @@ func TestBranchAdoptionRollsBackWhenRequestWriteFails(t *testing.T) {
 		return tx.PutRequest(ctx, record.AcceptedRequest{ID: bound.Request.ID, Kind: record.JobRequest, Payload: []byte("{}"), AcceptedAt: time.Now()})
 	}))
 	_, err = f.engine.Submit(t.Context(), bound.Request)
-	require.ErrorIs(t, err, state.ErrConflict)
+	require.ErrorIs(t, err, workflow.ErrRequestConflict)
 	require.NoError(t, f.store.View(t.Context(), f.repository, func(ctx context.Context, r state.Reader) error {
 		change, err := r.OpenChangeByBranch(ctx, "candidate")
 		require.NoError(t, err)

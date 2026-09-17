@@ -36,7 +36,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	previous, err := o.read(ctx, request.ID)
 	if err == nil {
 		if previous.State == record.ExecutionClosed || previous.State == record.ExecutionReleased && len(previous.Result) == 0 {
-			return verify.Submission{}, ErrClosed
+			return verify.Submission{}, errClosed
 		}
 		data, e := o.restore(previous)
 		if e != nil {

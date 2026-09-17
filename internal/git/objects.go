@@ -53,7 +53,7 @@ func (r *Repository) ObjectType(ctx context.Context, object string) (string, err
 	return strings.TrimSpace(string(out)), err
 }
 
-func (r *Repository) ObjectTypes(ctx context.Context, objects []string) (map[string]string, error) {
+func (r *Repository) objectTypes(ctx context.Context, objects []string) (map[string]string, error) {
 	types := make(map[string]string, len(objects))
 	if len(objects) == 0 {
 		return types, nil

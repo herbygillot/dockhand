@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"context"
+	"github.com/herbygillot/dockhand/internal/state"
 	"sync"
 	"testing"
 
@@ -99,7 +100,7 @@ func TestSubmitRevisionConstraints(t *testing.T) {
 	request = f.request("missing")
 	request.Spec.InputRevision = "missing"
 	_, err = f.engine.Submit(t.Context(), request)
-	require.ErrorIs(t, err, workflow.ErrNotFound, "missing revision accepted: %v", err)
+	require.ErrorIs(t, err, state.ErrNotFound, "missing revision accepted: %v", err)
 	request = f.request("future-action")
 	request.Spec.Action = record.Rebase
 	_, err = f.engine.Submit(t.Context(), request)
@@ -183,7 +184,7 @@ func TestStatusIsAnIndependentReadOnlyProjection(t *testing.T) {
 		require.ErrorIs(t, err, workflow.ErrInvalidScope, "invalid scope accepted: %+v", scope)
 	}
 	_, err = f.engine.Status(t.Context(), workflow.Scope{Jobs: []record.JobID{"missing"}})
-	require.ErrorIs(t, err, workflow.ErrNotFound, "unknown job accepted: %v", err)
+	require.ErrorIs(t, err, state.ErrNotFound, "unknown job accepted: %v", err)
 }
 
 func TestRetryAcceptsRedundantMatchingChangeIdentity(t *testing.T) {

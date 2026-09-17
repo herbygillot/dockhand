@@ -43,14 +43,6 @@ func (p *Provider) machineFor(c Config, guard *os.File) machine {
 	}
 	return newNative(c, guard, &p.images, p.State)
 }
-func (p *Provider) DescribeEnvironment(ctx context.Context) (Environment, error) {
-	c, err := settings(p.Config)
-	if err != nil {
-		return Environment{}, err
-	}
-	progress.Report(ctx, "Inspecting Tart image %s", c.Image)
-	return p.machineFor(c, nil).Environment(ctx)
-}
 func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error) {
 	c, err := settings(p.Config)
 	if err != nil {
@@ -180,8 +172,6 @@ var _ verify.Provider = (*Provider)(nil)
 func requestID(id record.RequestID) bool {
 	return id != "" && !strings.ContainsAny(string(id), "\x00\r\n\t ")
 }
-
-func (p *Provider) settings() (Config, error) { return settings(p.Config) }
 
 type Config struct {
 	Executable          string

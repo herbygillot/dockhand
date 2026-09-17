@@ -29,10 +29,6 @@ type Dependent struct {
 	Requires []string
 }
 
-func (d Dependent) BuildOnly() bool {
-	return len(d.Fields) == 1 && d.Fields[0] == DependsBuild
-}
-
 // Unread identifies an indexed dependency field that could not be parsed.
 type Unread struct {
 	Port    string
@@ -53,8 +49,8 @@ type Closure struct {
 	Unread       []Unread
 }
 
-// DependencyName extracts the provider port from a MacPorts dependency token.
-func DependencyName(value string) string {
+// dependencyName extracts the provider port from a MacPorts dependency token.
+func dependencyName(value string) string {
 	if index := strings.LastIndexByte(value, ':'); index >= 0 {
 		return value[index+1:]
 	}
@@ -75,7 +71,7 @@ func (e Entry) dependencyEdges(fields []string) (map[string][]string, []Unread) 
 			continue
 		}
 		for _, item := range items {
-			name := strings.ToLower(DependencyName(item))
+			name := strings.ToLower(dependencyName(item))
 			if name == "" {
 				continue
 			}

@@ -13,7 +13,7 @@ func ParseScript(src []byte, window text.Span) (*Script, []Error) {
 	return s, p.errs
 }
 
-func (b Braced) ScriptLens(src []byte) (*Script, []Error) {
+func (b Braced) scriptLens(src []byte) (*Script, []Error) {
 	return ParseScript(src, b.Body)
 }
 

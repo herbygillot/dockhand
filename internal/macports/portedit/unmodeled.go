@@ -75,7 +75,7 @@ func unmodeledReads(src []byte, script *syntax.Script) error {
 				continue
 			}
 			if unmodeledRead.MatchString(word.Span.Text(src)) && !benignSink(name) {
-				return fmt.Errorf("%w: %s reads %s", ErrProbeInconclusive, name, unmodeledDimension)
+				return fmt.Errorf("%w: %s reads %s", errProbeInconclusive, name, unmodeledDimension)
 			}
 		}
 	}
@@ -120,7 +120,7 @@ func controlParts(src []byte, cmd syntax.Command) (controls, bodies []syntax.Wor
 func benignBody(src []byte, body syntax.Word) error {
 	script, ok := body.BracedScript(src)
 	if !ok {
-		return fmt.Errorf("%w: a branch selected by %s is not a literal script", ErrProbeInconclusive, unmodeledDimension)
+		return fmt.Errorf("%w: a branch selected by %s is not a literal script", errProbeInconclusive, unmodeledDimension)
 	}
 	for _, item := range script.Items {
 		cmd, ok := item.(syntax.Command)
@@ -133,7 +133,7 @@ func benignBody(src []byte, body syntax.Word) error {
 			if benignSink(name) {
 				continue
 			}
-			return fmt.Errorf("%w: %s is selected by %s", ErrProbeInconclusive, name, unmodeledDimension)
+			return fmt.Errorf("%w: %s is selected by %s", errProbeInconclusive, name, unmodeledDimension)
 		}
 		for _, word := range nested {
 			if err := benignBody(src, word); err != nil {

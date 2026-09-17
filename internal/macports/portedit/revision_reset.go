@@ -27,11 +27,11 @@ func (s *Service) resetRevision(ctx context.Context, request Request, input *sou
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
 		before, err := s.observeContents(ctx, input, input.data, mode, !request.SharedRelease)
 		if err != nil {
-			return nil, fmt.Errorf("%w: baseline revision evaluation was inconclusive: %w", ErrProbeInconclusive, err)
+			return nil, fmt.Errorf("%w: baseline revision evaluation was inconclusive: %w", errProbeInconclusive, err)
 		}
 		after, err := s.observeContents(ctx, input, contents, mode, !request.SharedRelease)
 		if err != nil {
-			return nil, fmt.Errorf("%w: candidate revision evaluation was inconclusive: %w", ErrProbeInconclusive, err)
+			return nil, fmt.Errorf("%w: candidate revision evaluation was inconclusive: %w", errProbeInconclusive, err)
 		}
 		if selectedVersion == "" {
 			selectedVersion = after.Snapshot.Ports[input.target.Name].Version

@@ -87,7 +87,7 @@ func TestReverseDependenciesAndTransitiveClosure(t *testing.T) {
 	require.Equal(t, []string{portindex.DependsLib}, reverse.ByPort["core"][0].Fields)
 	require.Equal(t, []string{"core"}, reverse.ByPort["core"][0].Requires)
 	require.Equal(t, "builder", reverse.ByPort["tool"][0].Name)
-	require.True(t, reverse.ByPort["tool"][0].BuildOnly())
+	require.Equal(t, []string{portindex.DependsBuild}, reverse.ByPort["tool"][0].Fields)
 	require.Equal(t, "core", reverse.ByPort["runtime"][0].Name)
 
 	closure, err := index.DependencyClosure([]string{"consumer"})

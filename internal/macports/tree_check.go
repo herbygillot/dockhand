@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var ErrNotPortsTree = errors.New("not a MacPorts ports tree")
+var errNotPortsTree = errors.New("not a MacPorts ports tree")
 
 // ValidatePortsTree checks that a directory looks like a ports tree before any
 // expensive work, such as index generation, is spent on it. A ports tree holds
@@ -41,5 +41,5 @@ func ValidatePortsTree(root, described string) error {
 	if described == "" {
 		described = root
 	}
-	return fmt.Errorf("%w: %s has no <category>/<port>/Portfile; pass --tree /path/to/macports-ports or set MACPORTS_TREE", ErrNotPortsTree, described)
+	return fmt.Errorf("%w: %s has no <category>/<port>/Portfile; pass --tree /path/to/macports-ports or set MACPORTS_TREE", errNotPortsTree, described)
 }

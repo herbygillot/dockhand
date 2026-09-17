@@ -66,7 +66,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 		progress.Report(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
 		observed, err := s.observeContents(ctx, input, input.data, macports.ObservationRequest{Platform: profile, Declarations: true}, false)
 		if err != nil {
-			return nil, fmt.Errorf("%w: observing %+v: %v", ErrProbeInconclusive, profile, err)
+			return nil, fmt.Errorf("%w: observing %+v: %v", errProbeInconclusive, profile, err)
 		}
 		binding, err := s.bindArchives(input, input.data, observed)
 		if err != nil {
@@ -91,7 +91,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 	}
 	for id := range declared {
 		if !covered[id] {
-			return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", ErrProbeInconclusive, id)
+			return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, id)
 		}
 	}
 	return plan, nil

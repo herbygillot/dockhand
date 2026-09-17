@@ -96,7 +96,7 @@ func TestVersionBumpCheckpointsReleaseBeforePreparationAndResumesVerification(t 
 					current.ResolvedRelease.Commit = strings.Repeat("b", 40)
 					return tx.PutJob(ctx, current)
 				})
-				require.ErrorIs(t, err, state.ErrConflict)
+				require.ErrorIs(t, err, workflow.ErrRequestConflict)
 			})
 		}
 	}

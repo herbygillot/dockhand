@@ -249,7 +249,7 @@ func apply(src []byte, values map[string][]string, layouts map[string]*blockLayo
 	}
 	return append(out, added...), nil
 }
-func Generated(src []byte, name string) ([]string, error) {
+func generated(src []byte, name string) ([]string, error) {
 	commands, err := blocks(src)
 	if err != nil {
 		return nil, err

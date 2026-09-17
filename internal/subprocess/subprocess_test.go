@@ -60,14 +60,14 @@ func TestRunStreamsToAnExtraSinkAndHonorsInputDirAndEnv(t *testing.T) {
 func TestRunBoundsOutputAndJoinsCancellation(t *testing.T) {
 	path := script(t, "yes | head -c 4096\n")
 	_, err := Run(t.Context(), Spec{Tool: "fixture", Path: path, Limit: 512})
-	require.ErrorIs(t, err, ErrOutputLimit)
+	require.ErrorIs(t, err, errOutputLimit)
 
 	slow := script(t, "sleep 5\n")
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	_, err = Run(ctx, Spec{Tool: "fixture", Path: slow, WaitDelay: 100 * time.Millisecond})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.False(t, errors.Is(err, ErrOutputLimit))
+	require.False(t, errors.Is(err, errOutputLimit))
 	_, err = Run(t.Context(), Spec{Tool: "fixture"})
 	require.ErrorContains(t, err, "executable is required")
 }

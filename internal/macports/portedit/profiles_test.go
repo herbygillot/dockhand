@@ -1,6 +1,7 @@
 package portedit
 
 import (
+	"fmt"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -16,7 +17,7 @@ if {${build_arch} eq "arm64"} {distfiles a} else {distfiles b}`), native)
 	require.Contains(t, profiles, record.Platform{OS: "darwin", Version: "25", Architecture: "x86_64"})
 	require.NotContains(t, profiles, record.Platform{OS: "darwin", Version: "16", Architecture: "arm64"})
 	_, err = observationProfiles([]byte(`if {${os.major} >= $minimum} {version 1}`), native)
-	require.ErrorIs(t, err, ErrProbeInconclusive)
+	require.ErrorIs(t, err, errProbeInconclusive)
 }
 
 func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
@@ -31,7 +32,7 @@ func TestProfilesRefuseUnresolvedReadsAlongsideKnownBoundaries(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			_, err := observationProfiles([]byte(source), native)
-			require.ErrorIs(t, err, ErrProbeInconclusive)
+			require.ErrorIs(t, err, errProbeInconclusive)
 		})
 	}
 }
@@ -76,8 +77,27 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 	} {
 		t.Run(source, func(t *testing.T) {
 			_, err := observationProfiles([]byte(source), native)
-			require.ErrorIs(t, err, ErrProbeInconclusive)
+			require.ErrorIs(t, err, errProbeInconclusive)
 			require.Contains(t, err.Error(), "not modeled")
 		})
 	}
+}
+
+// Test-only helpers: production selects profiles through contextProfiles.
+func contextBoundaries(src []byte) (map[int]bool, bool, error) {
+	n, err := scanPlatformNeeds(src)
+	if err == nil && (len(n.operands) > 0 || n.exhaustive) {
+		err = fmt.Errorf("%w: native platform observations required", errProbeInconclusive)
+	}
+	return n.majors, n.arch, err
+}
+
+// observationProfiles includes the host, relevant architecture choices, and
+// both sides of literal Darwin conditions. Unmodeled expressions are gaps.
+func observationProfiles(src []byte, native record.Platform) ([]record.Platform, error) {
+	majors, archDependent, err := contextBoundaries(src)
+	if err != nil {
+		return nil, err
+	}
+	return profilesForBoundaries(majors, archDependent, native)
 }

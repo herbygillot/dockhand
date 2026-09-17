@@ -55,7 +55,7 @@ func Problem(check string, err error) Finding {
 	switch {
 	case errors.Is(err, dependency.ErrToolUnavailable):
 		status, code = Blocked, "missing-helper"
-	case errors.Is(err, ErrProbeInconclusive):
+	case errors.Is(err, errProbeInconclusive):
 		code = "probe-inconclusive"
 	case errors.Is(err, portsource.ErrTagPattern):
 		code = "tag-pattern-unknown"

@@ -92,7 +92,7 @@ func TestRetentionUsesSeparateJobAndReleaseAgesAndPreservesHistory(t *testing.T)
 		r := after.Resources[0]
 		r.ArtifactsPrunedAt = nil
 		return tx.PutResource(ctx, r)
-	}), state.ErrConflict)
+	}), workflow.ErrRequestConflict)
 }
 
 func TestRetentionSkipsLiveWorkClaimsAndExplicitRetention(t *testing.T) {

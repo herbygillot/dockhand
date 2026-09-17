@@ -109,7 +109,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 		if changed {
 			result.Advanced = append(result.Advanced, job.ID)
 		}
-		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || errors.Is(err, ErrNotImplemented) {
+		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || errors.Is(err, errNotImplemented) {
 			detail, err = err.Error(), nil
 		}
 		if err != nil {
@@ -132,7 +132,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	for _, resource := range resources {
 		c.checkProvider(ctx, resource.Handle.Provider)
 		detail, err := c.cleanup(ctx, resource.ID)
-		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || errors.Is(err, ErrNotImplemented) {
+		if errors.Is(err, ErrClaimLost) || errors.Is(err, state.ErrConflict) || errors.Is(err, errNotImplemented) {
 			detail, err = err.Error(), nil
 		}
 		if err != nil {
@@ -188,7 +188,7 @@ func (c *cycle) checkProvider(ctx context.Context, name string) {
 	c.providerChecked = true
 	c.providerName = name
 	c.providerError = nil
-	c.provider = c.engine.VerificationProvider(name)
+	c.provider = c.engine.verificationProvider(name)
 	if c.provider == nil {
 		c.providerError = fmt.Errorf("workflow: verification provider %q is unavailable in this driver", name)
 		return

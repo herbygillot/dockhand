@@ -38,7 +38,7 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 	if needs.exhaustive {
 		current, err := strconv.Atoi(input.before.Platform.Version)
 		if err != nil || current < 8 || current > 30 {
-			return nil, fmt.Errorf("%w: Darwin enumeration exceeds modeled range", ErrProbeInconclusive)
+			return nil, fmt.Errorf("%w: Darwin enumeration exceeds modeled range", errProbeInconclusive)
 		}
 		for n := 8; n <= current; n++ {
 			needs.majors[n] = true
@@ -63,21 +63,21 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 				}
 				for _, port := range observed.Ports {
 					if port.HostAccess || port.ModeledHostAccess {
-						return nil, fmt.Errorf("%w: platform boundary depends on host state%s", ErrProbeInconclusive, hostInputs(port))
+						return nil, fmt.Errorf("%w: platform boundary depends on host state%s", errProbeInconclusive, hostInputs(port))
 					}
 					for _, fact := range port.Operands {
 						if !slices.Contains(needs.operands, fact.Name) {
 							continue
 						}
 						if !sourceBoundOperand(input.files.root, fact.Frames) {
-							return nil, fmt.Errorf("%w: platform operand %s has no captured source", ErrProbeInconclusive, fact.Name)
+							return nil, fmt.Errorf("%w: platform operand %s has no captured source", errProbeInconclusive, fact.Name)
 						}
 						value, err := strconv.Atoi(fact.Value)
 						if err != nil {
-							return nil, fmt.Errorf("%w: platform operand %s is not an integer", ErrProbeInconclusive, fact.Name)
+							return nil, fmt.Errorf("%w: platform operand %s is not an integer", errProbeInconclusive, fact.Name)
 						}
 						if previous, ok := values[fact.Name]; ok && previous != value {
-							return nil, fmt.Errorf("%w: platform operand %s changes value (%d, %d)", ErrProbeInconclusive, fact.Name, previous, value)
+							return nil, fmt.Errorf("%w: platform operand %s changes value (%d, %d)", errProbeInconclusive, fact.Name, previous, value)
 						}
 						values[fact.Name] = value
 						if err := addBoundary(needs.majors, value); err != nil {
@@ -94,13 +94,13 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 		if len(expanded) == len(profiles) {
 			for _, name := range needs.operands {
 				if _, ok := values[name]; !ok {
-					return nil, fmt.Errorf("%w: platform operand %s was not observed; branch coverage is incomplete", ErrProbeInconclusive, name)
+					return nil, fmt.Errorf("%w: platform operand %s was not observed; branch coverage is incomplete", errProbeInconclusive, name)
 				}
 			}
 			return expanded, nil
 		}
 		if len(expanded) > 40 {
-			return nil, fmt.Errorf("%w: platform observation limit exceeded", ErrProbeInconclusive)
+			return nil, fmt.Errorf("%w: platform observation limit exceeded", errProbeInconclusive)
 		}
 		profiles = expanded
 	}

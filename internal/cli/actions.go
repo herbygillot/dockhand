@@ -21,20 +21,20 @@ import (
 )
 
 var (
-	ErrJobFailed      = errors.New("dockhand: requested work failed")
-	ErrNeedsAttention = errors.New("dockhand: requested work needs attention")
-	ErrJobCanceled    = errors.New("dockhand: requested work was canceled")
+	errJobFailed      = errors.New("dockhand: requested work failed")
+	errNeedsAttention = errors.New("dockhand: requested work needs attention")
+	errJobCanceled    = errors.New("dockhand: requested work was canceled")
 )
 
 func ExitCode(err error) int {
 	switch {
 	case err == nil:
 		return 0
-	case errors.Is(err, context.Canceled), errors.Is(err, ErrJobCanceled):
+	case errors.Is(err, context.Canceled), errors.Is(err, errJobCanceled):
 		return 130
-	case errors.Is(err, ErrNeedsAttention):
+	case errors.Is(err, errNeedsAttention):
 		return 3
-	case errors.Is(err, ErrJobFailed):
+	case errors.Is(err, errJobFailed):
 		return 2
 	default:
 		return 1
@@ -330,12 +330,12 @@ func outcome(status workflow.Status, canceling bool) error {
 	for _, entry := range status.Jobs {
 		switch entry.Job.State {
 		case record.JobFailed:
-			result = errors.Join(result, ErrJobFailed)
+			result = errors.Join(result, errJobFailed)
 		case record.JobNeedsAttention, record.JobSuperseded:
-			result = errors.Join(result, ErrNeedsAttention)
+			result = errors.Join(result, errNeedsAttention)
 		case record.JobCanceled:
 			if !canceling {
-				result = errors.Join(result, ErrJobCanceled)
+				result = errors.Join(result, errJobCanceled)
 			}
 		}
 	}

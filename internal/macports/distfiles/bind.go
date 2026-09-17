@@ -22,8 +22,7 @@ type Group struct {
 	Values map[string]Token
 }
 
-func (g Group) ID() string     { return g.Values["sha256"].Owner }
-func (g Group) Key() text.Span { return g.Values["sha256"].Span }
+func (g Group) ID() string { return g.Values["sha256"].Owner }
 
 type Artifact struct {
 	macports.Distfile

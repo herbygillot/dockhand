@@ -147,7 +147,7 @@ func TestFailedAutomaticDiscoveryCLIRequiresAttention(t *testing.T) {
 	config.GitHub.BaseURL = server.URL
 	var stdout, stderr bytes.Buffer
 	err := Run(t.Context(), []string{"bump", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
-	require.ErrorIs(t, err, ErrNeedsAttention)
+	require.ErrorIs(t, err, errNeedsAttention)
 	var result ActionResult
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	job := result.Status.Jobs[0].Job

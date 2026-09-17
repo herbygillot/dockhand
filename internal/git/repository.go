@@ -56,9 +56,6 @@ func (r *Repository) output(ctx context.Context, args ...string) ([]byte, error)
 	return r.run(ctx, nil, nil, args...)
 }
 
-// CommandError is a failed git invocation with what git wrote to stderr.
-type CommandError = subprocess.Error
-
 func (r *Repository) command(ctx context.Context, env []string, args ...string) *exec.Cmd {
 	executable := r.Executable
 	if executable == "" {
@@ -81,7 +78,7 @@ func (r *Repository) run(ctx context.Context, input []byte, env []string, args .
 		return nil, err
 	}
 	if args[0] == "for-each-ref" && len(result.Stderr) != 0 {
-		return nil, &CommandError{Tool: "git", Command: args[0], Stderr: strings.TrimSpace(string(result.Stderr)), Cause: errors.New("reference lookup reported a warning")}
+		return nil, &subprocess.Error{Tool: "git", Command: args[0], Stderr: strings.TrimSpace(string(result.Stderr)), Cause: errors.New("reference lookup reported a warning")}
 	}
 	return result.Output, nil
 }

@@ -15,21 +15,19 @@ import (
 )
 
 var (
-	// ErrNotImplemented identifies work whose executor is not implemented.
+	// errNotImplemented identifies work whose executor is not implemented.
 	// Cycle reports it as a job problem without discarding the accepted request.
-	ErrNotImplemented = errors.New("workflow: job execution is not implemented")
-	// ErrNoState means the engine or its state dependency is missing.
-	ErrNoState = errors.New("workflow: state store and repository are required")
-	// ErrUnsupportedAction means intake does not yet support the requested action or control.
-	ErrUnsupportedAction = errors.New("workflow: action intake is not implemented")
+	errNotImplemented = errors.New("workflow: job execution is not implemented")
+	// errNoState means the engine or its state dependency is missing.
+	errNoState = errors.New("workflow: state store and repository are required")
+	// errUnsupportedAction means intake does not yet support the requested action or control.
+	errUnsupportedAction = errors.New("workflow: action intake is not implemented")
 	// ErrRequestConflict means a request ID already identifies different intent.
 	// Job and control requests share the workflow request-ID namespace.
 	ErrRequestConflict = state.ErrConflict
 	// ErrStaleRevision means a modifying or publication request selected
 	// a revision that is no longer the change's current revision.
 	ErrStaleRevision = errors.New("workflow: selected revision is stale")
-	// ErrNotFound means a requested job or referenced record does not exist.
-	ErrNotFound = state.ErrNotFound
 	// ErrClaimLost means an action can no longer adopt its result because
 	// its claim expired, was replaced, or no longer matches the current state.
 	// Cycle reports this as a problem and continues with independent work.
@@ -98,9 +96,9 @@ type SourcePreparer interface {
 	Prepare(context.Context, preparation.Request) (preparation.Result, error)
 }
 
-// VerificationProvider resolves persisted work independently of CLI defaults.
+// verificationProvider resolves persisted work independently of CLI defaults.
 // A configured registry is authoritative; Provider supports single-provider engines.
-func (e *Engine) VerificationProvider(name string) verify.Provider {
+func (e *Engine) verificationProvider(name string) verify.Provider {
 	if e.Providers != nil {
 		return e.Providers[name]
 	}

@@ -32,7 +32,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		}
 		metadata := observed.Ports[input.target.Name]
 		if metadata.ModeledHostAccess {
-			return coverage, fmt.Errorf("%w: %v", ErrProbeInconclusive, metadata.Problems), nil
+			return coverage, fmt.Errorf("%w: %v", errProbeInconclusive, metadata.Problems), nil
 		}
 		if len(metadata.Problems) > 0 {
 			return coverage, fmt.Errorf("%w: %v", ErrUnsupported, metadata.Problems), nil
@@ -53,7 +53,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 	}
 	for id := range declared {
 		if !covered[id] {
-			return coverage, nil, fmt.Errorf("%w: checksum declaration %s is not covered by the observed contexts", ErrProbeInconclusive, id)
+			return coverage, nil, fmt.Errorf("%w: checksum declaration %s is not covered by the observed contexts", errProbeInconclusive, id)
 		}
 	}
 	return coverage, nil, nil

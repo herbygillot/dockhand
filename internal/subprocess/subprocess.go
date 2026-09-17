@@ -62,8 +62,8 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Cause }
 
-// ErrOutputLimit means a stream exceeded the spec's limit.
-var ErrOutputLimit = errors.New("subprocess: output exceeds limit")
+// errOutputLimit means a stream exceeded the spec's limit.
+var errOutputLimit = errors.New("subprocess: output exceeds limit")
 
 // Run executes the command and returns what it wrote, even when it failed.
 func Run(ctx context.Context, spec Spec) (Result, error) {
@@ -100,7 +100,7 @@ func Run(ctx context.Context, spec Spec) (Result, error) {
 		return result, nil
 	}
 	if output.exceeded || stderr.exceeded {
-		err = errors.Join(ErrOutputLimit, err)
+		err = errors.Join(errOutputLimit, err)
 	}
 	detail := stderr.String()
 	if spec.Combined {
@@ -126,7 +126,7 @@ type bounded struct {
 func (b *bounded) Write(p []byte) (int, error) {
 	if b.limit > 0 && int64(b.buffer.Len()+len(p)) > b.limit {
 		b.exceeded = true
-		return 0, ErrOutputLimit
+		return 0, errOutputLimit
 	}
 	return b.buffer.Write(p)
 }

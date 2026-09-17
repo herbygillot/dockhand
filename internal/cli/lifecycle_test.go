@@ -49,7 +49,7 @@ func TestWaitRecordsFailureWithoutSubmittingNewWork(t *testing.T) {
 	config, id := queuedJob(t)
 	var stdout, stderr bytes.Buffer
 	err := Run(t.Context(), []string{"wait", "--job", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
-	require.ErrorIs(t, err, ErrNeedsAttention)
+	require.ErrorIs(t, err, errNeedsAttention)
 	var result ActionResult
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	require.Equal(t, id, result.Status.Jobs[0].Job.ID)
@@ -64,7 +64,7 @@ func TestWaitSelectsExplicitOrCurrentContributionBranch(t *testing.T) {
 			config, id := queuedJob(t)
 			var stdout, stderr bytes.Buffer
 			err := Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config)
-			require.ErrorIs(t, err, ErrNeedsAttention)
+			require.ErrorIs(t, err, errNeedsAttention)
 			var result ActionResult
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 			require.Equal(t, "candidate", result.Branch)

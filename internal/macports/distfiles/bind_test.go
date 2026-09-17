@@ -53,6 +53,6 @@ distfiles-append pinned.zip
 		require.Len(t, binding.Groups, 2)
 		bindings = append(bindings, binding)
 	}
-	require.NotEqual(t, bindings[0].Groups[0].Key(), bindings[1].Groups[0].Key())
-	require.Equal(t, bindings[0].Groups[1].Key(), bindings[1].Groups[1].Key())
+	require.NotEqual(t, bindings[0].Groups[0].Values["sha256"].Span, bindings[1].Groups[0].Values["sha256"].Span)
+	require.Equal(t, bindings[0].Groups[1].Values["sha256"].Span, bindings[1].Groups[1].Values["sha256"].Span)
 }

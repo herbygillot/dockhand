@@ -80,7 +80,7 @@ func indexEntries(root string) (map[string]Entry, error) {
 	err = index.Each(func(entry Entry) bool {
 		key := strings.ToLower(entry.Name)
 		if _, exists := entries[key]; exists {
-			invalid = fmt.Errorf("%w: duplicate port %s", ErrMalformed, entry.Name)
+			invalid = fmt.Errorf("%w: duplicate port %s", errMalformed, entry.Name)
 			return false
 		}
 		entries[key] = entry

@@ -33,7 +33,7 @@ func (e *Engine) checkScope(scope Scope) error {
 		return err
 	}
 	if e == nil || e.State == nil || e.Repository == "" {
-		return ErrNoState
+		return errNoState
 	}
 	return nil
 }

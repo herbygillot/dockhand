@@ -8,7 +8,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/app"
 )
 
-var ErrNotImplemented = errors.New("dockhand v2: command workflows are not wired yet")
+var errNotImplemented = errors.New("dockhand v2: command workflows are not wired yet")
 
 type Streams struct {
 	In  io.Reader
@@ -42,5 +42,5 @@ func run(ctx context.Context, args []string, streams Streams, config app.Config,
 }
 
 func execute(ctx context.Context, command string, args []string, options Options, streams Streams, services *app.Services) error {
-	return ErrNotImplemented
+	return errNotImplemented
 }

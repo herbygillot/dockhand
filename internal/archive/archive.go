@@ -17,8 +17,8 @@ import (
 	"strings"
 )
 
-// ErrScanLimit means the archive's uncompressed stream exceeded the walk limit.
-var ErrScanLimit = errors.New("archive: exceeds scan limit")
+// errScanLimit means the archive's uncompressed stream exceeded the walk limit.
+var errScanLimit = errors.New("archive: exceeds scan limit")
 
 // scanLimit bounds the uncompressed bytes one walk reads.
 const scanLimit = 1 << 30
@@ -100,7 +100,7 @@ func Walk(ctx context.Context, filename string, fn func(Member) error) error {
 		member, err := tr.Next()
 		if err == io.EOF {
 			if limited.N == 0 {
-				return ErrScanLimit
+				return errScanLimit
 			}
 			return nil
 		}

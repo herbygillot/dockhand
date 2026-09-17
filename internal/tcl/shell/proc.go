@@ -13,7 +13,7 @@ import (
 
 const stderrLimit = 64 << 10
 
-const DefaultOutputLimit = 32 << 20
+const defaultOutputLimit = 32 << 20
 
 var ErrOutputOverflow = errors.New("shell: child output queue overflowed")
 
@@ -45,19 +45,17 @@ func WithArgs(args ...string) Option { return func(c *config) { c.args = args } 
 
 func WithDir(dir string) Option { return func(c *config) { c.dir = dir } }
 
-func WithEnv(env ...string) Option { return func(c *config) { c.env = env } }
-
 func WithCloseTimeout(d time.Duration) Option { return func(c *config) { c.closeTimeout = d } }
 
 func WithOutputLimit(n int) Option { return func(c *config) { c.outputLimit = n } }
 
 func Start(ctx context.Context, path string, opts ...Option) (*Proc, error) {
-	cfg := config{closeTimeout: 2 * time.Second, outputLimit: DefaultOutputLimit}
+	cfg := config{closeTimeout: 2 * time.Second, outputLimit: defaultOutputLimit}
 	for _, o := range opts {
 		o(&cfg)
 	}
 	if cfg.outputLimit <= 0 {
-		cfg.outputLimit = DefaultOutputLimit
+		cfg.outputLimit = defaultOutputLimit
 	}
 
 	cmd := exec.CommandContext(ctx, path, cfg.args...)

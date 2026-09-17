@@ -35,7 +35,7 @@ func TestBumpParsesOptionalVersionWithoutInitializingState(t *testing.T) {
 		var out bytes.Buffer
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &out}, config)
 		require.Error(t, err)
-		require.NotErrorIs(t, err, ErrNotImplemented)
+		require.NotErrorIs(t, err, errNotImplemented)
 		require.NotContains(t, err.Error(), "git ")
 	}
 	var out bytes.Buffer
@@ -152,7 +152,7 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 			config.Tart = tart.Config{Executable: "/missing/tart", Image: image}
 			var stdout, stderr bytes.Buffer
 			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
-			require.ErrorIs(t, err, ErrNeedsAttention, "%s", stderr.String())
+			require.ErrorIs(t, err, errNeedsAttention, "%s", stderr.String())
 			var result ActionResult
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 			job := result.Status.Jobs[0].Job

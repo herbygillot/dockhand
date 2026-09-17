@@ -288,7 +288,7 @@ func TestCombinedPublicationRequiresVerifiedPreparationAndImmutableDestination(t
 	require.Equal(t, "main", f.status(t, id).Jobs[0].Job.Spec.PublishTo.BaseBranch)
 	accepted.Spec.PublishTo.BaseBranch = "redirected"
 	err = f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error { return tx.PutJob(ctx, accepted) })
-	require.ErrorIs(t, err, state.ErrConflict)
+	require.ErrorIs(t, err, workflow.ErrRequestConflict)
 }
 
 func TestAlreadyCurrentCombinedBumpCreatesNoPublication(t *testing.T) {

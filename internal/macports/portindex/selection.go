@@ -68,7 +68,7 @@ func (i *Index) Select(ctx context.Context, filter Filter) (Selection, error) {
 		}
 		key := strings.ToLower(entry.Name)
 		if _, exists := entries[key]; exists {
-			failure = fmt.Errorf("%w: duplicate port %s", ErrMalformed, entry.Name)
+			failure = fmt.Errorf("%w: duplicate port %s", errMalformed, entry.Name)
 			return false
 		}
 		entries[key] = entry

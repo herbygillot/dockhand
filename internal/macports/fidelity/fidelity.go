@@ -152,7 +152,7 @@ func Equivalent(expected, actual macports.Snapshot, expectedRoot, actualRoot str
 
 // Version expects the selected port to move to the release, its revision to
 // reset, and its source declarations and checksums to change, and nothing else.
-func Version(before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Report {
+func version(before, after macports.Snapshot, selected, root string, release record.Release, checksums string) Report {
 	result := Report{Before: before, After: after, ExpectedChanges: []string{selected + ".version -> " + release.Version, selected + ".revision -> 0", selected + ".distfiles and checksums"}, UnexpectedChanges: []string{}}
 	names := map[string]bool{}
 	for name := range before.Ports {
@@ -277,7 +277,7 @@ func ScopedVersion(shared bool, before, after macports.Snapshot, selected, root 
 		if _, err := ReleaseScope(before, after, selected, false); err != nil {
 			return Report{Before: before, After: after, UnexpectedChanges: []string{err.Error()}}
 		}
-		return Version(before, after, selected, root, release, checksums)
+		return version(before, after, selected, root, release, checksums)
 	}
 	scope, err := ReleaseScope(before, after, selected, true)
 	if err != nil {
@@ -295,7 +295,7 @@ func ScopedVersion(shared bool, before, after macports.Snapshot, selected, root 
 		if member.MetadataOnly {
 			ownRelease.Tag = ""
 		}
-		f := Version(oneBefore, oneAfter, name, root, ownRelease, after.Ports[name].Options["checksums"])
+		f := version(oneBefore, oneAfter, name, root, ownRelease, after.Ports[name].Options["checksums"])
 		problems = append(problems, f.UnexpectedChanges...)
 		normalized.Ports[name] = after.Ports[name]
 	}

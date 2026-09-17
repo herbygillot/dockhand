@@ -18,15 +18,15 @@ import (
 // selectors and timestamps must be unset. Other control kinds remain unsupported.
 //
 // Repeated job IDs and their order do not change intent. An equivalent retry is
-// a no-op; reuse of an ID for other intent returns ErrRequestConflict. A successful
+// a no-op; reuse of an ID for other intent returns state.ErrConflict. A successful
 // call records intent only. A later Cycle applies it and reconciles any remote
 // cancellation. After an uncertain state commit, retry the original request.
 func (e *Engine) Control(ctx context.Context, request record.ControlRequest) error {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return ErrNoState
+		return errNoState
 	}
 	if request.Kind != record.Cancel {
-		return fmt.Errorf("%w: control %s", ErrUnsupportedAction, request.Kind)
+		return fmt.Errorf("%w: control %s", errUnsupportedAction, request.Kind)
 	}
 	if !validToken(string(request.ID)) || len(request.Jobs) == 0 || request.ChangeID != "" || request.ExpectedRevision != "" || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) {
 		return fmt.Errorf("%w: cancellation requires a request ID and explicit job IDs; timestamps are driver-owned", ErrInvalidRequest)
@@ -43,7 +43,7 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 		accepted, err := tx.Request(ctx, request.ID)
 		if err == nil {
 			if accepted.Kind != record.CancelRequest {
-				return ErrRequestConflict
+				return state.ErrConflict
 			}
 			previous, err := tx.Control(ctx, request.ID)
 			if err != nil {
@@ -52,7 +52,7 @@ func (e *Engine) Control(ctx context.Context, request record.ControlRequest) err
 			previous.SubmittedAt = request.SubmittedAt
 			previous.AppliedAt = nil
 			if !reflect.DeepEqual(previous, request) {
-				return ErrRequestConflict
+				return state.ErrConflict
 			}
 			return nil
 		}
@@ -78,7 +78,7 @@ func (e *Engine) BranchScope(ctx context.Context, branch string) (Scope, error) 
 // ContributionScope freezes pending jobs without incorporating later submissions.
 func (e *Engine) ContributionScope(ctx context.Context, selected ContributionSelector) (Scope, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return Scope{}, ErrNoState
+		return Scope{}, errNoState
 	}
 	if err := selected.Validate(); err != nil {
 		return Scope{}, err
@@ -116,10 +116,10 @@ func (e *Engine) ControlContribution(ctx context.Context, request record.Control
 		return Scope{}, err
 	}
 	if e == nil || e.State == nil || e.Repository == "" {
-		return Scope{}, ErrNoState
+		return Scope{}, errNoState
 	}
 	if request.Kind != record.Cancel {
-		return Scope{}, fmt.Errorf("%w: control %s", ErrUnsupportedAction, request.Kind)
+		return Scope{}, fmt.Errorf("%w: control %s", errUnsupportedAction, request.Kind)
 	}
 	if !validToken(string(request.ID)) || len(request.Jobs) != 0 || request.ChangeID != "" || request.ExpectedRevision != "" || !request.SubmittedAt.IsZero() || request.AppliedAt != nil || !utf8.ValidString(request.Reason) {
 		return Scope{}, fmt.Errorf("%w: branch cancellation requires a request ID and literal branch; selection and timestamps are driver-owned", ErrInvalidRequest)
@@ -129,14 +129,14 @@ func (e *Engine) ControlContribution(ctx context.Context, request record.Control
 		accepted, err := tx.Request(ctx, request.ID)
 		if err == nil {
 			if accepted.Kind != record.CancelRequest {
-				return ErrRequestConflict
+				return state.ErrConflict
 			}
 			previous, err := tx.Control(ctx, request.ID)
 			if err != nil {
 				return err
 			}
 			if previous.Kind != request.Kind || previous.Reason != request.Reason {
-				return ErrRequestConflict
+				return state.ErrConflict
 			}
 			if err = controlMatchesContribution(ctx, tx, previous, selected); err != nil {
 				return err
@@ -195,19 +195,19 @@ func controlMatchesContribution(ctx context.Context, r state.Reader, request rec
 			return err
 		}
 		if job.ChangeID == "" || selected != "" && job.ChangeID != selected {
-			return ErrRequestConflict
+			return state.ErrConflict
 		}
 		selected = job.ChangeID
 	}
 	if selected == "" {
-		return ErrRequestConflict
+		return state.ErrConflict
 	}
 	change, err := r.Change(ctx, selected)
 	if err != nil {
 		return err
 	}
 	if selector.Branch != "" && change.Branch != selector.Branch || selector.ChangeID != "" && change.ID != selector.ChangeID || selector.Target != "" && !strings.EqualFold(change.InitiatingTarget, selector.Target) {
-		return ErrRequestConflict
+		return state.ErrConflict
 	}
 	return nil
 }

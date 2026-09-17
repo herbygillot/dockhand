@@ -36,7 +36,7 @@ func (e *Engine) PlanPublication(ctx context.Context, input PublicationRequest) 
 
 func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, authenticate bool) (Request, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return Request{}, ErrNoState
+		return Request{}, errNoState
 	}
 	if e.Repo == nil || e.Publisher == nil {
 		return Request{}, fmt.Errorf("workflow: publication requires Git and a publisher")

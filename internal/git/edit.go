@@ -185,7 +185,7 @@ func (r *Repository) editTree(ctx context.Context, tree string, edits []FileEdit
 }
 
 func (r *Repository) DiffTrees(ctx context.Context, before, after string) ([]byte, error) {
-	types, err := r.ObjectTypes(ctx, []string{before, after})
+	types, err := r.objectTypes(ctx, []string{before, after})
 	if err != nil {
 		return nil, err
 	}

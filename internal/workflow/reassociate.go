@@ -16,7 +16,7 @@ import (
 func (e *Engine) Reassociate(ctx context.Context, id record.ChangeID, branch string, platform record.Platform) (record.Change, error) {
 	var change record.Change
 	if e == nil || e.State == nil || e.Repo == nil || e.Ports == nil || e.Repository == "" {
-		return change, ErrNoState
+		return change, errNoState
 	}
 	var previous record.Revision
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {

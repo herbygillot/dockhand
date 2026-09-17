@@ -2,7 +2,6 @@ package verify
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -13,8 +12,6 @@ const (
 	ProviderTart   = "tart"
 	ProviderGitHub = "github"
 )
-
-var ErrNotImplemented = errors.New("verify: verification planning is not implemented")
 
 type Capabilities struct {
 	Name string

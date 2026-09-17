@@ -32,7 +32,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 		return result, fmt.Errorf("upstream: native livecheck extraction is unavailable")
 	}
 	if !isStable(port.Version) {
-		return result, fmt.Errorf("%w: require a stable numeric version", ErrAutomaticUnsupported)
+		return result, fmt.Errorf("%w: require a stable numeric version", errAutomaticUnsupported)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, spec.Livecheck.URL, nil)
 	if err != nil {
@@ -89,7 +89,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 			return result, err
 		}
 		if evaluated != version {
-			return result, fmt.Errorf("%w: livecheck capture is not the evaluated version", ErrAutomaticUnsupported)
+			return result, fmt.Errorf("%w: livecheck capture is not the evaluated version", errAutomaticUnsupported)
 		}
 	}
 	digest := sha256.Sum256(page)

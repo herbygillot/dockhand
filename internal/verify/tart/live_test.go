@@ -140,7 +140,7 @@ destroot {
 	config := Config{Image: image, ArtifactDirectory: filepath.Join(directory, "artifacts"), Platform: platform, Capacity: 1}
 	provider := &Provider{Config: config, State: store, Repository: repository.ID, Repo: repo}
 	t.Log("hashing prepared VM image")
-	environment, err := provider.DescribeEnvironment(ctx)
+	environment, err := provider.describeEnvironment(ctx)
 	require.NoError(t, err)
 	t.Logf("environment %s", environment.Digest)
 	engine := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Ports: ports, Provider: provider}

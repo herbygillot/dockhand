@@ -89,7 +89,7 @@ func (w Word) BracedScript(src []byte) (*Script, bool) {
 	if !ok {
 		return nil, false
 	}
-	body, errs := braced.ScriptLens(src)
+	body, errs := braced.scriptLens(src)
 	if len(errs) != 0 {
 		return nil, false
 	}

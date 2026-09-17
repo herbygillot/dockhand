@@ -50,7 +50,7 @@ func lookupContribution(ctx context.Context, reader state.Reader, selected Contr
 		matches, err = reader.Changes(ctx, state.Query{Target: selected.Target, Pending: true, Limit: 16})
 		if err == nil {
 			if len(matches) == 0 {
-				return change, fmt.Errorf("%w: no open contribution for %s; start a bump, or explicitly select --branch or --working-tree for manual verification", ErrNotFound, selected.Target)
+				return change, fmt.Errorf("%w: no open contribution for %s; start a bump, or explicitly select --branch or --working-tree for manual verification", state.ErrNotFound, selected.Target)
 			}
 			if len(matches) > 1 {
 				choices := make([]string, 0, len(matches))
@@ -80,7 +80,7 @@ func lookupContribution(ctx context.Context, reader state.Reader, selected Contr
 
 func (e *Engine) SelectContribution(ctx context.Context, selected ContributionSelector) (record.Change, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return record.Change{}, ErrNoState
+		return record.Change{}, errNoState
 	}
 	var change record.Change
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
@@ -98,9 +98,9 @@ func contributionPrepared(change record.Change) error {
 	return nil
 }
 
-// ContributionBuild returns the latest accepted verification settings for this
+// contributionBuild returns the latest accepted verification settings for this
 // contribution; it never chooses a successful historical revision as the source.
-func (e *Engine) ContributionBuild(ctx context.Context, change record.Change) (record.JobSpec, error) {
+func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (record.JobSpec, error) {
 	var spec record.JobSpec
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, reader state.Reader) error {
 		current, err := reader.Change(ctx, change.ID)
@@ -126,12 +126,12 @@ func (e *Engine) ContributionBuild(ctx context.Context, change record.Change) (r
 // application fetches new upstream source. Nil means a new contribution.
 func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSelector, action record.Action) (*record.Job, error) {
 	if e == nil || e.State == nil || e.Repository == "" {
-		return nil, ErrNoState
+		return nil, errNoState
 	}
 	var result *record.Job
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		change, err := selectContribution(ctx, r, selector)
-		if errors.Is(err, ErrNotFound) && selector.ChangeID == "" && selector.Branch == "" {
+		if errors.Is(err, state.ErrNotFound) && selector.ChangeID == "" && selector.Branch == "" {
 			return nil
 		}
 		if err != nil {

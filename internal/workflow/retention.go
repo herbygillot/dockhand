@@ -169,7 +169,7 @@ func (c *cycle) collectResource(ctx context.Context, id record.ResourceID, befor
 		}
 		return item, err
 	}
-	pruner, ok := e.VerificationProvider(resource.Handle.Provider).(verify.ArtifactPruner)
+	pruner, ok := e.verificationProvider(resource.Handle.Provider).(verify.ArtifactPruner)
 	if !ok {
 		item.Detail = "provider does not support artifact pruning"
 		return item, nil

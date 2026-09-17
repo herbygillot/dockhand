@@ -32,12 +32,12 @@ func (s *Service) Observe(ctx context.Context, spec record.PublicationSpec) (for
 		observed, err = s.Forge.Find(ctx, forge.PullRequestQuery{Repository: spec.Repository, HeadRepository: spec.HeadRepository, HeadBranch: spec.HeadBranch, BaseBranch: spec.BaseBranch})
 	}
 	if err == nil {
-		err = ValidateObservation(spec, observed)
+		err = validateObservation(spec, observed)
 	}
 	return observed, err
 }
 
-func ValidateObservation(spec record.PublicationSpec, observed forge.PullRequestObservation) error {
+func validateObservation(spec record.PublicationSpec, observed forge.PullRequestObservation) error {
 	if observed.ObservedAt.IsZero() {
 		return fmt.Errorf("publish: missing observation time")
 	}
@@ -55,11 +55,11 @@ func ValidateObservation(spec record.PublicationSpec, observed forge.PullRequest
 }
 
 func Matches(spec record.PublicationSpec, observed forge.PullRequestObservation) bool {
-	return ValidateObservation(spec, observed) == nil && observed.Found && observed.PullRequest.State == record.PullRequestOpen && observed.PullRequest.RemoteHead == spec.Desired.Head && observed.PullRequest.Title == spec.Desired.Title && observed.PullRequest.Body == spec.Desired.Body
+	return validateObservation(spec, observed) == nil && observed.Found && observed.PullRequest.State == record.PullRequestOpen && observed.PullRequest.RemoteHead == spec.Desired.Head && observed.PullRequest.Title == spec.Desired.Title && observed.PullRequest.Body == spec.Desired.Body
 }
 
 func CheckMetadata(spec record.PublicationSpec, observed forge.PullRequestObservation) error {
-	if err := ValidateObservation(spec, observed); err != nil {
+	if err := validateObservation(spec, observed); err != nil {
 		return err
 	}
 	if spec.ExpectedPR == nil {

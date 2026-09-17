@@ -30,11 +30,11 @@ printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
 	p := &Provider{Config: Config{Home: root, Image: "base", ArtifactDirectory: filepath.Join(root, "artifacts"), Executable: executable, Platform: testPlatform}}
 	var messages []string
 	ctx := progress.WithReporter(t.Context(), func(update progress.Update) { messages = append(messages, update.Message) })
-	first, err := p.DescribeEnvironment(ctx)
+	first, err := p.describeEnvironment(ctx)
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(messages, "\n"), "Hashing Tart image base")
 	messages = nil
-	again, err := p.DescribeEnvironment(ctx)
+	again, err := p.describeEnvironment(ctx)
 	require.NoError(t, err)
 	require.Equal(t, first, again)
 	require.NotContains(t, strings.Join(messages, "\n"), "Hashing")
@@ -43,11 +43,11 @@ printf '%s\n' '[{"Name":"base","Source":"local","State":"stopped"}]'
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(disk, []byte("modified"), 0600))
 	require.NoError(t, os.Chtimes(disk, info.ModTime(), info.ModTime()))
-	changed, err := p.DescribeEnvironment(t.Context())
+	changed, err := p.describeEnvironment(t.Context())
 	require.NoError(t, err)
 	require.NotEqual(t, first.Digest, changed.Digest)
 	require.NoError(t, os.Remove(disk))
-	_, err = p.DescribeEnvironment(t.Context())
+	_, err = p.describeEnvironment(t.Context())
 	require.Error(t, err, "cached identity cannot conceal a missing image")
 }
 func TestStagedInputUsesAcceptedGitObjects(t *testing.T) {

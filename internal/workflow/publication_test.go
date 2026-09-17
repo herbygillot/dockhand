@@ -312,7 +312,7 @@ func TestPublicationUnknownRequestIsObservationOnlyEvenAfterCancellation(t *test
 	require.Equal(t, 0, hosting.writes)
 	require.Equal(t, record.JobActive, f.status(t, id).Jobs[0].Job.State)
 	_, err := f.engine.Submit(t.Context(), bindPublication(t, f, "duplicate"))
-	require.ErrorIs(t, err, state.ErrConflict)
+	require.ErrorIs(t, err, workflow.ErrRequestConflict)
 }
 
 func TestPublicationRejectsMovedSourceRemoteAndNewNegativeEvidence(t *testing.T) {
@@ -368,7 +368,7 @@ func TestPublicationConcurrentAcceptanceAndRepositoryScope(t *testing.T) {
 		errs[0], errs[1] = errs[1], errs[0]
 	}
 	require.NoError(t, errs[0])
-	require.ErrorIs(t, errs[1], state.ErrConflict)
+	require.ErrorIs(t, errs[1], workflow.ErrRequestConflict)
 	other, err := f.store.RegisterRepository(t.Context(), filepath.Join(t.TempDir(), ".git"))
 	require.NoError(t, err)
 	require.NoError(t, f.store.View(t.Context(), other.ID, func(ctx context.Context, r state.Reader) error {
@@ -525,5 +525,5 @@ func TestUnknownPublicationCannotClearWriteIntentWithoutRecordedRefusal(t *testi
 		action.State = record.PublicationPending
 		return tx.PutPublication(ctx, action)
 	})
-	require.ErrorIs(t, err, state.ErrConflict)
+	require.ErrorIs(t, err, workflow.ErrRequestConflict)
 }

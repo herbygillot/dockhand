@@ -252,7 +252,7 @@ func TestAdmissionIsIdempotentAndClosesUnknownIDs(t *testing.T) {
 	late := f.request
 	late.ID = "late"
 	_, err = f.provider.Submit(t.Context(), late)
-	require.ErrorIs(t, err, ErrClosed)
+	require.ErrorIs(t, err, errClosed)
 	require.Equal(t, 1, m.calls["clone"])
 }
 
@@ -356,7 +356,7 @@ func TestCapacityCountsReservationsAcrossRepositoriesAndExternalVMs(t *testing.T
 	require.Equal(t, verify.RequestClosed, reconciliation.State)
 	require.Len(t, reconciliation.Submission.Resources, 1)
 	_, err = a.provider.Submit(t.Context(), a.request)
-	require.ErrorIs(t, err, ErrClosed)
+	require.ErrorIs(t, err, errClosed)
 	m.stageError = nil
 	result, err = b.provider.Submit(t.Context(), b.request)
 	require.NoError(t, err)

@@ -13,7 +13,7 @@ import (
 var (
 	ErrRefConflict        = errors.New("git: ref precondition failed")
 	ErrRefUpdateUncertain = errors.New("git: ref update outcome is uncertain")
-	ErrSymbolicRef        = errors.New("git: expected a direct ref")
+	errSymbolicRef        = errors.New("git: expected a direct ref")
 )
 
 type RefValue struct {
@@ -104,7 +104,7 @@ func (r *Repository) readRefs(ctx context.Context, pattern string) (map[string]R
 		}
 		name, object := string(fields[0]), string(fields[1])
 		if len(fields[2]) != 0 {
-			return nil, fmt.Errorf("%w: %s", ErrSymbolicRef, name)
+			return nil, fmt.Errorf("%w: %s", errSymbolicRef, name)
 		}
 		if !validRefName(name) || !ValidObjectID(object) {
 			return nil, fmt.Errorf("git: invalid ref output for %s", name)

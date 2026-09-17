@@ -24,7 +24,7 @@ type ContributionResult struct {
 func (e *Engine) AbandonContribution(ctx context.Context, selected ContributionSelector) (ContributionResult, error) {
 	var result ContributionResult
 	if e == nil || e.State == nil || e.Repository == "" {
-		return result, ErrNoState
+		return result, errNoState
 	}
 	err := e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
 		change, err := lookupContribution(ctx, tx, selected, false)
@@ -64,7 +64,7 @@ func contributionIdle(ctx context.Context, r state.Reader, id record.ChangeID) e
 func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionSelector) (ContributionResult, error) {
 	var result ContributionResult
 	if e == nil || e.State == nil || e.Repository == "" || e.Repo == nil || e.Publisher == nil || e.Publisher.Forge == nil {
-		return result, ErrNoState
+		return result, errNoState
 	}
 	var expected record.Change
 	var previous record.PullRequest

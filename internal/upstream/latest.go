@@ -13,7 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
+var errAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
 
 type VersionSelector interface {
 	SelectVersion(context.Context, string, string, []macports.VersionCandidate) (macports.VersionSelection, error)
@@ -31,7 +31,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	discovery, discoveryErr := portsource.Discover(port)
 	if discoveryErr != nil {
-		return result, fmt.Errorf("%w: %v", ErrAutomaticUnsupported, discoveryErr)
+		return result, fmt.Errorf("%w: %v", errAutomaticUnsupported, discoveryErr)
 	}
 	if discovery.Catalog == portsource.HTTPRegex {
 		return s.discoverListing(ctx, port, discovery)
@@ -41,7 +41,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 		return result, err
 	}
 	if !isStable(port.Version) {
-		return result, fmt.Errorf("%w: require a stable numeric version", ErrAutomaticUnsupported)
+		return result, fmt.Errorf("%w: require a stable numeric version", errAutomaticUnsupported)
 	}
 	var observations []forge.Release
 	if spec.Catalog == portsource.Releases {

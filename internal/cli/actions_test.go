@@ -27,11 +27,11 @@ func TestVerificationArgumentsFailBeforeOpeningState(t *testing.T) {
 	}
 }
 func TestResultCodesDistinguishFailureAttentionAndInterruption(t *testing.T) {
-	require.Equal(t, 2, ExitCode(errors.Join(ErrJobFailed, errors.New("write"))))
-	require.Equal(t, 3, ExitCode(ErrNeedsAttention))
+	require.Equal(t, 2, ExitCode(errors.Join(errJobFailed, errors.New("write"))))
+	require.Equal(t, 3, ExitCode(errNeedsAttention))
 	require.Equal(t, 130, ExitCode(context.Canceled))
 	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{State: record.JobCanceled}}}}
-	require.ErrorIs(t, outcome(status, false), ErrJobCanceled)
+	require.ErrorIs(t, outcome(status, false), errJobCanceled)
 	require.NoError(t, outcome(status, true))
 }
 func TestJSONResultKeepsLogsAndProgressOffStdout(t *testing.T) {

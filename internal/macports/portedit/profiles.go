@@ -49,7 +49,7 @@ func scanPlatformNeeds(src []byte) (platformNeeds, error) {
 			} else if m := reverseComparison.FindStringSubmatchIndex(raw[:read[0]]); m != nil {
 				prefix := strings.TrimSpace(raw[:m[2]])
 				if prefix != "" && !strings.ContainsAny(prefix[len(prefix)-1:], "{([\"&|") {
-					return n, fmt.Errorf("%w: unresolved inverted Darwin comparison", ErrProbeInconclusive)
+					return n, fmt.Errorf("%w: unresolved inverted Darwin comparison", errProbeInconclusive)
 				}
 				operand = raw[m[2]:m[3]]
 			} else {
@@ -57,7 +57,7 @@ func scanPlatformNeeds(src []byte) (platformNeeds, error) {
 				// mistake an unsupported comparison expression for a harmless read.
 				rest := strings.TrimSpace(suffix)
 				if strings.HasPrefix(rest, ">") || strings.HasPrefix(rest, "<") || strings.HasPrefix(rest, "==") || strings.HasPrefix(rest, "!=") {
-					return n, fmt.Errorf("%w: unresolved Darwin comparison", ErrProbeInconclusive)
+					return n, fmt.Errorf("%w: unresolved Darwin comparison", errProbeInconclusive)
 				}
 				n.exhaustive = true
 				continue
@@ -83,7 +83,7 @@ func scanPlatformNeeds(src []byte) (platformNeeds, error) {
 }
 func addBoundary(majors map[int]bool, n int) error {
 	if n < 8 || n > 1000 {
-		return fmt.Errorf("%w: unsupported Darwin boundary %d", ErrProbeInconclusive, n)
+		return fmt.Errorf("%w: unsupported Darwin boundary %d", errProbeInconclusive, n)
 	}
 	for _, v := range []int{n - 1, n, n + 1} {
 		if v >= 8 {
@@ -92,32 +92,15 @@ func addBoundary(majors map[int]bool, n int) error {
 	}
 	return nil
 }
-func contextBoundaries(src []byte) (map[int]bool, bool, error) {
-	n, err := scanPlatformNeeds(src)
-	if err == nil && (len(n.operands) > 0 || n.exhaustive) {
-		err = fmt.Errorf("%w: native platform observations required", ErrProbeInconclusive)
-	}
-	return n.majors, n.arch, err
-}
 
 func comparisonEnd(rest string) bool {
 	return rest == "" || strings.ContainsAny(rest[:1], "})]\"") || strings.HasPrefix(rest, "&&") || strings.HasPrefix(rest, "||")
 }
 
-// observationProfiles includes the host, relevant architecture choices, and
-// both sides of literal Darwin conditions. Unmodeled expressions are gaps.
-func observationProfiles(src []byte, native record.Platform) ([]record.Platform, error) {
-	majors, archDependent, err := contextBoundaries(src)
-	if err != nil {
-		return nil, err
-	}
-	return profilesForBoundaries(majors, archDependent, native)
-}
-
 func profilesForBoundaries(majors map[int]bool, archDependent bool, native record.Platform) ([]record.Platform, error) {
 	result := []record.Platform{native}
 	if native.OS != "darwin" && (archDependent || len(majors) > 0) {
-		return nil, fmt.Errorf("%w: alternate platforms require Darwin modeling", ErrProbeInconclusive)
+		return nil, fmt.Errorf("%w: alternate platforms require Darwin modeling", errProbeInconclusive)
 	}
 	current, _ := strconv.Atoi(native.Version)
 	appendProfile := func(major int, arch string) {

@@ -84,7 +84,7 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 	}
 	if len(carriers) == 0 {
 		if failures > 0 {
-			return nil, fmt.Errorf("%w: %w: no editable version input established (%d candidate evaluations were inconclusive)", ErrUnsupported, ErrProbeInconclusive, failures)
+			return nil, fmt.Errorf("%w: %w: no editable version input established (%d candidate evaluations were inconclusive)", ErrUnsupported, errProbeInconclusive, failures)
 		}
 		return nil, fmt.Errorf("%w: no editable version input established (%d candidate evaluations were inconclusive)", ErrUnsupported, failures)
 	}
@@ -173,7 +173,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 			if ctx.Err() != nil {
 				return nil, snapshot, ctx.Err()
 			}
-			rejected = fmt.Errorf("%w: %w: candidate evaluation was inconclusive: %v", ErrUnsupported, ErrProbeInconclusive, err)
+			rejected = fmt.Errorf("%w: %w: candidate evaluation was inconclusive: %v", ErrUnsupported, errProbeInconclusive, err)
 			continue
 		}
 		after := evaluated.after

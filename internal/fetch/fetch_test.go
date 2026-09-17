@@ -28,7 +28,7 @@ func TestLimitsKnownAndStreamingBodies(t *testing.T) {
 				body, readErr := io.ReadAll(response.Body)
 				require.NoError(t, response.Body.Close())
 				if size > 4 {
-					require.ErrorIs(t, readErr, ErrTooLarge)
+					require.ErrorIs(t, readErr, errTooLarge)
 					require.Len(t, body, 4)
 				} else {
 					require.NoError(t, readErr)
@@ -36,7 +36,7 @@ func TestLimitsKnownAndStreamingBodies(t *testing.T) {
 				}
 			} else {
 				require.Greater(t, size, 4)
-				require.ErrorIs(t, err, ErrTooLarge)
+				require.ErrorIs(t, err, errTooLarge)
 			}
 			server.Close()
 		}

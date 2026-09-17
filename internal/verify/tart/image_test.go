@@ -42,7 +42,7 @@ func TestImageDigestProcess(t *testing.T) {
 	counted := &countedImageStore{ProviderStore: store}
 	p := imageFixtureProvider(root)
 	p.State = counted
-	environment, err := p.DescribeEnvironment(t.Context())
+	environment, err := p.describeEnvironment(t.Context())
 	require.NoError(t, err)
 	data, err := json.Marshal(imageProcessResult{environment, counted.writes != 0})
 	require.NoError(t, err)
@@ -216,7 +216,7 @@ func TestImageAvailabilityErrorsAreSpecific(t *testing.T) {
 			case "missing disk":
 				require.NoError(t, os.Remove(filepath.Join(root, "vms", "base", "disk.img")))
 			}
-			_, err := p.DescribeEnvironment(t.Context())
+			_, err := p.describeEnvironment(t.Context())
 			require.Error(t, err)
 			switch kind {
 			case "missing image":

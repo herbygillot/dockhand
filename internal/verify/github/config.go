@@ -31,7 +31,7 @@ type actionsAPI interface {
 	JobLog(context.Context, int64) (io.ReadCloser, error)
 }
 
-func BuildConfig(platform record.Platform, config Config, needsXcode bool) (record.BuildConfig, error) {
+func buildConfig(platform record.Platform, config Config, needsXcode bool) (record.BuildConfig, error) {
 	if err := config.validate(); err != nil {
 		return record.BuildConfig{}, err
 	}
@@ -66,5 +66,5 @@ func Configure(ctx context.Context, client *githubapi.Client, platform record.Pl
 	if flow.GetState() != "active" || flow.GetPath() != macports.PortsWorkflowPath {
 		return record.BuildConfig{}, fmt.Errorf("github verification: enable main.yml in your fork's Actions settings")
 	}
-	return BuildConfig(platform, Config{Destination: destination, WorkflowID: flow.GetID()}, needsXcode)
+	return buildConfig(platform, Config{Destination: destination, WorkflowID: flow.GetID()}, needsXcode)
 }

@@ -28,7 +28,7 @@ const mdxBlock = "go.vendors          gopkg.in/yaml.v3 \\\n" +
 
 func TestChangedCrateBlockKeepsMaintainedColumns(t *testing.T) {
 	src := []byte("name fixture\nversion 1\n" + codexBlock + "\nlicense MIT\n")
-	values, err := Generated(src, Cargo)
+	values, err := generated(src, Cargo)
 	require.NoError(t, err)
 	plan, err := Inspect(src, map[string]string{Cargo: strings.Join(values, " ")})
 	require.NoError(t, err)
@@ -54,14 +54,14 @@ func TestChangedCrateBlockKeepsMaintainedColumns(t *testing.T) {
 	require.Contains(t, text, "    process_security_environment_spec   0.8.0  "+sha, "a long name keeps the version field width, as cargo2port does")
 	require.Contains(t, text, "    zzz                           10.0.0-rc.1+build  "+sha+"\nlicense MIT", "a long version starts at the field floor and pushes the hash by the observed gap; the block ends without a continuation")
 	require.NotContains(t, text, "windows-implement")
-	regenerated, err := Generated(out, Cargo)
+	regenerated, err := generated(out, Cargo)
 	require.NoError(t, err)
 	require.Equal(t, next, regenerated)
 }
 
 func TestChangedGoBlockKeepsModuleAndFieldColumns(t *testing.T) {
 	src := []byte("name fixture\n" + mdxBlock + "\n")
-	values, err := Generated(src, Go)
+	values, err := generated(src, Go)
 	require.NoError(t, err)
 	plan, err := Inspect(src, map[string]string{Go: strings.Join(values, " ")})
 	require.NoError(t, err)
