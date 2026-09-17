@@ -25,6 +25,11 @@ Dockhand reads `go.mod` from the main archive, confirms its module matches `go.p
 
 A Go port without a vendor declaration does not acquire a helper requirement merely by using the Go PortGroup. Explicit empty declarations are checked for newly added dependencies. Go workspaces and `replace` or `exclude` directives require manual preparation because the current helper does not preserve their meaning.
 
+### Where the Go manifest is found
+
+The Go PortGroup's default `worksrcdir` is `gopath/src/<go.package>`, the directory `post-extract` moves the source into; it is not a path inside the archive. dockhand reads the archive itself, so for a `worksrcdir` under `gopath/src` the manifest is looked for directly under the archive's single top-level directory, which the PortGroup's extraction flattens into GOPATH. A port that sets `worksrcdir` outright is read at that path, as before. Two top-level directories each carrying a manifest are ambiguous and refused.
+
+
 ## Rust
 
 Dockhand passes the exact archive's `Cargo.lock` to `cargo2port`. Registry triples must match the lockfile's crates.io package names, versions, and checksums exactly; missing packages, alternative registries, and incomplete output are refused. Added and removed dependencies, including an empty resulting block, are supported.
