@@ -20,9 +20,7 @@ Implemented on 2026-09-16; see the [hardening report](activity/2026-09-16-first-
 
 ### 4. Support commit-qualified Cargo Git dependencies
 
-The real Codex exercise now identifies its Cargo source independently of its pinned V8 auxiliary file, but stops at a separate generator constraint: crossterm is pinned with `rev=`, while the current Cargo mapping requires a branch. Extend source identity and helper comparison to represent the exact Git commit without inventing a branch or relaxing maintained-override checks. Keep this in `macports/dependency` and its existing preparation integration.
-
-Acceptance: repeat the historical Codex update through complete preparation with the V8 pin unchanged, then verify it through the ordinary contribution workflow. Include branch-, tag-, and revision-qualified Git source refusals or support explicitly. Ambiguous or unsupported source URLs must remain actionable errors.
+Implemented on 2026-09-16; see the [Git reference report](activity/2026-09-16-cargo-git-references.md). Source identity now records each Git crate's selector (branch, tag, `rev`, or default branch) with its exact commit. The cargo PortGroup can only declare branch selectors, so the other kinds follow the port's `cargo.offline_cmd`: an offline build refuses them with an actionable error, and a port that disables offline mode leaves them to Cargo's online resolution and reports them. The maintained-override comparison is unchanged. Master had already moved past the historical Codex commit, so the live replay bumped Codex 0.154.0 to 0.155.0-alpha.15 through complete preparation with the V8 pin untouched.
 
 ### 5. Resolve the remaining demonstrated platform-coverage gaps
 

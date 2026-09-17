@@ -36,7 +36,7 @@ func (s *Service) prepareVersion(ctx context.Context, request Request, input *so
 }
 
 func inspectDependencies(input *sourceInput) (*dependency.Plan, error) {
-	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit, "cargo.update", "cargo.dir"} {
+	for _, key := range []string{dependency.Go, dependency.Cargo, dependency.CargoGit, "cargo.update", "cargo.dir", "cargo.offline_cmd"} {
 		if input.info.OptionErrors[key] != "" {
 			return nil, fmt.Errorf("%w: cannot evaluate %s", ErrUnsupported, key)
 		}
@@ -162,7 +162,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	defer os.RemoveAll(directory)
 	archives := s.archives(directory)
-	oldInput, err := originalDependencySource(ctx, archives, base.info, sources, plan.Kind)
+	oldInput, err := originalDependencySource(ctx, archives, base.info, sources, plan)
 	if err != nil {
 		return Result{}, err
 	}
@@ -195,7 +195,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	nextInput, err := selectDependencySource(ctx, next, nextSources, result.Downloads, plan.Kind)
+	nextInput, err := selectDependencySource(ctx, next, nextSources, result.Downloads, plan)
 	if err != nil {
 		return Result{}, err
 	}
@@ -203,6 +203,9 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	generated, err := dependency.Generate(ctx, plan.Kind, executable, nextInput)
 	if err != nil {
 		return Result{}, err
+	}
+	if len(generated.Online) > 0 {
+		progress.Report(ctx, "Leaving %d Git-pinned crates to Cargo's online resolution at build time because cargo.offline_cmd is empty: %s", len(generated.Online), dependency.GitSummary(generated.Online))
 	}
 	values, gitDownloads, err := s.gitCrateChecksums(ctx, request, input, result.Files[0].After, generated)
 	if err != nil {
@@ -254,7 +257,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	return result, nil
 }
 
-func dependencyInput(info macports.PortInfo, archive string) (dependency.Input, error) {
+func dependencyInput(info macports.PortInfo, archive string, plan *dependency.Plan) (dependency.Input, error) {
 	root := info.Options["worksrcdir"]
 	if dir := info.Options["cargo.dir"]; dir != "" {
 		if dir != "@worksrc@" && !strings.HasPrefix(dir, "@worksrc@/") {
@@ -262,7 +265,7 @@ func dependencyInput(info macports.PortInfo, archive string) (dependency.Input, 
 		}
 		root = filepath.Join(root, strings.TrimPrefix(strings.TrimPrefix(dir, "@worksrc@"), "/"))
 	}
-	return dependency.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"]}, nil
+	return dependency.Input{Archive: archive, Worksrcdir: filepath.ToSlash(root), Package: info.Options["go.package"], Tag: info.Options["git.branch"], Git: plan.Git}, nil
 }
 
 func (s *Service) gitCrateChecksums(ctx context.Context, request Request, input *sourceInput, contents []byte, generated dependency.GeneratedBlocks) (map[string][]string, []Download, error) {

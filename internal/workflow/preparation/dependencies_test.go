@@ -278,3 +278,42 @@ source = "git+https://github.com/owner/gitdep?branch=main#%s"
 	require.Contains(t, string(result.Files[0].After), "gitdep owner/gitdep main "+newCommit+" "+checksum)
 	require.NotContains(t, string(result.Files[0].After), oldCommit)
 }
+
+func TestCargoRevPinnedCratesStayOnlineWhenThePortDisablesOfflineMode(t *testing.T) {
+	oldCommit, newCommit := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	lock := func(commit string) string {
+		return fmt.Sprintf(`version = 4
+[[package]]
+name = "pinned"
+version = "0.1.0"
+source = "git+https://github.com/owner/pinned?rev=%s#%s"
+`, commit, commit)
+	}
+	before := manifestArchive(t, "Cargo.lock", lock(oldCommit), "1.0")
+	after := manifestArchive(t, "Cargo.lock", lock(newCommit), "2.0")
+	extra := "options cargo.crates cargo.crates_github cargo.offline_cmd\n default cargo.crates {}\n default cargo.crates_github {}\n default cargo.offline_cmd {--frozen}\n"
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		require.NotContains(t, r.URL.Path, "/git/")
+		if strings.Contains(r.URL.Path, "/1.0/") {
+			_, _ = w.Write(before)
+		} else {
+			_, _ = w.Write(after)
+		}
+	}
+	service, request := versionFixture(t, "setup", extra, handler)
+	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
+	_, err := service.Prepare(t.Context(), request)
+	require.ErrorContains(t, err, "pinned is pinned to Git rev "+oldCommit)
+	require.ErrorContains(t, err, "declares branches only")
+
+	service, request = versionFixture(t, "setup", extra+"# Disable offline mode to work around Git dependencies\ncargo.offline_cmd\n", handler)
+	service.DependencyTools.Cargo2Port = dependencyHelper(t, "exit 0")
+	result, err := service.Prepare(t.Context(), request)
+	require.NoError(t, err)
+	require.NotEmpty(t, result.PreparedTree)
+	require.Len(t, result.Downloads, 1, "no Git crate archive is fetched for an online crate")
+	contents := string(result.Files[0].After)
+	require.NotContains(t, contents, "\ncargo.crates_github", "no declaration is added for online crates")
+	require.NotContains(t, contents, newCommit)
+	require.Contains(t, contents, "# Disable offline mode to work around Git dependencies\ncargo.offline_cmd\n")
+}

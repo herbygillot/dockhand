@@ -10,14 +10,19 @@ import (
 	"time"
 )
 
-type Input struct{ Archive, Worksrcdir, Package, Tag string }
-type GitCrate struct{ Name, Repository, Branch, Commit string }
+type Input struct {
+	Archive, Worksrcdir, Package, Tag string
+	// Git states which Git crates a Cargo port declares; see GitPolicy.
+	Git GitPolicy
+}
 
-func (c GitCrate) Distfile() string { return c.Name + "-" + c.Commit + ".tar.gz" }
-
+// GeneratedBlocks holds helper-derived declarations. Git lists the crates
+// cargo.crates_github declares once their archive checksums are known; Online
+// lists the crates the port leaves to Cargo's network resolution at build time.
 type GeneratedBlocks struct {
 	Values map[string][]string
 	Git    []GitCrate
+	Online []GitCrate
 }
 
 type boundedBuffer struct{ bytes.Buffer }

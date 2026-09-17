@@ -152,7 +152,7 @@ source = "git+https://github.com/owner/dep?branch=main#%s"
 	in := Input{Archive: sourceArchive(t, map[string]string{"root/Cargo.lock": lock}), Worksrcdir: "root"}
 	result, err := Generate(t.Context(), Cargo, outputHelper(t, "cargo.crates dep 1.2.3 "+sha), in)
 	require.NoError(t, err)
-	require.Equal(t, []GitCrate{{Name: "gitdep", Repository: "owner/dep", Branch: "main", Commit: commit}}, result.Git)
+	require.Equal(t, []GitCrate{{Name: "gitdep", Repository: "owner/dep", Commit: commit, Reference: GitReference{Kind: GitBranch, Value: "main"}}}, result.Git)
 	values, err := result.WithGitChecksums(map[string]string{"gitdep-" + commit + ".tar.gz": sha})
 	require.NoError(t, err)
 	require.Len(t, values[CargoGit], 5)
@@ -213,3 +213,91 @@ func TestUnchangedDependencyBlockKeepsOriginalFormatting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, strings.Replace(string(src), "version 1", "version 2", 1), string(updated))
 }
+
+func TestCargoGitReferencesFollowThePortPolicy(t *testing.T) {
+	sha := strings.Repeat("a", 64)
+	commit := strings.Repeat("b", 40)
+	lock := func(selector string) string {
+		return fmt.Sprintf(`version = 4
+[[package]]
+name = "fixture"
+version = "2.0.0"
+[[package]]
+name = "dep"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "%s"
+[[package]]
+name = "pinned"
+version = "0.1.0"
+source = "git+https://github.com/owner/pinned%s#%s"
+`, sha, selector, commit)
+	}
+	helper := outputHelper(t, "cargo.crates dep 1.2.3 "+sha)
+	generate := func(selector string, policy GitPolicy) (GeneratedBlocks, error) {
+		in := Input{Archive: sourceArchive(t, map[string]string{"root/Cargo.lock": lock(selector)}), Worksrcdir: "root", Git: policy}
+		return Generate(t.Context(), Cargo, helper, in)
+	}
+	branch := GitCrate{Name: "pinned", Repository: "owner/pinned", Commit: commit, Reference: GitReference{Kind: GitBranch, Value: "main"}}
+	for _, policy := range []GitPolicy{"", GitDeclared, GitMixed} {
+		result, err := generate("?branch=main", policy)
+		require.NoError(t, err)
+		require.Equal(t, []GitCrate{branch}, result.Git)
+		require.Empty(t, result.Online)
+	}
+	result, err := generate("?branch=main", GitOnline)
+	require.NoError(t, err)
+	require.Empty(t, result.Git)
+	require.Equal(t, []GitCrate{branch}, result.Online, "a port that declares nothing keeps branch pins online too")
+	for selector, reference := range map[string]GitReference{"?rev=" + commit: {Kind: GitRev, Value: commit}, "?tag=v1": {Kind: GitTag, Value: "v1"}, "": {}} {
+		for _, policy := range []GitPolicy{"", GitDeclared} {
+			_, err := generate(selector, policy)
+			require.ErrorContains(t, err, "pinned is pinned to Git "+reference.String())
+			require.ErrorContains(t, err, "declares branches only")
+		}
+		for _, policy := range []GitPolicy{GitMixed, GitOnline} {
+			result, err := generate(selector, policy)
+			require.NoError(t, err)
+			require.Empty(t, result.Git)
+			require.Equal(t, []GitCrate{{Name: "pinned", Repository: "owner/pinned", Commit: commit, Reference: reference}}, result.Online)
+			values, err := result.WithGitChecksums(nil)
+			require.NoError(t, err, "online crates need no archive checksum")
+			require.Empty(t, values[CargoGit])
+		}
+	}
+	for _, unsupported := range []string{"?branch=main&rev=" + commit, "?ref=main", "?branch=", "?branch=[exec]", "?branch=main&branch=other"} {
+		_, err := generate(unsupported, GitOnline)
+		require.ErrorContains(t, err, "selector", unsupported)
+	}
+	require.Equal(t, "pinned@bbbbbbbb", GitSummary(result.Online))
+}
+
+func TestInspectDerivesGitPolicyFromOfflineMode(t *testing.T) {
+	sha := strings.Repeat("a", 64)
+	crates := "cargo.crates dep 1.0 " + sha + "\n"
+	declared := crates + "cargo.crates_github\n"
+	for _, c := range []struct {
+		src     string
+		offline *string
+		want    GitPolicy
+	}{
+		{crates, nil, GitDeclared},
+		{crates, ptr("--frozen"), GitDeclared},
+		{crates, ptr(""), GitOnline},
+		{declared, ptr(""), GitMixed},
+		{declared, ptr(" --offline "), GitDeclared},
+	} {
+		options := map[string]string{Cargo: "dep 1.0 " + sha}
+		if c.offline != nil {
+			options["cargo.offline_cmd"] = *c.offline
+		}
+		plan, err := Inspect([]byte(c.src), options)
+		require.NoError(t, err)
+		require.Equal(t, c.want, plan.Git)
+	}
+	plan, err := Inspect([]byte("go.vendors\n"), map[string]string{Go: "", "cargo.offline_cmd": ""})
+	require.NoError(t, err)
+	require.Empty(t, plan.Git)
+}
+
+func ptr(s string) *string { return &s }

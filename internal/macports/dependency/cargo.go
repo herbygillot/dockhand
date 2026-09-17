@@ -1,11 +1,10 @@
 package dependency
 
 import (
+	"cmp"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"maps"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,7 +33,7 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 		return GeneratedBlocks{}, fmt.Errorf("dependency: unsupported or empty Cargo.lock")
 	}
 	expected := map[string]string{}
-	var git []GitCrate
+	var git, online []GitCrate
 	seenGit := map[string]bool{}
 	repoBranches := map[string]string{}
 	for _, pkg := range lock.Package {
@@ -54,28 +53,24 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 			}
 			expected[key] = pkg.Checksum
 		} else if raw, ok := strings.CutPrefix(pkg.Source, "git+"); ok {
-			u, err := url.Parse(raw)
-			if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.User != nil {
-				return GeneratedBlocks{}, fmt.Errorf("dependency: %s has an unsupported Git source", pkg.Name)
+			crate, err := parseGitCrate(pkg.Name, raw)
+			if err != nil {
+				return GeneratedBlocks{}, err
 			}
-			query, err := url.ParseQuery(u.RawQuery)
-			repository := strings.TrimSuffix(strings.Trim(u.Path, "/"), ".git")
-			branch := query.Get("branch")
-			commit := u.Fragment
-			if err != nil || len(query) != 1 || len(query["branch"]) != 1 || branch == "" || !safeToken(branch) || !safeRepository(repository) || len(commit) != 40 {
-				return GeneratedBlocks{}, fmt.Errorf("dependency: %s requires a GitHub branch and full commit for cargo.crates_github", pkg.Name)
+			if !crate.Reference.Declarable() || in.Git == GitOnline {
+				if in.Git != GitOnline && in.Git != GitMixed {
+					return GeneratedBlocks{}, fmt.Errorf("dependency: %s is pinned to Git %s; cargo.crates_github declares branches only, so an offline build cannot resolve it: pin a branch upstream, or let the port resolve Git sources online with an empty cargo.offline_cmd", pkg.Name, crate.Reference)
+				}
+				online = append(online, crate)
+				continue
 			}
-			if _, err := hex.DecodeString(commit); err != nil {
-				return GeneratedBlocks{}, fmt.Errorf("dependency: invalid Git crate commit")
-			}
-			crate := GitCrate{Name: pkg.Name, Repository: repository, Branch: branch, Commit: commit}
 			if seenGit[crate.Distfile()] {
 				return GeneratedBlocks{}, fmt.Errorf("dependency: ambiguous Git crate archive %s", crate.Distfile())
 			}
-			if old, ok := repoBranches[repository]; ok && old != branch {
-				return GeneratedBlocks{}, fmt.Errorf("dependency: multiple branches of %s cannot share a Cargo source replacement", repository)
+			if old, ok := repoBranches[crate.Repository]; ok && old != crate.Reference.Value {
+				return GeneratedBlocks{}, fmt.Errorf("dependency: multiple branches of %s cannot share a Cargo source replacement", crate.Repository)
 			}
-			repoBranches[repository] = branch
+			repoBranches[crate.Repository] = crate.Reference.Value
 			seenGit[crate.Distfile()] = true
 			git = append(git, crate)
 		} else {
@@ -114,7 +109,10 @@ func generateCargo(ctx context.Context, executable string, in Input) (GeneratedB
 		return GeneratedBlocks{}, fmt.Errorf("dependency: cargo2port output does not cover Cargo.lock registry checksums exactly")
 	}
 	slices.SortFunc(git, func(a, b GitCrate) int { return strings.Compare(a.Name, b.Name) })
-	return GeneratedBlocks{Values: map[string][]string{Cargo: values, CargoGit: nil}, Git: git}, nil
+	slices.SortFunc(online, func(a, b GitCrate) int {
+		return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Commit, b.Commit))
+	})
+	return GeneratedBlocks{Values: map[string][]string{Cargo: values, CargoGit: nil}, Git: git, Online: online}, nil
 }
 
 func (g GeneratedBlocks) WithGitChecksums(sums map[string]string) (map[string][]string, error) {
@@ -124,7 +122,7 @@ func (g GeneratedBlocks) WithGitChecksums(sums map[string]string) (map[string][]
 		if !sha256Value(sum) {
 			return nil, fmt.Errorf("dependency: missing checksum for %s", crate.Name)
 		}
-		values[CargoGit] = append(values[CargoGit], crate.Name, crate.Repository, crate.Branch, crate.Commit, sum)
+		values[CargoGit] = append(values[CargoGit], crate.Name, crate.Repository, crate.Reference.Value, crate.Commit, sum)
 	}
 	return values, nil
 }

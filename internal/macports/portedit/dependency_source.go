@@ -29,7 +29,7 @@ func dependencySources(info macports.PortInfo, sources []archiveSource) ([]archi
 	return result, nil
 }
 
-func originalDependencySource(ctx context.Context, archives *archiveStore, info macports.PortInfo, sources []archiveSource, kind string) (dependency.Input, error) {
+func originalDependencySource(ctx context.Context, archives *archiveStore, info macports.PortInfo, sources []archiveSource, plan *dependency.Plan) (dependency.Input, error) {
 	var downloads []Download
 	for _, source := range sources {
 		download, err := archives.fetch(ctx, info, source)
@@ -38,10 +38,10 @@ func originalDependencySource(ctx context.Context, archives *archiveStore, info 
 		}
 		downloads = append(downloads, download)
 	}
-	return selectDependencySource(ctx, info, sources, downloads, kind)
+	return selectDependencySource(ctx, info, sources, downloads, plan)
 }
 
-func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []archiveSource, downloads []Download, kind string) (dependency.Input, error) {
+func selectDependencySource(ctx context.Context, info macports.PortInfo, sources []archiveSource, downloads []Download, plan *dependency.Plan) (dependency.Input, error) {
 	var selected *dependency.Input
 	for _, source := range sources {
 		matches := 0
@@ -55,12 +55,12 @@ func selectDependencySource(ctx context.Context, info macports.PortInfo, sources
 		if matches != 1 || filename == "" {
 			return dependency.Input{}, fmt.Errorf("%w: manifest candidate %s needs exactly one available source archive", ErrUnsupported, source.Name)
 		}
-		input, err := dependencyInput(info, filename)
+		input, err := dependencyInput(info, filename, plan)
 		if err != nil {
 			return dependency.Input{}, err
 		}
 		rename := info.Options["extract.rename"]
-		err = dependency.ConfirmSource(ctx, kind, input, rename == "yes" || rename == "true" || rename == "1")
+		err = dependency.ConfirmSource(ctx, plan.Kind, input, rename == "yes" || rename == "true" || rename == "1")
 		if errors.Is(err, dependency.ErrManifestMissing) {
 			continue
 		}

@@ -58,6 +58,8 @@ type Plan struct {
 	source []byte
 	Kind   string
 	Values map[string][]string
+	// Git states how a Cargo port obtains Git-pinned crates; empty for Go.
+	Git GitPolicy
 }
 
 func Inspect(src []byte, options map[string]string) (*Plan, error) {
@@ -102,7 +104,12 @@ func Inspect(src []byte, options map[string]string) (*Plan, error) {
 		}
 		values[name] = expected
 	}
-	return &Plan{Kind: kind, Values: values, source: slices.Clone(src)}, nil
+	plan := &Plan{Kind: kind, Values: values, source: slices.Clone(src)}
+	if kind == Cargo {
+		_, declared := commands[CargoGit]
+		plan.Git = gitPolicy(options, declared)
+	}
+	return plan, nil
 }
 func names(kind string) []string {
 	if kind == Go {

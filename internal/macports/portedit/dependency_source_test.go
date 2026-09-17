@@ -27,13 +27,13 @@ func TestManifestSourceAmbiguityAndAbsence(t *testing.T) {
 	info := macports.PortInfo{Options: map[string]string{"worksrcdir": "root", "extract.rename": "no"}}
 	sources := []archiveSource{{Name: "source.tar"}, {Name: "auxiliary.tar"}}
 	downloads := []Download{archive("source.tar", "root/Cargo.lock"), archive("auxiliary.tar", "root/Cargo.lock")}
-	_, err := selectDependencySource(t.Context(), info, sources, downloads, dependency.Cargo)
+	_, err := selectDependencySource(t.Context(), info, sources, downloads, &dependency.Plan{Kind: dependency.Cargo})
 	require.ErrorContains(t, err, "multiple extracted archives")
 	downloads[1] = archive("auxiliary.tar", "other/Cargo.lock")
-	selected, err := selectDependencySource(t.Context(), info, sources, downloads, dependency.Cargo)
+	selected, err := selectDependencySource(t.Context(), info, sources, downloads, &dependency.Plan{Kind: dependency.Cargo})
 	require.NoError(t, err)
 	require.Equal(t, downloads[0].path, selected.Archive)
 	downloads[0] = archive("source.tar", "root/README")
-	_, err = selectDependencySource(t.Context(), info, sources, downloads, dependency.Cargo)
+	_, err = selectDependencySource(t.Context(), info, sources, downloads, &dependency.Plan{Kind: dependency.Cargo})
 	require.ErrorContains(t, err, "no extracted archive contains")
 }
