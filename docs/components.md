@@ -334,6 +334,8 @@ CLI completion reports the verification outcome directly. Reuse explanations rem
 
 `progress` carries optional scoped messages through the active call context. The CLI installs a serialized observer that prints escaped stage messages on stderr, including with `--json`. Tart and PortIndex report actual work boundaries without importing the CLI or persisting display text. This does not change durable job states, provider capacity, or admission semantics. A different driver reports its own activity; status readers still use recorded state.
 
+`tui` renders the live `status` table with Bubble Tea. It depends only on `workflow` for the contribution projection and on three closures the CLI supplies: one that polls the snapshot, one that runs a dockhand verb in-process with its output captured, and one that opens a URL or file. It holds no state of its own beyond the selection and the message strip, so a key can do exactly what the corresponding command does and nothing else.
+
 ### GitHub verification
 
 `internal/verify/github` owns committed-source eligibility, the supported MacPorts workflow shape, durable submission and recovery, matrix outcome interpretation, per-request tracking cancellation, and completed-job log caching. Canceling tracking does not cancel a shared Actions run. `internal/verify/github` binds the shared authenticated SDK to Actions operations through its private Actions interface. `internal/app` resolves the personal fork through publication's destination logic before acceptance.

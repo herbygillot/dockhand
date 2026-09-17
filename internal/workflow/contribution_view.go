@@ -29,6 +29,8 @@ type Contribution struct {
 	// Next says what happens or is needed next.
 	Next        string
 	PullRequest string `json:",omitempty"`
+	// Log is the location of the latest failed build's log, when one is recorded.
+	Log string `json:",omitempty"`
 	// Active is the one job still doing work, with its last recorded detail.
 	Active *ActiveJob `json:",omitempty"`
 	// Detail is the current job's last recorded detail when nothing is active.
@@ -134,6 +136,17 @@ func project(change record.Change, known bool, entries []JobStatus, pr *record.P
 		}
 		if row.Change == "" {
 			row.Change = changeWords(job)
+		}
+		for _, attempt := range entry.Attempts {
+			if attempt.Evidence == nil || attempt.Evidence.Verdict != record.VerdictFailed {
+				continue
+			}
+			for _, log := range attempt.Evidence.Logs {
+				if log.Location != "" {
+					row.Log = log.Location
+					break
+				}
+			}
 		}
 		if job.State == record.JobSuperseded {
 			continue

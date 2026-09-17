@@ -2,9 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"maps"
+	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,16 +17,18 @@ import (
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/tui"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
 func (r *runtime) statusCommand() *cobra.Command {
 	var filter workflow.StatusFilter
+	var plainOutput bool
 	cmd := &cobra.Command{
 		Use:   "status [target]",
 		Short: "Show recorded workflow status",
-		Long:  "Show a repository state snapshot, including recorded jobs, verification, publication, and resource cleanup. This command does not advance work or refresh provider or pull request state.",
+		Long:  "Show a repository state snapshot as one row per contribution: port, change, phase, state, and what comes next. On a terminal the table is live and its keys run the existing verbs on the selected contribution; --plain prints it once, -v prints the full record with identifiers, and --json returns both. This command does not advance work or refresh provider or pull request state by itself.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
@@ -46,14 +51,47 @@ func (r *runtime) statusCommand() *cobra.Command {
 			if r.level(cmd) >= progress.Verbose {
 				return renderStatus(cmd.OutOrStdout(), status)
 			}
+			if !plainOutput && isTerminal(cmd.OutOrStdout()) && isTerminal(cmd.InOrStdin()) {
+				return r.liveStatus(cmd, filter)
+			}
 			return renderContributions(cmd.OutOrStdout(), overview)
 		},
 	}
+	cmd.Flags().BoolVar(&plainOutput, "plain", false, "Print the snapshot once instead of the live table on a terminal")
 	cmd.Flags().StringVar((*string)(&filter.JobID), "job", "", "Inspect one job instead of a target")
 	cmd.Flags().StringVar((*string)(&filter.ChangeID), "change", "", "Inspect one contribution")
 	cmd.Flags().BoolVar(&filter.Active, "active", false, "Show queued and active jobs, including capacity and retry waits")
 	cmd.Flags().StringVar(&filter.Branch, "branch", "", "Show jobs for a recorded contribution branch")
 	return cmd
+}
+
+// liveStatus renders the contribution table with Bubble Tea, polling the
+// snapshot, and runs the verbs its keys name in-process on this runtime's
+// configuration, so a key has exactly the authority of the command.
+func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter) error {
+	options := tui.Options{
+		Poll: func(ctx context.Context) (workflow.Overview, error) {
+			status, err := app.FilteredStatus(ctx, r.config, filter)
+			if err != nil {
+				return workflow.Overview{}, databaseReadError(err)
+			}
+			return workflow.Overview{Status: status, Contributions: workflow.Project(status)}, nil
+		},
+		Run: func(ctx context.Context, args []string, out io.Writer) error {
+			return run(ctx, args, Streams{Out: out, Err: out}, r.config, r.build)
+		},
+		Open: func(target string) error { return exec.Command("open", target).Start() },
+	}
+	return tui.Run(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), options)
+}
+
+func isTerminal(stream any) bool {
+	file, ok := stream.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // renderContributions prints the info-level status: one row per contribution
@@ -68,9 +106,9 @@ func renderContributions(out io.Writer, overview workflow.Overview) error {
 		return err
 	}
 	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(table, "PORT\tCHANGE\tPHASE\tSTATE\tNEXT\tPR")
+	fmt.Fprintln(table, "PORT\tCHANGE\tPHASE\tSTATE\tPR\tNEXT")
 	for _, row := range overview.Contributions {
-		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n", plain(row.Port), plain(row.Change), plain(row.Phase), plain(row.State), plain(row.Next), plain(row.PullRequest))
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n", plain(row.Port), plain(row.Change), plain(row.Phase), plain(row.State), plain(row.PullRequest), plain(row.Next))
 	}
 	return table.Flush()
 }
