@@ -169,13 +169,19 @@ func (p *Plan) Strip(src []byte) ([]byte, error) {
 	return Apply(src, replacements)
 }
 
-// Apply retains the original spelling of dependency blocks whose values did not change.
+// Apply retains the original spelling of dependency blocks whose values did
+// not change, and lays out changed blocks like the original: unchanged rows
+// stay byte for byte and new rows take the same columns.
 func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
-	out, err := Apply(src, values)
+	original, err := blocks(p.source)
 	if err != nil {
 		return nil, err
 	}
-	original, err := blocks(p.source)
+	layouts := map[string]*blockLayout{}
+	for name, cmd := range original {
+		layouts[name] = inferLayout(name, cmd.Span.Text(p.source))
+	}
+	out, err := apply(src, values, layouts)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +200,12 @@ func (p *Plan) Apply(src []byte, values map[string][]string) ([]byte, error) {
 	return text.Apply(out, edits)
 }
 
+// Apply writes plain single-space rows; Plan.Apply follows an existing layout.
 func Apply(src []byte, values map[string][]string) ([]byte, error) {
+	return apply(src, values, nil)
+}
+
+func apply(src []byte, values map[string][]string, layouts map[string]*blockLayout) ([]byte, error) {
 	commands, err := blocks(src)
 	if err != nil {
 		return nil, err
@@ -218,6 +229,13 @@ func Apply(src []byte, values map[string][]string) ([]byte, error) {
 				return nil, err
 			}
 			body += " \\\n    " + strings.Join(rows, " \\\n    ")
+			if layout := layouts[name]; layout != nil {
+				groups, err := tokenRows(name, tokens)
+				if err != nil {
+					return nil, err
+				}
+				body = layout.format(groups)
+			}
 		}
 		if cmd, found := commands[name]; found {
 			edits = append(edits, text.Edit{Span: cmd.Span, New: []byte(body)})
@@ -243,25 +261,29 @@ func Generated(src []byte, name string) ([]string, error) {
 	return literalWords(src, command)
 }
 
-func formattedRows(kind string, tokens []string) ([]string, error) {
-	var groups [][]string
+// tokenRows groups a block's tokens into declaration rows.
+func tokenRows(kind string, tokens []string) ([][]string, error) {
 	if kind == Go {
-		var err error
-		groups, err = goRows(tokens)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		width := 3
-		if kind == CargoGit {
-			width = 5
-		}
-		if len(tokens)%width != 0 {
-			return nil, fmt.Errorf("dependency: incomplete %s row", kind)
-		}
-		for i := 0; i < len(tokens); i += width {
-			groups = append(groups, tokens[i:i+width])
-		}
+		return goRows(tokens)
+	}
+	width := 3
+	if kind == CargoGit {
+		width = 5
+	}
+	if len(tokens)%width != 0 {
+		return nil, fmt.Errorf("dependency: incomplete %s row", kind)
+	}
+	var groups [][]string
+	for i := 0; i < len(tokens); i += width {
+		groups = append(groups, tokens[i:i+width])
+	}
+	return groups, nil
+}
+
+func formattedRows(kind string, tokens []string) ([]string, error) {
+	groups, err := tokenRows(kind, tokens)
+	if err != nil {
+		return nil, err
 	}
 	rows := make([]string, len(groups))
 	for i, row := range groups {
