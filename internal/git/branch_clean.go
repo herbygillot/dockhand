@@ -32,3 +32,25 @@ func (r *Repository) RequireCleanBranch(ctx context.Context, branch string) erro
 	}
 	return nil
 }
+
+// Checkouts lists the worktrees that have branch checked out.
+func (r *Repository) Checkouts(ctx context.Context, branch string) ([]string, error) {
+	if !ValidBranchName(branch) {
+		return nil, fmt.Errorf("git: invalid branch")
+	}
+	out, err := r.output(ctx, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var checkout string
+	var result []string
+	for _, field := range strings.Split(string(out), "\x00") {
+		if strings.HasPrefix(field, "worktree ") {
+			checkout = strings.TrimPrefix(field, "worktree ")
+		}
+		if field == "branch refs/heads/"+branch {
+			result = append(result, checkout)
+		}
+	}
+	return result, nil
+}

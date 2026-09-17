@@ -70,7 +70,10 @@ func (p *publicationForge) Find(ctx context.Context, _ forge.PullRequestQuery) (
 		if err != nil {
 			return result, err
 		}
-		result.PullRequest.RemoteHead = record.ObjectID(head.Object)
+		// A forge keeps reporting a merged PR's head after its branch is deleted.
+		if head.Exists {
+			result.PullRequest.RemoteHead = record.ObjectID(head.Object)
+		}
 		result.PullRequest.ObservedAt = result.ObservedAt
 	}
 	return result, nil

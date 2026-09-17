@@ -101,9 +101,20 @@ func TestRefreshRetiresMatchingPRAndNeverReopensLocalContribution(t *testing.T) 
 			require.Equal(t, expected, result.Change.Disposition)
 			require.Equal(t, remoteState, result.PullRequest.State)
 			require.Contains(t, result.Detail, "later bump")
-			head, _, err := f.repo.Branch(t.Context(), "candidate")
-			require.NoError(t, err)
-			require.Equal(t, string(f.source.Commit), head)
+			if remoteState == record.PullRequestMerged {
+				require.Contains(t, result.Detail, "local branch candidate deleted")
+				require.Contains(t, result.Detail, "fork branch author/ports:candidate deleted")
+				local, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
+				require.NoError(t, err)
+				require.False(t, local.Exists, "a merged contribution's local branch is residue")
+				remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+				require.NoError(t, err)
+				require.False(t, remote.Exists, "the fork's head branch is residue too")
+			} else {
+				head, _, err := f.repo.Branch(t.Context(), "candidate")
+				require.NoError(t, err)
+				require.Equal(t, string(f.source.Commit), head, "a closed PR keeps its branch for a resumed contribution")
+			}
 			require.NoError(t, f.store.Update(t.Context(), f.repository, func(ctx context.Context, tx state.Tx) error {
 				return tx.PutChange(ctx, record.Change{ID: "new-update", Branch: "candidate", InitiatingTarget: "fixture", Disposition: record.ChangeOpen})
 			}))
@@ -212,4 +223,62 @@ func TestRefreshRecordsPRStatusWithoutActingOnIt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, hosting.inspections, "a merged PR is not inspected")
 	require.NotContains(t, result.Detail, "mergeable")
+}
+
+func TestMergeCleanupKeepsCheckedOutBranchesAndGcSweepsLeftovers(t *testing.T) {
+	f, hosting, selected := publishedLifecycleFixture(t)
+	worktree := filepath.Join(t.TempDir(), "checkout")
+	add := exec.CommandContext(t.Context(), "git", "worktree", "add", "-q", worktree, "candidate")
+	add.Dir = f.repo.Root
+	out, err := add.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	hosting.observation.PullRequest.State = record.PullRequestMerged
+	result, err := f.engine.RefreshContribution(t.Context(), selected)
+	require.NoError(t, err)
+	require.Equal(t, record.ChangeMerged, result.Change.Disposition, result.Detail)
+	require.Contains(t, result.Detail, "local branch candidate kept; it is checked out at")
+	require.Contains(t, result.Detail, "fork branch author/ports:candidate deleted")
+	// gc reports the checked-out branch and deletes it once the checkout is gone.
+	collected, err := f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	require.NoError(t, err)
+	branches := branchItems(collected)
+	require.Len(t, branches, 1)
+	require.Equal(t, "delete-branch", branches[0].Action)
+	require.False(t, branches[0].Completed)
+	require.Contains(t, branches[0].Detail, "checked out at")
+	remove := exec.CommandContext(t.Context(), "git", "worktree", "remove", "--force", worktree)
+	remove.Dir = f.repo.Root
+	out, err = remove.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	collected, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{DryRun: true})
+	require.NoError(t, err)
+	branches = branchItems(collected)
+	require.Len(t, branches, 1)
+	require.Contains(t, branches[0].Detail, "would delete")
+	collected, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	require.NoError(t, err)
+	branches = branchItems(collected)
+	require.Len(t, branches, 1)
+	require.True(t, branches[0].Completed)
+	local, err := f.repo.ReadRef(t.Context(), "refs/heads/candidate")
+	require.NoError(t, err)
+	require.False(t, local.Exists)
+	// A leftover branch that moved past the published commit is kept.
+	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/candidate", Desired: git.RefValue{Exists: true, Object: string(f.source.Base)}}}))
+	collected, err = f.engine.Collect(t.Context(), workflow.RetentionOptions{})
+	require.NoError(t, err)
+	branches = branchItems(collected)
+	require.Len(t, branches, 1)
+	require.False(t, branches[0].Completed)
+	require.Contains(t, branches[0].Detail, "no longer holds the published commit")
+}
+
+func branchItems(result workflow.RetentionResult) []workflow.CleanupItem {
+	var items []workflow.CleanupItem
+	for _, item := range result.Items {
+		if item.Action == "delete-branch" {
+			items = append(items, item)
+		}
+	}
+	return items
 }

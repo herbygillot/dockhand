@@ -204,7 +204,15 @@ func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionS
 		if err := e.Repo.RequireCleanBranch(ctx, expected.Branch); err != nil {
 			problem = err.Error()
 		}
-		return apply(ctx, problem)
+		if err := apply(ctx, problem); err != nil {
+			return err
+		}
+		if result.Change.Disposition == record.ChangeMerged {
+			for _, note := range e.retireBranches(ctx, result.Change, pr, published.Source.Commit) {
+				result.Detail += "; " + note
+			}
+		}
+		return nil
 	})
 	return result, err
 }

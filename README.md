@@ -208,7 +208,7 @@ dockhand wait --job <job-id> --trace
 dockhand cancel --job <job-id> --wait
 ```
 
-After a PR is merged or closed, run `dockhand refresh jq` to record its outcome and let the next bump start fresh. Use `dockhand abandon jq` to end local pursuit of an update while preserving its branch and any PR; cancel pending jobs first.
+After a PR is merged or closed, run `dockhand refresh jq` to record its outcome and let the next bump start fresh; a merged PR also has its local and fork branches removed. Use `dockhand abandon jq` to end local pursuit of an update while preserving its branch and any PR; cancel pending jobs first.
 
 `status` reads what is recorded and starts nothing. `wait` resumes a job and follows it to the end. `wait` and `cancel` also accept `--branch <name>`, or no selector at all when you are on the branch in question. Ctrl-C detaches from a running command; the build keeps going, and `cancel` is how you stop it. `dockhand start` keeps working through every pending job for the checkout until you interrupt it.
 

@@ -121,6 +121,12 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 		}
 		result.Registrations = append(result.Registrations, registration)
 		engine := workflow.Engine{State: store, Repository: repository.ID, Providers: map[string]verify.Provider{}}
+		if !registration.CheckoutMissing {
+			// Branch cleanup needs the checkout; a registration without one still collects resources.
+			if repo, err := git.Open(ctx, checkoutRoot(repository.CommonDir), config.GitExecutable); err == nil {
+				engine.Repo = repo
+			}
+		}
 		if !retention.DryRun {
 			engine.Providers[verify.ProviderTart] = &tart.Provider{State: store, Repository: repository.ID, Config: config.Tart}
 		}
@@ -160,4 +166,13 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 		}
 	}
 	return result, nil
+}
+
+// checkoutRoot maps a registration's common Git directory to its main
+// checkout; a bare or unusual layout is opened as recorded.
+func checkoutRoot(commonDir string) string {
+	if filepath.Base(commonDir) == ".git" {
+		return filepath.Dir(commonDir)
+	}
+	return commonDir
 }

@@ -71,8 +71,10 @@ func (e *Engine) Collect(ctx context.Context, options RetentionOptions) (Retenti
 			}
 		}
 		if len(resources) < q.Limit {
-			err := c.collectLogCaches(ctx, &result)
-			return result, err
+			if err := c.collectLogCaches(ctx, &result); err != nil {
+				return result, err
+			}
+			return result, c.collectMergedBranches(ctx, &result, options.DryRun)
 		}
 		q.After = string(resources[len(resources)-1].ID)
 	}

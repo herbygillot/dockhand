@@ -125,3 +125,25 @@ func (r *Repository) CheckContributionBase(ctx context.Context, remote, branch, 
 	}
 	return nil
 }
+
+// DeleteRemoteBranch removes a remote branch only while it still holds the
+// expected commit, using the same lease the push path relies on. A branch that
+// is already gone is not an error; a moved branch is a RefConflict.
+func (r *Repository) DeleteRemoteBranch(ctx context.Context, remote, branch string, expected RefValue) error {
+	if !validRemoteURL(remote) || !ValidBranchName(branch) || !expected.Exists || !ValidObjectID(expected.Object) {
+		return fmt.Errorf("git: invalid remote branch deletion")
+	}
+	actual, err := r.RemoteHead(ctx, remote, branch)
+	if err != nil {
+		return err
+	}
+	if !actual.Exists {
+		return nil
+	}
+	if actual != expected {
+		return &RefConflict{Name: branch, Expected: expected, Actual: actual}
+	}
+	ref := "refs/heads/" + branch
+	_, err = r.output(ctx, "-c", "push.followTags=false", "push", "--porcelain", "--no-verify", "--no-follow-tags", "--recurse-submodules=no", "--force-with-lease="+ref+":"+expected.Object, "--", remote, ":"+ref)
+	return err
+}
