@@ -73,7 +73,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 }
 
 func publicationFlags(cmd *cobra.Command, options *publish.Options) {
-	cmd.Flags().StringVar(&options.Remote, "remote", "origin", "Git remote whose push URL receives the contribution")
-	cmd.Flags().StringVar(&options.Upstream, "upstream", "", "Upstream Git remote (defaults to upstream, then the fork parent)")
+	cmd.Flags().StringVar(&options.Remote, "remote", "", "Git remote whose push URL receives the contribution (default: the remote pushing to your fork)")
+	cmd.Flags().StringVar(&options.Upstream, "upstream", "", "Upstream Git remote (default: the remote naming macports/macports-ports, then upstream, then the fork parent)")
 	cmd.Flags().StringVar(&options.Base, "base", "", "PR base branch (defaults to the upstream default branch)")
 }

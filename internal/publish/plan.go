@@ -21,20 +21,9 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 	if err != nil {
 		return destination, err
 	}
-	if options.Remote == "" {
-		options.Remote = "origin"
-	}
-	var push, upstream git.Remote
-	for _, r := range remotes {
-		if r.Name == options.Remote {
-			push = r
-		}
-		if r.Name == options.Upstream || options.Upstream == "" && r.Name == "upstream" {
-			upstream = r
-		}
-	}
-	if push.Name == "" || options.Upstream != "" && upstream.Name == "" {
-		return destination, fmt.Errorf("%w: selected remote does not exist", ErrPrecondition)
+	push, upstream, login, err := s.selectRemotes(ctx, remotes, options)
+	if err != nil {
+		return destination, err
 	}
 	headName, err := s.Forge.NameFromRemote(push.PushURL)
 	if err != nil {
@@ -44,8 +33,10 @@ func (s *Service) Destination(ctx context.Context, options Options) (record.Publ
 	if err != nil {
 		return destination, err
 	}
-	if err := s.requireOwnedHead(ctx, head.Name, push.Name, remotes); err != nil {
-		return destination, err
+	if login != "" {
+		if err := s.requireOwnedHead(ctx, head.Name, push.Name, remotes); err != nil {
+			return destination, err
+		}
 	}
 	targetName := head.Name
 	if head.Parent != "" {
@@ -177,4 +168,73 @@ func (s *Service) PlanTo(ctx context.Context, change record.Change, source recor
 		return spec, fmt.Errorf("%w: PR head and push destination disagree", ErrPrecondition)
 	}
 	return spec, nil
+}
+
+// selectRemotes resolves the push and upstream remotes. The upstream is
+// recognized by its URL, so its local name does not matter. The fork is the
+// remote whose repository the authenticated user owns; without a login the
+// only remote that is not the upstream is taken, and publication itself
+// still checks ownership once it authenticates. Ambiguity names the choices.
+func (s *Service) selectRemotes(ctx context.Context, remotes []git.Remote, options Options) (push, upstream git.Remote, login string, err error) {
+	login, loginErr := s.Forge.AuthenticatedUser(ctx)
+	if loginErr != nil {
+		login = ""
+	}
+	names := map[string]string{}
+	for _, r := range remotes {
+		if name, err := s.Forge.NameFromRemote(r.PushURL); err == nil {
+			names[r.Name] = name
+		}
+	}
+	isUpstream := func(r git.Remote) bool {
+		return s.Upstream != "" && strings.EqualFold(names[r.Name], s.Upstream)
+	}
+	for _, r := range remotes {
+		switch {
+		case options.Upstream != "" && r.Name == options.Upstream:
+			upstream = r
+		case options.Upstream == "" && upstream.Name == "" && isUpstream(r):
+			upstream = r
+		case options.Upstream == "" && upstream.Name == "" && r.Name == "upstream":
+			upstream = r
+		}
+	}
+	if options.Upstream != "" && upstream.Name == "" {
+		return push, upstream, login, fmt.Errorf("%w: upstream remote %q does not exist", ErrPrecondition, options.Upstream)
+	}
+	if options.Remote != "" {
+		for _, r := range remotes {
+			if r.Name == options.Remote {
+				return r, upstream, login, nil
+			}
+		}
+		return push, upstream, login, fmt.Errorf("%w: remote %q does not exist", ErrPrecondition, options.Remote)
+	}
+	var candidates []git.Remote
+	var labels []string
+	for _, r := range remotes {
+		name, ok := names[r.Name]
+		if !ok || isUpstream(r) || r.Name == upstream.Name {
+			continue
+		}
+		if owner, _, _ := strings.Cut(name, "/"); login != "" && !strings.EqualFold(owner, login) {
+			continue
+		}
+		candidates = append(candidates, r)
+		labels = append(labels, r.Name+" ("+name+")")
+	}
+	switch len(candidates) {
+	case 1:
+		return candidates[0], upstream, login, nil
+	case 0:
+		if login == "" {
+			return push, upstream, login, fmt.Errorf("%w: no Git remote pushes to a fork; log in with `dockhand auth login` so your fork can be recognized, or add a remote for it and select it with --remote", ErrPrecondition)
+		}
+		return push, upstream, login, fmt.Errorf("%w: no Git remote pushes to a fork that %s owns; add a remote for your fork and select it with --remote", ErrPrecondition, login)
+	default:
+		if login == "" {
+			return push, upstream, login, fmt.Errorf("%w: several remotes could be your fork: %s; log in with `dockhand auth login` so it can be recognized, or select one with --remote", ErrPrecondition, strings.Join(labels, ", "))
+		}
+		return push, upstream, login, fmt.Errorf("%w: several remotes push to forks that %s owns: %s; select one with --remote", ErrPrecondition, login, strings.Join(labels, ", "))
+	}
 }

@@ -18,13 +18,16 @@ import (
 
 // destinationForge resolves repository names from remote paths without a network.
 type destinationForge struct {
+	loginErr     error
 	login        string
 	repositories map[string]forge.RepositoryInfo
 }
 
-func (d *destinationForge) Name() string                                      { return "fixture" }
-func (d *destinationForge) Authenticate(context.Context) error                { return nil }
-func (d *destinationForge) AuthenticatedUser(context.Context) (string, error) { return d.login, nil }
+func (d *destinationForge) Name() string                       { return "fixture" }
+func (d *destinationForge) Authenticate(context.Context) error { return nil }
+func (d *destinationForge) AuthenticatedUser(context.Context) (string, error) {
+	return d.login, d.loginErr
+}
 func (d *destinationForge) NameFromRemote(remote string) (string, error) {
 	name := strings.TrimSuffix(filepath.Base(filepath.Dir(remote))+"/"+filepath.Base(remote), ".git")
 	if _, ok := d.repositories[name]; !ok {
@@ -81,12 +84,18 @@ func destinationFixture(t *testing.T) (*publish.Service, *destinationForge) {
 		"contributor/macports-ports": {Name: "contributor/macports-ports", DefaultBranch: "master", Parent: "macports/macports-ports", CloneURL: fork},
 		"colleague/macports-ports":   {Name: "colleague/macports-ports", DefaultBranch: "master", Parent: "macports/macports-ports", CloneURL: other},
 	}}
-	return &publish.Service{Repo: repo, Forge: hosting, LockDirectory: filepath.Join(t.TempDir(), "locks")}, hosting
+	return &publish.Service{Repo: repo, Forge: hosting, LockDirectory: filepath.Join(t.TempDir(), "locks"), Upstream: "macports/macports-ports"}, hosting
 }
 
-func TestDestinationRefusesPushingToARepositoryTheUserDoesNotOwn(t *testing.T) {
-	s, _ := destinationFixture(t)
-	_, err := s.Destination(t.Context(), publish.Options{})
+func TestDestinationFindsTheForkAndUpstreamByThemselves(t *testing.T) {
+	s, hosting := destinationFixture(t)
+	destination, err := s.Destination(t.Context(), publish.Options{})
+	require.NoError(t, err, "the fork is the remote the login owns; the upstream is recognized by URL although it is called origin")
+	require.Equal(t, "contributor/macports-ports", destination.HeadRepository)
+	require.Equal(t, "macports/macports-ports", destination.Repository)
+	require.Equal(t, hosting.repositories["macports/macports-ports"].CloneURL, destination.BaseURL)
+
+	_, err = s.Destination(t.Context(), publish.Options{Remote: "origin"})
 	require.ErrorIs(t, err, publish.ErrPrecondition)
 	require.ErrorContains(t, err, `remote "origin" pushes to macports/macports-ports, which Contributor does not own`)
 	require.ErrorContains(t, err, "select your fork with --remote: contributor (contributor/macports-ports)")
@@ -95,6 +104,28 @@ func TestDestinationRefusesPushingToARepositoryTheUserDoesNotOwn(t *testing.T) {
 	_, err = s.Destination(t.Context(), publish.Options{Remote: "colleague"})
 	require.ErrorIs(t, err, publish.ErrPrecondition)
 	require.ErrorContains(t, err, `remote "colleague" pushes to colleague/macports-ports`)
+
+	_, err = s.Destination(t.Context(), publish.Options{Remote: "nowhere"})
+	require.ErrorContains(t, err, `remote "nowhere" does not exist`)
+}
+
+func TestDestinationNamesTheChoicesWhenTheForkIsAmbiguous(t *testing.T) {
+	s, hosting := destinationFixture(t)
+	hosting.login = "Colleague"
+	hosting.repositories["colleague/macports-ports"] = forge.RepositoryInfo{Name: "colleague/macports-ports", DefaultBranch: "master", Parent: "macports/macports-ports", CloneURL: hosting.repositories["colleague/macports-ports"].CloneURL}
+	destination, err := s.Destination(t.Context(), publish.Options{})
+	require.NoError(t, err)
+	require.Equal(t, "colleague/macports-ports", destination.HeadRepository, "ownership decides between the two non-upstream remotes")
+
+	hosting.loginErr = forge.ErrAuthentication
+	_, err = s.Destination(t.Context(), publish.Options{})
+	require.ErrorIs(t, err, publish.ErrPrecondition)
+	require.ErrorContains(t, err, "several remotes could be your fork: colleague (colleague/macports-ports), contributor (contributor/macports-ports)")
+	require.ErrorContains(t, err, "dockhand auth login")
+
+	destination, err = s.Destination(t.Context(), publish.Options{Remote: "contributor"})
+	require.NoError(t, err, "an explicit remote needs no login to be planned; publication checks ownership when it authenticates")
+	require.Equal(t, "contributor/macports-ports", destination.HeadRepository)
 }
 
 func TestDestinationPublishesFromTheOwnedFork(t *testing.T) {
@@ -113,6 +144,8 @@ func TestDestinationHintsWhenNoRemoteNamesTheFork(t *testing.T) {
 	hosting.login = "stranger"
 	_, err := s.Destination(t.Context(), publish.Options{})
 	require.ErrorIs(t, err, publish.ErrPrecondition)
+	require.ErrorContains(t, err, "no Git remote pushes to a fork that stranger owns; add a remote for your fork and select it with --remote")
+	_, err = s.Destination(t.Context(), publish.Options{Remote: "origin"})
 	require.ErrorContains(t, err, "add a Git remote for your fork and select it with --remote")
 }
 

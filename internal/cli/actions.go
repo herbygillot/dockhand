@@ -122,7 +122,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.MarkFlagsMutuallyExclusive("working-tree", "branch")
 	command.MarkFlagsMutuallyExclusive("working-tree", "change")
 	command.Flags().StringArrayVar(&variants, "variant", nil, "Explicit variant choice, such as +ssl or -x11 (repeatable)")
-	command.Flags().String("remote", "origin", "Git remote receiving the branch for GitHub verification")
+	command.Flags().String("remote", "", "Git remote receiving the branch for GitHub verification (default: the remote pushing to your fork)")
 	build.flags(command, r.config)
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
 	command.Flags().BoolVar(&wait, "wait", false, "Stay until verification completes")

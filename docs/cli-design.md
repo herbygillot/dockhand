@@ -432,7 +432,7 @@ dockhand bump jq [version] --publish [--image dockhand-base-tahoe] [--wait|--tra
 dockhand bump-revision jq --publish [--image dockhand-base-tahoe] [--wait|--trace]
 ```
 
-Both accept `--remote`, `--upstream`, and `--base` with the same defaults as `publish`. On bump commands those flags require `--publish`. Destination repositories, URLs, base branch, and the operation-lock directory are frozen before acceptance. No remote ref or PR is written during intake.
+Both accept `--remote`, `--upstream`, and `--base` with the same defaults as `publish`: the fork is the remote pushing to a repository the authenticated login owns, the upstream is the remote whose URL names `macports/macports-ports` whatever its name, and `--remote` is required only when that is ambiguous. On bump commands those flags require `--publish`. Destination repositories, URLs, base branch, and the operation-lock directory are frozen before acceptance. No remote ref or PR is written during intake.
 
 One job owns preparation, verification, and publication. Its accepted input source remains the original commit; its result revision identifies the prepared commit that is built and published. A passing build or applicable reuse leaves the job active for publication. When `--image` is omitted, the exact configuration comes from the selected evidence while accepted provider, platform, test, and source-build requirements remain fixed. The driver then records remote preconditions and content before any push, using the same executor and uncertainty handling as standalone publication. Status shows the requested destination before that publication checkpoint exists.
 

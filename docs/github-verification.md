@@ -13,6 +13,8 @@ dockhand bump croc --provider github --publish --wait
 dockhand verify croc --branch my-update --provider github --wait
 
 # Use a different local remote for your personal fork.
+dockhand verify croc --branch my-update --provider github --wait
+# The fork is found by URL and login; name it only when two remotes qualify:
 dockhand verify croc --branch my-update --provider github --remote personal --wait
 
 # Resume an accepted job. Its recorded provider and destination are retained.

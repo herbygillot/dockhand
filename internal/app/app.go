@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"maps"
 	"net/http"
 	"path/filepath"
@@ -104,7 +105,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Releases:   preparation,
 		Provider:   provider,
 		Providers:  map[string]verify.Provider{verify.ProviderTart: provider, verify.ProviderGitHub: githubProvider},
-		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
+		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks"), Upstream: macports.PortsRepository},
 		Now:        time.Now,
 	}
 	return &Services{

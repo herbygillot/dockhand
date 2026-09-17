@@ -28,8 +28,17 @@ type Service struct {
 	Repo          *git.Repository
 	Forge         Forge
 	LockDirectory string
+	// Upstream names the repository contributions target, such as
+	// macports/macports-ports. A remote whose URL names it is the upstream
+	// whatever it is called, and never a push destination.
+	Upstream string
 }
 
+// Options select a destination. An empty Remote is resolved automatically:
+// the remote pushing to the fork the authenticated user owns, or the only
+// remote that is not the upstream when the login is unknown. Upstream defaults
+// to the remote naming Service.Upstream, then one called "upstream", then the
+// fork's parent.
 type Options struct{ Remote, Upstream, Base string }
 
 func (s *Service) Preflight(ctx context.Context) error {
