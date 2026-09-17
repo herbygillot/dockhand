@@ -89,3 +89,34 @@ func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
 	require.Equal(t, "verify when ready: dockhand verify d", byPort["d"].Next)
 	require.Equal(t, "bump again once fixed, or abandon: forge: authentication is required", byPort["e"].Next, "a preparation that stopped before a branch is retried by bumping again")
 }
+
+func TestProjectFoldsAPortsContributionsUnderItsOpenOne(t *testing.T) {
+	base := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	status := Status{
+		Changes: []record.Change{
+			{ID: "c_old", InitiatingTarget: "wasmer", Disposition: record.ChangeClosed, CreatedAt: base.Add(-2 * time.Hour)},
+			{ID: "c_merged", InitiatingTarget: "wasmer", Branch: "dockhand/bump/wasmer-1", Disposition: record.ChangeMerged, CreatedAt: base.Add(-time.Hour)},
+			{ID: "c_open", InitiatingTarget: "wasmer", Branch: "dockhand/bump/wasmer-2", Disposition: record.ChangeOpen, CreatedAt: base},
+		},
+		Jobs: []JobStatus{
+			{Job: record.Job{ID: "j_old", ChangeID: "c_old", State: record.JobNeedsAttention, Phase: record.PhasePreparation, AcceptedAt: base.Add(-2 * time.Hour), Detail: "forge: authentication is required", Spec: record.JobSpec{Action: record.Bump, Targets: []record.Target{{Name: "wasmer"}}}}},
+			{Job: record.Job{ID: "j_open", ChangeID: "c_open", State: record.JobCompleted, Phase: record.PhaseVerification, AcceptedAt: base, ResultRevision: "r", Spec: record.JobSpec{Action: record.Bump, Destination: record.VerificationComplete, Targets: []record.Target{{Name: "wasmer"}}}, ResolvedRelease: &record.Release{Selection: record.Selection{CurrentVersion: "7.4.0"}, Version: "7.4.1"}, Prepared: &record.PreparedChange{Branch: "dockhand/bump/wasmer-2"}},
+				Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}},
+			{Job: record.Job{ID: "j_verify", State: record.JobCompleted, Phase: record.PhaseVerification, AcceptedAt: base.Add(time.Minute), Spec: record.JobSpec{Action: record.Verify, Destination: record.VerificationComplete, Targets: []record.Target{{Name: "wasmer"}}}},
+				Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}},
+		},
+	}
+	rows := Project(status)
+	require.Len(t, rows, 1, "one row per port")
+	row := rows[0]
+	require.Equal(t, "wasmer", row.Port)
+	require.Equal(t, record.ChangeID("c_open"), row.ChangeID, "the open contribution leads even when a standalone verification is newer")
+	require.Equal(t, "7.4.0 -> 7.4.1", row.Change)
+	require.Equal(t, "verified", row.State)
+	require.Len(t, row.Earlier, 3)
+	require.Equal(t, "verification", row.Earlier[0].Change, "newest first")
+	require.Equal(t, "merged", row.Earlier[1].State)
+	require.Equal(t, "retired", row.Earlier[2].State)
+	require.Equal(t, "stopped before a branch; bump again once fixed: forge: authentication is required", row.Earlier[2].Next)
+	require.True(t, row.Earlier[2].Retired)
+}

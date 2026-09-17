@@ -17,7 +17,7 @@ import (
 
 func (r *runtime) changeCommands() []*cobra.Command {
 	var commands []*cobra.Command
-	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. Retries continue their recorded contribution and frozen source. By default the command stays in the foreground through verification and publication of a PR on macports/macports-ports from your fork. --no-publish stops after verification, --no-verify stops at the prepared branch, and --detach returns once the work is accepted and admitted, leaving wait or start to finish it. Ctrl-C detaches without canceling accepted work. --diff previews the edit without touching the checkout or opening the state database."
+	const shared = "New preparations use freshly fetched master from macports/macports-ports; local commits and working-tree edits are excluded. A bump continues the port's open contribution and its frozen source; a preparation that stopped before any branch has retired, and the next bump starts from fresh master. By default the command stays in the foreground through verification and publication of a PR on macports/macports-ports from your fork. --no-publish stops after verification, --no-verify stops at the prepared branch, and --detach returns once the work is accepted and admitted, leaving wait or start to finish it. Ctrl-C detaches without canceling accepted work. --diff previews the edit without touching the checkout or opening the state database."
 	for _, spec := range []struct {
 		action  record.Action
 		short   string

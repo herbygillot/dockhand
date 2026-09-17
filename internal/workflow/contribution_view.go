@@ -41,6 +41,9 @@ type Contribution struct {
 	UpdatedAt time.Time
 	// Retired is set once the change is merged, closed, or abandoned.
 	Retired bool `json:",omitempty"`
+	// Earlier holds the port's other contributions and standalone
+	// verifications, newest first, folded under this row.
+	Earlier []Contribution `json:",omitempty"`
 }
 
 type ActiveJob struct {
@@ -65,11 +68,51 @@ type Overview struct {
 	Contributions []Contribution
 }
 
-// Project derives the contribution rows of a snapshot. Jobs sharing a change
-// form one row; a job without a change, such as a standalone verification,
-// is its own row. Rows are ordered by the time of their latest activity,
-// newest first.
+// Project derives the rows of a snapshot: one per port, carrying the port's
+// current open contribution, with its earlier contributions and standalone
+// verifications folded underneath. Rows are ordered by the time of their
+// latest activity, newest first.
 func Project(status Status) []Contribution {
+	return foldByPort(contributions(status))
+}
+
+// foldByPort keeps one row per port: the newest open tracked contribution,
+// else the newest standalone verification, else the newest retired one,
+// with the rest as Earlier in their original order.
+func foldByPort(rows []Contribution) []Contribution {
+	rank := func(row Contribution) int {
+		switch {
+		case row.Retired:
+			return 0
+		case row.ChangeID == "":
+			return 1
+		}
+		return 2
+	}
+	index := map[string]int{}
+	var folded []Contribution
+	for _, row := range rows {
+		i, seen := index[row.Port]
+		if !seen {
+			index[row.Port] = len(folded)
+			folded = append(folded, row)
+			continue
+		}
+		current := &folded[i]
+		if rank(row) > rank(*current) {
+			earlier := append([]Contribution{*current}, current.Earlier...)
+			current.Earlier = nil
+			row.Earlier = earlier
+			*current = row
+			continue
+		}
+		current.Earlier = append(current.Earlier, row)
+	}
+	return folded
+}
+
+// contributions derives one row per contribution or standalone verification.
+func contributions(status Status) []Contribution {
 	changes := make(map[record.ChangeID]record.Change, len(status.Changes))
 	for _, change := range status.Changes {
 		changes[change.ID] = change
@@ -237,12 +280,18 @@ func revisionWords(change record.Change, revisions []record.Revision) string {
 func words(change record.Change, known bool, current *JobStatus, pr *record.PullRequest) (phase, state, next string) {
 	if known && change.Disposition != record.ChangeOpen {
 		state = string(change.Disposition)
-		switch change.Disposition {
-		case record.ChangeMerged:
+		switch {
+		case change.Disposition == record.ChangeMerged:
 			next = "merged; branches cleaned"
-		case record.ChangeClosed:
+		case change.Disposition == record.ChangeClosed && change.Branch == "" && pr == nil:
+			state = "retired"
+			next = "stopped before a branch; bump again once fixed"
+			if current != nil && current.Job.Detail != "" {
+				next += ": " + current.Job.Detail
+			}
+		case change.Disposition == record.ChangeClosed:
 			next = "PR closed without merging"
-		case record.ChangeAbandoned:
+		case change.Disposition == record.ChangeAbandoned:
 			next = "abandoned; branch and evidence preserved"
 		}
 		return "done", state, next

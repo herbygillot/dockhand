@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAbandonPreparationAllowsFreshSourceAndPreservesHistory(t *testing.T) {
+func TestStoppedPreparationRetiresAndFreshSourceStartsAnew(t *testing.T) {
 	f, request := preparationFixture(t, false)
 	f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
 		return preparation.Result{}, errors.New("missing helper")
@@ -27,15 +27,13 @@ func TestAbandonPreparationAllowsFreshSourceAndPreservesHistory(t *testing.T) {
 	_, err := f.engine.AbandonContribution(t.Context(), selected)
 	require.ErrorContains(t, err, "pending job")
 	f.run(t, id)
-	original := f.status(t, id).Jobs[0].Job
-	abandoned, err := f.engine.AbandonContribution(t.Context(), selected)
-	require.NoError(t, err)
-	require.Equal(t, original.ChangeID, abandoned.Change.ID)
-	require.Equal(t, record.ChangeAbandoned, abandoned.Change.Disposition)
-	require.Empty(t, abandoned.Change.Branch)
-	replay, err := f.engine.AbandonContribution(t.Context(), workflow.ContributionSelector{ChangeID: abandoned.Change.ID})
-	require.NoError(t, err)
-	require.Equal(t, abandoned, replay)
+	status := f.status(t, id)
+	original := status.Jobs[0].Job
+	require.Equal(t, record.JobNeedsAttention, original.State)
+	require.Equal(t, record.ChangeClosed, status.Changes[0].Disposition, "a preparation that stopped before a branch retires on its own")
+	require.Empty(t, status.Changes[0].Branch)
+	_, err = f.engine.AbandonContribution(t.Context(), selected)
+	require.ErrorIs(t, err, state.ErrNotFound, "nothing is open for the target any more")
 	previous, err := f.engine.PreparationInput(t.Context(), selected, request.Spec.Action)
 	require.NoError(t, err)
 	require.Nil(t, previous)
@@ -51,13 +49,16 @@ func TestAbandonPreparationAllowsFreshSourceAndPreservesHistory(t *testing.T) {
 
 func TestAbandonAndRetryAreSerialized(t *testing.T) {
 	for range 4 {
-		f, request := preparationFixture(t, false)
-		f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
-			return preparation.Result{}, errors.New("missing helper")
-		})
+		f, request := preparationFixture(t, true)
+		request.Spec.Build = nil
 		id := submitPreparation(t, f, request)
+		candidateJob(t, f, id)
 		f.run(t, id)
-		changeID := f.status(t, id).Jobs[0].Job.ChangeID
+		f.run(t, id)
+		stopped := f.status(t, id).Jobs[0].Job
+		require.Equal(t, record.JobNeedsAttention, stopped.State)
+		require.NotNil(t, stopped.Prepared, "a stopped preparation with a branch stays open for abandon or retry")
+		changeID := stopped.ChangeID
 		request.ID, request.Spec.ChangeID = "retry", changeID
 		var abandonErr, submitErr error
 		var receipt workflow.Receipt
@@ -69,7 +70,7 @@ func TestAbandonAndRetryAreSerialized(t *testing.T) {
 		}()
 		go func() { defer group.Done(); receipt, submitErr = f.engine.Submit(t.Context(), request) }()
 		group.Wait()
-		require.NotEqual(t, abandonErr == nil, submitErr == nil)
+		require.NotEqual(t, abandonErr == nil, submitErr == nil, "abandon %v; submit %v", abandonErr, submitErr)
 		if submitErr == nil {
 			require.Equal(t, changeID, receipt.ChangeID)
 		}

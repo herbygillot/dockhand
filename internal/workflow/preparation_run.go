@@ -44,6 +44,9 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 		}
 		if job.Spec.Preparation == nil || e.Repo == nil || e.Preparer == nil && job.Spec.Preparation.Correction == nil {
 			detail = "workflow: preparation requires bound source, author, platform, Git, and a preparer"
+			if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
+				return err
+			}
 			finishJob(&job, record.JobNeedsAttention, detail, e.now())
 			changed = true
 			return tx.PutJob(ctx, job)
@@ -106,6 +109,12 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 				c.fail(&job.Lease, string(job.ID), operationErr)
 				job.Detail = detail
 			} else {
+				// A preparation that stops before any branch leaves nothing to
+				// pursue; the contribution retires so the port's next bump starts
+				// clean instead of competing with an empty open contribution.
+				if err := closeEmptyContribution(ctx, tx, job.ChangeID); err != nil {
+					return err
+				}
 				finishJob(&job, record.JobNeedsAttention, detail, e.now())
 			}
 		} else if resolving {

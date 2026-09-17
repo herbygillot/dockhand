@@ -288,8 +288,10 @@ func (m *model) verb(verb string) tea.Cmd {
 func verbArgs(verb string, row workflow.Contribution) ([]string, string) {
 	var args []string
 	switch {
-	case row.ChangeID != "" && verb == "bump":
-		args = []string{verb, row.Port, "--change", string(row.ChangeID)}
+	case verb == "bump":
+		// A bump continues the port's open contribution by itself, and starts
+		// afresh when the row's contribution has retired.
+		args = []string{verb, row.Port}
 	case row.ChangeID != "":
 		args = []string{verb, "--change", string(row.ChangeID)}
 	case verb == "cancel":
@@ -297,7 +299,7 @@ func verbArgs(verb string, row workflow.Contribution) ([]string, string) {
 			return nil, "nothing is pending"
 		}
 		args = []string{verb, "--job", string(row.Active.JobID)}
-	case verb == "verify" || verb == "bump":
+	case verb == "verify":
 		args = []string{verb, row.Port}
 	default:
 		return nil, "not a tracked contribution; " + verb + " needs one"
@@ -518,6 +520,13 @@ func expansion(row workflow.Contribution) []string {
 			text += "; " + job.Detail
 		}
 		lines = append(lines, text+" ("+string(job.JobID)+")")
+	}
+	for _, earlier := range row.Earlier {
+		text := fmt.Sprintf("earlier: %s; %s; %s", earlier.Change, earlier.State, earlier.Next)
+		if earlier.PullRequest != "" {
+			text += "; " + earlier.PullRequest
+		}
+		lines = append(lines, text)
 	}
 	return lines
 }

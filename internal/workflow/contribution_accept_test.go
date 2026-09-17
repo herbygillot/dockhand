@@ -56,7 +56,7 @@ func TestConcurrentPreparationsJoinOneContribution(t *testing.T) {
 	}))
 }
 
-func TestPreparationRetryKeepsIdentityAndFrozenSource(t *testing.T) {
+func TestPreparationStoppedBeforeBranchRetiresAndRetryStartsAfresh(t *testing.T) {
 	f, input := preparationFixture(t, false)
 	original := f.engine.Preparer
 	f.engine.Preparer = prepareFunc(func(context.Context, preparation.Request) (preparation.Result, error) {
@@ -64,8 +64,12 @@ func TestPreparationRetryKeepsIdentityAndFrozenSource(t *testing.T) {
 	})
 	id := submitPreparation(t, f, input)
 	f.run(t, id)
-	failed := f.status(t, id).Jobs[0].Job
-	require.Equal(t, record.JobNeedsAttention, failed.State)
+	failed := f.status(t, id)
+	require.Equal(t, record.JobNeedsAttention, failed.Jobs[0].Job.State)
+	require.Nil(t, failed.Jobs[0].Job.Prepared)
+	require.Len(t, failed.Changes, 1)
+	require.Equal(t, record.ChangeClosed, failed.Changes[0].Disposition, "a preparation that stops before any branch leaves nothing to pursue")
+	require.Empty(t, failed.Changes[0].Branch)
 	request := input
 	request.ID = "retry"
 	request.Spec.Source = commitPort(t, f, "candidate", "version 2\n")
@@ -75,13 +79,15 @@ func TestPreparationRetryKeepsIdentityAndFrozenSource(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, id, receipt.JobID)
 	retried := f.status(t, receipt.JobID).Jobs[0].Job
-	require.Equal(t, failed.ChangeID, retried.ChangeID)
-	require.Equal(t, failed.Spec.Source, retried.Spec.Source)
+	require.NotEqual(t, failed.Jobs[0].Job.ChangeID, retried.ChangeID, "the retry is a new contribution rather than a peer of a retired one")
+	require.Equal(t, request.Spec.Source, retried.Spec.Source, "the retry uses the source it was given, not the retired contribution's")
 	f.run(t, receipt.JobID)
 	f.run(t, receipt.JobID)
 	status := f.status(t, receipt.JobID)
 	require.Equal(t, record.JobCompleted, status.Jobs[0].Job.State)
-	require.Equal(t, failed.ChangeID, status.Changes[0].ID)
+	require.Len(t, status.Changes, 1)
+	require.Equal(t, retried.ChangeID, status.Changes[0].ID)
+	require.Equal(t, record.ChangeOpen, status.Changes[0].Disposition)
 	require.NotEmpty(t, status.Changes[0].GeneratedCommit)
 	require.Equal(t, record.JobNeedsAttention, f.status(t, id).Jobs[0].Job.State)
 }

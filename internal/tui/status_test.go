@@ -92,7 +92,7 @@ func TestVerbArgsForStandaloneWork(t *testing.T) {
 	require.Equal(t, []string{"verify", "deno", "--detach"}, args)
 	args, problem = verbArgs("bump", rows()[0])
 	require.Empty(t, problem)
-	require.Equal(t, []string{"bump", "jq", "--change", "change_jq", "--detach"}, args, "bumping again continues the exact contribution")
+	require.Equal(t, []string{"bump", "jq", "--detach"}, args, "a bump continues the port's open contribution or starts afresh")
 	_, problem = verbArgs("publish", standalone)
 	require.Contains(t, problem, "not a tracked contribution")
 	standalone.Active = nil

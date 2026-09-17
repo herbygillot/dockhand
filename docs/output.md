@@ -58,6 +58,8 @@ Headline verdict words: `assess` says "ready" instead of "input-found" and "cand
 - **active job**: at most one; its last progress message.
 - **history**: earlier jobs and attempts, shown only when expanded.
 
+Rows are per port (decided 2026-09-17 after seeing the table on real data): the port's newest open contribution leads, and its earlier contributions and standalone verifications fold underneath. A preparation that stops before creating a branch retires its contribution rather than leaving an empty open one.
+
 The "next" derivation moves out of the CLI's progress formatting and beside this projection.
 
 ## The status table
