@@ -1,10 +1,10 @@
 package host
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,19 +18,9 @@ import (
 )
 
 func (n Machine) launchctl(ctx context.Context, args ...string) error {
-	cmd := exec.CommandContext(ctx, "/bin/launchctl", args...)
-	cmd.Env = n.Client.Environment()
-	cmd.WaitDelay = 2 * time.Second
 	// Unfinished commands retain the caller's operation lock after driver death.
-	if n.Guard != nil {
-		cmd.ExtraFiles = []*os.File{n.Guard}
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("tart: launchctl: %w: %s", errors.Join(ctx.Err(), err), strings.TrimSpace(stderr.String()))
-	}
-	return nil
+	_, err := subprocess.Run(ctx, subprocess.Spec{Tool: "launchctl", Path: "/bin/launchctl", Args: args, Env: n.Client.Environment(), ExtraFiles: []*os.File{n.Guard}})
+	return err
 }
 func hostLabel(vm string) string { return "org.dockhand2.vm." + vm }
 func hostDomain() string         { return "gui/" + strconv.Itoa(os.Getuid()) }

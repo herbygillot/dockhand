@@ -23,7 +23,7 @@ func TestClientCombinedOutputRetainsCommandFailure(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "tart")
 	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\necho stdout\necho stderr >&2\nexit 7\n"), 0700))
 	output, err := (Client{Executable: executable, Home: t.TempDir()}).Run(t.Context(), RunOptions{Combined: true}, "clone")
-	require.ErrorContains(t, err, "tart: clone")
+	require.ErrorContains(t, err, "tart clone")
 	require.Contains(t, string(output), "stdout")
 	require.Contains(t, string(output), "stderr")
 }

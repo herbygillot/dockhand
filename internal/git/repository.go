@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,17 +56,8 @@ func (r *Repository) output(ctx context.Context, args ...string) ([]byte, error)
 	return r.run(ctx, nil, nil, args...)
 }
 
-type CommandError struct {
-	Command string
-	Stderr  string
-	Cause   error
-}
-
-func (e *CommandError) Error() string {
-	return fmt.Sprintf("git %s: %v: %s", e.Command, e.Cause, e.Stderr)
-}
-
-func (e *CommandError) Unwrap() error { return e.Cause }
+// CommandError is a failed git invocation with what git wrote to stderr.
+type CommandError = subprocess.Error
 
 func (r *Repository) command(ctx context.Context, env []string, args ...string) *exec.Cmd {
 	executable := r.Executable
@@ -85,20 +76,14 @@ func (r *Repository) command(ctx context.Context, env []string, args ...string) 
 
 func (r *Repository) run(ctx context.Context, input []byte, env []string, args ...string) ([]byte, error) {
 	command := r.command(ctx, env, args...)
-	command.Stdin = bytes.NewReader(input)
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	out, err := command.Output()
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "git", Command: args[0], Path: command.Path, Args: command.Args[1:], Dir: command.Dir, Env: command.Env, Stdin: bytes.NewReader(input), ExtraFiles: command.ExtraFiles, WaitDelay: command.WaitDelay})
 	if err != nil {
-		if ctx.Err() != nil {
-			err = errors.Join(ctx.Err(), err)
-		}
-		return nil, &CommandError{Command: args[0], Stderr: strings.TrimSpace(stderr.String()), Cause: err}
+		return nil, err
 	}
-	if args[0] == "for-each-ref" && stderr.Len() != 0 {
-		return nil, &CommandError{Command: args[0], Stderr: strings.TrimSpace(stderr.String()), Cause: errors.New("reference lookup reported a warning")}
+	if args[0] == "for-each-ref" && len(result.Stderr) != 0 {
+		return nil, &CommandError{Tool: "git", Command: args[0], Stderr: strings.TrimSpace(string(result.Stderr)), Cause: errors.New("reference lookup reported a warning")}
 	}
-	return out, nil
+	return result.Output, nil
 }
 
 func repositoryEnv() []string {

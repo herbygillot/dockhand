@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/atomicfile"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"io"
 	"io/fs"
 	"net/url"
@@ -136,14 +137,11 @@ func runtimeIdentity(ctx context.Context, executable string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, runtimeProbeTimeout)
 	defer cancel()
-	command := exec.CommandContext(ctx, fields[0], fields[1:]...)
-	command.Stdin = strings.NewReader("package require macports\nputs [macports::version]\n")
-	command.Env = indexerEnvironment("")
-	output, err := command.Output()
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: "tclsh", Path: fields[0], Args: fields[1:], Stdin: strings.NewReader("package require macports\nputs [macports::version]\n"), Env: indexerEnvironment("")})
 	if err != nil {
-		return "", fmt.Errorf("portindex: probing the MacPorts runtime of %s: %w", executable, errors.Join(ctx.Err(), err))
+		return "", fmt.Errorf("portindex: probing the MacPorts runtime of %s: %w", executable, err)
 	}
-	version := strings.TrimSpace(string(output))
+	version := strings.TrimSpace(string(result.Output))
 	if version == "" || strings.ContainsAny(version, " \t\r\n\x00") {
 		return "", fmt.Errorf("portindex: MacPorts runtime version is unavailable for %s", executable)
 	}
@@ -328,13 +326,7 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 		if err = os.WriteFile(configuration, []byte(configurationText), 0600); err != nil {
 			return err
 		}
-		command := exec.CommandContext(ctx, c.Executable, args...)
-		command.Dir = sourceRoot
-		if guard != nil {
-			command.ExtraFiles = []*os.File{guard}
-		}
-		command.Env = indexerEnvironment(configuration)
-		output, runErr := command.CombinedOutput()
+		_, runErr := subprocess.Run(ctx, subprocess.Spec{Tool: "portindex", Path: c.Executable, Args: args, Dir: sourceRoot, Env: indexerEnvironment(configuration), Combined: true, ExtraFiles: []*os.File{guard}})
 		if runErr != nil {
 			var exit *exec.ExitError
 			if ctx.Err() == nil && strict && seed != "" && errors.As(runErr, &exit) && exit.ExitCode() == 2 {
@@ -345,7 +337,7 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 				}
 			}
 			if runErr != nil {
-				return fmt.Errorf("portindex: %w: %s", errors.Join(ctx.Err(), runErr), strings.TrimSpace(string(output)))
+				return runErr
 			}
 		}
 		if !validIndexEntry(temp) {

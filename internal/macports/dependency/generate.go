@@ -5,9 +5,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"os/exec"
+	"github.com/herbygillot/dockhand/internal/subprocess"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -32,18 +31,14 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 func run(ctx context.Context, executable, directory string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Dir = directory
-	cmd.WaitDelay = 2 * time.Second
-	var stdout, stderr boundedBuffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	result, err := subprocess.Run(ctx, subprocess.Spec{Tool: filepath.Base(executable), Path: executable, Args: args, Dir: directory, Limit: maxManifestBytes})
+	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("dependency: %s failed: %w: %s", filepath.Base(executable), err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("dependency: %w", err)
 	}
-	return stdout.Bytes(), nil
+	return result.Output, nil
 }
 func Generate(ctx context.Context, kind, executable string, in Input) (GeneratedBlocks, error) {
 	if kind == Go {
