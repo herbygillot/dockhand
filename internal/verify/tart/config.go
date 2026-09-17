@@ -99,7 +99,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 			return record.BuildConfig{}, e
 		}
 	}
-	progress.Report(ctx, "Inspecting Tart image %s", c.Image)
+	progress.VerboseReport(ctx, "Inspecting Tart image %s", c.Image)
 	environment, err := p.machineFor(c, nil).Environment(ctx)
 	if err != nil {
 		if p.Config.Image == "" {

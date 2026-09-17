@@ -120,7 +120,7 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 			selected = append(selected, Port{Label: entry.Name, Name: entry.Name, Selection: portselection.FromEntry(entry, nil)})
 		}
 		problems = matches.Problems
-		progress.Report(ctx, "Selected %d indexed ports; %d selection coverage problems", len(selected), len(matches.Problems))
+		progress.VerboseReport(ctx, "Selected %d indexed ports; %d selection coverage problems", len(selected), len(matches.Problems))
 	}
 	return selected, problems, nil
 }

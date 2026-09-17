@@ -50,7 +50,7 @@ func Archive(ctx context.Context, repo *git.Repository, request Request, destina
 			return fmt.Errorf("staging: source commit and tree disagree")
 		}
 	}
-	progress.Report(ctx, "Materializing committed source for verification")
+	progress.DebugReport(ctx, "Materializing committed source for verification")
 	snapshot, err := repo.Materialize(ctx, string(request.Source.Tree))
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func Archive(ctx context.Context, repo *git.Repository, request Request, destina
 			return err
 		}
 	}
-	progress.Report(ctx, "Packing source and verification inputs")
+	progress.DebugReport(ctx, "Packing source and verification inputs")
 	return atomicfile.Create(destination, 0600, func(temp *os.File) error {
 		return packSource(ctx, snapshot.Root, payload, temp)
 	})

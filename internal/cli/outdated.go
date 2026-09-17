@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/progress"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/outdated"
@@ -29,7 +30,7 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 			if r.json {
 				err = json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			} else {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Inspecting committed source %s; working-tree edits are excluded.\n", result.Source.Commit)
+				progress.VerboseReport(cmd.Context(), "Inspecting committed source %s; working-tree edits are excluded", result.Source.Commit)
 				if len(result.Ports) == 0 {
 					fmt.Fprintln(cmd.OutOrStdout(), "No ports matched the selectors.")
 				}

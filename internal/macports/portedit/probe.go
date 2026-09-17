@@ -55,7 +55,7 @@ func (p *VersionProbe) prepare(ctx context.Context) error {
 	if p.carriers != nil {
 		return nil
 	}
-	progress.Report(ctx, "Probing editable version inputs for %s", p.input.target.Name)
+	progress.DebugReport(ctx, "Probing editable version inputs for %s", p.input.target.Name)
 	carriers, err := p.editor.versionCarriers(ctx, p.request, p.input)
 	if err != nil {
 		return err

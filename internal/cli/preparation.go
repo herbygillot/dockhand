@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
+	"github.com/herbygillot/dockhand/internal/progress"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -87,7 +88,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 						return err
 					}
 					defer services.Close()
-					fmt.Fprintln(cmd.ErrOrStderr(), "Binding contribution source; local commits and working-tree edits are excluded.")
+					progress.VerboseReport(cmd.Context(), "Binding contribution source; local commits and working-tree edits are excluded")
 					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{SharedRelease: sharedRelease, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Variants: choices},
@@ -100,7 +101,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					if err != nil {
 						return fmt.Errorf("accepting request %s: %w", bound.Request.ID, err)
 					}
-					fmt.Fprintf(cmd.ErrOrStderr(), "Accepted job %s; source commit %s.\n", receipt.JobID, receipt.Source.Commit)
+					progress.VerboseReport(cmd.Context(), "Accepted job %s; source commit %s", receipt.JobID, receipt.Source.Commit)
 					milestone := workflow.Admission
 					if options.Wait || options.Trace {
 						milestone = workflow.Completion
@@ -112,7 +113,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					request.Version = args[1]
 				}
 				if !r.json {
-					fmt.Fprintln(cmd.ErrOrStderr(), "Fetching MacPorts master for preview; local commits and working-tree edits are excluded.")
+					progress.VerboseReport(cmd.Context(), "Fetching MacPorts master for preview; local commits and working-tree edits are excluded")
 				}
 				preview, err := app.PreviewPreparation(cmd.Context(), r.config, request)
 				if err != nil {
@@ -121,7 +122,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				if r.json {
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(preview)
 				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "Repository: %s\nBranch: %s\nCommit: %s\nTarget: %s\n", preview.Repository, preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
+				progress.VerboseReport(cmd.Context(), "Repository %s; branch %s; commit %s; target %s", preview.Repository, preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
 				if release := preview.Preparation.Release; release != nil {
 					if release.NoUpdate {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Already current at %s; latest eligible version is %s.\n", release.CurrentVersion, release.Version)
@@ -139,7 +140,11 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 				}
 				for _, patch := range preview.Preparation.Patches {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Patch %s: %s\n", plain(patch.Name), plain(patch.Detail))
+					if patch.Checked && patch.Applies {
+						progress.VerboseReport(cmd.Context(), "Patch %s: %s", patch.Name, patch.Detail)
+					} else {
+						progress.Report(cmd.Context(), "Patch %s: %s", patch.Name, patch.Detail)
+					}
 				}
 				if scope := preview.Preparation.Scope; scope != nil {
 					for _, member := range scope.Affected {

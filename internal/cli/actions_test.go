@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"path/filepath"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestJSONResultKeepsLogsAndProgressOffStdout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	r := runtime{json: true}
 	result := ActionResult{Status: workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}}}}}
-	reporter := newReporter(&stderr, nil, false)
+	reporter := newReporter(&stderr, nil, false, progress.Info, false)
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, r.result(&stdout, result))
@@ -62,7 +63,7 @@ func (p *logProvider) ReadLog(_ context.Context, _ record.ProviderRun, offset in
 func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
 	var output bytes.Buffer
 	provider := &logProvider{data: []byte("first\nsecond\n")}
-	reporter := newReporter(&output, provider, true)
+	reporter := newReporter(&output, provider, true, progress.Info, false)
 	run := record.ProviderRun{Provider: "test", RunID: "run"}
 	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{Run: run, State: record.AttemptRunning}}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
@@ -75,7 +76,7 @@ func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
 
 func TestCompletionEmphasizesPassedVerificationAndKeepsReuseDecisionEarlier(t *testing.T) {
 	var output bytes.Buffer
-	reporter := newReporter(&output, nil, false)
+	reporter := newReporter(&output, nil, false, progress.Info, false)
 	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, ReuseDetail: "Previous image differs; running a new build"}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
 	status.Jobs[0].Job.State = record.JobCompleted

@@ -18,7 +18,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 	updates := map[text.Span]string{}
 	var downloads []Download
 	for _, item := range plan.observed.downloads {
-		progress.Report(ctx, "Refreshing %s", item.artifact.Name)
+		progress.VerboseReport(ctx, "Refreshing %s", item.artifact.Name)
 		download, err := archives.fetchFirst(ctx, item.info, item.artifact.Name, item.artifact.URLs)
 		if err != nil {
 			return result, err

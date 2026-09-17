@@ -91,7 +91,7 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		progress.Report(ctx, "Assessing %s", selected.Label)
+		progress.VerboseReport(ctx, "Assessing %s", selected.Label)
 		item := Port{Selector: selected.Label}
 		if request.Subport != "" {
 			selected.Selection.Subport = request.Subport

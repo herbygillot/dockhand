@@ -70,6 +70,10 @@ func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *
 		return err
 	}
 	result.Patches = results
-	progress.Report(ctx, "Patches: %s", patchcheck.Summary(results))
+	if len(patchcheck.Rejected(results)) > 0 || len(results) > 0 && !results[0].Checked {
+		progress.Report(ctx, "Patches: %s", patchcheck.Summary(results))
+	} else {
+		progress.VerboseReport(ctx, "Patches: %s", patchcheck.Summary(results))
+	}
 	return nil
 }

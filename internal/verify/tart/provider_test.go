@@ -556,7 +556,7 @@ func TestAdmissionProgressPrecedesWorkAndStopsAtFailure(t *testing.T) {
 			}
 			submitted, err := f.provider.Submit(ctx, f.request)
 			for _, update := range updates {
-				require.Equal(t, string(f.request.AttemptID), update.Scope)
+				require.Equal(t, f.request.Spec.Target.Name, update.Scope, "reports are scoped by port, not attempt")
 			}
 			if failStage {
 				require.ErrorContains(t, err, "transfer failed")

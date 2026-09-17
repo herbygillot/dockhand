@@ -40,7 +40,7 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 			if err != nil {
 				return workflow.BuildResolution{}, err
 			}
-			progress.Report(ctx, "Verification provider: github (pushes the candidate to your fork)")
+			progress.VerboseReport(ctx, "Verification provider: github (pushes the candidate to your fork)")
 			return workflow.BuildResolution{Build: &config}, nil
 		}
 		if s.providerName == verify.ProviderGitHub {
@@ -71,7 +71,7 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 					targets[name] = bound
 				}
 			}
-			progress.Report(ctx, "Verification provider: tart; no GitHub verification will be submitted")
+			progress.VerboseReport(ctx, "Verification provider: tart; no GitHub verification will be submitted")
 			return workflow.BuildResolution{Build: &config, TargetBuilds: targets}, nil
 		}
 		if ctx.Err() != nil {

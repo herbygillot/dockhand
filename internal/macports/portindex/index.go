@@ -270,7 +270,7 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	if seed == "" {
 		progress.Report(ctx, "Generating full PortIndex for source %s; this may take several minutes", short)
 	} else {
-		progress.Report(ctx, "Updating PortIndex for source %s from %d changed paths", short, len(changed))
+		progress.VerboseReport(ctx, "Updating PortIndex for source %s from %d changed paths", short, len(changed))
 	}
 	started := time.Now()
 	err = atomicfile.ReplaceDirectory(destination, func(temp string) (err error) {
@@ -360,7 +360,7 @@ func buildPortIndex(ctx context.Context, c Config, platform record.Platform, sou
 	if seed == "" {
 		pass = "full"
 	}
-	progress.Report(ctx, "PortIndex generated (%s pass, %s)", pass, time.Since(started).Round(time.Second))
+	progress.VerboseReport(ctx, "PortIndex generated (%s pass, %s)", pass, time.Since(started).Round(time.Second))
 	return nil
 }
 

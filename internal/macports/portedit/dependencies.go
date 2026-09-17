@@ -166,7 +166,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	progress.Report(ctx, "Checking existing %s against the original source", plan.Kind)
+	progress.VerboseReport(ctx, "Checking existing %s against the original source", plan.Kind)
 	old, err := dependency.Generate(ctx, plan.Kind, executable, oldInput)
 	if err != nil {
 		return Result{}, err
@@ -199,7 +199,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	progress.Report(ctx, "Regenerating %s for %s", plan.Kind, request.Release.Tag)
+	progress.VerboseReport(ctx, "Regenerating %s for %s", plan.Kind, request.Release.Tag)
 	generated, err := dependency.Generate(ctx, plan.Kind, executable, nextInput)
 	if err != nil {
 		return Result{}, err

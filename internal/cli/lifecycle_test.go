@@ -59,7 +59,7 @@ func TestWaitRecordsFailureWithoutSubmittingNewWork(t *testing.T) {
 	require.Len(t, status.Jobs, 1)
 }
 func TestWaitSelectsExplicitOrCurrentContributionBranch(t *testing.T) {
-	for _, args := range [][]string{{"wait", "--branch", "candidate", "--json"}, {"wait", "--json"}} {
+	for _, args := range [][]string{{"wait", "--branch", "candidate", "--json", "-v"}, {"wait", "--json", "-v"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			config, id := queuedJob(t)
 			var stdout, stderr bytes.Buffer
@@ -92,7 +92,7 @@ func TestCancelBeforeAdmissionPreservesBranchAndDoesNotNeedTart(t *testing.T) {
 func TestCancelSelectsContributionBranch(t *testing.T) {
 	config, id := queuedJob(t)
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"cancel", "--branch", "candidate", "--wait", "--reason", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"cancel", "--branch", "candidate", "--wait", "--reason", "fixture", "--json", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result ActionResult
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	require.Equal(t, "candidate", result.Branch)

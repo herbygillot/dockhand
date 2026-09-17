@@ -46,7 +46,7 @@ func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
 	defer cancel()
 	diagnostics := &detachOnAcceptance{cancel: cancel}
 	stdout.Reset()
-	err = Run(ctx, []string{"verify", "--working-tree", "--variant", "+debug", "--fresh", "--json"}, Streams{Out: &stdout, Err: diagnostics}, config)
+	err = Run(ctx, []string{"verify", "--working-tree", "--variant", "+debug", "--fresh", "--json", "-v"}, Streams{Out: &stdout, Err: diagnostics}, config)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Contains(t, diagnostics.String(), "inferred from tracked contribution")
 	require.Contains(t, diagnostics.String(), "Variants: +debug")

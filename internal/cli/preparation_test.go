@@ -48,9 +48,9 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	config, repo, commit := preparationCLI(t)
 	var err error
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--reason", "rebuild"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--reason", "rebuild", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
 	require.Contains(t, stdout.String(), "-revision 0\n+revision 1")
-	require.Contains(t, stderr.String(), "Branch: master")
+	require.Contains(t, stderr.String(), "branch master")
 	require.Contains(t, stderr.String(), "working-tree edits are excluded")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 	require.NoFileExists(t, filepath.Join(repo.CommonDir, "index"))
@@ -59,7 +59,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	require.Equal(t, commit, actual)
 	stdout.Reset()
 	stderr.Reset()
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result app.Preview
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	require.Equal(t, "master", result.Branch)
@@ -113,7 +113,7 @@ func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) 
 	require.NoError(t, err)
 	config.Tart = tart.Config{Executable: "/missing/tart"}
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json", "--reason", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json", "-v", "--reason", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	require.Len(t, result.Status.Jobs, 1)
@@ -267,7 +267,7 @@ func TestPreparationIgnoresLocalBranchAndRefusesFailedFetch(t *testing.T) {
 		require.NoError(t, err, "%s", out)
 	}
 	var stdout, stderr bytes.Buffer
-	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
+	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var preview app.Preview
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &preview))
 	require.Equal(t, record.ObjectID(upstream), preview.Preparation.Base.Commit)

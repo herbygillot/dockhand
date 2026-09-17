@@ -17,6 +17,8 @@ const stateIndependentHelp = "dockhand.state-independent"
 type serviceBuilder func(context.Context, app.Config) (*app.Services, error)
 
 type runtime struct {
+	verbosity    int
+	debug        bool
 	build        serviceBuilder
 	statusGitHub func(context.Context, *github.Client) (app.GitHubAuthStatus, error)
 	logoutGitHub func(context.Context, credential.Remover) (app.GitHubLogoutResult, error)
@@ -76,7 +78,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-			cmd.SetContext(progressContext(cmd.Context(), cmd.ErrOrStderr()))
+			cmd.SetContext(progressContext(cmd.Context(), cmd.ErrOrStderr(), runtime.level(cmd), runtime.json))
 		},
 		SilenceUsage: true,
 		RunE:         func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
@@ -134,6 +136,8 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 		}
 	}
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
+	root.PersistentFlags().CountVarP(&runtime.verbosity, "verbose", "v", "Show identifiers and the work behind the scenes; -vv shows every sub-operation")
+	root.PersistentFlags().BoolVar(&runtime.debug, "debug", false, "Show every sub-operation (same as -vv)")
 	if err := root.MarkPersistentFlagFilename("db"); err != nil {
 		return nil, err
 	}

@@ -47,7 +47,7 @@ func TestVerifyCLISelectsExplicitWorkingTreeOrBranch(t *testing.T) {
 			defer cancel()
 			stderr := &detachOnAcceptance{cancel: cancel}
 			var stdout bytes.Buffer
-			args := []string{"verify", "fixture", "--json"}
+			args := []string{"verify", "fixture", "--json", "-v"}
 			if explicit {
 				args = append(args, "--branch", "candidate")
 			} else {

@@ -44,7 +44,7 @@ func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
 	defer cancel()
 	detach := &detachOnAcceptance{cancel: cancel}
 	stdout.Reset()
-	err := Run(ctx, []string{"verify", "fixture", "--branch", "candidate", "--fresh", "--json"}, Streams{Out: &stdout, Err: detach}, config)
+	err := Run(ctx, []string{"verify", "fixture", "--branch", "candidate", "--fresh", "--json", "-v"}, Streams{Out: &stdout, Err: detach}, config)
 	require.ErrorIs(t, err, context.Canceled)
 	status, err := app.Status(t.Context(), config)
 	require.NoError(t, err)

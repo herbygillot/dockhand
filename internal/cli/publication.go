@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/progress"
 
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -56,7 +57,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("accepting request %s: %w", request.ID, err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Accepted publication job %s; branch %s at %s; verification %s.\n", receipt.JobID, plain(spec.HeadBranch), spec.Desired.Head, spec.EvidenceAttempt)
+			progress.VerboseReport(cmd.Context(), "Accepted publication job %s; branch %s at %s; verification %s", receipt.JobID, plain(spec.HeadBranch), spec.Desired.Head, spec.EvidenceAttempt)
 			milestone := workflow.Admission
 			if wait {
 				milestone = workflow.Completion

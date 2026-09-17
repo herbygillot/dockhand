@@ -171,6 +171,6 @@ func (n *native) Environment(ctx context.Context) (Environment, error) {
 		}
 	}
 	n.images.stamp, n.images.digest = before, cached.Digest
-	progress.Report(ctx, "Tart image fingerprint ready (%s)", time.Since(started).Round(time.Second))
+	progress.VerboseReport(ctx, "Tart image fingerprint ready (%s)", time.Since(started).Round(time.Second))
 	return Environment{Digest: n.images.digest, Platform: n.config.Platform}, nil
 }

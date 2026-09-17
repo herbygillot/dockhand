@@ -20,7 +20,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err := validateRequest(request); err != nil {
 		return verify.Submission{State: verify.Unsupported, Detail: err.Error()}, nil
 	}
-	ctx = progress.WithScope(ctx, string(request.AttemptID))
+	ctx = progress.WithScope(ctx, request.Spec.Target.Name)
 	config := p.Config
 	if len(request.Spec.Config.ProviderConfig) > 0 {
 		config = Config{}
@@ -127,7 +127,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return verify.Submission{}, err
 	}
 	uncertain := submission(v, verify.SubmissionUncertain)
-	progress.Report(ctx, "Tart capacity reserved for %s; cloning image %s", request.Spec.Target.Name, o.config.Image)
+	progress.VerboseReport(ctx, "Tart capacity reserved for %s; cloning image %s", request.Spec.Target.Name, o.config.Image)
 	if err = o.machine.Clone(ctx, o.config.Image, v.Resource); err != nil {
 		return uncertain, err
 	}
@@ -148,7 +148,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return uncertain, err
 	}
 	archive = inputPath
-	progress.Report(ctx, "Starting verification VM and waiting for the guest agent")
+	progress.VerboseReport(ctx, "Starting verification VM and waiting for the guest agent")
 	if err = o.machine.Start(ctx, v.Resource, directory); err != nil {
 		return uncertain, err
 	}
@@ -156,7 +156,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 		return uncertain, err
 	}
 	if !observed {
-		progress.Report(ctx, "Inspecting guest verification prerequisites")
+		progress.DebugReport(ctx, "Inspecting guest verification prerequisites")
 		inspection, inspectErr := o.machine.InspectCapabilities(ctx, v.Resource, o.config.GuestPrefix)
 		if inspectErr != nil {
 			return uncertain, inspectErr
@@ -178,7 +178,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			return submission(v, verify.Admitted), nil
 		}
 	}
-	progress.Report(ctx, "Transferring prepared source to the verification VM")
+	progress.DebugReport(ctx, "Transferring prepared source to the verification VM")
 	if err = o.machine.Stage(ctx, v.Resource, archive); err != nil {
 		return uncertain, err
 	}
@@ -190,10 +190,10 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 	if err = o.removeInput(v); err != nil {
 		return uncertain, err
 	}
-	progress.Report(ctx, "Launching verification")
+	progress.DebugReport(ctx, "Launching verification")
 	if err = o.machine.Launch(ctx, v.Resource); err != nil {
 		return uncertain, err
 	}
-	progress.Report(ctx, "Verification launched")
+	progress.VerboseReport(ctx, "Verification launched")
 	return submission(v, verify.Admitted), nil
 }

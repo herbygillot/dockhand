@@ -106,7 +106,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	}
 	var source record.Source
 	if prior == nil {
-		progress.Report(ctx, "Fetching MacPorts master")
+		progress.VerboseReport(ctx, "Fetching MacPorts master")
 		source, err = preparationSource(ctx, s.Workflow.Repo)
 		if err != nil {
 			return workflow.BoundPreparation{}, err

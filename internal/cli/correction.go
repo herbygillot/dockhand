@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/git"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -60,7 +61,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "Accepted correction %s for %s.\n", receipt.JobID, bound.Branch)
+				progress.VerboseReport(cmd.Context(), "Accepted correction %s for %s", receipt.JobID, bound.Branch)
 				milestone := workflow.Admission
 				if wait || trace {
 					milestone = workflow.Completion

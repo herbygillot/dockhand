@@ -63,7 +63,7 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 	plan := &observedArchivePlan{}
 	declared, covered, unique := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, profile := range profiles {
-		progress.Report(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
+		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
 		observed, err := s.observeContents(ctx, input, input.data, macports.ObservationRequest{Platform: profile, Declarations: true}, false)
 		if err != nil {
 			return nil, fmt.Errorf("%w: observing %+v: %v", errProbeInconclusive, profile, err)

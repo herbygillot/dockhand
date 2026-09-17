@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"io"
 	"slices"
@@ -89,9 +90,9 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			}
 			defer services.Close()
 			if workingTree {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Capturing working-tree source and checking verification settings...")
+				progress.VerboseReport(cmd.Context(), "Capturing working-tree source and checking verification settings")
 			} else if branch != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Binding committed source from %s and checking verification settings...\n", branch)
+				progress.VerboseReport(cmd.Context(), "Binding committed source from %s and checking verification settings", branch)
 			}
 			var selector string
 			if len(args) == 1 {
@@ -108,7 +109,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("accepting request %s: %w", bound.Request.ID, err)
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Accepted job %s; source tree %s.\n", receipt.JobID, bound.Request.Spec.Source.Tree)
+			progress.VerboseReport(cmd.Context(), "Accepted job %s; source tree %s", receipt.JobID, bound.Request.Spec.Source.Tree)
 			milestone := workflow.Admission
 			if wait || trace {
 				milestone = workflow.Completion
@@ -215,7 +216,7 @@ func (r *runtime) waitCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "Selected %d pending job(s): %s.\n", len(scope.Jobs), joinJobIDs(scope.Jobs))
+		progress.VerboseReport(cmd.Context(), "Selected %d pending job(s): %s", len(scope.Jobs), joinJobIDs(scope.Jobs))
 		return r.attachScope(cmd, services, scope, workflow.Completion, trace, false, nil, ActionResult{JobIDs: slices.Clone(scope.Jobs), Branch: selector.Branch})
 	}}
 	selected.flags(command)
@@ -260,7 +261,8 @@ func (r *runtime) cancelCommand() *cobra.Command {
 			}
 			result.JobIDs, result.Branch = slices.Clone(scope.Jobs), selector.Branch
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "Cancellation requested for %s.\n", joinJobIDs(scope.Jobs))
+		progress.Report(cmd.Context(), "Cancellation requested")
+		progress.VerboseReport(cmd.Context(), "Cancellation requested for %s", joinJobIDs(scope.Jobs))
 		if wait {
 			return r.attachScope(cmd, services, scope, workflow.Completion, false, true, nil, result)
 		}
@@ -290,8 +292,8 @@ func (r *runtime) startCommand() *cobra.Command {
 			return err
 		}
 		defer services.Close()
-		fmt.Fprintln(cmd.ErrOrStderr(), "Driver running for this repository. Ctrl-C stops the driver; accepted work remains recorded.")
-		reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, false)
+		progress.Report(cmd.Context(), "Driver running for this repository. Ctrl-C stops the driver; accepted work remains recorded.")
+		reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, false, r.level(cmd), r.json)
 		services.Processes.OnCycle = reporter.cycle
 		err = services.Processes.Run(cmd.Context(), services.Workflow, workflow.Scope{All: true})
 		if r.json {
@@ -308,7 +310,7 @@ func (r *runtime) attach(cmd *cobra.Command, services *app.Services, id record.J
 	return r.attachScope(cmd, services, workflow.Scope{Jobs: []record.JobID{id}}, milestone, trace, canceling, receipt, ActionResult{JobID: id})
 }
 func (r *runtime) attachScope(cmd *cobra.Command, services *app.Services, scope workflow.Scope, milestone workflow.Milestone, trace, canceling bool, receipt *workflow.Receipt, result ActionResult) error {
-	reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, trace)
+	reporter := newReporter(cmd.ErrOrStderr(), services.Workflow.Provider, trace, r.level(cmd), r.json)
 	reporter.providers = services.Workflow.Providers
 	services.Processes.OnCycle = reporter.cycle
 	status, err := services.Processes.Attach(cmd.Context(), services.Workflow, scope, milestone, func(status workflow.Status) error { return reporter.status(cmd.Context(), status) })

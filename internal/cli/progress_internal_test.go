@@ -32,13 +32,13 @@ func TestCommandProgressStaysOnStderrAndEscapesControlCharacters(t *testing.T) {
 	root.SetArgs([]string{"--json", "fixture"})
 	require.NoError(t, root.ExecuteContext(t.Context()))
 	require.JSONEq(t, `{"done":true}`, out.String())
-	require.Equal(t, "attempt_one: staging\\n\\x1b[31m\nattempt_two: packing source\n", diagnostics.String())
+	require.Equal(t, "{\"level\":\"info\",\"scope\":\"attempt_one\",\"message\":\"staging\\n\\u001b[31m\"}\n{\"level\":\"info\",\"scope\":\"attempt_two\",\"message\":\"packing source\"}\n", diagnostics.String(), "JSON mode reports one object per line on stderr")
 	require.NoFileExists(t, db)
 }
 
 func TestCohortProgressCountsQueuedTargets(t *testing.T) {
 	var out bytes.Buffer
-	reporter := newReporter(&out, nil, false)
+	reporter := newReporter(&out, nil, false, progress.Info, false)
 	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{State: record.AttemptQueued}, {State: record.AttemptRunning}, {State: record.AttemptQueued}}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
 	require.Equal(t, 1, strings.Count(out.String(), "waiting for provider admission"))

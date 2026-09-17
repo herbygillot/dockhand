@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/verify"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/spf13/cobra"
 )
 
 type reporter struct {
@@ -19,13 +21,24 @@ type reporter struct {
 	out       io.Writer
 	logs      verify.LogReader
 	trace     bool
+	level     progress.Level
+	jsonMode  bool
 	last      map[string]string
 	offsets   map[record.ProviderRun]int64
 }
 
-func newReporter(out io.Writer, p verify.Provider, trace bool) *reporter {
+func newReporter(out io.Writer, p verify.Provider, trace bool, level progress.Level, jsonMode bool) *reporter {
 	logs, _ := p.(verify.LogReader)
-	return &reporter{out: out, logs: logs, trace: trace, last: map[string]string{}, offsets: map[record.ProviderRun]int64{}}
+	return &reporter{out: out, logs: logs, trace: trace, level: level, jsonMode: jsonMode, last: map[string]string{}, offsets: map[record.ProviderRun]int64{}}
+}
+
+// label names a job for a person: its port at the info level, its job ID
+// when identifiers were asked for.
+func (r *reporter) label(job record.Job) string {
+	if r.level >= progress.Verbose || len(job.Spec.Targets) == 0 {
+		return string(job.ID)
+	}
+	return job.Spec.Targets[0].Name
 }
 func plain(s string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(strconv.Quote(s), "\""), "\"")
@@ -35,6 +48,12 @@ func (r *reporter) changed(key, value string) error {
 		return nil
 	}
 	r.last[key] = value
+	if r.jsonMode {
+		return json.NewEncoder(r.out).Encode(struct {
+			Level   string `json:"level"`
+			Message string `json:"message"`
+		}{"info", value})
+	}
 	_, err := fmt.Fprintln(r.out, plain(value))
 	return err
 }
@@ -52,9 +71,9 @@ func (r *reporter) cycle(result workflow.CycleResult) error {
 }
 func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 	for _, entry := range status.Jobs {
-		message := fmt.Sprintf("%s: %s", entry.Job.ID, entry.Job.State)
+		message := fmt.Sprintf("%s: %s", r.label(entry.Job), entry.Job.State)
 		if entry.Job.ReuseDetail != "" && entry.Job.State != record.JobCompleted {
-			if err := r.changed("reuse:"+string(entry.Job.ID), fmt.Sprintf("%s: %s", entry.Job.ID, entry.Job.ReuseDetail)); err != nil {
+			if err := r.changed("reuse:"+string(entry.Job.ID), fmt.Sprintf("%s: %s", r.label(entry.Job), entry.Job.ReuseDetail)); err != nil {
 				return err
 			}
 		}
@@ -167,13 +186,35 @@ func completedOutcome(entry workflow.JobStatus) string {
 	return verificationOutcome(entry.Job)
 }
 
-func progressContext(ctx context.Context, out io.Writer) context.Context {
+// level resolves the report level from -v, --debug, and a command's --trace.
+func (r *runtime) level(cmd *cobra.Command) progress.Level {
+	level := progress.Level(min(r.verbosity, 2))
+	if r.debug {
+		level = progress.Debug
+	}
+	if flag := cmd.Flags().Lookup("trace"); flag != nil && flag.Value.String() == "true" {
+		level = progress.Debug
+	}
+	return level
+}
+
+// progressContext prints reports at or below level. In JSON mode each report
+// is one JSON object per line on stderr, so stdout stays the result.
+func progressContext(ctx context.Context, out io.Writer, level progress.Level, jsonMode bool) context.Context {
 	var last progress.Update
 	return progress.WithReporter(ctx, func(update progress.Update) {
-		if update == last {
+		if update == last || update.Level > level {
 			return
 		}
 		last = update
+		if jsonMode {
+			_ = json.NewEncoder(out).Encode(struct {
+				Level   string `json:"level"`
+				Scope   string `json:"scope,omitempty"`
+				Message string `json:"message"`
+			}{update.Level.String(), update.Scope, update.Message})
+			return
+		}
 		message := update.Message
 		if update.Scope != "" {
 			message = update.Scope + ": " + message

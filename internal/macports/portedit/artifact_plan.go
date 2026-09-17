@@ -56,7 +56,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 	changed := map[string]bool{}
 	unique := map[string]bool{}
 	for _, profile := range profiles {
-		progress.Report(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
+		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
 		mode := macports.ObservationRequest{Platform: profile, Declarations: true}
 		before, err := s.observeContents(ctx, input, input.data, mode, false)
 		if err != nil {
@@ -69,7 +69,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
 		affected := old.Version != next.Version
 		if next.Fetch != nil && next.Fetch.Rejected {
-			progress.Report(ctx, "Preserving rejection-only fetch guard for %s %s %s; archive coverage does not establish build support", profile.OS, profile.Version, profile.Architecture)
+			progress.VerboseReport(ctx, "Preserving rejection-only fetch guard for %s %s %s; archive coverage does not establish build support", profile.OS, profile.Version, profile.Architecture)
 		}
 		if affected && (old.Version != input.info.Version || next.Version != request.Release.Version) {
 			return nil, fmt.Errorf("%w: candidate changed an independent version on %+v", ErrFidelity, profile)

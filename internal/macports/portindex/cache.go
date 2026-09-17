@@ -133,7 +133,7 @@ func (c *cache) ensure(ctx context.Context, repo *git.Repository, tree, root str
 	}
 	target := c.generation(tree)
 	if c.usable(tree, strict) {
-		progress.Report(ctx, "Using cached PortIndex for source %s", tree[:12])
+		progress.DebugReport(ctx, "Using cached PortIndex for source %s", tree[:12])
 		return target, touchEntry(target)
 	}
 	lockPath := target + ".lock"
