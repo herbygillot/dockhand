@@ -53,25 +53,46 @@ type Spec struct {
 	Livecheck      Livecheck
 }
 
-func Interpret(port macports.PortInfo) (Spec, error) {
+// Purpose says what an interpretation is for. The same PortGroup options are
+// read either way; discovery additionally needs a livecheck convention that
+// names a catalog to consult.
+type Purpose int
+
+const (
+	// Edit accepts any port with an evaluated version. A port without a
+	// recognized forge PortGroup is an archive source; a present but
+	// malformed forge declaration is still an error.
+	Edit Purpose = iota
+	// Discovery requires a supported regex livecheck for the evaluated
+	// version: a forge tags page or feed, or an HTTP listing for archive sources.
+	Discovery
+)
+
+// Interpret reads the port's source convention for one purpose.
+func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	github := present(port, "github.author")
 	gitlab := present(port, "gitlab.author")
+	if !github && !gitlab {
+		if purpose == Discovery {
+			return discoverListing(port)
+		}
+		if port.Version == "" {
+			return Spec{}, fmt.Errorf("%w: missing evaluated version", ErrUnsupported)
+		}
+		return Spec{CurrentVersion: port.Version, SourceVersion: port.Version}, nil
+	}
 	if github == gitlab {
 		return Spec{}, fmt.Errorf("%w: require exactly one recognized source PortGroup", ErrUnsupported)
 	}
+	var spec Spec
+	var err error
 	if github {
-		return interpret(port, GitHub, "github", "https://github.com")
+		spec, err = interpret(port, GitHub, "github", "https://github.com")
+	} else {
+		spec, err = interpret(port, GitLab, "gitlab", port.Options["gitlab.instance"])
 	}
-	return interpret(port, GitLab, "gitlab", port.Options["gitlab.instance"])
-}
-
-func Discover(port macports.PortInfo) (Spec, error) {
-	if !present(port, "github.author") && !present(port, "gitlab.author") {
-		return discoverListing(port)
-	}
-	spec, err := Interpret(port)
-	if err != nil {
-		return Spec{}, err
+	if err != nil || purpose == Edit {
+		return spec, err
 	}
 	for _, key := range []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version"} {
 		if err := evaluated(port, key); err != nil {
@@ -252,15 +273,3 @@ func appendPath(base string, elements ...string) (string, error) {
 	return parsed.String(), nil
 }
 func trimURL(value string) string { return strings.TrimRight(value, "/") }
-
-// ForEditing accepts an explicit evaluated version without inventing a forge or
-// tag identity. A present but malformed forge declaration remains an error.
-func ForEditing(port macports.PortInfo) (Spec, error) {
-	if !present(port, "github.author") && !present(port, "gitlab.author") {
-		if port.Version == "" {
-			return Spec{}, fmt.Errorf("%w: missing evaluated version", ErrUnsupported)
-		}
-		return Spec{CurrentVersion: port.Version, SourceVersion: port.Version}, nil
-	}
-	return Interpret(port)
-}

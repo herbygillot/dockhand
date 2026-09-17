@@ -36,7 +36,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if release.NoUpdate {
 		return archivePlan{result: Result{Base: request.Source, Target: input.target, Release: release}}, nil
 	}
-	spec, err := portsource.ForEditing(input.info)
+	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil {
 		return archivePlan{}, err
 	}

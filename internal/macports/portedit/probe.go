@@ -116,7 +116,7 @@ func (p *VersionProbe) CheckRelease(ctx context.Context, release record.Release)
 	if err := p.prepare(ctx); err != nil {
 		return err
 	}
-	spec, err := portsource.ForEditing(p.input.info)
+	spec, err := portsource.Interpret(p.input.info, portsource.Edit)
 	if err != nil {
 		return err
 	}

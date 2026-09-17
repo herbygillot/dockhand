@@ -1,0 +1,3 @@
+# Stage 3 of the resolution consolidation: one source interpretation
+
+`macports/source` exposed `Interpret`, `Discover`, and `ForEditing`, three readings of the same PortGroup options at different strictness. They are now one `Interpret(port, purpose)`: `Edit` accepts any port with an evaluated version, treating one without a forge PortGroup as an archive source, and `Discovery` additionally requires the regex livecheck convention that names a catalog, or an HTTP listing for archive sources. A present but malformed forge declaration is an error for either purpose. Every caller in `upstream` and `portedit` names its purpose. No behavior changed.

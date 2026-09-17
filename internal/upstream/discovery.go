@@ -58,11 +58,11 @@ type Service struct {
 func (s *Service) repository(port macports.PortInfo, automatic bool) (portsource.Spec, forge.Repository, error) {
 	var spec portsource.Spec
 	var err error
+	purpose := portsource.Edit
 	if automatic {
-		spec, err = portsource.Discover(port)
-	} else {
-		spec, err = portsource.Interpret(port)
+		purpose = portsource.Discovery
 	}
+	spec, err = portsource.Interpret(port, purpose)
 	if err != nil {
 		if automatic && errors.Is(err, portsource.ErrUnsupported) {
 			return spec, nil, fmt.Errorf("%w: %v", errAutomaticUnsupported, err)

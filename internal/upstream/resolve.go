@@ -27,7 +27,7 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 	if err := version.Validate(requested); err != nil {
 		return record.Release{}, err
 	}
-	editable, err := portsource.ForEditing(port)
+	editable, err := portsource.Interpret(port, portsource.Edit)
 	if err != nil {
 		return record.Release{}, err
 	}
@@ -91,7 +91,7 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 
 func (s *Service) Check(ctx context.Context, port macports.PortInfo, release record.Release) error {
 	if release.Archive {
-		spec, err := portsource.ForEditing(port)
+		spec, err := portsource.Interpret(port, portsource.Edit)
 		if err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release rec
 			return fmt.Errorf("upstream: archive release does not match the Portfile")
 		}
 		if release.Requested == "" {
-			observed, err := portsource.Discover(port)
+			observed, err := portsource.Interpret(port, portsource.Discovery)
 			if err != nil {
 				return err
 			}

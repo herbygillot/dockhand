@@ -23,7 +23,7 @@ type carrier struct {
 }
 
 func (s *Service) versionCarriers(ctx context.Context, request Request, input *sourceInput) (versionInputs, error) {
-	spec, err := portsource.ForEditing(input.info)
+	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (s *Service) versionCarriers(ctx context.Context, request Request, input *s
 		if !ok || info.Version == input.info.Version {
 			continue
 		}
-		observed, err := portsource.ForEditing(info)
+		observed, err := portsource.Interpret(info, portsource.Edit)
 		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion == spec.SourceVersion {
 			continue
 		}
@@ -152,7 +152,7 @@ func (inputs versionInputs) edits(data []byte, sourceVersion string) []versionEd
 // checkFidelity it also resets the revision, requires a changed version, and
 // refuses unexpected sibling changes, as an actual bump must.
 func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator, request Request, input *sourceInput, inputs versionInputs, sourceVersion string, checkFidelity bool) ([]byte, macports.Snapshot, error) {
-	spec, err := portsource.ForEditing(input.info)
+	spec, err := portsource.Interpret(input.info, portsource.Edit)
 	if err != nil {
 		return nil, macports.Snapshot{}, err
 	}
@@ -178,7 +178,7 @@ func (s *Service) evaluateVersion(ctx context.Context, reader snapshotEvaluator,
 		}
 		after := evaluated.after
 		next := after.Ports[input.target.Name]
-		observed, err := portsource.ForEditing(next)
+		observed, err := portsource.Interpret(next, portsource.Edit)
 		if err != nil || !sameRepository(spec, observed) || observed.SourceVersion != sourceVersion || spec.Forge != "" && next.Options["git.branch"] != spec.Pattern.Tag(sourceVersion) {
 			rejected = fmt.Errorf("%w: candidate did not select the requested source tag", ErrFidelity)
 			continue

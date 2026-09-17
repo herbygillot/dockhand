@@ -104,13 +104,13 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 		}
 	}
 	add("evaluation", "Committed Portfile evaluated successfully", nil)
-	spec, err := portsource.ForEditing(p.input.info)
+	spec, err := portsource.Interpret(p.input.info, portsource.Edit)
 	sourceDetail := fmt.Sprintf("%s %s; source version %s", spec.Forge, spec.Repository, spec.SourceVersion)
 	if err == nil && spec.Forge == "" {
 		sourceDetail = "Archive source version " + spec.SourceVersion
 	}
 	add("source", sourceDetail, err)
-	if discovery, discoveryErr := portsource.Discover(p.input.info); discoveryErr == nil {
+	if discovery, discoveryErr := portsource.Interpret(p.input.info, portsource.Discovery); discoveryErr == nil {
 		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: Passed, Code: "discovery-supported", Detail: "Supported " + string(discovery.Catalog) + " discovery; remote availability is untested"})
 	} else {
 		a.Findings = append(a.Findings, Finding{Check: "discovery", Status: NotTested, Code: "explicit-version-required", Detail: discoveryErr.Error() + "; supply an explicit version"})

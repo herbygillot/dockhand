@@ -28,7 +28,7 @@ func gitlabPort() macports.PortInfo {
 }
 
 func TestGitHubSourceSeparatesPortfileConventionFromRemoteAccess(t *testing.T) {
-	spec, err := source.Discover(githubPort())
+	spec, err := source.Interpret(githubPort(), source.Discovery)
 	require.NoError(t, err)
 	require.Equal(t, source.GitHub, spec.Forge)
 	require.Equal(t, source.Releases, spec.Catalog)
@@ -44,7 +44,7 @@ func TestGitHubSourceSeparatesPortfileConventionFromRemoteAccess(t *testing.T) {
 }
 
 func TestGitLabSourceRetainsInstanceNamespaceAndAtomMatchText(t *testing.T) {
-	spec, err := source.Discover(gitlabPort())
+	spec, err := source.Interpret(gitlabPort(), source.Discovery)
 	require.NoError(t, err)
 	require.Equal(t, source.GitLab, spec.Forge)
 	require.Equal(t, source.Tags, spec.Catalog)
@@ -59,7 +59,7 @@ func TestGitLabSourceRetainsInstanceNamespaceAndAtomMatchText(t *testing.T) {
 }
 
 func TestSourceURLsEscapeTagData(t *testing.T) {
-	spec, err := source.Interpret(githubPort())
+	spec, err := source.Interpret(githubPort(), source.Edit)
 	require.NoError(t, err)
 	value, err := spec.EvidenceURL("release/2#meta%-stable")
 	require.NoError(t, err)
@@ -70,20 +70,25 @@ func TestSourceURLsEscapeTagData(t *testing.T) {
 }
 
 func TestSourceInterpretationRejectsAmbiguousOrInconsistentMetadata(t *testing.T) {
+	archive := githubPort()
+	delete(archive.Options, "github.author")
+	spec, err := source.Interpret(archive, source.Edit)
+	require.NoError(t, err, "without a forge PortGroup an evaluated version is an archive source for editing")
+	require.Empty(t, spec.Forge)
+	require.Equal(t, archive.Version, spec.SourceVersion)
 	for _, mutate := range []func(*macports.PortInfo){
-		func(port *macports.PortInfo) { delete(port.Options, "github.author") },
 		func(port *macports.PortInfo) { port.Options["gitlab.author"] = "other" },
 		func(port *macports.PortInfo) { port.Options["git.branch"] = "other" },
 		func(port *macports.PortInfo) { port.OptionErrors = map[string]string{"github.version": "failed"} },
 	} {
 		port := githubPort()
 		mutate(&port)
-		_, err := source.Interpret(port)
+		_, err := source.Interpret(port, source.Edit)
 		require.Error(t, err)
 	}
 	port := githubPort()
 	port.Options["livecheck.url"] = "https://example.invalid/releases"
-	_, err := source.Discover(port)
+	_, err = source.Interpret(port, source.Discovery)
 	require.ErrorIs(t, err, source.ErrUnsupported)
 }
 
@@ -93,7 +98,7 @@ func TestSourceSpellingIsIndependentOfCalculatedPortVersion(t *testing.T) {
 	port.Options["github.version"] = "2026-09-07"
 	port.Options["git.branch"] = "release/2026-09-07-stable"
 	port.Options["livecheck.version"] = "2026-09-07"
-	spec, err := source.Discover(port)
+	spec, err := source.Interpret(port, source.Discovery)
 	require.NoError(t, err)
 	require.Equal(t, "release/2026-09-14-stable", spec.Pattern.Tag("2026-09-14"))
 	version, ok := spec.Pattern.Version("release/2026-09-14-stable")
@@ -102,6 +107,6 @@ func TestSourceSpellingIsIndependentOfCalculatedPortVersion(t *testing.T) {
 	_, ok = spec.Pattern.Version("release/2026-02-31-stable")
 	require.True(t, ok)
 	port.Version = "20260908"
-	_, err = source.Interpret(port)
+	_, err = source.Interpret(port, source.Edit)
 	require.NoError(t, err)
 }
