@@ -3,6 +3,7 @@ package cli
 import (
 	"crypto/rand"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/progress"
 
 	"github.com/herbygillot/dockhand/internal/publish"
@@ -45,7 +46,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 				if r.json {
 					return r.emit(request.Spec)
 				}
-				_, err := fmt.Fprintf(cmd.OutOrStdout(), "Publish %s at %s\n  %s:%s -> %s:%s\n  title: %s\n  target: %s\n  verification: %s (%s %s %s; tests %s; from source %t)\n", plain(spec.HeadBranch), spec.Desired.Head, plain(spec.HeadRepository), plain(spec.HeadBranch), plain(spec.Repository), plain(spec.BaseBranch), plain(spec.Desired.Title), plain(targetLabel(request.Spec.Targets[0])), spec.EvidenceAttempt, request.Spec.Build.Platform.OS, request.Spec.Build.Platform.Version, request.Spec.Build.Platform.Architecture, request.Spec.Build.Tests, request.Spec.Build.FromSource)
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "Publish %s at %s\n  %s:%s -> %s:%s\n  title: %s\n  target: %s\n  verification: %s (%s; tests %s; from source %t)\n", plain(spec.HeadBranch), spec.Desired.Head, plain(spec.HeadRepository), plain(spec.HeadBranch), plain(spec.Repository), plain(spec.BaseBranch), plain(spec.Desired.Title), plain(targetLabel(request.Spec.Targets[0])), spec.EvidenceAttempt, macos.Describe(request.Spec.Build.Platform), request.Spec.Build.Tests, request.Spec.Build.FromSource)
 				if err != nil {
 					return err
 				}

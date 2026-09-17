@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tui"
@@ -339,7 +340,7 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 			if attempt.Spec.Config.Tests == record.TestWorkflow {
 				platformLabel = "evaluation platform"
 			}
-			line("  attempt %s: %s; target: %s; %s: %s %s %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), platformLabel, attempt.Spec.Config.Platform.OS, attempt.Spec.Config.Platform.Version, attempt.Spec.Config.Platform.Architecture)
+			line("  attempt %s: %s; target: %s; %s: %s", attempt.ID, attempt.State, targetLabel(attempt.Spec.Target), platformLabel, macos.Describe(attempt.Spec.Config.Platform))
 			if attempt.LastError != "" {
 				line("    detail: %s", attempt.LastError)
 			}

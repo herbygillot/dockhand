@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -365,7 +366,7 @@ func activeState(entry JobStatus) string {
 			case record.AttemptSubmitting, record.AttemptRunning:
 				running++
 				if platform == "" {
-					platform = strings.TrimSpace(attempt.Spec.Config.Platform.OS + " " + attempt.Spec.Config.Platform.Version)
+					platform = macos.Describe(record.Platform{OS: attempt.Spec.Config.Platform.OS, Version: attempt.Spec.Config.Platform.Version})
 				}
 			}
 		}

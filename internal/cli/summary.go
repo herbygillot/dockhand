@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
 )
@@ -155,7 +156,7 @@ func jobState(entry workflow.JobStatus) string {
 }
 
 func platformLabel(platform record.Platform) string {
-	return strings.TrimSpace(strings.Join([]string{platform.OS, platform.Version, platform.Architecture}, " "))
+	return macos.Describe(platform)
 }
 
 // attemptLine is one build's verdict or progress on its platform, with the

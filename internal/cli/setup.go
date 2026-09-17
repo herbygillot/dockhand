@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/macports"
 
 	"github.com/herbygillot/dockhand/internal/app"
@@ -46,7 +47,7 @@ func (r *runtime) setupCommand() *cobra.Command {
 			if result.XcodeVersion != "" {
 				xcode = ", Xcode " + plain(result.XcodeVersion)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s verification image %s (%s %s %s, MacPorts %s, guest agent %s%s).\n", verb, plain(result.Image), plain(result.Platform.OS), plain(result.Platform.Version), plain(result.Platform.Architecture), plain(result.MacPortsVersion), plain(result.GuestAgentVersion), xcode)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s verification image %s (%s, MacPorts %s, guest agent %s%s).\n", verb, plain(result.Image), plain(macos.Describe(result.Platform)), plain(result.MacPortsVersion), plain(result.GuestAgentVersion), xcode)
 			return err
 		},
 	}

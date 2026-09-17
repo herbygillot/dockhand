@@ -1,6 +1,7 @@
 package macos
 
 import (
+	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -35,4 +36,11 @@ func TestProductForDarwinDoesNotExtendProvisioning(t *testing.T) {
 	require.Error(t, err)
 	_, err = ReleaseForDarwin(16)
 	require.Error(t, err)
+}
+
+func TestDescribeWordsDarwinAsMacOS(t *testing.T) {
+	require.Equal(t, "macOS 26 (Tahoe) arm64", Describe(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}))
+	require.Equal(t, "macOS 15 (Sequoia)", Describe(record.Platform{OS: "darwin", Version: "24"}))
+	require.Equal(t, "darwin 99 arm64", Describe(record.Platform{OS: "darwin", Version: "99", Architecture: "arm64"}), "an unknown release keeps the raw fields")
+	require.Equal(t, "linux 6", Describe(record.Platform{OS: "linux", Version: "6"}))
 }
