@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"net/http"
 	"path"
 
@@ -37,7 +38,7 @@ func (r Request) Validate() error {
 		if len(r.Selection.Ports) != 1 {
 			return fmt.Errorf("assess: --version requires exactly one explicit port")
 		}
-		return upstream.ValidateVersion(r.Version)
+		return version.Validate(r.Version)
 	}
 	return nil
 }

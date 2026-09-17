@@ -1,4 +1,4 @@
-package releasever
+package version
 
 import (
 	"testing"
@@ -25,4 +25,23 @@ func TestLeavesStable(t *testing.T) {
 	require.False(t, LeavesStable("0.154.0", "0.155.0"))
 	require.False(t, LeavesStable("0.154.0", "1.0.2u"), "unknown spellings are not called prereleases")
 	require.False(t, LeavesStable("1.0.2u", "1.0.3-rc1"), "an unknown current version is not known to be stable")
+}
+
+func TestValidateAndTagPattern(t *testing.T) {
+	for _, bad := range []string{"", "-1", "1 2", "1\t2", "\x00"} {
+		require.ErrorIs(t, Validate(bad), ErrInput, "%q", bad)
+	}
+	require.NoError(t, Validate("v2.56.0-rc1"))
+	p := TagPattern{Prefix: "v"}
+	require.Equal(t, "v1.2", p.Tag("1.2"))
+	got, ok := p.Version("v1.2")
+	require.True(t, ok)
+	require.Equal(t, "1.2", got)
+	_, ok = p.Version("1.2")
+	require.False(t, ok)
+	_, ok = p.Version("v")
+	require.False(t, ok)
+	require.True(t, p.Explicit("v1.2"))
+	require.False(t, p.Explicit("1.2"))
+	require.False(t, TagPattern{}.Explicit("1.2"))
 }

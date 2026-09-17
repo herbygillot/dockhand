@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"net/url"
 	"strings"
 	"unicode"
@@ -29,20 +30,8 @@ const (
 	Releases Catalog = "releases"
 )
 
-type TagPattern struct {
-	Prefix string
-	Suffix string
-}
-
-func (p TagPattern) Tag(version string) string { return p.Prefix + version + p.Suffix }
-func (p TagPattern) Version(tag string) (string, bool) {
-	version, prefix := strings.CutPrefix(tag, p.Prefix)
-	version, suffix := strings.CutSuffix(version, p.Suffix)
-	return version, prefix && suffix && version != ""
-}
-func (p TagPattern) Explicit(value string) bool {
-	return p.Prefix != "" && strings.HasPrefix(value, p.Prefix) || p.Suffix != "" && strings.HasSuffix(value, p.Suffix)
-}
+// TagPattern is the version leaf's mapping between Portfile versions and tags.
+type TagPattern = version.TagPattern
 
 type Livecheck struct {
 	Headers     map[string]string

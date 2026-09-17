@@ -1,0 +1,3 @@
+# Stage 1 of the resolution consolidation: the version leaf
+
+Per the [consolidation review](../reviews/2026-09-17-version-resolution-consolidation.md), `macports/version` now owns how a version spelling is read: `Validate` (formerly `upstream.ValidateVersion`), `TagPattern` (formerly defined in `macports/source`, which keeps an alias for its `Spec`), and `Classify` with the `Stability` vocabulary (formerly `upstream/releasever`, now removed). Ordering is deliberately not here; MacPorts compares versions through the evaluator. `upstream` keeps its exported aliases for tests and its selection policy, which now calls the leaf. The assessment boundary test admits the new leaf. No behavior changed.

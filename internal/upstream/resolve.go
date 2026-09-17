@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -23,7 +24,7 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 		}
 		return *result.Release, nil
 	}
-	if err := ValidateVersion(requested); err != nil {
+	if err := version.Validate(requested); err != nil {
 		return record.Release{}, err
 	}
 	editable, err := portsource.ForEditing(port)
@@ -94,7 +95,7 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release rec
 		if err != nil {
 			return err
 		}
-		if spec.Forge != "" || release.Requested != "" && release.Version != release.Requested || release.CurrentVersion != port.Version || release.NoUpdate || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || ValidateVersion(release.Version) != nil {
+		if spec.Forge != "" || release.Requested != "" && release.Version != release.Requested || release.CurrentVersion != port.Version || release.NoUpdate || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || version.Validate(release.Version) != nil {
 			return fmt.Errorf("upstream: archive release does not match the Portfile")
 		}
 		if release.Requested == "" {

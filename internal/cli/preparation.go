@@ -4,12 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/upstream"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
 )
@@ -55,7 +55,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					return fmt.Errorf("port must not be empty")
 				}
 				if len(args) == 2 {
-					return upstream.ValidateVersion(args[1])
+					return version.Validate(args[1])
 				}
 				return nil
 			},

@@ -3,23 +3,22 @@ package upstream
 import (
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"slices"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 )
 
 var (
-	ErrVersionInput     = errors.New("upstream: invalid explicit version")
+	ErrVersionInput     = version.ErrInput
 	ErrTagPattern       = portsource.ErrTagPattern
 	ErrReleaseMissing   = errors.New("upstream: requested release was not found in the supplied evidence")
 	ErrReleaseAmbiguous = errors.New("upstream: requested version matches multiple releases")
 )
 
-type TagPattern = portsource.TagPattern
+type TagPattern = version.TagPattern
 
 // Candidate pairs a possible Portfile version with the observed release it describes.
 type Candidate struct {
@@ -33,28 +32,21 @@ type Selection struct {
 	Inferred  bool
 }
 
-func ValidateVersion(value string) error {
-	if value == "" || !utf8.ValidString(value) || strings.HasPrefix(value, "-") || strings.IndexFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
-		return ErrVersionInput
-	}
-	return nil
-}
-
 // PatternFromCurrent requires one identifiable occurrence of the evaluated
 // version. Explicit PortGroup prefix/suffix metadata can supply a pattern directly.
-func PatternFromCurrent(version, tag string) (TagPattern, error) {
-	if ValidateVersion(version) != nil || ValidateVersion(tag) != nil || strings.Count(tag, version) != 1 {
+func PatternFromCurrent(current, tag string) (TagPattern, error) {
+	if version.Validate(current) != nil || version.Validate(tag) != nil || strings.Count(tag, current) != 1 {
 		return TagPattern{}, ErrTagPattern
 	}
-	prefix, suffix, _ := strings.Cut(tag, version)
-	return portsource.TagPattern{Prefix: prefix, Suffix: suffix}, nil
+	prefix, suffix, _ := strings.Cut(tag, current)
+	return TagPattern{Prefix: prefix, Suffix: suffix}, nil
 }
 
 // MatchRelease judges already collected evidence; lookup failures must be
 // handled by the reader, not converted into an empty successful observation.
 // A nil pattern means unknown, while an empty pattern means bare version tags.
 func MatchRelease(requested string, pattern *TagPattern, releases []Candidate) (Selection, error) {
-	if err := ValidateVersion(requested); err != nil {
+	if err := version.Validate(requested); err != nil {
 		return Selection{}, err
 	}
 	var matches []Selection
@@ -90,7 +82,7 @@ func MatchRelease(requested string, pattern *TagPattern, releases []Candidate) (
 		return Selection{}, fmt.Errorf("%w: %q matches %v; specify the exact tag", ErrReleaseAmbiguous, requested, tags)
 	}
 	selected := matches[0]
-	if ValidateVersion(selected.Candidate.Version) != nil {
+	if version.Validate(selected.Candidate.Version) != nil {
 		return Selection{}, fmt.Errorf("%w: cannot map tag %q to a Portfile version", ErrTagPattern, selected.Candidate.Tag)
 	}
 	if pattern != nil && selected.Candidate.Tag != "" {

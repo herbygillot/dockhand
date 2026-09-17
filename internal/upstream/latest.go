@@ -10,8 +10,8 @@ import (
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/record"
-	"github.com/herbygillot/dockhand/internal/upstream/releasever"
 )
 
 var errAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
@@ -44,7 +44,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if !automatic(port.Version) {
 		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
 	}
-	followsPrereleases := releasever.Classify(port.Version) == releasever.Prerelease
+	followsPrereleases := version.Classify(port.Version) == version.Prerelease
 	var observations []forge.Release
 	if spec.Catalog == portsource.Releases {
 		releases, ok := repository.(forge.ReleaseRepository)
