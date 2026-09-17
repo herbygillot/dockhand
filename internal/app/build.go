@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"maps"
 	"slices"
 
@@ -42,7 +43,7 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 			progress.Report(ctx, "Verification provider: github (pushes the candidate to your fork)")
 			return workflow.BuildResolution{Build: &config}, nil
 		}
-		if s.providerName == "github" {
+		if s.providerName == verify.ProviderGitHub {
 			return githubBuild()
 		}
 		policy := tests
@@ -98,7 +99,7 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 			return workflow.BuildResolution{}, err
 		}
 		if preserve {
-			requirements := &record.BuildRequirements{Provider: tart.ProviderName, Platform: platform, NeedsXcode: needsXcode, CapabilitiesRequired: true, Tests: policy, FromSource: fromSource}
+			requirements := &record.BuildRequirements{Provider: verify.ProviderTart, Platform: platform, NeedsXcode: needsXcode, CapabilitiesRequired: true, Tests: policy, FromSource: fromSource}
 			return workflow.BuildResolution{Requirements: requirements, Problem: err.Error()}, nil
 		}
 		return workflow.BuildResolution{}, err

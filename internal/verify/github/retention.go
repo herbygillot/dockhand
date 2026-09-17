@@ -22,10 +22,10 @@ var _ verify.LogCachePruner = (*Provider)(nil)
 // PruneLogCache relies on workflow's terminal-job eligibility decision and locks
 // the request against downloads. Remote run identity and database evidence remain.
 func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, before time.Time, dry bool) (bool, error) {
-	if run.Provider != ProviderName || run.RequestID == "" || p.State == nil || !filepath.IsAbs(p.Directory) {
+	if run.Provider != verify.ProviderGitHub || run.RequestID == "" || p.State == nil || !filepath.IsAbs(p.Directory) {
 		return false, state.ErrInvalid
 	}
-	pool, err := p.State.ProviderPool(ctx, ProviderName)
+	pool, err := p.State.ProviderPool(ctx, verify.ProviderGitHub)
 	if err != nil {
 		return false, err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"net/http"
 	"time"
 
@@ -26,7 +27,7 @@ func missingRunDetail(ctx context.Context, api actionsAPI, row record.ProviderEx
 		detail += "; main.yml is missing or inaccessible in the fork; check Actions settings and credential access"
 	case err != nil:
 		return detail, fmt.Errorf("github verification: inspecting missing-run workflow: %w", err)
-	case workflow.GetID() != saved.Config.WorkflowID || workflow.GetPath() != WorkflowPath:
+	case workflow.GetID() != saved.Config.WorkflowID || workflow.GetPath() != macports.PortsWorkflowPath:
 		detail += "; main.yml no longer matches the accepted workflow; observation remains bound to the original workflow ID"
 	case workflow.GetState() != "active":
 		detail += fmt.Sprintf("; main.yml state is %q; enable the workflow in the fork's Actions settings", workflow.GetState())

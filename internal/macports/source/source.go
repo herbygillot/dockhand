@@ -3,6 +3,7 @@ package source
 import (
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"net/url"
 	"strings"
 	"unicode"
@@ -17,8 +18,8 @@ var ErrTagPattern = errors.New("macports source: tag convention is unknown")
 type Forge string
 
 const (
-	GitHub Forge = "github"
-	GitLab Forge = "gitlab"
+	GitHub Forge = forge.GitHub
+	GitLab Forge = forge.GitLab
 )
 
 type Catalog string

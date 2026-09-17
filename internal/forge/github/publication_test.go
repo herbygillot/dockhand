@@ -271,7 +271,7 @@ func TestObserveTerminalPRFromDeletedFork(t *testing.T) {
 		row["head"].(map[string]any)["repo"] = nil
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(row) }))
 		client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL, Token: "fixture-token"}}}
-		result, err := client.Observe(t.Context(), record.PullRequestRef{Forge: "github", Repository: "upstream/ports", Number: 3})
+		result, err := client.Observe(t.Context(), record.PullRequestRef{Forge: forge.GitHub, Repository: "upstream/ports", Number: 3})
 		server.Close()
 		require.NoError(t, err)
 		expected := record.PullRequestClosed

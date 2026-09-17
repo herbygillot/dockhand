@@ -3,14 +3,14 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/installation"
+	"github.com/herbygillot/dockhand/internal/macports"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/spf13/cobra"
 )
 
 func (r *runtime) setupCommand() *cobra.Command {
-	options := app.SetupOptions{MacPortsVersion: installation.DefaultVersion}
+	options := app.SetupOptions{MacPortsVersion: macports.DefaultBaseVersion}
 	command := &cobra.Command{
 		Use:         "setup",
 		Short:       "Prepare a local Tart verification image",
@@ -56,7 +56,7 @@ func (r *runtime) setupCommand() *cobra.Command {
 	command.Flags().BoolVar(&options.Rebuild, "rebuild", false, "Provision and validate a replacement even when the image exists")
 	command.Flags().StringVar(&options.Image, "image", r.config.Tart.Image, "Local Tart image name (defaults from the native macOS release)")
 	command.Flags().StringVar(&options.Source, "source", "", "Source Tart OCI image (defaults to the matching vanilla macOS image)")
-	command.Flags().StringVar(&options.MacPortsVersion, "macports-version", installation.DefaultVersion, "MacPorts version to install and require")
+	command.Flags().StringVar(&options.MacPortsVersion, "macports-version", macports.DefaultBaseVersion, "MacPorts version to install and require")
 	command.Flags().StringVar(&options.Xcode, "xcode", "", "Xcode .xip archive or directory of compatible release archives")
 	_ = command.MarkFlagFilename("xcode", "xip")
 	command.MarkFlagsMutuallyExclusive("check", "rebuild")

@@ -144,7 +144,7 @@ func (o *operation) saved(v record.ProviderExecution) (verify.Observation, bool,
 	if err = json.Unmarshal(raw, &result); err != nil {
 		return result, false, err
 	}
-	if result.Run != (record.ProviderRun{Provider: ProviderName, RequestID: v.ID, RunID: v.Resource}) {
+	if result.Run != (record.ProviderRun{Provider: verify.ProviderTart, RequestID: v.ID, RunID: v.Resource}) {
 		return result, false, state.ErrConflict
 	}
 	_, err = verify.Judge(result)

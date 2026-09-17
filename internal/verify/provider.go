@@ -8,6 +8,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
+// Provider names as recorded on build configurations and resources.
+const (
+	ProviderTart   = "tart"
+	ProviderGitHub = "github"
+)
+
 var ErrNotImplemented = errors.New("verify: verification planning is not implemented")
 
 type Capabilities struct {

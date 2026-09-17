@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"strings"
 	"time"
 
@@ -13,14 +14,14 @@ import (
 )
 
 func matches(saved payload, run *gh.WorkflowRun) bool {
-	return run != nil && run.GetHeadSHA() == string(saved.Request.Spec.Source.Commit) && run.GetHeadBranch() == saved.Request.Spec.PushBranch() && run.GetEvent() == "push" && run.GetWorkflowID() == saved.Config.WorkflowID && run.GetPath() == WorkflowPath && strings.EqualFold(run.GetRepository().GetFullName(), saved.Config.Destination.HeadRepository) && strings.EqualFold(run.GetHeadRepository().GetFullName(), saved.Config.Destination.HeadRepository)
+	return run != nil && run.GetHeadSHA() == string(saved.Request.Spec.Source.Commit) && run.GetHeadBranch() == saved.Request.Spec.PushBranch() && run.GetEvent() == "push" && run.GetWorkflowID() == saved.Config.WorkflowID && run.GetPath() == macports.PortsWorkflowPath && strings.EqualFold(run.GetRepository().GetFullName(), saved.Config.Destination.HeadRepository) && strings.EqualFold(run.GetHeadRepository().GetFullName(), saved.Config.Destination.HeadRepository)
 }
 
 func (p *Provider) execution(ctx context.Context, handle record.ProviderRun) (payload, executionRun, record.ProviderExecution, error) {
 	var saved payload
 	var run executionRun
 	var row record.ProviderExecution
-	if handle.Provider != ProviderName || handle.RequestID == "" {
+	if handle.Provider != verify.ProviderGitHub || handle.RequestID == "" {
 		return saved, run, row, fmt.Errorf("github verification: invalid run handle")
 	}
 	row, err := p.read(ctx, handle.RequestID)
@@ -68,7 +69,7 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 	if err != nil {
 		return result, err
 	}
-	evidence := &record.WorkflowEvidence{Repository: saved.Config.Destination.HeadRepository, Branch: saved.Request.Spec.PushBranch(), Commit: saved.Request.Spec.Source.Commit, Path: WorkflowPath, RunID: selected.ID, RunAttempt: selected.Attempt, URL: run.GetHTMLURL(), Status: run.GetStatus(), Conclusion: run.GetConclusion()}
+	evidence := &record.WorkflowEvidence{Repository: saved.Config.Destination.HeadRepository, Branch: saved.Request.Spec.PushBranch(), Commit: saved.Request.Spec.Source.Commit, Path: macports.PortsWorkflowPath, RunID: selected.ID, RunAttempt: selected.Attempt, URL: run.GetHTMLURL(), Status: run.GetStatus(), Conclusion: run.GetConclusion()}
 	seen := map[string]bool{}
 	complete := len(jobs) == len(saved.Matrix)
 	for _, job := range jobs {

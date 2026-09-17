@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -65,7 +66,7 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 	}
 	// Pass the program through stdin rather than interpolating the prefix into Tcl.
 	tcl := "package require macports\nmportinit\nputs \"$::macports::os_platform $::macports::os_major $::macports::build_arch\"\n"
-	out, err := command(ctx, strings.NewReader(tcl), filepath.Join(prefix, "bin", "port-tclsh"))
+	out, err := command(ctx, strings.NewReader(tcl), filepath.Join(prefix, "bin", macports.TclShell))
 	if ctx.Err() != nil {
 		return result, ctx.Err()
 	}
@@ -87,6 +88,6 @@ func Inspect(ctx context.Context, command macos.Command, prefix string) (Facts, 
 }
 
 func CheckTclPackages(ctx context.Context, command macos.Command, prefix string) error {
-	_, err := command(ctx, strings.NewReader("package require json\npackage require json::write\n"), filepath.Join(prefix, "bin", "port-tclsh"))
+	_, err := command(ctx, strings.NewReader("package require json\npackage require json::write\n"), filepath.Join(prefix, "bin", macports.TclShell))
 	return err
 }

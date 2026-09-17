@@ -86,7 +86,7 @@ func (p *Provider) Cancel(ctx context.Context, run record.ProviderRun) error {
 	return err
 }
 func (p *Provider) Release(ctx context.Context, handle record.ResourceHandle) (verify.ReleaseResult, error) {
-	if handle.Provider != ProviderName {
+	if handle.Provider != verify.ProviderTart {
 		return verify.ReleaseResult{}, state.ErrInvalid
 	}
 	o, err := p.begin(ctx, record.RequestID(handle.ID))

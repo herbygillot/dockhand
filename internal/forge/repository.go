@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+// Forge names as recorded on releases, destinations, and pull requests.
+const (
+	GitHub = "github"
+	GitLab = "gitlab"
+)
+
 var ErrRejected = errors.New("forge: remote write was rejected")
 var ErrAuthentication = errors.New("forge: authentication is required")
 

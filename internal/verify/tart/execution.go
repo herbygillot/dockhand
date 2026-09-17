@@ -83,16 +83,16 @@ func (o *operation) directory(v record.ProviderExecution) string {
 func submission(v record.ProviderExecution, status verify.SubmissionState) verify.Submission {
 	result := verify.Submission{State: status}
 	if v.Resource != "" {
-		result.Resources = []record.ResourceHandle{{Provider: ProviderName, ID: string(v.ID)}}
+		result.Resources = []record.ResourceHandle{{Provider: verify.ProviderTart, ID: string(v.ID)}}
 	}
 	if status == verify.Admitted {
-		result.Run = record.ProviderRun{Provider: ProviderName, RequestID: v.ID, RunID: v.Resource}
+		result.Run = record.ProviderRun{Provider: verify.ProviderTart, RequestID: v.ID, RunID: v.Resource}
 	}
 	return result
 }
 
 func (p *Provider) openRun(ctx context.Context, run record.ProviderRun) (*operation, record.ProviderExecution, payload, error) {
-	if run.Provider != ProviderName {
+	if run.Provider != verify.ProviderTart {
 		return nil, record.ProviderExecution{}, payload{}, state.ErrInvalid
 	}
 	o, err := p.begin(ctx, run.RequestID)

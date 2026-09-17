@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"net/http"
 	"path/filepath"
 	"reflect"
@@ -48,14 +49,14 @@ type executionRun struct {
 }
 
 func (p *Provider) Capabilities(context.Context) (verify.Capabilities, error) {
-	return verify.Capabilities{Name: ProviderName, Isolated: true}, nil
+	return verify.Capabilities{Name: verify.ProviderGitHub, Isolated: true}, nil
 }
 
 func (p *Provider) locked(ctx context.Context, id record.RequestID, fn func(context.Context) error) error {
 	if p.State == nil || p.Repo == nil || p.Repository == "" || !filepath.IsAbs(p.Directory) || id == "" || p.backend == nil && p.Client == nil {
 		return fmt.Errorf("github verification: state, repository, Actions client, and absolute coordination directory are required")
 	}
-	_, err := p.State.RegisterProviderPool(ctx, record.ProviderPool{ID: ProviderName, Scope: ProviderName, Directory: p.Directory, Capacity: 1})
+	_, err := p.State.RegisterProviderPool(ctx, record.ProviderPool{ID: verify.ProviderGitHub, Scope: verify.ProviderGitHub, Directory: p.Directory, Capacity: 1})
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func (p *Provider) locked(ctx context.Context, id record.RequestID, fn func(cont
 
 func (p *Provider) read(ctx context.Context, id record.RequestID) (record.ProviderExecution, error) {
 	var value record.ProviderExecution
-	err := p.State.ProviderView(ctx, ProviderName, func(ctx context.Context, r state.ProviderReader) error {
+	err := p.State.ProviderView(ctx, verify.ProviderGitHub, func(ctx context.Context, r state.ProviderReader) error {
 		var err error
 		value, err = r.Execution(ctx, id)
 		if err == nil && value.RepositoryID != p.Repository {
@@ -80,7 +81,7 @@ func (p *Provider) read(ctx context.Context, id record.RequestID) (record.Provid
 	return value, err
 }
 func (p *Provider) put(ctx context.Context, value record.ProviderExecution) error {
-	return p.State.ProviderUpdate(ctx, ProviderName, func(ctx context.Context, tx state.ProviderTx) error { return tx.PutExecution(ctx, value) })
+	return p.State.ProviderUpdate(ctx, verify.ProviderGitHub, func(ctx context.Context, tx state.ProviderTx) error { return tx.PutExecution(ctx, value) })
 }
 
 func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.Submission, error) {
@@ -142,7 +143,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			return reject(err.Error())
 		}
 		d := config.Destination
-		return p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, ProviderName, d.HeadRepository, request.Spec.PushBranch(), func(ctx context.Context) error {
+		return p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, verify.ProviderGitHub, d.HeadRepository, request.Spec.PushBranch(), func(ctx context.Context) error {
 			snapshot, err := changeset.CaptureBranch(ctx, p.Repo, request.Spec.Branch)
 			if err != nil {
 				return preflightError(err)
@@ -165,7 +166,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			if err != nil {
 				return preflightError(err)
 			}
-			if workflow.GetID() != config.WorkflowID || workflow.GetPath() != WorkflowPath || workflow.GetState() != "active" {
+			if workflow.GetID() != config.WorkflowID || workflow.GetPath() != macports.PortsWorkflowPath || workflow.GetState() != "active" {
 				return reject("github verification: enable the expected main.yml workflow in your fork's Actions settings")
 			}
 			expected, err := p.Repo.RemoteHead(ctx, d.PushURL, request.Spec.PushBranch())
@@ -200,7 +201,7 @@ func (p *Provider) advance(ctx context.Context, row record.ProviderExecution) (v
 	}
 	d := saved.Config.Destination
 	var result verify.Submission
-	err := p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, ProviderName, d.HeadRepository, saved.Request.Spec.PushBranch(), func(ctx context.Context) error {
+	err := p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, verify.ProviderGitHub, d.HeadRepository, saved.Request.Spec.PushBranch(), func(ctx context.Context) error {
 		var err error
 		result, err = p.pushAndFind(ctx, row)
 		return err
@@ -273,7 +274,7 @@ func admitted(row record.ProviderExecution) (verify.Submission, error) {
 	if err := json.Unmarshal(row.Payload, &saved); err != nil {
 		return verify.Submission{}, err
 	}
-	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: ProviderName, RequestID: row.ID, RunID: fmt.Sprintf("%d:%d", run.ID, run.Attempt)}, Detail: runDetail(saved, run, "tracking")}, nil
+	return verify.Submission{State: verify.Admitted, Run: record.ProviderRun{Provider: verify.ProviderGitHub, RequestID: row.ID, RunID: fmt.Sprintf("%d:%d", run.ID, run.Attempt)}, Detail: runDetail(saved, run, "tracking")}, nil
 }
 
 func (p *Provider) Reconcile(ctx context.Context, id record.RequestID, options verify.ReconcileOptions) (verify.Reconciliation, error) {

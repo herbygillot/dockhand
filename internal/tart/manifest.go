@@ -2,6 +2,15 @@ package tart
 
 import "github.com/herbygillot/dockhand/internal/record"
 
+// Guest agent facts shared by provisioning and guest execution: the
+// tart-guest-agent release Dockhand installs, its archive digest, and where
+// it lives in the guest.
+const (
+	GuestAgentRelease = "0.14.1"
+	GuestAgentDigest  = "96596675452c8a4eed6f93c86a05b6a1e0c4bd2b0e381931b19ddeee3220eb23"
+	GuestAgentPath    = "/opt/dockhand/bin/tart-guest-agent"
+)
+
 // ImageManifestProtocol identifies the current setup manifest representation.
 const ImageManifestProtocol = 2
 

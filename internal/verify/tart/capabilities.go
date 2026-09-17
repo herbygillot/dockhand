@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"io"
 	"os/exec"
 	"path/filepath"
@@ -55,7 +57,7 @@ func (p *Provider) cachedImageCapabilities(ctx context.Context, environmentDiges
 	if p.State == nil {
 		return state.ImageCapabilities{}, false, nil
 	}
-	value, err := p.State.ImageCapabilities(ctx, ProviderName, environmentDigest)
+	value, err := p.State.ImageCapabilities(ctx, verify.ProviderTart, environmentDigest)
 	if errors.Is(err, state.ErrNotFound) {
 		return state.ImageCapabilities{}, false, nil
 	}
@@ -73,7 +75,7 @@ func validCapabilityIdentity(value state.ImageCapabilities) bool {
 }
 
 func capabilityProblem(value state.ImageCapabilities, config Config, accepted record.BuildConfig) string {
-	if value.Provider != ProviderName || value.EnvironmentDigest != accepted.EnvironmentDigest || !validCapabilityIdentity(value) {
+	if value.Provider != verify.ProviderTart || value.EnvironmentDigest != accepted.EnvironmentDigest || !validCapabilityIdentity(value) {
 		return "environment capability observation has invalid identity"
 	}
 	if accepted.CapabilityDigest != "" && accepted.CapabilityDigest != value.CapabilityDigest {
@@ -136,7 +138,7 @@ func (n *native) InspectCapabilities(ctx context.Context, vm, prefix string) (ca
 	if manifest != nil && (manifest.Protocol == 1 || manifest.Protocol == tartvm.ImageManifestProtocol) {
 		manifestPrefix := manifest.MacPortsPrefix
 		if manifest.Protocol == 1 && manifestPrefix == "" {
-			manifestPrefix = "/opt/local"
+			manifestPrefix = macports.DefaultPrefix
 		}
 		if filepath.IsAbs(manifestPrefix) && filepath.Clean(manifestPrefix) == manifestPrefix {
 			result.Capabilities.MacPortsPrefix = manifestPrefix
@@ -195,7 +197,7 @@ func manifestProblems(manifest tartvm.ImageManifest, capabilities record.Environ
 	}
 	prefix := manifest.MacPortsPrefix
 	if manifest.Protocol == 1 && prefix == "" {
-		prefix = "/opt/local"
+		prefix = macports.DefaultPrefix
 	}
 	if manifest.Source == "" || manifest.Platform != capabilities.Platform || prefix != capabilities.MacPortsPrefix || manifest.MacPortsVersion != capabilities.MacPortsVersion || manifest.XcodeVersion != capabilities.XcodeVersion {
 		problems = append(problems, "image manifest does not match observed capabilities")
@@ -205,7 +207,7 @@ func manifestProblems(manifest tartvm.ImageManifest, capabilities record.Environ
 
 func newImageCapabilities(environmentDigest string, inspection capabilityInspection) state.ImageCapabilities {
 	return state.ImageCapabilities{
-		Provider: ProviderName, EnvironmentDigest: environmentDigest,
+		Provider: verify.ProviderTart, EnvironmentDigest: environmentDigest,
 		CapabilityDigest: capabilityIdentity(inspection.Capabilities), Capabilities: inspection.Capabilities,
 		Problem: inspection.Problem, ObservedAt: time.Now().UTC().Truncate(time.Millisecond),
 	}

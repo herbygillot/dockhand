@@ -16,7 +16,7 @@ import (
 // runs, and commit statuses for the pull request's current head. It reads
 // only; nothing here reruns, comments, or merges.
 func (c *Client) Inspect(ctx context.Context, ref record.PullRequestRef) (record.PullRequestStatus, error) {
-	if ref.Forge != "github" || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
+	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
 		return record.PullRequestStatus{}, fmt.Errorf("github: invalid pull-request reference")
 	}
 	client, err := c.API(ctx)

@@ -17,8 +17,6 @@ var ErrImageUnavailable = errors.New("tart: no suitable prepared image is availa
 
 var errCapacity = errors.New("tart: pool is at capacity")
 
-const ProviderName = "tart"
-
 type Provider struct {
 	Config Config
 	// IndexCache is the PortIndex cache root shared with discovery; it is

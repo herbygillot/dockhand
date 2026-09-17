@@ -102,7 +102,7 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 		if !rootPresent {
 			return record.VerificationPlan{}, nil, fmt.Errorf("verify: initiating port is not a buildable member of the recorded shared release")
 		}
-		if len(targets) > 1 && config.Provider == "github" {
+		if len(targets) > 1 && config.Provider == ProviderGitHub {
 			return record.VerificationPlan{}, nil, fmt.Errorf("verify: shared-release coverage requires isolated local verification; select --provider tart and a prepared image")
 		}
 		if len(targets) == 0 {

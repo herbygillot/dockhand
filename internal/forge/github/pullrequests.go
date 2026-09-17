@@ -29,7 +29,7 @@ func pullRequestObservation(r *gh.PullRequest, repository string) (forge.PullReq
 	if r.Body != nil {
 		body = *r.Body
 	}
-	return forge.PullRequestObservation{Found: true, ObservedAt: at, PullRequest: record.PullRequest{Ref: record.PullRequestRef{Forge: "github", Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: record.ObjectID(r.Head.GetSHA()), Title: r.GetTitle(), Body: body, ObservedAt: at}}, nil
+	return forge.PullRequestObservation{Found: true, ObservedAt: at, PullRequest: record.PullRequest{Ref: record.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: r.GetNumber(), URL: r.GetHTMLURL()}, HeadRepository: r.Head.Repo.GetFullName(), HeadBranch: r.Head.GetRef(), BaseBranch: r.Base.GetRef(), State: state, RemoteHead: record.ObjectID(r.Head.GetSHA()), Title: r.GetTitle(), Body: body, ObservedAt: at}}, nil
 }
 
 func validQuery(q forge.PullRequestQuery) bool {
@@ -71,7 +71,7 @@ func (c *Client) Find(ctx context.Context, q forge.PullRequestQuery) (forge.Pull
 }
 
 func (c *Client) Observe(ctx context.Context, ref record.PullRequestRef) (forge.PullRequestObservation, error) {
-	if ref.Forge != "github" || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
+	if ref.Forge != forge.GitHub || !githubapi.ValidRepositoryName(ref.Repository) || ref.Number <= 0 {
 		return forge.PullRequestObservation{}, fmt.Errorf("github: invalid pull-request reference")
 	}
 	client, err := c.API(ctx)
@@ -110,7 +110,7 @@ func (c *Client) Create(ctx context.Context, input forge.PullRequestInput) (forg
 }
 
 func (c *Client) Update(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
-	if input.ExistingPR == nil || input.ExistingPR.Forge != "github" || input.ExistingPR.Repository != input.Repository || input.ExistingPR.Number <= 0 || !validQuery(forge.PullRequestQuery{Repository: input.Repository, HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch}) || input.Desired.Title == "" {
+	if input.ExistingPR == nil || input.ExistingPR.Forge != forge.GitHub || input.ExistingPR.Repository != input.Repository || input.ExistingPR.Number <= 0 || !validQuery(forge.PullRequestQuery{Repository: input.Repository, HeadRepository: input.HeadRepository, HeadBranch: input.HeadBranch, BaseBranch: input.BaseBranch}) || input.Desired.Title == "" {
 		return forge.PullRequestObservation{}, fmt.Errorf("%w: invalid pull-request input", forge.ErrRejected)
 	}
 	client, err := c.AuthenticatedAPI(ctx)

@@ -5,6 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/forge"
+	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"io"
 	"path/filepath"
 	"strings"
@@ -13,9 +16,6 @@ import (
 	githubapi "github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/record"
 )
-
-const ProviderName = "github"
-const WorkflowPath = ".github/workflows/main.yml"
 
 // Config freezes the remote destination; command defaults cannot redirect recovery.
 type Config struct {
@@ -40,12 +40,12 @@ func BuildConfig(platform record.Platform, config Config, needsXcode bool) (reco
 		return record.BuildConfig{}, err
 	}
 	// The workflow controls mutable hosted runners. This identifies the recipe, not a VM image.
-	return record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: "workflow:" + digest(raw), VerifierDigest: "github-workflow-v2", ProviderConfig: raw, Tests: record.TestWorkflow, NeedsXcode: needsXcode}, nil
+	return record.BuildConfig{Provider: verify.ProviderGitHub, Platform: platform, EnvironmentDigest: "workflow:" + digest(raw), VerifierDigest: "github-workflow-v2", ProviderConfig: raw, Tests: record.TestWorkflow, NeedsXcode: needsXcode}, nil
 }
 
 func (c Config) validate() error {
 	d := c.Destination
-	if d.Forge != ProviderName || !strings.EqualFold(d.Repository, "macports/macports-ports") || strings.EqualFold(d.HeadRepository, d.Repository) || d.HeadRepository == "" || d.PushURL == "" || d.BaseURL == "" || !filepath.IsAbs(d.LockDirectory) || d.BaseBranch != "master" || c.WorkflowID <= 0 {
+	if d.Forge != forge.GitHub || !strings.EqualFold(d.Repository, macports.PortsRepository) || strings.EqualFold(d.HeadRepository, d.Repository) || d.HeadRepository == "" || d.PushURL == "" || d.BaseURL == "" || !filepath.IsAbs(d.LockDirectory) || d.BaseBranch != macports.PortsBranch || c.WorkflowID <= 0 {
 		return fmt.Errorf("github verification: a personal macports-ports fork, upstream master, and active workflow are required")
 	}
 	return nil
@@ -63,7 +63,7 @@ func Configure(ctx context.Context, client *githubapi.Client, platform record.Pl
 	if err != nil {
 		return record.BuildConfig{}, fmt.Errorf("github verification: reading main.yml in your fork: %w", err)
 	}
-	if flow.GetState() != "active" || flow.GetPath() != WorkflowPath {
+	if flow.GetState() != "active" || flow.GetPath() != macports.PortsWorkflowPath {
 		return record.BuildConfig{}, fmt.Errorf("github verification: enable main.yml in your fork's Actions settings")
 	}
 	return BuildConfig(platform, Config{Destination: destination, WorkflowID: flow.GetID()}, needsXcode)

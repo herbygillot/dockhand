@@ -3,6 +3,7 @@ package tart
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"path/filepath"
 
 	"github.com/herbygillot/dockhand/internal/macports/portindex"
@@ -14,7 +15,7 @@ import (
 // legacy location beneath the recorded artifact directory.
 func SourceIndex(build record.BuildConfig, indexCache string) (portindex.Config, error) {
 	var config Config
-	if build.Provider != ProviderName || len(build.ProviderConfig) == 0 {
+	if build.Provider != verify.ProviderTart || len(build.ProviderConfig) == 0 {
 		return portindex.Config{}, fmt.Errorf("tart: recorded configuration required for source indexing")
 	}
 	if err := json.Unmarshal(build.ProviderConfig, &config); err != nil {

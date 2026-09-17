@@ -122,9 +122,9 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 		result.Registrations = append(result.Registrations, registration)
 		engine := workflow.Engine{State: store, Repository: repository.ID, Providers: map[string]verify.Provider{}}
 		if !retention.DryRun {
-			engine.Providers["tart"] = &tart.Provider{State: store, Repository: repository.ID, Config: config.Tart}
+			engine.Providers[verify.ProviderTart] = &tart.Provider{State: store, Repository: repository.ID, Config: config.Tart}
 		}
-		engine.Providers["github"] = &githubverify.Provider{State: store, Repository: repository.ID, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification")}
+		engine.Providers[verify.ProviderGitHub] = &githubverify.Provider{State: store, Repository: repository.ID, Directory: filepath.Join(filepath.Dir(store.Path()), "github-verification")}
 		collected, err := engine.Collect(ctx, retention)
 		result.Before = collected.Before
 		for i := range collected.Items {

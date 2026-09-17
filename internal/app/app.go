@@ -56,7 +56,7 @@ type Services struct {
 }
 
 func Build(ctx context.Context, config Config) (*Services, error) {
-	if config.VerificationProvider != "" && config.VerificationProvider != "auto" && config.VerificationProvider != "tart" && config.VerificationProvider != "github" {
+	if config.VerificationProvider != "" && config.VerificationProvider != "auto" && config.VerificationProvider != verify.ProviderTart && config.VerificationProvider != verify.ProviderGitHub {
 		return nil, fmt.Errorf("unknown verification provider %q", config.VerificationProvider)
 	}
 	if config.Repository == "" {
@@ -103,7 +103,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 		Dependents: dependentDiscovery{repo: repo, ports: ports, indexCache: indexCache},
 		Releases:   preparation,
 		Provider:   provider,
-		Providers:  map[string]verify.Provider{"tart": provider, "github": githubProvider},
+		Providers:  map[string]verify.Provider{verify.ProviderTart: provider, verify.ProviderGitHub: githubProvider},
 		Publisher:  &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: githubClient}, LockDirectory: filepath.Join(filepath.Dir(store.Path()), "publication-locks")},
 		Now:        time.Now,
 	}

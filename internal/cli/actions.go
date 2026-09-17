@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/verify"
 	"io"
 	"slices"
 	"strings"
@@ -79,7 +80,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if config.VerificationProvider == "github" && (workingTree || fresh) {
+			if config.VerificationProvider == verify.ProviderGitHub && (workingTree || fresh) {
 				return fmt.Errorf("GitHub verification requires committed source; --fresh is unsupported, rerun the workflow on GitHub and verify again")
 			}
 			services, err := r.build(cmd.Context(), config)

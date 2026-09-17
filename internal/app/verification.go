@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/verify"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
@@ -29,10 +30,10 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 	if s.providerName == "auto" {
 		return workflow.BoundVerification{}, fmt.Errorf("automatic provider selection is supported for bumps; choose tart or github for verify")
 	}
-	if s.providerName == "github" && (request.WorkingTree || request.Fresh) {
+	if s.providerName == verify.ProviderGitHub && (request.WorkingTree || request.Fresh) {
 		return workflow.BoundVerification{}, fmt.Errorf("github verification requires committed source; --fresh is unsupported, rerun the workflow on GitHub and verify again")
 	}
-	if s.providerName == "github" {
+	if s.providerName == verify.ProviderGitHub {
 		request.Fresh = true
 	}
 	platform, err := s.ports.NativePlatform(ctx)

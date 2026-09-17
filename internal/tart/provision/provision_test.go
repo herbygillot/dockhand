@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
-	"github.com/herbygillot/dockhand/internal/macports/installation"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
 	"os"
 	"testing"
@@ -35,7 +35,7 @@ func newFakeMachine(names ...string) *fakeMachine {
 	for _, name := range names {
 		images[name] = image{Name: name}
 	}
-	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: installation.DefaultVersion, GuestAgentVersion: "development snapshot"}}
+	return &fakeMachine{images: images, validation: validation{Platform: testPlatform, MacPortsVersion: macports.DefaultBaseVersion, GuestAgentVersion: "development snapshot"}}
 }
 
 func (f *fakeMachine) event(name string) error {
@@ -145,7 +145,7 @@ func TestMissingImageIsProvisionedAndAdoptedAfterValidation(t *testing.T) {
 
 func TestManifestRecordsObservedGuestAgentVersion(t *testing.T) {
 	machine := newFakeMachine()
-	machine.validation.GuestAgentVersion = AgentRelease + "-cb39b12"
+	machine.validation.GuestAgentVersion = tart.GuestAgentRelease + "-cb39b12"
 	result, err := testProvisioner(machine).Run(t.Context(), Options{})
 	require.NoError(t, err)
 	var manifest tart.ImageManifest
@@ -218,8 +218,8 @@ func index(values []string, value string) int {
 
 func TestAgentBootstrapPinsAndChecksTheReleaseAsset(t *testing.T) {
 	script := agentInstallScript()
-	require.Contains(t, script, "/v"+AgentRelease+"/")
-	require.Contains(t, script, agentDigest)
+	require.Contains(t, script, "/v"+tart.GuestAgentRelease+"/")
+	require.Contains(t, script, tart.GuestAgentDigest)
 	require.Contains(t, script, "shasum -a 256 -c")
 	require.NotContains(t, script, "homebrew")
 	var document struct{}

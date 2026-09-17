@@ -1,13 +1,12 @@
 package provision
 
-import "fmt"
-
-const AgentRelease = "0.14.1"
-const agentDigest = "96596675452c8a4eed6f93c86a05b6a1e0c4bd2b0e381931b19ddeee3220eb23"
-const agentPath = "/opt/dockhand/bin/tart-guest-agent"
+import (
+	"fmt"
+	"github.com/herbygillot/dockhand/internal/tart"
+)
 
 func agentURL() string {
-	return "https://github.com/openai/tart-guest-agent/releases/download/v" + AgentRelease + "/tart-guest-agent-darwin-all.tar.gz"
+	return "https://github.com/openai/tart-guest-agent/releases/download/v" + tart.GuestAgentRelease + "/tart-guest-agent-darwin-all.tar.gz"
 }
 
 func agentPlist(label, mode, directory string) string {
@@ -20,7 +19,7 @@ func agentPlist(label, mode, directory string) string {
 <key>WorkingDirectory</key><string>%s</string>
 <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
 </dict></plist>
-`, label, agentPath, mode, directory)
+`, label, tart.GuestAgentPath, mode, directory)
 }
 
 func agentInstallScript() string {
@@ -41,7 +40,7 @@ sudo -n /usr/bin/tee /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist
 sudo -n /usr/sbin/chown root:wheel /Library/LaunchDaemons/org.cirruslabs.tart-guest-daemon.plist /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist
 sudo -n /bin/chmod 0644 /Library/LaunchDaemons/org.cirruslabs.tart-guest-daemon.plist /Library/LaunchAgents/org.cirruslabs.tart-guest-agent.plist
 %s
-`, agentURL(), agentDigest, agentPath, daemon, agent, agentRegistrationScript())
+`, agentURL(), tart.GuestAgentDigest, tart.GuestAgentPath, daemon, agent, agentRegistrationScript())
 }
 
 func agentRegistrationScript() string {

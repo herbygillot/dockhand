@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"path"
 	"slices"
 	"strings"
@@ -29,7 +30,7 @@ func (p *Provider) source(ctx context.Context, request verify.Request) ([]string
 	if !git.ValidBranchName(spec.Branch) || spec.Branch == "master" || (spec.RemoteBranch != "" && (!git.ValidBranchName(spec.RemoteBranch) || spec.RemoteBranch == "master")) || !git.ValidObjectID(string(spec.Source.Commit)) || !git.ValidObjectID(string(spec.Source.Tree)) {
 		return nil, fmt.Errorf("github verification: select a committed contribution with --branch")
 	}
-	if spec.Config.Provider != ProviderName || spec.Config.Tests != record.TestWorkflow || spec.Config.FromSource || len(spec.Target.Variants) != 0 || len(spec.Inputs) != 0 {
+	if spec.Config.Provider != verify.ProviderGitHub || spec.Config.Tests != record.TestWorkflow || spec.Config.FromSource || len(spec.Target.Variants) != 0 || len(spec.Inputs) != 0 {
 		return nil, fmt.Errorf("github verification: the existing workflow controls tests, variants, dependencies, and its runner matrix")
 	}
 	trees, err := p.Repo.CommitTrees(ctx, []string{string(spec.Source.Commit)})
@@ -68,7 +69,7 @@ func (p *Provider) source(ctx context.Context, request verify.Request) ([]string
 	if !detected {
 		return nil, fmt.Errorf("github verification: the workflow would not detect this port change")
 	}
-	raw, err := p.Repo.ReadBlob(ctx, string(spec.Source.Commit)+":"+WorkflowPath)
+	raw, err := p.Repo.ReadBlob(ctx, string(spec.Source.Commit)+":"+macports.PortsWorkflowPath)
 	if err != nil {
 		return nil, fmt.Errorf("github verification: reading candidate workflow: %w", err)
 	}

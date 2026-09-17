@@ -35,10 +35,10 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 	executable := e.Executable
 	if executable == "" {
 		if e.Prefix != "" {
-			executable = filepath.Join(e.Prefix, "bin", "port-tclsh")
+			executable = filepath.Join(e.Prefix, "bin", macports.TclShell)
 		} else {
 			var err error
-			executable, err = exec.LookPath("port-tclsh")
+			executable, err = exec.LookPath(macports.TclShell)
 			if err != nil {
 				return nil, macports.Runtime{}, fmt.Errorf("%w: %w", macports.ErrStartup, err)
 			}

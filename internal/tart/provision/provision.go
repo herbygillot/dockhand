@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/macos"
-	"github.com/herbygillot/dockhand/internal/macports/installation"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/tart"
 )
@@ -161,15 +161,15 @@ func normalize(config Config) (Config, macos.Release, error) {
 		}
 	}
 	if config.MacPortsVersion == "" {
-		config.MacPortsVersion = installation.DefaultVersion
+		config.MacPortsVersion = macports.DefaultBaseVersion
 	}
 	if config.GuestPrefix == "" {
-		config.GuestPrefix = "/opt/local"
+		config.GuestPrefix = macports.DefaultPrefix
 	}
 	if !safeName(config.Image) || strings.TrimSpace(config.Source) != config.Source || strings.ContainsAny(config.Source, "\x00\r\n\t ") || !versionPattern.MatchString(config.MacPortsVersion) {
 		return config, release, fmt.Errorf("setup: invalid image, source, or MacPorts version")
 	}
-	if config.GuestPrefix != "/opt/local" {
+	if config.GuestPrefix != macports.DefaultPrefix {
 		return config, release, fmt.Errorf("setup: the MacPorts package installer requires guest prefix /opt/local")
 	}
 	if config.XcodeArchive != "" && strings.HasPrefix(config.Image, "dockhand-base-") {

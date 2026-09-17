@@ -2,6 +2,7 @@ package github_test
 
 import (
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/forge"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +32,7 @@ func TestInspectSummarizesMergeabilityReviewsAndChecks(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{BaseURL: server.URL}}}
-	status, err := client.Inspect(t.Context(), record.PullRequestRef{Forge: "github", Repository: "macports/macports-ports", Number: 7})
+	status, err := client.Inspect(t.Context(), record.PullRequestRef{Forge: forge.GitHub, Repository: "macports/macports-ports", Number: 7})
 	require.NoError(t, err)
 	require.Equal(t, "no", status.Mergeable)
 	require.Equal(t, "dirty", status.MergeableDetail)

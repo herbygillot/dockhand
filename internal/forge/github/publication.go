@@ -65,7 +65,7 @@ func (c *Client) RepositoryInfo(ctx context.Context, name string) (forge.Reposit
 	return result, nil
 }
 
-func (c *Client) Name() string { return "github" }
+func (c *Client) Name() string { return forge.GitHub }
 
 // A permanent rejection settles publication. A rate-limit refusal permits a
 // later write; other failures require observation to determine the outcome.

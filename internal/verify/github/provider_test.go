@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"io"
 	"net/http"
 	"os"
@@ -75,7 +76,7 @@ func (a *fakeActions) JobLog(ctx context.Context, id int64) (io.ReadCloser, erro
 type atCapacity struct{ verify.Provider }
 
 func (atCapacity) Capabilities(context.Context) (verify.Capabilities, error) {
-	return verify.Capabilities{Name: ProviderName}, nil
+	return verify.Capabilities{Name: verify.ProviderGitHub}, nil
 }
 func (atCapacity) Submit(context.Context, verify.Request) (verify.Submission, error) {
 	return verify.Submission{State: verify.AtCapacity}, nil
@@ -105,7 +106,7 @@ func setup(t *testing.T) *fixture {
 	command("config", "user.name", "Fixture")
 	command("config", "user.email", "fixture@example.invalid")
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".github/workflows"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(root, WorkflowPath), []byte(testWorkflow), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, macports.PortsWorkflowPath), []byte(testWorkflow), 0600))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel/fixture"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte("version 1\n"), 0600))
 	command("add", ".")
@@ -126,9 +127,9 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	repository, err := store.RegisterRepository(t.Context(), repo.CommonDir)
 	require.NoError(t, err)
-	api := &fakeActions{flow: &gh.Workflow{ID: gh.Ptr(int64(7)), Path: gh.Ptr(WorkflowPath), State: gh.Ptr("active")}}
+	api := &fakeActions{flow: &gh.Workflow{ID: gh.Ptr(int64(7)), Path: gh.Ptr(macports.PortsWorkflowPath), State: gh.Ptr("active")}}
 	p := &Provider{State: store, Repository: repository.ID, Repo: repo, Directory: filepath.Join(t.TempDir(), "coordination"), backend: func(context.Context, string) (actionsAPI, error) { return api, nil }}
-	config, err := BuildConfig(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Config{WorkflowID: 7, Destination: record.PublicationDestination{Forge: ProviderName, Repository: "macports/macports-ports", HeadRepository: "contributor/macports-ports", BaseBranch: "master", PushURL: remote, BaseURL: remote, LockDirectory: filepath.Join(t.TempDir(), "push-locks")}}, false)
+	config, err := BuildConfig(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, Config{WorkflowID: 7, Destination: record.PublicationDestination{Forge: verify.ProviderGitHub, Repository: "macports/macports-ports", HeadRepository: "contributor/macports-ports", BaseBranch: "master", PushURL: remote, BaseURL: remote, LockDirectory: filepath.Join(t.TempDir(), "push-locks")}}, false)
 	require.NoError(t, err)
 	e := &workflow.Engine{State: store, Repository: repository.ID, Repo: repo, Provider: atCapacity{}, WaitInterval: time.Millisecond, RetryDelay: time.Millisecond, ObserveInterval: time.Millisecond}
 	receipt, err := e.Submit(t.Context(), workflow.Request{ID: "fixture", Spec: record.JobSpec{Action: record.Verify, SourceBranch: "candidate", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(base)}, Targets: []record.Target{{Name: "fixture", Portfile: "devel/fixture/Portfile"}}, Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &config}})
@@ -140,12 +141,12 @@ func setup(t *testing.T) *fixture {
 	require.Len(t, status.Jobs[0].Attempts, 1)
 	attempt := status.Jobs[0].Attempts[0]
 	e.Provider = nil
-	e.Providers = map[string]verify.Provider{ProviderName: p}
+	e.Providers = map[string]verify.Provider{verify.ProviderGitHub: p}
 	return &fixture{p, api, verify.Request{ID: attempt.SubmissionID, AttemptID: attempt.ID, Spec: attempt.Spec}, remote, e, receipt.JobID}
 }
 
 func (f *fixture) ready() {
-	f.api.run = &gh.WorkflowRun{ID: gh.Ptr(int64(10)), RunAttempt: gh.Ptr(1), WorkflowID: gh.Ptr(int64(7)), HeadSHA: gh.Ptr(string(f.request.Spec.Source.Commit)), HeadBranch: gh.Ptr("candidate"), Path: gh.Ptr(WorkflowPath), Event: gh.Ptr("push"), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), HTMLURL: gh.Ptr("https://github.com/contributor/macports-ports/actions/runs/10"), Repository: &gh.Repository{FullName: gh.Ptr("contributor/macports-ports")}, HeadRepository: &gh.Repository{FullName: gh.Ptr("contributor/macports-ports")}}
+	f.api.run = &gh.WorkflowRun{ID: gh.Ptr(int64(10)), RunAttempt: gh.Ptr(1), WorkflowID: gh.Ptr(int64(7)), HeadSHA: gh.Ptr(string(f.request.Spec.Source.Commit)), HeadBranch: gh.Ptr("candidate"), Path: gh.Ptr(macports.PortsWorkflowPath), Event: gh.Ptr("push"), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), HTMLURL: gh.Ptr("https://github.com/contributor/macports-ports/actions/runs/10"), Repository: &gh.Repository{FullName: gh.Ptr("contributor/macports-ports")}, HeadRepository: &gh.Repository{FullName: gh.Ptr("contributor/macports-ports")}}
 	f.api.runs = []*gh.WorkflowRun{f.api.run}
 	for i, name := range []string{"macos-14", "macos-15"} {
 		f.api.jobs = append(f.api.jobs, &gh.WorkflowJob{ID: gh.Ptr(int64(i + 100)), RunID: gh.Ptr(int64(10)), RunAttempt: gh.Ptr(int64(1)), HeadSHA: gh.Ptr(string(f.request.Spec.Source.Commit)), Name: gh.Ptr(name), Status: gh.Ptr("completed"), Conclusion: gh.Ptr("success"), HTMLURL: gh.Ptr("https://github.com/contributor/macports-ports/actions/runs/10/job")})
@@ -556,7 +557,7 @@ func TestPermanentAdmissionFailureSurvivesLostReply(t *testing.T) {
 			case "missing workflow":
 				f.api.err = &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "workflow missing"}
 			}
-			f.engine.Providers[ProviderName] = lostRejectionReply{f.provider}
+			f.engine.Providers[verify.ProviderGitHub] = lostRejectionReply{f.provider}
 			require.Eventually(t, func() bool {
 				_, err := f.engine.Cycle(t.Context(), workflow.Scope{Jobs: []record.JobID{f.job}})
 				require.NoError(t, err)

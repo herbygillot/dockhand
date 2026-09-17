@@ -8,8 +8,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/macos"
 )
 
-const DefaultVersion = "2.12.6"
-
 func Install(ctx context.Context, command macos.Command, version string, release macos.Release) error {
 	filename := fmt.Sprintf("MacPorts-%s-%s-%s.pkg", version, release.Product, strings.ReplaceAll(release.Name, " ", ""))
 	address := "https://distfiles.macports.org/MacPorts/" + filename

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,7 @@ func settings(c Config) (Config, error) {
 		c.Capacity = 2
 	}
 	if c.GuestPrefix == "" {
-		c.GuestPrefix = "/opt/local"
+		c.GuestPrefix = macports.DefaultPrefix
 	}
 	runtime, err := (tartvm.Client{Executable: c.Executable, Home: c.Home}).Resolve()
 	if err != nil {
@@ -63,7 +64,7 @@ func (p *Provider) Capabilities(ctx context.Context) (verify.Capabilities, error
 	if c.Platform != (record.Platform{}) {
 		platforms = []record.Platform{c.Platform}
 	}
-	return verify.Capabilities{Name: ProviderName, Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
+	return verify.Capabilities{Name: verify.ProviderTart, Platforms: platforms, Isolated: true, Capacity: c.Capacity}, nil
 }
 func (p *Provider) BuildConfigForImage(ctx context.Context, platform record.Platform, options BuildOptions, image string) (record.BuildConfig, error) {
 	config := p.Config
@@ -123,7 +124,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		return record.BuildConfig{}, err
 	}
 	if observed {
-		accepted := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true}
+		accepted := record.BuildConfig{Provider: verify.ProviderTart, Platform: platform, EnvironmentDigest: environment.Digest, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true}
 		if problem := capabilityProblem(capabilities, c, accepted); problem != "" {
 			return record.BuildConfig{}, fmt.Errorf("%w: image %s is incompatible: %s", ErrImageUnavailable, c.Image, problem)
 		}
@@ -139,14 +140,14 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	if err != nil {
 		return record.BuildConfig{}, err
 	}
-	config := record.BuildConfig{Provider: ProviderName, Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true, Tests: options.Tests, FromSource: options.FromSource}
+	config := record.BuildConfig{Provider: verify.ProviderTart, Platform: platform, EnvironmentDigest: environment.Digest, VerifierDigest: verifierDigest(), ProviderConfig: raw, NeedsXcode: options.NeedsXcode, CapabilitiesRequired: true, Tests: options.Tests, FromSource: options.FromSource}
 	if observed {
 		config.CapabilityDigest = capabilities.CapabilityDigest
 	}
 	return config, verify.ValidateConfig(config)
 }
 func validateRequest(r verify.Request) error {
-	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != ProviderName || !r.Spec.Config.CapabilitiesRequired || len(r.Spec.Inputs) != 0 {
+	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != verify.ProviderTart || !r.Spec.Config.CapabilitiesRequired || len(r.Spec.Inputs) != 0 {
 		return fmt.Errorf("tart: one concrete verification target without artifact inputs is required")
 	}
 	if r.Spec.Config.Tests == record.TestWorkflow {

@@ -1,6 +1,7 @@
 package tart
 
 import (
+	"github.com/herbygillot/dockhand/internal/verify"
 	"testing"
 	"time"
 
@@ -15,10 +16,10 @@ func TestCapabilityProblemAppliesTheAcceptedToolchainProfile(t *testing.T) {
 		Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine,
 	}
 	value := state.ImageCapabilities{
-		Provider: ProviderName, EnvironmentDigest: "sha256:image", CapabilityDigest: capabilityIdentity(capabilities), Capabilities: capabilities,
+		Provider: verify.ProviderTart, EnvironmentDigest: "sha256:image", CapabilityDigest: capabilityIdentity(capabilities), Capabilities: capabilities,
 	}
 	config := Config{GuestPrefix: "/opt/local"}
-	accepted := record.BuildConfig{Provider: ProviderName, Platform: testPlatform, EnvironmentDigest: value.EnvironmentDigest, CapabilitiesRequired: true}
+	accepted := record.BuildConfig{Provider: verify.ProviderTart, Platform: testPlatform, EnvironmentDigest: value.EnvironmentDigest, CapabilitiesRequired: true}
 	require.Empty(t, capabilityProblem(value, config, accepted))
 	accepted.NeedsXcode = true
 	require.Contains(t, capabilityProblem(value, config, accepted), "requires full Xcode")
@@ -50,9 +51,9 @@ func TestAgentDiagnosticsDoNotDetermineCompatibility(t *testing.T) {
 	identity := capabilityIdentity(capabilities)
 	manifest := tartvm.ImageManifest{Protocol: tartvm.ImageManifestProtocol, Source: "source", Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", GuestAgentVersion: "different-release-tag"}
 	require.Empty(t, manifestProblems(manifest, capabilities))
-	legacy := state.ImageCapabilities{Provider: ProviderName, EnvironmentDigest: "image", Capabilities: capabilities, CapabilityDigest: legacyCapabilityIdentity(capabilities)}
+	legacy := state.ImageCapabilities{Provider: verify.ProviderTart, EnvironmentDigest: "image", Capabilities: capabilities, CapabilityDigest: legacyCapabilityIdentity(capabilities)}
 	config := Config{GuestPrefix: "/opt/local"}
-	accepted := record.BuildConfig{Provider: ProviderName, Platform: testPlatform, EnvironmentDigest: "image", CapabilityDigest: legacy.CapabilityDigest}
+	accepted := record.BuildConfig{Provider: verify.ProviderTart, Platform: testPlatform, EnvironmentDigest: "image", CapabilityDigest: legacy.CapabilityDigest}
 	require.Empty(t, capabilityProblem(legacy, config, accepted), "already accepted historical observations remain usable")
 	capabilities.GuestAgentVersion = ""
 	require.Equal(t, identity, capabilityIdentity(capabilities))
@@ -73,7 +74,7 @@ func TestCachedAgentVersionFailuresAreReobserved(t *testing.T) {
 		{"", "MacPorts is unavailable", false},
 		{"", "current MacPorts failure", true},
 	} {
-		value := state.ImageCapabilities{Provider: ProviderName, EnvironmentDigest: "fixture", Capabilities: record.EnvironmentCapabilities{GuestAgentVersion: test.version}, Problem: test.problem, ObservedAt: time.Now()}
+		value := state.ImageCapabilities{Provider: verify.ProviderTart, EnvironmentDigest: "fixture", Capabilities: record.EnvironmentCapabilities{GuestAgentVersion: test.version}, Problem: test.problem, ObservedAt: time.Now()}
 		value.CapabilityDigest = legacyCapabilityIdentity(value.Capabilities)
 		if test.problem == "current MacPorts failure" {
 			value.CapabilityDigest = capabilityIdentity(value.Capabilities)

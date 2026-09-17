@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -23,7 +24,7 @@ func (s *Services) githubBuild(ctx context.Context, platform record.Platform, ne
 		return record.BuildConfig{}, err
 	}
 	owner, _, _ := strings.Cut(head.Name, "/")
-	if !strings.EqualFold(owner, user) || !strings.EqualFold(head.Parent, "macports/macports-ports") {
+	if !strings.EqualFold(owner, user) || !strings.EqualFold(head.Parent, macports.PortsRepository) {
 		return record.BuildConfig{}, fmt.Errorf("github verification requires your personal fork of macports/macports-ports; select it with --remote")
 	}
 	return githubverify.Configure(ctx, s.githubClient, platform, destination, needsXcode)

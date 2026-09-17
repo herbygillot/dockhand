@@ -1,6 +1,7 @@
 package github_test
 
 import (
+	"github.com/herbygillot/dockhand/internal/forge"
 	"os"
 	"strconv"
 	"strings"
@@ -24,7 +25,7 @@ func TestInspectLivePullRequest(t *testing.T) {
 	n, err := strconv.Atoi(number)
 	require.NoError(t, err)
 	client := &github.Client{Client: &githubapi.Client{Config: githubapi.Config{Token: os.Getenv("DOCKHAND_TEST_GITHUB_TOKEN")}}}
-	status, err := client.Inspect(t.Context(), record.PullRequestRef{Forge: "github", Repository: repository, Number: n})
+	status, err := client.Inspect(t.Context(), record.PullRequestRef{Forge: forge.GitHub, Repository: repository, Number: n})
 	require.NoError(t, err)
 	require.Contains(t, []string{"yes", "no", "unknown"}, status.Mergeable)
 	require.Contains(t, []string{"approved", "changes-requested", "none"}, status.Review)
