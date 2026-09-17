@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +29,7 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		require.NoError(t, Run(t.Context(), append(args, "--json"), Streams{Out: &stdout, Err: &stderr}, config))
 		var result workflow.Status
-		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+		decodeResult(t, stdout.Bytes(), &result)
 		require.Len(t, result.Jobs, 1)
 		require.Equal(t, id, result.Jobs[0].Job.ID)
 		require.Equal(t, record.JobQueued, result.Jobs[0].Job.State)

@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -297,7 +296,7 @@ func (r *runtime) startCommand() *cobra.Command {
 		services.Processes.OnCycle = reporter.cycle
 		err = services.Processes.Run(cmd.Context(), services.Workflow, workflow.Scope{All: true})
 		if r.json {
-			encodeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
+			encodeErr := r.emit(struct {
 				Stopped     bool
 				Interrupted bool
 			}{true, cmd.Context().Err() != nil})
@@ -345,7 +344,7 @@ func outcome(status workflow.Status, canceling bool) error {
 }
 func (r *runtime) result(out io.Writer, result ActionResult) error {
 	if r.json {
-		return json.NewEncoder(out).Encode(result)
+		return r.emit(result)
 	}
 	if err := renderStatus(out, result.Status); err != nil {
 		return err

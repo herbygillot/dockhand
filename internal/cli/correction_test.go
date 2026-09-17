@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -14,7 +13,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	var out, stderr bytes.Buffer
 	require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &out, Err: &stderr}, config))
 	var original ActionResult
-	require.NoError(t, json.Unmarshal(out.Bytes(), &original))
+	decodeResult(t, out.Bytes(), &original)
 	branch := original.Status.Jobs[0].Job.Prepared.Branch
 	seedCLIVerification(t, config, branch)
 	before, err := repo.ReadRefs(t.Context(), "refs/heads/")
@@ -29,7 +28,7 @@ func TestAmendCLIReusesVerificationAndKeepsContribution(t *testing.T) {
 	stderr.Reset()
 	require.NoError(t, runFixture(t.Context(), []string{"amend", "--branch", branch, "--provider", "tart", "--wait", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)
 	require.Equal(t, original.Status.Jobs[0].Job.ChangeID, result.Status.Jobs[0].Job.ChangeID)
 	require.NotEmpty(t, result.Status.Jobs[0].Job.ReusedAttempt)

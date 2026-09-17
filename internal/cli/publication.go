@@ -2,7 +2,6 @@ package cli
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/progress"
 
@@ -44,7 +43,7 @@ func (r *runtime) publishCommand() *cobra.Command {
 			spec := request.Spec.Publication
 			if dryRun {
 				if r.json {
-					return json.NewEncoder(cmd.OutOrStdout()).Encode(request.Spec)
+					return r.emit(request.Spec)
 				}
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "Publish %s at %s\n  %s:%s -> %s:%s\n  title: %s\n  target: %s\n  verification: %s (%s %s %s; tests %s; from source %t)\n", plain(spec.HeadBranch), spec.Desired.Head, plain(spec.HeadRepository), plain(spec.HeadBranch), plain(spec.Repository), plain(spec.BaseBranch), plain(spec.Desired.Title), plain(targetLabel(request.Spec.Targets[0])), spec.EvidenceAttempt, request.Spec.Build.Platform.OS, request.Spec.Build.Platform.Version, request.Spec.Build.Platform.Architecture, request.Spec.Build.Tests, request.Spec.Build.FromSource)
 				if err != nil {

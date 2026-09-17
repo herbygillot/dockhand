@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/herbygillot/dockhand/internal/github"
 	"testing"
 
@@ -31,7 +32,8 @@ func TestAuthLoginCommandPresentsDeviceCodeAndRendersResult(t *testing.T) {
 			require.Contains(t, diagnostics.String(), "ABCD-EFGH")
 			require.Contains(t, diagnostics.String(), "https://github.com/login/device")
 			if jsonOutput {
-				require.JSONEq(t, `{"host":"github.com","account":"fixture-user","storage":"macOS Keychain"}`, output.String())
+				require.JSONEq(t, `{"host":"github.com","account":"fixture-user","storage":"macOS Keychain"}`, outcomeJSON(t, runtime))
+				require.Empty(t, output.String(), "the envelope is written by run, not the command")
 			} else {
 				require.Contains(t, output.String(), "Logged in to github.com as fixture-user")
 			}
@@ -50,7 +52,8 @@ func TestAuthStatusJSONIncludesRejectedSource(t *testing.T) {
 	command.SetOut(&output)
 	command.SetErr(&output)
 	require.ErrorIs(t, command.ExecuteContext(t.Context()), github.ErrAuthentication)
-	require.JSONEq(t, `{"host":"github.com","source":"Dockhand macOS Keychain","authenticated":false}`, output.String())
+	require.JSONEq(t, `{"host":"github.com","source":"Dockhand macOS Keychain","authenticated":false}`, outcomeJSON(t, r))
+	require.Empty(t, output.String(), "the envelope is written by run, not the command")
 }
 
 func TestAuthLogoutJSONReportsRemoval(t *testing.T) {
@@ -61,7 +64,8 @@ func TestAuthLogoutJSONReportsRemoval(t *testing.T) {
 	var output bytes.Buffer
 	command.SetOut(&output)
 	require.NoError(t, command.ExecuteContext(t.Context()))
-	require.JSONEq(t, `{"host":"github.com","storage":"macOS Keychain","removed":true}`, output.String())
+	require.JSONEq(t, `{"host":"github.com","storage":"macOS Keychain","removed":true}`, outcomeJSON(t, r))
+	require.Empty(t, output.String(), "the envelope is written by run, not the command")
 }
 
 func TestLoginWarnsAboutEnvironmentOverrideWithoutPrintingValue(t *testing.T) {
@@ -76,5 +80,13 @@ func TestLoginWarnsAboutEnvironmentOverrideWithoutPrintingValue(t *testing.T) {
 	require.NoError(t, command.ExecuteContext(t.Context()))
 	require.Contains(t, diagnostics.String(), "GH_TOKEN takes precedence")
 	require.NotContains(t, diagnostics.String(), "a-secret-environment-token")
-	require.JSONEq(t, `{"host":"github.com","account":"fixture","storage":"macOS Keychain"}`, output.String())
+	require.JSONEq(t, `{"host":"github.com","account":"fixture","storage":"macOS Keychain"}`, outcomeJSON(t, r))
+	require.Empty(t, output.String(), "the envelope is written by run, not the command")
+}
+
+func outcomeJSON(t *testing.T, r *runtime) string {
+	t.Helper()
+	raw, err := json.Marshal(r.outcome)
+	require.NoError(t, err)
+	return string(raw)
 }

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -55,7 +54,7 @@ func (r *runtime) authLoginCommand() *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(), "%s takes precedence over the saved login; unset it to use this Keychain credential.\n", name)
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+				return r.emit(result)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s as %s. Credential saved in %s.\n", plain(result.Host), plain(result.Account), plain(result.Storage))
 			return err
@@ -89,7 +88,7 @@ func (r *runtime) authStatusCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := r.statusGitHub(cmd.Context(), nil)
 			if r.json {
-				if writeErr := json.NewEncoder(cmd.OutOrStdout()).Encode(result); writeErr != nil {
+				if writeErr := r.emit(result); writeErr != nil {
 					return writeErr
 				}
 			} else if err == nil {
@@ -110,7 +109,7 @@ func (r *runtime) authLogoutCommand() *cobra.Command {
 				return err
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+				return r.emit(result)
 			}
 			message := "No Dockhand GitHub credential was saved in macOS Keychain."
 			if result.Removed {

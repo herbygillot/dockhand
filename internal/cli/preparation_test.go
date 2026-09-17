@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -61,7 +60,7 @@ func TestRevisionPreviewCLIUsesCommittedSourceWithoutStateOrProvider(t *testing.
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result app.Preview
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, "master", result.Branch)
 	require.Contains(t, result.Diff, "+revision 1")
 	require.Contains(t, stderr.String(), "PortIndex for source")
@@ -115,7 +114,7 @@ func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) 
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json", "-v", "--reason", "Rebuild fixture"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
 	job := result.Status.Jobs[0].Job
 	require.Equal(t, record.JobCompleted, job.State)
@@ -141,7 +140,7 @@ func TestRevisionBumpCLITracksCommittedChangeAndPreservesCheckout(t *testing.T) 
 	stdout.Reset()
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"wait", "--job", string(job.ID), "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, job.ResultRevision, result.Status.Jobs[0].Job.ResultRevision)
 }
 
@@ -154,7 +153,7 @@ func TestRevisionBumpCLIPreservesBranchWhenVerificationCannotStart(t *testing.T)
 			err := Run(t.Context(), []string{"bump-revision", "fixture", "--provider", "tart", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 			require.ErrorIs(t, err, errNeedsAttention, "%s", stderr.String())
 			var result ActionResult
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			decodeResult(t, stdout.Bytes(), &result)
 			job := result.Status.Jobs[0].Job
 			require.Equal(t, record.VerificationRequired, job.Spec.Verification)
 			require.Equal(t, record.JobNeedsAttention, job.State)
@@ -216,7 +215,7 @@ checksums rmd160 %s \
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "2.0", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var preview app.Preview
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &preview))
+	decodeResult(t, stdout.Bytes(), &preview)
 	require.Equal(t, "v2.0", preview.Preparation.Release.Tag)
 	require.Contains(t, preview.Diff, "-revision 3")
 	require.Contains(t, preview.Diff, "+revision 0")
@@ -225,7 +224,7 @@ checksums rmd160 %s \
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "v2.0", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
 	job := result.Status.Jobs[0].Job
 	require.Equal(t, record.Bump, job.Spec.Action)
@@ -269,7 +268,7 @@ func TestPreparationIgnoresLocalBranchAndRefusesFailedFetch(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--diff", "--json", "-vv"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var preview app.Preview
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &preview))
+	decodeResult(t, stdout.Bytes(), &preview)
 	require.Equal(t, record.ObjectID(upstream), preview.Preparation.Base.Commit)
 	require.Equal(t, "https://github.com/macports/macports-ports.git", preview.Repository)
 	require.NoError(t, repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/master", Expected: git.RefValue{Exists: true, Object: upstream}}}))

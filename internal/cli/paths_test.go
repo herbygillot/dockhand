@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,7 +90,7 @@ func TestGlobalGitReachesRepositoryOperations(t *testing.T) {
 	output.Reset()
 	require.NoError(t, Run(t.Context(), []string{"status", "--job", string(id), "--git", "./selected-git", "--json"}, Streams{Out: &output, Err: &output}, config))
 	var result workflow.Status
-	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	decodeResult(t, output.Bytes(), &result)
 	require.Len(t, result.Jobs, 1)
 }
 
@@ -128,7 +127,7 @@ func TestGlobalTreeSelectsRecordedWorkFromOutsideCheckout(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		require.NoError(t, Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config))
 		var result workflow.Status
-		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+		decodeResult(t, stdout.Bytes(), &result)
 		require.Len(t, result.Jobs, 1)
 		require.Equal(t, id, result.Jobs[0].Job.ID)
 		require.Equal(t, record.JobQueued, result.Jobs[0].Job.State)
@@ -166,7 +165,7 @@ func TestGlobalPrefixReachesPreviewAndDriverConstruction(t *testing.T) {
 	t.Setenv("MACPORTS_PREFIX", "/missing/macports")
 	require.NoError(t, Run(t.Context(), []string{"-T", repo.Root, "-P", "MacPorts prefix", "bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)
 	require.Equal(t, record.BranchReady, result.Status.Jobs[0].Job.Spec.Destination)

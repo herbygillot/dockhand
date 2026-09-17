@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports"
 
@@ -23,7 +22,7 @@ func (r *runtime) setupCommand() *cobra.Command {
 				return err
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+				return r.emit(result)
 			}
 			review := "no source-review record"
 			if result.HostMacPorts.SourceReviewed {

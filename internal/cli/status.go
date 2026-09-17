@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -39,7 +38,7 @@ func (r *runtime) statusCommand() *cobra.Command {
 				return databaseReadError(err)
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(status)
+				return r.emit(status)
 			}
 			return renderStatus(cmd.OutOrStdout(), status)
 		},

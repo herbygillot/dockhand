@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"github.com/herbygillot/dockhand/internal/git"
 	"os"
 	"os/exec"
@@ -28,7 +27,7 @@ func TestOutdatedObservesFrozenSourceWithoutStateOrDownloads(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			require.NoError(t, Run(t.Context(), []string{"outdated", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), stderr.String())
 			var result outdated.Result
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			decodeResult(t, stdout.Bytes(), &result)
 			require.Len(t, result.Ports, 1)
 			require.Equal(t, version, result.Ports[0].CurrentVersion)
 			if version == "1.0" {
@@ -54,7 +53,7 @@ func TestOutdatedKeepsUnknownAlongsideSuccessfulObservations(t *testing.T) {
 	err := Run(t.Context(), []string{"outdated", "missing", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, "unknown")
 	var result outdated.Result
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Len(t, result.Ports, 2)
 	require.Equal(t, upstream.Unknown, result.Ports[0].Assessment)
 	require.NotEmpty(t, result.Ports[0].Detail)
@@ -107,7 +106,7 @@ func TestOutdatedIndexedSelectionKeepsSourceAndCoverage(t *testing.T) {
 		err := Run(t.Context(), args, Streams{Out: &out, Err: &stderr}, config)
 		require.ErrorContains(t, err, "unknown", stderr.String())
 		var result outdated.Result
-		require.NoError(t, json.Unmarshal(out.Bytes(), &result), out.String())
+		decodeResult(t, out.Bytes(), &result)
 		require.Equal(t, commit, string(result.Source.Commit))
 		require.Len(t, result.Ports, 3)
 		require.Equal(t, "devel/broken/Portfile", result.Ports[0].Selector)
@@ -142,7 +141,7 @@ func TestOutdatedEmptySelectionAndDuplicatePorts(t *testing.T) {
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"outdated", "fixture", "fixture", "--json"}, Streams{Out: &out, Err: &stderr}, config), stderr.String())
 	var result outdated.Result
-	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	decodeResult(t, out.Bytes(), &result)
 	require.Len(t, result.Ports, 1)
 	require.EqualValues(t, 1, catalogs.Load())
 	require.Zero(t, downloads.Load())

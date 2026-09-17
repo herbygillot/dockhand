@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -78,7 +77,7 @@ func TestAutomaticBumpCLIUsesResolvedReleaseAndPreparedBranch(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--diff", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var preview app.Preview
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &preview))
+	decodeResult(t, stdout.Bytes(), &preview)
 	require.Contains(t, preview.Diff, "+version 2.0")
 	require.False(t, preview.Preparation.Release.NoUpdate)
 	require.Empty(t, preview.Preparation.Release.Requested)
@@ -87,7 +86,7 @@ func TestAutomaticBumpCLIUsesResolvedReleaseAndPreparedBranch(t *testing.T) {
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	job := result.Status.Jobs[0].Job
 	require.Equal(t, record.JobCompleted, job.State)
 	require.Empty(t, job.Spec.Version)
@@ -117,7 +116,7 @@ func TestCurrentBumpCLIIsSuccessfulWithoutDownloadsBranchOrProvider(t *testing.T
 	stderr.Reset()
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	job := result.Status.Jobs[0].Job
 	require.Equal(t, record.JobCompleted, job.State)
 	require.True(t, job.ResolvedRelease.NoUpdate)
@@ -149,7 +148,7 @@ func TestFailedAutomaticDiscoveryCLIRequiresAttention(t *testing.T) {
 	err := Run(t.Context(), []string{"bump", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorIs(t, err, errNeedsAttention)
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	job := result.Status.Jobs[0].Job
 	require.Equal(t, record.JobNeedsAttention, job.State)
 	require.Nil(t, job.ResolvedRelease)

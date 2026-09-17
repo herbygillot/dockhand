@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -23,7 +22,7 @@ func (r *runtime) databaseCommand() *cobra.Command {
 				return err
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+				return r.emit(result)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Database backup: %s (%d bytes)\n", result.Path, result.Bytes)
 			return err
@@ -37,7 +36,7 @@ func (r *runtime) databaseCommand() *cobra.Command {
 				return err
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct{ Valid bool }{true})
+				return r.emit(struct{ Valid bool }{true})
 			}
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Database integrity: ok")
 			return err
@@ -51,7 +50,7 @@ func (r *runtime) databaseCommand() *cobra.Command {
 				return err
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(struct{ Current bool }{true})
+				return r.emit(struct{ Current bool }{true})
 			}
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Database schema is current.")
 			return err
@@ -69,7 +68,7 @@ func (r *runtime) gcCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, callErr := app.Collect(cmd.Context(), r.config, options)
 			if r.json {
-				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(result); err != nil {
+				if err := r.emit(result); err != nil {
 					return err
 				}
 			} else {

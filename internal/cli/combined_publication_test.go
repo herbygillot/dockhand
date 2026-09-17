@@ -30,7 +30,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			require.NoError(t, runFixture(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 			var prior ActionResult
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &prior))
+			decodeResult(t, stdout.Bytes(), &prior)
 			seedCLIVerification(t, config, prior.Status.Jobs[0].Job.Prepared.Branch)
 			config.Tart.Image = ""
 			config.VerificationProvider = "tart"
@@ -92,7 +92,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 			}
 			require.NoError(t, runFixture(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 			var result ActionResult
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			decodeResult(t, stdout.Bytes(), &result)
 			id := result.Status.Jobs[0].Job.ID
 			if !wait {
 				require.Equal(t, record.JobActive, result.Status.Jobs[0].Job.State)
@@ -105,7 +105,7 @@ func TestRevisionBumpPublicationCLIWaitAndResume(t *testing.T) {
 				stdout.Reset()
 				stderr.Reset()
 				require.NoError(t, runFixture(t.Context(), []string{"wait", "--job", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
-				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+				decodeResult(t, stdout.Bytes(), &result)
 			}
 			entry := result.Status.Jobs[0]
 			require.Equal(t, id, entry.Job.ID)

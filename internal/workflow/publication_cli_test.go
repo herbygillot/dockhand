@@ -72,7 +72,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--dry-run", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.NoError(t, err, "%s", diagnostics.String())
 	var plan record.JobSpec
-	require.NoError(t, json.Unmarshal(output.Bytes(), &plan))
+	decodeCLIResult(t, output.Bytes(), &plan)
 	require.Equal(t, f.source.Commit, plan.Publication.Desired.Head)
 	require.Zero(t, writes)
 	requireUntrackedPublication(t, f)
@@ -99,7 +99,7 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	err = cli.Run(t.Context(), []string{"publish", "--branch", "candidate", "--wait", "--json"}, cli.Streams{Out: &output, Err: &diagnostics}, config)
 	require.NoError(t, err, "%s", diagnostics.String())
 	var result cli.ActionResult
-	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	decodeCLIResult(t, output.Bytes(), &result)
 	require.Len(t, result.Status.Jobs, 1)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)
 	require.Equal(t, "https://github.com/author/ports/pull/1", result.Status.PullRequests[0].Ref.URL)
@@ -107,4 +107,13 @@ func TestPublishCLIAdoptsManualBranchOnlyAfterDryRun(t *testing.T) {
 	require.Equal(t, 1, writes)
 	mu.Unlock()
 	require.Empty(t, result.Status.Jobs[0].Attempts)
+}
+
+func decodeCLIResult(t *testing.T, raw []byte, v any) {
+	t.Helper()
+	var envelope struct {
+		Result json.RawMessage `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &envelope), "%s", raw)
+	require.NoError(t, json.Unmarshal(envelope.Result, v))
 }

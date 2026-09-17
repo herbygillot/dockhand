@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"github.com/herbygillot/dockhand/internal/git"
 	"os"
 	"os/exec"
@@ -33,7 +32,7 @@ func TestAssessFrozenSourceWithoutStateDownloadsOrCatalogs(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		require.NoError(t, Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), stderr.String())
 		var result assess.Result
-		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+		decodeResult(t, stdout.Bytes(), &result)
 		require.Len(t, result.Ports, 1)
 		port := result.Ports[0]
 		require.Equal(t, "1.0", port.CurrentVersion)
@@ -67,14 +66,14 @@ func TestAssessKeepsIndependentFailuresAndDeduplicates(t *testing.T) {
 	require.ErrorContains(t, err, "unknown")
 	require.Equal(t, 1, ExitCode(err))
 	var result assess.Result
-	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	decodeResult(t, out.Bytes(), &result)
 	require.Len(t, result.Ports, 2)
 	require.Equal(t, portedit.Unknown, result.Ports[0].Outcome)
 	require.Equal(t, portedit.InputFound, result.Ports[1].Outcome)
 	out.Reset()
 	err = Run(t.Context(), []string{"assess", "fixture", "--version", "does-not-exist", "--json"}, Streams{Out: &out, Err: &stderr}, config)
 	require.Error(t, err)
-	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, portedit.Unknown, result.Ports[0].Outcome)
 }
 
@@ -131,7 +130,7 @@ func TestAssessIndexedSelectionKeepsSubportsAndCoverageProblems(t *testing.T) {
 		var out, stderr bytes.Buffer
 		require.Error(t, Run(t.Context(), args, Streams{Out: &out, Err: &stderr}, config))
 		var result assess.Result
-		require.NoError(t, json.Unmarshal(out.Bytes(), &result), stderr.String())
+		decodeResult(t, out.Bytes(), &result)
 		require.Equal(t, commit, string(result.Source.Commit))
 		require.Len(t, result.Ports, 3)
 		require.Equal(t, "devel/broken/Portfile", result.Ports[0].Selector)

@@ -17,6 +17,8 @@ const stateIndependentHelp = "dockhand.state-independent"
 type serviceBuilder func(context.Context, app.Config) (*app.Services, error)
 
 type runtime struct {
+	// outcome is the command's JSON result, written once inside the envelope after execution.
+	outcome      any
 	verbosity    int
 	debug        bool
 	build        serviceBuilder
@@ -37,10 +39,11 @@ const logo = `     _            _    _                     _
 `
 
 func NewRoot(config app.Config) (*cobra.Command, error) {
-	return newRoot(config, app.Build)
+	root, _, err := newRoot(config, app.Build)
+	return root, err
 }
 
-func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
+func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime, error) {
 	if config.DependencyTools.Go2Port == "" {
 		config.DependencyTools.Go2Port = os.Getenv("GO2PORT_BIN")
 	}
@@ -65,7 +68,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	if config.DBPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("cli: locating home directory for default state database: %w", err)
+			return nil, nil, fmt.Errorf("cli: locating home directory for default state database: %w", err)
 		}
 		config.DBPath = filepath.Join(homeDir, ".dockhand", "state.db")
 	}
@@ -85,7 +88,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 	}
 	dbPath := dbPathValue{target: &runtime.config.DBPath}
 	if err := dbPath.Set(runtime.config.DBPath); err != nil {
-		return nil, fmt.Errorf("cli: resolving state database: %w", err)
+		return nil, nil, fmt.Errorf("cli: resolving state database: %w", err)
 	}
 	root.PersistentFlags().Var(dbPath, "db", "Path to the Dockhand state database")
 	for _, flag := range []struct {
@@ -98,25 +101,25 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 		value := directoryPathValue{target: flag.target}
 		if *flag.target != "" {
 			if err := value.Set(*flag.target); err != nil {
-				return nil, fmt.Errorf("cli: resolving --%s: %w", flag.name, err)
+				return nil, nil, fmt.Errorf("cli: resolving --%s: %w", flag.name, err)
 			}
 		}
 		root.PersistentFlags().VarP(value, flag.name, flag.shorthand, flag.usage)
 		if err := root.MarkPersistentFlagDirname(flag.name); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	gitPath := executablePathValue{target: &runtime.config.GitExecutable}
 	if runtime.config.GitExecutable != "" {
 		if err := gitPath.Set(runtime.config.GitExecutable); err != nil {
-			return nil, fmt.Errorf("cli: resolving --git: %w", err)
+			return nil, nil, fmt.Errorf("cli: resolving --git: %w", err)
 		}
 	}
 	root.PersistentFlags().Var(gitPath, "git", "Git executable (GIT_BIN; otherwise find git on PATH)")
 	tartPath := executablePathValue{target: &runtime.config.Tart.Executable}
 	if runtime.config.Tart.Executable != "" {
 		if err := tartPath.Set(runtime.config.Tart.Executable); err != nil {
-			return nil, fmt.Errorf("cli: resolving --tart: %w", err)
+			return nil, nil, fmt.Errorf("cli: resolving --tart: %w", err)
 		}
 	}
 	root.PersistentFlags().Var(tartPath, "tart", "Tart executable (TART_BIN; otherwise find tart on PATH)")
@@ -127,25 +130,25 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 		value := executablePathValue{target: tool.target}
 		if *tool.target != "" {
 			if err := value.Set(*tool.target); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 		root.PersistentFlags().Var(value, tool.name, "Optional dependency generator executable ("+tool.env+")")
 		if err := root.MarkPersistentFlagFilename(tool.name); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	root.PersistentFlags().BoolVar(&runtime.json, "json", false, "Output command results as JSON")
 	root.PersistentFlags().CountVarP(&runtime.verbosity, "verbose", "v", "Show identifiers and the work behind the scenes; -vv shows every sub-operation")
 	root.PersistentFlags().BoolVar(&runtime.debug, "debug", false, "Show every sub-operation (same as -vv)")
 	if err := root.MarkPersistentFlagFilename("db"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := root.MarkPersistentFlagFilename("git"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := root.MarkPersistentFlagFilename("tart"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	root.AddCommand(runtime.setupCommand(), runtime.databaseCommand(), runtime.gcCommand())
@@ -170,7 +173,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, error) {
 			fmt.Fprintf(cmd.OutOrStdout(), "\nState database: %s\n", runtime.config.DBPath)
 		}
 	})
-	return root, nil
+	return root, runtime, nil
 }
 
 // helpGroups orders the help screen as the life of a contribution: prepare the

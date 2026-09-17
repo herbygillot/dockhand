@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/herbygillot/dockhand/internal/progress"
 	"path/filepath"
@@ -43,8 +42,9 @@ func TestJSONResultKeepsLogsAndProgressOffStdout(t *testing.T) {
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, r.result(&stdout, result))
-	var decoded ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &decoded))
+	require.Empty(t, stdout.String(), "the result waits for the envelope")
+	decoded, ok := r.outcome.(ActionResult)
+	require.True(t, ok)
 	require.Equal(t, record.JobID("job"), decoded.Status.Jobs[0].Job.ID)
 	require.Equal(t, "job: active\n", stderr.String())
 }

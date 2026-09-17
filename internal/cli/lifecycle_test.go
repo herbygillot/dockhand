@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +50,7 @@ func TestWaitRecordsFailureWithoutSubmittingNewWork(t *testing.T) {
 	err := Run(t.Context(), []string{"wait", "--job", string(id), "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorIs(t, err, errNeedsAttention)
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, id, result.Status.Jobs[0].Job.ID)
 	require.Equal(t, record.JobNeedsAttention, result.Status.Jobs[0].Job.State)
 	status, err := app.Status(t.Context(), config)
@@ -66,7 +65,7 @@ func TestWaitSelectsExplicitOrCurrentContributionBranch(t *testing.T) {
 			err := Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config)
 			require.ErrorIs(t, err, errNeedsAttention)
 			var result ActionResult
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			decodeResult(t, stdout.Bytes(), &result)
 			require.Equal(t, "candidate", result.Branch)
 			require.Equal(t, []record.JobID{id}, result.JobIDs)
 			require.Equal(t, id, result.Status.Jobs[0].Job.ID)
@@ -79,7 +78,7 @@ func TestCancelBeforeAdmissionPreservesBranchAndDoesNotNeedTart(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"cancel", "--job", string(id), "--wait", "--reason", "fixture", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, record.JobCanceled, result.Status.Jobs[0].Job.State)
 	require.Empty(t, result.Status.Jobs[0].Attempts)
 	services, err := app.Build(t.Context(), config)
@@ -94,7 +93,7 @@ func TestCancelSelectsContributionBranch(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"cancel", "--branch", "candidate", "--wait", "--reason", "fixture", "--json", "-v"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, "candidate", result.Branch)
 	require.Equal(t, []record.JobID{id}, result.JobIDs)
 	require.Equal(t, record.JobCanceled, result.Status.Jobs[0].Job.State)
@@ -147,7 +146,7 @@ func TestResidentDriverAppliesAcceptedControlAndStopsWithoutNewWork(t *testing.T
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
 	var result struct{ Stopped, Interrupted bool }
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.True(t, result.Stopped)
 	require.True(t, result.Interrupted)
 	status, err := app.Status(t.Context(), config)
@@ -165,7 +164,7 @@ func TestAbandonRequiresSettledWorkAndPreservesBranch(t *testing.T) {
 	out.Reset()
 	require.NoError(t, Run(t.Context(), []string{"abandon", "--json"}, Streams{Out: &out, Err: &out}, config))
 	var result workflow.ContributionResult
-	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, record.ChangeAbandoned, result.Change.Disposition)
 	out.Reset()
 	require.NoError(t, Run(t.Context(), []string{"abandon", "--change", "change"}, Streams{Out: &out, Err: &out}, config))

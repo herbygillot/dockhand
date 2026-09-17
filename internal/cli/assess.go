@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/progress"
 
@@ -37,7 +36,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 				incomplete = incomplete || port.Outcome == portedit.Blocked || port.Outcome == portedit.Unsupported || port.Outcome == portedit.Unknown
 			}
 			if r.json {
-				err = json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+				err = r.emit(result)
 			} else {
 				progress.VerboseReport(cmd.Context(), "Assessing committed source %s; working-tree edits are excluded", result.Source.Commit)
 				if len(result.Ports) == 0 {

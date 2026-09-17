@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"path/filepath"
@@ -24,14 +23,14 @@ func TestCommandProgressStaysOnStderrAndEscapesControlCharacters(t *testing.T) {
 		progress.Report(ctx, "staging\n\x1b[31m")
 		progress.Report(ctx, "staging\n\x1b[31m")
 		progress.Report(progress.WithScope(ctx, "attempt_two"), "packing source")
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]bool{"done": true})
+		return nil
 	}})
 	var out, diagnostics bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&diagnostics)
 	root.SetArgs([]string{"--json", "fixture"})
 	require.NoError(t, root.ExecuteContext(t.Context()))
-	require.JSONEq(t, `{"done":true}`, out.String())
+	require.Empty(t, out.String(), "a fixture command without a result writes nothing; run writes the envelope")
 	require.Equal(t, "{\"level\":\"info\",\"scope\":\"attempt_one\",\"message\":\"staging\\n\\u001b[31m\"}\n{\"level\":\"info\",\"scope\":\"attempt_two\",\"message\":\"packing source\"}\n", diagnostics.String(), "JSON mode reports one object per line on stderr")
 	require.NoFileExists(t, db)
 }

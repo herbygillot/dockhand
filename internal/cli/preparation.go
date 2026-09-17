@@ -2,7 +2,6 @@ package cli
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/version"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -120,7 +119,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					return err
 				}
 				if r.json {
-					return json.NewEncoder(cmd.OutOrStdout()).Encode(preview)
+					return r.emit(preview)
 				}
 				progress.VerboseReport(cmd.Context(), "Repository %s; branch %s; commit %s; target %s", preview.Repository, preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
 				if release := preview.Preparation.Release; release != nil {

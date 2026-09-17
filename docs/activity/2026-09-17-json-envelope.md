@@ -1,0 +1,3 @@
+# Interface pass, step 2: one JSON envelope
+
+Per the [output design](../output.md), every `--json` result now shares one envelope: `command`, `exit_code`, `error`, and `result`. Commands record their result on the runtime and `run` writes the envelope once after execution, when the exit code is known, so a refused command also produces an envelope with a null result and the error text, which nothing did before. The twenty emission sites became one, and the CLI tests unwrap the envelope through one helper. Progress in JSON mode is one object per line on stderr, so stdout remains exactly one result.

@@ -20,7 +20,7 @@ func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump-revision", "fixture", "--no-verify", "--json"}, Streams{Out: &stdout, Err: &stderr}, config))
 	var prepared ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &prepared))
+	decodeResult(t, stdout.Bytes(), &prepared)
 	branch := prepared.Status.Jobs[0].Job.Prepared.Branch
 	seedCLIVerification(t, config, branch)
 	out, err := exec.CommandContext(t.Context(), "git", "-C", repo.Root, "checkout", "-f", branch).CombinedOutput()
@@ -30,7 +30,7 @@ func TestVerifyCLIInfersTrackedBranchAndCurrentCheckout(t *testing.T) {
 		stderr.Reset()
 		require.NoError(t, Run(t.Context(), args, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 		var result ActionResult
-		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+		decodeResult(t, stdout.Bytes(), &result)
 		job := result.Status.Jobs[0].Job
 		require.Equal(t, record.JobCompleted, job.State)
 		require.Equal(t, prepared.Status.Jobs[0].Job.ChangeID, job.ChangeID)
@@ -67,7 +67,12 @@ func TestVerifyCLIRejectsUnknownInferenceWithoutAcceptingWork(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(t.Context(), []string{"verify", "--branch", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config)
 	require.ErrorContains(t, err, "without a tracked contribution; specify a port explicitly")
-	require.Empty(t, stdout.String())
+	var envelope Envelope
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &envelope))
+	require.Equal(t, "verify", envelope.Command)
+	require.Equal(t, 1, envelope.ExitCode)
+	require.Contains(t, envelope.Error, "specify a port explicitly")
+	require.Nil(t, envelope.Result, "a refused command has an envelope with no result")
 	status, err := app.Status(t.Context(), config)
 	require.NoError(t, err)
 	require.Empty(t, status.Jobs)

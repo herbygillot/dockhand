@@ -31,12 +31,14 @@ func TestDatabaseMaintenanceNeedsNoRepositoryOrProvider(t *testing.T) {
 	defer store.Close()
 	var output bytes.Buffer
 	require.NoError(t, cli.Run(t.Context(), []string{"db", "check", "--json"}, cli.Streams{Out: &output, Err: &output}, config))
-	require.JSONEq(t, `{"Valid":true}`, output.String())
+	var check struct{ Valid bool }
+	decodeResult(t, output.Bytes(), &check)
+	require.True(t, check.Valid)
 	output.Reset()
 	destination := filepath.Join(root, "backup.db")
 	require.NoError(t, cli.Run(t.Context(), []string{"db", "backup", destination, "--json"}, cli.Streams{Out: &output, Err: &output}, config))
 	var result state.Backup
-	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	decodeResult(t, output.Bytes(), &result)
 	require.Positive(t, result.Bytes)
 	output.Reset()
 	require.NoError(t, cli.Run(t.Context(), []string{"--db", destination, "db", "check"}, cli.Streams{Out: &output, Err: &output}, config))
@@ -100,8 +102,15 @@ func TestOldSchemaStatusExplainsDatabaseOnlyMigration(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err = cli.Run(t.Context(), args, cli.Streams{Out: &stdout, Err: &stderr}, config)
 		require.ErrorIs(t, err, state.ErrSchema)
-		if args[0] == "status" {
+		if args[0] == "status" && len(args) == 1 {
 			require.Empty(t, stdout.String())
+		}
+		if len(args) == 2 && args[1] == "--json" {
+			var envelope cli.Envelope
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &envelope))
+			require.Equal(t, 1, envelope.ExitCode)
+			require.Contains(t, envelope.Error, "requires migration")
+			require.Nil(t, envelope.Result)
 		}
 		var migration *state.MigrationRequiredError
 		require.ErrorAs(t, err, &migration)
@@ -131,7 +140,7 @@ func TestOldSchemaStatusExplainsDatabaseOnlyMigration(t *testing.T) {
 	for range 2 {
 		var output bytes.Buffer
 		require.NoError(t, cli.Run(t.Context(), []string{"db", "migrate", "--json"}, cli.Streams{Out: &output, Err: &output}, config))
-		require.JSONEq(t, `{"Current":true}`, output.String())
+		require.JSONEq(t, `{"command":"db migrate","exit_code":0,"error":"","result":{"Current":true}}`, output.String())
 		require.NoError(t, db.QueryRow("PRAGMA user_version").Scan(&version))
 		require.Equal(t, required, version)
 	}
@@ -215,7 +224,7 @@ func TestGCPrunesSharedIndexCacheWithoutProviderSetup(t *testing.T) {
 		var output bytes.Buffer
 		require.NoError(t, cli.Run(t.Context(), args, cli.Streams{Out: &output, Err: &output}, config))
 		var result workflow.RetentionResult
-		require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+		decodeResult(t, output.Bytes(), &result)
 		require.Len(t, result.Items, 1)
 		require.Equal(t, "prune-index-cache", result.Items[0].Action)
 		require.Equal(t, entry, result.Items[0].Path)
@@ -254,7 +263,7 @@ func TestGCAllRepositoriesReachesRegistrationsWithoutACheckout(t *testing.T) {
 	output.Reset()
 	require.NoError(t, cli.Run(t.Context(), []string{"gc", "--all-repositories", "--json"}, cli.Streams{Out: &output, Err: &output}, config))
 	var result app.CollectResult
-	require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+	decodeResult(t, output.Bytes(), &result)
 	require.Len(t, result.Registrations, 2)
 	require.False(t, result.Registrations[0].CheckoutMissing)
 	require.True(t, result.Registrations[1].CheckoutMissing)

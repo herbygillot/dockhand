@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/herbygillot/dockhand/internal/workflow"
@@ -44,7 +43,7 @@ func (r *runtime) contributionCommands() []*cobra.Command {
 				return err
 			}
 			if r.json {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+				return r.emit(result)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Contribution %s: %s\n%s\n", result.Change.ID, result.Change.Disposition, result.Detail)
 			return err

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/git"
@@ -39,7 +38,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 						return err
 					}
 					if r.json {
-						return json.NewEncoder(cmd.OutOrStdout()).Encode(bound)
+						return r.emit(bound)
 					}
 					_, err = fmt.Fprint(cmd.OutOrStdout(), bound.Diff)
 					return err
@@ -94,7 +93,7 @@ func (r *runtime) correctionCommands() []*cobra.Command {
 			return err
 		}
 		if r.json {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(change)
+			return r.emit(change)
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s now follows %s; revision %s. Existing PR identity is preserved.\n", change.ID, change.Branch, change.CurrentRevision)
 		return err

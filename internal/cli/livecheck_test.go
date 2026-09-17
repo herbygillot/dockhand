@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -65,14 +64,14 @@ subport fixture-1.15 {
 	var out, logs bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture-1.16", "1.16.2", "--diff", "--json"}, Streams{Out: &out, Err: &logs}, config), logs.String())
 	var explicit app.Preview
-	require.NoError(t, json.Unmarshal(out.Bytes(), &explicit))
+	decodeResult(t, out.Bytes(), &explicit)
 	require.Contains(t, explicit.Diff, "+ set patchNumber 2")
 	require.Zero(t, listingReads.Load())
 	out.Reset()
 	logs.Reset()
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture-1.16", "--no-verify", "--json"}, Streams{Out: &out, Err: &logs}, config), logs.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	decodeResult(t, out.Bytes(), &result)
 	job := result.Status.Jobs[0].Job
 	require.Equal(t, record.JobCompleted, job.State)
 	require.Equal(t, "1.16.2", job.ResolvedRelease.Version)
@@ -94,7 +93,7 @@ subport fixture-1.15 {
 	out.Reset()
 	logs.Reset()
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture-1.16", "1.16.2", "--no-verify", "--json"}, Streams{Out: &out, Err: &logs}, config), logs.String())
-	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	decodeResult(t, out.Bytes(), &result)
 	require.Equal(t, job.ID, result.Status.Jobs[0].Job.ID)
 	require.Empty(t, result.Status.Jobs[0].Job.ResolvedRelease.Requested)
 	require.Equal(t, int64(1), listingReads.Load())

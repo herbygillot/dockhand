@@ -28,7 +28,7 @@ func TestVerifyCLIReusesEvidenceAndFreshFlagIsDurable(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--branch", "candidate", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	entry := result.Status.Jobs[0]
 	require.Equal(t, record.JobCompleted, entry.Job.State)
 	require.Equal(t, record.AttemptID("original-attempt"), entry.Job.ReusedAttempt)
@@ -132,7 +132,7 @@ func TestVerifyCLISelectsSetupImageWhenImageIsOmitted(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"verify", "fixture", "--branch", "candidate", "--wait", "--json"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	var result ActionResult
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	decodeResult(t, stdout.Bytes(), &result)
 	require.Equal(t, record.JobCompleted, result.Status.Jobs[0].Job.State)
 	require.Equal(t, record.AttemptID("original-attempt"), result.Status.Jobs[0].Job.ReusedAttempt)
 	var providerConfig providertart.Config
