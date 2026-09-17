@@ -54,6 +54,7 @@ func TestProjectGroupsJobsByContributionAndWordsEachPhase(t *testing.T) {
 	require.NotNil(t, deno.Active)
 	require.Equal(t, "Verification running", deno.Active.Detail)
 	require.Empty(t, deno.ChangeID)
+	require.False(t, deno.Retired, "a running standalone verification is current")
 
 	gh := rows[2]
 	require.Equal(t, "gh", gh.Port)
@@ -115,8 +116,19 @@ func TestProjectFoldsAPortsContributionsUnderItsOpenOne(t *testing.T) {
 	require.Equal(t, "verified", row.State)
 	require.Len(t, row.Earlier, 3)
 	require.Equal(t, "verification", row.Earlier[0].Change, "newest first")
+	require.True(t, row.Earlier[0].Retired, "a finished standalone verification is history")
 	require.Equal(t, "merged", row.Earlier[1].State)
 	require.Equal(t, "retired", row.Earlier[2].State)
 	require.Equal(t, "stopped before a branch; bump again once fixed: forge: authentication is required", row.Earlier[2].Next)
 	require.True(t, row.Earlier[2].Retired)
+}
+
+func TestFinishedStandaloneVerificationsRetire(t *testing.T) {
+	verified := JobStatus{Job: record.Job{ID: "j", State: record.JobCompleted, Phase: record.PhaseVerification, Spec: record.JobSpec{Action: record.Verify, Destination: record.VerificationComplete, Targets: []record.Target{{Name: "libmd"}}}},
+		Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}}
+	rows := Project(Status{Jobs: []JobStatus{verified}})
+	require.Len(t, rows, 1)
+	require.Equal(t, "verified", rows[0].State)
+	require.True(t, rows[0].Retired, "there is nothing to abandon or continue; it hides with the retired rows")
+	require.Empty(t, Current(rows))
 }

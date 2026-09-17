@@ -39,7 +39,8 @@ type Contribution struct {
 	// History lists the jobs behind this row, oldest first.
 	History   []ContributionJob
 	UpdatedAt time.Time
-	// Retired is set once the change is merged, closed, or abandoned.
+	// Retired is set once the change is merged, closed, or abandoned, or a
+	// standalone verification has finished.
 	Retired bool `json:",omitempty"`
 	// Earlier holds the port's other contributions and standalone
 	// verifications, newest first, folded under this row.
@@ -230,7 +231,10 @@ func project(change record.Change, known bool, entries []JobStatus, pr *record.P
 		}
 	}
 	row.Phase, row.State, row.Next = words(change, known, current, pr)
-	row.Retired = known && change.Disposition != record.ChangeOpen
+	// A retired change is history. So is a standalone verification once its
+	// job has finished: it belongs to no contribution, so there is nothing
+	// to abandon and nothing further to do with it.
+	row.Retired = known && change.Disposition != record.ChangeOpen || !known && current != nil && current.Job.State.Terminal()
 	return row
 }
 
