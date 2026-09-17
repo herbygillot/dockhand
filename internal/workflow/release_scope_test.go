@@ -110,3 +110,46 @@ func TestSharedReleaseResumesIsolatedCoverageAndGatesPublication(t *testing.T) {
 		})
 	}
 }
+
+// A combined bump of a shared release builds only its initiating target by
+// default and still publishes; the PR body names the siblings left to the
+// pull request workflow. This is the path the first real stub bump took.
+func TestSharedReleaseRootOnlyCoveragePublishes(t *testing.T) {
+	f, hosting, request := combinedFixture(t, record.Bump)
+	request.Spec.Preparation.SharedRelease = true
+	original := f.engine.Preparer
+	root := request.Spec.Targets[0]
+	sibling := root
+	sibling.Name = "fixture-sibling"
+	sibling.Subport = sibling.Name
+	metadata := root
+	metadata.Name = "fixture-meta"
+	metadata.Subport = metadata.Name
+	scope := &record.ReleaseScope{Input: record.ReleaseInput{Portfile: root.Portfile, Before: "1", After: "2"}, Affected: []record.ReleaseMember{{Target: root}, {Target: sibling}, {Target: metadata, MetadataOnly: true}}}
+	f.engine.Preparer = prepareFunc(func(ctx context.Context, r preparation.Request) (preparation.Result, error) {
+		result, err := original.Prepare(ctx, r)
+		result.Scope = scope
+		return result, err
+	})
+	id := prepareCombined(t, f, request)
+	f.run(t, id)
+	before := f.status(t, id)
+	require.Len(t, before.Jobs[0].Plan.Targets, 1, "root only by default")
+	require.Equal(t, root, before.Jobs[0].Plan.Targets[0].Port)
+	f.provider.observe = func(_ context.Context, run record.ProviderRun) (verify.Observation, error) {
+		return verify.Observation{Run: run, State: record.AttemptFinished, Verdict: record.VerdictPassed, ObservedAt: f.now()}, nil
+	}
+	for range 50 {
+		if f.status(t, id).Jobs[0].Job.State.Terminal() {
+			break
+		}
+		f.run(t, id)
+	}
+	status := f.status(t, id)
+	job := status.Jobs[0].Job
+	require.Equal(t, record.JobCompleted, job.State, "%s", job.Detail)
+	require.Equal(t, 1, hosting.writes)
+	body := status.Jobs[0].Publications[0].Spec.Desired.Body
+	require.Contains(t, body, "The initiating subport of this shared release passed verification locally.")
+	require.Contains(t, body, "Not built locally: fixture-sibling. The pull request workflow builds every subport.")
+}

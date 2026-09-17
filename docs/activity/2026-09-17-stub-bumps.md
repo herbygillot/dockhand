@@ -15,3 +15,5 @@ The existing shared-release tests that assumed every sibling was built now set `
 ## Found by the real run
 
 The first real `bump py-idna` stopped at release resolution: the job's preparation request selected by its recorded target, `py314-idna`, so the edit service never saw the stub and the subport's own livecheck is `none`. The preparation request now selects the stub's Portfile again whenever the job records a stub, so the edit service redirects to the same newest subport and borrows the stub's livecheck. The preview had not caught it because the CLI passes the stub's name to the preview directly.
+
+The third run completed the exercise: `bump py-idna` continued the contribution, reused the passing `py314-idna` build, and published https://github.com/macports/macports-ports/pull/34737, whose body lists the one local build and names py310 through py313 as left to the workflow. The second run had stopped at publication with "missing shared-release target py310-idna", which neither the recorded data nor the current code reproduces; a combined-bump test with root-only coverage now pins that path.
