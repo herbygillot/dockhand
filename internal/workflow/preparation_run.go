@@ -147,8 +147,14 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 
 func preparationRequest(job record.Job) preparation.Request {
 	target := job.Spec.Targets[0]
+	selection := macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants}
+	if job.Spec.Preparation.Stub != "" {
+		// Select the stub again so the edit service redirects to the same
+		// newest subport and borrows the stub's livecheck for discovery.
+		selection.Subport = ""
+	}
 	return preparation.Request{SharedRelease: job.Spec.Preparation.SharedRelease, CommitName: job.Spec.Preparation.Stub, Action: job.Spec.Action, Source: job.Spec.Source,
-		Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants},
+		Selection: selection,
 		Platform:  job.Spec.Preparation.Platform, Reason: job.Spec.Reason, Version: job.Spec.Version, Release: job.ResolvedRelease}
 }
 
