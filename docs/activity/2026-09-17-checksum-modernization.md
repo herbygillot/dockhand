@@ -25,7 +25,7 @@ On the ports tree, `refresh-checksums argh --diff` produced:
     +                    sha256  50874370c149a23ff48bd4312395b9ba6eeec0864c44ecbd715758ddae9262c4 \
     +                    size    21346
 
-The existing rmd160 matched the download, which is the check that the archive is the one the port meant. `assess` on ten previously refused ports reported eight ready; the two others fail on the next reason in the chain, an ftp-only master site. The whole refused population was re-assessed afterwards; see the follow-up note below.
+The existing rmd160 matched the download, which is the check that the archive is the one the port meant. `assess` on ten previously refused ports reported eight ready; the two others fail on the next reason in the chain, an ftp-only master site. Re-assessing the whole refused population afterwards, the same 1,554 entries against the same tree: 1,486 are now input-found (95.6%), 63 unsupported, 5 unknown. Of the 68 left, 57 fail on an ftp-only master site, 4 on a genuinely ambiguous group (two groups with the same name), 3 on a declaration no observed context covers, and 4 on fetch hooks or host-dependent evaluation, none of them checksum layout. Against the survey's whole index of 41,716 rows, that moves input-found coverage from 16,378 (39.3%) to 17,864 (42.8%).
 
 ## Also found
 
