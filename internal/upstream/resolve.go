@@ -95,7 +95,10 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release rec
 		if err != nil {
 			return err
 		}
-		if spec.Forge != "" || release.Requested != "" && release.Version != release.Requested || release.CurrentVersion != port.Version || release.NoUpdate || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || version.Validate(release.Version) != nil {
+		// A frozen archive release must describe this Portfile's source; an
+		// already-current one is coherent too and lets preparation report
+		// "no update" the way it does for a forge source.
+		if spec.Forge != "" || release.Requested != "" && release.Version != release.Requested || release.CurrentVersion != port.Version || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || version.Validate(release.Version) != nil {
 			return fmt.Errorf("upstream: archive release does not match the Portfile")
 		}
 		if release.Requested == "" {

@@ -56,6 +56,8 @@ func TestHTTPDiscoveryUsesNativeFilterAndFreezesRelease(t *testing.T) {
 		result, err = service.DiscoverPort(t.Context(), port)
 		require.NoError(t, err)
 		require.Equal(t, upstream.Current, result.Assessment)
+		require.True(t, result.Release.NoUpdate)
+		require.NoError(t, service.Check(t.Context(), port, *result.Release), "an already-current archive release is coherent; preparation reports no update")
 	}
 }
 
