@@ -24,11 +24,11 @@ import (
 
 func (r *runtime) statusCommand() *cobra.Command {
 	var filter workflow.StatusFilter
-	var plainOutput bool
+	var printOnly bool
 	cmd := &cobra.Command{
 		Use:   "status [target]",
 		Short: "Show recorded workflow status",
-		Long:  "Show a repository state snapshot as one row per contribution: port, change, phase, state, and what comes next. On a terminal the table is live and its keys run the existing verbs on the selected contribution; --plain prints it once, -v prints the full record with identifiers, and --json returns both. This command does not advance work or refresh provider or pull request state by itself.",
+		Long:  "Show the repository's contributions as one row each: port, change, phase, state, and what comes next. On a terminal the table is live: it processes the repository's pending work while open, rereads the snapshot as work advances, and its keys run the existing verbs on the selected contribution. --print prints the snapshot once and processes nothing; --json and output that is not a terminal imply --print; -v prints the full record with identifiers.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
@@ -51,13 +51,13 @@ func (r *runtime) statusCommand() *cobra.Command {
 			if r.level(cmd) >= progress.Verbose {
 				return renderStatus(cmd.OutOrStdout(), status)
 			}
-			if !plainOutput && isTerminal(cmd.OutOrStdout()) && isTerminal(cmd.InOrStdin()) {
+			if !printOnly && isTerminal(cmd.OutOrStdout()) && isTerminal(cmd.InOrStdin()) {
 				return r.liveStatus(cmd, filter)
 			}
 			return renderContributions(cmd.OutOrStdout(), overview)
 		},
 	}
-	cmd.Flags().BoolVar(&plainOutput, "plain", false, "Print the snapshot once instead of the live table on a terminal")
+	cmd.Flags().BoolVar(&printOnly, "print", false, "Print the snapshot once; do not open the live table or process work")
 	cmd.Flags().StringVar((*string)(&filter.JobID), "job", "", "Inspect one job instead of a target")
 	cmd.Flags().StringVar((*string)(&filter.ChangeID), "change", "", "Inspect one contribution")
 	cmd.Flags().BoolVar(&filter.Active, "active", false, "Show queued and active jobs, including capacity and retry waits")
@@ -65,15 +65,23 @@ func (r *runtime) statusCommand() *cobra.Command {
 	return cmd
 }
 
-// liveStatus renders the contribution table with Bubble Tea, polling the
-// snapshot, and runs the verbs its keys name in-process on this runtime's
+// liveStatus renders the contribution table with Bubble Tea and processes
+// the repository's work while it is open: the driver loop runs beside the
+// table with its reports in the message strip, the snapshot is reread as
+// work advances, and the keys run the verbs in-process on this runtime's
 // configuration, so a key has exactly the authority of the command.
 func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter) error {
+	services, err := r.build(cmd.Context(), r.config)
+	if err != nil {
+		return err
+	}
+	defer services.Close()
+	level := r.level(cmd)
 	options := tui.Options{
 		Poll: func(ctx context.Context) (workflow.Overview, error) {
-			status, err := app.FilteredStatus(ctx, r.config, filter)
+			status, err := services.Workflow.FilteredStatus(ctx, filter)
 			if err != nil {
-				return workflow.Overview{}, databaseReadError(err)
+				return workflow.Overview{}, err
 			}
 			return workflow.Overview{Status: status, Contributions: workflow.Project(status)}, nil
 		},
@@ -81,8 +89,38 @@ func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter) e
 			return run(ctx, args, Streams{Out: out, Err: out}, r.config, r.build)
 		},
 		Open: func(target string) error { return exec.Command("open", target).Start() },
+		Processor: func(ctx context.Context, say func(scope, text string)) error {
+			ctx = progressContext(ctx, &lineWriter{say: func(text string) { say("", text) }}, level, false)
+			services.Processes.OnCycle = func(result workflow.CycleResult) error {
+				for _, problem := range result.Problems {
+					say(string(problem.JobID), problem.Detail)
+				}
+				return nil
+			}
+			return services.Processes.Run(ctx, services.Workflow, workflow.Scope{All: true})
+		},
 	}
 	return tui.Run(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), options)
+}
+
+// lineWriter hands each complete line written to it to say.
+type lineWriter struct {
+	say func(string)
+	buf []byte
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			return len(p), nil
+		}
+		if line := strings.TrimSpace(string(w.buf[:i])); line != "" {
+			w.say(line)
+		}
+		w.buf = w.buf[i+1:]
+	}
 }
 
 func isTerminal(stream any) bool {

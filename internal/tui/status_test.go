@@ -73,26 +73,26 @@ func TestKeysMapOntoVerbsWithConfirmation(t *testing.T) {
 	require.Equal(t, doneMsg{port: "jq", verb: "refresh"}, msg)
 	require.Equal(t, []string{"refresh --change change_jq"}, ran)
 	m.Update(msg)
-	require.Contains(t, m.View(), "jq: refresh finished")
+	require.Contains(t, m.View(), "jq: refresh started")
 	_, cmd = m.Update(key("p"))
 	require.Nil(t, cmd)
 	_, cmd = m.Update(key("y"))
 	require.NotNil(t, cmd)
 	cmd()
-	require.Equal(t, "publish --change change_jq", ran[1])
+	require.Equal(t, "publish --change change_jq --detach", ran[1], "work-starting verbs detach; the table's processing carries them")
 }
 
 func TestVerbArgsForStandaloneWork(t *testing.T) {
 	standalone := rows()[1]
-	args, problem := verbArgs("wait", standalone)
+	args, problem := verbArgs("cancel", standalone)
 	require.Empty(t, problem)
-	require.Equal(t, []string{"wait", "--job", "job_2"}, args)
+	require.Equal(t, []string{"cancel", "--job", "job_2"}, args)
 	args, problem = verbArgs("verify", standalone)
 	require.Empty(t, problem)
-	require.Equal(t, []string{"verify", "deno"}, args)
+	require.Equal(t, []string{"verify", "deno", "--detach"}, args)
 	args, problem = verbArgs("bump", rows()[0])
 	require.Empty(t, problem)
-	require.Equal(t, []string{"bump", "jq", "--change", "change_jq"}, args, "bumping again continues the exact contribution")
+	require.Equal(t, []string{"bump", "jq", "--change", "change_jq", "--detach"}, args, "bumping again continues the exact contribution")
 	_, problem = verbArgs("publish", standalone)
 	require.Contains(t, problem, "not a tracked contribution")
 	standalone.Active = nil
@@ -110,4 +110,31 @@ func TestOpenKeysReportMissingTargets(t *testing.T) {
 	require.Contains(t, m.View(), "jq: no log recorded")
 	_, cmd := m.Update(key("q"))
 	require.NotNil(t, cmd)
+}
+
+func TestProcessorRunsWhileTheTableIsOpenAndStopsWithIt(t *testing.T) {
+	started := make(chan struct{})
+	m := newModel(Options{
+		Poll: func(context.Context) (workflow.Overview, error) { return workflow.Overview{}, nil },
+		Processor: func(ctx context.Context, say func(scope, text string)) error {
+			say("jq", "Verification admitted")
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	})
+	var lines []tea.Msg
+	m.runner.send = func(msg tea.Msg) { lines = append(lines, msg) }
+	cmd := m.startProcessor()
+	require.True(t, m.processing)
+	require.Contains(t, m.View(), "dockhand status (processing)")
+	finished := make(chan tea.Msg, 1)
+	go func() { finished <- cmd() }()
+	<-started
+	m.stopProcessor()
+	require.Nil(t, <-finished, "a canceled processor ends quietly")
+	require.False(t, m.processing)
+	require.Equal(t, []tea.Msg{lineMsg{port: "jq", text: "Verification admitted"}}, lines)
+	m.Update(processorMsg{err: io.ErrUnexpectedEOF})
+	require.Contains(t, m.View(), "processing stopped: unexpected EOF")
 }

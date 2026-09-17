@@ -20,22 +20,27 @@ import (
 
 // Options wires the table to the rest of dockhand. Poll reads a snapshot;
 // Run executes one dockhand verb in-process, writing its output to out;
-// Open shows a URL or file to the person, typically in the browser.
+// Open shows a URL or file to the person, typically in the browser;
+// Processor, when set, advances the repository's work for as long as the
+// table is open, reporting through say into the message strip.
 type Options struct {
-	Poll     func(context.Context) (workflow.Overview, error)
-	Run      func(ctx context.Context, args []string, out io.Writer) error
-	Open     func(target string) error
-	Interval time.Duration
+	Poll      func(context.Context) (workflow.Overview, error)
+	Run       func(ctx context.Context, args []string, out io.Writer) error
+	Open      func(target string) error
+	Processor func(ctx context.Context, say func(scope, text string)) error
+	Interval  time.Duration
 	// Messages is how many strip lines stay visible.
 	Messages int
 }
 
-// Run shows the table until the person quits or the context ends.
+// Run shows the table until the person quits or the context ends. The
+// processor, if any, stops with the table.
 func Run(ctx context.Context, in io.Reader, out io.Writer, options Options) error {
 	model := newModel(options)
 	program := tea.NewProgram(model, tea.WithContext(ctx), tea.WithInput(in), tea.WithOutput(out))
 	model.runner.send = program.Send
 	_, err := program.Run()
+	model.stopProcessor()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -52,6 +57,7 @@ type doneMsg struct {
 	port, verb string
 	err        error
 }
+type processorMsg struct{ err error }
 
 // runner executes verbs in the background and streams their output lines
 // back into the program as messages.
@@ -81,6 +87,11 @@ type model struct {
 	confirm  *pending
 	width    int
 	height   int
+	// processing is set while the processor runs; stop ends it and done
+	// closes when it has returned.
+	processing bool
+	stop       context.CancelFunc
+	done       chan struct{}
 }
 
 func newModel(options Options) *model {
@@ -94,7 +105,39 @@ func newModel(options Options) *model {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(m.poll(), m.tick())
+	return tea.Batch(m.poll(), m.tick(), m.startProcessor())
+}
+
+// startProcessor runs the processor in the background for the life of the
+// table; its reports and its end land in the strip.
+func (m *model) startProcessor() tea.Cmd {
+	if m.options.Processor == nil {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.processing, m.stop, m.done = true, cancel, make(chan struct{})
+	processor, send, done := m.options.Processor, m.runner.send, m.done
+	return func() tea.Msg {
+		defer close(done)
+		err := processor(ctx, func(scope, text string) {
+			if send != nil {
+				send(lineMsg{port: scope, text: text})
+			}
+		})
+		if ctx.Err() != nil {
+			return nil
+		}
+		return processorMsg{err: err}
+	}
+}
+
+func (m *model) stopProcessor() {
+	if m.stop == nil {
+		return
+	}
+	m.stop()
+	<-m.done
+	m.stop, m.processing = nil, false
 }
 
 func (m *model) poll() tea.Cmd {
@@ -136,9 +179,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.say(msg.port, msg.verb+" failed: "+msg.err.Error())
 		} else {
-			m.say(msg.port, msg.verb+" finished")
+			m.say(msg.port, msg.verb+" started")
 		}
 		return m, m.poll()
+	case processorMsg:
+		m.processing = false
+		if msg.err != nil {
+			m.say("", "processing stopped: "+msg.err.Error())
+		} else {
+			m.say("", "processing stopped")
+		}
 	case tea.KeyMsg:
 		return m.key(msg)
 	}
@@ -176,8 +226,8 @@ func (m *model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.open("PR", m.selected().PullRequest)
 	case "l":
 		m.open("log", m.selected().Log)
-	case "w", "c", "v", "p", "r", "a", "b":
-		verb := map[string]string{"w": "wait", "c": "cancel", "v": "verify", "p": "publish", "r": "refresh", "a": "abandon", "b": "bump"}[key]
+	case "c", "v", "p", "r", "a", "b":
+		verb := map[string]string{"c": "cancel", "v": "verify", "p": "publish", "r": "refresh", "a": "abandon", "b": "bump"}[key]
 		return m, m.verb(verb)
 	}
 	return m, nil
@@ -233,24 +283,29 @@ func (m *model) verb(verb string) tea.Cmd {
 }
 
 // verbArgs builds the command for a verb on a row: exact by contribution ID
-// when the row is a tracked change, by job for standalone work.
+// when the row is a tracked change, by job for standalone work. Verbs that
+// start work detach, since the table's own processing carries it on.
 func verbArgs(verb string, row workflow.Contribution) ([]string, string) {
-	if row.ChangeID != "" {
-		if verb == "bump" {
-			return []string{verb, row.Port, "--change", string(row.ChangeID)}, ""
-		}
-		return []string{verb, "--change", string(row.ChangeID)}, ""
-	}
-	switch verb {
-	case "wait", "cancel":
+	var args []string
+	switch {
+	case row.ChangeID != "" && verb == "bump":
+		args = []string{verb, row.Port, "--change", string(row.ChangeID)}
+	case row.ChangeID != "":
+		args = []string{verb, "--change", string(row.ChangeID)}
+	case verb == "cancel":
 		if row.Active == nil {
 			return nil, "nothing is pending"
 		}
-		return []string{verb, "--job", string(row.Active.JobID)}, ""
-	case "verify", "bump":
-		return []string{verb, row.Port}, ""
+		args = []string{verb, "--job", string(row.Active.JobID)}
+	case verb == "verify" || verb == "bump":
+		args = []string{verb, row.Port}
+	default:
+		return nil, "not a tracked contribution; " + verb + " needs one"
 	}
-	return nil, "not a tracked contribution; " + verb + " needs one"
+	if verb == "bump" || verb == "verify" || verb == "publish" {
+		args = append(args, "--detach")
+	}
+	return args, ""
 }
 
 func (m *model) start(action pending) tea.Cmd {
@@ -325,7 +380,11 @@ func (m *model) View() string {
 	if !m.readAt.IsZero() {
 		age = fmt.Sprintf("read %s ago", m.now.Sub(m.readAt).Truncate(time.Second))
 	}
-	fmt.Fprintf(&b, "%s  %s\n", headerStyle.Render("dockhand status"), faintStyle.Render(age))
+	title := "dockhand status"
+	if m.processing {
+		title += " (processing)"
+	}
+	fmt.Fprintf(&b, "%s  %s\n", headerStyle.Render(title), faintStyle.Render(age))
 	if m.err != nil {
 		fmt.Fprintf(&b, "%s\n", "status unavailable: "+m.err.Error())
 	}
@@ -341,7 +400,7 @@ func (m *model) View() string {
 	if m.confirm != nil {
 		fmt.Fprintf(&b, "%s", headerStyle.Render(fmt.Sprintf("Run dockhand %s for %s? y/n", m.confirm.verb, m.confirm.port)))
 	} else {
-		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  b bump again  v verify  p publish  w wait  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
+		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  b bump again  v verify  p publish  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
 	}
 	return b.String()
 }
