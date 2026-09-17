@@ -160,7 +160,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				current.RetryAt = &retry
 			}
 		case settled:
-			current.ConsecutiveFailures = 0
+			current.ConsecutiveFailures, current.ConsecutiveWaits = 0, 0
 		}
 		work.Attempts[current.ID] = current
 		work.Job = job

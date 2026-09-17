@@ -16,17 +16,19 @@ func (c *cycle) take(lease *record.Lease, now time.Time, timeout time.Duration) 
 	return nil
 }
 
-// fail schedules the next retry after a failure, advancing the failure count
-// and honoring a rate limit's own deadline.
+// fail schedules the next retry after a failure, advancing the failure count,
+// forgetting waits, and honoring a rate limit's own deadline.
 func (c *cycle) fail(lease *record.Lease, key string, err error) time.Time {
+	lease.ConsecutiveWaits = 0
 	retry := c.failureDeadline(key, &lease.ConsecutiveFailures, err)
 	lease.RetryAt = &retry
 	return retry
 }
 
-// await schedules the next look at expected progress that is not a failure.
+// await schedules the next look at expected progress that is not a failure,
+// counting the wait so an unresolved one backs off and stays visible.
 func (c *cycle) await(lease *record.Lease) time.Time {
-	retry := c.waitingDeadline(&lease.ConsecutiveFailures)
+	retry := c.waitingDeadline(&lease.ConsecutiveFailures, &lease.ConsecutiveWaits)
 	lease.RetryAt = &retry
 	return retry
 }
@@ -35,6 +37,7 @@ func (c *cycle) await(lease *record.Lease) time.Time {
 // finished job carries no stale claim or retry time.
 func finishJob(job *record.Job, state record.JobState, detail string, now time.Time) {
 	job.State, job.Detail, job.FinishedAt = state, detail, &now
+	job.ConsecutiveWaits = 0
 	job.Release()
 }
 

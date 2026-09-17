@@ -14,6 +14,10 @@ type Lease struct {
 	ClaimGeneration uint64
 	// ConsecutiveFailures drives retry backoff; expected waiting resets it.
 	ConsecutiveFailures uint32 `json:",omitempty"`
+	// ConsecutiveWaits counts expected waits since the last change, so a wait
+	// that never resolves lengthens its interval and stays visible; a failure
+	// or a settled result resets it.
+	ConsecutiveWaits uint32 `json:",omitempty"`
 	// RetryAt is the earliest time the next action may run; nil imposes no delay.
 	RetryAt *time.Time
 }

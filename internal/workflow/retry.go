@@ -34,7 +34,19 @@ func (c *cycle) failureDeadline(key string, failures *uint32, err error) time.Ti
 	return deadline
 }
 
-func (c *cycle) waitingDeadline(failures *uint32) time.Time {
+// waitingDeadline schedules the next look at expected progress. Failures are
+// forgotten, and consecutive waits stretch the interval up to a ceiling so a
+// wait that never resolves neither spins nor disappears: the count stays on
+// the record for status to show.
+func (c *cycle) waitingDeadline(failures, waits *uint32) time.Time {
 	*failures = 0
-	return c.engine.now().Add(c.wait)
+	if *waits < ^uint32(0) {
+		*waits += 1
+	}
+	delay := c.wait
+	ceiling := max(5*time.Minute, delay)
+	for i := uint32(1); i < *waits && delay < ceiling; i++ {
+		delay = min(delay*2, ceiling)
+	}
+	return c.engine.now().Add(delay)
 }
