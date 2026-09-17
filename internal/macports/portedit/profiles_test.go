@@ -41,6 +41,10 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 	native := record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}
 	for _, source := range []string{
 		`configure.env-append MACOSX_DEPLOYMENT_TARGET=${macosx_deployment_target}`,
+		`if {${os.platform} eq "darwin" && [vercmp ${macosx_deployment_target} >= 15.0]} {
+    macosx_deployment_target 14.0
+}`,
+		`platform darwin { if { [vercmp ${macosx_deployment_target} >= 15.0]} { macosx_deployment_target 14.0 } }`,
 		`build.env-append MACOSX_DEPLOYMENT_TARGET=[shellescape ${macosx_deployment_target}]`,
 		`post-patch { reinplace "s/X/${macosx_deployment_target}/" ${worksrcpath}/Info.plist }`,
 		`build { system -W ${worksrcpath} "env MACOSX_DEPLOYMENT_TARGET=${macosx_deployment_target} swift build" }`,
@@ -70,6 +74,7 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 		`distname fixture-${macosx_deployment_target}`,
 		`master_sites https://example.invalid/${os.version}`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { checksums sha256 aaaa }`,
+		`if {[vercmp ${macosx_deployment_target} >= 15.0]} { macosx_deployment_target 14.0; distname legacy }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { configure.args-append x } else { distfiles other.tar.gz }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { if {${os.major} > 20} { version 2 } }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { foreach f {a} { set x $f }; distname fixture-$x }`,

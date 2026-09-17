@@ -19,8 +19,12 @@ import (
 // harmless instead of refused. A variable set from such a read carries it.
 
 // benignSinks accept the read as text without affecting source declarations.
+// macosx_deployment_target is among them because reassigning the deployment
+// target, typically capped from a read of itself (the qt5 and qt6 Portfiles,
+// TeXShop), changes only how the port compiles.
 var benignSinks = map[string]bool{
-	"system": true, "reinplace": true, "xinstall": true, "copy": true, "move": true, "delete": true, "ln": true, "file": true,
+	"macosx_deployment_target": true,
+	"system":                   true, "reinplace": true, "xinstall": true, "copy": true, "move": true, "delete": true, "ln": true, "file": true,
 	"notes": true, "notes-append": true, "ui_debug": true, "ui_info": true, "ui_msg": true, "ui_notice": true, "ui_warn": true, "ui_error": true,
 	"return": true, "error": true, "puts": true, "close": true, "flush": true, "fconfigure": true,
 }
