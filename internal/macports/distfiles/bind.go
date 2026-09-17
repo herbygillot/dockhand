@@ -20,9 +20,25 @@ type Token struct {
 type Group struct {
 	Name   string
 	Values map[string]Token
+	// Kinds lists the algorithms in written order; Pairs locates each one
+	// with its value, in the same order.
+	Kinds []string
+	Pairs []portfile.ChecksumWords
+	// Owner is the first algorithm's owner, "<declaration>/<word>", and
+	// identifies the group across observed contexts.
+	Owner string
 }
 
-func (g Group) ID() string { return g.Values["sha256"].Owner }
+func (g Group) ID() string { return g.Owner }
+
+// Legacy reports whether the group is rewritten as a whole when its
+// archive is refreshed rather than edited value by value.
+func (g Group) Legacy() bool { return portfile.LegacyChecksums(g.Kinds) }
+
+// Span covers the group's written pairs, first algorithm through last value.
+func (g Group) Span() text.Span {
+	return text.Span{Start: g.Pairs[0].Kind.Start, End: g.Pairs[len(g.Pairs)-1].Value.End}
+}
 
 type Artifact struct {
 	macports.Distfile
@@ -104,11 +120,21 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 			if _, ok := group.Values[kind.Value]; ok {
 				return result, fmt.Errorf("%w: duplicate checksum algorithm", portfile.ErrUnsupported)
 			}
+			if group.Owner == "" {
+				group.Owner = kind.Owner
+			} else if declarationOf(kind.Owner) != declarationOf(group.Owner) && portfile.LegacyChecksums(append(group.Kinds, kind.Value)) {
+				return result, fmt.Errorf("%w: legacy checksum group spans declarations", portfile.ErrUnsupported)
+			}
 			group.Values[kind.Value] = value
+			group.Kinds = append(group.Kinds, kind.Value)
+			group.Pairs = append(group.Pairs, portfile.ChecksumWords{Kind: kind.Span, Value: value.Span})
 			i += 2
 		}
-		if _, ok := group.Values["sha256"]; !ok || named[group.Name] {
-			return result, fmt.Errorf("%w: missing SHA256 or ambiguous checksum group", portfile.ErrUnsupported)
+		if len(group.Pairs) == 0 {
+			return result, fmt.Errorf("%w: checksum group without an algorithm", portfile.ErrUnsupported)
+		}
+		if named[group.Name] {
+			return result, fmt.Errorf("%w: ambiguous checksum group", portfile.ErrUnsupported)
 		}
 		named[group.Name] = true
 		result.Groups = append(result.Groups, group)
@@ -144,4 +170,8 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 	}
 	return result, nil
 }
-func algorithm(value string) bool { return value == "sha256" || value == "rmd160" || value == "size" }
+func algorithm(value string) bool {
+	return value == "sha256" || value == "rmd160" || value == "size" || value == "md5" || value == "sha1"
+}
+
+func declarationOf(owner string) string { return owner[:strings.IndexByte(owner, '/')] }

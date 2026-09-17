@@ -42,3 +42,49 @@ if {${build_arch} eq "arm64"} {distfiles arm.zip} else {distfiles intel.zip}
 	require.Empty(t, again.Files)
 	require.Empty(t, again.Commits)
 }
+
+// A Portfile still carrying md5 and sha1 is brought to the current layout
+// the first time dockhand touches its archive: the group is rewritten as
+// rmd160, sha256, and size in the Portfile's own column alignment, on a
+// refresh and on a version bump alike. A group already made of current
+// algorithms keeps its layout.
+func TestLegacyChecksumBlocksAreModernizedWhenTouched(t *testing.T) {
+	body := `version 1.2.3
+revision 2
+master_sites @SITE@/${version}
+distfiles fixture.zip
+checksums           md5     aaaa \
+                    sha1    bbbb \
+                    rmd160  cccc
+`
+	s, r, _ := archiveFixture(t, body)
+	r.Action, r.Version, r.Release = record.RefreshChecksums, "", nil
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Commits, 1)
+	after := string(result.Files[0].After)
+	require.NotContains(t, after, "md5")
+	require.NotContains(t, after, "sha1")
+	require.Regexp(t, `checksums           rmd160  [0-9a-f]{40} \\\n                    sha256  [0-9a-f]{64} \\\n                    size    \d+\n`, after)
+	require.Contains(t, after, "revision 2")
+
+	s, r, _ = archiveFixture(t, body)
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	after = string(result.Files[0].After)
+	require.Contains(t, after, "version 1.2.4")
+	require.NotContains(t, after, "md5")
+	require.Regexp(t, `rmd160  [0-9a-f]{40} \\\n                    sha256  [0-9a-f]{64} \\\n                    size    \d+\n`, after)
+
+	s, r, _ = archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture.zip
+checksums sha256 aaaa \
+          size 2
+`)
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	after = string(result.Files[0].After)
+	require.NotContains(t, after, "rmd160", "a current group keeps its algorithms")
+	require.Regexp(t, `checksums sha256 [0-9a-f]{64} \\\n          size \d+\n`, after)
+}

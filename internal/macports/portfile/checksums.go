@@ -12,6 +12,7 @@ import (
 
 type checksumPair struct {
 	kind  string
+	words ChecksumWords
 	value syntax.Word
 }
 type checksumGroup struct {
@@ -19,7 +20,87 @@ type checksumGroup struct {
 	pairs []checksumPair
 }
 
-func checksumKind(s string) bool { return s == "rmd160" || s == "sha256" || s == "size" }
+// checksumKind reports whether s is an algorithm MacPorts accepts in a
+// checksums declaration, current or legacy.
+func checksumKind(s string) bool {
+	return s == "rmd160" || s == "sha256" || s == "size" || s == "md5" || s == "sha1"
+}
+
+// ModernChecksumKinds is the layout MacPorts writes today, in the order
+// `port checksum` suggests it.
+var ModernChecksumKinds = []string{"rmd160", "sha256", "size"}
+
+// LegacyChecksums reports whether a group written with these algorithms is
+// rewritten as a whole: it names md5 or sha1, which MacPorts no longer
+// accepts as a sole guarantee, or it lacks sha256. Groups made only of
+// current algorithms keep their layout and are edited value by value.
+func LegacyChecksums(kinds []string) bool {
+	hasSHA256 := false
+	for _, kind := range kinds {
+		switch kind {
+		case "md5", "sha1":
+			return true
+		case "sha256":
+			hasSHA256 = true
+		}
+	}
+	return !hasSHA256
+}
+
+// ChecksumWords locates one algorithm and its value as written.
+type ChecksumWords struct {
+	Kind, Value text.Span
+}
+
+func (c Checksum) modern() []string {
+	values := map[string]string{"rmd160": c.RMD160, "sha256": c.SHA256, "size": strconv.FormatInt(c.Size, 10)}
+	var out []string
+	for _, kind := range ModernChecksumKinds {
+		out = append(out, kind, values[kind])
+	}
+	return out
+}
+
+// RewriteChecksumGroup replaces the written pairs of one group, first
+// algorithm through last value, with the modern layout, keeping the
+// group's own spacing: the column its values are aligned in, if any, and
+// the line continuation between pairs. A group written as a single pair continues
+// onto new lines aligned under its first algorithm. It returns the edit
+// and the evaluated words the group will then produce.
+func RewriteChecksumGroup(src []byte, pairs []ChecksumWords, sums Checksum) (text.Edit, []string) {
+	first, last := pairs[0], pairs[len(pairs)-1]
+	span := text.Span{Start: first.Kind.Start, End: last.Value.End}
+	// Values aligned in a column wider than the first algorithm needs keep
+	// that column; otherwise one space separates each algorithm from its value.
+	column := first.Value.Start - first.Kind.Start
+	if column <= len(src[first.Kind.Start:first.Kind.End])+1 {
+		column = 0
+	}
+	var between string
+	if len(pairs) > 1 {
+		between = string(src[first.Value.End:pairs[1].Kind.Start])
+	} else {
+		lineStart := strings.LastIndexByte(string(src[:first.Kind.Start]), '\n') + 1
+		indent := []byte(string(src[lineStart:first.Kind.Start]))
+		for i, b := range indent {
+			if b != '\t' {
+				indent[i] = ' '
+			}
+		}
+		between = " \\\n" + string(indent)
+	}
+	values := sums.modern()
+	var out strings.Builder
+	for i := 0; i < len(values); i += 2 {
+		if i > 0 {
+			out.WriteString(between)
+		}
+		out.WriteString(values[i])
+		out.WriteString(strings.Repeat(" ", max(1, column-len(values[i]))))
+		out.WriteString(values[i+1])
+	}
+	return text.Edit{Span: span, New: []byte(out.String())}, values
+}
 
 func checksumGroups(src []byte, evaluated string) ([]checksumGroup, error) {
 	script, errs := syntax.Parse(src)
@@ -68,11 +149,11 @@ func checksumGroups(src []byte, evaluated string) ([]checksumGroup, error) {
 				return nil, fmt.Errorf("%w: calculated or overridden checksums", ErrUnsupported)
 			}
 			seen[kind] = true
-			group.pairs = append(group.pairs, checksumPair{kind, words[i+1]})
+			group.pairs = append(group.pairs, checksumPair{kind, ChecksumWords{Kind: words[i].Span, Value: words[i+1].Span}, words[i+1]})
 			i += 2
 		}
-		if !seen["sha256"] {
-			return nil, fmt.Errorf("%w: each distfile requires a sha256 checksum", ErrUnsupported)
+		if len(group.pairs) == 0 {
+			return nil, fmt.Errorf("%w: checksum group without an algorithm", ErrUnsupported)
 		}
 		groups = append(groups, group)
 		if group.name == "" && i < len(words) {
@@ -82,6 +163,25 @@ func checksumGroups(src []byte, evaluated string) ([]checksumGroup, error) {
 	return groups, nil
 }
 
+func (g checksumGroup) kinds() []string {
+	var kinds []string
+	for _, pair := range g.pairs {
+		kinds = append(kinds, pair.kind)
+	}
+	return kinds
+}
+
+func (g checksumGroup) words() []ChecksumWords {
+	var words []ChecksumWords
+	for _, pair := range g.pairs {
+		words = append(words, pair.words)
+	}
+	return words
+}
+
+// ReplaceChecksums writes the downloads' checksums into the one checksums
+// command of src. A group written with current algorithms keeps its layout;
+// a legacy group is rewritten as rmd160, sha256, and size.
 func ReplaceChecksums(src []byte, evaluated string, downloads ...Checksum) ([]byte, string, error) {
 	groups, err := checksumGroups(src, evaluated)
 	if err != nil {
@@ -107,10 +207,16 @@ func ReplaceChecksums(src []byte, evaluated string, downloads ...Checksum) ([]by
 		if !ok {
 			return nil, "", fmt.Errorf("%w: no source distfile for checksums %s", ErrUnsupported, group.name)
 		}
-		sums := map[string]string{"rmd160": download.RMD160, "sha256": download.SHA256, "size": strconv.FormatInt(download.Size, 10)}
 		if group.name != "" {
 			expected = append(expected, group.name)
 		}
+		if LegacyChecksums(group.kinds()) {
+			edit, values := RewriteChecksumGroup(src, group.words(), download)
+			edits = append(edits, edit)
+			expected = append(expected, values...)
+			continue
+		}
+		sums := map[string]string{"rmd160": download.RMD160, "sha256": download.SHA256, "size": strconv.FormatInt(download.Size, 10)}
 		for _, pair := range group.pairs {
 			edits = append(edits, text.Edit{Span: pair.value.Span, New: []byte(sums[pair.kind])})
 			expected = append(expected, pair.kind, sums[pair.kind])
