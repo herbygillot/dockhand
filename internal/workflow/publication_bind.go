@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/workflow/policy"
 )
 
 type PublicationRequest struct {
@@ -149,7 +150,7 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 		if verdict := verify.Applicable(wanted, evidence); !verdict.Matches {
 			return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 		}
-		return publicationCoverage(ctx, r, evidence, revision.Scope)
+		return policy.PublicationCoverage(ctx, r, evidence, revision.Scope)
 	})
 	if err != nil {
 		return Request{}, err

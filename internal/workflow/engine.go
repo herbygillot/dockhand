@@ -20,8 +20,6 @@ var (
 	ErrNotImplemented = errors.New("workflow: job execution is not implemented")
 	// ErrNoState means the engine or its state dependency is missing.
 	ErrNoState = errors.New("workflow: state store and repository are required")
-	// ErrInvalidRequest means a request violates the intake contract.
-	ErrInvalidRequest = errors.New("workflow: invalid request")
 	// ErrUnsupportedAction means intake does not yet support the requested action or control.
 	ErrUnsupportedAction = errors.New("workflow: action intake is not implemented")
 	// ErrRequestConflict means a request ID already identifies different intent.

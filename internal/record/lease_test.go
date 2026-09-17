@@ -26,3 +26,22 @@ func TestLeaseEligibilityAndRelease(t *testing.T) {
 	require.Equal(t, uint64(3), lease.ClaimGeneration, "the generation outlives the claim")
 	require.Equal(t, uint32(2), lease.ConsecutiveFailures, "failures are reset only by expected progress")
 }
+
+func TestEffectiveSourceAndPreparingActions(t *testing.T) {
+	input := Source{Commit: ObjectID("a"), Tree: ObjectID("b")}
+	job := Job{Spec: JobSpec{InputRevision: "revision_in", Source: input}}
+	revision, source := job.EffectiveSource()
+	require.Equal(t, RevisionID("revision_in"), revision)
+	require.Equal(t, input, source)
+	prepared := Source{Commit: ObjectID("c"), Tree: ObjectID("d")}
+	job.ResultRevision, job.Prepared = "revision_out", &PreparedChange{Source: prepared}
+	revision, source = job.EffectiveSource()
+	require.Equal(t, RevisionID("revision_out"), revision)
+	require.Equal(t, prepared, source)
+	for _, action := range []Action{Bump, BumpRevision, RefreshChecksums, Amend, Rebase} {
+		require.True(t, action.Prepares(), string(action))
+	}
+	for _, action := range []Action{Verify, Publish} {
+		require.False(t, action.Prepares(), string(action))
+	}
+}

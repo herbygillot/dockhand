@@ -1,7 +1,8 @@
-package workflow
+package policy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -12,7 +13,12 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, spec record.PublicationSpec) error {
+// ErrInvalidRequest means a request violates the intake contract.
+var ErrInvalidRequest = errors.New("workflow: invalid request")
+
+// PublicationEvidence checks that the cited attempt proves the job's effective
+// source for its tracked target and is still the latest applicable result.
+func PublicationEvidence(ctx context.Context, r state.Reader, job record.Job, spec record.PublicationSpec) error {
 	if job.Phase != record.PhasePublication {
 		return fmt.Errorf("%w: evidence check requires publication phase", ErrInvalidRequest)
 	}
@@ -30,12 +36,12 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	if err != nil {
 		return err
 	}
-	revisionID, _ := publicationInput(job)
+	revisionID, _ := job.EffectiveSource()
 	revision, err := r.Revision(ctx, revisionID)
 	if err != nil {
 		return err
 	}
-	if err := publicationCoverage(ctx, r, candidate, revision.Scope); err != nil {
+	if err := PublicationCoverage(ctx, r, candidate, revision.Scope); err != nil {
 		return err
 	}
 	config := candidate.Spec.Config
@@ -46,12 +52,12 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	} else if job.Spec.BuildRequirements == nil || job.ReusedAttempt != candidate.ID || len(verify.RequirementDifferences(*job.Spec.BuildRequirements, config)) != 0 {
 		return ErrInvalidRequest
 	}
-	_, source := publicationInput(job)
+	_, source := job.EffectiveSource()
 	build := record.BuildSpec{Branch: change.Branch, Source: source, Target: job.Spec.Targets[0], Config: config}
 	if verdict := verify.Applicable(build, candidate); !verdict.Matches {
 		return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 	}
-	latest, _, err := selectVerification(ctx, r, job, build)
+	latest, _, err := SelectVerification(ctx, r, job, build)
 	if err != nil {
 		return err
 	}
@@ -61,7 +67,9 @@ func publicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	return nil
 }
 
-func validatePublicationAction(job record.Job, action record.PublicationAction) error {
+// ValidatePublicationAction checks that a recorded publication action still
+// matches the job's accepted intent.
+func ValidatePublicationAction(job record.Job, action record.PublicationAction) error {
 	invalid := func(detail string) error {
 		return fmt.Errorf("%w: publication action %s", ErrInvalidRequest, detail)
 	}
@@ -74,15 +82,8 @@ func validatePublicationAction(job record.Job, action record.PublicationAction) 
 		}
 		return nil
 	}
-	if !preparationAction(job.Spec.Action) || job.Spec.Destination != record.Published || job.Spec.PublishTo == nil || job.ResultRevision != action.RevisionID || job.Prepared == nil || job.Prepared.Source.Commit != action.Spec.Desired.Head || job.Prepared.Branch != action.Spec.SourceBranch() || *job.Spec.PublishTo != action.Spec.Destination() {
+	if !job.Spec.Action.Prepares() || job.Spec.Destination != record.Published || job.Spec.PublishTo == nil || job.ResultRevision != action.RevisionID || job.Prepared == nil || job.Prepared.Source.Commit != action.Spec.Desired.Head || job.Prepared.Branch != action.Spec.SourceBranch() || *job.Spec.PublishTo != action.Spec.Destination() {
 		return invalid("does not match the accepted prepared destination")
 	}
 	return nil
-}
-
-func publicationInput(job record.Job) (record.RevisionID, record.Source) {
-	if job.ResultRevision != "" && job.Prepared != nil {
-		return job.ResultRevision, job.Prepared.Source
-	}
-	return job.Spec.InputRevision, job.Spec.Source
 }

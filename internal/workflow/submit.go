@@ -12,6 +12,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/workflow/policy"
 )
 
 // Request supplies a caller-owned identity and the intent to accept.
@@ -164,11 +165,11 @@ func (e *Engine) Submit(ctx context.Context, request Request) (Receipt, error) {
 			if change.Branch != accepted.Publication.SourceBranch() {
 				return ErrInvalidRequest
 			}
-			if err := publicationEvidence(ctx, tx, job, *job.Spec.Publication); err != nil {
+			if err := policy.PublicationEvidence(ctx, tx, job, *job.Spec.Publication); err != nil {
 				return err
 			}
 			action := record.PublicationAction{ID: record.PublicationID("publication_" + rand.Text()), JobID: id, ChangeID: accepted.ChangeID, RevisionID: accepted.InputRevision, Spec: *accepted.Publication, State: record.PublicationPending}
-			if err := validatePublicationAction(job, action); err != nil {
+			if err := policy.ValidatePublicationAction(job, action); err != nil {
 				return err
 			}
 			if err := tx.PutPublication(ctx, action); err != nil {

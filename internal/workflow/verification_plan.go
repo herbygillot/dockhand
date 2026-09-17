@@ -9,6 +9,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 	"github.com/herbygillot/dockhand/internal/verify"
+	"github.com/herbygillot/dockhand/internal/workflow/policy"
 )
 
 // initializeVerification records planning or reuse in the caller's transaction.
@@ -44,7 +45,7 @@ func initializeVerification(ctx context.Context, tx state.Reader, work *executio
 		return len(work.Attempts) == 0, job.Detail, nil
 	}
 	if job.Spec.Build == nil && job.Spec.BuildRequirements != nil {
-		reused, plan, explanation, err = selectRecordedVerification(ctx, tx, job, work.Revision)
+		reused, plan, explanation, err = policy.SelectRecordedVerification(ctx, tx, job, work.Revision)
 		if err != nil {
 			return true, "", err
 		}
@@ -69,7 +70,7 @@ func initializeVerification(ctx context.Context, tx state.Reader, work *executio
 			return true, detail, nil
 		}
 		if len(builds) == 1 {
-			reused, explanation, err = selectVerification(ctx, tx, job, builds[0])
+			reused, explanation, err = policy.SelectVerification(ctx, tx, job, builds[0])
 			if err != nil {
 				return true, "", err
 			}

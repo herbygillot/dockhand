@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/workflow/policy"
 )
 
 // planPublication checkpoints the prepared revision's publication after its
@@ -64,7 +65,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 	if e.Publisher == nil || e.Publisher.Repo == nil || e.Publisher.Forge == nil {
 		return fail(fmt.Errorf("publication service is unavailable"))
 	}
-	revisionID, source := publicationInput(job)
+	revisionID, source := job.EffectiveSource()
 	var change record.Change
 	var evidence record.Attempt
 	var associated *record.PullRequest
@@ -106,7 +107,7 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 			}
 			associated = &pr
 		}
-		return publicationEvidence(ctx, r, job, record.PublicationSpec{EvidenceAttempt: evidence.ID})
+		return policy.PublicationEvidence(ctx, r, job, record.PublicationSpec{EvidenceAttempt: evidence.ID})
 	})
 	if err != nil {
 		return fail(err)
@@ -154,11 +155,11 @@ func (c *cycle) planPublication(ctx context.Context, job record.Job) (bool, stri
 		if change.CurrentRevision != revisionID || change.Disposition != record.ChangeOpen || change.Branch != spec.SourceBranch() {
 			return ErrStaleRevision
 		}
-		if err := publicationEvidence(ctx, tx, current, spec); err != nil {
+		if err := policy.PublicationEvidence(ctx, tx, current, spec); err != nil {
 			return err
 		}
 		action := record.PublicationAction{ID: record.PublicationID("publication_" + rand.Text()), JobID: job.ID, ChangeID: job.ChangeID, RevisionID: revisionID, Spec: spec, State: record.PublicationPending}
-		if err := validatePublicationAction(current, action); err != nil {
+		if err := policy.ValidatePublicationAction(current, action); err != nil {
 			return err
 		}
 		if err := tx.PutPublication(ctx, action); err != nil {

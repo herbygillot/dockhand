@@ -12,6 +12,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
+	"github.com/herbygillot/dockhand/internal/workflow/policy"
 )
 
 var errPublicationCanceled = errors.New("publication canceled; any pushed branch is preserved")
@@ -39,7 +40,7 @@ func (c *cycle) advancePublication(ctx context.Context, id record.JobID) (bool, 
 			return err
 		}
 		if action.ID != "" {
-			if policyErr := validatePublicationAction(job, action); policyErr != nil {
+			if policyErr := policy.ValidatePublicationAction(job, action); policyErr != nil {
 				rejected = policyErr.Error()
 				action.State, action.LastError = record.PublicationNeedsAttention, rejected
 				finishJob(&job, record.JobNeedsAttention, rejected, e.now())
@@ -149,11 +150,11 @@ func (c *cycle) authorizePublication(ctx context.Context, expected record.Job, w
 		if err != nil {
 			return err
 		}
-		revisionID, _ := publicationInput(*job)
+		revisionID, _ := job.EffectiveSource()
 		if change.Disposition != record.ChangeOpen || change.CurrentRevision != revisionID || change.Branch != action.Spec.SourceBranch() {
 			return ErrStaleRevision
 		}
-		if err := publicationEvidence(ctx, tx, *job, action.Spec); err != nil {
+		if err := policy.PublicationEvidence(ctx, tx, *job, action.Spec); err != nil {
 			return err
 		}
 		action.State, action.PushStarted = record.PublicationApplying, true
@@ -167,7 +168,7 @@ func (c *cycle) authorizePublication(ctx context.Context, expected record.Job, w
 func (c *cycle) runPublication(ctx context.Context, job record.Job, action record.PublicationAction) error {
 	s := c.engine.Publisher
 	spec := action.Spec
-	_, source := publicationInput(job)
+	_, source := job.EffectiveSource()
 	if !action.WriteStarted {
 		if err := c.publicationUpdate(ctx, job, func(tx state.Tx, current *record.Job, _ *record.PublicationAction) error {
 			if current.CancelRequestedAt != nil {
@@ -177,11 +178,11 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 			if err != nil {
 				return err
 			}
-			revisionID, _ := publicationInput(*current)
+			revisionID, _ := current.EffectiveSource()
 			if change.CurrentRevision != revisionID || change.Disposition != record.ChangeOpen {
 				return ErrStaleRevision
 			}
-			return publicationEvidence(ctx, tx, *current, action.Spec)
+			return policy.PublicationEvidence(ctx, tx, *current, action.Spec)
 		}); err != nil {
 			return err
 		}

@@ -59,7 +59,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 			changed = true
 			return tx.PutJob(ctx, job)
 		}
-		revisionID, _ := publicationInput(job)
+		revisionID, _ := job.EffectiveSource()
 		if revisionID != "" {
 			revision, err = tx.Revision(ctx, revisionID)
 			if err != nil {
@@ -81,7 +81,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 	}
 	call, cancel := context.WithTimeout(ctx, c.timeouts.Prepare)
 	defer cancel()
-	_, source := publicationInput(selected)
+	_, source := selected.EffectiveSource()
 	roots := selected.Spec.Targets
 	if revision.Scope != nil {
 		roots = revision.Scope.BuildTargets()

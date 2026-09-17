@@ -16,7 +16,3 @@ func initialPhase(action record.Action) record.JobPhase {
 		return ""
 	}
 }
-
-func preparationAction(action record.Action) bool {
-	return action == record.Amend || action == record.Rebase || action == record.Bump || action == record.BumpRevision || action == record.RefreshChecksums
-}

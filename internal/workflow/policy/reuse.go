@@ -1,4 +1,4 @@
-package workflow
+package policy
 
 import (
 	"context"
@@ -12,7 +12,9 @@ import (
 	"github.com/herbygillot/dockhand/internal/verify"
 )
 
-func selectVerification(ctx context.Context, reader state.Reader, job record.Job, build record.BuildSpec) (record.Attempt, string, error) {
+// SelectVerification finds applicable passing evidence for one build question,
+// or explains why a new build is needed.
+func SelectVerification(ctx context.Context, reader state.Reader, job record.Job, build record.BuildSpec) (record.Attempt, string, error) {
 	if job.Spec.FreshVerification {
 		return record.Attempt{}, "Fresh verification requested", nil
 	}
@@ -42,7 +44,9 @@ func selectVerification(ctx context.Context, reader state.Reader, job record.Job
 	return record.Attempt{}, fmt.Sprintf("No applicable result among the latest 32 terminal attempts for this tree and target; compared with %s: %s", candidates[0].ID, reason), nil
 }
 
-func selectRecordedVerification(ctx context.Context, reader state.Reader, job record.Job, revision record.Revision) (record.Attempt, record.VerificationPlan, string, error) {
+// SelectRecordedVerification selects evidence and its exact configuration for a
+// job that stated build requirements instead of a concrete build.
+func SelectRecordedVerification(ctx context.Context, reader state.Reader, job record.Job, revision record.Revision) (record.Attempt, record.VerificationPlan, string, error) {
 	if job.Spec.BuildRequirements == nil || len(job.Spec.Targets) != 1 || job.Prepared == nil {
 		return record.Attempt{}, record.VerificationPlan{}, "", ErrInvalidRequest
 	}
@@ -68,7 +72,7 @@ func selectRecordedVerification(ctx context.Context, reader state.Reader, job re
 			continue
 		}
 		if revision.Scope != nil {
-			if err := publicationCoverage(ctx, reader, candidate, revision.Scope); err != nil {
+			if err := PublicationCoverage(ctx, reader, candidate, revision.Scope); err != nil {
 				if !errors.Is(err, publish.ErrPrecondition) {
 					return record.Attempt{}, record.VerificationPlan{}, "", err
 				}

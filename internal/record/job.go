@@ -92,6 +92,11 @@ type JobSpec struct {
 	Preparation *PreparationSpec `json:",omitempty"`
 }
 
+// Prepares reports whether the action produces a candidate tree before verification.
+func (a Action) Prepares() bool {
+	return a == Amend || a == Rebase || a == Bump || a == BumpRevision || a == RefreshChecksums
+}
+
 // JobState describes progress toward a job's requested destination.
 // A terminal state does not imply that resource cleanup has finished.
 type JobState string
@@ -167,6 +172,16 @@ type Job struct {
 	// FinishedAt records a terminal job outcome independently of cleanup.
 	FinishedAt *time.Time
 	Detail     string
+}
+
+// EffectiveSource is the revision and source that verification and
+// publication act on: the prepared result when preparation produced one,
+// otherwise the accepted input.
+func (j Job) EffectiveSource() (RevisionID, Source) {
+	if j.ResultRevision != "" && j.Prepared != nil {
+		return j.ResultRevision, j.Prepared.Source
+	}
+	return j.Spec.InputRevision, j.Spec.Source
 }
 
 // Claim grants a driver temporary ownership of one action. Recording a result

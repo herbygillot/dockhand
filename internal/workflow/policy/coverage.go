@@ -1,4 +1,4 @@
-package workflow
+package policy
 
 import (
 	"context"
@@ -14,13 +14,13 @@ import (
 
 // A root attempt cites its immutable coverage plan. Both combined and standalone
 // publication must prove the entire cohort, including after process restart.
-func publicationCoverage(ctx context.Context, r state.Reader, root record.Attempt, required ...*record.ReleaseScope) error {
+func PublicationCoverage(ctx context.Context, r state.Reader, root record.Attempt, required ...*record.ReleaseScope) error {
 	owner, err := r.Job(ctx, root.JobID)
 	if err != nil {
 		return err
 	}
 	var scope *record.ReleaseScope
-	revisionID, _ := publicationInput(owner)
+	revisionID, _ := owner.EffectiveSource()
 	if revisionID != "" {
 		revision, err := r.Revision(ctx, revisionID)
 		if err != nil {
@@ -93,7 +93,7 @@ func publicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 		if !verify.Applicable(*target.Build, *found).Matches {
 			return fail(target.Port.Name + " has not passed")
 		}
-		latest, _, err := selectVerification(ctx, r, record.Job{}, *target.Build)
+		latest, _, err := SelectVerification(ctx, r, record.Job{}, *target.Build)
 		if err != nil {
 			return err
 		}
@@ -110,11 +110,13 @@ func publicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 	return nil
 }
 
-func (e *Engine) describePublicationCoverage(ctx context.Context, spec *record.PublicationSpec) error {
+// DescribeCoverage appends the verification coverage summary to a new pull
+// request body once the evidence proves the whole cohort.
+func DescribeCoverage(ctx context.Context, r state.Reader, spec *record.PublicationSpec) error {
 	if spec.ExpectedPR != nil {
 		return nil
 	}
-	return e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+	{
 		root, err := r.Attempt(ctx, spec.EvidenceAttempt)
 		if err != nil {
 			return err
@@ -123,7 +125,7 @@ func (e *Engine) describePublicationCoverage(ctx context.Context, spec *record.P
 		if err != nil {
 			return err
 		}
-		revisionID, _ := publicationInput(owner)
+		revisionID, _ := owner.EffectiveSource()
 		var scope *record.ReleaseScope
 		if revisionID != "" {
 			revision, err := r.Revision(ctx, revisionID)
@@ -135,7 +137,7 @@ func (e *Engine) describePublicationCoverage(ctx context.Context, spec *record.P
 		if !owner.Spec.IncludeDependents && scope == nil {
 			return nil
 		}
-		if err := publicationCoverage(ctx, r, root); err != nil {
+		if err := PublicationCoverage(ctx, r, root); err != nil {
 			return err
 		}
 		plan, err := r.Plan(ctx, owner.ID)
@@ -152,5 +154,5 @@ func (e *Engine) describePublicationCoverage(ctx context.Context, spec *record.P
 			spec.Desired.Body += publish.CoverageSummary(plan, attempts)
 		}
 		return nil
-	})
+	}
 }

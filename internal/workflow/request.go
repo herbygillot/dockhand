@@ -37,7 +37,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	if spec.Preparation != nil && spec.Preparation.SharedRelease && spec.Action != record.Bump {
 		return record.JobSpec{}, fmt.Errorf("%w: shared release applies only to bump", ErrInvalidRequest)
 	}
-	if spec.IncludeDependents && (spec.Verification != record.VerificationRequired || spec.Build == nil || spec.Build.Provider == "github" || spec.Action != record.Verify && !preparationAction(spec.Action)) {
+	if spec.IncludeDependents && (spec.Verification != record.VerificationRequired || spec.Build == nil || spec.Build.Provider == "github" || spec.Action != record.Verify && !spec.Action.Prepares()) {
 		return record.JobSpec{}, fmt.Errorf("%w: dependent verification requires a local build configuration and verification", ErrInvalidRequest)
 	}
 	if len(spec.TargetBuilds) > 0 {
@@ -94,7 +94,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 	}
 	if spec.PublishTo != nil {
 		destination := *spec.PublishTo
-		if !preparationAction(spec.Action) || spec.Preparation == nil || spec.Destination != record.Published || spec.Verification != record.VerificationRequired || spec.Publication != nil {
+		if !spec.Action.Prepares() || spec.Preparation == nil || spec.Destination != record.Published || spec.Verification != record.VerificationRequired || spec.Publication != nil {
 			return record.JobSpec{}, fmt.Errorf("%w: combined publication requires a verified preparation job", ErrInvalidRequest)
 		}
 		if err := publish.ValidateDestination(destination); err != nil {
@@ -102,7 +102,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 		}
 		spec.PublishTo = &destination
 	}
-	if preparationAction(spec.Action) && spec.Destination == record.Published && spec.PublishTo == nil {
+	if spec.Action.Prepares() && spec.Destination == record.Published && spec.PublishTo == nil {
 		return record.JobSpec{}, fmt.Errorf("%w: publication destination required", ErrInvalidRequest)
 	}
 	if spec.Publication != nil {
@@ -134,7 +134,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 		spec.Build = &build
 	}
 	if spec.BuildRequirements != nil {
-		if !preparationAction(spec.Action) || spec.Verification != record.VerificationRequired || spec.Destination == record.BranchReady {
+		if !spec.Action.Prepares() || spec.Verification != record.VerificationRequired || spec.Destination == record.BranchReady {
 			return record.JobSpec{}, fmt.Errorf("%w: recorded-evidence requirements require a verified preparation job", ErrInvalidRequest)
 		}
 		if err := verify.ValidateRequirements(*spec.BuildRequirements); err != nil {
@@ -155,7 +155,7 @@ func normalizeSpec(spec record.JobSpec) (record.JobSpec, error) {
 				return record.JobSpec{}, ErrInvalidRequest
 			}
 		}
-		if !preparationAction(spec.Action) || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 {
+		if !spec.Action.Prepares() || spec.InputRevision != "" || spec.Source.Commit == "" || len(spec.Targets) != 1 {
 			return record.JobSpec{}, fmt.Errorf("%w: preparation requires one committed source target and a branch-ready, verification, or publication destination", ErrInvalidRequest)
 		}
 		if !git.ValidBranchName(choices.SourceBranch) || choices.Author.Name == "" || choices.Author.Email == "" || strings.ContainsAny(choices.Author.Name+choices.Author.Email, "\x00\r\n<>") || !utf8.ValidString(choices.Author.Name+choices.Author.Email) {
