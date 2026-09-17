@@ -28,7 +28,7 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 	} {
 		var stdout, stderr bytes.Buffer
 		require.NoError(t, Run(t.Context(), append(args, "--json"), Streams{Out: &stdout, Err: &stderr}, config))
-		var result workflow.Status
+		var result workflow.Overview
 		decodeResult(t, stdout.Bytes(), &result)
 		require.Len(t, result.Jobs, 1)
 		require.Equal(t, id, result.Jobs[0].Job.ID)
@@ -36,17 +36,30 @@ func TestStatusSelectorsCLIReadRecordedBranchWithoutExecution(t *testing.T) {
 		require.Equal(t, record.PhaseVerification, result.Jobs[0].Job.Phase)
 		require.Empty(t, result.Jobs[0].Attempts)
 		require.Len(t, result.Changes, 1)
+		require.Len(t, result.Contributions, 1, "the JSON result carries the contribution projection beside the snapshot")
+		require.Equal(t, "fixture", result.Contributions[0].Port)
+		require.Equal(t, "queued", result.Contributions[0].State)
 		require.Empty(t, stderr.String())
 	}
 	var outbuf bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"status", "--job", string(id)}, Streams{Out: &outbuf, Err: &outbuf}, config))
+	require.Contains(t, outbuf.String(), "PORT")
+	require.Contains(t, outbuf.String(), "fixture")
+	require.Contains(t, outbuf.String(), "queued")
+	require.NotContains(t, outbuf.String(), string(id), "identifiers stay behind -v")
+	outbuf.Reset()
+	require.NoError(t, Run(t.Context(), []string{"status", "--job", string(id), "-v"}, Streams{Out: &outbuf, Err: &outbuf}, config))
 	require.Contains(t, outbuf.String(), "phase: verification")
+	require.Contains(t, outbuf.String(), string(id))
 	outbuf.Reset()
 	require.NoError(t, Run(t.Context(), []string{"status", "--branch", "missing", "--active"}, Streams{Out: &outbuf, Err: &outbuf}, config))
+	require.Contains(t, outbuf.String(), "No matching jobs.")
+	require.NotContains(t, outbuf.String(), string(id))
+	outbuf.Reset()
+	require.NoError(t, Run(t.Context(), []string{"status", "--branch", "missing", "--active", "-v"}, Streams{Out: &outbuf, Err: &outbuf}, config))
 	require.Contains(t, outbuf.String(), "Contribution branch: missing")
 	require.Contains(t, outbuf.String(), "Showing queued and active jobs.")
 	require.Contains(t, outbuf.String(), "No matching jobs.")
-	require.NotContains(t, outbuf.String(), string(id))
 	require.ErrorIs(t, Run(t.Context(), []string{"status", "--job", "unknown"}, Streams{Out: &outbuf, Err: &outbuf}, config), state.ErrNotFound)
 }
 

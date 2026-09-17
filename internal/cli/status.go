@@ -8,9 +8,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/app"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
@@ -37,10 +39,14 @@ func (r *runtime) statusCommand() *cobra.Command {
 			if err != nil {
 				return databaseReadError(err)
 			}
+			overview := workflow.Overview{Status: status, Contributions: workflow.Project(status)}
 			if r.json {
-				return r.emit(status)
+				return r.emit(overview)
 			}
-			return renderStatus(cmd.OutOrStdout(), status)
+			if r.level(cmd) >= progress.Verbose {
+				return renderStatus(cmd.OutOrStdout(), status)
+			}
+			return renderContributions(cmd.OutOrStdout(), overview)
 		},
 	}
 	cmd.Flags().StringVar((*string)(&filter.JobID), "job", "", "Inspect one job instead of a target")
@@ -50,6 +56,28 @@ func (r *runtime) statusCommand() *cobra.Command {
 	return cmd
 }
 
+// renderContributions prints the info-level status: one row per contribution
+// with the words of the projection, and nothing a person has to decode.
+func renderContributions(out io.Writer, overview workflow.Overview) error {
+	if len(overview.Contributions) == 0 {
+		message := "No recorded jobs."
+		if overview.Filter != nil {
+			message = "No matching jobs."
+		}
+		_, err := fmt.Fprintln(out, message)
+		return err
+	}
+	table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(table, "PORT\tCHANGE\tPHASE\tSTATE\tNEXT\tPR")
+	for _, row := range overview.Contributions {
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n", plain(row.Port), plain(row.Change), plain(row.Phase), plain(row.State), plain(row.Next), plain(row.PullRequest))
+	}
+	return table.Flush()
+}
+
+// renderStatus prints the full record behind -v: every job, attempt,
+// publication, change, revision, pull request, and resource with its
+// identifiers and times.
 func renderStatus(out io.Writer, status workflow.Status) error {
 	var buffer bytes.Buffer
 	line := func(format string, values ...any) {
