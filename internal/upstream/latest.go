@@ -11,6 +11,7 @@ import (
 	"github.com/herbygillot/dockhand/internal/macports"
 	portsource "github.com/herbygillot/dockhand/internal/macports/source"
 	"github.com/herbygillot/dockhand/internal/record"
+	"github.com/herbygillot/dockhand/internal/upstream/releasever"
 )
 
 var errAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
@@ -40,9 +41,10 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if err != nil {
 		return result, err
 	}
-	if !isStable(port.Version) {
-		return result, fmt.Errorf("%w: require a stable numeric version", errAutomaticUnsupported)
+	if !automatic(port.Version) {
+		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
 	}
+	followsPrereleases := releasever.Classify(port.Version) == releasever.Prerelease
 	var observations []forge.Release
 	if spec.Catalog == portsource.Releases {
 		releases, ok := repository.(forge.ReleaseRepository)
@@ -72,11 +74,11 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	var candidates []macports.VersionCandidate
 	var tags []string
 	for _, release := range observations {
-		if release.Draft || release.Prerelease {
+		if release.Draft || release.Prerelease && !followsPrereleases {
 			continue
 		}
 		version, matches := spec.Pattern.Version(release.Tag)
-		if !matches || !isStable(version) {
+		if !matches || !admits(port.Version, version) {
 			continue
 		}
 		subject, err := spec.MatchText(release.Tag)

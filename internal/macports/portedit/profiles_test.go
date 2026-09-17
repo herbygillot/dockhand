@@ -53,6 +53,10 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 		`ui_msg "targeting ${macos_version}"`,
 		`foreach re [list "s/A/$a/" "s/\$(MACOSX_DEPLOYMENT_TARGET)/${macosx_deployment_target}/"] { reinplace $re ${build.dir}/Info.plist }`,
 		`while {[vercmp $macosx_deployment_target 10.12] < 0} { ui_msg looping }`,
+		`set target ${macosx_deployment_target}`,
+		`set target ${macosx_deployment_target}; configure.args-append --target=${target}`,
+		`set target ${macosx_deployment_target}; set target 10.12; distname fixture-${target}`,
+		`for {set i ${macosx_deployment_target}} {$i < 3} {incr i} { ui_msg $i }`,
 	} {
 		t.Run(source, func(t *testing.T) {
 			profiles, err := observationProfiles([]byte(source), native)
@@ -61,19 +65,20 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 		})
 	}
 	for _, source := range []string{
-		`set target ${macosx_deployment_target}`,
+		`set target ${macosx_deployment_target}; distname fixture-${target}`,
+		`set target ${macosx_deployment_target}; set copy $target; master_sites https://example.invalid/${copy}`,
 		`distname fixture-${macosx_deployment_target}`,
 		`master_sites https://example.invalid/${os.version}`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { checksums sha256 aaaa }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { configure.args-append x } else { distfiles other.tar.gz }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} { if {${os.major} > 20} { version 2 } }`,
-		`if {[vercmp $macosx_deployment_target 10.12] < 0} { foreach f {a} { set x $f } }`,
+		`if {[vercmp $macosx_deployment_target 10.12] < 0} { foreach f {a} { set x $f }; distname fixture-$x }`,
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} "version 1"`,
 		`switch -- ${macosx_deployment_target} { 10.12 { version 1 } }`,
 		`platform darwin { configure.args-append ${macosx_deployment_target}; version ${macosx_deployment_target} }`,
 		`variant legacy { patchfiles-append legacy-${macosx_deployment_target}.diff }`,
-		`foreach target [list ${macosx_deployment_target}] { set deployment $target }`,
-		`for {set i ${macosx_deployment_target}} {$i < 3} {incr i} { ui_msg $i }`,
+		`foreach target [list ${macosx_deployment_target}] { set deployment $target }; distname fixture-${deployment}`,
+		`for {set i ${macosx_deployment_target}} {$i < 3} {incr i} { version $i }`,
 	} {
 		t.Run(source, func(t *testing.T) {
 			_, err := observationProfiles([]byte(source), native)
@@ -100,4 +105,20 @@ func observationProfiles(src []byte, native record.Platform) ([]record.Platform,
 		return nil, err
 	}
 	return profilesForBoundaries(majors, archDependent, native)
+}
+
+func TestToolchainReadsAreBenignInBuildPositionsOnly(t *testing.T) {
+	require.True(t, toolchainReadsBenign([]byte(`set CFLAGS "${configure.cflags} -std=gnu99 [get_canonical_archflags cc]"
+build.args CFLAGS="${CFLAGS}" CC=${configure.cc}
+if {[string match macports-clang-* ${configure.compiler}]} { depends_run-append port:[string map {"macports-" ""} ${configure.compiler}] }
+if {[string match macports-clang-* ${configure.compiler}]} { post-patch { reinplace "s|CC|${configure.cc}|" ${worksrcpath}/Makefile } }
+`)), "git's and mrustc's toolchain reads only shape the build")
+	require.False(t, toolchainReadsBenign([]byte(`if {${configure.compiler} eq "clang"} { post-extract { distfiles other.tar.gz } }`)), "extraction hooks are not judged here")
+	for _, source := range []string{
+		`distname fixture-${configure.compiler}`,
+		`set cc ${configure.cc}; master_sites https://example.invalid/${cc}`,
+		`if {${configure.compiler} eq "clang"} { distfiles other.tar.gz }`,
+	} {
+		require.False(t, toolchainReadsBenign([]byte(source)), source)
+	}
 }

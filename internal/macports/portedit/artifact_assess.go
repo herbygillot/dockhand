@@ -30,9 +30,9 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		if err := checkArchivePolicy(info, input.portdir()); err != nil {
 			return coverage, err, nil
 		}
-		metadata := observed.Ports[input.target.Name]
-		if metadata.ModeledHostAccess {
-			return coverage, fmt.Errorf("%w: %v", errProbeInconclusive, metadata.Problems), nil
+		metadata, inconclusive := tolerateToolchainProbes(observed.Ports[input.target.Name], input.data)
+		if inconclusive {
+			return coverage, fmt.Errorf("%w: modeled context depends on host state%s", errProbeInconclusive, hostInputs(metadata)), nil
 		}
 		if len(metadata.Problems) > 0 {
 			return coverage, fmt.Errorf("%w: %v", ErrUnsupported, metadata.Problems), nil

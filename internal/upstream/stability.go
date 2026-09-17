@@ -13,4 +13,22 @@ func classified(release record.Release, current string) record.Release {
 	return release
 }
 
-func isStable(version string) bool { return releasever.Classify(version) == releasever.Stable }
+// automatic reports whether a port's current version supports automatic
+// selection: a stable or prerelease numeric spelling. Unknown spellings such
+// as patch letters need an explicit version.
+func automatic(current string) bool {
+	return releasever.Classify(current) != releasever.Unknown
+}
+
+// admits reports whether a candidate may be selected automatically. Stable
+// candidates always qualify; prerelease candidates qualify only for a port
+// that already rides a prerelease, as -devel ports do.
+func admits(current, candidate string) bool {
+	switch releasever.Classify(candidate) {
+	case releasever.Stable:
+		return true
+	case releasever.Prerelease:
+		return releasever.Classify(current) == releasever.Prerelease
+	}
+	return false
+}

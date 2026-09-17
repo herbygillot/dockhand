@@ -28,6 +28,8 @@ func assessFetch(info macports.PortInfo, procedure, pre, post string) macports.F
 		case rejectionOnly(hook):
 			result.Rejected = true
 			result.Guards = append(result.Guards, fmt.Sprintf("pre-fetch hook %d unconditionally rejects this platform", i+1))
+		case conditionalRejection(hook):
+			result.Guards = append(result.Guards, fmt.Sprintf("pre-fetch hook %d only rejects unsupported configurations", i+1))
 		case info.Options["go.domain"] == "github.com" && goToolchainCheck(hook):
 			result.Guards = append(result.Guards, "Go toolchain compatibility guard")
 		default:
@@ -54,7 +56,11 @@ func rejectionOnly(body string) bool {
 	if len(errs) != 0 {
 		return false
 	}
-	commands := scriptCommands(script)
+	return rejectionCommands(src, scriptCommands(script))
+}
+
+// rejectionCommands accepts diagnostics followed by an unconditional error return.
+func rejectionCommands(src []byte, commands []syntax.Command) bool {
 	if len(commands) == 0 {
 		return false
 	}
@@ -68,6 +74,60 @@ func rejectionOnly(body string) bool {
 				return false
 			}
 		} else if len(words) != 2 || words[0].Span.Text(src) != "ui_error" || words[1].Expand || !messageSegments(words[1].Segments) {
+			return false
+		}
+	}
+	return true
+}
+
+// A conditional rejection consists only of if statements whose conditions
+// read variables and whose every branch is a rejection: the perl5 PortGroup's
+// required-variant check, for example. Such a hook can fail the fetch but
+// never change what is fetched. Conditions with command substitutions, and
+// branches that do anything else, are not recognized.
+func conditionalRejection(body string) bool {
+	body, ok := strings.CutPrefix(body, "global {*}[info globals]\n")
+	if !ok {
+		return false
+	}
+	src := []byte(body)
+	script, errs := syntax.Parse(src)
+	if len(errs) != 0 {
+		return false
+	}
+	commands := scriptCommands(script)
+	if len(commands) == 0 {
+		return false
+	}
+	for _, command := range commands {
+		words := command.Words
+		if len(words) < 3 || words[0].Span.Text(src) != "if" {
+			return false
+		}
+		expectCondition := true
+		for _, word := range words[1:] {
+			literal, _ := word.Literal(src)
+			switch {
+			case expectCondition:
+				if word.Expand || len(word.Segments) != 1 {
+					return false
+				}
+				braced, ok := word.Segments[0].(syntax.Braced)
+				if !ok || strings.ContainsAny(braced.Body.Text(src), "[]") {
+					return false
+				}
+				expectCondition = false
+			case literal == "then" || literal == "else":
+			case literal == "elseif":
+				expectCondition = true
+			default:
+				block, ok := word.BracedScript(src)
+				if !ok || !rejectionCommands(src, scriptCommands(block)) {
+					return false
+				}
+			}
+		}
+		if expectCondition {
 			return false
 		}
 	}

@@ -24,7 +24,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		example string
 	}{
 		{record.Bump, "Prepare a port version update",
-			shared + " Version updates support GitHub/GitLab tags and explicit archive versions, scoped release subports, conditional archive checksums, and supported Go/Cargo dependency declarations. Independent pinned releases are preserved. Omitting the version selects the newest eligible stable numeric version using the port's source convention and livecheck filter; ports whose source selects published releases ignore tags without a release. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix.",
+			shared + " Version updates support GitHub/GitLab tags and explicit archive versions, scoped release subports, conditional archive checksums, and supported Go/Cargo dependency declarations. Independent pinned releases are preserved. Omitting the version selects the newest eligible version using the port's source convention and livecheck filter, stable releases only unless the port already rides a prerelease; ports whose source selects published releases ignore tags without a release. Already-current ports complete without branch creation or verification. An explicit version may include its upstream tag prefix.",
 			"  dockhand bump jq\n  dockhand bump jq 1.8.1 --diff\n  dockhand bump rust-analyzer 2026-09-14 --publish --wait"},
 		{record.BumpRevision, "Prepare a port revision bump",
 			shared + " The literal revision increments by one; revision expressions and ambiguous or dynamically named scopes are refused. --reason becomes the commit body and pull-request description. The version and checksums are preserved.",

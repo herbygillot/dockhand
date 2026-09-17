@@ -107,7 +107,7 @@ func TestAutomaticSelectionAppliesMaintainerFilterAndReportsCurrentOrAhead(t *te
 }
 
 func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
-	for _, mode := range []string{"network", "no matches", "prerelease only", "invalid regex", "ambiguous", "missing selected tag", "custom source", "prerelease current"} {
+	for _, mode := range []string{"network", "no matches", "prerelease only", "invalid regex", "ambiguous", "missing selected tag", "custom source", "unknown current"} {
 		t.Run(mode, func(t *testing.T) {
 			c := &catalog{releases: []forge.Release{{Tag: "v2.0"}}}
 			service := automaticService(t, c)
@@ -129,8 +129,9 @@ func TestAutomaticUnknownIsNeverReportedCurrent(t *testing.T) {
 				})
 			case "custom source":
 				port.Options["livecheck.url"] = "https://example.invalid/latest"
-			case "prerelease current":
-				port.Version = "1.0rc1"
+			case "unknown current":
+				// A patch-letter spelling is neither stable nor a prerelease.
+				port.Version = "1.0.2u"
 				port.Options["github.version"] = port.Version
 				port.Options["git.branch"] = "v" + port.Version
 				port.Options["livecheck.version"] = port.Version
@@ -272,4 +273,28 @@ func TestAutomaticSelectionDoesNotHideFailedEvaluation(t *testing.T) {
 	require.ErrorIs(t, err, failed)
 	require.Equal(t, upstream.Unknown, result.Assessment)
 	require.Nil(t, result.Release)
+}
+
+func TestAutomaticSelectionFollowsPrereleasesForPrereleasePorts(t *testing.T) {
+	c := &catalog{tags: []forge.Tag{{Name: "v3.0"}, {Name: "v4.0-rc1"}, {Name: "v4.0-rc2"}, {Name: "v4.0-beta.9"}}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	port.Version, port.Options["version"], port.Options["github.version"], port.Options["git.branch"], port.Options["livecheck.version"] = "4.0-rc1", "4.0-rc1", "4.0-rc1", "v4.0-rc1", "4.0-rc1"
+	port.Options["github.tarball_from"] = "archive"
+	result, err := service.DiscoverPort(t.Context(), port)
+	require.NoError(t, err)
+	require.Equal(t, upstream.UpdateAvailable, result.Assessment)
+	require.Equal(t, "4.0-rc2", result.CandidateVersion, "a port on a prerelease follows prereleases")
+	require.Equal(t, "prerelease", result.Release.Stability)
+	require.False(t, result.Release.LeavesStable, "moving between prereleases does not leave stable")
+	stable := automaticPort()
+	stable.Options["github.tarball_from"] = "archive"
+	stable.Version, stable.Options["version"], stable.Options["github.version"], stable.Options["git.branch"], stable.Options["livecheck.version"] = "3.0", "3.0", "3.0", "v3.0", "3.0"
+	result, err = service.DiscoverPort(t.Context(), stable)
+	require.NoError(t, err)
+	require.Equal(t, upstream.Current, result.Assessment, "a stable port never selects a prerelease automatically")
+	patch := automaticPort()
+	patch.Version = "1.0.2u"
+	_, err = service.DiscoverPort(t.Context(), patch)
+	require.ErrorContains(t, err, "stable or prerelease numeric version")
 }

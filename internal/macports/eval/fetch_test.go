@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"github.com/herbygillot/dockhand/internal/macports"
 	"strings"
 	"testing"
 
@@ -75,4 +76,32 @@ return -code error "unsupported platform"`
 	require.True(t, info.Fetch.Rejected)
 	require.Equal(t, "1", info.Options["fetch.archive_compatible"])
 	require.NotContains(t, info.Options, "fetch_details")
+}
+
+func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
+	wrapper := "global {*}[info globals]\n"
+	perl := wrapper + `if {${perl5.variant} eq {} && ${perl5.require_variant}} {
+    ui_error "${name} requires one of these variants: ${perl5.variants}"
+    return -code error "absence of required perl variant"
+}
+`
+	require.True(t, conditionalRejection(perl))
+	require.False(t, rejectionOnly(perl), "a conditional guard is not an unconditional rejection")
+	semantics := assessFetch(macports.PortInfo{Options: map[string]string{}}, "portfetch::fetch_main", "{"+perl+"}", "")
+	require.Empty(t, semantics.Problem)
+	require.Equal(t, "guarded", semantics.Kind)
+	require.False(t, semantics.Rejected)
+	require.Contains(t, semantics.Guards, "pre-fetch hook 1 only rejects unsupported configurations")
+	elseForm := wrapper + `if {${a}} { return -code error "no" } elseif {${b}} { ui_error x; return -code error "no" } else { return -code error "never" }` + "\n"
+	require.True(t, conditionalRejection(elseForm))
+	for _, body := range []string{
+		wrapper + `if {[exec uname] eq "Darwin"} { return -code error "no" }` + "\n",
+		wrapper + `if {${a}} { set fetch.type git; return -code error "no" }` + "\n",
+		wrapper + `if {${a}} { ui_error x } else { distfiles other.tar.gz }` + "\n",
+		wrapper + `if {${a}} { return -code error "no" }; set x 1` + "\n",
+		wrapper + `return -code error "no"` + "\n",
+		"if {${a}} { return -code error \"no\" }\n",
+	} {
+		require.False(t, conditionalRejection(body), body)
+	}
 }

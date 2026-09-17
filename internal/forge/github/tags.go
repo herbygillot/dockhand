@@ -68,8 +68,13 @@ func (r *repository) ListTags(ctx context.Context) ([]forge.Tag, error) {
 		if err != nil {
 			return nil, githubapi.RateLimitError(err)
 		}
-		if row == nil || !git.ValidRefName("refs/tags/"+row.GetName()) || !git.ValidObjectID(row.GetCommit().GetSHA()) {
+		if row == nil {
 			return nil, fmt.Errorf("github: invalid repository tag")
+		}
+		// A tag that names no commit, such as git/git's junio-gpg-pub key
+		// blob, or an unusable ref name can never be a release; skip it.
+		if !git.ValidRefName("refs/tags/"+row.GetName()) || !git.ValidObjectID(row.GetCommit().GetSHA()) {
+			continue
 		}
 		if seen[row.GetName()] {
 			return nil, fmt.Errorf("%w: duplicate tag %s", forge.ErrIncomplete, row.GetName())

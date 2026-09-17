@@ -31,8 +31,8 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	if !ok {
 		return result, fmt.Errorf("upstream: native livecheck extraction is unavailable")
 	}
-	if !isStable(port.Version) {
-		return result, fmt.Errorf("%w: require a stable numeric version", errAutomaticUnsupported)
+	if !automatic(port.Version) {
+		return result, fmt.Errorf("%w: require a stable or prerelease numeric version", errAutomaticUnsupported)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, spec.Livecheck.URL, nil)
 	if err != nil {
@@ -64,7 +64,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	}
 	var candidates []macports.VersionCandidate
 	for _, version := range versions {
-		if isStable(version) {
+		if admits(port.Version, version) {
 			candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: version})
 		}
 	}
