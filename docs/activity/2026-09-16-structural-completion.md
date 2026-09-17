@@ -37,3 +37,9 @@ Expected waiting reset the failure count and scheduled the flat wait interval, s
 ## A fidelity package
 
 The comparators that decide whether an evaluated edit changed only what it was meant to, `revisionFidelity`, `versionFidelity`, `checksumFidelity`, the scoped variants, `releaseScope`, `comparablePort`, `comparePortMetadata`, `CheckEquivalent`, and `checkSnapshot`, were pure functions over snapshots with no `Service` dependency, and `workflow/preparation` already imported one of them across the package boundary. They now form `macports/fidelity`: `Report` is the comparison result, `ErrMismatch` its refusal, and `Revision`, `Version`, `Checksums`, `ScopedVersion`, `ScopedChecksums`, `ReleaseScope`, `Equivalent`, `Compare`, `ComparablePort`, and `CheckSnapshot` are the questions. `portedit.Fidelity` and `portedit.ErrFidelity` are aliases, so `Result.Fidelity` and every `errors.Is(err, ErrFidelity)` outside the package are unchanged. `checkSharedArchiveOwners` stays in `portedit` because it binds archives through the service. No behavior changed.
+
+## Closing checks
+
+- `go test ./... -count=1` and `go vet ./...` passed after each commit and once more over the assembled tree.
+- With the rebuilt binary against the real tree: `outdated deno`, `assess deno --version 2.9.7`, `bump-revision deno --diff`, `refresh-checksums deno --diff`, and `bump deno 2.9.7 --diff` behave as before, with the checksum refresh now covering both architectures.
+- Schema 18 migration rehearsal: a schema-17 database with one job, one attempt, and one resource was backed up with `db backup`, migrated with `db migrate`, and read back by `status` and `db check` with every record intact and the new counters at zero. Existing databases report the migration requirement from read-only commands with the exact steps to run.
