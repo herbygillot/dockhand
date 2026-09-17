@@ -62,3 +62,38 @@ master_sites @SITE@/${version}
 	require.Contains(t, err.Error(), "host state")
 	require.Empty(t, *requests)
 }
+
+func TestUnmodeledFormattingReadsDoNotBlockPreparation(t *testing.T) {
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 2
+checksums sha256 aaaa size 2
+master_sites @SITE@/${version}
+configure.env-append MACOSX_DEPLOYMENT_TARGET=${macosx_deployment_target}
+if {${os.platform} eq "darwin" && [vercmp $macosx_deployment_target 10.12] < 0} {
+    configure.args-append --without-clock_gettime
+}
+post-patch {
+    reinplace "s/TARGET/${macosx_deployment_target}/" ${worksrcpath}/Info.plist
+}
+`)
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, *requests, 1)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "version 1.2.4\nrevision 0")
+	require.Contains(t, after, "configure.env-append MACOSX_DEPLOYMENT_TARGET=${macosx_deployment_target}")
+	require.Contains(t, after, "[vercmp $macosx_deployment_target 10.12] < 0")
+}
+
+func TestUnmodeledReadSelectingSourcesRefusedBeforeDownloads(t *testing.T) {
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+if {[vercmp $macosx_deployment_target 10.12] < 0} {distfiles legacy.tar.gz} else {distfiles source.tar.gz}
+checksums sha256 aaaa size 2
+master_sites @SITE@/${version}
+`)
+	_, err := s.Prepare(t.Context(), r)
+	require.ErrorIs(t, err, ErrProbeInconclusive)
+	require.Contains(t, err.Error(), "distfiles is selected by the OS minor version or deployment target")
+	require.Empty(t, *requests)
+}

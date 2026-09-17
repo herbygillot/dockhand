@@ -63,7 +63,7 @@ func (s *Service) contextProfiles(ctx context.Context, request Request, input *s
 				}
 				for _, port := range observed.Ports {
 					if port.HostAccess || port.ModeledHostAccess {
-						return nil, fmt.Errorf("%w: platform boundary depends on host state", ErrProbeInconclusive)
+						return nil, fmt.Errorf("%w: platform boundary depends on host state%s", ErrProbeInconclusive, hostInputs(port))
 					}
 					for _, fact := range port.Operands {
 						if !slices.Contains(needs.operands, fact.Name) {
@@ -124,4 +124,35 @@ func sourceBoundOperand(root string, frames []macports.SourceFrame) bool {
 		}
 	}
 	return false
+}
+
+// hostInputs names the recorded host accesses with their Portfile lines so a
+// refusal says which read an alternate profile cannot reproduce.
+func hostInputs(port macports.PortObservation) string {
+	var details []string
+	add := func(detail string) {
+		if !slices.Contains(details, detail) {
+			details = append(details, detail)
+		}
+	}
+	for _, declaration := range port.Declarations {
+		if declaration.Command != "dockhand.host-access" || len(declaration.Values) == 0 {
+			continue
+		}
+		detail := strings.TrimPrefix(declaration.Values[0], "modeled context depends on ")
+		for _, frame := range declaration.Frames {
+			if strings.HasSuffix(frame.File, "/Portfile") {
+				detail += fmt.Sprintf(" (Portfile:%d)", frame.Line)
+				break
+			}
+		}
+		add(detail)
+	}
+	for _, problem := range port.Problems {
+		add(strings.TrimPrefix(problem, "modeled context depends on "))
+	}
+	if len(details) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(details, "; ")
 }

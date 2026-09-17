@@ -34,13 +34,13 @@ func scanPlatformNeeds(src []byte) (platformNeeds, error) {
 	if len(errs) > 0 {
 		return n, fmt.Errorf("%w: invalid context syntax", ErrUnsupported)
 	}
+	if err := unmodeledReads(src, script); err != nil {
+		return n, err
+	}
 	for cmd := range script.Commands(src, func(syntax.Command) bool { return true }) {
 		name, _ := cmd.Name(src)
 		raw := cmd.Span.Text(src)
 		n.arch = n.arch || (name == "supported_archs" && len(cmd.Words) > 1) || archRead.MatchString(raw)
-		if unmodeledRead.MatchString(raw) {
-			return n, fmt.Errorf("%w: OS minor version or deployment target is not modeled", ErrProbeInconclusive)
-		}
 		for _, read := range osRead.FindAllStringIndex(raw, -1) {
 			suffix := raw[read[1]:]
 			operand := ""

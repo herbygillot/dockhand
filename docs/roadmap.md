@@ -24,9 +24,7 @@ Implemented on 2026-09-16; see the [Git reference report](activity/2026-09-16-ca
 
 ### 5. Resolve the remaining demonstrated platform-coverage gaps
 
-The source-bound scalar/option and Darwin-major work is implemented. The corpus now explicitly exposes minor-version/deployment-target reads that the previous scanner missed; mrustc still accesses unmodeled host state. Classify these concrete inputs before choosing another modeled dimension. Start from the pinned abendrot, bun, warzone2100, fldigi, and mrustc controls; preserve the existing refusal when a source-bound value cannot be established.
-
-Acceptance: each supported case has baseline/candidate observations and counterexamples, preserves independent releases, and reports the modeled dimensions accurately. Keep session budgets measured. Do not model arbitrary filesystem, SDK, or command output by implication.
+Implemented on 2026-09-16 by classification rather than a new dimension; see the [classification report](activity/2026-09-16-unmodeled-read-classification.md). The five controls read the deployment target or minor version only where it cannot select a source declaration: as text in build-phase commands (abendrot, bun, warzone2100) or as a condition guarding configure-only branches (fldigi). The scanner now refuses such reads only where they can reach a version, distfile, or checksum declaration, and the four ports assess as input-found; abendrot, warzone2100, and fldigi pass candidate checks. mrustc's remaining inputs are compiler-selection and compiler-flag probes of the installed toolchain, which the refusal now names by Portfile line; it stays refused by design.
 
 ### 6. Broaden PR observation
 
