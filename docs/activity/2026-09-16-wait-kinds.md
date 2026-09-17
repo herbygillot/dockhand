@@ -26,3 +26,9 @@ Exhaustion settles visibly. A verification attempt finishes as errored with "no 
 - Unit: each unbounded kind keeps its flat interval across fifty waits and never exhausts; each budgeted kind grows monotonically, respects the ceiling, and exhausts on the twenty-first wait; the exhaustion detail names the kind and count.
 - Integration: a provider that answers every reconciliation with an unknown run drives one submission through twenty-one waits, then the attempt is errored, the job needs attention, the detail names the reconciliation waits, and the submission was never repeated.
 - `go test ./... -count=1` and `go vet ./...`: passed.
+
+## The count belongs to one kind
+
+The first version carried the wait count across kinds: three reconciliation waits followed by admission counted toward the build's waits, and a budgeted kind could inherit waits from an earlier one. `record.Lease` now records `WaitKind`, schema 19 stores it as `wait_kind` on jobs, attempts, and resources, and `await` zeroes the count when the kind changes. Failures and settlement clear both. Status names the kind: "waiting: 3 consecutive forge waits; next look ...". A test drives fifteen reconciliation waits, one build wait, and twenty-one forge waits on one lease and checks that only the twenty-first forge wait exhausts the forge budget.
+
+The real development database and the scratch databases were migrated from 18 to 19 after a backup; records and status were intact.

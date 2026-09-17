@@ -162,7 +162,7 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				finishAttempt(work, &job, &current, record.Evidence{Verdict: record.VerdictErrored, ObservedAt: now}, detail, now)
 			}
 		case settled:
-			current.ConsecutiveFailures, current.ConsecutiveWaits = 0, 0
+			current.ConsecutiveFailures, current.ConsecutiveWaits, current.WaitKind = 0, 0, ""
 		}
 		work.Attempts[current.ID] = current
 		work.Job = job

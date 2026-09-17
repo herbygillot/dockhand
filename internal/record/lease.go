@@ -18,6 +18,9 @@ type Lease struct {
 	// that never resolves lengthens its interval and stays visible; a failure
 	// or a settled result resets it.
 	ConsecutiveWaits uint32 `json:",omitempty"`
+	// WaitKind names what the consecutive waits were for; a wait of another
+	// kind starts the count over.
+	WaitKind string `json:",omitempty"`
 	// RetryAt is the earliest time the next action may run; nil imposes no delay.
 	RetryAt *time.Time
 }

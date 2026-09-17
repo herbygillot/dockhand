@@ -19,7 +19,7 @@ func (c *cycle) take(lease *record.Lease, now time.Time, timeout time.Duration) 
 // fail schedules the next retry after a failure, advancing the failure count,
 // forgetting waits, and honoring a rate limit's own deadline.
 func (c *cycle) fail(lease *record.Lease, key string, err error) time.Time {
-	lease.ConsecutiveWaits = 0
+	lease.ConsecutiveWaits, lease.WaitKind = 0, ""
 	retry := c.failureDeadline(key, &lease.ConsecutiveFailures, err)
 	lease.RetryAt = &retry
 	return retry
@@ -29,6 +29,9 @@ func (c *cycle) fail(lease *record.Lease, key string, err error) time.Time {
 // the wait. It reports true when a budgeted kind has waited past its budget;
 // the caller then settles the record instead of waiting again.
 func (c *cycle) await(lease *record.Lease, kind waitKind) (time.Time, bool) {
+	if lease.WaitKind != kind.String() {
+		lease.ConsecutiveWaits, lease.WaitKind = 0, kind.String()
+	}
 	retry, spent := c.waitingDeadline(kind, &lease.ConsecutiveFailures, &lease.ConsecutiveWaits)
 	lease.RetryAt = &retry
 	return retry, spent
@@ -38,7 +41,7 @@ func (c *cycle) await(lease *record.Lease, kind waitKind) (time.Time, bool) {
 // finished job carries no stale claim or retry time.
 func finishJob(job *record.Job, state record.JobState, detail string, now time.Time) {
 	job.State, job.Detail, job.FinishedAt = state, detail, &now
-	job.ConsecutiveWaits = 0
+	job.ConsecutiveWaits, job.WaitKind = 0, ""
 	job.Release()
 }
 

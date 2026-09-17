@@ -28,7 +28,7 @@ func (t *transaction) Attempt(ctx context.Context, id record.AttemptID) (record.
 	var owner sql.NullString
 	var claimUntil, retry, cancel sql.NullInt64
 	var created int64
-	err := t.conn.QueryRowContext(ctx, `SELECT id,job_id,target_id,coalesce(revision_id,''),source_id,build,state,claim_owner,claim_generation,claim_until,retry_at,cancel_sent_at,cancel_observe,last_error,created_at,consecutive_failures,consecutive_waits FROM attempts WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.JobID, &v.TargetID, &v.Spec.RevisionID, &source, &raw, &v.State, &owner, &v.ClaimGeneration, &claimUntil, &retry, &cancel, &v.CancelPendingObservation, &v.LastError, &created, &v.ConsecutiveFailures, &v.ConsecutiveWaits)
+	err := t.conn.QueryRowContext(ctx, `SELECT id,job_id,target_id,coalesce(revision_id,''),source_id,build,state,claim_owner,claim_generation,claim_until,retry_at,cancel_sent_at,cancel_observe,last_error,created_at,consecutive_failures,consecutive_waits,wait_kind FROM attempts WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.JobID, &v.TargetID, &v.Spec.RevisionID, &source, &raw, &v.State, &owner, &v.ClaimGeneration, &claimUntil, &retry, &cancel, &v.CancelPendingObservation, &v.LastError, &created, &v.ConsecutiveFailures, &v.ConsecutiveWaits, &v.WaitKind)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -109,7 +109,7 @@ func (t *transaction) PutAttempt(ctx context.Context, v record.Attempt) error {
 		next = nil
 	}
 	if found {
-		err = t.exec(ctx, `UPDATE attempts SET state=?,claim_owner=?,claim_generation=?,claim_until=?,consecutive_failures=?,consecutive_waits=?,retry_at=?,next_action_at=?,cancel_sent_at=?,cancel_observe=?,last_error=? WHERE repository_id=? AND id=?`, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, nullableTime(v.RetryAt), next, nullableTime(v.CancelSentAt), v.CancelPendingObservation, v.LastError, t.repo, v.ID)
+		err = t.exec(ctx, `UPDATE attempts SET state=?,claim_owner=?,claim_generation=?,claim_until=?,consecutive_failures=?,consecutive_waits=?,wait_kind=?,retry_at=?,next_action_at=?,cancel_sent_at=?,cancel_observe=?,last_error=? WHERE repository_id=? AND id=?`, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, v.WaitKind, nullableTime(v.RetryAt), next, nullableTime(v.CancelSentAt), v.CancelPendingObservation, v.LastError, t.repo, v.ID)
 	} else {
 		if v.Spec.RevisionID != "" {
 			revision, e := t.Revision(ctx, v.Spec.RevisionID)
@@ -135,7 +135,7 @@ func (t *transaction) PutAttempt(ctx context.Context, v record.Attempt) error {
 		if e != nil {
 			return e
 		}
-		err = t.exec(ctx, `INSERT INTO attempts(id,repository_id,job_id,target_id,revision_id,source_id,build,state,claim_owner,claim_generation,claim_until,consecutive_failures,consecutive_waits,retry_at,next_action_at,cancel_sent_at,cancel_observe,last_error,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.JobID, v.TargetID, nullableID(v.Spec.RevisionID), source, raw, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, nullableTime(v.RetryAt), next, nullableTime(v.CancelSentAt), v.CancelPendingObservation, v.LastError, v.CreatedAt.UnixMilli())
+		err = t.exec(ctx, `INSERT INTO attempts(id,repository_id,job_id,target_id,revision_id,source_id,build,state,claim_owner,claim_generation,claim_until,consecutive_failures,consecutive_waits,wait_kind,retry_at,next_action_at,cancel_sent_at,cancel_observe,last_error,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.JobID, v.TargetID, nullableID(v.Spec.RevisionID), source, raw, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, v.WaitKind, nullableTime(v.RetryAt), next, nullableTime(v.CancelSentAt), v.CancelPendingObservation, v.LastError, v.CreatedAt.UnixMilli())
 	}
 	if err != nil {
 		return err
@@ -199,7 +199,7 @@ func (t *transaction) Resource(ctx context.Context, id record.ResourceID) (recor
 	}
 	var owner sql.NullString
 	var until, retry, retain, released, pruned sql.NullInt64
-	err := t.conn.QueryRowContext(ctx, `SELECT id,attempt_id,submission_id,provider,handle,state,claim_owner,claim_generation,claim_until,retry_at,retain_until,released_at,artifacts_pruned_at,last_error,consecutive_failures,consecutive_waits FROM resources WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.AttemptID, &v.SubmissionID, &v.Handle.Provider, &v.Handle.ID, &v.State, &owner, &v.ClaimGeneration, &until, &retry, &retain, &released, &pruned, &v.LastError, &v.ConsecutiveFailures, &v.ConsecutiveWaits)
+	err := t.conn.QueryRowContext(ctx, `SELECT id,attempt_id,submission_id,provider,handle,state,claim_owner,claim_generation,claim_until,retry_at,retain_until,released_at,artifacts_pruned_at,last_error,consecutive_failures,consecutive_waits,wait_kind FROM resources WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.AttemptID, &v.SubmissionID, &v.Handle.Provider, &v.Handle.ID, &v.State, &owner, &v.ClaimGeneration, &until, &retry, &retain, &released, &pruned, &v.LastError, &v.ConsecutiveFailures, &v.ConsecutiveWaits, &v.WaitKind)
 	v.Claim = readClaim(owner, v.ClaimGeneration, until)
 	v.RetryAt = scanTime(retry)
 	v.RetainUntil = scanTime(retain)
@@ -263,7 +263,7 @@ func (t *transaction) PutResource(ctx context.Context, v record.Resource) error 
 		}
 	}
 	if found {
-		return t.exec(ctx, `UPDATE resources SET state=?,claim_owner=?,claim_generation=?,claim_until=?,consecutive_failures=?,consecutive_waits=?,retry_at=?,next_action_at=?,retain_until=?,released_at=?,last_error=? WHERE repository_id=? AND id=?`, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, nullableTime(v.RetryAt), next, nullableTime(v.RetainUntil), nullableTime(v.ReleasedAt), v.LastError, t.repo, v.ID)
+		return t.exec(ctx, `UPDATE resources SET state=?,claim_owner=?,claim_generation=?,claim_until=?,consecutive_failures=?,consecutive_waits=?,wait_kind=?,retry_at=?,next_action_at=?,retain_until=?,released_at=?,last_error=? WHERE repository_id=? AND id=?`, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, v.WaitKind, nullableTime(v.RetryAt), next, nullableTime(v.RetainUntil), nullableTime(v.ReleasedAt), v.LastError, t.repo, v.ID)
 	}
-	return t.exec(ctx, `INSERT INTO resources(id,repository_id,attempt_id,submission_id,provider,handle,state,claim_owner,claim_generation,claim_until,consecutive_failures,consecutive_waits,retry_at,next_action_at,retain_until,released_at,last_error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.AttemptID, v.SubmissionID, v.Handle.Provider, v.Handle.ID, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, nullableTime(v.RetryAt), next, nullableTime(v.RetainUntil), nullableTime(v.ReleasedAt), v.LastError)
+	return t.exec(ctx, `INSERT INTO resources(id,repository_id,attempt_id,submission_id,provider,handle,state,claim_owner,claim_generation,claim_until,consecutive_failures,consecutive_waits,wait_kind,retry_at,next_action_at,retain_until,released_at,last_error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.AttemptID, v.SubmissionID, v.Handle.Provider, v.Handle.ID, v.State, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, v.WaitKind, nullableTime(v.RetryAt), next, nullableTime(v.RetainUntil), nullableTime(v.ReleasedAt), v.LastError)
 }

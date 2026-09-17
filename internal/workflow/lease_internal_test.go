@@ -58,8 +58,32 @@ func TestLeaseHelpersScheduleFailureAndWaiting(t *testing.T) {
 	require.Equal(t, uint32(1), lease.ConsecutiveWaits)
 	require.Equal(t, engine.now().Add(10*time.Second), waiting)
 	require.Equal(t, waiting, *lease.RetryAt)
+	require.Equal(t, "capacity", lease.WaitKind)
 	c.fail(&lease, "key", errTest)
 	require.Zero(t, lease.ConsecutiveWaits, "a failure forgets waits")
+	require.Empty(t, lease.WaitKind)
+}
+
+func TestWaitCountBelongsToOneKind(t *testing.T) {
+	engine := &Engine{RetryDelay: time.Second, WaitInterval: 10 * time.Second, ObserveInterval: 30 * time.Second, Now: func() time.Time { return time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC) }}
+	c, err := engine.newCycle()
+	require.NoError(t, err)
+	var lease record.Lease
+	for i := 0; i < 15; i++ {
+		_, spent := c.await(&lease, waitReconciliation)
+		require.False(t, spent)
+	}
+	require.Equal(t, uint32(15), lease.ConsecutiveWaits)
+	_, spent := c.await(&lease, waitBuild)
+	require.False(t, spent)
+	require.Equal(t, uint32(1), lease.ConsecutiveWaits, "a wait of another kind starts the count over")
+	require.Equal(t, "build", lease.WaitKind)
+	for i := 0; i < 20; i++ {
+		_, spent = c.await(&lease, waitForge)
+	}
+	require.False(t, spent, "the twentieth forge wait is within budget")
+	_, spent = c.await(&lease, waitForge)
+	require.True(t, spent, "budgets count only waits of their own kind")
 }
 
 func TestWaitKindsScheduleAndBudgetDifferently(t *testing.T) {
