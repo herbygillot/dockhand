@@ -41,7 +41,7 @@ func TestJSONResultKeepsLogsAndProgressOffStdout(t *testing.T) {
 	reporter := newReporter(&stderr, nil, false, progress.Info, false)
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, reporter.status(t.Context(), result.Status))
-	require.NoError(t, r.result(&stdout, result))
+	require.NoError(t, r.result(&stdout, progress.Info, result))
 	require.Empty(t, stdout.String(), "the result waits for the envelope")
 	decoded, ok := r.outcome.(ActionResult)
 	require.True(t, ok)
@@ -93,7 +93,7 @@ func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
 	var out bytes.Buffer
 	r := runtime{}
 	status := workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, Spec: record.JobSpec{Destination: record.Published}}}}}
-	require.NoError(t, r.result(&out, ActionResult{Status: status}))
+	require.NoError(t, r.result(&out, progress.Info, ActionResult{Status: status}))
 	require.Contains(t, out.String(), "PR publication remains pending.")
 	require.Contains(t, out.String(), "dockhand wait --job job")
 	require.Contains(t, out.String(), "dockhand start")

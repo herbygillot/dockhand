@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/app"
 	"github.com/herbygillot/dockhand/internal/outdated"
@@ -34,7 +35,7 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 					fmt.Fprintln(cmd.OutOrStdout(), "No ports matched the selectors.")
 				}
 				for _, port := range result.Ports {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), port.Assessment)
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), strings.ReplaceAll(string(port.Assessment), "-", " "))
 					if port.CurrentVersion != "" {
 						fmt.Fprintf(cmd.OutOrStdout(), "; current %s", plain(port.CurrentVersion))
 					}

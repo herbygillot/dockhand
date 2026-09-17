@@ -96,7 +96,7 @@ func TestAssessHumanOutputExplainsScope(t *testing.T) {
 	config, _, _, _ := automaticCLI(t, "1.0")
 	var out, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"assess", "fixture", "-v"}, Streams{Out: &out, Err: &stderr}, config))
-	require.Contains(t, out.String(), "fixture: input-found")
+	require.Contains(t, out.String(), "fixture: ready")
 	require.Contains(t, out.String(), "input: devel/fixture/Portfile:")
 	require.Contains(t, out.String(), "candidate: not-tested")
 	require.Contains(t, out.String(), "verification: not-tested")

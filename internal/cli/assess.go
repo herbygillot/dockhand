@@ -14,7 +14,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 	var request assess.Request
 	cmd := &cobra.Command{
 		Use: "assess [port...]", Short: "Assess whether Dockhand can prepare a port update",
-		Long:        "Assess committed ports from local HEAD; working-tree edits are excluded. Select explicit ports, exact maintainer/category filters, or --all. The default checks local declarations and probes version inputs without querying upstream. With --version, resolve a specific upstream tag or explicit archive version and check the proposed edit. No source archives are downloaded, helpers executed, builds run, branches changed, or jobs created. Native Portfile evaluation still executes Tcl. An input-found or candidate-checked result is preparation evidence, not a build guarantee. Blocked, unsupported, or unknown results exit with status 1 after reporting all selected ports.",
+		Long:        "Assess committed ports from local HEAD; working-tree edits are excluded. Select explicit ports, exact maintainer/category filters, or --all. The default checks local declarations and probes version inputs without querying upstream. With --version, resolve a specific upstream tag or explicit archive version and check the proposed edit. No source archives are downloaded, helpers executed, builds run, branches changed, or jobs created. Native Portfile evaluation still executes Tcl. A ready or candidate-ready result is preparation evidence, not a build guarantee. Blocked, unsupported, or unknown results exit with status 1 after reporting all selected ports.",
 		Example:     "  dockhand assess terraform-1.16\n  dockhand assess rust-analyzer --version 2026-09-14\n  dockhand assess --maintainer herbygillot@github\n  dockhand assess --all --json",
 		Annotations: map[string]string{stateIndependentHelp: "true"},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -43,7 +43,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 					fmt.Fprintln(cmd.OutOrStdout(), "No ports matched the selectors.")
 				}
 				for _, port := range result.Ports {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), port.Outcome)
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s", plain(port.Selector), assessmentWord(port.Outcome))
 					if port.CurrentVersion != "" {
 						fmt.Fprintf(cmd.OutOrStdout(), "; current %s", plain(port.CurrentVersion))
 					}
@@ -69,7 +69,7 @@ func (r *runtime) assessCommand() *cobra.Command {
 						fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s; %s\n", finding.Check, finding.Status, plain(finding.Detail))
 					}
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Assessed %d: %d input-found, %d candidate-checked, %d blocked, %d unsupported, %d unknown.\n", len(result.Ports), counts[portedit.InputFound], counts[portedit.CandidateChecked], counts[portedit.Blocked], counts[portedit.Unsupported], counts[portedit.Unknown])
+				fmt.Fprintf(cmd.OutOrStdout(), "Assessed %d: %d ready, %d candidate ready, %d blocked, %d unsupported, %d unknown.\n", len(result.Ports), counts[portedit.InputFound], counts[portedit.CandidateChecked], counts[portedit.Blocked], counts[portedit.Unsupported], counts[portedit.Unknown])
 			}
 			if err != nil {
 				return err
@@ -86,4 +86,16 @@ func (r *runtime) assessCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&request.Selection.Categories, "category", nil, "Exact MacPorts category (repeatable; intersects maintainer selection)")
 	cmd.Flags().BoolVar(&request.Selection.All, "all", false, "Assess the entire committed ports tree")
 	return cmd
+}
+
+// assessmentWord is the plain headline for an assessment outcome; the code
+// itself stays in JSON.
+func assessmentWord(outcome string) string {
+	switch outcome {
+	case portedit.InputFound:
+		return "ready"
+	case portedit.CandidateChecked:
+		return "candidate ready"
+	}
+	return outcome
 }

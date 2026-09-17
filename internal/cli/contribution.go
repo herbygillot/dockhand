@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/workflow"
 	"github.com/spf13/cobra"
 )
@@ -45,10 +47,42 @@ func (r *runtime) contributionCommands() []*cobra.Command {
 			if r.json {
 				return r.emit(result)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Contribution %s: %s\n%s\n", result.Change.ID, result.Change.Disposition, result.Detail)
-			return err
+			return renderContribution(cmd.OutOrStdout(), r.level(cmd), result)
 		}
 		commands = append(commands, command)
 	}
 	return commands
+}
+
+// renderContribution prints what abandon and refresh did: the port and
+// branch, the PR and its observed state, and the detail; the contribution
+// ID joins at -v.
+func renderContribution(out io.Writer, level progress.Level, result workflow.ContributionResult) error {
+	change := result.Change
+	name := change.InitiatingTarget
+	if name == "" && len(change.Targets) > 0 {
+		name = change.Targets[0].Name
+	}
+	if name == "" {
+		name = string(change.ID)
+	}
+	if _, err := fmt.Fprintf(out, "%s (%s): %s\n", plain(name), plain(change.Branch), change.Disposition); err != nil {
+		return err
+	}
+	if level >= progress.Verbose {
+		if _, err := fmt.Fprintf(out, "  contribution: %s\n", change.ID); err != nil {
+			return err
+		}
+	}
+	if pr := result.PullRequest; pr != nil && pr.Ref.URL != "" {
+		text := fmt.Sprintf("  PR %s: %s", pr.Ref.URL, pr.State)
+		if pr.Status != nil {
+			text += "; " + pr.Status.Summary()
+		}
+		if _, err := fmt.Fprintln(out, plain(text)); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(out, "  %s\n", plain(result.Detail))
+	return err
 }

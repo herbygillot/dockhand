@@ -109,7 +109,7 @@ func TestCurrentBumpCLIIsSuccessfulWithoutDownloadsBranchOrProvider(t *testing.T
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, Run(t.Context(), []string{"bump", "fixture", "--diff"}, Streams{Out: &stdout, Err: &stderr}, config), "%s", stderr.String())
 	require.Empty(t, stdout.String())
-	require.Contains(t, stderr.String(), "Already current at 2.0")
+	require.Contains(t, stderr.String(), "fixture: already current at 2.0")
 	require.NoDirExists(t, filepath.Dir(config.DBPath))
 	require.Zero(t, downloads.Load())
 	stdout.Reset()

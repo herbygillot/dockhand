@@ -148,13 +148,13 @@ Default assessment evaluates local declarations and probes literal version input
 
 Each result retains findings with a check, status, stable reason code, and explanation, plus input locations where available:
 
-- `input-found`: local checks found literal candidates. A specific update has not been established; candidates can still be ambiguous or unsuitable for the requested release.
-- `candidate-checked`: a resolved release passes the pre-download preparation checks.
+- `input-found` (shown as "ready"): local checks found literal candidates. A specific update has not been established; candidates can still be ambiguous or unsuitable for the requested release.
+- `candidate-checked` (shown as "candidate ready"): a resolved release passes the pre-download preparation checks.
 - `blocked`: a required optional helper, such as `cargo2port` or `go2port`, is unavailable.
 - `unsupported`: an established preparation limitation, including unsupported source conventions or edits that change unrelated metadata.
 - `unknown`: evaluation, probing, upstream observation, or index coverage could not establish an answer.
 
-All findings remain visible when several conditions apply; the overall result prioritizes unsupported, then blocked, then unknown. Archives, generated-manifest equivalence, and verification remain explicitly untested. Successful assessment does not promise that a download, full preparation, or build will succeed. Use `bump --diff` to exercise full source preparation.
+The codes are the JSON values; human output prints the plain words in parentheses. All findings remain visible when several conditions apply; the overall result prioritizes unsupported, then blocked, then unknown. Archives, generated-manifest equivalence, and verification remain explicitly untested. Successful assessment does not promise that a download, full preparation, or build will succeed. Use `bump --diff` to exercise full source preparation.
 
 Independent ports continue after a per-port failure. Indexed subports are selected within their owning Portfile; explicit selection uses `assess <name>`. Unresolvable targets are reported individually; omitted Portfiles and missing index entries remain unknown. Exit status is 0 when all results are `input-found` or `candidate-checked` (or no ports match), and 1 if any are blocked, unsupported, or unknown. Cancellation follows the normal CLI exit convention.
 

@@ -123,20 +123,24 @@ func (r *runtime) changeCommands() []*cobra.Command {
 				}
 				progress.VerboseReport(cmd.Context(), "Repository %s; branch %s; commit %s; target %s", preview.Repository, preview.Branch, preview.Preparation.Base.Commit, preview.Preparation.Target.Name)
 				if release := preview.Preparation.Release; release != nil {
-					if release.NoUpdate {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Already current at %s; latest eligible version is %s.\n", release.CurrentVersion, release.Version)
-					} else if release.Archive {
-						if release.Listing != nil {
-							fmt.Fprintf(cmd.ErrOrStderr(), "Release: archive version %s; discovered at %s\n", release.Version, release.Listing.URL)
-						} else {
-							fmt.Fprintf(cmd.ErrOrStderr(), "Release: explicit archive version %s\n", release.Version)
-						}
-					} else {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Release: %s (%s); upstream commit: %s\n", release.Tag, release.Version, release.Commit)
+					fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", plain(preview.Preparation.Target.Name), plain(versionMove(release)))
+					switch {
+					case release.Archive && release.Listing != nil:
+						progress.VerboseReport(cmd.Context(), "Archive version %s discovered at %s", release.Version, release.Listing.URL)
+					case release.Archive:
+						progress.VerboseReport(cmd.Context(), "Explicit archive version %s", release.Version)
+					default:
+						progress.VerboseReport(cmd.Context(), "Release %s (%s); upstream commit %s", release.Tag, release.Version, release.Commit)
 					}
 					if release.LeavesStable {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: this takes %s out of stable; %s is a prerelease. The explicit version is honored.\n", args[0], release.Version)
+						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: this takes %s out of stable; %s is a prerelease. The explicit version is honored.\n", plain(args[0]), plain(release.Version))
 					}
+				} else {
+					what := "revision bump"
+					if spec.action == record.RefreshChecksums {
+						what = "checksum refresh"
+					}
+					fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", plain(preview.Preparation.Target.Name), what)
 				}
 				for _, patch := range preview.Preparation.Patches {
 					if patch.Checked && patch.Applies {

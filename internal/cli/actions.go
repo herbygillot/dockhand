@@ -268,7 +268,7 @@ func (r *runtime) cancelCommand() *cobra.Command {
 		_, cycleErr := services.Workflow.Cycle(cmd.Context(), scope)
 		status, statusErr := services.Workflow.Status(cmd.Context(), scope)
 		result.Status, result.Interrupted = status, cmd.Context().Err() != nil
-		return errors.Join(cycleErr, statusErr, r.result(cmd.OutOrStdout(), result))
+		return errors.Join(cycleErr, statusErr, r.result(cmd.OutOrStdout(), r.level(cmd), result))
 	}}
 	selected.flags(command)
 	command.Flags().BoolVar(&wait, "wait", false, "Remain attached until the selected jobs settle")
@@ -320,7 +320,7 @@ func (r *runtime) attachScope(cmd *cobra.Command, services *app.Services, scope 
 		status = workflow.EmptyStatus(time.Time{})
 	}
 	result.Receipt, result.Status, result.Interrupted = receipt, status, cmd.Context().Err() != nil
-	outputErr := r.result(cmd.OutOrStdout(), result)
+	outputErr := r.result(cmd.OutOrStdout(), r.level(cmd), result)
 	if err != nil {
 		return errors.Join(err, outputErr)
 	}
@@ -342,20 +342,22 @@ func outcome(status workflow.Status, canceling bool) error {
 	}
 	return result
 }
-func (r *runtime) result(out io.Writer, result ActionResult) error {
+
+// result writes an action's outcome: the JSON result, the compact summary at
+// the info level, or the full record with identifiers when -v was given.
+func (r *runtime) result(out io.Writer, level progress.Level, result ActionResult) error {
 	if r.json {
 		return r.emit(result)
+	}
+	if level < progress.Verbose {
+		return renderSummary(out, result.Status)
 	}
 	if err := renderStatus(out, result.Status); err != nil {
 		return err
 	}
 	for _, entry := range result.Status.Jobs {
-		if entry.Job.State == record.JobActive || entry.Job.State == record.JobQueued {
-			pending := "Work remains pending."
-			if entry.Job.Spec.Destination == record.Published {
-				pending = "PR publication remains pending."
-			}
-			if _, err := fmt.Fprintf(out, "\n%s A running driver must settle the result and perform cleanup. Resume with dockhand wait --job %s or run dockhand start for this repository.\n", pending, entry.Job.ID); err != nil {
+		if pending := pendingGuidance(entry.Job); pending != "" {
+			if _, err := fmt.Fprintf(out, "\n%s\n", pending); err != nil {
 				return err
 			}
 		}
