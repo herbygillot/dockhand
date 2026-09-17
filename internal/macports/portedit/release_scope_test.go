@@ -123,3 +123,33 @@ if {${subport} eq ${name}} {
 	require.Contains(t, after, "version 1.1.0")
 	require.Nil(t, result.Scope, "nothing but the target moved")
 }
+
+// A stub selection is probed through its newest subport, which borrows the
+// stub's livecheck: MacPorts disables livecheck on subports that share the
+// stub's version, and the release they share is discovered once.
+func TestStubProbeBorrowsTheStubsLivecheck(t *testing.T) {
+	s, r, _ := archiveFixture(t, `version 1.2.3
+revision 0
+distname shared-${version}
+master_sites @SITE@/${version}
+checksums sha256 aaaa size 2
+subport fixture-313 { livecheck.type none }
+subport fixture-314 { livecheck.type none }
+if {${subport} eq ${name}} {
+ distfiles
+ fetch {}
+ use_configure no
+ build {}
+ livecheck.type regex
+ livecheck.url @SITE@/releases
+ livecheck.regex {shared-(\d+(\.\d+)+)\.tar}
+}
+`)
+	probe, err := s.Probe(t.Context(), ProbeSource{Source: r.Source, Root: r.Root, Selection: macports.Selection{Selector: "fixture"}, Platform: r.Platform})
+	require.NoError(t, err)
+	port := probe.Port()
+	require.Equal(t, "fixture-314", port.Name, "the newest subport carries the edit")
+	require.Equal(t, "regex", port.Options["livecheck.type"], "and discovers through the stub's livecheck")
+	require.Contains(t, port.Options["livecheck.url"], "/releases")
+	require.Equal(t, "1", port.Options["dockhand.livecheck_standard"])
+}

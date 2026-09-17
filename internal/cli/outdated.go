@@ -15,7 +15,7 @@ func (r *runtime) outdatedCommand() *cobra.Command {
 	var selection outdated.Selection
 	cmd := &cobra.Command{
 		Use: "outdated [port...]", Short: "Check committed ports for upstream updates",
-		Long:        "Check explicit ports, or select by --maintainer and --category, from local HEAD using their GitHub, GitLab, or supported HTTP regex livecheck conventions. Working-tree edits are excluded. Reports current, update-available, and unknown assessments; unsupported or failed observations remain visible. Does not fetch MacPorts master, open the state database, create jobs, or authorize publication.",
+		Long:        "Check explicit ports, or select by --maintainer and --category, from local HEAD using their GitHub or GitLab catalogs, or the livecheck MacPorts itself resolves for the port, including pypi, sourceforge, and other checker types, as long as it comes down to a regex without custom hooks. Working-tree edits are excluded. Reports current, update-available, and unknown assessments; unsupported or failed observations remain visible. Does not fetch MacPorts master, open the state database, create jobs, or authorize publication.",
 		Annotations: map[string]string{stateIndependentHelp: "true"},
 		Args:        func(_ *cobra.Command, args []string) error { selection.Ports = args; return selection.Validate() },
 		RunE: func(cmd *cobra.Command, args []string) error {

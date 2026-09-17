@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
@@ -76,6 +78,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if err := fidelity.CheckSnapshot(before, bound); err != nil {
 		return nil, err
 	}
+	var stub string
 	if newest, _ := macports.StubMembers(before, selected.Name); newest != "" && selected.Subport == "" {
 		if _, ok := s.Ports.(macports.Observer); !ok {
 			return nil, fmt.Errorf("%w: shared releases require native declaration observation", ErrUnsupported)
@@ -85,11 +88,18 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		}
 		request.SharedRelease = true
 		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", selected.Name, newest)
+		stub = selected.Name
 		selected = record.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}
 	}
 	info, ok := before.Ports[selected.Name]
 	if !ok {
 		return nil, fmt.Errorf("%w: subport %s was not evaluated", ErrUnsupported, selected.Name)
+	}
+	if stub != "" {
+		// The stub owns the livecheck; MacPorts disables it on the subports
+		// that share the stub's version. Discovery borrows it for the subport
+		// that carries the edit, since the release is one and the same.
+		info = withLivecheckOf(info, before.Ports[stub])
 	}
 	data, err := os.ReadFile(files.path(selected.Portfile))
 	if err != nil {
@@ -186,4 +196,29 @@ func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator
 		return err
 	})
 	return result, err
+}
+
+// withLivecheckOf returns port with owner's livecheck declarations in place
+// of its own.
+func withLivecheckOf(port, owner macports.PortInfo) macports.PortInfo {
+	port.Options = maps.Clone(port.Options)
+	if port.Options == nil {
+		port.Options = map[string]string{}
+	}
+	port.OptionErrors = maps.Clone(port.OptionErrors)
+	for key, value := range owner.Options {
+		if strings.HasPrefix(key, "livecheck.") || strings.HasPrefix(key, "dockhand.livecheck_") {
+			port.Options[key] = value
+			delete(port.OptionErrors, key)
+		}
+	}
+	for key, value := range owner.OptionErrors {
+		if strings.HasPrefix(key, "livecheck.") {
+			if port.OptionErrors == nil {
+				port.OptionErrors = map[string]string{}
+			}
+			port.OptionErrors[key] = value
+		}
+	}
+	return port
 }

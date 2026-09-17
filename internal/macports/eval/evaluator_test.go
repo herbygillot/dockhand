@@ -246,3 +246,43 @@ subport selected-broken { error "sibling requires attention" }
 	_, err = e.Observe(t.Context(), bound, macports.ObservationRequest{Declarations: true})
 	require.ErrorContains(t, err, "sibling requires attention")
 }
+
+// A livecheck type such as pypi is resolved through the tree's own checker
+// definitions, exactly as port livecheck does, so dockhand sees the regex
+// livecheck it stands for rather than a type it would have to understand.
+func TestEvaluateResolvesLivecheckTypesThroughTheTreesCheckers(t *testing.T) {
+	evaluator := liveEvaluator(t)
+	tree := fixtureTree(t)
+	putFile(t, tree.Root(), "_resources/port1.0/livecheck/pypi.tcl", `if {${livecheck.name} eq "default"} {
+    livecheck.name ${name}
+}
+if {!$has_homepage || ${livecheck.url} eq ${homepage}} {
+    livecheck.url https://pypi.org/pypi/${livecheck.name}/json
+}
+if {${livecheck.regex} eq ""} {
+    livecheck.regex {"version": *"([^"]+)"[,\}]}
+}
+set livecheck.type "regex"
+`)
+	putFile(t, tree.Root(), "python/py-foo/Portfile", `PortSystem 1.0
+name py-foo
+version 1.2
+categories python
+homepage https://example.invalid/foo
+master_sites https://example.invalid/
+livecheck.type pypi
+livecheck.name foo
+`)
+	targets, err := evaluator.Resolve(t.Context(), tree, macports.Selection{Selector: "python/py-foo"})
+	require.NoError(t, err)
+	source, err := tree.Select(targets[0])
+	require.NoError(t, err)
+	snapshot, err := evaluator.Evaluate(t.Context(), source)
+	require.NoError(t, err)
+	port := snapshot.Ports["py-foo"]
+	require.Equal(t, "pypi", port.Options["dockhand.livecheck_declared"])
+	require.Equal(t, "regex", port.Options["livecheck.type"])
+	require.Equal(t, "https://pypi.org/pypi/foo/json", port.Options["livecheck.url"])
+	require.Equal(t, `{"version": *"([^"]+)"[,\}]}`, port.Options["livecheck.regex"], "option values keep their list encoding, as the raw path does")
+	require.NotContains(t, port.OptionErrors, "livecheck.url")
+}

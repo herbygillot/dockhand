@@ -41,6 +41,66 @@ namespace eval ::dockhand {
                     }
                 }
             }
+            # The effective livecheck, resolved the way port livecheck does and
+            # with the tree's own checker definitions under
+            # _resources/port1.0/livecheck, so a type such as pypi becomes the
+            # regex it stands for and dockhand never restates what MacPorts
+            # already knows. The declared type is kept beside it.
+            if {![catch {$worker eval {
+                apply {{} {
+                    global livecheck.url livecheck.type livecheck.regex livecheck.name homepage master_sites name
+                    set declared ${livecheck.type}
+                    set has_master_sites [info exists master_sites]
+                    set has_homepage [info exists homepage]
+                    if {!$has_homepage} { set livecheck.url {} }
+                    set types_dir [getdefaultportresourcepath "port1.0/livecheck"]
+                    set available_types [glob -directory $types_dir -tails -types f *.tcl]
+                    set available_types [regsub -all {\.tcl} [join $available_types |] {}]
+                    if {${livecheck.type} eq "default"} {
+                        if {$has_master_sites} {
+                            foreach {master_site} ${master_sites} {
+                                if {[regexp "^($available_types)(?::(\[^:\]+))?" ${master_site} _ site subdir]} {
+                                    set subdirs [split $subdir /]
+                                    if {[llength $subdirs] > 1} {
+                                        if {[lindex $subdirs 0] eq "project"} {
+                                            set subdir [lindex $subdirs 1]
+                                        } else {
+                                            set subdir ""
+                                        }
+                                    }
+                                    if {${subdir} ne "" && ${livecheck.name} eq "default"} {
+                                        set livecheck.name ${subdir}
+                                    }
+                                    set livecheck.type ${site}
+                                    break
+                                }
+                            }
+                        }
+                        if {${livecheck.type} eq "default"} {
+                            set livecheck.type "fallback"
+                        }
+                        if {$has_homepage} {
+                            if {[regexp {^http://code.google.com/p/([^/]+)} $homepage _ tag]} {
+                                set livecheck.type "googlecode"
+                            } elseif {[regexp {^http://www.gnu.org/software/([^/]+)} $homepage _ tag]} {
+                                set livecheck.type "gnu"
+                            }
+                        }
+                    }
+                    if {${livecheck.type} in [split $available_types "|"]} {
+                        source "$types_dir/${livecheck.type}.tcl"
+                    }
+                    set livecheck.url [join ${livecheck.url}]
+                    list $declared ${livecheck.type} ${livecheck.url} ${livecheck.regex} ${livecheck.name}
+                }}
+            }} effective]} {
+                dict set out dockhand.livecheck_declared [lindex $effective 0]
+                dict set out livecheck.type [lindex $effective 1]
+                dict set out livecheck.url [lindex $effective 2]
+                dict set out livecheck.regex [lindex $effective 3]
+                dict set out livecheck.name [lindex $effective 4]
+                foreach field {livecheck.type livecheck.url livecheck.regex} { dict unset failures $field }
+            }
             set metadata_only 0
             if {![catch {$worker eval {
                 apply {{} {

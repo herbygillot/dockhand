@@ -214,7 +214,7 @@ dockhand outdated --maintainer herbygillot@github
 dockhand outdated --maintainer @herbygillot --category devel --json
 ```
 
-This reads committed local `HEAD` and checks each selected port using the same GitHub/GitLab catalogs, supported native HTTP regex livechecks, and calculated-version probing as bump. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
+This reads committed local `HEAD` and checks each selected port using the same GitHub/GitLab catalogs, livechecks, and calculated-version probing as bump. A livecheck is taken exactly as `port livecheck` would resolve it: the evaluator applies the tree's own checker definitions under `_resources/port1.0/livecheck`, so a `pypi`, `sourceforge`, or defaulted type becomes the URL and regex it stands for, and dockhand supports whatever comes down to a regex without custom hooks. A python stub's subports borrow the stub's livecheck, since MacPorts disables theirs when they share its version. It excludes working-tree edits and does not fetch MacPorts master, initialize a database, download source archives, create branches/jobs, or grant publication authority. Update the checkout first if you want newer MacPorts definitions.
 
 Results distinguish `current`, `update-available`, and `unknown`. Unsupported ports and incomplete observations stay visible alongside successful results; any unknown result produces a nonzero exit status. An available update by itself is successful discovery. Automatic bump intake and unattended publication policy remain separate work.
 
