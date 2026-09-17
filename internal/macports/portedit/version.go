@@ -18,6 +18,10 @@ type archivePlan struct {
 	contents  []byte
 	versioned macports.Snapshot
 	sources   []archiveSource
+	// viaGit marks a git-fetched port's plan, which downloads nothing;
+	// branch is where git.branch must land, empty when the tag is unknown.
+	viaGit bool
+	branch string
 	// subject names the commit the applied plan intends.
 	subject string
 }
@@ -67,6 +71,9 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if request.SharedRelease || len(scope.Affected) > 1 {
 		scope.Input = input.versionInput
 		input.scope = scope
+	}
+	if gitFetched(input.info) {
+		return s.planGitVersion(ctx, request, input, contents, versioned)
 	}
 	if _, ok := s.Ports.(macports.Observer); ok {
 		observed, err := s.planObservedArchives(ctx, request, input, contents)
@@ -148,6 +155,9 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 	result := plan.result
 	if request.Release.NoUpdate {
 		return result, nil
+	}
+	if plan.viaGit {
+		return s.applyGitVersion(ctx, request, input, plan)
 	}
 	if plan.observed != nil {
 		return s.applyObservedArchives(ctx, request, input, plan, archives)

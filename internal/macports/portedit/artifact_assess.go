@@ -8,6 +8,9 @@ import (
 )
 
 func (s *Service) assessArchives(ctx context.Context, request Request, input *sourceInput) (coverage []ContextCoverage, fetchErr, checksumErr error) {
+	if gitFetched(input.info) {
+		return []ContextCoverage{{Fetch: input.info.Fetch, Platform: input.before.Platform}}, checkGitSource(input.info), nil
+	}
 	if _, ok := s.Ports.(macports.Observer); !ok {
 		sources, err := downloadSources(input.info, input.portdir())
 		if err != nil {

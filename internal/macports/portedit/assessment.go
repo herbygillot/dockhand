@@ -152,14 +152,18 @@ func (p *VersionProbe) Assess(ctx context.Context, release *record.Release) (Ass
 				a.Findings = append(a.Findings, Finding{Check: "platform-restriction", Status: NotTested, Code: "fetch-rejected", Detail: fmt.Sprintf("%s %s %s: archive metadata is available, but the preserved pre-fetch guard rejects this platform", context.Platform.OS, context.Platform.Version, context.Platform.Architecture)})
 			}
 		}
-		add("fetch", "MacPorts archive locations are observed; availability is untested", fetchErr)
+		fetchDetail, checksumDetail := "MacPorts archive locations are observed; availability is untested", "Checksum declarations are associated across the observed contexts"
+		if gitFetched(p.input.info) {
+			fetchDetail, checksumDetail = "Git source; the build clones git.url at git.branch", "No checksums: the source is cloned, not downloaded"
+		}
+		add("fetch", fetchDetail, fetchErr)
 		if fetchErr == nil {
 			if checksumErr == nil {
 				for _, context := range coverage {
 					a.Contexts = append(a.Contexts, context.Platform)
 				}
 			}
-			add("checksums", "Checksum declarations are associated across the observed contexts", checksumErr)
+			add("checksums", checksumDetail, checksumErr)
 		} else {
 			a.Findings = append(a.Findings, Finding{Check: "checksums", Status: NotTested, Code: "sources-required", Detail: "Checksum association requires supported archive sources"})
 		}

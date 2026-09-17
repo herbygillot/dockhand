@@ -199,6 +199,24 @@ func version(before, after macports.Snapshot, selected, root string, release rec
 	return result
 }
 
+// GitVersion is the version expectation for a port fetched with git: the
+// version moves, the revision resets, nothing is downloaded, and git.branch
+// lands on branch, the resolved tag or the resolved commit. An empty branch
+// leaves git.branch unchecked, for a source whose tag is not known.
+func GitVersion(shared bool, before, after macports.Snapshot, selected, root string, release record.Release, branch string) Report {
+	release.Tag = branch
+	report := ScopedVersion(shared, before, after, selected, root, release, "")
+	for i, change := range report.ExpectedChanges {
+		if change == selected+".distfiles and checksums" {
+			report.ExpectedChanges[i] = selected + ".git.branch -> " + branch
+			if branch == "" {
+				report.ExpectedChanges[i] = selected + ".git.branch follows the version"
+			}
+		}
+	}
+	return report
+}
+
 // Checksums expects only the selected port's checksums to change.
 func Checksums(before, after macports.Snapshot, selected, root, checksums string) Report {
 	expected := before
