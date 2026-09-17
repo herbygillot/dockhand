@@ -446,3 +446,29 @@ func TestPartialSubmissionCleanupPreservesItsFailure(t *testing.T) {
 	require.Contains(t, status.Jobs[0].Attempts[0].LastError, "indexing selected source failed")
 	require.Equal(t, record.ResourceReleased, status.Resources[0].State)
 }
+
+func TestUnresolvedReconciliationSettlesAfterItsBudget(t *testing.T) {
+	f := newFixture(t)
+	id := f.submit(t, "never-reconciled")
+	f.provider.submit = func(context.Context, verify.Request) (verify.Submission, error) {
+		return verify.Submission{State: verify.SubmissionUncertain, Detail: "provider acknowledged nothing"}, nil
+	}
+	f.provider.reconcile = func(context.Context, record.RequestID) (verify.Reconciliation, error) {
+		return verify.Reconciliation{State: verify.RunUnknown}, nil
+	}
+	for i := 0; i < 40; i++ {
+		f.runAttemptDue(t, id)
+		if f.status(t, id).Jobs[0].Job.State.Terminal() {
+			break
+		}
+	}
+	job := f.status(t, id).Jobs[0].Job
+	require.Equal(t, record.JobNeedsAttention, job.State, "an unresolved reconciliation must not wait forever")
+	attempt := f.attempt(t, id)
+	require.Equal(t, record.AttemptFinished, attempt.State)
+	require.Equal(t, record.VerdictErrored, attempt.Evidence.Verdict)
+	require.Contains(t, attempt.LastError, "no progress after 21 reconciliation waits")
+	require.Contains(t, job.Detail, "reconciliation waits")
+	require.Equal(t, 1, f.provider.count("submit"), "the submission was never repeated")
+	require.LessOrEqual(t, f.provider.count("reconcile"), 21)
+}

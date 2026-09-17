@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -147,8 +148,12 @@ func (c *cycle) cleanup(ctx context.Context, id record.ResourceID) (string, erro
 			}
 			if callErr != nil {
 				c.fail(&current.Lease, string(current.ID), callErr)
-			} else {
-				c.await(&current.Lease)
+			} else if _, spent := c.await(&current.Lease, waitRelease); spent {
+				// The provider never confirmed the release. Keep the obligation
+				// but stop polling frequently; gc and status show it for inspection.
+				detail = exhausted(waitRelease, current.ConsecutiveWaits, detail)
+				later := now.Add(24 * time.Hour)
+				current.RetryAt = &later
 			}
 			current.State, current.LastError = record.ResourceUncertain, detail
 		}

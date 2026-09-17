@@ -8,8 +8,9 @@ import (
 )
 
 func TestOutcomeKindsAndReporting(t *testing.T) {
-	require.Equal(t, waiting, waitingFor("progress").kind)
-	require.Empty(t, waitingFor("progress").problem(), "waiting is not a cycle problem")
+	require.Equal(t, waiting, waitingFor(waitBuild, "progress").kind)
+	require.Equal(t, waitBuild, waitingFor(waitBuild, "progress").wait)
+	require.Empty(t, waitingFor(waitBuild, "progress").problem(), "waiting is not a cycle problem")
 	err := errors.New("boom")
 	require.Equal(t, failed, failure(err).kind)
 	require.Equal(t, "boom", failure(err).problem())

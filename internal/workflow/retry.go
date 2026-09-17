@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"time"
 
@@ -34,19 +35,34 @@ func (c *cycle) failureDeadline(key string, failures *uint32, err error) time.Ti
 	return deadline
 }
 
-// waitingDeadline schedules the next look at expected progress. Failures are
-// forgotten, and consecutive waits stretch the interval up to a ceiling so a
-// wait that never resolves neither spins nor disappears: the count stays on
-// the record for status to show.
-func (c *cycle) waitingDeadline(failures, waits *uint32) time.Time {
+// waitingDeadline schedules the next look at expected progress of one kind.
+// Failures are forgotten and the wait is counted. Unbounded kinds poll at
+// their own interval; budgeted kinds stretch the interval up to a ceiling and
+// report exhaustion once the budget of consecutive waits is spent, so a wait
+// that never resolves neither spins nor hides.
+func (c *cycle) waitingDeadline(kind waitKind, failures, waits *uint32) (time.Time, bool) {
 	*failures = 0
 	if *waits < ^uint32(0) {
 		*waits += 1
 	}
+	policy := waitPolicies[kind]
 	delay := c.wait
-	ceiling := max(5*time.Minute, delay)
-	for i := uint32(1); i < *waits && delay < ceiling; i++ {
-		delay = min(delay*2, ceiling)
+	switch kind {
+	case waitBuild:
+		delay = c.observe
+	case waitCancellation:
+		delay = c.retry
 	}
-	return c.engine.now().Add(delay)
+	if policy.backoff {
+		ceiling := max(5*time.Minute, delay)
+		for i := uint32(1); i < *waits && delay < ceiling; i++ {
+			delay = min(delay*2, ceiling)
+		}
+	}
+	return c.engine.now().Add(delay), policy.budget > 0 && *waits > policy.budget
+}
+
+// exhausted describes a budgeted wait that never resolved.
+func exhausted(kind waitKind, waits uint32, detail string) string {
+	return fmt.Sprintf("no progress after %d %s waits: %s", waits, kind, detail)
 }

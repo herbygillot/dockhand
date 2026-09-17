@@ -150,14 +150,16 @@ func (c *cycle) advanceJob(ctx context.Context, id record.JobID) (bool, string, 
 				c.fail(&current.Lease, string(current.ID), result.err)
 			}
 		case waiting:
-			c.await(&current.Lease)
-			if current.State == record.AttemptRunning {
-				retry := now.Add(c.observe)
-				current.RetryAt = &retry
-			}
+			kind := result.wait
 			if job.CancelRequestedAt != nil {
-				retry := now.Add(c.retry)
-				current.RetryAt = &retry
+				kind = waitCancellation
+			}
+			if _, spent := c.await(&current.Lease, kind); spent {
+				// A budgeted wait that never resolved is a fault in the
+				// provider or forge, not a slow build; settle it visibly.
+				detail = exhausted(kind, current.ConsecutiveWaits, result.detail)
+				current.LastError = detail
+				finishAttempt(work, &job, &current, record.Evidence{Verdict: record.VerdictErrored, ObservedAt: now}, detail, now)
 			}
 		case settled:
 			current.ConsecutiveFailures, current.ConsecutiveWaits = 0, 0

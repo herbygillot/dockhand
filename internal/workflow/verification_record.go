@@ -57,7 +57,10 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 				work.Submissions[attempt.SubmissionID] = record.Submission{ID: attempt.SubmissionID, AttemptID: attempt.ID, Sequence: current.Sequence + 1, Provider: attempt.Spec.Config.Provider, CreatedAt: now}
 				attempt.State = record.AttemptQueued
 			}
-			return waitingFor("")
+			if attempt.State == record.AttemptRunning {
+				return waitingFor(waitBuild, "")
+			}
+			return waitingFor(waitCapacity, "")
 		case verify.RunUnknown:
 			// Reconciliation exists for this case; an undetermined run is expected waiting.
 			attempt.State = record.AttemptUncertain
@@ -66,7 +69,7 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 				detail = "Provider cannot yet determine whether the submission exists; reconciling"
 			}
 			recordVerificationProgress(work, job, detail)
-			return waitingFor(detail)
+			return waitingFor(waitReconciliation, detail)
 		default:
 			return failuref("workflow: invalid provider reconciliation state")
 		}
@@ -76,7 +79,7 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			return failure(result.err)
 		}
 		attempt.CancelSentAt = &now
-		return waitingFor("")
+		return waitingFor(waitCancellation, "")
 	case observeAttempt:
 		attempt.CancelPendingObservation = false
 		if result.err != nil {
@@ -99,7 +102,7 @@ func (c *cycle) recordAttempt(work *execution, job *record.Job, attempt *record.
 			finishAttempt(work, job, attempt, evidence, observation.Detail, now)
 			return settledWith(observation.Detail)
 		}
-		return waitingFor(observation.Detail)
+		return waitingFor(waitBuild, observation.Detail)
 	}
 	return failuref("workflow: invalid attempt action")
 }
@@ -140,14 +143,14 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 			job.AdmittedAt = &now
 		}
 		dispositionResources(work, attempt.ID, record.ResourceActive)
-		return waitingFor(submission.Detail)
+		return waitingFor(waitBuild, submission.Detail)
 	case verify.AtCapacity, verify.Unsupported:
 		if submission.Run != (record.ProviderRun{}) || hasResources(work, attempt.ID) {
 			return failuref("workflow: non-admission response has external effects; reconciling submission")
 		}
 		if submission.State == verify.AtCapacity {
 			attempt.State = record.AttemptQueued
-			return waitingFor(submission.Detail)
+			return waitingFor(waitCapacity, submission.Detail)
 		}
 		finishAttempt(work, job, attempt, record.Evidence{Verdict: record.VerdictUnsupported, ObservedAt: now}, submission.Detail, now)
 		return settledProblem("workflow: provider rejected the build as unsupported")
@@ -159,7 +162,7 @@ func recordSubmission(work *execution, job *record.Job, attempt *record.Attempt,
 			detail = "Submission outcome is uncertain; reconciling"
 		}
 		recordVerificationProgress(work, job, detail)
-		return waitingFor(detail)
+		return waitingFor(waitReconciliation, detail)
 	default:
 		return failuref("workflow: invalid provider submission state")
 	}

@@ -25,12 +25,13 @@ func (c *cycle) fail(lease *record.Lease, key string, err error) time.Time {
 	return retry
 }
 
-// await schedules the next look at expected progress that is not a failure,
-// counting the wait so an unresolved one backs off and stays visible.
-func (c *cycle) await(lease *record.Lease) time.Time {
-	retry := c.waitingDeadline(&lease.ConsecutiveFailures, &lease.ConsecutiveWaits)
+// await schedules the next look at expected progress of one kind, counting
+// the wait. It reports true when a budgeted kind has waited past its budget;
+// the caller then settles the record instead of waiting again.
+func (c *cycle) await(lease *record.Lease, kind waitKind) (time.Time, bool) {
+	retry, spent := c.waitingDeadline(kind, &lease.ConsecutiveFailures, &lease.ConsecutiveWaits)
 	lease.RetryAt = &retry
-	return retry
+	return retry, spent
 }
 
 // finishJob records a terminal outcome and releases the job's lease so a

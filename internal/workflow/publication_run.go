@@ -211,7 +211,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		return c.finishPublication(ctx, job, record.JobCompleted, fmt.Sprintf("Published %s from verified branch %s:%s at %s", observed.PullRequest.Ref.URL, spec.HeadRepository, spec.HeadBranch, spec.Desired.Head), &observed.PullRequest)
 	}
 	if action.WriteStarted {
-		return c.publicationRetry(ctx, job, waitingFor("PR request outcome is unresolved; observing without repeating the write"))
+		return c.publicationRetry(ctx, job, waitingFor(waitForge, "PR request outcome is unresolved; observing without repeating the write"))
 	}
 	if err := s.Repo.CheckContributionBase(ctx, spec.BaseURL, spec.BaseBranch, string(source.Base), string(source.Commit)); err != nil {
 		return err
@@ -233,10 +233,10 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 		if err := s.Repo.Push(ctx, git.Push{Remote: spec.PushURL, Branch: spec.HeadBranch, Commit: string(spec.Desired.Head), ExpectedRemote: expected}); err != nil {
 			return err
 		}
-		return c.publicationRetry(ctx, job, waitingFor(fmt.Sprintf("Pushed verified branch %s:%s at %s; checking the remote before publishing", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)))
+		return c.publicationRetry(ctx, job, waitingFor(waitForge, fmt.Sprintf("Pushed verified branch %s:%s at %s; checking the remote before publishing", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)))
 	}
 	if observed.Found && observed.PullRequest.RemoteHead != spec.Desired.Head {
-		return c.publicationRetry(ctx, job, waitingFor("Waiting for the forge to observe the pushed branch"))
+		return c.publicationRetry(ctx, job, waitingFor(waitForge, "Waiting for the forge to observe the pushed branch"))
 	}
 	if err := s.Preflight(ctx); err != nil {
 		return err
@@ -266,7 +266,7 @@ func (c *cycle) runPublication(ctx context.Context, job record.Job, action recor
 	if err != nil {
 		return err
 	}
-	return c.publicationRetry(ctx, job, waitingFor(fmt.Sprintf("PR request sent for verified branch %s:%s at %s; awaiting confirmation", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)))
+	return c.publicationRetry(ctx, job, waitingFor(waitForge, fmt.Sprintf("PR request sent for verified branch %s:%s at %s; awaiting confirmation", spec.HeadRepository, spec.HeadBranch, spec.Desired.Head)))
 }
 
 // publicationRetry releases the job for a later pass: a failure backs off and
@@ -281,8 +281,19 @@ func (c *cycle) publicationRetry(ctx context.Context, expected record.Job, resul
 		if result.kind == failed {
 			action.LastError = result.detail
 			c.fail(&job.Lease, string(job.ID), result.err)
-		} else {
-			c.await(&job.Lease)
+			job.Detail = result.detail
+			return nil
+		}
+		if _, spent := c.await(&job.Lease, result.wait); spent {
+			// The forge never reflected the effect; an uncertain write stays
+			// uncertain, and the job needs someone to look.
+			detail := exhausted(result.wait, job.ConsecutiveWaits, result.detail)
+			action.LastError = detail
+			if action.State != record.PublicationUncertain {
+				action.State = record.PublicationNeedsAttention
+			}
+			finishJob(job, record.JobNeedsAttention, detail, c.engine.now())
+			return nil
 		}
 		job.Detail = result.detail
 		return nil
