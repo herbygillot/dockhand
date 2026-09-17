@@ -27,6 +27,8 @@ type boundPorts struct {
 	seenBytes  string
 	err        error
 	onEvaluate func()
+	// snapshot, when set, supplies every port of the evaluated Portfile.
+	snapshot func(macports.Context) map[string]macports.PortInfo
 }
 
 func (p *boundPorts) Resolve(ctx context.Context, tree macports.Tree, sel macports.Selection) ([]record.Target, error) {
@@ -50,7 +52,11 @@ func (p *boundPorts) Evaluate(ctx context.Context, c macports.Context) (macports
 	if p.onEvaluate != nil {
 		p.onEvaluate()
 	}
-	return macports.Snapshot{Source: c.Source(), Target: c.Target(), Platform: c.Platform(), Ports: map[string]macports.PortInfo{c.Target().Name: {Name: c.Target().Name, Version: "1"}}}, p.err
+	ports := map[string]macports.PortInfo{c.Target().Name: {Name: c.Target().Name, Version: "1"}}
+	if p.snapshot != nil {
+		ports = p.snapshot(c)
+	}
+	return macports.Snapshot{Source: c.Source(), Target: c.Target(), Platform: c.Platform(), Ports: ports}, p.err
 }
 
 func commitPort(t *testing.T, f *fixture, branch, contents string) record.Source {
@@ -328,4 +334,33 @@ func TestTrackedVerificationPreservesEditedTargetsWhenTestingOtherPorts(t *testi
 	require.Equal(t, edited, status.Changes[0].Targets)
 	require.Equal(t, "downstream-port", f.attempt(t, receipt.JobID).Spec.Target.Name)
 	require.NotEmpty(t, status.Jobs[0].Job.Spec.InputRevision)
+}
+
+func TestStubSelectionBumpsItsNewestSubportAsASharedRelease(t *testing.T) {
+	f, ports := bindingFixture(t)
+	ports.snapshot = func(c macports.Context) map[string]macports.PortInfo {
+		return map[string]macports.PortInfo{
+			"py-fixture":    {Name: "py-fixture", Version: "1", Options: map[string]string{"dockhand.metadata_only": "1"}},
+			"py39-fixture":  {Name: "py39-fixture", Version: "1", Options: map[string]string{}},
+			"py313-fixture": {Name: "py313-fixture", Version: "1", Options: map[string]string{}},
+		}
+	}
+	ports.targetName = "py-fixture"
+	commit, tree, err := f.repo.Branch(t.Context(), "candidate")
+	require.NoError(t, err)
+	req := workflow.PreparationRequest{Action: record.Bump, ID: "prepare", SourceBranch: "master", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)},
+		Selection: macports.Selection{Selector: "py-fixture"}, Destination: record.BranchReady, Verification: record.VerificationSkipped,
+		Author: record.CommitIdentity{Name: "A", Email: "a@example.invalid"}, Platform: buildPlatform}
+	bound, err := f.engine.BindPreparation(t.Context(), req)
+	require.NoError(t, err)
+	spec := bound.Request.Spec
+	require.Equal(t, "py313-fixture", spec.Targets[0].Name, "the newest versioned subport carries the edit")
+	require.Equal(t, "py313-fixture", spec.Targets[0].Subport)
+	require.True(t, spec.Preparation.SharedRelease, "every subport shares the release")
+	require.Equal(t, "py-fixture", spec.Preparation.Stub, "the person's name stays on the contribution")
+	require.False(t, spec.AllSubports)
+	receipt, err := f.engine.Submit(t.Context(), bound.Request)
+	require.NoError(t, err)
+	status := f.status(t, receipt.JobID)
+	require.Equal(t, "py-fixture", status.Changes[0].InitiatingTarget, "status, verify, and publish select it by the stub's name")
 }

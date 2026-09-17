@@ -19,6 +19,7 @@ func TestSharedReleaseResumesIsolatedCoverageAndGatesPublication(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			f, hosting, request := combinedFixture(t, record.Bump)
 			request.Spec.Preparation.SharedRelease = true
+			request.Spec.AllSubports = true
 			original := f.engine.Preparer
 			root := request.Spec.Targets[0]
 			sibling := root
@@ -103,7 +104,7 @@ func TestSharedReleaseResumesIsolatedCoverageAndGatesPublication(t *testing.T) {
 				attempt := completeVerification(t, f, rootOnly, record.VerdictPassed)
 				require.True(t, verify.Applicable(attempt.Spec, attempt).Matches)
 				_, err = f.engine.BindPublication(t.Context(), workflow.PublicationRequest{ID: "after-root-only", Branch: job.Prepared.Branch, Options: publish.Options{}})
-				require.ErrorContains(t, err, "missing shared-release target", "a later standalone pass cannot substitute for sibling coverage")
+				require.NoError(t, err, "a later root-only pass is the default coverage; the PR workflow builds the siblings")
 				require.Zero(t, hosting.writes)
 			}
 		})

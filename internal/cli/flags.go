@@ -74,6 +74,7 @@ func changeFlags(command *cobra.Command, options *Options) {
 	command.Flags().BoolVarP(&options.NoVerify, "no-verify", "N", false, "Stop at the prepared branch; skip verification and publication")
 	command.Flags().BoolVar(&options.NoPublish, "no-publish", false, "Stop after verification; do not open or update a PR")
 	command.Flags().BoolVar(&options.Diff, "diff", false, "Preview source changes without submitting work")
+	command.Flags().BoolVar(&options.AllSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the newest")
 	command.MarkFlagsMutuallyExclusive("diff", "no-publish")
 	command.MarkFlagsMutuallyExclusive("diff", "detach")
 	command.MarkFlagsMutuallyExclusive("diff", "trace")

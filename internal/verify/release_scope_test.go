@@ -20,6 +20,13 @@ func TestSharedReleasePlansEveryBuildableSibling(t *testing.T) {
 	config := record.BuildConfig{Provider: "tart", Platform: record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, EnvironmentDigest: "image", Tests: record.TestDeclared}
 	plan, builds, err := PlanWithConfig(job, revision, config)
 	require.NoError(t, err)
+	require.Len(t, builds, 1, "by default only the initiating subport is built; the PR workflow covers the rest")
+	require.Len(t, plan.Targets, 1)
+	require.True(t, plan.Targets[0].Root)
+	require.Equal(t, root, plan.Targets[0].Port)
+	job.Spec.AllSubports = true
+	plan, builds, err = PlanWithConfig(job, revision, config)
+	require.NoError(t, err)
 	require.Len(t, builds, 2)
 	require.Len(t, plan.Targets, 2)
 	require.True(t, plan.Targets[0].Root)

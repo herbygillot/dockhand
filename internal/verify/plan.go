@@ -92,7 +92,7 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 	}
 	targets := job.Spec.Targets
 	if revision.Scope != nil {
-		targets = revision.Scope.BuildTargets()
+		targets = revision.Scope.RequiredTargets(job.Spec)
 		rootPresent := false
 		for _, target := range targets {
 			if record.CompareTargets(target, job.Spec.Targets[0]) == 0 {
@@ -148,7 +148,7 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 
 // PlanSingle retains the one-target planning contract used by evidence reuse.
 func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPlan, record.BuildSpec, error) {
-	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.BuildTargets()) != 1 {
+	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.RequiredTargets(job.Spec)) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
 	if job.Spec.Build == nil {
@@ -163,7 +163,7 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 // planSingleWithConfig creates a one-target plan from an exact configuration
 // selected by accepted requirements and recorded evidence.
 func planSingleWithConfig(job record.Job, revision record.Revision, config record.BuildConfig) (record.VerificationPlan, record.BuildSpec, error) {
-	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.BuildTargets()) != 1 {
+	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.RequiredTargets(job.Spec)) != 1 {
 		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
 	}
 	plan, builds, err := PlanWithConfig(job, revision, config)

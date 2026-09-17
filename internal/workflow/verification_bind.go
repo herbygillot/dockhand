@@ -23,6 +23,7 @@ type VerificationRequest struct {
 	UseRecordedBuild  bool
 	TargetBuilds      map[string]record.BuildConfig
 	IncludeDependents bool
+	AllSubports       bool
 	Fresh             bool
 	ID                record.RequestID
 	// Empty Branch selects the current working tree, including uncommitted edits.
@@ -228,7 +229,7 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 		}
 		request.Fresh = true
 	}
-	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
+	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: record.Verify, SourceBranch: request.Branch, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: record.VerificationComplete, Verification: record.VerificationRequired, Build: &request.Build, Checkout: provenance, FreshVerification: request.Fresh})
 	if err != nil {
 		return BoundVerification{}, err
 	}

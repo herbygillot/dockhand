@@ -10,6 +10,7 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/macports/portfile"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
@@ -28,7 +29,11 @@ type sourceInput struct {
 	baselineObservations map[observationKey]macports.Observation
 }
 
-func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, err error) {
+// load binds the request's selection to a disposable workspace. A stub
+// selection, a port that builds nothing while its versioned subports carry
+// its release, is redirected to the newest subport as a shared release,
+// and the request is updated so the commit keeps the stub's name.
+func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, err error) {
 	if s == nil || s.Ports == nil || request.Root == "" {
 		return nil, fmt.Errorf("portedit: a disposable source workspace and MacPorts reader are required")
 	}
@@ -70,6 +75,17 @@ func (s *Service) load(ctx context.Context, request Request) (_ *sourceInput, er
 	}
 	if err := fidelity.CheckSnapshot(before, bound); err != nil {
 		return nil, err
+	}
+	if newest, _ := macports.StubMembers(before, selected.Name); newest != "" && selected.Subport == "" {
+		if _, ok := s.Ports.(macports.Observer); !ok {
+			return nil, fmt.Errorf("%w: shared releases require native declaration observation", ErrUnsupported)
+		}
+		if request.CommitName == "" {
+			request.CommitName = selected.Name
+		}
+		request.SharedRelease = true
+		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", selected.Name, newest)
+		selected = record.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}
 	}
 	info, ok := before.Ports[selected.Name]
 	if !ok {

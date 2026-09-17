@@ -33,7 +33,7 @@ type VersionProbe struct {
 
 func (s *Service) Probe(ctx context.Context, source ProbeSource) (*VersionProbe, error) {
 	request := Request{SharedRelease: source.SharedRelease, Source: source.Source, Root: source.Root, Selection: source.Selection, Platform: source.Platform}
-	input, err := s.load(ctx, request)
+	input, err := s.load(ctx, &request)
 	if err != nil {
 		return nil, err
 	}

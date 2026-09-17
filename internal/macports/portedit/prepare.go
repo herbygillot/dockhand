@@ -29,8 +29,11 @@ type CommitIntent struct {
 
 type Request struct {
 	SharedRelease bool
-	Action        record.Action
-	Source        record.Source
+	// CommitName replaces the target's name in the commit subject, for a
+	// bump that a person addressed to a stub port.
+	CommitName string
+	Action     record.Action
+	Source     record.Source
 	// Root is an exclusively owned disposable source snapshot, never a user checkout.
 	Root      string
 	Selection macports.Selection
@@ -81,7 +84,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err := request.Validate(); err != nil {
 		return Result{}, err
 	}
-	input, err := s.load(ctx, request)
+	input, err := s.load(ctx, &request)
 	if err != nil {
 		return Result{}, err
 	}

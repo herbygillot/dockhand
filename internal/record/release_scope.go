@@ -51,6 +51,26 @@ func (s *ReleaseScope) BuildTargets() []Target {
 }
 
 // Valid checks that a release scope has unique, source-bound members and build work.
+// RequiredTargets lists the members verification must build for a job: every
+// buildable member when the job asked for all subports, otherwise the job's
+// initiating target alone, which must itself be buildable. A scope whose
+// initiating target builds nothing falls back to every buildable member.
+func (s *ReleaseScope) RequiredTargets(spec JobSpec) []Target {
+	if s == nil {
+		return spec.Targets
+	}
+	buildable := s.BuildTargets()
+	if spec.AllSubports || len(spec.Targets) == 0 {
+		return buildable
+	}
+	for _, target := range buildable {
+		if CompareTargets(target, spec.Targets[0]) == 0 {
+			return []Target{target}
+		}
+	}
+	return buildable
+}
+
 func (s *ReleaseScope) Valid() bool {
 	if s == nil {
 		return true

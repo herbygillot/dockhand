@@ -74,6 +74,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 // Preparation captures the choices needed to create a new contribution.
 type Preparation struct {
 	SharedRelease     bool
+	AllSubports       bool
 	KeepFailed        bool
 	ChangeID          record.ChangeID
 	IncludeDependents bool
@@ -105,6 +106,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		}
 	}
 	var source record.Source
+	var stub string
 	if prior == nil {
 		progress.VerboseReport(ctx, "Fetching MacPorts master")
 		source, err = preparationSource(ctx, s.Workflow.Repo)
@@ -115,8 +117,9 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		progress.Report(ctx, "Continuing contribution %s from recorded source %s", prior.ChangeID, prior.Spec.Source.Commit)
 		source = prior.Spec.Source
 		request.ChangeID = prior.ChangeID
-		if prior.Spec.Preparation != nil && prior.Spec.Preparation.SharedRelease {
-			request.SharedRelease = true
+		if prior.Spec.Preparation != nil {
+			request.SharedRelease = request.SharedRelease || prior.Spec.Preparation.SharedRelease
+			stub = prior.Spec.Preparation.Stub
 		}
 		target := prior.Spec.Targets[0]
 		variants := maps.Clone(target.Variants)
@@ -134,7 +137,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{SharedRelease: request.SharedRelease, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
+	bound := workflow.PreparationRequest{SharedRelease: request.SharedRelease, Stub: stub, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.NoVerify {

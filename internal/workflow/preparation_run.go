@@ -147,7 +147,7 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 
 func preparationRequest(job record.Job) preparation.Request {
 	target := job.Spec.Targets[0]
-	return preparation.Request{SharedRelease: job.Spec.Preparation.SharedRelease, Action: job.Spec.Action, Source: job.Spec.Source,
+	return preparation.Request{SharedRelease: job.Spec.Preparation.SharedRelease, CommitName: job.Spec.Preparation.Stub, Action: job.Spec.Action, Source: job.Spec.Source,
 		Selection: macports.Selection{Selector: target.Portfile, Subport: target.Subport, Variants: target.Variants},
 		Platform:  job.Spec.Preparation.Platform, Reason: job.Spec.Reason, Version: job.Spec.Version, Release: job.ResolvedRelease}
 }
@@ -194,7 +194,7 @@ func (c *cycle) prepareCandidate(ctx context.Context, job record.Job) (record.Pr
 			return r
 		}
 		return '-'
-	}, strings.ToLower(target.Name))
+	}, strings.ToLower(initiatingName(job.Spec)))
 	if len(name) > 64 {
 		name = name[:64]
 	}

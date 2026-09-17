@@ -225,6 +225,7 @@ type jobOptions struct {
 	EvaluatedVersions map[string]string              `json:",omitempty"`
 	TargetBuilds      map[string]record.BuildConfig  `json:",omitempty"`
 	IncludeDependents bool                           `json:",omitempty"`
+	AllSubports       bool                           `json:",omitempty"`
 	SourceBranch      string                         `json:",omitempty"`
 	Publication       *record.PublicationSpec        `json:",omitempty"`
 	PublishTo         *record.PublicationDestination `json:",omitempty"`
@@ -265,6 +266,7 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	v.Spec.FreshVerification = options.FreshVerification
 	v.Spec.TargetBuilds = options.TargetBuilds
 	v.Spec.IncludeDependents = options.IncludeDependents
+	v.Spec.AllSubports = options.AllSubports
 	v.Spec.KeepFailed = options.KeepFailed
 	v.ReusedAttempt = record.AttemptID(reused.String)
 	v.Claim = readClaim(owner, v.ClaimGeneration, until)
@@ -398,7 +400,7 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	raw, err := encode(jobOptions{KeepFailed: v.Spec.KeepFailed, EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
+	raw, err := encode(jobOptions{KeepFailed: v.Spec.KeepFailed, EvaluatedVersions: v.Spec.EvaluatedVersions, TargetBuilds: v.Spec.TargetBuilds, IncludeDependents: v.Spec.IncludeDependents, AllSubports: v.Spec.AllSubports, SourceBranch: v.Spec.SourceBranch, Publication: v.Spec.Publication, PublishTo: v.Spec.PublishTo, Targets: v.Spec.Targets, Build: v.Spec.Build, BuildRequirements: v.Spec.BuildRequirements, Version: v.Spec.Version, Reason: v.Spec.Reason, Preparation: v.Spec.Preparation, Checkout: v.Spec.Checkout, FreshVerification: v.Spec.FreshVerification})
 	if err != nil {
 		return err
 	}

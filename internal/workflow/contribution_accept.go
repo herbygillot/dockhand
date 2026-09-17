@@ -24,23 +24,23 @@ func acceptPreparation(ctx context.Context, tx state.Tx, id record.JobID, reques
 		if err != nil {
 			return job, nil, err
 		}
-		if change.Disposition != record.ChangeOpen || change.InitiatingTarget != spec.Targets[0].Name {
+		if change.Disposition != record.ChangeOpen || change.InitiatingTarget != initiatingName(spec) {
 			return job, nil, ErrInvalidRequest
 		}
 	} else {
-		matches, err := tx.Changes(ctx, state.Query{Target: spec.Targets[0].Name, Pending: true, Limit: 2})
+		matches, err := tx.Changes(ctx, state.Query{Target: initiatingName(spec), Pending: true, Limit: 2})
 		if err != nil {
 			return job, nil, err
 		}
 		if len(matches) > 1 {
-			return job, nil, fmt.Errorf("%w: multiple open contributions for %s; select --change", ErrInvalidRequest, spec.Targets[0].Name)
+			return job, nil, fmt.Errorf("%w: multiple open contributions for %s; select --change", ErrInvalidRequest, initiatingName(spec))
 		}
 		if len(matches) == 1 {
 			change = matches[0]
 		}
 	}
 	if change.ID == "" {
-		change = record.Change{ID: record.ChangeID("change_" + string(id)), InitiatingTarget: spec.Targets[0].Name, Targets: spec.Targets, Disposition: record.ChangeOpen, CreatedAt: now}
+		change = record.Change{ID: record.ChangeID("change_" + string(id)), InitiatingTarget: initiatingName(spec), Targets: spec.Targets, Disposition: record.ChangeOpen, CreatedAt: now}
 		if err := tx.PutChange(ctx, change); err != nil {
 			return job, nil, err
 		}
@@ -50,7 +50,7 @@ func acceptPreparation(ctx context.Context, tx state.Tx, id record.JobID, reques
 			return job, nil, err
 		}
 		if len(previous) == 0 {
-			return job, nil, fmt.Errorf("%w: %s already has contribution %s; continue it with verify or publish", ErrInvalidRequest, spec.Targets[0].Name, change.ID)
+			return job, nil, fmt.Errorf("%w: %s already has contribution %s; continue it with verify or publish", ErrInvalidRequest, initiatingName(spec), change.ID)
 		}
 		old := previous[0]
 		if old.Spec.Action != spec.Action || !reflect.DeepEqual(old.Spec.Targets, spec.Targets) || old.Spec.Reason != spec.Reason {
@@ -118,4 +118,13 @@ func closeEmptyContribution(ctx context.Context, tx state.Tx, id record.ChangeID
 	}
 	change.Disposition = record.ChangeClosed
 	return tx.PutChange(ctx, change)
+}
+
+// initiatingName is the port a person selected: the stub when a bump was
+// redirected to its newest subport, otherwise the job's target.
+func initiatingName(spec record.JobSpec) string {
+	if spec.Preparation != nil && spec.Preparation.Stub != "" {
+		return spec.Preparation.Stub
+	}
+	return spec.Targets[0].Name
 }

@@ -84,7 +84,7 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 	_, source := selected.EffectiveSource()
 	roots := selected.Spec.Targets
 	if revision.Scope != nil {
-		roots = revision.Scope.BuildTargets()
+		roots = revision.Scope.RequiredTargets(selected.Spec)
 	}
 	coverage, operationErr := e.Dependents.Discover(call, source, *selected.Spec.Build, roots)
 	var plan record.VerificationPlan

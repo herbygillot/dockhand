@@ -18,6 +18,7 @@ type Verification struct {
 	ChangeID          record.ChangeID
 	UseRecordedBuild  bool
 	IncludeDependents bool
+	AllSubports       bool
 	Fresh             bool
 	ID                record.RequestID
 	Branch            string
@@ -61,7 +62,7 @@ func (s *Services) BindVerification(ctx context.Context, request Verification) (
 		}
 	}
 	return s.Workflow.BindVerification(ctx, workflow.VerificationRequest{KeepFailed: request.KeepFailed,
-		Continue: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
+		Continue: continuation, UseRecordedBuild: request.UseRecordedBuild, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, ID: request.ID, Branch: request.Branch, Selection: request.Selection, Platform: platform, Fresh: request.Fresh,
 		ResolveBuild: s.buildResolver(platform, request.Tests, request.FromSource, false),
 	})
 }

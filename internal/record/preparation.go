@@ -8,12 +8,16 @@ type CommitIdentity struct {
 
 // PreparationSpec records the inputs a later driver needs to create a contribution.
 type PreparationSpec struct {
-	SharedRelease bool            `json:",omitempty"`
-	Correction    *CorrectionSpec `json:",omitempty"`
-	SourceURL     string          `json:",omitempty"`
-	SourceBranch  string
-	Platform      Platform
-	Author        CommitIdentity
+	SharedRelease bool `json:",omitempty"`
+	// Stub names the port a person selected when the edit targets its newest
+	// versioned subport instead: the contribution, branch, and commit carry
+	// this name.
+	Stub         string          `json:",omitempty"`
+	Correction   *CorrectionSpec `json:",omitempty"`
+	SourceURL    string          `json:",omitempty"`
+	SourceBranch string
+	Platform     Platform
+	Author       CommitIdentity
 	// VerificationProblem preserves setup failure without preventing branch creation.
 	VerificationProblem string `json:",omitempty"`
 }

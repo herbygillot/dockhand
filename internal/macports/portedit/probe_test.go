@@ -39,7 +39,7 @@ proc github.setup {owner project raw prefix} {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "devel/fixture/Portfile"), []byte(body), 0600))
 	request := Request{Action: record.Bump, Source: record.Source{Tree: record.ObjectID(strings.Repeat("a", 40))}, Root: root, Selection: macports.Selection{Selector: "fixture"}}
 	service := &Service{Ports: &eval.Evaluator{Executable: executable}}
-	input, err := service.load(t.Context(), request)
+	input, err := service.load(t.Context(), &request)
 	require.NoError(t, err)
 	return service, request, input
 }

@@ -6,12 +6,17 @@ import (
 
 	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
+	"github.com/herbygillot/dockhand/internal/progress"
 	"github.com/herbygillot/dockhand/internal/publish"
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
 type PreparationRequest struct {
-	SharedRelease       bool
+	SharedRelease bool
+	// Stub carries the selected port's name when a prior job already
+	// redirected it to a subport; binding sets it itself for a fresh stub.
+	Stub                string
+	AllSubports         bool
 	KeepFailed          bool
 	ChangeID            record.ChangeID
 	TargetBuilds        map[string]record.BuildConfig
@@ -72,6 +77,15 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if err != nil {
 		return BoundPreparation{}, err
 	}
+	// A stub such as py-foo cannot be edited or built itself; the bump lands
+	// on its newest versioned subport as a shared release, and the person's
+	// name stays on the contribution.
+	if newest, _ := macports.StubMembers(evaluation, targets[0].Name); newest != "" && targets[0].Subport == "" {
+		stub := targets[0]
+		targets = []record.Target{{Name: newest, Portfile: stub.Portfile, Subport: newest, Variants: stub.Variants}}
+		request.SharedRelease, request.Stub = true, stub.Name
+		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", stub.Name, newest)
+	}
 	if request.ResolveBuild != nil {
 		if request.Build != nil || request.BuildRequirements != nil || request.VerificationProblem != "" || request.Verification != record.VerificationRequired {
 			return BoundPreparation{}, fmt.Errorf("%w: build selection is inconsistent", ErrInvalidRequest)
@@ -107,8 +121,8 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	source.Base = source.Commit
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed,
-		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
-		Preparation: &record.PreparationSpec{SharedRelease: request.SharedRelease, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
+		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
+		Preparation: &record.PreparationSpec{SharedRelease: request.SharedRelease, Stub: request.Stub, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {
 		return BoundPreparation{}, err

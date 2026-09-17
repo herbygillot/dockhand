@@ -32,7 +32,7 @@ func PlanDependents(job record.Job, revision record.Revision, coverage Coverage)
 	}
 	rootTargets := job.Spec.Targets
 	if revision.Scope != nil {
-		rootTargets = revision.Scope.BuildTargets()
+		rootTargets = revision.Scope.RequiredTargets(job.Spec)
 	}
 	roots := make([]bool, len(rootTargets))
 	for i, candidate := range coverage.Targets {

@@ -86,6 +86,10 @@ func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.E
 	if len(report.UnexpectedChanges) > 0 {
 		return fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 	}
-	r.Commits = []CommitIntent{{Subject: input.target.Name + ": " + subject, Body: request.Reason, Paths: []string{input.target.Portfile}}}
+	name := input.target.Name
+	if request.CommitName != "" {
+		name = request.CommitName
+	}
+	r.Commits = []CommitIntent{{Subject: name + ": " + subject, Body: request.Reason, Paths: []string{input.target.Portfile}}}
 	return nil
 }

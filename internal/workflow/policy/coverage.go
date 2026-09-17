@@ -35,7 +35,7 @@ func PublicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 		if scope == nil {
 			return nil
 		}
-		targets := scope.BuildTargets()
+		targets := scope.RequiredTargets(owner.Spec)
 		if len(targets) == 1 && record.CompareTargets(targets[0], root.Spec.Target) == 0 {
 			return nil
 		}
@@ -51,7 +51,7 @@ func PublicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 		return fmt.Errorf("%w: verification coverage: %s", publish.ErrPrecondition, detail)
 	}
 	if scope != nil {
-		for _, required := range scope.BuildTargets() {
+		for _, required := range scope.RequiredTargets(owner.Spec) {
 			found := false
 			for _, target := range plan.Targets {
 				if record.CompareTargets(required, target.Port) == 0 {
@@ -149,7 +149,7 @@ func DescribeCoverage(ctx context.Context, r state.Reader, spec *record.Publicat
 			return err
 		}
 		if scope != nil && !owner.Spec.IncludeDependents {
-			spec.Desired.Body += publish.SharedReleaseSummary(plan, attempts)
+			spec.Desired.Body += publish.SharedReleaseSummary(plan, attempts, scope)
 		} else {
 			spec.Desired.Body += publish.CoverageSummary(plan, attempts)
 		}

@@ -30,6 +30,9 @@ type Options struct {
 	NoVerify  bool
 	NoPublish bool
 	Diff      bool
+	// AllSubports verifies every buildable member of a shared release
+	// locally instead of the newest subport alone.
+	AllSubports bool
 }
 
 func Run(ctx context.Context, args []string, streams Streams, config app.Config) error {

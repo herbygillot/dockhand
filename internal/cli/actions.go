@@ -55,7 +55,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	var workingTree bool
 	var build buildOptions
 	var variants []string
-	var detach, trace, fresh bool
+	var detach, trace, fresh, allSubports bool
 	command := &cobra.Command{
 		Use: "verify [port]", Short: "Verify a prepared contribution or explicit source",
 		Long: "Verify one named port or subport, or a snapshot-relative Portfile. By default, continue the unique open contribution for the target using its committed branch and recorded verification settings. Use --working-tree to capture tracked working-tree contents, including staged additions and deletions. Stage new files with git add to include them. An explicit --branch selects committed contents. Omit the port to use a tracked contribution's single target, including its subport and variant choices. Explicit variants override those choices. Inference requires changes confined to that port relative to its recorded base. The captured snapshot stays fixed while you continue editing. Matching passing evidence is reused unless --fresh is supplied. The command stays through completion; --detach returns once the provider admits the build. Ctrl-C detaches without canceling accepted work.",
@@ -97,7 +97,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 			if len(args) == 1 {
 				selector = args[0]
 			}
-			bound, err := services.BindVerification(cmd.Context(), app.Verification{KeepFailed: build.keepFailed, WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
+			bound, err := services.BindVerification(cmd.Context(), app.Verification{KeepFailed: build.keepFailed, AllSubports: allSubports, WorkingTree: workingTree, ChangeID: record.ChangeID(change), UseRecordedBuild: !verificationSettingsChanged(cmd), IncludeDependents: build.dependents, ID: record.RequestID("request_" + rand.Text()), Branch: branch, Selection: macports.Selection{Selector: selector, Variants: choices}, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource, Fresh: fresh})
 			if err != nil {
 				return err
 			}
@@ -125,6 +125,7 @@ func (r *runtime) verifyCommand() *cobra.Command {
 	command.Flags().String("remote", "", "Git remote receiving the branch for GitHub verification (default: the remote pushing to your fork)")
 	build.flags(command, r.config)
 	command.Flags().BoolVar(&fresh, "fresh", false, "Run a new build even when previous passing evidence applies")
+	command.Flags().BoolVar(&allSubports, "all-subports", false, "Verify every subport of a shared release locally, not only the initiating one")
 	command.Flags().BoolVar(&detach, "detach", false, "Return once the build is admitted; wait or start finishes it")
 	command.Flags().BoolVar(&trace, "trace", false, "Stream build logs to stderr through completion")
 	command.MarkFlagsMutuallyExclusive("detach", "trace")
