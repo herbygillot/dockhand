@@ -269,6 +269,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 	for _, pr := range status.PullRequests {
 		line("\nPull request %s: %s; change: %s; %s", pr.ID, pr.State, pr.ChangeID, pr.Ref.URL)
 		line("  observed: %s", statusTime(pr.ObservedAt))
+		if pr.Status != nil {
+			line("  status: %s; inspected %s", pr.Status.Summary(), statusTime(pr.Status.ObservedAt))
+		}
 	}
 	if len(status.Resources) != 0 {
 		line("\nResources:")

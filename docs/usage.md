@@ -87,7 +87,7 @@ dockhand abandon terraform-1.16
 dockhand refresh --change <change_id>
 ```
 
-`refresh` reads the associated PR from GitHub and records its open, closed, or merged state. It retires a closed or merged contribution only when no job is pending and the published revision still matches both the PR head and the local branch. Newer revisions, moved branches, and dirty checkouts stay open with an explanation. A deleted local branch or deleted fork does not prevent recognizing a matching completed PR. `status` continues to read recorded state without contacting GitHub.
+`refresh` reads the associated PR from GitHub and records its open, closed, or merged state. While it is open, `refresh` also records whether GitHub considers it mergeable, what reviewers decided, and how its checks stand, naming failing checks; `status` shows that line until the next refresh. Dockhand only reports it. It retires a closed or merged contribution only when no job is pending and the published revision still matches both the PR head and the local branch. Newer revisions, moved branches, and dirty checkouts stay open with an explanation. A deleted local branch or deleted fork does not prevent recognizing a matching completed PR. `status` continues to read recorded state without contacting GitHub.
 
 `abandon` explicitly ends local pursuit, including failed preparation that never made a branch. Wait for or cancel pending jobs first. It preserves branches, evidence, and any remote PR; it does not close the PR. A subsequent `bump <target>` starts a new contribution with freshly fetched source and a newly discovered release. Canceling a job alone preserves the contribution for retry.
 

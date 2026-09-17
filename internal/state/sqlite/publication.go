@@ -74,6 +74,7 @@ type pullRequestObservation struct {
 	RemoteHead                                  record.ObjectID
 	Title, Body                                 string
 	ObservedAt                                  time.Time
+	Status                                      *record.PullRequestStatus `json:",omitempty"`
 }
 
 func (t *transaction) PullRequest(ctx context.Context, id record.PullRequestID) (record.PullRequest, error) {
@@ -91,7 +92,7 @@ func (t *transaction) PullRequest(ctx context.Context, id record.PullRequestID) 
 		return v, err
 	}
 	v.HeadRepository, v.HeadBranch, v.BaseBranch, v.Ref.URL = observation.HeadRepository, observation.HeadBranch, observation.BaseBranch, observation.URL
-	v.State, v.RemoteHead, v.Title, v.Body, v.ObservedAt = observation.State, observation.RemoteHead, observation.Title, observation.Body, observation.ObservedAt
+	v.State, v.RemoteHead, v.Title, v.Body, v.ObservedAt, v.Status = observation.State, observation.RemoteHead, observation.Title, observation.Body, observation.ObservedAt, observation.Status
 	return v, nil
 }
 
@@ -102,7 +103,7 @@ func (t *transaction) PutPullRequest(ctx context.Context, v record.PullRequest) 
 	if _, err := t.Change(ctx, v.ChangeID); err != nil {
 		return err
 	}
-	raw, err := encode(pullRequestObservation{HeadRepository: v.HeadRepository, HeadBranch: v.HeadBranch, BaseBranch: v.BaseBranch, URL: v.Ref.URL, State: v.State, RemoteHead: v.RemoteHead, Title: v.Title, Body: v.Body, ObservedAt: v.ObservedAt})
+	raw, err := encode(pullRequestObservation{HeadRepository: v.HeadRepository, HeadBranch: v.HeadBranch, BaseBranch: v.BaseBranch, URL: v.Ref.URL, State: v.State, RemoteHead: v.RemoteHead, Title: v.Title, Body: v.Body, ObservedAt: v.ObservedAt, Status: v.Status})
 	if err != nil {
 		return err
 	}

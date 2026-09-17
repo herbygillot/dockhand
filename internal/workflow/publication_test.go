@@ -22,6 +22,9 @@ import (
 )
 
 type publicationForge struct {
+	inspections int
+	inspectErr  error
+	status      record.PullRequestStatus
 	f           *fixture
 	remote      string
 	observation forge.PullRequestObservation
@@ -74,6 +77,15 @@ func (p *publicationForge) Find(ctx context.Context, _ forge.PullRequestQuery) (
 }
 func (p *publicationForge) Observe(ctx context.Context, _ record.PullRequestRef) (forge.PullRequestObservation, error) {
 	return p.Find(ctx, forge.PullRequestQuery{})
+}
+func (p *publicationForge) Inspect(ctx context.Context, _ record.PullRequestRef) (record.PullRequestStatus, error) {
+	p.inspections++
+	if p.inspectErr != nil {
+		return record.PullRequestStatus{}, p.inspectErr
+	}
+	status := p.status
+	status.ObservedAt = p.f.now()
+	return status, nil
 }
 func (p *publicationForge) Create(ctx context.Context, input forge.PullRequestInput) (forge.PullRequestObservation, error) {
 	p.writes++

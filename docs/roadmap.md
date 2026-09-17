@@ -28,7 +28,7 @@ Implemented on 2026-09-16 by classification rather than a new dimension; see the
 
 ### 6. Broaden PR observation
 
-Observe PR head, mergeability, review, CI, and conflicts through the existing contribution lifecycle. Publication still completes when the PR is opened or updated; later observations attach to the contribution. Observation does not authorize automatic corrective edits, pushes, or responses to reviewers.
+Implemented on 2026-09-17; see the [PR observation report](activity/2026-09-17-pr-observation.md). `refresh` now records, for an open PR, the head's draft state, mergeability with the forge's detail, the latest review from each reviewer, and check runs and commit statuses with failing names; `status` shows the line. Publication still completes when the PR is opened or updated. Observation authorizes nothing: no rerun, comment, push, or edit follows from it.
 
 ## Later capabilities
 

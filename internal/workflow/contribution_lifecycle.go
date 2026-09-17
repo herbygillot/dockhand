@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
 )
@@ -107,6 +108,21 @@ func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionS
 		return result, fmt.Errorf("workflow: missing, stale, or mismatched PR observation; contribution unchanged")
 	}
 	pr.ID, pr.ChangeID, pr.Ref = previous.ID, previous.ChangeID, previous.Ref
+	// An open PR is inspected for mergeability, review, and checks when the
+	// forge can report them. Inspection failure keeps the last status and the
+	// refresh itself; it changes nothing on the forge.
+	pr.Status = previous.Status
+	statusProblem := ""
+	if inspector, ok := e.Publisher.Forge.(forge.PullRequestInspector); ok && pr.State == record.PullRequestOpen {
+		inspect, cancelInspect := context.WithTimeout(ctx, timeouts.Observe)
+		status, err := inspector.Inspect(inspect, previous.Ref)
+		cancelInspect()
+		if err != nil {
+			statusProblem = "; status unavailable: " + err.Error()
+		} else {
+			pr.Status = &status
+		}
+	}
 	// A deleted fork may be absent from the terminal GitHub response. Retain the
 	// known locator; this records history, not a claim that the fork still exists.
 	if pr.HeadRepository == "" && pr.State != record.PullRequestOpen {
@@ -129,6 +145,10 @@ func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionS
 				return err
 			}
 			detail := "PR is " + string(pr.State)
+			if pr.Status != nil && pr.State == record.PullRequestOpen {
+				detail += "; " + pr.Status.Summary()
+			}
+			detail += statusProblem
 			switch {
 			case current.Disposition != record.ChangeOpen:
 				detail += "; local contribution remains " + string(current.Disposition) + "; it was not reopened"

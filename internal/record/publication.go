@@ -1,6 +1,10 @@
 package record
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // PullRequestState records the last observed disposition on the forge.
 type PullRequestState string
@@ -41,6 +45,52 @@ type PullRequest struct {
 	Title      string
 	Body       string
 	ObservedAt time.Time
+	// Status is the forge's latest report on mergeability, review, and checks
+	// for an open PR. It is observation only; nothing acts on it.
+	Status *PullRequestStatus `json:",omitempty"`
+}
+
+// PullRequestStatus is what a forge reported about a PR head beyond its
+// state. Mergeable and Review use small fixed vocabularies so reports and
+// tests do not depend on one forge's spellings; Detail keeps the forge's own.
+type PullRequestStatus struct {
+	Draft bool `json:",omitempty"`
+	// Mergeable is "yes", "no", or "unknown" while the forge is still computing it.
+	Mergeable string
+	// MergeableDetail is the forge's finer state, such as clean, dirty, blocked, behind, or unstable.
+	MergeableDetail string `json:",omitempty"`
+	// Review is "approved", "changes-requested", or "none".
+	Review           string
+	Approvals        int `json:",omitempty"`
+	ChangesRequested int `json:",omitempty"`
+	Checks           CheckSummary
+	ObservedAt       time.Time
+}
+
+// CheckSummary counts the checks and statuses reported for a PR head.
+type CheckSummary struct {
+	Total, Passed, Failed, Pending int
+	// Failing names the checks that concluded unsuccessfully.
+	Failing []string `json:",omitempty"`
+}
+
+// Summary describes the status in one line for reports.
+func (s PullRequestStatus) Summary() string {
+	mergeable := "mergeable: " + s.Mergeable
+	if s.MergeableDetail != "" {
+		mergeable += " (" + s.MergeableDetail + ")"
+	}
+	if s.Draft {
+		mergeable = "draft; " + mergeable
+	}
+	checks := fmt.Sprintf("checks: %d passed, %d failed, %d pending of %d", s.Checks.Passed, s.Checks.Failed, s.Checks.Pending, s.Checks.Total)
+	if s.Checks.Total == 0 {
+		checks = "checks: none reported"
+	}
+	if len(s.Checks.Failing) > 0 {
+		checks += " (failing: " + strings.Join(s.Checks.Failing, ", ") + ")"
+	}
+	return mergeable + "; review: " + s.Review + "; " + checks
 }
 
 // ExpectedHead describes the remote branch precondition for a publication action.

@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"context"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -10,6 +11,12 @@ type PullRequestObservation struct {
 	Found       bool
 	PullRequest record.PullRequest
 	ObservedAt  time.Time
+}
+
+// PullRequestInspector reports mergeability, review, and check status for a
+// pull request. A forge that cannot report these is simply not an inspector.
+type PullRequestInspector interface {
+	Inspect(context.Context, record.PullRequestRef) (record.PullRequestStatus, error)
 }
 
 // PullRequestInput describes the desired remote write and its identity/preconditions.

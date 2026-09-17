@@ -182,3 +182,34 @@ func TestRefreshFencesConcurrentDispositionChange(t *testing.T) {
 	require.Equal(t, record.ChangeAbandoned, result.Change.Disposition)
 	require.Contains(t, result.Detail, "not reopened")
 }
+
+func TestRefreshRecordsPRStatusWithoutActingOnIt(t *testing.T) {
+	f, hosting, selected := publishedLifecycleFixture(t)
+	hosting.status = record.PullRequestStatus{Mergeable: "no", MergeableDetail: "dirty", Review: "changes-requested", ChangesRequested: 1, Checks: record.CheckSummary{Total: 2, Passed: 1, Failed: 1, Failing: []string{"Build ports (macos-15)"}}}
+	result, err := f.engine.RefreshContribution(t.Context(), selected)
+	require.NoError(t, err)
+	require.Equal(t, record.ChangeOpen, result.Change.Disposition)
+	require.Equal(t, 1, hosting.inspections)
+	require.NotNil(t, result.PullRequest.Status)
+	require.Equal(t, "changes-requested", result.PullRequest.Status.Review)
+	require.Contains(t, result.Detail, "PR is open; mergeable: no (dirty); review: changes-requested; checks: 1 passed, 1 failed, 0 pending of 2 (failing: Build ports (macos-15))")
+	require.Equal(t, 1, hosting.writes, "observation never writes to the forge")
+	var stored record.PullRequest
+	require.NoError(t, f.store.View(t.Context(), f.repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		stored, err = r.PullRequest(ctx, result.PullRequest.ID)
+		return err
+	}))
+	require.Equal(t, result.PullRequest.Status.Checks, stored.Status.Checks, "the status persists with the PR")
+	hosting.inspectErr = errors.New("api unavailable")
+	result, err = f.engine.RefreshContribution(t.Context(), selected)
+	require.NoError(t, err, "a failed inspection does not fail the refresh")
+	require.Contains(t, result.Detail, "status unavailable: api unavailable")
+	require.NotNil(t, result.PullRequest.Status, "the previous status is kept")
+	hosting.inspectErr = nil
+	hosting.observation.PullRequest.State = record.PullRequestMerged
+	result, err = f.engine.RefreshContribution(t.Context(), selected)
+	require.NoError(t, err)
+	require.Equal(t, 2, hosting.inspections, "a merged PR is not inspected")
+	require.NotContains(t, result.Detail, "mergeable")
+}
