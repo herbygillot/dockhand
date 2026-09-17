@@ -16,6 +16,7 @@ type PreparationRequest struct {
 	// Stub carries the selected port's name when a prior job already
 	// redirected it to a subport; binding sets it itself for a fresh stub.
 	Stub                string
+	KeepOldChecksums    bool
 	AllSubports         bool
 	KeepFailed          bool
 	ChangeID            record.ChangeID
@@ -122,7 +123,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed,
 		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
-		Preparation: &record.PreparationSpec{SharedRelease: request.SharedRelease, Stub: request.Stub, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
+		Preparation: &record.PreparationSpec{SharedRelease: request.SharedRelease, Stub: request.Stub, KeepOldChecksums: request.KeepOldChecksums, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {
 		return BoundPreparation{}, err

@@ -57,8 +57,9 @@ func (a *archiveStore) fetchFirst(ctx context.Context, info macports.PortInfo, n
 	return Download{}, err
 }
 
-// refresh downloads every declared archive and writes their checksums into contents.
-func (a *archiveStore) refresh(ctx context.Context, contents []byte, info macports.PortInfo, sources []archiveSource) ([]byte, string, []Download, error) {
+// refresh downloads every declared archive and writes their checksums into
+// contents, keeping legacy groups as written when asked.
+func (a *archiveStore) refresh(ctx context.Context, contents []byte, info macports.PortInfo, sources []archiveSource, keepLegacy bool) ([]byte, string, []Download, error) {
 	if err := checkChecksumSources(contents, info, sources); err != nil {
 		return nil, "", nil, err
 	}
@@ -70,7 +71,7 @@ func (a *archiveStore) refresh(ctx context.Context, contents []byte, info macpor
 		}
 		downloads = append(downloads, download)
 	}
-	contents, checksums, err := portfile.ReplaceChecksums(contents, info.Options["checksums"], checksumValues(downloads)...)
+	contents, checksums, err := portfile.ReplaceChecksumsKeeping(contents, info.Options["checksums"], keepLegacy, checksumValues(downloads)...)
 	if err != nil {
 		return nil, "", nil, err
 	}

@@ -154,7 +154,7 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 	}
 	contents, versioned, sources := plan.contents, plan.versioned, plan.sources
 	info := versioned.Ports[input.target.Name]
-	contents, checksums, downloads, err := archives.refresh(ctx, contents, info, sources)
+	contents, checksums, downloads, err := archives.refresh(ctx, contents, info, sources, request.KeepOldChecksums)
 	if err != nil {
 		return result, err
 	}
@@ -170,7 +170,7 @@ func (s *Service) applyArchivePlan(ctx context.Context, request Request, input *
 func checksumValues(downloads []Download) []portfile.Checksum {
 	values := make([]portfile.Checksum, len(downloads))
 	for i, d := range downloads {
-		values[i] = portfile.Checksum{Name: d.Name, SHA256: d.SHA256, RMD160: d.RMD160, Size: d.Size}
+		values[i] = portfile.Checksum{Name: d.Name, SHA256: d.SHA256, RMD160: d.RMD160, MD5: d.MD5, SHA1: d.SHA1, Size: d.Size}
 	}
 	return values
 }

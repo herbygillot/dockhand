@@ -183,6 +183,13 @@ func (g checksumGroup) words() []ChecksumWords {
 // command of src. A group written with current algorithms keeps its layout;
 // a legacy group is rewritten as rmd160, sha256, and size.
 func ReplaceChecksums(src []byte, evaluated string, downloads ...Checksum) ([]byte, string, error) {
+	return ReplaceChecksumsKeeping(src, evaluated, false, downloads...)
+}
+
+// ReplaceChecksumsKeeping is ReplaceChecksums with the choice to keep
+// legacy groups as written, refreshing every value they name, md5 and sha1
+// included.
+func ReplaceChecksumsKeeping(src []byte, evaluated string, keepLegacy bool, downloads ...Checksum) ([]byte, string, error) {
 	groups, err := checksumGroups(src, evaluated)
 	if err != nil {
 		return nil, "", err
@@ -210,13 +217,13 @@ func ReplaceChecksums(src []byte, evaluated string, downloads ...Checksum) ([]by
 		if group.name != "" {
 			expected = append(expected, group.name)
 		}
-		if LegacyChecksums(group.kinds()) {
+		if !keepLegacy && LegacyChecksums(group.kinds()) {
 			edit, values := RewriteChecksumGroup(src, group.words(), download)
 			edits = append(edits, edit)
 			expected = append(expected, values...)
 			continue
 		}
-		sums := map[string]string{"rmd160": download.RMD160, "sha256": download.SHA256, "size": strconv.FormatInt(download.Size, 10)}
+		sums := map[string]string{"rmd160": download.RMD160, "sha256": download.SHA256, "size": strconv.FormatInt(download.Size, 10), "md5": download.MD5, "sha1": download.SHA1}
 		for _, pair := range group.pairs {
 			edits = append(edits, text.Edit{Span: pair.value.Span, New: []byte(sums[pair.kind])})
 			expected = append(expected, pair.kind, sums[pair.kind])
@@ -230,7 +237,9 @@ var ErrUnsupported = errors.New("portfile: unsupported source edit")
 
 type Checksum struct {
 	Name, SHA256, RMD160 string
-	Size                 int64
+	// MD5 and SHA1 are written only into a legacy group kept as written.
+	MD5, SHA1 string
+	Size      int64
 }
 
 func ChecksumCount(src []byte, evaluated string) (int, error) {

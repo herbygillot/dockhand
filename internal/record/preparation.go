@@ -12,12 +12,15 @@ type PreparationSpec struct {
 	// Stub names the port a person selected when the edit targets its newest
 	// versioned subport instead: the contribution, branch, and commit carry
 	// this name.
-	Stub         string          `json:",omitempty"`
-	Correction   *CorrectionSpec `json:",omitempty"`
-	SourceURL    string          `json:",omitempty"`
-	SourceBranch string
-	Platform     Platform
-	Author       CommitIdentity
+	Stub string `json:",omitempty"`
+	// KeepOldChecksums refreshes a legacy checksum group's values in place,
+	// md5 and sha1 included, instead of rewriting it as rmd160, sha256, and size.
+	KeepOldChecksums bool            `json:",omitempty"`
+	Correction       *CorrectionSpec `json:",omitempty"`
+	SourceURL        string          `json:",omitempty"`
+	SourceBranch     string
+	Platform         Platform
+	Author           CommitIdentity
 	// VerificationProblem preserves setup failure without preventing branch creation.
 	VerificationProblem string `json:",omitempty"`
 }

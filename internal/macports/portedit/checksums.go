@@ -32,7 +32,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 	if err != nil {
 		return result, err
 	}
-	contents, checksums, downloads, err := s.archives("").refresh(ctx, input.data, input.info, sources)
+	contents, checksums, downloads, err := s.archives("").refresh(ctx, input.data, input.info, sources, request.KeepOldChecksums)
 	if err != nil {
 		return result, err
 	}

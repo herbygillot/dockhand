@@ -349,7 +349,7 @@ func TestStubSelectionBumpsItsNewestSubportAsASharedRelease(t *testing.T) {
 	commit, tree, err := f.repo.Branch(t.Context(), "candidate")
 	require.NoError(t, err)
 	req := workflow.PreparationRequest{Action: record.Bump, ID: "prepare", SourceBranch: "master", Source: record.Source{Commit: record.ObjectID(commit), Tree: record.ObjectID(tree), Base: record.ObjectID(commit)},
-		Selection: macports.Selection{Selector: "py-fixture"}, Destination: record.BranchReady, Verification: record.VerificationSkipped,
+		Selection: macports.Selection{Selector: "py-fixture"}, Destination: record.BranchReady, Verification: record.VerificationSkipped, KeepOldChecksums: true,
 		Author: record.CommitIdentity{Name: "A", Email: "a@example.invalid"}, Platform: buildPlatform}
 	bound, err := f.engine.BindPreparation(t.Context(), req)
 	require.NoError(t, err)
@@ -358,9 +358,11 @@ func TestStubSelectionBumpsItsNewestSubportAsASharedRelease(t *testing.T) {
 	require.Equal(t, "py313-fixture", spec.Targets[0].Subport)
 	require.True(t, spec.Preparation.SharedRelease, "every subport shares the release")
 	require.Equal(t, "py-fixture", spec.Preparation.Stub, "the person's name stays on the contribution")
+	require.True(t, spec.Preparation.KeepOldChecksums, "the checksum layout choice is frozen with the preparation")
 	require.False(t, spec.AllSubports)
 	receipt, err := f.engine.Submit(t.Context(), bound.Request)
 	require.NoError(t, err)
 	status := f.status(t, receipt.JobID)
+	require.True(t, status.Jobs[0].Job.Spec.Preparation.KeepOldChecksums, "and survives the store")
 	require.Equal(t, "py-fixture", status.Changes[0].InitiatingTarget, "status, verify, and publish select it by the stub's name")
 }

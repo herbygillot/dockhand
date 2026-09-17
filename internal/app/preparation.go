@@ -16,11 +16,12 @@ import (
 )
 
 type PreviewRequest struct {
-	SharedRelease bool
-	Action        record.Action
-	Selection     macports.Selection
-	Version       string
-	Reason        string
+	SharedRelease    bool
+	KeepOldChecksums bool
+	Action           record.Action
+	Selection        macports.Selection
+	Version          string
+	Reason           string
 }
 
 type Preview struct {
@@ -50,7 +51,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	githubClient := newGitHubClient(config.GitHub)
 	service := preparation.Service{DependencyTools: config.DependencyTools, Repo: repo, Ports: ports, Upstream: releaseDiscovery(ports, githubClient, http.DefaultClient)}
 	input := preparation.Request{
-		SharedRelease: request.SharedRelease, Action: request.Action, Source: source,
+		SharedRelease: request.SharedRelease, KeepOldChecksums: request.KeepOldChecksums, Action: request.Action, Source: source,
 		Selection: request.Selection, Version: request.Version, Reason: request.Reason,
 	}
 	if request.Action == record.Bump {
@@ -74,6 +75,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 // Preparation captures the choices needed to create a new contribution.
 type Preparation struct {
 	SharedRelease     bool
+	KeepOldChecksums  bool
 	AllSubports       bool
 	KeepFailed        bool
 	ChangeID          record.ChangeID
@@ -119,6 +121,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 		request.ChangeID = prior.ChangeID
 		if prior.Spec.Preparation != nil {
 			request.SharedRelease = request.SharedRelease || prior.Spec.Preparation.SharedRelease
+			request.KeepOldChecksums = request.KeepOldChecksums || prior.Spec.Preparation.KeepOldChecksums
 			stub = prior.Spec.Preparation.Stub
 		}
 		target := prior.Spec.Targets[0]
@@ -137,7 +140,7 @@ func (s *Services) BindPreparation(ctx context.Context, request Preparation) (wo
 	if err != nil {
 		return workflow.BoundPreparation{}, err
 	}
-	bound := workflow.PreparationRequest{SharedRelease: request.SharedRelease, Stub: stub, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
+	bound := workflow.PreparationRequest{SharedRelease: request.SharedRelease, Stub: stub, KeepOldChecksums: request.KeepOldChecksums, AllSubports: request.AllSubports, KeepFailed: request.KeepFailed, ChangeID: request.ChangeID, IncludeDependents: request.IncludeDependents, Action: request.Action, Version: request.Version, ID: request.ID, Source: source, SourceBranch: macports.PortsBranch, SourceURL: macports.PortsRepositoryURL, Selection: request.Selection, Reason: request.Reason,
 		Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, Platform: platform,
 		Destination: record.VerificationComplete, Verification: record.VerificationRequired}
 	if request.NoVerify {

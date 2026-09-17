@@ -38,7 +38,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		var build buildOptions
 		var publication publish.Options
 		var reason, change string
-		var sharedRelease bool
+		var sharedRelease, keepOldChecksums bool
 		var variants []string
 		use, maximum := string(spec.action)+" <port>", 1
 		if spec.action == record.Bump {
@@ -89,7 +89,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					defer services.Close()
 					progress.VerboseReport(cmd.Context(), "Binding contribution source; local commits and working-tree edits are excluded")
-					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{SharedRelease: sharedRelease, AllSubports: options.AllSubports, KeepFailed: build.keepFailed,
+					bound, err := services.BindPreparation(cmd.Context(), app.Preparation{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums, AllSubports: options.AllSubports, KeepFailed: build.keepFailed,
 						ChangeID: record.ChangeID(change), IncludeDependents: build.dependents, Action: spec.action, Version: version, ID: record.RequestID("request_" + rand.Text()),
 						Selection: macports.Selection{Selector: args[0], Variants: choices},
 						Reason:    reason, Publish: destination, NoVerify: options.NoVerify, Tests: record.TestPolicy(build.tests), FromSource: build.fromSource,
@@ -108,7 +108,7 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					}
 					return r.attach(cmd, services, receipt.JobID, milestone, options.Trace, false, &receipt)
 				}
-				request := app.PreviewRequest{SharedRelease: sharedRelease, Action: spec.action, Selection: macports.Selection{Selector: args[0], Variants: choices}, Reason: reason}
+				request := app.PreviewRequest{SharedRelease: sharedRelease, KeepOldChecksums: keepOldChecksums, Action: spec.action, Selection: macports.Selection{Selector: args[0], Variants: choices}, Reason: reason}
 				if len(args) == 2 {
 					request.Version = args[1]
 				}
@@ -162,6 +162,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 		changeFlags(command, options)
 		if spec.action == record.Bump {
 			command.Flags().BoolVar(&sharedRelease, "shared-release", false, "Authorize updating all subports that share this release source")
+		}
+		if spec.action == record.Bump || spec.action == record.RefreshChecksums {
+			command.Flags().BoolVar(&keepOldChecksums, "keep-old-checksums", false, "Keep a legacy checksum block's algorithms and layout, refreshing md5/sha1 values in place instead of rewriting the block as rmd160, sha256, and size")
 		}
 		command.Flags().StringVar(&change, "change", "", "Continue one contribution when the target is ambiguous")
 		command.MarkFlagsMutuallyExclusive("change", "diff")

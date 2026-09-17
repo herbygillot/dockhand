@@ -32,8 +32,12 @@ type Request struct {
 	// CommitName replaces the target's name in the commit subject, for a
 	// bump that a person addressed to a stub port.
 	CommitName string
-	Action     record.Action
-	Source     record.Source
+	// KeepOldChecksums keeps a legacy checksum group's algorithms and layout
+	// and refreshes its values, md5 and sha1 included, instead of rewriting
+	// the group as rmd160, sha256, and size.
+	KeepOldChecksums bool
+	Action           record.Action
+	Source           record.Source
 	// Root is an exclusively owned disposable source snapshot, never a user checkout.
 	Root      string
 	Selection macports.Selection

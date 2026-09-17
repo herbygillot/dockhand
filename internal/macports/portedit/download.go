@@ -2,6 +2,8 @@ package portedit
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/sha1"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -23,7 +25,9 @@ import (
 type Download struct {
 	path                      string
 	Name, URL, SHA256, RMD160 string
-	Size                      int64
+	// MD5 and SHA1 serve only a legacy group kept on request.
+	MD5, SHA1 string `json:",omitempty"`
+	Size      int64
 }
 
 type archiveSource struct{ Name, URL string }
@@ -161,8 +165,8 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	if strings.Contains(http.DetectContentType(prefix), "text/html") {
 		return Download{}, fmt.Errorf("portedit: download body is HTML for %s", name)
 	}
-	sha, rmd := sha256.New(), ripemd160.New()
-	writers := []io.Writer{sha, rmd}
+	sha, rmd, md, sha1sum := sha256.New(), ripemd160.New(), md5.New(), sha1.New()
+	writers := []io.Writer{sha, rmd, md, sha1sum}
 	if output != nil {
 		writers = append(writers, output)
 	}
@@ -178,7 +182,7 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	if size == 0 || size > limit {
 		return Download{}, fmt.Errorf("portedit: empty or oversized distfile %s", name)
 	}
-	return Download{Name: name, URL: address, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), Size: size}, nil
+	return Download{Name: name, URL: address, SHA256: fmt.Sprintf("%x", sha.Sum(nil)), RMD160: fmt.Sprintf("%x", rmd.Sum(nil)), MD5: fmt.Sprintf("%x", md.Sum(nil)), SHA1: fmt.Sprintf("%x", sha1sum.Sum(nil)), Size: size}, nil
 }
 
 func checkFetchCredentials(info macports.PortInfo) error {

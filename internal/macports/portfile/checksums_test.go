@@ -72,3 +72,15 @@ func TestLegacyChecksumGroupsAreRewrittenInTheirOwnLayout(t *testing.T) {
 	require.False(t, LegacyChecksums([]string{"sha256", "size"}))
 	require.True(t, LegacyChecksums([]string{"sha1", "sha256", "size"}))
 }
+
+func TestKeepingLegacyChecksumsRefreshesEveryWrittenValue(t *testing.T) {
+	src := []byte("checksums           md5     aaaa \\\n                    sha1    bbbb \\\n                    rmd160  cccc\n")
+	sums := Checksum{SHA256: "S", RMD160: "R", MD5: "M", SHA1: "H", Size: 7}
+	out, values, err := ReplaceChecksumsKeeping(src, "md5 aaaa sha1 bbbb rmd160 cccc", true, sums)
+	require.NoError(t, err)
+	require.Equal(t, "checksums           md5     M \\\n                    sha1    H \\\n                    rmd160  R\n", string(out))
+	require.Equal(t, "md5 M sha1 H rmd160 R", values)
+	out, _, err = ReplaceChecksumsKeeping(src, "md5 aaaa sha1 bbbb rmd160 cccc", false, sums)
+	require.NoError(t, err)
+	require.NotContains(t, string(out), "md5")
+}

@@ -88,3 +88,26 @@ checksums sha256 aaaa \
 	require.NotContains(t, after, "rmd160", "a current group keeps its algorithms")
 	require.Regexp(t, `checksums sha256 [0-9a-f]{64} \\\n          size \d+\n`, after)
 }
+
+// --keep-old-checksums refreshes a legacy block in place: the same
+// algorithms in the same layout, every value recomputed from the download.
+func TestKeepOldChecksumsRefreshesLegacyBlockInPlace(t *testing.T) {
+	s, r, _ := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture.zip
+checksums           md5     aaaa \
+                    sha1    bbbb \
+                    rmd160  cccc
+`)
+	r.Action, r.Version, r.Release, r.KeepOldChecksums = record.RefreshChecksums, "", nil, true
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Commits, 1)
+	after := string(result.Files[0].After)
+	require.Regexp(t, `checksums           md5     [0-9a-f]{32} \\\n                    sha1    [0-9a-f]{40} \\\n                    rmd160  [0-9a-f]{40}\n`, after)
+	require.NotContains(t, after, "sha256")
+	require.NotContains(t, after, "aaaa")
+	download := result.Downloads[0]
+	require.Contains(t, after, "md5     "+download.MD5)
+	require.Contains(t, after, "sha1    "+download.SHA1)
+}

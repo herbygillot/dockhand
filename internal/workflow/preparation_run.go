@@ -153,7 +153,7 @@ func preparationRequest(job record.Job) preparation.Request {
 		// newest subport and borrows the stub's livecheck for discovery.
 		selection.Subport = ""
 	}
-	return preparation.Request{SharedRelease: job.Spec.Preparation.SharedRelease, CommitName: job.Spec.Preparation.Stub, Action: job.Spec.Action, Source: job.Spec.Source,
+	return preparation.Request{SharedRelease: job.Spec.Preparation.SharedRelease, CommitName: job.Spec.Preparation.Stub, KeepOldChecksums: job.Spec.Preparation.KeepOldChecksums, Action: job.Spec.Action, Source: job.Spec.Source,
 		Selection: selection,
 		Platform:  job.Spec.Preparation.Platform, Reason: job.Spec.Reason, Version: job.Spec.Version, Release: job.ResolvedRelease}
 }
