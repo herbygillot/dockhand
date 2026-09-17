@@ -25,6 +25,7 @@ func TestCollectReleasedTartArtifactsWithMultipleProviders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	repoRoot := t.TempDir()
 	runGit(t, repoRoot, "init", "-q")
+	portsTree(t, repoRoot)
 	repo, err := git.Open(t.Context(), repoRoot, "")
 	require.NoError(t, err)
 	directory, err := filepath.EvalSymlinks(t.TempDir())

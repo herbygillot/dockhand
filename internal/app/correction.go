@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/macports"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state/sqlite"
@@ -39,7 +38,7 @@ func (s *Services) Reassociate(ctx context.Context, id record.ChangeID, branch s
 
 // PreviewCorrection reads existing contribution state without initializing it.
 func PreviewCorrection(ctx context.Context, config Config, request workflow.CorrectionRequest) (_ workflow.BoundCorrection, err error) {
-	repo, err := git.Open(ctx, config.Repository, config.GitExecutable)
+	repo, err := openPortsTree(ctx, config.Repository, config.GitExecutable)
 	if err != nil {
 		return workflow.BoundCorrection{}, err
 	}

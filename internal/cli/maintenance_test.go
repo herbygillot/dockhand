@@ -55,9 +55,7 @@ func TestDatabaseMaintenanceNeedsNoRepositoryOrProvider(t *testing.T) {
 }
 
 func TestGCDryRunAndEmptyRepositoryDoNotInitializeState(t *testing.T) {
-	root := t.TempDir()
-	out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
-	require.NoError(t, err, "%s", out)
+	root := portsTreeCheckout(t)
 	config := app.Config{Repository: root, DBPath: filepath.Join(root, "missing", "state.db")}
 	for _, args := range [][]string{{"gc", "--dry-run"}, {"gc"}, {"gc", "--dry-run", "--older-than", "0", "--json"}} {
 		var output bytes.Buffer
@@ -82,9 +80,7 @@ func TestGCDryRunAndEmptyRepositoryDoNotInitializeState(t *testing.T) {
 }
 
 func TestOldSchemaStatusExplainsDatabaseOnlyMigration(t *testing.T) {
-	root := t.TempDir()
-	out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
-	require.NoError(t, err, "%s", out)
+	root := portsTreeCheckout(t)
 	path := filepath.Join(root, "old state.db")
 	db, err := sql.Open("sqlite", path)
 	require.NoError(t, err)
@@ -194,10 +190,8 @@ func TestMigrationRefusesMissingEmptyForeignAndNewerDatabases(t *testing.T) {
 }
 
 func TestGCPrunesSharedIndexCacheWithoutProviderSetup(t *testing.T) {
-	root := t.TempDir()
+	root := portsTreeCheckout(t)
 	t.Setenv("HOME", t.TempDir())
-	out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
-	require.NoError(t, err, "%s", out)
 	repo, err := git.Open(t.Context(), root, "")
 	require.NoError(t, err)
 	config := app.Config{Repository: root, DBPath: filepath.Join(root, "state.db"), TclExecutable: "/missing/tcl"}
@@ -269,4 +263,16 @@ func TestGCAllRepositoriesReachesRegistrationsWithoutACheckout(t *testing.T) {
 	require.True(t, result.Registrations[1].CheckoutMissing)
 	output.Reset()
 	require.Error(t, cli.Run(t.Context(), []string{"gc"}, cli.Streams{Out: &output, Err: &output}, config), "without the flag gc still needs a checkout")
+}
+
+// portsTreeCheckout is an empty Git repository whose working tree has the one
+// Portfile that makes it a ports tree; commands refuse anything else.
+func portsTreeCheckout(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", root).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel", "fixture"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "devel", "fixture", "Portfile"), []byte("PortSystem 1.0\nname fixture\n"), 0o644))
+	return root
 }

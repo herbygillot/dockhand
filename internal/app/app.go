@@ -11,7 +11,6 @@ import (
 	"time"
 
 	forgegithub "github.com/herbygillot/dockhand/internal/forge/github"
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/github"
 	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"github.com/herbygillot/dockhand/internal/macports/selection"
@@ -60,10 +59,7 @@ func Build(ctx context.Context, config Config) (*Services, error) {
 	if config.VerificationProvider != "" && config.VerificationProvider != "auto" && config.VerificationProvider != verify.ProviderTart && config.VerificationProvider != verify.ProviderGitHub {
 		return nil, fmt.Errorf("unknown verification provider %q", config.VerificationProvider)
 	}
-	if config.Repository == "" {
-		config.Repository = "."
-	}
-	repo, err := git.Open(ctx, config.Repository, config.GitExecutable)
+	repo, err := openPortsTree(ctx, config.Repository, config.GitExecutable)
 	if err != nil {
 		return nil, err
 	}
@@ -147,11 +143,7 @@ func FilteredStatus(ctx context.Context, config Config, filter workflow.StatusFi
 		}
 		return result, nil
 	}
-	root := config.Repository
-	if root == "" {
-		root = "."
-	}
-	repo, err := git.Open(ctx, root, config.GitExecutable)
+	repo, err := openPortsTree(ctx, config.Repository, config.GitExecutable)
 	if err != nil {
 		return workflow.Status{}, err
 	}

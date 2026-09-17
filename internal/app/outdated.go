@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/herbygillot/dockhand/internal/git"
 	"github.com/herbygillot/dockhand/internal/outdated"
 )
 
@@ -13,7 +12,7 @@ func Outdated(ctx context.Context, config Config, selection outdated.Selection) 
 	if err := selection.Validate(); err != nil {
 		return outdated.Result{}, err
 	}
-	repo, err := git.Open(ctx, config.Repository, config.GitExecutable)
+	repo, err := openPortsTree(ctx, config.Repository, config.GitExecutable)
 	if err != nil {
 		return outdated.Result{}, err
 	}

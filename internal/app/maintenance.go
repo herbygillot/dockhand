@@ -76,11 +76,7 @@ func Collect(ctx context.Context, config Config, options CollectOptions) (Collec
 	}
 	var registered []record.Repository
 	if !options.AllRepositories {
-		root := config.Repository
-		if root == "" {
-			root = "."
-		}
-		repo, err := git.Open(ctx, root, config.GitExecutable)
+		repo, err := openPortsTree(ctx, config.Repository, config.GitExecutable)
 		if err != nil {
 			return result, err
 		}

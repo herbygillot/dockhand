@@ -18,7 +18,9 @@ import (
 func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
 	repository := t.TempDir()
 	runGit(t, repository, "init", "--quiet")
-	runGit(t, repository, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath="+os.DevNull, "commit", "--quiet", "--allow-empty", "-m", "fixture")
+	portsTree(t, repository)
+	runGit(t, repository, "add", "-A")
+	runGit(t, repository, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath="+os.DevNull, "commit", "--quiet", "-m", "fixture")
 	worktree := filepath.Join(t.TempDir(), "linked")
 	runGit(t, repository, "worktree", "add", "--quiet", "--detach", worktree)
 	clone := filepath.Join(t.TempDir(), "clone")
@@ -27,6 +29,7 @@ func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
 	runGit(t, repository, "clone", "--quiet", repository, clone2)
 	unrelated := t.TempDir()
 	runGit(t, unrelated, "init", "--quiet")
+	portsTree(t, unrelated)
 	db := filepath.Join(t.TempDir(), "state.db")
 	services := []*app.Services{}
 	for _, path := range []string{repository, worktree, clone, clone2, unrelated} {
@@ -54,6 +57,7 @@ func TestSharedDatabaseRepositoryRegistration(t *testing.T) {
 func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
 	root := t.TempDir()
 	runGit(t, root, "init", "--quiet")
+	portsTree(t, root)
 	db := filepath.Join(t.TempDir(), "missing", "state.db")
 	status, err := app.Status(t.Context(), app.Config{Repository: root, DBPath: db})
 	require.NoError(t, err)
@@ -74,6 +78,7 @@ func TestStatusDoesNotCreateOrRegisterState(t *testing.T) {
 	defer existing.Close()
 	other := t.TempDir()
 	runGit(t, other, "init", "--quiet")
+	portsTree(t, other)
 	status, err = app.Status(t.Context(), app.Config{Repository: other, DBPath: db})
 	require.NoError(t, err)
 	require.Empty(t, status.Repository)
@@ -98,4 +103,12 @@ func runGit(t *testing.T, root string, args ...string) {
 	command.Env = append(command.Env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "%s", output)
+}
+
+// portsTree gives a fixture checkout the one Portfile that makes it a ports
+// tree; every command refuses a checkout without one.
+func portsTree(t *testing.T, root string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel", "fixture"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "devel", "fixture", "Portfile"), []byte("PortSystem 1.0\nname fixture\n"), 0o644))
 }

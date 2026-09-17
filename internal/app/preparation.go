@@ -38,7 +38,7 @@ func PreviewPreparation(ctx context.Context, config Config, request PreviewReque
 	if root == "" {
 		root = "."
 	}
-	repo, err := git.Open(ctx, root, config.GitExecutable)
+	repo, err := openPortsTree(ctx, root, config.GitExecutable)
 	if err != nil {
 		return Preview{}, err
 	}

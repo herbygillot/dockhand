@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/herbygillot/dockhand/internal/assess"
-	"github.com/herbygillot/dockhand/internal/git"
 )
 
 // Assess wires preparation diagnostics without opening workflow state.
@@ -13,7 +12,7 @@ func Assess(ctx context.Context, config Config, request assess.Request) (assess.
 	if err := request.Validate(); err != nil {
 		return assess.Result{}, err
 	}
-	repo, err := git.Open(ctx, config.Repository, config.GitExecutable)
+	repo, err := openPortsTree(ctx, config.Repository, config.GitExecutable)
 	if err != nil {
 		return assess.Result{}, err
 	}

@@ -21,7 +21,9 @@ import (
 func queuedJob(t *testing.T) (app.Config, record.JobID) {
 	t.Helper()
 	root := t.TempDir()
-	for _, args := range [][]string{{"init", "-q", "-b", "candidate"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + os.DevNull, "commit", "-q", "--allow-empty", "-m", "fixture"}} {
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "devel", "fixture"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "devel", "fixture", "Portfile"), []byte("PortSystem 1.0\nname fixture\nversion 1.0\n"), 0o644))
+	for _, args := range [][]string{{"init", "-q", "-b", "candidate"}, {"add", "-A"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + os.DevNull, "commit", "-q", "-m", "fixture"}} {
 		command := exec.CommandContext(t.Context(), "git", args...)
 		command.Dir = root
 		output, err := command.CombinedOutput()
