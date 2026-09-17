@@ -85,7 +85,7 @@ func TestAutomaticProviderSelection(t *testing.T) {
 			client := &github.Client{Config: github.Config{BaseURL: server.URL, Token: "fixture-token"}}
 			local := &localBuild{err: test.localError}
 			services := &Services{providerName: test.provider, tartVerification: local, githubClient: client, Workflow: &workflow.Engine{Publisher: &publish.Service{Repo: repo, Forge: &forgegithub.Client{Client: client}, LockDirectory: filepath.Join(root, "locks")}}}
-			snapshot := macports.Snapshot{Target: record.Target{Name: "fixture"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": fmt.Sprint(test.xcode)}}}}
+			snapshot := macports.Snapshot{Target: record.Target{Name: "fixture"}, Runtime: macports.Runtime{BaseVersion: "2.11.6"}, Ports: map[string]macports.PortInfo{"fixture": {Options: map[string]string{"use_xcode": fmt.Sprint(test.xcode)}}}}
 			var messages []string
 			ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })
 			result, err := services.buildResolver(record.Platform{OS: "darwin", Version: "25", Architecture: "arm64"}, "", false, true)(ctx, snapshot)
@@ -100,6 +100,7 @@ func TestAutomaticProviderSelection(t *testing.T) {
 				require.Zero(t, remoteCalls, "local selection must not contact GitHub verification")
 				require.Equal(t, record.TestDeclared, result.Build.Tests)
 				require.Equal(t, test.xcode, local.options.NeedsXcode)
+				require.Equal(t, "2.11.6", local.options.HostMacPortsVersion, "the host Base version reaches the provider so it can warn on skew")
 			} else {
 				require.Positive(t, remoteCalls)
 				require.Equal(t, record.TestWorkflow, result.Build.Tests)

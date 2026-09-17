@@ -47,8 +47,13 @@ func (r *runtime) setupCommand() *cobra.Command {
 			if result.XcodeVersion != "" {
 				xcode = ", Xcode " + plain(result.XcodeVersion)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s verification image %s (%s, MacPorts %s, guest agent %s%s).\n", verb, plain(result.Image), plain(macos.Describe(result.Platform)), plain(result.MacPortsVersion), plain(result.GuestAgentVersion), xcode)
-			return err
+			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "%s verification image %s (%s, MacPorts %s, guest agent %s%s).\n", verb, plain(result.Image), plain(macos.Describe(result.Platform)), plain(result.MacPortsVersion), plain(result.GuestAgentVersion), xcode); err != nil {
+				return err
+			}
+			if host := result.HostMacPorts.BaseVersion; host != "" && host != result.MacPortsVersion {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: the host evaluates ports with MacPorts %s, but this image builds with MacPorts %s; host evaluation and guest builds will disagree on the Base release. Point -P or MACPORTS_PREFIX at the matching install, or provision with --macports-version %s.\n", plain(host), plain(result.MacPortsVersion), plain(host))
+			}
+			return nil
 		},
 	}
 	command.Flags().StringVar(&options.OS, "os", "", "macOS release name or major version (defaults to the host release)")

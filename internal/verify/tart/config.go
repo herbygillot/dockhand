@@ -120,6 +120,7 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 		if problem := capabilityProblem(capabilities, c, accepted); problem != "" {
 			return record.BuildConfig{}, fmt.Errorf("%w: image %s is incompatible: %s", ErrImageUnavailable, c.Image, problem)
 		}
+		warnMacPortsVersionSkew(ctx, options.HostMacPortsVersion, c.Image, capabilities.Capabilities.MacPortsVersion)
 	}
 	resolvedIndex, err := portindex.ResolveTool(ctx, portindex.Config{Executable: c.PortIndexExecutable, Digest: c.PortIndexDigest})
 	if err != nil {
@@ -138,6 +139,19 @@ func (p *Provider) BuildConfig(ctx context.Context, platform record.Platform, op
 	}
 	return config, verify.ValidateConfig(config)
 }
+
+// warnMacPortsVersionSkew says so when the host evaluates ports with one
+// MacPorts Base and the image builds with another. Neither is wrong on its
+// own, but the evaluation that chose the edit and the build that proves it
+// then run on different Base releases. An image never observed yet cannot be
+// compared here; setup warns at provisioning time instead.
+func warnMacPortsVersionSkew(ctx context.Context, host, image, guest string) {
+	if host == "" || guest == "" || host == guest {
+		return
+	}
+	progress.Report(ctx, "Warning: the host evaluates ports with MacPorts %s, but image %s builds with MacPorts %s; pass -P or set MACPORTS_PREFIX to the install that matches, or run dockhand setup --macports-version %s", host, image, guest, host)
+}
+
 func validateRequest(r verify.Request) error {
 	if !requestID(r.ID) || r.AttemptID == "" || r.Spec.Config.Provider != verify.ProviderTart || !r.Spec.Config.CapabilitiesRequired || len(r.Spec.Inputs) != 0 {
 		return fmt.Errorf("tart: one concrete verification target without artifact inputs is required")
@@ -195,4 +209,8 @@ type BuildOptions struct {
 	Tests      record.TestPolicy
 	FromSource bool
 	NeedsXcode bool
+	// HostMacPortsVersion is the MacPorts Base that evaluated the port on the
+	// host. It selects nothing; the provider warns when the image's observed
+	// Base differs, since host evaluation and guest builds then disagree.
+	HostMacPortsVersion string
 }

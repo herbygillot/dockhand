@@ -50,7 +50,8 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 		if policy == "" {
 			policy = record.TestDeclared
 		}
-		config, err := s.tartVerification.BuildConfig(ctx, platform, tart.BuildOptions{Tests: policy, FromSource: fromSource, NeedsXcode: needsXcode})
+		options := tart.BuildOptions{Tests: policy, FromSource: fromSource, NeedsXcode: needsXcode, HostMacPortsVersion: evaluation.Runtime.BaseVersion}
+		config, err := s.tartVerification.BuildConfig(ctx, platform, options)
 		if err == nil {
 			targets := map[string]record.BuildConfig{}
 			if len(s.targetImages) > 0 {
@@ -64,7 +65,7 @@ func (s *Services) buildResolver(platform record.Platform, tests record.TestPoli
 					if name == evaluation.Target.Name {
 						return workflow.BuildResolution{}, fmt.Errorf("use --image for root target %s", name)
 					}
-					bound, err := binder.BuildConfigForImage(ctx, platform, tart.BuildOptions{Tests: policy, FromSource: fromSource, NeedsXcode: needsXcode}, s.targetImages[name])
+					bound, err := binder.BuildConfigForImage(ctx, platform, options, s.targetImages[name])
 					if err != nil {
 						return workflow.BuildResolution{}, fmt.Errorf("image for %s: %w", name, err)
 					}

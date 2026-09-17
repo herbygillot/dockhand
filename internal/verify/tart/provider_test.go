@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -638,4 +639,31 @@ func TestSourcePreparationBeforeReservation(t *testing.T) {
 			require.Empty(t, leftovers)
 		})
 	}
+}
+
+// An image whose observed MacPorts differs from the host's is still usable,
+// and the person is told that evaluation and builds run on different Base
+// releases. An unobserved image, or a matching one, says nothing.
+func TestBuildConfigWarnsWhenHostAndImageMacPortsDiffer(t *testing.T) {
+	root := t.TempDir()
+	store, err := sqlite.Open(t.Context(), filepath.Join(root, "state.db"), sqlite.Options{})
+	require.NoError(t, err)
+	defer store.Close()
+	provider := &Provider{Config: Config{Home: filepath.Join(root, "home"), ArtifactDirectory: filepath.Join(root, "artifacts"), PortIndexExecutable: fakePortIndex(t)}, backend: newMachine(), State: store}
+	var messages []string
+	ctx := progress.WithReporter(t.Context(), func(u progress.Update) { messages = append(messages, u.Message) })
+	_, err = provider.BuildConfig(ctx, testPlatform, BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.11.6"})
+	require.NoError(t, err)
+	require.NotContains(t, strings.Join(messages, "\n"), "Warning", "an unobserved image cannot be compared")
+
+	capabilities := record.EnvironmentCapabilities{Platform: testPlatform, MacPortsPrefix: "/opt/local", MacPortsVersion: "2.12.6", DeveloperTools: record.DeveloperToolsCommandLine}
+	require.NoError(t, store.PutImageCapabilities(t.Context(), state.ImageCapabilities{Provider: verify.ProviderTart, EnvironmentDigest: "sha256:fixture", CapabilityDigest: capabilityIdentity(capabilities), Capabilities: capabilities, ObservedAt: time.Now()}))
+	messages = nil
+	_, err = provider.BuildConfig(ctx, testPlatform, BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.11.6"})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(messages, "\n"), "the host evaluates ports with MacPorts 2.11.6, but image dockhand-base-tahoe builds with MacPorts 2.12.6")
+	messages = nil
+	_, err = provider.BuildConfig(ctx, testPlatform, BuildOptions{Tests: record.TestDeclared, HostMacPortsVersion: "2.12.6"})
+	require.NoError(t, err)
+	require.NotContains(t, strings.Join(messages, "\n"), "Warning")
 }
