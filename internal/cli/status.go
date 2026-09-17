@@ -173,6 +173,9 @@ func renderStatus(out io.Writer, status workflow.Status) error {
 				}
 			} else {
 				line("  release: %s %s; commit: %s", release.Repository, release.Tag, release.Commit)
+				if release.LeavesStable {
+					line("  stability: prerelease; this change takes the port out of stable")
+				}
 			}
 		}
 		if job.Spec.Checkout == nil && job.Spec.SourceBranch != "" {

@@ -193,3 +193,21 @@ func TestExplicitArchiveReleaseNeedsNoForgeButRetainsSourceChecks(t *testing.T) 
 	release.Commit = strings.Repeat("a", 40)
 	require.Error(t, service.Check(t.Context(), port, release))
 }
+
+func TestResolveClassifiesStabilityWithoutRefusing(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	service := serviceWithCatalog(tagFunc(func(_ context.Context, _, tag string) (forge.Tag, error) {
+		if tag != "v2.0-rc1" && tag != "v2.0" {
+			return forge.Tag{}, forge.ErrNotFound
+		}
+		return forge.Tag{Name: tag, Commit: commit}, nil
+	}))
+	release, err := service.Resolve(t.Context(), githubPort(), "2.0-rc1")
+	require.NoError(t, err, "an explicit prerelease is honored")
+	require.Equal(t, "prerelease", release.Stability)
+	require.True(t, release.LeavesStable)
+	release, err = service.Resolve(t.Context(), githubPort(), "2.0")
+	require.NoError(t, err)
+	require.Equal(t, "stable", release.Stability)
+	require.False(t, release.LeavesStable)
+}

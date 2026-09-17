@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
@@ -15,10 +14,6 @@ import (
 )
 
 var ErrAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
-
-// Stable numeric versions include calendar and multi-component versions. Other
-// spellings, including prereleases, remain available through explicit selection.
-var stableVersion = regexp.MustCompile(`^[0-9]+(?:[.-][0-9]+)*$`)
 
 type VersionSelector interface {
 	SelectVersion(context.Context, string, string, []macports.VersionCandidate) (macports.VersionSelection, error)
@@ -45,7 +40,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if err != nil {
 		return result, err
 	}
-	if !stableVersion.MatchString(port.Version) {
+	if !isStable(port.Version) {
 		return result, fmt.Errorf("%w: require a stable numeric version", ErrAutomaticUnsupported)
 	}
 	var observations []forge.Release
@@ -81,7 +76,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 			continue
 		}
 		version, matches := spec.Pattern.Version(release.Tag)
-		if !matches || !stableVersion.MatchString(version) {
+		if !matches || !isStable(version) {
 			continue
 		}
 		subject, err := spec.MatchText(release.Tag)
@@ -143,7 +138,8 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	}
 	result.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
 	result.CandidateVersion = candidates[index].Version
-	result.Release = &record.Release{CurrentVersion: port.Version, Version: result.CandidateVersion, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: selection.Comparison <= 0}
+	release := classified(record.Release{CurrentVersion: port.Version, Version: result.CandidateVersion, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: selection.Comparison <= 0}, port.Version)
+	result.Release = &release
 	evidenceURL, err := spec.EvidenceURL(tag.Name)
 	if err != nil {
 		return result, err

@@ -121,6 +121,9 @@ func (c *cycle) advancePreparation(ctx context.Context, id record.JobID) (bool, 
 				if release.Archive {
 					label = "archive version " + release.Version
 				}
+				if release.LeavesStable {
+					label += " (prerelease; this takes the port out of stable)"
+				}
 				job.Detail = "Resolved " + label + "; awaiting source preparation"
 			}
 		} else {

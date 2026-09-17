@@ -134,6 +134,9 @@ func (r *runtime) changeCommands() []*cobra.Command {
 					} else {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Release: %s (%s); upstream commit: %s\n", release.Tag, release.Version, release.Commit)
 					}
+					if release.LeavesStable {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: this takes %s out of stable; %s is a prerelease. The explicit version is honored.\n", args[0], release.Version)
+					}
 				}
 				if scope := preview.Preparation.Scope; scope != nil {
 					for _, member := range scope.Affected {

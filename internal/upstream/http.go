@@ -31,7 +31,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	if !ok {
 		return result, fmt.Errorf("upstream: native livecheck extraction is unavailable")
 	}
-	if !stableVersion.MatchString(port.Version) {
+	if !isStable(port.Version) {
 		return result, fmt.Errorf("%w: require a stable numeric version", ErrAutomaticUnsupported)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, spec.Livecheck.URL, nil)
@@ -64,7 +64,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	}
 	var candidates []macports.VersionCandidate
 	for _, version := range versions {
-		if stableVersion.MatchString(version) {
+		if isStable(version) {
 			candidates = append(candidates, macports.VersionCandidate{Version: version, MatchText: version})
 		}
 	}
@@ -94,7 +94,8 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	}
 	digest := sha256.Sum256(page)
 	result.CandidateVersion = version
-	result.Release = &record.Release{Archive: true, Version: version, CurrentVersion: port.Version, ObservedAt: result.ObservedAt, NoUpdate: selected.Comparison <= 0, Listing: &record.ReleaseListing{URL: spec.Livecheck.URL, ETag: response.Header.Get("ETag"), LastModified: response.Header.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
+	release := classified(record.Release{Archive: true, Version: version, CurrentVersion: port.Version, ObservedAt: result.ObservedAt, NoUpdate: selected.Comparison <= 0, Listing: &record.ReleaseListing{URL: spec.Livecheck.URL, ETag: response.Header.Get("ETag"), LastModified: response.Header.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}, port.Version)
+	result.Release = &release
 	result.Evidence = []Observation{{Source: string(portsource.HTTPRegex), Version: version, URL: spec.Livecheck.URL, ObservedAt: result.ObservedAt}}
 	result.Assessment = UpdateAvailable
 	result.Detail = "Selected " + version + " from livecheck"

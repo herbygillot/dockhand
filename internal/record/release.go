@@ -22,6 +22,11 @@ type Release struct {
 	Tag            string
 	Commit         string
 	ObservedAt     time.Time
+	// Stability classifies Version (stable, prerelease, or unknown), and
+	// LeavesStable marks a move from a stable current version to a prerelease.
+	// An explicit version is honored either way; these only inform reporting.
+	Stability    string `json:",omitempty"`
+	LeavesStable bool   `json:",omitempty"`
 }
 
 // ReleaseListing retains compact discovery evidence; source archives are bound

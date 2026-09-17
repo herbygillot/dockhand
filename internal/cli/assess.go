@@ -52,6 +52,9 @@ func (r *runtime) assessCommand() *cobra.Command {
 						if release.Tag != "" {
 							fmt.Fprintf(cmd.OutOrStdout(), " (tag %s)", plain(release.Tag))
 						}
+						if release.LeavesStable {
+							fmt.Fprint(cmd.OutOrStdout(), "; prerelease: leaves stable")
+						}
 					}
 					fmt.Fprintln(cmd.OutOrStdout())
 					for _, input := range port.Inputs {
