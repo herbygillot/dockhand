@@ -19,3 +19,7 @@ Written after the git-devel exercise, whose four fixes landed in four packages f
 5. Classify observed reads by the command that consumed them, from the evaluator's frames, with the same benign vocabulary; keep the static scan for Darwin boundaries in branches that did not run.
 
 No behavior changes are intended. The existing suites and this week's live controls (Terraform, Deno, goreleaser, Codex, abendrot, bun, warzone2100, fldigi, mrustc, git-devel) are the acceptance set.
+
+## Outcome
+
+Stages 1 through 4 landed on 2026-09-17 as four commits, each on green: the `macports/version` leaf, the shared selection core in `upstream/candidates.go`, one `Interpret(port, purpose)`, and the embedded `Selection`. Stage 5 was examined and not done. Observing reads instead of scanning for them would replace the regexes that spot a read with the evaluator's own record, which is better evidence, but it does not remove the part of the classifier that has grown: a read landing in `set` is still consumed later, so taint through variables is needed either way. The evaluator would also need new variable and option traces for the minor-version and toolchain reads it does not currently record. That is a real improvement in evidence for a modest reduction in code, and it can wait for a case the static scan gets wrong. The scanner stays, with its tests and the live controls as its contract.

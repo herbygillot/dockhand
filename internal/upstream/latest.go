@@ -136,7 +136,7 @@ func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (res
 	if spec.Catalog == portsource.Releases {
 		catalog = "published releases"
 	}
-	release := record.Release{CurrentVersion: port.Version, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt, NoUpdate: comparison <= 0}
+	release := record.Release{Selection: record.Selection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Version: candidates[index].Version, Forge: string(spec.Forge), Instance: spec.Instance, Repository: repository.Name(), Tag: tag.Name, Commit: tag.Commit, ObservedAt: result.ObservedAt}
 	result.finish(release, port.Version, "Selected "+tag.Name+" from "+catalog, " among "+catalog)
 	result.Evidence = []Observation{{Source: string(spec.Forge) + "-" + string(spec.Catalog), Version: release.Version, URL: evidenceURL, ObservedAt: result.ObservedAt}}
 	return result, nil

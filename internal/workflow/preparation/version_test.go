@@ -126,7 +126,7 @@ pre-fetch {
 		return forge.Tag{Name: name, Commit: strings.Repeat("a", 40)}, nil
 	})
 	service.Upstream = &upstream.Service{Catalogs: map[portsource.Forge]upstream.Catalog{portsource.GitHub: resolver, portsource.GitLab: resolver}}
-	release := record.Release{Requested: "2.0", Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/fixture", Tag: "v2.0", Commit: strings.Repeat("a", 40)}
+	release := record.Release{Selection: record.Selection{Requested: "2.0"}, Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/fixture", Tag: "v2.0", Commit: strings.Repeat("a", 40)}
 	if style == "gitlab-setup" {
 		release.Forge = "gitlab"
 		release.Instance = "https://gitlab.example"

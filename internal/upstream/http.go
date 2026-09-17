@@ -83,7 +83,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 		}
 	}
 	digest := sha256.Sum256(page)
-	release := record.Release{Archive: true, Version: version, CurrentVersion: port.Version, ObservedAt: result.ObservedAt, NoUpdate: comparison <= 0, Listing: &record.ReleaseListing{URL: spec.Livecheck.URL, ETag: response.Header.Get("ETag"), LastModified: response.Header.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
+	release := record.Release{Selection: record.Selection{CurrentVersion: port.Version, NoUpdate: comparison <= 0}, Archive: true, Version: version, ObservedAt: result.ObservedAt, Listing: &record.ReleaseListing{URL: spec.Livecheck.URL, ETag: response.Header.Get("ETag"), LastModified: response.Header.Get("Last-Modified"), SHA256: hex.EncodeToString(digest[:])}}
 	result.finish(release, port.Version, "Selected "+version+" from livecheck", "")
 	result.Evidence = []Observation{{Source: string(portsource.HTTPRegex), Version: version, URL: spec.Livecheck.URL, ObservedAt: result.ObservedAt}}
 	return result, nil

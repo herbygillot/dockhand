@@ -26,7 +26,7 @@ func (f resolveFunc) ResolveRelease(ctx context.Context, r preparation.Request) 
 }
 
 func resolvedFixture(f *fixture) record.Release {
-	return record.Release{Requested: "2.0", Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/project", Tag: "v2.0", Commit: strings.Repeat("a", 40), ObservedAt: f.now()}
+	return record.Release{Selection: record.Selection{Requested: "2.0"}, Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/project", Tag: "v2.0", Commit: strings.Repeat("a", 40), ObservedAt: f.now()}
 }
 
 func TestVersionBumpCheckpointsReleaseBeforePreparationAndResumesVerification(t *testing.T) {
