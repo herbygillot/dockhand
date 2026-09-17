@@ -147,6 +147,9 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 			change.Targets = []record.Target{evidence.Spec.Target}
 		}
 		wanted := record.BuildSpec{Branch: change.Branch, Source: source, Target: change.Targets[0], Config: evidence.Spec.Config}
+		if associated != nil {
+			wanted = withRemoteBranch(wanted, associated.HeadBranch)
+		}
 		if verdict := verify.Applicable(wanted, evidence); !verdict.Matches {
 			return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 		}

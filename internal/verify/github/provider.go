@@ -142,7 +142,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			return reject(err.Error())
 		}
 		d := config.Destination
-		return p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, ProviderName, d.HeadRepository, request.Spec.Branch, func(ctx context.Context) error {
+		return p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, ProviderName, d.HeadRepository, request.Spec.PushBranch(), func(ctx context.Context) error {
 			snapshot, err := changeset.CaptureBranch(ctx, p.Repo, request.Spec.Branch)
 			if err != nil {
 				return preflightError(err)
@@ -168,7 +168,7 @@ func (p *Provider) Submit(ctx context.Context, request verify.Request) (verify.S
 			if workflow.GetID() != config.WorkflowID || workflow.GetPath() != WorkflowPath || workflow.GetState() != "active" {
 				return reject("github verification: enable the expected main.yml workflow in your fork's Actions settings")
 			}
-			expected, err := p.Repo.RemoteHead(ctx, d.PushURL, request.Spec.Branch)
+			expected, err := p.Repo.RemoteHead(ctx, d.PushURL, request.Spec.PushBranch())
 			if err != nil {
 				return preflightError(err)
 			}
@@ -200,7 +200,7 @@ func (p *Provider) advance(ctx context.Context, row record.ProviderExecution) (v
 	}
 	d := saved.Config.Destination
 	var result verify.Submission
-	err := p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, ProviderName, d.HeadRepository, saved.Request.Spec.Branch, func(ctx context.Context) error {
+	err := p.Repo.WithRemoteBranchLock(ctx, d.LockDirectory, ProviderName, d.HeadRepository, saved.Request.Spec.PushBranch(), func(ctx context.Context) error {
 		var err error
 		result, err = p.pushAndFind(ctx, row)
 		return err
@@ -215,13 +215,13 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 		return result, err
 	}
 	spec, d := saved.Request.Spec, saved.Config.Destination
-	result.Detail = fmt.Sprintf("Waiting for GitHub Actions on %s:%s at %s", d.HeadRepository, spec.Branch, spec.Source.Commit)
+	result.Detail = fmt.Sprintf("Waiting for GitHub Actions on %s:%s at %s", d.HeadRepository, spec.PushBranch(), spec.Source.Commit)
 	api, err := p.actions(ctx, d.HeadRepository)
 	if err != nil {
 		return result, err
 	}
 	// Observe first: a newer push may have moved the branch while the accepted run still exists.
-	runs, err := api.Runs(ctx, saved.Config.WorkflowID, spec.Branch, string(spec.Source.Commit))
+	runs, err := api.Runs(ctx, saved.Config.WorkflowID, spec.PushBranch(), string(spec.Source.Commit))
 	if err != nil {
 		return result, err
 	}
@@ -251,7 +251,7 @@ func (p *Provider) pushAndFind(ctx context.Context, row record.ProviderExecution
 	}
 	// Repeating a confirmed push is a no-op. Never dispatch an uncorrelated second run.
 	push := "push confirmed"
-	if err := p.Repo.Push(ctx, git.Push{Remote: d.PushURL, Branch: spec.Branch, Commit: string(spec.Source.Commit), ExpectedRemote: saved.Expected}); err != nil {
+	if err := p.Repo.Push(ctx, git.Push{Remote: d.PushURL, Branch: spec.PushBranch(), Commit: string(spec.Source.Commit), ExpectedRemote: saved.Expected}); err != nil {
 		if ctx.Err() != nil || !errors.Is(err, git.ErrRefConflict) {
 			return result, err
 		}
@@ -334,7 +334,7 @@ func rejectedSubmission(row record.ProviderExecution) (verify.Submission, error)
 }
 
 func runDetail(saved payload, run executionRun, status string) string {
-	detail := fmt.Sprintf("GitHub Actions %s: %s:%s at %s; run %d attempt %d", status, saved.Config.Destination.HeadRepository, saved.Request.Spec.Branch, saved.Request.Spec.Source.Commit, run.ID, run.Attempt)
+	detail := fmt.Sprintf("GitHub Actions %s: %s:%s at %s; run %d attempt %d", status, saved.Config.Destination.HeadRepository, saved.Request.Spec.PushBranch(), saved.Request.Spec.Source.Commit, run.ID, run.Attempt)
 	if run.URL != "" {
 		detail += "; " + run.URL
 	}

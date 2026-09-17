@@ -105,13 +105,26 @@ type BuildSpec struct {
 	// ReplaceRemoteHead authorizes a conditional replacement for a managed correction.
 	ReplaceRemoteHead ObjectID `json:",omitempty"`
 	Branch            string   `json:",omitempty"`
-	RevisionID        RevisionID
-	Source            Source
-	Target            Target
-	Config            BuildConfig
+	// RemoteBranch is the fork branch a forge verification pushes to and
+	// observes when it differs from the local Branch, as after a local rename
+	// of a contribution whose PR head keeps the original name.
+	RemoteBranch string `json:",omitempty"`
+	RevisionID   RevisionID
+	Source       Source
+	Target       Target
+	Config       BuildConfig
 	// Preinstall builds and installs these roots from the same tree in this isolated guest.
 	Preinstall []Target `json:",omitempty"`
 	Inputs     []Artifact
+}
+
+// PushBranch is the remote branch a forge verification uses: RemoteBranch
+// when set, otherwise the local Branch.
+func (s BuildSpec) PushBranch() string {
+	if s.RemoteBranch != "" {
+		return s.RemoteBranch
+	}
+	return s.Branch
 }
 
 // AttemptState describes provider submission and execution progress.

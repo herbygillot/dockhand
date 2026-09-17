@@ -69,6 +69,19 @@ func initializeVerification(ctx context.Context, tx state.Reader, work *executio
 			detail = err.Error()
 			return true, detail, nil
 		}
+		head, err := remoteBranch(ctx, tx, job.ChangeID)
+		if err != nil {
+			return true, "", err
+		}
+		for i := range builds {
+			builds[i] = withRemoteBranch(builds[i], head)
+		}
+		for i := range plan.Targets {
+			if plan.Targets[i].Build != nil {
+				build := withRemoteBranch(*plan.Targets[i].Build, head)
+				plan.Targets[i].Build = &build
+			}
+		}
 		if len(builds) == 1 {
 			reused, explanation, err = policy.SelectVerification(ctx, tx, job, builds[0])
 			if err != nil {

@@ -16,7 +16,7 @@ import (
 func missingRunDetail(ctx context.Context, api actionsAPI, row record.ProviderExecution, saved payload, push string) (string, error) {
 	spec := saved.Request.Spec
 	detail := fmt.Sprintf("No matching GitHub Actions run observed for %s:%s at %s; submission recorded at %s; %s",
-		saved.Config.Destination.HeadRepository, spec.Branch, spec.Source.Commit, row.CreatedAt.UTC().Format(time.RFC3339), push)
+		saved.Config.Destination.HeadRepository, spec.PushBranch(), spec.Source.Commit, row.CreatedAt.UTC().Format(time.RFC3339), push)
 	workflow, err := api.Workflow(ctx, "main.yml")
 	var response *gh.ErrorResponse
 	switch {

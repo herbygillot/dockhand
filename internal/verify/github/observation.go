@@ -13,7 +13,7 @@ import (
 )
 
 func matches(saved payload, run *gh.WorkflowRun) bool {
-	return run != nil && run.GetHeadSHA() == string(saved.Request.Spec.Source.Commit) && run.GetHeadBranch() == saved.Request.Spec.Branch && run.GetEvent() == "push" && run.GetWorkflowID() == saved.Config.WorkflowID && run.GetPath() == WorkflowPath && strings.EqualFold(run.GetRepository().GetFullName(), saved.Config.Destination.HeadRepository) && strings.EqualFold(run.GetHeadRepository().GetFullName(), saved.Config.Destination.HeadRepository)
+	return run != nil && run.GetHeadSHA() == string(saved.Request.Spec.Source.Commit) && run.GetHeadBranch() == saved.Request.Spec.PushBranch() && run.GetEvent() == "push" && run.GetWorkflowID() == saved.Config.WorkflowID && run.GetPath() == WorkflowPath && strings.EqualFold(run.GetRepository().GetFullName(), saved.Config.Destination.HeadRepository) && strings.EqualFold(run.GetHeadRepository().GetFullName(), saved.Config.Destination.HeadRepository)
 }
 
 func (p *Provider) execution(ctx context.Context, handle record.ProviderRun) (payload, executionRun, record.ProviderExecution, error) {
@@ -68,7 +68,7 @@ func (p *Provider) Observe(ctx context.Context, handle record.ProviderRun) (veri
 	if err != nil {
 		return result, err
 	}
-	evidence := &record.WorkflowEvidence{Repository: saved.Config.Destination.HeadRepository, Branch: saved.Request.Spec.Branch, Commit: saved.Request.Spec.Source.Commit, Path: WorkflowPath, RunID: selected.ID, RunAttempt: selected.Attempt, URL: run.GetHTMLURL(), Status: run.GetStatus(), Conclusion: run.GetConclusion()}
+	evidence := &record.WorkflowEvidence{Repository: saved.Config.Destination.HeadRepository, Branch: saved.Request.Spec.PushBranch(), Commit: saved.Request.Spec.Source.Commit, Path: WorkflowPath, RunID: selected.ID, RunAttempt: selected.Attempt, URL: run.GetHTMLURL(), Status: run.GetStatus(), Conclusion: run.GetConclusion()}
 	seen := map[string]bool{}
 	complete := len(jobs) == len(saved.Matrix)
 	for _, job := range jobs {

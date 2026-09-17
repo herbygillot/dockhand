@@ -26,7 +26,7 @@ func (p *Provider) source(ctx context.Context, request verify.Request) ([]string
 	if err := verify.ValidateConfig(spec.Config); err != nil {
 		return nil, err
 	}
-	if !git.ValidBranchName(spec.Branch) || spec.Branch == "master" || !git.ValidObjectID(string(spec.Source.Commit)) || !git.ValidObjectID(string(spec.Source.Tree)) {
+	if !git.ValidBranchName(spec.Branch) || spec.Branch == "master" || (spec.RemoteBranch != "" && (!git.ValidBranchName(spec.RemoteBranch) || spec.RemoteBranch == "master")) || !git.ValidObjectID(string(spec.Source.Commit)) || !git.ValidObjectID(string(spec.Source.Tree)) {
 		return nil, fmt.Errorf("github verification: select a committed contribution with --branch")
 	}
 	if spec.Config.Provider != ProviderName || spec.Config.Tests != record.TestWorkflow || spec.Config.FromSource || len(spec.Target.Variants) != 0 || len(spec.Inputs) != 0 {

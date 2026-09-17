@@ -42,7 +42,7 @@ Names and indexed subports work now; `assess` and `outdated` also support mainta
 
 ### GitHub verification refinements
 
-Consider controlled reruns, safe updates of already-pushed verification branches, and broader workflow coverage. After a local branch rename, verification currently uses the new local branch while publication retains the existing PR head; coordinating that identity is a concrete follow-up. Shared-run cancellation, missing-run diagnostics, delayed-run recovery, offline cancellation, and log-cache retention already exist; see the [GitHub exercise](activity/2026-09-15-xplr-github-exercise.md).
+Consider controlled reruns, safe updates of already-pushed verification branches, and broader workflow coverage. After a local branch rename, forge verification now pushes to the PR's recorded head branch while the local name only locates the commit; see the [remote branch report](activity/2026-09-17-remote-branch-identity.md). Shared-run cancellation, missing-run diagnostics, delayed-run recovery, offline cancellation, and log-cache retention already exist; see the [GitHub exercise](activity/2026-09-15-xplr-github-exercise.md).
 
 ### Expiring credentials
 

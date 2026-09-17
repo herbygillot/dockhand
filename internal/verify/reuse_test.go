@@ -171,3 +171,17 @@ func TestWorkflowEvidenceRequiresTheExactCommitAndBranch(t *testing.T) {
 	previous.Evidence.Workflow = nil
 	require.False(t, verify.Applicable(wanted, previous).Matches)
 }
+
+func TestApplicabilityComparesWorkflowEvidenceOnTheRemoteBranch(t *testing.T) {
+	previous := record.Attempt{ID: "attempt", Spec: reusableBuild(), State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed, ObservedAt: time.Now()}}
+	previous.Spec.Branch, previous.Spec.Config.Tests = "candidate", record.TestWorkflow
+	previous.Spec.Source.Commit = record.ObjectID(strings.Repeat("b", 40))
+	previous.Evidence.Workflow = &record.WorkflowEvidence{Branch: "candidate", Commit: previous.Spec.Source.Commit, Conclusion: "success"}
+	wanted := previous.Spec
+	wanted.Branch, wanted.RemoteBranch = "renamed", "candidate"
+	require.True(t, verify.Applicable(wanted, previous).Matches, "a renamed local branch still matches evidence from the PR head")
+	wanted.RemoteBranch = ""
+	require.False(t, verify.Applicable(wanted, previous).Matches)
+	require.Equal(t, "candidate", record.BuildSpec{Branch: "renamed", RemoteBranch: "candidate"}.PushBranch())
+	require.Equal(t, "renamed", record.BuildSpec{Branch: "renamed"}.PushBranch())
+}

@@ -54,6 +54,17 @@ func PublicationEvidence(ctx context.Context, r state.Reader, job record.Job, sp
 	}
 	_, source := job.EffectiveSource()
 	build := record.BuildSpec{Branch: change.Branch, Source: source, Target: job.Spec.Targets[0], Config: config}
+	if change.PullRequestID != "" {
+		// A renamed local branch keeps publishing to the PR's head branch, and
+		// forge verification pushes there too, so evidence is compared on it.
+		pr, err := r.PullRequest(ctx, change.PullRequestID)
+		if err != nil {
+			return err
+		}
+		if pr.HeadBranch != "" && pr.HeadBranch != build.Branch {
+			build.RemoteBranch = pr.HeadBranch
+		}
+	}
 	if verdict := verify.Applicable(build, candidate); !verdict.Matches {
 		return fmt.Errorf("%w: %s", publish.ErrPrecondition, strings.Join(verdict.Reasons, "; "))
 	}

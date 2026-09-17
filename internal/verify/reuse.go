@@ -33,7 +33,7 @@ func Applicable(wanted record.BuildSpec, previous record.Attempt) Applicability 
 		}
 	}
 	if wanted.Config.Tests == record.TestWorkflow {
-		if evidence == nil || evidence.Workflow == nil || evidence.Workflow.Commit != wanted.Source.Commit || evidence.Workflow.Branch != wanted.Branch || evidence.Workflow.Conclusion != "success" {
+		if evidence == nil || evidence.Workflow == nil || evidence.Workflow.Commit != wanted.Source.Commit || evidence.Workflow.Branch != wanted.PushBranch() || evidence.Workflow.Conclusion != "success" {
 			reject("matching workflow evidence is missing")
 		}
 	}
@@ -52,7 +52,7 @@ func InputDifferences(wanted, old record.BuildSpec) []string {
 	if !git.ValidObjectID(string(wanted.Source.Tree)) || wanted.Source.Tree != old.Source.Tree {
 		reject("source tree differs")
 	}
-	if wanted.Config.Tests == record.TestWorkflow && (wanted.Source.Commit != old.Source.Commit || wanted.Branch != old.Branch) {
+	if wanted.Config.Tests == record.TestWorkflow && (wanted.Source.Commit != old.Source.Commit || wanted.PushBranch() != old.PushBranch()) {
 		reject("workflow commit or branch differs")
 	}
 	if wanted.Target.Name != old.Target.Name || wanted.Target.Portfile != old.Target.Portfile || wanted.Target.Subport != old.Target.Subport {

@@ -229,3 +229,27 @@ func TestCorrectionExplicitTitlePreservesBody(t *testing.T) {
 	_, err = f.engine.BindCorrection(t.Context(), input)
 	require.ErrorContains(t, err, "one nonempty line")
 }
+
+func TestVerificationAfterRenameKeepsThePRHeadAsItsRemoteBranch(t *testing.T) {
+	f, _ := publicationFixture(t)
+	id := submitPublication(t, f, "publish-first")
+	for range 5 {
+		f.run(t, id)
+	}
+	require.Equal(t, record.JobCompleted, f.status(t, id).Jobs[0].Job.State)
+	require.NoError(t, f.repo.UpdateRefs(t.Context(), []git.RefChange{{Name: "refs/heads/renamed", Desired: git.RefValue{Exists: true, Object: string(f.source.Commit)}}, {Name: "refs/heads/candidate", Expected: git.RefValue{Exists: true, Object: string(f.source.Commit)}}}))
+	change, err := f.engine.Reassociate(t.Context(), "change", "renamed", buildPlatform)
+	require.NoError(t, err)
+	require.Equal(t, "renamed", change.Branch)
+	request := f.request("verify-renamed")
+	request.Spec.SourceBranch = "renamed"
+	receipt, err := f.engine.Submit(t.Context(), request)
+	require.NoError(t, err)
+	for range 3 {
+		f.run(t, receipt.JobID)
+	}
+	attempt := f.attempt(t, receipt.JobID)
+	require.Equal(t, "renamed", attempt.Spec.Branch, "the local locator captures the commit")
+	require.Equal(t, "candidate", attempt.Spec.RemoteBranch, "the fork branch stays the PR head")
+	require.Equal(t, "candidate", attempt.Spec.PushBranch())
+}

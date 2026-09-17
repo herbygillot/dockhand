@@ -14,6 +14,7 @@ type buildOptions struct {
 	ReplaceRemoteHead record.ObjectID `json:",omitempty"`
 	Preinstall        []record.Target `json:",omitempty"`
 	Branch            string          `json:",omitempty"`
+	RemoteBranch      string          `json:",omitempty"`
 	Target            record.Target
 	Config            record.BuildConfig
 	Inputs            []record.Artifact
@@ -36,7 +37,7 @@ func (t *transaction) Attempt(ctx context.Context, id record.AttemptID) (record.
 	if err = decode(raw, &build); err != nil {
 		return v, err
 	}
-	v.Spec.Branch = build.Branch
+	v.Spec.Branch, v.Spec.RemoteBranch = build.Branch, build.RemoteBranch
 	v.Spec.Target, v.Spec.Config, v.Spec.Inputs = build.Target, build.Config, build.Inputs
 	v.Spec.Preinstall = build.Preinstall
 	v.Spec.ReplaceRemoteHead = build.ReplaceRemoteHead
@@ -131,7 +132,7 @@ func (t *transaction) PutAttempt(ctx context.Context, v record.Attempt) error {
 		if e != nil {
 			return e
 		}
-		raw, e := encode(buildOptions{ReplaceRemoteHead: v.Spec.ReplaceRemoteHead, Preinstall: v.Spec.Preinstall, Branch: v.Spec.Branch, Target: v.Spec.Target, Config: v.Spec.Config, Inputs: v.Spec.Inputs})
+		raw, e := encode(buildOptions{ReplaceRemoteHead: v.Spec.ReplaceRemoteHead, Preinstall: v.Spec.Preinstall, Branch: v.Spec.Branch, RemoteBranch: v.Spec.RemoteBranch, Target: v.Spec.Target, Config: v.Spec.Config, Inputs: v.Spec.Inputs})
 		if e != nil {
 			return e
 		}
