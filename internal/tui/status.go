@@ -176,8 +176,8 @@ func (m *model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.open("PR", m.selected().PullRequest)
 	case "l":
 		m.open("log", m.selected().Log)
-	case "w", "c", "v", "p", "r", "a":
-		verb := map[string]string{"w": "wait", "c": "cancel", "v": "verify", "p": "publish", "r": "refresh", "a": "abandon"}[key]
+	case "w", "c", "v", "p", "r", "a", "b":
+		verb := map[string]string{"w": "wait", "c": "cancel", "v": "verify", "p": "publish", "r": "refresh", "a": "abandon", "b": "bump"}[key]
 		return m, m.verb(verb)
 	}
 	return m, nil
@@ -225,7 +225,7 @@ func (m *model) verb(verb string) tea.Cmd {
 	}
 	action := pending{verb: verb, args: args, port: row.Port}
 	switch verb {
-	case "verify", "publish", "cancel", "abandon":
+	case "verify", "publish", "cancel", "abandon", "bump":
 		m.confirm = &action
 		return nil
 	}
@@ -236,6 +236,9 @@ func (m *model) verb(verb string) tea.Cmd {
 // when the row is a tracked change, by job for standalone work.
 func verbArgs(verb string, row workflow.Contribution) ([]string, string) {
 	if row.ChangeID != "" {
+		if verb == "bump" {
+			return []string{verb, row.Port, "--change", string(row.ChangeID)}, ""
+		}
 		return []string{verb, "--change", string(row.ChangeID)}, ""
 	}
 	switch verb {
@@ -244,7 +247,7 @@ func verbArgs(verb string, row workflow.Contribution) ([]string, string) {
 			return nil, "nothing is pending"
 		}
 		return []string{verb, "--job", string(row.Active.JobID)}, ""
-	case "verify":
+	case "verify", "bump":
 		return []string{verb, row.Port}, ""
 	}
 	return nil, "not a tracked contribution; " + verb + " needs one"
@@ -338,7 +341,7 @@ func (m *model) View() string {
 	if m.confirm != nil {
 		fmt.Fprintf(&b, "%s", headerStyle.Render(fmt.Sprintf("Run dockhand %s for %s? y/n", m.confirm.verb, m.confirm.port)))
 	} else {
-		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  w wait  v verify  p publish  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
+		b.WriteString(faintStyle.Render("↑/↓ select  enter expand  b bump again  v verify  p publish  w wait  r refresh  c cancel  a abandon  o open PR  l log  q quit"))
 	}
 	return b.String()
 }

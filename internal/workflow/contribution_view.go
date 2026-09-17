@@ -266,8 +266,13 @@ func words(change record.Change, known bool, current *JobStatus, pr *record.Pull
 		return phase, "failed", failedNext(*current)
 	case record.JobNeedsAttention:
 		next = job.Detail
-		if job.Prepared != nil && len(job.Prepared.PatchProblems) > 0 {
+		switch {
+		case job.Prepared != nil && len(job.Prepared.PatchProblems) > 0:
 			next = fmt.Sprintf("patches no longer apply (%d); refresh them and amend", len(job.Prepared.PatchProblems))
+		case job.Phase == record.PhasePreparation && job.Prepared == nil:
+			next = "bump again once fixed, or abandon: " + job.Detail
+		case job.Phase == record.PhaseVerification:
+			next = "verify again once fixed, or abandon: " + job.Detail
 		}
 		return phase, "needs attention", next
 	case record.JobCanceled:

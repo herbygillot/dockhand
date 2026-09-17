@@ -73,7 +73,8 @@ func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
 	attention := JobStatus{Job: record.Job{ID: "job_a", ChangeID: "c3", State: record.JobNeedsAttention, Phase: record.PhasePreparation, Spec: record.JobSpec{Action: record.Bump, Targets: []record.Target{{Name: "c"}}},
 		Prepared: &record.PreparedChange{Branch: "b", PatchProblems: []string{"p1: rejects 4 hunks", "p2: rejects 1 hunk"}}}}
 	ready := JobStatus{Job: record.Job{ID: "job_r", ChangeID: "c4", State: record.JobCompleted, Phase: record.PhasePreparation, ResultRevision: "r", Spec: record.JobSpec{Action: record.Bump, Destination: record.BranchReady, Targets: []record.Target{{Name: "d"}}}}}
-	rows := Project(Status{Jobs: []JobStatus{waiting, failed, attention, ready}})
+	stopped := JobStatus{Job: record.Job{ID: "job_s", ChangeID: "c5", State: record.JobNeedsAttention, Phase: record.PhasePreparation, Detail: "forge: authentication is required", Spec: record.JobSpec{Action: record.Bump, Targets: []record.Target{{Name: "e"}}}}}
+	rows := Project(Status{Jobs: []JobStatus{waiting, failed, attention, ready, stopped}})
 	byPort := map[string]Contribution{}
 	for _, row := range rows {
 		byPort[row.Port] = row
@@ -86,4 +87,5 @@ func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
 	require.Equal(t, "patches no longer apply (2); refresh them and amend", byPort["c"].Next)
 	require.Equal(t, "branch ready", byPort["d"].State)
 	require.Equal(t, "verify when ready: dockhand verify d", byPort["d"].Next)
+	require.Equal(t, "bump again once fixed, or abandon: forge: authentication is required", byPort["e"].Next, "a preparation that stopped before a branch is retried by bumping again")
 }
