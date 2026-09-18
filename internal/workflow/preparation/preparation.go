@@ -98,6 +98,7 @@ func (s *Service) ResolveRelease(ctx context.Context, request Request) (_ record
 	if err != nil {
 		return record.Release{}, err
 	}
+	defer func() { err = errors.Join(err, probe.Close()) }()
 	discovery, err := s.Upstream.Bind(probe)
 	if err != nil {
 		return record.Release{}, err
@@ -131,6 +132,9 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 			return Result{}, err
 		}
 		original = probe.Port()
+		if err := probe.Close(); err != nil {
+			return Result{}, err
+		}
 		if err := s.Upstream.Check(ctx, original, *request.Release); err != nil {
 			return Result{}, err
 		}

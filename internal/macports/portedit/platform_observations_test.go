@@ -6,14 +6,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Two operand forms end to end; the rest are recognized at the scanner's
+// seam in TestScanPlatformNeedsRecognizesOperandForms.
 func TestNativePlatformOperands(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ name, setup, condition string }{
 		{"scalar", "set minimum 17", `${os.major} >= $minimum`},
-		{"inverted", "set minimum 17", `$minimum <= ${os.major}`},
 		{"option", "options fixture.minimum\nfixture.minimum 17", `${os.major} >= [option fixture.minimum]`},
-		{"alias", "set major ${os.major}", `$major >= 17`},
-		{"formatting", `configure.args --triplet=darwin${os.major}`, `${os.major} >= 17`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

@@ -20,9 +20,15 @@ import (
 // the selected and owning targets, and the original Portfile contents. Fields
 // after data are filled in as preparation learns more about the source.
 type sourceInput struct {
-	scope                *record.ReleaseScope
-	versionInput         record.ReleaseInput
-	files                *workspace
+	scope        *record.ReleaseScope
+	versionInput record.ReleaseInput
+	files        *workspace
+	tree         macports.Tree
+	// session is the one native interpreter the input's evaluations share:
+	// the baseline, every candidate, and the final edit. Modeled
+	// observations never use it; each starts its own interpreter, since
+	// observation setup changes the interpreter it runs in.
+	session              macports.Batch
 	before               macports.Snapshot
 	primary, target      record.Target
 	info                 macports.PortInfo
@@ -50,6 +56,12 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if err != nil {
 		return nil, err
 	}
+	input := &sourceInput{files: files, tree: tree}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, input.Close())
+		}
+	}()
 	targets, err := s.Ports.Resolve(ctx, tree, request.Selection)
 	if err != nil {
 		return nil, err
@@ -71,7 +83,7 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if err != nil {
 		return nil, err
 	}
-	before, err := s.Ports.Evaluate(ctx, bound)
+	before, err := input.native(ctx, s.Ports).Evaluate(ctx, bound)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +124,40 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if err != nil {
 		return nil, err
 	}
-	return &sourceInput{files: files, before: before, primary: targets[0], target: selected, info: info, data: data}, nil
+	input.before, input.primary, input.target, input.info, input.data = before, targets[0], selected, info, data
+	return input, nil
+}
+
+// native is the reader for the input's native evaluations: one interpreter
+// session bound to the workspace tree, opened on first use and shared by
+// the baseline, every candidate, and the final edit, so a preparation does
+// not start an interpreter per evaluation. A reader that cannot open
+// sessions is used as it is.
+func (i *sourceInput) native(ctx context.Context, ports macports.Reader) snapshotEvaluator {
+	if i.session != nil {
+		return i.session
+	}
+	batcher, ok := ports.(macports.BatchReader)
+	if !ok {
+		return ports
+	}
+	session, err := batcher.OpenBatch(ctx, i.tree)
+	if err != nil {
+		progress.DebugReport(ctx, "evaluating without a shared session: %v", err)
+		return ports
+	}
+	i.session = session
+	return session
+}
+
+// Close ends the input's shared session, if one was opened.
+func (i *sourceInput) Close() error {
+	if i == nil || i.session == nil {
+		return nil
+	}
+	session := i.session
+	i.session = nil
+	return session.Close()
 }
 
 // workspace is the exclusively owned, disposable source snapshot an editing
@@ -166,13 +211,13 @@ type evaluation struct {
 }
 
 func (s *Service) evaluateEdit(ctx context.Context, input *sourceInput, contents []byte) (evaluation, error) {
-	return s.evaluateContents(ctx, s.Ports, input, contents, false)
+	return s.evaluateContents(ctx, input.native(ctx, s.Ports), input, contents, false)
 }
 
 // evaluateCandidate omits sibling metadata for probes; full edit validation
 // uses evaluateEdit so unrelated subport changes remain visible.
 func (s *Service) evaluateCandidate(ctx context.Context, input *sourceInput, contents []byte) (evaluation, error) {
-	return s.evaluateContents(ctx, s.Ports, input, contents, true)
+	return s.evaluateContents(ctx, input.native(ctx, s.Ports), input, contents, true)
 }
 
 // snapshotEvaluator is the reader used for one evaluation: the service's

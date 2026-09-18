@@ -101,6 +101,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err != nil {
 		return Result{}, err
 	}
+	defer func() { err = errors.Join(err, input.Close()) }()
 	if request.Action == record.Bump {
 		return s.prepareVersion(ctx, request, input)
 	}

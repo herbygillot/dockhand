@@ -88,6 +88,9 @@ func (s *Service) Observe(ctx context.Context, selection Selection) (_ Result, e
 			item.Assessment = upstream.Unknown
 			item.Detail = problem.Error()
 		}
+		if err := probe.Close(); err != nil {
+			return result, err
+		}
 		result.Ports = append(result.Ports, item)
 	}
 	return result, ctx.Err()

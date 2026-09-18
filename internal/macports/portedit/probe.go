@@ -70,33 +70,30 @@ func (p *VersionProbe) EvaluateVersion(ctx context.Context, value string) (strin
 	if err := p.prepare(ctx); err != nil {
 		return "", err
 	}
-	_, snapshot, err := p.editor.evaluateVersion(ctx, p.editor.Ports, p.request, p.input, p.carriers, value, false)
+	_, snapshot, err := p.editor.evaluateVersion(ctx, p.input.native(ctx, p.editor.Ports), p.request, p.input, p.carriers, value, false)
 	if err != nil {
 		return "", err
 	}
 	return snapshot.Ports[p.input.target.Name].Version, nil
 }
 
+// Close ends the probe's interpreter session. Callers close a probe when
+// they are done with it, as they close the workspace it was bound to.
+func (p *VersionProbe) Close() error {
+	if p == nil {
+		return nil
+	}
+	return p.input.Close()
+}
+
 // EvaluateVersions reports the calculated port version for each source version
-// in order. When the reader can batch, one interpreter serves every candidate;
-// the evaluation itself is unchanged. An error names the value that failed.
+// in order, through the probe's shared interpreter session; the evaluation
+// itself is unchanged. An error names the value that failed.
 func (p *VersionProbe) EvaluateVersions(ctx context.Context, values []string) ([]string, error) {
 	if err := p.prepare(ctx); err != nil {
 		return nil, err
 	}
-	var reader snapshotEvaluator = p.editor.Ports
-	if batcher, ok := p.editor.Ports.(macports.BatchReader); ok && len(values) > 1 {
-		tree, err := macports.NewTree(p.request.Source, p.input.files.root, p.input.before.Platform)
-		if err != nil {
-			return nil, err
-		}
-		batch, err := batcher.OpenBatch(ctx, tree)
-		if err != nil {
-			return nil, err
-		}
-		defer batch.Close()
-		reader = batch
-	}
+	reader := p.input.native(ctx, p.editor.Ports)
 	results := make([]string, len(values))
 	for i, value := range values {
 		_, snapshot, err := p.editor.evaluateVersion(ctx, reader, p.request, p.input, p.carriers, value, false)

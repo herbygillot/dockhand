@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/stretchr/testify/require"
+	"slices"
 	"testing"
 )
 
@@ -133,5 +134,53 @@ if {[string match macports-clang-* ${configure.compiler}]} { post-patch { reinpl
 		`if {${configure.compiler} eq "clang"} { distfiles other.tar.gz }`,
 	} {
 		require.False(t, toolchainReadsBenign([]byte(source)), source)
+	}
+}
+
+// The forms a Darwin comparison takes are recognized by the scanner, which
+// is where each form is tested; the preparation tests keep one scalar and
+// one option case end to end.
+func TestScanPlatformNeedsRecognizesOperandForms(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		source     string
+		operands   []string
+		majors     []int
+		exhaustive bool
+		arch       bool
+	}{
+		"scalar":      {source: "set minimum 17\nif {${os.major} >= $minimum} {version 1}", operands: []string{"minimum"}},
+		"inverted":    {source: "set minimum 17\nif {$minimum <= ${os.major}} {version 1}", operands: []string{"minimum"}},
+		"option":      {source: "options fixture.minimum\nfixture.minimum 17\nif {${os.major} >= [option fixture.minimum]} {version 1}", operands: []string{"option:fixture.minimum"}},
+		"alias":       {source: "set major ${os.major}\nif {$major >= 17} {version 1}", exhaustive: true},
+		"formatting":  {source: "configure.args --triplet=darwin${os.major}\nif {${os.major} >= 17} {version 1}", majors: []int{16, 17, 18}, exhaustive: true},
+		"derived":     {source: "set modern [expr {${os.major} >= 17}]\nif {$modern} {distfiles a} else {distfiles b}", majors: []int{16, 17, 18}},
+		"multiline":   {source: "if {\n ${os.major} >= 17\n} {distfiles a} else {distfiles b}", majors: []int{16, 17, 18}},
+		"literal":     {source: "if {${os.major} < 20} {version 1}", majors: []int{19, 20, 21}},
+		"arch":        {source: "if {${configure.build_arch} eq \"arm64\"} {distfiles a} else {distfiles b}", arch: true},
+		"conjunction": {source: "if {${os.major} >= 17 && ${os.major} < 20} {version 1}", majors: []int{16, 17, 18, 19, 20, 21}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			needs, err := scanPlatformNeeds([]byte(tc.source))
+			require.NoError(t, err)
+			require.Equal(t, tc.operands, needs.operands)
+			var majors []int
+			for major := range needs.majors {
+				majors = append(majors, major)
+			}
+			slices.Sort(majors)
+			require.Equal(t, tc.majors, majors)
+			require.Equal(t, tc.exhaustive, needs.exhaustive)
+			require.Equal(t, tc.arch, needs.arch)
+		})
+	}
+	for _, source := range []string{
+		"if {${os.major} >= 17 + 5} {version 1}",
+		"if {${os.major} >= 7} {version 1}",
+		"if {[vercmp $macosx_deployment_target 10.12] < 0} {distfiles legacy.tar.gz} else {distfiles source.tar.gz}",
+	} {
+		_, err := scanPlatformNeeds([]byte(source))
+		require.ErrorIs(t, err, errProbeInconclusive, source)
 	}
 }

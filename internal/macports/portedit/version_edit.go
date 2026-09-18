@@ -98,7 +98,7 @@ func sameRepository(a, b portsource.Spec) bool {
 }
 
 func (s *Service) probeVersion(ctx context.Context, request Request, input *sourceInput, carriers versionInputs, sourceVersion string) ([]byte, macports.Snapshot, error) {
-	return s.evaluateVersion(ctx, s.Ports, request, input, carriers, sourceVersion, true)
+	return s.evaluateVersion(ctx, input.native(ctx, s.Ports), request, input, carriers, sourceVersion, true)
 }
 
 // versionInputs is the set of proven relations between Portfile literals and

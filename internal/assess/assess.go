@@ -159,6 +159,7 @@ func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files
 			selected.Selection.Subport = selected.Name
 		}
 		probe, problem := editor.Probe(ctx, portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: files.Source, Root: files.Root, Selection: selected.Selection, Platform: platform})
+		defer probe.Close()
 		if problem == nil && selected.Name != "" && selected.Name != probe.Port().Name {
 			problem = fmt.Errorf("%w: indexed subport %s; evaluation selected a different port %s", portedit.ErrUnsupported, selected.Name, probe.Port().Name)
 		}
