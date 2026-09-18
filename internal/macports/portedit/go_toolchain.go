@@ -27,12 +27,13 @@ func moduleModeGo(info macports.PortInfo) bool {
 	return info.Options["go.package"] != "" && info.Options["go.offline_build"] == "no"
 }
 
-// raiseGoToolchain reads the new release's go.mod from the kept archive and
+// raiseGoToolchain reads the new release's go.mod, from the kept archive or,
+// for a git-fetched port, from the repository at the resolved commit, and
 // raises a literal go.toolchain_min to the series it requires. It never
 // lowers one, never adds one, and never refuses the bump: a port that
 // declares no minimum, or carries it in a way that cannot be edited, is
 // told about the requirement and left as it is.
-func (s *Service) raiseGoToolchain(ctx context.Context, input *sourceInput, result *Result) error {
+func (s *Service) raiseGoToolchain(ctx context.Context, request Request, input *sourceInput, result *Result) error {
 	if len(result.Files) == 0 || result.Prepared.Ports == nil {
 		return nil
 	}
@@ -45,7 +46,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, input *sourceInput, resu
 		progress.VerboseReport(ctx, "%s builds in GOPATH mode, where go.mod's go directive is only an upper bound; go.toolchain_min is left as declared", input.target.Name)
 		return nil
 	}
-	required, found, err := s.goRequirement(ctx, selected, result.Downloads)
+	required, found, err := s.goRequirement(ctx, request, selected, result.Downloads)
 	if err != nil {
 		return err
 	}
@@ -100,8 +101,27 @@ func (s *Service) raiseGoToolchain(ctx context.Context, input *sourceInput, resu
 }
 
 // goRequirement finds go.mod in the first kept archive that holds one at
-// the port's worksrcdir and reports the Go series it requires.
-func (s *Service) goRequirement(ctx context.Context, info macports.PortInfo, downloads []Download) (required string, found bool, err error) {
+// the port's worksrcdir, or in the repository at the resolved commit when
+// the port is fetched with git, and reports the Go series it requires.
+func (s *Service) goRequirement(ctx context.Context, request Request, info macports.PortInfo, downloads []Download) (required string, found bool, err error) {
+	if gitFetched(info) {
+		if s.Manifests == nil || request.Release == nil {
+			progress.VerboseReport(ctx, "%s is fetched with git and no manifest source is configured; go.toolchain_min is left as declared", info.Name)
+			return "", false, nil
+		}
+		data, err := s.Manifests.Manifest(ctx, info, *request.Release, "go.mod")
+		if errors.Is(err, dependency.ErrManifestMissing) {
+			return "", false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		required, err := dependency.GoRequirement(data)
+		if err != nil {
+			return "", false, fmt.Errorf("%w: reading go.mod: %v", ErrUnsupported, err)
+		}
+		return required, true, nil
+	}
 	for _, download := range downloads {
 		if download.path == "" {
 			continue

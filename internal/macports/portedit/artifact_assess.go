@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/distfiles"
+	"maps"
 )
 
 func (s *Service) assessArchives(ctx context.Context, request Request, input *sourceInput) (coverage []ContextCoverage, fetchErr, checksumErr error) {
@@ -14,7 +15,7 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 	if err != nil {
 		return coverage, err, nil
 	}
-	declared, covered := map[string]bool{}, map[string]bool{}
+	declared, covered, inert := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	observations, err := s.observeProfiles(ctx, input, input.data, profiles, true, false)
 	if err != nil {
 		return coverage, err, nil
@@ -47,12 +48,13 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		for _, group := range binding.Groups {
 			declared[group.ID()] = true
 		}
+		maps.Copy(inert, inertChecksumGroups(info, binding.Groups))
 		for _, artifact := range binding.Artifacts {
 			covered[artifact.Group.ID()] = true
 		}
 	}
 	for id := range declared {
-		if !covered[id] {
+		if !covered[id] && !inert[id] {
 			return coverage, nil, fmt.Errorf("%w: checksum declaration %s is not covered by the observed contexts", errProbeInconclusive, id)
 		}
 	}

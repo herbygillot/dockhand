@@ -62,7 +62,11 @@ type Service struct {
 }
 
 func (s *Service) editor() *portedit.Service {
-	return &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, HTTP: s.HTTP, MaxDownloadBytes: s.MaxDownloadBytes}
+	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools, HTTP: s.HTTP, MaxDownloadBytes: s.MaxDownloadBytes}
+	if s.Upstream != nil {
+		editor.Manifests = s.Upstream
+	}
+	return editor
 }
 func (s *Service) open(ctx context.Context, request Request) (*git.Snapshot, error) {
 	if s == nil || s.Repo == nil {

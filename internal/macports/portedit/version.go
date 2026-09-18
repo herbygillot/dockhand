@@ -103,7 +103,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	if err != nil {
 		return result, err
 	}
-	if err := s.raiseGoToolchain(ctx, input, &result); err != nil {
+	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return result, err
 	}
 	return result, s.checkPatches(ctx, input, &result)

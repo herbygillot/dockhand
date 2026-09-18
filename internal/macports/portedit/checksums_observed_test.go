@@ -151,3 +151,41 @@ checksums           rmd160  [lindex [lindex ${info} 0] 0] \
 	download := result.Downloads[0]
 	require.Contains(t, after, "            "+download.RMD160+" \\\n            "+download.SHA256+" \\\n            "+strconv.FormatInt(download.Size, 10)+"\n")
 }
+
+// An old convention declared checksums for patch files beside the archive's;
+// with the patches present in files, MacPorts fetches and checks nothing
+// for them, so the entries are left as written rather than refused as
+// declarations no archive covers.
+func TestChecksumEntriesForLocalPatchesAreLeftAsWritten(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+distfiles fixture.tar.gz
+patchfiles patch-x.diff
+checksums fixture.tar.gz md5 00000000000000000000000000000000 \
+          patch-x.diff md5 11111111111111111111111111111111
+`)
+	require.NoError(t, os.MkdirAll(filepath.Join(r.Root, "devel/fixture/files"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(r.Root, "devel/fixture/files/patch-x.diff"), []byte("--- a\n+++ b\n"), 0o644))
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/1.2.4/fixture.tar.gz"}, *requests, "only the archive is fetched")
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "patch-x.diff md5 11111111111111111111111111111111", "the patch entry is untouched")
+	require.NotContains(t, after, "00000000000000000000000000000000", "the archive's entry is refreshed")
+	require.Contains(t, after, "fixture.tar.gz rmd160")
+
+	// Absent from files, the patch would be fetched and checked, so its
+	// entry is a declaration no observed archive covers.
+	s, r, _ = archiveFixture(t, `version 1.2.3
+revision 0
+master_sites @SITE@/${version}
+distfiles fixture.tar.gz
+patchfiles patch-x.diff
+checksums fixture.tar.gz md5 00000000000000000000000000000000 \
+          patch-x.diff md5 11111111111111111111111111111111
+`)
+	_, err = s.Prepare(t.Context(), r)
+	require.Error(t, err)
+}

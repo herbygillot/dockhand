@@ -254,7 +254,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	result.Files = []portfile.Edit{evaluated.edit}
 	result.report(final)
 	result.Downloads = append(result.Downloads, gitDownloads...)
-	if err := s.raiseGoToolchain(ctx, input, &result); err != nil {
+	if err := s.raiseGoToolchain(ctx, request, input, &result); err != nil {
 		return Result{}, err
 	}
 	if err := s.checkPatches(ctx, input, &result); err != nil {

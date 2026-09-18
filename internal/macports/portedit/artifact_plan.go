@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
+	"maps"
 	"slices"
 	"strings"
 
@@ -50,7 +51,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		return nil, err
 	}
 	plan := &observedArchivePlan{}
-	covered := map[string]bool{}
+	covered, inert := map[string]bool{}, map[string]bool{}
 	declared := map[string]bool{}
 	protected := map[string]bool{}
 	changed := map[string]bool{}
@@ -127,6 +128,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 				protected[group.ID()] = true
 			}
 		}
+		maps.Copy(inert, inertChecksumGroups(after.Snapshot.Ports[input.target.Name], binding.Groups))
 		oldFiles := map[string]distfiles.Artifact{}
 		for _, artifact := range oldBinding.Artifacts {
 			oldFiles[artifact.Group.ID()] = artifact
@@ -158,7 +160,7 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		plan.contexts = append(plan.contexts, archiveContext{profile: profile, before: before.Snapshot, after: after.Snapshot, binding: binding, affected: affected})
 	}
 	for id := range declared {
-		if !covered[id] {
+		if !covered[id] && !inert[id] {
 			return nil, fmt.Errorf("%w: checksum declaration %s has no archive in the observed contexts", errProbeInconclusive, id)
 		}
 	}

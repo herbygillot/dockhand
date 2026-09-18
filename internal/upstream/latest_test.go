@@ -3,6 +3,9 @@ package upstream_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
+	"github.com/herbygillot/dockhand/internal/record"
 	"os/exec"
 	"strings"
 	"testing"
@@ -25,6 +28,7 @@ type catalog struct {
 	tag          tagFunc
 	name         string
 	instance     string
+	file         func(commit, path string) ([]byte, error)
 }
 
 func (c *catalog) Releases(context.Context) ([]forge.Release, error) {
@@ -307,4 +311,39 @@ func TestAutomaticSelectionFollowsPrereleasesForPrereleasePorts(t *testing.T) {
 	patch.Version = "1.0.2u"
 	_, err = service.DiscoverPort(t.Context(), patch)
 	require.ErrorContains(t, err, "stable or prerelease numeric version")
+}
+
+func (c *catalog) File(_ context.Context, commit, path string, _ int64) ([]byte, error) {
+	if c.file == nil {
+		return nil, fmt.Errorf("%w: %s", forge.ErrNotFound, path)
+	}
+	return c.file(commit, path)
+}
+
+// A manifest is read from the resolved release's repository at its commit,
+// only when the release names this port's repository; an absent file is a
+// missing manifest, as the archive read reports it.
+func TestManifestReadsTheReleaseCommit(t *testing.T) {
+	t.Parallel()
+	commit := strings.Repeat("a", 40)
+	c := &catalog{file: func(at, path string) ([]byte, error) {
+		if at == commit && path == "go.mod" {
+			return []byte("go 1.25\n"), nil
+		}
+		return nil, forge.ErrNotFound
+	}}
+	service := automaticService(t, c)
+	port := automaticPort()
+	release := record.Release{Version: "2.0", Forge: "github", Instance: "https://github.com", Repository: "owner/project", Tag: "v2.0", Commit: commit}
+	data, err := service.Manifest(t.Context(), port, release, "go.mod")
+	require.NoError(t, err)
+	require.Equal(t, "go 1.25\n", string(data))
+	_, err = service.Manifest(t.Context(), port, release, "Cargo.toml")
+	require.ErrorIs(t, err, dependency.ErrManifestMissing)
+	other := release
+	other.Repository = "owner/other"
+	_, err = service.Manifest(t.Context(), port, other, "go.mod")
+	require.Error(t, err, "the release must name this port's repository")
+	_, err = service.Manifest(t.Context(), port, record.Release{Archive: true, Version: "2.0"}, "go.mod")
+	require.Error(t, err, "an archive release has no commit to read at")
 }

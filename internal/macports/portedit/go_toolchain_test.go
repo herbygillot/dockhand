@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
+	"github.com/herbygillot/dockhand/internal/macports/dependency"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -105,4 +107,60 @@ func TestToolchainMinIsLeftAloneWhenNotRaisable(t *testing.T) {
 			}
 		})
 	}
+}
+
+type fakeManifests struct {
+	manifest string
+	missing  bool
+	calls    []string
+}
+
+func (f *fakeManifests) Manifest(_ context.Context, _ macports.PortInfo, release record.Release, path string) ([]byte, error) {
+	f.calls = append(f.calls, release.Commit+":"+path)
+	if f.missing {
+		return nil, dependency.ErrManifestMissing
+	}
+	return []byte(f.manifest), nil
+}
+
+// A git-fetched module-mode port downloads no archive, so its go.mod is read
+// from the repository at the resolved commit; without a manifest source, or
+// with no go.mod there, the declared minimum stands.
+func TestGitFetchedModuleModePortRaisesToolchainMinFromTheRepository(t *testing.T) {
+	t.Parallel()
+	port := `version 1.2.3
+revision 1
+options go.package go.offline_build go.toolchain_min
+go.package example.com/fixture
+go.offline_build no
+go.toolchain_min 1.22
+fetch.type git
+git.url https://example.invalid/fixture.git
+git.branch v${version}
+`
+	commit := strings.Repeat("c", 40)
+	s, r, _ := archiveFixture(t, port)
+	r.Release = gitRelease(commit)
+	manifests := &fakeManifests{manifest: "module example.com/fixture\ngo 1.25\n"}
+	s.Manifests = manifests
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, []string{commit + ":go.mod"}, manifests.calls, "the manifest is read at the resolved commit")
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "go.toolchain_min 1.25")
+	require.Contains(t, after, "version 1.2.4")
+	require.Equal(t, "1.25", result.Prepared.Ports["fixture"].Options["go.toolchain_min"])
+
+	s, r, _ = archiveFixture(t, port)
+	r.Release = gitRelease(commit)
+	s.Manifests = &fakeManifests{missing: true}
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "go.toolchain_min 1.22", "no go.mod at the commit leaves the minimum")
+
+	s, r, _ = archiveFixture(t, port)
+	r.Release = gitRelease(commit)
+	result, err = s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Contains(t, string(result.Files[0].After), "go.toolchain_min 1.22", "no manifest source leaves the minimum")
 }

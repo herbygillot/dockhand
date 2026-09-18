@@ -88,6 +88,16 @@ type Service struct {
 	Ports            macports.Evaluator
 	HTTP             *http.Client
 	MaxDownloadBytes int64
+	// Manifests reads a manifest from the resolved release's repository, for
+	// a git-fetched port that downloads no archive to read it from; nil
+	// leaves such a port's toolchain minimum as declared.
+	Manifests ManifestSource
+}
+
+// ManifestSource reads one file of a port's source repository at the
+// resolved release. An absent file reports dependency.ErrManifestMissing.
+type ManifestSource interface {
+	Manifest(ctx context.Context, port macports.PortInfo, release record.Release, path string) ([]byte, error)
 }
 
 func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err error) {

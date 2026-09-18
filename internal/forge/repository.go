@@ -40,3 +40,10 @@ type Repository interface {
 type ReleaseRepository interface {
 	Releases(context.Context) ([]Release, error)
 }
+
+// FileRepository reads one file of the repository at a commit, for
+// manifests such as go.mod that a git-fetched port never downloads. An
+// absent file reports ErrNotFound; the read is bounded by limit bytes.
+type FileRepository interface {
+	File(ctx context.Context, commit, path string, limit int64) ([]byte, error)
+}
