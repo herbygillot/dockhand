@@ -6,7 +6,7 @@ This document collects build, testing, and implementation details previously kep
 
 Run `make` (or `make build`) to build `./dockhand`. Use `make test`, `make test-race`, and `make vet` for checks, and `make clean` to remove the binary. Override the output with `make BINARY=/path/to/dockhand` or the Go executable with `make GO=/path/to/go`. Tests cover workflow recovery, SQLite transactions, separate driver processes, repository isolation, CLI configuration, and Tcl syntax. Git is required by repository fixtures. MacPorts integration tests run when `port-tclsh` is available and otherwise skip; VM providers, credentials, and network access are not required. SQLite uses the pure-Go `modernc.org/sqlite` driver.
 
-The module requires Go 1.27.1 or newer. A first build downloads Go module dependencies as needed.
+The module requires Go 1.27.1 or newer. Dependencies are vendored: the `vendor` directory holds every module the build uses, so a build needs no module download and no network, and `go build`, `go test`, and `go vet` use it automatically. After changing a dependency in `go.mod`, run `go mod tidy && go mod vendor` and commit the result; a `vendor/modules.txt` that disagrees with `go.mod` fails the build. The `deadcode` target runs a tool by version through `go run`, which is unaffected by vendoring.
 
 The syntax package has `FuzzParse` and `FuzzSplitList` targets; their seed cases run in ordinary tests.
 
