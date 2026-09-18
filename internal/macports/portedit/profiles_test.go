@@ -48,6 +48,10 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
     macosx_deployment_target 14.0
 }`,
 		`platform darwin { if { [vercmp ${macosx_deployment_target} >= 15.0]} { macosx_deployment_target 14.0 } }`,
+		`if {[vercmp $macosx_deployment_target 10.12] < 0} { patchfiles-append patch-old.diff }`,
+		// Patch selection never reaches the archive plan; the patch check reads the native selection.
+		`variant legacy { patchfiles-append legacy-${macosx_deployment_target}.diff }`,
+		`if {[vercmp $macosx_deployment_target 10.12] < 0} { legacysupport.use_mp_libcxx yes }`,
 		`build.env-append MACOSX_DEPLOYMENT_TARGET=[shellescape ${macosx_deployment_target}]`,
 		`post-patch { reinplace "s/X/${macosx_deployment_target}/" ${worksrcpath}/Info.plist }`,
 		`build { system -W ${worksrcpath} "env MACOSX_DEPLOYMENT_TARGET=${macosx_deployment_target} swift build" }`,
@@ -84,7 +88,7 @@ func TestUnmodeledReadsAreGapsOnlyWhereTheyCanSelectSources(t *testing.T) {
 		`if {[vercmp $macosx_deployment_target 10.12] < 0} "version 1"`,
 		`switch -- ${macosx_deployment_target} { 10.12 { version 1 } }`,
 		`platform darwin { configure.args-append ${macosx_deployment_target}; version ${macosx_deployment_target} }`,
-		`variant legacy { patchfiles-append legacy-${macosx_deployment_target}.diff }`,
+
 		`foreach target [list ${macosx_deployment_target}] { set deployment $target }; distname fixture-${deployment}`,
 		`for {set i ${macosx_deployment_target}} {$i < 3} {incr i} { version $i }`,
 	} {

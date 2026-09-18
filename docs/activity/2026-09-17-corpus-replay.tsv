@@ -1,0 +1,148 @@
+Portfile	Stratum	Before	After	Reason
+sysutils/smartmontools/Portfile	forge-complex	input-found	input-found	
+devel/libimobiledevice/Portfile	forge-complex	input-found	input-found	
+graphics/Aseprite/Portfile	forge-complex	unsupported	unsupported	fetch: portfile: unsupported source edit: MacPorts Base 2.12.6: post-fetch hooks can modify archive preparation; prepare this port manually
+devel/libimobiledevice-glue/Portfile	forge-complex	input-found	input-found	
+multimedia/mythtv.27/Portfile	forge-complex	unsupported	unknown	fetch: portedit: version probe is inconclusive: modeled context depends on host state: filesystem state outside the captured ports tree (Portfile:5)
+aqua/squirrel-ime/Portfile	forge-complex	unsupported	input-found	
+python/py-memprof/Portfile	forge-complex	unsupported	input-found	
+lisp/cl-drakma/Portfile	forge-complex	input-found	input-found	
+devel/poco/Portfile	forge-complex	input-found	input-found	
+sysutils/gfxutil/Portfile	forge-complex	input-found	input-found	
+science/demeter/Portfile	forge-complex	input-found	input-found	
+devel/ziggity/Portfile	forge-complex	input-found	input-found	
+audio/portaudio/Portfile	forge-complex	input-found	input-found	
+devel/aqbanking6/Portfile	forge-complex	input-found	unknown	fetch: portedit: version probe is inconclusive: modeled context depends on host state: filesystem state outside the captured ports tree (Portfile:53)
+devel/love-0.7/Portfile	forge-complex	input-found	input-found	
+devel/usbmuxd/Portfile	forge-complex	input-found	input-found	
+games/widelands/Portfile	forge-complex	input-found	input-found	
+java/java_memcached/Portfile	forge-complex	unsupported	input-found	
+aqua/iTerm2/Portfile	forge-complex	input-found	input-found	
+lang/mrustc/Portfile	forge-complex	unknown	input-found	
+science/liquid-dsp/Portfile	forge-complex	input-found	input-found	
+science/gr-baz/Portfile	forge-complex	input-found	input-found	
+editors/mindforger/Portfile	forge-complex	unsupported	input-found	
+science/libfec/Portfile	forge-complex	input-found	input-found	
+devel/mpir/Portfile	forge-complex	input-found	input-found	
+python/py-triangle/Portfile	forge-complex	unsupported	input-found	
+llm/codex/Portfile	forge-complex	unsupported	input-found	
+gnome/keybinder/Portfile	forge-complex	input-found	input-found	
+mail/trojita/Portfile	forge-complex	unknown	unknown	fetch: portedit: version probe is inconclusive: modeled context depends on host state: filesystem state outside the captured ports tree (Portfile:17); filesystem state outside the captured ports tree
+sysutils/fontmatrix/Portfile	forge-complex	unknown	unknown	fetch: portedit: version probe is inconclusive: modeled context depends on host state: filesystem state outside the captured ports tree (Portfile:8); filesystem state outside the captured ports tree
+java/openjdk11/Portfile	forge-complex	unknown	unknown	version-input: portfile: unsupported source edit: portedit: version probe is inconclusive: no editable version input established (1 candidate evaluations were inconclusive)
+devel/qjson/Portfile	forge-complex	input-found	unknown	fetch: portedit: version probe is inconclusive: modeled context depends on host state: filesystem state outside the captured ports tree (Portfile:7)
+lisp/cl-named-readtables/Portfile	forge-complex	input-found	input-found	
+devel/libusb/Portfile	forge-complex	input-found	input-found	
+lua/lua-luahpdf/Portfile	forge-complex	unsupported	unsupported	fetch: portfile: unsupported source edit: no source archives; select a release subport if this is a metaport
+science/gr-ieee802-15-4/Portfile	forge-complex	unknown	unknown	source: macports source: tag convention is unknown
+devel/tinyobjloader/Portfile	forge-complex	input-found	input-found	
+lisp/cl-webengine/Portfile	forge-complex	input-found	input-found	
+devel/sourcekittendaemon/Portfile	forge-complex	unsupported	input-found	
+devel/zmq/Portfile	forge-complex	input-found	input-found	
+aqua/abendrot/Portfile	forge-complex	input-found	input-found	
+multimedia/mpv-legacy/Portfile	forge-complex	input-found	input-found	
+devel/notcurses/Portfile	forge-complex	input-found	input-found	
+graphics/MoltenVK/Portfile	forge-complex	unsupported	input-found	
+sysutils/extfstools/Portfile	forge-complex	input-found	input-found	
+www/edbrowse/Portfile	forge-complex	input-found	input-found	
+devel/bun/Portfile	forge-complex	input-found	input-found	
+shells/tcsh/Portfile	forge-complex	input-found	input-found	
+www/yuicompressor/Portfile	forge-complex	unsupported	unsupported	fetch: portfile: unsupported source edit: MacPorts Base 2.12.6: pre-fetch hook 1 has unrecognized behavior; prepare this port manually
+sysutils/pwait/Portfile	forge-complex	input-found	input-found	
+graphics/shaderc/Portfile	forge-complex	input-found	input-found	
+editors/poedit/Portfile	forge-complex	unsupported	input-found	
+devel/tldr-pages/Portfile	forge-complex	input-found	input-found	
+science/uhd/Portfile	forge-complex	input-found	input-found	
+games/warzone2100/Portfile	forge-complex	input-found	input-found	
+science/limesuite/Portfile	forge-complex	input-found	input-found	
+net/tcpflow/Portfile	forge-complex	unsupported	input-found	
+python/py-openssl/Portfile	forge-complex	unsupported	input-found	
+lang/libomp/Portfile	forge-complex	unknown	input-found	
+audio/beets/Portfile	forge-complex	unknown	input-found	
+science/fcl/Portfile	forge-simple	input-found	input-found	
+science/gmtsar/Portfile	forge-simple	input-found	input-found	
+science/yorick-imutil/Portfile	forge-simple	input-found	input-found	
+games/fheroes2/Portfile	forge-simple	input-found	input-found	
+www/mod_wsgi/Portfile	forge-simple	input-found	input-found	
+lang/luajit-openresty/Portfile	forge-simple	input-found	input-found	
+python/py-astroquery/Portfile	forge-simple	unsupported	input-found	
+databases/usql/Portfile	forge-simple	input-found	input-found	
+devel/git-extras/Portfile	forge-simple	input-found	input-found	
+net/httpie-go/Portfile	forge-simple	input-found	input-found	
+audio/codec2/Portfile	forge-simple	input-found	input-found	
+security/libewf/Portfile	forge-simple	unknown	input-found	
+devel/rye/Portfile	forge-simple	input-found	input-found	
+devel/efm-langserver/Portfile	forge-simple	input-found	input-found	
+devel/protobuf-cpp/Portfile	forge-simple	unsupported	input-found	
+python/py-ipdb/Portfile	forge-simple	unsupported	input-found	
+www/welly-clyang/Portfile	forge-simple	input-found	input-found	
+shells/brush/Portfile	forge-simple	input-found	input-found	
+sysutils/ratty/Portfile	forge-simple	input-found	input-found	
+security/aws-vault/Portfile	forge-simple	input-found	input-found	
+kde/rocs/Portfile	other	input-found	unknown	fetch: portedit: version probe is inconclusive: modeled context depends on host state: filesystem state outside the captured ports tree (Portfile:4); filesystem state outside the captured ports tree (Portfile:5); filesystem state outside the captured ports tree (Portfile:38)
+R/R-Rchoice/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+R/R-ipc/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+perl/p5-libapreq2/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+python/py-plotly/Portfile	other	unsupported	input-found	
+R/R-pbdMPI/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+ruby/rb-rubyinline/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+python/py-sdnotify/Portfile	other	unsupported	input-found	
+python/py-libnamebench/Portfile	other	unsupported	input-found	
+R/R-sm/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+python/py-fiona/Portfile	other	unsupported	input-found	
+ruby/rb-gdk3/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+perl/p5-file-sync/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+perl/p5-plack-middleware-reverseproxy/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+perl/p5-astro-coord-eci-vsop87d/Portfile	other	unsupported	unsupported	version-input: portfile: unsupported source edit: no editable version input established (0 candidate evaluations were inconclusive)
+devel/elftoolchain/Portfile	other-direct-simple	input-found	input-found	
+net/socket/Portfile	other-direct-simple	unsupported	input-found	
+devel/judy/Portfile	other-direct-simple	input-found	input-found	
+gnome/hicolor-icon-theme/Portfile	other-direct-simple	input-found	input-found	
+devel/cvsgraph/Portfile	other-direct-simple	unsupported	input-found	
+net/unbound/Portfile	other-direct-simple	input-found	input-found	
+net/apan/Portfile	other-direct-simple	input-found	input-found	
+gnome/goocanvasmm2/Portfile	other-direct-simple	input-found	input-found	
+www/http-fetcher/Portfile	other-direct-simple	unsupported	input-found	
+audio/sratom/Portfile	other-direct-simple	input-found	input-found	
+emulators/vmips/Portfile	other-direct-simple	input-found	input-found	
+textproc/stardict-xmlittre/Portfile	other-direct-simple	unsupported	input-found	
+devel/log4c/Portfile	other-direct-simple	input-found	input-found	
+lang/mozart/Portfile	other-direct-simple	unsupported	input-found	
+science/fldigi/Portfile	other-direct-simple	input-found	input-found	
+devel/fuzz/Portfile	other-direct-simple	input-found	input-found	
+devel/activewire/Portfile	other-direct-simple	input-found	input-found	
+devel/libconfig-hr/Portfile	other-direct-simple	input-found	input-found	
+editors/bvi/Portfile	other-direct-simple	input-found	input-found	
+emulators/lisaem/Portfile	other-direct-simple	unsupported	input-found	
+x11/xfd/Portfile	other-direct-simple	input-found	input-found	
+x11/rep-gtk/Portfile	other-direct-simple	unsupported	unknown	checksums: portedit: version probe is inconclusive: checksum declaration 11/10 is not covered by the observed contexts
+lang/gwydion-dylan/Portfile	other-direct-simple	unsupported	unsupported	fetch: portfile: unsupported source edit: remote or ambiguous patchfile d2c/compiler/main/patch-main.dylan.diff
+textproc/xmlpatch/Portfile	other-direct-simple	input-found	input-found	
+science/qfsm/Portfile	other-direct-simple	unsupported	unknown	fetch: portedit: version probe is inconclusive: modeled context depends on host state: filesystem state outside the captured ports tree (Portfile:5)
+gnome/gfbgraph/Portfile	other-direct-simple	input-found	input-found	
+graphics/Renaissance-Framework/Portfile	other-direct-simple	unsupported	input-found	
+net/gupnp/Portfile	other-direct-simple	input-found	input-found	
+math/feast/Portfile	other-direct-simple	unsupported	unsupported	fetch: portfile: unsupported source edit: MacPorts Base 2.12.6: pre-fetch hook 1 has unrecognized behavior; prepare this port manually
+textproc/less/Portfile	other-direct-simple	input-found	input-found	
+net/traceroute/Portfile	other-direct-simple	unsupported	unsupported	checksums: portfile: unsupported source edit: no HTTP(S) fetch location for traceroute-1.4a12.tar.gz
+devel/geany/Portfile	other-direct-simple	input-found	input-found	
+gnome/gstreamer010-gst-plugins-ugly/Portfile	other-direct-simple	input-found	input-found	
+aqua/AppHack/Portfile	other-direct-simple	unsupported	input-found	
+devel/boost169/Portfile	other-direct-simple	unsupported	unsupported	fetch: portfile: unsupported source edit: MacPorts Base 2.12.6: pre-fetch hook 1 has unrecognized behavior; prepare this port manually
+net/icpld/Portfile	other-direct-simple	unsupported	input-found	
+net/fprobe/Portfile	other-direct-simple	unsupported	input-found	
+textproc/mime/Portfile	other-direct-simple	unsupported	input-found	
+audio/libdca/Portfile	other-direct-simple	input-found	input-found	
+textproc/ekhtml/Portfile	other-direct-simple	input-found	input-found	
+print/a2ps/Portfile	other-direct-simple	input-found	input-found	
+gnome/gstreamer1-gst-libav/Portfile	other-direct-simple	input-found	input-found	
+print/ttf2pt1/Portfile	other-direct-simple	unsupported	input-found	
+games/gtypist/Portfile	other-direct-simple	input-found	input-found	
+archivers/deb2targz/Portfile	other-direct-simple	unsupported	input-found	
+devel/deno/Portfile	forge-complex	input-found	input-found	
+devel/gh/Portfile	forge-complex	input-found	input-found	
+devel/rust-analyzer/Portfile	forge-complex	input-found	input-found	
+lang/rust/Portfile	other	unsupported	unsupported	dependency-source: portfile: unsupported source edit: only direct HTTP(S) master sites are supported
+sysutils/helm/Portfile	forge-complex	unsupported	input-found	
+sysutils/jq/Portfile	forge-simple	input-found	input-found	
+sysutils/terraform/Portfile	other	unsupported	input-found	

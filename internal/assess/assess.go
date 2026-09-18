@@ -1,6 +1,9 @@
 package assess
 
 import (
+	"runtime"
+	"sync"
+
 	"context"
 	"errors"
 	"fmt"
@@ -87,12 +90,48 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		result.Ports = append(result.Ports, Port{Selector: problem.Port, Assessment: portedit.Assessment{Outcome: portedit.Unknown, Findings: []portedit.Finding{{Check: "selection", Status: portedit.Unknown, Code: "index-coverage", Detail: problem.Detail}}}})
 	}
 	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools}
-	for _, selected := range files.Ports {
-		if err := ctx.Err(); err != nil {
+	// Ports are assessed concurrently, each with its own interpreters; the
+	// snapshot and PortIndex they share are read-only. Results keep the
+	// selection's order. The bound keeps a whole-tree run from starting more
+	// MacPorts processes than the host can run at once.
+	assessed := make([]Port, len(files.Ports))
+	failures := make([]error, len(files.Ports))
+	slots := make(chan struct{}, Concurrency)
+	var wait sync.WaitGroup
+	for i, selected := range files.Ports {
+		if ctx.Err() != nil {
+			break
+		}
+		slots <- struct{}{}
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			defer func() { <-slots }()
+			assessed[i], failures[i] = s.assessOne(ctx, editor, files, platform, request, selected)
+		}()
+	}
+	wait.Wait()
+	for _, err := range failures {
+		if err != nil {
 			return result, err
 		}
-		progress.VerboseReport(ctx, "Assessing %s", selected.Label)
-		item := Port{Selector: selected.Label}
+	}
+	result.Ports = append(result.Ports, assessed...)
+	return result, ctx.Err()
+}
+
+// Concurrency bounds the ports assessed at once.
+var Concurrency = min(8, max(2, runtime.NumCPU()))
+
+// assessOne assesses one selected port: its probe, the optional release
+// resolution, and the assessment itself.
+func (s *Service) assessOne(ctx context.Context, editor *portedit.Service, files *survey.Workspace, platform record.Platform, request Request, selected survey.Port) (Port, error) {
+	if err := ctx.Err(); err != nil {
+		return Port{}, err
+	}
+	progress.VerboseReport(ctx, "Assessing %s", selected.Label)
+	item := Port{Selector: selected.Label}
+	{
 		if request.Subport != "" {
 			selected.Selection.Subport = request.Subport
 		} else if selected.Name != "" && selected.Name != path.Base(path.Dir(selected.Selection.Selector)) {
@@ -119,16 +158,16 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 					}
 				}
 			}
+			var err error
 			item.Assessment, err = probe.Assess(ctx, release)
 			if err != nil {
-				return result, err
+				return Port{}, err
 			}
 			if resolutionErr != nil {
 				item.Findings = append(item.Findings, portedit.Problem("release", resolutionErr))
 				item.Summarize()
 			}
 		}
-		result.Ports = append(result.Ports, item)
 	}
-	return result, ctx.Err()
+	return item, nil
 }
