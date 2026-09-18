@@ -59,7 +59,7 @@ type Port struct {
 // Service receives evaluation, source selection, and optional release integrations.
 type Service struct {
 	Repo            *git.Repository
-	Ports           macports.NativeReader
+	Ports           macports.NativeEvaluator
 	Upstream        *upstream.Service
 	DependencyTools dependency.Tools
 	Index           portindex.Config

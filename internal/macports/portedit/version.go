@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/herbygillot/dockhand/internal/macports/fidelity"
-	"maps"
 	"os"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -75,61 +74,15 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	if gitFetched(input.info) {
 		return s.planGitVersion(ctx, request, input, contents, versioned)
 	}
-	if _, ok := s.Ports.(macports.Observer); ok {
-		observed, err := s.planObservedArchives(ctx, request, input, contents)
-		result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release}
-		result.report(fidelity.ScopedVersion(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"]))
-		if observed != nil {
-			for _, frame := range observed.contexts {
-				result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
-			}
-		}
-		return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed, subject: "update to " + release.Version}, err
-	}
-
-	oldSources, err := downloadSources(input.info, input.portdir())
-	if err != nil {
-		return archivePlan{}, err
-	}
-	oldGroups, err := portfile.ChecksumCount(input.data, input.info.Options["checksums"])
-	if err != nil {
-		return archivePlan{}, err
-	}
-
-	info := versioned.Ports[input.target.Name]
-	checked := info
-	checked.Options = maps.Clone(info.Options)
-	checked.Options["filespath"] = input.info.Options["filespath"]
-	sources, err := downloadSources(checked, input.portdir())
-	if err != nil {
-		return archivePlan{}, err
-	}
-	groups, err := portfile.ChecksumCount(contents, info.Options["checksums"])
-	if err != nil {
-		return archivePlan{}, err
-	}
-	if groups != oldGroups || len(sources) != len(oldSources) {
-		return archivePlan{}, fmt.Errorf("%w: source/checksum group count changed", ErrUnsupported)
-	}
-	changed := false
-	for i, source := range sources {
-		if source.URL != oldSources[i].URL {
-			changed = true
-		}
-	}
-	if !changed {
-		return archivePlan{}, fmt.Errorf("%w: version edit did not change the download source", ErrUnsupported)
-	}
-	report := fidelity.ScopedVersion(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, info.Options["checksums"])
+	observed, err := s.planObservedArchives(ctx, request, input, contents)
 	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release}
-	result.report(report)
-	if len(report.UnexpectedChanges) > 0 {
-		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
+	result.report(fidelity.ScopedVersion(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, versioned.Ports[input.target.Name].Options["checksums"]))
+	if observed != nil {
+		for _, frame := range observed.contexts {
+			result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform, Affected: frame.affected})
+		}
 	}
-	if err := checkChecksumSources(contents, info, sources); err != nil {
-		return archivePlan{}, err
-	}
-	return archivePlan{result: result, contents: contents, versioned: versioned, sources: sources, subject: "update to " + release.Version}, nil
+	return archivePlan{result: result, contents: contents, versioned: versioned, observed: observed, subject: "update to " + release.Version}, err
 }
 
 func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, input *sourceInput) (Result, error) {

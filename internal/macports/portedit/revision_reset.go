@@ -11,12 +11,6 @@ import (
 )
 
 func (s *Service) resetRevision(ctx context.Context, request Request, input *sourceInput, contents []byte) ([]byte, error) {
-	if _, ok := s.Ports.(macports.Observer); !ok {
-		if input.info.Revision == 0 {
-			return contents, nil
-		}
-		return portfile.ResetRevision(contents, input.info.Revision)
-	}
 	profiles, err := s.contextProfiles(ctx, request, input, contents)
 	if err != nil {
 		return nil, err

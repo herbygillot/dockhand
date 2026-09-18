@@ -85,7 +85,7 @@ func (r *Result) report(report Fidelity) {
 
 type Service struct {
 	DependencyTools  dependency.Tools
-	Ports            macports.Reader
+	Ports            macports.Evaluator
 	HTTP             *http.Client
 	MaxDownloadBytes int64
 }

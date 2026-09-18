@@ -15,8 +15,11 @@ import (
 
 var errAutomaticUnsupported = errors.New("upstream: automatic selection does not support this source convention")
 
+// VersionSelector orders and captures versions the way MacPorts does: vercmp
+// for order and its native regex for livecheck captures.
 type VersionSelector interface {
 	SelectVersion(context.Context, string, string, []macports.VersionCandidate) (macports.VersionSelection, error)
+	ExtractVersions(context.Context, string, string, bool) ([]string, error)
 }
 
 func (s *Service) DiscoverPort(ctx context.Context, port macports.PortInfo) (result Result, err error) {

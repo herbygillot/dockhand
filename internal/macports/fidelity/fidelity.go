@@ -172,9 +172,7 @@ func version(before, after macports.Snapshot, selected, root string, release rec
 		next = ComparablePort(next, root)
 		if name == selected {
 			old.Version, old.Revision = release.Version, 0
-			// A homepage that spells the version, as the perl5 ports'
-			// metacpan release pages do, moves with it and fetches nothing.
-			for _, key := range []string{"fetch.has_credentials", "version", "github.version", "gitlab.version", "go.version", "git.branch", "distname", "dist_subdir", "distfiles", "extract.only", "master_sites", "worksrcdir", "livecheck.version", "github.master_sites", "gitlab.master_sites", "homepage"} {
+			for _, key := range macports.VersionFollowers {
 				if value, ok := next.Options[key]; ok {
 					old.Options[key] = value
 				} else {

@@ -16,10 +16,6 @@ import (
 	"github.com/herbygillot/dockhand/internal/record"
 )
 
-type regexExtractor interface {
-	ExtractVersions(context.Context, string, string, bool) ([]string, error)
-}
-
 func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, spec portsource.Spec) (result Result, err error) {
 	result = Result{CurrentVersion: port.Version, Assessment: Unknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	defer func() {
@@ -27,10 +23,6 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 			result.Detail = err.Error()
 		}
 	}()
-	native, ok := s.Versions.(regexExtractor)
-	if !ok {
-		return result, fmt.Errorf("upstream: native livecheck extraction is unavailable")
-	}
 	// The listing is compared against the source's own spelling of the
 	// version, as Base compares it against livecheck.version; the port
 	// version is evaluated from the selected spelling afterwards.
@@ -63,7 +55,7 @@ func (s *Service) discoverListing(ctx context.Context, port macports.PortInfo, s
 	if !utf8.Valid(page) {
 		return result, fmt.Errorf("upstream: livecheck listing is not UTF-8")
 	}
-	versions, err := native.ExtractVersions(ctx, spec.Livecheck.Regex, string(page), spec.Livecheck.Multiline)
+	versions, err := s.Versions.ExtractVersions(ctx, spec.Livecheck.Regex, string(page), spec.Livecheck.Multiline)
 	if err != nil {
 		return result, err
 	}

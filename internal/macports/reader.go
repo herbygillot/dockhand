@@ -52,6 +52,23 @@ type NativeReader interface {
 	NativePlatform(context.Context) (record.Platform, error)
 }
 
+// Evaluator is the reader an edit requires: whole and selected-only
+// evaluation, modeled observation of declarations and reads, and interpreter
+// sessions. Every edit is judged across observed contexts, so a reader that
+// cannot observe cannot edit; the one implementation is eval.Evaluator.
+type Evaluator interface {
+	Reader
+	SelectedReader
+	Observer
+	BatchReader
+}
+
+// NativeEvaluator is an Evaluator that also reports the native platform.
+type NativeEvaluator interface {
+	Evaluator
+	NativePlatform(context.Context) (record.Platform, error)
+}
+
 // Validate checks selector syntax before filesystem or evaluator access.
 func (s Selection) Validate() error {
 	if err := validateVariants(s.Variants); err != nil {

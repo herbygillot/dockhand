@@ -15,8 +15,7 @@ import (
 const HTTPRegex Catalog = "http-regex"
 
 func discoverListing(port macports.PortInfo) (Spec, error) {
-	keys := []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version", "livecheck.ignore_sslcert", "livecheck.compression", "livecheck.curloptions", "dockhand.livecheck_standard"}
-	for _, key := range keys {
+	for _, key := range macports.LivecheckListingOptions {
 		if err := evaluated(port, key); err != nil {
 			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
 		}

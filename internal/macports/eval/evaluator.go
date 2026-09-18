@@ -56,7 +56,8 @@ func (e *Evaluator) start(ctx context.Context, tree macports.Tree) (*rpc.Session
 		_ = session.Close()
 		return nil, macports.Runtime{}, err
 	}
-	if _, err := session.Call(ctx, "eval", compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
+	readOptions := "namespace eval ::dockhand {}\nset ::dockhand::read_options [list " + strings.Join(macports.ReadOptions, " ") + "]\n"
+	if _, err := session.Call(ctx, "eval", readOptions+compatibilityScript+"\n"+fetchCredentialsScript+"\n"+platformScript+"\n"+observationScript+"\n"+evaluatorScript); err != nil {
 		return fail(fmt.Errorf("%w: %w", macports.ErrStartup, err))
 	}
 	reply, err := session.Call(ctx, "initialize", tree.Root())

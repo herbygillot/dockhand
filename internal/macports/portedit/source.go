@@ -45,11 +45,6 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 	if s == nil || s.Ports == nil || request.Root == "" {
 		return nil, fmt.Errorf("portedit: a disposable source workspace and MacPorts reader are required")
 	}
-	if request.SharedRelease {
-		if _, ok := s.Ports.(macports.Observer); !ok {
-			return nil, fmt.Errorf("%w: shared releases require native declaration observation", ErrUnsupported)
-		}
-	}
 	files := &workspace{root: request.Root, source: request.Source}
 
 	tree, err := macports.NewTree(request.Source, files.root, request.Platform)
@@ -105,11 +100,6 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		request.Stub, request.SharedRelease = name, true
 		selected = carrier
 	}
-	if stub != "" {
-		if _, ok := s.Ports.(macports.Observer); !ok {
-			return nil, fmt.Errorf("%w: shared releases require native declaration observation", ErrUnsupported)
-		}
-	}
 	info, ok := before.Ports[selected.Name]
 	if !ok {
 		return nil, fmt.Errorf("%w: subport %s was not evaluated", ErrUnsupported, selected.Name)
@@ -131,17 +121,13 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 // native is the reader for the input's native evaluations: one interpreter
 // session bound to the workspace tree, opened on first use and shared by
 // the baseline, every candidate, and the final edit, so a preparation does
-// not start an interpreter per evaluation. A reader that cannot open
-// sessions is used as it is.
-func (i *sourceInput) native(ctx context.Context, ports macports.Reader) snapshotEvaluator {
+// not start an interpreter per evaluation. When a session cannot be opened
+// the evaluator itself serves, an interpreter per evaluation.
+func (i *sourceInput) native(ctx context.Context, ports macports.Evaluator) snapshotEvaluator {
 	if i.session != nil {
 		return i.session
 	}
-	batcher, ok := ports.(macports.BatchReader)
-	if !ok {
-		return ports
-	}
-	session, err := batcher.OpenBatch(ctx, i.tree)
+	session, err := ports.OpenBatch(ctx, i.tree)
 	if err != nil {
 		progress.DebugReport(ctx, "evaluating without a shared session: %v", err)
 		return ports
@@ -221,9 +207,10 @@ func (s *Service) evaluateCandidate(ctx context.Context, input *sourceInput, con
 }
 
 // snapshotEvaluator is the reader used for one evaluation: the service's
-// reader, or a batch bound to the workspace tree.
+// evaluator, or a session bound to the workspace tree.
 type snapshotEvaluator interface {
 	Evaluate(context.Context, macports.Context) (macports.Snapshot, error)
+	EvaluateSelected(context.Context, macports.Context) (macports.Snapshot, error)
 }
 
 func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator, input *sourceInput, contents []byte, selectedOnly bool) (evaluation, error) {
@@ -234,8 +221,8 @@ func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator
 			return err
 		}
 		var after macports.Snapshot
-		if selected, ok := reader.(macports.SelectedReader); ok && selectedOnly {
-			after, err = selected.EvaluateSelected(ctx, bound)
+		if selectedOnly {
+			after, err = reader.EvaluateSelected(ctx, bound)
 		} else {
 			after, err = reader.Evaluate(ctx, bound)
 		}

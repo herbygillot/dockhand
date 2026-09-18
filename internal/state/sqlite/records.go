@@ -71,18 +71,22 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 	if err := t.check(ctx, false); err != nil {
 		return v, err
 	}
-	var current sql.NullString
-	var raw, cleanup string
+	var current, published, pullRequest, cleanup sql.NullString
+	var raw string
 	var created int64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,''),generated_commit,initiating_target,coalesce(cleanup,'') FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID, &v.GeneratedCommit, &v.InitiatingTarget, &cleanup)
+	dests, err := changes.scanArgs(map[string]any{"id": &v.ID, "branch": &v.Branch, "current_revision": &current, "disposition": &v.Disposition, "targets": &raw, "created_at": &created, "published_revision": &published, "pull_request_id": &pullRequest, "generated_commit": &v.GeneratedCommit, "initiating_target": &v.InitiatingTarget, "cleanup": &cleanup})
 	if err != nil {
+		return v, err
+	}
+	if err := t.conn.QueryRowContext(ctx, changes.selectByID(), t.repo, id).Scan(dests...); err != nil {
 		return v, storageError(err)
 	}
 	v.CurrentRevision = record.RevisionID(current.String)
+	v.PublishedRevision, v.PullRequestID = record.RevisionID(published.String), record.PullRequestID(pullRequest.String)
 	v.CreatedAt = fromTime(created)
-	if cleanup != "" {
+	if cleanup.Valid && cleanup.String != "" {
 		v.Cleanup = &record.BranchCleanup{}
-		if err := decode(cleanup, v.Cleanup); err != nil {
+		if err := decode(cleanup.String, v.Cleanup); err != nil {
 			return v, err
 		}
 	}
@@ -141,10 +145,20 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 		}
 		cleanup = sql.NullString{String: encoded, Valid: true}
 	}
+	named := map[string]any{"id": v.ID, "branch": v.Branch, "current_revision": nullableID(v.CurrentRevision), "disposition": v.Disposition, "targets": raw, "created_at": v.CreatedAt.UnixMilli(), "published_revision": nullableID(v.PublishedRevision), "pull_request_id": nullableID(v.PullRequestID), "generated_commit": v.GeneratedCommit, "initiating_target": v.InitiatingTarget, "cleanup": cleanup}
 	if old.ID != "" {
-		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=?,published_revision=?,pull_request_id=?,generated_commit=?,cleanup=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, nullableID(v.PublishedRevision), nullableID(v.PullRequestID), v.GeneratedCommit, cleanup, t.repo, v.ID)
+		updated := []string{"branch", "current_revision", "disposition", "targets", "published_revision", "pull_request_id", "generated_commit", "cleanup"}
+		args, err := changes.updateArgs(updated, named, t.repo, v.ID)
+		if err != nil {
+			return err
+		}
+		return t.exec(ctx, changes.update(updated...), args...)
 	}
-	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at,generated_commit,initiating_target,cleanup) VALUES(?,?,?,?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli(), v.GeneratedCommit, v.InitiatingTarget, cleanup)
+	args, err := changes.insertArgs(t.repo, named)
+	if err != nil {
+		return err
+	}
+	return t.exec(ctx, changes.insert(), args...)
 }
 func (t *transaction) Revision(ctx context.Context, id record.RevisionID) (record.Revision, error) {
 	var v record.Revision
@@ -262,8 +276,11 @@ func (t *transaction) Job(ctx context.Context, id record.JobID) (record.Job, err
 	var accepted int64
 	var canceled, admitted, finished, until, retry sql.NullInt64
 	var owner, prepared, release, reused sql.NullString
-	err := t.conn.QueryRowContext(ctx, `SELECT id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,phase,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,retry_at,prepared,resolved_release,reused_attempt,reuse_detail,consecutive_failures,consecutive_waits,wait_kind FROM jobs WHERE repository_id=? AND id=?`, t.repo, id).Scan(&v.ID, &v.RequestID, &change, &specChange, &input, &result, &source, &v.Spec.Action, &v.Phase, &v.Spec.Destination, &v.Spec.Verification, &raw, &v.State, &accepted, &canceled, &admitted, &finished, &v.Detail, &owner, &v.ClaimGeneration, &until, &retry, &prepared, &release, &reused, &v.ReuseDetail, &v.ConsecutiveFailures, &v.ConsecutiveWaits, &v.WaitKind)
+	dests, err := jobs.scanArgs(map[string]any{"id": &v.ID, "request_id": &v.RequestID, "change_id": &change, "spec_change_id": &specChange, "input_revision": &input, "result_revision": &result, "source_id": &source, "action": &v.Spec.Action, "phase": &v.Phase, "destination": &v.Spec.Destination, "verification": &v.Spec.Verification, "options": &raw, "state": &v.State, "accepted_at": &accepted, "cancel_at": &canceled, "admitted_at": &admitted, "finished_at": &finished, "detail": &v.Detail, "claim_owner": &owner, "claim_generation": &v.ClaimGeneration, "claim_until": &until, "retry_at": &retry, "prepared": &prepared, "resolved_release": &release, "reused_attempt": &reused, "reuse_detail": &v.ReuseDetail, "consecutive_failures": &v.ConsecutiveFailures, "consecutive_waits": &v.ConsecutiveWaits, "wait_kind": &v.WaitKind})
 	if err != nil {
+		return v, err
+	}
+	if err := t.conn.QueryRowContext(ctx, jobs.selectByID(), t.repo, id).Scan(dests...); err != nil {
 		return v, storageError(err)
 	}
 	var options jobOptions
@@ -386,7 +403,12 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 		if old.ResultRevision != "" && (v.ResultRevision != old.ResultRevision || v.ChangeID != old.ChangeID) {
 			return state.ErrConflict
 		}
-		if err = t.exec(ctx, "UPDATE jobs SET change_id=?,result_revision=?,phase=?,state=?,cancel_at=?,admitted_at=?,finished_at=?,detail=?,claim_owner=?,claim_generation=?,claim_until=?,consecutive_failures=?,consecutive_waits=?,wait_kind=?,retry_at=?,prepared=?,resolved_release=?,reused_attempt=?,reuse_detail=? WHERE repository_id=? AND id=?", nullableID(v.ChangeID), nullableID(v.ResultRevision), v.Phase, v.State, nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, v.WaitKind, nullableTime(v.RetryAt), prepared, release, nullableID(v.ReusedAttempt), v.ReuseDetail, t.repo, v.ID); err != nil {
+		updated := []string{"change_id", "result_revision", "phase", "state", "cancel_at", "admitted_at", "finished_at", "detail", "claim_owner", "claim_generation", "claim_until", "consecutive_failures", "consecutive_waits", "wait_kind", "retry_at", "prepared", "resolved_release", "reused_attempt", "reuse_detail"}
+		args, err := jobs.updateArgs(updated, t.jobValues(v, "", "", owner, until, prepared, release), t.repo, v.ID)
+		if err != nil {
+			return err
+		}
+		if err = t.exec(ctx, jobs.update(updated...), args...); err != nil {
 			return err
 		}
 		return t.scheduleJob(ctx, v.ID)
@@ -418,11 +440,26 @@ func (t *transaction) PutJob(ctx context.Context, v record.Job) error {
 	if err != nil {
 		return err
 	}
-	err = t.exec(ctx, `INSERT INTO jobs(id,repository_id,request_id,change_id,spec_change_id,input_revision,result_revision,source_id,action,phase,destination,verification,options,state,accepted_at,cancel_at,admitted_at,finished_at,detail,claim_owner,claim_generation,claim_until,consecutive_failures,consecutive_waits,wait_kind,retry_at,prepared,resolved_release,reused_attempt,reuse_detail) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.ID, t.repo, v.RequestID, nullableID(v.ChangeID), nullableID(v.Spec.ChangeID), nullableID(v.Spec.InputRevision), nullableID(v.ResultRevision), source, v.Spec.Action, v.Phase, v.Spec.Destination, v.Spec.Verification, raw, v.State, v.AcceptedAt.UnixMilli(), nullableTime(v.CancelRequestedAt), nullableTime(v.AdmittedAt), nullableTime(v.FinishedAt), v.Detail, owner, v.ClaimGeneration, until, v.ConsecutiveFailures, v.ConsecutiveWaits, v.WaitKind, nullableTime(v.RetryAt), prepared, release, nullableID(v.ReusedAttempt), v.ReuseDetail)
+	args, err := jobs.insertArgs(t.repo, t.jobValues(v, source, raw, owner, until, prepared, release))
 	if err != nil {
 		return err
 	}
+	if err = t.exec(ctx, jobs.insert(), args...); err != nil {
+		return err
+	}
 	return t.scheduleJob(ctx, v.ID)
+}
+
+// jobValues names every job column's value; source and options are fixed
+// at insertion and left empty by an update, which does not set them.
+func (t *transaction) jobValues(v record.Job, source, options string, owner, until, prepared, release any) map[string]any {
+	return map[string]any{
+		"id": v.ID, "request_id": v.RequestID, "change_id": nullableID(v.ChangeID), "spec_change_id": nullableID(v.Spec.ChangeID), "input_revision": nullableID(v.Spec.InputRevision), "result_revision": nullableID(v.ResultRevision),
+		"source_id": source, "action": v.Spec.Action, "phase": v.Phase, "destination": v.Spec.Destination, "verification": v.Spec.Verification, "options": options, "state": v.State,
+		"accepted_at": v.AcceptedAt.UnixMilli(), "cancel_at": nullableTime(v.CancelRequestedAt), "admitted_at": nullableTime(v.AdmittedAt), "finished_at": nullableTime(v.FinishedAt), "detail": v.Detail,
+		"claim_owner": owner, "claim_generation": v.ClaimGeneration, "claim_until": until, "retry_at": nullableTime(v.RetryAt), "prepared": prepared, "resolved_release": release,
+		"reused_attempt": nullableID(v.ReusedAttempt), "reuse_detail": v.ReuseDetail, "consecutive_failures": v.ConsecutiveFailures, "consecutive_waits": v.ConsecutiveWaits, "wait_kind": v.WaitKind,
+	}
 }
 
 func jobPhaseOrder(phase record.JobPhase) int {

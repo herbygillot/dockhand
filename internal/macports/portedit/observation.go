@@ -25,10 +25,7 @@ type observationKey struct {
 // results keep the profiles' order. Baseline observations come from and go
 // to the request's cache like single observations do.
 func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, contents []byte, profiles []record.Platform, declarations, selectedOnly bool) ([]macports.Observation, error) {
-	observer, ok := s.Ports.(macports.Observer)
-	if !ok {
-		return nil, fmt.Errorf("%w: declaration observation is unavailable", ErrUnsupported)
-	}
+	observer := s.Ports
 	results := make([]macports.Observation, len(profiles))
 	requests := make([]macports.ObservationRequest, len(profiles))
 	keys := make([]observationKey, len(profiles))
@@ -98,10 +95,7 @@ func (s *Service) observeProfiles(ctx context.Context, input *sourceInput, conte
 var observationConcurrency = min(8, max(2, runtime.NumCPU()))
 
 func (s *Service) observeContents(ctx context.Context, input *sourceInput, contents []byte, profile macports.ObservationRequest, selectedOnly bool) (macports.Observation, error) {
-	observer, ok := s.Ports.(macports.Observer)
-	if !ok {
-		return macports.Observation{}, fmt.Errorf("%w: declaration observation is unavailable", ErrUnsupported)
-	}
+	observer := s.Ports
 	if err := ctx.Err(); err != nil {
 		return macports.Observation{}, err
 	}

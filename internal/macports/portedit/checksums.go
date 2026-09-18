@@ -1,10 +1,8 @@
 package portedit
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"github.com/herbygillot/dockhand/internal/macports/fidelity"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/macports"
@@ -18,43 +16,16 @@ import (
 // them; without one, the plain declaration path handles a single context.
 func (s *Service) prepareChecksums(ctx context.Context, request Request, input *sourceInput) (Result, error) {
 	result := Result{Base: request.Source, Target: input.target}
-	if _, ok := s.Ports.(macports.Observer); ok {
-		observed, err := s.planObservedChecksums(ctx, request, input)
-		if err != nil {
-			return result, err
-		}
-		for _, frame := range observed.contexts {
-			result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform})
-		}
-		return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.archives(""))
-	}
-	sources, err := downloadSources(input.info, input.portdir())
+	observed, err := s.planObservedChecksums(ctx, request, input)
 	if err != nil {
 		return result, err
 	}
-	contents, checksums, downloads, err := s.archives("").refresh(ctx, input.data, input.info, sources, request.KeepOldChecksums)
-	if err != nil {
-		return result, err
+	for _, frame := range observed.contexts {
+		result.Coverage = append(result.Coverage, ContextCoverage{Fetch: frame.after.Ports[input.target.Name].Fetch, Platform: frame.profile, Modeled: frame.profile != input.before.Platform})
 	}
-	result.Downloads = downloads
-	evaluated, err := s.evaluateEdit(ctx, input, contents)
-	if err != nil {
-		return result, err
-	}
-	report := fidelity.Checksums(input.before, evaluated.after, input.target.Name, input.files.root, checksums)
-	if bytes.Equal(contents, input.data) {
-		result.report(report)
-		if len(report.UnexpectedChanges) > 0 {
-			return result, fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
-		}
-		return result, nil
-	}
-	return result, result.commitEdit(input, request, evaluated.edit, report, "refresh checksums")
+	return s.applyObservedArchives(ctx, request, input, archivePlan{result: result, contents: input.data, observed: observed, subject: "refresh checksums"}, s.archives(""))
 }
 
-// planObservedChecksums observes the unchanged Portfile in every modeled
-// context and plans one download per bound archive. Nothing but checksums may
-// change, so every context is a protected context.
 func (s *Service) planObservedChecksums(ctx context.Context, request Request, input *sourceInput) (*observedArchivePlan, error) {
 	profiles, err := s.contextProfiles(ctx, request, input, input.data)
 	if err != nil {

@@ -97,7 +97,7 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 	if err != nil || purpose == Edit {
 		return spec, err
 	}
-	for _, key := range []string{"livecheck.type", "livecheck.url", "livecheck.regex", "livecheck.version"} {
+	for _, key := range macports.LivecheckOptions {
 		if err := evaluated(port, key); err != nil {
 			return Spec{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
 		}
@@ -171,7 +171,7 @@ func (s Spec) EvidenceURL(tag string) (string, error) {
 }
 
 func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Spec, error) {
-	keys := []string{prefix + ".author", prefix + ".project", prefix + ".version", prefix + ".tag_prefix", prefix + ".tag_suffix", "git.branch"}
+	keys := macports.ForgeOptions(prefix)
 	if forge == GitLab {
 		keys = append(keys, "gitlab.instance")
 	}

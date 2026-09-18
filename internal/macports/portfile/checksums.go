@@ -241,8 +241,3 @@ type Checksum struct {
 	MD5, SHA1 string
 	Size      int64
 }
-
-func ChecksumCount(src []byte, evaluated string) (int, error) {
-	groups, err := checksumGroups(src, evaluated)
-	return len(groups), err
-}

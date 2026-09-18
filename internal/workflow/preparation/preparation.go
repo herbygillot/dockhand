@@ -54,7 +54,7 @@ func (r Result) PatchProblems() []string {
 
 type Service struct {
 	Repo             *git.Repository
-	Ports            macports.Reader
+	Ports            macports.Evaluator
 	Upstream         *upstream.Service
 	DependencyTools  dependency.Tools
 	HTTP             *http.Client

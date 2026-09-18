@@ -32,7 +32,7 @@ type Port struct {
 // configuration. It does not open workflow state or accept jobs.
 type Service struct {
 	Repo     *git.Repository
-	Ports    macports.NativeReader
+	Ports    macports.NativeEvaluator
 	Upstream *upstream.Service
 	Index    portindex.Config
 	HTTP     *http.Client

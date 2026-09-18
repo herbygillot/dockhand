@@ -84,8 +84,11 @@ func (t *transaction) PullRequest(ctx context.Context, id record.PullRequestID) 
 	}
 	var raw string
 	var observeAfter sql.NullInt64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,change_id,forge,remote_repository,number,observation,observe_after FROM pull_requests WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.ChangeID, &v.Ref.Forge, &v.Ref.Repository, &v.Ref.Number, &raw, &observeAfter)
+	dests, err := pullRequests.scanArgs(map[string]any{"id": &v.ID, "change_id": &v.ChangeID, "forge": &v.Ref.Forge, "remote_repository": &v.Ref.Repository, "number": &v.Ref.Number, "observation": &raw, "observe_after": &observeAfter})
 	if err != nil {
+		return v, err
+	}
+	if err := t.conn.QueryRowContext(ctx, pullRequests.selectByID(), t.repo, id).Scan(dests...); err != nil {
 		return v, storageError(err)
 	}
 	if observeAfter.Valid {
@@ -112,15 +115,25 @@ func (t *transaction) PutPullRequest(ctx context.Context, v record.PullRequest) 
 	if err != nil {
 		return err
 	}
+	named := map[string]any{"id": v.ID, "change_id": v.ChangeID, "forge": v.Ref.Forge, "remote_repository": v.Ref.Repository, "number": v.Ref.Number, "observation": raw, "observe_after": nullableTime(v.ObserveAfter)}
 	old, err := t.PullRequest(ctx, v.ID)
 	if err == nil {
 		if old.ChangeID != v.ChangeID || old.Ref != v.Ref || v.ObservedAt.Before(old.ObservedAt) {
 			return state.ErrConflict
 		}
-		return t.exec(ctx, "UPDATE pull_requests SET observation=?,observe_after=? WHERE repository_id=? AND id=?", raw, nullableTime(v.ObserveAfter), t.repo, v.ID)
+		updated := []string{"observation", "observe_after"}
+		args, err := pullRequests.updateArgs(updated, named, t.repo, v.ID)
+		if err != nil {
+			return err
+		}
+		return t.exec(ctx, pullRequests.update(updated...), args...)
 	}
 	if !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
-	return t.exec(ctx, "INSERT INTO pull_requests(id,repository_id,change_id,forge,remote_repository,number,observation,observe_after) VALUES(?,?,?,?,?,?,?,?)", v.ID, t.repo, v.ChangeID, v.Ref.Forge, v.Ref.Repository, v.Ref.Number, raw, nullableTime(v.ObserveAfter))
+	args, err := pullRequests.insertArgs(t.repo, named)
+	if err != nil {
+		return err
+	}
+	return t.exec(ctx, pullRequests.insert(), args...)
 }

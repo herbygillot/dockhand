@@ -2,7 +2,6 @@ package portfile
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/tcl/syntax"
@@ -187,38 +186,4 @@ func (c Candidate) Probe() string {
 		result.WriteRune(r)
 	}
 	return result.String()
-}
-
-func ResetRevision(src []byte, current int) ([]byte, error) {
-	script, errs := syntax.Parse(src)
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("portfile: invalid Tcl syntax")
-	}
-	var commands []syntax.Command
-	for _, item := range script.Items {
-		if cmd, ok := item.(syntax.Command); ok {
-			if name, _ := cmd.Name(src); name == "revision" {
-				commands = append(commands, cmd)
-			}
-		}
-	}
-	if len(commands) > 1 {
-		return nil, fmt.Errorf("portfile: ambiguous revision commands")
-	}
-	if len(commands) == 0 {
-		if current != 0 {
-			return nil, fmt.Errorf("portfile: nonzero revision is set outside the supported scope")
-		}
-		return src, nil
-	}
-	cmd := commands[0]
-	if len(cmd.Words) != 2 {
-		return nil, fmt.Errorf("portfile: revision requires one literal")
-	}
-	value, ok := cmd.Words[1].Literal(src)
-	number, err := strconv.Atoi(value)
-	if !ok || err != nil || number != current {
-		return nil, fmt.Errorf("portfile: revision expression does not have a matching literal")
-	}
-	return text.Apply(src, []text.Edit{{Span: cmd.Words[1].Span, New: []byte("0")}})
 }
