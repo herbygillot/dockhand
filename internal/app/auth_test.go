@@ -70,8 +70,9 @@ func TestGitHubLoginUsesRegisteredClientID(t *testing.T) {
 	require.NotEmpty(t, flow.clientID)
 }
 
+// Serial: it clears the package's default client ID, which the parallel
+// tests read.
 func TestGitHubLoginRequiresConfigurationAndPropagatesStorageFailure(t *testing.T) {
-	t.Parallel()
 	configuredClientID := app.DefaultGitHubOAuthClientID
 	app.DefaultGitHubOAuthClientID = ""
 	t.Cleanup(func() { app.DefaultGitHubOAuthClientID = configuredClientID })
