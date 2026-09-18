@@ -58,8 +58,16 @@ func Acquire(ctx context.Context, path string, mode Mode) (*os.File, error) {
 // ErrBusy means another process currently owns an incompatible lock.
 var ErrBusy = errors.New("filelock: busy")
 
-// TryExisting acquires an existing lock without waiting or creating paths.
-// This lets maintenance skip active work and keep previews read-only.
+// forkGrace is how long TryExisting keeps trying before calling a lock busy.
+// A child process forked while some goroutine held a lock inherits the
+// descriptor until it execs, so a lock its holder has already closed can look
+// busy for a few milliseconds whenever the process spawns commands. A real
+// holder keeps a lock for far longer than a fork-to-exec window.
+const forkGrace = 250 * time.Millisecond
+
+// TryExisting acquires an existing lock without creating paths, waiting only
+// long enough to see past a forked child that has not yet execd. This lets
+// maintenance skip active work and keep previews read-only.
 func TryExisting(ctx context.Context, path string, mode Mode) (*os.File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -71,14 +79,27 @@ func TryExisting(ctx context.Context, path string, mode Mode) (*os.File, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err = syscall.Flock(int(file.Fd()), int(mode)|syscall.LOCK_NB); err != nil {
-		file.Close()
-		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+	deadline := time.Now().Add(forkGrace)
+	for {
+		err = syscall.Flock(int(file.Fd()), int(mode)|syscall.LOCK_NB)
+		if err == nil {
+			return file, nil
+		}
+		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+			file.Close()
+			return nil, err
+		}
+		if time.Now().After(deadline) {
+			file.Close()
 			return nil, ErrBusy
 		}
-		return nil, err
+		select {
+		case <-ctx.Done():
+			file.Close()
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
-	return file, nil
 }
 
 // Path names the lock file for a key inside a directory. Keys are hashed, so

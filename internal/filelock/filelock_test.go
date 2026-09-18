@@ -56,3 +56,45 @@ func TestTryExistingDoesNotCreatePathsAndSkipsBusyLocks(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, next.Close())
 }
+
+// A lock a holder is about to release is not busy: the try outlasts the
+// moment a forked child keeps an inherited descriptor alive before it execs.
+func TestTryExistingOutlastsAForkedChildButNotAHolder(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "lock")
+	held, err := Acquire(t.Context(), path, Exclusive)
+	require.NoError(t, err)
+	go func() {
+		time.Sleep(forkGrace / 5)
+		held.Close()
+	}()
+	started := time.Now()
+	next, err := TryExisting(t.Context(), path, Exclusive)
+	require.NoError(t, err, "released within the grace period")
+	require.Less(t, time.Since(started), forkGrace)
+	defer next.Close()
+	started = time.Now()
+	_, err = TryExisting(t.Context(), path, Exclusive)
+	require.ErrorIs(t, err, ErrBusy, "a holder that keeps the lock is reported")
+	require.GreaterOrEqual(t, time.Since(started), forkGrace)
+	// The child window is real: with commands spawning, a lock closed a moment
+	// ago is still seen busy by a try that does not wait.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	for range 4 {
+		go func() {
+			for ctx.Err() == nil {
+				_ = exec.CommandContext(ctx, "/usr/bin/true").Run()
+			}
+		}()
+	}
+	probe := filepath.Join(t.TempDir(), "probe")
+	for range 200 {
+		file, err := Acquire(ctx, probe, Exclusive)
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+		got, err := TryExisting(ctx, probe, Exclusive)
+		require.NoError(t, err, "a released lock is acquired despite forks in flight")
+		require.NoError(t, got.Close())
+	}
+}
