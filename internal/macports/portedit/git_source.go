@@ -64,7 +64,7 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 		if release.Commit == "" {
 			return archivePlan{}, fmt.Errorf("%w: git.branch pins a commit and the resolved release names none", ErrUnsupported)
 		}
-		rewritten, err := rewriteGitCommit(contents, old, release.Commit)
+		rewritten, err := rewriteLiteralDeclaration(contents, "git.branch", old, release.Commit)
 		if err != nil {
 			return archivePlan{}, err
 		}
@@ -84,17 +84,17 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 	return archivePlan{result: result, contents: contents, versioned: versioned, viaGit: true, branch: branch, subject: "update to " + release.Version}, nil
 }
 
-// rewriteGitCommit replaces the one literal git.branch declaration that
-// pins the old commit. A pin carried any other way is refused rather than
-// guessed at.
-func rewriteGitCommit(contents []byte, old, next string) ([]byte, error) {
+// rewriteLiteralDeclaration replaces the one declaration of command whose
+// single literal argument is old. A value carried any other way is refused
+// rather than guessed at.
+func rewriteLiteralDeclaration(contents []byte, command, old, next string) ([]byte, error) {
 	script, errs := syntax.Parse(contents)
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("%w: invalid Portfile syntax", ErrUnsupported)
 	}
 	var edits []text.Edit
 	for cmd := range script.Commands(contents, func(syntax.Command) bool { return true }) {
-		if name, _ := cmd.Name(contents); name != "git.branch" || len(cmd.Words) != 2 {
+		if name, _ := cmd.Name(contents); name != command || len(cmd.Words) != 2 {
 			continue
 		}
 		if literal, ok := cmd.Words[1].Literal(contents); ok && literal == old && !cmd.Words[1].Expand {
@@ -102,7 +102,7 @@ func rewriteGitCommit(contents []byte, old, next string) ([]byte, error) {
 		}
 	}
 	if len(edits) != 1 {
-		return nil, fmt.Errorf("%w: git.branch pins commit %s but no single literal declaration carries it", ErrUnsupported, old)
+		return nil, fmt.Errorf("%w: %s is %s but no single literal declaration carries it", ErrUnsupported, command, old)
 	}
 	return text.Apply(contents, edits)
 }

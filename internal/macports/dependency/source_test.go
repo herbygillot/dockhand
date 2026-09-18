@@ -35,3 +35,20 @@ func TestGOPATHWorksrcdirFindsTheManifestUnderTheArchiveTopDirectory(t *testing.
 	require.False(t, GOPATHLayout("uni-2.10.0"))
 	require.True(t, GOPATHLayout("gopath/src/github.com/cli/cli/v2"))
 }
+
+func TestGoRequirementIsTheLargerOfGoAndToolchainDirectives(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ manifest, want string }{
+		{"module example.com/x\ngo 1.24\n", "1.24"},
+		{"module example.com/x\ngo 1.24.2\n", "1.24"},
+		{"module example.com/x\ngo 1.24\ntoolchain go1.25.1\n", "1.25"},
+		{"module example.com/x\ngo 1.26\ntoolchain go1.25.1\n", "1.26"},
+		{"module example.com/x\n", ""},
+	} {
+		got, err := GoRequirement([]byte(test.manifest))
+		require.NoError(t, err, test.manifest)
+		require.Equal(t, test.want, got, test.manifest)
+	}
+	_, err := GoRequirement([]byte("go 1.24 1.25\n"))
+	require.Error(t, err)
+}

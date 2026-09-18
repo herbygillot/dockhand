@@ -136,7 +136,7 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 		return plan.result, err
 	}
 	store := s.archives("")
-	if patched(input.info) {
+	if patched(input.info) || moduleModeGo(input.info) {
 		directory, err := os.MkdirTemp("", "dockhand-patchcheck-")
 		if err != nil {
 			return Result{}, err
@@ -146,6 +146,9 @@ func (s *Service) prepareArchiveVersion(ctx context.Context, request Request, in
 	}
 	result, err := s.applyArchivePlan(ctx, request, input, plan, store)
 	if err != nil {
+		return result, err
+	}
+	if err := s.raiseGoToolchain(ctx, input, &result); err != nil {
 		return result, err
 	}
 	return result, s.checkPatches(ctx, input, &result)

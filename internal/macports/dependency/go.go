@@ -14,6 +14,30 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// GoRequirement is the Go series a go.mod requires, "1.24", the larger of
+// its go and toolchain directives. It is what go.toolchain_min should hold
+// for a port that builds in module mode, where Go enforces the directive.
+// A manifest without a go directive requires nothing.
+func GoRequirement(data []byte) (string, error) {
+	mod, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return "", err
+	}
+	var required string
+	if mod.Go != nil {
+		required = mod.Go.Version
+	}
+	if mod.Toolchain != nil {
+		if version, ok := strings.CutPrefix(mod.Toolchain.Name, "go"); ok && semver.Compare("v"+version, "v"+required) > 0 {
+			required = version
+		}
+	}
+	if required == "" {
+		return "", nil
+	}
+	return semver.MajorMinor("v" + required)[1:], nil
+}
+
 func generateGo(ctx context.Context, executable string, in Input) (GeneratedBlocks, error) {
 	data, member, err := Manifest(ctx, in.Archive, in.Worksrcdir, "go.mod")
 	if err != nil {

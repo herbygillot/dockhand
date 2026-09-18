@@ -25,6 +25,10 @@ Dockhand reads `go.mod` from the main archive, confirms its module matches `go.p
 
 A Go port without a vendor declaration does not acquire a helper requirement merely by using the Go PortGroup. Explicit empty declarations are checked for newly added dependencies. Go workspaces and `replace` or `exclude` directives require manual preparation because the current helper does not preserve their meaning.
 
+### go.toolchain_min follows the manifest in module mode
+
+With `go.offline_build no` the build runs in module mode, Go enforces the manifest's `go` directive, and that directive is exactly the minimum the Go PortGroup's `go.toolchain_min` should hold. After the archive edit dockhand reads the new release's `go.mod` from the kept archive and raises a literal `go.toolchain_min` to the series the manifest requires, the larger of its `go` and `toolchain` directives; the change is evaluated and checked like the rest of the edit. It never lowers a minimum, never adds one to a port that declares none (that would gate the port on older systems, which is the maintainer's call; the requirement is reported instead), and never refuses a bump over it: a minimum carried by an expression is reported for hand editing. In GOPATH mode, the default, the directive is only an upper bound on what the source needs, so the declared minimum is left alone, as the PortGroup's own guidance says.
+
 ### Where the Go manifest is found
 
 The Go PortGroup's default `worksrcdir` is `gopath/src/<go.package>`, the directory `post-extract` moves the source into; it is not a path inside the archive. dockhand reads the archive itself, so for a `worksrcdir` under `gopath/src` the manifest is looked for directly under the archive's single top-level directory, which the PortGroup's extraction flattens into GOPATH. A port that sets `worksrcdir` outright is read at that path, as before. Two top-level directories each carrying a manifest are ambiguous and refused.
