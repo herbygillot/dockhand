@@ -90,15 +90,31 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		result.Ports = append(result.Ports, Port{Selector: problem.Port, Assessment: portedit.Assessment{Outcome: portedit.Unknown, Findings: []portedit.Finding{{Check: "selection", Status: portedit.Unknown, Code: "index-coverage", Detail: problem.Detail}}}})
 	}
 	editor := &portedit.Service{Ports: s.Ports, DependencyTools: s.DependencyTools}
-	// Ports are assessed concurrently, each with its own interpreters; the
-	// snapshot and PortIndex they share are read-only. Results keep the
-	// selection's order. The bound keeps a whole-tree run from starting more
-	// MacPorts processes than the host can run at once.
+	// Ports are assessed concurrently, each with its own interpreters, and
+	// results keep the selection's order. The snapshot is shared, and an
+	// assessment writes probe candidates into its own Portfile while it
+	// runs, so ports that share a Portfile, subports of one port, are
+	// assessed one after another; only distinct Portfiles overlap. The bound
+	// keeps a whole-tree run from starting more MacPorts processes than the
+	// host can run at once.
 	assessed := make([]Port, len(files.Ports))
 	failures := make([]error, len(files.Ports))
 	slots := make(chan struct{}, Concurrency)
 	var wait sync.WaitGroup
+	byPortfile := map[string][]int{}
+	var order []string
 	for i, selected := range files.Ports {
+		key := selected.Portfile
+		if key == "" {
+			key = selected.Selection.Selector
+		}
+		if _, seen := byPortfile[key]; !seen {
+			order = append(order, key)
+		}
+		byPortfile[key] = append(byPortfile[key], i)
+	}
+	progress.VerboseReport(ctx, "Assessing %d ports across %d Portfiles, %d at a time", len(files.Ports), len(order), Concurrency)
+	for _, key := range order {
 		if ctx.Err() != nil {
 			break
 		}
@@ -107,7 +123,12 @@ func (s *Service) Assess(ctx context.Context, request Request) (_ Result, err er
 		go func() {
 			defer wait.Done()
 			defer func() { <-slots }()
-			assessed[i], failures[i] = s.assessOne(ctx, editor, files, platform, request, selected)
+			for _, i := range byPortfile[key] {
+				if ctx.Err() != nil {
+					return
+				}
+				assessed[i], failures[i] = s.assessOne(ctx, editor, files, platform, request, files.Ports[i])
+			}
 		}()
 	}
 	wait.Wait()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -48,6 +49,10 @@ type Port struct {
 	Label     string
 	Name      string
 	Selection macports.Selection
+	// Portfile is the file the selection resolves to when the index knows
+	// it, "category/port/Portfile"; ports that share one must not be
+	// probed at the same time, since probing writes candidates into it.
+	Portfile string
 }
 
 // Workspace owns a temporary tree until Close. Callers may probe edits only here.
@@ -98,10 +103,29 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 	var selected []Port
 	var problems []portindex.SelectionProblem
 	seen := map[string]bool{}
-	for _, selector := range selection.Ports {
-		if !seen[selector] {
-			selected = append(selected, Port{Label: selector, Selection: macports.Selection{Selector: selector}})
+	if len(selection.Ports) > 0 {
+		// The index is staged for resolution later anyway; consulting it now
+		// tells which explicit names share a Portfile.
+		var index *portindex.Index
+		if err := portindex.Stage(ctx, repo, source, platform, config, root); err != nil {
+			progress.VerboseReport(ctx, "PortIndex unavailable for grouping explicit ports: %v", err)
+		} else if index, err = portindex.Open(root); err != nil {
+			progress.VerboseReport(ctx, "PortIndex unreadable for grouping explicit ports: %v", err)
+		}
+		for _, selector := range selection.Ports {
+			if seen[selector] {
+				continue
+			}
 			seen[selector] = true
+			port := Port{Label: selector, Selection: macports.Selection{Selector: selector}}
+			if strings.Contains(selector, "/") {
+				port.Portfile = selector
+			} else if index != nil {
+				if entry, err := index.Lookup(selector); err == nil {
+					port.Portfile = path.Join(entry.Portdir, "Portfile")
+				}
+			}
+			selected = append(selected, port)
 		}
 	}
 	if len(selection.Ports) == 0 {
@@ -117,7 +141,7 @@ func selectPorts(ctx context.Context, repo *git.Repository, source record.Source
 			return nil, nil, err
 		}
 		for _, entry := range matches.Entries {
-			selected = append(selected, Port{Label: entry.Name, Name: entry.Name, Selection: portselection.FromEntry(entry, nil)})
+			selected = append(selected, Port{Label: entry.Name, Name: entry.Name, Selection: portselection.FromEntry(entry, nil), Portfile: path.Join(entry.Portdir, "Portfile")})
 		}
 		problems = matches.Problems
 		progress.VerboseReport(ctx, "Selected %d indexed ports; %d selection coverage problems", len(selected), len(matches.Problems))

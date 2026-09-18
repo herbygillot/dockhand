@@ -21,6 +21,12 @@ import (
 
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+// obsoleteIn reports a port that evaluates as an obsolete follower in the
+// observed context: replaced_by names its successor and it fetches nothing.
+func obsoleteIn(info macports.PortInfo) bool {
+	return info.Options["replaced_by"] != "" && info.OptionErrors["replaced_by"] == ""
+}
+
 // gitFetched reports whether MacPorts fetches the port by cloning.
 func gitFetched(info macports.PortInfo) bool {
 	return info.Options["fetch.type"] == "git" && info.OptionErrors["fetch.type"] == ""

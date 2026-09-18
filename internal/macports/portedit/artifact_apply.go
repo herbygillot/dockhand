@@ -27,7 +27,7 @@ func (s *Service) applyObservedArchives(ctx context.Context, request Request, in
 			return result, err
 		}
 		group := item.artifact.Group
-		if group.Legacy() && !request.KeepOldChecksums {
+		if group.Legacy() && !request.KeepOldChecksums && !group.Traced() {
 			edit, values := portfile.RewriteChecksumGroup(plan.contents, group.Pairs, checksumValues([]Download{download})[0])
 			if _, ok := updates[edit.Span]; !ok {
 				progress.Report(ctx, "Modernizing %s checksums: %s -> %s", item.artifact.Name, strings.Join(group.Kinds, " "), strings.Join(portfile.ModernChecksumKinds, " "))

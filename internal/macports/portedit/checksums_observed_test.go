@@ -3,6 +3,8 @@ package portedit
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -113,4 +115,39 @@ checksums           md5     aaaa \
 	download := result.Downloads[0]
 	require.Contains(t, after, "md5     "+download.MD5)
 	require.Contains(t, after, "sha1    "+download.SHA1)
+}
+
+// Checksums a declaration reads from a digest table are refreshed where the
+// table writes them; the declaration itself is untouched.
+func TestRefreshChecksumsRewritesADigestTable(t *testing.T) {
+	t.Parallel()
+	rmd, sha := strings.Repeat("a", 40), strings.Repeat("b", 64)
+	s, r, _ := archiveFixture(t, `version 1.2.3
+master_sites @SITE@/${version}
+distfiles fixture.zip
+array set modules {
+    fixture {
+        {
+            `+rmd+` \
+            `+sha+` \
+            646632
+        }
+    }
+}
+set info $modules(fixture)
+checksums           rmd160  [lindex [lindex ${info} 0] 0] \
+                    sha256  [lindex [lindex ${info} 0] 1] \
+                    size    [lindex [lindex ${info} 0] 2]
+`)
+	r.Action, r.Version, r.Release = record.RefreshChecksums, "", nil
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Commits, 1)
+	after := string(result.Files[0].After)
+	require.NotContains(t, after, rmd)
+	require.NotContains(t, after, sha)
+	require.NotContains(t, after, "646632")
+	require.Contains(t, after, "checksums           rmd160  [lindex [lindex ${info} 0] 0]", "the declaration keeps reading the table")
+	download := result.Downloads[0]
+	require.Contains(t, after, "            "+download.RMD160+" \\\n            "+download.SHA256+" \\\n            "+strconv.FormatInt(download.Size, 10)+"\n")
 }

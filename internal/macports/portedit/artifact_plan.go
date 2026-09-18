@@ -68,6 +68,12 @@ func (s *Service) planObservedArchives(ctx context.Context, request Request, inp
 		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
 		before, after := befores[i], afters[i]
 		old, next := before.Snapshot.Ports[input.target.Name], after.Snapshot.Ports[input.target.Name]
+		if obsoleteIn(old) && obsoleteIn(next) {
+			// The port is an obsolete follower in this context, with no
+			// archive of its own; the context adds no requirement.
+			progress.VerboseReport(ctx, "%s is obsolete on %s %s %s; no archive to cover there", input.target.Name, profile.OS, profile.Version, profile.Architecture)
+			continue
+		}
 		affected := old.Version != next.Version
 		if next.Fetch != nil && next.Fetch.Rejected {
 			progress.VerboseReport(ctx, "Preserving rejection-only fetch guard for %s %s %s; archive coverage does not establish build support", profile.OS, profile.Version, profile.Architecture)

@@ -31,6 +31,10 @@ func (s *Service) assessArchives(ctx context.Context, request Request, input *so
 		observed := observations[i]
 		info := observed.Snapshot.Ports[input.target.Name]
 		coverage = append(coverage, ContextCoverage{Platform: profile, Modeled: observed.Modeled, Fetch: info.Fetch})
+		if obsoleteIn(info) {
+			// An obsolete follower has no archive in this context by design.
+			continue
+		}
 		if err := checkArchivePolicy(info, input.portdir()); err != nil {
 			return coverage, err, nil
 		}

@@ -16,6 +16,11 @@ type Token struct {
 	Value   string
 	Span    text.Span
 	Literal bool
+	// Traced marks a value whose declaration word is not a literal but whose
+	// evaluated value has exactly one literal occurrence elsewhere in the
+	// Portfile, such as a digest table read through lindex or an array
+	// element; Span then locates that occurrence.
+	Traced bool
 }
 type Group struct {
 	Name   string
@@ -34,6 +39,18 @@ func (g Group) ID() string { return g.Owner }
 // Legacy reports whether the group is rewritten as a whole when its
 // archive is refreshed rather than edited value by value.
 func (g Group) Legacy() bool { return portfile.LegacyChecksums(g.Kinds) }
+
+// Traced reports whether any value of the group lives outside the
+// declaration, in a table or array the declaration reads; such a group is
+// edited value by value where those values are written.
+func (g Group) Traced() bool {
+	for _, token := range g.Values {
+		if token.Traced {
+			return true
+		}
+	}
+	return false
+}
 
 // Span covers the group's written pairs, first algorithm through last value.
 func (g Group) Span() text.Span {
@@ -82,6 +99,11 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 				tokens[i].Owner = fmt.Sprintf("%d/%d", ordinal, i)
 				tokens[i].Span = word.Span
 				tokens[i].Literal = ok && literal == value && !word.Expand
+				if !tokens[i].Literal && !algorithm(value) && digestLike(value) {
+					if span, ok := uniqueLiteral(src, value); ok {
+						tokens[i].Span, tokens[i].Literal, tokens[i].Traced = span, true, true
+					}
+				}
 			}
 		}
 		switch name {
@@ -170,6 +192,75 @@ func Bind(src []byte, path string, info macports.PortInfo, observed macports.Por
 	}
 	return result, nil
 }
+
+// digestLike accepts the values a checksum token can evaluate to: a hex
+// digest or a decimal size. Only those are traced to a literal elsewhere.
+func digestLike(value string) bool {
+	if value == "" {
+		return false
+	}
+	hex, decimal := true, true
+	for _, r := range value {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			hex = false
+		}
+		if r < '0' || r > '9' {
+			decimal = false
+		}
+	}
+	return decimal || hex && len(value) >= 32
+}
+
+// uniqueLiteral finds the one place the Portfile writes value as a whole
+// token: a word or list element bounded by whitespace, braces, quotes, or a
+// line continuation, outside comment lines. Two occurrences, or none, mean
+// the value has no owner that can be edited with confidence.
+func uniqueLiteral(src []byte, value string) (text.Span, bool) {
+	var found []text.Span
+	source := string(src)
+	for offset := 0; ; {
+		at := strings.Index(source[offset:], value)
+		if at < 0 {
+			break
+		}
+		start := offset + at
+		end := start + len(value)
+		offset = start + 1
+		if start > 0 && !boundary(source[start-1]) || end < len(source) && !boundary(source[end]) {
+			continue
+		}
+		if inComment(source, start) {
+			continue
+		}
+		found = append(found, text.Span{Start: start, End: end})
+	}
+	if len(found) != 1 {
+		return text.Span{}, false
+	}
+	return found[0], true
+}
+
+func boundary(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '{' || c == '}' || c == '"' || c == '\\'
+}
+
+// inComment reports whether the byte at offset sits on a line whose first
+// non-blank character is #.
+func inComment(text string, offset int) bool {
+	line := strings.LastIndexByte(text[:offset], '\n') + 1
+	for i := line; i < len(text); i++ {
+		switch text[i] {
+		case ' ', '\t':
+			continue
+		case '#':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 func algorithm(value string) bool {
 	return value == "sha256" || value == "rmd160" || value == "size" || value == "md5" || value == "sha1"
 }

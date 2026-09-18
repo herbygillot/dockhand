@@ -17,7 +17,9 @@ func Assess(ctx context.Context, config Config, request assess.Request) (assess.
 		return assess.Result{}, err
 	}
 	ports := portReader(config, repo)
-	index, err := surveyIndex(config, len(request.Selection.Ports) == 0)
+	// Explicit names need the index too: it tells which of them share a
+	// Portfile, and those are assessed one after another rather than at once.
+	index, err := surveyIndex(config, true)
 	if err != nil {
 		return assess.Result{}, err
 	}

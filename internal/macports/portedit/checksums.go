@@ -69,6 +69,9 @@ func (s *Service) planObservedChecksums(ctx context.Context, request Request, in
 	for i, profile := range profiles {
 		progress.DebugReport(ctx, "Checking archive context %s %s %s", profile.OS, profile.Version, profile.Architecture)
 		observed := observations[i]
+		if obsoleteIn(observed.Snapshot.Ports[input.target.Name]) {
+			continue
+		}
 		binding, err := s.bindArchives(input, input.data, observed)
 		if err != nil {
 			return nil, fmt.Errorf("context %+v: %w", profile, err)
