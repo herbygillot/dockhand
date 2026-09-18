@@ -39,4 +39,8 @@ func TestDatabaseFlagAndHelp(t *testing.T) {
 	var output bytes.Buffer
 	require.NoError(t, cli.Run(t.Context(), []string{"completion", "zsh"}, cli.Streams{Out: &output, Err: &output}, app.Config{DBPath: filepath.Join(working, "completion")}))
 	require.NoDirExists(t, filepath.Join(working, "completion"))
+	// The main help shows the logo with the build's version beneath it.
+	output.Reset()
+	require.NoError(t, cli.Run(t.Context(), []string{"--help"}, cli.Streams{Out: &output, Err: &output}, app.Config{}))
+	require.Contains(t, output.String(), "|_|\\__,_|_| |_|\\__,_|\nversion "+root.Version+"\n\nDockhand prepares")
 }

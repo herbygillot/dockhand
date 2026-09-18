@@ -29,8 +29,9 @@ type runtime struct {
 	loginGitHub  func(context.Context, app.GitHubLoginOptions) (app.GitHubLoginResult, error)
 }
 
-// logo opens the main help message, as it did in the first dockhand. The
-// trailing spaces on its lines are the art's own.
+// logo opens the main help message, as it did in the first dockhand, with
+// the build's version beneath it. The trailing spaces on its lines are the
+// art's own.
 const logo = `     _            _    _                     _
   __| | ___   ___| | _| |__   __ _ _ __   __| |
  / _` + "`" + ` |/ _ \ / __| |/ / '_ \ / _` + "`" + ` | '_ \ / _` + "`" + ` |
@@ -77,7 +78,7 @@ func newRoot(config app.Config, build serviceBuilder) (*cobra.Command, *runtime,
 		Use:           "dockhand",
 		Version:       buildVersion(),
 		Short:         "Maintain MacPorts ports",
-		Long:          logo + "\nDockhand prepares, verifies, and publishes MacPorts changes.\nPrepare version and revision bumps, verify committed ports, resume jobs, and run driver cycles. Automatic discovery supports GitHub/GitLab catalogs and supported MacPorts livechecks. Publish verified contribution branches to GitHub.",
+		Long:          logo + "version " + buildVersion() + "\n\nDockhand prepares, verifies, and publishes MacPorts changes.\nPrepare version and revision bumps, verify committed ports, resume jobs, and run driver cycles. Automatic discovery supports GitHub/GitLab catalogs and supported MacPorts livechecks. Publish verified contribution branches to GitHub.",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) {
