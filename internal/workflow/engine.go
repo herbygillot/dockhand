@@ -3,7 +3,6 @@ package workflow
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -114,12 +113,4 @@ const (
 	defaultPullRequestInterval = 5 * time.Minute
 	// observationsPerCycle bounds forge calls in one cycle.
 	observationsPerCycle = 4
-)
-
-// lastObserved throttles pull-request observation per process, keyed by
-// repository and change, so engines that share a process (and tests that
-// copy one) share one clock.
-var (
-	observeMu    sync.Mutex
-	lastObserved = map[string]time.Time{}
 )

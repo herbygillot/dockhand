@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/state"
@@ -68,7 +69,7 @@ func (t *transaction) Jobs(ctx context.Context, q state.Query) ([]record.Job, er
 	if err != nil {
 		return nil, err
 	}
-	if q.Branch != "" && q.ChangeID != "" || q.Newest && q.After != "" {
+	if q.Branch != "" && q.ChangeID != "" || q.Newest && q.After != "" || q.DueBefore != nil && q.After != "" {
 		return nil, state.ErrInvalid
 	}
 	clause, args := jobFilter("j.id", q.Jobs)
@@ -198,6 +199,9 @@ func (t *transaction) Resources(ctx context.Context, q state.Query) ([]record.Re
 	if err != nil {
 		return nil, err
 	}
+	if q.DueBefore != nil && q.After != "" {
+		return nil, state.ErrInvalid
+	}
 	clause, args := jobFilter("a.job_id", q.Jobs)
 	base := append([]any{t.repo, q.After}, args...)
 	sql := "SELECT r.id FROM resources r JOIN attempts a ON a.repository_id=r.repository_id AND a.id=r.attempt_id WHERE r.repository_id=? AND r.id>?" + clause
@@ -249,4 +253,57 @@ func (t *transaction) Controls(ctx context.Context, q state.Query) ([]record.Con
 	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.ControlRequest, error) {
 		return t.Control(ctx, record.RequestID(id))
 	})
+}
+
+func boundedLimit(limit int) (int, error) {
+	if limit <= 0 || limit > 10000 {
+		return 0, state.ErrInvalid
+	}
+	return limit, nil
+}
+
+func (t *transaction) DueJobs(ctx context.Context, selection []record.JobID, before time.Time, limit int) ([]record.Job, error) {
+	limit, err := boundedLimit(limit)
+	if err != nil || len(selection) > 10000 {
+		return nil, state.ErrInvalid
+	}
+	clause, args := jobFilter("j.id", selection)
+	args = append([]any{t.repo, before.UnixMilli()}, args...)
+	ids, err := t.ids(ctx, "SELECT j.id FROM jobs j WHERE j.repository_id=? AND j.next_action_at IS NOT NULL AND j.next_action_at<=?"+clause+" ORDER BY j.next_action_at,j.id LIMIT ?", append(args, limit)...)
+	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.Job, error) { return t.Job(ctx, record.JobID(id)) })
+}
+
+func (t *transaction) JobHistory(ctx context.Context, change record.ChangeID) ([]record.Job, error) {
+	if change == "" {
+		return nil, state.ErrInvalid
+	}
+	ids, err := t.ids(ctx, "SELECT j.id FROM jobs j INDEXED BY jobs_change WHERE j.repository_id=? AND j.change_id=? ORDER BY j.accepted_at DESC,j.rowid DESC", t.repo, change)
+	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.Job, error) { return t.Job(ctx, record.JobID(id)) })
+}
+
+func (t *transaction) OpenContributions(ctx context.Context, due time.Time, limit int) ([]record.Change, error) {
+	limit, err := boundedLimit(limit)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := t.ids(ctx, "SELECT c.id FROM changes c JOIN pull_requests p ON p.repository_id=c.repository_id AND p.id=c.pull_request_id WHERE c.repository_id=? AND c.disposition='open' AND (p.observe_after IS NULL OR p.observe_after<=?) ORDER BY p.observe_after IS NOT NULL,p.observe_after,c.id LIMIT ?", t.repo, due.UnixMilli(), limit)
+	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.Change, error) { return t.Change(ctx, record.ChangeID(id)) })
+}
+
+func (t *transaction) OwedCleanups(ctx context.Context, limit int) ([]record.Change, error) {
+	limit, err := boundedLimit(limit)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := t.ids(ctx, "SELECT id FROM changes WHERE repository_id=? AND disposition='merged' AND cleanup IS NOT NULL AND (json_extract(cleanup,'$.Local.State')='pending' OR json_extract(cleanup,'$.Fork.State')='pending') ORDER BY id LIMIT ?", t.repo, limit)
+	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.Change, error) { return t.Change(ctx, record.ChangeID(id)) })
+}
+
+func (t *transaction) CleanupCandidates(ctx context.Context, before time.Time, after record.JobID, limit int) ([]record.Job, error) {
+	limit, err := boundedLimit(limit)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := t.ids(ctx, "SELECT j.id FROM jobs j WHERE j.repository_id=? AND j.id>? AND j.state NOT IN ('queued','active') AND j.finished_at IS NOT NULL AND j.finished_at<=? ORDER BY j.id LIMIT ?", t.repo, after, before.UnixMilli(), limit)
+	return fetch(ctx, ids, err, func(ctx context.Context, id string) (record.Job, error) { return t.Job(ctx, record.JobID(id)) })
 }

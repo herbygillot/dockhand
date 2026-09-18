@@ -2,9 +2,11 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/herbygillot/dockhand/internal/forge"
 	"github.com/herbygillot/dockhand/internal/progress"
@@ -117,7 +119,10 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 	defer cancel()
 	observed, err := e.Publisher.Forge.Observe(call, previous.Ref)
 	if err != nil {
-		return result, err
+		// The last observation stands; the next periodic look waits a
+		// full interval from now, recorded so every driver and a restart
+		// honor it.
+		return result, errors.Join(err, e.deferObservation(ctx, previous))
 	}
 	pr := observed.PullRequest
 	if !observed.Found || pr.Ref.Forge != previous.Ref.Forge || !strings.EqualFold(pr.Ref.Repository, previous.Ref.Repository) || pr.Ref.Number != previous.Ref.Number || pr.ObservedAt.IsZero() || pr.ObservedAt.Before(previous.ObservedAt) || (pr.State != record.PullRequestOpen && pr.State != record.PullRequestClosed && pr.State != record.PullRequestMerged) {
@@ -157,6 +162,10 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 			if !reflect.DeepEqual(current, expected) || !reflect.DeepEqual(oldPR, previous) {
 				return ErrStaleRevision
 			}
+			// Each recorded observation schedules the next periodic look,
+			// whether an explicit refresh or the cycle made it.
+			next := e.now().Add(e.observationInterval())
+			pr.ObserveAfter = &next
 			if err := tx.PutPullRequest(ctx, pr); err != nil {
 				return err
 			}
@@ -260,54 +269,50 @@ func (e *Engine) settleAndReload(ctx context.Context, result *ContributionResult
 	})
 }
 
-// observePullRequests refreshes the open contributions whose PR has not been
-// looked at for PullRequestInterval, a few per cycle, exactly as refresh would:
-// the observation is recorded, and a merged or closed PR retires the
-// contribution and cleans its branches. Failures, such as being offline,
-// leave the last observation in place and are reported only at the verbose
-// level; the next look waits a full interval.
+// observationInterval is how long a cycle leaves an open PR unobserved.
+func (e *Engine) observationInterval() time.Duration {
+	if e.PullRequestInterval > 0 {
+		return e.PullRequestInterval
+	}
+	return defaultPullRequestInterval
+}
+
+// deferObservation records that a PR's next periodic look waits a full
+// interval from now, without recording a new observation.
+func (e *Engine) deferObservation(ctx context.Context, pr record.PullRequest) error {
+	next := e.now().Add(e.observationInterval())
+	pr.ObserveAfter = &next
+	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		return tx.PutPullRequest(ctx, pr)
+	})
+}
+
+// observePullRequests refreshes the open contributions whose PR's next look
+// is due, a few per cycle, exactly as refresh would: the observation is
+// recorded with the next look's time, and a merged or closed PR retires the
+// contribution and records its cleanup. The schedule lives on the PR
+// record, so drivers in other processes and a restarted one share it.
+// Failures, such as being offline, leave the last observation in place,
+// push the next look out a full interval, and are reported only at the
+// verbose level.
 func (e *Engine) observePullRequests(ctx context.Context) {
 	if e.Publisher == nil || e.Publisher.Forge == nil || e.Repo == nil {
 		return
 	}
-	interval := e.PullRequestInterval
-	if interval <= 0 {
-		interval = defaultPullRequestInterval
-	}
-	var open []record.Change
+	var due []record.Change
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
-		changes, err := collect(ctx, state.Query{}, r.Changes, func(v record.Change) string { return string(v.ID) })
-		if err != nil {
-			return err
-		}
-		for _, change := range changes {
-			if change.Disposition == record.ChangeOpen && change.PullRequestID != "" {
-				open = append(open, change)
-			}
-		}
-		return nil
+		var err error
+		due, err = r.OpenContributions(ctx, e.now(), observationsPerCycle)
+		return err
 	})
 	if err != nil {
 		progress.VerboseReport(ctx, "PR observation skipped: %v", err)
 		return
 	}
-	now := e.now()
-	looked := 0
-	for _, change := range open {
-		if looked >= observationsPerCycle || ctx.Err() != nil {
+	for _, change := range due {
+		if ctx.Err() != nil {
 			return
 		}
-		key := string(e.Repository) + "/" + string(change.ID)
-		observeMu.Lock()
-		due := now.Sub(lastObserved[key]) >= interval
-		if due {
-			lastObserved[key] = now
-		}
-		observeMu.Unlock()
-		if !due {
-			continue
-		}
-		looked++
 		result, err := e.refreshChange(ctx, change)
 		port := change.InitiatingTarget
 		if port == "" {

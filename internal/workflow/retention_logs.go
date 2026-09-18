@@ -10,12 +10,12 @@ import (
 
 func (c *cycle) collectLogCaches(ctx context.Context, result *RetentionResult) error {
 	e := c.engine
-	q := state.Query{Limit: 64, CleanupBefore: &result.Before}
+	var after record.JobID
 	for {
 		var jobs []record.Job
 		err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 			var err error
-			jobs, err = r.Jobs(ctx, q)
+			jobs, err = r.CleanupCandidates(ctx, result.Before, after, 64)
 			return err
 		})
 		if err != nil {
@@ -60,9 +60,9 @@ func (c *cycle) collectLogCaches(ctx context.Context, result *RetentionResult) e
 				}
 			}
 		}
-		if len(jobs) < q.Limit {
+		if len(jobs) < 64 {
 			return nil
 		}
-		q.After = string(jobs[len(jobs)-1].ID)
+		after = jobs[len(jobs)-1].ID
 	}
 }

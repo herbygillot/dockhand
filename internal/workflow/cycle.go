@@ -82,7 +82,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	now := e.now()
 	err = e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
 		var err error
-		jobs, err = r.Jobs(ctx, state.Query{Jobs: selection, DueBefore: &now, Limit: 64})
+		jobs, err = r.DueJobs(ctx, selection, now, 64)
 		return err
 	})
 	if err != nil {

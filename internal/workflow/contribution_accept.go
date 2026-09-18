@@ -45,14 +45,14 @@ func acceptPreparation(ctx context.Context, tx state.Tx, id record.JobID, reques
 			return job, nil, err
 		}
 	} else {
-		previous, err := tx.Jobs(ctx, state.Query{ChangeID: change.ID, Newest: true, Action: spec.Action, Limit: 1})
+		history, err := tx.JobHistory(ctx, change.ID)
 		if err != nil {
 			return job, nil, err
 		}
-		if len(previous) == 0 {
+		old, ok := newestJob(history, func(job record.Job) bool { return job.Spec.Action == spec.Action })
+		if !ok {
 			return job, nil, fmt.Errorf("%w: %s already has contribution %s; continue it with verify or publish", ErrInvalidRequest, initiatingName(spec), change.ID)
 		}
-		old := previous[0]
 		if old.Spec.Action != spec.Action || !reflect.DeepEqual(old.Spec.Targets, spec.Targets) || old.Spec.Reason != spec.Reason {
 			return job, nil, fmt.Errorf("%w: contribution %s already has a different preparation intent", ErrInvalidRequest, change.ID)
 		}

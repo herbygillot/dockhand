@@ -110,12 +110,12 @@ func (e *Engine) contributionBuild(ctx context.Context, change record.Change) (r
 		if current.CurrentRevision != change.CurrentRevision {
 			return ErrStaleRevision
 		}
-		jobs, err := reader.Jobs(ctx, state.Query{ChangeID: change.ID, Newest: true, WithBuild: true, Limit: 1})
+		history, err := reader.JobHistory(ctx, change.ID)
 		if err != nil {
 			return err
 		}
-		if len(jobs) == 1 {
-			spec = jobs[0].Spec
+		if newest, ok := newestJob(history, func(job record.Job) bool { return job.Spec.Action != record.Publish && job.Spec.Build != nil }); ok {
+			spec = newest.Spec
 		}
 		return nil
 	})
@@ -137,15 +137,27 @@ func (e *Engine) PreparationInput(ctx context.Context, selector ContributionSele
 		if err != nil {
 			return err
 		}
-		jobs, err := r.Jobs(ctx, state.Query{ChangeID: change.ID, Action: action, Newest: true, Limit: 1})
+		history, err := r.JobHistory(ctx, change.ID)
 		if err != nil {
 			return err
 		}
-		if len(jobs) == 0 {
+		newest, ok := newestJob(history, func(job record.Job) bool { return job.Spec.Action == action })
+		if !ok {
 			return fmt.Errorf("%w: contribution %s has different preparation intent; use verify or publish", ErrInvalidRequest, change.ID)
 		}
-		result = &jobs[0]
+		result = &newest
 		return nil
 	})
 	return result, err
+}
+
+// newestJob is the first job of a newest-first history that satisfies the
+// condition.
+func newestJob(history []record.Job, accept func(record.Job) bool) (record.Job, bool) {
+	for _, job := range history {
+		if accept(job) {
+			return job, true
+		}
+	}
+	return record.Job{}, false
 }

@@ -45,6 +45,11 @@ type PullRequest struct {
 	Title      string
 	Body       string
 	ObservedAt time.Time
+	// ObserveAfter is the earliest time a processing cycle looks at the PR
+	// again; nil means at the next opportunity. It is recorded with each
+	// observation, so separate drivers share one throttle and a restart
+	// keeps it. An explicit refresh ignores it and resets it.
+	ObserveAfter *time.Time `json:",omitempty"`
 	// Status is the forge's latest report on mergeability, review, and checks
 	// for an open PR. It is observation only; nothing acts on it.
 	Status *PullRequestStatus `json:",omitempty"`

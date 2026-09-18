@@ -44,6 +44,10 @@ type Store interface {
 // Query limits record enumeration. Jobs narrows the query within its repository;
 // a nil Jobs slice includes that repository, while an empty non-nil slice is empty.
 // DueBefore selects scheduled work. After is an exclusive ID cursor.
+// Query is the generic read for status and selection: a filter over one
+// record kind, ordered by ID and paged with After. Ordering by time and
+// paging by ID cannot be combined, since a due-ordered page can skip
+// records; the operation-shaped reads below serve those needs.
 type Query struct {
 	// Target selects contributions by initiating port name.
 	Target string
@@ -104,6 +108,24 @@ type Reader interface {
 	Resources(context.Context, Query) ([]record.Resource, error)
 	Control(context.Context, record.RequestID) (record.ControlRequest, error)
 	Controls(context.Context, Query) ([]record.ControlRequest, error)
+
+	// DueJobs lists the jobs whose next action is due at or before the
+	// time, soonest first, at most limit of them; a nil selection means
+	// every job, an empty one none. It is bounded, not paged.
+	DueJobs(context.Context, []record.JobID, time.Time, int) ([]record.Job, error)
+	// JobHistory lists one contribution's jobs, newest accepted first.
+	JobHistory(context.Context, record.ChangeID) ([]record.Job, error)
+	// OpenContributions lists open contributions with a pull request whose
+	// next look is due at or before the time, longest waiting first, at
+	// most limit of them.
+	OpenContributions(context.Context, time.Time, int) ([]record.Change, error)
+	// OwedCleanups lists merged contributions with a branch cleanup side
+	// still pending, oldest first, at most limit of them.
+	OwedCleanups(context.Context, int) ([]record.Change, error)
+	// CleanupCandidates lists terminal jobs finished at or before the time,
+	// by ID after the given one, at most limit of them: the retention
+	// sweep's page.
+	CleanupCandidates(context.Context, time.Time, record.JobID, int) ([]record.Job, error)
 }
 
 type Writer interface {

@@ -312,12 +312,29 @@ func TestCycleObservesOpenPullRequestsOnASchedule(t *testing.T) {
 	}))
 	require.NotNil(t, stored.Status)
 	require.Equal(t, 2, stored.Status.Checks.Pending)
+	require.NotNil(t, stored.ObserveAfter)
+	require.Equal(t, f.now().Add(time.Hour), *stored.ObserveAfter, "the next look is recorded with the observation")
 	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
 	require.NoError(t, err)
 	require.Equal(t, 1, hosting.inspections, "within the interval the PR is left alone")
+	restarted := *f.engine
+	_, err = restarted.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	require.Equal(t, 1, hosting.inspections, "another driver over the same store honors the recorded schedule")
+	f.advance(30 * time.Minute)
+	_, err = f.engine.RefreshContribution(t.Context(), workflow.ContributionSelector{ChangeID: "change"})
+	require.NoError(t, err)
+	require.Equal(t, 2, hosting.inspections, "an explicit refresh looks at once")
+	stored = loadPullRequest(t, f, "change")
+	require.Equal(t, f.now().Add(time.Hour), *stored.ObserveAfter, "and resets the schedule from its own observation")
 	hosting.inspectErr = errors.New("offline")
+	f.advance(time.Hour)
 	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
 	require.NoError(t, err, "a failed look never fails the cycle")
+	require.Equal(t, 3, hosting.inspections)
+	stored = loadPullRequest(t, f, "change")
+	require.Equal(t, f.now().Add(time.Hour), *stored.ObserveAfter, "a failed look still waits a full interval, on the record")
+	hosting.inspectErr = nil
 	hosting.observation.PullRequest.State = record.PullRequestMerged
 	f.advance(2 * time.Hour)
 	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
@@ -423,4 +440,18 @@ func loadChange(t *testing.T, f *fixture, id record.ChangeID) record.Change {
 		return err
 	}))
 	return change
+}
+
+func loadPullRequest(t *testing.T, f *fixture, change record.ChangeID) record.PullRequest {
+	t.Helper()
+	var pr record.PullRequest
+	require.NoError(t, f.store.View(t.Context(), f.repository, func(ctx context.Context, r state.Reader) error {
+		current, err := r.Change(ctx, change)
+		if err != nil {
+			return err
+		}
+		pr, err = r.PullRequest(ctx, current.PullRequestID)
+		return err
+	}))
+	return pr
 }

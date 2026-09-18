@@ -108,27 +108,25 @@ func (e *Engine) settleDueCleanups(ctx context.Context) {
 		return
 	}
 	now := e.now()
-	var due []record.Change
+	var owed []record.Change
 	err := e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
-		changes, err := collect(ctx, state.Query{}, r.Changes, func(v record.Change) string { return string(v.ID) })
-		if err != nil {
-			return err
-		}
-		for _, change := range changes {
-			if change.Disposition == record.ChangeMerged && change.Cleanup != nil && (change.Cleanup.Local.Due(now) || change.Cleanup.Fork.Due(now)) {
-				due = append(due, change)
-			}
-		}
-		return nil
+		var err error
+		owed, err = r.OwedCleanups(ctx, 64)
+		return err
 	})
 	if err != nil {
 		progress.VerboseReport(ctx, "branch cleanup skipped: %v", err)
 		return
 	}
-	for i, change := range due {
-		if i >= cleanupsPerCycle || ctx.Err() != nil {
+	taken := 0
+	for _, change := range owed {
+		if change.Cleanup == nil || !(change.Cleanup.Local.Due(now) || change.Cleanup.Fork.Due(now)) {
+			continue
+		}
+		if taken >= cleanupsPerCycle || ctx.Err() != nil {
 			return
 		}
+		taken++
 		port := change.InitiatingTarget
 		if port == "" {
 			port = string(change.ID)
