@@ -20,19 +20,32 @@ type Info struct {
 	Modified bool
 }
 
+// Version is the version a packager names at link time when no version
+// control data is available, as when building from a release tarball:
+//
+//	go build -ldflags "-X github.com/herbygillot/dockhand/internal/version.Version=v0.9.0" ./cmd/dockhand
+//
+// A version the toolchain stamped from a tag wins over it, so a build from a
+// checkout is never mislabeled by a stale build variable.
+var Version string
+
 // Current reads the embedded build information.
 func Current() Info {
 	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return Info{Version: "unknown"}
-	}
-	current := Info{Version: info.Main.Version}
-	for _, setting := range info.Settings {
-		switch setting.Key {
-		case "vcs.revision":
-			current.Revision = setting.Value
-		case "vcs.modified":
-			current.Modified = setting.Value == "true"
+	return current(info, ok, Version)
+}
+
+func current(info *debug.BuildInfo, ok bool, named string) Info {
+	current := Info{Version: "unknown"}
+	if ok {
+		current.Version = info.Main.Version
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				current.Revision = setting.Value
+			case "vcs.modified":
+				current.Modified = setting.Value == "true"
+			}
 		}
 	}
 	if len(current.Revision) > 12 {
@@ -40,6 +53,12 @@ func Current() Info {
 	}
 	if current.Version == "" || current.Version == "(devel)" {
 		current.Version = "devel"
+	}
+	if named = strings.TrimSpace(named); named != "" && (current.Version == "devel" || current.Version == "unknown") {
+		if !strings.HasPrefix(named, "v") {
+			named = "v" + named
+		}
+		current.Version = named
 	}
 	return current
 }

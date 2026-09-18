@@ -1,0 +1,5 @@
+# Naming the version of a tarball build
+
+Go stamps the main module's version from the nearest `vX.Y.Z` tag when it builds from a Git checkout, and `dockhand --version` reads it back: the tag on a clean tagged commit, `+dirty` with edits, a pseudo-version past the tag. A build without Git data, the case for a MacPorts port built from a release tarball, has nothing to stamp and said `devel`.
+
+The version package now has a linker-settable `Version`, `-X github.com/herbygillot/dockhand/internal/version.Version=v0.9.0`, and the Makefile passes it from `VERSION`, next to the OAuth client ID it already injects. It applies only when the toolchain stamped `devel` or nothing at all; a stamped tag or pseudo-version wins, so a checkout build cannot be mislabeled by a stale build variable. A value without the leading `v`, as MacPorts spells versions, gains it. The package test covers the three sources, stamped, linked, and neither, with the precedence between them; a `git archive` export built with `make VERSION=0.9.0` reports `v0.9.0`, and without it, `devel`.

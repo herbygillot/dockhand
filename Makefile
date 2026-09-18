@@ -1,6 +1,9 @@
 GO ?= go
 BINARY ?= dockhand
 GITHUB_OAUTH_CLIENT_ID ?=
+# VERSION names the build when no Git tag can be stamped, as from a release
+# tarball; a tag on a checkout wins over it. With or without the leading v.
+VERSION ?=
 GO_LDFLAGS ?=
 
 # Dependencies are vendored. Go would use the vendor directory on its own, but
@@ -11,6 +14,9 @@ export GOFLAGS
 
 ifneq ($(strip $(GITHUB_OAUTH_CLIENT_ID)),)
 GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/app.DefaultGitHubOAuthClientID=$(strip $(GITHUB_OAUTH_CLIENT_ID))
+endif
+ifneq ($(strip $(VERSION)),)
+GO_LDFLAGS += -X github.com/herbygillot/dockhand/internal/version.Version=$(strip $(VERSION))
 endif
 
 .PHONY: build test test-race vet deadcode vendor vendor-check clean
