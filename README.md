@@ -39,9 +39,11 @@ Optional, depending on what you work on:
 
 **Preparing updates**
 
-- Version bumps that find the newest stable upstream release from GitHub/GitLab catalogs or supported HTTP release listings, following the port's own livecheck and tag conventions, or use a version you name.
+- Version bumps that find the newest stable upstream release from GitHub/GitLab catalogs, or from the livecheck MacPorts itself resolves for the port, PyPI, CPAN, CRAN, RubyGems, SourceForge, and the other checker types that come down to a regex, following the port's own livecheck and tag conventions; or use a version you name.
 - Revision bumps.
-- Literal `version`, `github.setup`, `gitlab.setup`, and GitHub-backed `go.setup` sources, with checksums recomputed from the real archives, including ports with several archives or named checksums.
+- Versions carried as a literal `version` or as a `github.setup`, `gitlab.setup`, `go.setup`, `perl5.setup`, `R.setup`, or `ruby.setup` argument, edited in the spelling the source uses, with checksums recomputed from the real archives over HTTP or anonymous FTP, including ports with several archives, named or conditional checksums, checksums held in tables, and legacy md5/sha1 blocks, which are rewritten as rmd160, sha256, and size unless you ask to keep them.
+- Ports fetched with git, which bump through their version alone and let the build clone the tag.
+- Python, perl, and ruby stubs, which bump through their newest versioned subport as one shared release; the build proves the newest subport by default.
 - Regenerated `go.vendors`, `cargo.crates`, and `cargo.crates_github` blocks, checked against the upstream module and lockfile so a helper that silently drops a dependency is caught.
 - A preview mode that prints the exact diff without creating a branch or touching your checkout.
 - Every update starts from freshly fetched MacPorts `master`, on a new branch, with your working copy left alone.
@@ -65,7 +67,7 @@ Optional, depending on what you work on:
 - Work is durable. Close the terminal, come back later, and pick up the same job with `wait`.
 - Ctrl-C detaches from a running build without canceling it; `cancel` cancels on purpose.
 - A failed build keeps the prepared branch so you can fix it and check again.
-- `status` shows what Dockhand has recorded without starting anything.
+- `status` is a live table on a terminal: it shows every contribution, processes the repository's pending work while it is open, and its keys run the other commands on the selected row. `status --print` only reads.
 - `--json` on any command for scripting.
 
 ## Using It
@@ -144,7 +146,7 @@ It picks the newest eligible upstream version and prints the patch. Nothing is w
 dockhand bump jq 1.8.1 --diff
 ```
 
-Include the upstream tag prefix if you like (`v1.8.1`); if you leave it off, Dockhand follows the port's existing convention. A revision bump works the same way with `dockhand bump-revision jq --diff`.
+Include the upstream tag prefix if you like (`v1.8.1`); if you leave it off, Dockhand follows the port's existing convention. For a perl module the version you name is the module version, `0.58`, and the port version MacPorts derives from it is what the commit records. A revision bump works the same way with `dockhand bump-revision jq --diff`, and `dockhand refresh-checksums jq --diff` shows a checksum refresh.
 
 If the port's Portfile does something Dockhand does not understand, the preview says so instead of producing a guess. Those ports still need a manual edit, and you can hand that edit back to Dockhand for building and publishing, as described below.
 
@@ -186,12 +188,13 @@ Dockhand's branches are ordinary Git branches, and Dockhand is happy to build an
 git switch dockhand/bump/jq-...
 # edit, then stage the changed files
 git add <changed-files>
-git commit --amend --no-edit
 dockhand verify jq --working-tree --trace
+git commit --amend --no-edit
+dockhand verify jq
 dockhand publish
 ```
 
-`verify` checks the working tree by default, including staged edits, so you can build before you even commit; new files must be staged to be included. Add `--branch <name>` to check a branch's committed contents instead. Without a Tart image, add `--provider github`, which pushes the branch to your fork for the workflow to build.
+Plain `dockhand verify jq` builds the contribution's committed branch. `--working-tree` captures the checkout instead, including staged edits, so you can build before you commit; new files must be staged to be included. `--branch <name>` checks another branch's committed contents. Without a Tart image, add `--provider github`, which pushes the branch to your fork for the workflow to build.
 
 ### Follow, resume, or cancel
 
@@ -204,9 +207,9 @@ dockhand wait --job <job-id> --trace
 dockhand cancel --job <job-id> --wait
 ```
 
-After a PR is merged or closed, run `dockhand refresh jq` to record its outcome and let the next bump start fresh; a merged PR also has its local and fork branches removed. Use `dockhand abandon jq` to end local pursuit of an update while preserving its branch and any PR; cancel pending jobs first.
+After a PR is merged or closed, run `dockhand refresh jq` to record its outcome and let the next bump start fresh; the live `status` table and `start` do the same on their own every few minutes. A merged PR's local and fork branches are deleted once they no longer hold anything unpublished; one that could not be deleted yet, because it is checked out or the fork was unreachable, is recorded as owed and retried, and `status` says which. Use `dockhand abandon jq` to end local pursuit of an update while preserving its branch and any PR; cancel pending jobs first.
 
-`status` reads what is recorded and starts nothing. `wait` resumes a job and follows it to the end. `wait` and `cancel` also accept `--branch <name>`, or no selector at all when you are on the branch in question. Ctrl-C detaches from a running command; the build keeps going, and `cancel` is how you stop it. `dockhand start` keeps working through every pending job for the checkout until you interrupt it.
+`status --print` reads what is recorded and starts nothing. `wait` resumes a job and follows it to the end. `wait` and `cancel` also accept `--branch <name>`, or no selector at all when you are on the branch in question. Ctrl-C detaches from a running command; the build keeps going, and `cancel` is how you stop it. `dockhand start` keeps working through every pending job for the checkout until you interrupt it.
 
 Commands exit with 0 on success, 2 when the requested build failed, 3 when something needs your attention, 130 when interrupted or canceled, and 1 for any other error.
 
@@ -221,7 +224,7 @@ dockhand db backup ~/Backups/dockhand.db
 dockhand db check
 ```
 
-If a newer Dockhand reports that the database needs upgrading, run `dockhand db migrate`.
+A newer Dockhand upgrades the database the first time a command writes to it; a read-only command on an older database asks you to run `dockhand db migrate` first, after `dockhand db backup` if you want the old schema kept.
 
 ## Additional Info
 
@@ -236,7 +239,7 @@ The `docs/` directory has the detailed material:
 
 A few things worth knowing up front:
 
-- Automatic version discovery currently covers sources hosted on GitHub or GitLab that follow the standard PortGroup conventions. Other ports can still be bumped to a version you name, or edited by hand and then built and published with Dockhand.
+- Automatic version discovery covers GitHub and GitLab sources that follow the PortGroup conventions, and any port whose livecheck MacPorts resolves to a plain regex over an HTTP listing. A port with a custom livecheck script, a version composed from several variables, or a commit pinned as its version can still be bumped to a version you name, or edited by hand and then built and published with Dockhand.
 - `review` appears in `--help` but is not implemented yet.
 - Build results, VM images, and logs live outside the database: VMs under Tart's home directory, logs and artifacts next to the database under `~/.dockhand/`.
 - A successful GitHub Actions workflow is recorded as a pass under the workflow's own rules, which may tolerate individual port test failures. A Tart build reports lint, build, tests, and install separately.
