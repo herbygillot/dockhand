@@ -98,8 +98,17 @@ func TestConditionalRejectionGuardsAreRecognized(t *testing.T) {
 	require.Contains(t, semantics.Guards, "pre-fetch hook 1 only rejects unsupported configurations")
 	elseForm := wrapper + `if {${a}} { return -code error "no" } elseif {${b}} { ui_error x; return -code error "no" } else { return -code error "never" }` + "\n"
 	require.True(t, conditionalRejection(elseForm))
+	fortran := wrapper + `if {${compilers.require_fortran} && [fortran_variant_name] eq ""} {
+    return -code error "must set at least one Fortran variant (${compilers.my_fortran_variants})"
+}
+`
+	require.True(t, conditionalRejection(fortran), "the compilers PortGroup's guard queries variants and changes nothing")
+	require.True(t, conditionalRejection(wrapper+`if {![variant_isset gfortran] && [variant_exists gcc15]} { return -code error "no" }`+"\n"))
 	for _, body := range []string{
 		wrapper + `if {[exec uname] eq "Darwin"} { return -code error "no" }` + "\n",
+		wrapper + `if {[variant_isset $which]} { return -code error "no" }` + "\n",
+		wrapper + `if {[variant_isset [lindex $x 0]]} { return -code error "no" }` + "\n",
+		wrapper + `if {[fortran_variant_name] eq "" ]} { return -code error "no" }` + "\n",
 		wrapper + `if {${a}} { set fetch.type git; return -code error "no" }` + "\n",
 		wrapper + `if {${a}} { ui_error x } else { distfiles other.tar.gz }` + "\n",
 		wrapper + `if {${a}} { return -code error "no" }; set x 1` + "\n",

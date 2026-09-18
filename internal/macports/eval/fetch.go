@@ -83,8 +83,10 @@ func rejectionCommands(src []byte, commands []syntax.Command) bool {
 // A conditional rejection consists only of if statements whose conditions
 // read variables and whose every branch is a rejection: the perl5 PortGroup's
 // required-variant check, for example. Such a hook can fail the fetch but
-// never change what is fetched. Conditions with command substitutions, and
-// branches that do anything else, are not recognized.
+// never change what is fetched. Conditions may call the variant queries in
+// pureConditionCommands, which the compilers PortGroup's Fortran check
+// needs; any other command substitution, and branches that do anything
+// else, are not recognized.
 func conditionalRejection(body string) bool {
 	body, ok := strings.CutPrefix(body, "global {*}[info globals]\n")
 	if !ok {
@@ -113,7 +115,7 @@ func conditionalRejection(body string) bool {
 					return false
 				}
 				braced, ok := word.Segments[0].(syntax.Braced)
-				if !ok || strings.ContainsAny(braced.Body.Text(src), "[]") {
+				if !ok || !pureCondition(braced.Body.Text(src)) {
 					return false
 				}
 				expectCondition = false
@@ -132,6 +134,37 @@ func conditionalRejection(body string) bool {
 		}
 	}
 	return true
+}
+
+// pureConditionCommands are the commands a rejection's condition may call:
+// queries of the selected variants that read interpreter state and change
+// nothing, and take literal arguments only.
+var pureConditionCommands = map[string]bool{"variant_isset": true, "variant_exists": true, "fortran_variant_name": true}
+
+// pureCondition accepts a condition whose command substitutions, if any, are
+// all pure variant queries with literal arguments; nested substitutions,
+// variable arguments, and unbalanced brackets are refused.
+func pureCondition(condition string) bool {
+	for {
+		open := strings.IndexByte(condition, '[')
+		if open < 0 {
+			return !strings.ContainsRune(condition, ']')
+		}
+		end := strings.IndexByte(condition[open:], ']')
+		if end < 0 {
+			return false
+		}
+		call := strings.Fields(condition[open+1 : open+end])
+		if len(call) == 0 || !pureConditionCommands[call[0]] {
+			return false
+		}
+		for _, argument := range call[1:] {
+			if strings.ContainsAny(argument, "$[]{}\\\"") {
+				return false
+			}
+		}
+		condition = condition[open+end+1:]
+	}
 }
 
 // The Go PortGroup's compatibility check does not change the fetched archive.

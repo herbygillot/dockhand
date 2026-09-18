@@ -201,6 +201,12 @@ func (s *Service) evaluateContents(ctx context.Context, reader snapshotEvaluator
 // withLivecheckOf returns port with owner's livecheck declarations in place
 // of its own.
 func withLivecheckOf(port, owner macports.PortInfo) macports.PortInfo {
+	// A member that checks upstream itself keeps its own livecheck: the
+	// ruby PortGroup's stub returns before declaring one and its subports
+	// each declare the RubyGems check, the reverse of the python shape.
+	if own := port.Options["livecheck.type"]; (own == "regex" || own == "regexm") && port.Options["livecheck.regex"] != "" && port.OptionErrors["livecheck.regex"] == "" {
+		return port
+	}
 	port.Options = maps.Clone(port.Options)
 	if port.Options == nil {
 		port.Options = map[string]string{}

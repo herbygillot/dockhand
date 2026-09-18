@@ -95,6 +95,22 @@ func Candidates(src []byte) ([]Candidate, error) {
 				if len(cmd.Words) >= 3 && len(cmd.Words) <= 5 {
 					index = 2
 				}
+			// The perl5, R, and ruby PortGroups carry the version as a setup
+			// argument: perl5.setup module vers ?cpandir?, R.setup domain
+			// author package version ?tag_prefix? ?tag_suffix?, and
+			// ruby.setup module vers ?type? ?docs? ?source? ?implementation?.
+			case "perl5.setup":
+				if len(cmd.Words) >= 3 && len(cmd.Words) <= 4 {
+					index = 2
+				}
+			case "R.setup":
+				if len(cmd.Words) >= 5 && len(cmd.Words) <= 7 {
+					index = 4
+				}
+			case "ruby.setup":
+				if len(cmd.Words) >= 3 && len(cmd.Words) <= 7 {
+					index = 2
+				}
 			}
 			if index >= 0 {
 				word(cmd.Words[index])

@@ -46,7 +46,7 @@ func (s *Service) planArchiveVersion(ctx context.Context, request Request, input
 	}
 	sourceVersion, ok := spec.Pattern.Version(release.Tag)
 	if spec.Forge == "" {
-		sourceVersion, ok = release.Version, release.Forge == ""
+		sourceVersion, ok = release.SourceSpelling(), release.Forge == ""
 	}
 	if !ok {
 		return archivePlan{}, fmt.Errorf("%w: selected tag does not match source convention", ErrFidelity)

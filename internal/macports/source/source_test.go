@@ -110,3 +110,32 @@ func TestSourceSpellingIsIndependentOfCalculatedPortVersion(t *testing.T) {
 	_, err = source.Interpret(port, source.Edit)
 	require.NoError(t, err)
 }
+
+// An archive source's version is spelled the way livecheck.version spells it,
+// which the perl5 PortGroup derives the port version from; its multiline
+// regex livecheck is accepted for discovery like the line-oriented one.
+func TestArchiveSourceVersionIsTheLivecheckSpelling(t *testing.T) {
+	port := macports.PortInfo{Name: "p5.34-json", Version: "4.110.0", Options: map[string]string{
+		"livecheck.type": "regexm", "livecheck.url": "https://fastapi.metacpan.org/v1/release/JSON/", "livecheck.regex": `{"name"} : {"JSON-([^"]+?)"}`, "livecheck.version": "4.11",
+		"livecheck.ignore_sslcert": "no", "livecheck.compression": "yes", "livecheck.curloptions": "", "dockhand.livecheck_standard": "1",
+	}}
+	spec, err := source.Interpret(port, source.Edit)
+	require.NoError(t, err)
+	require.Equal(t, "4.110.0", spec.CurrentVersion)
+	require.Equal(t, "4.11", spec.SourceVersion)
+	spec, err = source.Interpret(port, source.Discovery)
+	require.NoError(t, err)
+	require.Equal(t, source.HTTPRegex, spec.Catalog)
+	require.True(t, spec.Livecheck.Multiline)
+	require.Equal(t, "4.11", spec.SourceVersion)
+	port.OptionErrors = map[string]string{"livecheck.version": "cannot evaluate"}
+	spec, err = source.Interpret(port, source.Edit)
+	require.NoError(t, err)
+	require.Equal(t, "4.110.0", spec.SourceVersion, "an unevaluated spelling falls back to the port version")
+	_, err = source.Interpret(port, source.Discovery)
+	require.Error(t, err)
+	delete(port.OptionErrors, "livecheck.version")
+	port.Options["livecheck.type"] = "none"
+	_, err = source.Interpret(port, source.Discovery)
+	require.Error(t, err)
+}

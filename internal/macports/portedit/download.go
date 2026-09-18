@@ -133,7 +133,7 @@ func (s *Service) downloadArchive(ctx context.Context, info macports.PortInfo, s
 	request.Header.Set("Accept-Encoding", "identity")
 	agent := info.Options["fetch.user_agent"]
 	if agent == "" {
-		agent = "dockhand/2"
+		agent = fetch.UserAgent
 	}
 	request.Header.Set("User-Agent", agent)
 	limit := s.MaxDownloadBytes

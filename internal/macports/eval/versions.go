@@ -61,8 +61,10 @@ func (e *Evaluator) SelectVersion(ctx context.Context, current, expression strin
 }
 
 // ExtractVersions collects all distinct first captures using native Tcl regex
-// semantics and Base's line-oriented regex livecheck behavior.
-func (e *Evaluator) ExtractVersions(ctx context.Context, expression, page string) (_ []string, err error) {
+// semantics and Base's line-oriented regex livecheck behavior. With
+// multiline it is Base's regexm instead: one match against the whole page,
+// so the result holds at most one version.
+func (e *Evaluator) ExtractVersions(ctx context.Context, expression, page string, multiline bool) (_ []string, err error) {
 	session, _, err := e.start(ctx, macports.Tree{})
 	if err != nil {
 		return nil, err
@@ -71,7 +73,11 @@ func (e *Evaluator) ExtractVersions(ctx context.Context, expression, page string
 	if _, err = session.Call(ctx, "eval", versionScript); err != nil {
 		return nil, err
 	}
-	reply, err := session.Call(ctx, "extract-versions", expression, page)
+	mode := "line"
+	if multiline {
+		mode = "page"
+	}
+	reply, err := session.Call(ctx, "extract-versions", expression, page, mode)
 	if err != nil {
 		return nil, err
 	}

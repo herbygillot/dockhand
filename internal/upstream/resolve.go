@@ -35,14 +35,20 @@ func (s *Service) Resolve(ctx context.Context, port macports.PortInfo, requested
 		if s.EvaluateVersion == nil {
 			return record.Release{}, fmt.Errorf("upstream: Portfile version evaluation is required")
 		}
+		// The request is the source's spelling; the port version is what
+		// the Portfile evaluates from it, the same string for most ports.
 		version, err := s.EvaluateVersion(ctx, requested)
 		if err != nil {
 			return record.Release{}, err
 		}
-		if version != requested || version == port.Version {
+		if version == "" || version == port.Version {
 			return record.Release{}, fmt.Errorf("upstream: explicit archive version must select a different evaluated version")
 		}
-		return classified(record.Release{Selection: record.Selection{Requested: requested, CurrentVersion: port.Version}, Archive: true, Version: version, ObservedAt: time.Now().UTC()}, port.Version), nil
+		release := record.Release{Selection: record.Selection{Requested: requested, CurrentVersion: port.Version}, Archive: true, Version: version, ObservedAt: time.Now().UTC()}
+		if version != requested {
+			release.SourceVersion = requested
+		}
+		return classified(release, port.Version), nil
 	}
 	spec, repository, err := s.repository(port, false)
 	if err != nil {
@@ -98,7 +104,7 @@ func (s *Service) Check(ctx context.Context, port macports.PortInfo, release rec
 		// A frozen archive release must describe this Portfile's source; an
 		// already-current one is coherent too and lets preparation report
 		// "no update" the way it does for a forge source.
-		if spec.Forge != "" || release.Requested != "" && release.Version != release.Requested || release.CurrentVersion != port.Version || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || version.Validate(release.Version) != nil {
+		if spec.Forge != "" || release.Requested != "" && release.SourceSpelling() != release.Requested || release.CurrentVersion != port.Version || release.Forge != "" || release.Instance != "" || release.Repository != "" || release.Tag != "" || release.Commit != "" || version.Validate(release.Version) != nil || release.SourceVersion != "" && version.Validate(release.SourceVersion) != nil {
 			return fmt.Errorf("upstream: archive release does not match the Portfile")
 		}
 		if release.Requested == "" {

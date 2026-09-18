@@ -24,9 +24,18 @@ proc ::dockhand::select_version {current expression args} {
 }
 ::tclrpc::register select-version ::dockhand::select_version
 
-proc ::dockhand::extract_versions {expression page} {
+proc ::dockhand::extract_versions {expression page {mode line}} {
     set regex [join $expression]
     if {$regex eq ""} {error "empty livecheck expression"}
+    if {$mode eq "page"} {
+        # Base's regexm: one match against the whole page, first capture.
+        if {![regexp -nocase -indices -- $regex $page whole capture]} {return {}}
+        if {![info exists capture] || [lindex $capture 0] < 0} {error "livecheck requires a version capture"}
+        lassign $capture first last
+        set version [string range $page $first $last]
+        if {$version eq ""} {error "empty livecheck version capture"}
+        return [list $version]
+    }
     # Match each line like Base's regex livecheck. Progress is explicit even for
     # zero-width matches, so malformed patterns cannot trap the interpreter.
     set versions [dict create]

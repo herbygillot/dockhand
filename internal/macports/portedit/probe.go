@@ -122,7 +122,7 @@ func (p *VersionProbe) CheckRelease(ctx context.Context, release record.Release)
 	}
 	raw, ok := spec.Pattern.Version(release.Tag)
 	if spec.Forge == "" {
-		raw, ok = release.Version, release.Forge == ""
+		raw, ok = release.SourceSpelling(), release.Forge == ""
 	}
 	if !ok {
 		return fmt.Errorf("%w: selected tag no longer matches source convention", ErrFidelity)

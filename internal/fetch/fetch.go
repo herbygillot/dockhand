@@ -19,6 +19,10 @@ func (e *StatusError) Error() string { return fmt.Sprintf("fetch: HTTP %d for %s
 
 // Open requires a successful HTTP response and bounds bytes read from its body.
 // The caller closes the body and decides content validation, hashing, and storage.
+// UserAgent identifies dockhand's own HTTP requests. Some listings, MetaCPAN
+// among them, refuse a client library's default agent.
+const UserAgent = "dockhand/2"
+
 func Open(client *http.Client, request *http.Request, limit int64) (*http.Response, error) {
 	if request == nil || request.URL == nil || limit <= 0 {
 		return nil, fmt.Errorf("fetch: request and positive size limit required")

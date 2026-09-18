@@ -157,3 +157,38 @@ if {${subport} eq ${name}} {
 	require.Contains(t, port.Options["livecheck.url"], "/releases")
 	require.Equal(t, "1", port.Options["dockhand.livecheck_standard"])
 }
+
+// The ruby PortGroup's stub returns before declaring a livecheck while each
+// subport declares the RubyGems check: the newest subport keeps its own
+// livecheck rather than borrowing the stub's absent one.
+func TestStubProbeKeepsAMembersOwnLivecheck(t *testing.T) {
+	t.Parallel()
+	s, r, _ := archiveFixture(t, `version 1.2.3
+revision 0
+distname shared-${version}
+master_sites @SITE@/${version}
+checksums sha256 aaaa size 2
+subport fixture-33 {
+ livecheck.type regex
+ livecheck.url @SITE@/gems
+ livecheck.regex {shared-(\d+(\.\d+)+)\.tar}
+}
+subport fixture-34 {
+ livecheck.type regex
+ livecheck.url @SITE@/gems
+ livecheck.regex {shared-(\d+(\.\d+)+)\.tar}
+}
+if {${subport} eq ${name}} {
+ distfiles
+ fetch {}
+ use_configure no
+ build {}
+}
+`)
+	probe, err := s.Probe(t.Context(), ProbeSource{Source: r.Source, Root: r.Root, Selection: macports.Selection{Selector: "fixture"}, Platform: r.Platform})
+	require.NoError(t, err)
+	port := probe.Port()
+	require.Equal(t, "fixture-34", port.Name)
+	require.Equal(t, "regex", port.Options["livecheck.type"], "the member's own livecheck stands")
+	require.Contains(t, port.Options["livecheck.url"], "/gems")
+}

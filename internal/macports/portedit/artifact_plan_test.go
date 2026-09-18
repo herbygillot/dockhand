@@ -182,3 +182,32 @@ func TestPreparePreservesRejectedPlatformGuardWithoutClaimingBuildCoverage(t *te
 	}
 	require.True(t, guarded)
 }
+
+// A Portfile that derives its version from the source's spelling, as the
+// perl5 PortGroup derives the port version from the module version, is
+// edited to the spelling and evaluated to the version: the release names
+// both, the input holds the spelling, and the archive is fetched by it.
+func TestPrepareEditsTheSourceSpellingOfADerivedVersion(t *testing.T) {
+	t.Parallel()
+	s, r, requests := archiveFixture(t, `set modver 1.2
+version ${modver}00
+revision 1
+livecheck.version ${modver}
+master_sites @SITE@/${modver}
+distfiles fixture.tar.gz
+checksums sha256 aaaa size 2
+`)
+	r.Version = "1.3"
+	r.Release = &record.Release{Selection: record.Selection{Requested: "1.3"}, Archive: true, Version: "1.300", SourceVersion: "1.3"}
+	result, err := s.Prepare(t.Context(), r)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/1.3/fixture.tar.gz"}, *requests)
+	after := string(result.Files[0].After)
+	require.Contains(t, after, "set modver 1.3")
+	require.Contains(t, after, "version ${modver}00")
+	require.Contains(t, after, "revision 0")
+	require.Equal(t, "1.300", result.Release.Version)
+	r.Release = &record.Release{Selection: record.Selection{Requested: "1.3"}, Archive: true, Version: "1.3"}
+	_, err = s.Prepare(t.Context(), r)
+	require.Error(t, err, "a release whose version is not what the spelling evaluates to is refused")
+}

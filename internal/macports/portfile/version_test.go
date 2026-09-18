@@ -18,7 +18,7 @@ func TestCandidatesPreserveSourceAndExcludeHooksAndData(t *testing.T) {
 	require.Error(t, err)
 }
 func TestCandidatesFindSetupAndComposedInputs(t *testing.T) {
-	for _, src := range []string{"go.setup github.com/owner/project 1.2 v\n", "gitlab.setup owner project 1.2 v\n", "github.setup owner project 2026-09-07\nversion [string map {- {}} ${github.version}]\n", "set patch 3\nproc release {} {global patch; return 1.2.${patch}}\nversion [release]\n"} {
+	for _, src := range []string{"go.setup github.com/owner/project 1.2 v\n", "gitlab.setup owner project 1.2 v\n", "github.setup owner project 2026-09-07\nversion [string map {- {}} ${github.version}]\n", "set patch 3\nproc release {} {global patch; return 1.2.${patch}}\nversion [release]\n", "perl5.setup App-cpanminus 1.7049 ../../authors/id/M/MI/MIYAGAWA\n", "R.setup cran jeroen jsonlite 1.8.9\n", "R.setup github tidyverse ggplot2 3.5.1 v\n", "ruby.setup 3llo 1.3.1 gem {} rubygems\n", "ruby.setup {rails railties} 7.1.2 gem {} rubygems ruby33\n"} {
 		values, err := portfile.Candidates([]byte(src))
 		require.NoError(t, err)
 		require.Len(t, values, 1)

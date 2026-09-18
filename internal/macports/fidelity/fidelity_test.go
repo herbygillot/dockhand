@@ -48,3 +48,19 @@ func TestRevisionAndChecksumsReportOnlyIntendedChanges(t *testing.T) {
 	require.NotEmpty(t, Checksums(before, refreshed, "main", "/source", "sha256 cccc").UnexpectedChanges, "checksums must match the intended values")
 	require.Error(t, CheckSnapshot(macports.Snapshot{}, macports.Context{}))
 }
+
+// A homepage that spells the version moves with a bump: the perl5 ports'
+// metacpan release pages do, and nothing is fetched from it.
+func TestVersionAllowsAHomepageThatFollowsTheVersion(t *testing.T) {
+	before := snapshot(map[string]macports.PortInfo{
+		"main": {Name: "main", Version: "0.21.0", Revision: 0, Options: map[string]string{"checksums": "sha256 aaaa", "homepage": "https://metacpan.org/release/List-Uniq-v0.21.0"}},
+	})
+	after := snapshot(map[string]macports.PortInfo{
+		"main": {Name: "main", Version: "0.230.0", Revision: 0, Options: map[string]string{"checksums": "sha256 bbbb", "homepage": "https://metacpan.org/release/List-Uniq-0.23"}},
+	})
+	report := ScopedVersion(false, before, after, "main", "/source", record.Release{Version: "0.230.0"}, "sha256 bbbb")
+	require.Empty(t, report.UnexpectedChanges)
+	after.Ports["main"].Options["description"] = "changed"
+	report = ScopedVersion(false, before, after, "main", "/source", record.Release{Version: "0.230.0"}, "sha256 bbbb")
+	require.NotEmpty(t, report.UnexpectedChanges, "other metadata still may not move")
+}

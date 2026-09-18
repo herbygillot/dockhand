@@ -36,10 +36,13 @@ type TagPattern = version.TagPattern
 type Livecheck struct {
 	Headers     map[string]string
 	Compression bool
-	Type        string
-	URL         string
-	Regex       string
-	Version     string
+	// Multiline is Base's regexm: the expression is matched once against
+	// the whole listing rather than against each line.
+	Multiline bool
+	Type      string
+	URL       string
+	Regex     string
+	Version   string
 }
 
 type Spec struct {
@@ -79,7 +82,7 @@ func Interpret(port macports.PortInfo, purpose Purpose) (Spec, error) {
 		if port.Version == "" {
 			return Spec{}, fmt.Errorf("%w: missing evaluated version", ErrUnsupported)
 		}
-		return Spec{CurrentVersion: port.Version, SourceVersion: port.Version}, nil
+		return Spec{CurrentVersion: port.Version, SourceVersion: archiveSourceVersion(port)}, nil
 	}
 	if github == gitlab {
 		return Spec{}, fmt.Errorf("%w: require exactly one recognized source PortGroup", ErrUnsupported)
@@ -206,6 +209,18 @@ func interpret(port macports.PortInfo, forge Forge, prefix, instance string) (Sp
 		return Spec{}, fmt.Errorf("macports source: invalid %s repository %q", prefix, repository)
 	}
 	return Spec{Forge: forge, Instance: instance, Repository: repository, CurrentVersion: port.Version, SourceVersion: raw, Pattern: pattern, Catalog: Tags}, nil
+}
+
+// archiveSourceVersion is the spelling an archive source uses for the port's
+// version: livecheck.version, which MacPorts compares upstream observations
+// against, when the Portfile evaluates one, otherwise the port version. The
+// perl5 PortGroup derives the port version from its module version and
+// checks CPAN for the latter; for most ports the two are the same string.
+func archiveSourceVersion(port macports.PortInfo) string {
+	if value := port.Options["livecheck.version"]; value != "" && port.OptionErrors["livecheck.version"] == "" {
+		return value
+	}
+	return port.Version
 }
 
 func evaluated(port macports.PortInfo, key string) error {

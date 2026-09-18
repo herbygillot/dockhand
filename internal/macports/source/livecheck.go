@@ -32,9 +32,11 @@ func discoverListing(port macports.PortInfo) (Spec, error) {
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return Spec{}, fmt.Errorf("%w: livecheck requires an HTTP(S) URL without credentials", ErrUnsupported)
 	}
-	if live.Type != "regex" || live.Regex == "" || live.Version != port.Version || port.Options["dockhand.livecheck_standard"] != "1" {
+	sourceVersion := archiveSourceVersion(port)
+	if live.Type != "regex" && live.Type != "regexm" || live.Regex == "" || live.Version != sourceVersion || port.Options["dockhand.livecheck_standard"] != "1" {
 		return Spec{}, fmt.Errorf("%w: require standard regex livecheck for the evaluated port version, without custom hooks", ErrUnsupported)
 	}
+	live.Multiline = live.Type == "regexm"
 	ignore, err := boolean(port.Options["livecheck.ignore_sslcert"])
 	if err != nil || ignore {
 		return Spec{}, fmt.Errorf("%w: livecheck.ignore_sslcert must be disabled", ErrUnsupported)
@@ -59,7 +61,7 @@ func discoverListing(port macports.PortInfo) (Spec, error) {
 		}
 		live.Headers[name] = value
 	}
-	return Spec{CurrentVersion: port.Version, SourceVersion: port.Version, Catalog: HTTPRegex, Livecheck: live}, nil
+	return Spec{CurrentVersion: port.Version, SourceVersion: sourceVersion, Catalog: HTTPRegex, Livecheck: live}, nil
 }
 
 func boolean(value string) (bool, error) {

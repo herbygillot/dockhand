@@ -26,13 +26,19 @@ type Release struct {
 	Archive bool            `json:",omitempty"`
 	Listing *ReleaseListing `json:",omitempty"`
 	Selection
-	Version    string
-	Forge      string
-	Instance   string
-	Repository string
-	Tag        string
-	Commit     string
-	ObservedAt time.Time
+	Version string
+	// SourceVersion is the version as the source spells it when the
+	// Portfile derives its own from that spelling, such as a perl5 module
+	// version that MacPorts normalizes into the port version; empty when
+	// the two agree. It is what the version input is edited to; Version
+	// is always the evaluated result.
+	SourceVersion string `json:",omitempty"`
+	Forge         string
+	Instance      string
+	Repository    string
+	Tag           string
+	Commit        string
+	ObservedAt    time.Time
 }
 
 // ReleaseListing retains compact discovery evidence; source archives are bound
@@ -42,4 +48,13 @@ type ReleaseListing struct {
 	ETag         string `json:",omitempty"`
 	LastModified string `json:",omitempty"`
 	SHA256       string
+}
+
+// SourceSpelling is the version the source names: SourceVersion when the
+// Portfile derives its version from it, otherwise Version itself.
+func (r Release) SourceSpelling() string {
+	if r.SourceVersion != "" {
+		return r.SourceVersion
+	}
+	return r.Version
 }

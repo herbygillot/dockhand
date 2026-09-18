@@ -66,14 +66,14 @@ func TestExtractVersionsUsesNativeTclAndLineBoundaries(t *testing.T) {
 		t.Skip("MacPorts is required")
 	}
 	evaluator := eval.Evaluator{Executable: executable}
-	versions, err := evaluator.ExtractVersions(t.Context(), `{\mversion_([[:digit:]]+\.[[:digit:]]+)\M}`, "version_1.9 version_1.10\nversion_1.9 xversion_9.9\n")
+	versions, err := evaluator.ExtractVersions(t.Context(), `{\mversion_([[:digit:]]+\.[[:digit:]]+)\M}`, "version_1.9 version_1.10\nversion_1.9 xversion_9.9\n", false)
 	require.NoError(t, err)
 	require.Equal(t, []string{"1.9", "1.10"}, versions)
-	versions, err = evaluator.ExtractVersions(t.Context(), `{start(.*)end}`, "start\n1.2\nend")
+	versions, err = evaluator.ExtractVersions(t.Context(), `{start(.*)end}`, "start\n1.2\nend", false)
 	require.NoError(t, err)
 	require.Empty(t, versions)
 	for _, expression := range []string{`{(}`, `{version}`, `{()}`} {
-		_, err = evaluator.ExtractVersions(t.Context(), expression, "version")
+		_, err = evaluator.ExtractVersions(t.Context(), expression, "version", false)
 		require.Error(t, err)
 	}
 }

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"encoding/hex"
+	"github.com/herbygillot/dockhand/internal/macports/version"
 	"net/url"
 
 	"github.com/herbygillot/dockhand/internal/record"
@@ -14,8 +15,13 @@ func validReleaseSource(r record.Release) bool {
 	if r.CurrentVersion == "" || r.Forge != "" || r.Instance != "" || r.Repository != "" || r.Tag != "" || r.Commit != "" {
 		return false
 	}
+	if r.SourceVersion != "" && (r.SourceVersion == r.Version || version.Validate(r.SourceVersion) != nil) {
+		return false
+	}
 	if r.Requested != "" {
-		return r.Requested == r.Version && r.Listing == nil
+		// An explicit version is the source's spelling: the evaluated
+		// version itself, or the spelling the Portfile derives it from.
+		return r.Requested == r.SourceSpelling() && r.Listing == nil
 	}
 	if r.Listing == nil {
 		return false
