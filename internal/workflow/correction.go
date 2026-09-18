@@ -65,12 +65,9 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 	if input.Action != record.Amend && input.Action != record.Rebase {
 		return result, ErrInvalidRequest
 	}
-	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
+	err := e.requireRepository(ctx, "")
 	if err != nil {
 		return result, err
-	}
-	if registered.ID != e.Repository {
-		return result, ErrInvalidRequest
 	}
 	branch := input.Branch
 	if branch == "" {
@@ -200,15 +197,9 @@ func (e *Engine) BindCorrection(ctx context.Context, input CorrectionRequest) (B
 		Preparation: &record.PreparationSpec{SourceBranch: branch, Platform: input.Platform, Author: record.CommitIdentity{Name: author.Name, Email: author.Email}, VerificationProblem: build.Problem,
 			Correction: &record.CorrectionSpec{Scope: scope, ChangeID: change.ID, RevisionID: revision.ID, Branch: branch, PreviousHead: committed.Head, RemoteHead: remoteHead, Candidate: candidate}}}
 	if input.Publication != nil {
-		if e.Publisher == nil {
-			return result, fmt.Errorf("workflow: publisher required")
-		}
-		if err := e.Publisher.Preflight(ctx); err != nil {
-			return result, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
-		}
-		destination, err := e.Publisher.Destination(ctx, *input.Publication)
+		destination, err := e.publicationDestination(ctx, *input.Publication)
 		if err != nil {
-			return result, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
+			return result, err
 		}
 		spec.PublishTo, spec.Destination = &destination, record.Published
 	}

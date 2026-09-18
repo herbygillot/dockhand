@@ -107,12 +107,8 @@ func (e *Engine) BindVerification(ctx context.Context, request VerificationReque
 	if request.ResolveBuild != nil {
 		platform = request.Platform
 	}
-	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
-	if err != nil {
+	if err := e.requireRepository(ctx, "Git repository does not match workflow scope"); err != nil {
 		return BoundVerification{}, err
-	}
-	if registered.ID != e.Repository {
-		return BoundVerification{}, fmt.Errorf("%w: Git repository does not match workflow scope", ErrInvalidRequest)
 	}
 	working := request.Branch == ""
 	var snapshot changeset.Snapshot

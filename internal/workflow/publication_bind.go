@@ -50,12 +50,8 @@ func (e *Engine) bindPublication(ctx context.Context, input PublicationRequest, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeouts.Publish)
 	defer cancel()
-	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
-	if err != nil {
+	if err := e.requireRepository(ctx, ""); err != nil {
 		return Request{}, err
-	}
-	if registered.ID != e.Repository {
-		return Request{}, ErrInvalidRequest
 	}
 	var continuation *record.Change
 	if input.Target != "" || input.ChangeID != "" {

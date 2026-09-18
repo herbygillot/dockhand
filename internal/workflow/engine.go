@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/herbygillot/dockhand/internal/git"
@@ -114,3 +115,42 @@ const (
 	// observationsPerCycle bounds forge calls in one cycle.
 	observationsPerCycle = 4
 )
+
+// requireRepository checks that the Git repository the engine drives is the
+// one its state is scoped to; scope words the refusal for the caller.
+func (e *Engine) requireRepository(ctx context.Context, scope string) error {
+	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
+	if err != nil {
+		return err
+	}
+	if registered.ID != e.Repository {
+		if scope == "" {
+			return ErrInvalidRequest
+		}
+		return fmt.Errorf("%w: %s", ErrInvalidRequest, scope)
+	}
+	return nil
+}
+
+// publicationDestination resolves where a publication would go, after the
+// publisher's preflight, within the publication timeout. It is the intake
+// step every bind that can publish shares.
+func (e *Engine) publicationDestination(ctx context.Context, options publish.Options) (record.PublicationDestination, error) {
+	if e.Publisher == nil {
+		return record.PublicationDestination{}, fmt.Errorf("workflow: publisher required")
+	}
+	timeouts, err := e.Timeouts.defaults()
+	if err != nil {
+		return record.PublicationDestination{}, err
+	}
+	call, cancel := context.WithTimeout(ctx, timeouts.Publish)
+	defer cancel()
+	if err := e.Publisher.Preflight(call); err != nil {
+		return record.PublicationDestination{}, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
+	}
+	destination, err := e.Publisher.Destination(call, options)
+	if err != nil {
+		return record.PublicationDestination{}, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
+	}
+	return destination, nil
+}

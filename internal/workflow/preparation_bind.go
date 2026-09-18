@@ -54,12 +54,8 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	if !validToken(string(request.ID)) || !git.ValidBranchName(request.SourceBranch) {
 		return BoundPreparation{}, ErrInvalidRequest
 	}
-	registered, err := e.State.FindRepository(ctx, e.Repo.CommonDir)
-	if err != nil {
+	if err := e.requireRepository(ctx, "preparation repository does not match state scope"); err != nil {
 		return BoundPreparation{}, err
-	}
-	if registered.ID != e.Repository {
-		return BoundPreparation{}, fmt.Errorf("%w: preparation repository does not match state scope", ErrInvalidRequest)
 	}
 	source := request.Source
 	if source.Base != source.Commit {
@@ -97,22 +93,9 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	}
 	var destination *record.PublicationDestination
 	if request.Destination == record.Published {
-		if e.Publisher == nil {
-			return BoundPreparation{}, fmt.Errorf("workflow: publisher required")
-		}
-		timeouts, err := e.Timeouts.defaults()
+		resolved, err := e.publicationDestination(ctx, request.Publication)
 		if err != nil {
 			return BoundPreparation{}, err
-		}
-		call, cancel := context.WithTimeout(ctx, timeouts.Publish)
-		if err := e.Publisher.Preflight(call); err != nil {
-			cancel()
-			return BoundPreparation{}, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
-		}
-		resolved, err := e.Publisher.Destination(call, request.Publication)
-		cancel()
-		if err != nil {
-			return BoundPreparation{}, fmt.Errorf("%w: %w", ErrPublicationIntake, err)
 		}
 		destination = &resolved
 	}
