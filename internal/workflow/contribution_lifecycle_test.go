@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -361,7 +362,7 @@ func TestMergeCleanupIsOwedUntilSettled(t *testing.T) {
 	require.Equal(t, f.now().Add(15*time.Minute), *cleanup.Fork.RetryAt)
 	stored := loadChange(t, f, "change")
 	require.Equal(t, cleanup, stored.Cleanup, "the obligation is what the store holds")
-	rows := workflow.Project(workflow.Status{Changes: []record.Change{stored}})
+	rows := view.Project(view.Snapshot{Changes: []record.Change{stored}})
 	require.Len(t, rows, 1)
 	require.Equal(t, "merged; fork branch author/ports:candidate cleanup pending: "+cleanup.Fork.Detail, rows[0].Next)
 
@@ -386,7 +387,7 @@ func TestMergeCleanupIsOwedUntilSettled(t *testing.T) {
 	remote, err = f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
 	require.NoError(t, err)
 	require.False(t, remote.Exists)
-	rows = workflow.Project(workflow.Status{Changes: []record.Change{stored}})
+	rows = view.Project(view.Snapshot{Changes: []record.Change{stored}})
 	require.Equal(t, "merged; branches cleaned", rows[0].Next)
 }
 

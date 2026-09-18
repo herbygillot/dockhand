@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,7 +84,7 @@ func TestStatusRejectsInvalidSelectorsBeforeOpeningRepository(t *testing.T) {
 func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
 	t.Parallel()
 	status := workflow.EmptyStatus(time.Now())
-	status.Jobs = []workflow.JobStatus{{Job: record.Job{
+	status.Jobs = []view.JobStatus{{Job: record.Job{
 		ID:    "job_fixture",
 		State: record.JobCompleted,
 		Spec: record.JobSpec{
@@ -114,7 +115,7 @@ func TestStatusRendersWorkingTreeFileCount(t *testing.T) {
 func TestStatusRendersGitHubRunIdentity(t *testing.T) {
 	t.Parallel()
 	status := workflow.EmptyStatus(time.Now())
-	status.Jobs = []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobCompleted}, Attempts: []record.Attempt{{
+	status.Jobs = []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobCompleted}, Attempts: []record.Attempt{{
 		ID: "attempt", State: record.AttemptFinished,
 		Evidence: &record.Evidence{Verdict: record.VerdictPassed, Workflow: &record.WorkflowEvidence{RunID: 34989358751, RunAttempt: 2, Conclusion: "success", URL: "https://github.com/owner/ports/actions/runs/34989358751"}},
 	}}}}
@@ -127,7 +128,7 @@ func TestStatusRendersGitHubRunIdentity(t *testing.T) {
 func TestStatusShowsQueuedGitHubRunAndForkBranch(t *testing.T) {
 	t.Parallel()
 	status := workflow.EmptyStatus(time.Now())
-	status.Jobs = []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{
+	status.Jobs = []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{
 		State: record.AttemptRunning, Evidence: &record.Evidence{Workflow: &record.WorkflowEvidence{Repository: "owner/ports", Branch: "update", Commit: "abc", RunID: 10, RunAttempt: 2, Status: "queued", URL: "https://github.com/owner/ports/actions/runs/10"}},
 	}}}}
 	var output bytes.Buffer
@@ -140,7 +141,7 @@ func TestStatusDistinguishesFailedBumpFromStandaloneVerification(t *testing.T) {
 	t.Parallel()
 	target := record.Target{Name: "terraform-1.16", Subport: "terraform-1.16", Portfile: "sysutils/terraform/Portfile"}
 	status := workflow.EmptyStatus(time.Now())
-	status.Jobs = []workflow.JobStatus{
+	status.Jobs = []view.JobStatus{
 		{Job: record.Job{ID: "bump", State: record.JobNeedsAttention, Phase: record.PhasePreparation,
 			Spec: record.JobSpec{Action: record.Bump, Targets: []record.Target{target}}}},
 		{Job: record.Job{ID: "verify", State: record.JobCompleted, Phase: record.PhaseVerification,
@@ -164,7 +165,7 @@ func TestStatusDoesNotDescribeUnintegratedCandidateAsBranch(t *testing.T) {
 	status := workflow.EmptyStatus(time.Now())
 	job := record.Job{ID: "bump", Phase: record.PhasePreparation, State: record.JobNeedsAttention,
 		Prepared: &record.PreparedChange{Branch: "candidate"}}
-	status.Jobs = []workflow.JobStatus{{Job: job}}
+	status.Jobs = []view.JobStatus{{Job: job}}
 	var output bytes.Buffer
 	require.NoError(t, renderStatus(&output, status))
 	require.Contains(t, output.String(), "candidate awaiting confirmed branch integration: candidate")

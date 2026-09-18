@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"io"
 	"maps"
 	"os"
@@ -45,9 +46,9 @@ func (r *runtime) statusCommand() *cobra.Command {
 			if err != nil {
 				return databaseReadError(err)
 			}
-			overview := workflow.Overview{Status: status, Contributions: workflow.Project(status)}
+			overview := workflow.Overview{Status: status, Contributions: view.Project(status.Snapshot)}
 			if !all {
-				overview.Contributions = workflow.Current(overview.Contributions)
+				overview.Contributions = view.Current(overview.Contributions)
 			}
 			if r.json {
 				return r.emit(overview)
@@ -58,7 +59,7 @@ func (r *runtime) statusCommand() *cobra.Command {
 			if !printOnly && isTerminal(cmd.OutOrStdout()) && isTerminal(cmd.InOrStdin()) {
 				return r.liveStatus(cmd, filter, all)
 			}
-			return renderContributions(cmd.OutOrStdout(), overview, len(workflow.Project(status))-len(overview.Contributions))
+			return renderContributions(cmd.OutOrStdout(), overview, len(view.Project(status.Snapshot))-len(overview.Contributions))
 		},
 	}
 	cmd.Flags().BoolVar(&printOnly, "print", false, "Print the snapshot once; do not open the live table or process work")
@@ -89,7 +90,7 @@ func (r *runtime) liveStatus(cmd *cobra.Command, filter workflow.StatusFilter, s
 			if err != nil {
 				return workflow.Overview{}, err
 			}
-			return workflow.Overview{Status: status, Contributions: workflow.Project(status)}, nil
+			return workflow.Overview{Status: status, Contributions: view.Project(status.Snapshot)}, nil
 		},
 		Run: func(ctx context.Context, args []string, out io.Writer) error {
 			return run(ctx, args, Streams{Out: out, Err: out}, r.config, r.build)

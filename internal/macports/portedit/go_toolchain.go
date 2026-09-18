@@ -33,10 +33,10 @@ func moduleModeGo(info macports.PortInfo) bool {
 // declares no minimum, or carries it in a way that cannot be edited, is
 // told about the requirement and left as it is.
 func (s *Service) raiseGoToolchain(ctx context.Context, input *sourceInput, result *Result) error {
-	if len(result.Files) == 0 || len(result.Fidelity) == 0 {
+	if len(result.Files) == 0 || result.Prepared.Ports == nil {
 		return nil
 	}
-	previous := result.Fidelity[len(result.Fidelity)-1].After
+	previous := result.Prepared
 	selected := previous.Ports[input.target.Name]
 	if selected.Options["go.package"] == "" {
 		return nil
@@ -91,7 +91,7 @@ func (s *Service) raiseGoToolchain(ctx context.Context, input *sourceInput, resu
 		report.UnexpectedChanges = append(report.UnexpectedChanges, fidelity.Compare(name, fidelity.ComparablePort(expected, input.files.root), fidelity.ComparablePort(next, input.files.root))...)
 	}
 	result.Files = []portfile.Edit{evaluated.edit}
-	result.Fidelity = append(result.Fidelity, report)
+	result.report(report)
 	if len(report.UnexpectedChanges) > 0 {
 		return fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 	}

@@ -35,9 +35,12 @@ type Result struct {
 	Files        []git.FileEdit
 	Commits      []CommitIntent
 	Fidelity     []portedit.Fidelity
-	Release      *record.Release
-	Downloads    []portedit.Download
-	Patches      []patchcheck.Result `json:",omitempty"`
+	// Prepared is the evaluated snapshot of the prepared tree, bound to
+	// its committed source identity once the candidate tree is written.
+	Prepared  macports.Snapshot `json:"-"`
+	Release   *record.Release
+	Downloads []portedit.Download
+	Patches   []patchcheck.Result `json:",omitempty"`
 }
 
 // PatchProblems names the declared patches that no longer apply to the candidate source.
@@ -133,7 +136,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		}
 	}
 	edited, err := s.editor().Prepare(ctx, request)
-	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Release: edited.Release, Downloads: edited.Downloads, Patches: edited.Patches}
+	result := Result{Scope: edited.Scope, Coverage: edited.Coverage, Base: edited.Base, Target: edited.Target, Fidelity: edited.Fidelity, Prepared: edited.Prepared, Release: edited.Release, Downloads: edited.Downloads, Patches: edited.Patches}
 	if err != nil {
 		return result, err
 	}
@@ -163,7 +166,7 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 		return result, err
 	}
 	defer func() { err = errors.Join(err, candidate.Close()) }()
-	expected := result.Fidelity[len(result.Fidelity)-1].After
+	expected := result.Prepared
 	source := record.Source{Tree: record.ObjectID(tree), Base: request.Source.Base}
 	bound, err := macports.NewContext(source, candidate.Root, expected.Target, expected.Platform)
 	if err != nil {
@@ -179,11 +182,14 @@ func (s *Service) Prepare(ctx context.Context, request Request) (_ Result, err e
 	if err = fidelity.Equivalent(expected, snapshot, files.Root, candidate.Root); err != nil {
 		return result, err
 	}
+	// The committed candidate is the prepared result, and the last report
+	// records it as evidence.
+	result.Prepared = snapshot
 	result.Fidelity[len(result.Fidelity)-1].After = snapshot
 	result.PreparedTree = record.ObjectID(tree)
 	return result, nil
 }
 
 func probeSource(request Request) portedit.ProbeSource {
-	return portedit.ProbeSource{SharedRelease: request.SharedRelease, Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform}
+	return portedit.ProbeSource{EditIntent: request.EditIntent, Source: request.Source, Root: request.Root, Selection: request.Selection, Platform: request.Platform}
 }

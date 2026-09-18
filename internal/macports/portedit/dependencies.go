@@ -186,7 +186,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	if err != nil {
 		return Result{}, err
 	}
-	next := result.Fidelity[len(result.Fidelity)-1].After.Ports[input.target.Name]
+	next := result.Prepared.Ports[input.target.Name]
 	nextSources, err := downloadSources(next, base.portdir())
 	if err != nil {
 		return Result{}, err
@@ -252,7 +252,7 @@ func (s *Service) prepareDependencyVersion(ctx context.Context, request Request,
 	}
 	result.Base = request.Source
 	result.Files = []portfile.Edit{evaluated.edit}
-	result.Fidelity = append(result.Fidelity, final)
+	result.report(final)
 	result.Downloads = append(result.Downloads, gitDownloads...)
 	if err := s.raiseGoToolchain(ctx, input, &result); err != nil {
 		return Result{}, err

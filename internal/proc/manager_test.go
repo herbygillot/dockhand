@@ -3,6 +3,7 @@ package proc
 import (
 	"context"
 	"errors"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func (e *scriptedEngine) Status(ctx context.Context, scope workflow.Scope) (work
 	if err := ctx.Err(); err != nil {
 		return workflow.Status{}, err
 	}
-	return workflow.Status{Jobs: []workflow.JobStatus{{Job: e.stages[e.index]}}}, nil
+	return workflow.Status{Jobs: []view.JobStatus{{Job: e.stages[e.index]}}}, nil
 }
 func (e *scriptedEngine) Cycle(ctx context.Context, scope workflow.Scope) (workflow.CycleResult, error) {
 	e.cycles++

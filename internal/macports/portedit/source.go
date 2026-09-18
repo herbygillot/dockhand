@@ -79,17 +79,24 @@ func (s *Service) load(ctx context.Context, request *Request) (_ *sourceInput, e
 		return nil, err
 	}
 	var stub string
-	if newest, _ := macports.StubMembers(before, selected.Name); newest != "" && selected.Subport == "" {
+	if request.Stub != "" {
+		// The selection was resolved when the job was bound: the target is
+		// the carrying subport and the stub's name is recorded. Honor it.
+		if _, ok := before.Ports[request.Stub]; !ok || selected.Name == request.Stub || selected.Subport == "" {
+			return nil, fmt.Errorf("%w: recorded stub %s does not match the selected subport %s", ErrUnsupported, request.Stub, selected.Name)
+		}
+		stub = request.Stub
+		request.SharedRelease = true
+	} else if carrier, name := macports.ResolveStub(before, selected); name != "" {
+		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", name, carrier.Name)
+		stub = name
+		request.Stub, request.SharedRelease = name, true
+		selected = carrier
+	}
+	if stub != "" {
 		if _, ok := s.Ports.(macports.Observer); !ok {
 			return nil, fmt.Errorf("%w: shared releases require native declaration observation", ErrUnsupported)
 		}
-		if request.CommitName == "" {
-			request.CommitName = selected.Name
-		}
-		request.SharedRelease = true
-		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", selected.Name, newest)
-		stub = selected.Name
-		selected = record.Target{Name: newest, Portfile: selected.Portfile, Subport: newest, Variants: selected.Variants}
 	}
 	info, ok := before.Ports[selected.Name]
 	if !ok {

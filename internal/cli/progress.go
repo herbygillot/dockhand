@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"io"
 	"strconv"
 	"strings"
@@ -152,7 +153,7 @@ func (r *reporter) status(ctx context.Context, status workflow.Status) error {
 	return nil
 }
 
-func completedOutcome(entry workflow.JobStatus) string {
+func completedOutcome(entry view.JobStatus) string {
 	job := entry.Job
 	if job.State != record.JobCompleted {
 		if job.State.Terminal() && job.Phase == record.PhasePreparation && job.ResultRevision == "" {

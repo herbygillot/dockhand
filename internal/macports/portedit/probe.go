@@ -15,11 +15,11 @@ import (
 // ProbeSource selects an exclusively owned disposable source workspace.
 // Probing restores the Portfile after each evaluation; it does not fetch archives.
 type ProbeSource struct {
-	SharedRelease bool
-	Source        record.Source
-	Root          string
-	Selection     macports.Selection
-	Platform      record.Platform
+	record.EditIntent
+	Source    record.Source
+	Root      string
+	Selection macports.Selection
+	Platform  record.Platform
 }
 
 // VersionProbe binds source metadata and candidate evaluation to one workspace.
@@ -32,7 +32,7 @@ type VersionProbe struct {
 }
 
 func (s *Service) Probe(ctx context.Context, source ProbeSource) (*VersionProbe, error) {
-	request := Request{SharedRelease: source.SharedRelease, Source: source.Source, Root: source.Root, Selection: source.Selection, Platform: source.Platform}
+	request := Request{EditIntent: source.EditIntent, Source: source.Source, Root: source.Root, Selection: source.Selection, Platform: source.Platform}
 	input, err := s.load(ctx, &request)
 	if err != nil {
 		return nil, err

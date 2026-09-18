@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/herbygillot/dockhand/internal/record"
 	"github.com/herbygillot/dockhand/internal/workflow"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,7 +41,7 @@ func TestCohortProgressCountsQueuedTargets(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	reporter := newReporter(&out, nil, false, progress.Info, false)
-	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{State: record.AttemptQueued}, {State: record.AttemptRunning}, {State: record.AttemptQueued}}}}}
+	status := workflow.Status{Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{State: record.AttemptQueued}, {State: record.AttemptRunning}, {State: record.AttemptQueued}}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
 	require.Equal(t, 1, strings.Count(out.String(), "waiting for provider admission"))
 	require.Contains(t, out.String(), "2 targets waiting")

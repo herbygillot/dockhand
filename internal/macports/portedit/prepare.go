@@ -28,16 +28,12 @@ type CommitIntent struct {
 }
 
 type Request struct {
-	SharedRelease bool
-	// CommitName replaces the target's name in the commit subject, for a
-	// bump that a person addressed to a stub port.
-	CommitName string
-	// KeepOldChecksums keeps a legacy checksum group's algorithms and layout
-	// and refreshes its values, md5 and sha1 included, instead of rewriting
-	// the group as rmd160, sha256, and size.
-	KeepOldChecksums bool
-	Action           record.Action
-	Source           record.Source
+	// EditIntent is the person's choices for the edit, as bound or as
+	// recorded on the job: a Stub already resolved there is honored rather
+	// than resolved again.
+	record.EditIntent
+	Action record.Action
+	Source record.Source
 	// Root is an exclusively owned disposable source snapshot, never a user checkout.
 	Root      string
 	Selection macports.Selection
@@ -60,18 +56,31 @@ type ContextCoverage struct {
 }
 
 type Result struct {
-	Scope     *record.ReleaseScope `json:",omitempty"`
-	Coverage  []ContextCoverage    `json:",omitempty"`
-	Base      record.Source
-	Target    record.Target
-	Files     []portfile.Edit
-	Commits   []CommitIntent
-	Fidelity  []Fidelity
+	Scope    *record.ReleaseScope `json:",omitempty"`
+	Coverage []ContextCoverage    `json:",omitempty"`
+	Base     record.Source
+	Target   record.Target
+	Files    []portfile.Edit
+	Commits  []CommitIntent
+	Fidelity []Fidelity
+	// Prepared is the evaluated snapshot of the prepared files, the state
+	// every later step reads: the go.mod check, dependency regeneration,
+	// the patch check, and the adapter's final evaluation. It is set with
+	// each fidelity report, so it is the last report's snapshot without
+	// any reader having to know that.
+	Prepared  macports.Snapshot `json:"-"`
 	Release   *record.Release
 	Downloads []Download
 	// Patches reports whether each declared patch file still applies to the
 	// candidate source; a rejected patch is a finding, not a refusal.
 	Patches []patchcheck.Result `json:",omitempty"`
+}
+
+// report records a fidelity report and makes its evaluated snapshot the
+// prepared result.
+func (r *Result) report(report Fidelity) {
+	r.Fidelity = append(r.Fidelity, report)
+	r.Prepared = report.After
 }
 
 type Service struct {

@@ -6,21 +6,31 @@ type CommitIdentity struct {
 	Email string
 }
 
-// PreparationSpec records the inputs a later driver needs to create a contribution.
-type PreparationSpec struct {
+// EditIntent is what a person asked of the edit beyond the version: the
+// choices that shape the commit. It is set once from the command line and
+// travels unchanged through the job record to the editor, so an option is
+// one field rather than one copied through every type on the way.
+type EditIntent struct {
+	// SharedRelease authorizes moving every subport that shares the
+	// selected port's release source.
 	SharedRelease bool `json:",omitempty"`
 	// Stub names the port a person selected when the edit targets its newest
 	// versioned subport instead: the contribution, branch, and commit carry
-	// this name.
+	// this name, and the editor honors the recorded redirect.
 	Stub string `json:",omitempty"`
 	// KeepOldChecksums refreshes a legacy checksum group's values in place,
 	// md5 and sha1 included, instead of rewriting it as rmd160, sha256, and size.
-	KeepOldChecksums bool            `json:",omitempty"`
-	Correction       *CorrectionSpec `json:",omitempty"`
-	SourceURL        string          `json:",omitempty"`
-	SourceBranch     string
-	Platform         Platform
-	Author           CommitIdentity
+	KeepOldChecksums bool `json:",omitempty"`
+}
+
+// PreparationSpec records the inputs a later driver needs to create a contribution.
+type PreparationSpec struct {
+	EditIntent
+	Correction   *CorrectionSpec `json:",omitempty"`
+	SourceURL    string          `json:",omitempty"`
+	SourceBranch string
+	Platform     Platform
+	Author       CommitIdentity
 	// VerificationProblem preserves setup failure without preventing branch creation.
 	VerificationProblem string `json:",omitempty"`
 }

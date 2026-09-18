@@ -30,9 +30,9 @@ func PlanDependents(job record.Job, revision record.Revision, coverage Coverage)
 			return plan, fmt.Errorf("verify: image override %s does not name a discovered dependent", name)
 		}
 	}
-	rootTargets := job.Spec.Targets
-	if revision.Scope != nil {
-		rootTargets = revision.Scope.RequiredTargets(job.Spec)
+	rootTargets, err := job.Spec.RequiredTargets(revision.Scope)
+	if err != nil {
+		return plan, err
 	}
 	roots := make([]bool, len(rootTargets))
 	for i, candidate := range coverage.Targets {

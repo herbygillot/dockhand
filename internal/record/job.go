@@ -83,7 +83,8 @@ type JobSpec struct {
 	IncludeDependents bool `json:",omitempty"`
 	FreshVerification bool `json:",omitempty"`
 	// AllSubports asks verification to build every buildable member of a
-	// shared release rather than the initiating target alone.
+	// shared release rather than the initiating target alone; Coverage
+	// reads it as an intent.
 	AllSubports bool `json:",omitempty"`
 	// KeepFailed retains a failed verification environment for explicit investigation.
 	// It does not affect evidence compatibility or retain successful/canceled runs.
@@ -234,4 +235,32 @@ type ControlRequest struct {
 	// AppliedAt means the driver has applied the intent to all selected jobs
 	// or found them terminal. It does not confirm that remote cancellation finished.
 	AppliedAt *time.Time
+}
+
+// Coverage is the job's verification intent over a shared release: every
+// buildable member when it asked for all subports, otherwise its initiating
+// target alone.
+func (spec JobSpec) Coverage() CoverageIntent {
+	if spec.AllSubports || len(spec.Targets) == 0 {
+		return CoverageAll
+	}
+	return CoverageInitiating
+}
+
+// Initiating is the target the job was addressed to, the first of its
+// targets, or the zero target when it has none.
+func (spec JobSpec) Initiating() Target {
+	if len(spec.Targets) == 0 {
+		return Target{}
+	}
+	return spec.Targets[0]
+}
+
+// RequiredTargets applies the job's coverage intent to a release scope; with
+// no scope the job's own targets are required.
+func (spec JobSpec) RequiredTargets(scope *ReleaseScope) ([]Target, error) {
+	if scope == nil {
+		return spec.Targets, nil
+	}
+	return scope.RequiredTargets(spec.Coverage(), spec.Initiating())
 }

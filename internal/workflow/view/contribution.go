@@ -1,4 +1,9 @@
-package workflow
+// Package view is the contribution-centric projection of the engine's
+// recorded snapshot: the rows a person reads in status, its JSON, and the
+// live table. It reads records only; it knows neither the engine nor the
+// store, so what a phase, state, or next step is called lives in one place
+// that nothing operational depends on.
+package view
 
 import (
 	"fmt"
@@ -9,6 +14,33 @@ import (
 	"github.com/herbygillot/dockhand/internal/macos"
 	"github.com/herbygillot/dockhand/internal/record"
 )
+
+// JobStatus is one job with the attempts and publication actions recorded
+// for it.
+type JobStatus struct {
+	Plan         *record.VerificationPlan `json:",omitempty"`
+	Job          record.Job
+	Attempts     []record.Attempt
+	Publications []record.PublicationAction
+	// Reused is the original execution cited by a completed job, not a new attempt.
+	Reused *record.Attempt `json:",omitempty"`
+}
+
+// Snapshot is what the view projects: the jobs, changes, revisions, and
+// pull requests read from the store at one moment.
+type Snapshot struct {
+	Jobs         []JobStatus
+	Changes      []record.Change
+	Revisions    []record.Revision
+	PullRequests []record.PullRequest
+	Resources    []record.Resource
+}
+
+// EmptySnapshot is a snapshot with every list present and empty, so its
+// JSON says so rather than omitting them.
+func EmptySnapshot() Snapshot {
+	return Snapshot{Jobs: []JobStatus{}, Changes: []record.Change{}, Revisions: []record.Revision{}, PullRequests: []record.PullRequest{}, Resources: []record.Resource{}}
+}
 
 // Contribution is one row of the contribution-centric view of a repository:
 // a tracked change, or a standalone verification, with the words a person
@@ -64,17 +96,11 @@ type ContributionJob struct {
 	FinishedAt *time.Time `json:",omitempty"`
 }
 
-// Overview is a status snapshot with its contribution projection.
-type Overview struct {
-	Status
-	Contributions []Contribution
-}
-
 // Project derives the rows of a snapshot: one per port, carrying the port's
 // current open contribution, with its earlier contributions and standalone
 // verifications folded underneath. Rows are ordered by the time of their
 // latest activity, newest first.
-func Project(status Status) []Contribution {
+func Project(status Snapshot) []Contribution {
 	return foldByPort(contributions(status))
 }
 
@@ -127,7 +153,7 @@ func Current(rows []Contribution) []Contribution {
 }
 
 // contributions derives one row per contribution or standalone verification.
-func contributions(status Status) []Contribution {
+func contributions(status Snapshot) []Contribution {
 	changes := make(map[record.ChangeID]record.Change, len(status.Changes))
 	for _, change := range status.Changes {
 		changes[change.ID] = change

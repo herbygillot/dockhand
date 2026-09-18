@@ -90,9 +90,11 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 			return record.VerificationPlan{}, nil, fmt.Errorf("verify: selected evidence does not satisfy accepted requirements: %s", strings.Join(differences, "; "))
 		}
 	}
-	targets := job.Spec.Targets
+	targets, err := job.Spec.RequiredTargets(revision.Scope)
+	if err != nil {
+		return record.VerificationPlan{}, nil, err
+	}
 	if revision.Scope != nil {
-		targets = revision.Scope.RequiredTargets(job.Spec)
 		rootPresent := false
 		for _, target := range targets {
 			if record.CompareTargets(target, job.Spec.Targets[0]) == 0 {
@@ -148,8 +150,8 @@ func PlanWithConfig(job record.Job, revision record.Revision, config record.Buil
 
 // PlanSingle retains the one-target planning contract used by evidence reuse.
 func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPlan, record.BuildSpec, error) {
-	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.RequiredTargets(job.Spec)) != 1 {
-		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
+	if err := requireSingle(job, revision); err != nil {
+		return record.VerificationPlan{}, record.BuildSpec{}, err
 	}
 	if job.Spec.Build == nil {
 		if job.Spec.Preparation != nil && job.Spec.Preparation.VerificationProblem != "" {
@@ -163,12 +165,25 @@ func PlanSingle(job record.Job, revision record.Revision) (record.VerificationPl
 // planSingleWithConfig creates a one-target plan from an exact configuration
 // selected by accepted requirements and recorded evidence.
 func planSingleWithConfig(job record.Job, revision record.Revision, config record.BuildConfig) (record.VerificationPlan, record.BuildSpec, error) {
-	if len(job.Spec.Targets) != 1 || revision.Scope != nil && len(revision.Scope.RequiredTargets(job.Spec)) != 1 {
-		return record.VerificationPlan{}, record.BuildSpec{}, fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
+	if err := requireSingle(job, revision); err != nil {
+		return record.VerificationPlan{}, record.BuildSpec{}, err
 	}
 	plan, builds, err := PlanWithConfig(job, revision, config)
 	if err != nil {
 		return record.VerificationPlan{}, record.BuildSpec{}, err
 	}
 	return plan, builds[0], nil
+}
+
+// requireSingle is the one-target planning contract: one job target whose
+// coverage intent the release scope resolves to exactly one member.
+func requireSingle(job record.Job, revision record.Revision) error {
+	targets, err := job.Spec.RequiredTargets(revision.Scope)
+	if err != nil {
+		return err
+	}
+	if len(job.Spec.Targets) != 1 || len(targets) != 1 {
+		return fmt.Errorf("verify: this cycle requires one verification target and an explicit build configuration")
+	}
+	return nil
 }

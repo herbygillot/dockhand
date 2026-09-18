@@ -23,10 +23,10 @@ func patched(info macports.PortInfo) bool {
 // the final evaluation, so callers run it while their archive store exists.
 // A rejected patch is a finding on the result, never a preparation error.
 func (s *Service) checkPatches(ctx context.Context, input *sourceInput, result *Result) error {
-	if len(result.Fidelity) == 0 {
+	if result.Prepared.Ports == nil {
 		return nil
 	}
-	info := result.Fidelity[len(result.Fidelity)-1].After.Ports[input.target.Name]
+	info := result.Prepared.Ports[input.target.Name]
 	names, errs := syntax.ListValues(info.Options["patchfiles"])
 	if len(errs) > 0 || len(names) == 0 {
 		return nil

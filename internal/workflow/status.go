@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"slices"
 	"strings"
 	"time"
@@ -41,27 +42,24 @@ func (f StatusFilter) Validate() error {
 	return nil
 }
 
-type JobStatus struct {
-	Plan         *record.VerificationPlan `json:",omitempty"`
-	Job          record.Job
-	Attempts     []record.Attempt
-	Publications []record.PublicationAction
-	// Reused is the original execution cited by a completed job, not a new attempt.
-	Reused *record.Attempt `json:",omitempty"`
-}
+// Status is the engine's read of a repository: which records were selected,
+// when, and the snapshot the view projects.
 type Status struct {
-	Filter       *StatusFilter `json:",omitempty"`
-	Repository   record.RepositoryID
-	ReadAt       time.Time
-	Jobs         []JobStatus
-	Changes      []record.Change
-	Revisions    []record.Revision
-	PullRequests []record.PullRequest
-	Resources    []record.Resource
+	Filter     *StatusFilter `json:",omitempty"`
+	Repository record.RepositoryID
+	ReadAt     time.Time
+	view.Snapshot
+}
+
+// Overview is a status with its contribution projection, the shape the
+// status command prints and emits.
+type Overview struct {
+	Status
+	Contributions []view.Contribution
 }
 
 func EmptyStatus(at time.Time) Status {
-	return Status{ReadAt: at.UTC(), Jobs: []JobStatus{}, Changes: []record.Change{}, Revisions: []record.Revision{}, PullRequests: []record.PullRequest{}, Resources: []record.Resource{}}
+	return Status{ReadAt: at.UTC(), Snapshot: view.EmptySnapshot()}
 }
 func collect[T any](ctx context.Context, q state.Query, get func(context.Context, state.Query) ([]T, error), id func(T) string) ([]T, error) {
 	result := []T{}
@@ -126,7 +124,7 @@ func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (
 			if err != nil {
 				return err
 			}
-			entry := JobStatus{Job: job, Attempts: attempts, Publications: []record.PublicationAction{}}
+			entry := view.JobStatus{Job: job, Attempts: attempts, Publications: []record.PublicationAction{}}
 			{
 				plan, err := r.Plan(ctx, job.ID)
 				if err != nil && !errors.Is(err, state.ErrNotFound) {
@@ -174,7 +172,7 @@ func (e *Engine) status(ctx context.Context, scope Scope, filter StatusFilter) (
 	if err != nil {
 		return Status{}, err
 	}
-	slices.SortFunc(result.Jobs, func(a, b JobStatus) int {
+	slices.SortFunc(result.Jobs, func(a, b view.JobStatus) int {
 		if cmp := a.Job.AcceptedAt.Compare(b.Job.AcceptedAt); cmp != 0 {
 			return cmp
 		}

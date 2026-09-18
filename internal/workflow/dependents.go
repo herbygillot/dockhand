@@ -82,11 +82,11 @@ func (c *cycle) planDependents(ctx context.Context, id record.JobID) (bool, stri
 	call, cancel := context.WithTimeout(ctx, c.timeouts.Prepare)
 	defer cancel()
 	_, source := selected.EffectiveSource()
-	roots := selected.Spec.Targets
-	if revision.Scope != nil {
-		roots = revision.Scope.RequiredTargets(selected.Spec)
+	roots, operationErr := selected.Spec.RequiredTargets(revision.Scope)
+	var coverage verify.Coverage
+	if operationErr == nil {
+		coverage, operationErr = e.Dependents.Discover(call, source, *selected.Spec.Build, roots)
 	}
-	coverage, operationErr := e.Dependents.Discover(call, source, *selected.Spec.Build, roots)
 	var plan record.VerificationPlan
 	if operationErr == nil {
 		plan, operationErr = verify.PlanDependents(selected, revision, coverage)

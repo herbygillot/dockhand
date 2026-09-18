@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"io"
 	"maps"
 	"slices"
@@ -85,7 +86,7 @@ func jobPort(job record.Job) string {
 }
 
 // jobHeadline says what the job does and where it stands: "1.7 -> 1.8.1; verified".
-func jobHeadline(entry workflow.JobStatus) string {
+func jobHeadline(entry view.JobStatus) string {
 	job := entry.Job
 	var what string
 	switch job.Spec.Action {
@@ -120,7 +121,7 @@ func versionMove(release *record.Release) string {
 	return release.CurrentVersion + " -> " + release.Version
 }
 
-func jobState(entry workflow.JobStatus) string {
+func jobState(entry view.JobStatus) string {
 	job := entry.Job
 	switch job.State {
 	case record.JobQueued:
@@ -207,7 +208,7 @@ func attemptLine(job record.Job, attempt record.Attempt) string {
 
 // pullRequestLine names the PR a publication confirmed, or the recorded PR of
 // the job's contribution, with its observed state.
-func pullRequestLine(entry workflow.JobStatus, pulls []record.PullRequest) string {
+func pullRequestLine(entry view.JobStatus, pulls []record.PullRequest) string {
 	for _, publication := range entry.Publications {
 		if publication.State != record.PublicationConfirmed {
 			continue

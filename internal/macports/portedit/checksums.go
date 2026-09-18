@@ -43,7 +43,7 @@ func (s *Service) prepareChecksums(ctx context.Context, request Request, input *
 	}
 	report := fidelity.Checksums(input.before, evaluated.after, input.target.Name, input.files.root, checksums)
 	if bytes.Equal(contents, input.data) {
-		result.Fidelity = []Fidelity{report}
+		result.report(report)
 		if len(report.UnexpectedChanges) > 0 {
 			return result, fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 		}

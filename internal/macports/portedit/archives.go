@@ -83,13 +83,13 @@ func (a *archiveStore) refresh(ctx context.Context, contents []byte, info macpor
 // way so callers can report what was attempted.
 func (r *Result) commitEdit(input *sourceInput, request Request, edit portfile.Edit, report Fidelity, subject string) error {
 	r.Files = []portfile.Edit{edit}
-	r.Fidelity = append(r.Fidelity, report)
+	r.report(report)
 	if len(report.UnexpectedChanges) > 0 {
 		return fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 	}
 	name := input.target.Name
-	if request.CommitName != "" {
-		name = request.CommitName
+	if request.Stub != "" {
+		name = request.Stub
 	}
 	r.Commits = []CommitIntent{{Subject: name + ": " + subject, Body: request.Reason, Paths: []string{input.target.Portfile}}}
 	return nil

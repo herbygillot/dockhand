@@ -1,4 +1,4 @@
-package workflow
+package view
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ func TestProjectGroupsJobsByContributionAndWordsEachPhase(t *testing.T) {
 	base := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	platform := record.Platform{OS: "macOS", Version: "26", Architecture: "arm64"}
 	finished := base.Add(10 * time.Minute)
-	status := Status{
+	status := Snapshot{
 		Changes: []record.Change{
 			{ID: "change_jq", InitiatingTarget: "jq", Branch: "dockhand/bump/jq", Targets: []record.Target{{Name: "jq"}}, Disposition: record.ChangeOpen, PullRequestID: "pr_jq", CreatedAt: base},
 			{ID: "change_gh", InitiatingTarget: "gh", Branch: "dockhand/bump/gh", Disposition: record.ChangeMerged, CreatedAt: base.Add(-time.Hour),
@@ -78,7 +78,7 @@ func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
 		Prepared: &record.PreparedChange{Branch: "b", PatchProblems: []string{"p1: rejects 4 hunks", "p2: rejects 1 hunk"}}}}
 	ready := JobStatus{Job: record.Job{ID: "job_r", ChangeID: "c4", State: record.JobCompleted, Phase: record.PhasePreparation, ResultRevision: "r", Spec: record.JobSpec{Action: record.Bump, Destination: record.BranchReady, Targets: []record.Target{{Name: "d"}}}}}
 	stopped := JobStatus{Job: record.Job{ID: "job_s", ChangeID: "c5", State: record.JobNeedsAttention, Phase: record.PhasePreparation, Detail: "forge: authentication is required", Spec: record.JobSpec{Action: record.Bump, Targets: []record.Target{{Name: "e"}}}}}
-	rows := Project(Status{Jobs: []JobStatus{waiting, failed, attention, ready, stopped}})
+	rows := Project(Snapshot{Jobs: []JobStatus{waiting, failed, attention, ready, stopped}})
 	byPort := map[string]Contribution{}
 	for _, row := range rows {
 		byPort[row.Port] = row
@@ -97,7 +97,7 @@ func TestProjectWordsWaitingFailureAndAttention(t *testing.T) {
 func TestProjectFoldsAPortsContributionsUnderItsOpenOne(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
-	status := Status{
+	status := Snapshot{
 		Changes: []record.Change{
 			{ID: "c_old", InitiatingTarget: "wasmer", Disposition: record.ChangeClosed, CreatedAt: base.Add(-2 * time.Hour)},
 			{ID: "c_merged", InitiatingTarget: "wasmer", Branch: "dockhand/bump/wasmer-1", Disposition: record.ChangeMerged, CreatedAt: base.Add(-time.Hour)},
@@ -131,7 +131,7 @@ func TestFinishedStandaloneVerificationsRetire(t *testing.T) {
 	t.Parallel()
 	verified := JobStatus{Job: record.Job{ID: "j", State: record.JobCompleted, Phase: record.PhaseVerification, Spec: record.JobSpec{Action: record.Verify, Destination: record.VerificationComplete, Targets: []record.Target{{Name: "libmd"}}}},
 		Attempts: []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}}
-	rows := Project(Status{Jobs: []JobStatus{verified}})
+	rows := Project(Snapshot{Jobs: []JobStatus{verified}})
 	require.Len(t, rows, 1)
 	require.Equal(t, "verified", rows[0].State)
 	require.True(t, rows[0].Retired, "there is nothing to abandon or continue; it hides with the retired rows")

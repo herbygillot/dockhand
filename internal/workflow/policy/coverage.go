@@ -35,7 +35,10 @@ func PublicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 		if scope == nil {
 			return nil
 		}
-		targets := scope.RequiredTargets(owner.Spec)
+		targets, err := scope.RequiredTargets(owner.Spec.Coverage(), owner.Spec.Initiating())
+		if err != nil {
+			return fmt.Errorf("%w: %v", publish.ErrPrecondition, err)
+		}
 		if len(targets) == 1 && record.CompareTargets(targets[0], root.Spec.Target) == 0 {
 			return nil
 		}
@@ -51,7 +54,11 @@ func PublicationCoverage(ctx context.Context, r state.Reader, root record.Attemp
 		return fmt.Errorf("%w: verification coverage: %s", publish.ErrPrecondition, detail)
 	}
 	if scope != nil {
-		for _, required := range scope.RequiredTargets(owner.Spec) {
+		required, err := scope.RequiredTargets(owner.Spec.Coverage(), owner.Spec.Initiating())
+		if err != nil {
+			return fail(err.Error())
+		}
+		for _, required := range required {
 			found := false
 			for _, target := range plan.Targets {
 				if record.CompareTargets(required, target.Port) == 0 {

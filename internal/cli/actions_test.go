@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"github.com/herbygillot/dockhand/internal/progress"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"path/filepath"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestResultCodesDistinguishFailureAttentionAndInterruption(t *testing.T) {
 	require.Equal(t, 2, ExitCode(errors.Join(errJobFailed, errors.New("write"))))
 	require.Equal(t, 3, ExitCode(errNeedsAttention))
 	require.Equal(t, 130, ExitCode(context.Canceled))
-	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{State: record.JobCanceled}}}}
+	status := workflow.Status{Jobs: []view.JobStatus{{Job: record.Job{State: record.JobCanceled}}}}
 	require.ErrorIs(t, outcome(status, false), errJobCanceled)
 	require.NoError(t, outcome(status, true))
 }
@@ -40,7 +41,7 @@ func TestJSONResultKeepsLogsAndProgressOffStdout(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	r := runtime{json: true}
-	result := ActionResult{Status: workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}}}}}
+	result := ActionResult{Status: workflow.Status{ReadAt: time.Now(), Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}}}}}
 	reporter := newReporter(&stderr, nil, false, progress.Info, false)
 	require.NoError(t, reporter.status(t.Context(), result.Status))
 	require.NoError(t, reporter.status(t.Context(), result.Status))
@@ -69,7 +70,7 @@ func TestTraceResumesOffsetsAndDrainsTerminalLogs(t *testing.T) {
 	provider := &logProvider{data: []byte("first\nsecond\n")}
 	reporter := newReporter(&output, provider, true, progress.Info, false)
 	run := record.ProviderRun{Provider: "test", RunID: "run"}
-	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{Run: run, State: record.AttemptRunning}}}}}
+	status := workflow.Status{Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive}, Attempts: []record.Attempt{{Run: run, State: record.AttemptRunning}}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
 	require.Equal(t, []int64{0}, provider.seen)
 	status.Jobs[0].Attempts[0].State = record.AttemptFinished
@@ -82,7 +83,7 @@ func TestCompletionEmphasizesPassedVerificationAndKeepsReuseDecisionEarlier(t *t
 	t.Parallel()
 	var output bytes.Buffer
 	reporter := newReporter(&output, nil, false, progress.Info, false)
-	status := workflow.Status{Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, ReuseDetail: "Previous image differs; running a new build"}}}}
+	status := workflow.Status{Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, ReuseDetail: "Previous image differs; running a new build"}}}}
 	require.NoError(t, reporter.status(t.Context(), status))
 	status.Jobs[0].Job.State = record.JobCompleted
 	status.Jobs[0].Attempts = []record.Attempt{{State: record.AttemptFinished, Evidence: &record.Evidence{Verdict: record.VerdictPassed}}}
@@ -98,7 +99,7 @@ func TestDetachedPublicationNamesPendingPRAndResumeCommand(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	r := runtime{}
-	status := workflow.Status{ReadAt: time.Now(), Jobs: []workflow.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, Spec: record.JobSpec{Destination: record.Published}}}}}
+	status := workflow.Status{ReadAt: time.Now(), Jobs: []view.JobStatus{{Job: record.Job{ID: "job", State: record.JobActive, Spec: record.JobSpec{Destination: record.Published}}}}}
 	require.NoError(t, r.result(&out, progress.Info, ActionResult{Status: status}))
 	require.Contains(t, out.String(), "PR publication remains pending.")
 	require.Contains(t, out.String(), "dockhand wait --job job")

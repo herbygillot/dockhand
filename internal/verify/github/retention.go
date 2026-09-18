@@ -32,6 +32,11 @@ func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, be
 	if pool.Directory != p.Directory {
 		return false, state.ErrConflict
 	}
+	// Identity is checked before the lock: a run that is not the recorded
+	// one is refused whether or not its cache is busy or already gone.
+	if _, _, _, err := p.execution(ctx, run); err != nil {
+		return false, err
+	}
 	lock, err := filelock.TryExisting(ctx, filelock.Path(p.Directory, string(run.RequestID)), filelock.Exclusive)
 	if errors.Is(err, filelock.ErrBusy) || errors.Is(err, os.ErrNotExist) {
 		return false, nil
@@ -40,10 +45,6 @@ func (p *Provider) PruneLogCache(ctx context.Context, run record.ProviderRun, be
 		return false, err
 	}
 	defer lock.Close()
-	_, _, _, err = p.execution(ctx, run)
-	if err != nil {
-		return false, err
-	}
 	root, err := os.OpenRoot(p.Directory)
 	if err != nil {
 		return false, err

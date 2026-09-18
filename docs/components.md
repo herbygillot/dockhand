@@ -27,6 +27,7 @@ dockhand2/
     workflow/            # Request acceptance and all workflow advancement
       preparation/       # Git snapshot lifetime and final edited-tree storage
       policy/            # Read-only evidence, coverage, and publication questions
+      view/              # Contribution-centric projection of a status snapshot; records only
     assess/              # Preparation capability reports, without jobs or downloads
     outdated/            # Read-only committed-port update scans
     upstream/            # Release discovery and version assessment

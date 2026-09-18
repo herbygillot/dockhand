@@ -82,7 +82,8 @@ func (s *Service) planGitVersion(ctx context.Context, request Request, input *so
 		progress.Report(ctx, "git.branch pins a commit; moving it to %s", release.Commit)
 	}
 	report := fidelity.GitVersion(request.SharedRelease, input.before, versioned, input.target.Name, input.files.root, *release, branch)
-	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Fidelity: []Fidelity{report}, Coverage: []ContextCoverage{{Fetch: next.Fetch, Platform: input.before.Platform}}}
+	result := Result{Scope: input.scope, Base: request.Source, Target: input.target, Release: release, Coverage: []ContextCoverage{{Fetch: next.Fetch, Platform: input.before.Platform}}}
+	result.report(report)
 	if len(report.UnexpectedChanges) > 0 {
 		return archivePlan{result: result}, fmt.Errorf("%w: %v", ErrFidelity, report.UnexpectedChanges)
 	}

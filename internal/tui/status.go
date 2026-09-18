@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"io"
 	"strings"
 	"sync"
@@ -80,7 +81,7 @@ type pending struct {
 type model struct {
 	options Options
 	runner  *runner
-	rows    []workflow.Contribution
+	rows    []view.Contribution
 	// showRetired includes retired rows; hidden counts those left out.
 	showRetired bool
 	readAt      time.Time
@@ -240,11 +241,11 @@ func (m *model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // visible is the rows the table shows: all of them, or only those not retired.
-func (m *model) visible() []workflow.Contribution {
+func (m *model) visible() []view.Contribution {
 	if m.showRetired {
 		return m.rows
 	}
-	return workflow.Current(m.rows)
+	return view.Current(m.rows)
 }
 
 func (m *model) hidden() int { return len(m.rows) - len(m.visible()) }
@@ -255,11 +256,11 @@ func (m *model) clampCursor() {
 	}
 }
 
-func (m *model) selected() workflow.Contribution {
+func (m *model) selected() view.Contribution {
 	if rows := m.visible(); m.cursor < len(rows) {
 		return rows[m.cursor]
 	}
-	return workflow.Contribution{}
+	return view.Contribution{}
 }
 
 func (m *model) open(what, target string) {
@@ -307,7 +308,7 @@ func (m *model) verb(verb string) tea.Cmd {
 // verbArgs builds the command for a verb on a row: exact by contribution ID
 // when the row is a tracked change, by job for standalone work. Verbs that
 // start work detach, since the table's own processing carries it on.
-func verbArgs(verb string, row workflow.Contribution) ([]string, string) {
+func verbArgs(verb string, row view.Contribution) ([]string, string) {
 	var args []string
 	switch {
 	case verb == "bump":
@@ -515,7 +516,7 @@ func (m *model) window() (int, int) {
 
 // expansion lists what a selected row hides: identifiers, targets, the PR,
 // the active job, and the history.
-func expansion(row workflow.Contribution) []string {
+func expansion(row view.Contribution) []string {
 	var lines []string
 	if row.Branch != "" {
 		lines = append(lines, "branch: "+row.Branch)

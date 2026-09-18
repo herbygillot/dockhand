@@ -1,6 +1,10 @@
 package record
 
-import "maps"
+import (
+	"errors"
+	"fmt"
+	"maps"
+)
 
 // ReleaseScope records the complete effect of one source-bound version input.
 // The initiating target remains the user-facing contribution handle.
@@ -51,24 +55,44 @@ func (s *ReleaseScope) BuildTargets() []Target {
 }
 
 // Valid checks that a release scope has unique, source-bound members and build work.
-// RequiredTargets lists the members verification must build for a job: every
-// buildable member when the job asked for all subports, otherwise the job's
-// initiating target alone, which must itself be buildable. A scope whose
-// initiating target builds nothing falls back to every buildable member.
-func (s *ReleaseScope) RequiredTargets(spec JobSpec) []Target {
+// CoverageIntent says which members of a shared release a job's verification
+// must build.
+type CoverageIntent string
+
+const (
+	// CoverageInitiating builds the job's initiating target alone.
+	CoverageInitiating CoverageIntent = "initiating"
+	// CoverageAll builds every buildable member of the release.
+	CoverageAll CoverageIntent = "all"
+)
+
+// ErrCoverage reports a coverage intent the release scope cannot satisfy.
+var ErrCoverage = errors.New("record: verification coverage cannot be satisfied")
+
+// RequiredTargets lists the members verification must build: every buildable
+// member for CoverageAll, otherwise the initiating target alone, which must
+// itself be a buildable member. An initiating target that builds nothing in
+// this scope is an error, never a silent widening to every member.
+func (s *ReleaseScope) RequiredTargets(intent CoverageIntent, initiating Target) ([]Target, error) {
 	if s == nil {
-		return spec.Targets
+		if intent == CoverageInitiating && initiating.Name == "" {
+			return nil, fmt.Errorf("%w: no initiating target", ErrCoverage)
+		}
+		return []Target{initiating}, nil
 	}
 	buildable := s.BuildTargets()
-	if spec.AllSubports || len(spec.Targets) == 0 {
-		return buildable
-	}
-	for _, target := range buildable {
-		if CompareTargets(target, spec.Targets[0]) == 0 {
-			return []Target{target}
+	switch intent {
+	case CoverageAll:
+		return buildable, nil
+	case CoverageInitiating:
+		for _, target := range buildable {
+			if CompareTargets(target, initiating) == 0 {
+				return []Target{target}, nil
+			}
 		}
+		return nil, fmt.Errorf("%w: initiating target %s builds nothing in this release", ErrCoverage, initiating.Name)
 	}
-	return buildable
+	return nil, fmt.Errorf("%w: unknown intent %q", ErrCoverage, intent)
 }
 
 func (s *ReleaseScope) Valid() bool {

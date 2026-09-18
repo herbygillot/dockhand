@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"github.com/herbygillot/dockhand/internal/workflow/view"
 	"io"
 	"strings"
 	"testing"
@@ -14,11 +15,11 @@ import (
 	"github.com/herbygillot/dockhand/internal/workflow"
 )
 
-func rows() []workflow.Contribution {
-	return []workflow.Contribution{
+func rows() []view.Contribution {
+	return []view.Contribution{
 		{Port: "jq", Change: "1.7 -> 1.8.1", Phase: "publication", State: "published", Next: "PR open, 3 checks pending", PullRequest: "https://github.com/macports/macports-ports/pull/1", ChangeID: "change_jq", Branch: "dockhand/bump/jq",
-			History: []workflow.ContributionJob{{JobID: "job_1", Action: record.Bump, State: record.JobCompleted, AcceptedAt: time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)}}},
-		{Port: "deno", Change: "verification", Phase: "verification", State: "building on macOS 26", Next: "verification pending", Active: &workflow.ActiveJob{JobID: "job_2", Action: record.Verify, Detail: "Verification running"}},
+			History: []view.ContributionJob{{JobID: "job_1", Action: record.Bump, State: record.JobCompleted, AcceptedAt: time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)}}},
+		{Port: "deno", Change: "verification", Phase: "verification", State: "building on macOS 26", Next: "verification pending", Active: &view.ActiveJob{JobID: "job_2", Action: record.Verify, Detail: "Verification running"}},
 	}
 }
 
@@ -140,7 +141,7 @@ func TestProcessorRunsWhileTheTableIsOpenAndStopsWithIt(t *testing.T) {
 }
 
 func TestRetiredRowsHideUntilHistoryIsAsked(t *testing.T) {
-	retired := workflow.Contribution{Port: "xplr", Change: "1.1.1 -> 1.1.2", Phase: "done", State: "merged", Next: "merged; branches cleaned", Retired: true}
+	retired := view.Contribution{Port: "xplr", Change: "1.1.1 -> 1.1.2", Phase: "done", State: "merged", Next: "merged; branches cleaned", Retired: true}
 	m := newModel(Options{})
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m.Update(snapshotMsg{overview: workflow.Overview{Contributions: append(rows(), retired)}})

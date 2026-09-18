@@ -12,11 +12,9 @@ import (
 )
 
 type PreparationRequest struct {
-	SharedRelease bool
-	// Stub carries the selected port's name when a prior job already
-	// redirected it to a subport; binding sets it itself for a fresh stub.
-	Stub                string
-	KeepOldChecksums    bool
+	// EditIntent is the person's choices; binding resolves a fresh stub
+	// selection into it, and a continued contribution carries its prior one.
+	record.EditIntent
 	AllSubports         bool
 	KeepFailed          bool
 	ChangeID            record.ChangeID
@@ -81,11 +79,10 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	// A stub such as py-foo cannot be edited or built itself; the bump lands
 	// on its newest versioned subport as a shared release, and the person's
 	// name stays on the contribution.
-	if newest, _ := macports.StubMembers(evaluation, targets[0].Name); newest != "" && targets[0].Subport == "" {
-		stub := targets[0]
-		targets = []record.Target{{Name: newest, Portfile: stub.Portfile, Subport: newest, Variants: stub.Variants}}
-		request.SharedRelease, request.Stub = true, stub.Name
-		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", stub.Name, newest)
+	if carrier, stub := macports.ResolveStub(evaluation, targets[0]); stub != "" {
+		targets = []record.Target{carrier}
+		request.SharedRelease, request.Stub = true, stub
+		progress.Report(ctx, "%s is a stub; editing %s and its sibling subports as one release", stub, carrier.Name)
 	}
 	if request.ResolveBuild != nil {
 		if request.Build != nil || request.BuildRequirements != nil || request.VerificationProblem != "" || request.Verification != record.VerificationRequired {
@@ -123,7 +120,7 @@ func (e *Engine) BindPreparation(ctx context.Context, request PreparationRequest
 	evaluation.Source = source
 	spec, err := normalizeSpec(record.JobSpec{KeepFailed: request.KeepFailed,
 		ChangeID: request.ChangeID, TargetBuilds: request.TargetBuilds, IncludeDependents: request.IncludeDependents, AllSubports: request.AllSubports, Action: request.Action, PublishTo: destination, Version: request.Version, Source: source, Targets: targets, EvaluatedVersions: evaluatedVersions(evaluation, targets), Destination: request.Destination, Verification: request.Verification, Build: request.Build, BuildRequirements: request.BuildRequirements, Reason: request.Reason,
-		Preparation: &record.PreparationSpec{SharedRelease: request.SharedRelease, Stub: request.Stub, KeepOldChecksums: request.KeepOldChecksums, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
+		Preparation: &record.PreparationSpec{EditIntent: request.EditIntent, SourceBranch: request.SourceBranch, SourceURL: request.SourceURL, Platform: request.Platform, Author: request.Author, VerificationProblem: request.VerificationProblem},
 	})
 	if err != nil {
 		return BoundPreparation{}, err
