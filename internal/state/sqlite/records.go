@@ -72,14 +72,20 @@ func (t *transaction) Change(ctx context.Context, id record.ChangeID) (record.Ch
 		return v, err
 	}
 	var current sql.NullString
-	var raw string
+	var raw, cleanup string
 	var created int64
-	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,''),generated_commit,initiating_target FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID, &v.GeneratedCommit, &v.InitiatingTarget)
+	err := t.conn.QueryRowContext(ctx, "SELECT id,branch,current_revision,disposition,targets,created_at,coalesce(published_revision,''),coalesce(pull_request_id,''),generated_commit,initiating_target,coalesce(cleanup,'') FROM changes WHERE repository_id=? AND id=?", t.repo, id).Scan(&v.ID, &v.Branch, &current, &v.Disposition, &raw, &created, &v.PublishedRevision, &v.PullRequestID, &v.GeneratedCommit, &v.InitiatingTarget, &cleanup)
 	if err != nil {
 		return v, storageError(err)
 	}
 	v.CurrentRevision = record.RevisionID(current.String)
 	v.CreatedAt = fromTime(created)
+	if cleanup != "" {
+		v.Cleanup = &record.BranchCleanup{}
+		if err := decode(cleanup, v.Cleanup); err != nil {
+			return v, err
+		}
+	}
 	return v, decode(raw, &v.Targets)
 }
 func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
@@ -127,10 +133,18 @@ func (t *transaction) PutChange(ctx context.Context, v record.Change) error {
 	if err != nil {
 		return err
 	}
-	if old.ID != "" {
-		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=?,published_revision=?,pull_request_id=?,generated_commit=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, nullableID(v.PublishedRevision), nullableID(v.PullRequestID), v.GeneratedCommit, t.repo, v.ID)
+	var cleanup sql.NullString
+	if v.Cleanup != nil {
+		encoded, err := encode(v.Cleanup)
+		if err != nil {
+			return err
+		}
+		cleanup = sql.NullString{String: encoded, Valid: true}
 	}
-	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at,generated_commit,initiating_target) VALUES(?,?,?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli(), v.GeneratedCommit, v.InitiatingTarget)
+	if old.ID != "" {
+		return t.exec(ctx, "UPDATE changes SET branch=?,current_revision=?,disposition=?,targets=?,published_revision=?,pull_request_id=?,generated_commit=?,cleanup=? WHERE repository_id=? AND id=?", v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, nullableID(v.PublishedRevision), nullableID(v.PullRequestID), v.GeneratedCommit, cleanup, t.repo, v.ID)
+	}
+	return t.exec(ctx, "INSERT INTO changes(id,repository_id,branch,current_revision,disposition,targets,created_at,generated_commit,initiating_target,cleanup) VALUES(?,?,?,?,?,?,?,?,?,?)", v.ID, t.repo, v.Branch, nullableID(v.CurrentRevision), v.Disposition, raw, v.CreatedAt.UnixMilli(), v.GeneratedCommit, v.InitiatingTarget, cleanup)
 }
 func (t *transaction) Revision(ctx context.Context, id record.RevisionID) (record.Revision, error) {
 	var v record.Revision

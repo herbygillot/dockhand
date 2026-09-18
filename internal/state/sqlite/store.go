@@ -75,7 +75,10 @@ var waitCountSchema string
 //go:embed migrations/019.sql
 var waitKindSchema string
 
-const schemaVersion = 19
+//go:embed migrations/020.sql
+var branchCleanupSchema string
+
+const schemaVersion = 20
 const applicationID = 0x44484e44
 
 type Options struct {
@@ -288,6 +291,7 @@ func migrations() []schemaMigration {
 		{version: 17, schema: releaseScopeSchema},
 		{version: 18, schema: waitCountSchema},
 		{version: 19, schema: waitKindSchema},
+		{version: 20, schema: branchCleanupSchema},
 	}
 }
 

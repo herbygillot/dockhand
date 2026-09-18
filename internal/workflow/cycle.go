@@ -121,6 +121,7 @@ func (e *Engine) Cycle(ctx context.Context, scope Scope) (CycleResult, error) {
 	}
 	if scope.All {
 		e.observePullRequests(ctx)
+		e.settleDueCleanups(ctx)
 	}
 	var resources []record.Resource
 	now = e.now()

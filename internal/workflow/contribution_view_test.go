@@ -16,7 +16,8 @@ func TestProjectGroupsJobsByContributionAndWordsEachPhase(t *testing.T) {
 	status := Status{
 		Changes: []record.Change{
 			{ID: "change_jq", InitiatingTarget: "jq", Branch: "dockhand/bump/jq", Targets: []record.Target{{Name: "jq"}}, Disposition: record.ChangeOpen, PullRequestID: "pr_jq", CreatedAt: base},
-			{ID: "change_gh", InitiatingTarget: "gh", Branch: "dockhand/bump/gh", Disposition: record.ChangeMerged, CreatedAt: base.Add(-time.Hour)},
+			{ID: "change_gh", InitiatingTarget: "gh", Branch: "dockhand/bump/gh", Disposition: record.ChangeMerged, CreatedAt: base.Add(-time.Hour),
+				Cleanup: &record.BranchCleanup{Local: record.CleanupOutcome{Name: "dockhand/bump/gh", State: record.CleanupComplete}, Fork: record.CleanupOutcome{Name: "author/ports:dockhand/bump/gh", State: record.CleanupComplete}}},
 		},
 		PullRequests: []record.PullRequest{{ID: "pr_jq", ChangeID: "change_jq", State: record.PullRequestOpen, ObservedAt: finished, Ref: record.PullRequestRef{URL: "https://github.com/macports/macports-ports/pull/1"},
 			Status: &record.PullRequestStatus{Mergeable: "yes", Review: "none", Checks: record.CheckSummary{Total: 4, Passed: 1, Pending: 3}}}},
@@ -135,4 +136,18 @@ func TestFinishedStandaloneVerificationsRetire(t *testing.T) {
 	require.Equal(t, "verified", rows[0].State)
 	require.True(t, rows[0].Retired, "there is nothing to abandon or continue; it hides with the retired rows")
 	require.Empty(t, Current(rows))
+}
+
+// A merged contribution's next column is its housekeeping: cleaned once
+// both branches are settled, what is still owed or was kept otherwise, and
+// only merged when it retired before cleanup was recorded.
+func TestMergedNextWordsTheRecordedCleanup(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "merged", mergedNext(nil))
+	both := &record.BranchCleanup{Local: record.CleanupOutcome{Name: "b", State: record.CleanupComplete}, Fork: record.CleanupOutcome{Name: "o/r:b", State: record.CleanupComplete}}
+	require.Equal(t, "merged; branches cleaned", mergedNext(both))
+	pending := &record.BranchCleanup{Local: record.CleanupOutcome{Name: "b", State: record.CleanupPending}, Fork: record.CleanupOutcome{Name: "o/r:b", State: record.CleanupPending, Detail: "kept: push failed"}}
+	require.Equal(t, "merged; local branch b cleanup pending; fork branch o/r:b cleanup pending: kept: push failed", mergedNext(pending))
+	kept := &record.BranchCleanup{Local: record.CleanupOutcome{Name: "b", State: record.CleanupKept, Detail: "kept; it no longer holds the published commit"}, Fork: record.CleanupOutcome{Name: "o/r:b", State: record.CleanupComplete}}
+	require.Equal(t, "merged; local branch b kept; it no longer holds the published commit", mergedNext(kept))
 }

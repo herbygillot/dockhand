@@ -79,7 +79,9 @@ func (e *Engine) RefreshContribution(ctx context.Context, selected ContributionS
 }
 
 // refreshChange is RefreshContribution for a change already in hand; the
-// periodic observation in Cycle uses it too.
+// periodic observation in Cycle uses it too. A merged PR retires the
+// contribution and records the branch cleanup it owes; settling the cleanup
+// follows, and a side that cannot be settled now is retried later.
 func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (ContributionResult, error) {
 	var result ContributionResult
 	var previous record.PullRequest
@@ -177,6 +179,9 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 					current.Disposition = record.ChangeClosed
 					if pr.State == record.PullRequestMerged {
 						current.Disposition = record.ChangeMerged
+						// What the merge leaves behind is owed from this
+						// same transaction; settling it comes after.
+						current.Cleanup = newBranchCleanup(current, pr, published.Source.Commit)
 					}
 					if err := tx.PutChange(ctx, current); err != nil {
 						return err
@@ -191,7 +196,14 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 		})
 	}
 	if expected.Disposition != record.ChangeOpen || pr.State == record.PullRequestOpen {
-		err = apply(ctx, "")
+		if err := apply(ctx, ""); err != nil {
+			return result, err
+		}
+		// A refresh of a merged contribution takes up whatever cleanup is
+		// still owed, whether the last attempt failed or never ran.
+		if result.Change.Disposition == record.ChangeMerged && !result.Change.Cleanup.Settled() {
+			err = e.settleAndReload(ctx, &result)
+		}
 		return result, err
 	}
 	problem := ""
@@ -218,17 +230,34 @@ func (e *Engine) refreshChange(ctx context.Context, expected record.Change) (Con
 		if err := e.Repo.RequireCleanBranch(ctx, expected.Branch); err != nil {
 			problem = err.Error()
 		}
-		if err := apply(ctx, problem); err != nil {
+		return apply(ctx, problem)
+	})
+	if err != nil {
+		return result, err
+	}
+	// Deletion is guarded by the expected commit, not by the branch lock, so
+	// the obligation settles the same way here and from the cycle.
+	if result.Change.Disposition == record.ChangeMerged {
+		err = e.settleAndReload(ctx, &result)
+	}
+	return result, err
+}
+
+// settleAndReload settles the owed cleanup of the result's merged
+// contribution at once, notes each outcome on the result, and rereads the
+// change so the result carries the settled record.
+func (e *Engine) settleAndReload(ctx context.Context, result *ContributionResult) error {
+	for _, note := range e.settleCleanup(ctx, result.Change.ID, true) {
+		result.Detail += "; " + note
+	}
+	return e.State.View(ctx, e.Repository, func(ctx context.Context, r state.Reader) error {
+		change, err := r.Change(ctx, result.Change.ID)
+		if err != nil {
 			return err
 		}
-		if result.Change.Disposition == record.ChangeMerged {
-			for _, note := range e.retireBranches(ctx, result.Change, pr, published.Source.Commit) {
-				result.Detail += "; " + note
-			}
-		}
+		result.Change = change
 		return nil
 	})
-	return result, err
 }
 
 // observePullRequests refreshes the open contributions whose PR has not been

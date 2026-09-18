@@ -35,5 +35,61 @@ type Change struct {
 	PublishedRevision RevisionID
 	PullRequestID     PullRequestID
 	Disposition       Disposition
-	CreatedAt         time.Time
+	// Cleanup is the housekeeping a merged contribution owes, recorded
+	// with the merged disposition and settled afterwards; nil before the
+	// merge and on contributions retired before it was recorded.
+	Cleanup   *BranchCleanup `json:",omitempty"`
+	CreatedAt time.Time
+}
+
+// CleanupState is where one side of a merged contribution's cleanup stands.
+type CleanupState string
+
+const (
+	// CleanupPending marks a deletion still owed: not yet attempted, or
+	// attempted and to be retried after RetryAt.
+	CleanupPending CleanupState = "pending"
+	// CleanupComplete marks a branch deleted, or already gone.
+	CleanupComplete CleanupState = "complete"
+	// CleanupKept marks a branch deliberately left in place, for the reason
+	// in Detail: it moved past the published commit, or no remote can reach it.
+	CleanupKept CleanupState = "kept"
+)
+
+// BranchCleanup is what a merged contribution leaves behind: its local
+// branch and the fork branch its pull request was published from. Both are
+// deleted only while they still hold Published, so nothing unpublished is
+// lost, and each side settles on its own, so a process exit or a failed
+// remote call leaves an obligation the next cycle or refresh takes up
+// rather than a branch nothing revisits.
+type BranchCleanup struct {
+	// Published is the commit both branches are expected to hold.
+	Published ObjectID
+	Local     CleanupOutcome
+	Fork      CleanupOutcome
+}
+
+// CleanupOutcome is one side of a BranchCleanup.
+type CleanupOutcome struct {
+	// Name is the local branch, or the fork branch as owner/repo:branch;
+	// empty when there was nothing to delete.
+	Name  string `json:",omitempty"`
+	State CleanupState
+	// Detail says what happened on the last attempt.
+	Detail string `json:",omitempty"`
+	// ConsecutiveFailures and RetryAt are the retry bookkeeping a Lease
+	// keeps: failures back the next attempt off, and nothing runs before
+	// RetryAt except an explicit refresh.
+	ConsecutiveFailures uint32     `json:",omitempty"`
+	RetryAt             *time.Time `json:",omitempty"`
+}
+
+// Settled reports whether every side of the cleanup has a final outcome.
+func (c *BranchCleanup) Settled() bool {
+	return c != nil && c.Local.State != CleanupPending && c.Fork.State != CleanupPending
+}
+
+// Due reports whether a pending side may be attempted at now.
+func (o CleanupOutcome) Due(now time.Time) bool {
+	return o.State == CleanupPending && (o.RetryAt == nil || !o.RetryAt.After(now))
 }

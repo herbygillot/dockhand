@@ -11,7 +11,9 @@ import (
 // collectMergedBranches deletes local branches left behind by contributions
 // whose PR merged before their refresh cleaned up, or whose branch was
 // checked out at the time. A branch that moved past the published commit is
-// reported and kept. Fork branches are cleaned at merge observation only.
+// reported and kept. A deletion settles the contribution's recorded cleanup
+// obligation when it has one. Fork branches are cleaned at merge observation
+// and by the cycle's retries, not here.
 func (c *cycle) collectMergedBranches(ctx context.Context, result *RetentionResult, dry bool) error {
 	e := c.engine
 	if e.Repo == nil {
@@ -68,6 +70,9 @@ func (c *cycle) collectMergedBranches(ctx context.Context, result *RetentionResu
 				}
 				item.Completed = true
 				item.Detail = "deleted the branch of merged contribution " + string(change.ID)
+				if err := c.recordLocalCleanup(ctx, change.ID); err != nil {
+					return err
+				}
 			}
 			result.Items = append(result.Items, item)
 		}
@@ -76,4 +81,23 @@ func (c *cycle) collectMergedBranches(ctx context.Context, result *RetentionResu
 		}
 		q.After = string(changes[len(changes)-1].ID)
 	}
+}
+
+// recordLocalCleanup settles the local side of a merged contribution's
+// cleanup after the sweep deleted its branch.
+func (c *cycle) recordLocalCleanup(ctx context.Context, id record.ChangeID) error {
+	e := c.engine
+	return e.State.Update(ctx, e.Repository, func(ctx context.Context, tx state.Tx) error {
+		current, err := tx.Change(ctx, id)
+		if err != nil {
+			return err
+		}
+		if current.Cleanup == nil || current.Cleanup.Local.State != record.CleanupPending {
+			return nil
+		}
+		next := *current.Cleanup
+		next.Local = cleanupSettled(next.Local, record.CleanupComplete, "deleted by gc")
+		current.Cleanup = &next
+		return tx.PutChange(ctx, current)
+	})
 }

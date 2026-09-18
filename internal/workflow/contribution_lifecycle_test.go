@@ -332,3 +332,94 @@ func TestCycleObservesOpenPullRequestsOnASchedule(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, local.Exists, "and cleans its branch as refresh would")
 }
+
+// A merged contribution's branch cleanup is recorded with the merge and
+// owed until settled: a fork deletion that fails stays pending with a retry
+// time, the cycle takes it up once due, an explicit refresh takes it up at
+// once, and status words the obligation rather than claiming the branches
+// were cleaned.
+func TestMergeCleanupIsOwedUntilSettled(t *testing.T) {
+	t.Parallel()
+	f, hosting, selected := publishedLifecycleFixture(t)
+	hosting.observation.PullRequest.State = record.PullRequestMerged
+	// The fork stays readable for observation; only deleting its ref fails.
+	heads := filepath.Join(hosting.remote, "refs", "heads")
+	require.NoError(t, os.Chmod(heads, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(heads, 0o755) })
+	result, err := f.engine.RefreshContribution(t.Context(), selected)
+	require.NoError(t, err)
+	require.Equal(t, record.ChangeMerged, result.Change.Disposition)
+	require.Contains(t, result.Detail, "local branch candidate deleted")
+	require.Contains(t, result.Detail, "fork branch author/ports:candidate kept:")
+	cleanup := result.Change.Cleanup
+	require.NotNil(t, cleanup)
+	require.Equal(t, f.source.Commit, cleanup.Published)
+	require.Equal(t, record.CleanupComplete, cleanup.Local.State)
+	require.Equal(t, record.CleanupPending, cleanup.Fork.State)
+	require.Equal(t, uint32(1), cleanup.Fork.ConsecutiveFailures)
+	require.NotNil(t, cleanup.Fork.RetryAt)
+	require.Equal(t, f.now().Add(15*time.Minute), *cleanup.Fork.RetryAt)
+	stored := loadChange(t, f, "change")
+	require.Equal(t, cleanup, stored.Cleanup, "the obligation is what the store holds")
+	rows := workflow.Project(workflow.Status{Changes: []record.Change{stored}})
+	require.Len(t, rows, 1)
+	require.Equal(t, "merged; fork branch author/ports:candidate cleanup pending: "+cleanup.Fork.Detail, rows[0].Next)
+
+	// Not due yet: the cycle leaves it alone even though the remote is writable again.
+	require.NoError(t, os.Chmod(heads, 0o755))
+	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	stored = loadChange(t, f, "change")
+	require.Equal(t, record.CleanupPending, stored.Cleanup.Fork.State)
+	remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+	require.NoError(t, err)
+	require.True(t, remote.Exists)
+
+	// Due: the cycle settles it.
+	f.advance(16 * time.Minute)
+	_, err = f.engine.Cycle(t.Context(), workflow.Scope{All: true})
+	require.NoError(t, err)
+	stored = loadChange(t, f, "change")
+	require.Equal(t, record.CleanupComplete, stored.Cleanup.Fork.State, stored.Cleanup.Fork.Detail)
+	require.True(t, stored.Cleanup.Settled())
+	require.Nil(t, stored.Cleanup.Fork.RetryAt)
+	remote, err = f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+	require.NoError(t, err)
+	require.False(t, remote.Exists)
+	rows = workflow.Project(workflow.Status{Changes: []record.Change{stored}})
+	require.Equal(t, "merged; branches cleaned", rows[0].Next)
+}
+
+// An explicit refresh of a merged contribution retries owed cleanup at once,
+// without waiting for the retry time.
+func TestRefreshOfMergedContributionSettlesOwedCleanupAtOnce(t *testing.T) {
+	t.Parallel()
+	f, hosting, selected := publishedLifecycleFixture(t)
+	hosting.observation.PullRequest.State = record.PullRequestMerged
+	heads := filepath.Join(hosting.remote, "refs", "heads")
+	require.NoError(t, os.Chmod(heads, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(heads, 0o755) })
+	result, err := f.engine.RefreshContribution(t.Context(), selected)
+	require.NoError(t, err)
+	require.Equal(t, record.CleanupPending, result.Change.Cleanup.Fork.State)
+	require.NoError(t, os.Chmod(heads, 0o755))
+	result, err = f.engine.RefreshContribution(t.Context(), selected)
+	require.NoError(t, err)
+	require.Contains(t, result.Detail, "not reopened")
+	require.Contains(t, result.Detail, "fork branch author/ports:candidate deleted")
+	require.True(t, result.Change.Cleanup.Settled(), result.Change.Cleanup.Fork.Detail)
+	remote, err := f.repo.RemoteHead(t.Context(), hosting.remote, "candidate")
+	require.NoError(t, err)
+	require.False(t, remote.Exists)
+}
+
+func loadChange(t *testing.T, f *fixture, id record.ChangeID) record.Change {
+	t.Helper()
+	var change record.Change
+	require.NoError(t, f.store.View(t.Context(), f.repository, func(ctx context.Context, r state.Reader) error {
+		var err error
+		change, err = r.Change(ctx, id)
+		return err
+	}))
+	return change
+}

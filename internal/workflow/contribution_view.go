@@ -300,7 +300,7 @@ func words(change record.Change, known bool, current *JobStatus, pr *record.Pull
 		state = string(change.Disposition)
 		switch {
 		case change.Disposition == record.ChangeMerged:
-			next = "merged; branches cleaned"
+			next = mergedNext(change.Cleanup)
 		case change.Disposition == record.ChangeClosed && change.Branch == "" && pr == nil:
 			state = "retired"
 			next = "stopped before a branch; bump again once fixed"
@@ -487,4 +487,34 @@ func jobPort(job record.Job) string {
 		return "--job " + string(job.ID)
 	}
 	return job.Spec.Targets[0].Name
+}
+
+// mergedNext words a merged contribution's housekeeping from its recorded
+// cleanup: cleaned once both branches are settled, otherwise what is still
+// owed or was kept and why. A contribution retired before cleanup was
+// recorded is only merged.
+func mergedNext(cleanup *record.BranchCleanup) string {
+	if cleanup == nil {
+		return "merged"
+	}
+	var parts []string
+	for _, side := range []struct {
+		label   string
+		outcome record.CleanupOutcome
+	}{{"local branch", cleanup.Local}, {"fork branch", cleanup.Fork}} {
+		switch side.outcome.State {
+		case record.CleanupPending:
+			part := side.label + " " + side.outcome.Name + " cleanup pending"
+			if side.outcome.Detail != "" {
+				part += ": " + side.outcome.Detail
+			}
+			parts = append(parts, part)
+		case record.CleanupKept:
+			parts = append(parts, side.label+" "+side.outcome.Name+" "+side.outcome.Detail)
+		}
+	}
+	if len(parts) == 0 {
+		return "merged; branches cleaned"
+	}
+	return "merged; " + strings.Join(parts, "; ")
 }
